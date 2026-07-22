@@ -89,13 +89,13 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
 }
 
 export const apiClient = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, init?: RequestInit) => request<T>(path, init),
   /**
    * 探测式 GET：不弹全局 toast（调用方自带错误展示，例如能力目录的黄色降级提示）。
    * 5xx/403 仍正常抛 ApiError；只是不重复弹通知。用于按 backend 批量探测的端点
    * （/capabilities / /setup），避免一个不可达容器触发 N 个堆叠 toast。
    */
-  silentGet: <T>(path: string) => request<T>(path, undefined, { silent: true }),
+  silentGet: <T>(path: string, init?: RequestInit) => request<T>(path, init, { silent: true }),
   post: <T>(path: string, body?: unknown, extra?: RequestInit) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}), ...extra }),
   /** 探测式 POST：不弹全局 toast（见 silentGet 说明）。 */

@@ -44,6 +44,7 @@ import type { ImageContextMenuClipboardActions } from "../stage/imageStageContex
 import type { RasterMaskRenderRecord } from "../stage/shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframeActions";
+import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -58,6 +59,7 @@ type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeom
  *   - editors: maskEditor / polygonDraft / canvas* / projectRenderingConfig / issue*
  */
 interface WorkbenchStageHostCommonProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   stageKind: StageKind;
   /** v0.13.2 · 当前任务 id，点云 3D 舞台据此拉 point-cloud manifest。 */
   taskId: string | null;
@@ -303,6 +305,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const { common, video, image, ai, editors } = props;
     const {
       stageKind,
+      maskCompareStore,
       taskId,
       overlays,
       readOnly,
@@ -499,6 +502,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
+            maskCompareStore={maskCompareStore}
             ref={ref}
             manifest={videoManifest}
             frameTimetable={videoFrameTimetable}
@@ -562,6 +566,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           />
         ) : (
           <ImageWorkbench
+            maskCompareStore={maskCompareStore}
             rasterMaskRecords={rasterMaskRecords}
             rasterMaskStatusById={rasterMaskStatusById}
             onRetryRasterMask={onRetryRasterMask}

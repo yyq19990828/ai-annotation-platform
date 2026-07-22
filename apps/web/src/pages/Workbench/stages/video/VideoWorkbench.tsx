@@ -29,11 +29,13 @@ import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
 import type { VideoMaskKeyframeActionHandlers } from "../../stage/videoMaskKeyframeActions";
+import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
   isLoading?: boolean;
@@ -116,6 +118,7 @@ export interface VideoWorkbenchProps {
 
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
   function VideoWorkbench({
+    maskCompareStore,
     manifest,
     frameTimetable,
     isLoading,
@@ -185,6 +188,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     // v0.16.5 · 视频渲染栈统一到 Konva(删旧 SVG 栈,见 ADR-0041):唯一实现,无 flag 分支。
     return (
       <VideoKonvaStage
+        maskCompareStore={maskCompareStore}
         ref={ref}
         manifest={manifest}
         frameTimetable={frameTimetable}

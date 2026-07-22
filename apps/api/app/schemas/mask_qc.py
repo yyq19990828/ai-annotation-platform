@@ -24,6 +24,12 @@ MASK_QC_RULE_CODES = frozenset(
 )
 MaskQCSeverity = Literal["info", "warning", "blocker"]
 MaskQCSeverityOverride = Literal["info", "warning", "blocker", "off"]
+MaskCompareBaseline = Literal[
+    "previous_version",
+    "tracker_candidate",
+    "ai_candidate",
+    "neighbor_keyframe",
+]
 
 
 class MaskQCSingleFrameConfig(BaseModel):
@@ -133,6 +139,21 @@ class MaskQCRunOut(BaseModel):
     reused: bool = False
 
 
+class MaskQCRegionBBox(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x0: float = Field(ge=0, le=1)
+    y0: float = Field(ge=0, le=1)
+    x1: float = Field(ge=0, le=1)
+    y1: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "MaskQCRegionBBox":
+        if self.x1 <= self.x0 or self.y1 <= self.y0:
+            raise ValueError("Mask QC region bbox must have positive area")
+        return self
+
+
 class MaskQCIssueOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -153,7 +174,7 @@ class MaskQCIssueOut(BaseModel):
     frame_end: int | None
     metric: dict[str, Any]
     threshold: dict[str, Any]
-    region_bbox: dict[str, Any] | None
+    region_bbox: MaskQCRegionBBox | None
     region_mask_ref: dict[str, Any] | None
     region_digest: str | None
     source: dict[str, Any]
@@ -189,5 +210,42 @@ class TaskMaskQCSummary(BaseModel):
         "cancelled",
         "stale",
     ]
+    progress_pct: int = Field(ge=0, le=100)
     counts: dict[str, int] = Field(default_factory=dict)
     blocking: bool = False
+
+
+class MaskCompareSide(BaseModel):
+    annotation_id: UUID
+    annotation_version: int = Field(ge=1)
+    frame_index: int | None = Field(default=None, ge=0)
+    source: str
+    state: str | None = None
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size: tuple[int, int]
+    content_path: str
+    candidate_job_id: UUID | None = None
+    candidate_digest: str | None = None
+    candidate_instance_id: str | None = None
+
+
+class MaskCompareMetrics(BaseModel):
+    current_area_pixels: int = Field(ge=0)
+    baseline_area_pixels: int = Field(ge=0)
+    intersection_pixels: int = Field(ge=0)
+    union_pixels: int = Field(ge=0)
+    changed_pixels: int = Field(ge=0)
+    added_pixels: int = Field(ge=0)
+    removed_pixels: int = Field(ge=0)
+    iou_numerator: int = Field(ge=0)
+    iou_denominator: int = Field(ge=0)
+    dice_numerator: int = Field(ge=0)
+    dice_denominator: int = Field(ge=0)
+
+
+class MaskCompareOut(BaseModel):
+    baseline_kind: MaskCompareBaseline
+    current: MaskCompareSide
+    baseline: MaskCompareSide
+    metrics: MaskCompareMetrics
+    loss: list[str] = Field(default_factory=list)

@@ -133,6 +133,8 @@ export interface UseWorkbenchHotkeysArgs {
   maskTaskReadOnly?: boolean;
   /** 分块缓存超预算时停止像素编辑，但保留已有草稿的保存入口。 */
   maskPixelReadOnly?: boolean;
+  /** 证据对比期间冻结所有 Mask 编辑快捷键，包括取消草稿。 */
+  maskInteractionFrozen?: boolean;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -165,7 +167,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported, aiInteractiveEnabled,
     maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit,
-    maskTaskReadOnly = false, maskPixelReadOnly = false,
+    maskTaskReadOnly = false, maskPixelReadOnly = false, maskInteractionFrozen = false,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -242,6 +244,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     if (s.tool !== "mask") return;
     if (!maskEditor) return;
     const onKey = (e: KeyboardEvent) => {
+      if (maskInteractionFrozen) return;
       const t = e.target;
       if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (s.pendingDrawing || s.editingClass) return;
@@ -324,7 +327,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskTaskReadOnly, maskPixelReadOnly, annotationsRef]);
+  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, s.selectedId, maskEditor, commitMaskAsPolygon, commitMaskInstanceOperation, cancelMaskEdit, maskInteractionFrozen, maskTaskReadOnly, maskPixelReadOnly, annotationsRef]);
 
   // 主 keydown / keyup
   useEffect(() => {

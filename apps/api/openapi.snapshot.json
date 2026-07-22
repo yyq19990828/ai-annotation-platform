@@ -9837,9 +9837,32 @@
       "FeedbackAnchorPosition": {
         "description": "pixel anchor 携带的坐标 (相对 0-1 与 geometry 同语义); frame 视频时可选.",
         "properties": {
+          "boundary_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boundary Digest"
+          },
+          "compare_locator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaskFeedbackCompareLocator"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "frame": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -9848,11 +9871,66 @@
             ],
             "title": "Frame"
           },
+          "mask_qc_issue_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask Qc Issue Id"
+          },
+          "region_bbox": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Bbox"
+          },
+          "region_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Digest"
+          },
           "x": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "X",
             "type": "number"
           },
           "y": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "title": "Y",
             "type": "number"
           }
@@ -13230,6 +13308,226 @@
         "title": "ManagedLifecycleCapabilities",
         "type": "object"
       },
+      "MaskCompareMetrics": {
+        "properties": {
+          "added_pixels": {
+            "minimum": 0.0,
+            "title": "Added Pixels",
+            "type": "integer"
+          },
+          "baseline_area_pixels": {
+            "minimum": 0.0,
+            "title": "Baseline Area Pixels",
+            "type": "integer"
+          },
+          "changed_pixels": {
+            "minimum": 0.0,
+            "title": "Changed Pixels",
+            "type": "integer"
+          },
+          "current_area_pixels": {
+            "minimum": 0.0,
+            "title": "Current Area Pixels",
+            "type": "integer"
+          },
+          "dice_denominator": {
+            "minimum": 0.0,
+            "title": "Dice Denominator",
+            "type": "integer"
+          },
+          "dice_numerator": {
+            "minimum": 0.0,
+            "title": "Dice Numerator",
+            "type": "integer"
+          },
+          "intersection_pixels": {
+            "minimum": 0.0,
+            "title": "Intersection Pixels",
+            "type": "integer"
+          },
+          "iou_denominator": {
+            "minimum": 0.0,
+            "title": "Iou Denominator",
+            "type": "integer"
+          },
+          "iou_numerator": {
+            "minimum": 0.0,
+            "title": "Iou Numerator",
+            "type": "integer"
+          },
+          "removed_pixels": {
+            "minimum": 0.0,
+            "title": "Removed Pixels",
+            "type": "integer"
+          },
+          "union_pixels": {
+            "minimum": 0.0,
+            "title": "Union Pixels",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "current_area_pixels",
+          "baseline_area_pixels",
+          "intersection_pixels",
+          "union_pixels",
+          "changed_pixels",
+          "added_pixels",
+          "removed_pixels",
+          "iou_numerator",
+          "iou_denominator",
+          "dice_numerator",
+          "dice_denominator"
+        ],
+        "title": "MaskCompareMetrics",
+        "type": "object"
+      },
+      "MaskCompareOut": {
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/MaskCompareSide"
+          },
+          "baseline_kind": {
+            "enum": [
+              "previous_version",
+              "tracker_candidate",
+              "ai_candidate",
+              "neighbor_keyframe"
+            ],
+            "title": "Baseline Kind",
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/MaskCompareSide"
+          },
+          "loss": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Loss",
+            "type": "array"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MaskCompareMetrics"
+          }
+        },
+        "required": [
+          "baseline_kind",
+          "current",
+          "baseline",
+          "metrics"
+        ],
+        "title": "MaskCompareOut",
+        "type": "object"
+      },
+      "MaskCompareSide": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "annotation_version": {
+            "minimum": 1.0,
+            "title": "Annotation Version",
+            "type": "integer"
+          },
+          "candidate_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Digest"
+          },
+          "candidate_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Instance Id"
+          },
+          "candidate_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Job Id"
+          },
+          "content_path": {
+            "title": "Content Path",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "size": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Size",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "annotation_version",
+          "source",
+          "digest",
+          "size",
+          "content_path"
+        ],
+        "title": "MaskCompareSide",
+        "type": "object"
+      },
       "MaskCreateMutation": {
         "additionalProperties": false,
         "properties": {
@@ -13308,6 +13606,96 @@
           "version"
         ],
         "title": "MaskExpectedVersion",
+        "type": "object"
+      },
+      "MaskFeedbackCompareLocator": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Baseline Digest",
+            "type": "string"
+          },
+          "baseline_kind": {
+            "enum": [
+              "previous_version",
+              "tracker_candidate",
+              "ai_candidate",
+              "neighbor_keyframe"
+            ],
+            "title": "Baseline Kind",
+            "type": "string"
+          },
+          "candidate_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Digest"
+          },
+          "candidate_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Instance Id"
+          },
+          "candidate_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Job Id"
+          },
+          "candidate_job_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Job Revision"
+          },
+          "current_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Current Digest",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "overlay",
+              "boundary",
+              "xor",
+              "added",
+              "removed"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "baseline_kind",
+          "mode",
+          "current_digest",
+          "baseline_digest"
+        ],
+        "title": "MaskFeedbackCompareLocator",
         "type": "object"
       },
       "MaskLineageEdgeOut": {
@@ -13968,14 +14356,12 @@
           "region_bbox": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/MaskQCRegionBBox"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Region Bbox"
+            ]
           },
           "region_digest": {
             "anyOf": [
@@ -14171,6 +14557,43 @@
           "status"
         ],
         "title": "MaskQCIssuePatch",
+        "type": "object"
+      },
+      "MaskQCRegionBBox": {
+        "additionalProperties": false,
+        "properties": {
+          "x0": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X0",
+            "type": "number"
+          },
+          "x1": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X1",
+            "type": "number"
+          },
+          "y0": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y0",
+            "type": "number"
+          },
+          "y1": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y1",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x0",
+          "y0",
+          "x1",
+          "y1"
+        ],
+        "title": "MaskQCRegionBBox",
         "type": "object"
       },
       "MaskQCRunOut": {
@@ -22829,6 +23252,12 @@
             "title": "Counts",
             "type": "object"
           },
+          "progress_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress Pct",
+            "type": "integer"
+          },
           "qc_digest": {
             "anyOf": [
               {
@@ -22887,7 +23316,8 @@
           "run_id",
           "qc_digest",
           "source_snapshot_digest",
-          "status"
+          "status",
+          "progress_pct"
         ],
         "title": "TaskMaskQCSummary",
         "type": "object"
@@ -30328,6 +30758,247 @@
         ]
       }
     },
+    "/api/v1/annotations/{annotation_id}/mask-compare": {
+      "get": {
+        "operationId": "get_mask_compare_api_v1_annotations__annotation_id__mask_compare_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "baseline",
+            "required": true,
+            "schema": {
+              "enum": [
+                "previous_version",
+                "tracker_candidate",
+                "ai_candidate",
+                "neighbor_keyframe"
+              ],
+              "title": "Baseline",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Annotation Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frame_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Frame Index"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Candidate Job Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_job_revision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Candidate Job Revision"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_digest",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Candidate Digest"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_instance_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Candidate Instance Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskCompareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Mask Compare",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/annotations/{annotation_id}/mask-compare/content": {
+      "get": {
+        "operationId": "get_mask_compare_content_api_v1_annotations__annotation_id__mask_compare_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Annotation Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "digest",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frame_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Frame Index"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CocoRleContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Mask Compare Content",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
     "/api/v1/annotations/{annotation_id}/mask-content": {
       "get": {
         "description": "v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。\n\n支持图片 RasterMaskGeometry 掩码的静态内容服务。\n返回标准 COCO RLE 格式，带 ETag 支持条件请求。",
@@ -35350,6 +36021,64 @@
           }
         ],
         "summary": "Patch Issue",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/mask-qc/issues/{issue_id}/region-content": {
+      "get": {
+        "operationId": "get_issue_region_content_api_v1_mask_qc_issues__issue_id__region_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "digest",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Digest",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CocoRleContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issue Region Content",
         "tags": [
           "mask-qc"
         ]

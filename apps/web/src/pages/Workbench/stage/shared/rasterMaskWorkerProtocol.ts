@@ -24,12 +24,31 @@ export interface RasterMaskTileOverride extends RasterMaskTileRect {
   alpha: Uint8Array;
 }
 
+export type RasterMaskCompareMode = "overlay" | "boundary" | "xor" | "added" | "removed";
+
+export interface RasterMaskCompareSessionRef {
+  sessionId: string;
+  sha256: string;
+}
+
+export interface RasterMaskCompareMetrics {
+  currentAreaPixels: number;
+  baselineAreaPixels: number;
+  intersectionPixels: number;
+  unionPixels: number;
+  changedPixels: number;
+  addedPixels: number;
+  removedPixels: number;
+}
+
 export type RasterMaskWorkerJobKind =
   | "analyze"
   | "operation"
   | "instance_operation"
   | "tile_decode"
-  | "tile_merge";
+  | "tile_merge"
+  | "compare_metrics"
+  | "compare_tile";
 
 type AnalysisWorkerRequest = {
   kind: "analyze";
@@ -69,12 +88,31 @@ type TileMergeWorkerRequest = {
   tiles: RasterMaskTileOverride[];
 };
 
+type CompareTileWorkerRequest = {
+  kind: "compare_tile";
+  id: number;
+  current: RasterMaskCompareSessionRef;
+  baseline: RasterMaskCompareSessionRef;
+  rect: RasterMaskTileRect;
+  mode: RasterMaskCompareMode;
+  sampleStep: number;
+};
+
+type CompareMetricsWorkerRequest = {
+  kind: "compare_metrics";
+  id: number;
+  current: RasterMaskCompareSessionRef;
+  baseline: RasterMaskCompareSessionRef;
+};
+
 export type RasterMaskWorkerJobRequest =
   | AnalysisWorkerRequest
   | OperationWorkerRequest
   | InstanceOperationWorkerRequest
   | TileDecodeWorkerRequest
-  | TileMergeWorkerRequest;
+  | TileMergeWorkerRequest
+  | CompareMetricsWorkerRequest
+  | CompareTileWorkerRequest;
 
 export type RasterMaskWorkerControlRequest =
   | {
@@ -119,5 +157,24 @@ export type RasterMaskWorkerResponse =
       sessionId: string;
       sha256: string;
       rle: RasterMaskTransferredRle;
+    }
+  | {
+      kind: "compare_metrics";
+      id: number;
+      ok: true;
+      current: RasterMaskCompareSessionRef;
+      baseline: RasterMaskCompareSessionRef;
+      metrics: RasterMaskCompareMetrics;
+    }
+  | {
+      kind: "compare_tile";
+      id: number;
+      ok: true;
+      current: RasterMaskCompareSessionRef;
+      baseline: RasterMaskCompareSessionRef;
+      rect: RasterMaskTileRect;
+      mode: RasterMaskCompareMode;
+      sampleStep: number;
+      codes: Uint8Array;
     }
   | { kind: RasterMaskWorkerJobKind; id: number; ok: false; error: string };

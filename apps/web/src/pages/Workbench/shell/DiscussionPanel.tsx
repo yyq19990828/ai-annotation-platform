@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
+import { MaskQcPanel } from "./MaskQcPanel";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
 // 顶部 tab 切换条: 字号/字重与右栏上段"标注详情"标题 (text-sm font-semibold) 对齐,
@@ -26,12 +27,13 @@ const TAB_BUTTON_INACTIVE = "border-transparent text-muted-foreground";
  * CommentsPanel 保留作本面板 comments/history tab 的子渲染器。
  * 边界：只统一 comment + issue + history(audit)；bug / reject 刻意不进。
  */
-type DiscussionTab = "comments" | "history" | "issues";
+type DiscussionTab = "comments" | "history" | "issues" | "mask_qc";
 
 const TABS: { key: DiscussionTab; label: string }[] = [
   { key: "comments", label: "评论" },
   { key: "history", label: "历史" },
   { key: "issues", label: "Issue" },
+  { key: "mask_qc", label: "Mask 质检" },
 ];
 
 // v0.11.5+ · 评论内画布批注 (live 绘图) + 点评论跳帧 (video) 的桥接 props，
@@ -43,6 +45,7 @@ type CommentsBridgeProps = Pick<
 >;
 
 interface DiscussionPanelProps extends CommentsBridgeProps {
+  maskQc?: ComponentProps<typeof MaskQcPanel>;
   annotationId: string | null;
   taskId: string | null;
   projectId: string | null;
@@ -56,6 +59,7 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
 }
 
 export function DiscussionPanel({
+  maskQc,
   annotationId, taskId, projectId, currentUserId,
   backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame,
   onDetach,
@@ -63,7 +67,7 @@ export function DiscussionPanel({
   collapsed: collapsedProp,
   onToggleCollapsed,
 }: DiscussionPanelProps) {
-  const [tab, setTab] = useState<DiscussionTab>("comments");
+  const [tab, setTab] = useState<DiscussionTab>(maskQc?.activeIssue ? "mask_qc" : "comments");
   // v0.20.22 · 受控优先 (走 workbench.layout 持久), 缺省回落组件内会话态 (测试/独立使用)。
   const [collapsedLocal, setCollapsedLocal] = useState(false);
   const collapsed = collapsedProp ?? collapsedLocal;
@@ -82,6 +86,19 @@ export function DiscussionPanel({
   // toggleCollapsed / collapsed 依赖漂移会引起循环触发, 故按 tick 一路径走。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabRequestTick]);
+
+  useEffect(() => {
+    if (!maskQc && tab === "mask_qc") setTab("comments");
+  }, [maskQc, tab]);
+
+  useEffect(() => {
+    if (!maskQc?.activeIssue) return;
+    setTab("mask_qc");
+    if (collapsed) toggleCollapsed();
+  // An active QC navigation is an explicit request to expose this tab. The
+  // collapsed callbacks are intentionally omitted to avoid replaying it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maskQc?.activeIssue?.id]);
 
   return (
     <div
@@ -102,14 +119,17 @@ export function DiscussionPanel({
               <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
             </button>
           )}
-          {TABS.map((t) => (
+          {TABS.filter((t) => t.key !== "mask_qc" || maskQc).map((t) => (
             <button
               key={t.key}
               type="button"
               role="tab"
               aria-selected={tab === t.key}
               className={`${TAB_BUTTON_BASE} ${tab === t.key ? TAB_BUTTON_ACTIVE : TAB_BUTTON_INACTIVE}`}
-              onClick={() => setTab(t.key)}
+              onClick={() => {
+                setTab(t.key);
+                if (collapsed) toggleCollapsed();
+              }}
             >
               {t.label}
             </button>
@@ -130,7 +150,9 @@ export function DiscussionPanel({
       {/* v0.20.22 · 完全收起时不渲染 tabpanel, 仅留 tab 头一条; 展开由 chevron 或 IssueLayer 图钉触发。 */}
       {!collapsed && (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" role="tabpanel">
-          {tab === "issues" ? (
+          {tab === "mask_qc" ? (
+            maskQc ? <MaskQcPanel {...maskQc} /> : null
+          ) : tab === "issues" ? (
             projectId && taskId ? (
               <DiscussionIssuesTab projectId={projectId} taskId={taskId} />
             ) : null

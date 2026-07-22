@@ -2,7 +2,7 @@
  * I18 · AnnotationFeedback 统一反馈表 API client.
  *
  * 端点列表见 docs/adr/archive/0027-annotation-feedback-unified-table.md.
- * pixel anchor 携带 `anchor_position: { x, y, frame? }` (相对 0-1, 与 geometry 同语义).
+ * pixel anchor 携带相对 0-1 坐标，并可选携带 Mask 质检区域与边界摘要。
  */
 import { apiClient } from "./client";
 
@@ -11,10 +11,26 @@ export type FeedbackAnchorType = "project" | "task" | "annotation" | "pixel";
 export type FeedbackStatus = "open" | "resolved" | "wont_fix";
 export type FeedbackSeverity = "info" | "warn" | "blocker";
 
+export interface MaskFeedbackCompareLocator {
+  baseline_kind: "previous_version" | "tracker_candidate" | "ai_candidate" | "neighbor_keyframe";
+  mode: "overlay" | "boundary" | "xor" | "added" | "removed";
+  current_digest: string;
+  baseline_digest: string;
+  candidate_job_id?: string | null;
+  candidate_job_revision?: number | null;
+  candidate_digest?: string | null;
+  candidate_instance_id?: string | null;
+}
+
 export interface FeedbackAnchorPosition {
   x: number;
   y: number;
   frame?: number | null;
+  region_bbox?: [number, number, number, number] | null;
+  region_digest?: string | null;
+  boundary_digest?: string | null;
+  mask_qc_issue_id?: string | null;
+  compare_locator?: MaskFeedbackCompareLocator | null;
 }
 
 export interface AnnotationFeedback {
@@ -88,8 +104,8 @@ function buildQuery(params: ListFeedbacksParams): string {
 }
 
 export const feedbacksApi = {
-  list: (params: ListFeedbacksParams) =>
-    apiClient.get<AnnotationFeedbackListPage>(`/feedbacks${buildQuery(params)}`),
+  list: (params: ListFeedbacksParams, signal?: AbortSignal) =>
+    apiClient.get<AnnotationFeedbackListPage>(`/feedbacks${buildQuery(params)}`, { signal }),
 
   create: (payload: CreateFeedbackPayload) =>
     apiClient.post<AnnotationFeedback>("/feedbacks", payload),

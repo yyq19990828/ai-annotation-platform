@@ -58,6 +58,18 @@ _SUGGESTIONS = {
 }
 
 
+def _region_bbox_xyxy(rle: dict[str, Any]) -> dict[str, float] | None:
+    bbox = coco_rle_bbox_norm(rle)
+    if not bbox:
+        return None
+    return {
+        "x0": bbox["x"],
+        "y0": bbox["y"],
+        "x1": bbox["x"] + bbox["w"],
+        "y1": bbox["y"] + bbox["h"],
+    }
+
+
 @dataclass(frozen=True)
 class _FrameMask:
     annotation_id: uuid.UUID
@@ -204,7 +216,7 @@ async def _persist_issue(
         "frame_end": frame_end,
         "metric": metric,
         "threshold": threshold,
-        "region_bbox": coco_rle_bbox_norm(region_rle) if region_rle else None,
+        "region_bbox": _region_bbox_xyxy(region_rle) if region_rle else None,
         "region_mask_ref": region_ref,
         "region_digest": region_digest,
         "dedupe_key": dedupe_key,

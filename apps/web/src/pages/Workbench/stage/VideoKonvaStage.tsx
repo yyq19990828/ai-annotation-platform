@@ -17,6 +17,11 @@ import { VideoKonvaMediaLayer, pickMediaImageSource } from "./VideoKonvaMediaLay
 import { VideoKonvaTracksLayer } from "./VideoKonvaTracksLayer";
 import { VideoKonvaMaskLayer } from "./VideoKonvaMaskLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
+import { MaskCompareTileLayer } from "./overlays/MaskCompareTileLayer";
+import {
+  maskCompareCompanionVisible,
+  type MaskCompareTileStore,
+} from "./shared/maskCompareTileStore";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { MaskBuffer } from "./shared/geometry/maskBuffer";
 import { canCommitMask, canEditMask } from "../state/canEditMask";
@@ -48,6 +53,7 @@ import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import type { VideoManagedTrackAnnotation, VideoTrackCompositionOptions, VideoTrackConversionOptions, VideoSamPrompt } from "./videoStageTypes";
 import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
+import { fitNormalizedRegion } from "./shared/viewport/region";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
 import type { VideoLoopRegion } from "./videoNavigationState";
 import { collectPredictedFrames, resolveAiBoxAtFrame } from "./aiBoxFrames";
@@ -80,6 +86,7 @@ const MASK_OPERATION_PREVIEW_COLOR = [245, 158, 11] as const;
 const MASK_INSTANCE_PREVIEW_COLOR = [14, 165, 233] as const;
 
 interface VideoKonvaStageProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
   isLoading?: boolean;
@@ -194,6 +201,7 @@ const noop = () => {};
  * 所有播放/逐帧/书签/循环区间逻辑委托给 useVideoPlaybackController。
  */
 export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStageProps>(function VideoKonvaStage({
+  maskCompareStore,
   manifest,
   frameTimetable,
   isLoading = false,
@@ -298,6 +306,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     () => videoIntrinsicSize(manifest?.metadata.width, manifest?.metadata.height),
     [manifest?.metadata.height, manifest?.metadata.width],
   );
+  const maskCompareViewport = useMemo(() => {
+    if (!maskCompareStore || vp.scale <= 0 || viewportSize.w <= 0 || viewportSize.h <= 0) return null;
+    const x0 = Math.max(0, -vp.tx / vp.scale);
+    const y0 = Math.max(0, -vp.ty / vp.scale);
+    const x1 = Math.min(size.w, (viewportSize.w - vp.tx) / vp.scale);
+    const y1 = Math.min(size.h, (viewportSize.h - vp.ty) / vp.scale);
+    return x1 > x0 && y1 > y0
+      ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+      : null;
+  }, [maskCompareStore, size.h, size.w, viewportSize.h, viewportSize.w, vp.scale, vp.tx, vp.ty]);
   const maskOperationPreviewBuffer = useMemo(() => {
     const preview = maskEditor?.operationPreview;
     if (!preview || preview.alpha.length !== size.w * size.h) return null;
@@ -470,11 +488,22 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     [maskRecords],
   );
   const displayedMaskRecords = useMemo(
-    () => maskEditor?.active && selectedId
-      ? maskRecords.filter((record) => record.source === "tracker" || record.id !== selectedId)
-      : maskRecords,
-    [maskEditor?.active, maskRecords, selectedId],
+    () => maskRecords.filter((record) => {
+      if (!maskCompareCompanionVisible(maskCompareStore?.display, {
+        source: record.source,
+        id: record.id,
+      })) return false;
+      return !(maskEditor?.active && selectedId)
+        || record.source === "tracker"
+        || record.id !== selectedId;
+    }),
+    [maskCompareStore, maskEditor?.active, maskRecords, selectedId],
   );
+  const maskCompareActive = !!maskCompareStore?.display;
+  const displayedSamMaskRecords = maskCompareCompanionVisible(
+    maskCompareStore?.display,
+    { source: "ai" },
+  ) ? samMaskRecords : [];
 
   // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
   // v0.21.9 WS2 · 检测式轨迹候选(video_track_bbox)也纳入: 用 resolveTrackAtFrame 解出当前帧框,
@@ -667,7 +696,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // annotation is_locked, 关闭锁定对象经视频 pointer 路径修改的绕过。
     const selectedTrackId = selectedManagedTrack?.geometry.track_id;
     const maskEditable = !!maskEditor && canEditMask({
-      taskReadOnly: !!readOnly || isPlaybackActive,
+      taskReadOnly: !!readOnly || isPlaybackActive || maskCompareActive,
       annotationLocked: !!selectedManagedTrack?.is_locked,
       trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
       segmentLocked: false,
@@ -755,11 +784,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return;
     }
     interaction.onStagePointerDown(e);
-  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskEditor, onSelectSamMaskCandidate, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, samMaskRecords, selectedManagedTrack, size.h, size.w, videoTool]);
+  }, [commitPointsDraft, interaction, isPlaybackActive, isPointsClosedTool, lockedTrackIds, maskCompareActive, maskEditor, onSelectSamMaskCandidate, pointFromClientEvt, pointsDrawEnabled, pointsDraft, readOnly, samMaskRecords, selectedManagedTrack, size.h, size.w, videoTool]);
 
   useEffect(() => {
     if (videoTool !== "mask" || !maskEditor) return;
     const onKey = (event: KeyboardEvent) => {
+      if (maskCompareActive) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
       const command = event.ctrlKey || event.metaKey;
@@ -823,7 +853,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [isPlaybackActive, lockedTrackIds, maskEditor, onMaskCancel, onMaskCommit, readOnly, selectedManagedTrack, videoTool]);
+  }, [isPlaybackActive, lockedTrackIds, maskCompareActive, maskEditor, onMaskCancel, onMaskCommit, readOnly, selectedManagedTrack, videoTool]);
 
   // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
   useEffect(() => {
@@ -1054,7 +1084,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   // ctrl/⌘+滚轮围绕光标缩放(几何边界判断,对齐旧栈 onWheel)。
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
-      if (videoTool === "mask" && maskEditor && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      if (!maskCompareActive && videoTool === "mask" && maskEditor && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         maskEditor.setRadius(maskEditor.radius + (e.deltaY < 0 ? 2 : -2));
         return;
@@ -1073,7 +1103,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     };
     window.addEventListener("wheel", onWheel, { capture: true, passive: false });
     return () => window.removeEventListener("wheel", onWheel, { capture: true });
-  }, [maskEditor, videoTool, vpRef, zoomAt]);
+  }, [maskCompareActive, maskEditor, videoTool, vpRef, zoomAt]);
 
   // 本地视口/导航快捷键(对齐旧 SVG 栈 VideoStage 本地 keydown):
   // F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧(,/. 跳关键帧由中央 hotkeys 分发器处理)。
@@ -1139,6 +1169,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     return { left: p.x, top: p.y };
   }, [size, vpRef]);
 
+  const focusRegion = useCallback((bbox: { x0: number; y0: number; x1: number; y1: number }) => {
+    setVp((current) => fitNormalizedRegion(
+      current,
+      bbox,
+      { width: size.w, height: size.h },
+      { width: viewportSize.w, height: viewportSize.h },
+    ));
+  }, [setVp, size.h, size.w, viewportSize.h, viewportSize.w]);
+
   const toggleManagedTrackOutside = useCallback(() => {
     if (selectedManagedTrack?.geometry.type === "video_track_mask") {
       if (
@@ -1171,7 +1210,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     cycleInCategory,
     stepCategory,
     focusObject,
-  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, normToClient, seekManagedKeyframe, stepCategory, toggleManagedTrackOccluded, toggleManagedTrackOutside, trackActions]);
+    focusRegion,
+  }), [controls, cycleInCategory, deleteSelectedTrackKeyframe, focusObject, focusRegion, normToClient, seekManagedKeyframe, stepCategory, toggleManagedTrackOccluded, toggleManagedTrackOutside, trackActions]);
 
   const beginPan = useCallback((evt: ReactPointerEvent<HTMLDivElement>) => {
     const isSpacePan = evt.button === 0 && spacePan;
@@ -1197,13 +1237,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       onCursorMove?.(inFrame);
       // 橡皮筋预览: 仅绘制工具激活时跟踪, 用于「上一点 → 光标」预览段与首点吸附高亮。
       if (pointsDrawEnabled) setPointsCursor(inFrame);
-      if (videoTool === "mask") setMaskCursor(inFrame);
+      if (videoTool === "mask" && !maskCompareActive) setMaskCursor(inFrame);
     }
     const maskStroke = maskStrokeRef.current;
     const maskLasso = maskLassoRef.current;
     const selectedTrackId = selectedManagedTrack?.geometry.track_id;
     const maskEditable = !!maskEditor && canEditMask({
-      taskReadOnly: !!readOnly || isPlaybackActive,
+      taskReadOnly: !!readOnly || isPlaybackActive || maskCompareActive,
       annotationLocked: !!selectedManagedTrack?.is_locked,
       trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
       segmentLocked: false,
@@ -1241,7 +1281,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const dy = evt.clientY - start.y;
     panRef.current = { x: evt.clientX, y: evt.clientY };
     setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
-  }, [isPlaybackActive, lockedTrackIds, maskEditor, onCursorMove, pointFromClientEvt, pointsDrawEnabled, readOnly, selectedManagedTrack, setVp, showPlaybackOverlay, size, videoTool, vpRef]);
+  }, [isPlaybackActive, lockedTrackIds, maskCompareActive, maskEditor, onCursorMove, pointFromClientEvt, pointsDrawEnabled, readOnly, selectedManagedTrack, setVp, showPlaybackOverlay, size, videoTool, vpRef]);
 
   const endPan = useCallback(() => {
     if (maskStrokeRef.current) {
@@ -1252,7 +1292,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     if (lasso) {
       maskLassoRef.current = null;
       setMaskLassoPoints([]);
-      if (maskEditor && lasso.length >= 3) {
+      if (maskEditor && !maskCompareActive && lasso.length >= 3) {
         void maskEditor.runOperation(maskEditor.tool, {
           type: "polygon",
           points: lasso,
@@ -1262,7 +1302,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }
     panRef.current = null;
     setPanning(false);
-  }, [maskEditor]);
+  }, [maskCompareActive, maskEditor]);
+
+  useEffect(() => {
+    if (!maskCompareActive) return;
+    if (maskStrokeRef.current) maskEditor?.endStroke();
+    maskStrokeRef.current = null;
+    maskLassoRef.current = null;
+    setMaskLassoPoints([]);
+    setMaskCursor(null);
+  }, [maskCompareActive, maskEditor]);
 
   const onPointerLeave = useCallback(() => {
     onCursorMove?.(null);
@@ -1357,7 +1406,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             visual={visual}
           />
           <VideoKonvaMaskLayer records={displayedMaskRecords} size={size} />
-          {videoTool === "mask" && maskEditor?.active && maskEditor.buffer && !maskOperationPreviewBuffer && (
+          <MaskCompareTileLayer store={maskCompareStore} viewport={maskCompareViewport} />
+          {!maskCompareActive && videoTool === "mask" && maskEditor?.active && maskEditor.buffer && !maskOperationPreviewBuffer && (
             <MaskOverlayLayer
               buffer={maskEditor.buffer}
               revision={maskEditor.revision}
@@ -1366,7 +1416,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               visible
             />
           )}
-          {videoTool === "mask" && maskOperationPreviewBuffer && (
+          {!maskCompareActive && videoTool === "mask" && maskOperationPreviewBuffer && (
             <MaskOverlayLayer
               buffer={maskOperationPreviewBuffer}
               revision={maskEditor?.operationPreview?.id ?? 0}
@@ -1376,7 +1426,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               visible
             />
           )}
-          {videoTool === "mask" && maskInstancePreviewBuffer && (
+          {!maskCompareActive && videoTool === "mask" && maskInstancePreviewBuffer && (
             <MaskOverlayLayer
               buffer={maskInstancePreviewBuffer}
               revision={maskEditor?.instanceOperationPreview?.id ?? 0}
@@ -1386,7 +1436,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               visible
             />
           )}
-          {videoTool === "mask" && maskLassoPoints.length > 1 && (
+          {!maskCompareActive && videoTool === "mask" && maskLassoPoints.length > 1 && (
             <Layer name="mask-lasso-preview" listening={false}>
               <Line
                 points={maskLassoPoints.flatMap(([x, y]) => [x, y])}
@@ -1436,7 +1486,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             preview={preview}
             onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
           />
-          {videoTool === "mask" && maskCursor && maskEditor
+          {!maskCompareActive && videoTool === "mask" && maskCursor && maskEditor
             && (maskEditor.tool === "brush" || maskEditor.tool === "erase") && (
             <Layer name="video-mask-cursor" listening={false}>
               <Circle
@@ -1534,9 +1584,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             );
           })()}
           {/* v0.21.23 · 交互式 SAM 候选 + 点会话（瞬态，不落库；置顶且不吃事件）。 */}
-          {samMaskRecords.length > 0 && (
+          {displayedSamMaskRecords.length > 0 && (
             <Layer name="sam-native-mask-candidates" listening={false}>
-              {[...samMaskRecords]
+              {[...displayedSamMaskRecords]
                 .sort((left, right) => left.zOrder - right.zOrder)
                 .map((record) => (
                   <Group key={record.cacheKey} id={record.id} listening={false}>

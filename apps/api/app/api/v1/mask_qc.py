@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,15 +16,22 @@ from app.db.models.mask_qc import MaskQCIssue, MaskQCRun
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.deps import get_db, require_project_visible, require_roles
+from app.deps import get_db, require_project_visible, require_roles, require_scopes
 from app.schemas.mask_qc import (
     MASK_QC_RULE_CODES,
+    MaskCompareBaseline,
+    MaskCompareOut,
     MaskQCIssueOut,
     MaskQCIssuePage,
     MaskQCIssuePatch,
     MaskQCRunOut,
     MaskQCRunRequest,
     TaskMaskQCSummary,
+)
+from app.schemas._jsonb_types import CocoRleContent
+from app.services.mask_qc.compare import (
+    build_mask_compare,
+    resolve_annotation_side,
 )
 from app.services.mask_qc.service import (
     MaskQCError,
@@ -38,6 +45,17 @@ from app.services.mask_qc.service import (
 from app.services.scheduler import is_privileged_for_project
 
 router = APIRouter()
+
+
+async def _load_visible_compare_annotation(
+    db: AsyncSession, *, annotation_id: uuid.UUID, user: User
+) -> tuple[Annotation, Task]:
+    from app.api.v1.annotations import _load_visible_mask_annotation
+
+    annotation, task, _geometry = await _load_visible_mask_annotation(
+        annotation_id, db, user
+    )
+    return annotation, task
 
 
 def _raise_mask_qc_error(exc: MaskQCError) -> None:
@@ -250,6 +268,123 @@ async def get_task_summary(
         raise HTTPException(status_code=404, detail="Project not found")
     return TaskMaskQCSummary.model_validate(
         await task_qc_summary(db, task=task, project=project)
+    )
+
+
+@router.get(
+    "/annotations/{annotation_id}/mask-compare",
+    response_model=MaskCompareOut,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_mask_compare(
+    annotation_id: uuid.UUID,
+    baseline: MaskCompareBaseline,
+    annotation_version: int = Query(ge=1),
+    frame_index: int | None = Query(default=None, ge=0),
+    candidate_job_id: uuid.UUID | None = None,
+    candidate_job_revision: int | None = Query(default=None, ge=1),
+    candidate_digest: str | None = None,
+    candidate_instance_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> MaskCompareOut:
+    annotation, _task = await _load_visible_compare_annotation(
+        db, annotation_id=annotation_id, user=current_user
+    )
+    try:
+        return await build_mask_compare(
+            db,
+            annotation=annotation,
+            annotation_version=annotation_version,
+            baseline_kind=baseline,
+            frame_index=frame_index,
+            candidate_job_id=candidate_job_id,
+            candidate_job_revision=candidate_job_revision,
+            candidate_digest=candidate_digest,
+            candidate_instance_id=candidate_instance_id,
+        )
+    except MaskQCError as exc:
+        _raise_mask_qc_error(exc)
+
+
+@router.get(
+    "/annotations/{annotation_id}/mask-compare/content",
+    response_model=CocoRleContent,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_mask_compare_content(
+    annotation_id: uuid.UUID,
+    request: Request,
+    annotation_version: int = Query(ge=1),
+    digest: str = Query(pattern=r"^[0-9a-f]{64}$"),
+    frame_index: int | None = Query(default=None, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> Response:
+    annotation, _task = await _load_visible_compare_annotation(
+        db, annotation_id=annotation_id, user=current_user
+    )
+    try:
+        side = await resolve_annotation_side(
+            db,
+            annotation=annotation,
+            annotation_version=annotation_version,
+            frame_index=frame_index,
+            missing_reason="baseline_expired",
+        )
+    except MaskQCError as exc:
+        _raise_mask_qc_error(exc)
+    if side.reference.get("sha256") != digest:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "mask_compare_content_digest_conflict"},
+        )
+    from app.api.v1.annotations import _mask_content_response
+
+    return await _mask_content_response(
+        annotation_id=annotation.id,
+        mask_ref=side.reference,
+        request=request,
+    )
+
+
+@router.get(
+    "/mask-qc/issues/{issue_id}/region-content",
+    response_model=CocoRleContent,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_issue_region_content(
+    issue_id: uuid.UUID,
+    request: Request,
+    digest: str = Query(pattern=r"^[0-9a-f]{64}$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> Response:
+    issue = await db.get(MaskQCIssue, issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Mask QC issue not found")
+    annotation, task = await _load_visible_compare_annotation(
+        db, annotation_id=issue.annotation_id, user=current_user
+    )
+    if task.id != issue.task_id or annotation.project_id != issue.project_id:
+        raise HTTPException(status_code=409, detail={"reason": "mask_qc_issue_scope_conflict"})
+    reference = issue.region_mask_ref
+    if not isinstance(reference, dict):
+        raise HTTPException(
+            status_code=404,
+            detail={"reason": "mask_qc_issue_region_unavailable"},
+        )
+    if reference.get("sha256") != digest or issue.region_digest != digest:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "mask_qc_issue_region_digest_conflict"},
+        )
+    from app.api.v1.annotations import _mask_content_response
+
+    return await _mask_content_response(
+        annotation_id=annotation.id,
+        mask_ref=reference,
+        request=request,
     )
 
 

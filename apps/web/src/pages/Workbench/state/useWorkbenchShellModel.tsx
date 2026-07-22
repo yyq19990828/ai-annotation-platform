@@ -66,6 +66,13 @@ import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
+import {
+  useMaskQcReview,
+  collectMaskQcTrackerCandidates,
+  type MaskQcLocalAiCandidate,
+  type MaskQcTrackerCandidate,
+} from "./useMaskQcReview";
+import type { MaskQcIssue } from "@/api/maskQc";
 import { usePredictionPropagation } from "./usePredictionPropagation";
 import { useAiPopoverFrame } from "./useAiPopoverFrame";
 import { useVideoTrackerPanelFrame } from "./useVideoTrackerPanelFrame";
@@ -203,6 +210,7 @@ import {
 } from "../stage/shared/geometry/maskMutationDraft";
 import {
   buildPipelineRunPayload,
+  commitAfterNavigationGuard,
   missingBackendIdsForStages,
   selectProjectPipelineStages,
   buildPredictParams,
@@ -631,18 +639,17 @@ export function useWorkbenchShellModel({
   currentTaskIdRef.current = taskId;
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
   const selectTask = useCallback(
-    async (id: string, opts: { replace?: boolean } = {}): Promise<boolean> => {
-      const allowed = await maskNavigationGuardRef.current();
-      if (!allowed) return false;
-      setCurrentTaskId(id);
-      setSelectedId(null);
-      updateUrl({
-        batchId: selectedBatchId,
-        taskId: id,
-        replace: opts.replace,
-        maskGuardApproved: true,
+    async (id: string, opts: { replace?: boolean; signal?: AbortSignal } = {}): Promise<boolean> => {
+      return commitAfterNavigationGuard(maskNavigationGuardRef.current, opts.signal, () => {
+        setCurrentTaskId(id);
+        setSelectedId(null);
+        updateUrl({
+          batchId: selectedBatchId,
+          taskId: id,
+          replace: opts.replace,
+          maskGuardApproved: true,
+        });
       });
-      return true;
     },
     [selectedBatchId, setCurrentTaskId, setSelectedId, updateUrl],
   );
@@ -1101,7 +1108,11 @@ export function useWorkbenchShellModel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const { data: annotationsData, refetch: refetchAnnotations } = useAnnotations(taskId);
+  const {
+    data: annotationsData,
+    refetch: refetchAnnotations,
+    isSuccess: annotationsReady,
+  } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
   // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
@@ -1140,6 +1151,10 @@ export function useWorkbenchShellModel({
         ? (annotationsData ?? []).filter((ann) => !orphanAnnotationIds.has(ann.id))
         : (annotationsData ?? []),
     [annotationsData, hideOrphanAnnotations, orphanAnnotationIds],
+  );
+  const visibleAnnotationIds = useMemo(
+    () => new Set(visibleAnnotationsData.map((annotation) => annotation.id)),
+    [visibleAnnotationsData],
   );
   const selectedIdsForOrphanFilter = s.selectedIds;
   const replaceSelectedForOrphanFilter = s.replaceSelected;
@@ -1588,6 +1603,41 @@ export function useWorkbenchShellModel({
 
   // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
   const videoControlsRef = useRef<VideoStageControls | null>(null);
+  const maskQcAiCandidateRef = useRef<MaskQcLocalAiCandidate | null>(null);
+  const getMaskQcTrackerCandidates = useCallback((
+    issue: MaskQcIssue,
+    targetFrame: number,
+  ): MaskQcTrackerCandidate[] => collectMaskQcTrackerCandidates(
+    issue,
+    targetFrame,
+    trackerJobs.candidates,
+    trackerJobs.jobs,
+  ), [trackerJobs.candidates, trackerJobs.jobs]);
+  const maskQcReview = useMaskQcReview({
+    enabled: mode === "review",
+    taskId,
+    annotations: annotationsData,
+    annotationsReady,
+    visibleAnnotationIds,
+    selectedId: s.selectedId,
+    isVideoTask,
+    videoManifestReady: !isVideoTask || (
+      videoManifest.isSuccess
+      && videoManifest.data?.task_id === taskId
+      && (videoManifest.data?.metadata.frame_count ?? 0) > 0
+    ),
+    frameIndex: s.videoFrameIndex,
+    stageGeom,
+    workerPool: rasterMaskWorkerPool,
+    getAiCandidate: () => maskQcAiCandidateRef.current,
+    getTrackerCandidates: getMaskQcTrackerCandidates,
+    videoControlsRef,
+    selectTask,
+    setSelectedId,
+    setFrameIndex: s.setVideoFrameIndex,
+    setVp,
+  });
+  const maskCompareInteractionBlocked = maskQcReview.store !== null;
 
   // v0.21.23 · 视频交互式 SAM 的投递方式: 视频 task 的 file_path 是整段 mp4, 服务端取不到帧,
   // 故把当前帧解成 JPEG 走 multipart。图片 task 传 undefined → hook 用默认 transport。
@@ -1628,6 +1678,16 @@ export function useWorkbenchShellModel({
     ),
     [sam.candidates],
   );
+  const activeMaskQcAiCandidate = sam.candidates[sam.activeIdx];
+  maskQcAiCandidateRef.current = activeMaskQcAiCandidate?.type === "mask" && taskId
+    ? {
+        taskId,
+        digest: activeMaskQcAiCandidate.candidateId.replace(/^sha256:/, ""),
+        rle: activeMaskQcAiCandidate.rle,
+        frameIndex: activeMaskQcAiCandidate.frameIndex,
+        refineSource: activeMaskQcAiCandidate.refineSource,
+      }
+    : null;
   const samMaskCandidateDescriptors = useMemo(
     () => sam.candidates.flatMap((candidate, index) => {
       if (candidate.type !== "mask") return [];
@@ -3905,7 +3965,7 @@ export function useWorkbenchShellModel({
     const trackLocked = !!selectedVideoMask
       && s.lockedVideoTrackIds.has(selectedVideoMask.geometry.track_id);
     if (!canEditMask({
-      taskReadOnly: isLockedForActions,
+      taskReadOnly: isLockedForActions || maskCompareInteractionBlocked,
       annotationLocked: !!selectedVideoMask?.is_locked,
       trackLocked,
       segmentLocked: !!lockConflict || !!lockError,
@@ -3957,7 +4017,7 @@ export function useWorkbenchShellModel({
         }
         return { ...result, savedKeyframe };
       });
-  }, [handleVideoMaskCommit, isLockedForActions, lockConflict, lockError, maskEditor, pushToast, s, selectedVideoMask]);
+  }, [handleVideoMaskCommit, isLockedForActions, lockConflict, lockError, maskCompareInteractionBlocked, maskEditor, pushToast, s, selectedVideoMask]);
   const submitVideoMaskCorrection = useCallback(async (intent: VideoMaskCorrectionIntent) => {
     setVideoMaskCorrectionSubmitting(true);
     let savedDuringSubmit = savedVideoMaskCorrection;
@@ -4514,8 +4574,12 @@ export function useWorkbenchShellModel({
     commitMaskAsPolygon,
     commitMaskInstanceOperation: () => void requestCommitMaskInstanceOperation(),
     cancelMaskEdit: cancelImageMaskEdit,
-    maskTaskReadOnly: isLockedForActions || imageMaskInteractionBlocked || maskInstanceTransitionBusy,
+    maskTaskReadOnly: isLockedForActions
+      || imageMaskInteractionBlocked
+      || maskInstanceTransitionBusy
+      || maskCompareInteractionBlocked,
     maskPixelReadOnly: maskEditor.tiledReadOnly,
+    maskInteractionFrozen: maskCompareInteractionBlocked,
   });
 
   const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
@@ -5347,7 +5411,7 @@ export function useWorkbenchShellModel({
     && s.lockedVideoTrackIds.has(maskToolbarSelection.geometry.track_id)
   );
   const maskToolbarEditContext = {
-    taskReadOnly: isLockedForActions || imageMaskInteractionBlocked,
+    taskReadOnly: isLockedForActions || imageMaskInteractionBlocked || maskCompareInteractionBlocked,
     annotationLocked: !!maskToolbarSelection?.is_locked,
     trackLocked: maskToolbarTrackLocked,
     segmentLocked: !!lockConflict || !!lockError,
@@ -5459,6 +5523,7 @@ export function useWorkbenchShellModel({
     stageHost: {
       common: {
         stageKind,
+        maskCompareStore: maskQcReview.store,
         taskId: taskId ?? null,
         readOnly: isLocked || !!lockConflict || !!lockError,
         activeClass: s.activeClass,
@@ -5506,6 +5571,7 @@ export function useWorkbenchShellModel({
                 operationError={maskEditor.operationError}
                 canEdit={maskToolbarBlockReason === null}
                 canCommit={maskToolbarBaseBlockReason === null}
+                interactionFrozen={maskCompareInteractionBlocked}
                 largeCanvas={maskEditor.backend === "tiled"}
                 editBlockReason={maskToolbarBlockReason}
                 onSetTool={maskEditor.setTool}
@@ -6068,6 +6134,29 @@ export function useWorkbenchShellModel({
     } : undefined,
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
+      maskQc: mode === "review" && projectId && taskId ? {
+        projectId,
+        taskId,
+        activeIssue: maskQcReview.issue,
+        phase: maskQcReview.phase,
+        error: maskQcReview.error,
+        compare: maskQcReview.compare,
+        baseline: maskQcReview.baseline,
+        aiCandidateAvailable: maskQcAiCandidateRef.current !== null,
+        trackerCandidates: maskQcReview.issue
+          ? getMaskQcTrackerCandidates(maskQcReview.issue, maskQcReview.issue.frame_start ?? 0)
+          : [],
+        trackerCandidateKey: maskQcReview.trackerCandidate?.key ?? null,
+        mode: maskQcReview.mode,
+        onNavigateIssue: (issue) => { void maskQcReview.navigate(issue); },
+        onReplayFeedback: maskQcReview.replayFeedback,
+        onRetryNavigation: maskQcReview.retry,
+        onClearIssue: maskQcReview.clear,
+        onSetMode: maskQcReview.setMode,
+        onSetBaseline: maskQcReview.setBaseline,
+        onSetTrackerCandidate: maskQcReview.setTrackerCandidate,
+        onUpdateIssue: maskQcReview.updateIssue,
+      } : undefined,
       annotationId: s.selectedId,
       taskId: taskId ?? null,
       projectId: projectId ?? null,

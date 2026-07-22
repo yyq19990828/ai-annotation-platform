@@ -280,6 +280,19 @@
 | GET | `/invitations/{token}` |
 | POST | `/register` |
 
+## `mask_qc.py`
+
+| Method | Path |
+|---|---|
+| POST | `/projects/{project_id}/mask-qc/runs` |
+| GET | `/projects/{project_id}/mask-qc/issues` |
+| GET | `/tasks/{task_id}/mask-qc/summary` |
+| GET | `/annotations/{annotation_id}/mask-compare` |
+| GET | `/annotations/{annotation_id}/mask-compare/content` |
+| GET | `/mask-qc/issues/{issue_id}/region-content` |
+| GET | `/mask-qc/issues/{issue_id}` |
+| PATCH | `/mask-qc/issues/{issue_id}` |
+
 ## `me.py`
 
 | Method | Path |
@@ -583,4 +596,4 @@
 
 ---
 
-_共 55 模块 / 321 路由_
+_共 56 模块 / 329 路由_

@@ -15,6 +15,11 @@ import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import { TiledMaskOverlayLayer } from "./overlays/TiledMaskOverlayLayer";
+import { MaskCompareTileLayer } from "./overlays/MaskCompareTileLayer";
+import {
+  maskCompareCompanionVisible,
+  type MaskCompareTileStore,
+} from "./shared/maskCompareTileStore";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { MaskBuffer } from "./shared/geometry/maskBuffer";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX } from "../state/useMaskEditor";
@@ -142,6 +147,7 @@ function SamRefineButton({
 }
 
 interface ImageStageProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   rasterMaskRecords?: readonly RasterMaskRenderRecord<"annotation">[];
   tiledMaskOverviewRecord?: RasterMaskRenderRecord<"annotation"> | null;
   rasterMaskStatusById?: ReadonlyMap<string, RasterMaskRecordStatus>;
@@ -424,6 +430,7 @@ function SamCandidateOverlay({
 
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
+  maskCompareStore,
   rasterMaskRecords = [], rasterMaskStatusById = new Map(), onRetryRasterMask, maskReadOnly = false,
   tiledMaskOverviewRecord,
   fileUrl, mediaKey, blurhash, imageWidth, imageHeight, tool, activeClass,
@@ -533,7 +540,20 @@ export function ImageStage({
       .sort((a, c) => (a.b.z_order ?? 0) - (c.b.z_order ?? 0) || a.i - c.i)
       .map((entry) => entry.b);
   }, [userBoxes]);
-  const displayedRasterMaskRecords = rasterMaskRecords;
+  const displayedRasterMaskRecords = useMemo(
+    () => maskCompareStore?.display
+      ? rasterMaskRecords.filter((record) => maskCompareCompanionVisible(
+          maskCompareStore.display,
+          { source: "annotation", id: record.id },
+        ))
+      : rasterMaskRecords,
+    [maskCompareStore, rasterMaskRecords],
+  );
+  const displayedSamMaskRecords = maskCompareCompanionVisible(
+    maskCompareStore?.display,
+    { source: "ai" },
+  ) ? samMaskRecords : [];
+  const maskCompareActive = !!maskCompareStore?.display;
   const rasterMaskIssues = useMemo(
     () => [...rasterMaskStatusById.entries()].flatMap(([id, status]) =>
       status.state === "error" || status.state === "deferred" ? [{ id, status }] : []),
@@ -700,7 +720,7 @@ export function ImageStage({
       // 用 `tool === "mask"` 判定而非 `maskEditor.active`：active 只在 buffer 已初始化
       // （beginBlank / initFromPolygon）后为 true，但用户选了 mask 工具后画第一笔之前
       // 也需要预调半径。
-      if (e.shiftKey && !(e.ctrlKey || e.metaKey) && tool === "mask" && maskEditor &&
+      if (!maskCompareActive && e.shiftKey && !(e.ctrlKey || e.metaKey) && tool === "mask" && maskEditor &&
           Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault();
         const delta = e.deltaY < 0 ? 2 : -2;
@@ -719,7 +739,7 @@ export function ImageStage({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [setVp, maskEditor, tool, workbenchConfig.image.zoomStepFactor]);
+  }, [maskCompareActive, setVp, maskEditor, tool, workbenchConfig.image.zoomStepFactor]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
   // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
@@ -843,7 +863,7 @@ export function ImageStage({
         }));
       } else if (d.kind === "maskBrush") {
         // v0.10.8 · 相邻两点线段插值 (步长 = radius/2)；不走 rAF 节流，避免漏笔。
-        if (!maskEditor) return;
+        if (!maskEditor || maskCompareActive) return;
         const phase = maskEditor.phase
           ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle");
         if (!canEditMask({
@@ -867,6 +887,7 @@ export function ImageStage({
         d.lastX = px;
         d.lastY = py;
       } else if (d.kind === "maskLasso") {
+        if (maskCompareActive) return;
         const px = pt.x * imgW;
         const py = pt.y * imgH;
         const previous = d.points[d.points.length - 1];
@@ -980,7 +1001,12 @@ export function ImageStage({
         } else if (d.kind === "canvasStroke") {
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
-        } else if (d.kind === "maskLasso" && d.points.length >= 3 && maskEditor) {
+        } else if (
+          d.kind === "maskLasso"
+          && d.points.length >= 3
+          && maskEditor
+          && !maskCompareActive
+        ) {
           void maskEditor.runOperation(maskEditor.tool, {
             type: "polygon",
             points: d.points,
@@ -1009,7 +1035,18 @@ export function ImageStage({
       window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("mouseup", onUp, true);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH, snapImagePoint, readOnly, primarySelectedBox?.is_locked]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, maskCompareActive, imgW, imgH, snapImagePoint, readOnly, primarySelectedBox?.is_locked]);
+
+  useEffect(() => {
+    if (!maskCompareActive) return;
+    const currentDrag = dragRef.current;
+    if (currentDrag?.kind === "maskBrush") maskEditor?.endStroke();
+    if (currentDrag?.kind === "maskBrush" || currentDrag?.kind === "maskLasso") {
+      dragRef.current = null;
+      setDrag(null);
+    }
+    setMaskCursor(null);
+  }, [maskCompareActive, maskEditor]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -1041,7 +1078,7 @@ export function ImageStage({
       activeClass,
       imgW, imgH,
       spacePan,
-      readOnly: readOnly || (tool === "mask" && maskReadOnly),
+      readOnly: readOnly || (tool === "mask" && (maskReadOnly || maskCompareActive)),
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
       preserveSelectionForPrompt:
@@ -1093,7 +1130,7 @@ export function ImageStage({
       setSnapIndicator(null);
     }
     // v0.10.9 · Mask 工具下追踪笔刷光标位置（image-space pixels），驱动 overlay 圆圈渲染。
-    if (tool === "mask") {
+    if (tool === "mask" && !maskCompareActive) {
       setMaskCursor(pt ? { x: pt.x * imgW, y: pt.y * imgH } : null);
     } else if (maskCursor) {
       setMaskCursor(null);
@@ -1109,7 +1146,7 @@ export function ImageStage({
     : tool === "select" ? "default"
     : tool === "canvas" ? "crosshair"
     // v0.10.9 · Mask 工具用自绘 overlay 圆圈替代系统光标，让笔刷大小与图像同比例可视。
-    : tool === "mask" ? "none"
+    : tool === "mask" ? (maskCompareActive ? "default" : "none")
     : pendingDrawing ? "default" : "crosshair";
 
   useEffect(() => {
@@ -1385,6 +1422,16 @@ export function ImageStage({
             );
           })}
         </Layer>
+
+        <MaskCompareTileLayer
+          store={maskCompareStore}
+          viewport={viewportBBox ? {
+            x: viewportBBox.minX * imgW,
+            y: viewportBBox.minY * imgH,
+            width: (viewportBBox.maxX - viewportBBox.minX) * imgW,
+            height: (viewportBBox.maxY - viewportBBox.minY) * imgH,
+          } : null}
+        />
 
         {/* ai 层：AI 预测框（虚线 + 浅填充）。严格分离：仅「选择工具」下可点选采纳，
             与 user 层一致；绘制工具下不响应 hit-test，避免预标注被任意工具误选。 */}
@@ -1690,7 +1737,7 @@ export function ImageStage({
         </Layer>
 
         {/* v0.10.8 · Mask 编辑器临时叠加层 (仅 tool === "mask" 且 active 时挂)。 */}
-        {tool === "mask" && maskEditor?.active && maskEditor.buffer && !maskOperationPreviewBuffer && (
+        {!maskCompareActive && tool === "mask" && maskEditor?.active && maskEditor.buffer && !maskOperationPreviewBuffer && (
           <MaskOverlayLayer
             buffer={maskEditor.buffer}
             revision={maskEditor.revision}
@@ -1700,7 +1747,7 @@ export function ImageStage({
             visible={true}
           />
         )}
-        {tool === "mask" && maskEditor?.active && maskEditor.backend === "tiled" && (
+        {!maskCompareActive && tool === "mask" && maskEditor?.active && maskEditor.backend === "tiled" && (
           <TiledMaskOverlayLayer
             tiles={maskEditor.tiledTiles}
             overview={tiledMaskOverviewRecord
@@ -1716,7 +1763,7 @@ export function ImageStage({
             visible
           />
         )}
-        {tool === "mask" && maskOperationPreviewBuffer && (
+        {!maskCompareActive && tool === "mask" && maskOperationPreviewBuffer && (
           <MaskOverlayLayer
             buffer={maskOperationPreviewBuffer}
             revision={maskEditor?.operationPreview?.id ?? 0}
@@ -1727,7 +1774,7 @@ export function ImageStage({
             visible
           />
         )}
-        {tool === "mask" && maskInstancePreviewBuffer && (
+        {!maskCompareActive && tool === "mask" && maskInstancePreviewBuffer && (
           <MaskOverlayLayer
             buffer={maskInstancePreviewBuffer}
             revision={maskEditor?.instanceOperationPreview?.id ?? 0}
@@ -1931,7 +1978,7 @@ export function ImageStage({
               listening={false}
             />
           )}
-          {drag?.kind === "maskLasso" && drag.points.length > 1 && (
+          {!maskCompareActive && drag?.kind === "maskLasso" && drag.points.length > 1 && (
             <Line
               points={drag.points.flatMap(([x, y]) => [x, y])}
               stroke={maskEditor?.tool === "lasso_subtract" ? "#f97316" : "#22c55e"}
@@ -1952,7 +1999,7 @@ export function ImageStage({
               tool={tool}
             />
           )}
-          {samMaskRecords.map((record) => {
+          {displayedSamMaskRecords.map((record) => {
             const { bounds } = record;
             return (
               <Group
@@ -2098,7 +2145,7 @@ export function ImageStage({
           )}
           {/* v0.10.9 · Mask 笔刷光标圈：仅 mask 工具激活时渲染；圆心 = maskCursor，半径 = maskEditor.radius
               (image-space px)，描边宽度按 vp.scale 取倒数保持像素级视觉。brush=红、erase=灰。 */}
-          {tool === "mask" && maskCursor && maskEditor
+          {!maskCompareActive && tool === "mask" && maskCursor && maskEditor
             && (maskEditor.tool === "brush" || maskEditor.tool === "erase") && (
             <Circle
               x={maskCursor.x}

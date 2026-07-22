@@ -731,6 +731,7 @@ async def task_qc_summary(
             "qc_digest": None,
             "source_snapshot_digest": current_digest,
             "status": "not_applicable",
+            "progress_pct": 0,
             "counts": {},
             "blocking": config.blocking,
         }
@@ -743,6 +744,7 @@ async def task_qc_summary(
             "qc_digest": None,
             "source_snapshot_digest": current_digest,
             "status": "stale",
+            "progress_pct": 0,
             "counts": {},
             "blocking": config.blocking,
         }
@@ -777,6 +779,7 @@ async def task_qc_summary(
         "qc_digest": qc_digest,
         "source_snapshot_digest": frozen_digest,
         "status": run.status if current else "stale",
+        "progress_pct": run.progress_pct,
         "counts": counts,
         "blocking": config.blocking,
     }

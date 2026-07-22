@@ -15,6 +15,8 @@ export interface VideoStageControls {
   microStep: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToKeyframe: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToFrame: (frameIndex: number, options?: { recordHistory?: boolean }) => void;
+  /** Seek completion means the media element has resolved the requested frame. */
+  seekToFrameReady: (frameIndex: number, options?: { recordHistory?: boolean }) => Promise<void>;
   toggleBookmark: () => void;
   jumpHistory: (dir: -1 | 1) => void;
   clearLoopRegion: () => void;
@@ -45,6 +47,8 @@ export interface VideoStageControls {
    * 键盘两级循环 / 侧栏点选 / 画布点选 统一经选中变化触发。
    */
   focusObject: (id: string) => void;
+  /** Fit an explicit normalized QC region independently of selection-focus preferences. */
+  focusRegion: (bbox: { x0: number; y0: number; x1: number; y1: number }) => void;
   /**
    * v0.21.4 · 把当前帧解码后的 ImageBitmap 编码成 JPEG Blob(单题 AI 供图路径用)。
    * 当前帧尚未解出位图时返回 null。

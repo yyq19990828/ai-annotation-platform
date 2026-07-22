@@ -75,6 +75,8 @@ describe("VideoKonvaStage · konva mock", () => {
     const ref = createRef<VideoStageControls>();
     render(<VideoKonvaStage ref={ref} manifest={manifest} />);
     expect(typeof ref.current?.togglePlayback).toBe("function");
+    expect(typeof ref.current?.seekToFrameReady).toBe("function");
+    expect(typeof ref.current?.focusRegion).toBe("function");
     expect(ref.current?.deleteSelectedTrackKeyframe()).toBe(false); // 轨迹类 no-op
     playMock.mockClear();
     act(() => ref.current?.togglePlayback());

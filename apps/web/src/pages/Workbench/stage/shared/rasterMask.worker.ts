@@ -7,6 +7,8 @@ import type {
 } from "./rasterMaskWorkerProtocol";
 import {
   buildRasterMaskWorkerSession,
+  compareRasterMaskSessionTile,
+  compareRasterMaskSessionMetrics,
   decodeRasterMaskSessionTile,
   decodeRasterMaskTransferredRle,
   mergeRasterMaskSessionTiles,
@@ -74,6 +76,42 @@ workerScope.onmessage = (event) => {
         sha256: request.sha256,
         rle,
       }, [rle.counts.buffer]);
+      return;
+    }
+    if (request.kind === "compare_tile") {
+      const codes = compareRasterMaskSessionTile(
+        sessionFor(request.current.sessionId, request.current.sha256),
+        sessionFor(request.baseline.sessionId, request.baseline.sha256),
+        request.rect,
+        request.mode,
+        request.sampleStep,
+      );
+      workerScope.postMessage({
+        kind: "compare_tile",
+        id: request.id,
+        ok: true,
+        current: request.current,
+        baseline: request.baseline,
+        rect: request.rect,
+        mode: request.mode,
+        sampleStep: request.sampleStep,
+        codes,
+      }, [codes.buffer]);
+      return;
+    }
+    if (request.kind === "compare_metrics") {
+      const metrics = compareRasterMaskSessionMetrics(
+        sessionFor(request.current.sessionId, request.current.sha256),
+        sessionFor(request.baseline.sessionId, request.baseline.sha256),
+      );
+      workerScope.postMessage({
+        kind: "compare_metrics",
+        id: request.id,
+        ok: true,
+        current: request.current,
+        baseline: request.baseline,
+        metrics,
+      });
       return;
     }
 

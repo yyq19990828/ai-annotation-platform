@@ -1,9 +1,34 @@
 // v0.16.x 第 2 批 · useWorkbenchShellModel 纯函数测试守护(伴随逻辑提炼,锁定坐标公式行为)。
 import { describe, it, expect } from "vitest";
 import {
+  commitAfterNavigationGuard,
   resolveMaskEditorSize,
   resolvePinViewport,
 } from "../useWorkbenchShellModel.helpers";
+
+describe("commitAfterNavigationGuard", () => {
+  it("快速导航时不允许较旧 guard 的迟到结果提交切题", async () => {
+    const firstController = new AbortController();
+    let releaseFirst: ((allowed: boolean) => void) | undefined;
+    const firstGuard = () => new Promise<boolean>((resolve) => { releaseFirst = resolve; });
+    const commits: string[] = [];
+    const first = commitAfterNavigationGuard(
+      firstGuard,
+      firstController.signal,
+      () => commits.push("first"),
+    );
+    firstController.abort();
+    const second = commitAfterNavigationGuard(
+      async () => true,
+      undefined,
+      () => commits.push("second"),
+    );
+    await expect(second).resolves.toBe(true);
+    releaseFirst?.(true);
+    await expect(first).resolves.toBe(false);
+    expect(commits).toEqual(["second"]);
+  });
+});
 
 describe("resolveMaskEditorSize", () => {
   it("视频任务使用 manifest 的固有尺寸而不是未初始化的图片舞台尺寸", () => {

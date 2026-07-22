@@ -24,6 +24,17 @@ export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 export const clamp = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, v));
 
+export async function commitAfterNavigationGuard(
+  guard: () => Promise<boolean>,
+  signal: AbortSignal | undefined,
+  commit: () => void,
+): Promise<boolean> {
+  const allowed = await guard();
+  if (!allowed || signal?.aborted) return false;
+  commit();
+  return true;
+}
+
 export function resolveMaskEditorSize(
   isVideoTask: boolean,
   imageSize: { imgW: number; imgH: number },

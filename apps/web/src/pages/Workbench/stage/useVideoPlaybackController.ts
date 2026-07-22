@@ -132,7 +132,7 @@ export interface UseVideoPlaybackControllerResult {
   seekOverlayByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
   pausePlayback: (options?: { snapToGrid?: boolean }) => void;
   /** cycleInCategory / stepCategory 由 VideoKonvaStage 补齐, 故此处 Omit(见 controls memo)。 */
-  controls: Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject" | "normToClient">;
+  controls: Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject" | "focusRegion" | "normToClient">;
 }
 
 export function useVideoPlaybackController({
@@ -574,6 +574,15 @@ export function useVideoPlaybackController({
     [pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
 
+  const seekToFrameReady = useCallback(
+    async (nextFrame: number, options?: { recordHistory?: boolean }) => {
+      showPlaybackOverlay();
+      pausePlayback({ snapToGrid: false });
+      await seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
+    },
+    [pausePlayback, seekFrameAsync, showPlaybackOverlay],
+  );
+
   // v0.21.9 · 跳到下一个/上一个有预测的帧 (预测帧集合上的 next/prev)。
   const seekToAdjacentPredictedFrame = useCallback((dir: -1 | 1) => {
     const target = adjacentPredictedFrame(predictedFrames, frameIndex, dir);
@@ -862,7 +871,7 @@ export function useVideoPlaybackController({
   // ---- controls 句柄(对齐 VideoStage useImperativeHandle) ----
   // cycleInCategory / stepCategory 依赖 stage 侧的当前帧分类 + selectedId + onSelect,
   // 由 VideoKonvaStage 在 useImperativeHandle 补齐, 故此处 Omit。
-  const controls = useMemo<Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject" | "normToClient">>(() => ({
+  const controls = useMemo<Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject" | "focusRegion" | "normToClient">>(() => ({
     togglePlayback,
     jogPlayback: jogPlaybackBy,
     pausePlayback,
@@ -871,6 +880,7 @@ export function useVideoPlaybackController({
     microStep: microStepBy,
     seekToKeyframe,
     seekToFrame,
+    seekToFrameReady,
     toggleBookmark,
     jumpHistory: jumpHistoryBy,
     clearLoopRegion,
@@ -899,6 +909,7 @@ export function useVideoPlaybackController({
     seekByFrames,
     seekGrid,
     seekToFrame,
+    seekToFrameReady,
     seekToKeyframe,
     toggleBookmark,
     togglePlayback,

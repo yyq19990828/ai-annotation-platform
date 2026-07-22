@@ -78,6 +78,43 @@ class FakeWorker {
     } } as MessageEvent<RasterMaskWorkerResponse>);
   }
 
+  respondCompare(id: number, codes: Uint8Array) {
+    const request = this.jobRequests().find((candidate) => candidate.id === id);
+    if (!request || request.kind !== "compare_tile") throw new Error(`compare request ${id} not found`);
+    this.onmessage?.({ data: {
+      kind: "compare_tile",
+      id,
+      ok: true,
+      current: request.current,
+      baseline: request.baseline,
+      rect: request.rect,
+      mode: request.mode,
+      sampleStep: request.sampleStep,
+      codes,
+    } } as MessageEvent<RasterMaskWorkerResponse>);
+  }
+
+  respondCompareMetrics(id: number) {
+    const request = this.jobRequests().find((candidate) => candidate.id === id);
+    if (!request || request.kind !== "compare_metrics") throw new Error(`metrics request ${id} not found`);
+    this.onmessage?.({ data: {
+      kind: "compare_metrics",
+      id,
+      ok: true,
+      current: request.current,
+      baseline: request.baseline,
+      metrics: {
+        currentAreaPixels: 2,
+        baselineAreaPixels: 1,
+        intersectionPixels: 1,
+        unionPixels: 2,
+        changedPixels: 1,
+        addedPixels: 1,
+        removedPixels: 0,
+      },
+    } } as MessageEvent<RasterMaskWorkerResponse>);
+  }
+
   respond(response: RasterMaskWorkerResponse) {
     this.onmessage?.({ data: response } as MessageEvent<RasterMaskWorkerResponse>);
   }
@@ -329,6 +366,48 @@ describe("RasterMaskWorkerPool", () => {
     expect(pool.getSnapshot()).toMatchObject({ workersReplaced: 1, sessions: 1 });
     pool.releaseSession("session-a");
     expect(pool.getSnapshot().sessions).toBe(0);
+    pool.dispose();
+  });
+
+  it("compares two registered sessions and cancels when either side is released", async () => {
+    const worker = new FakeWorker();
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => worker as unknown as Worker,
+    });
+    pool.registerSession("current", "sha-current", zeroRle(4, 4));
+    pool.registerSession("baseline", "sha-baseline", zeroRle(4, 4));
+    const current = { sessionId: "current", sha256: "sha-current" };
+    const baseline = { sessionId: "baseline", sha256: "sha-baseline" };
+    const rect = { x: 0, y: 0, width: 2, height: 2 };
+    const completed = pool.compareTile(current, baseline, rect, "xor");
+    const request = worker.jobRequests()[0];
+    if (!request || request.kind !== "compare_tile") throw new Error("missing compare request");
+    worker.respondCompare(request.id, Uint8Array.from([0, 1, 2, 0]));
+    await expect(completed).resolves.toMatchObject({
+      current,
+      baseline,
+      rect,
+      mode: "xor",
+      sampleStep: 1,
+      codes: Uint8Array.from([0, 1, 2, 0]),
+    });
+
+    const metrics = pool.compareMetrics(current, baseline);
+    const metricsRequest = worker.jobRequests().find((candidate) => candidate.kind === "compare_metrics");
+    if (!metricsRequest) throw new Error("missing compare metrics request");
+    worker.respondCompareMetrics(metricsRequest.id);
+    await expect(metrics).resolves.toMatchObject({
+      current,
+      baseline,
+      metrics: { changedPixels: 1 },
+    });
+
+    const cancelled = pool.compareTile(current, baseline, rect, "overlay");
+    const rejection = expect(cancelled).rejects.toBeInstanceOf(RasterMaskWorkerCancelledError);
+    pool.releaseSession("baseline");
+    await rejection;
+    expect(pool.getSnapshot()).toMatchObject({ sessions: 1, cancelled: 1 });
     pool.dispose();
   });
 });

@@ -609,7 +609,10 @@ async def get_video_tracker_job_preview(
     return VideoTrackerJobPreview.model_validate(await tracker_job_preview(db, row))
 
 
-@router.get("/{job_id}/mask-content/{sha256}")
+@router.get(
+    "/{job_id}/mask-content/{sha256}",
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
 async def get_video_tracker_mask_content(
     job_id: uuid.UUID,
     sha256: str,

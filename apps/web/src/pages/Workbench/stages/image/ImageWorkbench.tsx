@@ -15,11 +15,13 @@ import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../../stage/imageStageContextMenu";
 import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "../../stage/shared/useRasterMaskRecords";
+import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
   rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
   onRetryRasterMask: (id: string) => void;
@@ -141,6 +143,7 @@ export interface ImageWorkbenchProps {
 }
 
 export function ImageWorkbench({
+  maskCompareStore,
   rasterMaskRecords,
   rasterMaskStatusById,
   onRetryRasterMask,
@@ -299,6 +302,7 @@ export function ImageWorkbench({
 
   return (
     <ImageStage
+      maskCompareStore={maskCompareStore}
       rasterMaskRecords={displayedRasterMaskRecords}
       tiledMaskOverviewRecord={editingRasterMaskRecord}
       rasterMaskStatusById={rasterMaskStatusById}

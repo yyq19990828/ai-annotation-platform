@@ -3,6 +3,9 @@ import type { MaskInstanceOperationPlan, MaskInstanceOperationSpec } from "./geo
 import type { MaskOperationResult, MaskOperationSpec } from "./geometry/maskOperations";
 import type { RasterMaskAnalysis } from "./rasterMaskRender";
 import type {
+  RasterMaskCompareMode,
+  RasterMaskCompareMetrics,
+  RasterMaskCompareSessionRef,
   RasterMaskOperationContext,
   RasterMaskTileOverride,
   RasterMaskTileRect,
@@ -64,7 +67,7 @@ interface PoolJob {
   transfer: Transferable[];
   timeoutMs: number;
   signal?: AbortSignal;
-  sessionId?: string;
+  sessionIds?: readonly string[];
   abort?: () => void;
   timer?: unknown;
   resolve: (value: unknown) => void;
@@ -312,7 +315,7 @@ export class RasterMaskWorkerPool {
       transfer: [],
       timeoutMs: options.timeoutMs ?? OPERATION_TIMEOUT_MS,
       options,
-      sessionId,
+      sessionIds: [sessionId],
       read: (response) => {
         if (response.kind !== "tile_decode" || !response.ok) {
           throw new RasterMaskWorkerError("invalid tile decode response");
@@ -338,12 +341,76 @@ export class RasterMaskWorkerPool {
       transfer: transferredTiles.map((tile) => tile.alpha.buffer),
       timeoutMs: options.timeoutMs ?? TILE_MERGE_TIMEOUT_MS,
       options,
-      sessionId,
+      sessionIds: [sessionId],
       read: (response) => {
         if (response.kind !== "tile_merge" || !response.ok) {
           throw new RasterMaskWorkerError("invalid tile merge response");
         }
         return { sessionId: response.sessionId, sha256: response.sha256, rle: response.rle };
+      },
+    });
+  }
+
+  compareTile(
+    current: RasterMaskCompareSessionRef,
+    baseline: RasterMaskCompareSessionRef,
+    rect: RasterMaskTileRect,
+    mode: RasterMaskCompareMode,
+    sampleStep = 1,
+    options: RasterMaskWorkerRunOptions = {},
+  ): Promise<{
+    current: RasterMaskCompareSessionRef;
+    baseline: RasterMaskCompareSessionRef;
+    rect: RasterMaskTileRect;
+    mode: RasterMaskCompareMode;
+    sampleStep: number;
+    codes: Uint8Array;
+  }> {
+    this.assertSession(current.sessionId, current.sha256);
+    this.assertSession(baseline.sessionId, baseline.sha256);
+    const id = ++this.nextId;
+    return this.enqueue({
+      id,
+      kind: "compare_tile",
+      request: { kind: "compare_tile", id, current, baseline, rect, mode, sampleStep },
+      transfer: [],
+      timeoutMs: options.timeoutMs ?? OPERATION_TIMEOUT_MS,
+      options,
+      sessionIds: [current.sessionId, baseline.sessionId],
+      read: (response) => {
+        if (response.kind !== "compare_tile" || !response.ok) {
+          throw new RasterMaskWorkerError("invalid compare tile response");
+        }
+        return response;
+      },
+    });
+  }
+
+  compareMetrics(
+    current: RasterMaskCompareSessionRef,
+    baseline: RasterMaskCompareSessionRef,
+    options: RasterMaskWorkerRunOptions = {},
+  ): Promise<{
+    current: RasterMaskCompareSessionRef;
+    baseline: RasterMaskCompareSessionRef;
+    metrics: RasterMaskCompareMetrics;
+  }> {
+    this.assertSession(current.sessionId, current.sha256);
+    this.assertSession(baseline.sessionId, baseline.sha256);
+    const id = ++this.nextId;
+    return this.enqueue({
+      id,
+      kind: "compare_metrics",
+      request: { kind: "compare_metrics", id, current, baseline },
+      transfer: [],
+      timeoutMs: options.timeoutMs ?? OPERATION_TIMEOUT_MS,
+      options,
+      sessionIds: [current.sessionId, baseline.sessionId],
+      read: (response) => {
+        if (response.kind !== "compare_metrics" || !response.ok) {
+          throw new RasterMaskWorkerError("invalid compare metrics response");
+        }
+        return response;
       },
     });
   }
@@ -367,7 +434,7 @@ export class RasterMaskWorkerPool {
     transfer,
     timeoutMs,
     options,
-    sessionId,
+    sessionIds,
     read,
   }: {
     id: number;
@@ -376,7 +443,7 @@ export class RasterMaskWorkerPool {
     transfer: Transferable[];
     timeoutMs: number;
     options: RasterMaskWorkerRunOptions;
-    sessionId?: string;
+    sessionIds?: readonly string[];
     read: (response: RasterMaskWorkerResponse) => T;
   }): Promise<T> {
     if (this.disposed) return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker pool is disposed"));
@@ -398,7 +465,7 @@ export class RasterMaskWorkerPool {
         transfer,
         timeoutMs,
         signal: options.signal,
-        sessionId,
+        sessionIds,
         resolve: (value) => resolve(value as T),
         reject,
         read,
@@ -582,12 +649,12 @@ export class RasterMaskWorkerPool {
 
   private cancelSessionJobs(sessionId: string): void {
     for (let index = this.queue.length - 1; index >= 0; index -= 1) {
-      if (this.queue[index].sessionId !== sessionId) continue;
+      if (!this.queue[index].sessionIds?.includes(sessionId)) continue;
       this.cancelled += 1;
       this.rejectQueued(this.queue.splice(index, 1)[0], new RasterMaskWorkerCancelledError());
     }
     for (const slot of this.slots) {
-      if (slot.current?.sessionId !== sessionId) continue;
+      if (!slot.current?.sessionIds?.includes(sessionId)) continue;
       this.cancelled += 1;
       this.rejectRunning(slot, new RasterMaskWorkerCancelledError(), true);
     }

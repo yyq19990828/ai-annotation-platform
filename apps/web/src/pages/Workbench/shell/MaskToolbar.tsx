@@ -62,6 +62,7 @@ interface MaskToolbarProps {
   canRedo: boolean;
   canEdit: boolean;
   canCommit?: boolean;
+  interactionFrozen?: boolean;
   largeCanvas?: boolean;
   editBlockReason?: MaskEditBlockReason | null;
   operationPreview: MaskOperationPreview | null;
@@ -157,6 +158,7 @@ export function MaskToolbar({
   canRedo,
   canEdit,
   canCommit,
+  interactionFrozen = false,
   largeCanvas = false,
   editBlockReason,
   operationPreview,
@@ -460,6 +462,7 @@ export function MaskToolbar({
           <Button
             type="button"
             size="xs"
+            disabled={!canEdit}
             onClick={() => {
               if (operationPreview.report.afterArea === 0) setConfirmEmptyOpen(true);
               else onConfirmOperation();
@@ -533,7 +536,7 @@ export function MaskToolbar({
               type="button"
               size="xs"
               variant="ghost"
-              disabled={instanceBusy}
+              disabled={instanceBusy || !canEdit}
               onClick={onCommitInstanceOperation}
             >重试</Button>
           )}
@@ -542,7 +545,7 @@ export function MaskToolbar({
               type="button"
               size="xs"
               variant="ghost"
-              disabled={instanceBusy}
+              disabled={instanceBusy || !canEdit}
               onClick={onRefreshInstanceOperation}
             >刷新范围</Button>
           )}
@@ -576,7 +579,7 @@ export function MaskToolbar({
           重试
         </Button>
       )}
-      <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={instanceBusy} title="取消 (Esc)">
+      <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={instanceBusy || interactionFrozen} title="取消 (Esc)">
         取消
       </Button>
       <Button
@@ -610,7 +613,7 @@ export function MaskToolbar({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>返回预览</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={onConfirmOperation}>确认清空</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={onConfirmOperation} disabled={!canEdit}>确认清空</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
