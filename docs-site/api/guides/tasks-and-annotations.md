@@ -218,6 +218,22 @@ annotation 变更、内容关联、操作账本、lineage、任务统计和聚�
 
 缺少范围版本返回 `428 expected_versions_missing`。范围成员变化、版本漂移、任务 / 对象 / 分段锁冲突分别返回结构化 409 reason；操作合同、类别、geometry、引用或空结果无效返回结构化 422 reason。任一失败都不会留下部分 annotation 或账本记录。
 
+## 标注转换计划
+
+图片与视频的几何转换使用「预检计划 → 原子执行」两步接口，客户端不得用多次 annotation PATCH 模拟批量 replace：
+
+```http
+POST /api/v1/tasks/:id/annotation-conversions:dry-run
+POST /api/v1/tasks/:id/annotation-conversions:execute
+```
+
+dry-run 接收最多 100 个同来源类型的 `annotation_ids`、目标 `mask | polygon | bbox`、`copy | replace`、范围 `image | current_frame | keyframes`，以及当前帧和是否允许物化 held 帧。响应返回十分钟有效的不可预测 `plan_token`、逐对象报告与汇总；服务端计划冻结来源版本、geometry 内容摘要、目标 geometry manifest 和内容摘要，token 本身只以 SHA-256 摘要落库。预览不写对象存储、不创建上传 reservation；取消或重复预览不会占用 Mask 配额。
+单次请求的原始尺寸 × 待转换对象 / 可见关键帧数不得超过 32 Mi 像素，超限返回 `422 conversion_budget_exceeded`，避免批量请求长时间占用 API 进程。
+
+支持的转换为：图片 polygon / multi-polygon → `raster_mask`，图片 `raster_mask` → polygon / multi-polygon 或紧致 bbox；视频单帧 polygon、polygon track 当前帧或全部可见关键帧 → `video_track_mask`；视频 Mask track 当前帧 → `video_bbox`。Mask → bbox 始终是紧致轴对齐框，不生成 rotated bbox。当前帧 replace 只抑制来源轨迹的当前帧；keyframes replace 才原位替换整条来源轨迹。
+
+execute 只接收 `plan_token`、任务内 actor 维度的幂等 key，以及 replace / lossy 的显式确认。服务端按 task → task edit lock → video segment → Mask 内容引用 → upload reservation → annotation UUID 的顺序加锁，重新验证计划归属、TTL、来源快照、类别和写入闸，并重算转换结果与冻结报告。只有两者一致后才预留配额，取得 annotation 行锁并再次验证快照，然后写入新 Mask 对象；最后在同一个事务内写 annotation、内容关联、`convert_annotations` operation、`converted` lineage、任务统计与聚合审计，并返回完整的更新 / 新建对象。相同 key 与相同请求回放首次响应，即使短期计划已清理；同 key 异参、计划已消费、版本漂移、报告漂移或锁冲突返回结构化 409，任一失败都不会部分转换。
+
 ## 原生 AI Mask 候选采纳
 
 交互式推理返回的原生 Mask 是短生命周期候选，不应由客户端拆成“上传内容 + 创建标注”两次写操作。客户端应把候选和平台签发的 receipt 提交到任务级原子采纳接口：

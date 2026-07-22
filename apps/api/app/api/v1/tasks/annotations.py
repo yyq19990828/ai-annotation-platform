@@ -1,6 +1,7 @@
 import base64
 import uuid
 from datetime import datetime
+from typing import NoReturn
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,11 +38,21 @@ from app.schemas.annotation import (
     VideoTrackConvertToBboxesRequest,
     VideoTrackConvertToBboxesResponse,
 )
+from app.schemas.annotation_conversion import (
+    AnnotationConversionDryRunRequest,
+    AnnotationConversionDryRunResponse,
+    AnnotationConversionExecuteRequest,
+    AnnotationConversionExecuteResponse,
+)
 from app.services.annotation import (
     AnnotationService,
     validate_geometry_type_transition,
 )
 from app.services.audit import AuditAction, AuditService
+from app.services.annotation_conversion import (
+    AnnotationConversionError,
+    AnnotationConversionService,
+)
 from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
     GPUShadowSessionFactory,
@@ -67,6 +78,68 @@ from app.api.v1.tasks._shared import (
 )
 
 router = APIRouter()
+
+
+def _raise_conversion_error(exc: AnnotationConversionError) -> NoReturn:
+    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post(
+    "/{task_id}/annotation-conversions:dry-run",
+    response_model=AnnotationConversionDryRunResponse,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def dry_run_annotation_conversion(
+    task_id: uuid.UUID,
+    data: AnnotationConversionDryRunRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    try:
+        result = await AnnotationConversionService(db).dry_run(
+            task=task,
+            actor=current_user,
+            payload=data,
+        )
+    except AnnotationConversionError as exc:
+        _raise_conversion_error(exc)
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    await db.commit()
+    return result
+
+
+@router.post(
+    "/{task_id}/annotation-conversions:execute",
+    response_model=AnnotationConversionExecuteResponse,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def execute_annotation_conversion(
+    task_id: uuid.UUID,
+    data: AnnotationConversionExecuteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    try:
+        result = await AnnotationConversionService(db).execute(
+            task_id=task_id,
+            actor=current_user,
+            payload=data,
+            request=request,
+        )
+    except AnnotationConversionError as exc:
+        _raise_conversion_error(exc)
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    await db.commit()
+    return result
 
 
 @router.get(

@@ -50,6 +50,7 @@ graph TD
 | `apps/api/app/services/annotation.py` | create / update / delete / accept_prediction / draft |
 | `apps/api/app/db/models/annotation_operation.py` | 原子多对象操作与 lineage 账本 |
 | `apps/api/app/services/mask_mutation.py` | Mask split / copy / join / overlap 事务边界 |
+| `apps/api/app/db/models/annotation_conversion_plan.py` · `services/annotation_conversion.py` | 短期转换计划与原子执行边界 |
 | `apps/api/app/api/v1/tasks/annotations.py` · `predictions.py` | annotation 与 prediction 相关 HTTP 入口 |
 | `apps/api/app/api/v1/tasks/mask_mutations.py` | 任务级 Mask 原子 mutation 入口 |
 | `apps/api/app/services/batch.py` | annotation 写入后 batch 自动迁移 |
@@ -133,8 +134,14 @@ fingerprint，复核 task / annotation / segment 锁、类别、帧、内容引�
 update / create / soft-delete、任务统计、heartbeat、operation、lineage 和聚合审计。
 
 `annotation_operations` 以 task + actor + idempotency key 去重，保存请求摘要、范围摘要、源 / 结果版本和类型化报告；
-`annotation_lineage_edges` 表示多源到多结果的 split / copied / keyframe-copied / joined / overlap-erased 关系。两张表都不存完整
+`annotation_lineage_edges` 表示多源到多结果的 split / copied / keyframe-copied / joined / overlap-erased / converted 关系。两张表都不存完整
 geometry 或 RLE counts，source / result annotation ID 为软引用，使账本不会因标注或用户生命周期被意外删除。
+
+### 标注转换计划
+
+polygon、Mask 与紧致 bbox 的图片 / 视频转换使用 `dry-run → execute` 两步协议。dry-run 冻结请求、来源版本 / digest、目标 manifest 和逐项损失报告，只保存十分钟有效的 token 摘要；这一步不写对象存储，也不预留上传配额。
+
+execute 先重验计划与来源快照，重算转换并与冻结报告比对，再按共享锁序预留新 Mask 引用、取得 annotation 行锁并复查快照。内容写入、annotation 变更、`convert_annotations` operation、`converted` lineage、统计、heartbeat 和聚合审计作为一个事务提交。短期计划过期后可清理，已成功请求的幂等回放仍由持久 operation 账本提供。
 
 交互式 AI 的原生 Mask 候选不先写 Prediction，也不由浏览器拆成内容上传和标注创建。平台代理响应为每个候选签发绑定 task、像素、prompt revision 与实际路由的短生命周期 receipt；接受时 `POST /tasks/{task_id}/ai-mask-candidates/accept` 重新检查权限、写闸、锁和源版本，并在同一提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。decision 以 task + 客户端幂等键唯一保存完整响应并设有效期；相同请求可安全重放，不同请求复用 key 或过期重放返回冲突。有效 decision 引用的内容受 Raster GC 保活，过期 decision 先清理后才参与对象扫描。
 

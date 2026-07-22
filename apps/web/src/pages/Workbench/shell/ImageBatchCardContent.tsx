@@ -22,6 +22,7 @@ export interface ImageBatchCardContentProps {
   onToggleHidden: () => void;
   onDelete: () => void;
   onClear: () => void;
+  onConvert?: () => void;
 }
 
 /**
@@ -40,6 +41,7 @@ export function ImageBatchCardContent({
   onToggleHidden,
   onDelete,
   onClear,
+  onConvert,
 }: ImageBatchCardContentProps) {
   return (
     <div className={BODY_CLASS}>
@@ -49,6 +51,18 @@ export function ImageBatchCardContent({
       </div>
 
       <ActionBar label="批量操作">
+        {onConvert && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="批量转换"
+            aria-label="批量转换"
+            disabled={readOnly || allLocked}
+            onClick={onConvert}
+          >
+            批量转换
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

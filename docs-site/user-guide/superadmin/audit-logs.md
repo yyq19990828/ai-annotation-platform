@@ -57,13 +57,14 @@ last_reviewed: 2026-07-22
 - `video_correction_job.create` / `video_correction_job.cancel`（人工 Mask 纠错传播创建 / 取消）
 - `video_mask.keyframe_correct` / `video_mask.keyframe_operate`（保存纠错帧，以及删除、消失或恢复关键帧状态）
 - `annotation.mask_mutation`（Mask 拆分、复制、合并或严格非重叠的聚合提交）
+- `annotation.convert`（图片 / 视频标注转换的聚合提交）
 - `ml_registry.created` / `ml_registry.updated` / `ml_registry.deleted`（全局注册 CRUD）
 - `ml_service_pool.created` / `ml_service_pool.updated` / `ml_service_pool.deleted` / `ml_service_pool.member_upserted` / `ml_service_pool.member_removed` / `ml_service_pool.member_drained` / `ml_service_pool.member_resumed`
 - `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` / `ml_backend.enablement` / `ml_backend.reloaded` / `ml_backend.unloaded` / `ml_backend.warmup` / `ml_backend.smoke_tested`（项目兼容与实例生命周期；详见 [ML Backend 注册](./ml-backend-registry)）
 
 > 上述 ML 相关动作由后端以**原始字符串**写入，目前未纳入 `AuditAction` 枚举。可分别按 `action LIKE 'ml_registry.%'`、`'ml_service_pool.%'` 或 `'ml_backend.%'` 查询。
 
-原生 Mask、实例原子操作与视频纠错审计只保存有界摘要和 lineage：对象 / 版本、窗口、backend / pool / model、候选数量、fallback、digest 与人工覆盖前后摘要。审计和普通日志都不保存 RLE counts、完整 geometry、笔迹坐标、logits、receipt 或原始 prompt 正文。
+原生 Mask、实例原子操作、标注转换与视频纠错审计只保存有界摘要和 lineage：对象 / 版本、窗口、backend / pool / model、候选数量、fallback、digest 与人工覆盖前后摘要。审计和普通日志都不保存 RLE counts、完整 geometry、笔迹坐标、logits、receipt 或原始 prompt 正文。
 
 ### 标注
 - `annotation.create` / `annotation.update` / `annotation.delete`

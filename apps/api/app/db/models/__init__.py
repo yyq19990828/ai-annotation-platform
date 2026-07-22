@@ -42,6 +42,7 @@ from app.db.models.annotation_operation import (
     AnnotationLineageEdge,
     AnnotationOperation,
 )
+from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
 from app.db.models.video_chapter import VideoChapter
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -105,6 +106,7 @@ __all__ = [
     "AiMaskAcceptDecision",
     "AnnotationOperation",
     "AnnotationLineageEdge",
+    "AnnotationConversionPlan",
     "VideoChapter",
     "AuditLog",
     "UserInvitation",

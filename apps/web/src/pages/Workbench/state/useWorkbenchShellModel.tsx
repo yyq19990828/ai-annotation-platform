@@ -39,6 +39,7 @@ import {
   type MaskMutationScope,
 } from "@/api/maskMutations";
 import { ApiError } from "@/api/client";
+import type { AnnotationConversionExecuteResponse } from "@/api/annotationConversions";
 import { videoTrackerApi } from "@/api/videoTracker";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
@@ -89,12 +90,6 @@ import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
 import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
 import { classColorForCanvas } from "../stage/colors";
 import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
-import {
-  formatMaskConversionReport,
-  rasterMaskToRegionPreview,
-  vectorGeometryToRasterPreview,
-  type MaskConversionReport,
-} from "../stage/shared/geometry/maskConversion";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -135,6 +130,10 @@ import {
 } from "../stage/VideoMaskCorrectionDialog";
 import { executeVideoMaskCorrectionFlow } from "./videoMaskCorrectionFlow";
 import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
+import {
+  MaskConversionDialog,
+  type MaskConversionDialogRequest,
+} from "../stage/MaskConversionDialog";
 import { isAnyVideoSingleFrame, isVideoBbox, isVideoMaskTrack, isVideoPointsTrack, isVideoPolylineTrack, isVideoTrack, resolveTrackAtFrame, resolveVideoMaskTrackAtFrame } from "../stage/videoStageGeometry";
 import { isFrameOutside } from "../stage/videoTrackOutside";
 import {
@@ -163,6 +162,7 @@ import { VideoTrackBatchCardContent } from "../shell/VideoTrackBatchCardContent"
 import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
 import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
 import { VideoPointsTrackCardContent } from "../shell/selectionCard/VideoPointsTrackCardContent";
+import { ConversionBatchCardContent } from "../shell/selectionCard/ConversionBatchCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -322,6 +322,7 @@ interface WorkbenchShellReadyModel {
   layout: ComponentProps<typeof WorkbenchLayout>;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   maskCorrectionDialog: ComponentProps<typeof VideoMaskCorrectionDialog>;
+  conversionDialog: ComponentProps<typeof MaskConversionDialog>;
   trackerReview: ComponentProps<typeof VideoTrackerReviewBar>;
   issueSection?: WorkbenchShellIssueSection;
 }
@@ -2551,69 +2552,67 @@ export function useWorkbenchShellModel({
     }
     maskEditor.recoverFromError();
   }, [imageMaskPersistenceMode, maskCapabilities, maskEditor, maskFailLoad, maskGeneration, maskLoadBlank, maskLoadRle, pushToast, selectedImageRasterMask]);
-  const confirmMaskConversion = useCallback((report: MaskConversionReport) => {
-    if (!window.confirm(`${formatMaskConversionReport(report)}\n\n是否执行转换？`)) return false;
-    return !report.lossy || window.confirm("该转换会改变像素真值。确认继续有损转换？");
-  }, []);
-  const convertRegionToRasterMask = useCallback(async (annotationId: string) => {
-    const annotation = annotationsRef.current.find((item) => item.id === annotationId);
-    if (!annotation || (annotation.geometry.type !== "polygon" && annotation.geometry.type !== "multi_polygon")) return;
-    if (imageMaskPersistenceMode !== "native" || isLockedForActions || annotation.is_locked) {
-      pushToast({ msg: "当前对象不可转为 Mask", kind: "warning" });
+  const [maskConversionRequest, setMaskConversionRequest] = useState<MaskConversionDialogRequest | null>(null);
+  const openAnnotationConversion = useCallback((annotationIds: string | string[]) => {
+    const ids = Array.isArray(annotationIds) ? annotationIds : [annotationIds];
+    const annotations = ids
+      .map((id) => annotationsRef.current.find((item) => item.id === id))
+      .filter((item): item is AnnotationResponse => item !== undefined);
+    if (!taskId || annotations.length !== ids.length) {
+      pushToast({ msg: "转换条件未就绪", sub: "请刷新标注后重试", kind: "warning" });
       return;
     }
-    if (!taskId || !imageWidth || !imageHeight || annotation.version == null) {
-      pushToast({ msg: "转换条件未就绪", sub: "缺少原图尺寸或对象版本", kind: "warning" });
+    const sourceTypes = new Set(annotations.map((item) => item.geometry.type));
+    if (sourceTypes.size !== 1) {
+      pushToast({ msg: "批量转换要求来源类型一致", kind: "warning" });
       return;
     }
-    try {
-      const preview = vectorGeometryToRasterPreview(annotation.geometry, imageWidth, imageHeight);
-      if (!confirmMaskConversion(preview.report)) return;
-      const mask = await rasterMasksApi.uploadTaskContent(taskId, preview.rle);
-      const geometry = { type: "raster_mask", mask } as const;
-      const updated = await updateAnnotationMut.mutateAsync({
-        annotationId,
-        payload: { geometry },
-        etag: `W/"${annotation.version}"`,
-      });
-      history.push({
-        kind: "update",
-        annotationId,
-        before: { geometry: annotation.geometry },
-        after: { geometry: updated.geometry },
-      });
-      pushToast({ msg: "已转为原生 Mask", sub: `${preview.report.targetAreaPixels} 像素`, kind: "success" });
-    } catch (error) {
-      pushToast({ msg: "Mask 转换失败", sub: String(error), kind: "error" });
-    }
-  }, [confirmMaskConversion, history, imageHeight, imageMaskPersistenceMode, imageWidth, isLockedForActions, pushToast, taskId, updateAnnotationMut]);
-  const convertRasterMaskToRegion = useCallback(async (annotationId: string) => {
-    const annotation = annotationsRef.current.find((item) => item.id === annotationId);
-    if (!annotation || annotation.geometry.type !== "raster_mask") return;
-    if (isLockedForActions || annotation.is_locked || annotation.version == null) {
-      pushToast({ msg: "当前对象不可转换", kind: "warning" });
+    if (isLockedForActions || annotations.some((item) => item.is_locked)) {
+      pushToast({ msg: "锁定或只读对象不能转换", kind: "warning" });
       return;
     }
-    try {
-      const rle = await rasterMasksApi.annotationRasterMaskContent(annotationId);
-      const preview = rasterMaskToRegionPreview(rle);
-      if (!confirmMaskConversion(preview.report)) return;
-      const updated = await updateAnnotationMut.mutateAsync({
-        annotationId,
-        payload: { geometry: preview.geometry },
-        etag: `W/"${annotation.version}"`,
-      });
-      history.push({
-        kind: "update",
-        annotationId,
-        before: { geometry: annotation.geometry },
-        after: { geometry: updated.geometry },
-      });
-      pushToast({ msg: `已转为 ${preview.geometry.type}`, sub: `${preview.report.targetVertices} 顶点`, kind: "success" });
-    } catch (error) {
-      pushToast({ msg: "Mask 转换失败", sub: String(error), kind: "error" });
+    const sourceType = annotations[0].geometry.type;
+    const supported = new Set([
+      "polygon",
+      "multi_polygon",
+      "raster_mask",
+      "video_polygon",
+      "video_track_polygon",
+      "video_track_mask",
+    ]);
+    if (!supported.has(sourceType)) {
+      pushToast({ msg: "当前几何类型暂不支持转换", sub: sourceType, kind: "warning" });
+      return;
     }
-  }, [confirmMaskConversion, history, isLockedForActions, pushToast, updateAnnotationMut]);
+    const singleFrameIndexes = annotations
+      .filter((item) => item.geometry.type === "video_polygon")
+      .map((item) => item.geometry.type === "video_polygon" ? item.geometry.frame_index : s.videoFrameIndex);
+    if (new Set(singleFrameIndexes).size > 1) {
+      pushToast({ msg: "视频单帧批量转换要求对象位于同一帧", kind: "warning" });
+      return;
+    }
+    setMaskConversionRequest({
+      taskId,
+      annotationIds: ids,
+      sourceType,
+      ...(sourceType.startsWith("video_")
+        ? { frameIndex: singleFrameIndexes[0] ?? s.videoFrameIndex }
+        : {}),
+    });
+  }, [isLockedForActions, pushToast, s.videoFrameIndex, taskId]);
+  const completeAnnotationConversion = useCallback(async (
+    result: AnnotationConversionExecuteResponse,
+  ) => {
+    await queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+    void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    const selected = result.created_annotations[0] ?? result.updated_annotations[0];
+    if (selected) s.setSelectedId(selected.id);
+    pushToast({
+      msg: "转换已完成",
+      sub: `${result.report.source_count} 个来源 · ${result.report.result_count} 个结果`,
+      kind: "success",
+    });
+  }, [pushToast, queryClient, s, taskId]);
 
   const cancelVideoMaskEdit = useCallback(() => {
     if (maskInstanceTransitionInFlightRef.current) {
@@ -4778,6 +4777,14 @@ export function useWorkbenchShellModel({
       const selectedAnns = userBoxes.filter((b) => selectedIds.includes(b.id));
       const allLocked = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_locked);
       const allHidden = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_hidden);
+      const conversionSourceType = selectedAnns[0]?.geometry?.type;
+      const canBatchConvert = Boolean(
+        conversionSourceType
+        && selectedAnns.every((item) => item.geometry?.type === conversionSourceType)
+        && ["polygon", "multi_polygon", "raster_mask"].includes(conversionSourceType)
+        && (conversionSourceType === "raster_mask" || imageMaskPersistenceMode === "native")
+        && !selectedAnns.some((item) => item.is_locked),
+      );
       children = (
         <ImageBatchCardContent
           count={selectionCount}
@@ -4790,6 +4797,7 @@ export function useWorkbenchShellModel({
           onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
           onDelete={handleBatchDelete}
           onClear={() => setSelectedId(null)}
+          onConvert={canBatchConvert ? () => openAnnotationConversion(selectedIds) : undefined}
         />
       );
     } else if (multi && stageKind === "video") {
@@ -4819,7 +4827,22 @@ export function useWorkbenchShellModel({
           />
         );
       } else {
-        children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
+        const sourceType = selectedAnns[0]?.geometry.type;
+        const sameConvertibleSource = Boolean(
+          sourceType
+          && ["video_polygon", "video_track_polygon", "video_track_mask"].includes(sourceType)
+          && selectedAnns.every((item) => item.geometry.type === sourceType)
+          && !selectedAnns.some((item) => item.is_locked),
+        );
+        children = sameConvertibleSource ? (
+          <ConversionBatchCardContent
+            count={selectionCount}
+            sourceType={sourceType!}
+            readOnly={isLocked}
+            onConvert={() => openAnnotationConversion(selectedIds)}
+            onClear={() => setSelectedId(null)}
+          />
+        ) : <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
       }
     } else if (multi) {
       children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
@@ -4853,6 +4876,7 @@ export function useWorkbenchShellModel({
             onChangeClass={handleStartChangeClass}
             onDelete={handleDeleteBox}
             onUpdateAttributes={handleUpdateAttributes}
+            onConvert={ann.geometry.type === "video_polygon" ? openAnnotationConversion : undefined}
           />
         );
       } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
@@ -4875,6 +4899,9 @@ export function useWorkbenchShellModel({
             onToggleLock={toggleLockedVideoTrack}
             onEditMask={isVideoMaskTrack(ann) ? () => setVideoTool("mask") : undefined}
             onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
+            onConvert={ann.geometry.type === "video_track_polygon" || isVideoMaskTrack(ann)
+              ? openAnnotationConversion
+              : undefined}
             maskActions={isVideoMaskTrack(ann) ? videoMaskKeyframeActions : undefined}
           />
         );
@@ -4968,8 +4995,8 @@ export function useWorkbenchShellModel({
                 setTool("mask");
               }
             : undefined}
-          onConvertRegionToRaster={imageMaskPersistenceMode === "native" ? convertRegionToRasterMask : undefined}
-          onConvertRasterToRegion={convertRasterMaskToRegion}
+          onConvertRegionToRaster={imageMaskPersistenceMode === "native" ? openAnnotationConversion : undefined}
+          onConvertRasterToRegion={openAnnotationConversion}
         />
       );
     } else {
@@ -5038,8 +5065,7 @@ export function useWorkbenchShellModel({
     acceptPredictionFromCard,
     rejectPredictionFromCard,
     handleRefinePrediction,
-    convertRasterMaskToRegion,
-    convertRegionToRasterMask,
+    openAnnotationConversion,
     imageMaskPersistenceMode,
     imageRasterMasks.retry,
     imageRasterMasks.statusById,
@@ -5486,6 +5512,13 @@ export function useWorkbenchShellModel({
                     ? openVideoMaskCorrection
                     : undefined
                 }
+                onOpenConversion={isVideoTask
+                  ? selectedVideoMask
+                    ? () => openAnnotationConversion(selectedVideoMask.id)
+                    : undefined
+                  : selectedImageRasterMask
+                    ? () => openAnnotationConversion(selectedImageRasterMask.id)
+                    : undefined}
                 onCancel={isVideoTask ? cancelVideoMaskEdit : cancelImageMaskEdit}
               />
             )}
@@ -6131,6 +6164,15 @@ export function useWorkbenchShellModel({
     onSubmit: submitVideoMaskCorrection,
   };
 
+  const conversionDialogProps: ComponentProps<typeof MaskConversionDialog> = {
+    open: maskConversionRequest !== null,
+    request: maskConversionRequest,
+    onOpenChange: (open) => {
+      if (!open) setMaskConversionRequest(null);
+    },
+    onCompleted: completeAnnotationConversion,
+  };
+
   const issueSection = projectId && taskId ? {
     openIssueCount,
     stageKind,
@@ -6157,6 +6199,7 @@ export function useWorkbenchShellModel({
     layout,
     propagateDialog: propagateDialogProps,
     maskCorrectionDialog: maskCorrectionDialogProps,
+    conversionDialog: conversionDialogProps,
     trackerReview: trackerReviewProps,
     issueSection,
   };

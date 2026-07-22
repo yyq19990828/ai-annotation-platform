@@ -63,6 +63,7 @@ function renderCard(input: {
   frameIndex?: number;
   maskActions?: VideoMaskKeyframeActionHandlers;
   onSeekFrame?: (frame: number) => void;
+  onConvert?: (id: string) => void;
 } = {}) {
   const annotation = input.annotation ?? maskTrack();
   const maskActions = input.maskActions ?? actions();
@@ -82,6 +83,7 @@ function renderCard(input: {
       onDelete={vi.fn()}
       onToggleHidden={vi.fn()}
       onToggleLock={vi.fn()}
+      onConvert={input.onConvert}
       maskActions={maskActions}
     />,
   );
@@ -134,5 +136,13 @@ describe("VideoPointsTrackCardContent Mask 关键帧操作", () => {
     const button = screen.getByRole("button", { name: "预测消失" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.title).toBe("预测 outside 不可人工恢复");
+  });
+
+  it("从 Mask 轨迹卡打开当前帧 BBox 转换", () => {
+    const onConvert = vi.fn();
+    renderCard({ onConvert });
+
+    fireEvent.click(screen.getByRole("button", { name: "转 BBox" }));
+    expect(onConvert).toHaveBeenCalledWith("mask-1");
   });
 });

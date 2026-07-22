@@ -36,6 +36,7 @@ export interface VideoPointsTrackCardContentProps {
   onToggleLock: (trackId: string) => void;
   onEditMask?: () => void;
   onPropagate?: () => void;
+  onConvert?: (id: string) => void;
   maskActions?: VideoMaskKeyframeActionHandlers;
 }
 
@@ -71,6 +72,7 @@ export function VideoPointsTrackCardContent({
   onToggleLock,
   onEditMask,
   onPropagate,
+  onConvert,
   maskActions,
 }: VideoPointsTrackCardContentProps) {
   if (!isVideoPointsTrack(annotation) && !isVideoMaskTrack(annotation)) return null;
@@ -201,6 +203,18 @@ export function VideoPointsTrackCardContent({
       />
 
       <ActionBar label={isVideoMaskTrack(annotation) ? "Mask 轨迹操作" : "点集轨迹操作"}>
+        {onConvert && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title={isVideoMaskTrack(annotation) ? "转换当前帧为 BBox" : "转换为 Mask"}
+            aria-label={isVideoMaskTrack(annotation) ? "转 BBox" : "转 Mask"}
+            disabled={readOnly || locked || annotation.is_locked}
+            onClick={() => onConvert(annotation.id)}
+          >
+            {isVideoMaskTrack(annotation) ? "转 BBox" : "转 Mask"}
+          </Button>
+        )}
         {isVideoMaskTrack(annotation) && (
           <Button
             variant="ghost"

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import case, delete, select, text, update
 
 from app.db.models.annotation_comment import AnnotationComment
+from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
 from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
@@ -27,6 +28,22 @@ from app.workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 VIDEO_TRACKER_STAGED_TTL = timedelta(hours=24)
+
+
+async def _expire_annotation_conversion_plans(
+    db,
+    *,
+    now: datetime | None = None,
+) -> int:
+    result = await db.execute(
+        delete(AnnotationConversionPlan)
+        .where(
+            AnnotationConversionPlan.expires_at
+            <= (now or datetime.now(timezone.utc))
+        )
+        .returning(AnnotationConversionPlan.id)
+    )
+    return len(result.scalars().all())
 
 
 @celery_app.task(name="app.workers.cleanup.purge_soft_deleted_attachments")
@@ -237,6 +254,7 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
             )
         )
         expired_tracker_candidates = await _expire_stale_video_tracker_candidates(db)
+        expired_conversion_plans = await _expire_annotation_conversion_plans(db)
         await db.commit()
         await refresh_raster_mask_active_geometries_safely(db)
         referenced = await _referenced_raster_mask_keys(db)
@@ -306,6 +324,7 @@ async def _purge_unreferenced_raster_masks_async(*, dry_run: bool = False) -> di
         "deleted": deleted,
         "errors": errors,
         "expired_tracker_candidates": expired_tracker_candidates,
+        "expired_conversion_plans": expired_conversion_plans,
     }
     log.info("purge_unreferenced_raster_masks done: %s", result)
     return result

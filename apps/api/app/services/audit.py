@@ -58,6 +58,7 @@ class AuditAction(str, Enum):
     ANNOTATION_UPDATE = "annotation.update"
     ANNOTATION_DELETE = "annotation.delete"
     ANNOTATION_MASK_MUTATION = "annotation.mask_mutation"
+    ANNOTATION_CONVERT = "annotation.convert"
     AI_MASK_CANDIDATE_ACCEPT = "mask_ai.candidate_accept"
     ANNOTATION_COMMENT_ADD = "annotation.comment_add"
     ANNOTATION_COMMENT_DELETE = "annotation.comment_delete"

@@ -444,6 +444,8 @@
 
 | Method | Path |
 |---|---|
+| POST | `/{task_id}/annotation-conversions:dry-run` |
+| POST | `/{task_id}/annotation-conversions:execute` |
 | GET | `/{task_id}/neighbor-annotations` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
@@ -581,4 +583,4 @@
 
 ---
 
-_共 55 模块 / 319 路由_
+_共 55 模块 / 321 路由_

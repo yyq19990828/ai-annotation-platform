@@ -95,6 +95,7 @@ interface MaskToolbarProps {
   instanceCommitBlocked?: boolean;
   onCommit: () => void;
   onCommitAndPropagate?: () => void;
+  onOpenConversion?: () => void;
   onCancel: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -181,6 +182,7 @@ export function MaskToolbar({
   instanceCommitBlocked = false,
   onCommit,
   onCommitAndPropagate,
+  onOpenConversion,
   onCancel,
   onUndo,
   onRedo,
@@ -298,6 +300,15 @@ export function MaskToolbar({
             })}
           >
             拆分全部组件（保留最大）
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>派生与转换</DropdownMenuLabel>
+          <DropdownMenuItem
+            disabled={!onOpenConversion || dirty}
+            title={dirty ? "请先保存当前 Mask 草稿" : "打开标注转换中心"}
+            onSelect={() => onOpenConversion?.()}
+          >
+            转为紧致 BBox / Polygon
           </DropdownMenuItem>
           {onPrepareJoin && (
             <>

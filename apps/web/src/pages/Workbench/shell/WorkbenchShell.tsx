@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useFabRevealed } from "@/stores/fabRevealStore";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { VideoMaskCorrectionDialog } from "../stage/VideoMaskCorrectionDialog";
+import { MaskConversionDialog } from "../stage/MaskConversionDialog";
 import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
 import { useWorkbenchShellModel } from "../state/useWorkbenchShellModel";
 import { IssueCreateModal } from "./IssueCreateModal";
@@ -41,6 +42,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           <>
             <VideoTrackerPropagateDialog {...model.propagateDialog} />
             <VideoMaskCorrectionDialog {...model.maskCorrectionDialog} />
+            <MaskConversionDialog {...model.conversionDialog} />
             <VideoTrackerReviewBar {...model.trackerReview} />
           </>
         )}

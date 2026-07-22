@@ -1230,6 +1230,433 @@
         "title": "AnnotationCommentUpdate",
         "type": "object"
       },
+      "AnnotationConversionDryRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "materialize_held": {
+            "default": false,
+            "title": "Materialize Held",
+            "type": "boolean"
+          },
+          "operation": {
+            "default": "copy",
+            "enum": [
+              "copy",
+              "replace"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "image",
+              "current_frame",
+              "keyframes"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "mask",
+              "polygon",
+              "bbox"
+            ],
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "annotation_ids",
+          "target",
+          "scope"
+        ],
+        "title": "AnnotationConversionDryRunRequest",
+        "type": "object"
+      },
+      "AnnotationConversionDryRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationConversionItemReport"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "copy",
+              "replace"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "plan_token": {
+            "title": "Plan Token",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "image",
+              "current_frame",
+              "keyframes"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AnnotationConversionSummary"
+          },
+          "target": {
+            "enum": [
+              "mask",
+              "polygon",
+              "bbox"
+            ],
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_token",
+          "expires_at",
+          "target",
+          "operation",
+          "scope",
+          "items",
+          "summary"
+        ],
+        "title": "AnnotationConversionDryRunResponse",
+        "type": "object"
+      },
+      "AnnotationConversionExecuteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_lossy": {
+            "default": false,
+            "title": "Confirm Lossy",
+            "type": "boolean"
+          },
+          "confirm_replace": {
+            "default": false,
+            "title": "Confirm Replace",
+            "type": "boolean"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "plan_token": {
+            "maxLength": 128,
+            "minLength": 32,
+            "pattern": "^cvp_[A-Za-z0-9_-]+$",
+            "title": "Plan Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_token",
+          "idempotency_key"
+        ],
+        "title": "AnnotationConversionExecuteRequest",
+        "type": "object"
+      },
+      "AnnotationConversionExecuteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Created Annotations",
+            "type": "array"
+          },
+          "deleted_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Deleted Annotation Ids",
+            "type": "array"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "lineage_edges": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationConversionLineageOut"
+            },
+            "title": "Lineage Edges",
+            "type": "array"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/AnnotationConversionSummary"
+          },
+          "updated_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Updated Annotations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation_id",
+          "report"
+        ],
+        "title": "AnnotationConversionExecuteResponse",
+        "type": "object"
+      },
+      "AnnotationConversionItemReport": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_pixels": {
+            "minimum": 0.0,
+            "title": "Changed Pixels",
+            "type": "integer"
+          },
+          "frame_indexes": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Frame Indexes",
+            "type": "array"
+          },
+          "lossy": {
+            "title": "Lossy",
+            "type": "boolean"
+          },
+          "materialized_held_frames": {
+            "minimum": 0.0,
+            "title": "Materialized Held Frames",
+            "type": "integer"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "result_count": {
+            "minimum": 1.0,
+            "title": "Result Count",
+            "type": "integer"
+          },
+          "source_annotation_id": {
+            "format": "uuid",
+            "title": "Source Annotation Id",
+            "type": "string"
+          },
+          "source_area_pixels": {
+            "minimum": 0.0,
+            "title": "Source Area Pixels",
+            "type": "integer"
+          },
+          "source_components": {
+            "minimum": 0.0,
+            "title": "Source Components",
+            "type": "integer"
+          },
+          "source_holes": {
+            "minimum": 0.0,
+            "title": "Source Holes",
+            "type": "integer"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "source_vertices": {
+            "minimum": 0.0,
+            "title": "Source Vertices",
+            "type": "integer"
+          },
+          "target_area_pixels": {
+            "minimum": 0.0,
+            "title": "Target Area Pixels",
+            "type": "integer"
+          },
+          "target_components": {
+            "minimum": 0.0,
+            "title": "Target Components",
+            "type": "integer"
+          },
+          "target_holes": {
+            "minimum": 0.0,
+            "title": "Target Holes",
+            "type": "integer"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          },
+          "target_vertices": {
+            "minimum": 0.0,
+            "title": "Target Vertices",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_annotation_id",
+          "source_type",
+          "target_type",
+          "source_version",
+          "result_count",
+          "source_area_pixels",
+          "target_area_pixels",
+          "changed_pixels",
+          "source_components",
+          "target_components",
+          "source_holes",
+          "target_holes",
+          "source_vertices",
+          "target_vertices",
+          "materialized_held_frames",
+          "lossy"
+        ],
+        "title": "AnnotationConversionItemReport",
+        "type": "object"
+      },
+      "AnnotationConversionLineageOut": {
+        "properties": {
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "result_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Annotation Id"
+          },
+          "result_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Version"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          }
+        },
+        "title": "AnnotationConversionLineageOut",
+        "type": "object"
+      },
+      "AnnotationConversionSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "lossy_count": {
+            "minimum": 0.0,
+            "title": "Lossy Count",
+            "type": "integer"
+          },
+          "materialized_held_frames": {
+            "minimum": 0.0,
+            "title": "Materialized Held Frames",
+            "type": "integer"
+          },
+          "result_count": {
+            "minimum": 1.0,
+            "title": "Result Count",
+            "type": "integer"
+          },
+          "source_count": {
+            "minimum": 1.0,
+            "title": "Source Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_count",
+          "result_count",
+          "materialized_held_frames",
+          "lossy_count"
+        ],
+        "title": "AnnotationConversionSummary",
+        "type": "object"
+      },
       "AnnotationCreate": {
         "properties": {
           "annotation_type": {
@@ -41668,6 +42095,122 @@
           }
         ],
         "summary": "Accept Native Ai Mask Candidate",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotation-conversions:dry-run": {
+      "post": {
+        "operationId": "dry_run_annotation_conversion_api_v1_tasks__task_id__annotation_conversions_dry_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationConversionDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationConversionDryRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dry Run Annotation Conversion",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotation-conversions:execute": {
+      "post": {
+        "operationId": "execute_annotation_conversion_api_v1_tasks__task_id__annotation_conversions_execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationConversionExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationConversionExecuteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Annotation Conversion",
         "tags": [
           "tasks"
         ]

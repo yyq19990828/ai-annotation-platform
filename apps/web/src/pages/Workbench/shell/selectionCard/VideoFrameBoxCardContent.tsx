@@ -32,6 +32,7 @@ export interface VideoFrameBoxCardContentProps {
   onChangeClass: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdateAttributes: (id: string, next: Record<string, unknown>) => void;
+  onConvert?: (id: string) => void;
 }
 
 /** 秒 → 紧凑时间码 m:ss(帧定位 chip 用,不带毫秒)。 */
@@ -60,6 +61,7 @@ export function VideoFrameBoxCardContent({
   onChangeClass,
   onDelete,
   onUpdateAttributes,
+  onConvert,
 }: VideoFrameBoxCardContentProps) {
   const geom = annotation.geometry;
   const frameIndex =
@@ -114,6 +116,18 @@ export function VideoFrameBoxCardContent({
       />
 
       <ActionBar label="单帧标注操作">
+        {geom.type === "video_polygon" && onConvert && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="转为 Mask"
+            aria-label="转为 Mask"
+            disabled={readOnly || annotation.is_locked}
+            onClick={() => onConvert(annotation.id)}
+          >
+            转 Mask
+          </Button>
+        )}
         {frameIndex !== null && (
           <Button
             variant="ghost"
