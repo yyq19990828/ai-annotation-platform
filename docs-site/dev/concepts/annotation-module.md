@@ -145,6 +145,13 @@ Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始
 100 条，并按 Low / Standard / High 档位共享 16 / 32 / 64 MiB 硬预算；新写入会释放 redo，超预算
 时只从最旧 undo 开始淘汰。这是编辑器本地历史，不改变服务端 annotation history 与审计语义。
 
+大画布编辑不创建整图 alpha 或整图 overlay canvas。`SparseMaskTileStore` 以 immutable base RLE 加
+512 像素 materialized override tile 作为真值；base 在 Worker 会话中建 run index，单 tile 按列从
+COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中心和 even-odd 栅格化原语，
+命中优先读 override，未物化区域通过主线程 run index 精确查询 base。viewport 仅 pin 可见 tile
+与一圈预取；全图缩放时不解码全部 tile，而是使用不参与写入和精确命中的受限 overview。
+保存只传 dirty overrides，Worker 按 COCO column-major 顺序合并并直接复用未访问 base 区间。
+
 ### 原子多对象 Mask 操作
 
 split / component copy / keyframe copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和

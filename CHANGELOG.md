@@ -47,6 +47,9 @@
 - **Mask XOR 分块历史**. 笔刷、橡皮和已确认操作改为保留 512 像素 tile 的 1-bit XOR patch，
   笔画期间仅捕获首次触及 tile 的临时基线，不再为每次编辑生成 before / after RLE。撤销与重做
   共用同一 patch，最多保留 100 条并同时受 16 / 32 / 64 MiB 设备档位硬预算约束。
+- **Mask 稀疏 tile 编辑核心**. 大画布真值由不可变 base RLE 与按需解码的 512 像素 override tile 组成；
+  brush、erase、lasso、精确命中与 XOR history 均只读写相交 tile。viewport 只 pin 可见区及一圈预取，
+  全图缩放使用受限 overview；保存在 Worker 中合并 dirty tile 与未访问 base 区间，不物化整图 alpha。
 
 ## [0.23.9] - 2026-07-22
 

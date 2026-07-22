@@ -10,6 +10,7 @@
 //   v1 不引入 d3-contour / scanline 库依赖。
 
 import { decodeCocoRle, encodeCocoRle, type CocoRle } from "./maskRle";
+import { rasterizeMaskBrush, rasterizeMaskPolygon } from "./maskRasterization";
 
 export interface MaskBufferOptions {
   width: number;
@@ -207,28 +208,21 @@ export class MaskBuffer {
     value: 0 | 255 = 255,
     shape: MaskBrushShape = "circle",
   ): void {
-    const radius = Math.max(0.5, r);
-    const rSq = radius * radius;
-    const x0 = Math.max(0, Math.floor(cx - radius));
-    const x1 = Math.min(this.width - 1, Math.ceil(cx + radius));
-    const y0 = Math.max(0, Math.floor(cy - radius));
-    const y1 = Math.min(this.height - 1, Math.ceil(cy + radius));
-    for (let y = y0; y <= y1; y++) {
-      const dy = y - cy;
-      const dy2 = dy * dy;
-      const row = y * this.width;
-      for (let x = x0; x <= x1; x++) {
-        const dx = x - cx;
-        if (
-          (shape === "square" && Math.abs(dx) <= radius && Math.abs(dy) <= radius)
-          || (shape === "circle" && dx * dx + dy2 <= rSq)
-        ) {
-          this.data[row + x] = value;
-        }
-      }
+    const change = rasterizeMaskBrush(this.data, this.width, this.height, {
+      cx,
+      cy,
+      radius: r,
+      value,
+      shape,
+    });
+    if (change.touchedBounds) {
+      this.markDirty(
+        change.touchedBounds.x0,
+        change.touchedBounds.y0,
+        change.touchedBounds.x1,
+        change.touchedBounds.y1,
+      );
     }
-    // 脏区 = brush 整个外接方框（半开区间，xCount+1 / yCount+1 是因为上面循环用闭区间）
-    this.markDirty(x0, y0, x1 + 1, y1 + 1);
   }
 
   /** 橡皮 = brush(cx, cy, r, 0) 的语义糖。 */
@@ -244,46 +238,14 @@ export class MaskBuffer {
    * - value=255 与已有 Mask 做 add，value=0 做 subtract；调用方要全量替换时先 `clear()`。
    */
   fromPolygon(points: ReadonlyArray<readonly [number, number]>, value: 0 | 255 = 255): void {
-    if (points.length < 3) return;
-    const { width, height } = this;
-    // 计算 x/y 范围（x 用于脏区，y 用于裁剪迭代上下界）
-    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
-    for (const [px, py] of points) {
-      if (px < xMin) xMin = px;
-      if (px > xMax) xMax = px;
-      if (py < yMin) yMin = py;
-      if (py > yMax) yMax = py;
-    }
-    const y0 = Math.max(0, Math.ceil(yMin - 0.5));
-    const y1 = Math.min(height - 1, Math.ceil(yMax - 0.5) - 1);
-    // 脏区 = polygon bbox（已 clamp）
-    this.markDirty(xMin, yMin, xMax + 1, yMax + 1);
-    const n = points.length;
-    for (let y = y0; y <= y1; y++) {
-      // 收集所有与 y 行相交的 x 值
-      const xs: number[] = [];
-      const yc = y + 0.5;
-      for (let i = 0; i < n; i++) {
-        const a = points[i];
-        const b = points[(i + 1) % n];
-        const [, ay] = a;
-        const [, by] = b;
-        // 半开区间判交：[min, max) 避免顶点重交两次
-        const lower = Math.min(ay, by);
-        const upper = Math.max(ay, by);
-        if (yc < lower || yc >= upper) continue;
-        const [ax, _ay] = a;
-        const [bx, _by] = b;
-        const t = (yc - ay) / (by - ay);
-        xs.push(ax + t * (bx - ax));
-      }
-      xs.sort((p, q) => p - q);
-      for (let i = 0; i + 1 < xs.length; i += 2) {
-        const xa = Math.max(0, Math.ceil(xs[i] - 0.5));
-        const xb = Math.min(width - 1, Math.ceil(xs[i + 1] - 0.5) - 1);
-        const row = y * width;
-        for (let x = xa; x <= xb; x++) this.data[row + x] = value;
-      }
+    const change = rasterizeMaskPolygon(this.data, this.width, this.height, points, value);
+    if (change.touchedBounds) {
+      this.markDirty(
+        change.touchedBounds.x0,
+        change.touchedBounds.y0,
+        change.touchedBounds.x1,
+        change.touchedBounds.y1,
+      );
     }
   }
 

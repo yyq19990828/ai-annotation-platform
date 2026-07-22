@@ -96,6 +96,17 @@ function packDenseTile(
   return { ...dimensions, bits };
 }
 
+function packTileAlpha(alpha: Uint8Array, width: number, height: number): Uint8Array {
+  if (alpha.length !== width * height) {
+    throw new Error("mask history tile alpha length must match its dimensions");
+  }
+  const bits = new Uint8Array(Math.ceil(width * height / 8));
+  for (let index = 0; index < alpha.length; index += 1) {
+    if (alpha[index] !== 0) bits[index >> 3] |= 1 << (index & 7);
+  }
+  return bits;
+}
+
 function countBits(value: number): number {
   let bits = value;
   bits -= (bits >> 1) & 0x55;
@@ -172,26 +183,54 @@ export class MaskHistoryCheckpoint {
     }
   }
 
-  finishDense(
+  captureTile(
+    tileX: number,
+    tileY: number,
+    width: number,
+    height: number,
+    alpha: Uint8Array,
+  ): void {
+    const expected = tileDimensions(this.canvasWidth, this.canvasHeight, tileX, tileY);
+    if (width !== expected.width || height !== expected.height) {
+      throw new Error("mask history tile dimensions do not match the canvas grid");
+    }
+    const key = tileKey(tileX, tileY);
+    if (this.tiles.has(key)) return;
+    this.tiles.set(key, {
+      tileX,
+      tileY,
+      width,
+      height,
+      beforeBits: packTileAlpha(alpha, width, height),
+    });
+  }
+
+  finish(
     name: string,
     sourceRevision: number,
-    alpha: Uint8Array,
+    readTile: (tileX: number, tileY: number, width: number, height: number) => Uint8Array,
+  ): MaskHistoryCommand | null {
+    return this.finishBits(name, sourceRevision, (captured) => packTileAlpha(
+      readTile(captured.tileX, captured.tileY, captured.width, captured.height),
+      captured.width,
+      captured.height,
+    ));
+  }
+
+  private finishBits(
+    name: string,
+    sourceRevision: number,
+    readBits: (captured: CapturedTile) => Uint8Array,
   ): MaskHistoryCommand | null {
     const patches: MaskHistoryPatch[] = [];
     let changedPixels = 0;
     try {
       for (const captured of this.tiles.values()) {
-        const after = packDenseTile(
-          alpha,
-          this.canvasWidth,
-          this.canvasHeight,
-          captured.tileX,
-          captured.tileY,
-        );
+        const afterBits = readBits(captured);
         const xorBits = new Uint8Array(captured.beforeBits.length);
         let tileChangedPixels = 0;
         for (let index = 0; index < xorBits.length; index += 1) {
-          const xor = captured.beforeBits[index] ^ after.bits[index];
+          const xor = captured.beforeBits[index] ^ afterBits[index];
           xorBits[index] = xor;
           tileChangedPixels += countBits(xor);
         }
@@ -216,6 +255,22 @@ export class MaskHistoryCheckpoint {
       changedPixels,
       chargedBytes: chargeMaskHistoryPatches(patches),
     };
+  }
+
+  finishDense(
+    name: string,
+    sourceRevision: number,
+    alpha: Uint8Array,
+  ): MaskHistoryCommand | null {
+    return this.finishBits(name, sourceRevision, (captured) => (
+      packDenseTile(
+        alpha,
+        this.canvasWidth,
+        this.canvasHeight,
+        captured.tileX,
+        captured.tileY,
+      ).bits
+    ));
   }
 }
 
@@ -297,7 +352,7 @@ export class MaskHistoryStore {
   }
 
   undo(apply: (command: MaskHistoryCommand) => void): MaskHistoryCommand | null {
-    const command = this.undoStack.at(-1);
+    const command = this.undoStack[this.undoStack.length - 1];
     if (!command) return null;
     apply(command);
     this.undoStack.pop();
@@ -306,7 +361,7 @@ export class MaskHistoryStore {
   }
 
   redo(apply: (command: MaskHistoryCommand) => void): MaskHistoryCommand | null {
-    const command = this.redoStack.at(-1);
+    const command = this.redoStack[this.redoStack.length - 1];
     if (!command) return null;
     apply(command);
     this.redoStack.pop();
