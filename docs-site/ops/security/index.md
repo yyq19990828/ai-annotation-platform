@@ -218,6 +218,7 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 - 标注：`annotation.create/update/delete/attribute_change/comment_add/comment_delete`
 - 数据集：`dataset.create/delete/link/unlink`
 - 导出：`project.export/batch.export`
+- Mask 格式导入：`mask_format.import_preflight/import_execute/import_resume`
 - bug 反馈：`bug_report.created/status_changed`
 - 系统：`system.bootstrap_admin`
 
@@ -289,6 +290,10 @@ production 收紧的目的：避免误把 dev regex 上线放任何 localhost �
 下载者签名水印（PDF/zip 内嵌发起人邮箱）仍在路线图中，当前导出审计依赖 audit log 和对象存储访问日志。
 
 ### 7.2 文件存取
+
+Mask 格式 staged upload 只能使用服务端为当前项目和用户生成的 object key 前缀。预检与执行分别复核 SHA-256，
+15 分钟 receipt 只持久化 token hash，并绑定 adapter / manifest 版本、mapping、options 与 plan digest。archive reader
+拒绝路径穿越、绝对路径、重复或大小写折叠路径、symlink、压缩炸弹和悬空 manifest 引用，不使用 `extractall`。
 
 MinIO 的 presigned **GET / download URL** 默认 1 小时 TTL（`apps/api/app/services/storage.py`）。下载签名会把过期时刻对齐到 10 分钟网格，让同一对象在一个窗口内签出完全相同的 URL——浏览器据此缓存缩略图与原图，避免列表刷新后整批重下。代价是实际有效期在 1 小时到 1 小时 10 分之间浮动。presigned PUT / upload URL 仍使用调用方传入的原始 `expires_in`，不做网格对齐。每个 URL 只授权单文件，不含目录列表能力。
 

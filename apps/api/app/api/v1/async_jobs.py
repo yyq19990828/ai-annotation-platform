@@ -21,6 +21,7 @@ from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
 from app.db.models.mask_qc import MaskQCRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
+from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
 from app.schemas.async_job import (
@@ -40,6 +41,7 @@ CANCELLABLE_KINDS = {
     "dataset_import",
     "mask_qc",
     "mask_repair",
+    "mask_format_import",
 }
 RETRY_FAILED_KINDS = {"batch_predict"}
 
@@ -241,6 +243,35 @@ async def cancel_async_job(
             await db.execute(
                 select(MaskRepairBatch)
                 .where(MaskRepairBatch.async_job_id == job.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if job.status == AsyncJobStatus.PENDING.value:
+            await async_job_svc.mark_cancelled(
+                db, job.id, result={"reason": "cancelled_by_user"}
+            )
+            if batch is not None and batch.status == "pending":
+                batch.status = "cancelled"
+                batch.completed_at = datetime.now(timezone.utc)
+            await notify_job_terminal(db, job_id=job.id)
+            await db.commit()
+            return {"status": "cancelled", "id": str(job_id)}
+        await async_job_svc.request_cancel(db, job.id)
+        await db.commit()
+        return {"status": "cancel_requested", "id": str(job_id)}
+
+    if job.kind == "mask_format_import":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("mask_format_import revoke failed job=%s", job.id)
+        batch = (
+            await db.execute(
+                select(MaskFormatImport)
+                .where(MaskFormatImport.async_job_id == job.id)
                 .with_for_update()
             )
         ).scalar_one_or_none()

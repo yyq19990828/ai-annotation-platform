@@ -100,6 +100,13 @@ graph TB
 | `MINIO_USE_SSL` | `false` | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。 |
 | `ML_BACKEND_STORAGE_HOST` | 空 | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
 | `ML_BACKEND_DEFAULT_URL` | 空 | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。 |
+| `MASK_FORMAT_TEMP_QUOTA_BYTES` | `8589934592` | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。 |
+| `MASK_FORMAT_MAX_ENTRY_BYTES` | `536870912` | 安全 archive 单 entry 的最大展开字节数。 |
+| `MASK_FORMAT_MAX_ARCHIVE_FILES` | `200000` | 单个 Mask 格式包允许的最大文件数。 |
+| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100` | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。 |
+
+Mask 格式 staged object 使用 import bucket，导出产物使用 export bucket，两者均由 API 初始化为 7 天 lifecycle。
+调小配额时应同时观察 `media` / `export` 队列的失败率；只需修改 `.env` 并重建容器，不需要重建镜像。
 
 ### 2.4 认证 / 安全
 

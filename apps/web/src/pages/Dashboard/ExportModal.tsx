@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { projectsApi, type ExportTarget, type VideoFrameMode } from "@/api/projects";
+import {
+  maskFormatsApi,
+  type MaskFormatExportPreflight,
+} from "@/api/maskFormats";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -153,10 +157,17 @@ function ExportForm({
   const [includeAttributes, setIncludeAttributes] = useState(true);
   const [videoFrameMode, setVideoFrameMode] = useState<VideoFrameMode>("keyframes");
   const [busy, setBusy] = useState(false);
+  const [preflight, setPreflight] = useState<MaskFormatExportPreflight | null>(null);
+  const [lossyConfirmed, setLossyConfirmed] = useState(false);
   const pushToast = useToastStore((s) => s.push);
 
   // 帧模式仅对 Video JSON 有意义（MOT/KITTI 走采样网格，AAP 透传源帧）。
   const showFrameMode = isVideoProject && targets.includes("video_json");
+
+  useEffect(() => {
+    setPreflight(null);
+    setLossyConfirmed(false);
+  }, [includeAttributes, targets, videoFrameMode]);
 
   const toggleTarget = (value: ExportTarget) => {
     setTargets((prev) =>
@@ -168,9 +179,24 @@ function ExportForm({
     if (targets.length === 0) return;
     setBusy(true);
     try {
-      await projectsApi.exportProject(projectId, targets, {
+      const options = {
         includeAttributes,
         ...(showFrameMode ? { videoFrameMode } : {}),
+      };
+      const checked = preflight
+        ?? await maskFormatsApi.preflightExport(projectId, targets, options);
+      if (!preflight) setPreflight(checked);
+      if (checked.loss_class === "unsupported") {
+        pushToast({
+          msg: "当前导出计划包含不支持的标注",
+          sub: "请查看预检报告并调整格式或项目内容",
+          kind: "warning",
+        });
+        return;
+      }
+      if (checked.loss_class === "lossy" && !lossyConfirmed) return;
+      await projectsApi.exportProject(projectId, targets, {
+        ...options,
       });
       pushToast({
         msg: "导出已入队",
@@ -308,6 +334,61 @@ function ExportForm({
           仅对 COCO / YOLO / Video JSON / LiDAR 标准格式生效；AAP JSON 始终包含，MOT 无此字段。
         </div>
       </div>
+      {preflight && (
+        <div
+          className={cn(
+            "flex flex-col gap-2 rounded-md border px-3 py-2.5 text-xs",
+            preflight.loss_class === "unsupported"
+              ? "border-status-danger/40 bg-status-danger/10"
+              : preflight.loss_class === "lossy"
+                ? "border-status-caution/40 bg-status-caution/10"
+                : "border-status-success/40 bg-status-success/10",
+          )}
+          data-testid="mask-format-preflight"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-semibold text-foreground">
+              {preflight.loss_class === "lossless"
+                ? "预检通过 · 无损"
+                : preflight.loss_class === "lossy"
+                  ? "预检通过 · 有损"
+                  : "预检阻止 · 不支持"}
+            </span>
+            <span className="text-muted-foreground">
+              {preflight.estimated_objects} 对象 · {preflight.estimated_files} 文件
+            </span>
+          </div>
+          {(preflight.losses.length > 0
+            || preflight.plans.some((plan) => plan.items.some((item) => item.warnings.length > 0))) && (
+            <div className="flex flex-col gap-1 text-muted-foreground">
+              {preflight.losses.map((loss, index) => (
+                <div key={`${loss.code}-${index}`}>
+                  <code className="text-foreground">{loss.code}</code> · {loss.message}
+                </div>
+              ))}
+              {preflight.plans.flatMap((plan) =>
+                plan.items.flatMap((item) =>
+                  item.warnings.map((warning, index) => (
+                    <div key={`${item.item_id}-${warning.code}-${index}`}>
+                      <code className="text-foreground">{warning.code}</code> · {warning.message}
+                    </div>
+                  )),
+                ),
+              )}
+            </div>
+          )}
+          {preflight.loss_class === "lossy" && (
+            <label className="flex cursor-pointer items-center gap-2 text-foreground">
+              <input
+                type="checkbox"
+                checked={lossyConfirmed}
+                onChange={(event) => setLossyConfirmed(event.target.checked)}
+              />
+              我已了解以上格式损失，继续导出
+            </label>
+          )}
+        </div>
+      )}
       <div className="flex justify-end gap-2 pt-1">
         <button
           type="button"
@@ -318,11 +399,19 @@ function ExportForm({
         </button>
         <button
           type="button"
-          disabled={busy || targets.length === 0}
+          disabled={
+            busy
+            || targets.length === 0
+            || preflight?.loss_class === "unsupported"
+          }
           onClick={handleExport}
           className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"
         >
-          {busy ? "导出中…" : "开始导出"}
+          {busy
+            ? "检查中…"
+            : preflight?.loss_class === "lossy" && !lossyConfirmed
+              ? "确认格式损失"
+              : "开始导出"}
         </button>
       </div>
     </div>

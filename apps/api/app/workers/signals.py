@@ -27,6 +27,7 @@ from app.config import settings
 from app.db.models.async_job import AsyncJobStatus
 from app.db.models.mask_qc import MaskQCRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
+from app.db.models.mask_format_import import MaskFormatImport
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
 
@@ -80,6 +81,17 @@ async def _mark_failed(celery_task_id: str, error: str) -> None:
                         else "failed"
                     )
                     batch.completed_at = datetime.now(timezone.utc)
+            elif aj.kind == "mask_format_import":
+                batch = (
+                    await db.execute(
+                        select(MaskFormatImport)
+                        .where(MaskFormatImport.async_job_id == aj.id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if batch is not None:
+                    batch.status = "failed"
+                    batch.completed_at = datetime.now(timezone.utc)
             await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     finally:
@@ -122,9 +134,29 @@ async def _mark_cancelled(celery_task_id: str) -> None:
                         for value in (
                             (batch.result_json or {}).get("shards") or {}
                         ).values()
-                        if isinstance(value, dict) and value.get("status") == "completed"
+                        if isinstance(value, dict)
+                        and value.get("status") == "completed"
                     ]
                     batch.status = "partial" if completed_shards else "cancelled"
+                    batch.completed_at = datetime.now(timezone.utc)
+            elif aj.kind == "mask_format_import":
+                batch = (
+                    await db.execute(
+                        select(MaskFormatImport)
+                        .where(MaskFormatImport.async_job_id == aj.id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if batch is not None and batch.status in {"pending", "running"}:
+                    committed = [
+                        value
+                        for value in (
+                            (batch.result_json or {}).get("items") or {}
+                        ).values()
+                        if isinstance(value, dict)
+                        and value.get("status") == "committed"
+                    ]
+                    batch.status = "partial" if committed else "cancelled"
                     batch.completed_at = datetime.now(timezone.utc)
             await notify_job_terminal(db, job_id=aj.id)
             await db.commit()

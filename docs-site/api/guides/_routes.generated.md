@@ -280,6 +280,18 @@
 | GET | `/invitations/{token}` |
 | POST | `/register` |
 
+## `mask_formats.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/mask-formats` |
+| POST | `/projects/{project_id}/mask-formats/exports:preflight` |
+| POST | `/projects/{project_id}/mask-formats/imports:upload-init` |
+| POST | `/projects/{project_id}/mask-formats/imports:preflight` |
+| POST | `/projects/{project_id}/mask-formats/imports` |
+| GET | `/projects/{project_id}/mask-formats/imports/{import_id}` |
+| POST | `/projects/{project_id}/mask-formats/imports/{import_id}/resume` |
+
 ## `mask_qc.py`
 
 | Method | Path |
@@ -601,4 +613,4 @@
 
 ---
 
-_共 56 模块 / 334 路由_
+_共 57 模块 / 341 路由_

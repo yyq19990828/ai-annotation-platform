@@ -72,6 +72,10 @@ const KIND_LABEL: Record<string, string> = {
   dataset_import: "数据集导入",
   create_tasks: "建任务",
   export: "数据导出",
+  mask_qc: "Mask 质检",
+  mask_repair: "Mask 批量修复",
+  mask_repair_rollback: "Mask 修复回滚",
+  mask_format_import: "Mask 格式导入",
 };
 
 /** export job 完成时 result 的下载字段（后端 mark_complete 写入）。 */

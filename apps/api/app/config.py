@@ -150,6 +150,13 @@ class Settings(BaseSettings):
     dataset_import_max_files: int = 50_000
     dataset_import_max_total_bytes: int = 200 * 1024 * 1024 * 1024
 
+    # Mask format adapter temp/archive budgets. Readers and writers enforce
+    # actual streamed bytes in addition to preflight estimates.
+    mask_format_temp_quota_bytes: int = 8 * 1024 * 1024 * 1024
+    mask_format_max_entry_bytes: int = 512 * 1024 * 1024
+    mask_format_max_archive_files: int = 200_000
+    mask_format_max_compression_ratio: float = 100.0
+
     # v0.12.0 · dataset link 建 task 同步阈值：item 数 ≤ 阈值走同步快路径，
     # > 阈值改入 Celery 异步建 task（避免大 dataset 在 HTTP 单事务里超时 + 长事务锁）。
     task_create_sync_threshold: int = 2000

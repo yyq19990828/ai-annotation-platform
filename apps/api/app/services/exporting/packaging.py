@@ -70,7 +70,9 @@ from app.services.project import (
     derive_classes_list,
 )
 from app.services.storage import storage_service
+from app.services.mask_formats import registry as mask_format_registry
 from app.services.raster_mask_storage import load_coco_rle
+from app.config import settings
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
 from app.services.video_frame_service import derive_sampled_frames, derive_step
 from app.services.video_tracks import derive_track_number
@@ -117,14 +119,13 @@ def clean_export_targets(targets: list[str], data_type: str | None = None) -> li
     ``build_export_zip`` 抛 ``UnsupportedExportError`` 拖垮整批（含合法目标）。
     ``data_type=None`` 时退回旧行为（接受全集），保持向后兼容。
     """
-    if data_type == "video":
-        allowed = VIDEO_EXPORT_FORMATS
-    elif data_type == "image":
-        allowed = IMAGE_EXPORT_TARGETS | {"voc"}
-    elif data_type == "lidar":
-        allowed = LIDAR_EXPORT_TARGETS
-    else:
-        allowed = ALL_EXPORT_TARGETS
+    allowed = {
+        adapter.descriptor.format_id
+        for adapter in mask_format_registry.list(
+            media_type=data_type,
+            direction="export",
+        )
+    }
     seen: list[str] = []
     for t in targets:
         if t not in allowed:
@@ -398,6 +399,58 @@ def _new_zip_tempfile() -> str:
     return path
 
 
+class ExportQuotaError(ValueError):
+    pass
+
+
+class _QuotaZipFile(zipfile.ZipFile):
+    def _check_entry(self, size_bytes: int) -> None:
+        if len(self.filelist) >= settings.mask_format_max_archive_files:
+            raise ExportQuotaError("resource_budget_exceeded:max_archive_files")
+        if size_bytes > settings.mask_format_max_entry_bytes:
+            raise ExportQuotaError("resource_budget_exceeded:max_entry_bytes")
+
+    def _check_archive(self) -> None:
+        if self.fp is not None:
+            self.fp.flush()
+        if os.path.getsize(self.filename) > settings.mask_format_temp_quota_bytes:
+            raise ExportQuotaError("resource_budget_exceeded:temp_quota_bytes")
+
+    def writestr(self, zinfo_or_arcname, data, compress_type=None, compresslevel=None):
+        size_bytes = len(data.encode("utf-8") if isinstance(data, str) else data)
+        self._check_entry(size_bytes)
+        result = super().writestr(
+            zinfo_or_arcname,
+            data,
+            compress_type=compress_type,
+            compresslevel=compresslevel,
+        )
+        self._check_archive()
+        return result
+
+    def write(self, filename, arcname=None, compress_type=None, compresslevel=None):
+        self._check_entry(os.path.getsize(filename))
+        result = super().write(
+            filename,
+            arcname=arcname,
+            compress_type=compress_type,
+            compresslevel=compresslevel,
+        )
+        self._check_archive()
+        return result
+
+
+def _open_export_zip(path: str) -> _QuotaZipFile:
+    return _QuotaZipFile(path, "w", zipfile.ZIP_DEFLATED)
+
+
+def _export_size(path: str) -> int:
+    size_bytes = os.path.getsize(path)
+    if size_bytes > settings.mask_format_temp_quota_bytes:
+        raise ExportQuotaError("resource_budget_exceeded:temp_quota_bytes")
+    return size_bytes
+
+
 def _safe_unlink(path: str) -> None:
     try:
         os.unlink(path)
@@ -432,9 +485,9 @@ async def build_export_zip(
     tmp_path = _new_zip_tempfile()
     try:
         if project is None:
-            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED):
+            with _open_export_zip(tmp_path):
                 pass
-            return tmp_path, 0, os.path.getsize(tmp_path)
+            return tmp_path, 0, _export_size(tmp_path)
 
         # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
         if project.data_type == "video":
@@ -505,7 +558,7 @@ async def build_export_zip(
             now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
         ).isoformat()
 
-        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        with _open_export_zip(tmp_path) as zf:
             # 共享产物（格式无关）：类别清单 + 属性 schema。
             zf.writestr("classes.txt", "\n".join(classes_list))
             if include_attributes:
@@ -624,7 +677,7 @@ async def build_export_zip(
             if not multi and not has_yolo:
                 zf.writestr("data.yaml", _build_data_yaml(classes_list))
 
-        return tmp_path, file_count, os.path.getsize(tmp_path)
+        return tmp_path, file_count, _export_size(tmp_path)
     except BaseException:
         _safe_unlink(tmp_path)
         raise
@@ -788,7 +841,7 @@ async def _build_lidar_export_zip(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
     ).isoformat()
 
-    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with _open_export_zip(tmp_path) as zf:
         zf.writestr("classes.txt", "\n".join(classes_list))
         if include_attributes:
             zf.writestr(
@@ -942,7 +995,7 @@ async def _build_lidar_export_zip(
                     f"{prefix}category_map.json", category_map_json(classes_list)
                 )
 
-    return tmp_path, file_count, os.path.getsize(tmp_path)
+    return tmp_path, file_count, _export_size(tmp_path)
 
 
 # ── v0.10.31 · Phase 4 视频导出组装 ──────────────────────────────────
@@ -1145,7 +1198,7 @@ async def _build_video_export_zip(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
     ).isoformat()
 
-    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with _open_export_zip(tmp_path) as zf:
         for target in targets:
             prefix = f"{target}/" if multi else ""
             if target == "video_json":
@@ -1490,4 +1543,4 @@ async def _build_video_export_zip(
         if has_frame_sequences:
             zf.writestr("fetch_frames.py", _FETCH_FRAMES_TEMPLATE)
 
-    return tmp_path, file_count or total_tasks, os.path.getsize(tmp_path)
+    return tmp_path, file_count or total_tasks, _export_size(tmp_path)

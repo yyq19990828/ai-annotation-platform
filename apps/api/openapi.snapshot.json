@@ -13698,6 +13698,715 @@
         "title": "MaskFeedbackCompareLocator",
         "type": "object"
       },
+      "MaskFormatCapability": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled_for_ui": {
+            "default": false,
+            "title": "Enabled For Ui",
+            "type": "boolean"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          },
+          "verified": {
+            "default": false,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported"
+        ],
+        "title": "MaskFormatCapability",
+        "type": "object"
+      },
+      "MaskFormatCode": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "MaskFormatCode",
+        "type": "object"
+      },
+      "MaskFormatDescriptorOut": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_version": {
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "export_capability": {
+            "$ref": "#/components/schemas/MaskFormatCapability"
+          },
+          "format_id": {
+            "title": "Format Id",
+            "type": "string"
+          },
+          "import_capability": {
+            "$ref": "#/components/schemas/MaskFormatCapability"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "manifest_version": {
+            "title": "Manifest Version",
+            "type": "string"
+          },
+          "media_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Media Types",
+            "type": "array"
+          },
+          "option_schema": {
+            "additionalProperties": true,
+            "title": "Option Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "format_id",
+          "label",
+          "adapter_version",
+          "manifest_version",
+          "media_types",
+          "import_capability",
+          "export_capability"
+        ],
+        "title": "MaskFormatDescriptorOut",
+        "type": "object"
+      },
+      "MaskFormatExportPreflightRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "axis_frame": {
+            "default": "iso",
+            "enum": [
+              "iso",
+              "source"
+            ],
+            "title": "Axis Frame",
+            "type": "string"
+          },
+          "include_attributes": {
+            "default": true,
+            "title": "Include Attributes",
+            "type": "boolean"
+          },
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          },
+          "video_frame_mode": {
+            "default": "keyframes",
+            "enum": [
+              "keyframes",
+              "all_frames"
+            ],
+            "title": "Video Frame Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "title": "MaskFormatExportPreflightRequest",
+        "type": "object"
+      },
+      "MaskFormatExportPreflightResponse": {
+        "properties": {
+          "estimated_bytes": {
+            "minimum": 0.0,
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "estimated_files": {
+            "minimum": 0.0,
+            "title": "Estimated Files",
+            "type": "integer"
+          },
+          "estimated_objects": {
+            "minimum": 0.0,
+            "title": "Estimated Objects",
+            "type": "integer"
+          },
+          "loss_class": {
+            "enum": [
+              "lossless",
+              "lossy",
+              "unsupported"
+            ],
+            "title": "Loss Class",
+            "type": "string"
+          },
+          "losses": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Losses",
+            "type": "array"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatPlan"
+            },
+            "title": "Plans",
+            "type": "array"
+          },
+          "preflight_digest": {
+            "title": "Preflight Digest",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plans",
+          "loss_class",
+          "estimated_objects",
+          "estimated_files",
+          "estimated_bytes",
+          "preflight_digest"
+        ],
+        "title": "MaskFormatExportPreflightResponse",
+        "type": "object"
+      },
+      "MaskFormatImportBatchOut": {
+        "properties": {
+          "adapter_version": {
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "async_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Async Job Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "format_id": {
+            "title": "Format Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "manifest_version": {
+            "title": "Manifest Version",
+            "type": "string"
+          },
+          "plan_digest": {
+            "title": "Plan Digest",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "receipt_expires_at": {
+            "format": "date-time",
+            "title": "Receipt Expires At",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "staged_sha256": {
+            "title": "Staged Sha256",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "async_job_id",
+          "format_id",
+          "adapter_version",
+          "manifest_version",
+          "staged_sha256",
+          "plan_digest",
+          "status",
+          "result",
+          "receipt_expires_at",
+          "created_at",
+          "updated_at",
+          "completed_at"
+        ],
+        "title": "MaskFormatImportBatchOut",
+        "type": "object"
+      },
+      "MaskFormatImportExecuteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_lossy": {
+            "default": false,
+            "title": "Confirm Lossy",
+            "type": "boolean"
+          },
+          "plan_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Digest",
+            "type": "string"
+          },
+          "receipt": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Receipt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt",
+          "plan_digest"
+        ],
+        "title": "MaskFormatImportExecuteRequest",
+        "type": "object"
+      },
+      "MaskFormatImportPreflightRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "format_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Format Id",
+            "type": "string"
+          },
+          "mapping": {
+            "additionalProperties": true,
+            "title": "Mapping",
+            "type": "object"
+          },
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          },
+          "staged_object_key": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Staged Object Key",
+            "type": "string"
+          },
+          "staged_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Staged Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format_id",
+          "staged_object_key",
+          "staged_sha256"
+        ],
+        "title": "MaskFormatImportPreflightRequest",
+        "type": "object"
+      },
+      "MaskFormatImportPreflightResponse": {
+        "properties": {
+          "import_id": {
+            "format": "uuid",
+            "title": "Import Id",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/MaskFormatPlan"
+          },
+          "receipt": {
+            "title": "Receipt",
+            "type": "string"
+          },
+          "receipt_expires_at": {
+            "format": "date-time",
+            "title": "Receipt Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "receipt",
+          "receipt_expires_at",
+          "plan"
+        ],
+        "title": "MaskFormatImportPreflightResponse",
+        "type": "object"
+      },
+      "MaskFormatPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_version": {
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "import",
+              "export"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "estimated_bytes": {
+            "minimum": 0.0,
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "estimated_files": {
+            "minimum": 0.0,
+            "title": "Estimated Files",
+            "type": "integer"
+          },
+          "estimated_objects": {
+            "minimum": 0.0,
+            "title": "Estimated Objects",
+            "type": "integer"
+          },
+          "format_id": {
+            "title": "Format Id",
+            "type": "string"
+          },
+          "frame_mapping": {
+            "additionalProperties": true,
+            "title": "Frame Mapping",
+            "type": "object"
+          },
+          "id_mapping": {
+            "additionalProperties": true,
+            "title": "Id Mapping",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatPlanItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "loss_class": {
+            "enum": [
+              "lossless",
+              "lossy",
+              "unsupported"
+            ],
+            "title": "Loss Class",
+            "type": "string"
+          },
+          "losses": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Losses",
+            "type": "array"
+          },
+          "manifest_version": {
+            "title": "Manifest Version",
+            "type": "string"
+          },
+          "mapping_digest": {
+            "title": "Mapping Digest",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "options_digest": {
+            "title": "Options Digest",
+            "type": "string"
+          },
+          "overlap_conflicts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Overlap Conflicts",
+            "type": "array"
+          },
+          "plan_digest": {
+            "title": "Plan Digest",
+            "type": "string"
+          },
+          "size_conflicts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Size Conflicts",
+            "type": "array"
+          },
+          "skips": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Skips",
+            "type": "array"
+          },
+          "staged_object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staged Object Key"
+          },
+          "staged_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staged Sha256"
+          },
+          "unknown_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unknown Labels",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format_id",
+          "direction",
+          "adapter_version",
+          "manifest_version",
+          "media_type",
+          "loss_class",
+          "mapping_digest",
+          "options_digest",
+          "estimated_objects",
+          "estimated_files",
+          "estimated_bytes",
+          "plan_digest"
+        ],
+        "title": "MaskFormatPlan",
+        "type": "object"
+      },
+      "MaskFormatPlanItem": {
+        "additionalProperties": false,
+        "properties": {
+          "estimated_bytes": {
+            "minimum": 0.0,
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "estimated_files": {
+            "minimum": 0.0,
+            "title": "Estimated Files",
+            "type": "integer"
+          },
+          "estimated_objects": {
+            "minimum": 0.0,
+            "title": "Estimated Objects",
+            "type": "integer"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "loss_class": {
+            "enum": [
+              "lossless",
+              "lossy",
+              "unsupported"
+            ],
+            "title": "Loss Class",
+            "type": "string"
+          },
+          "losses": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Losses",
+            "type": "array"
+          },
+          "media_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Path"
+          },
+          "skips": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Skips",
+            "type": "array"
+          },
+          "source_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Index"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/MaskFormatCode"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item_id",
+          "loss_class",
+          "estimated_objects",
+          "estimated_files",
+          "estimated_bytes"
+        ],
+        "title": "MaskFormatPlanItem",
+        "type": "object"
+      },
+      "MaskFormatUploadInitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "default": "application/octet-stream",
+            "maxLength": 255,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name"
+        ],
+        "title": "MaskFormatUploadInitRequest",
+        "type": "object"
+      },
+      "MaskFormatUploadInitResponse": {
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "object_key": {
+            "title": "Object Key",
+            "type": "string"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_key",
+          "upload_url",
+          "expires_in"
+        ],
+        "title": "MaskFormatUploadInitResponse",
+        "type": "object"
+      },
       "MaskLineageEdgeOut": {
         "properties": {
           "frame_index": {
@@ -40729,6 +41438,406 @@
         "summary": "Guide Asset Upload Init",
         "tags": [
           "guide-assets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats": {
+      "get": {
+        "operationId": "list_mask_formats_api_v1_projects__project_id__mask_formats_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MaskFormatDescriptorOut"
+                  },
+                  "title": "Response List Mask Formats Api V1 Projects  Project Id  Mask Formats Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mask Formats",
+        "tags": [
+          "mask-formats"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats/exports:preflight": {
+      "post": {
+        "operationId": "preflight_mask_format_export_api_v1_projects__project_id__mask_formats_exports_preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskFormatExportPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskFormatExportPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preflight Mask Format Export",
+        "tags": [
+          "mask-formats"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats/imports": {
+      "post": {
+        "operationId": "execute_mask_format_import_api_v1_projects__project_id__mask_formats_imports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskFormatImportExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskFormatImportBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Mask Format Import",
+        "tags": [
+          "mask-formats"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats/imports/{import_id}": {
+      "get": {
+        "operationId": "get_mask_format_import_api_v1_projects__project_id__mask_formats_imports__import_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskFormatImportBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Mask Format Import",
+        "tags": [
+          "mask-formats"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats/imports/{import_id}/resume": {
+      "post": {
+        "operationId": "resume_mask_format_import_api_v1_projects__project_id__mask_formats_imports__import_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskFormatImportBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resume Mask Format Import",
+        "tags": [
+          "mask-formats"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats/imports:preflight": {
+      "post": {
+        "operationId": "preflight_mask_format_import_api_v1_projects__project_id__mask_formats_imports_preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskFormatImportPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskFormatImportPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preflight Mask Format Import",
+        "tags": [
+          "mask-formats"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-formats/imports:upload-init": {
+      "post": {
+        "operationId": "init_mask_format_upload_api_v1_projects__project_id__mask_formats_imports_upload_init_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskFormatUploadInitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskFormatUploadInitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Init Mask Format Upload",
+        "tags": [
+          "mask-formats"
         ]
       }
     },

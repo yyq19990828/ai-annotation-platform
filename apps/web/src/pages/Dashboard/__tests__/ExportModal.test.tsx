@@ -17,8 +17,59 @@ vi.mock("@/api/projects", () => ({
     exportProject: vi.fn(async () => ({ job_id: "j1" })),
   },
 }));
+vi.mock("@/api/maskFormats", () => ({
+  maskFormatsApi: {
+    preflightExport: vi.fn(),
+  },
+}));
 
 import { projectsApi } from "@/api/projects";
+import { maskFormatsApi } from "@/api/maskFormats";
+
+function preflight(
+  lossClass: "lossless" | "lossy" | "unsupported" = "lossless",
+  lossCode?: string,
+) {
+  const losses = lossCode
+    ? [{ code: lossCode, message: "格式损失说明", detail: {} }]
+    : [];
+  return {
+    plans: [
+      {
+        format_id: "coco",
+        direction: "export" as const,
+        adapter_version: "1.0.0",
+        manifest_version: "1",
+        media_type: "image",
+        loss_class: lossClass,
+        staged_object_key: null,
+        staged_sha256: null,
+        mapping_digest: "a".repeat(64),
+        options_digest: "b".repeat(64),
+        items: [],
+        unknown_labels: [],
+        size_conflicts: [],
+        overlap_conflicts: [],
+        id_mapping: {},
+        frame_mapping: {},
+        estimated_objects: 2,
+        estimated_files: 1,
+        estimated_bytes: 128,
+        losses,
+        skips: [],
+        warnings: [],
+        plan_digest: "c".repeat(64),
+      },
+    ],
+    loss_class: lossClass,
+    estimated_objects: 2,
+    estimated_files: 1,
+    estimated_bytes: 128,
+    losses,
+    warnings: [],
+    preflight_digest: "d".repeat(64),
+  };
+}
 
 // 受控 harness：导出完成回调把 open 置 false，便于断言弹窗关闭。
 function ExportModalHarness({
@@ -46,6 +97,8 @@ function submitExport() {
 describe("ExportModal", () => {
   beforeEach(() => {
     vi.mocked(projectsApi.exportProject).mockClear();
+    vi.mocked(maskFormatsApi.preflightExport).mockReset();
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight());
   });
 
   it("默认 coco + 勾选 → targets=[coco], includeAttributes=true", async () => {
@@ -200,5 +253,33 @@ describe("ExportModal", () => {
       ["aap_json", "kitti", "nuscenes", "pointmask"],
       { includeAttributes: true },
     );
+  });
+
+  it("有损预检显示稳定 code，确认前不入队", async () => {
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(
+      preflight("lossy", "unknown_future_loss"),
+    );
+    render(<ExportModalHarness projectId="p-lossy" />);
+
+    submitExport();
+    await screen.findByTestId("mask-format-preflight");
+    expect(screen.getByText("unknown_future_loss")).toBeInTheDocument();
+    expect(projectsApi.exportProject).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText("我已了解以上格式损失，继续导出"));
+    submitExport();
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalledOnce());
+  });
+
+  it("unsupported 预检阻止导出", async () => {
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(
+      preflight("unsupported"),
+    );
+    render(<ExportModalHarness projectId="p-unsupported" />);
+
+    submitExport();
+    await screen.findByText("预检阻止 · 不支持");
+    expect(projectsApi.exportProject).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "开始导出" })).toBeDisabled();
   });
 });

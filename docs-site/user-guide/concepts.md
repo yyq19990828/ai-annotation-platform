@@ -63,6 +63,10 @@ Job 的 `kind` 完整列表：
 | `dataset_import` | 数据集（连接器）导入 |
 | `create_tasks` | 建任务（大数据集关联） |
 | `audit_archive` | 审计日志月分区归档 |
+| `mask_qc` | Mask 质检 |
+| `mask_repair` | Mask 批量修复 |
+| `mask_repair_rollback` | Mask 修复回滚 |
+| `mask_format_import` | Mask 格式导入 |
 
 ## 状态流转速查
 

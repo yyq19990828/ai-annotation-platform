@@ -28,6 +28,7 @@ TERMINAL_NOTIFY_KINDS = {
     "mask_qc",
     "mask_repair",
     "mask_repair_rollback",
+    "mask_format_import",
 }
 
 _STATUS_TO_TYPE = {
@@ -61,6 +62,9 @@ _PAYLOAD_SUMMARY_KEYS = (
     "retain_months",
     "source_snapshot_digest",
     "mask_repair_batch_id",
+    "mask_format_import_id",
+    "staged_sha256",
+    "plan_digest",
 )
 
 _RESULT_SUMMARY_KEYS = (

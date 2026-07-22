@@ -77,6 +77,10 @@ const JOB_KIND_LABEL: Record<string, string> = {
   dataset_import: "数据集导入",
   create_tasks: "建任务",
   audit_archive: "审计归档",
+  mask_qc: "Mask 质检",
+  mask_repair: "Mask 批量修复",
+  mask_repair_rollback: "Mask 修复回滚",
+  mask_format_import: "Mask 格式导入",
 };
 
 function stringValue(value: unknown): string {
@@ -111,6 +115,9 @@ function jobTitle(item: NotificationItem): string {
   }
   if (kind === "dataset_import") {
     return stringValue((payload as { dataset_name?: unknown }).dataset_name);
+  }
+  if (kind === "mask_format_import") {
+    return stringValue((payload as { format?: unknown }).format).toUpperCase();
   }
   return "";
 }
