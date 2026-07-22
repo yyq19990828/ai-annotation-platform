@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CocoRleMaskRef } from "@/types";
 import type { CocoRle } from "./geometry/maskRle";
 import { analyzeRasterMaskRleAsync, RasterMaskWorkerError } from "./rasterMaskCompute";
+import type { RasterMaskWorkerPool, RasterMaskWorkerPriority } from "./rasterMaskWorkerPool";
 import {
   closeRasterMaskImage,
   createTintedRasterMaskImage,
@@ -130,6 +131,8 @@ export interface UseRasterMaskRecordsOptions<TSource extends string = string> {
   maxCachedRecords?: number;
   /** Test/SSR override; omitted values read `navigator.deviceMemory`, then fall back to Standard. */
   deviceMemory?: number | null;
+  /** Task-scoped shared pool; omitted tests retain the explicit synchronous fallback. */
+  workerPool?: RasterMaskWorkerPool;
 }
 
 export interface RasterMaskResourceCounters {
@@ -220,6 +223,15 @@ function descriptorPriority(descriptor: RasterMaskRecordDescriptor): number {
   if (descriptor.selected) return 1;
   if (descriptor.loadPriority === "prefetch") return 3;
   return 2;
+}
+
+function descriptorWorkerPriority(
+  descriptor: RasterMaskRecordDescriptor,
+): RasterMaskWorkerPriority {
+  if (descriptor.loadPriority === "editing") return "editing";
+  if (descriptor.selected) return "selected";
+  if (descriptor.loadPriority === "prefetch") return "prefetch";
+  return "current";
 }
 
 function loadRleSingleFlight(descriptor: RasterMaskRecordDescriptor): Promise<CocoRle> {
@@ -357,7 +369,7 @@ function toRenderRecord<TSource extends string>(
 export function useRasterMaskRecords<TSource extends string = string>(
   options: UseRasterMaskRecordsOptions<TSource>,
 ): UseRasterMaskRecordsResult<TSource> {
-  const { scopeKey, descriptors } = options;
+  const { scopeKey, descriptors, workerPool } = options;
   const deviceBudget = rasterMaskDeviceBudget(
     options.deviceMemory === undefined ? navigatorDeviceMemory() : options.deviceMemory,
   );
@@ -537,7 +549,10 @@ export function useRasterMaskRecords<TSource extends string = string>(
         }
         let analysis: RasterMaskAnalysis;
         try {
-          analysis = await analyzeRasterMaskRleAsync(rle);
+          analysis = await analyzeRasterMaskRleAsync(rle, {
+            ...(workerPool ? { pool: workerPool } : {}),
+            priority: descriptorWorkerPriority(job.descriptor),
+          });
           if (analysis.area === 0) {
             throw new InvalidRasterMaskContentError("mask content has no foreground pixels");
           }
@@ -663,7 +678,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
         pumpRef.current();
       }
     })();
-  }, [disposeCached, disposeImage, isCurrentJob, markDeferred, pinnedCacheKeys, publish, reserveAdmission, reservedBytesNow, trackImage]);
+  }, [disposeCached, disposeImage, isCurrentJob, markDeferred, pinnedCacheKeys, publish, reserveAdmission, reservedBytesNow, trackImage, workerPool]);
 
   pumpRef.current = () => {
     while (

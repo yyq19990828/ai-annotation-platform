@@ -11,243 +11,144 @@ import {
   type MaskInstanceOperationSpec,
 } from "./geometry/maskInstanceOperations";
 import { analyzeRasterMaskAlpha, type RasterMaskAnalysis } from "./rasterMaskRender";
+import type { RasterMaskOperationContext } from "./rasterMaskWorkerProtocol";
+import {
+  RasterMaskWorkerPool,
+  type RasterMaskWorkerFactory,
+  type RasterMaskWorkerPriority,
+  RasterMaskWorkerCancelledError,
+  RasterMaskWorkerError,
+  RasterMaskWorkerQueueFullError,
+  RasterMaskWorkerTimeoutError,
+} from "./rasterMaskWorkerPool";
 
-export interface RasterMaskOperationContext {
-  sessionId: string;
-  generation: number;
-  operationId: number;
-}
-
-type AnalysisWorkerRequest = { kind: "analyze"; id: number; rle: CocoRle };
-type OperationWorkerRequest = {
-  kind: "operation";
-  id: number;
-  rle: CocoRle;
-  operation: MaskOperationSpec;
-  context: RasterMaskOperationContext;
+export type { RasterMaskOperationContext } from "./rasterMaskWorkerProtocol";
+export {
+  RasterMaskWorkerCancelledError,
+  RasterMaskWorkerError,
+  RasterMaskWorkerQueueFullError,
+  RasterMaskWorkerTimeoutError,
 };
-type InstanceOperationWorkerRequest = {
-  kind: "instance_operation";
-  id: number;
-  rle: CocoRle;
-  operation: MaskInstanceOperationSpec;
-  context: RasterMaskOperationContext;
-};
-export type RasterMaskWorkerRequest =
-  | AnalysisWorkerRequest
-  | OperationWorkerRequest
-  | InstanceOperationWorkerRequest;
 
-type RasterMaskWorkerResponse =
-  | { kind: "analyze"; id: number; ok: true; analysis: RasterMaskAnalysis }
-  | { kind: "operation"; id: number; ok: true; context: RasterMaskOperationContext; result: MaskOperationResult }
-  | {
-      kind: "instance_operation";
-      id: number;
-      ok: true;
-      context: RasterMaskOperationContext;
-      plan: MaskInstanceOperationPlan | null;
-    }
-  | { kind: "analyze" | "operation" | "instance_operation"; id: number; ok: false; error: string };
-
-type WorkerFactory = () => Worker;
-
-export class RasterMaskWorkerError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RasterMaskWorkerError";
-  }
+interface RasterMaskComputeOptions {
+  pool?: RasterMaskWorkerPool;
+  createWorker?: RasterMaskWorkerFactory | null;
+  priority?: RasterMaskWorkerPriority;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
-export class RasterMaskWorkerCancelledError extends Error {
-  constructor() {
-    super("Raster Mask operation was cancelled");
-    this.name = "RasterMaskWorkerCancelledError";
-  }
-}
-
-function createDefaultWorker(): Worker {
-  return new Worker(new URL("./rasterMask.worker.ts", import.meta.url), { type: "module" });
-}
+let defaultPool: RasterMaskWorkerPool | null = null;
 
 function analyzeSynchronously(rle: CocoRle): RasterMaskAnalysis {
   const [height, width] = rle.size;
   return analyzeRasterMaskAlpha(decodeCocoRle(rle), width, height);
 }
 
+function shouldUseSynchronousFallback(options: RasterMaskComputeOptions): boolean {
+  return options.createWorker === null
+    || (
+      !options.pool
+      && options.createWorker === undefined
+      && typeof Worker === "undefined"
+      && import.meta.env.MODE === "test"
+    );
+}
+
+function workerPoolFor(options: RasterMaskComputeOptions): {
+  pool: RasterMaskWorkerPool;
+  dispose: boolean;
+} {
+  if (options.pool) return { pool: options.pool, dispose: false };
+  if (options.createWorker) {
+    return {
+      pool: new RasterMaskWorkerPool({ size: 1, createWorker: options.createWorker }),
+      dispose: true,
+    };
+  }
+  if (typeof Worker === "undefined") {
+    throw new RasterMaskWorkerError("Raster Mask Worker is unavailable");
+  }
+  defaultPool ??= new RasterMaskWorkerPool();
+  return { pool: defaultPool, dispose: false };
+}
+
+async function withWorkerPool<T>(
+  options: RasterMaskComputeOptions,
+  run: (pool: RasterMaskWorkerPool) => Promise<T>,
+): Promise<T> {
+  let selected: { pool: RasterMaskWorkerPool; dispose: boolean };
+  try {
+    selected = workerPoolFor(options);
+  } catch (error) {
+    throw error instanceof RasterMaskWorkerError
+      ? error
+      : new RasterMaskWorkerError(String(error));
+  }
+  try {
+    return await run(selected.pool);
+  } finally {
+    if (selected.dispose) selected.pool.dispose();
+  }
+}
+
+export function disposeDefaultRasterMaskWorkerPool(): void {
+  defaultPool?.dispose();
+  defaultPool = null;
+}
+
 /** Decode and analyze an RLE outside the UI thread. */
 export function analyzeRasterMaskRleAsync(
   rle: CocoRle,
-  options: { createWorker?: WorkerFactory | null } = {},
+  options: RasterMaskComputeOptions = {},
 ): Promise<RasterMaskAnalysis> {
-  const explicitFallback = options.createWorker === null;
-  if (
-    explicitFallback
-    || (typeof Worker === "undefined" && options.createWorker === undefined && import.meta.env.MODE === "test")
-  ) {
-    return Promise.resolve(analyzeSynchronously(rle));
-  }
-  if (typeof Worker === "undefined" && options.createWorker === undefined) {
-    return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker is unavailable"));
-  }
-
-  let worker: Worker;
-  try {
-    worker = (options.createWorker ?? createDefaultWorker)();
-  } catch (error) {
-    return Promise.reject(new RasterMaskWorkerError(String(error)));
-  }
-  const id = 1;
-  return new Promise<RasterMaskAnalysis>((resolve, reject) => {
-    const dispose = () => worker.terminate();
-    worker.onmessage = (event: MessageEvent<RasterMaskWorkerResponse>) => {
-      if (event.data.id !== id || event.data.kind !== "analyze") return;
-      dispose();
-      if (event.data.ok) resolve(event.data.analysis);
-      else reject(new Error(event.data.error));
-    };
-    worker.onerror = (event) => {
-      dispose();
-      reject(new RasterMaskWorkerError(event.message || "Raster Mask Worker failed"));
-    };
-    const request: AnalysisWorkerRequest = { kind: "analyze", id, rle };
-    try {
-      worker.postMessage(request);
-    } catch (error) {
-      dispose();
-      reject(new RasterMaskWorkerError(String(error)));
-    }
-  });
+  if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
+  if (shouldUseSynchronousFallback(options)) return Promise.resolve(analyzeSynchronously(rle));
+  return withWorkerPool(options, (pool) => pool.analyze(rle, {
+    priority: options.priority,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  }));
 }
 
 export function executeRasterMaskOperationAsync(
   rle: CocoRle,
   operation: MaskOperationSpec,
   context: RasterMaskOperationContext,
-  options: { createWorker?: WorkerFactory | null; signal?: AbortSignal } = {},
+  options: RasterMaskComputeOptions = {},
 ): Promise<{ context: RasterMaskOperationContext; result: MaskOperationResult }> {
   if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
-  const explicitFallback = options.createWorker === null;
-  if (
-    explicitFallback
-    || (typeof Worker === "undefined" && options.createWorker === undefined && import.meta.env.MODE === "test")
-  ) {
+  if (shouldUseSynchronousFallback(options)) {
     const [height, width] = rle.size;
     return Promise.resolve({
       context,
       result: applyMaskOperation(decodeCocoRle(rle), width, height, operation),
     });
   }
-  if (typeof Worker === "undefined" && options.createWorker === undefined) {
-    return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker is unavailable"));
-  }
-
-  let worker: Worker;
-  try {
-    worker = (options.createWorker ?? createDefaultWorker)();
-  } catch (error) {
-    return Promise.reject(new RasterMaskWorkerError(String(error)));
-  }
-  const id = context.operationId;
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const dispose = () => {
-      options.signal?.removeEventListener("abort", abort);
-      worker.terminate();
-    };
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      dispose();
-      callback();
-    };
-    const abort = () => finish(() => reject(new RasterMaskWorkerCancelledError()));
-    options.signal?.addEventListener("abort", abort, { once: true });
-    worker.onmessage = (event: MessageEvent<RasterMaskWorkerResponse>) => {
-      const response = event.data;
-      if (response.id !== id || response.kind !== "operation") return;
-      finish(() => {
-        if (response.ok) resolve({ context: response.context, result: response.result });
-        else reject(new Error(response.error));
-      });
-    };
-    worker.onerror = (event) => {
-      finish(() => reject(new RasterMaskWorkerError(event.message || "Raster Mask Worker failed")));
-    };
-    const request: OperationWorkerRequest = { kind: "operation", id, rle, operation, context };
-    try {
-      worker.postMessage(request);
-    } catch (error) {
-      finish(() => reject(new RasterMaskWorkerError(String(error))));
-    }
-  });
+  return withWorkerPool(options, (pool) => pool.executeOperation(rle, operation, context, {
+    priority: options.priority,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  }));
 }
 
 export function executeRasterMaskInstanceOperationAsync(
   rle: CocoRle,
   operation: MaskInstanceOperationSpec,
   context: RasterMaskOperationContext,
-  options: { createWorker?: WorkerFactory | null; signal?: AbortSignal } = {},
+  options: RasterMaskComputeOptions = {},
 ): Promise<{ context: RasterMaskOperationContext; plan: MaskInstanceOperationPlan | null }> {
   if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
-  const explicitFallback = options.createWorker === null;
-  if (
-    explicitFallback
-    || (typeof Worker === "undefined" && options.createWorker === undefined && import.meta.env.MODE === "test")
-  ) {
+  if (shouldUseSynchronousFallback(options)) {
     const [height, width] = rle.size;
     return Promise.resolve({
       context,
       plan: applyMaskInstanceOperation(decodeCocoRle(rle), width, height, operation),
     });
   }
-  if (typeof Worker === "undefined" && options.createWorker === undefined) {
-    return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker is unavailable"));
-  }
-
-  let worker: Worker;
-  try {
-    worker = (options.createWorker ?? createDefaultWorker)();
-  } catch (error) {
-    return Promise.reject(new RasterMaskWorkerError(String(error)));
-  }
-  const id = context.operationId;
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const dispose = () => {
-      options.signal?.removeEventListener("abort", abort);
-      worker.terminate();
-    };
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      dispose();
-      callback();
-    };
-    const abort = () => finish(() => reject(new RasterMaskWorkerCancelledError()));
-    options.signal?.addEventListener("abort", abort, { once: true });
-    worker.onmessage = (event: MessageEvent<RasterMaskWorkerResponse>) => {
-      const response = event.data;
-      if (response.id !== id || response.kind !== "instance_operation") return;
-      finish(() => {
-        if (response.ok) resolve({ context: response.context, plan: response.plan });
-        else reject(new Error(response.error));
-      });
-    };
-    worker.onerror = (event) => {
-      finish(() => reject(new RasterMaskWorkerError(event.message || "Raster Mask Worker failed")));
-    };
-    const request: InstanceOperationWorkerRequest = {
-      kind: "instance_operation",
-      id,
-      rle,
-      operation,
-      context,
-    };
-    try {
-      worker.postMessage(request);
-    } catch (error) {
-      finish(() => reject(new RasterMaskWorkerError(String(error))));
-    }
-  });
+  return withWorkerPool(options, (pool) => pool.executeInstanceOperation(rle, operation, context, {
+    priority: options.priority,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  }));
 }

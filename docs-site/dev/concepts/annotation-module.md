@@ -132,6 +132,13 @@ graph TD
 状态。同一 SHA-256 的并发内容请求 single-flight。单对象的完整 crop 超预算时保留不超过约一百万像素的
 preview 与 canonical RLE，显示使用 preview，命中按 RLE column-major run 精确查询。
 
+Mask 内容分析与大图操作共享任务级 `RasterMaskWorkerPool`。Low 档位创建 1 个 slot，其余档位创建 2 个；
+等待队列最多 32 项，优先级依次为正在编辑、selected、当前内容、预取。同一 slot 连续处理多个 job，输入
+counts 在主线程边界复制为 `Uint32Array` 后转移所有权，分析 crop alpha、操作结果和实例计划再以
+transferable buffer 返回。分析默认 15 秒、普通操作 30 秒、tile merge 60 秒；运行中取消、超时或 crash
+只终止并补充对应 Worker，其他 slot 继续。pool 按 task 创建，切题或卸载时 dispose，队列、session run
+index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误，不在主线程静默执行大操作。
+
 ### 原子多对象 Mask 操作
 
 split / component copy / keyframe copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和

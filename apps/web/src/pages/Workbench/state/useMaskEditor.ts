@@ -21,6 +21,7 @@ import {
   executeRasterMaskOperationAsync,
   RasterMaskWorkerCancelledError,
 } from "../stage/shared/rasterMaskCompute";
+import type { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
 import type { MaskEditorPhase } from "./canEditMask";
 
 export type MaskMode = "brush" | "erase";
@@ -67,6 +68,7 @@ export interface UseMaskEditorOptions {
   width: number;
   height: number;
   initialRadius?: number;
+  workerPool?: RasterMaskWorkerPool;
 }
 
 export interface UseMaskEditorReturn {
@@ -150,6 +152,7 @@ export function useMaskEditor({
   width,
   height,
   initialRadius = MASK_BRUSH_DEFAULT_PX,
+  workerPool,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
   const bufferRef = useRef<MaskBuffer | null>(null);
   const strokeBeforeRef = useRef<CocoRle | null>(null);
@@ -367,7 +370,11 @@ export function useMaskEditor({
             rle,
             operation,
             { ...context, operationId },
-            { signal: controller.signal },
+            {
+              ...(workerPool ? { pool: workerPool } : {}),
+              priority: "editing",
+              signal: controller.signal,
+            },
           )).result
         : applyMaskOperation(current.data, width, height, operation);
       if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
@@ -387,7 +394,7 @@ export function useMaskEditor({
       setOperationStatus("error");
       return false;
     }
-  }, [cancelActiveOperation, height, previewOperation, width]);
+  }, [cancelActiveOperation, height, previewOperation, width, workerPool]);
 
   const previewInstanceOperation = useCallback((
     name: string,
@@ -438,7 +445,11 @@ export function useMaskEditor({
             rle,
             operation,
             { ...context, operationId },
-            { signal: controller.signal },
+            {
+              ...(workerPool ? { pool: workerPool } : {}),
+              priority: "editing",
+              signal: controller.signal,
+            },
           )).plan
         : applyMaskInstanceOperation(current.data, width, height, operation);
       if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
@@ -462,7 +473,7 @@ export function useMaskEditor({
       setOperationStatus("error");
       return false;
     }
-  }, [cancelActiveOperation, height, previewInstanceOperation, width]);
+  }, [cancelActiveOperation, height, previewInstanceOperation, width, workerPool]);
 
   const confirmOperation = useCallback((): boolean => {
     if (instanceOperationPreviewRef.current) return false;
