@@ -135,6 +135,7 @@ describe("ImageSelectionCardContent", () => {
           holeCount: 1,
           boundaryPixelCount: 12,
           bounds: { x: 0.1, y: 0.2, w: 0.5, h: 0.4 },
+          preview: false,
         }}
       />,
     );
@@ -189,6 +190,48 @@ describe("ImageSelectionCardContent", () => {
       message: "Mask object is missing",
       httpStatus: 409,
     }));
+  });
+
+  it("raster_mask 预算延后状态可从选中卡重试", () => {
+    const onRetry = vi.fn();
+    const { getByRole, getByLabelText } = render(
+      <ImageSelectionCardContent
+        annotation={makeAnnotation({
+          geometry: {
+            type: "raster_mask",
+            mask: {
+              encoding: "coco_rle_ref",
+              size: [10, 20],
+              object_key: "raster-masks/sha256/aa/bb/digest.json",
+              sha256: "a".repeat(64),
+              runs: 4,
+              bytes: 32,
+            },
+          },
+        })}
+        imageWidth={20}
+        imageHeight={10}
+        attributeSchema={undefined}
+        readOnly={false}
+        onChangeClass={noop}
+        onToggleFlag={noop}
+        onDelete={noop}
+        onUpdateAttributes={noop}
+        onRetryRasterMask={onRetry}
+        rasterMaskStatus={{
+          state: "deferred",
+          reason: "budget_exceeded",
+          message: "Mask 已因当前缓存预算延后",
+          retryable: true,
+          requiredBytes: 2048,
+          budgetBytes: 1024,
+        }}
+      />,
+    );
+
+    expect(getByRole("status").textContent).toContain("budget_exceeded：Mask 已因当前缓存预算延后");
+    fireEvent.click(getByLabelText("重试 Mask 内容"));
+    expect(onRetry).toHaveBeenCalledWith("anno-1");
   });
 
   it("改类 / 锁定 / 删除 回调透传正确参数", () => {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { encodeCocoRle } from "./geometry/maskRle";
 import {
   analyzeRasterMaskAlpha,
   pickTopRasterMaskAt,
+  rasterMaskPreviewDimensions,
   rasterMaskAlphaBounds,
 } from "./rasterMaskRender";
 
@@ -136,5 +138,34 @@ describe("pickTopRasterMaskAt", () => {
 
     expect(pickTopRasterMaskAt([first, later], { x: 0.5, y: 0.5 })?.id).toBe("later");
     expect(pickTopRasterMaskAt([later, first], { x: 0.5, y: 0.5 })?.id).toBe("first");
+  });
+
+  it("uses retained RLE truth instead of an empty preview crop", () => {
+    const pixels = alpha([
+      [1, 0],
+      [0, 1],
+    ]);
+    const target = {
+      id: "preview",
+      zOrder: 1,
+      sourceWidth: 2,
+      sourceHeight: 2,
+      crop: { x: 0, y: 0, width: 2, height: 2, alpha: new Uint8Array() },
+      rle: encodeCocoRle(pixels, 2, 2),
+    };
+
+    expect(pickTopRasterMaskAt([target], { x: 0.1, y: 0.1 })?.id).toBe("preview");
+    expect(pickTopRasterMaskAt([target], { x: 0.9, y: 0.1 })).toBeNull();
+  });
+});
+
+describe("rasterMaskPreviewDimensions", () => {
+  it("keeps aspect ratio within a hard pixel budget", () => {
+    expect(rasterMaskPreviewDimensions(4000, 2000, 1_000_000)).toEqual({
+      width: 1414,
+      height: 707,
+    });
+    expect(rasterMaskPreviewDimensions(1, 4096, 400)).toEqual({ width: 1, height: 400 });
+    expect(rasterMaskPreviewDimensions(20, 10, 1_000)).toEqual({ width: 20, height: 10 });
   });
 });

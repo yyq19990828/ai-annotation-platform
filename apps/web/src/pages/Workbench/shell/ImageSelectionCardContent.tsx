@@ -93,7 +93,8 @@ export function ImageSelectionCardContent({
             <span>Mask 内容加载中…</span>
           ) : rasterMaskStatus.state === "ready" ? (
             <span>
-              已按真实像素渲染 · {rasterMaskStatus.area} px · {rasterMaskStatus.componentCount} 个组件
+              {rasterMaskStatus.preview ? "受限预览、按原始 RLE 精确命中" : "已按真实像素渲染"}
+              {" "}· {rasterMaskStatus.area} px · {rasterMaskStatus.componentCount} 个组件
               {" "}· {rasterMaskStatus.holeCount} 个孔洞 · {rasterMaskStatus.boundaryPixelCount} 边界像素
               {` · AABB (${rasterMaskStatus.bounds.x.toFixed(3)}, ${rasterMaskStatus.bounds.y.toFixed(3)}, ${rasterMaskStatus.bounds.w.toFixed(3)}, ${rasterMaskStatus.bounds.h.toFixed(3)})`}
             </span>

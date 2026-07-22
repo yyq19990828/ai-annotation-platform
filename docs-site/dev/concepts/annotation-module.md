@@ -126,6 +126,12 @@ graph TD
 
 图片工作台通过受任务权限保护的 `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力，不在浏览器复制环境变量。原生写入需同时通过部署总闸、项目 opt-in、`region` 绑定和任务 / 对象锁。`polygon | multi_polygon | raster_mask` 只能在同一 `region` 工具单元内原位转换；类型转换和 Raster 内容替换必须带最新 `If-Match`，同一事务内同步 `annotation_type` 与 `geometry.type`。
 
+浏览器显示缓存按 `navigator.deviceMemory` 分为 64 / 128 / 192 MiB，缺失时使用 128 MiB；下载并发分别为
+1 / 2 / 4。准入同时计算 crop alpha、bitmap 与保留的 RLE counts，在插入前淘汰未 pin LRU，不能让当前帧
+全部 active 对象绕过硬预算。正在编辑和 selected 对象可 pin；其余对象进入可重试 `budget_exceeded`
+状态。同一 SHA-256 的并发内容请求 single-flight。单对象的完整 crop 超预算时保留不超过约一百万像素的
+preview 与 canonical RLE，显示使用 preview，命中按 RLE column-major run 精确查询。
+
 ### 原子多对象 Mask 操作
 
 split / component copy / keyframe copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和

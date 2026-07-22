@@ -531,9 +531,9 @@ export function ImageStage({
       .map((entry) => entry.b);
   }, [userBoxes]);
   const displayedRasterMaskRecords = rasterMaskRecords;
-  const rasterMaskErrors = useMemo(
+  const rasterMaskIssues = useMemo(
     () => [...rasterMaskStatusById.entries()].flatMap(([id, status]) =>
-      status.state === "error" ? [{ id, status }] : []),
+      status.state === "error" || status.state === "deferred" ? [{ id, status }] : []),
     [rasterMaskStatusById],
   );
   const snapIndex = useMemo(() => {
@@ -2094,13 +2094,13 @@ export function ImageStage({
           />
         ) : null}
       </Stage>
-      {rasterMaskErrors.length > 0 && (
+      {rasterMaskIssues.length > 0 && (
         <div
           className="pointer-events-auto absolute right-3 top-3 z-popover max-w-80 rounded-md border border-border bg-card p-2 text-xs text-foreground shadow-md"
           role="status"
-          aria-label="Mask 加载错误"
+          aria-label="Mask 加载状态"
         >
-          {rasterMaskErrors.map(({ id, status }) => (
+          {rasterMaskIssues.map(({ id, status }) => (
             <div key={id} className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate">
                 {userBoxes.find((annotation) => annotation.id === id)?.cls ?? id}：{status.message}

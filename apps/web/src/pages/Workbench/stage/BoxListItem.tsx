@@ -212,7 +212,7 @@ export function BoxListItem({
       : rasterMaskStatus.state === "ready"
         ? {
             label: baseToolMeta.label,
-            detail: `${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · ${rasterMaskStatus.holeCount} 孔洞 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
+            detail: `${rasterMaskStatus.preview ? "受限预览 · 精确像素命中 · " : ""}${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · ${rasterMaskStatus.holeCount} 孔洞 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
           }
         : {
             label: baseToolMeta.label,
@@ -285,7 +285,8 @@ export function BoxListItem({
           <span className="overflow-hidden text-ellipsis whitespace-nowrap">
             {toolMeta.detail}
           </span>
-          {rasterMaskStatus?.state === "error" && rasterMaskStatus.retryable && onRetryRasterMask && (
+          {(rasterMaskStatus?.state === "error" || rasterMaskStatus?.state === "deferred")
+            && rasterMaskStatus.retryable && onRetryRasterMask && (
             <button
               type="button"
               className="shrink-0 rounded border border-border px-1.5 py-px text-2xs hover:bg-muted"

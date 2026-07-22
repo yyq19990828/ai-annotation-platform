@@ -396,7 +396,7 @@ test.describe("raster mask native write matrix", () => {
     await expect(corruptRow).toContainText("missing_object", { timeout: 15_000 });
     await corruptRow.click();
     await expect(page.getByRole("button", { name: "\u590d\u5236 Mask \u8bca\u65ad" })).toBeVisible();
-    await expect(page.getByLabel("Mask \u52a0\u8f7d\u9519\u8bef")).toContainText("mask object is invalid");
+    await expect(page.getByLabel("Mask \u52a0\u8f7d\u72b6\u6001")).toContainText("mask object is invalid");
   });
 
   test("10. deployment create-on does not regress the legacy polygon Mask flow", async ({ page, seed }) => {

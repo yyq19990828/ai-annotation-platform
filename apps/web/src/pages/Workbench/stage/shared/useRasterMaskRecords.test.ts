@@ -3,11 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CocoRleMaskRef } from "@/types";
 import { encodeCocoRle, type CocoRle } from "./geometry/maskRle";
 import {
+  estimateCocoRleRetainedBytes,
+  rasterMaskDeviceBudget,
   rasterMaskLoadError,
   rasterMaskRecordCacheKey,
   useRasterMaskRecords,
   type RasterMaskRecordDescriptor,
 } from "./useRasterMaskRecords";
+import { pickTopRasterMaskAt } from "./rasterMaskRender";
 
 class FakeImageBitmap {
   close = vi.fn();
@@ -180,6 +183,7 @@ describe("useRasterMaskRecords", () => {
       selected: true,
       area: 2,
     });
+    expect(view.result.current.records[0]?.rle).toBeUndefined();
   });
 
   it("keeps ready siblings when one object fails and retries only the target", async () => {
@@ -262,19 +266,24 @@ describe("useRasterMaskRecords", () => {
 
     view.rerender({ descriptor: latestItem.descriptor });
     await flushAsync();
-    expect(view.result.current.records[0]?.cacheKey).toBe(rasterMaskRecordCacheKey(latestItem.descriptor));
+    expect(view.result.current.records).toEqual([]);
+    expect(latestItem.load).not.toHaveBeenCalled();
 
     lateLoad.resolve(lateItem.rle);
     await flushAsync();
 
+    expect(view.result.current.records[0]?.cacheKey).toBe(rasterMaskRecordCacheKey(latestItem.descriptor));
     expect(bitmaps).toHaveLength(3);
     expect(bitmaps[0].close).not.toHaveBeenCalled();
-    expect(bitmaps[1].close).not.toHaveBeenCalled();
-    expect(bitmaps[2].close).toHaveBeenCalledTimes(1);
-    expect(view.result.current.records[0]?.image).toBe(bitmaps[1]);
+    const currentImage = view.result.current.records[0]?.image as unknown as FakeImageBitmap | undefined;
+    expect(bitmaps.slice(1).filter((bitmap) => bitmap === currentImage)).toHaveLength(1);
+    for (const bitmap of bitmaps.slice(1)) {
+      if (bitmap === currentImage) expect(bitmap.close).not.toHaveBeenCalled();
+      else expect(bitmap.close).toHaveBeenCalledTimes(1);
+    }
   });
 
-  it("starts at most four loads and advances the queue one completion at a time", async () => {
+  it("uses the Standard concurrency of two and advances the queue one completion at a time", async () => {
     const pending = Array.from({ length: 6 }, () => deferred<CocoRle>());
     const items = pending.map((request, index) => makeDescriptor(`mask-${index}`, {
       load: vi.fn(() => request.promise),
@@ -284,11 +293,11 @@ describe("useRasterMaskRecords", () => {
       descriptors: items.map((item) => item.descriptor),
     }));
 
-    expect(items.map((item) => item.load.mock.calls.length)).toEqual([1, 1, 1, 1, 0, 0]);
+    expect(items.map((item) => item.load.mock.calls.length)).toEqual([1, 1, 0, 0, 0, 0]);
 
     pending[0].resolve(items[0].rle);
     await flushAsync();
-    expect(items.map((item) => item.load.mock.calls.length)).toEqual([1, 1, 1, 1, 1, 0]);
+    expect(items.map((item) => item.load.mock.calls.length)).toEqual([1, 1, 1, 0, 0, 0]);
 
     for (let index = 1; index < pending.length; index += 1) pending[index].resolve(items[index].rle);
     await flushAsync(16);
@@ -322,8 +331,14 @@ describe("useRasterMaskRecords", () => {
     expect(bitmaps[2].close).not.toHaveBeenCalled();
 
     view.rerender({ scope: "task-2", items: [] });
+    await flushAsync();
     expect(bitmaps[1].close).toHaveBeenCalledTimes(1);
     expect(bitmaps[2].close).toHaveBeenCalledTimes(1);
+    expect(view.result.current.resources).toMatchObject({
+      liveRecords: 0,
+      retainedBytes: 0,
+      liveBitmaps: 0,
+    });
     view.unmount();
     for (const bitmap of bitmaps) expect(bitmap.close).toHaveBeenCalledTimes(1);
   });
@@ -331,35 +346,38 @@ describe("useRasterMaskRecords", () => {
   it("evicts inactive records by retained-byte budget", async () => {
     const first = makeDescriptor("first");
     const second = makeDescriptor("second");
+    const recordBytes = estimateCocoRleRetainedBytes(first.rle) + 20;
     const view = renderHook(
       ({ items }) => useRasterMaskRecords({
         scopeKey: "task-1",
         descriptors: items,
-        maxCacheBytes: 21,
+        maxCacheBytes: recordBytes + 1,
       }),
       { initialProps: { items: [first.descriptor] } },
     );
     await flushAsync();
-    expect(view.result.current.cacheBytes).toBe(20);
+    expect(view.result.current.cacheBytes).toBe(recordBytes);
 
     view.rerender({ items: [second.descriptor] });
     await flushAsync();
 
-    expect(view.result.current.cacheBytes).toBe(20);
+    expect(view.result.current.cacheBytes).toBe(recordBytes);
     expect(bitmaps[0].close).toHaveBeenCalledTimes(1);
     expect(bitmaps[1].close).not.toHaveBeenCalled();
   });
 
-  it("keeps cache bytes stable across 20 masks and 50 task scopes", async () => {
+  it("keeps cache bytes stable across 50 masks and 50 task scopes", async () => {
     const makeScope = (scopeIndex: number) => Array.from(
-      { length: 20 },
+      { length: 50 },
       (_, maskIndex) => makeDescriptor(`scope-${scopeIndex}-mask-${maskIndex}`).descriptor,
     );
+    const sample = makeDescriptor("sample");
+    const recordBytes = estimateCocoRleRetainedBytes(sample.rle) + 20;
     const view = renderHook(
       ({ scope, items }) => useRasterMaskRecords({
         scopeKey: scope,
         descriptors: items,
-        maxCacheBytes: 401,
+        maxCacheBytes: recordBytes * 50 + 1,
       }),
       {
         initialProps: {
@@ -369,7 +387,7 @@ describe("useRasterMaskRecords", () => {
       },
     );
     await flushAsync(16);
-    expect(view.result.current.cacheBytes).toBe(400);
+    expect(view.result.current.cacheBytes).toBe(recordBytes * 50);
 
     for (let scopeIndex = 1; scopeIndex < 50; scopeIndex += 1) {
       view.rerender({
@@ -377,16 +395,149 @@ describe("useRasterMaskRecords", () => {
         items: makeScope(scopeIndex),
       });
       await flushAsync(16);
-      expect(view.result.current.cacheBytes).toBe(400);
+      expect(view.result.current.cacheBytes).toBe(recordBytes * 50);
     }
 
-    expect(bitmaps).toHaveLength(1000);
-    for (const bitmap of bitmaps.slice(0, -20)) {
+    expect(bitmaps).toHaveLength(2500);
+    for (const bitmap of bitmaps.slice(0, -50)) {
       expect(bitmap.close).toHaveBeenCalledTimes(1);
     }
-    for (const bitmap of bitmaps.slice(-20)) expect(bitmap.close).not.toHaveBeenCalled();
+    for (const bitmap of bitmaps.slice(-50)) expect(bitmap.close).not.toHaveBeenCalled();
     view.unmount();
     for (const bitmap of bitmaps) expect(bitmap.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes Low, Standard, and High device budgets", () => {
+    expect(rasterMaskDeviceBudget(2)).toMatchObject({
+      tier: "low",
+      maxConcurrent: 1,
+      workerPoolSize: 1,
+      maxCacheBytes: 64 * 1024 * 1024,
+    });
+    expect(rasterMaskDeviceBudget(undefined)).toMatchObject({
+      tier: "standard",
+      maxConcurrent: 2,
+      workerPoolSize: 2,
+      maxCacheBytes: 128 * 1024 * 1024,
+    });
+    expect(rasterMaskDeviceBudget(-1).tier).toBe("standard");
+    expect(rasterMaskDeviceBudget(8)).toMatchObject({
+      tier: "high",
+      maxConcurrent: 4,
+      workerPoolSize: 2,
+      maxCacheBytes: 192 * 1024 * 1024,
+    });
+  });
+
+  it("prioritizes the selected descriptor ahead of current-frame siblings", () => {
+    const firstRequest = deferred<CocoRle>();
+    const selectedRequest = deferred<CocoRle>();
+    const first = makeDescriptor("first", { load: vi.fn(() => firstRequest.promise) });
+    const selected = makeDescriptor("selected", {
+      selected: true,
+      load: vi.fn(() => selectedRequest.promise),
+    });
+    const view = renderHook(() => useRasterMaskRecords({
+      scopeKey: "task-1",
+      descriptors: [first.descriptor, selected.descriptor],
+      maxConcurrent: 1,
+    }));
+
+    expect(selected.load).toHaveBeenCalledTimes(1);
+    expect(first.load).not.toHaveBeenCalled();
+    view.unmount();
+    selectedRequest.resolve(selected.rle);
+    firstRequest.resolve(first.rle);
+  });
+
+  it("single-flights concurrent immutable content loads by sha256", async () => {
+    const first = makeDescriptor("first");
+    const second = makeDescriptor("second");
+    second.descriptor.ref = first.descriptor.ref;
+    const view = renderHook(() => useRasterMaskRecords({
+      scopeKey: "task-1",
+      descriptors: [first.descriptor, second.descriptor],
+    }));
+
+    await flushAsync();
+
+    expect(first.load).toHaveBeenCalledTimes(1);
+    expect(second.load).not.toHaveBeenCalled();
+    expect(view.result.current.records).toHaveLength(2);
+  });
+
+  it("uses a budgeted preview while retaining exact RLE picking", async () => {
+    const width = 20;
+    const height = 20;
+    const rle = encodeCocoRle(new Uint8Array(width * height).fill(255), width, height);
+    const descriptor: RasterMaskRecordDescriptor<"annotation"> = {
+      id: "large",
+      source: "annotation",
+      ref: { size: rle.size, sha256: "b".repeat(64) },
+      revision: 1,
+      color: "#102030",
+      colorRevision: "class-color-1",
+      zOrder: 0,
+      selected: true,
+      load: vi.fn(async () => rle),
+    };
+    const view = renderHook(() => useRasterMaskRecords({
+      scopeKey: "task-1",
+      descriptors: [descriptor],
+      maxCacheBytes: 500,
+    }));
+
+    await flushAsync();
+
+    expect(view.result.current.statusById.get("large")).toMatchObject({
+      state: "ready",
+      preview: true,
+    });
+    expect(view.result.current.cacheBytes).toBeLessThanOrEqual(500);
+    expect(view.result.current.resources).toMatchObject({
+      liveRecords: 1,
+      retainedAlphaBytes: 0,
+      bitmapsCreated: 1,
+      bitmapsClosed: 0,
+      liveBitmaps: 1,
+    });
+    expect(pickTopRasterMaskAt(view.result.current.records, { x: 0.9, y: 0.9 })?.id).toBe("large");
+  });
+
+  it("protects selected records and defers unselected admission at the hard budget", async () => {
+    const selected = makeDescriptor("selected", { selected: true });
+    const deferredItem = makeDescriptor("deferred");
+    const recordBytes = estimateCocoRleRetainedBytes(selected.rle) + 20;
+    const view = renderHook(
+      ({ items }) => useRasterMaskRecords({
+        scopeKey: "task-1",
+        descriptors: items,
+        maxCacheBytes: recordBytes,
+        maxConcurrent: 1,
+      }),
+      { initialProps: { items: [selected.descriptor, deferredItem.descriptor] } },
+    );
+    await flushAsync();
+
+    expect(view.result.current.cacheBytes).toBeLessThanOrEqual(recordBytes);
+    expect(view.result.current.statusById.get("selected")?.state).toBe("ready");
+    expect(view.result.current.statusById.get("deferred")).toMatchObject({
+      state: "deferred",
+      reason: "budget_exceeded",
+    });
+
+    view.rerender({
+      items: [
+        { ...selected.descriptor, selected: false },
+        { ...deferredItem.descriptor, selected: true },
+      ],
+    });
+    await flushAsync();
+
+    expect(view.result.current.cacheBytes).toBeLessThanOrEqual(recordBytes);
+    expect(view.result.current.statusById.get("deferred")?.state).toBe("ready");
+    expect(view.result.current.statusById.get("selected")?.state).toBe("deferred");
+    expect(bitmaps[0].close).toHaveBeenCalledTimes(1);
   });
 
   it("closes an image created after unmount exactly once", async () => {

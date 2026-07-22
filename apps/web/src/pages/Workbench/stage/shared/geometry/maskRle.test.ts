@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import fixture from "@/__fixtures__/rasterMaskRle.json";
 import {
+  cocoRleContainsPixel,
   decodeCocoRle,
   encodeCocoRle,
   prepareCocoRleGzipUpload,
@@ -61,6 +62,20 @@ describe("COCO uncompressed RLE", () => {
       storage_encoding: "gzip",
     });
     expect(prepared?.body.type).toBe("application/json");
+  });
+
+  it("looks up exact pixels in column-major RLE without decoding a full alpha plane", () => {
+    const rle = encodeCocoRle([
+      1, 0, 1,
+      0, 1, 0,
+    ], 3, 2);
+
+    expect(cocoRleContainsPixel(rle, 0, 0)).toBe(true);
+    expect(cocoRleContainsPixel(rle, 1, 0)).toBe(false);
+    expect(cocoRleContainsPixel(rle, 1, 1)).toBe(true);
+    expect(cocoRleContainsPixel(rle, 2, 0)).toBe(true);
+    expect(cocoRleContainsPixel(rle, -1, 0)).toBe(false);
+    expect(cocoRleContainsPixel(rle, 3, 0)).toBe(false);
   });
 
   it("falls back when gzip would exceed the shared expansion ratio", async () => {

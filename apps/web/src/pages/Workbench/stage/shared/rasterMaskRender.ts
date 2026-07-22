@@ -1,3 +1,5 @@
+import { cocoRleContainsPixel, type CocoRle } from "./geometry/maskRle";
+
 export type RasterMaskPoint = { x: number; y: number };
 
 export type RasterMaskNormalizedBounds = {
@@ -36,6 +38,8 @@ export interface RasterMaskPickSurface {
   sourceWidth: number;
   sourceHeight: number;
   crop: RasterMaskAlphaCrop;
+  /** Retained for exact picking when `crop.alpha` is a reduced preview. */
+  rle?: CocoRle;
 }
 
 /** Shared committed-mask view model for image and video renderers. */
@@ -52,6 +56,7 @@ export interface RasterMaskRenderRecord<TSource extends string = string>
   zOrder: number;
   selected: boolean;
   cacheKey: string;
+  preview: boolean;
 }
 
 export interface RasterMaskCroppedImage {
@@ -398,12 +403,69 @@ export async function createTintedRasterMaskImage(
   return { image, x: crop.x, y: crop.y, width: crop.width, height: crop.height };
 }
 
+export function rasterMaskPreviewDimensions(
+  width: number,
+  height: number,
+  maxPixels: number,
+): { width: number; height: number } {
+  const pixelBudget = Math.floor(maxPixels);
+  if (width <= 0 || height <= 0 || pixelBudget <= 0) return { width: 0, height: 0 };
+  if (width * height <= pixelBudget) return { width, height };
+  const scale = Math.sqrt(pixelBudget / (width * height));
+  let previewWidth = Math.max(1, Math.floor(width * scale));
+  let previewHeight = Math.max(1, Math.floor(height * scale));
+  if (previewWidth * previewHeight > pixelBudget) {
+    if (previewWidth <= previewHeight) previewHeight = Math.max(1, Math.floor(pixelBudget / previewWidth));
+    else previewWidth = Math.max(1, Math.floor(pixelBudget / previewHeight));
+  }
+  return { width: previewWidth, height: previewHeight };
+}
+
+/** Build a max-pooled preview while preserving the exact source-space bounds. */
+export async function createTintedRasterMaskPreviewImage(
+  analysis: RasterMaskAnalysis,
+  color: string,
+  maxPixels: number,
+): Promise<RasterMaskCroppedImage | null> {
+  const { crop } = analysis;
+  const preview = rasterMaskPreviewDimensions(crop.width, crop.height, maxPixels);
+  if (preview.width === 0 || preview.height === 0) return null;
+  if (preview.width === crop.width && preview.height === crop.height) {
+    return createTintedRasterMaskImage(analysis, color);
+  }
+  const previewAlpha = new Uint8Array(preview.width * preview.height);
+  for (let y = 0; y < crop.height; y += 1) {
+    const previewY = Math.min(preview.height - 1, Math.floor(y * preview.height / crop.height));
+    for (let x = 0; x < crop.width; x += 1) {
+      if (crop.alpha[y * crop.width + x] === 0) continue;
+      const previewX = Math.min(preview.width - 1, Math.floor(x * preview.width / crop.width));
+      previewAlpha[previewY * preview.width + previewX] = 255;
+    }
+  }
+  const rendered = await createTintedRasterMaskImage({
+    ...analysis,
+    crop: { x: crop.x, y: crop.y, width: preview.width, height: preview.height, alpha: previewAlpha },
+  }, color);
+  return rendered && {
+    ...rendered,
+    x: crop.x,
+    y: crop.y,
+    width: preview.width,
+    height: preview.height,
+  };
+}
+
 export function closeRasterMaskImage(image: CanvasImageSource | null | undefined) {
   if (image && typeof ImageBitmap !== "undefined" && image instanceof ImageBitmap) image.close();
 }
 
 function surfaceContainsPoint(surface: RasterMaskPickSurface, point: RasterMaskPoint): boolean {
   const { sourceWidth, sourceHeight, crop } = surface;
+  if (surface.rle) {
+    const sourceX = Math.min(sourceWidth - 1, Math.floor(point.x * sourceWidth));
+    const sourceY = Math.min(sourceHeight - 1, Math.floor(point.y * sourceHeight));
+    return cocoRleContainsPixel(surface.rle, sourceX, sourceY);
+  }
   if (
     sourceWidth <= 0
     || sourceHeight <= 0

@@ -106,6 +106,30 @@ export function decodeCocoRle(rle: unknown): Uint8Array {
   return out;
 }
 
+/** Exact point lookup without materializing the full row-major alpha plane. */
+export function cocoRleContainsPixel(rle: CocoRle, x: number, y: number): boolean {
+  const [height, width] = rle.size;
+  if (
+    !Number.isInteger(x)
+    || !Number.isInteger(y)
+    || x < 0
+    || y < 0
+    || x >= width
+    || y >= height
+  ) {
+    return false;
+  }
+  const target = x * height + y;
+  let offset = 0;
+  let foreground = false;
+  for (const runLength of rle.counts) {
+    if (target < offset + runLength) return foreground;
+    offset += runLength;
+    foreground = !foreground;
+  }
+  return false;
+}
+
 async function compressWithBrowserStream(input: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream === "undefined") {
     throw new Error("CompressionStream is unavailable");
