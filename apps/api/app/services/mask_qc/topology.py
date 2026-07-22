@@ -249,6 +249,8 @@ def _combine_rles(left: dict, right: dict, mode: str) -> dict:
         step = min(left_remaining, right_remaining)
         if mode == "and":
             next_foreground = left_foreground and right_foreground
+        elif mode == "or":
+            next_foreground = left_foreground or right_foreground
         elif mode == "and_not":
             next_foreground = left_foreground and not right_foreground
         elif mode == "xor":
@@ -326,6 +328,10 @@ def rle_and_not(left: dict, right: dict) -> dict:
 
 def rle_and(left: dict, right: dict) -> dict:
     return _combine_rles(left, right, "and")
+
+
+def rle_or(left: dict, right: dict) -> dict:
+    return _combine_rles(left, right, "or")
 
 
 def rle_xor(left: dict, right: dict) -> dict:

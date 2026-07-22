@@ -29,6 +29,10 @@ vi.mock("@/hooks/useFeedbacks", () => ({
   useCreateFeedback: () => ({ mutate: mocks.createFeedbackMutate, isPending: false }),
 }));
 
+vi.mock("./MaskRepairSheet", () => ({
+  MaskRepairSheet: () => null,
+}));
+
 import { MaskQcPanel, type MaskQcPanelProps } from "./MaskQcPanel";
 
 function currentFeedbackAnchor(): FeedbackAnchorPosition {
@@ -142,6 +146,15 @@ beforeEach(() => {
 });
 
 describe("MaskQcPanel", () => {
+  it("只将当前可确定修复的 open issue 加入批量预览", () => {
+    render(<MaskQcPanel {...props()} />);
+    const checkbox = screen.getByRole("checkbox", { name: "选择修复 小孤岛" });
+    const preview = screen.getByRole("button", { name: "预览批量修复" });
+    expect(preview).toBeDisabled();
+    fireEvent.click(checkbox);
+    expect(preview).toBeEnabled();
+  });
+
   it("可切到项目范围并保留 cursor 列表入口", () => {
     render(<MaskQcPanel {...props()} />);
     expect(mocks.useIssues).toHaveBeenLastCalledWith(expect.objectContaining({ taskId: "task-1" }));

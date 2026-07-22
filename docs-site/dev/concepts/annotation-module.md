@@ -178,6 +178,17 @@ execute 先重验计划与来源快照，重算转换并与冻结报告比对，
 
 交互式 AI 的原生 Mask 候选不先写 Prediction，也不由浏览器拆成内容上传和标注创建。平台代理响应为每个候选签发绑定 task、像素、prompt revision 与实际路由的短生命周期 receipt；接受时 `POST /tasks/{task_id}/ai-mask-candidates/accept` 重新检查权限、写闸、锁和源版本，并在同一提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。decision 以 task + 客户端幂等键唯一保存完整响应并设有效期；相同请求可安全重放，不同请求复用 key 或过期重放返回冲突。有效 decision 引用的内容受 Raster GC 保活，过期 decision 先清理后才参与对象扫描。
 
+### Mask 质检修复批次
+
+Mask 质检修复使用 `dry-run → execute → optional rollback` 协议。dry-run 从当前 issue 与不可变 RLE 计算精确差集或并集，
+冻结 annotation 版本、scope fingerprint、changed pixels、写入 payload 和 task + 100 mutation 分片。数据库只保存 receipt 的 SHA-256；
+execute 必须同时提交原 receipt 和 canonical plan digest，重放同一计划不会二次派发。
+
+确定性分片逐项复用 `MaskMutationService`，因此 task / segment / annotation 锁、当前范围、版本、像素代数、operation、lineage 和 audit
+仍在同一原子事务内校验与写入。`mask_repair_batches` 持久化每片的 operation IDs 与 after versions，允许只重试失败片；
+SAM / Tracker 重跑项只创建候选，不越过候选审阅直接改写 annotation。回滚按原分片逆序执行，先确认全部对象仍处于记录的 after version，
+再恢复 before geometry；任一版本不等时整片失败。收据与回滚保留期内的 before refs 都是 Raster GC live roots。
+
 ### 属性 schema 与派生渲染
 
 `Annotation.attributes` 是 JSONB 自由字段，由项目级 `AttributeField` schema（`apps/api/app/db/models/project.py` → `attribute_schema`，前端在「项目设置 / 类别与属性」用 `AttributeSchemaEditor` 维护）约束 key、类型、必填、`applies_to` 类别白名单等。
@@ -324,6 +335,16 @@ execute 先重验计划与来源快照，重算转换并与冻结报告比对，
 - 图片 join 支持「替换来源」和「创建副本并保留来源」；视频 join 只允许后者，新轨只含当前 manual keyframe。
 - 视频 keyframe copy 通过 `source_frame_index` 锁定来源帧解析值，完整 RLE 等值验证通过后才创建目标帧单关键帧轨迹。
 - 任一校验或写入失败由路由层 rollback，不会留下部分 annotation、lineage 或 audit。
+
+### 6. Mask 质检批量修复
+
+入口与主流程：
+
+- `POST /projects/{project_id}/mask-qc/repairs:dry-run` 创建 15 分钟冻结计划，不修改 annotation。
+- `POST /projects/{project_id}/mask-qc/repairs` 校验 receipt / digest 并创建 `mask_repair` 异步作业。
+- `POST /mask-qc/repairs/{repair_id}/resume` 只重跑未完成分片或候选项。
+- `POST /mask-qc/repairs/{repair_id}/rollback` 绑定当前 result digest 并创建独立回滚作业。
+- Worker 必须在分片 / 候选边界检查协作取消；不得将跳过项计为成功。
 
 ## 跨帧 propagate 与插值（3D 时序）
 

@@ -1181,6 +1181,8 @@ async def test_video_copy_keyframe_can_copy_external_held_source_atomically(
         "outside": [{"from": 3, "to": 3, "source": "manual"}],
     }
     await db_session.flush()
+    await db_session.refresh(source)
+    source_version = int(source.version or 1)
     scope = MaskMutationScope(
         media="video",
         frame_index=3,
@@ -1196,7 +1198,9 @@ async def test_video_copy_keyframe_can_copy_external_held_source_atomically(
         "scope": scope.model_dump(mode="json"),
         "source_frame_index": 5,
         "scope_fingerprint": scope_fingerprint(scope, [source]),
-        "expected_versions": [{"annotation_id": str(source.id), "version": 1}],
+        "expected_versions": [
+            {"annotation_id": str(source.id), "version": source_version}
+        ],
         "mutations": [
             {
                 "kind": "create",
@@ -1234,7 +1238,7 @@ async def test_video_copy_keyframe_can_copy_external_held_source_atomically(
             "source_annotation_id": str(source.id),
             "result_annotation_id": body["created_annotations"][0]["id"],
             "relation": "keyframe_copied",
-            "source_version": 1,
+            "source_version": source_version,
             "result_version": 1,
             "frame_index": 3,
         }
@@ -1251,7 +1255,7 @@ async def test_video_copy_keyframe_can_copy_external_held_source_atomically(
     assert created_keyframe["source"] == "manual"
     assert created_keyframe["occluded"] is False
     await db_session.refresh(source)
-    assert source.version == 1
+    assert source.version == source_version
     assert [item["frame_index"] for item in source.geometry["keyframes"]] == [0, 5]
     operation = await db_session.get(
         AnnotationOperation, uuid.UUID(body["operation_id"])

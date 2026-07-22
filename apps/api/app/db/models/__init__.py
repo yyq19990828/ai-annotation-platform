@@ -46,6 +46,7 @@ from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
 from app.db.models.mask_annotation_revision import MaskAnnotationRevision
 from app.db.models.mask_qc import MaskQCIssue, MaskQCRun
 from app.db.models.mask_review_scope import MaskReviewScope
+from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.video_chapter import VideoChapter
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -114,6 +115,7 @@ __all__ = [
     "MaskQCIssue",
     "MaskQCRun",
     "MaskReviewScope",
+    "MaskRepairBatch",
     "VideoChapter",
     "AuditLog",
     "UserInvitation",

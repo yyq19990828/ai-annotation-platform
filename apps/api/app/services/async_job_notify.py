@@ -26,6 +26,8 @@ TERMINAL_NOTIFY_KINDS = {
     "prediction_retry",
     "dataset_import",
     "mask_qc",
+    "mask_repair",
+    "mask_repair_rollback",
 }
 
 _STATUS_TO_TYPE = {
@@ -58,6 +60,7 @@ _PAYLOAD_SUMMARY_KEYS = (
     "direction",
     "retain_months",
     "source_snapshot_digest",
+    "mask_repair_batch_id",
 )
 
 _RESULT_SUMMARY_KEYS = (
@@ -82,6 +85,8 @@ _RESULT_SUMMARY_KEYS = (
     "deleted",
     "run_id",
     "issue_count",
+    "result_digest",
+    "rolled_back_count",
 )
 
 

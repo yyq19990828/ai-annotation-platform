@@ -100,17 +100,88 @@ export interface MaskCompareResult {
 }
 
 export interface MaskCompareMetrics {
-    current_area_pixels: number;
-    baseline_area_pixels: number;
-    intersection_pixels: number;
-    union_pixels: number;
-    changed_pixels: number;
-    added_pixels: number;
-    removed_pixels: number;
-    iou_numerator: number;
-    iou_denominator: number;
-    dice_numerator: number;
-    dice_denominator: number;
+  current_area_pixels: number;
+  baseline_area_pixels: number;
+  intersection_pixels: number;
+  union_pixels: number;
+  changed_pixels: number;
+  added_pixels: number;
+  removed_pixels: number;
+  iou_numerator: number;
+  iou_denominator: number;
+  dice_numerator: number;
+  dice_denominator: number;
+}
+
+export type MaskRepairKind =
+  | "delete_small_islands"
+  | "fill_small_holes"
+  | "resolve_same_class_overlap"
+  | "rerun_local_sam"
+  | "rerun_tracker";
+
+export interface MaskRepairAction {
+  issue_id: string;
+  kind: MaskRepairKind;
+  backend_id?: string;
+  model_id?: string;
+  model_key?: string;
+  from_frame?: number;
+  to_frame?: number;
+  direction?: "forward" | "backward" | "bidirectional";
+  segment_id?: string;
+  allow_bbox_fallback?: boolean;
+  text?: string;
+}
+
+export interface MaskRepairPlanItem {
+  issue_id: string;
+  task_id: string | null;
+  annotation_ids: string[];
+  kind: MaskRepairKind;
+  frame_index: number | null;
+  source_versions: Record<string, number>;
+  changed_pixels: number;
+  mutation_count: number;
+  candidate_count: number;
+  scope_fingerprint: string | null;
+  skip_code: string | null;
+  skip_detail: string | null;
+}
+
+export interface MaskRepairPlanSummary {
+  action_count: number;
+  executable_count: number;
+  skipped_count: number;
+  mutation_count: number;
+  candidate_count: number;
+  changed_pixels: number;
+  shard_count: number;
+}
+
+export interface MaskRepairDryRun {
+  receipt: string;
+  plan_digest: string;
+  expires_at: string;
+  items: MaskRepairPlanItem[];
+  summary: MaskRepairPlanSummary;
+}
+
+export interface MaskRepairBatch {
+  id: string;
+  project_id: string;
+  async_job_id: string | null;
+  rollback_async_job_id: string | null;
+  status: string;
+  plan_digest: string;
+  plan: Record<string, unknown>;
+  result: Record<string, unknown>;
+  result_digest: string;
+  receipt_expires_at: string;
+  rollback_expires_at: string | null;
+  created_at: string;
+  completed_at: string | null;
+  rolled_back_at: string | null;
 }
 
 function queryString(params: Record<string, string | number | null | undefined>): string {
@@ -191,4 +262,22 @@ export const maskQcApi = {
       })}`,
       { signal },
     ),
+  dryRunRepairs: (projectId: string, actions: MaskRepairAction[]) =>
+    apiClient.post<MaskRepairDryRun>(
+      `/projects/${projectId}/mask-qc/repairs:dry-run`,
+      { actions },
+    ),
+  executeRepairs: (projectId: string, receipt: string, planDigest: string) =>
+    apiClient.post<MaskRepairBatch>(`/projects/${projectId}/mask-qc/repairs`, {
+      receipt,
+      plan_digest: planDigest,
+    }),
+  repairBatch: (repairId: string, signal?: AbortSignal) =>
+    apiClient.get<MaskRepairBatch>(`/mask-qc/repairs/${repairId}`, { signal }),
+  resumeRepairs: (repairId: string) =>
+    apiClient.post<MaskRepairBatch>(`/mask-qc/repairs/${repairId}/resume`, {}),
+  rollbackRepairs: (repairId: string, expectedResultDigest: string) =>
+    apiClient.post<MaskRepairBatch>(`/mask-qc/repairs/${repairId}/rollback`, {
+      expected_result_digest: expectedResultDigest,
+    }),
 };

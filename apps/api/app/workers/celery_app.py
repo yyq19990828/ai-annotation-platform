@@ -21,6 +21,7 @@ celery_app = Celery(
         "app.workers.predictions_retry",
         "app.workers.video_tracker",
         "app.workers.mask_qc",
+        "app.workers.mask_repair",
         # v0.10.16 · async_jobs 兜底信号 + DuckDB 分析同步
         "app.workers.signals",
         "app.workers.analytics",
@@ -75,6 +76,8 @@ celery_app.conf.update(
         "app.workers.media.cleanup_video_frame_assets": {"queue": "media"},
         "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.mask_qc.run_mask_qc": {"queue": "media"},
+        "app.workers.mask_repair.run_mask_repair": {"queue": "media"},
+        "app.workers.mask_repair.rollback_mask_repair": {"queue": "media"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
         "app.workers.cleanup.purge_unreferenced_raster_masks": {"queue": "cleanup"},
         # v0.10.16 · DuckDB 同步 + async_jobs 清理走 cleanup 队列

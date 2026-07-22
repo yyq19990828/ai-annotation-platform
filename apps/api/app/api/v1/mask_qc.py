@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _REVIEWERS, _assert_task_visible, _visible_task_ids
 from app.db.models.annotation import Annotation
+from app.db.models.async_job import AsyncJob
 from app.db.models.mask_qc import MaskQCIssue, MaskQCRun
+from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -28,6 +30,13 @@ from app.schemas.mask_qc import (
     MaskQCRunRequest,
     TaskMaskQCSummary,
 )
+from app.schemas.mask_repair import (
+    MaskRepairBatchOut,
+    MaskRepairDryRunRequest,
+    MaskRepairDryRunResponse,
+    MaskRepairExecuteRequest,
+    MaskRepairRollbackRequest,
+)
 from app.schemas._jsonb_types import CocoRleContent
 from app.services.mask_qc.compare import (
     build_mask_compare,
@@ -42,9 +51,24 @@ from app.services.mask_qc.service import (
     list_issues,
     task_qc_summary,
 )
+from app.services import async_job as async_job_svc
+from app.services.audit import AuditAction, AuditService
+from app.services.mask_repair import (
+    MaskRepairError,
+    batch_out,
+    create_repair_plan,
+    dispatch_repair_batch,
+    execute_repair_plan,
+    request_repair_rollback,
+    resume_repair_batch,
+)
 from app.services.scheduler import is_privileged_for_project
 
 router = APIRouter()
+
+
+def _raise_mask_repair_error(exc: MaskRepairError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 async def _load_visible_compare_annotation(
@@ -437,3 +461,252 @@ async def patch_issue(
     await db.commit()
     await db.refresh(issue)
     return await _issue_out(db, issue)
+
+
+async def _assert_repair_issues_visible(
+    db: AsyncSession,
+    *,
+    project: Project,
+    user: User,
+    issue_ids: list[uuid.UUID],
+) -> None:
+    rows = list(
+        (
+            await db.execute(
+                select(MaskQCIssue).where(
+                    MaskQCIssue.project_id == project.id,
+                    MaskQCIssue.id.in_(issue_ids),
+                )
+            )
+        ).scalars()
+    )
+    task_ids = sorted({row.task_id for row in rows}, key=str)
+    tasks = list(
+        (await db.execute(select(Task).where(Task.id.in_(task_ids)))).scalars()
+    )
+    for task in tasks:
+        await _assert_task_visible(db, task, user)
+
+
+async def _load_visible_repair_batch(
+    db: AsyncSession,
+    *,
+    repair_id: uuid.UUID,
+    user: User,
+) -> MaskRepairBatch:
+    batch = await db.get(MaskRepairBatch, repair_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Mask repair batch not found")
+    task_ids = {
+        uuid.UUID(str(item["task_id"]))
+        for item in (batch.plan_json or {}).get("items") or []
+        if item.get("task_id")
+    }
+    tasks = list(
+        (await db.execute(select(Task).where(Task.id.in_(task_ids)))).scalars()
+    )
+    if len(tasks) != len(task_ids):
+        raise HTTPException(status_code=404, detail="Mask repair task not found")
+    for task in tasks:
+        await _assert_task_visible(db, task, user)
+    return batch
+
+
+async def _dispatch_repair_or_fail(
+    db: AsyncSession,
+    *,
+    batch: MaskRepairBatch,
+    rollback: bool,
+) -> None:
+    job_id = batch.rollback_async_job_id if rollback else batch.async_job_id
+    assert job_id is not None
+    try:
+        celery_task_id = await dispatch_repair_batch(batch.id, rollback=rollback)
+    except MaskRepairError as exc:
+        await db.rollback()
+        locked = (
+            await db.execute(
+                select(MaskRepairBatch)
+                .where(MaskRepairBatch.id == batch.id)
+                .with_for_update()
+            )
+        ).scalar_one()
+        locked.status = "rollback_failed" if rollback else "failed"
+        await async_job_svc.mark_failed(db, job_id, error=str(exc))
+        await db.commit()
+        _raise_mask_repair_error(exc)
+    job = await db.get(AsyncJob, job_id)
+    if job is not None:
+        job.celery_task_id = celery_task_id
+    await db.commit()
+
+
+@router.post(
+    "/projects/{project_id}/mask-qc/repairs:dry-run",
+    response_model=MaskRepairDryRunResponse,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def dry_run_mask_repairs(
+    body: MaskRepairDryRunRequest,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> MaskRepairDryRunResponse:
+    await _assert_repair_issues_visible(
+        db,
+        project=project,
+        user=current_user,
+        issue_ids=[action.issue_id for action in body.actions],
+    )
+    response = await create_repair_plan(
+        db,
+        project=project,
+        actor=current_user,
+        request=body,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.MASK_REPAIR_DRY_RUN,
+        target_type="project",
+        target_id=project.id,
+        request=request,
+        status_code=200,
+        detail={
+            "plan_digest": response.plan_digest,
+            "summary": response.summary.model_dump(mode="json"),
+        },
+    )
+    await db.commit()
+    return response
+
+
+@router.post(
+    "/projects/{project_id}/mask-qc/repairs",
+    response_model=MaskRepairBatchOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def execute_mask_repairs(
+    body: MaskRepairExecuteRequest,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> MaskRepairBatchOut:
+    try:
+        batch, should_dispatch = await execute_repair_plan(
+            db,
+            project=project,
+            actor=current_user,
+            receipt=body.receipt,
+            plan_digest=body.plan_digest,
+        )
+    except MaskRepairError as exc:
+        await db.rollback()
+        _raise_mask_repair_error(exc)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.MASK_REPAIR_EXECUTE,
+        target_type="mask_repair_batch",
+        target_id=batch.id,
+        request=request,
+        status_code=202,
+        detail={"plan_digest": batch.plan_digest},
+    )
+    await db.commit()
+    if should_dispatch:
+        await _dispatch_repair_or_fail(db, batch=batch, rollback=False)
+    await db.refresh(batch)
+    return batch_out(batch)
+
+
+@router.get(
+    "/mask-qc/repairs/{repair_id}",
+    response_model=MaskRepairBatchOut,
+)
+async def get_mask_repair_batch(
+    repair_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> MaskRepairBatchOut:
+    batch = await _load_visible_repair_batch(
+        db, repair_id=repair_id, user=current_user
+    )
+    return batch_out(batch)
+
+
+@router.post(
+    "/mask-qc/repairs/{repair_id}/resume",
+    response_model=MaskRepairBatchOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def resume_mask_repairs(
+    repair_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> MaskRepairBatchOut:
+    await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
+    try:
+        batch = await resume_repair_batch(
+            db, batch_id=repair_id, actor=current_user
+        )
+    except MaskRepairError as exc:
+        await db.rollback()
+        _raise_mask_repair_error(exc)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.MASK_REPAIR_RESUME,
+        target_type="mask_repair_batch",
+        target_id=batch.id,
+        request=request,
+        status_code=202,
+    )
+    await db.commit()
+    await _dispatch_repair_or_fail(db, batch=batch, rollback=False)
+    await db.refresh(batch)
+    return batch_out(batch)
+
+
+@router.post(
+    "/mask-qc/repairs/{repair_id}/rollback",
+    response_model=MaskRepairBatchOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_scopes("annotations:write"))],
+)
+async def rollback_mask_repairs(
+    repair_id: uuid.UUID,
+    body: MaskRepairRollbackRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+) -> MaskRepairBatchOut:
+    await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
+    try:
+        batch = await request_repair_rollback(
+            db,
+            batch_id=repair_id,
+            actor=current_user,
+            expected_result_digest=body.expected_result_digest,
+        )
+    except MaskRepairError as exc:
+        await db.rollback()
+        _raise_mask_repair_error(exc)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.MASK_REPAIR_ROLLBACK,
+        target_type="mask_repair_batch",
+        target_id=batch.id,
+        request=request,
+        status_code=202,
+    )
+    await db.commit()
+    await _dispatch_repair_or_fail(db, batch=batch, rollback=True)
+    await db.refresh(batch)
+    return batch_out(batch)

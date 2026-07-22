@@ -1,5 +1,10 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { maskQcApi, type MaskQcIssueStatus, type MaskQcSeverity } from "@/api/maskQc";
+import {
+  maskQcApi,
+  type MaskQcIssueStatus,
+  type MaskQcSeverity,
+  type MaskRepairAction,
+} from "@/api/maskQc";
 
 export function useMaskQcIssues(params: {
   projectId: string;
@@ -55,6 +60,59 @@ export function usePatchMaskQcIssue(projectId: string, taskId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["mask-qc-summary", taskId] });
       void queryClient.invalidateQueries({ queryKey: ["mask-qc-issues", projectId] });
+    },
+  });
+}
+
+export function useDryRunMaskRepairs(projectId: string) {
+  return useMutation({
+    mutationFn: (actions: MaskRepairAction[]) => maskQcApi.dryRunRepairs(projectId, actions),
+  });
+}
+
+export function useExecuteMaskRepairs(projectId: string) {
+  return useMutation({
+    mutationFn: ({ receipt, planDigest }: { receipt: string; planDigest: string }) =>
+      maskQcApi.executeRepairs(projectId, receipt, planDigest),
+  });
+}
+
+export function useMaskRepairBatch(projectId: string, repairId: string | null) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: ["mask-repair", repairId],
+    queryFn: ({ signal }) => maskQcApi.repairBatch(repairId!, signal),
+    enabled: !!repairId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status && ["completed", "partial", "failed", "cancelled", "rolled_back", "rollback_failed"].includes(status)) {
+        void queryClient.invalidateQueries({ queryKey: ["mask-qc-issues", projectId] });
+        return false;
+      }
+      return 1_500;
+    },
+  });
+}
+
+export function useRollbackMaskRepairs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ repairId, resultDigest }: { repairId: string; resultDigest: string }) =>
+      maskQcApi.rollbackRepairs(repairId, resultDigest),
+    onSuccess: (batch) => {
+      queryClient.setQueryData(["mask-repair", batch.id], batch);
+      void queryClient.invalidateQueries({ queryKey: ["mask-repair", batch.id] });
+    },
+  });
+}
+
+export function useResumeMaskRepairs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (repairId: string) => maskQcApi.resumeRepairs(repairId),
+    onSuccess: (batch) => {
+      queryClient.setQueryData(["mask-repair", batch.id], batch);
+      void queryClient.invalidateQueries({ queryKey: ["mask-repair", batch.id] });
     },
   });
 }

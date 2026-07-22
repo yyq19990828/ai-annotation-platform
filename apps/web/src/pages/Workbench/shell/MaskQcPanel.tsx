@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type {
@@ -7,7 +7,11 @@ import type {
   MaskQcIssue,
   MaskQcIssueStatus,
   MaskQcSeverity,
+  MaskRepairAction,
+  MaskRepairKind,
 } from "@/api/maskQc";
+import { Checkbox } from "@/components/shadcn/ui/checkbox";
+import { Field, FieldLegend, FieldSet } from "@/components/shadcn/ui/field";
 import { useCreateFeedback, useInfiniteFeedbacks } from "@/hooks/useFeedbacks";
 import type { MaskFeedbackCompareLocator } from "@/api/feedbacks";
 import {
@@ -21,6 +25,7 @@ import type {
   MaskQcNavigationPhase,
   MaskQcTrackerCandidate,
 } from "../state/useMaskQcReview";
+import { MaskRepairSheet } from "./MaskRepairSheet";
 
 const MODE_LABELS: Array<{ mode: RasterMaskCompareMode; label: string }> = [
   { mode: "overlay", label: "叠加" },
@@ -57,6 +62,12 @@ const RULE_LABELS: Record<string, string> = {
   cross_class_overlap: "跨类重叠",
   flicker: "时序闪烁",
   drift: "时序漂移",
+};
+
+const DETERMINISTIC_REPAIR_BY_RULE: Partial<Record<string, MaskRepairKind>> = {
+  small_island: "delete_small_islands",
+  small_hole: "fill_small_holes",
+  same_class_overlap: "resolve_same_class_overlap",
 };
 
 function cx(...classes: Array<string | false | null | undefined>): string {
@@ -124,6 +135,8 @@ export function MaskQcPanel({
   const [comment, setComment] = useState("");
   const [regionDecision, setRegionDecision] = useState<"accept" | "reject" | null>(null);
   const [regionDecisionError, setRegionDecisionError] = useState<string | null>(null);
+  const [selectedRepairIssueIds, setSelectedRepairIssueIds] = useState<Set<string>>(new Set());
+  const [repairOpen, setRepairOpen] = useState(false);
   const query = useMaskQcIssues({
     projectId,
     taskId: scope === "task" ? taskId : undefined,
@@ -146,10 +159,17 @@ export function MaskQcPanel({
   const createFeedback = useCreateFeedback(feedbackParams);
   const lastCompletedRunRef = useRef<string | null>(null);
   const refetchIssues = query.refetch;
+  const refetchSummary = summary.refetch;
   const issues = useMemo(
     () => query.data?.pages.flatMap((page) => page.items) ?? [],
     [query.data?.pages],
   );
+  const repairActions = useMemo<MaskRepairAction[]>(() => issues
+    .filter((issue) => selectedRepairIssueIds.has(issue.id))
+    .map((issue) => ({
+      issue_id: issue.id,
+      kind: DETERMINISTIC_REPAIR_BY_RULE[issue.code]!,
+    })), [issues, selectedRepairIssueIds]);
   const issueComments = feedbackQuery.data?.pages
     .flatMap((page) => page.items)
     .filter((feedback) => {
@@ -220,6 +240,27 @@ export function MaskQcPanel({
       || latest.annotation_version !== activeIssue.annotation_version
     ) onUpdateIssue(latest);
   }, [activeIssue, issues, onUpdateIssue]);
+
+  useEffect(() => {
+    const eligibleIds = new Set(issues
+      .filter((issue) => (
+        issue.effective_status === "open"
+        && DETERMINISTIC_REPAIR_BY_RULE[issue.code]
+      ))
+      .map((issue) => issue.id));
+    setSelectedRepairIssueIds((current) => {
+      const next = new Set([...current].filter((issueId) => eligibleIds.has(issueId)));
+      return next.size === current.size && [...next].every((issueId) => current.has(issueId))
+        ? current
+        : next;
+    });
+  }, [issues]);
+
+  const finishRepair = useCallback(() => {
+    setSelectedRepairIssueIds(new Set());
+    void refetchIssues();
+    void refetchSummary();
+  }, [refetchIssues, refetchSummary]);
 
   const submitComment = async () => {
     if (!activeIssue || stale || !comment.trim()) return;
@@ -383,32 +424,74 @@ export function MaskQcPanel({
         </div>
       )}
 
-      {issues.map((issue) => (
-        <button
-          key={issue.id}
-          type="button"
-          onClick={() => onNavigateIssue(issue)}
-          className={cx(
-            "flex cursor-pointer flex-col gap-1 rounded-md border border-border bg-muted p-2 text-left",
-            activeIssue?.id === issue.id && "border-brand",
-          )}
-        >
-          <span className="flex items-center gap-1.5 text-xs">
-            <span className={cx(
-              "rounded px-1.5 py-px text-2xs",
-              issue.severity === "blocker" ? "bg-status-danger-soft text-status-danger"
-                : issue.severity === "warning" ? "bg-status-caution-soft text-status-caution"
-                  : "bg-status-info-soft text-status-info-alt",
-            )}>
-              {issue.severity === "blocker" ? "阻断" : issue.severity === "warning" ? "警告" : "提示"}
-            </span>
-            <span className="font-semibold text-foreground">{RULE_LABELS[issue.code] ?? issue.code}</span>
-            {issue.frame_start != null && <span className="ml-auto text-2xs text-muted-foreground">F{issue.frame_start}</span>}
+      {issues.some((issue) => issue.effective_status === "open" && DETERMINISTIC_REPAIR_BY_RULE[issue.code]) && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+          <span className="text-xs text-muted-foreground">
+            已选 {selectedRepairIssueIds.size} 个可确定修复的问题
           </span>
-          {issue.suggestion && <span className="text-2xs text-muted-foreground">{issue.suggestion}</span>}
-          <span className="text-2xs text-muted-foreground">状态：{issue.effective_status}</span>
-        </button>
-      ))}
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={selectedRepairIssueIds.size === 0}
+            onClick={() => setRepairOpen(true)}
+          >
+            预览批量修复
+          </Button>
+        </div>
+      )}
+
+      <FieldSet className="gap-2">
+        <FieldLegend className="sr-only">Mask 质检问题批量选择</FieldLegend>
+        {issues.map((issue) => {
+          const repairKind = DETERMINISTIC_REPAIR_BY_RULE[issue.code];
+          const repairEligible = issue.effective_status === "open" && repairKind !== undefined;
+          return (
+            <Field
+              key={issue.id}
+              orientation="horizontal"
+              data-disabled={!repairEligible}
+              className={cx(
+                "items-start gap-2 rounded-md border border-border bg-muted p-2",
+                activeIssue?.id === issue.id && "border-brand",
+              )}
+            >
+              <Checkbox
+                aria-label={`选择修复 ${RULE_LABELS[issue.code] ?? issue.code}`}
+                checked={selectedRepairIssueIds.has(issue.id)}
+                disabled={!repairEligible}
+                onCheckedChange={(checked) => {
+                  setSelectedRepairIssueIds((current) => {
+                    const next = new Set(current);
+                    if (checked === true) next.add(issue.id);
+                    else next.delete(issue.id);
+                    return next;
+                  });
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => onNavigateIssue(issue)}
+                className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-left"
+              >
+                <span className="flex items-center gap-1.5 text-xs">
+                  <span className={cx(
+                    "rounded px-1.5 py-px text-2xs",
+                    issue.severity === "blocker" ? "bg-status-danger-soft text-status-danger"
+                      : issue.severity === "warning" ? "bg-status-caution-soft text-status-caution"
+                        : "bg-status-info-soft text-status-info-alt",
+                  )}>
+                    {issue.severity === "blocker" ? "阻断" : issue.severity === "warning" ? "警告" : "提示"}
+                  </span>
+                  <span className="font-semibold text-foreground">{RULE_LABELS[issue.code] ?? issue.code}</span>
+                  {issue.frame_start != null && <span className="ml-auto text-2xs text-muted-foreground">F{issue.frame_start}</span>}
+                </span>
+                {issue.suggestion && <span className="text-2xs text-muted-foreground">{issue.suggestion}</span>}
+                <span className="text-2xs text-muted-foreground">状态：{issue.effective_status}</span>
+              </button>
+            </Field>
+          );
+        })}
+      </FieldSet>
       {query.hasNextPage && (
         <Button
           variant="ghost"
@@ -609,6 +692,13 @@ export function MaskQcPanel({
           </div>
         </div>
       )}
+      <MaskRepairSheet
+        open={repairOpen}
+        projectId={projectId}
+        actions={repairActions}
+        onOpenChange={setRepairOpen}
+        onFinished={finishRepair}
+      />
     </div>
   );
 }

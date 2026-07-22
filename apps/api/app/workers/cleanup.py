@@ -163,6 +163,20 @@ _MASK_REFERENCE_QUERIES = (
     FROM mask_qc_issues
     WHERE region_mask_ref->>'object_key' LIKE 'raster-masks/sha256/%'
     """,
+    """
+    SELECT DISTINCT value #>> '{}' AS object_key
+    FROM mask_repair_batches,
+         LATERAL jsonb_path_query(plan_json, '$.**.object_key') value
+    WHERE (
+        (status = 'planned' AND receipt_expires_at > now())
+        OR status IN ('pending', 'running', 'rolling_back')
+        OR (
+            status IN ('completed', 'partial', 'rollback_failed')
+            AND rollback_expires_at > now()
+        )
+      )
+      AND value #>> '{}' LIKE 'raster-masks/sha256/%'
+    """,
 )
 
 _MASK_REFERENCE_EXISTS_QUERIES = (
@@ -222,6 +236,22 @@ _MASK_REFERENCE_EXISTS_QUERIES = (
         SELECT 1
         FROM mask_qc_issues
         WHERE region_mask_ref->>'object_key' = :key
+    )
+    """,
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM mask_repair_batches,
+             LATERAL jsonb_path_query(plan_json, '$.**.object_key') value
+        WHERE (
+            (status = 'planned' AND receipt_expires_at > now())
+            OR status IN ('pending', 'running', 'rolling_back')
+            OR (
+                status IN ('completed', 'partial', 'rollback_failed')
+                AND rollback_expires_at > now()
+            )
+          )
+          AND value #>> '{}' = :key
     )
     """,
 )

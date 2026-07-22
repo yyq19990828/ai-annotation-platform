@@ -10,7 +10,15 @@ from app.schemas._jsonb_types import RasterMaskGeometry, VideoTrackMaskGeometry
 MaskGeometry = RasterMaskGeometry | VideoTrackMaskGeometry
 NonNegativeInt = Annotated[int, Field(ge=0)]
 MaskOperationKind = Literal[
-    "split_components", "copy_component", "copy_keyframe", "join_masks", "overlap"
+    "split_components",
+    "copy_component",
+    "copy_keyframe",
+    "join_masks",
+    "overlap",
+    "delete_small_islands",
+    "fill_small_holes",
+    "resolve_same_class_overlap",
+    "mask_repair_rollback",
 ]
 
 

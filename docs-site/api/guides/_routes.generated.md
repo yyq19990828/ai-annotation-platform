@@ -292,6 +292,11 @@
 | GET | `/mask-qc/issues/{issue_id}/region-content` |
 | GET | `/mask-qc/issues/{issue_id}` |
 | PATCH | `/mask-qc/issues/{issue_id}` |
+| POST | `/projects/{project_id}/mask-qc/repairs:dry-run` |
+| POST | `/projects/{project_id}/mask-qc/repairs` |
+| GET | `/mask-qc/repairs/{repair_id}` |
+| POST | `/mask-qc/repairs/{repair_id}/resume` |
+| POST | `/mask-qc/repairs/{repair_id}/rollback` |
 
 ## `me.py`
 
@@ -596,4 +601,4 @@
 
 ---
 
-_共 56 模块 / 329 路由_
+_共 56 模块 / 334 路由_

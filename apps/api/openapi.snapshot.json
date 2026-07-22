@@ -13871,7 +13871,11 @@
               "copy_component",
               "copy_keyframe",
               "join_masks",
-              "overlap"
+              "overlap",
+              "delete_small_islands",
+              "fill_small_holes",
+              "resolve_same_class_overlap",
+              "mask_repair_rollback"
             ],
             "title": "Operation",
             "type": "string"
@@ -14844,6 +14848,527 @@
           }
         },
         "title": "MaskQCTemporalConfig",
+        "type": "object"
+      },
+      "MaskRepairAction": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_bbox_fallback": {
+            "default": false,
+            "title": "Allow Bbox Fallback",
+            "type": "boolean"
+          },
+          "backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Id"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "backward",
+                  "bidirectional"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "from_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Frame"
+          },
+          "issue_id": {
+            "format": "uuid",
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "delete_small_islands",
+              "fill_small_holes",
+              "resolve_same_class_overlap",
+              "rerun_local_sam",
+              "rerun_tracker"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "model_key": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Key"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "to_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Frame"
+          }
+        },
+        "required": [
+          "issue_id",
+          "kind"
+        ],
+        "title": "MaskRepairAction",
+        "type": "object"
+      },
+      "MaskRepairBatchOut": {
+        "properties": {
+          "async_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Async Job Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "title": "Plan",
+            "type": "object"
+          },
+          "plan_digest": {
+            "title": "Plan Digest",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "receipt_expires_at": {
+            "format": "date-time",
+            "title": "Receipt Expires At",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "result_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Result Digest",
+            "type": "string"
+          },
+          "rollback_async_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollback Async Job Id"
+          },
+          "rollback_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollback Expires At"
+          },
+          "rolled_back_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolled Back At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "async_job_id",
+          "rollback_async_job_id",
+          "status",
+          "plan_digest",
+          "plan",
+          "result",
+          "result_digest",
+          "receipt_expires_at",
+          "rollback_expires_at",
+          "created_at",
+          "completed_at",
+          "rolled_back_at"
+        ],
+        "title": "MaskRepairBatchOut",
+        "type": "object"
+      },
+      "MaskRepairDryRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/MaskRepairAction"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Actions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actions"
+        ],
+        "title": "MaskRepairDryRunRequest",
+        "type": "object"
+      },
+      "MaskRepairDryRunResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaskRepairPlanItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "plan_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Digest",
+            "type": "string"
+          },
+          "receipt": {
+            "title": "Receipt",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/MaskRepairPlanSummary"
+          }
+        },
+        "required": [
+          "receipt",
+          "plan_digest",
+          "expires_at",
+          "items",
+          "summary"
+        ],
+        "title": "MaskRepairDryRunResponse",
+        "type": "object"
+      },
+      "MaskRepairExecuteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "plan_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Digest",
+            "type": "string"
+          },
+          "receipt": {
+            "maxLength": 128,
+            "minLength": 32,
+            "pattern": "^mrp_[A-Za-z0-9_-]+$",
+            "title": "Receipt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt",
+          "plan_digest"
+        ],
+        "title": "MaskRepairExecuteRequest",
+        "type": "object"
+      },
+      "MaskRepairPlanItem": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "candidate_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "changed_pixels": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Changed Pixels",
+            "type": "integer"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "issue_id": {
+            "format": "uuid",
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "delete_small_islands",
+              "fill_small_holes",
+              "resolve_same_class_overlap",
+              "rerun_local_sam",
+              "rerun_tracker"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mutation_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Mutation Count",
+            "type": "integer"
+          },
+          "scope_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Fingerprint"
+          },
+          "skip_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Code"
+          },
+          "skip_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Detail"
+          },
+          "source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Versions",
+            "type": "object"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "issue_id",
+          "kind"
+        ],
+        "title": "MaskRepairPlanItem",
+        "type": "object"
+      },
+      "MaskRepairPlanSummary": {
+        "properties": {
+          "action_count": {
+            "minimum": 0.0,
+            "title": "Action Count",
+            "type": "integer"
+          },
+          "candidate_count": {
+            "minimum": 0.0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "changed_pixels": {
+            "minimum": 0.0,
+            "title": "Changed Pixels",
+            "type": "integer"
+          },
+          "executable_count": {
+            "minimum": 0.0,
+            "title": "Executable Count",
+            "type": "integer"
+          },
+          "mutation_count": {
+            "minimum": 0.0,
+            "title": "Mutation Count",
+            "type": "integer"
+          },
+          "shard_count": {
+            "minimum": 0.0,
+            "title": "Shard Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "minimum": 0.0,
+            "title": "Skipped Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action_count",
+          "executable_count",
+          "skipped_count",
+          "mutation_count",
+          "candidate_count",
+          "changed_pixels",
+          "shard_count"
+        ],
+        "title": "MaskRepairPlanSummary",
+        "type": "object"
+      },
+      "MaskRepairRollbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_result_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Result Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_result_digest"
+        ],
+        "title": "MaskRepairRollbackRequest",
         "type": "object"
       },
       "MaskUpdateMutation": {
@@ -36126,6 +36651,160 @@
         ]
       }
     },
+    "/api/v1/mask-qc/repairs/{repair_id}": {
+      "get": {
+        "operationId": "get_mask_repair_batch_api_v1_mask_qc_repairs__repair_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Repair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskRepairBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Mask Repair Batch",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/mask-qc/repairs/{repair_id}/resume": {
+      "post": {
+        "operationId": "resume_mask_repairs_api_v1_mask_qc_repairs__repair_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Repair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskRepairBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resume Mask Repairs",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/mask-qc/repairs/{repair_id}/rollback": {
+      "post": {
+        "operationId": "rollback_mask_repairs_api_v1_mask_qc_repairs__repair_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Repair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskRepairRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskRepairBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rollback Mask Repairs",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
     "/api/v1/me/api-keys": {
       "get": {
         "operationId": "list_my_keys_api_v1_me_api_keys_get",
@@ -40234,6 +40913,122 @@
           }
         ],
         "summary": "Get Project Issues",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-qc/repairs": {
+      "post": {
+        "operationId": "execute_mask_repairs_api_v1_projects__project_id__mask_qc_repairs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskRepairExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskRepairBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Mask Repairs",
+        "tags": [
+          "mask-qc"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mask-qc/repairs:dry-run": {
+      "post": {
+        "operationId": "dry_run_mask_repairs_api_v1_projects__project_id__mask_qc_repairs_dry_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskRepairDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskRepairDryRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dry Run Mask Repairs",
         "tags": [
           "mask-qc"
         ]

@@ -284,6 +284,19 @@ def _validate_operation_shape(
             and bool(updates)
             and not creates
         )
+    elif payload.operation in {
+        "delete_small_islands",
+        "fill_small_holes",
+        "resolve_same_class_overlap",
+        "mask_repair_rollback",
+    }:
+        valid = (
+            len(source_ids) == 1
+            and len(updates) == 1
+            and updates[0].annotation_id in source_ids
+            and not creates
+            and not deletes
+        )
 
     if not valid:
         raise MaskMutationError(
@@ -916,7 +929,7 @@ class MaskMutationService:
             joined_result = next(iter(result_rles.values()))
             if not _rle_equal(joined_source, joined_result, algebra_budget):
                 invalid_message = "joined result must equal the union of all sources"
-        else:
+        elif payload.operation == "overlap":
             if payload.scope.overlap_policy == "allow":
                 invalid_message = "overlap mutation requires an erase policy"
             primary = payload.mutations[0]
@@ -981,6 +994,14 @@ class MaskMutationService:
                             "overlap result must equal source minus the primary mask"
                         )
                         break
+        else:
+            # Repair payloads are built from a server-side, short-lived plan.
+            # The shared mutation service still validates the exact source/result
+            # RLEs, scope fingerprint, versions, locks and write contract here.
+            source_rle = source_rles[next(iter(source_ids))]
+            result_rle = next(iter(result_rles.values()))
+            if _rle_equal(source_rle, result_rle, algebra_budget):
+                invalid_message = "mask repair must change at least one pixel"
         if invalid_message is not None:
             raise MaskMutationError(
                 status_code=422,
@@ -1546,6 +1567,10 @@ class MaskMutationService:
             "copy_keyframe": "keyframe_copied",
             "join_masks": "joined",
             "overlap": "overlap_erased",
+            "delete_small_islands": "mask_repaired",
+            "fill_small_holes": "mask_repaired",
+            "resolve_same_class_overlap": "mask_repaired",
+            "mask_repair_rollback": "mask_repair_rolled_back",
         }[payload.operation]
         if payload.operation in {
             "split_components",
@@ -1566,7 +1591,7 @@ class MaskMutationService:
                             frame_index=payload.scope.frame_index,
                         )
                     )
-        else:
+        elif payload.operation == "overlap":
             for annotation in updated:
                 lineage.append(
                     AnnotationLineageEdge(
@@ -1586,6 +1611,19 @@ class MaskMutationService:
                         source_annotation_id=annotation.id,
                         result_annotation_id=None,
                         relation="overlap_erased",
+                        source_version=expected_versions[str(annotation.id)],
+                        result_version=result_versions[str(annotation.id)],
+                        frame_index=payload.scope.frame_index,
+                    )
+                )
+        else:
+            for annotation in updated:
+                lineage.append(
+                    AnnotationLineageEdge(
+                        operation_id=operation_id,
+                        source_annotation_id=annotation.id,
+                        result_annotation_id=annotation.id,
+                        relation=relation,
                         source_version=expected_versions[str(annotation.id)],
                         result_version=result_versions[str(annotation.id)],
                         frame_index=payload.scope.frame_index,
