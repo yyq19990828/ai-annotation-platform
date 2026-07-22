@@ -76,6 +76,7 @@ const EMPTY_LOCKED = new Set<string>();
 const EMPTY_SELECTED_IDS: string[] = [];
 const EMPTY_MASK_CANDIDATES: VideoMaskCandidate[] = [];
 const MASK_OPERATION_PREVIEW_COLOR = [245, 158, 11] as const;
+const MASK_INSTANCE_PREVIEW_COLOR = [14, 165, 233] as const;
 
 interface VideoKonvaStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -301,6 +302,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     buffer.replaceAlpha(preview.alpha);
     return buffer;
   }, [maskEditor?.operationPreview, size.h, size.w]);
+  const maskInstancePreviewBuffer = useMemo(() => {
+    const preview = maskEditor?.instanceOperationPreview;
+    if (!preview || preview.plan.focusAlpha.length !== size.w * size.h) return null;
+    const buffer = new MaskBuffer({ width: size.w, height: size.h });
+    buffer.replaceAlpha(preview.plan.focusAlpha);
+    return buffer;
+  }, [maskEditor?.instanceOperationPreview, size.h, size.w]);
 
   // 右键上下文菜单状态
   const contextMenu = useCanvasContextMenu();
@@ -689,6 +697,37 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         setMaskCursor(point);
         return;
       }
+      if (maskEditor.tool === "component_keep" || maskEditor.tool === "component_delete") {
+        void maskEditor.runOperation(maskEditor.tool, {
+          type: "component",
+          action: maskEditor.tool === "component_keep" ? "keep" : "delete",
+          x,
+          y,
+          connectivity: maskEditor.connectivity,
+        });
+        setMaskCursor(point);
+        return;
+      }
+      if (maskEditor.tool === "component_copy") {
+        void maskEditor.runInstanceOperation(maskEditor.tool, {
+          type: "copy_component",
+          x,
+          y,
+          connectivity: maskEditor.connectivity,
+        });
+        setMaskCursor(point);
+        return;
+      }
+      if (maskEditor.tool === "hole_fill") {
+        void maskEditor.runOperation(maskEditor.tool, {
+          type: "fill_holes",
+          mode: "hit",
+          x,
+          y,
+        });
+        setMaskCursor(point);
+        return;
+      }
       maskEditor.beginStroke();
       maskEditor.paintAt(x, y);
       maskStrokeRef.current = { lastX: x, lastY: y };
@@ -759,7 +798,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         event.preventDefault();
         event.stopImmediatePropagation();
         if (!editable) return;
-        if (maskEditor.operationPreview) {
+        if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
           maskEditor.confirmOperation();
           return;
         }
@@ -768,7 +807,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (maskEditor.operationPreview) {
+        if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
           maskEditor.cancelOperation();
           return;
         }
@@ -1304,6 +1343,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               imgW={size.w}
               imgH={size.h}
               color={MASK_OPERATION_PREVIEW_COLOR}
+              visible
+            />
+          )}
+          {videoTool === "mask" && maskInstancePreviewBuffer && (
+            <MaskOverlayLayer
+              buffer={maskInstancePreviewBuffer}
+              revision={maskEditor?.instanceOperationPreview?.id ?? 0}
+              imgW={size.w}
+              imgH={size.h}
+              color={MASK_INSTANCE_PREVIEW_COLOR}
               visible
             />
           )}

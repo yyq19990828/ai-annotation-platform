@@ -1,7 +1,7 @@
 // v0.23.5 · WS-C · canEditMask / canCommitMask 单测 (A4 锁定绕过的纯函数层)。
 
 import { describe, expect, it } from "vitest";
-import { canCommitMask, canEditMask } from "./canEditMask";
+import { canCommitMask, canEditMask, maskEditBlockReason } from "./canEditMask";
 
 const OPEN = {
   taskReadOnly: false,
@@ -38,6 +38,17 @@ describe("canEditMask · 锁与只读门", () => {
   it("idle / error 态 → 拒绝", () => {
     expect(canEditMask({ ...OPEN, editorPhase: "idle" })).toBe(false);
     expect(canEditMask({ ...OPEN, editorPhase: "error" })).toBe(false);
+  });
+  it("返回稳定且按安全优先级排序的禁用原因", () => {
+    expect(maskEditBlockReason({
+      ...OPEN,
+      taskReadOnly: true,
+      annotationLocked: true,
+      editorPhase: "saving",
+    })).toBe("task_read_only");
+    expect(maskEditBlockReason({ ...OPEN, trackLocked: true, editorPhase: "ready" })).toBe("track_locked");
+    expect(maskEditBlockReason({ ...OPEN, editorPhase: "loading" })).toBe("editor_loading");
+    expect(maskEditBlockReason({ ...OPEN, editorPhase: "dirty" })).toBeNull();
   });
 });
 

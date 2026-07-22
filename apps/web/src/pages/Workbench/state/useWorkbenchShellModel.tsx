@@ -152,7 +152,7 @@ import {
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
 import { promptMaskLeaveChoice, useMaskEditorSession, type MaskSessionKey } from "./useMaskEditorSession";
-import { canCommitMask, canEditMask } from "./canEditMask";
+import { canCommitMask, canEditMask, maskEditBlockReason } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import {
@@ -3866,6 +3866,24 @@ export function useWorkbenchShellModel({
       ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex)).length
       : aiBoxes.length;
 
+  const maskToolbarSelection = s.selectedId
+    ? visibleAnnotationsData.find((annotation) => annotation.id === s.selectedId)
+    : null;
+  const maskToolbarTrackLocked = !!(
+    isVideoTask
+    && maskToolbarSelection
+    && isVideoMaskTrack(maskToolbarSelection)
+    && s.lockedVideoTrackIds.has(maskToolbarSelection.geometry.track_id)
+  );
+  const maskToolbarEditContext = {
+    taskReadOnly: isLockedForActions || imageMaskInteractionBlocked,
+    annotationLocked: !!maskToolbarSelection?.is_locked,
+    trackLocked: maskToolbarTrackLocked,
+    segmentLocked: !!lockConflict || !!lockError,
+    editorPhase: maskEditor.phase,
+  };
+  const maskToolbarBlockReason = maskEditBlockReason(maskToolbarEditContext);
+
   const layout: ComponentProps<typeof WorkbenchLayout> = {
     gridTemplateColumns: `${leftOpen ? `clamp(180px, ${leftPct}%, 600px)` : "0px"} 48px 1fr ${rightOpen ? `clamp(180px, ${rightPct}%, 600px)` : "0px"}`,
     taskQueue: {
@@ -3995,29 +4013,19 @@ export function useWorkbenchShellModel({
                 canUndo={maskEditor.canUndo}
                 canRedo={maskEditor.canRedo}
                 operationPreview={maskEditor.operationPreview}
+                instanceOperationPreview={maskEditor.instanceOperationPreview}
                 operationStatus={maskEditor.operationStatus}
-                canEdit={(() => {
-                  // v0.23.5 · WS-C · 工具栏经 canEditMask 统一准入 (与 pointer / hotkey 同源)。
-                  const sel = s.selectedId
-                    ? visibleAnnotationsData.find((a) => a.id === s.selectedId)
-                    : null;
-                  const trackLocked = isVideoTask && sel && isVideoMaskTrack(sel)
-                    ? s.lockedVideoTrackIds.has(sel.geometry.track_id)
-                    : false;
-                  return canEditMask({
-                    taskReadOnly: isLockedForActions || imageMaskInteractionBlocked,
-                    annotationLocked: !!sel?.is_locked,
-                    trackLocked,
-                    segmentLocked: !!lockConflict || !!lockError,
-                    editorPhase: maskEditor.phase,
-                  });
-                })()}
+                operationError={maskEditor.operationError}
+                canEdit={maskToolbarBlockReason === null}
+                editBlockReason={maskToolbarBlockReason}
                 onSetTool={maskEditor.setTool}
                 onSetBrushShape={maskEditor.setBrushShape}
                 onSetConnectivity={maskEditor.setConnectivity}
                 onSetRadius={maskEditor.setRadius}
                 onConfirmOperation={maskEditor.confirmOperation}
                 onCancelOperation={maskEditor.cancelOperation}
+                onRunOperation={maskEditor.runOperation}
+                onRunInstanceOperation={maskEditor.runInstanceOperation}
                 onUndo={maskEditor.undo}
                 onRedo={maskEditor.redo}
                 onRetry={isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession}

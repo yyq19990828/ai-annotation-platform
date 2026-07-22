@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Brush,
   Check,
@@ -8,6 +9,16 @@ import {
   Undo2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/shadcn/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadcn/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,10 +39,16 @@ import {
   type MaskEditorTool,
   type MaskOperationStatus,
   type MaskOperationPreview,
+  type MaskInstanceOperationPreview,
 } from "../state/useMaskEditor";
 import type { MaskBrushShape } from "../stage/shared/geometry/maskBuffer";
-import type { MaskConnectivity } from "../stage/shared/geometry/maskOperations";
-import type { MaskEditorPhase } from "../state/canEditMask";
+import type {
+  MaskConnectivity,
+  MaskKernelShape,
+  MaskOperationSpec,
+} from "../stage/shared/geometry/maskOperations";
+import type { MaskInstanceOperationSpec } from "../stage/shared/geometry/maskInstanceOperations";
+import type { MaskEditBlockReason, MaskEditorPhase } from "../state/canEditMask";
 
 interface MaskToolbarProps {
   active: boolean;
@@ -44,14 +61,19 @@ interface MaskToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   canEdit: boolean;
+  editBlockReason?: MaskEditBlockReason | null;
   operationPreview: MaskOperationPreview | null;
+  instanceOperationPreview: MaskInstanceOperationPreview | null;
   operationStatus: MaskOperationStatus;
+  operationError?: unknown;
   onSetTool: (tool: MaskEditorTool) => void;
   onSetBrushShape: (shape: MaskBrushShape) => void;
   onSetConnectivity: (connectivity: MaskConnectivity) => void;
   onSetRadius: (radius: number) => void;
   onConfirmOperation: () => void;
   onCancelOperation: () => void;
+  onRunOperation: (name: string, operation: MaskOperationSpec) => Promise<boolean>;
+  onRunInstanceOperation: (name: string, operation: MaskInstanceOperationSpec) => Promise<boolean>;
   onCommit: () => void;
   onCommitAndPropagate?: () => void;
   onCancel: () => void;
@@ -74,6 +96,30 @@ const operationLabel: Record<string, string> = {
   lasso_subtract: "套索扣除",
   fill_add: "区域填充",
   fill_subtract: "区域擦除",
+  component_keep: "保留命中组件",
+  component_delete: "删除命中组件",
+  hole_fill: "填充命中孔洞",
+  dilate: "膨胀",
+  erode: "腐蚀",
+  open: "开运算",
+  close: "闭运算",
+  smooth: "边界平滑",
+  deburr: "去除小组件",
+  fill_holes_all: "填充全部孔洞",
+  fill_holes_small: "填充小孔洞",
+  component_copy: "复制命中组件",
+  split_components: "拆分组件",
+};
+
+const editBlockReasonLabel: Record<MaskEditBlockReason, string> = {
+  task_read_only: "任务只读或原生 Mask 写能力未开启",
+  annotation_locked: "当前标注已锁定",
+  track_locked: "当前 Mask 轨迹已锁定",
+  segment_locked: "当前视频分段锁冲突",
+  editor_idle: "请先进入 Mask 编辑",
+  editor_loading: "正在加载 Mask",
+  editor_saving: "正在保存 Mask",
+  editor_error: "请先恢复失败的编辑会话",
 };
 
 export function MaskToolbar({
@@ -87,14 +133,19 @@ export function MaskToolbar({
   canUndo,
   canRedo,
   canEdit,
+  editBlockReason,
   operationPreview,
+  instanceOperationPreview,
   operationStatus,
+  operationError,
   onSetTool,
   onSetBrushShape,
   onSetConnectivity,
   onSetRadius,
   onConfirmOperation,
   onCancelOperation,
+  onRunOperation,
+  onRunInstanceOperation,
   onCommit,
   onCommitAndPropagate,
   onCancel,
@@ -102,6 +153,18 @@ export function MaskToolbar({
   onRedo,
   onRetry,
 }: MaskToolbarProps) {
+  const [componentThreshold, setComponentThreshold] = useState(16);
+  const [morphologyRadius, setMorphologyRadius] = useState(1);
+  const [kernelShape, setKernelShape] = useState<MaskKernelShape>("disk");
+  const [confirmEmptyOpen, setConfirmEmptyOpen] = useState(false);
+  const runMorphology = (operation: "dilate" | "erode" | "open" | "close") => {
+    void onRunOperation(operation, {
+      type: "morphology",
+      operation,
+      kernelShape,
+      radius: morphologyRadius,
+    });
+  };
   return (
     <div
       data-testid="mask-toolbar"
@@ -142,12 +205,104 @@ export function MaskToolbar({
           disabled={!canEdit}
           title="Mask 高级工具"
         >
-          高级 <ChevronDown />
+          {operationLabel[tool] ?? "高级"} <ChevronDown />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent
+          align="start"
+          className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto"
+        >
           <DropdownMenuLabel>区域工具</DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => onSetTool("fill_add")}>填充命中区域</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onSetTool("fill_subtract")}>擦除命中区域</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>组件与孔洞</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => onSetTool("component_keep")}>保留命中组件</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onSetTool("component_delete")}>删除命中组件</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onSetTool("component_copy")}>复制命中组件为新实例</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onSetTool("hole_fill")}>填充命中孔洞</DropdownMenuItem>
+          <DropdownMenuLabel className="flex items-center gap-2 font-normal">
+            <span className="text-xs text-muted-foreground">面积阈值</span>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={componentThreshold}
+              aria-label="组件与孔洞面积阈值"
+              onChange={(event) => setComponentThreshold(Math.max(1, Number.parseInt(event.target.value, 10) || 1))}
+              className="h-7 w-20"
+            />
+            <span className="text-xs text-muted-foreground">px</span>
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onSelect={() => void onRunOperation("deburr", {
+              type: "remove_small_components",
+              maxArea: componentThreshold,
+              connectivity,
+            })}
+          >
+            去除小组件（≤ {componentThreshold}px）
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => void onRunOperation("fill_holes_small", {
+              type: "fill_holes",
+              mode: "max_area",
+              maxArea: componentThreshold,
+            })}
+          >
+            填充小孔洞（≤ {componentThreshold}px）
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => void onRunOperation("fill_holes_all", { type: "fill_holes", mode: "all" })}
+          >
+            填充全部孔洞
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => void onRunInstanceOperation("split_components", {
+              type: "split_components",
+              keep: "largest",
+              connectivity,
+            })}
+          >
+            拆分全部组件（保留最大）
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>形态学</DropdownMenuLabel>
+          <DropdownMenuLabel className="flex items-center gap-2 font-normal">
+            <span className="text-xs text-muted-foreground">半径</span>
+            <Input
+              type="number"
+              min={1}
+              max={32}
+              step={1}
+              value={morphologyRadius}
+              aria-label="形态学半径"
+              onChange={(event) => {
+                const value = Number.parseInt(event.target.value, 10) || 1;
+                setMorphologyRadius(Math.max(1, Math.min(32, value)));
+              }}
+              className="h-7 w-16"
+            />
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={kernelShape}
+            onValueChange={(value) => setKernelShape(value as MaskKernelShape)}
+          >
+            <DropdownMenuRadioItem value="disk">圆盘 kernel</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="square">方形 kernel</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+          <DropdownMenuItem onSelect={() => runMorphology("dilate")}>膨胀</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => runMorphology("erode")}>腐蚀</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => runMorphology("open")}>开运算</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => runMorphology("close")}>闭运算</DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => void onRunOperation("smooth", {
+              type: "smooth",
+              kernelShape,
+              radius: morphologyRadius,
+            })}
+          >
+            边界平滑（闭→开）
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>笔刷形状</DropdownMenuLabel>
           <DropdownMenuRadioGroup
@@ -191,6 +346,11 @@ export function MaskToolbar({
       <span className={cn("text-xs", dirty ? "text-status-caution" : "text-muted-foreground")}>
         {phaseLabel[phase]}
       </span>
+      {!canEdit && editBlockReason && (
+        <span className="text-xs text-status-caution" role="status">
+          不可编辑：{editBlockReasonLabel[editBlockReason]}
+        </span>
+      )}
 
       {operationPreview && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
@@ -200,12 +360,40 @@ export function MaskToolbar({
           <span className="text-xs text-muted-foreground">
             变化 {operationPreview.report.changedPixels} px
           </span>
+          <span className="text-xs text-muted-foreground">
+            面积 {operationPreview.report.beforeArea}→{operationPreview.report.afterArea}
+            · 组件 {operationPreview.report.beforeComponents}→{operationPreview.report.afterComponents}
+            · 孔洞 {operationPreview.report.beforeHoles}→{operationPreview.report.afterHoles}
+          </span>
           <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>
             取消预览
           </Button>
-          <Button type="button" size="xs" onClick={onConfirmOperation}>
+          <Button
+            type="button"
+            size="xs"
+            onClick={() => {
+              if (operationPreview.report.afterArea === 0) setConfirmEmptyOpen(true);
+              else onConfirmOperation();
+            }}
+          >
             应用预览
           </Button>
+        </div>
+      )}
+      {instanceOperationPreview && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
+          <span className="text-xs text-foreground">
+            {instanceOperationPreview.plan.kind === "copy_component"
+              ? "复制组件"
+              : instanceOperationPreview.plan.kind === "join_masks"
+                ? "合并 Mask"
+                : "拆分组件"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {instanceOperationPreview.plan.sourceCount} 个来源 → {instanceOperationPreview.plan.resultCount} 个结果
+          </span>
+          <span className="text-xs text-status-caution">等待原子提交</span>
+          <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>取消预览</Button>
         </div>
       )}
       {operationStatus === "computing" && (
@@ -216,7 +404,9 @@ export function MaskToolbar({
       )}
       {operationStatus === "error" && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1">
-          <span className="text-xs text-destructive">高级操作失败</span>
+          <span className="text-xs text-destructive">
+            高级操作失败：{operationError instanceof Error ? operationError.message : String(operationError ?? "未知错误")}
+          </span>
           <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>关闭</Button>
         </div>
       )}
@@ -258,6 +448,20 @@ export function MaskToolbar({
           保存并传播
         </Button>
       )}
+      <AlertDialog open={confirmEmptyOpen} onOpenChange={setConfirmEmptyOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认清空当前 Mask？</AlertDialogTitle>
+            <AlertDialogDescription>
+              该操作会把当前对象变为空 Mask。应用后仍可用撤销恢复，但保存时需要选择删除对象或继续编辑。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>返回预览</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onConfirmOperation}>确认清空</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

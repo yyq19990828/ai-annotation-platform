@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analyzeRasterMaskRleAsync,
+  executeRasterMaskInstanceOperationAsync,
   executeRasterMaskOperationAsync,
   RasterMaskWorkerCancelledError,
 } from "./rasterMaskCompute";
@@ -16,6 +17,25 @@ describe("analyzeRasterMaskRleAsync", () => {
     expect(analysis.sourceHeight).toBe(2);
     expect(analysis.area).toBe(2);
     expect(analysis.bounds).toEqual({ x: 0, y: 0, w: 0.5, h: 1 });
+  });
+});
+
+describe("executeRasterMaskInstanceOperationAsync", () => {
+  it("同步测试路径生成 split plan 并保留隔离上下文", async () => {
+    const result = await executeRasterMaskInstanceOperationAsync(
+      { encoding: "coco_rle", size: [1, 5], counts: [0, 1, 2, 2] },
+      { type: "split_components", keep: "largest", connectivity: 4 },
+      { sessionId: "task-a|frame-3", generation: 7, operationId: 11 },
+      { createWorker: null },
+    );
+
+    expect(result.context).toEqual({
+      sessionId: "task-a|frame-3",
+      generation: 7,
+      operationId: 11,
+    });
+    expect(result.plan?.sourceAreas).toEqual([3]);
+    expect(result.plan?.resultAreas).toEqual([2, 1]);
   });
 });
 

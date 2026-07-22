@@ -57,6 +57,34 @@ export const MaskTool: CanvasToolMeta = {
     if (maskEditor.tool === "lasso_add" || maskEditor.tool === "lasso_subtract") {
       return { kind: "maskLasso", points: [[px, py]] } as DragInit;
     }
+    if (maskEditor.tool === "component_keep" || maskEditor.tool === "component_delete") {
+      void maskEditor.runOperation(maskEditor.tool, {
+        type: "component",
+        action: maskEditor.tool === "component_keep" ? "keep" : "delete",
+        x: px,
+        y: py,
+        connectivity: maskEditor.connectivity,
+      });
+      return null;
+    }
+    if (maskEditor.tool === "component_copy") {
+      void maskEditor.runInstanceOperation(maskEditor.tool, {
+        type: "copy_component",
+        x: px,
+        y: py,
+        connectivity: maskEditor.connectivity,
+      });
+      return null;
+    }
+    if (maskEditor.tool === "hole_fill") {
+      void maskEditor.runOperation(maskEditor.tool, {
+        type: "fill_holes",
+        mode: "hit",
+        x: px,
+        y: py,
+      });
+      return null;
+    }
     // v0.23.5 · WS-B/A3 · 开启一笔的历史边界: 配合 ImageStage pointerup 的 endStroke,
     // 让图片 mask 每笔可 undo (与视频路径 VideoKonvaStage 一致)。
     maskEditor.beginStroke();

@@ -67,6 +67,30 @@ export type MaskOperationSpec =
       operation: MaskMorphologyOperation;
       kernelShape: MaskKernelShape;
       radius: number;
+    }
+  | {
+      type: "component";
+      action: "keep" | "delete";
+      x: number;
+      y: number;
+      connectivity: MaskConnectivity;
+    }
+  | {
+      type: "remove_small_components";
+      maxArea: number;
+      connectivity: MaskConnectivity;
+    }
+  | {
+      type: "fill_holes";
+      mode: "hit" | "max_area" | "all";
+      x?: number;
+      y?: number;
+      maxArea?: number;
+    }
+  | {
+      type: "smooth";
+      kernelShape: MaskKernelShape;
+      radius: number;
     };
 
 function assertAlpha(alpha: Uint8Array, width: number, height: number): void {
@@ -341,6 +365,91 @@ export function applyMaskFloodFill(
   return operationResult(source, after, width, height);
 }
 
+function fillRegion(after: Uint8Array, width: number, region: MaskRegion, value: 0 | 255): void {
+  for (const span of region.spans) {
+    after.fill(value, span.y * width + span.x0, span.y * width + span.x1);
+  }
+}
+
+export function applyMaskComponent(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  options: {
+    action: "keep" | "delete";
+    x: number;
+    y: number;
+    connectivity: MaskConnectivity;
+  },
+): MaskOperationResult {
+  assertAlpha(source, width, height);
+  const labels = labelMaskRegions(source, width, height, {
+    value: 255,
+    connectivity: options.connectivity,
+  });
+  const selected = labels.hit(options.x, options.y);
+  const after = options.action === "keep" ? new Uint8Array(source.length) : source.slice();
+  if (selected) fillRegion(after, width, selected, options.action === "keep" ? 255 : 0);
+  else if (options.action === "keep") after.set(source);
+  return operationResult(source, after, width, height);
+}
+
+export function removeSmallMaskComponents(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  options: { maxArea: number; connectivity: MaskConnectivity },
+): MaskOperationResult {
+  assertAlpha(source, width, height);
+  if (!Number.isInteger(options.maxArea) || options.maxArea < 1) {
+    throw new Error("component area threshold must be a positive integer");
+  }
+  const after = source.slice();
+  const labels = labelMaskRegions(source, width, height, {
+    value: 255,
+    connectivity: options.connectivity,
+  });
+  for (const region of labels.regions) {
+    if (region.area <= options.maxArea) fillRegion(after, width, region, 0);
+  }
+  return operationResult(source, after, width, height);
+}
+
+export function fillMaskHoles(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  options: {
+    mode: "hit" | "max_area" | "all";
+    x?: number;
+    y?: number;
+    maxArea?: number;
+  },
+): MaskOperationResult {
+  assertAlpha(source, width, height);
+  if (options.mode === "hit" && (!Number.isFinite(options.x) || !Number.isFinite(options.y))) {
+    throw new Error("hole hit coordinates must be finite");
+  }
+  if (options.mode === "max_area" && (!Number.isInteger(options.maxArea) || options.maxArea! < 1)) {
+    throw new Error("hole area threshold must be a positive integer");
+  }
+  // Hole 的冻结合同固定为 4 邻域；它不随 component/fill 的可选 connectivity 改变。
+  const labels = labelMaskRegions(source, width, height, { value: 0, connectivity: 4 });
+  const after = source.slice();
+  let selected: MaskRegion[];
+  if (options.mode === "hit") {
+    const hit = labels.hit(options.x!, options.y!);
+    selected = hit && !hit.touchesBoundary ? [hit] : [];
+  } else {
+    selected = labels.regions.filter((region) => (
+      !region.touchesBoundary
+      && (options.mode === "all" || region.area <= options.maxArea!)
+    ));
+  }
+  for (const region of selected) fillRegion(after, width, region, 255);
+  return operationResult(source, after, width, height);
+}
+
 function squareMorphology(
   source: Uint8Array,
   width: number,
@@ -542,6 +651,25 @@ export function applyMaskMorphology(
   return operationResult(source, after, width, height);
 }
 
+export function smoothMaskBoundary(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  options: { kernelShape: MaskKernelShape; radius: number },
+): MaskOperationResult {
+  const closed = applyMaskMorphology(source, width, height, {
+    operation: "close",
+    kernelShape: options.kernelShape,
+    radius: options.radius,
+  }).alpha;
+  const opened = applyMaskMorphology(closed, width, height, {
+    operation: "open",
+    kernelShape: options.kernelShape,
+    radius: options.radius,
+  }).alpha;
+  return operationResult(source, opened, width, height);
+}
+
 export function applyMaskOperation(
   source: Uint8Array,
   width: number,
@@ -553,6 +681,18 @@ export function applyMaskOperation(
   }
   if (operation.type === "flood_fill") {
     return applyMaskFloodFill(source, width, height, operation);
+  }
+  if (operation.type === "component") {
+    return applyMaskComponent(source, width, height, operation);
+  }
+  if (operation.type === "remove_small_components") {
+    return removeSmallMaskComponents(source, width, height, operation);
+  }
+  if (operation.type === "fill_holes") {
+    return fillMaskHoles(source, width, height, operation);
+  }
+  if (operation.type === "smooth") {
+    return smoothMaskBoundary(source, width, height, operation);
   }
   return applyMaskMorphology(source, width, height, operation);
 }

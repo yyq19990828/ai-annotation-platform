@@ -19,6 +19,7 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
     canUndo: false,
     canRedo: false,
     operationPreview: null,
+    instanceOperationPreview: null,
     operationStatus: "idle",
     operationError: undefined,
     beginBlank: vi.fn(),
@@ -37,6 +38,8 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
     setRadius: vi.fn(),
     previewOperation: vi.fn(() => true),
     runOperation: vi.fn(async () => true),
+    previewInstanceOperation: vi.fn(() => true),
+    runInstanceOperation: vi.fn(async () => true),
     confirmOperation: vi.fn(() => true),
     cancelOperation: vi.fn(),
     cancel: vi.fn(),
@@ -111,5 +114,41 @@ describe("MaskTool", () => {
       connectivity: 4,
     });
     expect(me.paintAt).not.toHaveBeenCalled();
+  });
+
+  it("component 与 hole 工具按像素 membership 生成预览", () => {
+    const component = fakeMaskEditor(true);
+    component.tool = "component_keep";
+    expect(MaskTool.onPointerDown!(baseCtx(component))).toBeNull();
+    expect(component.runOperation).toHaveBeenCalledWith("component_keep", {
+      type: "component",
+      action: "keep",
+      x: 400,
+      y: 300,
+      connectivity: 4,
+    });
+
+    const hole = fakeMaskEditor(true);
+    hole.tool = "hole_fill";
+    expect(MaskTool.onPointerDown!(baseCtx(hole))).toBeNull();
+    expect(hole.runOperation).toHaveBeenCalledWith("hole_fill", {
+      type: "fill_holes",
+      mode: "hit",
+      x: 400,
+      y: 300,
+    });
+  });
+
+  it("copy component 只生成待原子提交的 instance plan", () => {
+    const me = fakeMaskEditor(true);
+    me.tool = "component_copy";
+    expect(MaskTool.onPointerDown!(baseCtx(me))).toBeNull();
+    expect(me.runInstanceOperation).toHaveBeenCalledWith("component_copy", {
+      type: "copy_component",
+      x: 400,
+      y: 300,
+      connectivity: 4,
+    });
+    expect(me.runOperation).not.toHaveBeenCalled();
   });
 });

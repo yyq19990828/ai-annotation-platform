@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   applyMaskBrush,
+  applyMaskComponent,
   applyMaskFloodFill,
   applyMaskMorphology,
   applyMaskPolygon,
+  fillMaskHoles,
   labelMaskRegions,
+  removeSmallMaskComponents,
+  smoothMaskBoundary,
 } from "./maskOperations";
 
 function alpha(rows: number[][]): Uint8Array {
@@ -264,5 +268,106 @@ describe("Mask operations · morphology", () => {
       radius: 32,
     });
     expect(full.report.afterArea).toBe(0);
+  });
+});
+
+describe("Mask operations · component and hole editing", () => {
+  it("keeps or deletes the foreground component hit by alpha membership", () => {
+    const source = alpha([
+      [1, 1, 0, 0, 0, 0],
+      [1, 1, 0, 1, 1, 0],
+      [0, 0, 0, 1, 1, 0],
+    ]);
+
+    const kept = applyMaskComponent(source, 6, 3, {
+      action: "keep",
+      x: 3,
+      y: 1,
+      connectivity: 4,
+    });
+    const deleted = applyMaskComponent(source, 6, 3, {
+      action: "delete",
+      x: 0,
+      y: 0,
+      connectivity: 4,
+    });
+
+    expect(rows(kept.alpha, 6)).toEqual([
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 1, 1, 0],
+      [0, 0, 0, 1, 1, 0],
+    ]);
+    expect(rows(deleted.alpha, 6)).toEqual(rows(kept.alpha, 6));
+    expect(kept.report.changedPixels).toBe(4);
+  });
+
+  it("does not use a component AABB as hit membership", () => {
+    const source = alpha([
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 1],
+    ]);
+    const result = applyMaskComponent(source, 3, 3, {
+      action: "delete",
+      x: 1,
+      y: 1,
+      connectivity: 4,
+    });
+    expect([...result.alpha]).toEqual([...source]);
+    expect(result.report.changedPixels).toBe(0);
+  });
+
+  it("removes every foreground component at or below the threshold", () => {
+    const source = alpha([
+      [1, 0, 0, 1, 1],
+      [0, 0, 0, 1, 1],
+      [1, 1, 0, 1, 1],
+    ]);
+    const result = removeSmallMaskComponents(source, 5, 3, {
+      maxArea: 2,
+      connectivity: 4,
+    });
+    expect(rows(result.alpha, 5)).toEqual([
+      [0, 0, 0, 1, 1],
+      [0, 0, 0, 1, 1],
+      [0, 0, 0, 1, 1],
+    ]);
+    expect(result.report.changedPixels).toBe(3);
+  });
+
+  it("fills only enclosed background and supports hit / threshold / all modes", () => {
+    const source = alpha([
+      [0, 0, 0, 0, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 1, 0, 1, 0, 1, 0],
+      [0, 1, 1, 1, 0, 1, 0],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 0, 0, 0, 0, 0, 0],
+    ]);
+    const hit = fillMaskHoles(source, 7, 6, { mode: "hit", x: 2, y: 2 });
+    const threshold = fillMaskHoles(source, 7, 6, { mode: "max_area", maxArea: 1 });
+    const all = fillMaskHoles(source, 7, 6, { mode: "all" });
+
+    expect(hit.report.changedPixels).toBe(1);
+    expect(threshold.report.changedPixels).toBe(1);
+    expect(all.report.changedPixels).toBe(3);
+    expect(all.alpha[0]).toBe(0);
+    expect(fillMaskHoles(source, 7, 6, { mode: "hit", x: 0, y: 0 }).report.changedPixels).toBe(0);
+  });
+
+  it("smooth is one close-then-open result and keeps the source immutable", () => {
+    const source = alpha([
+      [0, 0, 0, 0, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 1, 1, 0, 1, 1, 0],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0],
+    ]);
+    const before = source.slice();
+    const result = smoothMaskBoundary(source, 7, 6, { kernelShape: "square", radius: 1 });
+    expect([...source]).toEqual([...before]);
+    expect(result.alpha[2 * 7 + 3]).toBe(255);
+    expect(result.alpha[4 * 7 + 3]).toBe(0);
   });
 });

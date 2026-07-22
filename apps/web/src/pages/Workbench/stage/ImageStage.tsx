@@ -324,6 +324,7 @@ const SAM_DASH: [number, number] = [6, 4];
 const SAM_DASH_PERIOD = SAM_DASH[0] + SAM_DASH[1];
 const SAM_FLOW_SPEED = 22;
 const MASK_OPERATION_PREVIEW_COLOR = [245, 158, 11] as const;
+const MASK_INSTANCE_PREVIEW_COLOR = [14, 165, 233] as const;
 
 function SamCandidateOverlay({
   candidates,
@@ -1118,6 +1119,13 @@ export function ImageStage({
     buffer.replaceAlpha(preview.alpha);
     return buffer;
   }, [imgH, imgW, maskEditor?.operationPreview]);
+  const maskInstancePreviewBuffer = useMemo(() => {
+    const preview = maskEditor?.instanceOperationPreview;
+    if (!preview || preview.plan.focusAlpha.length !== imgW * imgH) return null;
+    const buffer = new MaskBuffer({ width: imgW, height: imgH });
+    buffer.replaceAlpha(preview.plan.focusAlpha);
+    return buffer;
+  }, [imgH, imgW, maskEditor?.instanceOperationPreview]);
 
   const drawingPreview = drag?.kind === "draw"
     ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
@@ -1683,6 +1691,17 @@ export function ImageStage({
             imgH={imgH}
             opacity={workbenchConfig.image.maskOverlayOpacity}
             color={MASK_OPERATION_PREVIEW_COLOR}
+            visible
+          />
+        )}
+        {tool === "mask" && maskInstancePreviewBuffer && (
+          <MaskOverlayLayer
+            buffer={maskInstancePreviewBuffer}
+            revision={maskEditor?.instanceOperationPreview?.id ?? 0}
+            imgW={imgW}
+            imgH={imgH}
+            opacity={workbenchConfig.image.maskOverlayOpacity}
+            color={MASK_INSTANCE_PREVIEW_COLOR}
             visible
           />
         )}

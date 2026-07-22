@@ -26,6 +26,28 @@ export interface CanEditMaskContext {
   editorPhase: MaskEditorPhase;
 }
 
+export type MaskEditBlockReason =
+  | "task_read_only"
+  | "annotation_locked"
+  | "track_locked"
+  | "segment_locked"
+  | "editor_idle"
+  | "editor_loading"
+  | "editor_saving"
+  | "editor_error";
+
+export function maskEditBlockReason(ctx: CanEditMaskContext): MaskEditBlockReason | null {
+  if (ctx.taskReadOnly) return "task_read_only";
+  if (ctx.annotationLocked) return "annotation_locked";
+  if (ctx.trackLocked) return "track_locked";
+  if (ctx.segmentLocked) return "segment_locked";
+  if (ctx.editorPhase === "idle") return "editor_idle";
+  if (ctx.editorPhase === "loading") return "editor_loading";
+  if (ctx.editorPhase === "saving") return "editor_saving";
+  if (ctx.editorPhase === "error") return "editor_error";
+  return null;
+}
+
 /**
  * 是否允许对当前 mask session 写入 (pointer / hotkey / commit)。
  *
@@ -34,11 +56,7 @@ export interface CanEditMaskContext {
  *   idle 无 buffer, error 需先恢复。
  */
 export function canEditMask(ctx: CanEditMaskContext): boolean {
-  if (ctx.taskReadOnly) return false;
-  if (ctx.annotationLocked) return false;
-  if (ctx.trackLocked) return false;
-  if (ctx.segmentLocked) return false;
-  return ctx.editorPhase === "ready" || ctx.editorPhase === "dirty";
+  return maskEditBlockReason(ctx) === null;
 }
 
 /**

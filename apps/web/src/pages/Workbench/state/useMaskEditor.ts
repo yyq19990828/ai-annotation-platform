@@ -12,6 +12,12 @@ import type {
 } from "../stage/shared/geometry/maskOperations";
 import { applyMaskOperation } from "../stage/shared/geometry/maskOperations";
 import {
+  applyMaskInstanceOperation,
+  type MaskInstanceOperationPlan,
+  type MaskInstanceOperationSpec,
+} from "../stage/shared/geometry/maskInstanceOperations";
+import {
+  executeRasterMaskInstanceOperationAsync,
   executeRasterMaskOperationAsync,
   RasterMaskWorkerCancelledError,
 } from "../stage/shared/rasterMaskCompute";
@@ -23,7 +29,11 @@ export type MaskEditorTool =
   | "lasso_add"
   | "lasso_subtract"
   | "fill_add"
-  | "fill_subtract";
+  | "fill_subtract"
+  | "component_keep"
+  | "component_delete"
+  | "component_copy"
+  | "hole_fill";
 
 export const MASK_BRUSH_MIN_PX = 1;
 export const MASK_BRUSH_MAX_PX = 200;
@@ -35,6 +45,13 @@ export interface MaskOperationPreview {
   sourceRevision: number;
   alpha: Uint8Array;
   report: MaskOperationReport;
+}
+
+export interface MaskInstanceOperationPreview {
+  id: number;
+  name: string;
+  sourceRevision: number;
+  plan: MaskInstanceOperationPlan;
 }
 
 export type MaskOperationStatus = "idle" | "computing" | "preview" | "error";
@@ -66,6 +83,7 @@ export interface UseMaskEditorReturn {
   canUndo: boolean;
   canRedo: boolean;
   operationPreview: MaskOperationPreview | null;
+  instanceOperationPreview: MaskInstanceOperationPreview | null;
   operationStatus: MaskOperationStatus;
   operationError: unknown;
   beginBlank: () => void;
@@ -90,6 +108,16 @@ export interface UseMaskEditorReturn {
   runOperation: (
     name: string,
     operation: MaskOperationSpec,
+    context?: { sessionId: string; generation: number },
+  ) => Promise<boolean>;
+  previewInstanceOperation: (
+    name: string,
+    plan: MaskInstanceOperationPlan,
+    sourceRevision?: number,
+  ) => boolean;
+  runInstanceOperation: (
+    name: string,
+    operation: MaskInstanceOperationSpec,
     context?: { sessionId: string; generation: number },
   ) => Promise<boolean>;
   confirmOperation: () => boolean;
@@ -128,6 +156,7 @@ export function useMaskEditor({
   const undoRef = useRef<MaskHistoryCommand[]>([]);
   const redoRef = useRef<MaskHistoryCommand[]>([]);
   const operationPreviewRef = useRef<MaskOperationPreview | null>(null);
+  const instanceOperationPreviewRef = useRef<MaskInstanceOperationPreview | null>(null);
   const operationIdRef = useRef(0);
   const operationAbortRef = useRef<AbortController | null>(null);
   const revisionRef = useRef(0);
@@ -141,6 +170,7 @@ export function useMaskEditor({
   const [revision, setRevision] = useState(0);
   const [historyRevision, setHistoryRevision] = useState(0);
   const [operationPreview, setOperationPreview] = useState<MaskOperationPreview | null>(null);
+  const [instanceOperationPreview, setInstanceOperationPreview] = useState<MaskInstanceOperationPreview | null>(null);
   const [operationStatus, setOperationStatus] = useState<MaskOperationStatus>("idle");
   const [operationError, setOperationError] = useState<unknown>(undefined);
   void historyRevision;
@@ -152,7 +182,9 @@ export function useMaskEditor({
 
   const clearOperationPreview = useCallback(() => {
     operationPreviewRef.current = null;
+    instanceOperationPreviewRef.current = null;
     setOperationPreview(null);
+    setInstanceOperationPreview(null);
     setOperationStatus("idle");
   }, []);
 
@@ -224,7 +256,12 @@ export function useMaskEditor({
 
   const paintAt = useCallback((x: number, y: number) => {
     const buffer = bufferRef.current;
-    if (!buffer || operationPreviewRef.current || (tool !== "brush" && tool !== "erase")) return;
+    if (
+      !buffer
+      || operationPreviewRef.current
+      || instanceOperationPreviewRef.current
+      || (tool !== "brush" && tool !== "erase")
+    ) return;
     if (mode === "erase") buffer.erase(x, y, radius, brushShape);
     else buffer.brush(x, y, radius, 255, brushShape);
     setDirty(true);
@@ -236,6 +273,7 @@ export function useMaskEditor({
       !bufferRef.current
       || strokeBeforeRef.current
       || operationPreviewRef.current
+      || instanceOperationPreviewRef.current
       || (tool !== "brush" && tool !== "erase")
     ) return;
     strokeBeforeRef.current = bufferRef.current.toRle();
@@ -261,7 +299,7 @@ export function useMaskEditor({
   }, [bump, cancelActiveOperation]);
 
   const undo = useCallback(() => {
-    if (operationPreviewRef.current) {
+    if (operationPreviewRef.current || instanceOperationPreviewRef.current) {
       clearOperationPreview();
       return;
     }
@@ -323,7 +361,7 @@ export function useMaskEditor({
     setOperationError(undefined);
     try {
       const shouldUseWorker = width * height > 1_000_000
-        || (operation.type === "morphology" && operation.radius > 4);
+        || ((operation.type === "morphology" || operation.type === "smooth") && operation.radius > 4);
       const result = shouldUseWorker
         ? (await executeRasterMaskOperationAsync(
             rle,
@@ -351,7 +389,83 @@ export function useMaskEditor({
     }
   }, [cancelActiveOperation, height, previewOperation, width]);
 
+  const previewInstanceOperation = useCallback((
+    name: string,
+    plan: MaskInstanceOperationPlan,
+    sourceRevision = revisionRef.current,
+  ): boolean => {
+    const current = bufferRef.current;
+    if (!current || sourceRevision !== revisionRef.current) return false;
+    const allAlphas = [plan.primary, plan.focusAlpha, ...plan.created];
+    if (allAlphas.some((alpha) => alpha.length !== current.data.length)) {
+      throw new Error("mask instance preview dimensions do not match the editor buffer");
+    }
+    operationIdRef.current += 1;
+    const preview: MaskInstanceOperationPreview = {
+      id: operationIdRef.current,
+      name,
+      sourceRevision,
+      plan,
+    };
+    operationPreviewRef.current = null;
+    instanceOperationPreviewRef.current = preview;
+    setOperationPreview(null);
+    setInstanceOperationPreview(preview);
+    setOperationError(undefined);
+    setOperationStatus("preview");
+    return true;
+  }, []);
+
+  const runInstanceOperation = useCallback(async (
+    name: string,
+    operation: MaskInstanceOperationSpec,
+    context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
+  ): Promise<boolean> => {
+    const current = bufferRef.current;
+    if (!current) return false;
+    cancelActiveOperation();
+    const sourceRevision = revisionRef.current;
+    const rle = current.toRle();
+    operationIdRef.current += 1;
+    const operationId = operationIdRef.current;
+    const controller = new AbortController();
+    operationAbortRef.current = controller;
+    setOperationStatus("computing");
+    setOperationError(undefined);
+    try {
+      const plan = width * height > 1_000_000
+        ? (await executeRasterMaskInstanceOperationAsync(
+            rle,
+            operation,
+            { ...context, operationId },
+            { signal: controller.signal },
+          )).plan
+        : applyMaskInstanceOperation(current.data, width, height, operation);
+      if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
+      operationAbortRef.current = null;
+      if (!plan) {
+        setOperationStatus("idle");
+        return false;
+      }
+      const accepted = previewInstanceOperation(name, plan, sourceRevision);
+      if (!accepted) setOperationStatus("idle");
+      return accepted;
+    } catch (error) {
+      if (operationAbortRef.current === controller) operationAbortRef.current = null;
+      const isCurrent = operationIdRef.current === operationId;
+      if (error instanceof RasterMaskWorkerCancelledError || controller.signal.aborted) {
+        if (isCurrent) setOperationStatus("idle");
+        return false;
+      }
+      if (!isCurrent) return false;
+      setOperationError(error);
+      setOperationStatus("error");
+      return false;
+    }
+  }, [cancelActiveOperation, height, previewInstanceOperation, width]);
+
   const confirmOperation = useCallback((): boolean => {
+    if (instanceOperationPreviewRef.current) return false;
     const preview = operationPreviewRef.current;
     const current = bufferRef.current;
     if (!preview || !current || preview.sourceRevision !== revisionRef.current) {
@@ -413,6 +527,7 @@ export function useMaskEditor({
     canUndo: undoRef.current.length > 0,
     canRedo: redoRef.current.length > 0,
     operationPreview,
+    instanceOperationPreview,
     operationStatus,
     operationError,
     beginBlank,
@@ -431,6 +546,8 @@ export function useMaskEditor({
     setRadius,
     previewOperation,
     runOperation,
+    previewInstanceOperation,
+    runInstanceOperation,
     confirmOperation,
     cancelOperation,
     cancel,

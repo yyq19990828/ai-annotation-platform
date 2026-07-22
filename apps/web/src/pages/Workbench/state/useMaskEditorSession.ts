@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMaskEditor, type UseMaskEditorOptions, type UseMaskEditorReturn } from "./useMaskEditor";
 import type { CocoRle } from "../stage/shared/geometry/maskRle";
 import type { MaskOperationSpec } from "../stage/shared/geometry/maskOperations";
+import type { MaskInstanceOperationSpec } from "../stage/shared/geometry/maskInstanceOperations";
 import type { MaskEditorPhase } from "./canEditMask";
 
 /** 会话键输入: 标识一段唯一的编辑上下文。 */
@@ -119,6 +120,7 @@ export function useMaskEditorSession({
   const editorInitFromRle = editor.initFromRle;
   const editorMaterializeFromRle = editor.materializeFromRle;
   const editorRunOperation = editor.runOperation;
+  const editorRunInstanceOperation = editor.runInstanceOperation;
   const [phase, setPhase] = useState<MaskEditorPhase>("idle");
   const [generation, setGeneration] = useState(0);
   const [lastSaveError, setLastSaveError] = useState<unknown>(undefined);
@@ -251,6 +253,13 @@ export function useMaskEditorSession({
     })
   ), [editorRunOperation]);
 
+  const runInstanceOperation = useCallback((name: string, operation: MaskInstanceOperationSpec) => (
+    editorRunInstanceOperation(name, operation, {
+      sessionId: requestedSessionIdRef.current,
+      generation: generationRef.current,
+    })
+  ), [editorRunInstanceOperation]);
+
   const cancel = useCallback(() => {
     transitionTokenRef.current += 1;
     editorCancel();
@@ -319,6 +328,7 @@ export function useMaskEditorSession({
     initFromRle,
     materializeFromRle,
     runOperation,
+    runInstanceOperation,
     cancel,
     phase,
     sessionId,

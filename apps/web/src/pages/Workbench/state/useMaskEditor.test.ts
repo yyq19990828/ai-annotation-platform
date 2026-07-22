@@ -14,6 +14,7 @@ import {
   MASK_BRUSH_DEFAULT_PX,
 } from "./useMaskEditor";
 import { applyMaskPolygon } from "../stage/shared/geometry/maskOperations";
+import { planMaskJoin } from "../stage/shared/geometry/maskInstanceOperations";
 
 describe("useMaskEditor · 初始态", () => {
   it("初始非 active，dirty=false，buffer=null，revision=0", () => {
@@ -257,6 +258,9 @@ describe("useMaskEditor · operation preview / command", () => {
     expect(result.current.tool).toBe("erase");
     act(() => result.current.setBrushShape("square"));
     expect(result.current.brushShape).toBe("square");
+    act(() => result.current.setTool("component_keep"));
+    expect(result.current.tool).toBe("component_keep");
+    expect(result.current.mode).toBe("erase");
   });
 
   it("runOperation 在小图同步计算并进入 preview 状态", async () => {
@@ -274,5 +278,47 @@ describe("useMaskEditor · operation preview / command", () => {
     expect(result.current.operationStatus).toBe("preview");
     expect(result.current.operationPreview?.report.afterArea).toBe(12);
     expect(result.current.buffer?.countSet()).toBe(0);
+  });
+
+  it("instance plan 只进入待提交预览，不能绕过原子提交修改 Buffer", async () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 5, height: 1 }));
+    act(() => result.current.initFromRle({
+      encoding: "coco_rle",
+      size: [1, 5],
+      counts: [0, 1, 2, 2],
+    }));
+    await act(async () => {
+      expect(await result.current.runInstanceOperation("split_components", {
+        type: "split_components",
+        keep: "largest",
+        connectivity: 4,
+      })).toBe(true);
+    });
+
+    expect(result.current.instanceOperationPreview?.plan.resultAreas).toEqual([2, 1]);
+    expect(result.current.buffer?.countSet()).toBe(3);
+    expect(result.current.dirty).toBe(false);
+    expect(result.current.confirmOperation()).toBe(false);
+    expect(result.current.instanceOperationPreview).not.toBeNull();
+    act(() => result.current.cancelOperation());
+    expect(result.current.instanceOperationPreview).toBeNull();
+    expect(result.current.buffer?.countSet()).toBe(3);
+  });
+
+  it("外部 join plan 复用同一 stale revision 隔离边界", () => {
+    const { result } = renderHook(() => useMaskEditor({ width: 3, height: 1 }));
+    act(() => result.current.initFromRle({
+      encoding: "coco_rle",
+      size: [1, 3],
+      counts: [0, 1, 2],
+    }));
+    const sourceRevision = result.current.revision;
+    const plan = planMaskJoin([
+      Uint8Array.of(255, 0, 0),
+      Uint8Array.of(0, 255, 0),
+    ], 3, 1);
+    act(() => result.current.paintAt(2, 0));
+    expect(result.current.previewInstanceOperation("join_masks", plan, sourceRevision)).toBe(false);
+    expect(result.current.instanceOperationPreview).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { decodeCocoRle } from "./geometry/maskRle";
 import { applyMaskOperation } from "./geometry/maskOperations";
+import { applyMaskInstanceOperation } from "./geometry/maskInstanceOperations";
 import {
   analyzeRasterMaskAlpha,
   type RasterMaskAnalysis,
@@ -9,11 +10,19 @@ import type {
   RasterMaskWorkerRequest,
 } from "./rasterMaskCompute";
 import type { MaskOperationResult } from "./geometry/maskOperations";
+import type { MaskInstanceOperationPlan } from "./geometry/maskInstanceOperations";
 
 type WorkerResponse =
   | { kind: "analyze"; id: number; ok: true; analysis: RasterMaskAnalysis }
   | { kind: "operation"; id: number; ok: true; context: RasterMaskOperationContext; result: MaskOperationResult }
-  | { kind: "analyze" | "operation"; id: number; ok: false; error: string };
+  | {
+      kind: "instance_operation";
+      id: number;
+      ok: true;
+      context: RasterMaskOperationContext;
+      plan: MaskInstanceOperationPlan | null;
+    }
+  | { kind: "analyze" | "operation" | "instance_operation"; id: number; ok: false; error: string };
 
 type WorkerScope = {
   onmessage: ((event: MessageEvent<RasterMaskWorkerRequest>) => void) | null;
@@ -32,6 +41,17 @@ workerScope.onmessage = (event) => {
       workerScope.postMessage(
         { kind: "analyze", id: request.id, ok: true, analysis },
         [analysis.crop.alpha.buffer],
+      );
+      return;
+    }
+    if (request.kind === "instance_operation") {
+      const plan = applyMaskInstanceOperation(alpha, width, height, request.operation);
+      const transfer = plan
+        ? [plan.primary.buffer, plan.focusAlpha.buffer, ...plan.created.map((created) => created.buffer)]
+        : [];
+      workerScope.postMessage(
+        { kind: "instance_operation", id: request.id, ok: true, context: request.context, plan },
+        transfer,
       );
       return;
     }
