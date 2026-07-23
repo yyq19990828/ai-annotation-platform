@@ -32,6 +32,11 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 
+# 必须在首次 import app 前开启；否则 app.api.v1.router 不会挂载测试 Seed router。
+# 数据库名仍由下方 fixture 固定到 annotation_test，router 自身会再做后缀校验。
+os.environ["E2E_SEED_ENABLED"] = "true"
+
+
 def _default_test_db_url() -> str:
     """默认测试库：跟随本环境 .env 的 DATABASE_URL（host/port/账号/驱动），库名固定
     annotation_test。这样多 worktree（各连不同 postgres 端口，如点云隔离栈 5433）无需

@@ -4,7 +4,8 @@
 e2e/fixtures/seed.ts 通过 _test_seed router 调用。
 
 约束：
-  - 只在测试 / 非 production 环境使用（_test_seed router 自身有环境守卫）
+  - 只在显式开启 E2E Seed 且数据库名以 _e2e / _test 结尾时使用
+    （_test_seed router 自身有环境与数据库纵深守卫）
   - 数据可重入（display_id 加随机后缀，避免重复 truncate 造数）
   - 不写 audit_log（避免污染 audit 测试）
 """

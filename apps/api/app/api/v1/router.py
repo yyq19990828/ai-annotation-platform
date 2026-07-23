@@ -152,10 +152,16 @@ api_router.include_router(
 # include_in_schema=False, 不进 OpenAPI 公开 schema; 所有环境暴露 (监控用)。
 api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 
-# v0.8.3 · _test_seed router：仅非 production 暴露，供 Playwright E2E 造数 + 跳登录
+# _test_seed router 仅在非 production 且显式开启 E2E_SEED_ENABLED 时挂载；
+# router 内还有数据库名守卫，避免测试造数端点误连开发库。
 from app.config import settings as _settings  # noqa: E402
 
-if _settings.environment != "production":
+
+def _e2e_seed_routes_enabled() -> bool:
+    return _settings.environment != "production" and _settings.e2e_seed_enabled
+
+
+if _e2e_seed_routes_enabled():
     from app.api.v1 import _test_seed  # noqa: E402
 
     api_router.include_router(_test_seed.router, prefix="/__test", tags=["_test_seed"])

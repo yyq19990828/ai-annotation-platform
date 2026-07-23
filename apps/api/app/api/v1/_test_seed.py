@@ -1,12 +1,13 @@
-"""v0.8.3 · 仅测试 / 非 production 环境暴露的 seed router。
+"""仅供隔离 E2E / 测试数据库使用的 Seed router。
 
 E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重置数据库
 到固定 fixture（admin / annotator / reviewer 三个用户 + 1 项目 + 5 任务），通过
 `POST /api/v1/__test/seed/login` 跳过 UI 登录直接拿 JWT。
 
 安全：
-  - 仅当 `settings.environment != "production"` 时挂载（main.py 条件 include_router）
-  - 即使误挂到 production，每个端点入口再做一次 environment 守卫
+  - 仅在非 production 且显式设置 `E2E_SEED_ENABLED=true` 时挂载
+  - router 级依赖会再次核对环境、开关与当前数据库名
+  - 数据库名转为小写后必须严格以 `_e2e` 或 `_test` 结尾
   - 不调 AuditService，避免污染审计测试
 
 不暴露给 OpenAPI 公开 schema（include_in_schema=False）。
@@ -27,53 +28,32 @@ from app.core.security import create_access_token
 from app.deps import get_db
 from app.schemas.user import UserOut
 
-router = APIRouter()
 
-
-def _ensure_non_production() -> None:
-    if settings.environment == "production":
+async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None:
+    """纵深保护所有 Seed 端点，并复用端点将要使用的同一数据库会话。"""
+    if settings.environment == "production" or not settings.e2e_seed_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="seed routes disabled in production",
+            detail="E2E seed routes are disabled",
+        )
+
+    database_name = await db.scalar(text("SELECT current_database()"))
+    normalized_name = str(database_name or "").lower()
+    if not normalized_name.endswith(("_e2e", "_test")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="E2E seed routes require an isolated _e2e or _test database",
         )
 
 
-class SeedReset(BaseModel):
-    admin_email: str
-    annotator_email: str
-    reviewer_email: str
-    project_id: str
-    task_ids: list[str]
-    # v0.9.4 phase 3: SAM E2E 走 page.route 拦截 /interactive-annotating, 但项目侧仍需
-    # 「AI 启用 + 有效 ml_backend_id 绑定」, 否则 GeneralSection / 工作台显示「未绑定」红字,
-    # SAM 工具按钮直接 disabled. 这个 backend 的 url 是 mock://e2e-sam (前端不会真的请求,
-    # 由 Playwright page.route 拦截). 字段返回让 spec 可声明依赖.
-    ml_backend_id: str
+router = APIRouter(dependencies=[Depends(_require_e2e_seed_database)])
 
 
-@router.post(
-    "/seed/reset",
-    response_model=SeedReset,
-    status_code=200,
-    include_in_schema=False,
-)
-async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
-    """重置测试数据库为固定 E2E fixture（幂等）。
-
-    v0.8.7+ · 不再 TRUNCATE 整库，改为定向 DELETE：只清除 `@e2e.test` 用户 +
-    name='E2E Demo Project' 项目（含其 task_batches/tasks/annotations/locks 等
-    FK 链条）。开发者本地的 admin/pm/qa/anno 等账号 + dev 项目 / 数据集 / 标注
-    完全保留。
-
-    注：audit_logs 不删（trigger 阻止 + 用户 FK SET NULL 已无害）。
-    """
-    _ensure_non_production()
-
-    from tests.factory import create_user, create_project, create_task
-
+async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
+    """定向删除 E2E fixture，并在当前事务内确认关键残留已清零。"""
     import logging
 
-    log = logging.getLogger("anno-api.seed_reset")
+    log = logging.getLogger("anno-api.seed_cleanup")
 
     # 0) 豁免 audit_logs immutability trigger：DELETE users 触发 audit_logs.actor_id
     #    ON DELETE SET NULL（隐式 UPDATE）会被 trigger 拒绝（"audit_logs rows are
@@ -92,13 +72,13 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         )
     ).fetchall()
     fixture_project_ids = [r[0] for r in fixture_proj_rows]
-    log.info("seed_reset · fixture project ids: %s", fixture_project_ids)
+    log.info("seed_cleanup · fixture project ids: %s", fixture_project_ids)
 
     fixture_user_rows = (
         await db.execute(text("SELECT id FROM users WHERE email LIKE '%@e2e.test'"))
     ).fetchall()
     fixture_user_ids = [r[0] for r in fixture_user_rows]
-    log.info("seed_reset · fixture user ids: %s", fixture_user_ids)
+    log.info("seed_cleanup · fixture user ids: %s", fixture_user_ids)
 
     # 2) 按 FK 依赖顺序定向 DELETE。
     #    用 SAVEPOINT 隔离每个 DELETE：单条失败（如表不存在 / 列名漂移）不让外层
@@ -111,7 +91,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
             async with db.begin_nested():
                 await db.execute(text(sql), params or {})
         except Exception as exc:
-            log.warning("seed_reset skip · %s · %s", sql.split()[2], exc)
+            log.warning("seed_cleanup skip · %s · %s", sql.split()[2], exc)
 
     if fixture_project_ids:
         # 2a) 找 fixture 项目下所有 task/annotation 的 id（在 SAVEPOINT 里）
@@ -140,7 +120,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
                     ).fetchall()
                 ]
             except Exception as exc:
-                log.warning("seed_reset · child id lookup failed: %s", exc)
+                log.warning("seed_cleanup · child id lookup failed: %s", exc)
                 await sp.rollback()
 
         # 2b) 删 annotation_feedbacks (FK → tasks/annotations/projects 均无 ondelete,
@@ -253,6 +233,79 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     )
 
     await db.flush()
+
+    residual_row = (
+        (
+            await db.execute(
+                text(
+                    "SELECT "
+                    "(SELECT count(*) FROM users "
+                    " WHERE email LIKE '%@e2e.test') AS users, "
+                    "(SELECT count(*) FROM projects "
+                    " WHERE name = 'E2E Demo Project' "
+                    "    OR display_id LIKE 'P-E2E-%') AS projects, "
+                    "(SELECT count(*) FROM ml_backend_registry "
+                    " WHERE url = 'http://mock-sam.e2e:9999') AS ml_backends"
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    residuals = {
+        key: int(residual_row[key]) for key in ("users", "projects", "ml_backends")
+    }
+    if any(residuals.values()):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "e2e_seed_cleanup_incomplete",
+                "residuals": residuals,
+            },
+        )
+
+
+class SeedCleanup(BaseModel):
+    ok: bool = True
+
+
+@router.post(
+    "/seed/cleanup",
+    response_model=SeedCleanup,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_cleanup(db: AsyncSession = Depends(get_db)) -> SeedCleanup:
+    """幂等清除固定 E2E fixture，同时保留所有非 E2E 数据。"""
+    await _cleanup_e2e_fixtures(db)
+    await db.commit()
+    return SeedCleanup()
+
+
+class SeedReset(BaseModel):
+    admin_email: str
+    annotator_email: str
+    reviewer_email: str
+    project_id: str
+    task_ids: list[str]
+    # v0.9.4 phase 3: SAM E2E 走 page.route 拦截 /interactive-annotating, 但项目侧仍需
+    # 「AI 启用 + 有效 ml_backend_id 绑定」, 否则 GeneralSection / 工作台显示「未绑定」红字,
+    # SAM 工具按钮直接 disabled. 这个 backend 的 url 是 mock://e2e-sam (前端不会真的请求,
+    # 由 Playwright page.route 拦截). 字段返回让 spec 可声明依赖.
+    ml_backend_id: str
+
+
+@router.post(
+    "/seed/reset",
+    response_model=SeedReset,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
+    """先清理旧 fixture，再重建固定 E2E 数据（幂等）。"""
+    from tests.factory import create_user, create_project, create_task
+
+    await _cleanup_e2e_fixtures(db)
 
     admin = await create_user(db, "super_admin", "admin@e2e.test", "E2E Admin")
     annotator = await create_user(db, "annotator", "anno@e2e.test", "E2E Annotator")
@@ -477,8 +530,6 @@ def _make_test_pcd_bytes(n_side: int = 8) -> bytes:
 )
 async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     """造点云 E2E fixture(幂等)。需先调 /seed/reset(复用其 E2E 用户),缺则补建。"""
-    _ensure_non_production()
-
     from sqlalchemy import select
 
     from app.db.models.annotation import Annotation
@@ -673,8 +724,6 @@ async def seed_login(
     db: AsyncSession = Depends(get_db),
 ) -> SeedLoginResponse:
     """跳过密码验证发 JWT（仅 E2E 测试用）。"""
-    _ensure_non_production()
-
     from sqlalchemy import select
     from app.db.models.user import User
 
@@ -712,8 +761,6 @@ async def seed_catalog(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """解析 screenshots profile 的稳定逻辑键；数据漂移时明确失败。"""
-    _ensure_non_production()
-
     from app.services.screenshot_seed_catalog import (
         ScreenshotSeedCatalogError,
         build_screenshot_seed_catalog,
@@ -738,8 +785,6 @@ async def seed_catalog(
 )
 async def seed_peek(db: AsyncSession = Depends(get_db)) -> SeedPeekResponse:
     """只读窥探现有数据，给截图自动化用（不破坏开发数据）。"""
-    _ensure_non_production()
-
     from sqlalchemy import select
     from app.db.models.project import Project
     from app.db.models.task import Task
@@ -795,8 +840,6 @@ async def seed_inject_prediction(
     db: AsyncSession = Depends(get_db),
 ) -> InjectPredictionResponse:
     """直插一条 polygonlabels 类型的 prediction。"""
-    _ensure_non_production()
-
     from uuid import UUID
     from app.db.models.prediction import Prediction
 
@@ -848,8 +891,6 @@ async def seed_configure_raster_mask(
     部署级 read/create 总闸仍由当前 API 进程的环境变量决定，
     本辅助端点只改项目级灰度开关。
     """
-    _ensure_non_production()
-
     from uuid import UUID
 
     from app.db.models.project import Project
@@ -883,8 +924,6 @@ async def seed_video_task(
     db: AsyncSession = Depends(get_db),
 ) -> SeedVideoTaskResponse:
     """Add one deterministic video task to the reset fixture for workbench E2E."""
-    _ensure_non_production()
-
     from pathlib import Path
     from uuid import UUID
 
@@ -995,8 +1034,6 @@ async def seed_tracker_review(
     db: AsyncSession = Depends(get_db),
 ) -> SeedTrackerReviewResponse:
     """Create a deterministic two-target staged tracker review for browser E2E."""
-
-    _ensure_non_production()
     from uuid import UUID
 
     from sqlalchemy import select
@@ -1129,8 +1166,6 @@ async def seed_native_mask_candidate(
     db: AsyncSession = Depends(get_db),
 ) -> SeedNativeMaskCandidateResponse:
     """Issue a real signed receipt for a deterministic transient Mask candidate."""
-    _ensure_non_production()
-
     import hashlib
     from uuid import UUID
 
@@ -1402,11 +1437,9 @@ async def seed_inject_raster_mask(
 ) -> InjectRasterMaskResponse:
     """直插原生 raster annotation，用于 reader / corrupt / lock E2E。
 
-    端点只在非生产环境挂载，刻意绕过 create gate，以便在
+    端点只在隔离 E2E / 测试数据库挂载，刻意绕过 create gate，以便在
     ``read=true/create=false`` 矩阵中构造“已有内容可读”的真实基线。
     """
-    _ensure_non_production()
-
     from uuid import UUID
 
     from sqlalchemy import select
@@ -1494,8 +1527,6 @@ async def seed_inject_raster_prediction(
     db: AsyncSession = Depends(get_db),
 ) -> InjectRasterPredictionResponse:
     """构造待接受的 raster prediction，用于验证 accept write gate。"""
-    _ensure_non_production()
-
     from uuid import UUID
 
     from app.db.models.prediction import Prediction
@@ -1561,8 +1592,6 @@ async def seed_advance_task(
     db: AsyncSession = Depends(get_db),
 ) -> AdvanceTaskResponse:
     """绕过状态机直接置 task 到目标状态。E2E 写实化用，不调审计。"""
-    _ensure_non_production()
-
     from datetime import datetime, timezone
     from uuid import UUID
     from sqlalchemy import select

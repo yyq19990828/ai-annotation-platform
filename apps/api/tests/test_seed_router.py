@@ -8,6 +8,101 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
+async def test_e2e_seed_setting_defaults_off(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.delenv("E2E_SEED_ENABLED", raising=False)
+    assert Settings(_env_file=None).e2e_seed_enabled is False
+
+
+@pytest.mark.parametrize(
+    ("environment", "enabled", "expected"),
+    [
+        ("development", False, False),
+        ("development", True, True),
+        ("staging", False, False),
+        ("staging", True, True),
+        ("production", False, False),
+        ("production", True, False),
+    ],
+)
+async def test_seed_router_mount_gate(
+    monkeypatch, environment: str, enabled: bool, expected: bool
+):
+    from app.api.v1 import router as router_module
+
+    monkeypatch.setattr(router_module._settings, "environment", environment)
+    monkeypatch.setattr(router_module._settings, "e2e_seed_enabled", enabled)
+
+    assert router_module._e2e_seed_routes_enabled() is expected
+
+
+@pytest.mark.parametrize(
+    ("environment", "enabled", "database_name", "allowed"),
+    [
+        ("development", True, "annotation_test", True),
+        ("staging", True, "ANNOTATION_E2E", True),
+        ("development", False, "annotation_test", False),
+        ("production", True, "annotation_test", False),
+        ("development", True, "annotation", False),
+        ("development", True, "annotation_test_copy", False),
+    ],
+)
+async def test_seed_router_runtime_guard_matrix(
+    monkeypatch,
+    environment: str,
+    enabled: bool,
+    database_name: str,
+    allowed: bool,
+):
+    from fastapi import HTTPException
+
+    from app.api.v1 import _test_seed
+
+    class StubSession:
+        async def scalar(self, statement):
+            assert str(statement) == "SELECT current_database()"
+            return database_name
+
+    monkeypatch.setattr(_test_seed.settings, "environment", environment)
+    monkeypatch.setattr(_test_seed.settings, "e2e_seed_enabled", enabled)
+
+    if allowed:
+        await _test_seed._require_e2e_seed_database(StubSession())
+    else:
+        with pytest.raises(HTTPException) as exc_info:
+            await _test_seed._require_e2e_seed_database(StubSession())
+        assert exc_info.value.status_code == 403
+
+
+async def test_all_seed_routes_have_database_guard():
+    from fastapi.routing import APIRoute
+
+    from app.api.v1 import _test_seed
+
+    routes = [
+        route for route in _test_seed.router.routes if isinstance(route, APIRoute)
+    ]
+    assert routes
+    assert all(
+        any(
+            dependency.call is _test_seed._require_e2e_seed_database
+            for dependency in route.dependant.dependencies
+        )
+        for route in routes
+    )
+
+
+async def test_seed_router_uses_real_annotation_test_database(httpx_client, db_session):
+    from sqlalchemy import text
+
+    database_name = await db_session.scalar(text("SELECT current_database()"))
+    assert database_name == "annotation_test"
+
+    response = await httpx_client.get("/api/v1/__test/seed/peek")
+    assert response.status_code == 200, response.text
+
+
 async def test_seed_reset_returns_fixture_payload(httpx_client):
     res = await httpx_client.post("/api/v1/__test/seed/reset")
     assert res.status_code == 200, res.text
@@ -63,6 +158,113 @@ async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client, db_ses
     assert {(item.width, item.height, item.file_type) for item in items} == {
         (64, 48, "image")
     }
+
+
+async def test_seed_cleanup_is_idempotent_and_preserves_non_e2e_data(
+    httpx_client, db_session
+):
+    import uuid
+
+    from sqlalchemy import func, or_, select
+
+    from app.db.models.dataset import Dataset
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+    from app.db.models.project import Project
+    from app.db.models.user import User
+
+    dev_user_id = uuid.uuid4()
+    dev_project_id = uuid.uuid4()
+    dev_backend_id = uuid.uuid4()
+    db_session.add(
+        User(
+            id=dev_user_id,
+            email="cleanup-keeper@example.com",
+            name="Cleanup Keeper",
+            password_hash="x",
+            role="super_admin",
+            status="offline",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        Project(
+            id=dev_project_id,
+            display_id="P-DEV-CLEANUP-KEEP",
+            name="Cleanup Keeper Project",
+            type_label="image-det",
+            type_key="image-det",
+            owner_id=dev_user_id,
+        )
+    )
+    db_session.add(
+        MLBackendRegistry(
+            id=dev_backend_id,
+            name="Cleanup Keeper Backend",
+            url="http://cleanup-keeper.test:9999",
+            state="connected",
+            is_interactive=True,
+            source="manual",
+        )
+    )
+    await db_session.commit()
+
+    reset = await httpx_client.post("/api/v1/__test/seed/reset")
+    assert reset.status_code == 200, reset.text
+
+    first = await httpx_client.post("/api/v1/__test/seed/cleanup")
+    second = await httpx_client.post("/api/v1/__test/seed/cleanup")
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json() == {"ok": True}
+    assert second.json() == {"ok": True}
+
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(User).where(User.email.like("%@e2e.test"))
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(
+                or_(
+                    Project.name == "E2E Demo Project",
+                    Project.display_id.like("P-E2E-%"),
+                )
+            )
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Dataset)
+            .where(Dataset.display_id.like("DS-E2E-%"))
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(MLBackendRegistry)
+            .where(MLBackendRegistry.url == "http://mock-sam.e2e:9999")
+        )
+        == 0
+    )
+
+    for model, record_id in (
+        (User, dev_user_id),
+        (Project, dev_project_id),
+        (MLBackendRegistry, dev_backend_id),
+    ):
+        assert (
+            await db_session.scalar(
+                select(func.count()).select_from(model).where(model.id == record_id)
+            )
+            == 1
+        )
 
 
 async def test_seed_login_after_reset_returns_jwt(httpx_client):

@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     app_version: str = "0.23.11"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
+    e2e_seed_enabled: bool = False
 
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/annotation"
     redis_url: str = "redis://localhost:6379/0"
