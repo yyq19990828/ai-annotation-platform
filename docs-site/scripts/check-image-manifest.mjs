@@ -8,10 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  collectMarkdownImageReferences,
-  walkFiles,
-} from "../../scripts/image-reference-utils.mjs";
+import { collectMarkdownImageReferences, walkFiles } from "../../scripts/image-reference-utils.mjs";
 import {
   readImageDimensions,
   readScreenshotManifest,
@@ -22,15 +19,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const DOCS_ROOT = path.join(REPO_ROOT, "docs-site");
 const USER_GUIDE_ROOT = path.join(DOCS_ROOT, "user-guide");
-const MANIFEST_PATH = path.join(
-  REPO_ROOT,
-  "apps/web/e2e/screenshots/outputs/manifest.json",
-);
+const MANIFEST_PATH = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/manifest.json");
 const SCENES_ROOT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/scenes");
-const SEED_SPEC_PATH = path.join(
-  REPO_ROOT,
-  "apps/api/app/services/screenshot_seed_spec.py",
-);
+const SEED_SPEC_PATH = path.join(REPO_ROOT, "apps/api/app/services/screenshot_seed_spec.py");
 
 const strict = process.argv.includes("--strict") || process.argv.includes("--release");
 const release = process.argv.includes("--release");
@@ -73,9 +64,7 @@ const allReferences = collectMarkdownImageReferences({
   repoRoot: REPO_ROOT,
   docsRoot: DOCS_ROOT,
 });
-const staticReferences = new Map(
-  [...allReferences].filter(([key]) => !/\.gif$/i.test(key)),
-);
+const staticReferences = new Map([...allReferences].filter(([key]) => !/\.gif$/i.test(key)));
 
 const failures = [];
 const warnings = [];
@@ -94,7 +83,9 @@ for (const [key, reference] of staticReferences) {
   }
 }
 
-for (const [key, entry] of Object.entries(entries).sort(([left], [right]) => left.localeCompare(right))) {
+for (const [key, entry] of Object.entries(entries).sort(([left], [right]) =>
+  left.localeCompare(right),
+)) {
   const absolute = path.join(REPO_ROOT, key);
   if (entry.target && entry.target !== key) failures.push(`${key}: entry.target 与 key 不一致`);
   if (!fs.existsSync(absolute)) {
@@ -109,7 +100,9 @@ for (const [key, entry] of Object.entries(entries).sort(([left], [right]) => lef
     try {
       const dimensions = readImageDimensions(absolute);
       if (entry.width !== dimensions.width || entry.height !== dimensions.height) {
-        failures.push(`${key}: manifest 尺寸 ${entry.width}×${entry.height} 与文件 ${dimensions.width}×${dimensions.height} 不一致`);
+        failures.push(
+          `${key}: manifest 尺寸 ${entry.width}×${entry.height} 与文件 ${dimensions.width}×${dimensions.height} 不一致`,
+        );
       }
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
@@ -126,7 +119,9 @@ for (const [key, entry] of Object.entries(entries).sort(([left], [right]) => lef
     failures.push(`${key}: scene ${entry.scene ?? "<missing>"} 不存在`);
   } else {
     if (entry.source !== expectedScene.source) {
-      failures.push(`${key}: source 应为 ${expectedScene.source}，实际为 ${entry.source ?? "<missing>"}`);
+      failures.push(
+        `${key}: source 应为 ${expectedScene.source}，实际为 ${entry.source ?? "<missing>"}`,
+      );
     }
     if (!targetBelongsToScene(key, expectedScene.target)) {
       failures.push(`${key}: 不是 scene ${entry.scene} 的 target`);
@@ -170,7 +165,9 @@ if (json) {
   console.log(JSON.stringify(results, null, 2));
 } else {
   console.log(`\n图片 manifest 校验 — schema v${schemaVersion}\n${"─".repeat(72)}`);
-  console.log(`scene ${sceneInventory.size} · 文档静态图 ${staticReferences.size} · manifest ${Object.keys(entries).length}`);
+  console.log(
+    `scene ${sceneInventory.size} · 文档静态图 ${staticReferences.size} · manifest ${Object.keys(entries).length}`,
+  );
   for (const warning of warnings) console.log(`⚠  ${warning}`);
   for (const failure of results.failures) console.log(`✗  ${failure}`);
   if (results.failures.length === 0) console.log("✓  manifest、磁盘文件、scene 与文档引用一致");

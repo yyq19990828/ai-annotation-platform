@@ -54,8 +54,7 @@ def _chunked_update_region(bind, *, table: str, where_clause: str) -> None:
         ctids = ", ".join(f"'{r.ctid}'::tid" for r in rows)
         bind.execute(
             sa.text(
-                f"UPDATE {table} SET tool_unit_id = 'region' "
-                f"WHERE ctid IN ({ctids})"
+                f"UPDATE {table} SET tool_unit_id = 'region' WHERE ctid IN ({ctids})"
             )
         )
         last_ctid = f"'{rows[-1].ctid}'::tid"
@@ -107,9 +106,7 @@ def upgrade() -> None:
     # ── Data backfill: projects.tool_bindings ────────────────────────
     bind = op.get_bind()
     rows = bind.execute(
-        sa.text(
-            "SELECT id, type_key, classes_config, attribute_schema FROM projects"
-        )
+        sa.text("SELECT id, type_key, classes_config, attribute_schema FROM projects")
     ).fetchall()
 
     for row in rows:

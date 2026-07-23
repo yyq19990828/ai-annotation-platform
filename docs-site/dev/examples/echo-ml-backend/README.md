@@ -33,6 +33,7 @@ HOST=http://host.docker.internal:8000 ./test.sh
 ## 接入平台
 
 在前端 ProjectSettings → ML Backends 添加：
+
 - 平台跑 Docker：`http://host.docker.internal:8000`
 - 平台直接本机：`http://localhost:8000`
 

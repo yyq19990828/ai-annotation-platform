@@ -37,9 +37,11 @@ function auth(token: string): Record<string, string> {
 
 async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) {
-    throw new Error(`${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`);
+    throw new Error(
+      `${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`,
+    );
   }
-  return await response.json() as T;
+  return (await response.json()) as T;
 }
 
 async function annotations(
@@ -47,10 +49,9 @@ async function annotations(
   taskId: string,
   token: string,
 ): Promise<AnnotationDto[]> {
-  return json<AnnotationDto[]>(await request.get(
-    `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-    { headers: auth(token) },
-  ));
+  return json<AnnotationDto[]>(
+    await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers: auth(token) }),
+  );
 }
 
 async function maskContent(
@@ -58,22 +59,18 @@ async function maskContent(
   annotationId: string,
   token: string,
 ): Promise<CocoRle> {
-  return json<CocoRle>(await request.get(
-    `${API_BASE}/api/v1/annotations/${annotationId}/mask-content`,
-    { headers: auth(token) },
-  ));
+  return json<CocoRle>(
+    await request.get(`${API_BASE}/api/v1/annotations/${annotationId}/mask-content`, {
+      headers: auth(token),
+    }),
+  );
 }
 
 function foregroundArea(rle: CocoRle): number {
   return rle.counts.reduce((area, count, index) => area + (index % 2 === 1 ? count : 0), 0);
 }
 
-async function openTask(
-  page: Page,
-  seed: SeedAPI,
-  data: SeedData,
-  taskId: string,
-): Promise<void> {
+async function openTask(page: Page, seed: SeedAPI, data: SeedData, taskId: string): Promise<void> {
   await seed.configureRasterMask(data.project_id, true);
   await seed.advanceTask({
     taskId,
@@ -94,11 +91,7 @@ async function beginEdit(page: Page, annotationId: string): Promise<void> {
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
 }
 
-async function imagePoint(
-  page: Page,
-  x: number,
-  y: number,
-): Promise<{ x: number; y: number }> {
+async function imagePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const box = await page.getByTestId("workbench-stage").boundingBox();
   if (!box) throw new Error("workbench stage has no bounding box");
   const scale = Math.min(box.width / IMAGE_WIDTH, box.height / IMAGE_HEIGHT);
@@ -157,7 +150,11 @@ async function applyPreview(page: Page): Promise<void> {
 }
 
 test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
-  test("1. 非正方形图片的方笔刷、圆橡皮、lasso 与 undo/redo 刷新后逐像素一致", async ({ page, request, seed }) => {
+  test("1. 非正方形图片的方笔刷、圆橡皮、lasso 与 undo/redo 刷新后逐像素一致", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
@@ -176,12 +173,24 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await paintStroke(page, [20, 18], [24, 18]);
 
     await toolbar.getByRole("radio", { name: "套索添加" }).click();
-    await drawLasso(page, [[2, 32], [8, 32], [8, 40], [2, 40], [2, 32]]);
+    await drawLasso(page, [
+      [2, 32],
+      [8, 32],
+      [8, 40],
+      [2, 40],
+      [2, 32],
+    ]);
     await expect(toolbar).toContainText("套索添加");
     await applyPreview(page);
 
     await toolbar.getByRole("radio", { name: "套索扣除" }).click();
-    await drawLasso(page, [[30, 18], [36, 18], [36, 26], [30, 26], [30, 18]]);
+    await drawLasso(page, [
+      [30, 18],
+      [36, 18],
+      [36, 26],
+      [30, 26],
+      [30, 18],
+    ]);
     await expect(toolbar).toContainText("套索扣除");
     await applyPreview(page);
     await expect(toolbar).toContainText("未保存");
@@ -191,18 +200,21 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await page.keyboard.press("Control+y");
     await expect(toolbar.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
 
-    const savedResponse = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/${fixture.annotation_id}`)
-      && response.request().method() === "PATCH"
-      && response.ok()
-    ));
+    const savedResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/${fixture.annotation_id}`) &&
+        response.request().method() === "PATCH" &&
+        response.ok(),
+    );
     await toolbar.getByRole("button", { name: "确认", exact: true }).click();
     await savedResponse;
     const saved = await maskContent(request, fixture.annotation_id, token);
     expect(saved.counts).not.toEqual(before.counts);
 
     await page.reload();
-    await expect(page.getByTestId(`box-list-item-${fixture.annotation_id}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`box-list-item-${fixture.annotation_id}`)).toBeVisible({
+      timeout: 15_000,
+    });
     expect(await maskContent(request, fixture.annotation_id, token)).toEqual(saved);
   });
 
@@ -238,17 +250,22 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await clickPixel(page, 20, 20);
     await expect(toolbar).toContainText("面积 32→16");
     await applyPreview(page);
-    const savedResponse = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/${fixture.annotation_id}`)
-      && response.request().method() === "PATCH"
-      && response.ok()
-    ));
+    const savedResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/${fixture.annotation_id}`) &&
+        response.request().method() === "PATCH" &&
+        response.ok(),
+    );
     await toolbar.getByRole("button", { name: "确认", exact: true }).click();
     await savedResponse;
     expect(foregroundArea(await maskContent(request, fixture.annotation_id, token))).toBe(16);
   });
 
-  test("3. donut 与小岛的 hole、去小组件、keep 预览准确且取消不改持久内容", async ({ page, request, seed }) => {
+  test("3. donut 与小岛的 hole、去小组件、keep 预览准确且取消不改持久内容", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -340,7 +357,8 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
             failingWorker = {
               onmessage: null,
               onerror: null,
-              postMessage: () => queueMicrotask(() => failingWorker.onerror?.({ message: "forced worker failure" })),
+              postMessage: () =>
+                queueMicrotask(() => failingWorker.onerror?.({ message: "forced worker failure" })),
               terminate: () => undefined,
             };
             return failingWorker as unknown as Worker;
@@ -365,7 +383,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
       };
     });
 
-    expect(result.completedContext).toEqual({ sessionId: "e2e-worker", generation: 1, operationId: 1 });
+    expect(result.completedContext).toEqual({
+      sessionId: "e2e-worker",
+      generation: 1,
+      operationId: 1,
+    });
     expect(result.completedArea).toBeGreaterThan(0);
     expect(result.cancelledName).toBe("RasterMaskWorkerCancelledError");
     expect(result.failureName).toBe("RasterMaskWorkerError");
@@ -373,7 +395,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     expect(result.inputUnchanged).toBe(true);
   });
 
-  test("5. split 冲突整批 409 无部分写入，刷新后原子提交并保留 lineage", async ({ page, request, seed }) => {
+  test("5. split 冲突整批 409 无部分写入，刷新后原子提交并保留 lineage", async ({
+    page,
+    request,
+    seed,
+  }) => {
     test.setTimeout(90_000);
     const data = await seed.reset();
     const taskId = data.task_ids[0];
@@ -399,10 +425,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     );
     expect(bumped.ok(), await bumped.text()).toBe(true);
 
-    const conflicted = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`)
-      && response.request().method() === "POST"
-    ));
+    const conflicted = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`) &&
+        response.request().method() === "POST",
+    );
     await toolbar.getByRole("button", { name: "原子提交" }).click();
     const conflictResponse = await conflicted;
     expect(conflictResponse.status()).toBe(409);
@@ -411,11 +438,12 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
 
     await toolbar.getByRole("button", { name: "刷新范围" }).click();
     await expect(toolbar).toContainText("1 个来源 → 3 个结果", { timeout: 15_000 });
-    const committed = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const committed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await toolbar.getByRole("button", { name: "原子提交" }).click();
     const body = await json<{
       created_annotations: Array<{ id: string }>;
@@ -460,11 +488,12 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await expect(page.locator('[role="menu"]:visible')).toHaveCount(0);
     await expect(toolbar).toContainText("2 个来源 → 1 个结果");
     await expect(toolbar).toContainText("保留 2 个来源");
-    const joined = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const joined = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await toolbar.getByRole("button", { name: "原子提交" }).click();
     const joinBody = await json<{
       created_annotations: Array<{ id: string }>;
@@ -502,7 +531,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await expect(lockedToolbar.getByRole("button", { name: "原子提交" })).toBeDisabled();
   });
 
-  test("7. 默认允许重叠；erase_same_class 只修改同类当前媒体对象", async ({ page, request, seed }) => {
+  test("7. 默认允许重叠；erase_same_class 只修改同类当前媒体对象", async ({
+    page,
+    request,
+    seed,
+  }) => {
     test.setTimeout(90_000);
     const data = await seed.reset();
     const taskId = data.task_ids[0];
@@ -521,11 +554,12 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     const toolbar = page.getByTestId("mask-toolbar");
     await toolbar.getByTestId("mask-radius-slider").fill("2");
     await paintStroke(page, [52, 5], [56, 8]);
-    const saved = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/${primary.annotation_id}`)
-      && response.request().method() === "PATCH"
-      && response.ok()
-    ));
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/${primary.annotation_id}`) &&
+        response.request().method() === "PATCH" &&
+        response.ok(),
+    );
     await toolbar.getByRole("button", { name: "确认", exact: true }).click();
     await saved;
     await expect(toolbar).toContainText("未激活", { timeout: 10_000 });
@@ -541,11 +575,12 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await strictToolbar.getByRole("button", { name: "原子提交" }).click();
     const confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("确认删除 1 个 Mask 实例");
-    const committed = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const committed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await confirm.getByRole("button", { name: "确认删除并提交" }).click();
     const body = await json<{ deleted_annotation_ids: string[] }>(await committed);
     expect(body.deleted_annotation_ids).toContain(sameClass.annotation_id);
@@ -556,7 +591,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     expect(await maskContent(request, otherClass.annotation_id, token)).toEqual(otherBefore);
   });
 
-  test("14. 锁定对象的 toolbar、快捷键和原子 API 均拒绝高级操作", async ({ page, request, seed }) => {
+  test("14. 锁定对象的 toolbar、快捷键和原子 API 均拒绝高级操作", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -594,17 +633,27 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
       overlap_policy: "allow",
       strict_non_overlap: false,
     };
-    const fingerprint = await page.evaluate(async ({ payloadScope, memberId }) => {
-      const canonical = (value: unknown): string => {
-        if (value === null || typeof value !== "object") return JSON.stringify(value);
-        if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-        const object = value as Record<string, unknown>;
-        return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonical(object[key])}`).join(",")}}`;
-      };
-      const bytes = new TextEncoder().encode(canonical({ scope: payloadScope, members: [memberId] }));
-      const digest = await crypto.subtle.digest("SHA-256", bytes);
-      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    }, { payloadScope: scope, memberId: source.id });
+    const fingerprint = await page.evaluate(
+      async ({ payloadScope, memberId }) => {
+        const canonical = (value: unknown): string => {
+          if (value === null || typeof value !== "object") return JSON.stringify(value);
+          if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+          const object = value as Record<string, unknown>;
+          return `{${Object.keys(object)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonical(object[key])}`)
+            .join(",")}}`;
+        };
+        const bytes = new TextEncoder().encode(
+          canonical({ scope: payloadScope, members: [memberId] }),
+        );
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        return Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+      },
+      { payloadScope: scope, memberId: source.id },
+    );
     const rejected = await request.post(
       `${API_BASE}/api/v1/tasks/${taskId}/annotations/mask-mutations:commit`,
       {
@@ -615,11 +664,13 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
           scope,
           scope_fingerprint: fingerprint,
           expected_versions: [{ annotation_id: source.id, version: source.version }],
-          mutations: [{
-            kind: "create",
-            source_annotation_ids: [source.id],
-            geometry: source.geometry,
-          }],
+          mutations: [
+            {
+              kind: "create",
+              source_annotation_ids: [source.id],
+              geometry: source.geometry,
+            },
+          ],
           report: { source_areas: [744], result_areas: [744, 744], connectivity: 4 },
         },
       },

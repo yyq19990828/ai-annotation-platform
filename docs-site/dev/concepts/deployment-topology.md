@@ -32,6 +32,7 @@ graph TB
 ```
 
 要点：
+
 - 全部走 compose service DNS（`grounded-sam2-backend:8001`），无 loopback 问题
 - GPU 在同机时 `runtime: nvidia` 由 compose 声明
 - 适合：≤ 5 标注员 / 单卡
@@ -57,6 +58,7 @@ graph TB
 ```
 
 要点：
+
 - ML Backend 注册时填 GPU 主机 LAN IP / 域名（**不能填 loopback**，详见 [容器网络](../troubleshooting/container-networking)）
 - presigned URL 必须能从 GPU 主机访问 MinIO，因此设置 `ML_BACKEND_STORAGE_HOST=http://<minio-host>:9000`，worker 在生成 URL 时替换 host
 - 适合：10–50 标注员 / 单卡或多卡 GPU 池
@@ -83,21 +85,22 @@ graph TB
 ```
 
 要点：
+
 - 每个 ML Backend 在 `ml_backends` 表注册一行，项目设置选择绑定（"模型市场"）
 - 协议见 [ML Backend 协议](../reference/ml-backend-protocol)
 - 同一项目可以绑定不同模型，由 prompt + alias 路由
 
 ## 网络与端口
 
-| 服务 | 默认端口 | 是否暴露公网 |
-|---|---|---|
-| web (nginx) | 80 / 443 | ✅ |
-| api | 8000 | ❌（仅内网，nginx 反代） |
-| worker | — | ❌ |
-| postgres | 5432 | ❌ |
-| redis | 6379 | ❌ |
-| minio | 9000（API） / 9001（console） | 9000 ⚠️（presigned URL 客户端需可达）/ 9001 ❌ |
-| grounded-sam2-backend | 8001 | ❌（仅 worker 调） |
+| 服务                  | 默认端口                      | 是否暴露公网                                   |
+| --------------------- | ----------------------------- | ---------------------------------------------- |
+| web (nginx)           | 80 / 443                      | ✅                                             |
+| api                   | 8000                          | ❌（仅内网，nginx 反代）                       |
+| worker                | —                             | ❌                                             |
+| postgres              | 5432                          | ❌                                             |
+| redis                 | 6379                          | ❌                                             |
+| minio                 | 9000（API） / 9001（console） | 9000 ⚠️（presigned URL 客户端需可达）/ 9001 ❌ |
+| grounded-sam2-backend | 8001                          | ❌（仅 worker 调）                             |
 
 **MinIO 9000 必须客户端可达**，否则前端无法用 presigned URL 拉图、上传。生产环境把 9000 走 nginx 反代到 HTTPS 是常见做法。
 

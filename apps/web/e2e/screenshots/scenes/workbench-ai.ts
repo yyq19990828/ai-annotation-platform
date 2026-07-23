@@ -5,10 +5,7 @@ const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
   primaryTheme: "dark",
 };
 
-const imageTaskRoute = (
-  catalog: Parameters<ScreenshotScene["route"]>[0],
-  task: string,
-) => {
+const imageTaskRoute = (catalog: Parameters<ScreenshotScene["route"]>[0], task: string) => {
   const project = catalog.projects.image_demo;
   return `/projects/${project.id}/annotate?task=${project.tasks[task].id}`;
 };
@@ -46,8 +43,8 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     },
     capture: { kind: "locator", selector: '[data-testid="mask-toolbar"]', padding: 12 },
     annotate: [
-      { selector: '[data-testid="mask-mode-brush"]',  style: "rect-red", label: "笔刷" },
-      { selector: '[data-testid="mask-mode-erase"]',  style: "rect-red", label: "橡皮" },
+      { selector: '[data-testid="mask-mode-brush"]', style: "rect-red", label: "笔刷" },
+      { selector: '[data-testid="mask-mode-erase"]', style: "rect-red", label: "橡皮" },
       { selector: '[data-testid="mask-radius-slider"]', style: "numbered" },
     ],
     matrix: DARK_WORKBENCH_MATRIX,
@@ -67,7 +64,8 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
       const button = page.getByTestId("tool-btn-smart-point");
       await button.waitFor({ state: "visible" });
-      if (!(await button.isEnabled())) throw new Error("sam/smart-point-toolbar: smart-point 被禁用");
+      if (!(await button.isEnabled()))
+        throw new Error("sam/smart-point-toolbar: smart-point 被禁用");
       await button.click();
       await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
       await page.waitForTimeout(200);

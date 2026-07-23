@@ -31,12 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shadcn/ui/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/shadcn/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/shadcn/ui/field";
 import {
   Select,
   SelectContent,
@@ -157,7 +152,8 @@ export function MaskConversionDialog({
   }, [open, request]);
 
   const busy = planning || executing;
-  const heldOptionVisible = request?.sourceType === "video_track_polygon" && scope === "current_frame";
+  const heldOptionVisible =
+    request?.sourceType === "video_track_polygon" && scope === "current_frame";
   const canPreview = !!request && targets.length > 0 && !busy;
   const needsConfirmation = operation === "replace" || (preview?.summary.lossy_count ?? 0) > 0;
 
@@ -225,9 +221,13 @@ export function MaskConversionDialog({
           {request ? (
             <Alert>
               <InfoIcon />
-              <AlertTitle>{sourceLabel(request.sourceType)} · {request.annotationIds.length} 个对象</AlertTitle>
+              <AlertTitle>
+                {sourceLabel(request.sourceType)} · {request.annotationIds.length} 个对象
+              </AlertTitle>
               <AlertDescription>
-                {request.frameIndex === undefined ? "图片 / 关键帧范围" : `当前 F${request.frameIndex}`}
+                {request.frameIndex === undefined
+                  ? "图片 / 关键帧范围"
+                  : `当前 F${request.frameIndex}`}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -245,7 +245,9 @@ export function MaskConversionDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {targets.map((option) => (
-                    <SelectItem key={option} value={option}>{targetLabel(option)}</SelectItem>
+                    <SelectItem key={option} value={option}>
+                      {targetLabel(option)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -290,7 +292,9 @@ export function MaskConversionDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {scopes.map((option) => (
-                      <SelectItem key={option} value={option}>{scopeLabel(option)}</SelectItem>
+                      <SelectItem key={option} value={option}>
+                        {scopeLabel(option)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -306,7 +310,9 @@ export function MaskConversionDialog({
                   onCheckedChange={(checked) => setMaterializeHeld(checked === true)}
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <FieldLabel htmlFor="conversion-materialize-held">允许物化 held / 插值帧</FieldLabel>
+                  <FieldLabel htmlFor="conversion-materialize-held">
+                    允许物化 held / 插值帧
+                  </FieldLabel>
                   <FieldDescription>当前帧不是精确关键帧时必须显式开启。</FieldDescription>
                 </div>
               </Field>
@@ -324,7 +330,8 @@ export function MaskConversionDialog({
           {preview ? (
             <div className="flex flex-col gap-3" aria-label="转换预览报告">
               <div className="text-xs text-muted-foreground">
-                {sourceLabel(request?.sourceType ?? "")} → {targetLabel(preview.target)} · {scopeLabel(preview.scope)} ·
+                {sourceLabel(request?.sourceType ?? "")} → {targetLabel(preview.target)} ·{" "}
+                {scopeLabel(preview.scope)} ·
                 {preview.operation === "copy" ? " 保留来源" : " 替换来源"}
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -342,9 +349,15 @@ export function MaskConversionDialog({
               </div>
               <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
                 {preview.items.map((item) => (
-                  <div key={item.source_annotation_id} className="rounded-md border border-border p-3 text-xs">
+                  <div
+                    key={item.source_annotation_id}
+                    className="rounded-md border border-border p-3 text-xs"
+                  >
                     <div className="flex items-center gap-2 font-medium text-foreground">
-                      <span className="font-mono text-muted-foreground" title={item.source_annotation_id}>
+                      <span
+                        className="font-mono text-muted-foreground"
+                        title={item.source_annotation_id}
+                      >
                         {item.source_annotation_id.slice(0, 8)}
                       </span>
                       <span>{item.source_type}</span>
@@ -353,12 +366,22 @@ export function MaskConversionDialog({
                       {item.lossy ? <span className="text-status-caution">有损</span> : null}
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground sm:grid-cols-3">
-                      <span>面积 {item.source_area_pixels} → {item.target_area_pixels}</span>
+                      <span>
+                        面积 {item.source_area_pixels} → {item.target_area_pixels}
+                      </span>
                       <span>XOR {item.changed_pixels} px</span>
-                      <span>组件 {item.source_components} → {item.target_components}</span>
-                      <span>孔洞 {item.source_holes} → {item.target_holes}</span>
-                      <span>顶点 {item.source_vertices} → {item.target_vertices}</span>
-                      <span>帧 {item.frame_indexes.length ? item.frame_indexes.join(", ") : "图片"}</span>
+                      <span>
+                        组件 {item.source_components} → {item.target_components}
+                      </span>
+                      <span>
+                        孔洞 {item.source_holes} → {item.target_holes}
+                      </span>
+                      <span>
+                        顶点 {item.source_vertices} → {item.target_vertices}
+                      </span>
+                      <span>
+                        帧 {item.frame_indexes.length ? item.frame_indexes.join(", ") : "图片"}
+                      </span>
                     </div>
                     {item.reasons.length ? (
                       <div className="mt-2 text-status-caution">
@@ -369,13 +392,16 @@ export function MaskConversionDialog({
                 ))}
               </div>
               <p className="m-0 text-xs text-muted-foreground">
-                计划有效至 {new Date(preview.expires_at).toLocaleTimeString()}；执行前会重新检查版本、锁和内容摘要。
+                计划有效至 {new Date(preview.expires_at).toLocaleTimeString()}
+                ；执行前会重新检查版本、锁和内容摘要。
               </p>
             </div>
           ) : null}
 
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>取消</Button>
+            <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
+              取消
+            </Button>
             {preview ? (
               <>
                 <Button

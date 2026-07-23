@@ -92,7 +92,10 @@ async def _run(
         for did in targets:
             try:
                 res = await infer_and_apply(
-                    db, dataset_id=did, mode=mode, dry_run=dry_run  # type: ignore[arg-type]
+                    db,
+                    dataset_id=did,
+                    mode=mode,
+                    dry_run=dry_run,  # type: ignore[arg-type]
                 )
             except ValueError as exc:
                 logger.error("dataset=%s failed: %s", did, exc)

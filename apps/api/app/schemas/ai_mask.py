@@ -38,9 +38,7 @@ class AiMaskPromptSummary(BaseModel):
     positive_scribbles: StrictInt = Field(default=0, ge=0, le=64)
     negative_scribbles: StrictInt = Field(default=0, ge=0, le=64)
     multimask: bool = False
-    parameters_digest: str | None = Field(
-        default=None, pattern=r"^[0-9a-f]{64}$"
-    )
+    parameters_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def _validate_totals(self):
@@ -81,9 +79,13 @@ class AiMaskAcceptTarget(BaseModel):
     def _validate_mode_fields(self):
         if self.mode == "create":
             if self.source_annotation_id is not None or self.source_version is not None:
-                raise ValueError("create target cannot include source annotation fields")
+                raise ValueError(
+                    "create target cannot include source annotation fields"
+                )
         elif self.source_annotation_id is None or self.source_version is None:
-            raise ValueError("refine target requires source_annotation_id and source_version")
+            raise ValueError(
+                "refine target requires source_annotation_id and source_version"
+            )
         return self
 
 

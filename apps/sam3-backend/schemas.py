@@ -136,7 +136,9 @@ class Context(BaseModel):
                 )
         if self.type == "interactive_box":
             if self.bbox is None or len(self.bbox) != 4:
-                raise ValueError("context.bbox=[x1,y1,x2,y2] required for type=interactive_box")
+                raise ValueError(
+                    "context.bbox=[x1,y1,x2,y2] required for type=interactive_box"
+                )
             if any(not math.isfinite(value) for value in self.bbox):
                 raise ValueError("context.bbox must be finite")
             x1, y1, x2, y2 = self.bbox
@@ -152,7 +154,9 @@ class Context(BaseModel):
                     raise ValueError(f"context.points[{index}] must be finite [x,y]")
                 if not all(0.0 <= value <= 1.0 for value in point):
                     raise ValueError(f"context.points[{index}] must be normalized")
-            if self.labels is not None and any(label not in (0, 1) for label in self.labels):
+            if self.labels is not None and any(
+                label not in (0, 1) for label in self.labels
+            ):
                 raise ValueError("context.labels values must be 0 or 1")
         if self.type == "mask" and self.mask_prompt is None:
             raise ValueError("context.mask_prompt required for type=mask")

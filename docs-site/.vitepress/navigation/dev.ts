@@ -81,7 +81,10 @@ export function createDevSidebar(
             { text: "API Schema 边界", link: "/dev/concepts/api-schema-boundary" },
             { text: "后端基础设施（容器）", link: "/dev/concepts/backend-infrastructure" },
             { text: "部署拓扑", link: "/dev/concepts/deployment-topology" },
-            { text: "运行环境形态（dev/staging/prod）", link: "/dev/concepts/runtime-environments" },
+            {
+              text: "运行环境形态（dev/staging/prod）",
+              link: "/dev/concepts/runtime-environments",
+            },
             { text: "性能 HUD", link: "/dev/concepts/perfhud" },
           ],
         },
@@ -96,7 +99,10 @@ export function createDevSidebar(
         { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
         { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
         { text: "更新截图", link: "/dev/how-to/update-screenshots" },
-        { text: "迁移内联样式到 CSS Modules", link: "/dev/how-to/migrate-inline-style-to-css-modules" },
+        {
+          text: "迁移内联样式到 CSS Modules",
+          link: "/dev/how-to/migrate-inline-style-to-css-modules",
+        },
         { text: "视频工作台性能回归", link: "/dev/how-to/video-workbench-performance-regression" },
       ],
     },
@@ -138,7 +144,10 @@ export function createDevSidebar(
       collapsed: true,
       items: [
         { text: "总览与速查表", link: "/dev/troubleshooting/" },
-        { text: "Docker rebuild vs restart", link: "/dev/troubleshooting/docker-rebuild-vs-restart" },
+        {
+          text: "Docker rebuild vs restart",
+          link: "/dev/troubleshooting/docker-rebuild-vs-restart",
+        },
         { text: "容器网络与 loopback", link: "/dev/troubleshooting/container-networking" },
         { text: "Prediction Schema 适配器", link: "/dev/troubleshooting/schema-adapter-pitfalls" },
         { text: "Dev 数据保护", link: "/dev/troubleshooting/dev-data-preservation" },

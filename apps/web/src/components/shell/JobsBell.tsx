@@ -142,20 +142,12 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
   );
 }
 
-function JobRow({
-  job,
-  onDismiss,
-}: {
-  job: AsyncJob;
-  onDismiss?: (id: string) => void;
-}) {
+function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) => void }) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
   // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
   const downloadUrl =
-    job.kind === "export" && job.status === "completed"
-      ? exportDownloadUrl(job.result)
-      : null;
+    job.kind === "export" && job.status === "completed" ? exportDownloadUrl(job.result) : null;
   const detail = jobDetail(job);
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
@@ -371,9 +363,7 @@ export function JobsBell() {
                   {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
                 </div>
               ) : (
-                visibleJobs.map((j) => (
-                  <JobRow key={j.id} job={j} onDismiss={dismissOne} />
-                ))
+                visibleJobs.map((j) => <JobRow key={j.id} job={j} onDismiss={dismissOne} />)
               )}
             </div>
           </div>

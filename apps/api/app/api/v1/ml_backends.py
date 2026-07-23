@@ -726,7 +726,13 @@ async def _prepare_safe_interactive_context(
 ) -> tuple[dict, str | None]:
     uses_mask_contract = any(
         key in context
-        for key in ("mask_prompt", "mask_input", "scribbles", "output_geometry", "model_id")
+        for key in (
+            "mask_prompt",
+            "mask_input",
+            "scribbles",
+            "output_geometry",
+            "model_id",
+        )
     ) or context.get("type") in {"point", "interactive_box", "mask", "scribble"}
     if not uses_mask_contract:
         return dict(context), None
@@ -817,12 +823,12 @@ def _interactive_response(
         "source_annotation_id": (
             prompt_source.get("source_annotation_id") if prompt_source else None
         ),
-        "source_version": prompt_source.get("source_version") if prompt_source else None,
+        "source_version": prompt_source.get("source_version")
+        if prompt_source
+        else None,
         "frame_index": frame_index,
     }
-    if context.get("output_geometry") == "mask" and isinstance(
-        prompt_revision, str
-    ):
+    if context.get("output_geometry") == "mask" and isinstance(prompt_revision, str):
         for candidate_index, candidate in enumerate(normalized):
             rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
             content_digest = hashlib.sha256(canonical_rle_bytes(rle)).hexdigest()
@@ -917,14 +923,10 @@ def _interactive_prompt_summary(context: dict) -> dict:
     prompt_type = str(context.get("type") or "point")
     labels = context.get("labels") if isinstance(context.get("labels"), list) else []
     exemplars = (
-        context.get("exemplars")
-        if isinstance(context.get("exemplars"), list)
-        else []
+        context.get("exemplars") if isinstance(context.get("exemplars"), list) else []
     )
     scribbles = (
-        context.get("scribbles")
-        if isinstance(context.get("scribbles"), list)
-        else []
+        context.get("scribbles") if isinstance(context.get("scribbles"), list) else []
     )
     excluded = {
         "type",
@@ -939,9 +941,7 @@ def _interactive_prompt_summary(context: dict) -> dict:
         "output_geometry",
         "model_id",
     }
-    parameters = {
-        key: value for key, value in context.items() if key not in excluded
-    }
+    parameters = {key: value for key, value in context.items() if key not in excluded}
     parameters_digest = (
         hashlib.sha256(
             json.dumps(

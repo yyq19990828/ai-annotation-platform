@@ -35,7 +35,9 @@ export interface UseWorkbenchTaskFlowParams {
   setCurrentTaskId: (id: string) => void;
   setSelectedId: (id: string | null) => void;
   pushToast: ToastFn;
-  submitTaskMut: { mutate: (id: string, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void }) => void };
+  submitTaskMut: {
+    mutate: (id: string, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void }) => void;
+  };
 }
 
 export interface UseWorkbenchTaskFlowResult {
@@ -47,50 +49,89 @@ export interface UseWorkbenchTaskFlowResult {
 
 export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenchTaskFlowResult {
   const {
-    taskId, task, tasks, hasNextPage, isFetchingNextPage, fetchNextPage,
-    annotationsRef, annotationsData, currentProject, userBoxesCount,
-    setCurrentTaskId, setSelectedId, pushToast, submitTaskMut,
+    taskId,
+    task,
+    tasks,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    annotationsRef,
+    annotationsData,
+    currentProject,
+    userBoxesCount,
+    setCurrentTaskId,
+    setSelectedId,
+    pushToast,
+    submitTaskMut,
   } = p;
 
-  const navigateTask = useCallback((direction: "next" | "prev") => {
-    if (tasks.length === 0) return;
-    const idx = tasks.findIndex((t) => t.id === taskId);
-    const newIdx = direction === "next"
-      ? Math.min(idx + 1, tasks.length - 1)
-      : Math.max(0, idx - 1);
-    // 距末页 10 条时预加载下一页
-    if (direction === "next" && newIdx >= tasks.length - 10 && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-    setCurrentTaskId(tasks[newIdx].id);
-    setSelectedId(null);
-  }, [tasks, taskId, hasNextPage, isFetchingNextPage, fetchNextPage, setCurrentTaskId, setSelectedId]);
+  const navigateTask = useCallback(
+    (direction: "next" | "prev") => {
+      if (tasks.length === 0) return;
+      const idx = tasks.findIndex((t) => t.id === taskId);
+      const newIdx =
+        direction === "next" ? Math.min(idx + 1, tasks.length - 1) : Math.max(0, idx - 1);
+      // 距末页 10 条时预加载下一页
+      if (
+        direction === "next" &&
+        newIdx >= tasks.length - 10 &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+      setCurrentTaskId(tasks[newIdx].id);
+      setSelectedId(null);
+    },
+    [
+      tasks,
+      taskId,
+      hasNextPage,
+      isFetchingNextPage,
+      fetchNextPage,
+      setCurrentTaskId,
+      setSelectedId,
+    ],
+  );
 
   /** N（下一未标注）/ U（下一最不确定，total_predictions desc）。 */
-  const smartNext = useCallback((mode: "open" | "uncertain") => {
-    if (tasks.length === 0) return;
-    const idx = tasks.findIndex((t) => t.id === taskId);
-    const after = tasks.slice(idx + 1);
-    const target = mode === "open"
-      ? after.find((t) => t.status !== "completed" && t.total_annotations === 0)
-      : [...after]
-          .filter((t) => t.total_predictions > 0 && t.total_annotations === 0)
-          .sort((a, b) => b.total_predictions - a.total_predictions)[0];
-    if (!target) {
-      if (hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-        pushToast({ msg: "正在加载下一页任务…", kind: "warning" });
-      } else {
-        pushToast({
-          msg: mode === "open" ? "前方已无未标注题目" : "前方已无不确定题目",
-          kind: "warning",
-        });
+  const smartNext = useCallback(
+    (mode: "open" | "uncertain") => {
+      if (tasks.length === 0) return;
+      const idx = tasks.findIndex((t) => t.id === taskId);
+      const after = tasks.slice(idx + 1);
+      const target =
+        mode === "open"
+          ? after.find((t) => t.status !== "completed" && t.total_annotations === 0)
+          : [...after]
+              .filter((t) => t.total_predictions > 0 && t.total_annotations === 0)
+              .sort((a, b) => b.total_predictions - a.total_predictions)[0];
+      if (!target) {
+        if (hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+          pushToast({ msg: "正在加载下一页任务…", kind: "warning" });
+        } else {
+          pushToast({
+            msg: mode === "open" ? "前方已无未标注题目" : "前方已无不确定题目",
+            kind: "warning",
+          });
+        }
+        return;
       }
-      return;
-    }
-    setCurrentTaskId(target.id);
-    setSelectedId(null);
-  }, [tasks, taskId, hasNextPage, isFetchingNextPage, fetchNextPage, setCurrentTaskId, setSelectedId, pushToast]);
+      setCurrentTaskId(target.id);
+      setSelectedId(null);
+    },
+    [
+      tasks,
+      taskId,
+      hasNextPage,
+      isFetchingNextPage,
+      fetchNextPage,
+      setCurrentTaskId,
+      setSelectedId,
+      pushToast,
+    ],
+  );
 
   /** 计算所有 annotation 中是否有 required 属性未填（驱动提交按钮 disabled）。 */
   const hasMissingRequired = useMemo(() => {
@@ -107,7 +148,11 @@ export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenc
   const handleSubmitTask = useCallback(() => {
     if (!taskId) return;
     if (hasMissingRequired) {
-      pushToast({ msg: "存在必填属性未填，无法提交", sub: "请检查右侧标注属性表单", kind: "error" });
+      pushToast({
+        msg: "存在必填属性未填，无法提交",
+        sub: "请检查右侧标注属性表单",
+        kind: "error",
+      });
       return;
     }
     submitTaskMut.mutate(taskId, {
@@ -120,7 +165,15 @@ export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenc
         navigateTask("next");
       },
     });
-  }, [taskId, submitTaskMut, pushToast, task?.display_id, userBoxesCount, navigateTask, hasMissingRequired]);
+  }, [
+    taskId,
+    submitTaskMut,
+    pushToast,
+    task?.display_id,
+    userBoxesCount,
+    navigateTask,
+    hasMissingRequired,
+  ]);
 
   return { navigateTask, smartNext, hasMissingRequired, handleSubmitTask };
 }

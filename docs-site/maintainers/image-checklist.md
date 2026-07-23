@@ -147,7 +147,9 @@
 ## 综合截图清单（按区域维护）
 
 > 新截图统一在这里按区域维护；已废弃截图保留删除原因，避免后续重复补拍。
+
 ### 入口
+
 - [x] `images/getting-started/login.png` — 登录页全屏 [auto]
 - [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast [auto]
 - [ ] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交；旧 1×1 PNG 伪 GIF 已删除，待真实重录
@@ -156,10 +158,12 @@
 - [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
 
 ### 数据集
+
 - [ ] `images/datasets/lidar-axis-wizard-step2.png` — 向导第 2 步选「3D 点云」后出现 AxisConventionPicker + 自动检测按钮 [manual]
 - [ ] `images/datasets/lidar-axis-mismatch-banner.png` — 3D 工作台顶部坐标系不一致 banner + 重投影按钮 [manual]
 
 ### 项目
+
 - [x] `images/projects/create-entry.png` — 「新建项目」按钮高亮 [auto]
 - [x] `images/projects/wizard-steps.png` — 6 步 wizard 关键截图 [auto]
 - [x] `images/projects/wizard-step4-backend.png` — wizard 第 4 步 ML Backend 配置 [auto]
@@ -184,6 +188,7 @@
 - [ ] `images/projects/template-apply-banner.png` — 从模板创建 Wizard 顶部 banner [manual]
 
 ### 参考
+
 - [x] `images/export/format-select.png` — 导出对话框 + 格式选项 [auto]
 - [~] ~~`images/export/progress.png` — 进度条 + 下载链接 toast~~ — **已废弃**：导出异步化，进度移至右上角任务铃 JobsBell，无独立进度条页（待补 JobsBell 截图）
 - [x] `images/notifications/panel-overview.png` — 通知面板展开态（筛选 tab + 分组 + 加载更多）
@@ -194,11 +199,13 @@
 - [x] `images/settings/my-feedback.png` — 我的反馈：用户视角看自己提交的 BUG 工单与状态
 
 ### 审核
+
 - [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 [auto]
 - [x] `images/review/reject-form.png` — 退回备注表单 [auto]
 - [x] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）`[auto]`
 
 ### 平台管理
+
 - [x] `images/superadmin/bugs/list.png` — `/bugs` 列表全图，含状态/严重度筛选 + 重开徽标 `↻N`
 - [x] `images/superadmin/bugs/detail-panel.png` — 详情面板：元信息行、Markdown 描述、截图附件、状态切换按钮
 - [x] `images/superadmin/bugs/status-transitions.png` — 状态切换按钮高亮 + 关闭后再重开的 reopen 徽标 `[auto]`
@@ -233,6 +240,7 @@
 - [x] `images/superadmin/system-monitoring/workers-table.png` — Workers 表（名称/Heartbeat/Pool/状态） `[auto]`
 
 ### 工作台
+
 - [x] `images/bbox/draw-in-progress.gif` — 选矩形工具 → 画布拖出轴对齐矩形 `[auto-gif]`（flows/bbox-draw，P-COCO8）
 - [ ] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
 - [ ] `images/polygon/close-hint.png` — 三顶点后下一点贴近首点的闭合提示；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
@@ -289,6 +297,7 @@
 - [ ] `images/workbench/video-track-qc-warnings.png` — 画布左上角质量提示浮层 [manual]
 
 ### 工作流
+
 - [x] 复用 `images/projects/ai-pre-config-panel.png` — ProjectDetailPanel（批次勾选 + predict_mode 三 tab + 跑预标按钮） [auto]
 - [x] `images/workflows/failed-prediction-recovery-jobs-list.png` — /ai-pre/jobs?status=failed 列表 [auto]
 - [x] 复用 `images/projects/wizard-steps.png` — 向导类型选择（7 种项目类型卡） [auto]

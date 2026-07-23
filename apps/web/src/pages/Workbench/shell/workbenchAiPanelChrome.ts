@@ -9,5 +9,4 @@ export const AI_PANEL_HEADER_CLASS =
 export const AI_PANEL_ICON_CLASS =
   "inline-flex size-6 shrink-0 items-center justify-center rounded-sm bg-violet-500/[0.18] text-status-info";
 
-export const AI_PANEL_SECTION_CLASS =
-  "border-b border-border bg-muted px-3.5 py-2.5";
+export const AI_PANEL_SECTION_CLASS = "border-b border-border bg-muted px-3.5 py-2.5";

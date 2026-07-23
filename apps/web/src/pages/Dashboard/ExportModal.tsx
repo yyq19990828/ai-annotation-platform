@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import { projectsApi, type ExportTarget, type VideoFrameMode } from "@/api/projects";
-import {
-  maskFormatsApi,
-  type MaskFormatExportPreflight,
-} from "@/api/maskFormats";
+import { maskFormatsApi, type MaskFormatExportPreflight } from "@/api/maskFormats";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -30,7 +27,12 @@ type ImageOption =
   | { kind: "group"; label: string; description: string; members: TargetOption[] };
 
 const IMAGE_OPTIONS: ImageOption[] = [
-  { kind: "single", value: "coco", label: "COCO", description: "通用检测 / 分割 / 关键点，单 annotations.json。" },
+  {
+    kind: "single",
+    value: "coco",
+    label: "COCO",
+    description: "通用检测 / 分割 / 关键点，单 annotations.json。",
+  },
   {
     kind: "group",
     label: "YOLO",
@@ -41,15 +43,43 @@ const IMAGE_OPTIONS: ImageOption[] = [
       { value: "yolo-seg", label: "分割", description: "polygon / mask 归一化多边形。" },
     ],
   },
-  { kind: "single", value: "aap_json", label: "AAP JSON", description: "平台原生无损，含 predictions + annotations 双数组。" },
-  { kind: "single", value: "label-studio-brush", label: "Label Studio Brush", description: "BrushLabels 官方 RLE，可被 Label Studio 直接消费。" },
-  { kind: "single", value: "binary-png", label: "逐实例 Binary PNG", description: "每个实例独立 0/255 PNG，无损保留重叠。" },
-  { kind: "single", value: "indexed-png", label: "Indexed PNG", description: "每张图一份 palette instance map；重叠需显式策略。" },
+  {
+    kind: "single",
+    value: "aap_json",
+    label: "AAP JSON",
+    description: "平台原生无损，含 predictions + annotations 双数组。",
+  },
+  {
+    kind: "single",
+    value: "label-studio-brush",
+    label: "Label Studio Brush",
+    description: "BrushLabels 官方 RLE，可被 Label Studio 直接消费。",
+  },
+  {
+    kind: "single",
+    value: "binary-png",
+    label: "逐实例 Binary PNG",
+    description: "每个实例独立 0/255 PNG，无损保留重叠。",
+  },
+  {
+    kind: "single",
+    value: "indexed-png",
+    label: "Indexed PNG",
+    description: "每张图一份 palette instance map；重叠需显式策略。",
+  },
 ];
 
 const VIDEO_OPTIONS: TargetOption[] = [
-  { value: "video_json", label: "Video JSON", description: "平台视频轨迹 JSON，可选关键帧或展开所有帧。" },
-  { value: "yolo-frames-det", label: "YOLO 逐帧", description: "按采样网格抽帧，导出检测训练用 labels。" },
+  {
+    value: "video_json",
+    label: "Video JSON",
+    description: "平台视频轨迹 JSON，可选关键帧或展开所有帧。",
+  },
+  {
+    value: "yolo-frames-det",
+    label: "YOLO 逐帧",
+    description: "按采样网格抽帧，导出检测训练用 labels。",
+  },
   {
     value: "yolo-frames-seg",
     label: "YOLO 逐帧分割",
@@ -75,16 +105,32 @@ const VIDEO_OPTIONS: TargetOption[] = [
     label: "MOTS",
     description: "逐帧 compressed COCO RLE，显式保存 class / track / frame 映射。",
   },
-  { value: "aap_json", label: "AAP JSON", description: "无损保留 video_track geometry 与项目配置。" },
+  {
+    value: "aap_json",
+    label: "AAP JSON",
+    description: "无损保留 video_track geometry 与项目配置。",
+  },
   { value: "mot", label: "MOT", description: "MOT 16/17/20 跟踪评测格式，按采样网格重排帧号。" },
   { value: "kitti", label: "KITTI", description: "KITTI Tracking 2D labels，适配 KITTI 工具链。" },
 ];
 
 const LIDAR_OPTIONS: TargetOption[] = [
   { value: "aap_json", label: "AAP JSON", description: "平台原生无损，保留 3D 几何与项目配置。" },
-  { value: "kitti", label: "KITTI 3D", description: "逐帧 label_2 + calib，输出 KITTI camera 坐标。" },
-  { value: "nuscenes", label: "nuScenes JSON", description: "单帧 sample 风格，ego 坐标 + 占位 ego_pose。" },
-  { value: "pointmask", label: "Point Mask", description: "逐点 uint32 label + 类别映射，适配 3D 分割训练前处理。" },
+  {
+    value: "kitti",
+    label: "KITTI 3D",
+    description: "逐帧 label_2 + calib，输出 KITTI camera 坐标。",
+  },
+  {
+    value: "nuscenes",
+    label: "nuScenes JSON",
+    description: "单帧 sample 风格，ego 坐标 + 占位 ego_pose。",
+  },
+  {
+    value: "pointmask",
+    label: "Point Mask",
+    description: "逐点 uint32 label + 类别映射，适配 3D 分割训练前处理。",
+  },
 ];
 
 const FRAME_MODES: { value: VideoFrameMode; label: string; description: string }[] = [
@@ -187,7 +233,14 @@ function ExportForm({
   useEffect(() => {
     setPreflight(null);
     setLossyConfirmed(false);
-  }, [includeAttributes, indexedOverlapPolicy, motsFrameBase, targets, videoFrameMode, videoOverlapPolicy]);
+  }, [
+    includeAttributes,
+    indexedOverlapPolicy,
+    motsFrameBase,
+    targets,
+    videoFrameMode,
+    videoOverlapPolicy,
+  ]);
 
   const toggleTarget = (value: ExportTarget) => {
     setTargets((prev) =>
@@ -208,8 +261,8 @@ function ExportForm({
           : {}),
         ...(targets.includes("mots") ? { motsFrameBase } : {}),
       };
-      const checked = preflight
-        ?? await maskFormatsApi.preflightExport(projectId, targets, options);
+      const checked =
+        preflight ?? (await maskFormatsApi.preflightExport(projectId, targets, options));
       if (!preflight) setPreflight(checked);
       if (checked.loss_class === "unsupported") {
         pushToast({
@@ -263,7 +316,10 @@ function ExportForm({
                     onToggle={() => toggleTarget(o.value)}
                   />
                 ) : (
-                  <div key={o.label} className="overflow-hidden rounded-md border border-border bg-muted">
+                  <div
+                    key={o.label}
+                    className="overflow-hidden rounded-md border border-border bg-muted"
+                  >
                     <button
                       type="button"
                       onClick={() => setYoloExpanded((v) => !v)}
@@ -280,7 +336,9 @@ function ExportForm({
                           </span>
                         ) : null;
                       })()}
-                      <span className="text-xs font-normal text-muted-foreground">{o.description}</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {o.description}
+                      </span>
                     </button>
                     {yoloExpanded && (
                       <div className="flex flex-col gap-1.5 px-2.5 pb-2.5">
@@ -332,7 +390,9 @@ function ExportForm({
                   />
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className={OPTION_LABEL_CLASS}>{item.label}</span>
-                    <span className="text-xs font-normal text-muted-foreground">{item.description}</span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {item.description}
+                    </span>
                   </span>
                 </button>
               );
@@ -348,7 +408,9 @@ function ExportForm({
           <select
             id="indexed-overlap-policy"
             value={indexedOverlapPolicy}
-            onChange={(event) => setIndexedOverlapPolicy(event.target.value as typeof indexedOverlapPolicy)}
+            onChange={(event) =>
+              setIndexedOverlapPolicy(event.target.value as typeof indexedOverlapPolicy)
+            }
             className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
           >
             <option value="error">检测到重叠时阻止（默认）</option>
@@ -366,7 +428,9 @@ function ExportForm({
           <select
             id="video-overlap-policy"
             value={videoOverlapPolicy}
-            onChange={(event) => setVideoOverlapPolicy(event.target.value as typeof videoOverlapPolicy)}
+            onChange={(event) =>
+              setVideoOverlapPolicy(event.target.value as typeof videoOverlapPolicy)
+            }
             className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
           >
             <option value="error">检测到重叠时阻止（默认）</option>
@@ -435,8 +499,10 @@ function ExportForm({
               {preflight.estimated_objects} 对象 · {preflight.estimated_files} 文件
             </span>
           </div>
-          {(preflight.losses.length > 0
-            || preflight.plans.some((plan) => plan.items.some((item) => item.warnings.length > 0))) && (
+          {(preflight.losses.length > 0 ||
+            preflight.plans.some((plan) =>
+              plan.items.some((item) => item.warnings.length > 0),
+            )) && (
             <div className="flex flex-col gap-1 text-muted-foreground">
               {preflight.losses.map((loss, index) => (
                 <div key={`${loss.code}-${index}`}>
@@ -476,11 +542,7 @@ function ExportForm({
         </button>
         <button
           type="button"
-          disabled={
-            busy
-            || targets.length === 0
-            || preflight?.loss_class === "unsupported"
-          }
+          disabled={busy || targets.length === 0 || preflight?.loss_class === "unsupported"}
           onClick={handleExport}
           className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"
         >

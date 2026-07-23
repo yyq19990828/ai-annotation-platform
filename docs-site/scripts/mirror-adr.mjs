@@ -55,10 +55,7 @@ function escapeForVue(text) {
       } else {
         const code = parts[j];
         if (/\{\{|\}\}/.test(code)) {
-          const escaped = code
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+          const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
           rebuilt += `<code v-pre>${escaped}</code>`;
         } else {
           rebuilt += "`" + code + "`";
@@ -73,7 +70,9 @@ function escapeForVue(text) {
 // —— 收集顶层 + archive 的 ADR 文件清单 ——
 function listAdrFiles(dir) {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .sort();
 }
 
 const topFiles = listAdrFiles(SRC);
@@ -143,7 +142,10 @@ function rewriteBody(text, { isReadme } = {}) {
     (_m, stem, hash = "") => {
       const encoded = stem.startsWith("archive/")
         ? `archived-${stem.slice("archive/".length)}`
-        : stem.replace(/^\[archived\]/, "archived-").replace(/\[/g, "").replace(/\]/g, "");
+        : stem
+            .replace(/^\[archived\]/, "archived-")
+            .replace(/\[/g, "")
+            .replace(/\]/g, "");
       return `](/roadmap/${encoded}${hash})`;
     },
   );

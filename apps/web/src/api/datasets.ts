@@ -72,7 +72,13 @@ export interface SniffAxisConventionResponse {
 }
 
 export const datasetsApi = {
-  list: (params?: { search?: string; data_type?: string; has_scenes?: boolean; limit?: number; offset?: number }) => {
+  list: (params?: {
+    search?: string;
+    data_type?: string;
+    has_scenes?: boolean;
+    limit?: number;
+    offset?: number;
+  }) => {
     const q = new URLSearchParams();
     if (params?.search) q.set("search", params.search);
     if (params?.data_type) q.set("data_type", params.data_type);
@@ -87,16 +93,13 @@ export const datasetsApi = {
 
   get: (id: string) => apiClient.get<DatasetResponse>(`/datasets/${id}`),
 
-  create: (payload: DatasetCreatePayload) =>
-    apiClient.post<DatasetResponse>("/datasets", payload),
+  create: (payload: DatasetCreatePayload) => apiClient.post<DatasetResponse>("/datasets", payload),
 
   update: (id: string, payload: DatasetUpdatePayload) =>
     apiClient.put<DatasetResponse>(`/datasets/${id}`, payload),
 
   sniffAxisConvention: (id: string) =>
-    apiClient.post<SniffAxisConventionResponse>(
-      `/datasets/${id}/sniff-axis-convention`,
-    ),
+    apiClient.post<SniffAxisConventionResponse>(`/datasets/${id}/sniff-axis-convention`),
 
   delete: (id: string) => apiClient.delete<void>(`/datasets/${id}`),
 
@@ -127,7 +130,13 @@ export const datasetsApi = {
     id: string,
     file: File,
     onProgress?: (pct: number) => void,
-  ): Promise<{ added: number; skipped: number; errors: Array<{ name: string; error: string }>; total_in_zip: number; linked_tasks: number }> => {
+  ): Promise<{
+    added: number;
+    skipped: number;
+    errors: Array<{ name: string; error: string }>;
+    total_in_zip: number;
+    linked_tasks: number;
+  }> => {
     return new Promise((resolve, reject) => {
       const token = localStorage.getItem("token");
       const xhr = new XMLHttpRequest();
@@ -162,7 +171,9 @@ export const datasetsApi = {
   },
 
   scanItems: (id: string) =>
-    apiClient.post<{ status: string; new_items: number; linked_tasks: number }>(`/datasets/${id}/items/scan`),
+    apiClient.post<{ status: string; new_items: number; linked_tasks: number }>(
+      `/datasets/${id}/items/scan`,
+    ),
 
   backfillDimensions: (id: string, batch = 50) =>
     apiClient.post<{ processed: number; failed: number; remaining_hint: boolean }>(
@@ -183,10 +194,7 @@ export const datasetsApi = {
       // v0.12.0 · 大 dataset(>2000 items) 异步建 task 时返回 job id；小 dataset 同步建则为 null
       async_job_id?: string | null;
       created_tasks?: number;
-    }>(
-      `/datasets/${id}/link`,
-      { project_id: projectId },
-    ),
+    }>(`/datasets/${id}/link`, { project_id: projectId }),
 
   unlinkProject: (id: string, projectId: string) =>
     apiClient.delete<{
@@ -209,13 +217,15 @@ export const datasetsApi = {
 
   // v0.7.3 · 项目侧反查：列出本项目已关联的所有数据集
   listForProject: (projectId: string) =>
-    apiClient.get<{
-      id: string;
-      display_id: string;
-      name: string;
-      data_type: string;
-      linked_at: string | null;
-      items_count: number;
-      tasks_in_project: number;
-    }[]>(`/projects/${projectId}/datasets`),
+    apiClient.get<
+      {
+        id: string;
+        display_id: string;
+        name: string;
+        data_type: string;
+        linked_at: string | null;
+        items_count: number;
+        tasks_in_project: number;
+      }[]
+    >(`/projects/${projectId}/datasets`),
 };

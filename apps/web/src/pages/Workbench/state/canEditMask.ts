@@ -5,13 +5,7 @@
 //
 // 纯函数: 不读 React state, 所有上下文由调用方传入, 便于单测与在 reducer / 事件处理器中复用。
 
-export type MaskEditorPhase =
-  | "idle"
-  | "loading"
-  | "ready"
-  | "dirty"
-  | "saving"
-  | "error";
+export type MaskEditorPhase = "idle" | "loading" | "ready" | "dirty" | "saving" | "error";
 
 export interface CanEditMaskContext {
   /** task 级只读 (review/completed 锁 + 非 reviewer)。 */
@@ -64,10 +58,7 @@ export function canEditMask(ctx: CanEditMaskContext): boolean {
  * Enter 提交的真实条件 (ADR-0052 D7): editorPhase ∈ {ready, dirty} 且 dirty===true。
  * 无变化不物化 held keyframe; 旧逻辑只查 `active`, 现统一走此函数。
  */
-export function canCommitMask(
-  editorPhase: MaskEditorPhase,
-  dirty: boolean,
-): boolean {
+export function canCommitMask(editorPhase: MaskEditorPhase, dirty: boolean): boolean {
   if (editorPhase !== "ready" && editorPhase !== "dirty") return false;
   return dirty;
 }

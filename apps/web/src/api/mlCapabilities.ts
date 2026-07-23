@@ -156,10 +156,8 @@ export interface CapabilityInstancesResponse {
 }
 
 export const mlCapabilitiesApi = {
-  getProtocol: () =>
-    apiClient.get<ProtocolCapabilities>("/ml-capabilities/protocol"),
-  getInstances: () =>
-    apiClient.get<CapabilityInstancesResponse>("/ml-capabilities/instances"),
+  getProtocol: () => apiClient.get<ProtocolCapabilities>("/ml-capabilities/protocol"),
+  getInstances: () => apiClient.get<CapabilityInstancesResponse>("/ml-capabilities/instances"),
 };
 
 export function useProtocolCapabilities() {

@@ -57,15 +57,13 @@ test.describe("review feedback loop", () => {
     await page.waitForTimeout(500);
 
     // 拿 reviewer token 直查 task 状态
-    const tokenRes = await request.post(
-      `${API_BASE}/api/v1/__test/seed/login`,
-      { data: { email: data.reviewer_email } },
-    );
+    const tokenRes = await request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+      data: { email: data.reviewer_email },
+    });
     const { access_token } = (await tokenRes.json()) as { access_token: string };
-    const taskRes = await request.get(
-      `${API_BASE}/api/v1/tasks/${data.task_ids[0]}`,
-      { headers: { Authorization: `Bearer ${access_token}` } },
-    );
+    const taskRes = await request.get(`${API_BASE}/api/v1/tasks/${data.task_ids[0]}`, {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
     expect(taskRes.ok()).toBeTruthy();
     const task = (await taskRes.json()) as {
       status: string;

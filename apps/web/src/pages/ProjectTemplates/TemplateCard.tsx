@@ -24,14 +24,7 @@ const SCOPE_LABEL: Record<ProjectTemplateOut["scope"], string> = {
   public: "公共",
 };
 
-export function TemplateCard({
-  template,
-  canEdit,
-  onApply,
-  onDuplicate,
-  onEdit,
-  onDelete,
-}: Props) {
+export function TemplateCard({ template, canEdit, onApply, onDuplicate, onEdit, onDelete }: Props) {
   const type = PROJECT_TYPES.find((t) => t.key === template.type_key);
   return (
     <Card>
@@ -68,9 +61,7 @@ export function TemplateCard({
               </>
             ) : null}
           </div>
-          {template.description ? (
-            <div>{template.description}</div>
-          ) : null}
+          {template.description ? <div>{template.description}</div> : null}
         </div>
 
         <div className={styles.cardActions}>

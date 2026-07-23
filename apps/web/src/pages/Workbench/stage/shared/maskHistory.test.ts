@@ -134,9 +134,11 @@ describe("MaskHistoryStore", () => {
     const store = new MaskHistoryStore(100);
     const command = syntheticCommand("recoverable", 80);
     store.push(command);
-    expect(() => store.undo(() => {
-      throw new Error("apply failed");
-    })).toThrow("apply failed");
+    expect(() =>
+      store.undo(() => {
+        throw new Error("apply failed");
+      }),
+    ).toThrow("apply failed");
     expect(store.snapshot()).toMatchObject({
       retainedBytes: 80,
       undoCommands: 1,
@@ -157,7 +159,7 @@ describe("MaskHistoryStore", () => {
   });
 
   it("admits a full 8192 square XOR bitset in the low-memory budget", () => {
-    const tileBits = new Uint8Array(MASK_HISTORY_TILE_SIZE * MASK_HISTORY_TILE_SIZE / 8);
+    const tileBits = new Uint8Array((MASK_HISTORY_TILE_SIZE * MASK_HISTORY_TILE_SIZE) / 8);
     const patches = Array.from({ length: 16 * 16 }, (_, index) => ({
       tileX: index % 16,
       tileY: Math.floor(index / 16),
@@ -169,13 +171,15 @@ describe("MaskHistoryStore", () => {
     expect(chargedBytes).toBeGreaterThanOrEqual(8 * 1024 * 1024);
     expect(chargedBytes).toBeLessThan(maskHistoryBudgetBytes(2));
     const store = new MaskHistoryStore(maskHistoryBudgetBytes(2));
-    expect(store.push({
-      name: "full-canvas",
-      sourceRevision: 0,
-      patches,
-      changedPixels: 8192 * 8192,
-      chargedBytes,
-    })).toBe(true);
+    expect(
+      store.push({
+        name: "full-canvas",
+        sourceRevision: 0,
+        patches,
+        changedPixels: 8192 * 8192,
+        chargedBytes,
+      }),
+    ).toBe(true);
   });
 
   it("uses the frozen low, standard, and high device budgets", () => {

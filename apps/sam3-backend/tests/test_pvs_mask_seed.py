@@ -70,9 +70,7 @@ def test_pvs_rejects_correction_frame_outside_window() -> None:
             local_seed=0,
             seed={
                 "obj_id": 1,
-                "prompts": [
-                    {"frame_index": 20, "mask_prompt": _mask_prompt()}
-                ],
+                "prompts": [{"frame_index": 20, "mask_prompt": _mask_prompt()}],
             },
             lo=10,
             local_count=4,

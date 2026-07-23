@@ -10,8 +10,20 @@ import {
 
 const donut: PolygonGeometry = {
   type: "polygon",
-  points: [[0, 0], [1, 0], [1, 1], [0, 1]],
-  holes: [[[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]]],
+  points: [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+  ],
+  holes: [
+    [
+      [0.25, 0.25],
+      [0.75, 0.25],
+      [0.75, 0.75],
+      [0.25, 0.75],
+    ],
+  ],
 };
 
 describe("maskConversion", () => {
@@ -29,9 +41,33 @@ describe("maskConversion", () => {
     const geometry: MultiPolygonGeometry = {
       type: "multi_polygon",
       polygons: [
-        { type: "polygon", points: [[0, 0], [0.25, 0], [0.25, 0.34], [0, 0.34]] },
-        { type: "polygon", points: [[0.4, 0.34], [0.6, 0.34], [0.6, 0.67], [0.4, 0.67]] },
-        { type: "polygon", points: [[0.75, 0.67], [1, 0.67], [1, 1], [0.75, 1]] },
+        {
+          type: "polygon",
+          points: [
+            [0, 0],
+            [0.25, 0],
+            [0.25, 0.34],
+            [0, 0.34],
+          ],
+        },
+        {
+          type: "polygon",
+          points: [
+            [0.4, 0.34],
+            [0.6, 0.34],
+            [0.6, 0.67],
+            [0.4, 0.67],
+          ],
+        },
+        {
+          type: "polygon",
+          points: [
+            [0.75, 0.67],
+            [1, 0.67],
+            [1, 1],
+            [0.75, 1],
+          ],
+        },
       ],
     };
     const alpha = rasterizeRegionGeometry(geometry, 12, 6);
@@ -50,10 +86,7 @@ describe("maskConversion", () => {
     edited[0] = 0;
     edited[3 * 8 + 3] = 255;
 
-    const report = compareRegionToRasterResult(
-      donut,
-      encodeCocoRle(edited, 8, 6),
-    );
+    const report = compareRegionToRasterResult(donut, encodeCocoRle(edited, 8, 6));
 
     expect(report.changedPixels).toBe(2);
     expect(report.droppedPixels).toBe(1);

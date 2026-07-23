@@ -32,9 +32,10 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
   const { uploadAsset, deleteAsset, signAsset } = useGuideAssets(project.id);
 
   // 后端 ProjectOut 已强类型, 但 codegen 未重跑前, annotation_guide / guide_assets 走宽松断言.
-  const initialMarkdown = (project as unknown as { annotation_guide?: string | null }).annotation_guide ?? "";
+  const initialMarkdown =
+    (project as unknown as { annotation_guide?: string | null }).annotation_guide ?? "";
   const initialAssets =
-    ((project as unknown as { guide_assets?: GuideAssetEntry[] }).guide_assets ?? []);
+    (project as unknown as { guide_assets?: GuideAssetEntry[] }).guide_assets ?? [];
 
   const [mode, setMode] = useState<Mode>("edit");
   const [draft, setDraft] = useState<string>(initialMarkdown);
@@ -146,13 +147,17 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
         {assets.length > 0 && (
           <>
             <p className={DESCRIPTION_CLASS}>已上传图片资源</p>
-            <ul className="m-0 max-h-[200px] list-none overflow-auto rounded-md border border-border p-0" data-testid="guide-asset-list">
+            <ul
+              className="m-0 max-h-[200px] list-none overflow-auto rounded-md border border-border p-0"
+              data-testid="guide-asset-list"
+            >
               {assets.map((a) => (
-                <li className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 text-xs last:border-b-0" key={a.key}>
+                <li
+                  className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 text-xs last:border-b-0"
+                  key={a.key}
+                >
                   <span title={a.key}>{a.original_name}</span>
-                  <span className="text-muted-foreground">
-                    {(a.size / 1024).toFixed(1)} KB
-                  </span>
+                  <span className="text-muted-foreground">{(a.size / 1024).toFixed(1)} KB</span>
                   <button
                     type="button"
                     onClick={() => void handleDeleteAsset(a.key)}

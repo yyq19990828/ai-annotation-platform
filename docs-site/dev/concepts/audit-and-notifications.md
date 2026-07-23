@@ -37,16 +37,16 @@ flowchart TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/services/audit.py` | `AuditAction`、`AuditService.log()`、`log_many()` |
-| `apps/api/app/db/models/audit_log.py` | `AuditLog` 数据模型 |
-| `apps/api/app/api/v1/audit_logs.py` | audit 查询与导出 |
-| `apps/api/app/services/notification.py` | 通知写表与 Redis PubSub |
-| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper |
-| `apps/api/app/db/models/notification.py` | `Notification` 模型 |
-| `apps/api/app/api/v1/notifications.py` | 通知列表、已读、偏好设置 |
-| `apps/api/app/api/v1/ws.py` | `/ws/notifications` 在线推送 |
+| 位置                                        | 作用                                              |
+| ------------------------------------------- | ------------------------------------------------- |
+| `apps/api/app/services/audit.py`            | `AuditAction`、`AuditService.log()`、`log_many()` |
+| `apps/api/app/db/models/audit_log.py`       | `AuditLog` 数据模型                               |
+| `apps/api/app/api/v1/audit_logs.py`         | audit 查询与导出                                  |
+| `apps/api/app/services/notification.py`     | 通知写表与 Redis PubSub                           |
+| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper      |
+| `apps/api/app/db/models/notification.py`    | `Notification` 模型                               |
+| `apps/api/app/api/v1/notifications.py`      | 通知列表、已读、偏好设置                          |
+| `apps/api/app/api/v1/ws.py`                 | `/ws/notifications` 在线推送                      |
 
 ## Audit：记录发生了什么
 
@@ -54,16 +54,16 @@ flowchart TD
 
 `AuditLog` 当前核心字段：
 
-| 字段 | 含义 |
-|---|---|
-| `actor_id` / `actor_email` / `actor_role` | 谁触发了动作 |
-| `action` | 业务动作名，如 `task.submit` |
-| `target_type` / `target_id` | 作用对象 |
-| `method` / `path` / `status_code` | HTTP 元数据 |
-| `ip` | 客户端 IP |
-| `detail_json` | 补充上下文 |
-| `request_id` | 同一 HTTP 请求下的多条 audit 关联键 |
-| `created_at` | 时间戳 |
+| 字段                                      | 含义                                |
+| ----------------------------------------- | ----------------------------------- |
+| `actor_id` / `actor_email` / `actor_role` | 谁触发了动作                        |
+| `action`                                  | 业务动作名，如 `task.submit`        |
+| `target_type` / `target_id`               | 作用对象                            |
+| `method` / `path` / `status_code`         | HTTP 元数据                         |
+| `ip`                                      | 客户端 IP                           |
+| `detail_json`                             | 补充上下文                          |
+| `request_id`                              | 同一 HTTP 请求下的多条 audit 关联键 |
+| `created_at`                              | 时间戳                              |
 
 ### `AuditAction`
 
@@ -160,14 +160,14 @@ flowchart TD
 
 `Notification` 当前关键字段：
 
-| 字段 | 含义 |
-|---|---|
-| `user_id` | 收件人 |
-| `type` | 通知类型，如 `task.rejected` |
-| `target_type` / `target_id` | 指向哪个对象 |
-| `payload` | UI 展示辅助数据 |
-| `read_at` | 已读时间 |
-| `created_at` | 创建时间 |
+| 字段                        | 含义                         |
+| --------------------------- | ---------------------------- |
+| `user_id`                   | 收件人                       |
+| `type`                      | 通知类型，如 `task.rejected` |
+| `target_type` / `target_id` | 指向哪个对象                 |
+| `payload`                   | UI 展示辅助数据              |
+| `read_at`                   | 已读时间                     |
+| `created_at`                | 创建时间                     |
 
 通知是“按用户持久化”的，不是纯瞬时弹窗。
 
@@ -244,10 +244,10 @@ flowchart TD
 
 用户发起且有 `user_id` 的后台任务在进入终态后会发通用通知：
 
-| 状态 | 通知 type |
-|---|---|
+| 状态        | 通知 type       |
+| ----------- | --------------- |
 | `completed` | `job.completed` |
-| `failed` | `job.failed` |
+| `failed`    | `job.failed`    |
 | `cancelled` | `job.cancelled` |
 
 helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在各自 `mark_*`
@@ -351,11 +351,11 @@ WS 握手时会校验 JWT，然后订阅：
 
 迁移按三段式推进，每段独立可回退：
 
-| 阶段 | 状态 | 行为 |
-|---|---|---|
-| 新表与 API | ✅ 已落 | 新表 + 新 API（`GET/POST/PATCH/DELETE /feedbacks`），旧三表读写不动；前端 IssueLayer 直接读新表 |
+| 阶段            | 状态    | 行为                                                                                                                                                                                                                                                                                             |
+| --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 新表与 API      | ✅ 已落 | 新表 + 新 API（`GET/POST/PATCH/DELETE /feedbacks`），旧三表读写不动；前端 IssueLayer 直接读新表                                                                                                                                                                                                  |
 | 双写与统一 view | ✅ 已落 | `v_annotation_feedback_unified` UNION ALL view（带 `source_table` 列对账）；`FeedbackService.mirror_bug_report` / `mirror_annotation_comment` / `mirror_task_reject` 3 个 helper 接入旧三处写路径，**同事务**双写，失败一起回滚；前端只读暂不切到 view，避免老 bug/reject 出现在 DiscussionPanel |
-| 切单源 | 计划中 | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径，旧表保留只读一个版本作回退 |
+| 切单源          | 计划中  | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径，旧表保留只读一个版本作回退                                                                                                                                                                                  |
 
 **audit 落点对齐**：新表的写操作走 `FEEDBACK_CREATED` / `FEEDBACK_STATUS_CHANGED` / `FEEDBACK_DELETED` 三个 AuditAction，不再为 4 个 source 各维护 detail helper。旧 `bug_report.*` 通知类型保留。
 
@@ -367,14 +367,14 @@ WS 握手时会校验 JWT，然后订阅：
 
 ## 常见修改落点
 
-| 你想改什么 | 先看哪里 |
-|---|---|
-| 新增业务动作审计 | `services/audit.py` + 对应 route |
-| 让某动作可通知 | `services/notification.py` + 对应 route |
-| 通知偏好开关 | `api/v1/notifications.py` + `notification_preferences` |
+| 你想改什么       | 先看哪里                                                |
+| ---------------- | ------------------------------------------------------- |
+| 新增业务动作审计 | `services/audit.py` + 对应 route                        |
+| 让某动作可通知   | `services/notification.py` + 对应 route                 |
+| 通知偏好开关     | `api/v1/notifications.py` + `notification_preferences`  |
 | 后台任务终态通知 | `services/async_job_notify.py` + 对应 worker/API 终态点 |
-| 审计查询 / 导出 | `api/v1/audit_logs.py` |
-| 批次审计聚合视图 | `api/v1/batches.py:list_batch_audit_logs` |
+| 审计查询 / 导出  | `api/v1/audit_logs.py`                                  |
+| 批次审计聚合视图 | `api/v1/batches.py:list_batch_audit_logs`               |
 
 ## 常见误解
 

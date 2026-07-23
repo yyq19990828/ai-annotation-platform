@@ -31,7 +31,10 @@ export function getVideoWorkbenchDiagnosticsSnapshot(): VideoWorkbenchDiagnostic
   const activeSnapshot = activeTaskId ? store?.byTask?.[activeTaskId] : null;
   if (activeSnapshot && typeof activeSnapshot === "object") {
     const route = (activeSnapshot as { route?: unknown }).route;
-    if (typeof route === "string" && route !== `${window.location.pathname}${window.location.search}`) {
+    if (
+      typeof route === "string" &&
+      route !== `${window.location.pathname}${window.location.search}`
+    ) {
       return null;
     }
     return activeSnapshot as VideoWorkbenchDiagnosticsSnapshot;
@@ -60,7 +63,9 @@ export function appendVideoWorkbenchDiagnostics(
   return `${description}\n\n---\n\n### Video Workbench Diagnostics\n\n\`\`\`json\n${stableStringify(snapshot)}\n\`\`\``;
 }
 
-export function videoWorkbenchDiagnosticsConsoleEntry(snapshot: VideoWorkbenchDiagnosticsSnapshot | null) {
+export function videoWorkbenchDiagnosticsConsoleEntry(
+  snapshot: VideoWorkbenchDiagnosticsSnapshot | null,
+) {
   if (!snapshot) return null;
   return {
     msg: "[video-workbench-diagnostics]",
@@ -68,7 +73,9 @@ export function videoWorkbenchDiagnosticsConsoleEntry(snapshot: VideoWorkbenchDi
   };
 }
 
-export function taskIdFromVideoWorkbenchDiagnostics(snapshot: VideoWorkbenchDiagnosticsSnapshot | null) {
+export function taskIdFromVideoWorkbenchDiagnostics(
+  snapshot: VideoWorkbenchDiagnosticsSnapshot | null,
+) {
   const taskId = typeof snapshot?.taskId === "string" ? snapshot.taskId : null;
   return taskId && UUID_RE.test(taskId) ? taskId : undefined;
 }

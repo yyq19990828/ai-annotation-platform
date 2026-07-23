@@ -11,11 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import {
-  mlBackendsApi,
-  mlBackendSetupQueryKey,
-  type MLBackendCapability,
-} from "@/api/ml-backends";
+import { mlBackendsApi, mlBackendSetupQueryKey, type MLBackendCapability } from "@/api/ml-backends";
 import { INTERACTIVE_ROUTE_PROMPT_IDS } from "@/api/generated/capabilityVocab.gen";
 
 /**
@@ -115,11 +111,12 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
           inputs: new Set(m.supported_inputs ?? []),
           outputs: new Set(m.supported_geometric_outputs ?? []),
           textDrivenTrackers: new Set(m.text_driven_trackers ?? []),
-          maxWindowFrames: typeof m.max_window_frames === "number"
-            && Number.isInteger(m.max_window_frames)
-            && m.max_window_frames > 0
-            ? m.max_window_frames
-            : null,
+          maxWindowFrames:
+            typeof m.max_window_frames === "number" &&
+            Number.isInteger(m.max_window_frames) &&
+            m.max_window_frames > 0
+              ? m.max_window_frames
+              : null,
         });
       }
       for (const t of m.supported_trackers ?? []) trackers.add(t);
@@ -146,11 +143,12 @@ export function buildCapEntry(cap: MLBackendCapability | undefined): BackendCapE
         inputs: new Set(cap.supported_inputs ?? []),
         outputs: new Set(cap.supported_geometric_outputs ?? []),
         textDrivenTrackers: new Set(cap.text_driven_trackers ?? []),
-        maxWindowFrames: typeof cap.max_window_frames === "number"
-          && Number.isInteger(cap.max_window_frames)
-          && cap.max_window_frames > 0
-          ? cap.max_window_frames
-          : null,
+        maxWindowFrames:
+          typeof cap.max_window_frames === "number" &&
+          Number.isInteger(cap.max_window_frames) &&
+          cap.max_window_frames > 0
+            ? cap.max_window_frames
+            : null,
       });
     }
   }
@@ -201,11 +199,12 @@ function entrySupportsRequest(
   requirement: InteractiveRouteRequirement,
 ): boolean {
   return Boolean(
-    entry?.reachable
-    && entry.interactiveModels.some(
-      (model) => model.prompts.has(requirement.prompt)
-        && model.outputs.has(requirement.output)
-        && requirement.requiredInputs.every((input) => model.inputs.has(input)),
+    entry?.reachable &&
+    entry.interactiveModels.some(
+      (model) =>
+        model.prompts.has(requirement.prompt) &&
+        model.outputs.has(requirement.output) &&
+        requirement.requiredInputs.every((input) => model.inputs.has(input)),
     ),
   );
 }
@@ -232,11 +231,7 @@ export function resolveInteractiveRequest(
 }
 
 /** reachable 且支持该 prompt 的候选后端 (按注册顺序)。 */
-export function candidatesFor(
-  capIndex: CapIndex,
-  order: string[],
-  p: InteractivePrompt,
-): string[] {
+export function candidatesFor(capIndex: CapIndex, order: string[], p: InteractivePrompt): string[] {
   return order.filter((id) => {
     const e = capIndex[id];
     return !!e && e.reachable && e.prompts.has(p);
@@ -389,13 +384,14 @@ export function useBackendRouting({
     },
     resolveInteractive: (p) =>
       resolveInteractive(capIndex, order, defaultBackendId, preferredInteractiveId, p),
-    resolveInteractiveRequest: (requirement) => resolveInteractiveRequest(
-      capIndex,
-      order,
-      defaultBackendId,
-      preferredInteractiveId,
-      requirement,
-    ),
+    resolveInteractiveRequest: (requirement) =>
+      resolveInteractiveRequest(
+        capIndex,
+        order,
+        defaultBackendId,
+        preferredInteractiveId,
+        requirement,
+      ),
     candidatesFor: (p) => candidatesFor(capIndex, order, p),
     preferredInteractiveId,
     setPreferredInteractiveId,

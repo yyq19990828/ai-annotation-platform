@@ -90,25 +90,30 @@ describe("MaskConversionDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成预览" }));
     await screen.findByLabelText("转换预览报告");
     expect(screen.getByText("XOR 1 px")).toBeInTheDocument();
-    expect(apiMocks.dryRun).toHaveBeenCalledWith("task-1", expect.objectContaining({
-      annotation_ids: ["ann-1"],
-      target: "polygon",
-      operation: "copy",
-      scope: "image",
-    }));
+    expect(apiMocks.dryRun).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        annotation_ids: ["ann-1"],
+        target: "polygon",
+        operation: "copy",
+        scope: "image",
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "执行转换" }));
     expect(await screen.findByRole("heading", { name: "确认执行转换？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
-    await waitFor(() => expect(apiMocks.execute).toHaveBeenCalledWith(
-      "task-1",
-      expect.objectContaining({
-        plan_token: "cvp_token",
-        confirm_lossy: true,
-        confirm_replace: false,
-      }),
-    ));
+    await waitFor(() =>
+      expect(apiMocks.execute).toHaveBeenCalledWith(
+        "task-1",
+        expect.objectContaining({
+          plan_token: "cvp_token",
+          confirm_lossy: true,
+          confirm_replace: false,
+        }),
+      ),
+    );
     expect(onCompleted).toHaveBeenCalledTimes(1);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -120,14 +125,16 @@ describe("MaskConversionDialog", () => {
       target: "mask",
       operation: "copy",
       scope: "image",
-      items: [{
-        ...report,
-        source_type: "polygon",
-        target_type: "raster_mask",
-        lossy: false,
-        reasons: [],
-        changed_pixels: 0,
-      }],
+      items: [
+        {
+          ...report,
+          source_type: "polygon",
+          target_type: "raster_mask",
+          lossy: false,
+          reasons: [],
+          changed_pixels: 0,
+        },
+      ],
       summary: {
         source_count: 1,
         result_count: 1,

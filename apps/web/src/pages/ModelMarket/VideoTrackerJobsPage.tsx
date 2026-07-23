@@ -15,11 +15,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
-import {
-  asyncJobsApi,
-  type AsyncJob,
-  type AsyncJobStatus,
-} from "@/api/asyncJobs";
+import { asyncJobsApi, type AsyncJob, type AsyncJobStatus } from "@/api/asyncJobs";
 
 const FIELD_CLASS =
   "appearance-none rounded-sm border border-border bg-muted px-2.5 py-1 text-xs text-foreground outline-none";
@@ -31,13 +27,7 @@ const TH_CLASS =
 type StatusFilter = "" | AsyncJobStatus;
 
 const PAGE_SIZE = 20;
-const STATUS_ORDER: AsyncJobStatus[] = [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-];
+const STATUS_ORDER: AsyncJobStatus[] = ["pending", "running", "completed", "failed", "cancelled"];
 
 const STATUS_LABEL: Record<AsyncJobStatus, string> = {
   pending: "排队中",
@@ -54,14 +44,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const offset = page * PAGE_SIZE;
 
   const jobsQ = useQuery({
-    queryKey: [
-      "async-jobs",
-      "video_tracker",
-      projectId,
-      statusFilter,
-      modelKey,
-      page,
-    ],
+    queryKey: ["async-jobs", "video_tracker", projectId, statusFilter, modelKey, page],
     queryFn: () =>
       asyncJobsApi.list({
         kind: "video_tracker",
@@ -181,9 +164,7 @@ function JobRow({ job }: { job: AsyncJob }) {
         <td>
           {job.project_name ?? "(已删除)"}
           {job.project_display_id && (
-            <span className="ml-1.5 text-muted-foreground">
-              ({job.project_display_id})
-            </span>
+            <span className="ml-1.5 text-muted-foreground">({job.project_display_id})</span>
           )}
         </td>
         <td>
@@ -202,9 +183,7 @@ function JobRow({ job }: { job: AsyncJob }) {
         <td className="text-muted-foreground">
           {direction ?? <span className="text-muted-foreground">—</span>}
         </td>
-        <td className="text-muted-foreground">
-          {formatRelative(job.started_at)}
-        </td>
+        <td className="text-muted-foreground">{formatRelative(job.started_at)}</td>
       </tr>
       {job.status === "failed" && job.error_message && (
         <tr>
@@ -233,26 +212,18 @@ function EmptyState() {
     <div className="flex flex-col items-center gap-2 p-8 px-4 text-center text-muted-foreground">
       <Icon name="sparkles" size={28} />
       <div className="text-xs text-muted-foreground">暂无视频追踪任务</div>
-      <div className="text-xs">
-        去视频工作台按 Ctrl+B 发起一次追踪，任务会出现在这里。
-      </div>
+      <div className="text-xs">去视频工作台按 Ctrl+B 发起一次追踪，任务会出现在这里。</div>
     </div>
   );
 }
 
-function payloadString(
-  record: Record<string, unknown>,
-  key: string,
-): string | null {
+function payloadString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   if (typeof value === "string" && value) return value;
   return null;
 }
 
-function payloadNumber(
-  record: Record<string, unknown>,
-  key: string,
-): number | null {
+function payloadNumber(record: Record<string, unknown>, key: string): number | null {
   const value = record[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {

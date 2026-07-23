@@ -6,25 +6,25 @@
 
 ## 0. 上游已完成基座(读方向,不在本 epic 范围)
 
-| 能力 | 版本 | 位置 |
-|---|---|---|
-| 相机标定透出 | v0.13.1 | `SensorCalibration`(intrinsic/extrinsic),`point-cloud/manifest` 返回 |
-| 3D 框投影到相机图(12 边线框) | v0.13.4 | `CameraProjectionView.tsx` + `projection.ts` `projectPoints`/`BOX_EDGES` |
-| 点投影框反选 3D 框 | v0.13.4 | `CameraProjectionView` 命中测试 → `onSelectBox` |
-| 深度提示(栅格热力图 + hover 读数) | v0.13.6 | `depthmap.ts` `buildDepthRaster`/`sampleDepth` |
-| 多相机面板 | v0.13.x | `FloatingCameraPanel.tsx` |
-| 点云→3D 框自动拟合 | (已有) | `autofit.ts` `psrFromPoints`/`fitSize`/`fitBottom`/`fitYaw` |
+| 能力                              | 版本    | 位置                                                                     |
+| --------------------------------- | ------- | ------------------------------------------------------------------------ |
+| 相机标定透出                      | v0.13.1 | `SensorCalibration`(intrinsic/extrinsic),`point-cloud/manifest` 返回     |
+| 3D 框投影到相机图(12 边线框)      | v0.13.4 | `CameraProjectionView.tsx` + `projection.ts` `projectPoints`/`BOX_EDGES` |
+| 点投影框反选 3D 框                | v0.13.4 | `CameraProjectionView` 命中测试 → `onSelectBox`                          |
+| 深度提示(栅格热力图 + hover 读数) | v0.13.6 | `depthmap.ts` `buildDepthRaster`/`sampleDepth`                           |
+| 多相机面板                        | v0.13.x | `FloatingCameraPanel.tsx`                                                |
+| 点云→3D 框自动拟合                | (已有)  | `autofit.ts` `psrFromPoints`/`fitSize`/`fitBottom`/`fitYaw`              |
 
 > **关键判断**:读方向(3D→2D 投影)已经做完。本 epic 只补**写方向**(2D→3D),且拟合段可直接复用 `autofit.psrFromPoints`,真正的新几何只有「像素→射线 反投影」与「点-在-视锥」。
 
 ## 1. 架构决策(贯穿全 epic,违反即推倒)
 
-| # | 决策 | 反面(不要走) | 理由 |
-|---|---|---|---|
-| **J1** | **3D box_3d 是唯一真值;相机图是它的投影视图** | 相机图上单独存一套 2D 框、与 3D 双写 | 双写 = 双真值漂移。2D 操作的产物始终是 box_3d 的增删改,不另立 2D 标注存储 |
-| **J2** | **2D 框是「瞬态种子」,不持久化** | 把画的 2D 矩形当独立 annotation 落库 | 2D 矩形只为生成/约束一个 box_3d;落库的只有 box_3d。呼应决策底线「内部稳定 ID」「双数组分开」——不引入半吊子 2D 实体 |
-| **J3** | **相机图不引入新标注类型,只引入新交互入口** | 在相机图上做 2D bbox 工具、keypoint 等独立模态 | 那是图片工作台的活;3D 工作台的相机图只服务于 3D 标注效率。要纯 2D 标注走 image 项目 |
-| **J4** | **复用既有投影 / 拟合 / 标定,不重写** | 自写一套相机模型 | `projection.ts`/`autofit.ts`/`SensorCalibration` 已是真值,新代码只加「反投影 + 视锥选点」 |
+| #      | 决策                                          | 反面(不要走)                                   | 理由                                                                                                               |
+| ------ | --------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **J1** | **3D box_3d 是唯一真值;相机图是它的投影视图** | 相机图上单独存一套 2D 框、与 3D 双写           | 双写 = 双真值漂移。2D 操作的产物始终是 box_3d 的增删改,不另立 2D 标注存储                                          |
+| **J2** | **2D 框是「瞬态种子」,不持久化**              | 把画的 2D 矩形当独立 annotation 落库           | 2D 矩形只为生成/约束一个 box_3d;落库的只有 box_3d。呼应决策底线「内部稳定 ID」「双数组分开」——不引入半吊子 2D 实体 |
+| **J3** | **相机图不引入新标注类型,只引入新交互入口**   | 在相机图上做 2D bbox 工具、keypoint 等独立模态 | 那是图片工作台的活;3D 工作台的相机图只服务于 3D 标注效率。要纯 2D 标注走 image 项目                                |
+| **J4** | **复用既有投影 / 拟合 / 标定,不重写**         | 自写一套相机模型                               | `projection.ts`/`autofit.ts`/`SensorCalibration` 已是真值,新代码只加「反投影 + 视锥选点」                          |
 
 ## 2. Phase 切片
 

@@ -124,25 +124,13 @@ export const maskFormatsApi = {
       `/projects/${projectId}/mask-formats/imports:preflight`,
       body,
     ),
-  executeImport: (
-    projectId: string,
-    receipt: string,
-    planDigest: string,
-    confirmLossy: boolean,
-  ) =>
-    apiClient.post<MaskFormatImportBatch>(
-      `/projects/${projectId}/mask-formats/imports`,
-      {
-        receipt,
-        plan_digest: planDigest,
-        confirm_lossy: confirmLossy,
-      },
-    ),
-  preflightExport: (
-    projectId: string,
-    targets: ExportTarget[],
-    opts?: ExportOptions,
-  ) =>
+  executeImport: (projectId: string, receipt: string, planDigest: string, confirmLossy: boolean) =>
+    apiClient.post<MaskFormatImportBatch>(`/projects/${projectId}/mask-formats/imports`, {
+      receipt,
+      plan_digest: planDigest,
+      confirm_lossy: confirmLossy,
+    }),
+  preflightExport: (projectId: string, targets: ExportTarget[], opts?: ExportOptions) =>
     apiClient.post<MaskFormatExportPreflight>(
       `/projects/${projectId}/mask-formats/exports:preflight`,
       {
@@ -154,12 +142,8 @@ export const maskFormatsApi = {
           ...(opts?.indexedOverlapPolicy
             ? { indexed_overlap_policy: opts.indexedOverlapPolicy }
             : {}),
-          ...(opts?.videoOverlapPolicy
-            ? { video_overlap_policy: opts.videoOverlapPolicy }
-            : {}),
-          ...(opts?.motsFrameBase !== undefined
-            ? { mots_frame_base: opts.motsFrameBase }
-            : {}),
+          ...(opts?.videoOverlapPolicy ? { video_overlap_policy: opts.videoOverlapPolicy } : {}),
+          ...(opts?.motsFrameBase !== undefined ? { mots_frame_base: opts.motsFrameBase } : {}),
         },
       },
     ),

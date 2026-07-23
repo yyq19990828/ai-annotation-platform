@@ -62,30 +62,34 @@ describe("imageStageContextMenu", () => {
       secondaryBarHidden: false,
       onToggleSecondaryBar,
     });
-    expect(shown.find((i) => i.id === "toggle-secondary-bar")?.label).toBe(
-      "关闭二次推理面板",
-    );
+    expect(shown.find((i) => i.id === "toggle-secondary-bar")?.label).toBe("关闭二次推理面板");
   });
 
   it("suppresses the menu during readOnly, keypoint drafting, or drag", () => {
-    expect(shouldSuppressImageContextMenu({
-      readOnly: true,
-      keypointDraftPending: false,
-      down: { x: 0, y: 0 },
-      point: { x: 0, y: 0 },
-    })).toBe(true);
-    expect(shouldSuppressImageContextMenu({
-      readOnly: false,
-      keypointDraftPending: true,
-      down: { x: 0, y: 0 },
-      point: { x: 0, y: 0 },
-    })).toBe(true);
-    expect(shouldSuppressImageContextMenu({
-      readOnly: false,
-      keypointDraftPending: false,
-      down: { x: 0, y: 0 },
-      point: { x: 6, y: 0 },
-    })).toBe(true);
+    expect(
+      shouldSuppressImageContextMenu({
+        readOnly: true,
+        keypointDraftPending: false,
+        down: { x: 0, y: 0 },
+        point: { x: 0, y: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressImageContextMenu({
+        readOnly: false,
+        keypointDraftPending: true,
+        down: { x: 0, y: 0 },
+        point: { x: 0, y: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressImageContextMenu({
+        readOnly: false,
+        keypointDraftPending: false,
+        down: { x: 0, y: 0 },
+        point: { x: 6, y: 0 },
+      }),
+    ).toBe(true);
   });
 
   it("walks up hit-node parents to find the annotation id", () => {
@@ -130,11 +134,25 @@ describe("imageStageContextMenu", () => {
   it("enables join only for selected same-class polygon annotations", () => {
     const onJoinSelected = vi.fn();
     const poly = annotation({
-      geometry: { type: "polygon", points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [0.1, 0],
+          [0.1, 0.1],
+        ],
+      },
     });
     const peer = annotation({
       id: "ann-2",
-      geometry: { type: "polygon", points: [[0.1, 0], [0.2, 0], [0.2, 0.1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0.1, 0],
+          [0.2, 0],
+          [0.2, 0.1],
+        ],
+      },
     });
 
     const enabled = buildImageContextMenuItems({
@@ -167,12 +185,26 @@ describe("imageStageContextMenu", () => {
   it("enables crop for the right-clicked polygon plus a cutter, ignoring class match", () => {
     const onCropSelected = vi.fn();
     const base = annotation({
-      geometry: { type: "polygon", points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [0.1, 0],
+          [0.1, 0.1],
+        ],
+      },
     });
     const cutter = annotation({
       id: "ann-2",
       cls: "person", // 不同类别也允许裁切(遮挡场景)
-      geometry: { type: "polygon", points: [[0.05, 0], [0.2, 0], [0.2, 0.1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0.05, 0],
+          [0.2, 0],
+          [0.2, 0.1],
+        ],
+      },
     });
 
     const enabled = buildImageContextMenuItems({

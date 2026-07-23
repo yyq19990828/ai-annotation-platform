@@ -105,7 +105,11 @@ function assertAlpha(alpha: Uint8Array, width: number, height: number): void {
   }
 }
 
-function changedBounds(before: Uint8Array, after: Uint8Array, width: number): {
+function changedBounds(
+  before: Uint8Array,
+  after: Uint8Array,
+  width: number,
+): {
   changedPixels: number;
   bounds: MaskPixelBounds | null;
 } {
@@ -126,9 +130,7 @@ function changedBounds(before: Uint8Array, after: Uint8Array, width: number): {
   }
   return {
     changedPixels,
-    bounds: changedPixels === 0
-      ? null
-      : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 },
+    bounds: changedPixels === 0 ? null : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 },
   };
 }
 
@@ -171,7 +173,8 @@ export function applyMaskBrush(
 ): MaskOperationResult {
   assertAlpha(source, width, height);
   const { cx, cy, shape, value, radius } = options;
-  if (![cx, cy, options.radius].every(Number.isFinite)) throw new Error("brush values must be finite");
+  if (![cx, cy, options.radius].every(Number.isFinite))
+    throw new Error("brush values must be finite");
   if (!Number.isInteger(radius) || radius < 1 || radius > 200) {
     throw new Error("brush radius must be an integer in [1, 200]");
   }
@@ -224,7 +227,7 @@ export function applyMaskPolygon(
     for (let index = 0; index < points.length; index += 1) {
       const [ax, ay] = points[index];
       const [bx, by] = points[(index + 1) % points.length];
-      if ((ay > sampleY) === (by > sampleY)) continue;
+      if (ay > sampleY === by > sampleY) continue;
       intersections.push(ax + ((sampleY - ay) * (bx - ax)) / (by - ay));
     }
     intersections.sort((left, right) => left - right);
@@ -239,8 +242,22 @@ export function applyMaskPolygon(
 
 function neighbours(connectivity: MaskConnectivity): ReadonlyArray<readonly [number, number]> {
   return connectivity === 8
-    ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
-    : [[0, -1], [-1, 0], [1, 0], [0, 1]];
+    ? [
+        [-1, -1],
+        [0, -1],
+        [1, -1],
+        [-1, 0],
+        [1, 0],
+        [-1, 1],
+        [0, 1],
+        [1, 1],
+      ]
+    : [
+        [0, -1],
+        [-1, 0],
+        [1, 0],
+        [0, 1],
+      ];
 }
 
 export function labelMaskRegions(
@@ -294,15 +311,15 @@ export function labelMaskRegions(
 
     members.sort((left, right) => left - right);
     const spans: MaskRegionSpan[] = [];
-    for (let index = 0; index < members.length;) {
+    for (let index = 0; index < members.length; ) {
       const member = members[index];
       const y = Math.floor(member / width);
       let x1 = member % width;
       index += 1;
       while (
-        index < members.length
-        && Math.floor(members[index] / width) === y
-        && members[index] % width === x1 + 1
+        index < members.length &&
+        Math.floor(members[index] / width) === y &&
+        members[index] % width === x1 + 1
       ) {
         x1 += 1;
         index += 1;
@@ -328,13 +345,16 @@ export function labelMaskRegions(
       if (x < 0 || y < 0 || x >= width || y >= height || source[y * width + x] !== options.value) {
         return null;
       }
-      return regions.find((region) => (
-        x >= region.bounds.x0
-        && x < region.bounds.x1
-        && y >= region.bounds.y0
-        && y < region.bounds.y1
-        && region.spans.some((span) => span.y === y && x >= span.x0 && x < span.x1)
-      )) ?? null;
+      return (
+        regions.find(
+          (region) =>
+            x >= region.bounds.x0 &&
+            x < region.bounds.x1 &&
+            y >= region.bounds.y0 &&
+            y < region.bounds.y1 &&
+            region.spans.some((span) => span.y === y && x >= span.x0 && x < span.x1),
+        ) ?? null
+      );
     },
   };
 }
@@ -353,7 +373,8 @@ export function applyMaskFloodFill(
     return operationResult(source, after, width, height, options.connectivity);
   }
   const target = source[y * width + x] as 0 | 255;
-  if (target === options.value) return operationResult(source, after, width, height, options.connectivity);
+  if (target === options.value)
+    return operationResult(source, after, width, height, options.connectivity);
   const labels = labelMaskRegions(source, width, height, {
     value: target,
     connectivity: options.connectivity,
@@ -442,10 +463,10 @@ export function fillMaskHoles(
     const hit = labels.hit(options.x!, options.y!);
     selected = hit && !hit.touchesBoundary ? [hit] : [];
   } else {
-    selected = labels.regions.filter((region) => (
-      !region.touchesBoundary
-      && (options.mode === "all" || region.area <= options.maxArea!)
-    ));
+    selected = labels.regions.filter(
+      (region) =>
+        !region.touchesBoundary && (options.mode === "all" || region.area <= options.maxArea!),
+    );
   }
   for (const region of selected) fillRegion(after, width, region, 255);
   return operationResult(source, after, width, height);
@@ -468,9 +489,8 @@ function squareMorphology(
     }
     for (let x = 0; x < width; x += 1) {
       const inside = x - radius >= 0 && x + radius < width;
-      horizontal[y * width + x] = operation === "dilate"
-        ? (count > 0 ? 255 : 0)
-        : (inside && count === diameter ? 255 : 0);
+      horizontal[y * width + x] =
+        operation === "dilate" ? (count > 0 ? 255 : 0) : inside && count === diameter ? 255 : 0;
       const removeX = x - radius;
       const addX = x + radius + 1;
       if (removeX >= 0 && removeX < width && source[y * width + removeX] !== 0) count -= 1;
@@ -484,9 +504,8 @@ function squareMorphology(
     }
     for (let y = 0; y < height; y += 1) {
       const inside = y - radius >= 0 && y + radius < height;
-      output[y * width + x] = operation === "dilate"
-        ? (count > 0 ? 255 : 0)
-        : (inside && count === diameter ? 255 : 0);
+      output[y * width + x] =
+        operation === "dilate" ? (count > 0 ? 255 : 0) : inside && count === diameter ? 255 : 0;
       const removeY = y - radius;
       const addY = y + radius + 1;
       if (removeY >= 0 && removeY < height && horizontal[removeY * width + x] !== 0) count -= 1;
@@ -505,16 +524,18 @@ function distanceTransform1d(input: Float64Array, output: Float64Array): void {
   boundaries[0] = Number.NEGATIVE_INFINITY;
   boundaries[1] = Number.POSITIVE_INFINITY;
   for (let q = 1; q < length; q += 1) {
-    let intersection = (
-      (input[q] + q * q)
-      - (input[locations[envelope]] + locations[envelope] * locations[envelope])
-    ) / (2 * q - 2 * locations[envelope]);
+    let intersection =
+      (input[q] +
+        q * q -
+        (input[locations[envelope]] + locations[envelope] * locations[envelope])) /
+      (2 * q - 2 * locations[envelope]);
     while (intersection <= boundaries[envelope]) {
       envelope -= 1;
-      intersection = (
-        (input[q] + q * q)
-        - (input[locations[envelope]] + locations[envelope] * locations[envelope])
-      ) / (2 * q - 2 * locations[envelope]);
+      intersection =
+        (input[q] +
+          q * q -
+          (input[locations[envelope]] + locations[envelope] * locations[envelope])) /
+        (2 * q - 2 * locations[envelope]);
     }
     envelope += 1;
     locations[envelope] = q;
@@ -575,9 +596,9 @@ function diskMorphology(
   operation: "dilate" | "erode",
 ): Uint8Array {
   if (operation === "dilate") {
-    const features = Uint8Array.from(source, (value) => value ? 1 : 0);
+    const features = Uint8Array.from(source, (value) => (value ? 1 : 0));
     const within = withinDiskDistance(features, width, height, radius);
-    return Uint8Array.from(within, (value) => value ? 255 : 0);
+    return Uint8Array.from(within, (value) => (value ? 255 : 0));
   }
 
   const paddedWidth = width + 2;

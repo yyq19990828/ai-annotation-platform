@@ -19,7 +19,6 @@ const apiCallRing: ApiCallEntry[] = [];
 const consoleErrorRing: ConsoleErrorEntry[] = [];
 
 export function initBugReportCapture() {
-
   // Capture console errors
   const origOnerror = window.onerror;
   window.onerror = (message, source, lineno, colno, error) => {
@@ -90,7 +89,6 @@ export async function captureScreenshot(): Promise<Blob> {
   });
 }
 
-
 /**
  * Hook into the app's fetch to record API calls. Call once at app init.
  */
@@ -107,7 +105,8 @@ export function patchFetchForBugCapture() {
       status = 0;
       throw new Error("fetch failed");
     } finally {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url.includes("/api/v1/")) {
         apiCallRing.push({
           method: init?.method ?? "GET",

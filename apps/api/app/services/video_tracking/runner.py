@@ -207,18 +207,14 @@ def _correction_execution_windows(
     job: VideoTrackerJob,
 ) -> list[tuple[int, int, str, bool]]:
     correction_frame = int(
-        job.correction_frame
-        if job.correction_frame is not None
-        else job.from_frame
+        job.correction_frame if job.correction_frame is not None else job.from_frame
     )
     correction = (job.prompt or {}).get("correction") or {}
     routing = correction.get("routing") or {}
     frozen_limit = routing.get("max_window_frames")
     size = max(1, int(settings.video_tracker_window_size_frames))
     if job.model_key.startswith("sam3"):
-        size = min(
-            size, max(1, int(settings.video_tracker_sam3_window_size_frames))
-        )
+        size = min(size, max(1, int(settings.video_tracker_sam3_window_size_frames)))
     if type(frozen_limit) is int and frozen_limit > 0:
         size = min(size, frozen_limit)
     windows: list[tuple[int, int, str, bool]] = []
@@ -313,9 +309,7 @@ async def _correction_seed(
             or correction.get("fallback_confirmed") is not True
         ):
             raise ValueError("bbox_fallback_not_confirmed")
-        return [
-            {"obj_id": 1, "bbox": dict(correction.get("seed_bbox") or {})}
-        ]
+        return [{"obj_id": 1, "bbox": dict(correction.get("seed_bbox") or {})}]
     return [{"obj_id": 1, "prompts": [prompt]}]
 
 
@@ -1268,8 +1262,7 @@ async def _decide_tracker_issue_region(
     prompt_versions = (job.prompt or {}).get("expected_source_versions") or {}
     if (
         expected_version is None
-        or int(prompt_versions.get(str(source_annotation_id), -1))
-        != expected_version
+        or int(prompt_versions.get(str(source_annotation_id), -1)) != expected_version
     ):
         raise TrackerJobStateConflict(
             "source version snapshot differs from the current preview",
@@ -1527,7 +1520,10 @@ async def _decide_tracker_issue_region(
     updated_prompt = {**(job.prompt or {}), "review_state": state}
     if touched:
         touched_ids = {
-            *[str(value) for value in updated_prompt.get("touched_annotation_ids") or []],
+            *[
+                str(value)
+                for value in updated_prompt.get("touched_annotation_ids") or []
+            ],
             str(annotation.id),
         }
         updated_prompt["touched_annotation_ids"] = sorted(touched_ids)
@@ -1706,7 +1702,10 @@ async def decide_tracker_job(
             "tracker job revision changed; refresh the preview",
             reason="job_revision_conflict",
             conflicts=[
-                {"expected_revision": job_revision, "current_revision": int(job.revision or 1)}
+                {
+                    "expected_revision": job_revision,
+                    "current_revision": int(job.revision or 1),
+                }
             ],
         )
     if override_manual and not privileged:
@@ -1788,11 +1787,15 @@ async def decide_tracker_job(
     }.get(output_geometry, "video_track_bbox")
     for instance_id, source in source_map.items():
         source_type = (source.geometry or {}).get("type")
-        if source_type in {
-            "video_track_bbox",
-            "video_track_polygon",
-            "video_track_mask",
-        } and source_type != expected_geometry_type:
+        if (
+            source_type
+            in {
+                "video_track_bbox",
+                "video_track_polygon",
+                "video_track_mask",
+            }
+            and source_type != expected_geometry_type
+        ):
             raise TrackerJobStateConflict(
                 "local review cannot change an existing track geometry type",
                 reason="tracker_geometry_type_conflict",
@@ -1811,7 +1814,10 @@ async def decide_tracker_job(
         }
         for keyframe in (source.geometry or {}).get("keyframes") or []:
             frame_index = int(keyframe.get("frame_index", -1))
-            if keyframe.get("source", "manual") == "manual" and frame_index in selected_frames:
+            if (
+                keyframe.get("source", "manual") == "manual"
+                and frame_index in selected_frames
+            ):
                 manual_conflicts.append(
                     {
                         "annotation_id": str(source.id),
@@ -1870,7 +1876,9 @@ async def decide_tracker_job(
             touched.append(annotation)
         try:
             for annotation in touched:
-                await validate_mask_geometry_for_task(db, task, annotation.geometry or {})
+                await validate_mask_geometry_for_task(
+                    db, task, annotation.geometry or {}
+                )
             await lock_raster_mask_references(
                 db,
                 [annotation.geometry or {} for annotation in touched],
@@ -1928,7 +1936,10 @@ async def decide_tracker_job(
     updated_prompt = {**(job.prompt or {}), "review_state": state}
     if touched:
         touched_ids = {
-            *[str(value) for value in updated_prompt.get("touched_annotation_ids") or []],
+            *[
+                str(value)
+                for value in updated_prompt.get("touched_annotation_ids") or []
+            ],
             *[str(annotation.id) for annotation in touched],
         }
         updated_prompt["touched_annotation_ids"] = sorted(touched_ids)

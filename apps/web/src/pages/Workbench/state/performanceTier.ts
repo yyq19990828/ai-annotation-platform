@@ -11,7 +11,10 @@ export interface WorkbenchPerformanceConfig {
   pcdDecimate: number;
 }
 
-export const WORKBENCH_PERFORMANCE_TIERS: Record<WorkbenchPerformanceTier, WorkbenchPerformanceConfig> = {
+export const WORKBENCH_PERFORMANCE_TIERS: Record<
+  WorkbenchPerformanceTier,
+  WorkbenchPerformanceConfig
+> = {
   light: {
     videoBitmapCache: 24,
     videoDecoderCache: 24,

@@ -1,9 +1,5 @@
 import type { APIResponse, Page, Request } from "@playwright/test";
-import {
-  expect,
-  test,
-  type SeedNativeMaskCandidateData,
-} from "../fixtures/seed";
+import { expect, test, type SeedNativeMaskCandidateData } from "../fixtures/seed";
 
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 const MATRIX = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
@@ -37,7 +33,13 @@ const nativeSetup = {
       composition: "atom",
       is_interactive: true,
       supported_prompts: ["point", "interactive_box", "exemplar", "mask", "scribble"],
-      supported_inputs: ["full_image", "point_prompt", "bbox_prompt", "mask_prompt", "scribble_prompt"],
+      supported_inputs: [
+        "full_image",
+        "point_prompt",
+        "bbox_prompt",
+        "mask_prompt",
+        "scribble_prompt",
+      ],
       supported_geometric_outputs: ["polygon", "mask"],
       resource_profile: { device: "cpu", batchable: false },
     },
@@ -63,14 +65,16 @@ const polygonOnlySetup = {
   supported_prompts: ["point", "interactive_box", "exemplar"],
   supported_inputs: ["full_image", "point_prompt", "bbox_prompt"],
   supported_geometric_outputs: ["polygon"],
-  models: nativeSetup.models.map((model) => model.id === "e2e-native-mask"
-    ? {
-        ...model,
-        supported_prompts: ["point", "interactive_box", "exemplar"],
-        supported_inputs: ["full_image", "point_prompt", "bbox_prompt"],
-        supported_geometric_outputs: ["polygon"],
-      }
-    : model),
+  models: nativeSetup.models.map((model) =>
+    model.id === "e2e-native-mask"
+      ? {
+          ...model,
+          supported_prompts: ["point", "interactive_box", "exemplar"],
+          supported_inputs: ["full_image", "point_prompt", "bbox_prompt"],
+          supported_geometric_outputs: ["polygon"],
+        }
+      : model,
+  ),
 };
 
 interface VideoMaskAnnotationResponse {
@@ -101,9 +105,12 @@ async function routeNativeCandidate(
 ): Promise<{ contexts: Array<Record<string, unknown>> }> {
   const contexts: Array<Record<string, unknown>> = [];
   let failedPrompt = false;
-  await page.route(
-    /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
-    (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(nativeSetup) }),
+  await page.route(/\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(nativeSetup),
+    }),
   );
   await page.route(
     /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating(?:-frame)?/,
@@ -114,22 +121,26 @@ async function routeNativeCandidate(
         contexts.push(body.context ?? {});
       } else {
         const match = request.postData()?.match(/name="context"\r?\n\r?\n([^\r\n]+)/);
-        contexts.push(match ? JSON.parse(match[1]) as Record<string, unknown> : {});
+        contexts.push(match ? (JSON.parse(match[1]) as Record<string, unknown>) : {});
       }
       const isTargetPrompt = contexts.at(-1)?.type === "scribble";
       const shouldFail = options?.failFirst && isTargetPrompt && !failedPrompt;
       if (shouldFail) failedPrompt = true;
-      await route.fulfill(shouldFail ? {
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({
-          detail: { reason: "temporary_failure", message: "retry the same prompt" },
-        }),
-      } : {
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(fixture.response),
-      });
+      await route.fulfill(
+        shouldFail
+          ? {
+              status: 503,
+              contentType: "application/json",
+              body: JSON.stringify({
+                detail: { reason: "temporary_failure", message: "retry the same prompt" },
+              }),
+            }
+          : {
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(fixture.response),
+            },
+      );
     },
   );
   return { contexts };
@@ -137,9 +148,8 @@ async function routeNativeCandidate(
 
 async function routePolygonCandidate(page: Page): Promise<Array<Record<string, unknown>>> {
   const contexts: Array<Record<string, unknown>> = [];
-  await page.route(
-    /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
-    (route) => route.fulfill({
+  await page.route(/\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/, (route) =>
+    route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(polygonOnlySetup),
@@ -154,20 +164,27 @@ async function routePolygonCandidate(page: Page): Promise<Array<Record<string, u
         contexts.push(body.context ?? {});
       } else {
         const match = request.postData()?.match(/name="context"\r?\n\r?\n([^\r\n]+)/);
-        contexts.push(match ? JSON.parse(match[1]) as Record<string, unknown> : {});
+        contexts.push(match ? (JSON.parse(match[1]) as Record<string, unknown>) : {});
       }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          result: [{
-            type: "polygonlabels",
-            value: {
-              points: [[0.42, 0.34], [0.72, 0.36], [0.68, 0.66], [0.4, 0.62]],
-              polygonlabels: ["object"],
+          result: [
+            {
+              type: "polygonlabels",
+              value: {
+                points: [
+                  [0.42, 0.34],
+                  [0.72, 0.36],
+                  [0.68, 0.66],
+                  [0.4, 0.62],
+                ],
+                polygonlabels: ["object"],
+              },
+              score: 0.91,
             },
-            score: 0.91,
-          }],
+          ],
           output_geometry: "polygon",
           model_version: "e2e-polygon-only",
         }),
@@ -225,9 +242,10 @@ async function generateAndAccept(
   await page.keyboard.press("Enter");
   const picker = page.getByTestId("class-picker-popover");
   await expect(picker).toBeVisible({ timeout: 10_000 });
-  const accepted = page.waitForResponse((response) =>
-    response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`)
-    && response.request().method() === "POST",
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`) &&
+      response.request().method() === "POST",
   );
   await picker.getByText("car", { exact: true }).click();
   const response = await accepted;
@@ -246,7 +264,11 @@ async function expectRleEquals(
 test.describe("native Mask interactive candidate acceptance", () => {
   test.skip(MATRIX !== "native", "requires the native raster Mask matrix");
 
-  test("image candidate and committed raster Mask keep identical pixels", async ({ page, request, seed }) => {
+  test("image candidate and committed raster Mask keep identical pixels", async ({
+    page,
+    request,
+    seed,
+  }) => {
     // Remote HTTP hosts are not secure contexts, so randomUUID is unavailable.
     // Force that browser path even though Playwright's loopback origin is trusted.
     await page.addInitScript(() => {
@@ -274,10 +296,9 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     const token = await seed.accessToken(data.annotator_email);
     await expectRleEquals(
-      await request.get(
-        `${API_BASE}/api/v1/annotations/${accepted.annotation.id}/mask-content`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      await request.get(`${API_BASE}/api/v1/annotations/${accepted.annotation.id}/mask-content`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
       fixture.rles[2],
     );
     const row = page.getByTestId(`box-list-item-${accepted.annotation.id}`);
@@ -285,7 +306,11 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await expect(row).toContainText("1 孔洞");
   });
 
-  test("model without Mask capability stays on explicit polygon without creating a raster annotation", async ({ page, request, seed }) => {
+  test("model without Mask capability stays on explicit polygon without creating a raster annotation", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await seed.configureRasterMask(data.project_id, true);
@@ -309,13 +334,14 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     await page.keyboard.press("Enter");
     const picker = page.getByTestId("class-picker-popover");
-    const created = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`)
-      && response.request().method() === "POST"
-      && response.status() === 201,
+    const created = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`) &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
     );
     await picker.getByText("car", { exact: true }).click();
-    const createdBody = await created.then((response) => response.json()) as {
+    const createdBody = (await created.then((response) => response.json())) as {
       annotation_type: string;
     };
     expect(createdBody.annotation_type).toBe("polygon");
@@ -325,12 +351,18 @@ test.describe("native Mask interactive candidate acceptance", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(rows.ok(), await rows.text()).toBeTruthy();
-    expect((await rows.json() as Array<{ annotation_type: string }>).some(
-      (annotation) => annotation.annotation_type === "raster_mask",
-    )).toBe(false);
+    expect(
+      ((await rows.json()) as Array<{ annotation_type: string }>).some(
+        (annotation) => annotation.annotation_type === "raster_mask",
+      ),
+    ).toBe(false);
   });
 
-  test("lost accept response retries with the same idempotency key and commits once", async ({ page, request, seed }) => {
+  test("lost accept response retries with the same idempotency key and commits once", async ({
+    page,
+    request,
+    seed,
+  }) => {
     test.setTimeout(60_000);
     const data = await seed.reset();
     const taskId = data.task_ids[0];
@@ -349,7 +381,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
         if (attempts === 1) {
           const serverResponse = await route.fetch();
           expect(serverResponse.status(), await serverResponse.text()).toBe(200);
-          committedBeforeDisconnect = await serverResponse.json() as AcceptedMaskResponse;
+          committedBeforeDisconnect = (await serverResponse.json()) as AcceptedMaskResponse;
           await route.abort("failed");
           return;
         }
@@ -369,20 +401,23 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await page.keyboard.press("Enter");
     let picker = page.getByTestId("class-picker-popover");
     await picker.getByText("car", { exact: true }).click();
-    await expect(page.getByText("原生 Mask 采纳失败", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("原生 Mask 采纳失败", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
     expect(committedBeforeDisconnect).not.toBeNull();
 
     await page.keyboard.press("Enter");
     picker = page.getByTestId("class-picker-popover");
     await expect(picker).toBeVisible();
-    const replay = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`)
-      && response.request().method() === "POST",
+    const replay = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`) &&
+        response.request().method() === "POST",
     );
     await picker.getByText("car", { exact: true }).click();
     const replayResponse = await replay;
     expect(replayResponse.status(), await replayResponse.text()).toBe(200);
-    const replayed = await replayResponse.json() as AcceptedMaskResponse;
+    const replayed = (await replayResponse.json()) as AcceptedMaskResponse;
     expect(replayed.replayed).toBe(true);
     expect(replayed.annotation.id).toBe(committedBeforeDisconnect?.annotation.id);
     expect(replayed.prediction.id).toBe(committedBeforeDisconnect?.prediction.id);
@@ -393,13 +428,17 @@ test.describe("native Mask interactive candidate acceptance", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(rows.ok(), await rows.text()).toBeTruthy();
-    const matching = (await rows.json() as Array<{ id: string }>).filter(
+    const matching = ((await rows.json()) as Array<{ id: string }>).filter(
       (annotation) => annotation.id === replayed.annotation.id,
     );
     expect(matching).toHaveLength(1);
   });
 
-  test("video current-frame candidate and committed keyframe keep identical pixels", async ({ page, request, seed }) => {
+  test("video current-frame candidate and committed keyframe keep identical pixels", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const { task_id: taskId } = await seed.videoTask(data.project_id);
     await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
@@ -413,10 +452,9 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     const token = await seed.accessToken(data.annotator_email);
     await expectRleEquals(
-      await request.get(
-        `${API_BASE}/api/v1/annotations/${accepted.annotation.id}/mask-content/0`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      await request.get(`${API_BASE}/api/v1/annotations/${accepted.annotation.id}/mask-content/0`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
       fixture.rle,
     );
     await page.getByLabel("收起浮窗").click();
@@ -425,7 +463,11 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await expect(page.getByTestId("video-tracker-propagate-dialog")).toBeVisible();
   });
 
-  test("video drift frame correction propagates backward and accepts a local window", async ({ page, request, seed }) => {
+  test("video drift frame correction propagates backward and accepts a local window", async ({
+    page,
+    request,
+    seed,
+  }) => {
     test.setTimeout(60_000);
     const data = await seed.reset();
     const { task_id: taskId } = await seed.videoTask(data.project_id);
@@ -442,12 +484,10 @@ test.describe("native Mask interactive candidate acceptance", () => {
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(segmentsResponse.ok(), await segmentsResponse.text()).toBeTruthy();
-    const segments = await segmentsResponse.json() as {
+    const segments = (await segmentsResponse.json()) as {
       segments: Array<{ id: string; start_frame: number; end_frame: number }>;
     };
-    const segment = segments.segments.find(
-      (item) => item.start_frame <= 2 && item.end_frame >= 2,
-    );
+    const segment = segments.segments.find((item) => item.start_frame <= 2 && item.end_frame >= 2);
     if (!segment) throw new Error("video correction segment is missing");
     const claimResponse = await request.post(
       `${API_BASE}/api/v1/tasks/${taskId}/video/segments/${segment.id}:claim`,
@@ -506,39 +546,37 @@ test.describe("native Mask interactive candidate acceptance", () => {
         });
       },
     );
-    await page.route(
-      new RegExp(`/api/v1/video-tracker-jobs/${jobId}$`),
-      (route) => route.fulfill({
+    await page.route(new RegExp(`/api/v1/video-tracker-jobs/${jobId}$`), (route) =>
+      route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(jobBody("pending_review")),
       }),
     );
-    await page.route(
-      new RegExp(`/api/v1/video-tracker-jobs/${jobId}/preview$`),
-      async (route) => {
-        const { saved } = await candidateReady;
-        const correctionFrame = Number(correctionPayload?.correction_frame ?? 2);
-        const keyframe = saved.geometry.keyframes.find(
-          (item) => item.frame_index === correctionFrame,
-        );
-        if (!keyframe) throw new Error("saved correction keyframe is missing");
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            job_id: jobId,
-            status: "pending_review",
-            annotation_id: annotationId,
-            job_kind: "correction",
-            correction_frame: correctionFrame,
-            direction: "backward",
-            from_frame: correctionPayload?.from_frame ?? 0,
-            to_frame: correctionPayload?.to_frame ?? correctionFrame,
-            fallback_reason: null,
-            seed_mode: "native_mask",
-            protect_manual: true,
-            results: [{
+    await page.route(new RegExp(`/api/v1/video-tracker-jobs/${jobId}/preview$`), async (route) => {
+      const { saved } = await candidateReady;
+      const correctionFrame = Number(correctionPayload?.correction_frame ?? 2);
+      const keyframe = saved.geometry.keyframes.find(
+        (item) => item.frame_index === correctionFrame,
+      );
+      if (!keyframe) throw new Error("saved correction keyframe is missing");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          job_id: jobId,
+          status: "pending_review",
+          annotation_id: annotationId,
+          job_kind: "correction",
+          correction_frame: correctionFrame,
+          direction: "backward",
+          from_frame: correctionPayload?.from_frame ?? 0,
+          to_frame: correctionPayload?.to_frame ?? correctionFrame,
+          fallback_reason: null,
+          seed_mode: "native_mask",
+          protect_manual: true,
+          results: [
+            {
               frame_index: correctionFrame - 1,
               instance_id: "1",
               candidate_key: `1:${correctionFrame - 1}`,
@@ -546,19 +584,19 @@ test.describe("native Mask interactive candidate acceptance", () => {
               target_annotation_id: annotationId,
               manual_protected: false,
               geometry: { type: "mask", mask: keyframe.mask },
-            }],
-            grid_step: 1,
-            output_geometry: "mask",
-            job_revision: 1,
-            expected_source_versions: { [annotationId]: saved.version },
-            candidate_total: 1,
-            candidate_pending: 1,
-            candidate_accepted: 0,
-            candidate_rejected: 0,
-          }),
-        });
-      },
-    );
+            },
+          ],
+          grid_step: 1,
+          output_geometry: "mask",
+          job_revision: 1,
+          expected_source_versions: { [annotationId]: saved.version },
+          candidate_total: 1,
+          candidate_pending: 1,
+          candidate_accepted: 0,
+          candidate_rejected: 0,
+        }),
+      });
+    });
     await page.route(
       new RegExp(`/api/v1/video-tracker-jobs/${jobId}/mask-content/[a-f0-9]{64}$`),
       async (route) => {
@@ -605,15 +643,17 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const dialog = page.getByRole("dialog", { name: "保存 Mask 纠错帧" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("radio", { name: "← 更早帧" }).click();
-    const saveResponsePromise = page.waitForResponse((response) =>
-      response.url().endsWith(
-        `/api/v1/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/2`,
-      ) && response.request().method() === "PUT",
+    const saveResponsePromise = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/v1/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/2`) &&
+        response.request().method() === "PUT",
     );
     await dialog.getByRole("button", { name: "保存并启动传播" }).click();
     const saveResponse = await saveResponsePromise;
     expect(saveResponse.status(), await saveResponse.text()).toBe(200);
-    const saved = await saveResponse.json() as VideoMaskAnnotationResponse;
+    const saved = (await saveResponse.json()) as VideoMaskAnnotationResponse;
     await expect.poll(() => correctionPayload).not.toBeNull();
     const correctionFrame = Number(correctionPayload?.correction_frame);
     const savedMask = saved.geometry.keyframes.find(
@@ -637,7 +677,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     expect(maskResponse.ok(), await maskResponse.text()).toBeTruthy();
     resolveCandidate({
       saved,
-      mask: await maskResponse.json() as SeedNativeMaskCandidateData["rle"],
+      mask: (await maskResponse.json()) as SeedNativeMaskCandidateData["rle"],
     });
 
     const review = page.getByRole("dialog", { name: "Mask 纠错候选审阅" });
@@ -658,7 +698,11 @@ test.describe("native Mask interactive candidate acceptance", () => {
     });
   });
 
-  test("saved Mask negative scribble survives a failed prompt retry and refresh", async ({ page, request, seed }) => {
+  test("saved Mask negative scribble survives a failed prompt retry and refresh", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await seed.configureRasterMask(data.project_id, true);
@@ -702,11 +746,13 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     const box = await stage.boundingBox();
     if (!box) throw new Error("workbench stage has no bounding box");
-    const pointContexts = () => routed.contexts.filter((context) =>
-      context.type === "point"
-      && (context.mask_prompt_source as { annotation_id?: unknown } | undefined)?.annotation_id
-        === source.annotation_id,
-    );
+    const pointContexts = () =>
+      routed.contexts.filter(
+        (context) =>
+          context.type === "point" &&
+          (context.mask_prompt_source as { annotation_id?: unknown } | undefined)?.annotation_id ===
+            source.annotation_id,
+      );
     await page.mouse.click(box.x + box.width * 0.52, box.y + box.height * 0.48);
     await expect.poll(() => pointContexts().length, { timeout: 10_000 }).toBe(1);
     expect(pointContexts().at(-1)).toMatchObject({
@@ -749,37 +795,36 @@ test.describe("native Mask interactive candidate acceptance", () => {
       annotation_id: source.annotation_id,
     });
     expect(scribbleContexts()[1]?.mask_input).toBe("opaque-e2e-mask-session");
-    expect(scribbleContexts()[1]?.scribbles).toEqual([
-      expect.objectContaining({ polarity: 0 }),
-    ]);
+    expect(scribbleContexts()[1]?.scribbles).toEqual([expect.objectContaining({ polarity: 0 })]);
 
     await page.keyboard.press("Enter");
     const picker = page.getByTestId("class-picker-popover");
     await expect(picker).toBeVisible({ timeout: 10_000 });
-    const accepted = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`)
-      && response.request().method() === "POST",
+    const accepted = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/ai-mask-candidates/accept`) &&
+        response.request().method() === "POST",
     );
     await picker.getByText("car", { exact: true }).click();
     const acceptedResponse = await accepted;
     expect(acceptedResponse.status()).toBe(200);
-    const acceptedBody = await acceptedResponse.json() as AcceptedMaskResponse;
+    const acceptedBody = (await acceptedResponse.json()) as AcceptedMaskResponse;
     expect(acceptedBody.annotation.id).toBe(source.annotation_id);
 
     await expectRleEquals(
-      await request.get(
-        `${API_BASE}/api/v1/annotations/${source.annotation_id}/mask-content`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      await request.get(`${API_BASE}/api/v1/annotations/${source.annotation_id}/mask-content`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
       fixture.rle,
     );
     await page.reload();
-    await expect(page.getByTestId(`box-list-item-${source.annotation_id}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`box-list-item-${source.annotation_id}`)).toBeVisible({
+      timeout: 15_000,
+    });
     await expectRleEquals(
-      await request.get(
-        `${API_BASE}/api/v1/annotations/${source.annotation_id}/mask-content`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      await request.get(`${API_BASE}/api/v1/annotations/${source.annotation_id}/mask-content`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
       fixture.rle,
     );
   });

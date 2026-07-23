@@ -53,9 +53,7 @@ export function useAiToolModelPref(backendId: string | null | undefined) {
         timerRef.current = null;
         const payload = pendingRef.current;
         if (payload) {
-          authApi
-            .updatePreferences({ ai: { model_by_backend: payload } })
-            .catch(() => {});
+          authApi.updatePreferences({ ai: { model_by_backend: payload } }).catch(() => {});
           pendingRef.current = null;
         }
       }

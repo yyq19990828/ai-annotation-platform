@@ -14,7 +14,8 @@ vi.mock("@/hooks/useProjects", () => ({
   useUpdateProject: () => ({ mutate: mockUpdateMutate, isPending: false }),
 }));
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
+  const actual =
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>

@@ -28,11 +28,11 @@ curl http://localhost:8000/health  # OK
 
 ## 根因
 
-| 服务 | 是否热重载 |
-|---|---|
-| `apps/api`（FastAPI / uvicorn） | ✅ `--reload` 监听挂载卷 |
-| 前端 vite | ✅ HMR |
-| **Celery worker** | ❌ **没有任何自动重载机制** |
+| 服务                            | 是否热重载                  |
+| ------------------------------- | --------------------------- |
+| `apps/api`（FastAPI / uvicorn） | ✅ `--reload` 监听挂载卷    |
+| 前端 vite                       | ✅ HMR                      |
+| **Celery worker**               | ❌ **没有任何自动重载机制** |
 
 dev `docker-compose.yml` 把整个 `apps/api` 挂卷到所有 worker 容器里，所以源文件**看起来**是新的，但 Celery 进程已经把旧版 task 加载进解释器，挂载只影响下次进程启动后的导入。
 
@@ -56,6 +56,7 @@ docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-wo
 ```
 
 **rebuild 触发条件清单**（CLAUDE.md §7）：
+
 - `pyproject.toml` / `uv.lock` / `requirements.txt`
 - `package.json` / `pnpm-lock.yaml`
 - `Dockerfile` / `.dockerignore`

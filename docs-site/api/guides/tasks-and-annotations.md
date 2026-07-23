@@ -151,18 +151,20 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
   "geometry": {
     "type": "video_track_mask",
     "track_id": "trk_...",
-    "keyframes": [{
-      "frame_index": 0,
-      "source": "manual",
-      "mask": {
-        "encoding": "coco_rle_ref",
-        "size": [1080, 1920],
-        "object_key": "raster-masks/sha256/...json",
-        "sha256": "...",
-        "runs": 312,
-        "bytes": 3727
+    "keyframes": [
+      {
+        "frame_index": 0,
+        "source": "manual",
+        "mask": {
+          "encoding": "coco_rle_ref",
+          "size": [1080, 1920],
+          "object_key": "raster-masks/sha256/...json",
+          "sha256": "...",
+          "runs": 312,
+          "bytes": 3727
+        }
       }
-    }]
+    ]
   }
 }
 ```
@@ -261,12 +263,12 @@ POST /api/v1/tasks/:id/annotations/:annotation_id/video/convert-to-bboxes
 
 参数：
 
-| 字段 | 取值 | 说明 |
-|---|---|---|
-| `operation` | `copy` / `split` | `copy` 保留源轨迹；`split` 移除源关键帧或整条源轨迹 |
-| `scope` | `frame` / `track` | 转换当前帧或整条轨迹 |
-| `frame_index` | number | `scope=frame` 时必填 |
-| `frame_mode` | `keyframes` / `all_frames` | `scope=track` 时生效 |
+| 字段          | 取值                       | 说明                                                |
+| ------------- | -------------------------- | --------------------------------------------------- |
+| `operation`   | `copy` / `split`           | `copy` 保留源轨迹；`split` 移除源关键帧或整条源轨迹 |
+| `scope`       | `frame` / `track`          | 转换当前帧或整条轨迹                                |
+| `frame_index` | number                     | `scope=frame` 时必填                                |
+| `frame_mode`  | `keyframes` / `all_frames` | `scope=track` 时生效                                |
 
 响应包含 `source_annotation`、`created_annotations[]`、`deleted_source` 与 `removed_frame_indexes`。`copy` 不会移除源帧，所以 `removed_frame_indexes` 为空；`split` 才会返回被移除的帧号。
 
@@ -284,12 +286,12 @@ POST /api/v1/tasks/:id/annotations/video/track-compositions
 }
 ```
 
-| `operation` | 说明 |
-|---|---|
-| `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track_bbox` |
-| `split_track` | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条 |
-| `merge_tracks` | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap |
-| `join_tracks` | 跳连两条同类、可见帧区间不重叠的 track；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |
+| `operation`        | 说明                                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track_bbox`                                   |
+| `split_track`      | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条                                                    |
+| `merge_tracks`     | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap                                        |
+| `join_tracks`      | 跳连两条同类、可见帧区间不重叠的 track；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |
 
 响应包含 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，客户端应按这三组结果更新 annotation 列表。
 
@@ -309,6 +311,7 @@ POST /api/v1/tasks/:id/annotations/accept
 ```
 
 后端会：
+
 1. 把 shape 写入 `annotations`（source=ai-accepted）
 2. 反查类别配置把 alias 映射回原类别名
 3. 写审计 `annotation.prediction_accepted`
@@ -331,9 +334,9 @@ GET /api/v1/tasks/:id/comments         # 标注评论
 
 ## 任务锁
 
-| 端点 | 作用 |
-|---|---|
-| `POST /tasks/:id/lock` | 显式续锁 |
+| 端点                     | 作用     |
+| ------------------------ | -------- |
+| `POST /tasks/:id/lock`   | 显式续锁 |
 | `DELETE /tasks/:id/lock` | 主动释放 |
 
 锁过期后由后台清理任务自动归还。详见 [ADR 0005](../../dev/adr/archive/0005-task-lock-and-review-matrix)。

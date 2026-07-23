@@ -86,7 +86,7 @@ function packDenseTile(
     throw new Error("mask history alpha length must match the canvas");
   }
   const dimensions = tileDimensions(canvasWidth, canvasHeight, tileX, tileY);
-  const bits = new Uint8Array(Math.ceil(dimensions.width * dimensions.height / 8));
+  const bits = new Uint8Array(Math.ceil((dimensions.width * dimensions.height) / 8));
   const x0 = tileX * MASK_HISTORY_TILE_SIZE;
   const y0 = tileY * MASK_HISTORY_TILE_SIZE;
   for (let y = 0; y < dimensions.height; y += 1) {
@@ -105,7 +105,7 @@ function packTileAlpha(alpha: Uint8Array, width: number, height: number): Uint8A
   if (alpha.length !== width * height) {
     throw new Error("mask history tile alpha length must match its dimensions");
   }
-  const bits = new Uint8Array(Math.ceil(width * height / 8));
+  const bits = new Uint8Array(Math.ceil((width * height) / 8));
   for (let index = 0; index < alpha.length; index += 1) {
     if (alpha[index] !== 0) bits[index >> 3] |= 1 << (index & 7);
   }
@@ -120,7 +120,12 @@ function countBits(value: number): number {
 }
 
 export function maskHistoryBudgetBytes(deviceMemory?: number | null): number {
-  if (deviceMemory != null && Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 2) {
+  if (
+    deviceMemory != null &&
+    Number.isFinite(deviceMemory) &&
+    deviceMemory > 0 &&
+    deviceMemory <= 2
+  ) {
     return 16 * MIB;
   }
   if (deviceMemory != null && Number.isFinite(deviceMemory) && deviceMemory >= 8) {
@@ -136,9 +141,9 @@ export function navigatorMaskHistoryBudgetBytes(): number {
 }
 
 export function chargeMaskHistoryPatches(patches: readonly MaskHistoryPatch[]): number {
-  return COMMAND_OVERHEAD_BYTES + patches.reduce(
-    (total, patch) => total + PATCH_OVERHEAD_BYTES + patch.xorBits.byteLength,
-    0,
+  return (
+    COMMAND_OVERHEAD_BYTES +
+    patches.reduce((total, patch) => total + PATCH_OVERHEAD_BYTES + patch.xorBits.byteLength, 0)
   );
 }
 
@@ -170,13 +175,7 @@ export class MaskHistoryCheckpoint {
       for (let tileX = firstTileX; tileX <= lastTileX; tileX += 1) {
         const key = tileKey(tileX, tileY);
         if (this.tiles.has(key)) continue;
-        const tile = packDenseTile(
-          alpha,
-          this.canvasWidth,
-          this.canvasHeight,
-          tileX,
-          tileY,
-        );
+        const tile = packDenseTile(alpha, this.canvasWidth, this.canvasHeight, tileX, tileY);
         this.tiles.set(key, {
           tileX,
           tileY,
@@ -215,11 +214,13 @@ export class MaskHistoryCheckpoint {
     sourceRevision: number,
     readTile: (tileX: number, tileY: number, width: number, height: number) => Uint8Array,
   ): MaskHistoryCommand | null {
-    return this.finishBits(name, sourceRevision, (captured) => packTileAlpha(
-      readTile(captured.tileX, captured.tileY, captured.width, captured.height),
-      captured.width,
-      captured.height,
-    ));
+    return this.finishBits(name, sourceRevision, (captured) =>
+      packTileAlpha(
+        readTile(captured.tileX, captured.tileY, captured.width, captured.height),
+        captured.width,
+        captured.height,
+      ),
+    );
   }
 
   private finishBits(
@@ -262,20 +263,14 @@ export class MaskHistoryCheckpoint {
     };
   }
 
-  finishDense(
-    name: string,
-    sourceRevision: number,
-    alpha: Uint8Array,
-  ): MaskHistoryCommand | null {
-    return this.finishBits(name, sourceRevision, (captured) => (
-      packDenseTile(
-        alpha,
-        this.canvasWidth,
-        this.canvasHeight,
-        captured.tileX,
-        captured.tileY,
-      ).bits
-    ));
+  finishDense(name: string, sourceRevision: number, alpha: Uint8Array): MaskHistoryCommand | null {
+    return this.finishBits(
+      name,
+      sourceRevision,
+      (captured) =>
+        packDenseTile(alpha, this.canvasWidth, this.canvasHeight, captured.tileX, captured.tileY)
+          .bits,
+    );
   }
 }
 

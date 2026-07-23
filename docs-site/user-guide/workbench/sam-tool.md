@@ -14,13 +14,13 @@ last_reviewed: 2026-07-23
 
 工具栏按交互范式拆成 5 个独立 AI 工具（均为**画布手势驱动**）。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
-| 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
-|---|---|---|---|---|
-| **智能点** | 🎯 | `S` 循环 | `point` | polygon / 原生 Mask 候选 |
-| **智能框** | ▭ | `S` 循环 | `interactive_box` | polygon / 原生 Mask 候选 |
-| **智能笔迹** | ✎ | — | `scribble` + `mask` | 原位精修已存原生 Mask |
-| **Magic Box** | ✨ | `G` / `S` 循环 | `interactive_box` | **直接** bbox 标注 |
-| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` | polygon / bbox 候选 |
+| 工具              | 图标 | 默认快捷键     | 后端要求            | 输出形态                 |
+| ----------------- | ---- | -------------- | ------------------- | ------------------------ |
+| **智能点**        | 🎯   | `S` 循环       | `point`             | polygon / 原生 Mask 候选 |
+| **智能框**        | ▭    | `S` 循环       | `interactive_box`   | polygon / 原生 Mask 候选 |
+| **智能笔迹**      | ✎    | —              | `scribble` + `mask` | 原位精修已存原生 Mask    |
+| **Magic Box**     | ✨   | `G` / `S` 循环 | `interactive_box`   | **直接** bbox 标注       |
+| **Exemplar 示例** | ⎘    | `S` 循环       | `exemplar`          | polygon / bbox 候选      |
 
 > **文本提示「找全图」已归批量线**:给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`),不再是工具栏交互工具,改在 **AI 面板 / 批量预标页** 使用(见下方「文本预标『找全图』」一节)。工具栏只保留需要在画布上画点/框/示例的交互工具。
 
@@ -69,10 +69,10 @@ last_reviewed: 2026-07-23
 
 拖框时不要求精准，拖一个**大致包住目标**的框就行;SAM 跑 mask → 自动取 mask 的紧凑外接矩形 → **直接落 bbox 标注**(不经过候选层确认)。
 
-| 与 Smart Box 的区别 |
-|---|
+| 与 Smart Box 的区别                                             |
+| --------------------------------------------------------------- |
 | Smart Box: 输出 polygon 或原生 Mask 候选,等 `Enter` 接受 + 选类 |
-| Magic Box: 输出 **bbox** 直接落库,跳过候选层 |
+| Magic Box: 输出 **bbox** 直接落库,跳过候选层                    |
 
 **使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
 
@@ -146,15 +146,15 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 点工具栏「AI」打开悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。面板可拖动头部移动、拖右下角缩放，位置和尺寸在刷新后保留。常见字段及项目级默认值：
 
-| 字段 | 后端 | 项目级默认 | 范围 | 说明 |
-|---|---|---|---|---|
-| `box_threshold` | grounded-sam2 | 0.35 | [0.0, 1.0] | DINO bbox 置信度阈值 |
-| `text_threshold` | grounded-sam2 | 0.25 | [0.0, 1.0] | DINO token 置信度阈值 |
-| `score_threshold` | sam3 | 后端自定义 | — | PCS 候选置信度 |
-| `simplify_tolerance` | 两者 | 后端自定义 | 像素 | polygon 轮廓 Douglas-Peucker 容差 |
-| `model_variant` / `embedding_cache_size` | — | — | — | 只读信息（禁用展示，不可改）|
+| 字段                                     | 后端          | 项目级默认 | 范围       | 说明                              |
+| ---------------------------------------- | ------------- | ---------- | ---------- | --------------------------------- |
+| `box_threshold`                          | grounded-sam2 | 0.35       | [0.0, 1.0] | DINO bbox 置信度阈值              |
+| `text_threshold`                         | grounded-sam2 | 0.25       | [0.0, 1.0] | DINO token 置信度阈值             |
+| `score_threshold`                        | sam3          | 后端自定义 | —          | PCS 候选置信度                    |
+| `simplify_tolerance`                     | 两者          | 后端自定义 | 像素       | polygon 轮廓 Douglas-Peucker 容差 |
+| `model_variant` / `embedding_cache_size` | —             | —          | —          | 只读信息（禁用展示，不可改）      |
 
-> 文本提示格式：在 AI 面板 Prompt 输入框填英文短语，多个类别用 ` . `（空格+点+空格）分隔，格式与 GroundingDINO 一致，例如 `ripe apple . green apple . orange`。
+> 文本提示格式：在 AI 面板 Prompt 输入框填英文短语，多个类别用 `.`（空格+点+空格）分隔，格式与 GroundingDINO 一致，例如 `ripe apple . green apple . orange`。
 
 模型变体（SAM2 / DINO 变体）在同一面板的「变体选择器」里切换。backend 若上报 `/setup.supported_variants`，选项会显示显存估算、快速/均衡/精度档位和推荐标识；未上报时回落到 `/setup.params` 的 enum。参数按**所绑定后端**动态显示——绑 sam3 不会出现 DINO 阈值，绑 gsam2 才有。
 
@@ -191,19 +191,19 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 ## 快捷键速查
 
-| 键 | 行为 |
-|---|---|
-| `S` | 在 4 个常规 AI 工具间循环（跳过置灰；含 Magic Box） |
-| `G` | 直接切到 Magic Box |
-| `Alt + 3` | 同 `S` |
-| 单击 | Smart Point: positive point |
-| `Alt + 单击` | Smart Point: negative point |
-| `=` / `+` / `-` | Smart Point / Smart Scribble 默认极性切换 |
-| 拖框 | Smart Box / Magic Box / Exemplar 触发 |
-| 拖动 | Smart Scribble 在选中 Mask 上追加正向笔迹；`Alt + 拖动`追加负向笔迹 |
-| `Enter` | 接受当前候选，弹出类别选择器 |
-| `Esc` | 取消所有候选 |
-| `Tab` / `Shift+Tab` | 切换候选 |
+| 键                  | 行为                                                                |
+| ------------------- | ------------------------------------------------------------------- |
+| `S`                 | 在 4 个常规 AI 工具间循环（跳过置灰；含 Magic Box）                 |
+| `G`                 | 直接切到 Magic Box                                                  |
+| `Alt + 3`           | 同 `S`                                                              |
+| 单击                | Smart Point: positive point                                         |
+| `Alt + 单击`        | Smart Point: negative point                                         |
+| `=` / `+` / `-`     | Smart Point / Smart Scribble 默认极性切换                           |
+| 拖框                | Smart Box / Magic Box / Exemplar 触发                               |
+| 拖动                | Smart Scribble 在选中 Mask 上追加正向笔迹；`Alt + 拖动`追加负向笔迹 |
+| `Enter`             | 接受当前候选，弹出类别选择器                                        |
+| `Esc`               | 取消所有候选                                                        |
+| `Tab` / `Shift+Tab` | 切换候选                                                            |
 
 Magic Box 只出一个候选，无需 `Enter`：候选一到就直接弹类别选择器。
 
@@ -211,12 +211,12 @@ Magic Box 只出一个候选，无需 `Enter`：候选一到就直接弹类别�
 
 同一组工具在**视频单帧**上也可用，对当前帧做分割。键位与图片侧一致：
 
-| 键 | 视频侧 | 图片侧 |
-|---|---|---|
-| `S` | 直接切到智能点 | 在 AI 工具间循环 |
-| `D` | 智能框 | （靠 `S` 循环进入）|
-| `E` | 示例框 | （靠 `S` 循环进入）|
-| `G` | Magic Box | Magic Box |
+| 键  | 视频侧         | 图片侧              |
+| --- | -------------- | ------------------- |
+| `S` | 直接切到智能点 | 在 AI 工具间循环    |
+| `D` | 智能框         | （靠 `S` 循环进入） |
+| `E` | 示例框         | （靠 `S` 循环进入） |
+| `G` | Magic Box      | Magic Box           |
 
 视频没有「AI 工具循环」，四个工具各有直达键，所以 `S` 的含义与图片侧不同——其余三个键相同。
 

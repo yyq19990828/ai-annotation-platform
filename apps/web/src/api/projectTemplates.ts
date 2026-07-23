@@ -97,9 +97,7 @@ export const projectTemplatesApi = {
       params.type_key.forEach((tk) => q.append("type_key", tk));
     }
     const qs = q.toString();
-    return apiClient.get<ProjectTemplateOut[]>(
-      `/project-templates${qs ? `?${qs}` : ""}`,
-    );
+    return apiClient.get<ProjectTemplateOut[]>(`/project-templates${qs ? `?${qs}` : ""}`);
   },
 
   get: (id: string) => apiClient.get<ProjectTemplateOut>(`/project-templates/${id}`),

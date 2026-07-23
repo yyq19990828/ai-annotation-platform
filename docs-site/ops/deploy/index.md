@@ -12,12 +12,12 @@ last_reviewed: 2026-06-12
 
 ## 先选形态
 
-| 你要做的 | 去哪 |
-|---|---|
-| 在本机跑起来做开发 / 联调 | [开发部署（本地）](/ops/deploy/development) |
-| 搬到 staging / 生产 | [生产部署](/ops/deploy/docker-compose) |
+| 你要做的                                 | 去哪                                               |
+| ---------------------------------------- | -------------------------------------------------- |
+| 在本机跑起来做开发 / 联调                | [开发部署（本地）](/ops/deploy/development)        |
+| 搬到 staging / 生产                      | [生产部署](/ops/deploy/docker-compose)             |
 | 把平台 / API 暴露给团队或远程 SDK 调用方 | [端口暴露与网络安全](/ops/deploy/network-security) |
-| 升级版本 / 跑迁移 / rebuild 还是 restart | [升级指南](/ops/upgrade-guide) |
+| 升级版本 / 跑迁移 / rebuild 还是 restart | [升级指南](/ops/upgrade-guide)                     |
 
 ## 开发态 vs 生产态：一句话区别
 

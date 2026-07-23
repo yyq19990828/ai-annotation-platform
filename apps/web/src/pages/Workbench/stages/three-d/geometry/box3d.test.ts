@@ -10,9 +10,7 @@ import {
 
 /** 把角点排成可比较的有序 [x,y,z] 元组列表 (按坐标字典序排序, 消除顺序差异)。 */
 function sortedTuples(pts: THREE.Vector3[]): number[][] {
-  return pts
-    .map((p) => [p.x, p.y, p.z])
-    .sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  return pts.map((p) => [p.x, p.y, p.z]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
 }
 
 function expectCornersClose(got: number[][], want: number[][]) {
@@ -95,9 +93,7 @@ describe("boxToMatrix4 / psrToCorners consistency", () => {
       [0.5, 0.5, 0.5],
       [-0.5, 0.5, 0.5],
     ];
-    const viaMatrix = unitCorners.map((c) =>
-      new THREE.Vector3(c[0], c[1], c[2]).applyMatrix4(m),
-    );
+    const viaMatrix = unitCorners.map((c) => new THREE.Vector3(c[0], c[1], c[2]).applyMatrix4(m));
     const viaPsr = psrToCorners(center, size, rotation);
 
     viaMatrix.forEach((p, i) => {
@@ -166,9 +162,7 @@ describe("boxLocalClipPlanes", () => {
     expect(planes.every((p) => p.distanceToPoint(c) >= -1e-9)).toBe(true);
 
     // 沿 local +X 走 1 个全边长 (出 +X 面, 半边长=2) → 框外
-    const outside = c
-      .clone()
-      .addScaledVector(boxAxisWorldDir(rotation, 0), size[0]);
+    const outside = c.clone().addScaledVector(boxAxisWorldDir(rotation, 0), size[0]);
     expect(planes.some((p) => p.distanceToPoint(outside) < 0)).toBe(true);
   });
 

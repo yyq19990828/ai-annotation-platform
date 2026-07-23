@@ -16,9 +16,7 @@ import { RenderingConfigEditor } from "./RenderingConfigEditor";
 export function RenderingConfigSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const update = useUpdateProject(project.id);
-  const [draft, setDraft] = useState<ProjectRenderingConfig>(
-    project.rendering_config ?? {},
-  );
+  const [draft, setDraft] = useState<ProjectRenderingConfig>(project.rendering_config ?? {});
 
   const onChange = (next: ProjectRenderingConfig) => {
     setDraft(next);
@@ -35,13 +33,10 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
       <div className="p-4">
         <h3 className="m-0 text-md font-semibold">工作台规范（项目级覆盖）</h3>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          项目级覆盖优先于成员的个人「标注偏好」，也可锁定 3D 新框尺寸、关键帧复制策略和 AI 追踪默认模型。
+          项目级覆盖优先于成员的个人「标注偏好」，也可锁定 3D 新框尺寸、关键帧复制策略和 AI
+          追踪默认模型。
         </p>
-        <RenderingConfigEditor
-          value={draft}
-          onChange={onChange}
-          disabled={update.isPending}
-        />
+        <RenderingConfigEditor value={draft} onChange={onChange} disabled={update.isPending} />
         {update.isPending && <div className="mt-3 text-xs text-muted-foreground">保存中…</div>}
       </div>
     </Card>

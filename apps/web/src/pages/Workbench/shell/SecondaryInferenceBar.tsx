@@ -19,11 +19,7 @@ import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { AttributeField } from "@/api/projects";
 import type { AnnotationResponse } from "@/types";
 import { displayClassName } from "../stage/colors";
-import {
-  SchemaForm,
-  deriveDefaults,
-  type JsonSchemaObject,
-} from "../components/SchemaForm";
+import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "../components/SchemaForm";
 import {
   buildSecondaryInferencePayload,
   hasConfigurableParams,
@@ -65,8 +61,7 @@ const TASK_LABELS: Record<string, string> = {
   ocr: "文字识别",
   doc_layout: "版面分析",
 };
-const taskLabel = (t: string | null | undefined) =>
-  (t && TASK_LABELS[t.toLowerCase()]) || "其他";
+const taskLabel = (t: string | null | undefined) => (t && TASK_LABELS[t.toLowerCase()]) || "其他";
 
 const capKey = (c: SecondaryCapability) => `${c.backendId}:${c.model.id}`;
 
@@ -76,9 +71,7 @@ const TARGET_HINT: Record<SecondaryCapability["writeTarget"], string> = {
 };
 
 /** 按 task 把能力分桶, 保持原始顺序; 返回 [task, caps[]] 供 <optgroup> 渲染。 */
-function groupByTask(
-  caps: SecondaryCapability[],
-): Array<[string, SecondaryCapability[]]> {
+function groupByTask(caps: SecondaryCapability[]): Array<[string, SecondaryCapability[]]> {
   const order: string[] = [];
   const buckets = new Map<string, SecondaryCapability[]>();
   for (const c of caps) {
@@ -106,19 +99,14 @@ export function SecondaryInferenceBar({
   const [runningKey, setRunningKey] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   // v0.20.13 · 每能力的推理参数 (阈值等); paramsOpen = 当前是否展开选中能力的参数面板。
-  const [paramsByKey, setParamsByKey] = useState<
-    Record<string, Record<string, unknown>>
-  >({});
+  const [paramsByKey, setParamsByKey] = useState<Record<string, Record<string, unknown>>>({});
   // v0.20.17 · 每能力已选的模型变体档位 (series/size 等); 与 default_variants 合并成实际下发档位。
-  const [variantByKey, setVariantByKey] = useState<
-    Record<string, Record<string, unknown>>
-  >({});
+  const [variantByKey, setVariantByKey] = useState<Record<string, Record<string, unknown>>>({});
   // v0.20.18 · 开集文本模型的查询文本 (按能力); 每次运行的临时查询, 不持久化。
   const [promptByKey, setPromptByKey] = useState<Record<string, string>>({});
   const [paramsOpen, setParamsOpen] = useState(false);
   // v0.20.17 · 用户级偏好 (按 backendId:modelId): 参数 + 变体跨框/跨设备记住。
-  const { byModel, loaded: prefsLoaded, save: savePref } =
-    useSecondaryParamPrefs();
+  const { byModel, loaded: prefsLoaded, save: savePref } = useSecondaryParamPrefs();
 
   // 偏好载入后, 把存过的 params/variants 灌进组件 state (仅未触碰的键, 不覆盖当前编辑)。
   useEffect(() => {
@@ -151,8 +139,7 @@ export function SecondaryInferenceBar({
 
   const existing = existingAttributeKeys ?? new Set<string>();
   // 选中能力: 用户选过的; 未选/失效则回落首个。
-  const selected =
-    capabilities.find((c) => capKey(c) === selectedKey) ?? capabilities[0];
+  const selected = capabilities.find((c) => capKey(c) === selectedKey) ?? capabilities[0];
   const selKey = capKey(selected);
   const busy = runningKey !== null;
   const missing = missingAttributeFields(selected, existing);
@@ -200,8 +187,7 @@ export function SecondaryInferenceBar({
               ? `写回 ${attrKeys.length} 项, 其中 ${invisible.length} 项项目缺字段 (面板不显示, 请补全)`
               : `写回 ${attrKeys.length} 项属性`
             : "无属性产出";
-      const produced =
-        cap.writeTarget === "geometry" ? childCount > 0 : attrKeys.length > 0;
+      const produced = cap.writeTarget === "geometry" ? childCount > 0 : attrKeys.length > 0;
       pushToast({
         msg: `${cap.label} 已完成`,
         sub,
@@ -235,9 +221,7 @@ export function SecondaryInferenceBar({
           <b className="whitespace-nowrap text-xs">
             <span className="text-brand">✦</span> 二次推理
           </b>
-          <span className={FIELD_LABEL_CLASS}>
-            「{displayClassName(annotation.class_name)}」框
-          </span>
+          <span className={FIELD_LABEL_CLASS}>「{displayClassName(annotation.class_name)}」框</span>
         </div>
 
         {DIVIDER}
@@ -341,9 +325,7 @@ export function SecondaryInferenceBar({
                 type="text"
                 value={promptByKey[selKey] ?? ""}
                 disabled={busy}
-                onChange={(e) =>
-                  setPromptByKey((prev) => ({ ...prev, [selKey]: e.target.value }))
-                }
+                onChange={(e) => setPromptByKey((prev) => ({ ...prev, [selKey]: e.target.value }))}
                 placeholder="如 car . person"
                 title="开集模型的检测/分割目标文本 (多个用 . 分隔)"
                 data-testid="secondary-prompt"

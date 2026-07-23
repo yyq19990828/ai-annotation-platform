@@ -135,18 +135,11 @@ describe("WorkbenchLayout", () => {
       <WorkbenchLayout {...baseProps} gridTemplateColumns="100px 1fr 200px" />,
     );
     const root = container.firstChild as HTMLElement;
-    expect(root.style.getPropertyValue("--workbench-grid-template")).toBe(
-      "100px 1fr 200px",
-    );
+    expect(root.style.getPropertyValue("--workbench-grid-template")).toBe("100px 1fr 200px");
   });
 
   it("在中间画布定位容器内渲染 stage overlay", () => {
-    render(
-      <WorkbenchLayout
-        {...baseProps}
-        stageOverlay={<div data-testid="stage-overlay" />}
-      />,
-    );
+    render(<WorkbenchLayout {...baseProps} stageOverlay={<div data-testid="stage-overlay" />} />);
 
     const stage = screen.getByTestId("stage-host");
     const overlay = screen.getByTestId("stage-overlay");
@@ -311,7 +304,13 @@ describe("WorkbenchLayout", () => {
           context: {
             selection: { count: 1, title: "car", collapsed: false, sourceKind: "manual" },
             ai: { running: false, candidateCount: 0, backendOnline: true },
-            workflow: { saving: false, offline: false, offlineQueueCount: 0, readOnly: false, reviewMode: false },
+            workflow: {
+              saving: false,
+              offline: false,
+              offlineQueueCount: 0,
+              readOnly: false,
+              reviewMode: false,
+            },
             quality: { warningCount: 0, primaryWarning: null },
             counts: { annotationCount: 0 },
           },
@@ -345,7 +344,13 @@ describe("WorkbenchLayout", () => {
           context: {
             selection: { count: 1, title: "car", collapsed: true, sourceKind: "manual" },
             ai: { running: false, candidateCount: 0, backendOnline: true },
-            workflow: { saving: false, offline: false, offlineQueueCount: 0, readOnly: false, reviewMode: false },
+            workflow: {
+              saving: false,
+              offline: false,
+              offlineQueueCount: 0,
+              readOnly: false,
+              reviewMode: false,
+            },
             quality: { warningCount: 0, primaryWarning: null },
             counts: { annotationCount: 0 },
           },

@@ -96,19 +96,17 @@ describe("MaskFormatImportWizard", () => {
       status: "pending",
       result: {},
     });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200 })),
+    );
   });
 
   it("只展示 registry 已验证格式，并按 staged receipt 发起导入", async () => {
     vi.mocked(maskFormatsApi.preflightImport).mockResolvedValue(plan("lossless"));
     const onQueued = vi.fn();
     render(
-      <MaskFormatImportWizard
-        open
-        projectId="project-1"
-        onClose={() => {}}
-        onQueued={onQueued}
-      />,
+      <MaskFormatImportWizard open projectId="project-1" onClose={() => {}} onQueued={onQueued} />,
     );
 
     expect(await screen.findByRole("option", { name: "COCO Instance" })).toBeInTheDocument();
@@ -128,12 +126,14 @@ describe("MaskFormatImportWizard", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "确认导入" }));
-    await waitFor(() => expect(maskFormatsApi.executeImport).toHaveBeenCalledWith(
-      "project-1",
-      "mfi_receipt_123456789",
-      "d".repeat(64),
-      false,
-    ));
+    await waitFor(() =>
+      expect(maskFormatsApi.executeImport).toHaveBeenCalledWith(
+        "project-1",
+        "mfi_receipt_123456789",
+        "d".repeat(64),
+        false,
+      ),
+    );
     expect(onQueued).toHaveBeenCalledOnce();
   });
 
@@ -141,13 +141,7 @@ describe("MaskFormatImportWizard", () => {
     vi.mocked(maskFormatsApi.preflightImport)
       .mockResolvedValueOnce(plan("unsupported", ["vehicle"]))
       .mockResolvedValueOnce(plan("lossless"));
-    render(
-      <MaskFormatImportWizard
-        open
-        projectId="project-1"
-        onClose={() => {}}
-      />,
-    );
+    render(<MaskFormatImportWizard open projectId="project-1" onClose={() => {}} />);
     await screen.findByRole("option", { name: "COCO Instance" });
     fireEvent.change(screen.getByLabelText("文件"), {
       target: { files: [new File(["{}"], "coco.json", { type: "application/json" })] },
@@ -156,18 +150,18 @@ describe("MaskFormatImportWizard", () => {
     const mapping = await screen.findByPlaceholderText("项目类别名");
     fireEvent.change(mapping, { target: { value: "car" } });
     fireEvent.click(screen.getByRole("button", { name: "应用映射并重新预检" }));
-    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
-      "project-1",
-      expect.objectContaining({ mapping: { labels: { vehicle: "car" } } }),
-    ));
+    await waitFor(() =>
+      expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+        "project-1",
+        expect.objectContaining({ mapping: { labels: { vehicle: "car" } } }),
+      ),
+    );
     expect(await screen.findByText("无损，可执行")).toBeInTheDocument();
   });
 
   it("有损导入必须显式确认", async () => {
     vi.mocked(maskFormatsApi.preflightImport).mockResolvedValue(plan("lossy"));
-    render(
-      <MaskFormatImportWizard open projectId="project-1" onClose={() => {}} />,
-    );
+    render(<MaskFormatImportWizard open projectId="project-1" onClose={() => {}} />);
     await screen.findByRole("option", { name: "COCO Instance" });
     fireEvent.change(screen.getByLabelText("文件"), {
       target: {
@@ -238,13 +232,15 @@ describe("MaskFormatImportWizard", () => {
       target: { files: [new File(["zip"], "ytvos.zip", { type: "application/zip" })] },
     });
     fireEvent.click(screen.getByRole("button", { name: "上传并预检" }));
-    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
-      "video-project",
-      expect.objectContaining({
-        format_id: "youtube-vos",
-        options: { overwrite: false, sparse_gap_policy: "nearest_hold" },
-      }),
-    ));
+    await waitFor(() =>
+      expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+        "video-project",
+        expect.objectContaining({
+          format_id: "youtube-vos",
+          options: { overwrite: false, sparse_gap_policy: "nearest_hold" },
+        }),
+      ),
+    );
 
     fireEvent.change(screen.getByLabelText("格式"), { target: { value: "coco-frames-seg" } });
     expect(screen.getByLabelText("帧号基准")).toHaveValue("1");
@@ -252,13 +248,15 @@ describe("MaskFormatImportWizard", () => {
       target: { files: [new File(["{}"], "coco-frames.json", { type: "application/json" })] },
     });
     fireEvent.click(screen.getByRole("button", { name: "上传并预检" }));
-    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
-      "video-project",
-      expect.objectContaining({
-        format_id: "coco-frames-seg",
-        options: { overwrite: false, frame_base: 1 },
-      }),
-    ));
+    await waitFor(() =>
+      expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+        "video-project",
+        expect.objectContaining({
+          format_id: "coco-frames-seg",
+          options: { overwrite: false, frame_base: 1 },
+        }),
+      ),
+    );
 
     fireEvent.change(screen.getByLabelText("格式"), { target: { value: "mots" } });
     fireEvent.change(screen.getByLabelText("帧号基准"), { target: { value: "1" } });
@@ -266,12 +264,14 @@ describe("MaskFormatImportWizard", () => {
       target: { files: [new File(["zip"], "mots.zip", { type: "application/zip" })] },
     });
     fireEvent.click(screen.getByRole("button", { name: "上传并预检" }));
-    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
-      "video-project",
-      expect.objectContaining({
-        format_id: "mots",
-        options: { overwrite: false, frame_base: 1 },
-      }),
-    ));
+    await waitFor(() =>
+      expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+        "video-project",
+        expect.objectContaining({
+          format_id: "mots",
+          options: { overwrite: false, frame_base: 1 },
+        }),
+      ),
+    );
   });
 });

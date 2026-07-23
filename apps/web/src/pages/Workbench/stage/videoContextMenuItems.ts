@@ -1,6 +1,12 @@
 import type { AnnotationResponse } from "@/types";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
-import { isVideoBbox, isVideoMaskTrack, isVideoPointsSingleFrame, isVideoPointsTrack, isVideoTrack } from "./videoStageGeometry";
+import {
+  isVideoBbox,
+  isVideoMaskTrack,
+  isVideoPointsSingleFrame,
+  isVideoPointsTrack,
+  isVideoTrack,
+} from "./videoStageGeometry";
 import type { VideoTrackActions } from "./useVideoTrackActions";
 import type { VideoMaskKeyframeActionHandlers } from "./videoMaskKeyframeActions";
 import { isFrameOutside } from "./videoTrackOutside";
@@ -33,7 +39,10 @@ export interface VideoContextMenuCtx {
   deleteSelectedTrackKeyframe: () => boolean;
   onChangeUserBoxClass?: (id: string) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
-  onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onConvertToBboxes?: (
+    annotation: AnnotationResponse,
+    options: VideoTrackConversionOptions,
+  ) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
@@ -72,9 +81,9 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
       ? selectedVideoBboxes
       : [];
     const sameClass = new Set(aggregateTargets.map((ann) => ann.class_name)).size <= 1;
-    const uniqueFrames = new Set(
-      aggregateTargets.map((ann) => (isVideoBbox(ann) ? ann.geometry.frame_index : -1)),
-    ).size === aggregateTargets.length;
+    const uniqueFrames =
+      new Set(aggregateTargets.map((ann) => (isVideoBbox(ann) ? ann.geometry.frame_index : -1)))
+        .size === aggregateTargets.length;
     const canAggregate = aggregateTargets.length > 1 && sameClass && uniqueFrames;
     return [
       {
@@ -86,18 +95,19 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
       },
       ...(aggregateTargets.length > 1
         ? [
-          { id: "bbox-divider", divider: true, label: "" } as DropdownItem,
-          {
-            id: "bbox-aggregate",
-            label: "聚合为轨迹",
-            disabled: readOnly || !onComposeTracks || !canAggregate,
-            onSelect: () => onComposeTracks?.({
-              operation: "aggregate_bboxes",
-              annotationIds: aggregateTargets.map((ann) => ann.id),
-              deleteSources: true,
-            }),
-          } satisfies DropdownItem,
-        ]
+            { id: "bbox-divider", divider: true, label: "" } as DropdownItem,
+            {
+              id: "bbox-aggregate",
+              label: "聚合为轨迹",
+              disabled: readOnly || !onComposeTracks || !canAggregate,
+              onSelect: () =>
+                onComposeTracks?.({
+                  operation: "aggregate_bboxes",
+                  annotationIds: aggregateTargets.map((ann) => ann.id),
+                  deleteSources: true,
+                }),
+            } satisfies DropdownItem,
+          ]
         : []),
       { id: "bbox-delete-divider", divider: true, label: "" },
       {
@@ -138,17 +148,19 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
     const trackId = contextMenuAnnotation.geometry.track_id;
     const locked = lockedTrackIds?.has(trackId) ?? false;
     const frameOutside = isFrameOutside(contextMenuAnnotation.geometry, frameIndex);
-    const frameManualOutside = (contextMenuAnnotation.geometry.outside ?? []).some((range) => (
-      range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to
-    ));
+    const frameManualOutside = (contextMenuAnnotation.geometry.outside ?? []).some(
+      (range) =>
+        range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to,
+    );
     const exact = contextMenuAnnotation.geometry.keyframes.some(
       (keyframe) => keyframe.frame_index === frameIndex,
     );
-    const frameMutationDisabled = readOnly
-      || locked
-      || contextMenuAnnotation.is_locked
-      || maskKeyframeActions?.busy
-      || !maskKeyframeActions;
+    const frameMutationDisabled =
+      readOnly ||
+      locked ||
+      contextMenuAnnotation.is_locked ||
+      maskKeyframeActions?.busy ||
+      !maskKeyframeActions;
     return [
       {
         id: "mask-copy-current",
@@ -174,9 +186,7 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
       { id: "mask-frame-divider", divider: true, label: "" },
       {
         id: "mask-outside",
-        label: frameOutside
-          ? frameManualOutside ? "恢复保持" : "预测消失"
-          : "标记消失",
+        label: frameOutside ? (frameManualOutside ? "恢复保持" : "预测消失") : "标记消失",
         icon: "eyeOff",
         kbd: "O",
         disabled: frameMutationDisabled || (frameOutside && !frameManualOutside),
@@ -187,10 +197,11 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
         label: "删除当前关键帧",
         icon: "trash",
         kbd: "Del",
-        disabled: frameMutationDisabled
-          || !exact
-          || frameOutside
-          || contextMenuAnnotation.geometry.keyframes.length <= 1,
+        disabled:
+          frameMutationDisabled ||
+          !exact ||
+          frameOutside ||
+          contextMenuAnnotation.geometry.keyframes.length <= 1,
         onSelect: () => maskKeyframeActions?.deleteCurrentKeyframe(contextMenuAnnotation),
       },
       {
@@ -261,7 +272,12 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
     ];
   }
 
-  if (!selectedAnnotation || selectedAnnotation.id !== contextMenuTargetId || !isVideoTrack(selectedAnnotation)) return [];
+  if (
+    !selectedAnnotation ||
+    selectedAnnotation.id !== contextMenuTargetId ||
+    !isVideoTrack(selectedAnnotation)
+  )
+    return [];
   const frameEditDisabled = !trackActions.canEditSelectedTrack;
   const trackMutationDisabled = readOnly || trackActions.selectedTrackLocked;
   return [
@@ -319,11 +335,12 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
       label: "当前帧转独立框",
       icon: "box",
       disabled: trackMutationDisabled || !onConvertToBboxes,
-      onSelect: () => onConvertToBboxes?.(selectedAnnotation, {
-        operation: "split",
-        scope: "frame",
-        frameIndex,
-      }),
+      onSelect: () =>
+        onConvertToBboxes?.(selectedAnnotation, {
+          operation: "split",
+          scope: "frame",
+          frameIndex,
+        }),
     },
     {
       id: "delete-keyframe",

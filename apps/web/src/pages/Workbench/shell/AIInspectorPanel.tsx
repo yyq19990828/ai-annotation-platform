@@ -20,14 +20,9 @@ import { BoxListItem } from "../stage/BoxListItem";
 import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
-import {
-  PreannotateConfigForm,
-} from "@/pages/AIPreAnnotate/components/PreannotateConfigForm";
+import { PreannotateConfigForm } from "@/pages/AIPreAnnotate/components/PreannotateConfigForm";
 import { type PreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
-import {
-  SIDE_FLOATING_PANEL_MIN_SIZE,
-  SIDE_FLOATING_PANEL_MAX_SIZE,
-} from "./floatingPanelSizing";
+import { SIDE_FLOATING_PANEL_MIN_SIZE, SIDE_FLOATING_PANEL_MAX_SIZE } from "./floatingPanelSizing";
 import {
   AI_PANEL_HEADER_CLASS,
   AI_PANEL_ICON_CLASS,
@@ -80,10 +75,7 @@ interface AIInspectorPanelProps {
    * v0.10.20 · I12 多选批量编辑回调; 多选时 AttributeForm.onChange 改走此路径调用 useAnnotationBulkUpdate.
    * 不传时多选只显示 batch banner, 但 onChange 仍按单条 PATCH 走 (退化兼容).
    */
-  onBulkUpdateAttributes?: (
-    ids: string[],
-    patch: { attributes?: Record<string, unknown> },
-  ) => void;
+  onBulkUpdateAttributes?: (ids: string[], patch: { attributes?: Record<string, unknown> }) => void;
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
@@ -135,15 +127,33 @@ export function AIInspectorPanel({
   open,
   aiBoxes,
   predictionSourceFilter,
-  userBoxes, orphanUserBoxIds, rasterMaskStatusById, onRetryRasterMask, selectedId, selectedIds,
+  userBoxes,
+  orphanUserBoxIds,
+  rasterMaskStatusById,
+  onRetryRasterMask,
+  selectedId,
+  selectedIds,
   dimmedAiIds,
-  imageWidth, imageHeight,
-  attributeSchema, selectedAnnotation, onUpdateAttributes,
+  imageWidth,
+  imageHeight,
+  attributeSchema,
+  selectedAnnotation,
+  onUpdateAttributes,
   onBulkUpdateAttributes,
-  hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
-  currentFrameIndex, onSeekFrame,
-  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon, onEditRasterMask,
-  onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  hasMorePredictions,
+  isFetchingMorePredictions,
+  onFetchMorePredictions,
+  currentFrameIndex,
+  onSeekFrame,
+  onSelect,
+  onAcceptPrediction,
+  onRejectPrediction,
+  onRefinePrediction,
+  onRefineUserPolygon,
+  onEditRasterMask,
+  onClearSelection,
+  onDeleteUserBox,
+  onChangeUserBoxClass,
   onToggleUserBoxFlag,
   readOnly = false,
   videoTrackPanel,
@@ -158,23 +168,31 @@ export function AIInspectorPanel({
   manualSectionCollapsed = false,
   onToggleManualSection,
 }: AIInspectorPanelProps) {
-  const selSet = selectedIds && selectedIds.length > 0
-    ? new Set(selectedIds)
-    : selectedId ? new Set([selectedId]) : new Set<string>();
+  const selSet =
+    selectedIds && selectedIds.length > 0
+      ? new Set(selectedIds)
+      : selectedId
+        ? new Set([selectedId])
+        : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
   // 底部属性区折叠态（v0.11.28 上下分栏：属性区固定在列表下方，可折叠让出列表空间）。
   // v0.20.19 · 受控优先(走 workbench.layout 持久), 缺省回落组件内会话态(测试/独立使用)。
   const [attrCollapsedLocal, setAttrCollapsedLocal] = useState(false);
   const attrCollapsed = attrCollapsedProp ?? attrCollapsedLocal;
   const toggleAttrCollapsed = onToggleAttrCollapsed ?? (() => setAttrCollapsedLocal((v) => !v));
-  const attrMissing = selectedAnnotation && attributeSchema
-    ? getMissingRequired(attributeSchema, selectedAnnotation.class_name, selectedAnnotation.attributes ?? {})
-    : [];
+  const attrMissing =
+    selectedAnnotation && attributeSchema
+      ? getMissingRequired(
+          attributeSchema,
+          selectedAnnotation.class_name,
+          selectedAnnotation.attributes ?? {},
+        )
+      : [];
   // v0.18.0 · 采纳前预览: 选中单个 AI 候选 (未落库, selectedAnnotation 为空) 且其携带属性时,
   // 在底部用 AttributeForm 展示二阶段 backend 写入的 attributes (经 schema options 解析为中文)。
   const selectedAiBox =
     !selectedAnnotation && selSet.size === 1
-      ? aiBoxes.find((b) => selSet.has(b.id)) ?? null
+      ? (aiBoxes.find((b) => selSet.has(b.id)) ?? null)
       : null;
   // v0.18.3 · 候选属性审阅 + 分步采纳: 预览改为可编辑, 改动存本地 state (按 box id 重置),
   // 采纳时经 onAcceptPrediction 的 attributeOverrides 把改后值原子落库 (而非一步全采纳原值)。
@@ -241,7 +259,10 @@ export function AIInspectorPanel({
           data-testid="ai-inspector-capability-warnings"
         >
           {capabilityWarnings.map((w) => (
-            <div key={w.key} className="flex items-start gap-1.5 text-xs leading-[1.4] text-status-caution">
+            <div
+              key={w.key}
+              className="flex items-start gap-1.5 text-xs leading-[1.4] text-status-caution"
+            >
               <Icon name="warning" size={11} />
               <span>{w.message}</span>
               {w.fillable && onFillAttribute && (
@@ -261,11 +282,15 @@ export function AIInspectorPanel({
 
       {multiCount > 0 && (
         <div className="flex items-center justify-between border-b border-border bg-brand/10 px-3.5 py-1.5 text-xs text-brand">
-          <span>已选 <b>{multiCount}</b> 个 user 框</span>
+          <span>
+            已选 <b>{multiCount}</b> 个 user 框
+          </span>
           <button
             onClick={onClearSelection}
             className="cursor-pointer appearance-none rounded-[3px] border border-border bg-transparent px-1.5 py-px text-2xs text-muted-foreground"
-          >清除</button>
+          >
+            清除
+          </button>
         </div>
       )}
 
@@ -315,9 +340,13 @@ export function AIInspectorPanel({
             <Icon name={attrCollapsed ? "chevRight" : "chevDown"} size={13} />
             <span>属性</span>
             {attrMissing.length > 0 && (
-              <span className="text-xs font-normal text-status-caution">· {attrMissing.length} 项必填未填</span>
+              <span className="text-xs font-normal text-status-caution">
+                · {attrMissing.length} 项必填未填
+              </span>
             )}
-            <span className="ml-auto text-xs font-normal text-muted-foreground">{displayClassName(selectedAnnotation.class_name)}</span>
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {displayClassName(selectedAnnotation.class_name)}
+            </span>
           </button>
           {!attrCollapsed && (
             <div className="overflow-y-auto pb-1">
@@ -359,7 +388,9 @@ export function AIInspectorPanel({
             {editedAiBoxAttrs && Object.keys(editedAiBoxAttrs).length > 0 && (
               <span className="text-xs font-normal text-status-caution">· 已改动</span>
             )}
-            <span className="ml-auto text-xs font-normal text-muted-foreground">{displayClassName(selectedAiBox.cls)}</span>
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {displayClassName(selectedAiBox.cls)}
+            </span>
           </button>
           {!attrCollapsed && (
             <div className="overflow-y-auto pb-1">
@@ -527,8 +558,14 @@ export function AIPredictionPopover({
     const top = rect?.top ?? 0;
     const minW = SIDE_FLOATING_PANEL_MIN_SIZE.w;
     const minH = SIDE_FLOATING_PANEL_MIN_SIZE.h;
-    const maxW = Math.max(minW, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, window.innerWidth - left - 8));
-    const maxH = Math.max(minH, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, window.innerHeight - top - 8));
+    const maxW = Math.max(
+      minW,
+      Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, window.innerWidth - left - 8),
+    );
+    const maxH = Math.max(
+      minH,
+      Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, window.innerHeight - top - 8),
+    );
     onSizeChange({
       w: Math.round(Math.min(maxW, Math.max(minW, s.w + evt.clientX - s.x))),
       h: Math.round(Math.min(maxH, Math.max(minH, s.h + evt.clientY - s.y))),
@@ -556,14 +593,12 @@ export function AIPredictionPopover({
       const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxAvailableH);
       const nextSize = size
         ? {
-            w: Math.round(Math.max(
-              minW,
-              Math.min(size.w, SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW),
-            )),
-            h: Math.round(Math.max(
-              minH,
-              Math.min(size.h, SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH),
-            )),
+            w: Math.round(
+              Math.max(minW, Math.min(size.w, SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW)),
+            ),
+            h: Math.round(
+              Math.max(minH, Math.min(size.h, SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH)),
+            ),
           }
         : null;
 
@@ -581,8 +616,12 @@ export function AIPredictionPopover({
       if (position) {
         const rect = node.getBoundingClientRect();
         const nextPosition = {
-          left: Math.round(Math.max(8, Math.min(position.left, window.innerWidth - rect.width - 8))),
-          top: Math.round(Math.max(8, Math.min(position.top, window.innerHeight - rect.height - 8))),
+          left: Math.round(
+            Math.max(8, Math.min(position.left, window.innerWidth - rect.width - 8)),
+          ),
+          top: Math.round(
+            Math.max(8, Math.min(position.top, window.innerHeight - rect.height - 8)),
+          ),
         };
         node.style.setProperty("--ai-inspector-popover-left", `${nextPosition.left}px`);
         node.style.setProperty("--ai-inspector-popover-top", `${nextPosition.top}px`);
@@ -634,28 +673,45 @@ export function AIPredictionPopover({
               {aiRunning && <Icon name="loader2" size={10} className="spin" />}
               {aiRunning ? "推理中" : "就绪"}
             </Badge>
-            <Button variant="ghost" size="sm" onClick={onClose} title="关闭当前题 AI" className="px-1.5 py-0.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              title="关闭当前题 AI"
+              className="px-1.5 py-0.5"
+            >
               <Icon name="x" size={12} />
             </Button>
           </div>
         </div>
         <div className="mb-2 flex justify-between gap-3 text-xs text-muted-foreground">
-          <span>本次模型: <span className="font-medium text-foreground">{aiModel}</span></span>
+          <span>
+            本次模型: <span className="font-medium text-foreground">{aiModel}</span>
+          </span>
           <span className="mono">{aiBoxCount} 待审</span>
         </div>
         <div className="mb-2.5 flex gap-1.5">
           <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} className="flex-1">
-            {aiRunning
-              ? <Icon name="loader2" size={11} className="spin" />
-              : <Icon name="wandSparkles" size={11} />}
+            {aiRunning ? (
+              <Icon name="loader2" size={11} className="spin" />
+            ) : (
+              <Icon name="wandSparkles" size={11} />
+            )}
             {aiRunning
               ? isVariantWarmProp === false
                 ? `加载中… 已等 ${coldElapsedSec}s（首次约 5-15s）`
                 : "推理中..."
               : "运行当前题"}
           </Button>
-          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className="flex-1" title="采纳当前题可见候选">
-            <Icon name="check" size={11} />采纳当前候选
+          <Button
+            size="sm"
+            onClick={onAcceptAll}
+            disabled={aiBoxCount === 0}
+            className="flex-1"
+            title="采纳当前题可见候选"
+          >
+            <Icon name="check" size={11} />
+            采纳当前候选
           </Button>
         </div>
         {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
@@ -684,7 +740,8 @@ export function AIPredictionPopover({
         )}
         {isVideoTask && (
           <p className="mb-1 text-2xs leading-snug text-muted-foreground">
-            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Ctrl+B 种子追踪，或到「AI 预标」批量页按整段序列跑。
+            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Ctrl+B
+            种子追踪，或到「AI 预标」批量页按整段序列跑。
           </p>
         )}
       </div>
@@ -696,10 +753,14 @@ export function AIPredictionPopover({
           <div className="mb-1.5 text-xs font-semibold text-foreground">候选筛选</div>
           <div className="mb-1 flex items-baseline justify-between text-xs">
             <span className="text-muted-foreground">置信度阈值</span>
-            <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-status-info">{(confThreshold * 100).toFixed(0)}%</span>
+            <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-status-info">
+              {(confThreshold * 100).toFixed(0)}%
+            </span>
           </div>
           <div className="mb-1.5 text-2xs leading-[1.4] text-muted-foreground">
-            仅显示并采纳当前题中置信度 ≥ 此值的 AI 候选；低于阈值的候选会隐藏，且不纳入一键采纳。可拖动滑块调整，或用工具栏 <kbd>[</kbd> / <kbd>]</kbd>（滚轮 5%、Shift 10%）。
+            仅显示并采纳当前题中置信度 ≥ 此值的 AI
+            候选；低于阈值的候选会隐藏，且不纳入一键采纳。可拖动滑块调整，或用工具栏 <kbd>[</kbd> /{" "}
+            <kbd>]</kbd>（滚轮 5%、Shift 10%）。
           </div>
           {/* 可拖动滑块 (step 1%); 仍支持滚轮 (5%/Shift 10%) 与工具栏 [ / ]. */}
           <input
@@ -756,9 +817,7 @@ export function AIPredictionPopover({
                     {taskAiAvgMs}ms
                   </>
                 )}
-                <span className="ml-1 text-muted-foreground">
-                  ({taskAiPredictionCount} 次)
-                </span>
+                <span className="ml-1 text-muted-foreground">({taskAiPredictionCount} 次)</span>
               </span>
             </div>
           )}
@@ -787,24 +846,35 @@ export function AIPredictionPopover({
 // ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
-  | { kind: "frameFilter"; filter: FrameFilter; key: string; onFilterChange: (filter: FrameFilter) => void }
+  | {
+      kind: "frameFilter";
+      filter: FrameFilter;
+      key: string;
+      onFilterChange: (filter: FrameFilter) => void;
+    }
   | { kind: "sourceFilter"; filter: PredictionSourceFilterState; key: string }
   | {
-    kind: "header";
-    count: number;
-    totalCount: number;
-    key: string;
-    label: string;
-    /** v0.20.22 · header 带上分组身份 + 折叠态 + 点击回调, 存在 onToggle 时 header 渲染为可点 button。 */
-    sectionKey?: "ai" | "manual";
-    collapsed?: boolean;
-    onToggle?: () => void;
-  }
+      kind: "header";
+      count: number;
+      totalCount: number;
+      key: string;
+      label: string;
+      /** v0.20.22 · header 带上分组身份 + 折叠态 + 点击回调, 存在 onToggle 时 header 渲染为可点 button。 */
+      sectionKey?: "ai" | "manual";
+      collapsed?: boolean;
+      onToggle?: () => void;
+    }
   | { kind: "videoTracks"; key: string }
   /** v0.20.9 · 父子标注: depth=1 的行是子框, 在其父框行下方缩进渲染。 */
   | { kind: "user"; box: Annotation; key: string; depth?: number };
 
-function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (filter: FrameFilter) => void }) {
+function FrameFilterTabs({
+  value,
+  onChange,
+}: {
+  value: FrameFilter;
+  onChange: (filter: FrameFilter) => void;
+}) {
   const options: Array<{ value: FrameFilter; label: string }> = [
     { value: "all", label: "全部" },
     { value: "current", label: "当前帧" },
@@ -842,7 +912,8 @@ function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilter
       aria-label="预测来源筛选"
     >
       <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-        <Icon name="filter" size={12} />来源
+        <Icon name="filter" size={12} />
+        来源
       </span>
       <div className="flex min-w-0 items-center justify-end gap-1.5">
         {PREDICTION_SOURCE_FILTERS.map((source) => {
@@ -856,7 +927,9 @@ function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilter
               className={cn(
                 "flex min-w-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border bg-muted px-2 py-1 text-xs text-muted-foreground",
                 checked && !isImport && "border-violet-500/45 bg-status-info-soft text-status-info",
-                checked && isImport && "border-amber-500/45 bg-status-caution-soft text-status-caution",
+                checked &&
+                  isImport &&
+                  "border-amber-500/45 bg-status-caution-soft text-status-caution",
               )}
             >
               <input
@@ -917,13 +990,31 @@ interface BoxesListProps {
 }
 
 function BoxesList({
-  aiBoxes, predictionSourceFilter, userBoxes, orphanUserBoxIds, rasterMaskStatusById, onRetryRasterMask, selSet, dimmedAiIds, imageWidth, imageHeight,
-  hasMore, isFetchingMore, onFetchMore,
+  aiBoxes,
+  predictionSourceFilter,
+  userBoxes,
+  orphanUserBoxIds,
+  rasterMaskStatusById,
+  onRetryRasterMask,
+  selSet,
+  dimmedAiIds,
+  imageWidth,
+  imageHeight,
+  hasMore,
+  isFetchingMore,
+  onFetchMore,
   currentFrameIndex,
   onSeekFrame,
-  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon, onEditRasterMask,
+  onSelect,
+  onAcceptPrediction,
+  onRejectPrediction,
+  onRefinePrediction,
+  onRefineUserPolygon,
+  onEditRasterMask,
   readOnly = false,
-  onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onClearSelection,
+  onDeleteUserBox,
+  onChangeUserBoxClass,
   onToggleUserBoxFlag,
   videoTrackPanel,
   aiSectionCollapsed = false,
@@ -937,7 +1028,7 @@ function BoxesList({
   const [frameFilter, setFrameFilter] = useState<FrameFilter>("current");
   const showFrameFilter = typeof currentFrameIndex === "number";
   const resolvedVideoTrackPanel = useMemo(
-    () => typeof videoTrackPanel === "function" ? videoTrackPanel(frameFilter) : videoTrackPanel,
+    () => (typeof videoTrackPanel === "function" ? videoTrackPanel(frameFilter) : videoTrackPanel),
     [frameFilter, videoTrackPanel],
   );
 
@@ -954,7 +1045,12 @@ function BoxesList({
     const out: Row[] = [];
     const aiTotalCount = predictionSourceFilter?.totalCount ?? aiBoxes.length;
     if (showFrameFilter && (aiTotalCount > 0 || userBoxes.length > 0 || resolvedVideoTrackPanel)) {
-      out.push({ kind: "frameFilter", key: "frame-filter", filter: frameFilter, onFilterChange: setFrameFilter });
+      out.push({
+        kind: "frameFilter",
+        key: "frame-filter",
+        filter: frameFilter,
+        onFilterChange: setFrameFilter,
+      });
     }
     if (aiTotalCount > 0) {
       const hasKnownPredictionSources = predictionSourceFilter
@@ -973,7 +1069,11 @@ function BoxesList({
       // v0.20.22 · 分组收起时跳过成员行 + 附属的 sourceFilter 卡片, 但计数仍在 header 上显示。
       if (!aiSectionCollapsed) {
         if (predictionSourceFilter && hasKnownPredictionSources) {
-          out.push({ kind: "sourceFilter", key: "prediction-source-filter", filter: predictionSourceFilter });
+          out.push({
+            kind: "sourceFilter",
+            key: "prediction-source-filter",
+            filter: predictionSourceFilter,
+          });
         }
         filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
       }
@@ -1010,7 +1110,8 @@ function BoxesList({
       const emitBoxWithChildren = (b: Annotation) => {
         out.push({ kind: "user", box: b, key: `user-${b.id}` });
         const kids = childrenByParent.get(b.id);
-        if (kids) kids.forEach((c) => out.push({ kind: "user", box: c, key: `user-${c.id}`, depth: 1 }));
+        if (kids)
+          kids.forEach((c) => out.push({ kind: "user", box: c, key: `user-${c.id}`, depth: 1 }));
       };
 
       // v0.21.3 · 标注编组已删除: 顶层框平铺 (parent 缩进保留)。
@@ -1019,10 +1120,18 @@ function BoxesList({
     if (resolvedVideoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
   }, [
-    aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter,
-    predictionSourceFilter, showFrameFilter, userBoxes.length,
+    aiBoxes.length,
+    filteredAiBoxes,
+    filteredUserBoxes,
+    frameFilter,
+    predictionSourceFilter,
+    showFrameFilter,
+    userBoxes.length,
     resolvedVideoTrackPanel,
-    aiSectionCollapsed, manualSectionCollapsed, onToggleAiSection, onToggleManualSection,
+    aiSectionCollapsed,
+    manualSectionCollapsed,
+    onToggleAiSection,
+    onToggleManualSection,
   ]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
@@ -1052,11 +1161,13 @@ function BoxesList({
   useEffect(() => {
     if (!items.length || !hasMore || isFetchingMore || !onFetchMore) return;
     const aiEndIndex = aiBoxes.length;
-    const visibleAiNearEnd = aiBoxes.length > 0 && items.some(
-      (item) => item.index <= aiEndIndex && item.index >= Math.max(1, aiBoxes.length - 4),
-    );
+    const visibleAiNearEnd =
+      aiBoxes.length > 0 &&
+      items.some(
+        (item) => item.index <= aiEndIndex && item.index >= Math.max(1, aiBoxes.length - 4),
+      );
     if (visibleAiNearEnd) onFetchMore();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, hasMore, isFetchingMore, aiBoxes.length]);
   return (
     <div ref={parentRef} className="flex-1 overflow-y-auto px-2 py-1">
@@ -1081,23 +1192,27 @@ function BoxesList({
             >
               {r.kind === "ai" && (
                 <BoxListItem
-                  b={r.box} isAi
+                  b={r.box}
+                  isAi
                   selected={selSet.has(r.box.id)}
                   dimmed={dimmedAiIds?.has(r.box.id) ?? false}
-                  imageWidth={imageWidth} imageHeight={imageHeight}
+                  imageWidth={imageWidth}
+                  imageHeight={imageHeight}
                   onSelect={(e) => selectBox(r.box, e?.shiftKey)}
                   onAccept={() => onAcceptPrediction(r.box)}
                   onReject={() => {
                     onRejectPrediction?.(r.box);
                     onClearSelection();
                   }}
-                  onRefine={onRefinePrediction && r.box.geometry?.type === "polygon"
-                    ? () => onRefinePrediction(r.box)
-                    : undefined}
+                  onRefine={
+                    onRefinePrediction && r.box.geometry?.type === "polygon"
+                      ? () => onRefinePrediction(r.box)
+                      : undefined
+                  }
                 />
               )}
-              {r.kind === "header" && (
-                r.onToggle ? (
+              {r.kind === "header" &&
+                (r.onToggle ? (
                   // v0.20.22 · 分组头可点折叠 (AI 待审 / 人工)。计数常驻显示; 收起时下方成员行整体跳过。
                   <button
                     type="button"
@@ -1115,7 +1230,9 @@ function BoxesList({
                       {r.label}
                     </span>
                     <span className="mono text-xs font-medium text-muted-foreground">
-                      {showFrameFilter && frameFilter === "current" ? `${r.count}/${r.totalCount}` : r.count}
+                      {showFrameFilter && frameFilter === "current"
+                        ? `${r.count}/${r.totalCount}`
+                        : r.count}
                     </span>
                   </button>
                 ) : (
@@ -1123,48 +1240,58 @@ function BoxesList({
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-semibold">{r.label}</span>
                       <span className="mono text-xs font-medium text-muted-foreground">
-                        {showFrameFilter && frameFilter === "current" ? `${r.count}/${r.totalCount}` : r.count}
+                        {showFrameFilter && frameFilter === "current"
+                          ? `${r.count}/${r.totalCount}`
+                          : r.count}
                       </span>
                     </div>
                   </div>
-                )
-              )}
+                ))}
               {r.kind === "frameFilter" && (
                 <div className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5">
                   <span className="text-xs font-semibold text-muted-foreground">显示范围</span>
                   <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
                 </div>
               )}
-              {r.kind === "sourceFilter" && (
-                <PredictionSourceFilterCard filter={r.filter} />
-              )}
+              {r.kind === "sourceFilter" && <PredictionSourceFilterCard filter={r.filter} />}
               {r.kind === "videoTracks" && (
-                <div data-testid="video-track-panel-row">
-                  {resolvedVideoTrackPanel}
-                </div>
+                <div data-testid="video-track-panel-row">{resolvedVideoTrackPanel}</div>
               )}
               {r.kind === "user" && (
                 <div className={r.depth ? "ml-3 border-l-2 border-border pl-2" : undefined}>
                   <BoxListItem
                     b={r.box}
                     rasterMaskStatus={rasterMaskStatusById?.get(r.box.id)}
-                    onRetryRasterMask={onRetryRasterMask ? () => onRetryRasterMask(r.box.id) : undefined}
+                    onRetryRasterMask={
+                      onRetryRasterMask ? () => onRetryRasterMask(r.box.id) : undefined
+                    }
                     orphan={orphanUserBoxIds?.has(r.box.id) ?? false}
                     selected={selSet.has(r.box.id)}
-                    imageWidth={imageWidth} imageHeight={imageHeight}
+                    imageWidth={imageWidth}
+                    imageHeight={imageHeight}
                     onSelect={(e) => selectBox(r.box, e?.shiftKey)}
-                    onDelete={!readOnly && !r.box.is_locked ? () => onDeleteUserBox(r.box.id) : undefined}
-                    onChangeClass={!readOnly && !r.box.is_locked && onChangeUserBoxClass
-                      ? () => onChangeUserBoxClass(r.box.id)
-                      : undefined}
-                    onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
-                    onRefine={r.box.geometry?.type === "raster_mask"
-                      ? (!readOnly && !r.box.is_locked && onEditRasterMask
+                    onDelete={
+                      !readOnly && !r.box.is_locked ? () => onDeleteUserBox(r.box.id) : undefined
+                    }
+                    onChangeClass={
+                      !readOnly && !r.box.is_locked && onChangeUserBoxClass
+                        ? () => onChangeUserBoxClass(r.box.id)
+                        : undefined
+                    }
+                    onToggleFlag={
+                      onToggleUserBoxFlag
+                        ? (flag) => onToggleUserBoxFlag(r.box.id, flag)
+                        : undefined
+                    }
+                    onRefine={
+                      r.box.geometry?.type === "raster_mask"
+                        ? !readOnly && !r.box.is_locked && onEditRasterMask
                           ? () => onEditRasterMask(r.box.id)
-                          : undefined)
-                      : onRefineUserPolygon && r.box.geometry?.type === "polygon"
-                        ? () => onRefineUserPolygon(r.box.id)
-                        : undefined}
+                          : undefined
+                        : onRefineUserPolygon && r.box.geometry?.type === "polygon"
+                          ? () => onRefineUserPolygon(r.box.id)
+                          : undefined
+                    }
                   />
                 </div>
               )}
@@ -1174,11 +1301,15 @@ function BoxesList({
       </div>
       {(hasMore || isFetchingMore) && (
         <div className="px-2 py-1.5 text-center text-xs text-muted-foreground">
-          {isFetchingMore ? "加载更多预测..." : (
+          {isFetchingMore ? (
+            "加载更多预测..."
+          ) : (
             <button
               onClick={onFetchMore}
               className="cursor-pointer appearance-none rounded border border-border bg-transparent px-3 py-1 text-xs text-muted-foreground"
-            >加载更多</button>
+            >
+              加载更多
+            </button>
           )}
         </div>
       )}

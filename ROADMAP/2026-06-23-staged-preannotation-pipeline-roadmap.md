@@ -25,37 +25,37 @@
 
 ### 2.1 后端已就绪（可直接复用）
 
-| 能力 | 位置 | 说明 |
-|---|---|---|
-| 协议 `attributes` 字段 | `docs-site/dev/reference/ml-backend-protocol.md` §3 / §4.1.8 | `result[].attributes` 承载 OCR/分类结果；`output_attribute_types` 半开放 |
-| 协议③ 属性自描述 | 同上（v0.18.0 路径 A 新增） | `/setup` 的 model 条目自报 `output_attribute_schema`（含 select options），平台一键导入项目 `attribute_schema`。**B 直接复用，不重做** |
-| 属性透传落库 | `apps/api/app/services/prediction.py::to_internal_shape` | LS result → 内部 geometry，`attributes` 原样透传进 `Annotation.attributes` JSONB |
-| 标注属性模型 | `apps/api/app/db/models/annotation.py:40-57` | `class_name`（主类）+ `attributes` JSONB + `parent_annotation_id`（层级） |
-| 多模型路由 | `apps/api/app/workers/tasks.py::_build_predict_context:39` | `context.model_id` / `task_type` / `model_variants` 已支持单 backend 多模型选择 |
-| 批量预标 worker | `apps/api/app/workers/tasks.py::_run_batch:118` | 进度发布、predict_mode、失败软记录（`failed_predictions`）成熟 |
+| 能力                   | 位置                                                         | 说明                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 协议 `attributes` 字段 | `docs-site/dev/reference/ml-backend-protocol.md` §3 / §4.1.8 | `result[].attributes` 承载 OCR/分类结果；`output_attribute_types` 半开放                                                               |
+| 协议③ 属性自描述       | 同上（v0.18.0 路径 A 新增）                                  | `/setup` 的 model 条目自报 `output_attribute_schema`（含 select options），平台一键导入项目 `attribute_schema`。**B 直接复用，不重做** |
+| 属性透传落库           | `apps/api/app/services/prediction.py::to_internal_shape`     | LS result → 内部 geometry，`attributes` 原样透传进 `Annotation.attributes` JSONB                                                       |
+| 标注属性模型           | `apps/api/app/db/models/annotation.py:40-57`                 | `class_name`（主类）+ `attributes` JSONB + `parent_annotation_id`（层级）                                                              |
+| 多模型路由             | `apps/api/app/workers/tasks.py::_build_predict_context:39`   | `context.model_id` / `task_type` / `model_variants` 已支持单 backend 多模型选择                                                        |
+| 批量预标 worker        | `apps/api/app/workers/tasks.py::_run_batch:118`              | 进度发布、predict_mode、失败软记录（`failed_predictions`）成熟                                                                         |
 
 ### 2.2 前端 `/ai-pre` 现状（编排界面的演进基座）
 
-| 层 | 文件 | 角色 |
-|---|---|---|
-| 路由入口 | `apps/web/src/App.tsx:392-402` | `/ai-pre`（index=执行预标 / `/jobs`=历史），`AIPreAnnotateLayout` 顶部 tab |
-| 主页 | `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 项目卡片网格 + 详情面板 |
-| **编排基座** | `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` | 单项目多批次预标：批次多选 + 配置 + predict_mode + 并发 + 运行。**升级为「阶段列表容器」的落点** |
-| **单节点配置单元** | `PreannotateConfigForm.tsx` + `usePreannotateConfig.ts` | 选 backend/model/variant/阈值/类别白名单/prompt 的完整表单，状态由 hook 单一事实源供给。**也被工作台 `AIInspectorPanel` 复用** → 编排化 = 把它实例化成「每阶段一份」 |
-| 发起请求 | `hooks/usePreannotation.ts` → `POST /projects/{pid}/preannotate` | 请求体 `PreannotateRequest`（`ml_backend_id`/`model_id`/`task_type`/`model_variants`/`params`/`class_filter`/`predict_mode`…） |
-| 能力数据源 | `GET .../ml-backends/{bid}/capabilities` + `/setup` | backend 可选 model、variant 轴、参数 schema、协议③ 属性 schema |
+| 层                 | 文件                                                                 | 角色                                                                                                                                                                 |
+| ------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 路由入口           | `apps/web/src/App.tsx:392-402`                                       | `/ai-pre`（index=执行预标 / `/jobs`=历史），`AIPreAnnotateLayout` 顶部 tab                                                                                           |
+| 主页               | `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx`             | 项目卡片网格 + 详情面板                                                                                                                                              |
+| **编排基座**       | `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` | 单项目多批次预标：批次多选 + 配置 + predict_mode + 并发 + 运行。**升级为「阶段列表容器」的落点**                                                                     |
+| **单节点配置单元** | `PreannotateConfigForm.tsx` + `usePreannotateConfig.ts`              | 选 backend/model/variant/阈值/类别白名单/prompt 的完整表单，状态由 hook 单一事实源供给。**也被工作台 `AIInspectorPanel` 复用** → 编排化 = 把它实例化成「每阶段一份」 |
+| 发起请求           | `hooks/usePreannotation.ts` → `POST /projects/{pid}/preannotate`     | 请求体 `PreannotateRequest`（`ml_backend_id`/`model_id`/`task_type`/`model_variants`/`params`/`class_filter`/`predict_mode`…）                                       |
+| 能力数据源         | `GET .../ml-backends/{bid}/capabilities` + `/setup`                  | backend 可选 model、variant 轴、参数 schema、协议③ 属性 schema                                                                                                       |
 
 > 状态管理用 React hooks + React Query（**无 zustand**）。`usePreannotateConfig` 是单节点配置的单一事实源——这正是「每阶段一份配置」要复用的对象。
 
 ### 2.3 缺口（B 需新增）
 
-| 缺口 | 现状 | 需要 |
-|---|---|---|
-| **阶段编排** | `_run_batch` 是 `for task in tasks` 单轮循环 | 改造成「阶段 0 → 阶段 1 …」，前阶段输出喂后阶段输入 |
-| **中间状态链** | `predictions` 表无 stage / parent 字段（`apps/api/app/db/models/prediction.py:35-51`） | 追溯「哪个框产出了哪个属性」。MVP 暂存 `PredictionMeta.extra`，验证后再考虑加正式列 |
-| **ROI 输入构造** | context 由前端固定参数生成 | 后阶段需以前阶段 bbox 裁剪图片喂下游模型（平台内置 `dynamic_crop` 约定） |
-| **跨 backend 编排** | `MAX_ML_BACKENDS_PER_PROJECT=1` | B 天然需 ≥2 backend（detect + classify），需放开并解决多 backend 选择 |
-| **编排界面** | 单模型表单 | 升级为「有序阶段卡列表」（见 §4） |
+| 缺口                | 现状                                                                                   | 需要                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **阶段编排**        | `_run_batch` 是 `for task in tasks` 单轮循环                                           | 改造成「阶段 0 → 阶段 1 …」，前阶段输出喂后阶段输入                                 |
+| **中间状态链**      | `predictions` 表无 stage / parent 字段（`apps/api/app/db/models/prediction.py:35-51`） | 追溯「哪个框产出了哪个属性」。MVP 暂存 `PredictionMeta.extra`，验证后再考虑加正式列 |
+| **ROI 输入构造**    | context 由前端固定参数生成                                                             | 后阶段需以前阶段 bbox 裁剪图片喂下游模型（平台内置 `dynamic_crop` 约定）            |
+| **跨 backend 编排** | `MAX_ML_BACKENDS_PER_PROJECT=1`                                                        | B 天然需 ≥2 backend（detect + classify），需放开并解决多 backend 选择               |
+| **编排界面**        | 单模型表单                                                                             | 升级为「有序阶段卡列表」（见 §4）                                                   |
 
 ## 3. 设计草案
 
@@ -66,23 +66,35 @@
 ```jsonc
 {
   "pipeline_stages": [
-    { "stage": 0, "ml_backend_id": "<detect-uuid>", "model_id": "detect",
+    {
+      "stage": 0,
+      "ml_backend_id": "<detect-uuid>",
+      "model_id": "detect",
       "model_variants": { "series": "yolo11", "size": "l" },
-      "params": { "conf": 0.35 } },
-    { "stage": 1, "ml_backend_id": "<color-uuid>", "model_id": "color",
+      "params": { "conf": 0.35 },
+    },
+    {
+      "stage": 1,
+      "ml_backend_id": "<color-uuid>",
+      "model_id": "color",
       "task_type": "classification",
-      "parent_stage": 0,                        // 依赖 stage 0 的框
-      "parent_class_filter": ["car","truck"],   // 只对这些类的父框跑（Roboflow 风格过滤）
-      "roi": { "mode": "crop", "pad": 0.05 },   // 如何把父框喂给本阶段
-      "write": { "target": "attributes", "keys": ["color"] } },
-    { "stage": 2, "ml_backend_id": "<vtype-uuid>", "model_id": "vehicle_type",
+      "parent_stage": 0, // 依赖 stage 0 的框
+      "parent_class_filter": ["car", "truck"], // 只对这些类的父框跑（Roboflow 风格过滤）
+      "roi": { "mode": "crop", "pad": 0.05 }, // 如何把父框喂给本阶段
+      "write": { "target": "attributes", "keys": ["color"] },
+    },
+    {
+      "stage": 2,
+      "ml_backend_id": "<vtype-uuid>",
+      "model_id": "vehicle_type",
       "task_type": "classification",
-      "parent_stage": 0,                        // 与 stage 1 同父 → 并行兄弟
-      "parent_class_filter": ["car","truck"],
+      "parent_stage": 0, // 与 stage 1 同父 → 并行兄弟
+      "parent_class_filter": ["car", "truck"],
       "roi": { "mode": "crop", "pad": 0.05 },
-      "write": { "target": "attributes", "keys": ["vehicle_type"] } }
+      "write": { "target": "attributes", "keys": ["vehicle_type"] },
+    },
   ],
-  "predict_mode": "skip_predicted"
+  "predict_mode": "skip_predicted",
 }
 ```
 
@@ -141,11 +153,11 @@ extra = { "stage_index": 1, "parent_prediction_id": "<uuid>" }
 
 B 的级联完全在**平台侧 worker** 编排，每个 backend 仍只被调一次普通 `/predict`，与今天一致——这是 §3.4「平台裁 ROI、backend 无感」决策的直接回报，也是 B 相对路径 A 的核心卖点（任意现成 backend 自由组合）。现有 backend（`apps/yolo-backend` / `apps/grounded-sam2-backend` / `apps/sam3-backend` / `apps/onnxtools-backend`）按角色：
 
-| 角色 | 改造面 | 说明 |
-|---|---|---|
-| **stage 0 检测器** | **零改动** | 产框行为就是今天的单模型 predict，B 不碰 |
-| **下游 classify/OCR stage** | **零改动（若本就支持分类/OCR 并返回 `attributes`）** | 平台把 crop 当普通小图喂入，backend 跑它本就支持的任务、把结果塞 `attributes` 返回——协议 §3 已有能力，非 B 新增。纯检测器只能当 stage 0（能力事实，非缺改造） |
-| **下游 + 想免手配属性 options** | **可选**：`/setup` 补 `output_attribute_schema`（协议③，同 onnxtools v0.18.0） | opt-in、逐 backend、向后兼容；不补也能用（项目侧手配 select options）。**非强制迁移**。`yolo-backend` 已现 `output_attribute` 线索，届时确认即可 |
+| 角色                            | 改造面                                                                         | 说明                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **stage 0 检测器**              | **零改动**                                                                     | 产框行为就是今天的单模型 predict，B 不碰                                                                                                                      |
+| **下游 classify/OCR stage**     | **零改动（若本就支持分类/OCR 并返回 `attributes`）**                           | 平台把 crop 当普通小图喂入，backend 跑它本就支持的任务、把结果塞 `attributes` 返回——协议 §3 已有能力，非 B 新增。纯检测器只能当 stage 0（能力事实，非缺改造） |
+| **下游 + 想免手配属性 options** | **可选**：`/setup` 补 `output_attribute_schema`（协议③，同 onnxtools v0.18.0） | opt-in、逐 backend、向后兼容；不补也能用（项目侧手配 select options）。**非强制迁移**。`yolo-backend` 已现 `output_attribute` 线索，届时确认即可              |
 
 **不强制项**：协议版本不需再升（均已 v2.x）；`MAX_ML_BACKENDS_PER_PROJECT` 放开是平台配置非 backend 改动；worker 传 crop 走现有 image input 格式。
 
@@ -155,12 +167,12 @@ B 的级联完全在**平台侧 worker** 编排，每个 backend 仍只被调一
 
 **结论：MVP 用「线性阶段卡列表」，不上节点图。** 数据模型设计成「有序 stage 数组」，保留远期升级 React Flow 的路径，但在出现真正的分支/循环/用户自助编排需求前不引入节点图（对零自由度拓扑是过度设计，违反 CLAUDE.md §2）。
 
-| 维度 | 线性阶段卡（选定） | 轻量节点图（不选） |
-|---|---|---|
-| 拓扑表达力 | 顺序链 + 单层并行扇出（够用） | 任意 DAG（用不上） |
-| 用户认知负担 | 低（像填表） | 中高（要懂拖拽连线），用户是非工程师管理员 |
-| 前端实现量级 | **小**：阶段列表容器 + 复用现有 `PreannotateConfigForm` ×N + 阶段间映射约定 + 逐阶段进度。约现界面 1.5–2× | **大**：画布+自定义节点+边/handle+inspector+运行态高亮+布局。配置面板/字段映射/校验是大头，业界生产级 14–25 周 |
-| 远期分支/循环 | 需重构为图 | 已就位 |
+| 维度          | 线性阶段卡（选定）                                                                                        | 轻量节点图（不选）                                                                                             |
+| ------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 拓扑表达力    | 顺序链 + 单层并行扇出（够用）                                                                             | 任意 DAG（用不上）                                                                                             |
+| 用户认知负担  | 低（像填表）                                                                                              | 中高（要懂拖拽连线），用户是非工程师管理员                                                                     |
+| 前端实现量级  | **小**：阶段列表容器 + 复用现有 `PreannotateConfigForm` ×N + 阶段间映射约定 + 逐阶段进度。约现界面 1.5–2× | **大**：画布+自定义节点+边/handle+inspector+运行态高亮+布局。配置面板/字段映射/校验是大头，业界生产级 14–25 周 |
+| 远期分支/循环 | 需重构为图                                                                                                | 已就位                                                                                                         |
 
 **界面形态**：`ProjectDetailPanel` 内，把现有「单个配置表单」改成「**可增删排序的阶段卡列表**」：
 
@@ -183,6 +195,7 @@ B 的级联完全在**平台侧 worker** 编排，每个 backend 仍只被调一
 ```
 
 **关键交互（均借鉴行业、不暴露通用映射 UI）**：
+
 - **数据流是内置约定**：「上游每个 bbox → 下游 ROI」「下游结果 → 写回框属性」是固定语义，不让用户手动连线/映射。用户只配「只对哪些父框类别跑」（轻量过滤器）和「写回哪个属性键」。
 - **并行扇出靠分组、不靠连线**：同一父阶段下可「并行添加同级阶段」，UI 上呈现为该父阶段下的一组同级卡片（Roboflow 风格——多个块引用同一上游）。仍是卡片列表，不是画布。
 - **按类别路由 = 每张卡的「父框类别」过滤器**：每个阶段卡选「只对哪些父框类别启动」（`parent_class_filter`）。不相交 = 不同类走不同模型，重叠 = 同类喂多模型。这是声明式过滤，不是 if/else 分支节点——用户只勾类别，不画路由线。
@@ -217,12 +230,12 @@ B 的「对每个框跑分类」有交互式对应：选中一个框 →「对�
 
 **落 0.18.x**：
 
-| 触点 | 改什么 | 版本 |
-|---|---|---|
-| 1 候选属性**只读预览** | `BoxListItem`/inspector 渲染候选 `AiBox.attributes` | 随 **v0.18.0**（路径 A 缺口 A，最小只读） |
-| 1 候选属性**审阅 + 分步采纳** | accept 前可见可改任意 select 属性，非一步全采纳 | **v0.18.2 / v0.18.3**（B 泛化） |
-| 2 选中框**交互式跑属性模型** | 请求体加 `region`/`selected_box_id` + 面板「对该框跑属性」入口 | **v0.18.3+**（可选 enrich） |
-| 红线 | 阶段编排不进共享表单 / 不进工作台面板 | 贯穿 |
+| 触点                          | 改什么                                                         | 版本                                      |
+| ----------------------------- | -------------------------------------------------------------- | ----------------------------------------- |
+| 1 候选属性**只读预览**        | `BoxListItem`/inspector 渲染候选 `AiBox.attributes`            | 随 **v0.18.0**（路径 A 缺口 A，最小只读） |
+| 1 候选属性**审阅 + 分步采纳** | accept 前可见可改任意 select 属性，非一步全采纳                | **v0.18.2 / v0.18.3**（B 泛化）           |
+| 2 选中框**交互式跑属性模型**  | 请求体加 `region`/`selected_box_id` + 面板「对该框跑属性」入口 | **v0.18.3+**（可选 enrich）               |
+| 红线                          | 阶段编排不进共享表单 / 不进工作台面板                          | 贯穿                                      |
 
 ## 6. 里程碑（→ 0.18.x 版本映射）
 

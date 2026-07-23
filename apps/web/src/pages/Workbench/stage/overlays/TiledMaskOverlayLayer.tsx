@@ -28,7 +28,8 @@ export function tintSparseMaskTile(
   color: readonly [number, number, number],
   opacityByte: number,
 ): Uint8ClampedArray {
-  if (alpha.length !== width * height) throw new Error("tile alpha length must match its dimensions");
+  if (alpha.length !== width * height)
+    throw new Error("tile alpha length must match its dimensions");
   const data = new Uint8ClampedArray(width * height * 4);
   for (let index = 0; index < alpha.length; index += 1) {
     if (alpha[index] === 0) continue;
@@ -120,11 +121,7 @@ export function TiledMaskOverlayLayer({
               listening={false}
             />
           )}
-          <TiledMaskImage
-            tile={tile}
-            opacityByte={opacityByte}
-            color={color}
-          />
+          <TiledMaskImage tile={tile} opacityByte={opacityByte} color={color} />
         </Fragment>
       ))}
     </Layer>

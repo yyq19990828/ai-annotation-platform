@@ -70,7 +70,11 @@ const mockCapabilityPreview = vi.fn();
 const mockAcceptCapabilityMutate = vi.fn();
 
 vi.mock("./useGlobalRegistry", () => ({
-  useDeleteRegistry: () => ({ mutate: mockDeleteRegistryMutate, mutateAsync: vi.fn(), isPending: false }),
+  useDeleteRegistry: () => ({
+    mutate: mockDeleteRegistryMutate,
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   useRegistryHealth: () => ({ mutate: mockHealthMutate, isPending: false }),
   useRegistryUnload: () => ({ mutate: mockUnloadMutate, mutateAsync: vi.fn(), isPending: false }),
   useDrainPoolMember: () => ({

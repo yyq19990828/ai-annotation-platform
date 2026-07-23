@@ -23,10 +23,13 @@ class RuntimeTileBackend implements SparseMaskTileBackend {
   mergeCalls: RasterMaskTileOverride[][] = [];
 
   registerSession(sessionId: string, sha256: string, rle: CocoRle): void {
-    this.sessions.set(sessionId, buildRasterMaskWorkerSession(sha256, {
-      size: [rle.size[0], rle.size[1]],
-      counts: Uint32Array.from(rle.counts),
-    }));
+    this.sessions.set(
+      sessionId,
+      buildRasterMaskWorkerSession(sha256, {
+        size: [rle.size[0], rle.size[1]],
+        counts: Uint32Array.from(rle.counts),
+      }),
+    );
   }
 
   releaseSession(sessionId: string): void {
@@ -74,7 +77,10 @@ function makeStore(
   return { backend, store };
 }
 
-function retain(store: SparseMaskTileStore, command: MaskHistoryCommand | null): MaskHistoryCommand {
+function retain(
+  store: SparseMaskTileStore,
+  command: MaskHistoryCommand | null,
+): MaskHistoryCommand {
   expect(command).not.toBeNull();
   store.retainHistoryCommand(command!);
   return command!;
@@ -97,7 +103,12 @@ describe("SparseMaskTileStore", () => {
     const checkpoint = store.beginHistoryCheckpoint();
     await store.brush({ cx: 512, cy: 256, radius: 3, value: 255, shape: "circle", checkpoint });
     dense.brush(512, 256, 3, 255, "circle");
-    const polygon = [[510, 254], [518, 254], [518, 260], [510, 260]] as const;
+    const polygon = [
+      [510, 254],
+      [518, 254],
+      [518, 260],
+      [510, 260],
+    ] as const;
     await store.lasso(polygon, 0, { checkpoint });
     dense.fromPolygon(polygon, 0);
 
@@ -118,10 +129,22 @@ describe("SparseMaskTileStore", () => {
   it("subtracts from an immutable foreground base while exact picking reads overrides first", async () => {
     const width = 1025;
     const height = 4;
-    const base = { encoding: "coco_rle" as const, size: [height, width] as [number, number], counts: [0, width * height] };
+    const base = {
+      encoding: "coco_rle" as const,
+      size: [height, width] as [number, number],
+      counts: [0, width * height],
+    };
     const { store } = makeStore(width, height, base);
     expect(store.containsPixel(512, 1)).toBe(true);
-    await store.lasso([[510, 0], [515, 0], [515, 4], [510, 4]], 0);
+    await store.lasso(
+      [
+        [510, 0],
+        [515, 0],
+        [515, 4],
+        [510, 4],
+      ],
+      0,
+    );
     expect(store.containsPixel(509, 1)).toBe(true);
     expect(store.containsPixel(512, 1)).toBe(false);
     expect(store.containsPixel(516, 1)).toBe(true);
@@ -133,7 +156,11 @@ describe("SparseMaskTileStore", () => {
     expect(rects).toHaveLength(9);
     await store.loadViewport();
     expect(backend.decodeCalls).toHaveLength(9);
-    expect(store.snapshot()).toMatchObject({ liveTiles: 9, viewportPinnedTiles: 9, overviewOnly: false });
+    expect(store.snapshot()).toMatchObject({
+      liveTiles: 9,
+      viewportPinnedTiles: 9,
+      overviewOnly: false,
+    });
 
     expect(store.setViewport({ x: 0, y: 0, width: 4096, height: 4096 })).toEqual([]);
     await store.loadViewport();

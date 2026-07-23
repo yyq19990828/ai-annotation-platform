@@ -99,9 +99,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("idx_dataset_items_scene_frame", table_name="dataset_items")
-    op.drop_constraint(
-        "fk_dataset_items_scene", "dataset_items", type_="foreignkey"
-    )
+    op.drop_constraint("fk_dataset_items_scene", "dataset_items", type_="foreignkey")
     op.drop_column("dataset_items", "frame_index")
     op.drop_column("dataset_items", "scene_id")
     op.drop_index("ix_scenes_dataset_id", table_name="scenes")

@@ -18,7 +18,10 @@ import type { VideoSamCandidateShape } from "../../stage/VideoSamCandidateOverla
 import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
-import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../../stage/VideoPlaybackOverlay";
+import type {
+  VideoTimelineChapter,
+  VideoTimelineChapterControls,
+} from "../../stage/VideoPlaybackOverlay";
 import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../../stage/videoStageTypes";
 import type { VideoMaskCandidate } from "../../stage/videoMaskFrames";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
@@ -26,13 +29,23 @@ import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
 import { resolveAnnotationVisual } from "../../stage/annotationVisual";
 import type { DiffMode } from "../../modes/types";
-import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
+import type {
+  VideoConvertOptions,
+  VideoTrackCompositionOptions,
+} from "./useVideoAnnotationActions";
 import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
 import type { VideoMaskKeyframeActionHandlers } from "../../stage/videoMaskKeyframeActions";
 import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry =
+  | VideoBboxGeometry
+  | VideoTrackGeometry
+  | VideoTrackMaskGeometry
+  | VideoPolygonGeometry
+  | VideoPolylineGeometry
+  | VideoTrackPolygonGeometry
+  | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
   maskCompareStore?: MaskCompareTileStore | null;
@@ -117,67 +130,70 @@ export interface VideoWorkbenchProps {
 }
 
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
-  function VideoWorkbench({
-    maskCompareStore,
-    manifest,
-    frameTimetable,
-    isLoading,
-    error,
-    annotations,
-    aiBoxes,
-    selectedId,
-    activeClass,
-    frameIndex,
-    selectedIds = [],
-    reviewDisplayMode,
-    hiddenTrackIds,
-    lockedTrackIds,
-    trackColorOverrides,
-    readOnly,
-    videoTool,
-    isVideoToolEnabled,
-    spacePan = false,
-    onSpacePanDragStart,
-    pendingDrawing,
-    chapters,
-    timelineChapterControls,
-    propagateRange,
-    videoSampling,
-    performanceTier,
-    onSelect,
-    onFrameIndexChange,
-    onCreate,
-    onCreatePointsTrack,
-    onCreatePoints,
-    onSamPrompt,
-    samCandidates,
-    samMaskRecords,
-    onSelectSamMaskCandidate,
-    samActiveIdx,
-    samSessionPoints,
-    samSessionBoxes,
-    maskCandidates,
-    maskEditor,
-    maskKeyframeActions,
-    onMaskCommit,
-    onMaskCancel,
-    samPolarity,
-    onPendingDraw,
-    onUpdate,
-    onChangeUserBoxClass,
-    onDeleteUserBox,
-    onConvertToBboxes,
-    onAcceptPrediction,
-    onRejectPrediction,
-    onComposeTracks,
-    onToggleHiddenTrack,
-    onToggleLockedTrack,
-    onPropagateTrack,
-    onCursorMove,
-    issuePixelFeedbacks,
-    issueHighlightId,
-    onIssuePinClick,
-  }, ref) {
+  function VideoWorkbench(
+    {
+      maskCompareStore,
+      manifest,
+      frameTimetable,
+      isLoading,
+      error,
+      annotations,
+      aiBoxes,
+      selectedId,
+      activeClass,
+      frameIndex,
+      selectedIds = [],
+      reviewDisplayMode,
+      hiddenTrackIds,
+      lockedTrackIds,
+      trackColorOverrides,
+      readOnly,
+      videoTool,
+      isVideoToolEnabled,
+      spacePan = false,
+      onSpacePanDragStart,
+      pendingDrawing,
+      chapters,
+      timelineChapterControls,
+      propagateRange,
+      videoSampling,
+      performanceTier,
+      onSelect,
+      onFrameIndexChange,
+      onCreate,
+      onCreatePointsTrack,
+      onCreatePoints,
+      onSamPrompt,
+      samCandidates,
+      samMaskRecords,
+      onSelectSamMaskCandidate,
+      samActiveIdx,
+      samSessionPoints,
+      samSessionBoxes,
+      maskCandidates,
+      maskEditor,
+      maskKeyframeActions,
+      onMaskCommit,
+      onMaskCancel,
+      samPolarity,
+      onPendingDraw,
+      onUpdate,
+      onChangeUserBoxClass,
+      onDeleteUserBox,
+      onConvertToBboxes,
+      onAcceptPrediction,
+      onRejectPrediction,
+      onComposeTracks,
+      onToggleHiddenTrack,
+      onToggleLockedTrack,
+      onPropagateTrack,
+      onCursorMove,
+      issuePixelFeedbacks,
+      issueHighlightId,
+      onIssuePinClick,
+    },
+    ref,
+  ) {
     const { config: workbenchConfig } = useWorkbenchConfig();
     const workbenchVideo = workbenchConfig.video;
     // v0.15.27 · 共享标注视觉规格(线宽/填充/字号/标签显隐);与图片工作台共用 common 子集。

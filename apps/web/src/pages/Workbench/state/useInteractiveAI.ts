@@ -205,12 +205,7 @@ const defaultTransport: InteractiveTransport = ({
   context,
   signal,
 }) =>
-  mlBackendsApi.interactiveAnnotate(
-    projectId,
-    mlBackendId,
-    { task_id: taskId, context },
-    signal,
-  );
+  mlBackendsApi.interactiveAnnotate(projectId, mlBackendId, { task_id: taskId, context }, signal);
 
 export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIReturn {
   const { projectId, taskId, mlBackendId, cacheScope } = args;
@@ -257,16 +252,20 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const maskInputRef = useRef<string | null>(null);
   const maskInputVariantSigRef = useRef<string | null>(null);
   const activeRefinementFamilyRef = useRef<"point" | "bbox" | "scribble" | null>(null);
-  const scribbleSessionRef = useRef<{
-    points: [number, number][];
-    polarity: 1 | 0;
-    width: number;
-  }[]>([]);
-  const [sessionScribbles, setSessionScribbles] = useState<{
-    points: [number, number][];
-    polarity: 1 | 0;
-    width: number;
-  }[]>([]);
+  const scribbleSessionRef = useRef<
+    {
+      points: [number, number][];
+      polarity: 1 | 0;
+      width: number;
+    }[]
+  >([]);
+  const [sessionScribbles, setSessionScribbles] = useState<
+    {
+      points: [number, number][];
+      polarity: 1 | 0;
+      width: number;
+    }[]
+  >([]);
 
   const clearPointSession = useCallback(() => {
     pointSessionRef.current = [];
@@ -283,20 +282,23 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     maskInputRef.current = null;
     maskInputVariantSigRef.current = null;
   }, [clearPointSession, clearScribbleSession]);
-  const enterRefinementFamily = useCallback((family: "point" | "bbox" | "scribble") => {
-    if (activeRefinementFamilyRef.current === family) return;
-    if (family !== "point") clearPointSession();
-    if (family !== "scribble") clearScribbleSession();
-    activeRefinementFamilyRef.current = family;
-  }, [clearPointSession, clearScribbleSession]);
+  const enterRefinementFamily = useCallback(
+    (family: "point" | "bbox" | "scribble") => {
+      if (activeRefinementFamilyRef.current === family) return;
+      if (family !== "point") clearPointSession();
+      if (family !== "scribble") clearScribbleSession();
+      activeRefinementFamilyRef.current = family;
+    },
+    [clearPointSession, clearScribbleSession],
+  );
 
   // v0.18.19 · exemplar refine 会话: 累加同一概念的正/负框, 每次重发全量 (无状态后端). 拖正框
   // 扩召回 / 拖负框去误检 / 拖阈值实时增减 / 叠 text 概念。会话在 Esc(cancel) / 切 task·backend /
   // 切到其它 prompt 模式 (point/bbox/text) 时重置。lastExemplarArgsRef 存上次 dispatch 的
   // outputMode + extra, 供「不加新框」的 text/阈值/output 变更重跑复用。
-  const exemplarSessionRef = useRef<
-    { bbox: [number, number, number, number]; polarity: 1 | 0 }[]
-  >([]);
+  const exemplarSessionRef = useRef<{ bbox: [number, number, number, number]; polarity: 1 | 0 }[]>(
+    [],
+  );
   const lastExemplarArgsRef = useRef<{
     outputMode: TextOutputMode;
     extra: Record<string, unknown>;
@@ -344,41 +346,46 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     };
   }, [cache]);
 
-  const retireCandidates = useCallback((deleteCached: boolean) => {
-    if (candidateExpiryRef.current) {
-      clearTimeout(candidateExpiryRef.current);
-      candidateExpiryRef.current = null;
-    }
-    if (deleteCached && activeCacheKeyRef.current) {
-      cache.delete(activeCacheKeyRef.current);
-    }
-    activeCacheKeyRef.current = null;
-    setCandidates([]);
-    setActiveIdx(0);
-    setCanAcceptCandidates(false);
-  }, [cache]);
-
-  const activateCandidates = useCallback((
-    next: PendingCandidate[],
-    cacheKey: string,
-    expiresAt: number,
-  ) => {
-    if (candidateExpiryRef.current) clearTimeout(candidateExpiryRef.current);
-    activeCacheKeyRef.current = cacheKey;
-    setCandidates(next);
-    setActiveIdx(0);
-    setCanAcceptCandidates(true);
-    candidateExpiryRef.current = setTimeout(() => {
-      if (activeCacheKeyRef.current !== cacheKey) return;
-      cache.delete(cacheKey);
+  const retireCandidates = useCallback(
+    (deleteCached: boolean) => {
+      if (candidateExpiryRef.current) {
+        clearTimeout(candidateExpiryRef.current);
+        candidateExpiryRef.current = null;
+      }
+      if (deleteCached && activeCacheKeyRef.current) {
+        cache.delete(activeCacheKeyRef.current);
+      }
       activeCacheKeyRef.current = null;
       setCandidates([]);
       setActiveIdx(0);
       setCanAcceptCandidates(false);
-      resetRefinementSession();
-      resetExemplarSession();
-    }, Math.max(0, expiresAt - Date.now()));
-  }, [cache, resetExemplarSession, resetRefinementSession]);
+    },
+    [cache],
+  );
+
+  const activateCandidates = useCallback(
+    (next: PendingCandidate[], cacheKey: string, expiresAt: number) => {
+      if (candidateExpiryRef.current) clearTimeout(candidateExpiryRef.current);
+      activeCacheKeyRef.current = cacheKey;
+      setCandidates(next);
+      setActiveIdx(0);
+      setCanAcceptCandidates(true);
+      candidateExpiryRef.current = setTimeout(
+        () => {
+          if (activeCacheKeyRef.current !== cacheKey) return;
+          cache.delete(cacheKey);
+          activeCacheKeyRef.current = null;
+          setCandidates([]);
+          setActiveIdx(0);
+          setCanAcceptCandidates(false);
+          resetRefinementSession();
+          resetExemplarSession();
+        },
+        Math.max(0, expiresAt - Date.now()),
+      );
+    },
+    [cache, resetExemplarSession, resetRefinementSession],
+  );
 
   const guard = useCallback((): boolean => {
     if (!projectId || !taskId) return false;
@@ -406,10 +413,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       });
       let requestContext = normalized.context;
       const variantSig = variantSignature(requestContext);
-      if (
-        requestContext.mask_input != null
-        && maskInputVariantSigRef.current !== variantSig
-      ) {
+      if (requestContext.mask_input != null && maskInputVariantSigRef.current !== variantSig) {
         const { mask_input: _staleMaskInput, ...withoutStaleMaskInput } = requestContext;
         requestContext = withoutStaleMaskInput;
         maskInputRef.current = null;
@@ -427,7 +431,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         scope: cacheScope,
       });
       // 命中前端缓存：直接复用候选，跳过 HTTP。
-      const bypassCache = requestContext.output_geometry === "mask" && requestContext.mask_input != null;
+      const bypassCache =
+        requestContext.output_geometry === "mask" && requestContext.mask_input != null;
       const cached = bypassCache ? undefined : cache.get(cacheKey);
       if (cached) {
         lastFailedRequestRef.current = null;
@@ -441,8 +446,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       // 请求在途和网络失败时保留上一个已签名候选，便于继续修改或重试。
       // 新请求成功后由 activateCandidates 原子替换；成功空结果才退役旧候选。
       // v0.10.23 · 本次请求携带的变体是否与上次成功应用的不同 → 切换后首次预测, 弹三态通知。
-      const isVariantSwitch =
-        variantSig !== null && variantSig !== lastAppliedVariantRef.current;
+      const isVariantSwitch = variantSig !== null && variantSig !== lastAppliedVariantRef.current;
       if (isVariantSwitch) {
         pushToast({ msg: `正在切换到 ${variantLabel(requestContext)} 模型…` });
       }
@@ -483,11 +487,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         // 仅缓存非空结果，避免后端瞬时返空被钉死。
         if (next.length > 0) {
           const stored = bypassCache ? undefined : cache.set(cacheKey, next);
-          activateCandidates(
-            next,
-            cacheKey,
-            stored?.expiresAt ?? Date.now() + SAM_CACHE_TTL_MS,
-          );
+          activateCandidates(next, cacheKey, stored?.expiresAt ?? Date.now() + SAM_CACHE_TTL_MS);
         }
         if (next.length === 0) {
           retireCandidates(false);
@@ -501,10 +501,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
           // 候选是画布上的待确认浮层 (紫虚线), 不在右栏; point 多候选为同一对象的备选 mask。
           pushToast({
             msg: `${next.length} 个候选`,
-            sub:
-              source === "point"
-                ? "Tab 切换备选 / Enter 采纳"
-                : "在画布上确认候选",
+            sub: source === "point" ? "Tab 切换备选 / Enter 采纳" : "在画布上确认候选",
             kind: "success",
           });
         }
@@ -514,9 +511,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         const formatted = formatPredictError(err);
         const msg = err instanceof Error ? err.message : String(err);
         const sessionReason = apiErrorReason(err);
-        const invalidSession = sessionReason === "invalid_mask_session"
-          || sessionReason === "mask_session_expired"
-          || sessionReason === "mask_session_mismatch";
+        const invalidSession =
+          sessionReason === "invalid_mask_session" ||
+          sessionReason === "mask_session_expired" ||
+          sessionReason === "mask_session_mismatch";
         let retryContext = requestContext;
         if (invalidSession) {
           const { mask_input: _invalidMaskInput, ...withoutInvalidMaskInput } = requestContext;
@@ -525,12 +523,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
           maskInputVariantSigRef.current = null;
         }
         const retryableWithoutSession = !(
-          retryContext.type === "scribble"
-          && !isRecord(retryContext.mask_prompt_source)
-          && Array.isArray(retryContext.scribbles)
-          && retryContext.scribbles.every(
-            (stroke) => isRecord(stroke) && stroke.polarity === 0,
-          )
+          retryContext.type === "scribble" &&
+          !isRecord(retryContext.mask_prompt_source) &&
+          Array.isArray(retryContext.scribbles) &&
+          retryContext.scribbles.every((stroke) => isRecord(stroke) && stroke.polarity === 0)
         );
         lastFailedRequestRef.current = retryableWithoutSession
           ? { context: retryContext, source }
@@ -750,15 +746,18 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       setActiveIdx((i) => {
         const n = candidates.length;
         if (n === 0) return 0;
-        return ((i + dir) % n + n) % n;
+        return (((i + dir) % n) + n) % n;
       });
     },
     [candidates.length],
   );
 
-  const select = useCallback((idx: number) => {
-    setActiveIdx(candidates.length === 0 ? 0 : Math.min(Math.max(0, idx), candidates.length - 1));
-  }, [candidates.length]);
+  const select = useCallback(
+    (idx: number) => {
+      setActiveIdx(candidates.length === 0 ? 0 : Math.min(Math.max(0, idx), candidates.length - 1));
+    },
+    [candidates.length],
+  );
 
   const consume = useCallback(
     (idx: number) => {
@@ -933,7 +932,10 @@ function normalizePredictContext(context: Record<string, unknown>): {
   const modelVariants = readModelVariants(context);
   const next: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(context)) {
-    if (key === "model_variants" || VARIANT_FIELD_KEYS.includes(key as (typeof VARIANT_FIELD_KEYS)[number])) {
+    if (
+      key === "model_variants" ||
+      VARIANT_FIELD_KEYS.includes(key as (typeof VARIANT_FIELD_KEYS)[number])
+    ) {
       continue;
     }
     next[key] = value;
@@ -966,7 +968,6 @@ function formatPredictError(err: unknown): { msg: string; sub?: string } | null 
   }
   return null;
 }
-
 
 interface BackendResult {
   type?: string;
@@ -1021,16 +1022,16 @@ function normalizeResult(
     const routing = response.routing;
     const promptSummary = response.prompt_summary;
     if (
-      typeof candidateId !== "string"
-      || response.output_geometry !== "mask"
-      || typeof promptRevision !== "string"
-      || typeof receipt !== "string"
-      || !routing
-      || typeof routing.requested_backend_id !== "string"
-      || typeof routing.backend_instance_id !== "string"
-      || typeof routing.model_id !== "string"
-      || !promptSummary
-      || !r.value?.rle
+      typeof candidateId !== "string" ||
+      response.output_geometry !== "mask" ||
+      typeof promptRevision !== "string" ||
+      typeof receipt !== "string" ||
+      !routing ||
+      typeof routing.requested_backend_id !== "string" ||
+      typeof routing.backend_instance_id !== "string" ||
+      typeof routing.model_id !== "string" ||
+      !promptSummary ||
+      !r.value?.rle
     ) {
       return null;
     }
@@ -1051,9 +1052,7 @@ function normalizeResult(
       candidateId,
       candidateIndex: idx,
       promptRevision,
-      frameIndex: Number.isInteger(response.frame_index)
-        ? response.frame_index as number
-        : null,
+      frameIndex: Number.isInteger(response.frame_index) ? (response.frame_index as number) : null,
       receipt,
       idempotencyKey: newMaskIdempotencyKey(),
       promptSummary,
@@ -1142,7 +1141,10 @@ export const SAM_SIMPLIFY_RATIO = 0.003;
 /** 按候选自身尺度简化: epsilon = 外接框对角线 × SAM_SIMPLIFY_RATIO。 */
 export function simplifyCandidateRing(ring: [number, number][]): [number, number][] {
   if (ring.length < 4) return ring;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const [x, y] of ring) {
     if (x < minX) minX = x;
     if (y < minY) minY = y;

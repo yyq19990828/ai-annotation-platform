@@ -12,23 +12,23 @@ last_reviewed: 2026-07-22
 
 FastAPI `/metrics` 暴露 Prometheus metrics。超管也可以直接打开 `/admin/health` 查看同一批基础探测的实时摘要；该页面适合快速确认 DB / Redis / MinIO / Celery 是否可用，长期趋势和告警仍以 Prometheus / Grafana 为准。
 
-| Metric | 类型 | Labels | 用途 |
-|---|---|---|---|
-| `http_requests_total` | Counter | `method`, `path`, `status_code` | 按路由模板统计请求 QPS / 错误率 |
-| `http_request_duration_seconds` | Histogram | `method`, `path` | 请求延迟分位（p50 / p95 / p99） |
-| `ml_backend_request_duration_seconds` | Histogram | `backend_id`, `outcome` | ML Backend 调用延迟 |
-| `celery_queue_length` | Gauge | `queue` | 各队列堆积（default / ml / media / audit / events） |
-| `celery_worker_heartbeat_seconds` | Gauge | `worker` | worker 上次心跳距今秒数 |
-| `raster_mask_content_operations_total` | Counter | `operation`, `outcome` | Mask 内容加载、存储与校验结果 |
-| `raster_mask_content_errors_total` | Counter | `operation`, `reason` | Mask 内容错误的固定原因分类 |
-| `raster_mask_active_geometries` | Gauge | `kind` | 活跃图片 Mask 标注与含 Mask 预测数量 |
-| `mask_ai_operations_total` | Counter | 受控操作、提示、输出、候选、决定、降级与结果 | Mask AI 成功、失败与冲突率 |
-| `mask_ai_phase_duration_seconds` | Histogram | `operation`, `phase`, `outcome` | Mask AI 各阶段耗时 |
-| `mask_ai_correction_jobs` | Gauge | `status` | 视频 Mask 纠错 job 库存 |
-| `mask_ai_correction_oldest_age_seconds` | Gauge | `status` | 最老活跃纠错 job 年龄 |
-| `mask_ai_staged_mask_references` | Gauge | `job_kind` | Tracker staged Mask 引用库存 |
-| `mask_ai_accept_decisions` | Gauge | `state` | 原生 Mask 接受幂等快照库存 |
-| `mask_ai_oldest_expired_decision_age_seconds` | Gauge | — | 最老过期幂等快照积压年龄 |
+| Metric                                        | 类型      | Labels                                       | 用途                                                |
+| --------------------------------------------- | --------- | -------------------------------------------- | --------------------------------------------------- |
+| `http_requests_total`                         | Counter   | `method`, `path`, `status_code`              | 按路由模板统计请求 QPS / 错误率                     |
+| `http_request_duration_seconds`               | Histogram | `method`, `path`                             | 请求延迟分位（p50 / p95 / p99）                     |
+| `ml_backend_request_duration_seconds`         | Histogram | `backend_id`, `outcome`                      | ML Backend 调用延迟                                 |
+| `celery_queue_length`                         | Gauge     | `queue`                                      | 各队列堆积（default / ml / media / audit / events） |
+| `celery_worker_heartbeat_seconds`             | Gauge     | `worker`                                     | worker 上次心跳距今秒数                             |
+| `raster_mask_content_operations_total`        | Counter   | `operation`, `outcome`                       | Mask 内容加载、存储与校验结果                       |
+| `raster_mask_content_errors_total`            | Counter   | `operation`, `reason`                        | Mask 内容错误的固定原因分类                         |
+| `raster_mask_active_geometries`               | Gauge     | `kind`                                       | 活跃图片 Mask 标注与含 Mask 预测数量                |
+| `mask_ai_operations_total`                    | Counter   | 受控操作、提示、输出、候选、决定、降级与结果 | Mask AI 成功、失败与冲突率                          |
+| `mask_ai_phase_duration_seconds`              | Histogram | `operation`, `phase`, `outcome`              | Mask AI 各阶段耗时                                  |
+| `mask_ai_correction_jobs`                     | Gauge     | `status`                                     | 视频 Mask 纠错 job 库存                             |
+| `mask_ai_correction_oldest_age_seconds`       | Gauge     | `status`                                     | 最老活跃纠错 job 年龄                               |
+| `mask_ai_staged_mask_references`              | Gauge     | `job_kind`                                   | Tracker staged Mask 引用库存                        |
+| `mask_ai_accept_decisions`                    | Gauge     | `state`                                      | 原生 Mask 接受幂等快照库存                          |
+| `mask_ai_oldest_expired_decision_age_seconds` | Gauge     | —                                            | 最老过期幂等快照积压年龄                            |
 
 定义在 `apps/api/app/observability/metrics.py` 与 `apps/api/app/main.py:108`。
 
@@ -94,13 +94,13 @@ raster_mask_active_geometries
 
 阶段耗时的定义如下：
 
-| `phase` | 边界 |
-|---|---|
-| `upload` | 视频当前帧完成有界读取后，上传临时帧到对象存储 |
-| `inference` | 平台调用实际路由到的 ML Backend |
-| `decode` | 校验并归一化 backend 响应、RLE 和诊断 |
-| `encode` | 生成平台响应、候选签名与短期会话令牌 |
-| `commit` | 接受候选、局部决定或纠错 job 状态写入数据库并提交 |
+| `phase`     | 边界                                              |
+| ----------- | ------------------------------------------------- |
+| `upload`    | 视频当前帧完成有界读取后，上传临时帧到对象存储    |
+| `inference` | 平台调用实际路由到的 ML Backend                   |
+| `decode`    | 校验并归一化 backend 响应、RLE 和诊断             |
+| `encode`    | 生成平台响应、候选签名与短期会话令牌              |
+| `commit`    | 接受候选、局部决定或纠错 job 状态写入数据库并提交 |
 
 库存 Gauge 在 API `/metrics` scrape 时从 PostgreSQL 刷新，并为所有固定 status / kind / state
 显式输出零值。查询失败时保留上次成功值并让 scrape 继续返回；排查时不要把陈旧值理解为实时零。
@@ -129,6 +129,7 @@ docker compose --profile monitoring up -d prometheus grafana
 - Grafana → http://localhost:3001（admin / admin，dev 默认）
 
 Grafana 启动时自动 provision：
+
 - Datasource `Prometheus`（`infra/grafana/provisioning/datasources/prometheus.yaml`）
 - Dashboard 文件夹 `Anno`（`infra/grafana/provisioning/dashboards/default.yaml`）
 - Dashboard JSON `Anno Overview`（`infra/grafana/dashboards/anno-overview.json`）
@@ -175,17 +176,17 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 
 - 指标统一为**裸名 + `service` label**（不带 backend 前缀），同语义指标靠 label 区分 backend：
 
-| Metric | 类型 | 用途 |
-|---|---|---|
-| `gpu_utilization_percent` | Gauge | GPU SM 利用率 |
-| `gpu_memory_used_mb` / `gpu_memory_total_mb` | Gauge | 显存（占用率 = used/total） |
-| `gpu_temperature_celsius` / `gpu_power_watts` | Gauge | 温度 / 功耗 |
-| `inference_latency_seconds` | Histogram | 推理延迟（P50/P95 用 `histogram_quantile`） |
-| `embedding_cache_hits_total` / `_misses_total` / `embedding_cache_size` | Counter/Gauge | embedding cache 命中与容量 |
-| `container_cpu_percent` / `container_memory_percent` | Gauge | 容器 CPU / 内存 |
-| `video_tracker_*`（仅 grounded-sam2） | Counter/Histogram | 视频追踪帧数 / 延迟 |
-| `mask_ai_backend_inference_total` | Counter | 视频追踪 / 纠错调用、候选桶、显式降级与结果 |
-| `mask_ai_backend_inference_seconds` | Histogram | grounded-SAM2、SAM3 multiplex / PVS 的追踪 / 纠错推理延迟 |
+| Metric                                                                  | 类型              | 用途                                                      |
+| ----------------------------------------------------------------------- | ----------------- | --------------------------------------------------------- |
+| `gpu_utilization_percent`                                               | Gauge             | GPU SM 利用率                                             |
+| `gpu_memory_used_mb` / `gpu_memory_total_mb`                            | Gauge             | 显存（占用率 = used/total）                               |
+| `gpu_temperature_celsius` / `gpu_power_watts`                           | Gauge             | 温度 / 功耗                                               |
+| `inference_latency_seconds`                                             | Histogram         | 推理延迟（P50/P95 用 `histogram_quantile`）               |
+| `embedding_cache_hits_total` / `_misses_total` / `embedding_cache_size` | Counter/Gauge     | embedding cache 命中与容量                                |
+| `container_cpu_percent` / `container_memory_percent`                    | Gauge             | 容器 CPU / 内存                                           |
+| `video_tracker_*`（仅 grounded-sam2）                                   | Counter/Histogram | 视频追踪帧数 / 延迟                                       |
+| `mask_ai_backend_inference_total`                                       | Counter           | 视频追踪 / 纠错调用、候选桶、显式降级与结果               |
+| `mask_ai_backend_inference_seconds`                                     | Histogram         | grounded-SAM2、SAM3 multiplex / PVS 的追踪 / 纠错推理延迟 |
 
 > backend 在独立 GPU 机、prometheus 不在同网时，把 `ml-backends` job 的 `http_sd_configs` 注释掉，改用同 job 里注释好的 static 兜底（target 填 prometheus 视角可达地址）。
 >
@@ -201,13 +202,13 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
 
 其余 HTTP / Celery / Sentry 相关不在仓库内强制产出（不同团队偏好不一），下面是建议规则：
 
-| 告警 | 触发表达式 | 严重度 |
-|---|---|---|
-| API p99 > 1s 持续 5min | `histogram_quantile(0.99, sum by (le)(rate(http_request_duration_seconds_bucket[5m]))) > 1` | warning |
-| ML Backend 失败率 > 10% | `sum(rate(ml_backend_request_duration_seconds_count{outcome="error"}[5m])) / sum(rate(ml_backend_request_duration_seconds_count[5m])) > 0.1` | critical |
-| Celery queue 堆积 > 200 持续 10min | `celery_queue_length > 200` | warning |
-| Worker 离线 > 2min | `celery_worker_heartbeat_seconds > 120` | critical |
-| Sentry DSN 未配置 production | (启动日志 WARN，配合 deploy.md checklist) | one-shot |
+| 告警                               | 触发表达式                                                                                                                                   | 严重度   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| API p99 > 1s 持续 5min             | `histogram_quantile(0.99, sum by (le)(rate(http_request_duration_seconds_bucket[5m]))) > 1`                                                  | warning  |
+| ML Backend 失败率 > 10%            | `sum(rate(ml_backend_request_duration_seconds_count{outcome="error"}[5m])) / sum(rate(ml_backend_request_duration_seconds_count[5m])) > 0.1` | critical |
+| Celery queue 堆积 > 200 持续 10min | `celery_queue_length > 200`                                                                                                                  | warning  |
+| Worker 离线 > 2min                 | `celery_worker_heartbeat_seconds > 120`                                                                                                      | critical |
+| Sentry DSN 未配置 production       | (启动日志 WARN，配合 deploy.md checklist)                                                                                                    | one-shot |
 
 ---
 
@@ -222,36 +223,36 @@ ML backend（grounded-sam2 / sam3 / 后续接入的任意 backend）的 `/metric
     "current_size": 2,
     "loaded_keys": [
       {
-        "key": "yolov11/s/detection",     // backend-defined opaque string
+        "key": "yolov11/s/detection", // backend-defined opaque string
         "loaded_at": "2026-06-08T03:11:22Z",
         "last_used_at": "2026-06-08T03:15:00Z",
-        "hit_count": 12                   // 累计命中次数 (不含 warmup)
-      }
+        "hit_count": 12, // 累计命中次数 (不含 warmup)
+      },
     ],
     "last_evict": {
       "key": "yolov8/x/detection",
       "at": "2026-06-08T03:14:00Z",
-      "reason": "lru"                     // 受控: lru | manual | idle_timeout
-    }
-  }
+      "reason": "lru", // 受控: lru | manual | idle_timeout
+    },
+  },
 }
 ```
 
 **key 命名约定**（backend 自由选择，平台只做相等匹配）：
 
-| backend | key 形式 |
-|---|---|
-| yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
+| backend               | key 形式                                                                 |
+| --------------------- | ------------------------------------------------------------------------ |
+| yolo-backend          | `{series}/{size}/{task}`，如 `yolov11/s/detection`                       |
 | grounded-sam2-backend | `sam={sam_variant}/dino={dino_variant}`；video 池另用 `video:sam=…` 区分 |
-| sam3-backend | 模型变体字符串如 `sam3`；`cap` 永远 `1` |
+| sam3-backend          | 模型变体字符串如 `sam3`；`cap` 永远 `1`                                  |
 
 **`/predict` 响应观测三件套**（协议 §4.2）：
 
-| 字段 | 用途 |
-|---|---|
-| `cache_hit: bool \| null` | 本次推理是否命中 pool 内权重；`false` 表本次触发加载（冷启动 / pool evict 后 / 服务重启） |
-| `model_load_ms: int \| null` | 本次 disk→GPU 加载毫秒（`cache_hit=True` 时通常 `0`） |
-| `pool_state: {current_size, cap} \| null` | 轻量 pool 快照（按需开启，常态 `null` 避免响应体膨胀） |
+| 字段                                      | 用途                                                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `cache_hit: bool \| null`                 | 本次推理是否命中 pool 内权重；`false` 表本次触发加载（冷启动 / pool evict 后 / 服务重启） |
+| `model_load_ms: int \| null`              | 本次 disk→GPU 加载毫秒（`cache_hit=True` 时通常 `0`）                                     |
+| `pool_state: {current_size, cap} \| null` | 轻量 pool 快照（按需开启，常态 `null` 避免响应体膨胀）                                    |
 
 **前端冷启动 UX**：响应回来后调 `recordPredictCacheHit(backendId, variants, cache_hit)` 写入本会话 Map，下次同 variant 调用前查 `isVariantHot()` 决定按钮文案。pool LRU evict 后误判一次不可避免（前端 Map 还以为热的），但下次响应里 `cache_hit=false` 会自我修正。v0.14.13 的 `sessionStorage` 猜测保留作老 backend (未上报 `cache_hit`) 的 fallback，v0.14.15 删除。
 
@@ -274,10 +275,10 @@ curl -X POST localhost:8003/warmup \
 
 服务池 / 实例 / 路由状态由两个权威读模型提供（`apps/api/app/services/ml_routing/diagnostics.py`）：
 
-| 端点 | 角色 | 用途 |
-|---|---|---|
-| `GET /admin/ml-integrations/topology` | PROJECT_ADMIN + SUPER_ADMIN | 服务池 + 成员实例拓扑；角色裁剪（Project Admin 看 `routing_policy="unknown"` 与 `null` 敏感字段） |
-| `GET /admin/ml-integrations/runtime-snapshot` | SUPER_ADMIN only | router mode + per-pool/member `route_inflight` + `circuit_open` + health + freshness 信封 |
+| 端点                                          | 角色                        | 用途                                                                                              |
+| --------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `GET /admin/ml-integrations/topology`         | PROJECT_ADMIN + SUPER_ADMIN | 服务池 + 成员实例拓扑；角色裁剪（Project Admin 看 `routing_policy="unknown"` 与 `null` 敏感字段） |
+| `GET /admin/ml-integrations/runtime-snapshot` | SUPER_ADMIN only            | router mode + per-pool/member `route_inflight` + `circuit_open` + health + freshness 信封         |
 
 **runtime-snapshot 的 freshness 信封**：每个异步来源（`topology` / `router_ledger` / `health` / `gpu` / `residency`）独立带 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据，`partial=true` + `partial_reason` 列出哪些来源 stale。`gpu` 与 `residency` 在 runtime-snapshot 中恒为 stale + `not_bundled_in_v0_23_3`——它们需通过 `/observe` 在模型市场 Instance Detail Sheet 单独取。
 
@@ -354,19 +355,19 @@ Prometheus Gauge 当作 API `/metrics` 可见的跨进程指标。
 
 ## 6. 关键文件索引
 
-| 主题 | 路径 |
-|---|---|
-| Metrics 定义 | `apps/api/app/observability/metrics.py` |
-| Raster Mask 活跃量巡检 | `apps/api/app/observability/raster_mask.py` |
-| ML backend 指标埋点 | `apps/grounded-sam2-backend/observability.py` · `apps/sam3-backend/observability.py` |
-| ML backend http_sd 端点 | `apps/api/app/api/v1/` → `GET /api/v1/internal/metrics-targets` |
-| ML backend 告警规则 | `infra/prometheus/alerts.yml` |
-| Alertmanager 配置 | `infra/alertmanager/alertmanager.yml` |
-| FastAPI `/metrics` 挂载 | `apps/api/app/main.py:108-130` |
-| Sentry 初始化 | `apps/api/app/main.py:22-45` |
-| Grafana dashboard JSON | `infra/grafana/dashboards/anno-overview.json` |
-| Grafana provisioning | `infra/grafana/provisioning/` |
-| Prometheus scrape | `infra/prometheus/prometheus.yml` |
-| docker-compose monitoring profile | `docker-compose.yml` |
-| 超管系统健康聚合端点 | `apps/api/app/api/v1/admin_system_health.py` |
-| GPU/ML backend 实时浮窗 (PerfHud) | [concepts/perfhud](/dev/concepts/perfhud) |
+| 主题                              | 路径                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| Metrics 定义                      | `apps/api/app/observability/metrics.py`                                              |
+| Raster Mask 活跃量巡检            | `apps/api/app/observability/raster_mask.py`                                          |
+| ML backend 指标埋点               | `apps/grounded-sam2-backend/observability.py` · `apps/sam3-backend/observability.py` |
+| ML backend http_sd 端点           | `apps/api/app/api/v1/` → `GET /api/v1/internal/metrics-targets`                      |
+| ML backend 告警规则               | `infra/prometheus/alerts.yml`                                                        |
+| Alertmanager 配置                 | `infra/alertmanager/alertmanager.yml`                                                |
+| FastAPI `/metrics` 挂载           | `apps/api/app/main.py:108-130`                                                       |
+| Sentry 初始化                     | `apps/api/app/main.py:22-45`                                                         |
+| Grafana dashboard JSON            | `infra/grafana/dashboards/anno-overview.json`                                        |
+| Grafana provisioning              | `infra/grafana/provisioning/`                                                        |
+| Prometheus scrape                 | `infra/prometheus/prometheus.yml`                                                    |
+| docker-compose monitoring profile | `docker-compose.yml`                                                                 |
+| 超管系统健康聚合端点              | `apps/api/app/api/v1/admin_system_health.py`                                         |
+| GPU/ML backend 实时浮窗 (PerfHud) | [concepts/perfhud](/dev/concepts/perfhud)                                            |

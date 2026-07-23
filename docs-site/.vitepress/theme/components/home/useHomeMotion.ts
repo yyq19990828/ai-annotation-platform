@@ -77,7 +77,10 @@ export function useHomeMotion(rootRef: Ref<HTMLElement | null>): void {
         }
         if (screen) {
           const r = screen.getBoundingClientRect();
-          const t = Math.max(-1, Math.min(1, (r.top - window.innerHeight * 0.5) / window.innerHeight));
+          const t = Math.max(
+            -1,
+            Math.min(1, (r.top - window.innerHeight * 0.5) / window.innerHeight),
+          );
           screen.style.transform = `rotateX(${3 + t * 2}deg) scale(${0.96 + Math.max(0, -t) * 0.035})`;
         }
       }
@@ -132,8 +135,6 @@ export function useHomeMotion(rootRef: Ref<HTMLElement | null>): void {
     magneticCleanups.forEach((fn) => fn());
     magneticCleanups.length = 0;
     // 离开首页时清除叠加在页面壳层上的顶栏透明态，避免残留影响其他页。
-    document
-      .querySelector(".docs-home-page")
-      ?.classList.remove("home-nav-transparent");
+    document.querySelector(".docs-home-page")?.classList.remove("home-nav-transparent");
   });
 }

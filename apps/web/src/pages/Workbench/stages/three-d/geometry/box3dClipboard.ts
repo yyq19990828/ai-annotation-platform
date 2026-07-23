@@ -16,7 +16,9 @@ function cloneGeometry(geometry: Box3DGeometry): Box3DGeometry {
   };
 }
 
-export function serializeBox3D(annotation: AnnotationResponse | null | undefined): ClipboardBox3D | null {
+export function serializeBox3D(
+  annotation: AnnotationResponse | null | undefined,
+): ClipboardBox3D | null {
   const geometry = annotation?.geometry;
   if (!annotation || geometry?.type !== "box_3d") return null;
   return {

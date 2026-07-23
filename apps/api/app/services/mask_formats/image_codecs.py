@@ -56,7 +56,9 @@ def normalize_coco_segmentation_rle(
     flat = np.asarray(dense, dtype=np.uint8).reshape(
         (expected_height, expected_width), order="C"
     )
-    return encode_coco_rle(flat.ravel(order="C").tolist(), expected_width, expected_height)
+    return encode_coco_rle(
+        flat.ravel(order="C").tolist(), expected_width, expected_height
+    )
 
 
 def rasterize_coco_polygons(
@@ -103,7 +105,9 @@ class _BitReader:
             byte_index, bit_index = divmod(self._offset, 8)
             if byte_index >= len(self._data):
                 raise ValueError("Label Studio RLE ended unexpectedly")
-            value = (value << 1) | ((int(self._data[byte_index]) >> (7 - bit_index)) & 1)
+            value = (value << 1) | (
+                (int(self._data[byte_index]) >> (7 - bit_index)) & 1
+            )
             self._offset += 1
         return value
 
@@ -175,7 +179,10 @@ def encode_label_studio_mask(pixels_row_major: Sequence[int]) -> list[int]:
     bit_string = "".join(bits)
     padding = 8 - (len(bit_string) % 8)
     bit_string += "0" * padding
-    return [int(bit_string[offset : offset + 8], 2) for offset in range(0, len(bit_string), 8)]
+    return [
+        int(bit_string[offset : offset + 8], 2)
+        for offset in range(0, len(bit_string), 8)
+    ]
 
 
 def label_studio_rle_to_coco(
@@ -288,8 +295,12 @@ def compose_indexed_mask(
     return output, dict(lost)
 
 
-def _component_pixels(pixels: Sequence[int], width: int, height: int) -> list[set[tuple[int, int]]]:
-    unseen = {(x, y) for y in range(height) for x in range(width) if pixels[y * width + x]}
+def _component_pixels(
+    pixels: Sequence[int], width: int, height: int
+) -> list[set[tuple[int, int]]]:
+    unseen = {
+        (x, y) for y in range(height) for x in range(width) if pixels[y * width + x]
+    }
     components: list[set[tuple[int, int]]] = []
     while unseen:
         seed = min(unseen, key=lambda point: (point[1], point[0]))
@@ -308,10 +319,13 @@ def _component_pixels(pixels: Sequence[int], width: int, height: int) -> list[se
 
 
 def _signed_area(points: Sequence[tuple[int, int]]) -> float:
-    return sum(
-        x1 * y2 - x2 * y1
-        for (x1, y1), (x2, y2) in zip(points, (*points[1:], points[0]))
-    ) / 2
+    return (
+        sum(
+            x1 * y2 - x2 * y1
+            for (x1, y1), (x2, y2) in zip(points, (*points[1:], points[0]))
+        )
+        / 2
+    )
 
 
 def _trace_component(component: set[tuple[int, int]]) -> list[tuple[int, int]]:

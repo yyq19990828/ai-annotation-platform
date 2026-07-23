@@ -8,7 +8,6 @@ import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import { useTheme } from "@/hooks/useTheme";
 import type { TaskResponse } from "@/types";
 
-
 interface TopbarProps {
   /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
   projectName: string;
@@ -75,17 +74,46 @@ function cn(...xs: Array<string | false | null | undefined>): string {
  * 工具切换 → ToolDock（左侧垂直）；撤销/重做/缩放/适应 → FloatingDock（画布右下）。
  */
 export function Topbar({
-  projectName, projectDisplayId,
-  task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
-  onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
-  onRunAi, aiOpen = false, aiDisabled = false,
-  onToggleTracker, trackerOpen = false, trackerRunning = false,
-  onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
+  projectName,
+  projectDisplayId,
+  task,
+  taskIdx,
+  taskTotal,
+  aiRunning,
+  batchStatus,
+  isSubmitting,
+  confThreshold,
+  onShowHotkeys,
+  onBack,
+  leftSidebarOpen,
+  rightSidebarOpen,
+  onToggleLeftSidebar,
+  onToggleRightSidebar,
+  onRunAi,
+  aiOpen = false,
+  aiDisabled = false,
+  onToggleTracker,
+  trackerOpen = false,
+  trackerRunning = false,
+  onPrev,
+  onNext,
+  onSubmit,
+  onSmartNextOpen,
+  onSmartNextUncertain,
   onOpenWorkbenchSettings,
-  canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
-  onWithdraw, onReopen,
-  isSkipping = false, onSkip,
-  mode = "annotate", onApprove, onReject, isApproving = false, isRejecting = false,
+  canWithdraw = false,
+  canReopen = false,
+  isWithdrawing = false,
+  isReopening = false,
+  onWithdraw,
+  onReopen,
+  isSkipping = false,
+  onSkip,
+  mode = "annotate",
+  onApprove,
+  onReject,
+  isApproving = false,
+  isRejecting = false,
   reviewInfoSlot,
 }: TopbarProps) {
   const { resolved, setTheme } = useTheme();
@@ -99,7 +127,10 @@ export function Topbar({
   const lastThrRef = useRef<number | undefined>(confThreshold);
   useEffect(() => {
     if (confThreshold === undefined) return;
-    if (lastThrRef.current === undefined) { lastThrRef.current = confThreshold; return; }
+    if (lastThrRef.current === undefined) {
+      lastThrRef.current = confThreshold;
+      return;
+    }
     if (Math.abs(confThreshold - lastThrRef.current) < 1e-6) return;
     lastThrRef.current = confThreshold;
     setShowThr(true);
@@ -110,8 +141,15 @@ export function Topbar({
   const indexLabel = taskTotal > 0 && taskIdx >= 0 ? `${taskIdx + 1} / ${taskTotal}` : "";
 
   const smartItems: DropdownItem[] = [];
-  if (onSmartNextOpen) smartItems.push({ id: "next-open", label: "下一未标注", kbd: "N", onSelect: onSmartNextOpen });
-  if (onSmartNextUncertain) smartItems.push({ id: "next-uncertain", label: "下一最不确定", kbd: "U", onSelect: onSmartNextUncertain });
+  if (onSmartNextOpen)
+    smartItems.push({ id: "next-open", label: "下一未标注", kbd: "N", onSelect: onSmartNextOpen });
+  if (onSmartNextUncertain)
+    smartItems.push({
+      id: "next-uncertain",
+      label: "下一最不确定",
+      kbd: "U",
+      onSelect: onSmartNextUncertain,
+    });
 
   const nextTheme = resolved === "dark" ? "light" : "dark";
   const themeIcon: IconName = nextTheme === "dark" ? "moon" : "sun";
@@ -124,8 +162,14 @@ export function Topbar({
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="flex shrink-0 items-center gap-0.5">
           {onBack && (
-            <Button variant="ghost" size="sm" onClick={onBack} className="px-2 py-1 text-muted-foreground">
-              <Icon name="chevLeft" size={13} />返回
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="px-2 py-1 text-muted-foreground"
+            >
+              <Icon name="chevLeft" size={13} />
+              返回
             </Button>
           )}
           {onToggleLeftSidebar && (
@@ -134,14 +178,22 @@ export function Topbar({
               size="sm"
               onClick={onToggleLeftSidebar}
               title={leftSidebarOpen ? "收起任务列表" : "展开任务列表"}
-              className={cn("justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground", leftSidebarOpen && "text-foreground bg-transparent shadow-none")}
+              className={cn(
+                "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+                leftSidebarOpen && "text-foreground bg-transparent shadow-none",
+              )}
             >
               <Icon name="panelLeft" size={14} />
             </Button>
           )}
         </div>
         <span className="shrink-0 w-px h-[18px] bg-border" />
-        <span className="flex-auto min-w-0 overflow-hidden text-sm font-semibold text-foreground truncate" title={projectName}>{projectName}</span>
+        <span
+          className="flex-auto min-w-0 overflow-hidden text-sm font-semibold text-foreground truncate"
+          title={projectName}
+        >
+          {projectName}
+        </span>
       </div>
 
       {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
@@ -149,9 +201,7 @@ export function Topbar({
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="mono shrink-0 text-xs text-muted-foreground">{projectDisplayId}</span>
           <span className="shrink-0 w-px h-4 bg-border" />
-          <span
-            className="mono shrink-0 text-sm font-semibold text-foreground"
-          >
+          <span className="mono shrink-0 text-sm font-semibold text-foreground">
             {task?.display_id ?? "—"}
           </span>
           <span
@@ -161,29 +211,22 @@ export function Topbar({
             {task?.file_name ?? "—"}
           </span>
           {indexLabel && (
-            <span
-              className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full"
-            >
+            <span className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full">
               {indexLabel}
             </span>
           )}
           {/* v0.9.6 · 仅 pre_annotated 时显示徽章, 标注员一眼知道「先看 AI 候选」 */}
-          {batchStatus === "pre_annotated" && (
-            <BatchStatusBadge status="pre_annotated" />
-          )}
+          {batchStatus === "pre_annotated" && <BatchStatusBadge status="pre_annotated" />}
           {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
-          {(task?.assignee || task?.reviewer) && (
-            <span className="shrink-0 w-px h-4 bg-border" />
-          )}
-          {task?.assignee && (
-            <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
-          )}
-          {task?.reviewer && (
-            <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />
-          )}
+          {(task?.assignee || task?.reviewer) && <span className="shrink-0 w-px h-4 bg-border" />}
+          {task?.assignee && <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />}
+          {task?.reviewer && <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />}
         </div>
         <span className="shrink-0 w-px h-4 bg-border" />
-        <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={13} />上一</Button>
+        <Button size="sm" onClick={onPrev}>
+          <Icon name="chevLeft" size={13} />
+          上一
+        </Button>
         {mode === "review" ? (
           <>
             <Button
@@ -194,7 +237,8 @@ export function Topbar({
               data-testid="review-approve"
               title="通过 (A)"
             >
-              <Icon name="check" size={13} />通过
+              <Icon name="check" size={13} />
+              通过
             </Button>
             <Button
               variant="danger"
@@ -204,7 +248,8 @@ export function Topbar({
               data-testid="review-reject"
               title="退回 (R)"
             >
-              <Icon name="x" size={12} />退回
+              <Icon name="x" size={12} />
+              退回
             </Button>
           </>
         ) : isReview ? (
@@ -215,7 +260,8 @@ export function Topbar({
             disabled={!canWithdraw || isWithdrawing || !onWithdraw}
             title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
           >
-            <Icon name="chevLeft" size={13} />撤回提交
+            <Icon name="chevLeft" size={13} />
+            撤回提交
           </Button>
         ) : isCompleted ? (
           <Button
@@ -225,7 +271,8 @@ export function Topbar({
             disabled={!canReopen || isReopening || !onReopen}
             title="重开任务，回到编辑态"
           >
-            <Icon name="edit" size={13} />继续编辑
+            <Icon name="edit" size={13} />
+            继续编辑
           </Button>
         ) : (
           <>
@@ -236,7 +283,8 @@ export function Topbar({
               disabled={isSubmitting}
               data-testid="workbench-submit"
             >
-              <Icon name="check" size={13} />提交质检
+              <Icon name="check" size={13} />
+              提交质检
             </Button>
             {onSkip && (
               <Button
@@ -246,12 +294,16 @@ export function Topbar({
                 title="图像损坏 / 无目标 / 不清晰时跳过本题"
                 data-testid="workbench-skip"
               >
-                <Icon name="x" size={12} />跳过
+                <Icon name="x" size={12} />
+                跳过
               </Button>
             )}
           </>
         )}
-        <Button size="sm" onClick={onNext}>下一<Icon name="chevRight" size={13} /></Button>
+        <Button size="sm" onClick={onNext}>
+          下一
+          <Icon name="chevRight" size={13} />
+        </Button>
 
         {smartItems.length > 0 && (
           <DropdownMenu
@@ -285,9 +337,7 @@ export function Topbar({
       <div className="relative flex items-center justify-end gap-1.5">
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
-          <span
-            className="mono absolute top-[calc(100%+6px)] right-0 z-local-overlay inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md"
-          >
+          <span className="mono absolute top-[calc(100%+6px)] right-0 z-local-overlay inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md">
             <span className="w-1.5 h-1.5 bg-violet-600 dark:bg-violet-400 rounded-full" />
             阈值 {(confThreshold * 100).toFixed(0)}%
           </span>
@@ -301,13 +351,21 @@ export function Topbar({
                 onClick={onToggleTracker}
                 aria-label="发现新目标"
                 aria-pressed={trackerOpen}
-                title={trackerOpen ? "关闭画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"}
+                title={
+                  trackerOpen ? "关闭画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"
+                }
                 className="h-7 px-3"
                 data-testid="workbench-ai-tracker"
               >
-                {trackerRunning
-                  ? <Icon name="loader2" size={13} className="animate-spin motion-reduce:animate-none" />
-                  : <Icon name="bot" size={13} />}
+                {trackerRunning ? (
+                  <Icon
+                    name="loader2"
+                    size={13}
+                    className="animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Icon name="bot" size={13} />
+                )}
                 发现目标
               </Button>
             )}
@@ -318,13 +376,25 @@ export function Topbar({
               aria-label="AI 单题"
               aria-pressed={aiOpen}
               disabled={aiDisabled}
-              title={aiDisabled ? "视频任务暂不支持 AI" : aiOpen ? "关闭 AI 单题面板" : "打开 AI 单题面板"}
+              title={
+                aiDisabled
+                  ? "视频任务暂不支持 AI"
+                  : aiOpen
+                    ? "关闭 AI 单题面板"
+                    : "打开 AI 单题面板"
+              }
               className="h-7 px-3"
               data-testid="workbench-ai-single"
             >
-              {aiRunning
-                ? <Icon name="loader2" size={13} className="animate-spin motion-reduce:animate-none" />
-                : <Icon name="wandSparkles" size={13} />}
+              {aiRunning ? (
+                <Icon
+                  name="loader2"
+                  size={13}
+                  className="animate-spin motion-reduce:animate-none"
+                />
+              ) : (
+                <Icon name="wandSparkles" size={13} />
+              )}
               AI
             </Button>
           </>
@@ -358,7 +428,10 @@ export function Topbar({
             size="sm"
             onClick={onToggleRightSidebar}
             title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
-            className={cn("justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground", rightSidebarOpen && "text-foreground bg-transparent shadow-none")}
+            className={cn(
+              "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+              rightSidebarOpen && "text-foreground bg-transparent shadow-none",
+            )}
           >
             <Icon name="panelRight" size={14} />
           </Button>

@@ -20,6 +20,7 @@ Project
 ```
 
 **为什么这么分**:
+
 - 一个视频几千帧不能给一个人,要按 `Segment` 切,每个 `Job` 一段
 - `Job.stage` 表达"标注 → 复核 → 验收"的工序流（比 Annotation 上的 `is_labeled` 更严）
 - `parent_job` 让"共识标注"（同一段给 3 个人独立标然后合并）成为头等公民
@@ -48,6 +49,7 @@ class AttributeVal:              # 该属性的值
 ```
 
 **视频追踪的实现**（LS 没这么干）:
+
 - `LabeledTrack` 存"对象一生"
 - `TrackedShape` 存关键帧位置
 - 中间帧由前端**线性插值**,标注员只标关键帧
@@ -73,12 +75,14 @@ serverless/{framework}/{org}/{model}/nuclio/function.yaml
 **新路:CVAT AI Agents（2024-2025 推出,主推）**
 
 不再要求模型部署成 Nuclio function,而是:
+
 1. 用户写一个 Python 模块（用 cvat-sdk）
 2. 用 CLI `cvat-cli function register` 把元数据注册到 CVAT（不上传代码/权重）
 3. 用户在自己的 GPU 机器上跑 `cvat-cli agent` 进程
 4. 这个 agent 进程**反向连接**到 CVAT,从队列拉任务、跑模型、回写结果
 
 **为什么这么改**:
+
 - 模型权重永远不离开用户机器（隐私 / 合规）
 - 用户不用懂 Nuclio / Knative
 - agent 可以用任何 GPU/CPU/MPS,不需要在 K8s 集群里
@@ -100,6 +104,7 @@ cvat/apps/consensus/
 ```
 
 `QualitySettings`:
+
 ```python
 iou_threshold, oks_sigma, line_thickness, low_overlap_threshold,
 point_size_base, compare_line_orientation, panoptic_comparison

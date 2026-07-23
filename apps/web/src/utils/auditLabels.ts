@@ -45,4 +45,14 @@ export const AUDIT_BUSINESS_ACTIONS: string[] = Object.keys(AUDIT_ACTION_LABELS)
   (k) => !k.startsWith("http."),
 );
 
-export const AUDIT_TARGET_TYPES = ["user", "project", "task", "dataset", "annotation", "system", "ml_backend", "bug_report", "video_tracker_job"];
+export const AUDIT_TARGET_TYPES = [
+  "user",
+  "project",
+  "task",
+  "dataset",
+  "annotation",
+  "system",
+  "ml_backend",
+  "bug_report",
+  "video_tracker_job",
+];

@@ -48,17 +48,15 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
     );
     expect(createRes.status()).toBe(201);
     const annotationId = (await createRes.json()).id;
-    const lockResp = await seed.request.post(
-      `${API_BASE}/api/v1/annotations/bulk-update`,
-      { headers, data: { ids: [annotationId], patch: { is_locked: true } } },
-    );
+    const lockResp = await seed.request.post(`${API_BASE}/api/v1/annotations/bulk-update`, {
+      headers,
+      data: { ids: [annotationId], patch: { is_locked: true } },
+    });
     expect(lockResp.ok()).toBeTruthy();
 
     // 2. 进工作台, 等 annotation 列表加载。
     await seed.injectToken(page, data.annotator_email);
-    await page.goto(
-      `/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`,
-    );
+    await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
     // 3. 从标注列表精确选中锁定对象。
@@ -91,8 +89,11 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
     // 7. 真实 pointer → Enter 闭环不得产生任何 annotation mutation。
     let mutationCount = 0;
     page.on("request", (request) => {
-      if (/\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(request.url())
-        && ["POST", "PATCH", "PUT", "DELETE"].includes(request.method())) mutationCount += 1;
+      if (
+        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(request.url()) &&
+        ["POST", "PATCH", "PUT", "DELETE"].includes(request.method())
+      )
+        mutationCount += 1;
     });
     await page.mouse.move(cx, cy);
     await page.mouse.down();

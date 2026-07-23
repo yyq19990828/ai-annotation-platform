@@ -25,7 +25,9 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "video_tracker_jobs",
-        sa.Column("staged_result", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "staged_result", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
     )
 
 

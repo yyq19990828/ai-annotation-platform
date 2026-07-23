@@ -18,7 +18,10 @@ interface Group {
   remaining: number;
 }
 
-const STATUS: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "outline" }> = {
+const STATUS: Record<
+  string,
+  { label: string; variant: "accent" | "warning" | "danger" | "outline" }
+> = {
   active: { label: "未开始", variant: "outline" },
   annotating: { label: "标注中", variant: "accent" },
   reviewing: { label: "审核中", variant: "warning" },
@@ -33,7 +36,13 @@ const STATUS_ORDER: Record<string, number> = {
 };
 
 /** 单根进度条；与工作台进度卡的三档配色对齐（标注中=brand / 送审=caution / 通过=positive）。 */
-function ProgressRow({ label, count, total, pct, color }: {
+function ProgressRow({
+  label,
+  count,
+  total,
+  pct,
+  color,
+}: {
   label: string;
   count: number;
   total: number;
@@ -50,7 +59,9 @@ function ProgressRow({ label, count, total, pct, color }: {
       <div className={styles.track}>
         <div ref={ref} className={styles.fill} />
       </div>
-      <span className={`mono ${styles.progressValue}`}>{count}/{total}</span>
+      <span className={`mono ${styles.progressValue}`}>
+        {count}/{total}
+      </span>
     </div>
   );
 }
@@ -73,9 +84,7 @@ export function BatchCardGrid({ batches, onSelect }: Props) {
       m.set(b.project_id, g);
     }
     const arr = [...m.values()];
-    arr.sort(
-      (a, b) => b.remaining - a.remaining || a.project_name.localeCompare(b.project_name),
-    );
+    arr.sort((a, b) => b.remaining - a.remaining || a.project_name.localeCompare(b.project_name));
     for (const g of arr) {
       g.items.sort((a, b) => {
         const ra = STATUS_ORDER[a.status] ?? 9;
@@ -127,14 +136,34 @@ export function BatchCardGrid({ batches, onSelect }: Props) {
                     <div className={styles.cardTop}>
                       <span className={`mono ${styles.cardId}`}>{b.batch_display_id}</span>
                       <span className={styles.cardStatus}>
-                        <Badge variant={s.variant} dot>{s.label}</Badge>
+                        <Badge variant={s.variant} dot>
+                          {s.label}
+                        </Badge>
                       </span>
                     </div>
                     <div className={styles.cardName}>{b.batch_name}</div>
                     <div className={styles.progress}>
-                      <ProgressRow label="标注中" count={startedDone} total={total} pct={pctOf(startedDone)} color="var(--sc-brand)" />
-                      <ProgressRow label="送审" count={reviewDone} total={total} pct={pctOf(reviewDone)} color="var(--sc-caution)" />
-                      <ProgressRow label="通过" count={approvedDone} total={total} pct={pctOf(approvedDone)} color="var(--sc-positive)" />
+                      <ProgressRow
+                        label="标注中"
+                        count={startedDone}
+                        total={total}
+                        pct={pctOf(startedDone)}
+                        color="var(--sc-brand)"
+                      />
+                      <ProgressRow
+                        label="送审"
+                        count={reviewDone}
+                        total={total}
+                        pct={pctOf(reviewDone)}
+                        color="var(--sc-caution)"
+                      />
+                      <ProgressRow
+                        label="通过"
+                        count={approvedDone}
+                        total={total}
+                        pct={pctOf(approvedDone)}
+                        color="var(--sc-positive)"
+                      />
                     </div>
                   </div>
                 </button>

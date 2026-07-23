@@ -26,7 +26,11 @@ def test_parse_frame_stats():
                     "backend_id": "11111111-1111-1111-1111-111111111111",
                     "backend_name": "sam",
                     "state": "connected",
-                    "gpu_info": {"gpu_utilization_percent": 73, "memory_used_mb": 100, "memory_total_mb": 200},
+                    "gpu_info": {
+                        "gpu_utilization_percent": 73,
+                        "memory_used_mb": 100,
+                        "memory_total_mb": 200,
+                    },
                     "cache": {"hit_rate": 0.9},
                     "loaded": True,
                     "idle_unload_seconds": 42.0,
@@ -58,7 +62,10 @@ def test_parse_frame_skips_bad_snapshot():
     frame = json.dumps(
         {
             "backends": [
-                {"backend_id": "11111111-1111-1111-1111-111111111111", "state": "connected"},
+                {
+                    "backend_id": "11111111-1111-1111-1111-111111111111",
+                    "state": "connected",
+                },
                 {"backend_name": "broken"},  # 缺 state → 跳过
             ]
         }

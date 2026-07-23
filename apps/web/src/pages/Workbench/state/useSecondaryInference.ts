@@ -4,11 +4,7 @@
 //   的能力 (supported_inputs 含 crop、非交互), 派生 writeTarget (检测→geometry / 分类·OCR→attributes)。
 // - useRunSecondaryInference: 调后端 secondary-inference 端点, 落库后 invalidate 标注列表刷新画布/侧栏。
 import { useMemo } from "react";
-import {
-  useQueries,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mlBackendsApi, type MLModelCapability } from "@/api/ml-backends";
 import { hasInput, INPUT_CROP_ID } from "@/api/capabilityInputs";
 import type { AttributeField } from "@/api/projects";
@@ -21,14 +17,7 @@ import type { AnnotationResponse } from "@/types";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { isVariantField } from "../components/SchemaForm";
 
-const ALLOWED_ATTR_TYPES = [
-  "text",
-  "number",
-  "boolean",
-  "select",
-  "multiselect",
-  "range",
-];
+const ALLOWED_ATTR_TYPES = ["text", "number", "boolean", "select", "multiselect", "range"];
 
 export interface SecondaryCapability {
   backendId: string;
@@ -49,9 +38,7 @@ const GEOMETRY_TASKS = new Set([
 ]);
 const ATTRIBUTE_TASKS = new Set(["classification", "cls", "ocr", "doc_layout"]);
 
-function deriveWriteTarget(
-  m: MLModelCapability,
-): "attributes" | "geometry" | null {
+function deriveWriteTarget(m: MLModelCapability): "attributes" | "geometry" | null {
   const task = (m.task ?? "").toLowerCase();
   if (GEOMETRY_TASKS.has(task)) return "geometry";
   if (ATTRIBUTE_TASKS.has(task)) return "attributes";
@@ -72,8 +59,7 @@ export function hasConfigurableParams(m: MLModelCapability): boolean {
   const props = m.params?.properties;
   if (!props) return false;
   return Object.entries(props).some(
-    ([key, raw]) =>
-      !isVariantField(key, (raw ?? {}) as Parameters<typeof isVariantField>[1]),
+    ([key, raw]) => !isVariantField(key, (raw ?? {}) as Parameters<typeof isVariantField>[1]),
   );
 }
 
@@ -184,9 +170,7 @@ export function buildSecondaryInferencePayload(
 ): SecondaryInferenceRequest {
   const m = cap.model;
   // attributes: 只取 backend 声明的输出属性键; 空 → null (=全取, 别发空数组致后端过滤成空)。
-  const attrKeys = (m.output_attribute_schema ?? [])
-    .map((f) => f.key)
-    .filter(Boolean);
+  const attrKeys = (m.output_attribute_schema ?? []).map((f) => f.key).filter(Boolean);
   const trimmedPrompt = prompt?.trim();
   return {
     ml_backend_id: cap.backendId,
@@ -201,8 +185,7 @@ export function buildSecondaryInferencePayload(
         ? mergeVariants(m.default_variants, variants)
         : null,
     task_type: m.task ?? null,
-    write_keys:
-      cap.writeTarget === "attributes" && attrKeys.length > 0 ? attrKeys : null,
+    write_keys: cap.writeTarget === "attributes" && attrKeys.length > 0 ? attrKeys : null,
     params: params && Object.keys(params).length > 0 ? params : null,
     prompt: trimmedPrompt ? trimmedPrompt : null,
   };

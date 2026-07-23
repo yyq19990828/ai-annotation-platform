@@ -113,9 +113,7 @@ describe("GlobalPipelineLibraryPage", () => {
     await screen.findByTestId("pipeline-canvas");
 
     const source = screen.getByLabelText("源阶段模型") as HTMLSelectElement;
-    const errorOption = Array.from(source.options).find((o) =>
-      o.textContent?.includes("探测失败"),
-    );
+    const errorOption = Array.from(source.options).find((o) => o.textContent?.includes("探测失败"));
     expect(errorOption).toBeTruthy();
     expect(errorOption?.disabled).toBe(true);
   });
@@ -278,9 +276,6 @@ describe("GlobalPipelineLibraryPage", () => {
     // 删除第一条.
     const [firstDeleteBtn] = screen.getAllByRole("button", { name: /删除/ });
     fireEvent.click(firstDeleteBtn);
-    expect(mockDeleteProjectPipelineMutate).toHaveBeenCalledWith(
-      "pipe-1",
-      expect.any(Object),
-    );
+    expect(mockDeleteProjectPipelineMutate).toHaveBeenCalledWith("pipe-1", expect.any(Object));
   });
 });

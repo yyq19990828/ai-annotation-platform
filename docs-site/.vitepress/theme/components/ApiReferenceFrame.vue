@@ -12,20 +12,11 @@ const loaded = ref(false);
   <div class="api-ref-frame">
     <div class="api-ref-bar">
       <span class="api-ref-label">OpenAPI Reference</span>
-      <a class="api-ref-fullscreen" :href="src" target="_blank" rel="noreferrer">
-        全屏打开 ↗
-      </a>
+      <a class="api-ref-fullscreen" :href="src" target="_blank" rel="noreferrer"> 全屏打开 ↗ </a>
     </div>
     <div class="api-ref-viewport">
-      <div v-if="!loaded" class="api-ref-loading" aria-hidden="true">
-        加载 API Reference…
-      </div>
-      <iframe
-        :src="src"
-        title="API Reference"
-        loading="lazy"
-        @load="loaded = true"
-      ></iframe>
+      <div v-if="!loaded" class="api-ref-loading" aria-hidden="true">加载 API Reference…</div>
+      <iframe :src="src" title="API Reference" loading="lazy" @load="loaded = true"></iframe>
     </div>
   </div>
 </template>

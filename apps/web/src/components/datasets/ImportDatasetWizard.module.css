@@ -162,7 +162,9 @@
   border: 2px dashed var(--sc-border);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .dropZoneHover {

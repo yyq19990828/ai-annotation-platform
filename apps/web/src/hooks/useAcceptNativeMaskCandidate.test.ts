@@ -78,11 +78,13 @@ describe("useAcceptNativeMaskCandidate", () => {
     const push = vi.fn();
     const accepted = response();
     const request = vi.spyOn(aiMasksApi, "accept").mockResolvedValue(accepted);
-    const view = renderHook(() => useAcceptNativeMaskCandidate({
-      taskId: "task-1",
-      queryClient,
-      history: { push },
-    }));
+    const view = renderHook(() =>
+      useAcceptNativeMaskCandidate({
+        taskId: "task-1",
+        queryClient,
+        history: { push },
+      }),
+    );
 
     let result: AiMaskAcceptResponse | undefined;
     await act(async () => {
@@ -94,14 +96,15 @@ describe("useAcceptNativeMaskCandidate", () => {
     });
 
     expect(result).toBe(accepted);
-    expect(request).toHaveBeenCalledWith("task-1", expect.objectContaining({
-      idempotency_key: "mask:stable-idempotency-key",
-      class_name: "car",
-      target: { mode: "create" },
-    }));
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toEqual([
-      accepted.annotation,
-    ]);
+    expect(request).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        idempotency_key: "mask:stable-idempotency-key",
+        class_name: "car",
+        target: { mode: "create" },
+      }),
+    );
+    expect(queryClient.getQueryData(["annotations", "task-1"])).toEqual([accepted.annotation]);
     expect(push).toHaveBeenCalledWith({
       kind: "acceptPrediction",
       predictionId: "prediction-1",
@@ -116,39 +119,44 @@ describe("useAcceptNativeMaskCandidate", () => {
     const first = new Promise<AiMaskAcceptResponse>((_resolve, reject) => {
       rejectFirst = reject;
     });
-    const request = vi.spyOn(aiMasksApi, "accept")
+    const request = vi
+      .spyOn(aiMasksApi, "accept")
       .mockReturnValueOnce(first)
       .mockResolvedValueOnce(response());
     const item = candidate();
-    const view = renderHook(() => useAcceptNativeMaskCandidate({
-      taskId: "task-1",
-      queryClient,
-      history: { push },
-    }));
+    const view = renderHook(() =>
+      useAcceptNativeMaskCandidate({
+        taskId: "task-1",
+        queryClient,
+        history: { push },
+      }),
+    );
 
     const pending = view.result.current({
       candidate: item,
       className: "car",
       target: { mode: "create" },
     });
-    await expect(view.result.current({
-      candidate: item,
-      className: "car",
-      target: { mode: "create" },
-    })).resolves.toBeUndefined();
+    await expect(
+      view.result.current({
+        candidate: item,
+        className: "car",
+        target: { mode: "create" },
+      }),
+    ).resolves.toBeUndefined();
     expect(request).toHaveBeenCalledTimes(1);
 
     rejectFirst(new Error("network lost"));
     await expect(pending).rejects.toThrow("network lost");
-    await expect(view.result.current({
-      candidate: item,
-      className: "car",
-      target: { mode: "create" },
-    })).resolves.toEqual(response());
+    await expect(
+      view.result.current({
+        candidate: item,
+        className: "car",
+        target: { mode: "create" },
+      }),
+    ).resolves.toEqual(response());
     expect(request).toHaveBeenCalledTimes(2);
-    expect(request.mock.calls[0][1].idempotency_key).toBe(
-      request.mock.calls[1][1].idempotency_key,
-    );
+    expect(request.mock.calls[0][1].idempotency_key).toBe(request.mock.calls[1][1].idempotency_key);
   });
 
   it("精修已存 Mask 原位更新缓存，历史记录 update 而非删除原标注", async () => {
@@ -178,15 +186,20 @@ describe("useAcceptNativeMaskCandidate", () => {
     };
     queryClient.setQueryData(["annotations", "task-1"], [before]);
     vi.spyOn(aiMasksApi, "accept").mockResolvedValue(accepted);
-    const view = renderHook(() => useAcceptNativeMaskCandidate({
-      taskId: "task-1",
-      queryClient,
-      history: { push },
-    }));
+    const view = renderHook(() =>
+      useAcceptNativeMaskCandidate({
+        taskId: "task-1",
+        queryClient,
+        history: { push },
+      }),
+    );
 
     await act(async () => {
       await view.result.current({
-        candidate: { ...candidate(), refineSource: { annotationId: "annotation-source", sourceVersion: 7 } },
+        candidate: {
+          ...candidate(),
+          refineSource: { annotationId: "annotation-source", sourceVersion: 7 },
+        },
         className: "car",
         target: {
           mode: "refine",
@@ -196,8 +209,9 @@ describe("useAcceptNativeMaskCandidate", () => {
       });
     });
 
-    expect(queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"]))
-      .toEqual([accepted.annotation]);
+    expect(queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"])).toEqual([
+      accepted.annotation,
+    ]);
     expect(push).toHaveBeenCalledWith({
       kind: "update",
       annotationId: "annotation-source",

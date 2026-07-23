@@ -33,10 +33,13 @@ class Backend implements MaskCompareTileBackend {
   compareTileCalls = 0;
 
   registerSession(sessionId: string, sha256: string, value: CocoRle) {
-    this.sessions.set(sessionId, buildRasterMaskWorkerSession(sha256, {
-      size: value.size,
-      counts: Uint32Array.from(value.counts),
-    }));
+    this.sessions.set(
+      sessionId,
+      buildRasterMaskWorkerSession(sha256, {
+        size: value.size,
+        counts: Uint32Array.from(value.counts),
+      }),
+    );
   }
 
   releaseSession(sessionId: string) {
@@ -109,7 +112,10 @@ describe("MaskCompareTileStore", () => {
     const gate: { release?: () => void } = {};
     const original = backend.compareTile.bind(backend);
     backend.compareTile = async (...args) => {
-      if (!gate.release) await new Promise<void>((resolve) => { gate.release = resolve; });
+      if (!gate.release)
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
       return original(...args);
     };
     const store = new MaskCompareTileStore({
@@ -122,10 +128,11 @@ describe("MaskCompareTileStore", () => {
     const second = store.loadViewport({ x: 512, y: 0, width: 512, height: 512 });
     gate.release?.();
 
-    await expect(first).rejects.toSatisfy((error) => (
-      error instanceof MaskCompareStaleGenerationError
-      || (error instanceof DOMException && error.name === "AbortError")
-    ));
+    await expect(first).rejects.toSatisfy(
+      (error) =>
+        error instanceof MaskCompareStaleGenerationError ||
+        (error instanceof DOMException && error.name === "AbortError"),
+    );
     await expect(second).resolves.toHaveLength(2);
     store.dispose();
   });
@@ -135,7 +142,10 @@ describe("MaskCompareTileStore", () => {
     const gate: { release?: () => void } = {};
     const original = backend.compareTile.bind(backend);
     backend.compareTile = async (...args) => {
-      if (!gate.release) await new Promise<void>((resolve) => { gate.release = resolve; });
+      if (!gate.release)
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
       return original(...args);
     };
     const store = new MaskCompareTileStore({
@@ -147,8 +157,9 @@ describe("MaskCompareTileStore", () => {
 
     const first = store.loadViewport({ x: 0, y: 0, width: 400, height: 400 });
     const second = store.loadViewport({ x: 8, y: 8, width: 400, height: 400 });
-    expect(store.viewportSignature({ x: 0, y: 0, width: 400, height: 400 }))
-      .toBe(store.viewportSignature({ x: 8, y: 8, width: 400, height: 400 }));
+    expect(store.viewportSignature({ x: 0, y: 0, width: 400, height: 400 })).toBe(
+      store.viewportSignature({ x: 8, y: 8, width: 400, height: 400 }),
+    );
     gate.release?.();
     await expect(first).rejects.toBeInstanceOf(MaskCompareStaleGenerationError);
     const secondTiles = await second;
@@ -162,7 +173,10 @@ describe("MaskCompareTileStore", () => {
     const gate: { release?: () => void } = {};
     const original = backend.compareTile.bind(backend);
     backend.compareTile = async (...args) => {
-      if (!gate.release) await new Promise<void>((resolve) => { gate.release = resolve; });
+      if (!gate.release)
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
       return original(...args);
     };
     const store = new MaskCompareTileStore({
@@ -187,7 +201,10 @@ describe("MaskCompareTileStore", () => {
     const gate: { release?: () => void } = {};
     const original = backend.compareTile.bind(backend);
     backend.compareTile = async (...args) => {
-      if (!gate.release) await new Promise<void>((resolve) => { gate.release = resolve; });
+      if (!gate.release)
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
       return original(...args);
     };
     const store = new MaskCompareTileStore({
@@ -266,14 +283,18 @@ describe("MaskCompareTileStore", () => {
       hideAiCandidate: true,
       hideTrackerCandidate: false,
     });
-    expect(maskCompareCompanionVisible(store.display, {
-      source: "annotation",
-      id: "annotation-1",
-    })).toBe(false);
-    expect(maskCompareCompanionVisible(store.display, {
-      source: "annotation",
-      id: "annotation-2",
-    })).toBe(true);
+    expect(
+      maskCompareCompanionVisible(store.display, {
+        source: "annotation",
+        id: "annotation-1",
+      }),
+    ).toBe(false);
+    expect(
+      maskCompareCompanionVisible(store.display, {
+        source: "annotation",
+        id: "annotation-2",
+      }),
+    ).toBe(true);
     expect(maskCompareCompanionVisible(store.display, { source: "ai" })).toBe(false);
     expect(maskCompareCompanionVisible(store.display, { source: "tracker" })).toBe(true);
     store.dispose();

@@ -15,9 +15,7 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
       await waitForAdminProjectsDashboard(page);
     },
     // 箭头指向「新建项目」按钮
-    annotate: [
-      { selector: '[data-testid="new-project-btn"]', style: "rect-blue" },
-    ],
+    annotate: [{ selector: '[data-testid="new-project-btn"]', style: "rect-blue" }],
     matrix: { themes: ["light", "dark"] },
     target: "docs-site/user-guide/images/projects/create-entry.png",
   },

@@ -136,7 +136,14 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     const cy = cbox.y + cbox.height * 0.5;
 
     // 框中心附近多起点试拖(任一命中 gizmo 轴/面即落 PATCH);命中即停。
-    for (const [dx, dy] of [[0, 0], [30, 0], [0, 30], [-30, 0], [0, -30], [20, 20]]) {
+    for (const [dx, dy] of [
+      [0, 0],
+      [30, 0],
+      [0, 30],
+      [-30, 0],
+      [0, -30],
+      [20, 20],
+    ]) {
       await page.mouse.move(cx + dx, cy + dy);
       await page.mouse.down();
       await page.mouse.move(cx + dx + 50, cy + dy, { steps: 8 });

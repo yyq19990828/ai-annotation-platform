@@ -119,7 +119,9 @@ if (missing.length === 0) {
   console.log("✓ All pages are reachable from navigation or another rendered page.");
 } else {
   for (const route of missing) console.log(`✗ ${route}`);
-  console.log(`\n${missing.length} page(s) are not reachable. Add a navigation or page link, or record an intentional exemption.`);
+  console.log(
+    `\n${missing.length} page(s) are not reachable. Add a navigation or page link, or record an intentional exemption.`,
+  );
 }
 
 if (EXEMPT_ROUTES.size > 0) {

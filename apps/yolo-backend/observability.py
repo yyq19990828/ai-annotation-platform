@@ -53,7 +53,9 @@ CONTAINER_CPU = Gauge("container_cpu_percent", "容器 CPU 利用率 (%) — yol
 CONTAINER_MEM = Gauge("container_memory_percent", "容器内存利用率 (%) — yolo-backend")
 
 
-def record_inference(task: str, series: str, size: str, duration_seconds: float) -> None:
+def record_inference(
+    task: str, series: str, size: str, duration_seconds: float
+) -> None:
     INFERENCE_LATENCY.labels(task=task, series=series, size=size).observe(
         duration_seconds
     )
@@ -133,9 +135,7 @@ def sample_perfhud() -> dict:
             import pynvml
 
             name = pynvml.nvmlDeviceGetName(_pynvml_handle)
-            out["gpu_device_name"] = (
-                name.decode() if isinstance(name, bytes) else name
-            )
+            out["gpu_device_name"] = name.decode() if isinstance(name, bytes) else name
             util = pynvml.nvmlDeviceGetUtilizationRates(_pynvml_handle).gpu
             temp = pynvml.nvmlDeviceGetTemperature(
                 _pynvml_handle, pynvml.NVML_TEMPERATURE_GPU

@@ -63,7 +63,11 @@ export function validateCocoRle(rle: unknown): CocoRle {
   return { encoding: "coco_rle", size: [height, width], counts: [...value.counts] };
 }
 
-export function encodeCocoRle(pixelsRowMajor: ArrayLike<number>, width: number, height: number): CocoRle {
+export function encodeCocoRle(
+  pixelsRowMajor: ArrayLike<number>,
+  width: number,
+  height: number,
+): CocoRle {
   const checkedWidth = positiveInteger(width, "width");
   const checkedHeight = positiveInteger(height, "height");
   if (checkedWidth > MAX_MASK_DIMENSION || checkedHeight > MAX_MASK_DIMENSION) {
@@ -114,14 +118,7 @@ export function decodeCocoRle(rle: unknown): Uint8Array {
 /** Exact point lookup without materializing the full row-major alpha plane. */
 export function cocoRleContainsPixel(rle: CocoRle, x: number, y: number): boolean {
   const [height, width] = rle.size;
-  if (
-    !Number.isInteger(x)
-    || !Number.isInteger(y)
-    || x < 0
-    || y < 0
-    || x >= width
-    || y >= height
-  ) {
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) {
     return false;
   }
   const target = x * height + y;
@@ -136,10 +133,7 @@ export function cocoRleContainsPixel(rle: CocoRle, x: number, y: number): boolea
 }
 
 export function cocoRleArea(rle: CocoRle): number {
-  return rle.counts.reduce(
-    (area, count, index) => area + ((index & 1) === 1 ? count : 0),
-    0,
-  );
+  return rle.counts.reduce((area, count, index) => area + ((index & 1) === 1 ? count : 0), 0);
 }
 
 /** Exact normalized foreground bounds without allocating a dense alpha plane. */
@@ -209,8 +203,9 @@ export async function prepareCocoRleGzipUpload(
   if (raw.byteLength < minBytes || raw.byteLength > MAX_MASK_GZIP_UNCOMPRESSED_BYTES) {
     return null;
   }
-  const compress = options.compress
-    ?? (typeof CompressionStream === "undefined" ? null : compressWithBrowserStream);
+  const compress =
+    options.compress ??
+    (typeof CompressionStream === "undefined" ? null : compressWithBrowserStream);
   if (!compress) return null;
   let compressed: Uint8Array;
   try {
@@ -219,9 +214,9 @@ export async function prepareCocoRleGzipUpload(
     return null;
   }
   if (
-    compressed.byteLength === 0
-    || compressed.byteLength > MAX_MASK_GZIP_COMPRESSED_BYTES
-    || raw.byteLength > compressed.byteLength * MAX_MASK_GZIP_EXPANSION_RATIO
+    compressed.byteLength === 0 ||
+    compressed.byteLength > MAX_MASK_GZIP_COMPRESSED_BYTES ||
+    raw.byteLength > compressed.byteLength * MAX_MASK_GZIP_EXPANSION_RATIO
   ) {
     return null;
   }

@@ -23,70 +23,72 @@ import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 
 // v0.6.6 · 重型 / 非首屏页面 lazy-load，让登录 / 仪表盘不下载 konva 等
 const WorkbenchPage = lazy(() =>
-  import("@/pages/Workbench/WorkbenchPage").then((m) => ({ default: m.WorkbenchPage }))
+  import("@/pages/Workbench/WorkbenchPage").then((m) => ({ default: m.WorkbenchPage })),
 );
 const UsersPage = lazy(() =>
-  import("@/pages/Users/UsersPage").then((m) => ({ default: m.UsersPage }))
+  import("@/pages/Users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
 const ReviewPage = lazy(() =>
-  import("@/pages/Review/ReviewPage").then((m) => ({ default: m.ReviewPage }))
+  import("@/pages/Review/ReviewPage").then((m) => ({ default: m.ReviewPage })),
 );
 const AnnotatePage = lazy(() =>
-  import("@/pages/Annotate/AnnotatePage").then((m) => ({ default: m.AnnotatePage }))
+  import("@/pages/Annotate/AnnotatePage").then((m) => ({ default: m.AnnotatePage })),
 );
 const DatasetsPage = lazy(() =>
-  import("@/pages/Datasets/DatasetsPage").then((m) => ({ default: m.DatasetsPage }))
+  import("@/pages/Datasets/DatasetsPage").then((m) => ({ default: m.DatasetsPage })),
 );
 const StoragePage = lazy(() =>
-  import("@/pages/Storage/StoragePage").then((m) => ({ default: m.StoragePage }))
+  import("@/pages/Storage/StoragePage").then((m) => ({ default: m.StoragePage })),
 );
 const ProjectSettingsPage = lazy(() =>
-  import("@/pages/Projects/ProjectSettingsPage").then((m) => ({ default: m.ProjectSettingsPage }))
+  import("@/pages/Projects/ProjectSettingsPage").then((m) => ({ default: m.ProjectSettingsPage })),
 );
 const ProjectDataManagerPage = lazy(() =>
-  import("@/pages/Projects/ProjectDataManagerPage").then((m) => ({ default: m.ProjectDataManagerPage }))
+  import("@/pages/Projects/ProjectDataManagerPage").then((m) => ({
+    default: m.ProjectDataManagerPage,
+  })),
 );
 const ProjectTemplatesPage = lazy(() =>
-  import("@/pages/ProjectTemplates/ProjectTemplatesPage").then((m) => ({ default: m.ProjectTemplatesPage }))
+  import("@/pages/ProjectTemplates/ProjectTemplatesPage").then((m) => ({
+    default: m.ProjectTemplatesPage,
+  })),
 );
 const AuditPage = lazy(() =>
-  import("@/pages/Audit/AuditPage").then((m) => ({ default: m.AuditPage }))
+  import("@/pages/Audit/AuditPage").then((m) => ({ default: m.AuditPage })),
 );
-const BugsPage = lazy(() =>
-  import("@/pages/Bugs/BugsPage").then((m) => ({ default: m.BugsPage }))
-);
+const BugsPage = lazy(() => import("@/pages/Bugs/BugsPage").then((m) => ({ default: m.BugsPage })));
 const BugReportDrawer = lazy(() =>
-  import("@/components/bugreport/BugReportDrawer").then((m) => ({ default: m.BugReportDrawer }))
+  import("@/components/bugreport/BugReportDrawer").then((m) => ({ default: m.BugReportDrawer })),
 );
 const SettingsPage = lazy(() =>
-  import("@/pages/Settings/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+  import("@/pages/Settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
 const ModelMarketPage = lazy(() =>
-  import("@/pages/ModelMarket/ModelMarketPage").then((m) => ({ default: m.ModelMarketPage }))
+  import("@/pages/ModelMarket/ModelMarketPage").then((m) => ({ default: m.ModelMarketPage })),
 );
 const AIPreAnnotatePage = lazy(() =>
-  import("@/pages/AIPreAnnotate/AIPreAnnotatePage").then((m) => ({ default: m.default }))
+  import("@/pages/AIPreAnnotate/AIPreAnnotatePage").then((m) => ({ default: m.default })),
 );
 const AIPreAnnotateLayout = lazy(() =>
-  import("@/pages/AIPreAnnotate/AIPreAnnotateLayout").then((m) => ({ default: m.default }))
+  import("@/pages/AIPreAnnotate/AIPreAnnotateLayout").then((m) => ({ default: m.default })),
 );
 const AIPreAnnotateJobsPage = lazy(() =>
-  import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default }))
+  import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default })),
 );
 const GlobalPipelineLibraryPage = lazy(() =>
-  import("@/pages/AIPreAnnotate/GlobalPipelineLibraryPage").then((m) => ({ default: m.default }))
+  import("@/pages/AIPreAnnotate/GlobalPipelineLibraryPage").then((m) => ({ default: m.default })),
 );
 const AdminPeoplePage = lazy(() =>
-  import("@/pages/Admin/AdminPeoplePage").then((m) => ({ default: m.AdminPeoplePage }))
+  import("@/pages/Admin/AdminPeoplePage").then((m) => ({ default: m.AdminPeoplePage })),
 );
 const AnalyticsPage = lazy(() =>
-  import("@/pages/Admin/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
+  import("@/pages/Admin/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })),
 );
 const SystemHealthPage = lazy(() =>
-  import("@/pages/Admin/SystemHealthPage").then((m) => ({ default: m.SystemHealthPage }))
+  import("@/pages/Admin/SystemHealthPage").then((m) => ({ default: m.SystemHealthPage })),
 );
 const MyPerformancePage = lazy(() =>
-  import("@/pages/Me/MyPerformancePage").then((m) => ({ default: m.MyPerformancePage }))
+  import("@/pages/Me/MyPerformancePage").then((m) => ({ default: m.MyPerformancePage })),
 );
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
@@ -199,7 +201,11 @@ function AppShell() {
       <BugReportFAB onClick={() => openBugDrawer()} />
       {bugDrawerOpen && (
         <Suspense fallback={null}>
-          <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+          <BugReportDrawer
+            open={bugDrawerOpen}
+            focusBugId={bugDrawerFocusId}
+            onClose={closeBugDrawer}
+          />
         </Suspense>
       )}
       {/* v0.9.11 PerfHud · 全局浮窗 (内部按角色 gating + visibility store 控制渲染) */}
@@ -243,7 +249,11 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
       <BugReportFAB hidden={!fabRevealed} onClick={() => openBugDrawer()} />
       {bugDrawerOpen && (
         <Suspense fallback={null}>
-          <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+          <BugReportDrawer
+            open={bugDrawerOpen}
+            focusBugId={bugDrawerFocusId}
+            onClose={closeBugDrawer}
+          />
         </Suspense>
       )}
       {tooNarrow && <MobileWorkbenchBlock />}
@@ -253,15 +263,12 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
 
 function MobileWorkbenchBlock() {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className={styles.mobileWorkbenchBlock}
-    >
+    <div role="dialog" aria-modal="true" className={styles.mobileWorkbenchBlock}>
       <div className={styles.mobileWorkbenchIcon}>🖥️</div>
       <h2 className={styles.mobileWorkbenchTitle}>请切换到桌面端</h2>
       <p className={styles.mobileWorkbenchText}>
-        标注工作台依赖快捷键、画布鼠标交互和大屏侧栏。当前屏幕小于 768px，仅以只读方式展示，避免误操作。
+        标注工作台依赖快捷键、画布鼠标交互和大屏侧栏。当前屏幕小于
+        768px，仅以只读方式展示，避免误操作。
       </p>
       <div className={styles.mobileWorkbenchHint}>建议宽度 ≥ 1024px</div>
     </div>

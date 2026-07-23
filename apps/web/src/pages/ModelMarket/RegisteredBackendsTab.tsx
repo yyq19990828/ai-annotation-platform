@@ -35,20 +35,14 @@ import {
 import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
 import { usePermissions } from "@/hooks/usePermissions";
 
-import {
-  collectDiagnostics,
-  mergeTopologyAndSnapshot,
-} from "./runtimeTopology";
+import { collectDiagnostics, mergeTopologyAndSnapshot } from "./runtimeTopology";
 import { GlobalBackendFormModal } from "./GlobalBackendFormModal";
 import { ServicePoolsSection } from "./registry/ServicePoolsSection";
 import { BackendInstancesSection } from "./registry/BackendInstancesSection";
 import { GPUResourcesSection } from "./registry/GPUResourcesSection";
 import { ProjectBindingsSection } from "./registry/ProjectBindingsSection";
 import { IssueCenter } from "./registry/IssueCenter";
-import type {
-  RegistryFilters,
-  RegistryScope,
-} from "./registry/registryTypes";
+import type { RegistryFilters, RegistryScope } from "./registry/registryTypes";
 
 type StatusFilter = RegistryFilters["statusFilter"];
 
@@ -126,7 +120,7 @@ export function RegisteredBackendsTab(): ReactNode {
   // We narrow here so the rest of the component (and the RegistryScope it
   // builds) can rely on a non-null TopologyResponse.
   const topology = topologyQ.data ?? null;
-  const snapshot = isSuperAdmin ? snapshotQ.data ?? null : null;
+  const snapshot = isSuperAdmin ? (snapshotQ.data ?? null) : null;
   const vm = useMemo(() => {
     if (!topology) return null;
     return mergeTopologyAndSnapshot(topology, snapshot);
@@ -137,7 +131,7 @@ export function RegisteredBackendsTab(): ReactNode {
     return collectDiagnostics(
       topology,
       snapshot,
-      isSuperAdmin ? gpuQ.data?.resources ?? null : null,
+      isSuperAdmin ? (gpuQ.data?.resources ?? null) : null,
     );
   }, [topology, snapshot, gpuQ.data, isSuperAdmin]);
 
@@ -166,15 +160,13 @@ export function RegisteredBackendsTab(): ReactNode {
 
   // ── header counts ─────────────────────────────────────────────────────────
   const totalPools = narrowedVm.pools.length;
-  const routableInstances = narrowedVm.pools.reduce(
-    (sum, p) => sum + p.availability.routable,
-    0,
-  );
+  const routableInstances = narrowedVm.pools.reduce((sum, p) => sum + p.availability.routable, 0);
   const totalInstances = narrowedVm.pools.reduce((sum, p) => sum + p.availability.total, 0);
   const anomalyCount = diagnostics.length;
-  const affectedProjects = isSuperAdmin && overviewQ.data
-    ? countAffectedProjects(overviewQ.data.projects, narrowedVm.pools)
-    : null;
+  const affectedProjects =
+    isSuperAdmin && overviewQ.data
+      ? countAffectedProjects(overviewQ.data.projects, narrowedVm.pools)
+      : null;
 
   const scope: RegistryScope = {
     isSuperAdmin,
@@ -182,8 +174,8 @@ export function RegisteredBackendsTab(): ReactNode {
     topology: narrowedTopology,
     servicePools: null,
     backends: allQ.data?.items ?? [],
-    gpuResources: isSuperAdmin ? gpuQ.data?.resources ?? null : null,
-    overview: isSuperAdmin ? overviewQ.data ?? null : null,
+    gpuResources: isSuperAdmin ? (gpuQ.data?.resources ?? null) : null,
+    overview: isSuperAdmin ? (overviewQ.data ?? null) : null,
     diagnostics,
     routerMode: narrowedVm.router_mode,
   };
@@ -195,124 +187,119 @@ export function RegisteredBackendsTab(): ReactNode {
       <div className="flex flex-col gap-4">
         <Card>
           <RegistryHeader
-          isSuperAdmin={isSuperAdmin}
-          totalPools={totalPools}
-          routableInstances={routableInstances}
-          totalInstances={totalInstances}
-          anomalyCount={anomalyCount}
-          affectedProjects={affectedProjects}
-          filters={filters}
-          onFiltersChange={setFilters}
-          onRefresh={refreshAll}
-          refreshing={
-            topologyQ.isFetching ||
-            (isSuperAdmin &&
-              (snapshotQ.isFetching || gpuQ.isFetching || overviewQ.isFetching)) ||
-            allQ.isFetching
-          }
-          snapshotError={
-            isSuperAdmin && snapshotQ.isError
-              ? (snapshotQ.error as Error)?.message ?? "运行时快照加载失败"
-              : null
-          }
-          gpuError={
-            isSuperAdmin && gpuQ.isError
-              ? (gpuQ.error as Error)?.message ?? "GPU 资源加载失败"
-              : null
-          }
-          overviewError={
-            isSuperAdmin && overviewQ.isError
-              ? (overviewQ.error as Error)?.message ?? "项目绑定概览加载失败"
-              : null
-          }
-          allError={
-            allQ.isError
-              ? (allQ.error as Error)?.message ?? "实例列表加载失败"
-              : null
-          }
-          onOpenRegister={() => setRegisterOpen(true)}
-        />
-      </Card>
+            isSuperAdmin={isSuperAdmin}
+            totalPools={totalPools}
+            routableInstances={routableInstances}
+            totalInstances={totalInstances}
+            anomalyCount={anomalyCount}
+            affectedProjects={affectedProjects}
+            filters={filters}
+            onFiltersChange={setFilters}
+            onRefresh={refreshAll}
+            refreshing={
+              topologyQ.isFetching ||
+              (isSuperAdmin && (snapshotQ.isFetching || gpuQ.isFetching || overviewQ.isFetching)) ||
+              allQ.isFetching
+            }
+            snapshotError={
+              isSuperAdmin && snapshotQ.isError
+                ? ((snapshotQ.error as Error)?.message ?? "运行时快照加载失败")
+                : null
+            }
+            gpuError={
+              isSuperAdmin && gpuQ.isError
+                ? ((gpuQ.error as Error)?.message ?? "GPU 资源加载失败")
+                : null
+            }
+            overviewError={
+              isSuperAdmin && overviewQ.isError
+                ? ((overviewQ.error as Error)?.message ?? "项目绑定概览加载失败")
+                : null
+            }
+            allError={allQ.isError ? ((allQ.error as Error)?.message ?? "实例列表加载失败") : null}
+            onOpenRegister={() => setRegisterOpen(true)}
+          />
+        </Card>
 
-      <Card className="p-3">
-        {isSuperAdmin ? (
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="mb-3">
-              <TabsTrigger value="pools">
-                <Icon name="layers" size={12} />
-                服务池
-              </TabsTrigger>
-              <TabsTrigger value="instances">
-                <Icon name="bot" size={12} />
-                实例
-              </TabsTrigger>
-              <TabsTrigger value="gpu">
-                <Icon name="activity" size={12} />
-                GPU 资源
-              </TabsTrigger>
-              <TabsTrigger value="projects">
-                <Icon name="folder" size={12} />
-                项目绑定
-              </TabsTrigger>
-              <TabsTrigger value="issues">
-                <Icon name="alert-triangle" size={12} />
-                问题中心
-                {anomalyCount > 0 && (
-                  <Badge variant="danger" className="ml-1 text-2xs">
-                    {anomalyCount}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="pools">
-              <ServicePoolsSection scope={scope} filters={filters} />
-            </TabsContent>
-            <TabsContent value="instances">
-              <BackendInstancesSection
-                scope={scope}
-                filters={filters}
-                focusedPoolId={focusedPoolId}
-                onClearPoolFocus={() => setFocusedPoolId(null)}
-              />
-            </TabsContent>
-            <TabsContent value="gpu">
-              <GPUResourcesSection scope={scope} />
-            </TabsContent>
-            <TabsContent value="projects">
-              <ProjectBindingsSection scope={scope} />
-            </TabsContent>
-            <TabsContent value="issues">
-              <IssueCenter scope={scope} />
-            </TabsContent>
-          </Tabs>
-        ) : (
-          // Project Admin: only the first two tabs, read-only. No Issue Center,
-          // no GPU Resources, no Project Bindings overview (plan §5).
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="mb-3">
-              <TabsTrigger value="pools">
-                <Icon name="layers" size={12} />
-                服务池
-              </TabsTrigger>
-              <TabsTrigger value="instances">
-                <Icon name="bot" size={12} />
-                实例
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="pools">
-              <ServicePoolsSection scope={scope} filters={filters} />
-            </TabsContent>
-            <TabsContent value="instances">
-              <BackendInstancesSection
-                scope={scope}
-                filters={filters}
-                focusedPoolId={focusedPoolId}
-                onClearPoolFocus={() => setFocusedPoolId(null)}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
-      </Card>
+        <Card className="p-3">
+          {isSuperAdmin ? (
+            <Tabs value={tab} onValueChange={setTab}>
+              <TabsList className="mb-3">
+                <TabsTrigger value="pools">
+                  <Icon name="layers" size={12} />
+                  服务池
+                </TabsTrigger>
+                <TabsTrigger value="instances">
+                  <Icon name="bot" size={12} />
+                  实例
+                </TabsTrigger>
+                <TabsTrigger value="gpu">
+                  <Icon name="activity" size={12} />
+                  GPU 资源
+                </TabsTrigger>
+                <TabsTrigger value="projects">
+                  <Icon name="folder" size={12} />
+                  项目绑定
+                </TabsTrigger>
+                <TabsTrigger value="issues">
+                  <Icon name="alert-triangle" size={12} />
+                  问题中心
+                  {anomalyCount > 0 && (
+                    <Badge variant="danger" className="ml-1 text-2xs">
+                      {anomalyCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="pools">
+                <ServicePoolsSection scope={scope} filters={filters} />
+              </TabsContent>
+              <TabsContent value="instances">
+                <BackendInstancesSection
+                  scope={scope}
+                  filters={filters}
+                  focusedPoolId={focusedPoolId}
+                  onClearPoolFocus={() => setFocusedPoolId(null)}
+                />
+              </TabsContent>
+              <TabsContent value="gpu">
+                <GPUResourcesSection scope={scope} />
+              </TabsContent>
+              <TabsContent value="projects">
+                <ProjectBindingsSection scope={scope} />
+              </TabsContent>
+              <TabsContent value="issues">
+                <IssueCenter scope={scope} />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            // Project Admin: only the first two tabs, read-only. No Issue Center,
+            // no GPU Resources, no Project Bindings overview (plan §5).
+            <Tabs value={tab} onValueChange={setTab}>
+              <TabsList className="mb-3">
+                <TabsTrigger value="pools">
+                  <Icon name="layers" size={12} />
+                  服务池
+                </TabsTrigger>
+                <TabsTrigger value="instances">
+                  <Icon name="bot" size={12} />
+                  实例
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="pools">
+                <ServicePoolsSection scope={scope} filters={filters} />
+              </TabsContent>
+              <TabsContent value="instances">
+                <BackendInstancesSection
+                  scope={scope}
+                  filters={filters}
+                  focusedPoolId={focusedPoolId}
+                  onClearPoolFocus={() => setFocusedPoolId(null)}
+                />
+              </TabsContent>
+            </Tabs>
+          )}
+        </Card>
 
         <GlobalBackendFormModal
           open={registerOpen}
@@ -396,7 +383,11 @@ function RegistryHeader({
             disabled={refreshing}
             title="刷新全部数据源"
           >
-            <Icon name={refreshing ? "loader2" : "refresh"} size={11} className={refreshing ? "spin" : undefined} />
+            <Icon
+              name={refreshing ? "loader2" : "refresh"}
+              size={11}
+              className={refreshing ? "spin" : undefined}
+            />
             刷新
           </Button>
         </div>
@@ -521,9 +512,7 @@ function countAffectedProjects(
   let count = 0;
   for (const proj of projects) {
     const backendIds = new Set(proj.backends.map((b) => b.id));
-    const linked = pools.filter((p) =>
-      p.members.some((m) => backendIds.has(m.registry_id)),
-    );
+    const linked = pools.filter((p) => p.members.some((m) => backendIds.has(m.registry_id)));
     const atRisk =
       linked.length === 0 ||
       linked.some((p) => p.status === "offline" || p.availability.routable === 0);

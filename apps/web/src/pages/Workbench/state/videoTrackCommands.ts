@@ -1,8 +1,4 @@
-import type {
-  VideoTrackGeometry,
-  VideoTrackKeyframe,
-  VideoTrackOutsideRange,
-} from "@/types";
+import type { VideoTrackGeometry, VideoTrackKeyframe, VideoTrackOutsideRange } from "@/types";
 import type { Command } from "./useAnnotationHistory";
 
 // v0.10.30 · 2.3 keyframe.attributes 是「逐帧覆盖」(仅承载 schema 中 mutable=true 的键)。
@@ -34,7 +30,10 @@ function cloneKeyframe(kf: VideoTrackKeyframe): VideoTrackKeyframe {
   return cloned;
 }
 
-function sameKeyframe(a: VideoTrackKeyframe | undefined, b: VideoTrackKeyframe | undefined): boolean {
+function sameKeyframe(
+  a: VideoTrackKeyframe | undefined,
+  b: VideoTrackKeyframe | undefined,
+): boolean {
   if (!a || !b) return a === b;
   return (
     a.frame_index === b.frame_index &&

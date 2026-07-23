@@ -152,9 +152,7 @@ def _validate(root: Path, *, source_sha256: str) -> GeneratedScreenshotAssets:
     )
 
 
-def _yolo_line(
-    class_id: int, box: tuple[float, float, float, float]
-) -> str:
+def _yolo_line(class_id: int, box: tuple[float, float, float, float]) -> str:
     left, top, right, bottom = box
     return (
         f"{class_id} {(left + right) / 2:.6f} {(top + bottom) / 2:.6f} "
@@ -178,7 +176,9 @@ def _crop_box(
     )
     center_x = (left + right) / 2
     center_y = (top + bottom) / 2
-    if not (crop_left <= center_x <= crop_right and crop_top <= center_y <= crop_bottom):
+    if not (
+        crop_left <= center_x <= crop_right and crop_top <= center_y <= crop_bottom
+    ):
         return None
     crop_width = crop_right - crop_left
     crop_height = crop_bottom - crop_top
@@ -354,13 +354,17 @@ def _normalized_xyz_pcd(source: Path) -> bytes:
     if data_kind == "ascii":
         try:
             rows = body.decode("ascii").splitlines()
-            points = [tuple(float(value) for value in row.split()) for row in rows if row]
+            points = [
+                tuple(float(value) for value in row.split()) for row in rows if row
+            ]
         except (UnicodeDecodeError, ValueError) as exc:
             raise SeedAssetError(f"screenshot ASCII PCD is invalid: {source}") from exc
     elif data_kind == "binary":
         if len(body) != point_count * 12:
             raise SeedAssetError(f"screenshot binary PCD size is invalid: {source}")
-        points = [struct.unpack_from("<fff", body, index * 12) for index in range(point_count)]
+        points = [
+            struct.unpack_from("<fff", body, index * 12) for index in range(point_count)
+        ]
     elif data_kind == "binary_compressed":
         if len(body) < 8:
             raise SeedAssetError(f"screenshot compressed PCD is truncated: {source}")

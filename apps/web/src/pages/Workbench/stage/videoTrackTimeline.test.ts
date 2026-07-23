@@ -25,15 +25,17 @@ function track(patch: Partial<VideoTrackGeometry>): VideoTrackGeometry {
 
 describe("videoTrackTimeline", () => {
   it("builds selected track timeline without interpolating across outside", () => {
-    const timeline = buildSelectedTrackTimeline(track({
-      outside: [{ from: 4, to: 5 }],
-      keyframes: [
-        { frame_index: 0, bbox, source: "manual" },
-        { frame_index: 3, bbox, source: "prediction", occluded: true },
-        { frame_index: 6, bbox, source: "manual" },
-        { frame_index: 9, bbox, source: "manual" },
-      ],
-    }));
+    const timeline = buildSelectedTrackTimeline(
+      track({
+        outside: [{ from: 4, to: 5 }],
+        keyframes: [
+          { frame_index: 0, bbox, source: "manual" },
+          { frame_index: 3, bbox, source: "prediction", occluded: true },
+          { frame_index: 6, bbox, source: "manual" },
+          { frame_index: 9, bbox, source: "manual" },
+        ],
+      }),
+    );
 
     expect(timeline.keyframes).toEqual([
       { frame: 0, source: "manual", occluded: false },
@@ -49,22 +51,48 @@ describe("videoTrackTimeline", () => {
   });
 
   it("labels mask keyframe gaps as held instead of interpolated", () => {
-    const timeline = buildSelectedTrackTimeline({
-      type: "video_track_mask",
-      track_id: "trk_mask",
-      keyframes: [
-        { frame_index: 0, mask: { encoding: "coco_rle_ref", size: [2, 2], object_key: "a", sha256: "a".repeat(64), runs: 1, bytes: 1 }, source: "manual" },
-        { frame_index: 4, mask: { encoding: "coco_rle_ref", size: [2, 2], object_key: "b", sha256: "b".repeat(64), runs: 1, bytes: 1 }, source: "prediction" },
-      ],
-    }, "held");
-    expect(timeline.interpolated).toEqual([
-      { from: 0, to: 4, hasPrediction: true, kind: "held" },
-    ]);
+    const timeline = buildSelectedTrackTimeline(
+      {
+        type: "video_track_mask",
+        track_id: "trk_mask",
+        keyframes: [
+          {
+            frame_index: 0,
+            mask: {
+              encoding: "coco_rle_ref",
+              size: [2, 2],
+              object_key: "a",
+              sha256: "a".repeat(64),
+              runs: 1,
+              bytes: 1,
+            },
+            source: "manual",
+          },
+          {
+            frame_index: 4,
+            mask: {
+              encoding: "coco_rle_ref",
+              size: [2, 2],
+              object_key: "b",
+              sha256: "b".repeat(64),
+              runs: 1,
+              bytes: 1,
+            },
+            source: "prediction",
+          },
+        ],
+      },
+      "held",
+    );
+    expect(timeline.interpolated).toEqual([{ from: 0, to: 4, hasPrediction: true, kind: "held" }]);
   });
 
   it("filters outside keyframes from keyframe navigation", () => {
     const geometry = track({
-      outside: [{ from: 5, to: 6 }, { from: 8, to: 8 }],
+      outside: [
+        { from: 5, to: 6 },
+        { from: 8, to: 8 },
+      ],
       keyframes: [
         { frame_index: 1, bbox, source: "manual" },
         { frame_index: 5, bbox, source: "manual" },
@@ -81,7 +109,10 @@ describe("videoTrackTimeline", () => {
 
   it("navigates prev/next keyframe and first/last appear over visible frames", () => {
     const geometry = track({
-      outside: [{ from: 5, to: 6 }, { from: 8, to: 8 }],
+      outside: [
+        { from: 5, to: 6 },
+        { from: 8, to: 8 },
+      ],
       keyframes: [
         { frame_index: 1, bbox, source: "manual" },
         { frame_index: 5, bbox, source: "manual" },
@@ -110,22 +141,27 @@ describe("videoTrackTimeline", () => {
   });
 
   it("aggregates global density into stable bins", () => {
-    const bins = buildGlobalTimelineDensity([
-      track({
-        track_id: "a",
-        keyframes: [
-          { frame_index: 0, bbox, source: "manual" },
-          { frame_index: 5, bbox, source: "manual" },
-        ],
-      }),
-      track({
-        track_id: "b",
-        keyframes: [
-          { frame_index: 5, bbox, source: "prediction" },
-          { frame_index: 9, bbox, source: "manual" },
-        ],
-      }),
-    ], 9, 5, [5, 6]);
+    const bins = buildGlobalTimelineDensity(
+      [
+        track({
+          track_id: "a",
+          keyframes: [
+            { frame_index: 0, bbox, source: "manual" },
+            { frame_index: 5, bbox, source: "manual" },
+          ],
+        }),
+        track({
+          track_id: "b",
+          keyframes: [
+            { frame_index: 5, bbox, source: "prediction" },
+            { frame_index: 9, bbox, source: "manual" },
+          ],
+        }),
+      ],
+      9,
+      5,
+      [5, 6],
+    );
 
     expect(bins).toEqual([
       { index: 0, from: 0, to: 1, density: 1, tracks: [{ trackId: "a", count: 1 }] },
@@ -146,15 +182,19 @@ describe("videoTrackTimeline", () => {
   });
 
   it("can build per-frame density bins when the bin count matches frame count", () => {
-    const bins = buildGlobalTimelineDensity([
-      track({
-        track_id: "a",
-        keyframes: [
-          { frame_index: 0, bbox, source: "manual" },
-          { frame_index: 4, bbox, source: "manual" },
-        ],
-      }),
-    ], 4, 5);
+    const bins = buildGlobalTimelineDensity(
+      [
+        track({
+          track_id: "a",
+          keyframes: [
+            { frame_index: 0, bbox, source: "manual" },
+            { frame_index: 4, bbox, source: "manual" },
+          ],
+        }),
+      ],
+      4,
+      5,
+    );
 
     expect(bins.map((bin) => ({ from: bin.from, to: bin.to, density: bin.density }))).toEqual([
       { from: 0, to: 0, density: 1 },

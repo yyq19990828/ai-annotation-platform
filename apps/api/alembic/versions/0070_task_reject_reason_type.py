@@ -25,9 +25,7 @@ def upgrade() -> None:
         "tasks",
         sa.Column("reject_reason_type", sa.String(20), nullable=True),
     )
-    op.create_index(
-        "ix_tasks_reject_reason_type", "tasks", ["reject_reason_type"]
-    )
+    op.create_index("ix_tasks_reject_reason_type", "tasks", ["reject_reason_type"])
 
 
 def downgrade() -> None:

@@ -35,10 +35,8 @@ export function useFeedbacks(params: ListFeedbacksParams, enabled = true) {
 export function useInfiniteFeedbacks(params: ListFeedbacksParams, enabled = true) {
   return useInfiniteQuery({
     queryKey: [...feedbacksKey(params), "infinite", params.limit ?? 100],
-    queryFn: ({ pageParam, signal }) => feedbacksApi.list(
-      { ...params, cursor: pageParam ?? undefined },
-      signal,
-    ),
+    queryFn: ({ pageParam, signal }) =>
+      feedbacksApi.list({ ...params, cursor: pageParam ?? undefined }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: enabled && !!params.project_id,
@@ -80,8 +78,15 @@ export function useDeleteFeedback(invalidateParams: ListFeedbacksParams) {
 export function useReplyFeedback(invalidateParams: ListFeedbacksParams) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body, attachments }: { id: string; body: string; attachments?: Array<Record<string, unknown>> }) =>
-      feedbacksApi.reply(id, { body, attachments }),
+    mutationFn: ({
+      id,
+      body,
+      attachments,
+    }: {
+      id: string;
+      body: string;
+      attachments?: Array<Record<string, unknown>>;
+    }) => feedbacksApi.reply(id, { body, attachments }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["feedbacks", invalidateParams.project_id] });
     },

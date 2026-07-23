@@ -15,9 +15,7 @@ export function SelectProjectModal({ open, onClose, projects, onPick }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="选择项目开始标注" width={560}>
       {projects.length === 0 ? (
-        <div className={styles.empty}>
-          暂无分配项目
-        </div>
+        <div className={styles.empty}>暂无分配项目</div>
       ) : (
         <ul className={styles.list}>
           {projects.map((p) => {
@@ -25,7 +23,10 @@ export function SelectProjectModal({ open, onClose, projects, onPick }: Props) {
             return (
               <li key={p.id}>
                 <button
-                  onClick={() => { onPick(p.id); onClose(); }}
+                  onClick={() => {
+                    onPick(p.id);
+                    onClose();
+                  }}
                   className={styles.projectButton}
                 >
                   <Icon name="folder" size={16} className={styles.folderIcon} />
@@ -35,7 +36,10 @@ export function SelectProjectModal({ open, onClose, projects, onPick }: Props) {
                       <span className="mono">{p.display_id}</span> · {p.type_label}
                     </div>
                   </div>
-                  <Badge variant={remaining > 0 ? "accent" : "outline"} className={styles.remainingBadge}>
+                  <Badge
+                    variant={remaining > 0 ? "accent" : "outline"}
+                    className={styles.remainingBadge}
+                  >
                     待标 {remaining}
                   </Badge>
                   <Icon name="chevRight" size={13} className={styles.chevronIcon} />

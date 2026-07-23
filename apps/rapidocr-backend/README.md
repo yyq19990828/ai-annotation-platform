@@ -3,11 +3,11 @@
 RapidOCR（ONNX）ML backend，平台首个真实 OCR backend。把 RapidOCR 的 `det → cls → rec`
 三段拆为**原子能力 + 端到端编排**，对外自报三个 model：
 
-| model_id | 任务 | 输入 → 输出 | composition |
-|---|---|---|---|
-| `ocr-det` | `detection` | full_image → polygon 文本框 | atom |
-| `ocr-rec` | `ocr` | crop → `attributes.text`(+orientation/language) | atom（内部跑 cls 方向校正）|
-| `ocr-e2e` | `ocr` | full_image → polygon + text + orientation | composite（det→cls→rec）|
+| model_id  | 任务        | 输入 → 输出                                     | composition                 |
+| --------- | ----------- | ----------------------------------------------- | --------------------------- |
+| `ocr-det` | `detection` | full_image → polygon 文本框                     | atom                        |
+| `ocr-rec` | `ocr`       | crop → `attributes.text`(+orientation/language) | atom（内部跑 cls 方向校正） |
+| `ocr-e2e` | `ocr`       | full_image → polygon + text + orientation       | composite（det→cls→rec）    |
 
 cls（文本行方向 0/180）语言/版本无关，内化进 rec 与 e2e、不单独暴露。平台 pipeline 可把
 `ocr-det（源阶段）→ ocr-rec（下游吃 crop）` 串成编排。
@@ -42,16 +42,16 @@ curl -s localhost:8005/setup | python3 -m json.tool
 也支持显式 CPU 模式；无 GPU reservation 时可直接运行同一镜像并设置
 `RAPIDOCR_DEVICE=cpu`。环境变量：
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `RAPIDOCR_MODEL_DIR` | `/app/models` | 权重根目录 |
-| `RAPIDOCR_DEVICE` | `gpu` | `gpu` 优先构造 CUDA session，明确设备错误时才尝试 CPU replacement；`cpu` 只构造 CPU session。实际 provider 以 `/health` 的业务 session 为准 |
-| `RAPIDOCR_POOL_CAP` | `3` | composite 引擎数上限；每个引擎固定持有 det/cls/rec 三个 ORT session |
-| `RAPIDOCR_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后 builder 仍由池跟踪 |
-| `RAPIDOCR_IDLE_UNLOAD_SECONDS` | `600` | 整池空闲卸载阈值；非正数关闭 |
-| `RAPIDOCR_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期 |
-| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0` | 部署级 opt-in；当前镜像/模型的参考实卡证据见 v0.22.4 仲裁计划，硬件或制品不匹配时须重新验证 |
-| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | 空 | Ed25519 验签公钥 keyring；空值保持 legacy gate |
+| 变量                                  | 默认          | 说明                                                                                                                                        |
+| ------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RAPIDOCR_MODEL_DIR`                  | `/app/models` | 权重根目录                                                                                                                                  |
+| `RAPIDOCR_DEVICE`                     | `gpu`         | `gpu` 优先构造 CUDA session，明确设备错误时才尝试 CPU replacement；`cpu` 只构造 CPU session。实际 provider 以 `/health` 的业务 session 为准 |
+| `RAPIDOCR_POOL_CAP`                   | `3`           | composite 引擎数上限；每个引擎固定持有 det/cls/rec 三个 ORT session                                                                         |
+| `RAPIDOCR_BUILD_TIMEOUT`              | `30`          | 调用方等待冷启动的秒数；超时后 builder 仍由池跟踪                                                                                           |
+| `RAPIDOCR_IDLE_UNLOAD_SECONDS`        | `600`         | 整池空闲卸载阈值；非正数关闭                                                                                                                |
+| `RAPIDOCR_IDLE_CHECK_INTERVAL`        | `60`          | 空闲检查周期                                                                                                                                |
+| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0`           | 部署级 opt-in；当前镜像/模型的参考实卡证据见 v0.22.4 仲裁计划，硬件或制品不匹配时须重新验证                                                 |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON`      | 空            | Ed25519 验签公钥 keyring；空值保持 legacy gate                                                                                              |
 
 ## 引擎池与受管生命周期
 

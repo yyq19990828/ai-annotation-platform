@@ -42,7 +42,9 @@ def test_metric_path_uses_route_template_not_uuid() -> None:
 
 
 def test_metric_path_collapses_unmatched_api_urls() -> None:
-    assert _metric_route_path(_request("/api/v1/private/value", None)) == "/api/unmatched"
+    assert (
+        _metric_route_path(_request("/api/v1/private/value", None)) == "/api/unmatched"
+    )
 
 
 @pytest.mark.asyncio
@@ -63,9 +65,7 @@ async def test_request_middleware_records_the_resolved_route_template() -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        response = await client.get(
-            "/api/items/7c1e81ac-ef5c-4a1e-b61f-0ec699a8a710"
-        )
+        response = await client.get("/api/items/7c1e81ac-ef5c-4a1e-b61f-0ec699a8a710")
 
     assert response.status_code == 200
     assert float(metric._value.get()) == before + 1

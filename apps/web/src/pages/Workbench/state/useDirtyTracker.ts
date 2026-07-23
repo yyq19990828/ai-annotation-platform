@@ -27,30 +27,40 @@ export function useDirtyTracker() {
   const notify = useCallback(() => {
     setRevision((n) => n + 1);
     listenersRef.current.forEach((l) => {
-      try { l(); } catch { /* listeners must not throw */ }
+      try {
+        l();
+      } catch {
+        /* listeners must not throw */
+      }
     });
   }, []);
 
-  const markDirty = useCallback((id: string, field: DirtyField) => {
-    let s = mapRef.current.get(id);
-    if (!s) {
-      s = new Set();
-      mapRef.current.set(id, s);
-    }
-    if (s.has(field)) return;
-    s.add(field);
-    notify();
-  }, [notify]);
+  const markDirty = useCallback(
+    (id: string, field: DirtyField) => {
+      let s = mapRef.current.get(id);
+      if (!s) {
+        s = new Set();
+        mapRef.current.set(id, s);
+      }
+      if (s.has(field)) return;
+      s.add(field);
+      notify();
+    },
+    [notify],
+  );
 
   const getDirtyFields = useCallback((id: string): DirtyField[] => {
     const s = mapRef.current.get(id);
     return s ? [...s] : [];
   }, []);
 
-  const clear = useCallback((id: string) => {
-    if (!mapRef.current.delete(id)) return;
-    notify();
-  }, [notify]);
+  const clear = useCallback(
+    (id: string) => {
+      if (!mapRef.current.delete(id)) return;
+      notify();
+    },
+    [notify],
+  );
 
   const clearAll = useCallback(() => {
     if (mapRef.current.size === 0) return;
@@ -60,7 +70,9 @@ export function useDirtyTracker() {
 
   const subscribe = useCallback((listener: () => void) => {
     listenersRef.current.add(listener);
-    return () => { listenersRef.current.delete(listener); };
+    return () => {
+      listenersRef.current.delete(listener);
+    };
   }, []);
 
   /**

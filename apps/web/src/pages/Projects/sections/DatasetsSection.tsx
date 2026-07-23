@@ -48,9 +48,7 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
         </div>
 
         {isLoading && (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            加载中...
-          </div>
+          <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
         )}
 
         {!isLoading && linked.length === 0 && (
@@ -65,10 +63,7 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
               <thead>
                 <tr className="border-b border-border">
                   {["数据集", "类型", "原数据集条目", "本项目任务", "关联时间", "操作"].map((h) => (
-                    <th
-                      key={h}
-                      className={TABLE_HEAD_CELL}
-                    >
+                    <th key={h} className={TABLE_HEAD_CELL}>
                       {h}
                     </th>
                   ))}
@@ -78,8 +73,12 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
                 {linked.map((d) => (
                   <tr key={d.id} className="border-b border-border">
                     <td className={TABLE_CELL}>
-                      <div className="max-w-[240px] truncate font-medium" title={d.name}>{d.name}</div>
-                      <div className={cn("mono", "whitespace-nowrap text-xs text-muted-foreground")}>
+                      <div className="max-w-[240px] truncate font-medium" title={d.name}>
+                        {d.name}
+                      </div>
+                      <div
+                        className={cn("mono", "whitespace-nowrap text-xs text-muted-foreground")}
+                      >
                         {d.display_id}
                       </div>
                     </td>
@@ -195,9 +194,7 @@ function LinkDatasetModal({
                     checked && "bg-brand",
                   )}
                 >
-                  {checked && (
-                    <span className="absolute inset-[3px] rounded-full bg-white" />
-                  )}
+                  {checked && <span className="absolute inset-[3px] rounded-full bg-white" />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="text-sm font-medium">{d.name}</span>
@@ -224,7 +221,9 @@ function LinkDatasetModal({
         />
       )}
       <div className="mt-4 flex justify-end gap-2">
-        <Button onClick={onClose} disabled={!!linkJobId}>取消</Button>
+        <Button onClick={onClose} disabled={!!linkJobId}>
+          取消
+        </Button>
         <Button
           variant="primary"
           onClick={onSubmit}
@@ -296,8 +295,7 @@ function UnlinkConfirmModal({
         });
         onDone();
       },
-      onError: (e) =>
-        pushToast({ msg: "取消关联失败", sub: (e as Error).message, kind: "error" }),
+      onError: (e) => pushToast({ msg: "取消关联失败", sub: (e as Error).message, kind: "error" }),
     });
   };
 
@@ -318,12 +316,14 @@ function UnlinkConfirmModal({
               <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
                 <>
-                  （含 <strong className="text-status-danger">{preview.annotations}</strong> 个已有标注）
+                  （含 <strong className="text-status-danger">{preview.annotations}</strong>{" "}
+                  个已有标注）
                 </>
               )}
               {preview.batches > 0 && (
                 <>
-                  ，并清理 <strong className="text-status-danger">{preview.batches}</strong> 个失去全部任务的空批次
+                  ，并清理 <strong className="text-status-danger">{preview.batches}</strong>{" "}
+                  个失去全部任务的空批次
                 </>
               )}
               。<br />

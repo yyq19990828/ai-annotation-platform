@@ -14,10 +14,7 @@ const REPO_ROOT = path.resolve(__dirname, "../../..");
 const DOCS_ROOT = path.join(REPO_ROOT, "docs-site");
 const USER_GUIDE_ROOT = path.join(DOCS_ROOT, "user-guide");
 const IMAGES_PREFIX = "docs-site/user-guide/images/";
-const MANIFEST_PATH = path.join(
-  REPO_ROOT,
-  "apps/web/e2e/screenshots/outputs/manifest.json",
-);
+const MANIFEST_PATH = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/manifest.json");
 const strict = process.argv.includes("--strict");
 
 const { schemaVersion, entries } = readScreenshotManifest(MANIFEST_PATH);
@@ -35,7 +32,9 @@ const imageRefs = [...references.entries()]
   .sort(([left], [right]) => left.localeCompare(right));
 
 let missingCount = 0;
-console.log(`\n截图 manifest 快速校验（schema v${schemaVersion}，${imageRefs.length} 张静态引用图）\n`);
+console.log(
+  `\n截图 manifest 快速校验（schema v${schemaVersion}，${imageRefs.length} 张静态引用图）\n`,
+);
 console.log("─".repeat(64));
 
 for (const [key, reference] of imageRefs) {

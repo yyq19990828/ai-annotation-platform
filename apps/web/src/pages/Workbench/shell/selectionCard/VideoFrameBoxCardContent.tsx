@@ -9,8 +9,7 @@ import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics } from "./geometryMetrics";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
 const FRAME_CHIP_CLASS =
   "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium tabular-nums whitespace-nowrap bg-brand/10 text-brand";
@@ -65,10 +64,10 @@ export function VideoFrameBoxCardContent({
 }: VideoFrameBoxCardContentProps) {
   const geom = annotation.geometry;
   const frameIndex =
-    geom.type === "video_bbox"
-    || geom.type === "video_polygon"
-    || geom.type === "video_polyline"
-    || geom.type === "video_rotated_bbox"
+    geom.type === "video_bbox" ||
+    geom.type === "video_polygon" ||
+    geom.type === "video_polyline" ||
+    geom.type === "video_rotated_bbox"
       ? geom.frame_index
       : null;
   const metrics = geometryMetrics(geom, imageWidth, imageHeight);

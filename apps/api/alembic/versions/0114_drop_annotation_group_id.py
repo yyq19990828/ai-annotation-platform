@@ -32,7 +32,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("CREATE SEQUENCE IF NOT EXISTS cross_frame_group_seq START WITH 1000000000")
+    op.execute(
+        "CREATE SEQUENCE IF NOT EXISTS cross_frame_group_seq START WITH 1000000000"
+    )
     op.add_column(
         "tasks",
         sa.Column(

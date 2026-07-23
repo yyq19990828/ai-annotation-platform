@@ -40,11 +40,11 @@ uv run pytest --cov=app --cov-report=html    # 看覆盖率
 
 `tests/conftest.py` 提供：
 
-| Fixture | 用途 |
-|---|---|
-| `db_session` | function-scoped，SAVEPOINT 隔离的 DB 会话 |
-| `httpx_client` | ASGI 客户端，依赖注入了 db_session |
-| `super_admin` / `project_admin` / `annotator` / `reviewer` | 4 角色 fixture，带 JWT token |
+| Fixture                                                    | 用途                                      |
+| ---------------------------------------------------------- | ----------------------------------------- |
+| `db_session`                                               | function-scoped，SAVEPOINT 隔离的 DB 会话 |
+| `httpx_client`                                             | ASGI 客户端，依赖注入了 db_session        |
+| `super_admin` / `project_admin` / `annotator` / `reviewer` | 4 角色 fixture，带 JWT token              |
 
 ### 写一个 API 测试
 
@@ -141,14 +141,14 @@ E2E spec 通过 `apps/web/e2e/fixtures/seed.ts` 调后端 `/api/v1/__test/seed/*
 import { test, expect } from "../fixtures/seed";
 
 test("正确凭证 → 跳 dashboard", async ({ page, seed }) => {
-  const data = await seed.reset();                  // 清理并重建固定 fixture
+  const data = await seed.reset(); // 清理并重建固定 fixture
   await seed.loginViaUI(page, data.admin_email, "Test1234");
   await expect(page).toHaveURL(/\/dashboard/);
 });
 
 test("注入 token 跳 UI 登录", async ({ page, seed }) => {
   const data = await seed.reset();
-  await seed.injectToken(page, data.annotator_email);  // 直接 localStorage 注入
+  await seed.injectToken(page, data.annotator_email); // 直接 localStorage 注入
   await page.goto("/annotate");
 });
 ```
@@ -174,10 +174,17 @@ ROADMAP 列出的 ≥ 25% 目标继续推：补 InviteUserModal / RegisterPage /
 
 ## Pre-commit
 
-`pre-commit install` 后每次 `git commit` 自动跑：
+先执行 `uv tool install "pre-commit==4.6.1" && pre-commit install`。之后每次
+`git commit` 自动跑：
 
-- ruff check + format（apps/api）
+- Ruff check + format（全部第一方 Python，排除 vendor）
+- Prettier（本次提交涉及的受支持文本文件）
 - eslint（apps/web）
 - tsc --noEmit（apps/web）
 
 如果 hook 失败，**不要** `--no-verify`，先把问题修了。
+
+CI 在全仓 `format:check`、Ruff、ESLint 和类型检查之外，还会以 `manual` 阶段执行一次
+`pre-commit --all-files`。该阶段跳过会写入并暂存 OpenAPI、能力词表和文档生成物的三个
+本地提交 hook；这些生成物继续由 OpenAPI 契约测试、能力词表契约测试和文档 codegen
+只读检查兜底。

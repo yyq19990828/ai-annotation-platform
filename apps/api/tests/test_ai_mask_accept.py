@@ -46,7 +46,7 @@ async def _seed(
     await db.flush()
     item = DatasetItem(
         dataset_id=dataset.id,
-        file_name=f"sample.{ 'png' if media_type == 'image' else 'mp4' }",
+        file_name=f"sample.{'png' if media_type == 'image' else 'mp4'}",
         file_path=f"{media_type}/{suffix}",
         file_type=media_type,
         width=3,
@@ -208,7 +208,9 @@ def accept_storage_mocks(monkeypatch):
     store = AsyncMock()
     prepare_prediction = AsyncMock()
     prepare_annotation = AsyncMock()
-    monkeypatch.setattr("app.services.ai_mask_accept.store_mask_reference_objects", store)
+    monkeypatch.setattr(
+        "app.services.ai_mask_accept.store_mask_reference_objects", store
+    )
     monkeypatch.setattr(
         "app.services.prediction.prepare_mask_payload_for_write", prepare_prediction
     )
@@ -244,7 +246,9 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     payload = first.json()
     assert payload["replayed"] is False
     assert payload["annotation"]["geometry"]["type"] == "raster_mask"
-    assert payload["annotation"]["geometry"]["mask"]["sha256"] == payload["content_digest"]
+    assert (
+        payload["annotation"]["geometry"]["mask"]["sha256"] == payload["content_digest"]
+    )
     assert payload["annotation"]["parent_prediction_id"] == payload["prediction"]["id"]
     assert first.headers["etag"] == 'W/"1"'
 
@@ -265,10 +269,14 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
         ).scalar_one()
         assert count == 1
     audits = (
-        await db_session.execute(
-            select(AuditLog).where(AuditLog.action == "mask_ai.candidate_accept")
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.action == "mask_ai.candidate_accept")
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(audits) == 1
     assert "counts" not in str(audits[0].detail_json)
 
@@ -277,10 +285,7 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     from app.workers import cleanup
 
     decision = (await db_session.execute(select(AiMaskAcceptDecision))).scalar_one()
-    replay_only_key = (
-        "raster-masks/sha256/ff/ff/"
-        f"{'f' * 64}.json"
-    )
+    replay_only_key = f"raster-masks/sha256/ff/ff/{'f' * 64}.json"
     decision.response_json = {"replay_only": {"object_key": replay_only_key}}
     await db_session.flush()
     assert replay_only_key in await cleanup._referenced_raster_mask_keys(db_session)
@@ -436,9 +441,7 @@ async def test_video_accept_updates_only_current_keyframe_and_outside(
     accept_storage_mocks,
 ):
     user, token = super_admin
-    task, backend, pool = await _seed(
-        db_session, owner_id=user.id, media_type="video"
-    )
+    task, backend, pool = await _seed(db_session, owner_id=user.id, media_type="video")
     source = Annotation(
         task_id=task.id,
         project_id=task.project_id,
@@ -498,7 +501,10 @@ async def test_video_accept_updates_only_current_keyframe_and_outside(
     assert stored_geometry["keyframes"][2] == before_last
     assert stored_geometry["keyframes"][1]["frame_index"] == 4
     assert stored_geometry["keyframes"][1]["source"] == "prediction"
-    assert stored_geometry["keyframes"][1]["mask"]["sha256"] == build_rle_reference(ALT_RLE)["sha256"]
+    assert (
+        stored_geometry["keyframes"][1]["mask"]["sha256"]
+        == build_rle_reference(ALT_RLE)["sha256"]
+    )
     assert stored_geometry["outside"] == [
         {"from": 3, "to": 3, "source": "manual"},
         {"from": 5, "to": 5, "source": "manual"},
@@ -514,9 +520,7 @@ async def test_video_accept_create_builds_one_current_frame_keyframe(
     accept_storage_mocks,
 ):
     user, token = super_admin
-    task, backend, pool = await _seed(
-        db_session, owner_id=user.id, media_type="video"
-    )
+    task, backend, pool = await _seed(db_session, owner_id=user.id, media_type="video")
     body = _body(task, backend, pool, frame_index=7)
 
     response = await httpx_client_bound.post(
@@ -612,9 +616,7 @@ async def test_signed_historical_route_survives_instance_removal(
     backend_id = backend.id
     pool.legacy_instance_id = None
     await db_session.execute(
-        delete(MLBackendPoolMember).where(
-            MLBackendPoolMember.registry_id == backend_id
-        )
+        delete(MLBackendPoolMember).where(MLBackendPoolMember.registry_id == backend_id)
     )
     await db_session.delete(backend)
     await db_session.flush()

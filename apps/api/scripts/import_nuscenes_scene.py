@@ -440,7 +440,9 @@ async def import_nuscenes(
                     continue
 
                 jpg_bytes = (nuscenes_root / sd["filename"]).read_bytes()
-                cam_key = f"{dataset_name}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
+                cam_key = (
+                    f"{dataset_name}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
+                )
                 storage_service.client.put_object(
                     Bucket=bucket, Key=cam_key, Body=jpg_bytes
                 )

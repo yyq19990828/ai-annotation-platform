@@ -6,13 +6,13 @@ import {
 } from "./maskInstanceOperations";
 
 function alpha(rows: number[][]): Uint8Array {
-  return Uint8Array.from(rows.flat().map((value) => value ? 255 : 0));
+  return Uint8Array.from(rows.flat().map((value) => (value ? 255 : 0)));
 }
 
 function rows(value: Uint8Array, width: number): number[][] {
   const result: number[][] = [];
   for (let offset = 0; offset < value.length; offset += width) {
-    result.push([...value.slice(offset, offset + width)].map((pixel) => pixel ? 1 : 0));
+    result.push([...value.slice(offset, offset + width)].map((pixel) => (pixel ? 1 : 0)));
   }
   return result;
 }
@@ -47,11 +47,13 @@ describe("Mask instance operation plans", () => {
     expect(plan?.resultAreas).toEqual([4, 1, 1]);
     expect(plan?.resultAreas.reduce((sum, value) => sum + value, 0)).toBe(6);
     expect(plan?.created).toHaveLength(2);
-    expect([...source]).toEqual([...alpha([
-      [1, 0, 0, 1, 1],
-      [0, 0, 0, 1, 1],
-      [0, 1, 0, 0, 0],
-    ])]);
+    expect([...source]).toEqual([
+      ...alpha([
+        [1, 0, 0, 1, 1],
+        [0, 0, 0, 1, 1],
+        [0, 1, 0, 0, 0],
+      ]),
+    ]);
   });
 
   it("split hit uses membership and returns null when the point is background", () => {
@@ -60,16 +62,20 @@ describe("Mask instance operation plans", () => {
       [1, 0, 1],
       [1, 1, 1],
     ]);
-    expect(planMaskComponentSplit(source, 3, 3, {
-      keep: "hit",
-      x: 1,
-      y: 1,
-      connectivity: 4,
-    })).toBeNull();
-    expect(planMaskComponentSplit(alpha([[1, 1, 1]]), 3, 1, {
-      keep: "largest",
-      connectivity: 4,
-    })).toBeNull();
+    expect(
+      planMaskComponentSplit(source, 3, 3, {
+        keep: "hit",
+        x: 1,
+        y: 1,
+        connectivity: 4,
+      }),
+    ).toBeNull();
+    expect(
+      planMaskComponentSplit(alpha([[1, 1, 1]]), 3, 1, {
+        keep: "largest",
+        connectivity: 4,
+      }),
+    ).toBeNull();
   });
 
   it("join unions overlapping sources without double-counting pixels", () => {

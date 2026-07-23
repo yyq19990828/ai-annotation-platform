@@ -47,33 +47,33 @@ test.describe("review approve loop", () => {
     await page.waitForTimeout(500);
 
     // 4. 后端直查 task 状态确认 approve 成功（避免依赖 reviewer 列表 DOM）
-    const reviewerTokenRes = await request.post(
-      `${API_BASE}/api/v1/__test/seed/login`,
-      { data: { email: data.reviewer_email } },
-    );
-    const reviewerToken = ((await reviewerTokenRes.json()) as {
-      access_token: string;
-    }).access_token;
-    const taskRes = await request.get(
-      `${API_BASE}/api/v1/tasks/${data.task_ids[0]}`,
-      { headers: { Authorization: `Bearer ${reviewerToken}` } },
-    );
+    const reviewerTokenRes = await request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+      data: { email: data.reviewer_email },
+    });
+    const reviewerToken = (
+      (await reviewerTokenRes.json()) as {
+        access_token: string;
+      }
+    ).access_token;
+    const taskRes = await request.get(`${API_BASE}/api/v1/tasks/${data.task_ids[0]}`, {
+      headers: { Authorization: `Bearer ${reviewerToken}` },
+    });
     expect(taskRes.ok()).toBeTruthy();
     const task = (await taskRes.json()) as { status: string };
     expect(task.status).toBe("completed");
 
     // 5. annotator 视角：拉 /notifications 应有一条 task.approved 通知
-    const annotatorTokenRes = await request.post(
-      `${API_BASE}/api/v1/__test/seed/login`,
-      { data: { email: data.annotator_email } },
-    );
-    const annotatorToken = ((await annotatorTokenRes.json()) as {
-      access_token: string;
-    }).access_token;
-    const notiRes = await request.get(
-      `${API_BASE}/api/v1/notifications?limit=20`,
-      { headers: { Authorization: `Bearer ${annotatorToken}` } },
-    );
+    const annotatorTokenRes = await request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+      data: { email: data.annotator_email },
+    });
+    const annotatorToken = (
+      (await annotatorTokenRes.json()) as {
+        access_token: string;
+      }
+    ).access_token;
+    const notiRes = await request.get(`${API_BASE}/api/v1/notifications?limit=20`, {
+      headers: { Authorization: `Bearer ${annotatorToken}` },
+    });
     expect(notiRes.ok()).toBeTruthy();
     const noti = (await notiRes.json()) as {
       items: Array<{ type: string; data?: { task_id?: string } }>;

@@ -123,9 +123,9 @@ GET    /api/v1/admin/ml-integrations/runtime-snapshot
 
 ML Backend 必须实现：
 
-| 端点 | 用途 |
-|---|---|
-| `GET /health` | 健康检查 |
+| 端点            | 用途                                                                           |
+| --------------- | ------------------------------------------------------------------------------ |
+| `GET /health`   | 健康检查                                                                       |
 | `POST /predict` | 推理（请求/响应见 [ML Backend 协议](../../dev/reference/ml-backend-protocol)） |
 
 参考实现：`docs-site/dev/examples/echo-ml-backend/`。

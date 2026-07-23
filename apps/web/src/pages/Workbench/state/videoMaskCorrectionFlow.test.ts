@@ -19,7 +19,8 @@ describe("executeVideoMaskCorrectionFlow", () => {
   it("创建失败后重试只重发传播，不重复保存关键帧", async () => {
     const snapshot = { annotationId: "annotation-1", version: 4, digest: "a".repeat(64) };
     const saveKeyframe = vi.fn().mockResolvedValue(snapshot);
-    const createPropagation = vi.fn()
+    const createPropagation = vi
+      .fn()
       .mockRejectedValueOnce(new Error("broker unavailable"))
       .mockResolvedValueOnce(undefined);
     let savedKeyframe: typeof snapshot | null = null;
@@ -27,21 +28,25 @@ describe("executeVideoMaskCorrectionFlow", () => {
       savedKeyframe = saved;
     });
 
-    await expect(executeVideoMaskCorrectionFlow({
-      intent: propagateIntent,
-      savedKeyframe,
-      saveKeyframe,
-      onKeyframeSaved,
-      createPropagation,
-    })).rejects.toThrow("broker unavailable");
+    await expect(
+      executeVideoMaskCorrectionFlow({
+        intent: propagateIntent,
+        savedKeyframe,
+        saveKeyframe,
+        onKeyframeSaved,
+        createPropagation,
+      }),
+    ).rejects.toThrow("broker unavailable");
 
-    await expect(executeVideoMaskCorrectionFlow({
-      intent: propagateIntent,
-      savedKeyframe,
-      saveKeyframe,
-      onKeyframeSaved,
-      createPropagation,
-    })).resolves.toEqual({ kind: "created", savedKeyframe: snapshot });
+    await expect(
+      executeVideoMaskCorrectionFlow({
+        intent: propagateIntent,
+        savedKeyframe,
+        saveKeyframe,
+        onKeyframeSaved,
+        createPropagation,
+      }),
+    ).resolves.toEqual({ kind: "created", savedKeyframe: snapshot });
 
     expect(saveKeyframe).toHaveBeenCalledTimes(1);
     expect(createPropagation).toHaveBeenCalledTimes(2);
@@ -52,13 +57,15 @@ describe("executeVideoMaskCorrectionFlow", () => {
   it("保存失败不创建传播作业", async () => {
     const createPropagation = vi.fn();
 
-    await expect(executeVideoMaskCorrectionFlow({
-      intent: propagateIntent,
-      savedKeyframe: null,
-      saveKeyframe: vi.fn().mockResolvedValue(null),
-      onKeyframeSaved: vi.fn(),
-      createPropagation,
-    })).resolves.toEqual({ kind: "save_failed", savedKeyframe: null });
+    await expect(
+      executeVideoMaskCorrectionFlow({
+        intent: propagateIntent,
+        savedKeyframe: null,
+        saveKeyframe: vi.fn().mockResolvedValue(null),
+        onKeyframeSaved: vi.fn(),
+        createPropagation,
+      }),
+    ).resolves.toEqual({ kind: "save_failed", savedKeyframe: null });
     expect(createPropagation).not.toHaveBeenCalled();
   });
 
@@ -66,13 +73,15 @@ describe("executeVideoMaskCorrectionFlow", () => {
     const snapshot = { annotationId: "annotation-1" };
     const createPropagation = vi.fn();
 
-    await expect(executeVideoMaskCorrectionFlow({
-      intent: { ...propagateIntent, mode: "save_only", direction: undefined },
-      savedKeyframe: null,
-      saveKeyframe: vi.fn().mockResolvedValue(snapshot),
-      onKeyframeSaved: vi.fn(),
-      createPropagation,
-    })).resolves.toEqual({ kind: "saved", savedKeyframe: snapshot });
+    await expect(
+      executeVideoMaskCorrectionFlow({
+        intent: { ...propagateIntent, mode: "save_only", direction: undefined },
+        savedKeyframe: null,
+        saveKeyframe: vi.fn().mockResolvedValue(snapshot),
+        onKeyframeSaved: vi.fn(),
+        createPropagation,
+      }),
+    ).resolves.toEqual({ kind: "saved", savedKeyframe: snapshot });
     expect(createPropagation).not.toHaveBeenCalled();
   });
 });

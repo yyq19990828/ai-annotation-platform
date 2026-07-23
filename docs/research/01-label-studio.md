@@ -70,6 +70,7 @@ class FailedPrediction:               # 失败也记录
 ```
 
 **这套模型解决了什么**:
+
 - 多模型多版本对同一任务的预测都能保留并对比
 - 人工标注可以"派生自某个 Prediction"（`parent_prediction`）,便于做 AI 接管率分析
 - 多人交叉标注通过 `parent_annotation` 链表追踪
@@ -101,6 +102,7 @@ POST {url}/webhook           — 事件回调(标注完成时)
 ```
 
 **抽象的好处**:
+
 - 任何语言/框架的模型都能接入,只要实现这几个 REST 接口
 - LS 提供官方 `label-studio-ml-backend` SDK 把 PyTorch/TF/HF 模型一键封装成 ML Backend
 - 训练 / 预测 / 健康 用不同超时配置（`ML_TIMEOUT_TRAIN=30s`,`ML_TIMEOUT_PREDICT=100s`）

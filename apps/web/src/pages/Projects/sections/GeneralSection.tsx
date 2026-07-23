@@ -93,8 +93,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     raster_mask_native_editing_enabled?: boolean;
   }) => {
     update.mutate(patch, {
-      onError: (err) =>
-        pushToast({ msg: "保存失败", sub: (err as Error).message }),
+      onError: (err) => pushToast({ msg: "保存失败", sub: (err as Error).message }),
     });
   };
 
@@ -139,21 +138,33 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           <div>
             <label className={LABEL_CLASS}>状态</label>
-            <select value={status} onChange={(e) => onStatusChange(e.target.value)} className={`${CONTROL_CLASS} cursor-pointer`}>
+            <select
+              value={status}
+              onChange={(e) => onStatusChange(e.target.value)}
+              className={`${CONTROL_CLASS} cursor-pointer`}
+            >
               {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label className={LABEL_CLASS}>截止日期</label>
-            <input type="date" value={dueDate} onChange={(e) => onDueDateChange(e.target.value)} className={CONTROL_CLASS} />
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => onDueDateChange(e.target.value)}
+              className={CONTROL_CLASS}
+            />
           </div>
         </div>
         <div>
           <label className={LABEL_CLASS}>类型</label>
           <div className={READONLY_VALUE_CLASS}>
-            {project.type_label} <span className="mono ml-2 text-xs text-muted-foreground">{project.type_key}</span>
+            {project.type_label}{" "}
+            <span className="mono ml-2 text-xs text-muted-foreground">{project.type_key}</span>
           </div>
         </div>
         <div>
@@ -161,9 +172,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           <div className={READONLY_VALUE_CLASS}>
             {project.scene_mode ? "已开启" : "未开启"}
             {project.scene_mode && (
-              <span className="ml-2 text-muted-foreground">
-                按 scene 保持连续帧任务与批次边界
-              </span>
+              <span className="ml-2 text-muted-foreground">按 scene 保持连续帧任务与批次边界</span>
             )}
           </div>
         </div>
@@ -175,21 +184,28 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                 className="mt-0.5 size-4 accent-primary"
                 checked={project.raster_mask_native_editing_enabled ?? true}
                 disabled={update.isPending}
-                onChange={(event) => savePatch({
-                  raster_mask_native_editing_enabled: event.target.checked,
-                })}
+                onChange={(event) =>
+                  savePatch({
+                    raster_mask_native_editing_enabled: event.target.checked,
+                  })
+                }
               />
               <span className="flex min-w-0 flex-col gap-1">
                 <span className="text-sm font-medium text-foreground">原生 Mask 编辑</span>
                 <span className="text-xs text-muted-foreground">
-                  默认允许该项目在 region 工具中写入逐像素 Mask；可按项目关闭。部署级创建总闸关闭时，项目仍保持只读。
+                  默认允许该项目在 region 工具中写入逐像素
+                  Mask；可按项目关闭。部署级创建总闸关闭时，项目仍保持只读。
                 </span>
               </span>
             </label>
           </div>
         )}
         <ProgressOverview project={project} />
-        {update.isPending && <div className="text-xs text-muted-foreground" data-testid="saving-hint">保存中…</div>}
+        {update.isPending && (
+          <div className="text-xs text-muted-foreground" data-testid="saving-hint">
+            保存中…
+          </div>
+        )}
       </div>
     </Card>
   );

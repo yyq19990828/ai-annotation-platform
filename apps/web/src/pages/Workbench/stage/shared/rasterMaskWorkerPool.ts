@@ -1,5 +1,8 @@
 import type { CocoRle } from "./geometry/maskRle";
-import type { MaskInstanceOperationPlan, MaskInstanceOperationSpec } from "./geometry/maskInstanceOperations";
+import type {
+  MaskInstanceOperationPlan,
+  MaskInstanceOperationSpec,
+} from "./geometry/maskInstanceOperations";
 import type { MaskOperationResult, MaskOperationSpec } from "./geometry/maskOperations";
 import type { RasterMaskAnalysis } from "./rasterMaskRender";
 import type {
@@ -145,12 +148,12 @@ function transferableRle(rle: CocoRle): RasterMaskTransferredRle {
   const [height, width] = rle.size;
   const pixels = height * width;
   if (
-    !Number.isSafeInteger(height)
-    || height <= 0
-    || !Number.isSafeInteger(width)
-    || width <= 0
-    || !Number.isSafeInteger(pixels)
-    || pixels > 0xffff_ffff
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    !Number.isSafeInteger(width) ||
+    width <= 0 ||
+    !Number.isSafeInteger(pixels) ||
+    pixels > 0xffff_ffff
   ) {
     throw new RasterMaskWorkerError("mask size cannot be represented by the Worker protocol");
   }
@@ -231,7 +234,8 @@ export class RasterMaskWorkerPool {
       timeoutMs: options.timeoutMs ?? ANALYZE_TIMEOUT_MS,
       options,
       read: (response) => {
-        if (response.kind !== "analyze" || !response.ok) throw new RasterMaskWorkerError("invalid analyze response");
+        if (response.kind !== "analyze" || !response.ok)
+          throw new RasterMaskWorkerError("invalid analyze response");
         return response.analysis;
       },
     });
@@ -253,7 +257,8 @@ export class RasterMaskWorkerPool {
       timeoutMs: options.timeoutMs ?? OPERATION_TIMEOUT_MS,
       options,
       read: (response) => {
-        if (response.kind !== "operation" || !response.ok) throw new RasterMaskWorkerError("invalid operation response");
+        if (response.kind !== "operation" || !response.ok)
+          throw new RasterMaskWorkerError("invalid operation response");
         return { context: response.context, result: response.result };
       },
     });
@@ -446,7 +451,8 @@ export class RasterMaskWorkerPool {
     sessionIds?: readonly string[];
     read: (response: RasterMaskWorkerResponse) => T;
   }): Promise<T> {
-    if (this.disposed) return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker pool is disposed"));
+    if (this.disposed)
+      return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker pool is disposed"));
     if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
     this.ensureWorkers();
     if (!this.slots.some((slot) => slot.worker)) {
@@ -475,7 +481,9 @@ export class RasterMaskWorkerPool {
         job.signal.addEventListener("abort", job.abort, { once: true });
       }
       this.queue.push(job);
-      this.queue.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
+      this.queue.sort(
+        (left, right) => left.priority - right.priority || left.sequence - right.sequence,
+      );
       this.pump();
     });
   }
@@ -519,12 +527,16 @@ export class RasterMaskWorkerPool {
     const session = this.sessions.get(sessionId);
     if (!session || !slot.worker) return;
     const rle = copyTransferredRle(session.rle);
-    this.postControl(slot, {
-      kind: "register_session",
-      sessionId,
-      sha256: session.sha256,
-      rle,
-    }, [rle.counts.buffer]);
+    this.postControl(
+      slot,
+      {
+        kind: "register_session",
+        sessionId,
+        sha256: session.sha256,
+        rle,
+      },
+      [rle.counts.buffer],
+    );
   }
 
   private postControl(
@@ -612,7 +624,10 @@ export class RasterMaskWorkerPool {
     if (job) {
       this.cleanupJob(job);
       slot.current = null;
-      if (!(error instanceof RasterMaskWorkerCancelledError) && !(error instanceof RasterMaskWorkerTimeoutError)) {
+      if (
+        !(error instanceof RasterMaskWorkerCancelledError) &&
+        !(error instanceof RasterMaskWorkerTimeoutError)
+      ) {
         this.failed += 1;
       }
       job.reject(error);

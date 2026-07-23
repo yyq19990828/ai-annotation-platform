@@ -14,12 +14,16 @@ export function useMaskQcIssues(params: {
   code?: string;
 }) {
   return useInfiniteQuery({
-    queryKey: ["mask-qc-issues", params.projectId, params.taskId ?? null, params.status ?? null, params.severity ?? null, params.code ?? null],
-    queryFn: ({ pageParam, signal }) => maskQcApi.issues(
+    queryKey: [
+      "mask-qc-issues",
       params.projectId,
-      { ...params, cursor: pageParam ?? undefined },
-      signal,
-    ),
+      params.taskId ?? null,
+      params.status ?? null,
+      params.severity ?? null,
+      params.code ?? null,
+    ],
+    queryFn: ({ pageParam, signal }) =>
+      maskQcApi.issues(params.projectId, { ...params, cursor: pageParam ?? undefined }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!params.projectId,
@@ -53,7 +57,10 @@ export function useRunTaskMaskQc(projectId: string, taskId: string) {
 export function usePatchMaskQcIssue(projectId: string, taskId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ issueId, status }: {
+    mutationFn: ({
+      issueId,
+      status,
+    }: {
       issueId: string;
       status: "open" | "resolved" | "wont_fix";
     }) => maskQcApi.patchIssue(issueId, status),
@@ -85,7 +92,12 @@ export function useMaskRepairBatch(projectId: string, repairId: string | null) {
     enabled: !!repairId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status && ["completed", "partial", "failed", "cancelled", "rolled_back", "rollback_failed"].includes(status)) {
+      if (
+        status &&
+        ["completed", "partial", "failed", "cancelled", "rolled_back", "rollback_failed"].includes(
+          status,
+        )
+      ) {
         void queryClient.invalidateQueries({ queryKey: ["mask-qc-issues", projectId] });
         return false;
       }

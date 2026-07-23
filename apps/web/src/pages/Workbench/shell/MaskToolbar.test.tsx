@@ -401,8 +401,12 @@ describe("MaskToolbar", () => {
     );
 
     expect(view.queryByRole("button", { name: "重试" })).toBeNull();
-    expect((view.getByRole("button", { name: "刷新范围" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((view.getByRole("button", { name: "取消预览" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByRole("button", { name: "刷新范围" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((view.getByRole("button", { name: "取消预览" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     expect(view.getByText("创建 1 个合并副本，保留 2 个来源")).not.toBeNull();
   });
 
@@ -439,12 +443,14 @@ describe("MaskToolbar", () => {
         operationStatus="preview"
         instanceCommitError="1 个对象未解决"
         instanceCommitBlocked
-        instancePreviewRows={[{
-          annotationId: "12345678-aaaa-bbbb-cccc-1234567890ab",
-          version: 7,
-          changedPixels: 12,
-          status: "unresolved",
-        }]}
+        instancePreviewRows={[
+          {
+            annotationId: "12345678-aaaa-bbbb-cccc-1234567890ab",
+            version: 7,
+            changedPixels: 12,
+            status: "unresolved",
+          },
+        ]}
         onSetTool={vi.fn()}
         onSetBrushShape={vi.fn()}
         onSetConnectivity={vi.fn()}
@@ -462,7 +468,9 @@ describe("MaskToolbar", () => {
       />,
     );
 
-    expect((view.getByRole("button", { name: "原子提交" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByRole("button", { name: "原子提交" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     expect(view.queryByTitle("恢复或重试 Mask")).toBeNull();
     expect(view.getByText("12345678·v7·12px·未解决")).not.toBeNull();
     expect(onRetry).not.toHaveBeenCalled();

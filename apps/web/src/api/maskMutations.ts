@@ -1,7 +1,12 @@
 import type { RasterMaskGeometry, VideoTrackMaskGeometry } from "@/types";
 import { apiClient } from "./client";
 
-export type MaskMutationOperation = "split_components" | "copy_component" | "copy_keyframe" | "join_masks" | "overlap";
+export type MaskMutationOperation =
+  | "split_components"
+  | "copy_component"
+  | "copy_keyframe"
+  | "join_masks"
+  | "overlap";
 export type MaskMutationGeometry = RasterMaskGeometry | VideoTrackMaskGeometry;
 
 export interface MaskMutationScope {

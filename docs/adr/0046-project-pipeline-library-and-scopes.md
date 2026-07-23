@@ -19,11 +19,11 @@
 
 需要把编排从「Project 的一条 JSONB」升级为**可命名、可复用、有作用域**的一等资源。
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
-| **A. 独立 `project_pipelines` 表 + 三档作用域(private / organization / public) + apply copy-on-write** | 命名 / 多条 / 跨项目复用;作用域天然表达 private→org→public 治理层次;项目侧仍以一条 `is_default` 维持「当前编排」语义不破 | 新表 + 数据迁移;权限要按档分层;与旧 `preannotate_pipeline` 列并存一段 |
-| B. 继续用 `Project.preannotate_pipeline`,加「从别的项目导入」 | 改动最小 | 仍是每项目一份拷贝,无命名无作用域,治理缺失——治标 |
-| C. 编排直接挂到 [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 的全局 backend 注册表上 | 复用现成全局层 | 编排是「能力的组合」而非「能力本身」,概念错层;且套用要项目上下文(类别 / 属性 schema)才能落地 |
+| 选项                                                                                                                    | 主要卖点                                                                                                                 | 主要劣势                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| **A. 独立 `project_pipelines` 表 + 三档作用域(private / organization / public) + apply copy-on-write**                  | 命名 / 多条 / 跨项目复用;作用域天然表达 private→org→public 治理层次;项目侧仍以一条 `is_default` 维持「当前编排」语义不破 | 新表 + 数据迁移;权限要按档分层;与旧 `preannotate_pipeline` 列并存一段                        |
+| B. 继续用 `Project.preannotate_pipeline`,加「从别的项目导入」                                                           | 改动最小                                                                                                                 | 仍是每项目一份拷贝,无命名无作用域,治理缺失——治标                                             |
+| C. 编排直接挂到 [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 的全局 backend 注册表上 | 复用现成全局层                                                                                                           | 编排是「能力的组合」而非「能力本身」,概念错层;且套用要项目上下文(类别 / 属性 schema)才能落地 |
 
 ## Decision
 
@@ -46,11 +46,11 @@
 
 ### 2. 三档作用域 + owner 配对规则
 
-| scope | 语义 | `project_id` | `organization_id` | 可 `is_default` |
-|---|---|---|---|---|
-| `private` | 项目私有(即「项目当前 / 默认编排」的载体) | **必填** | 必空 | 是 |
-| `organization` | 组织内共享 | 必空 | **必填** | 否 |
-| `public` | 平台公共模板 | 必空 | 必空 | 否 |
+| scope          | 语义                                      | `project_id` | `organization_id` | 可 `is_default` |
+| -------------- | ----------------------------------------- | ------------ | ----------------- | --------------- |
+| `private`      | 项目私有(即「项目当前 / 默认编排」的载体) | **必填**     | 必空              | 是              |
+| `organization` | 组织内共享                                | 必空         | **必填**          | 否              |
+| `public`       | 平台公共模板                              | 必空         | 必空              | 否              |
 
 配对是硬约束:`_validate_scope_owner`(`apps/api/app/schemas/project_pipeline.py:15`)与 DB CHECK `ck_project_pipelines_scope_owner` 逐条对应,任一侧违规即拒(schema 层 422 / DB 层写入失败),不给「scope=public 却带 project_id」这类脏行留缝。
 

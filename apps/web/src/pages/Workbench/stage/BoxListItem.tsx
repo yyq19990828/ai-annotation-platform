@@ -197,27 +197,39 @@ interface BoxListItemProps {
 }
 
 export function BoxListItem({
-  b, isAi, selected, dimmed = false, imageWidth, imageHeight,
-  onSelect, onAccept, onReject, onRefine, onDelete, onChangeClass, onToggleFlag,
+  b,
+  isAi,
+  selected,
+  dimmed = false,
+  imageWidth,
+  imageHeight,
+  onSelect,
+  onAccept,
+  onReject,
+  onRefine,
+  onDelete,
+  onChangeClass,
+  onToggleFlag,
   orphan = false,
   rasterMaskStatus,
   onRetryRasterMask,
 }: BoxListItemProps) {
   const color = classColor(b.cls);
   const baseToolMeta = annotationToolMeta(b, imageWidth, imageHeight);
-  const toolMeta = b.geometry?.type !== "raster_mask" || !rasterMaskStatus
-    ? baseToolMeta
-    : rasterMaskStatus.state === "loading"
-      ? { label: baseToolMeta.label, detail: "内容加载中…" }
-      : rasterMaskStatus.state === "ready"
-        ? {
-            label: baseToolMeta.label,
-            detail: `${rasterMaskStatus.preview ? "受限预览 · 精确像素命中 · " : ""}${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · ${rasterMaskStatus.holeCount} 孔洞 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
-          }
-        : {
-            label: baseToolMeta.label,
-            detail: `${rasterMaskStatus.backendReason ?? rasterMaskStatus.reason} · ${rasterMaskStatus.message}`,
-          };
+  const toolMeta =
+    b.geometry?.type !== "raster_mask" || !rasterMaskStatus
+      ? baseToolMeta
+      : rasterMaskStatus.state === "loading"
+        ? { label: baseToolMeta.label, detail: "内容加载中…" }
+        : rasterMaskStatus.state === "ready"
+          ? {
+              label: baseToolMeta.label,
+              detail: `${rasterMaskStatus.preview ? "受限预览 · 精确像素命中 · " : ""}${rasterMaskStatus.area} px · ${rasterMaskStatus.componentCount} 组件 · ${rasterMaskStatus.holeCount} 孔洞 · AABB ${pct(rasterMaskStatus.bounds.w)}×${pct(rasterMaskStatus.bounds.h)}`,
+            }
+          : {
+              label: baseToolMeta.label,
+              detail: `${rasterMaskStatus.backendReason ?? rasterMaskStatus.reason} · ${rasterMaskStatus.message}`,
+            };
   const predictionSource = isAi ? getPredictionSource(b) : null;
   // v0.14.9 · OCR / doc_layout 候选: 文本摘要 + 版面 type badge (仅 AI 行展示).
   const ocrText = isAi ? ocrTextSummary(b) : null;
@@ -238,27 +250,38 @@ export function BoxListItem({
           <circle cx="5" cy="5" r="5" fill={color} />
         </svg>
         <div className="flex items-center gap-[7px] min-w-0">
-          <b className="overflow-hidden text-sm text-ellipsis whitespace-nowrap">{displayClassName(b.cls)}</b>
+          <b className="overflow-hidden text-sm text-ellipsis whitespace-nowrap">
+            {displayClassName(b.cls)}
+          </b>
           {isAi ? (
             <span
               className={cn(
                 "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap",
-                predictionSource === "external_import" ? "bg-status-caution-soft text-status-caution" : "bg-status-info-soft text-status-info",
+                predictionSource === "external_import"
+                  ? "bg-status-caution-soft text-status-caution"
+                  : "bg-status-info-soft text-status-info",
               )}
             >
               <Icon name={predictionSource === "external_import" ? "upload" : "sparkle"} size={8} />
               {predictionSourceLabel(predictionSource)} · {(b.conf * 100).toFixed(0)}%
             </span>
           ) : (
-            <span className={cn(
-              "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap",
-              b.source === "prediction_based" ? "bg-muted text-muted-foreground" : "bg-brand/10 text-brand",
-            )}>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap",
+                b.source === "prediction_based"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-brand/10 text-brand",
+              )}
+            >
               {b.source === "prediction_based" ? "AI 采纳" : "手动"}
             </span>
           )}
           {layoutBadge && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap border border-border bg-background text-muted-foreground" title="版面类别">
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-2xs font-medium whitespace-nowrap border border-border bg-background text-muted-foreground"
+              title="版面类别"
+            >
               {layoutBadge}
             </span>
           )}
@@ -266,7 +289,9 @@ export function BoxListItem({
             <span
               className="px-1.5 py-px border border-border rounded-md bg-muted text-muted-foreground text-2xs"
               title="已被同类用户框（IoU > 0.7）覆盖"
-            >已被覆盖</span>
+            >
+              已被覆盖
+            </span>
           )}
           {orphan && !isAi && (
             <span
@@ -282,26 +307,28 @@ export function BoxListItem({
           <span className="shrink-0 px-1.5 py-px border border-border rounded bg-muted text-muted-foreground font-[inherit]">
             {toolMeta.label}
           </span>
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-            {toolMeta.detail}
-          </span>
-          {(rasterMaskStatus?.state === "error" || rasterMaskStatus?.state === "deferred")
-            && rasterMaskStatus.retryable && onRetryRasterMask && (
-            <button
-              type="button"
-              className="shrink-0 rounded border border-border px-1.5 py-px text-2xs hover:bg-muted"
-              onClick={(event) => {
-                event.stopPropagation();
-                onRetryRasterMask();
-              }}
-              aria-label={`重试 Mask ${b.id}`}
-            >
-              重试
-            </button>
-          )}
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap">{toolMeta.detail}</span>
+          {(rasterMaskStatus?.state === "error" || rasterMaskStatus?.state === "deferred") &&
+            rasterMaskStatus.retryable &&
+            onRetryRasterMask && (
+              <button
+                type="button"
+                className="shrink-0 rounded border border-border px-1.5 py-px text-2xs hover:bg-muted"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRetryRasterMask();
+                }}
+                aria-label={`重试 Mask ${b.id}`}
+              >
+                重试
+              </button>
+            )}
         </div>
         {ocrText && (
-          <div className="col-start-2 flex items-center gap-1 min-w-0 mt-0.5 text-muted-foreground text-xs" title={ocrText}>
+          <div
+            className="col-start-2 flex items-center gap-1 min-w-0 mt-0.5 text-muted-foreground text-xs"
+            title={ocrText}
+          >
             <Icon name="type" size={11} />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap">{ocrText}</span>
           </div>
@@ -337,7 +364,10 @@ export function BoxListItem({
                     size="sm"
                     title="采纳预测"
                     aria-label="采纳预测"
-                    onClick={(e) => { e.stopPropagation(); onAccept(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAccept();
+                    }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                   >
                     <Icon name="check" size={12} />
@@ -349,7 +379,10 @@ export function BoxListItem({
                     size="sm"
                     title="忽略预测"
                     aria-label="忽略预测"
-                    onClick={(e) => { e.stopPropagation(); onReject(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReject();
+                    }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                   >
                     <Icon name="x" size={12} />
@@ -360,7 +393,10 @@ export function BoxListItem({
                     size="sm"
                     title="精修 (Mask 笔刷)"
                     aria-label="精修"
-                    onClick={(e) => { e.stopPropagation(); onRefine(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRefine();
+                    }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                     data-testid={`ai-refine-${b.id}`}
                   >
@@ -377,7 +413,10 @@ export function BoxListItem({
                       title={b.is_hidden ? "显示 (H)" : "隐藏 (H)"}
                       aria-label={b.is_hidden ? "显示" : "隐藏"}
                       aria-pressed={!!b.is_hidden}
-                      onClick={(e) => { e.stopPropagation(); onToggleFlag("is_hidden"); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFlag("is_hidden");
+                      }}
                       className={cn(
                         "!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3",
                         !b.is_hidden && "!opacity-55",
@@ -390,7 +429,10 @@ export function BoxListItem({
                       title={b.is_locked ? "解锁 (L)" : "锁定 (L)"}
                       aria-label={b.is_locked ? "解锁" : "锁定"}
                       aria-pressed={!!b.is_locked}
-                      onClick={(e) => { e.stopPropagation(); onToggleFlag("is_locked"); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFlag("is_locked");
+                      }}
                       className={cn(
                         "!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3",
                         !b.is_locked && "!opacity-55",
@@ -405,7 +447,10 @@ export function BoxListItem({
                     size="sm"
                     title="修改类别"
                     aria-label="修改类别"
-                    onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChangeClass();
+                    }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                   >
                     <Icon name="tag" size={12} />
@@ -416,7 +461,10 @@ export function BoxListItem({
                     size="sm"
                     title={b.geometry?.type === "raster_mask" ? "编辑 Mask" : "Mask 笔刷精修"}
                     aria-label={b.geometry?.type === "raster_mask" ? "编辑 Mask" : "精修"}
-                    onClick={(e) => { e.stopPropagation(); onRefine(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRefine();
+                    }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                     data-testid={`user-refine-${b.id}`}
                   >
@@ -429,7 +477,10 @@ export function BoxListItem({
                     size="sm"
                     title="删除标注"
                     aria-label="删除标注"
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete();
+                    }}
                     className="!w-[24px] !h-[24px] !justify-center !p-0 !rounded-md [&_svg]:!size-3"
                   >
                     <Icon name="trash" size={12} />

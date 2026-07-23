@@ -19,6 +19,7 @@ last_reviewed: 2026-05-09
 ## Step 1：选择一处文案修改
 
 找一处前端界面上的中文文案（比如按钮、提示语）：
+
 ```
 apps/web/src/
 ```
@@ -62,11 +63,11 @@ git push origin your-branch
 
 ## 常见卡点
 
-| 问题 | 处理 |
-|---|---|
-| `pnpm test` 报 import 错误 | `pnpm install` 后重试 |
-| TypeScript 类型报错 | `pnpm type-check` 查看完整错误 |
-| CI 失败但本地通过 | 检查 Node 版本（需 ≥20）；查 CI 日志 |
+| 问题                       | 处理                                 |
+| -------------------------- | ------------------------------------ |
+| `pnpm test` 报 import 错误 | `pnpm install` 后重试                |
+| TypeScript 类型报错        | `pnpm type-check` 查看完整错误       |
+| CI 失败但本地通过          | 检查 Node 版本（需 ≥20）；查 CI 日志 |
 
 ## 下一步
 

@@ -19,9 +19,7 @@ describe("validateAttributeFields", () => {
   });
 
   it("空 key 不合法", () => {
-    const fields: AttributeField[] = [
-      { key: "", label: "x", type: "text", required: false },
-    ];
+    const fields: AttributeField[] = [{ key: "", label: "x", type: "text", required: false }];
     expect(validateAttributeFields(fields)).toContain("key");
   });
 
@@ -34,16 +32,12 @@ describe("validateAttributeFields", () => {
   });
 
   it("select 类型缺 options 不合法", () => {
-    const fields: AttributeField[] = [
-      { key: "color", label: "颜色", type: "select" },
-    ];
+    const fields: AttributeField[] = [{ key: "color", label: "颜色", type: "select" }];
     expect(validateAttributeFields(fields)).toContain("选项");
   });
 
   it("multiselect 缺 options 不合法", () => {
-    const fields: AttributeField[] = [
-      { key: "tags", label: "Tags", type: "multiselect" },
-    ];
+    const fields: AttributeField[] = [{ key: "tags", label: "Tags", type: "multiselect" }];
     expect(validateAttributeFields(fields)).toContain("选项");
   });
 
@@ -99,13 +93,7 @@ describe("newAttributeField", () => {
 
 describe("<AttributeSchemaEditor />", () => {
   it("空数组显示 emptyHint", () => {
-    render(
-      <AttributeSchemaEditor
-        value={[]}
-        onChange={() => {}}
-        emptyHint="自定义空提示"
-      />,
-    );
+    render(<AttributeSchemaEditor value={[]} onChange={() => {}} emptyHint="自定义空提示" />);
     expect(screen.getByText("自定义空提示")).toBeInTheDocument();
   });
 
@@ -120,18 +108,14 @@ describe("<AttributeSchemaEditor />", () => {
   });
 
   it("已有字段渲染对应 key 输入框", () => {
-    const fields: AttributeField[] = [
-      { key: "occluded", label: "是否遮挡", type: "boolean" },
-    ];
+    const fields: AttributeField[] = [{ key: "occluded", label: "是否遮挡", type: "boolean" }];
     render(<AttributeSchemaEditor value={fields} onChange={() => {}} />);
     expect(screen.getByDisplayValue("occluded")).toBeInTheDocument();
     expect(screen.getByDisplayValue("是否遮挡")).toBeInTheDocument();
   });
 
   it("删除字段前等待确认回调", async () => {
-    const fields: AttributeField[] = [
-      { key: "occluded", label: "是否遮挡", type: "boolean" },
-    ];
+    const fields: AttributeField[] = [{ key: "occluded", label: "是否遮挡", type: "boolean" }];
     const onChange = vi.fn();
     const onConfirmDelete = vi.fn().mockResolvedValue(false);
     render(

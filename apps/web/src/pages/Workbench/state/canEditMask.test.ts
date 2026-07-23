@@ -40,13 +40,17 @@ describe("canEditMask · 锁与只读门", () => {
     expect(canEditMask({ ...OPEN, editorPhase: "error" })).toBe(false);
   });
   it("返回稳定且按安全优先级排序的禁用原因", () => {
-    expect(maskEditBlockReason({
-      ...OPEN,
-      taskReadOnly: true,
-      annotationLocked: true,
-      editorPhase: "saving",
-    })).toBe("task_read_only");
-    expect(maskEditBlockReason({ ...OPEN, trackLocked: true, editorPhase: "ready" })).toBe("track_locked");
+    expect(
+      maskEditBlockReason({
+        ...OPEN,
+        taskReadOnly: true,
+        annotationLocked: true,
+        editorPhase: "saving",
+      }),
+    ).toBe("task_read_only");
+    expect(maskEditBlockReason({ ...OPEN, trackLocked: true, editorPhase: "ready" })).toBe(
+      "track_locked",
+    );
     expect(maskEditBlockReason({ ...OPEN, editorPhase: "loading" })).toBe("editor_loading");
     expect(maskEditBlockReason({ ...OPEN, editorPhase: "dirty" })).toBeNull();
   });

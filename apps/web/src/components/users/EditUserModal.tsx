@@ -3,11 +3,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import {
-  useAssignUserGroup,
-  useChangeUserRole,
-  useDeleteUser,
-} from "@/hooks/useUsers";
+import { useAssignUserGroup, useChangeUserRole, useDeleteUser } from "@/hooks/useUsers";
 import { useGroups } from "@/hooks/useGroups";
 import { usePermissions } from "@/hooks/usePermissions";
 import { ROLE_LABELS } from "@/constants/roles";
@@ -73,8 +69,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
   const isSelf = false; // EditUserModal 入口已经隐藏自己；保留位以避免 UI 错配
   const targetRole = user.role as UserRole;
 
-  const canEditRole =
-    !isSelf && allowedRoles.includes(targetRole); // 当前角色必须在 actor 可改的集合内才能允许改
+  const canEditRole = !isSelf && allowedRoles.includes(targetRole); // 当前角色必须在 actor 可改的集合内才能允许改
   const canDelete = !isSelf && deletableRoles.includes(targetRole);
 
   const dirtyRole = canEditRole && roleVal !== user.role;
@@ -122,16 +117,14 @@ export function EditUserModal({ open, user, onClose }: Props) {
   const error = changeRole.error || assignGroup.error || deleteUser.error;
 
   // 角色下拉里允许出现的选项 = 当前角色 + actor 可指派集合（去重）
-  const roleOptions: UserRole[] = Array.from(
-    new Set<UserRole>([targetRole, ...allowedRoles]),
-  );
+  const roleOptions: UserRole[] = Array.from(new Set<UserRole>([targetRole, ...allowedRoles]));
 
   const editRoleHint =
     actorRole === "project_admin"
       ? "项目管理员仅能在审核员 / 标注员 之间切换"
       : !canEditRole
-      ? "你无权修改该用户的角色"
-      : "";
+        ? "你无权修改该用户的角色"
+        : "";
 
   return (
     <Modal open={open} onClose={onClose} title={`编辑成员 · ${user.name}`} width={520}>
@@ -186,7 +179,12 @@ export function EditUserModal({ open, user, onClose }: Props) {
             {canDelete && confirmDelete && (
               <div className={styles.confirmDelete}>
                 <span className={styles.dangerText}>确认删除？该用户将无法登录</span>
-                <Button type="button" variant="danger" onClick={handleDelete} disabled={deleteUser.isPending}>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={handleDelete}
+                  disabled={deleteUser.isPending}
+                >
                   {deleteUser.isPending ? "删除中…" : "确认删除"}
                 </Button>
                 <Button type="button" onClick={() => setConfirmDelete(false)}>

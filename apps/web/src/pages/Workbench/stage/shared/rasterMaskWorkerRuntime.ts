@@ -57,7 +57,11 @@ export function compareRasterMaskSessionMetrics(
   };
 }
 
-function checkedDimensions(size: [number, number]): { height: number; width: number; pixels: number } {
+function checkedDimensions(size: [number, number]): {
+  height: number;
+  width: number;
+  pixels: number;
+} {
   const [height, width] = size;
   if (!Number.isSafeInteger(height) || height <= 0 || !Number.isSafeInteger(width) || width <= 0) {
     throw new Error("mask size must contain positive integers");
@@ -116,22 +120,19 @@ export function decodeRasterMaskTransferredRle(rle: RasterMaskTransferredRle): U
   return alpha;
 }
 
-function validateTileRect(
-  session: RasterMaskWorkerSession,
-  rect: RasterMaskTileRect,
-): void {
+function validateTileRect(session: RasterMaskWorkerSession, rect: RasterMaskTileRect): void {
   const [height, width] = session.size;
   if (
-    !Number.isSafeInteger(rect.x)
-    || !Number.isSafeInteger(rect.y)
-    || !Number.isSafeInteger(rect.width)
-    || !Number.isSafeInteger(rect.height)
-    || rect.x < 0
-    || rect.y < 0
-    || rect.width <= 0
-    || rect.height <= 0
-    || rect.x + rect.width > width
-    || rect.y + rect.height > height
+    !Number.isSafeInteger(rect.x) ||
+    !Number.isSafeInteger(rect.y) ||
+    !Number.isSafeInteger(rect.width) ||
+    !Number.isSafeInteger(rect.height) ||
+    rect.x < 0 ||
+    rect.y < 0 ||
+    rect.width <= 0 ||
+    rect.height <= 0 ||
+    rect.x + rect.width > width ||
+    rect.y + rect.height > height
   ) {
     throw new Error("mask tile rectangle is outside the session bounds");
   }
@@ -202,8 +203,12 @@ function mergeColumnComparisonCells(
       const currentOn = (currentIndex & 1) === 1;
       const baselineOn = (baselineIndex & 1) === 1;
       const flag = currentOn
-        ? (baselineOn ? CELL_OVERLAP : CELL_CURRENT_ONLY)
-        : (baselineOn ? CELL_BASELINE_ONLY : 0);
+        ? baselineOn
+          ? CELL_OVERLAP
+          : CELL_CURRENT_ONLY
+        : baselineOn
+          ? CELL_BASELINE_ONLY
+          : 0;
       if (flag !== 0) {
         for (let localY = localY0; localY <= localY1; localY += 1) {
           flags[localY * rasterWidth + localX] |= flag;
@@ -225,11 +230,12 @@ function markCellYRange(
   bit: number,
 ): void {
   if (
-    sourceX < rect.x
-    || sourceX >= rect.x + rect.width
-    || sourceY1 <= rect.y
-    || sourceY0 >= rect.y + rect.height
-  ) return;
+    sourceX < rect.x ||
+    sourceX >= rect.x + rect.width ||
+    sourceY1 <= rect.y ||
+    sourceY0 >= rect.y + rect.height
+  )
+    return;
   const clippedY0 = Math.max(rect.y, sourceY0);
   const clippedY1 = Math.min(rect.y + rect.height, sourceY1);
   if (clippedY1 <= clippedY0) return;
@@ -382,7 +388,12 @@ function boundaryAt(
   const localX = x - expanded.x;
   const localY = y - expanded.y;
   if (alpha[localY * expanded.width + localX] === 0) return false;
-  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+  for (const [dx, dy] of [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ] as const) {
     const neighborX = x + dx;
     const neighborY = y + dy;
     if (neighborX < 0 || neighborX >= sourceWidth || neighborY < 0 || neighborY >= sourceHeight) {
@@ -429,28 +440,29 @@ export function compareRasterMaskSessionTile(
     for (let index = 0; index < flags.length; index += 1) {
       const flag = flags[index];
       if (mode === "overlay") {
-        codes[index] = ((flag & (CELL_BASELINE_ONLY | CELL_OVERLAP)) ? 1 : 0)
-          | ((flag & (CELL_CURRENT_ONLY | CELL_OVERLAP)) ? 2 : 0);
+        codes[index] =
+          (flag & (CELL_BASELINE_ONLY | CELL_OVERLAP) ? 1 : 0) |
+          (flag & (CELL_CURRENT_ONLY | CELL_OVERLAP) ? 2 : 0);
       } else if (mode === "xor") {
-        codes[index] = ((flag & CELL_BASELINE_ONLY) ? 1 : 0)
-          | ((flag & CELL_CURRENT_ONLY) ? 2 : 0);
+        codes[index] = (flag & CELL_BASELINE_ONLY ? 1 : 0) | (flag & CELL_CURRENT_ONLY ? 2 : 0);
       } else if (mode === "added") {
-        codes[index] = (flag & CELL_CURRENT_ONLY) ? 2 : 0;
+        codes[index] = flag & CELL_CURRENT_ONLY ? 2 : 0;
       } else {
-        codes[index] = (flag & CELL_BASELINE_ONLY) ? 1 : 0;
+        codes[index] = flag & CELL_BASELINE_ONLY ? 1 : 0;
       }
     }
     return codes;
   }
   const [sourceHeight, sourceWidth] = current.size;
-  const expanded = mode === "boundary"
-    ? {
-        x: Math.max(0, rect.x - 1),
-        y: Math.max(0, rect.y - 1),
-        width: Math.min(sourceWidth, rect.x + rect.width + 1) - Math.max(0, rect.x - 1),
-        height: Math.min(sourceHeight, rect.y + rect.height + 1) - Math.max(0, rect.y - 1),
-      }
-    : rect;
+  const expanded =
+    mode === "boundary"
+      ? {
+          x: Math.max(0, rect.x - 1),
+          y: Math.max(0, rect.y - 1),
+          width: Math.min(sourceWidth, rect.x + rect.width + 1) - Math.max(0, rect.x - 1),
+          height: Math.min(sourceHeight, rect.y + rect.height + 1) - Math.max(0, rect.y - 1),
+        }
+      : rect;
   const currentAlpha = decodeRasterMaskSessionTile(current, expanded);
   const baselineAlpha = decodeRasterMaskSessionTile(baseline, expanded);
   const codes = new Uint8Array(rect.width * rect.height);
@@ -459,12 +471,14 @@ export function compareRasterMaskSessionTile(
       const x = rect.x + localX;
       const y = rect.y + localY;
       const expandedIndex = (y - expanded.y) * expanded.width + x - expanded.x;
-      const currentOn = mode === "boundary"
-        ? boundaryAt(currentAlpha, expanded, sourceWidth, sourceHeight, x, y)
-        : currentAlpha[expandedIndex] > 0;
-      const baselineOn = mode === "boundary"
-        ? boundaryAt(baselineAlpha, expanded, sourceWidth, sourceHeight, x, y)
-        : baselineAlpha[expandedIndex] > 0;
+      const currentOn =
+        mode === "boundary"
+          ? boundaryAt(currentAlpha, expanded, sourceWidth, sourceHeight, x, y)
+          : currentAlpha[expandedIndex] > 0;
+      const baselineOn =
+        mode === "boundary"
+          ? boundaryAt(baselineAlpha, expanded, sourceWidth, sourceHeight, x, y)
+          : baselineAlpha[expandedIndex] > 0;
       let code = (baselineOn ? 1 : 0) | (currentOn ? 2 : 0);
       if (mode === "xor" && code === 3) code = 0;
       if (mode === "added" && code !== 2) code = 0;
@@ -531,7 +545,8 @@ export function mergeRasterMaskSessionTiles(
       while (baseRunIndex < session.runEnds.length && cursor >= session.runEnds[baseRunIndex]) {
         baseRunIndex += 1;
       }
-      if (baseRunIndex >= session.runEnds.length) throw new Error("mask RLE ended before the image boundary");
+      if (baseRunIndex >= session.runEnds.length)
+        throw new Error("mask RLE ended before the image boundary");
       const length = Math.min(target, session.runEnds[baseRunIndex]) - cursor;
       if (emit) append((baseRunIndex & 1) === 1, length);
       cursor += length;
@@ -545,10 +560,8 @@ export function mergeRasterMaskSessionTiles(
     while (localY < tile.height) {
       const foreground = tile.alpha[localY * tile.width + localX] > 0;
       let endY = localY + 1;
-      while (
-        endY < tile.height
-        && (tile.alpha[endY * tile.width + localX] > 0) === foreground
-      ) endY += 1;
+      while (endY < tile.height && tile.alpha[endY * tile.width + localX] > 0 === foreground)
+        endY += 1;
       append(foreground, endY - localY);
       localY = endY;
     }

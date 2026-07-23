@@ -85,7 +85,11 @@ def _ml_backend(project_id, state="connected") -> MLBackend:
         state=state,
         health_meta=HealthMeta(
             model_version="v1.2",
-            gpu_info={"gpu_utilization_percent": 73, "memory_used_mb": 8000, "memory_total_mb": 24000},
+            gpu_info={
+                "gpu_utilization_percent": 73,
+                "memory_used_mb": 8000,
+                "memory_total_mb": 24000,
+            },
         ),
         last_checked_at=datetime(2026, 6, 11, tzinfo=timezone.utc),
     )
@@ -101,7 +105,20 @@ class _StubProjects:
             pending_review=8,
             total_data_series=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100],
             completed_series=[5, 10, 18, 25, 33, 40, 46, 50, 55, 58, 59, 60],
-            ai_rate_series=[0.1, 0.2, 0.25, 0.3, 0.32, 0.35, 0.36, 0.38, 0.39, 0.4, 0.4, 0.4],
+            ai_rate_series=[
+                0.1,
+                0.2,
+                0.25,
+                0.3,
+                0.32,
+                0.35,
+                0.36,
+                0.38,
+                0.39,
+                0.4,
+                0.4,
+                0.4,
+            ],
             pending_review_series=[2, 3, 4, 5, 6, 7, 8, 9, 8, 8, 8, 8],
         )
 
@@ -117,7 +134,9 @@ class _StubDatasets:
         self._items = items
 
     def list(self, **kw):
-        return Page[Dataset](items=self._items, total=len(self._items), limit=50, offset=0)
+        return Page[Dataset](
+            items=self._items, total=len(self._items), limit=50, offset=0
+        )
 
 
 class _StubJobs:
@@ -457,7 +476,9 @@ async def test_open_project_pushes_detail_with_subtabs():
     project = _project()
     job = _job("running", project_id=project.id)  # 命中本项目的 job
     pages = [JobPage(items=[job], total=1)]
-    client = _StubClient([project], [_dataset()], pages, {project.id: [_ml_backend(project.id)]})
+    client = _StubClient(
+        [project], [_dataset()], pages, {project.id: [_ml_backend(project.id)]}
+    )
     app = AapTuiApp(client, base_url=BASE)
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
@@ -614,8 +635,12 @@ def _batch(project_id) -> Batch:
         review_tasks=3,
         rejected_tasks=1,
         progress_pct=60.0,
-        annotator=UserBrief(id=uuid4(), name="标注员甲", email="a@x.io", avatar_initial="甲"),
-        reviewer=UserBrief(id=uuid4(), name="审核员乙", email="b@x.io", avatar_initial="乙"),
+        annotator=UserBrief(
+            id=uuid4(), name="标注员甲", email="a@x.io", avatar_initial="甲"
+        ),
+        reviewer=UserBrief(
+            id=uuid4(), name="审核员乙", email="b@x.io", avatar_initial="乙"
+        ),
     )
 
 
@@ -714,8 +739,12 @@ async def test_axis_chart_renders_axes_and_line():
     from ai_annotation.tui.app import _render_axis_chart
 
     plain = _render_axis_chart(
-        [50, 60, 55, 80, 40, 95], width=60, height=8, unit="%",
-        x_left="-12w", x_right="now",
+        [50, 60, 55, 80, 40, 95],
+        width=60,
+        height=8,
+        unit="%",
+        x_left="-12w",
+        x_right="now",
     ).plain
     # 自适应纵轴: 顶=max 底=min; 横轴: 首末标签 + └ 基线; braille 连线
     assert "95%" in plain and "40%" in plain
@@ -730,14 +759,19 @@ async def test_fmt_pool_summarizes_protocol_fields():
     from ai_annotation.tui.app import _fmt_pool
 
     # 协议 PoolStatus / video_pool 字段 → 简洁摘要, 不退化打印原始长 dict
-    img = _fmt_pool({"cap": 1, "current_size": 0, "loaded_keys": [], "last_evict": None})
+    img = _fmt_pool(
+        {"cap": 1, "current_size": 0, "loaded_keys": [], "last_evict": None}
+    )
     assert img == "cap=1 · loaded=0"
     vid = _fmt_pool(
         {"cap": 1, "loaded_variants": [], "active_sessions": 0, "idle_seconds": 600}
     )
     assert vid == "cap=1 · loaded=0 · active=0 · idle=600s"
     # current_size 缺失 → 回落到 loaded_keys 长度
-    assert _fmt_pool({"cap": 2, "loaded_keys": [{"key": "a"}, {"key": "b"}]}) == "cap=2 · loaded=2"
+    assert (
+        _fmt_pool({"cap": 2, "loaded_keys": [{"key": "a"}, {"key": "b"}]})
+        == "cap=2 · loaded=2"
+    )
     assert _fmt_pool({}) == "-"
     assert "loaded_keys" not in img  # 不出现原始键名
 
@@ -745,8 +779,11 @@ async def test_fmt_pool_summarizes_protocol_fields():
 async def test_people_tab_loads_for_super_admin():
     project = _project()
     client = _StubClient(
-        [project], [_dataset()], [JobPage(items=[], total=0)],
-        role="super_admin", people=[_person()],
+        [project],
+        [_dataset()],
+        [JobPage(items=[], total=0)],
+        role="super_admin",
+        people=[_person()],
     )
     app = AapTuiApp(client, base_url=BASE)
     async with app.run_test(size=(120, 32)) as pilot:

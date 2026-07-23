@@ -41,7 +41,12 @@ export interface DropdownItem {
 
 interface DropdownMenuBaseProps {
   /** 触发器 render —— 接收 `open` 状态用于切换样式（按钮按下高亮）。 */
-  trigger: (ctx: { open: boolean; toggle: () => void; close: () => void; ref: React.Ref<HTMLButtonElement> }) => ReactNode;
+  trigger: (ctx: {
+    open: boolean;
+    toggle: () => void;
+    close: () => void;
+    ref: React.Ref<HTMLButtonElement>;
+  }) => ReactNode;
   /** 菜单对齐：默认 "end"（右对齐 trigger）。 */
   align?: "start" | "end";
   /** 触发器宿主上的额外样式（默认 inline-block + relative）。 */
@@ -167,9 +172,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
   const [focusIdx, setFocusIdx] = useState(-1);
 
   const selectableIdx = items
-    ? items
-        .map((it, i) => (!it.divider && !it.disabled ? i : -1))
-        .filter((i) => i >= 0)
+    ? items.map((it, i) => (!it.divider && !it.disabled ? i : -1)).filter((i) => i >= 0)
     : [];
 
   // 点外面 / Esc 关闭
@@ -177,10 +180,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (
-        !hostRef.current?.contains(target) &&
-        !menuRef.current?.contains(target)
-      ) {
+      if (!hostRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -206,7 +206,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
       return;
     }
     const activePos = items.findIndex((it) => it.active && !it.divider && !it.disabled);
-    setFocusIdx(activePos >= 0 ? activePos : selectableIdx[0] ?? -1);
+    setFocusIdx(activePos >= 0 ? activePos : (selectableIdx[0] ?? -1));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveFocus = (dir: 1 | -1) => {
@@ -277,13 +277,8 @@ export function DropdownMenu(props: DropdownMenuProps) {
       const margin = 8;
       const gap = 4;
 
-      let left = align === "start"
-        ? triggerRect.left
-        : triggerRect.right - menuWidth;
-      left = Math.max(
-        margin,
-        Math.min(left, window.innerWidth - margin - menuWidth),
-      );
+      let left = align === "start" ? triggerRect.left : triggerRect.right - menuWidth;
+      left = Math.max(margin, Math.min(left, window.innerWidth - margin - menuWidth));
 
       let top = triggerRect.bottom + gap;
       const flippedTop = triggerRect.top - gap - menuHeight;
@@ -326,11 +321,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
         : items?.map((it, i) => {
             if (it.divider) {
               return (
-                <div
-                  key={it.id || `div-${i}`}
-                  role="separator"
-                  className="my-1 h-px bg-border"
-                />
+                <div key={it.id || `div-${i}`} role="separator" className="my-1 h-px bg-border" />
               );
             }
             const focused = focusIdx === i;
@@ -361,9 +352,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
                     {it.kbd}
                   </span>
                 )}
-                {it.active && !it.kbd && (
-                  <Icon name="check" size={12} className="text-brand" />
-                )}
+                {it.active && !it.kbd && <Icon name="check" size={12} className="text-brand" />}
               </button>
             );
           })}

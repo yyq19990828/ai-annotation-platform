@@ -66,9 +66,7 @@ describe("MyPerformancePage", () => {
     await waitFor(() => expect(screen.getByText("128")).toBeInTheDocument());
     expect(screen.getByText("+12.5%")).toBeInTheDocument();
     // 图表卡片标题（容器外文案）
-    expect(
-      screen.getByText("产出趋势 · 我 vs 团队均线（近 4 周）"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("产出趋势 · 我 vs 团队均线（近 4 周）")).toBeInTheDocument();
     expect(screen.getByText("标注耗时分布")).toBeInTheDocument();
     // v0.12.4 质量归因块
     expect(screen.getByText("82%")).toBeInTheDocument(); // 首过率
@@ -79,8 +77,6 @@ describe("MyPerformancePage", () => {
   it("接口报错时显示降级文案", async () => {
     mockGetMyPerformance.mockRejectedValue(new Error("boom"));
     renderPage();
-    expect(
-      await screen.findByText("绩效数据暂不可用，请稍后再试。"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("绩效数据暂不可用，请稍后再试。")).toBeInTheDocument();
   });
 });

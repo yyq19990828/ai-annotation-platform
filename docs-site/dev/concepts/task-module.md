@@ -44,44 +44,44 @@ graph TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/db/models/task.py` | Task 主模型 |
-| `apps/api/app/db/enums.py` | `TaskStatus` 枚举 |
-| `apps/api/app/schemas/task.py` | Task 响应模型与 lock 响应 |
-| `apps/api/app/api/v1/tasks/` | task 路由包(list / video / annotations / predictions / lifecycle / review / locks 子模块 + `_shared.py` 共享依赖):task 路由、状态机、审核动作、lock 端点 |
-| `apps/api/app/services/scheduler.py` | 下一题派发、batch 可见性过滤 |
-| `apps/api/app/services/task_lock.py` | task 锁服务 |
-| `apps/api/app/services/annotation.py` | annotation 写入对 task 的状态回写 |
-| `apps/web/src/api/tasks.ts` | 前端 task API wrapper |
-| `apps/web/src/hooks/useTaskLock.ts` | 前端 task lock 生命周期 |
-| `apps/web/src/pages/Workbench/` | 工作台主消费方 |
+| 位置                                  | 作用                                                                                                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/app/db/models/task.py`      | Task 主模型                                                                                                                                              |
+| `apps/api/app/db/enums.py`            | `TaskStatus` 枚举                                                                                                                                        |
+| `apps/api/app/schemas/task.py`        | Task 响应模型与 lock 响应                                                                                                                                |
+| `apps/api/app/api/v1/tasks/`          | task 路由包(list / video / annotations / predictions / lifecycle / review / locks 子模块 + `_shared.py` 共享依赖):task 路由、状态机、审核动作、lock 端点 |
+| `apps/api/app/services/scheduler.py`  | 下一题派发、batch 可见性过滤                                                                                                                             |
+| `apps/api/app/services/task_lock.py`  | task 锁服务                                                                                                                                              |
+| `apps/api/app/services/annotation.py` | annotation 写入对 task 的状态回写                                                                                                                        |
+| `apps/web/src/api/tasks.ts`           | 前端 task API wrapper                                                                                                                                    |
+| `apps/web/src/hooks/useTaskLock.ts`   | 前端 task lock 生命周期                                                                                                                                  |
+| `apps/web/src/pages/Workbench/`       | 工作台主消费方                                                                                                                                           |
 
 ## 数据模型
 
 `Task` 当前的关键字段：
 
-| 字段 | 含义 |
-|---|---|
-| `project_id` | 所属项目 |
-| `batch_id` | 所属批次，可空 |
-| `dataset_item_id` | 数据集项引用 |
-| `display_id` | 人类可读任务 ID |
-| `file_name` / `file_path` / `file_type` | 原始素材信息 |
-| `status` | 任务工作流状态 |
-| `assignee_id` | 当前标注责任人 |
-| `reviewer_id` | 当前审核责任人 |
-| `assigned_at` | 分配时间 |
-| `is_labeled` | 是否已有有效标注 |
-| `total_annotations` / `total_predictions` | 聚合计数 |
-| `submitted_at` | 送审时间 |
-| `reviewer_claimed_at` | 审核员 claim 时间 |
-| `reviewed_at` | 审核完成时间 |
-| `reject_reason` | 退回原因 |
-| `skip_reason` / `skipped_at` | 跳过原因与时间 |
-| `reopened_count` / `last_reopened_at` | 重开编辑历史 |
-| `version` | annotation 写入时的乐观并发辅助 |
-| `sequence_order` | 帧内序号；scene 模式下与 frame_index 关联（batch `by_scene` 切分时写入），用于排序与跨帧导航 |
+| 字段                                      | 含义                                                                                         |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `project_id`                              | 所属项目                                                                                     |
+| `batch_id`                                | 所属批次，可空                                                                               |
+| `dataset_item_id`                         | 数据集项引用                                                                                 |
+| `display_id`                              | 人类可读任务 ID                                                                              |
+| `file_name` / `file_path` / `file_type`   | 原始素材信息                                                                                 |
+| `status`                                  | 任务工作流状态                                                                               |
+| `assignee_id`                             | 当前标注责任人                                                                               |
+| `reviewer_id`                             | 当前审核责任人                                                                               |
+| `assigned_at`                             | 分配时间                                                                                     |
+| `is_labeled`                              | 是否已有有效标注                                                                             |
+| `total_annotations` / `total_predictions` | 聚合计数                                                                                     |
+| `submitted_at`                            | 送审时间                                                                                     |
+| `reviewer_claimed_at`                     | 审核员 claim 时间                                                                            |
+| `reviewed_at`                             | 审核完成时间                                                                                 |
+| `reject_reason`                           | 退回原因                                                                                     |
+| `skip_reason` / `skipped_at`              | 跳过原因与时间                                                                               |
+| `reopened_count` / `last_reopened_at`     | 重开编辑历史                                                                                 |
+| `version`                                 | annotation 写入时的乐观并发辅助                                                              |
+| `sequence_order`                          | 帧内序号；scene 模式下与 frame_index 关联（batch `by_scene` 切分时写入），用于排序与跨帧导航 |
 
 数据集关联项目时会为该数据集的现有 `dataset_items` 创建 task；关联关系存在期间，后续上传、ZIP 导入或扫描导入新增的 item 也会扇出为对应项目的 task，并同步更新 `project.total_tasks`。
 
@@ -142,11 +142,11 @@ stateDiagram-v2
 
 `GET /tasks` 在可见性约束之上叠加若干可选过滤参数（与可见性正交）：
 
-| 参数 | 作用 |
-|---|---|
-| `assignee_id` | 按标注责任人过滤 |
-| `reject_reason_type` | 按 `Task.reject_reason_type`（退回原因 enum）过滤 |
-| `class_name` | 命中存在该 `class_name` 有效 annotation 的 task（`EXISTS` 子查询，不展开多行） |
+| 参数                 | 作用                                                                           |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `assignee_id`        | 按标注责任人过滤                                                               |
+| `reject_reason_type` | 按 `Task.reject_reason_type`（退回原因 enum）过滤                              |
+| `class_name`         | 命中存在该 `class_name` 有效 annotation 的 task（`EXISTS` 子查询，不展开多行） |
 
 `reject_reason_type` / `class_name` 是 v0.12.6（A3）为成员绩效页 reject/类别维度下钻新增的；
 两者均同时作用于列表 query 与 count query，分页口径一致。
@@ -295,14 +295,14 @@ task 事件会回写 batch，主要体现在：
 
 改 task 逻辑时，至少检查这些位置：
 
-| 文件 | 为什么要看 |
-|---|---|
-| `apps/web/src/api/tasks.ts` | 前端 task API wrapper |
-| `apps/web/src/hooks/useTaskLock.ts` | 锁获取、续期、释放 |
-| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | 工作台主状态流 |
+| 文件                                                    | 为什么要看               |
+| ------------------------------------------------------- | ------------------------ |
+| `apps/web/src/api/tasks.ts`                             | 前端 task API wrapper    |
+| `apps/web/src/hooks/useTaskLock.ts`                     | 锁获取、续期、释放       |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | 工作台主状态流           |
 | `apps/web/src/pages/Workbench/shell/TaskQueuePanel.tsx` | 任务列表与 rejected 提示 |
-| `apps/web/src/pages/Annotate/AnnotatePage.tsx` | 标注页面上的批次送审入口 |
-| `apps/web/src/pages/Review/` | 审核工作台 |
+| `apps/web/src/pages/Annotate/AnnotatePage.tsx`          | 标注页面上的批次送审入口 |
+| `apps/web/src/pages/Review/`                            | 审核工作台               |
 
 高频联动风险：
 
@@ -314,11 +314,11 @@ task 事件会回写 batch，主要体现在：
 
 建议优先看这些测试：
 
-| 文件 | 覆盖重点 |
-|---|---|
-| `apps/api/tests/test_task_lock_dedup.py` | task lock 残留 / 去重 |
-| `apps/api/tests/test_batch_lifecycle.py` | task 事件对 batch 的反作用 |
-| 相关 `tasks.py` 路由测试 | submit / withdraw / reopen / reject / approve |
+| 文件                                     | 覆盖重点                                      |
+| ---------------------------------------- | --------------------------------------------- |
+| `apps/api/tests/test_task_lock_dedup.py` | task lock 残留 / 去重                         |
+| `apps/api/tests/test_batch_lifecycle.py` | task 事件对 batch 的反作用                    |
+| 相关 `tasks.py` 路由测试                 | submit / withdraw / reopen / reject / approve |
 
 调试顺序通常是：
 

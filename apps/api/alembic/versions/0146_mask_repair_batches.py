@@ -62,9 +62,7 @@ def upgrade() -> None:
         sa.Column(
             "request_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False
         ),
-        sa.Column(
-            "plan_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("plan_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column(
             "result_json",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -97,12 +95,8 @@ def upgrade() -> None:
             "plan_digest ~ '^[0-9a-f]{64}$'",
             name="ck_mask_repair_batches_plan_digest",
         ),
-        sa.ForeignKeyConstraint(
-            ["project_id"], ["projects.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["requested_by_id"], ["users.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["requested_by_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(
             ["async_job_id"], ["async_jobs.id"], ondelete="SET NULL"
         ),
@@ -147,16 +141,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_mask_repair_batches_token_hash", table_name="mask_repair_batches"
-    )
+    op.drop_index("ix_mask_repair_batches_token_hash", table_name="mask_repair_batches")
     op.drop_index(
         "ix_mask_repair_batches_rollback_async_job",
         table_name="mask_repair_batches",
     )
-    op.drop_index(
-        "ix_mask_repair_batches_async_job", table_name="mask_repair_batches"
-    )
+    op.drop_index("ix_mask_repair_batches_async_job", table_name="mask_repair_batches")
     op.drop_index(
         "ix_mask_repair_batches_rollback_expires",
         table_name="mask_repair_batches",

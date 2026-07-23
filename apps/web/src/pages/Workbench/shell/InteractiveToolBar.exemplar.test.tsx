@@ -5,9 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InteractiveToolBar } from "./InteractiveToolBar";
 import type { MLModelCapability } from "@/api/ml-backends";
 
-function exemplarModel(
-  caps: MLModelCapability["exemplar_capabilities"],
-): MLModelCapability {
+function exemplarModel(caps: MLModelCapability["exemplar_capabilities"]): MLModelCapability {
   return {
     id: "exemplar-yoloe",
     task: "interactive_seg",

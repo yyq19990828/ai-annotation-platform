@@ -24,9 +24,17 @@ test("workbench perf · __workbenchPerf 在 image 工作台 mount 后存在", as
   await page.waitForSelector("[data-testid='workbench-stage']", { timeout: 10_000 });
   // useWorkbenchPerf 在 mount 后写入 window；DEV 100%, PROD 5% — 即使采样率 5% 也会先初始化 counters。
   const stats = await page.evaluate(() => {
-    return (window as unknown as {
-      __workbenchPerf?: { longTaskCount: number; longTaskMaxMs: number; lastLongTaskAt: number | null };
-    }).__workbenchPerf ?? null;
+    return (
+      (
+        window as unknown as {
+          __workbenchPerf?: {
+            longTaskCount: number;
+            longTaskMaxMs: number;
+            lastLongTaskAt: number | null;
+          };
+        }
+      ).__workbenchPerf ?? null
+    );
   });
   expect(stats).not.toBeNull();
   expect(typeof stats!.longTaskCount).toBe("number");

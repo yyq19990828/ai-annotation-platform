@@ -78,10 +78,14 @@ def encode_coco_rle(
     # Predictor outputs are NumPy arrays. Converting to column-major once and
     # finding transitions in native code avoids a Python loop over every pixel
     # for every candidate (tens of millions of iterations for exemplar output).
-    column_major = np.asarray(pixels_row_major, dtype=np.bool_).reshape(
-        height,
-        width,
-    ).ravel(order="F")
+    column_major = (
+        np.asarray(pixels_row_major, dtype=np.bool_)
+        .reshape(
+            height,
+            width,
+        )
+        .ravel(order="F")
+    )
     transitions = np.flatnonzero(column_major[1:] != column_major[:-1]) + 1
     boundaries = np.concatenate(([0], transitions, [pixel_count]))
     counts = np.diff(boundaries).astype(int).tolist()

@@ -22,19 +22,19 @@ last_reviewed: 2026-06-10
 
 ### API 层
 
-| 指标 | 含义 | 告警阈值（参考） |
-|---|---|---|
-| `http_requests_total{status=~"5.."}` | 5xx 速率 | > 1% / 5min |
-| `http_request_duration_seconds` (P95) | API 延迟 | > 1s / 5min |
-| `db_pool_used` / `db_pool_size` | 连接池水位 | 持续 > 80% |
-| `redis_pool_used` | Redis 连接池 | — |
+| 指标                                  | 含义         | 告警阈值（参考） |
+| ------------------------------------- | ------------ | ---------------- |
+| `http_requests_total{status=~"5.."}`  | 5xx 速率     | > 1% / 5min      |
+| `http_request_duration_seconds` (P95) | API 延迟     | > 1s / 5min      |
+| `db_pool_used` / `db_pool_size`       | 连接池水位   | 持续 > 80%       |
+| `redis_pool_used`                     | Redis 连接池 | —                |
 
 ### Worker 层
 
-| 指标 | 含义 |
-|---|---|
-| `celery_queue_length{queue}` | 各队列待处理 + 在执行任务数（Gauge） |
-| `celery_worker_heartbeat_seconds{worker}` | worker 上次心跳距今秒数（Gauge，越小越新鲜） |
+| 指标                                                       | 含义                                                                                   |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `celery_queue_length{queue}`                               | 各队列待处理 + 在执行任务数（Gauge）                                                   |
+| `celery_worker_heartbeat_seconds{worker}`                  | worker 上次心跳距今秒数（Gauge，越小越新鲜）                                           |
 | `ml_backend_request_duration_seconds{backend_id, outcome}` | ML backend predict / interactive 单次调用耗时（Histogram，outcome="success"\|"error"） |
 
 > 上述三个指标均在 `apps/api/app/observability/metrics.py` 注册。平台不暴露 `celery_tasks_total` 或 `celery_task_duration_seconds`；预标 job 状态分布通过 `async_jobs` 表查询，不以 Prometheus Counter 形式暴露。
@@ -65,12 +65,12 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 
 ## 健康检查端点
 
-| 服务 | 路径 | 含义 |
-|---|---|---|
-| api | `/health` | DB + Redis + MinIO 联通性 |
-| api | `/api/v1/admin/system-health` | 超管聚合视图，返回组件状态、延迟、Celery 队列和 worker 心跳 |
-| api | `/ready` | lifespan 完成 |
-| grounded-sam2-backend | `/health` | 模型加载完成 |
+| 服务                  | 路径                          | 含义                                                        |
+| --------------------- | ----------------------------- | ----------------------------------------------------------- |
+| api                   | `/health`                     | DB + Redis + MinIO 联通性                                   |
+| api                   | `/api/v1/admin/system-health` | 超管聚合视图，返回组件状态、延迟、Celery 队列和 worker 心跳 |
+| api                   | `/ready`                      | lifespan 完成                                               |
+| grounded-sam2-backend | `/health`                     | 模型加载完成                                                |
 
 ## 系统健康面板
 
@@ -80,7 +80,7 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 
 - 组件状态：PostgreSQL、Redis、MinIO、Celery，展示 `ok` / `degraded` / `down` 与 latency。
 - Celery 队列：显示各队列积压数量，`length ≥ 25` 标为降级（`degraded`），`length ≥ 100` 标为不可用（`down`）（`apps/api/app/api/v1/admin_system_health.py:60-65`）。
-![Workers 表（名称/Heartbeat/Pool/状态）](../images/superadmin/system-monitoring/workers-table.png)
+  ![Workers 表（名称/Heartbeat/Pool/状态）](../images/superadmin/system-monitoring/workers-table.png)
 - Worker 心跳：显示 worker 名称、最近心跳距现在的秒数和 pool 并发上限；心跳 `≥ 120s` 标为降级，`≥ 300s` 标为不可用（`apps/api/app/api/v1/admin_system_health.py:68-75`）。
 
 ⚠️ FastAPI lifespan 阻塞会让 `/health` 30s 内不可用——曾在 CI 引发卡死，详见 [CI 服务依赖踩坑](../../dev/troubleshooting/ci-flaky-services)。
@@ -91,12 +91,12 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 
 ## 容量规划经验值
 
-| 资源 | 经验值 |
-|---|---|
-| 每标注员日均 200 任务 → API 流量 ~1 req/s 长尾 | — |
-| 每 SAM 推理 P95 ~800ms（A10G）/ ~3s（CPU fallback） | — |
-| 单 GPU 并发 4 推理稳定 | — |
-| Postgres 连接池建议 = (worker concurrency + api concurrency) × 1.5 | — |
+| 资源                                                               | 经验值 |
+| ------------------------------------------------------------------ | ------ |
+| 每标注员日均 200 任务 → API 流量 ~1 req/s 长尾                     | —      |
+| 每 SAM 推理 P95 ~800ms（A10G）/ ~3s（CPU fallback）                | —      |
+| 单 GPU 并发 4 推理稳定                                             | —      |
+| Postgres 连接池建议 = (worker concurrency + api concurrency) × 1.5 | —      |
 
 ## 备份
 

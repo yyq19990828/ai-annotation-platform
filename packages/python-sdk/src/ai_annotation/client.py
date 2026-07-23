@@ -52,7 +52,9 @@ class Projects:
     def __init__(self, http: HttpTransport):
         self._http = http
 
-    def list(self, status: str | None = None, search: str | None = None) -> list[Project]:
+    def list(
+        self, status: str | None = None, search: str | None = None
+    ) -> list[Project]:
         resp = self._http.request(
             "GET", "/projects", params=_drop_none({"status": status, "search": search})
         )
@@ -101,7 +103,12 @@ class Datasets:
             "GET",
             "/datasets",
             params=_drop_none(
-                {"search": search, "data_type": data_type, "limit": limit, "offset": offset}
+                {
+                    "search": search,
+                    "data_type": data_type,
+                    "limit": limit,
+                    "offset": offset,
+                }
             ),
         )
         return Page[Dataset].model_validate(resp.json())
@@ -129,7 +136,9 @@ class Datasets:
         files = [Path(p) for p in paths]
         items: list[UploadedItem] = []
         for i, path in enumerate(files):
-            content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            content_type = (
+                mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            )
             init = self._http.request(
                 "POST",
                 f"/datasets/{dataset_id}/items/upload-init",
@@ -232,7 +241,9 @@ class Annotations:
         resp = self._http.request("POST", f"/tasks/{task_id}/annotations", json=body)
         return Annotation.model_validate(resp.json())
 
-    def update(self, task_id: IdLike, annotation_id: IdLike, **fields: Any) -> Annotation:
+    def update(
+        self, task_id: IdLike, annotation_id: IdLike, **fields: Any
+    ) -> Annotation:
         resp = self._http.request(
             "PATCH", f"/tasks/{task_id}/annotations/{annotation_id}", json=fields
         )
@@ -333,7 +344,9 @@ class Jobs:
             if job.status in _JOB_TERMINAL:
                 raise JobFailedError(job)
             if time.monotonic() >= deadline:
-                raise JobTimeoutError(f"async job {job_id} 等待超过 {timeout}s 仍未到终态")
+                raise JobTimeoutError(
+                    f"async job {job_id} 等待超过 {timeout}s 仍未到终态"
+                )
             time.sleep(poll_interval)
 
 
@@ -354,7 +367,9 @@ class Exports:
         if include_attributes is not None:
             params["include_attributes"] = include_attributes
         params.update(_drop_none(kwargs))
-        resp = self._http.request("POST", f"/projects/{project_id}/export", params=params)
+        resp = self._http.request(
+            "POST", f"/projects/{project_id}/export", params=params
+        )
         return resp.json()["job_id"]
 
     def wait(
@@ -365,7 +380,10 @@ class Exports:
         on_progress: Callable[[Job], None] | None = None,
     ) -> Job:
         return self._jobs.wait(
-            job_id, timeout=timeout, poll_interval=poll_interval, on_progress=on_progress
+            job_id,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            on_progress=on_progress,
         )
 
     def download(self, job_or_id: Job | IdLike, dest_path: str | Path) -> Path:
@@ -416,9 +434,7 @@ class Batches:
         return [Batch.model_validate(x) for x in resp.json()]
 
     def get(self, project_id: IdLike, batch_id: IdLike) -> Batch:
-        resp = self._http.request(
-            "GET", f"/projects/{project_id}/batches/{batch_id}"
-        )
+        resp = self._http.request("GET", f"/projects/{project_id}/batches/{batch_id}")
         return Batch.model_validate(resp.json())
 
 

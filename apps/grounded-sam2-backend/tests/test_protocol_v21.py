@@ -44,7 +44,10 @@ def test_resolve_variant_accepts_model_variants() -> None:
     from main import _resolve_variant
 
     assert _resolve_variant(
-        {"type": "text", "model_variants": {"sam_variant": "small", "dino_variant": "B"}}
+        {
+            "type": "text",
+            "model_variants": {"sam_variant": "small", "dino_variant": "B"},
+        }
     ) == ("small", "B")
 
 
@@ -52,11 +55,16 @@ def test_resolve_variant_accepts_legacy_fields_with_warning(caplog) -> None:
     from main import _resolve_variant
 
     caplog.set_level("WARNING")
-    assert _resolve_variant({"type": "text", "sam_variant": "tiny", "dino_variant": "T"}) == (
+    assert _resolve_variant(
+        {"type": "text", "sam_variant": "tiny", "dino_variant": "T"}
+    ) == (
         "tiny",
         "T",
     )
-    assert "context.dino_variant, context.sam_variant -> context.model_variants" in caplog.text
+    assert (
+        "context.dino_variant, context.sam_variant -> context.model_variants"
+        in caplog.text
+    )
 
 
 def test_resolve_variant_invalid_value_returns_standard_422() -> None:

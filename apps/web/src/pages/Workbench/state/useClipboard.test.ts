@@ -269,7 +269,10 @@ describe("useClipboard", () => {
   });
 
   it("paste rotated_bbox / polyline / keypoint 保留几何类型并整体平移", async () => {
-    const createAnnotation = vi.fn(async (payload: AnnotationPayload) => ({ id: `new-${payload.annotation_type ?? "unknown"}` }) as never);
+    const createAnnotation = vi.fn(
+      async (payload: AnnotationPayload) =>
+        ({ id: `new-${payload.annotation_type ?? "unknown"}` }) as never,
+    );
     const { result } = renderHook(() =>
       useClipboard({
         userBoxes: [],
@@ -287,13 +290,20 @@ describe("useClipboard", () => {
     });
 
     expect(createAnnotation).toHaveBeenCalledTimes(3);
-    const [rotatedPayload, polylinePayload, keypointPayload] = createAnnotation.mock.calls.map((call) => call[0]) as Array<{
+    const [rotatedPayload, polylinePayload, keypointPayload] = createAnnotation.mock.calls.map(
+      (call) => call[0],
+    ) as Array<{
       annotation_type: string;
       geometry: Record<string, unknown>;
     }>;
 
     expect(rotatedPayload.annotation_type).toBe("rotated_bbox");
-    expect(rotatedPayload.geometry).toMatchObject({ type: "rotated_bbox", cx: 0.6, cy: 0.6, angle: 30 });
+    expect(rotatedPayload.geometry).toMatchObject({
+      type: "rotated_bbox",
+      cx: 0.6,
+      cy: 0.6,
+      angle: 30,
+    });
 
     expect(polylinePayload.annotation_type).toBe("polyline");
     expect(polylinePayload.geometry.type).toBe("polyline");
@@ -305,7 +315,9 @@ describe("useClipboard", () => {
 
     expect(keypointPayload.annotation_type).toBe("keypoint");
     expect(keypointPayload.geometry.type).toBe("keypoint");
-    const keypointPoints = (keypointPayload.geometry as { points: Array<{ x: number; y: number; v: number }> }).points;
+    const keypointPoints = (
+      keypointPayload.geometry as { points: Array<{ x: number; y: number; v: number }> }
+    ).points;
     expect(keypointPoints[0]).toMatchObject({ v: 2 });
     expect(keypointPoints[0].x).toBeCloseTo(0.2, 6);
     expect(keypointPoints[0].y).toBeCloseTo(0.3, 6);

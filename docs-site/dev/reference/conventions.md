@@ -22,17 +22,17 @@ last_reviewed: 2026-05-09
 
 ### type
 
-| type | 含义 |
-|---|---|
-| `feat` | 新功能 |
-| `fix` | 修 bug |
-| `refactor` | 重构（功能不变） |
-| `perf` | 性能优化 |
-| `docs` | 文档 |
-| `test` | 测试 |
-| `chore` | 构建 / 依赖 |
-| `ci` | CI 配置 |
-| `style` | 格式（不影响行为） |
+| type       | 含义               |
+| ---------- | ------------------ |
+| `feat`     | 新功能             |
+| `fix`      | 修 bug             |
+| `refactor` | 重构（功能不变）   |
+| `perf`     | 性能优化           |
+| `docs`     | 文档               |
+| `test`     | 测试               |
+| `chore`    | 构建 / 依赖        |
+| `ci`       | CI 配置            |
+| `style`    | 格式（不影响行为） |
 
 ### scope（建议）
 
@@ -84,12 +84,13 @@ ci(vitest): 用真实 openapi.json 替代空 stub
 
 ## Linting & Formatting
 
-- 后端：`ruff check` + `ruff format`，配置在 `apps/api/pyproject.toml`（如未配置则用默认）
-- 前端：`eslint` (flat config, `apps/web/eslint.config.js`)
-- pre-commit hook 会自动跑
+- 全部第一方 Python：固定使用 Ruff，根配置在 `ruff.toml`；`vendor` 保留上游格式。
+- TypeScript、JavaScript、CSS、Markdown、JSON、YAML 等：固定使用根级 Prettier 配置。
+- 前端语义检查：ESLint flat config（`apps/web/eslint.config.js`）和 CSS token guard。
+- `pnpm format` 自动修复全仓格式，`pnpm format:check` 以只读模式执行 CI 同款校验。
+- pre-commit 对本次提交涉及的文件执行同版 Ruff 与 Prettier，再运行 Web ESLint / tsc。
 
 ## 不引入的东西
 
-- 不引入 `prettier` 单独配置（hey-api 内部用，主代码靠 IDE + ESLint）
 - 不引入 changelog 工具（changesets / standard-version）；`CHANGELOG.md` 手写够用
 - 不引入 monorepo 工具（nx / turborepo）；pnpm workspace 直管

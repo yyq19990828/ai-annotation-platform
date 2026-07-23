@@ -19,10 +19,7 @@ test.describe("batch lifecycle", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  test("annotator 提交 → reviewer 待审 → admin 设置页 batches tab", async ({
-    page,
-    seed,
-  }) => {
+  test("annotator 提交 → reviewer 待审 → admin 设置页 batches tab", async ({ page, seed }) => {
     const data = await seed.reset();
 
     // 1. annotator 提交一个 task；另一个推到 review，reviewer 双绑定
@@ -53,8 +50,6 @@ test.describe("batch lifecycle", () => {
     await expect(batchesTab).toBeVisible({ timeout: 10_000 });
     await batchesTab.click();
     // 切到 batches section 后页面无崩溃；URL 不变
-    await expect(page).toHaveURL(
-      new RegExp(`/projects/${data.project_id}/settings`),
-    );
+    await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/settings`));
   });
 });

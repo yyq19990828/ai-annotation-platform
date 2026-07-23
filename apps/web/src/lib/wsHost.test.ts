@@ -15,8 +15,8 @@ describe("getWsHost", () => {
   });
 
   it("honors an explicit worktree override", () => {
-    expect(getWsHost({ hostname: "dev.example", host: "dev.example:3000" }, "dev.example:8010")).toBe(
-      "dev.example:8010",
-    );
+    expect(
+      getWsHost({ hostname: "dev.example", host: "dev.example:3000" }, "dev.example:8010"),
+    ).toBe("dev.example:8010");
   });
 });

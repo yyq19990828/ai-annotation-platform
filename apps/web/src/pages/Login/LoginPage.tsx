@@ -15,7 +15,8 @@ const CAPTCHA_THRESHOLD = 5;
 export function LoginPage() {
   const token = useAuthStore((s) => s.token);
   const location = useLocation();
-  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
+  const from =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -72,7 +73,12 @@ export function LoginPage() {
       <div className="w-[min(380px,100%)]">
         {/* Logo */}
         <div className="mb-8 flex items-center justify-center gap-2.5">
-          <img src="/ai-annotation-platform-icon.svg" alt="" aria-hidden="true" className="size-8 shrink-0 rounded-md" />
+          <img
+            src="/ai-annotation-platform-icon.svg"
+            alt=""
+            aria-hidden="true"
+            className="size-8 shrink-0 rounded-md"
+          />
           <div>
             <div className="text-base font-bold">标注中心</div>
             <div className="text-xs text-muted-foreground">AI Annotation Platform</div>
@@ -177,12 +183,24 @@ export function LoginPage() {
 
           {import.meta.env.MODE !== "production" && (
             <div className="mt-5 rounded-md bg-muted px-3.5 py-3 text-xs text-muted-foreground">
-              <div className="mb-1.5 font-medium text-muted-foreground">测试账号 (密码统一: 123456)</div>
-              <div>超级管理员：<span className="mono">admin</span></div>
-              <div className="mt-0.5">项目管理员：<span className="mono">pm</span></div>
-              <div className="mt-0.5">质检员：<span className="mono">qa</span></div>
-              <div className="mt-0.5">标注员：<span className="mono">anno</span></div>
-              <div className="mt-0.5">观察者：<span className="mono">viewer</span></div>
+              <div className="mb-1.5 font-medium text-muted-foreground">
+                测试账号 (密码统一: 123456)
+              </div>
+              <div>
+                超级管理员：<span className="mono">admin</span>
+              </div>
+              <div className="mt-0.5">
+                项目管理员：<span className="mono">pm</span>
+              </div>
+              <div className="mt-0.5">
+                质检员：<span className="mono">qa</span>
+              </div>
+              <div className="mt-0.5">
+                标注员：<span className="mono">anno</span>
+              </div>
+              <div className="mt-0.5">
+                观察者：<span className="mono">viewer</span>
+              </div>
             </div>
           )}
         </div>

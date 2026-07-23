@@ -15,8 +15,7 @@ export function useStorageConnections() {
 export function useCreateStorageConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: StorageConnectionCreatePayload) =>
-      storageConnectionsApi.create(payload),
+    mutationFn: (payload: StorageConnectionCreatePayload) => storageConnectionsApi.create(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["storage-connections"] });
     },
@@ -26,13 +25,8 @@ export function useCreateStorageConnection() {
 export function useUpdateStorageConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      payload,
-    }: {
-      id: string;
-      payload: StorageConnectionUpdatePayload;
-    }) => storageConnectionsApi.update(id, payload),
+    mutationFn: ({ id, payload }: { id: string; payload: StorageConnectionUpdatePayload }) =>
+      storageConnectionsApi.update(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["storage-connections"] });
     },

@@ -139,13 +139,15 @@ describe("精确交互请求路由", () => {
     const nativeRefine: MLBackendCapability = {
       name: "native-refine",
       supported_prompts: ["point", "mask"],
-      models: [{
-        id: "refine",
-        is_interactive: true,
-        supported_prompts: ["point", "mask"],
-        supported_inputs: ["point_prompt", "mask_prompt"],
-        supported_geometric_outputs: ["mask"],
-      }],
+      models: [
+        {
+          id: "refine",
+          is_interactive: true,
+          supported_prompts: ["point", "mask"],
+          supported_inputs: ["point_prompt", "mask_prompt"],
+          supported_geometric_outputs: ["mask"],
+        },
+      ],
     };
     const idx = mkIndex({ split, nativeRefine });
     const requirement = {
@@ -157,13 +159,9 @@ describe("精确交互请求路由", () => {
     expect(candidatesForRequest(idx, ["split", "nativeRefine"], requirement)).toEqual([
       "nativeRefine",
     ]);
-    expect(resolveInteractiveRequest(
-      idx,
-      ["split", "nativeRefine"],
-      "split",
-      "split",
-      requirement,
-    )).toBe("nativeRefine");
+    expect(
+      resolveInteractiveRequest(idx, ["split", "nativeRefine"], "split", "split", requirement),
+    ).toBe("nativeRefine");
   });
 });
 
@@ -278,21 +276,25 @@ describe("capFingerprint — capSignature 内容变化感知", () => {
     const base: MLBackendCapability = {
       name: "native",
       supported_prompts: ["point"],
-      models: [{
-        id: "interactive",
-        is_interactive: true,
-        supported_prompts: ["point"],
-        supported_inputs: ["point_prompt"],
-        supported_geometric_outputs: ["polygon"],
-      }],
+      models: [
+        {
+          id: "interactive",
+          is_interactive: true,
+          supported_prompts: ["point"],
+          supported_inputs: ["point_prompt"],
+          supported_geometric_outputs: ["polygon"],
+        },
+      ],
     };
     const changed: MLBackendCapability = {
       ...base,
-      models: [{
-        ...base.models![0],
-        supported_inputs: ["point_prompt", "mask_prompt"],
-        supported_geometric_outputs: ["mask"],
-      }],
+      models: [
+        {
+          ...base.models![0],
+          supported_inputs: ["point_prompt", "mask_prompt"],
+          supported_geometric_outputs: ["mask"],
+        },
+      ],
     };
     expect(capFingerprint(changed)).not.toBe(capFingerprint(base));
   });
@@ -330,12 +332,14 @@ describe("capFingerprint — capSignature 内容变化感知", () => {
     const base: MLBackendCapability = {
       name: "tracker",
       supported_prompts: [],
-      models: [{
-        id: "tracker",
-        task: "tracker",
-        supported_trackers: ["sam2_video"],
-        max_window_frames: 16,
-      }],
+      models: [
+        {
+          id: "tracker",
+          task: "tracker",
+          supported_trackers: ["sam2_video"],
+          max_window_frames: 16,
+        },
+      ],
     };
     const changed: MLBackendCapability = {
       ...base,

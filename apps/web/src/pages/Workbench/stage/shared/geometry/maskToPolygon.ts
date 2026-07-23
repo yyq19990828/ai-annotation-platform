@@ -71,13 +71,26 @@ function isSolid(mask: MaskLike, x: number, y: number, threshold: number): boole
  *
  * 起点 (sx, sy) 是从左上扫到的第一个 solid 像素。返回闭合环（首尾相同时去重）。
  */
-function traceBoundary(mask: MaskLike, sx: number, sy: number, threshold: number): [number, number][] {
+function traceBoundary(
+  mask: MaskLike,
+  sx: number,
+  sy: number,
+  threshold: number,
+): [number, number][] {
   // 8 邻域顺时针：从「左」开始（上一像素 = 起点的左边）
   const dirs: ReadonlyArray<readonly [number, number]> = [
-    [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1],
+    [-1, 0],
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
   ];
   const out: [number, number][] = [];
-  let cx = sx, cy = sy;
+  let cx = sx,
+    cy = sy;
   // 起点的「来向」= 上一帧像素方向 = 左；记录索引 0
   let dir = 0;
   out.push([cx, cy]);
@@ -87,7 +100,8 @@ function traceBoundary(mask: MaskLike, sx: number, sy: number, threshold: number
     for (let k = 0; k < 8; k++) {
       const di = (dir + 1 + k) % 8;
       const [dx, dy] = dirs[di];
-      const nx = cx + dx, ny = cy + dy;
+      const nx = cx + dx,
+        ny = cy + dy;
       if (isSolid(mask, nx, ny, threshold)) {
         // 回到起点 → 终止
         if (nx === sx && ny === sy && out.length > 1) {
@@ -263,7 +277,10 @@ export function maskToPolygon(
   // 用 polygon-clipping union(self) 去自相交 / 修复 marching-squares 锯齿
   try {
     const closed: [number, number][] = [...ring];
-    if (closed[0][0] !== closed[closed.length - 1][0] || closed[0][1] !== closed[closed.length - 1][1]) {
+    if (
+      closed[0][0] !== closed[closed.length - 1][0] ||
+      closed[0][1] !== closed[closed.length - 1][1]
+    ) {
       closed.push([closed[0][0], closed[0][1]]);
     }
     const poly: Polygon = [closed];

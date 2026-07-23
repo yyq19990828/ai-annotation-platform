@@ -9,19 +9,10 @@ import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import { PROJECT_TYPES } from "@/constants/projectTypes";
 import { usePermissions } from "@/hooks/usePermissions";
-import {
-  useCreateProjectTemplate,
-  useUpdateProjectTemplate,
-} from "@/hooks/useProjectTemplates";
-import type {
-  ProjectTemplateOut,
-  TemplateScope,
-} from "@/api/projectTemplates";
+import { useCreateProjectTemplate, useUpdateProjectTemplate } from "@/hooks/useProjectTemplates";
+import type { ProjectTemplateOut, TemplateScope } from "@/api/projectTemplates";
 import type { AttributeField, ProjectRenderingConfig } from "@/api/projects";
-import {
-  ClassEditor,
-  type ClassRow,
-} from "@/pages/Projects/sections/ClassEditor";
+import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
 import { AttributeSchemaEditor } from "@/pages/Projects/sections/AttributeSchemaEditor";
 import { ToolUnitTabs } from "@/pages/Projects/sections/ToolUnitTabs";
 import { RenderingConfigEditor } from "@/pages/Projects/sections/RenderingConfigEditor";
@@ -55,9 +46,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
   const [description, setDescription] = useState(initial?.description ?? "");
   const [scope, setScope] = useState<TemplateScope>(initial?.scope ?? "private");
   const [typeKey, setTypeKey] = useState(initial?.type_key ?? PROJECT_TYPES[0].key);
-  const [annotationGuide, setAnnotationGuide] = useState(
-    initial?.annotation_guide ?? "",
-  );
+  const [annotationGuide, setAnnotationGuide] = useState(initial?.annotation_guide ?? "");
   const [bindings, setBindings] = useState<UnitBindingMap>(() =>
     buildUnitBindings({
       type_key: initial?.type_key,
@@ -92,8 +81,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
   }, [initial, open]);
 
   const typeLabel = useMemo(
-    () =>
-      PROJECT_TYPES.find((t) => t.key === typeKey)?.label ?? typeKey,
+    () => PROJECT_TYPES.find((t) => t.key === typeKey)?.label ?? typeKey,
     [typeKey],
   );
 
@@ -275,8 +263,8 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
         {tab === "tools" && (
           <>
             <p className={styles.help}>
-              工具维度独立配置类别与属性 (v0.10.17)。勾选启用工具单位, 在 Tab 内编辑.
-              强隔离: 不同工具的同名类是独立记录。
+              工具维度独立配置类别与属性 (v0.10.17)。勾选启用工具单位, 在 Tab 内编辑. 强隔离:
+              不同工具的同名类是独立记录。
             </p>
             <ToolUnitTabs
               bindings={bindings}
@@ -293,11 +281,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
             ) : (
               <>
                 <h4 className={styles.subheading}>类别</h4>
-                <ClassEditor
-                  value={activeBinding.classRows}
-                  onChange={onChangeClasses}
-                  max={50}
-                />
+                <ClassEditor value={activeBinding.classRows} onChange={onChangeClasses} max={50} />
                 <h4 className={styles.subheading}>属性 schema</h4>
                 <AttributeSchemaEditor
                   value={activeBinding.attributeFields}

@@ -63,7 +63,9 @@ describe("executeRasterMaskOperationAsync", () => {
       onmessage: null,
       onerror: null,
       postMessage: () => undefined,
-      terminate: () => { terminated = true; },
+      terminate: () => {
+        terminated = true;
+      },
     } as unknown as Worker;
     const controller = new AbortController();
     const pending = executeRasterMaskOperationAsync(

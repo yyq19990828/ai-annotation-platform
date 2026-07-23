@@ -40,7 +40,8 @@ export function VideoKeyframeControls({
           title="上一可见关键帧"
           onClick={() => previousFrame !== null && onSeekFrame?.(previousFrame)}
         >
-          <Icon name="chevLeft" size={14} />上一关键帧
+          <Icon name="chevLeft" size={14} />
+          上一关键帧
         </Button>
         <Button
           size="sm"
@@ -49,7 +50,8 @@ export function VideoKeyframeControls({
           title="下一可见关键帧"
           onClick={() => nextFrame !== null && onSeekFrame?.(nextFrame)}
         >
-          下一关键帧<Icon name="chevRight" size={14} />
+          下一关键帧
+          <Icon name="chevRight" size={14} />
         </Button>
       </div>
       {(onCopy || onPasteSame || onPasteNew) && (
@@ -62,7 +64,8 @@ export function VideoKeyframeControls({
               title="复制当前解析几何"
               onClick={onCopy}
             >
-              <Icon name="copy" size={14} />复制当前帧
+              <Icon name="copy" size={14} />
+              复制当前帧
             </Button>
           )}
           {onPasteSame && (
@@ -73,7 +76,8 @@ export function VideoKeyframeControls({
               title={clipboardLabel ? `粘贴 ${clipboardLabel}` : "粘贴到当前轨迹"}
               onClick={onPasteSame}
             >
-              <Icon name="clipboardPaste" size={14} />粘贴当前轨迹
+              <Icon name="clipboardPaste" size={14} />
+              粘贴当前轨迹
             </Button>
           )}
           {onPasteNew && (
@@ -84,7 +88,8 @@ export function VideoKeyframeControls({
               title={clipboardLabel ? `把 ${clipboardLabel} 粘贴为新轨迹` : "粘贴为新轨迹"}
               onClick={onPasteNew}
             >
-              <Icon name="plus" size={14} />粘贴新轨迹
+              <Icon name="plus" size={14} />
+              粘贴新轨迹
             </Button>
           )}
         </div>

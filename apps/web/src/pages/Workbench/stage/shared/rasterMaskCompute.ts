@@ -46,13 +46,13 @@ function analyzeSynchronously(rle: CocoRle): RasterMaskAnalysis {
 }
 
 function shouldUseSynchronousFallback(options: RasterMaskComputeOptions): boolean {
-  return options.createWorker === null
-    || (
-      !options.pool
-      && options.createWorker === undefined
-      && typeof Worker === "undefined"
-      && import.meta.env.MODE === "test"
-    );
+  return (
+    options.createWorker === null ||
+    (!options.pool &&
+      options.createWorker === undefined &&
+      typeof Worker === "undefined" &&
+      import.meta.env.MODE === "test")
+  );
 }
 
 function workerPoolFor(options: RasterMaskComputeOptions): {
@@ -81,9 +81,7 @@ async function withWorkerPool<T>(
   try {
     selected = workerPoolFor(options);
   } catch (error) {
-    throw error instanceof RasterMaskWorkerError
-      ? error
-      : new RasterMaskWorkerError(String(error));
+    throw error instanceof RasterMaskWorkerError ? error : new RasterMaskWorkerError(String(error));
   }
   try {
     return await run(selected.pool);
@@ -104,11 +102,13 @@ export function analyzeRasterMaskRleAsync(
 ): Promise<RasterMaskAnalysis> {
   if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
   if (shouldUseSynchronousFallback(options)) return Promise.resolve(analyzeSynchronously(rle));
-  return withWorkerPool(options, (pool) => pool.analyze(rle, {
-    priority: options.priority,
-    signal: options.signal,
-    timeoutMs: options.timeoutMs,
-  }));
+  return withWorkerPool(options, (pool) =>
+    pool.analyze(rle, {
+      priority: options.priority,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    }),
+  );
 }
 
 export function executeRasterMaskOperationAsync(
@@ -125,11 +125,13 @@ export function executeRasterMaskOperationAsync(
       result: applyMaskOperation(decodeCocoRle(rle), width, height, operation),
     });
   }
-  return withWorkerPool(options, (pool) => pool.executeOperation(rle, operation, context, {
-    priority: options.priority,
-    signal: options.signal,
-    timeoutMs: options.timeoutMs,
-  }));
+  return withWorkerPool(options, (pool) =>
+    pool.executeOperation(rle, operation, context, {
+      priority: options.priority,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    }),
+  );
 }
 
 export function executeRasterMaskInstanceOperationAsync(
@@ -146,9 +148,11 @@ export function executeRasterMaskInstanceOperationAsync(
       plan: applyMaskInstanceOperation(decodeCocoRle(rle), width, height, operation),
     });
   }
-  return withWorkerPool(options, (pool) => pool.executeInstanceOperation(rle, operation, context, {
-    priority: options.priority,
-    signal: options.signal,
-    timeoutMs: options.timeoutMs,
-  }));
+  return withWorkerPool(options, (pool) =>
+    pool.executeInstanceOperation(rle, operation, context, {
+      priority: options.priority,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    }),
+  );
 }

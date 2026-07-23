@@ -74,8 +74,9 @@ test.describe("screenshots automation", () => {
       const catalog = cached;
 
       // 获取当前 Playwright project 对应的矩阵轴
-      const axis = PROJECT_AXES[info.project.name as keyof typeof PROJECT_AXES]
-        ?? PROJECT_AXES["desktop-light"];
+      const axis =
+        PROJECT_AXES[info.project.name as keyof typeof PROJECT_AXES] ??
+        PROJECT_AXES["desktop-light"];
 
       // 不在此 project 跑的 scene 直接 skip
       if (!shouldRunInProject(scene, axis)) {
@@ -87,13 +88,11 @@ test.describe("screenshots automation", () => {
       const route = scene.route(catalog);
 
       const emailMap: Record<Role, string> = {
-        admin:     catalog.users.admin.email,
+        admin: catalog.users.admin.email,
         annotator: catalog.users.annotator.email,
-        reviewer:  catalog.users.reviewer.email,
+        reviewer: catalog.users.reviewer.email,
       };
-      const roleEmail = Array.isArray(scene.role)
-        ? emailMap[scene.role[0]]
-        : emailMap[scene.role];
+      const roleEmail = Array.isArray(scene.role) ? emailMap[scene.role[0]] : emailMap[scene.role];
 
       let cleanupMock: () => Promise<void> = async () => {};
       let cleanupAnnotations: () => Promise<void> = async () => {};
@@ -115,7 +114,7 @@ test.describe("screenshots automation", () => {
 
         // 合并默认 mask + scene 级 mask
         const maskSelectors = [...DEFAULT_MASK_SELECTORS, ...(scene.mask ?? [])];
-        const maskLocators  = maskSelectors.map((sel) => page.locator(sel));
+        const maskLocators = maskSelectors.map((sel) => page.locator(sel));
 
         // 确保输出目录存在
         const outRelative = resolveOutputPath(scene, axis);
@@ -132,11 +131,21 @@ test.describe("screenshots automation", () => {
 
         if (!capture) {
           if (!VALIDATE_ONLY) {
-            await page.screenshot({ path: out, fullPage: false, animations: "disabled", mask: maskLocators });
+            await page.screenshot({
+              path: out,
+              fullPage: false,
+              animations: "disabled",
+              mask: maskLocators,
+            });
           }
         } else if (capture.kind === "fullPage") {
           if (!VALIDATE_ONLY) {
-            await page.screenshot({ path: out, fullPage: true, animations: "disabled", mask: maskLocators });
+            await page.screenshot({
+              path: out,
+              fullPage: true,
+              animations: "disabled",
+              mask: maskLocators,
+            });
           }
         } else if (capture.kind === "locator") {
           const locator = page.locator(capture.selector);
@@ -153,9 +162,9 @@ test.describe("screenshots automation", () => {
               animations: "disabled",
               mask: maskLocators,
               clip: {
-                x:      Math.max(0, box.x - capture.padding),
-                y:      Math.max(0, box.y - capture.padding),
-                width:  box.width  + capture.padding * 2,
+                x: Math.max(0, box.x - capture.padding),
+                y: Math.max(0, box.y - capture.padding),
+                width: box.width + capture.padding * 2,
                 height: box.height + capture.padding * 2,
               },
             });
@@ -169,28 +178,35 @@ test.describe("screenshots automation", () => {
           }
         } else if (capture.kind === "clip") {
           if (!VALIDATE_ONLY) {
-            await page.screenshot({ path: out, animations: "disabled", mask: maskLocators, clip: capture.rect });
+            await page.screenshot({
+              path: out,
+              animations: "disabled",
+              mask: maskLocators,
+              clip: capture.rect,
+            });
           }
         }
 
         info.annotations.push({ type: "screenshot", description: outRelative });
         await info.attach("screenshot-manifest", {
-          body: Buffer.from(JSON.stringify({
-            target: outRelative,
-            scene: scene.name,
-            source: scene.source,
-            capture: capture ?? { kind: "viewport" },
-            fixture: scene.fixture ?? null,
-            seed_revision: catalog.seed_revision,
-            project: info.project.name,
-            viewport: page.viewportSize(),
-            theme: axis.theme,
-            locale: axis.locale,
-            browser: {
-              name: page.context().browser()?.browserType().name() ?? "chromium",
-              version: page.context().browser()?.version() ?? "unknown",
-            },
-          })),
+          body: Buffer.from(
+            JSON.stringify({
+              target: outRelative,
+              scene: scene.name,
+              source: scene.source,
+              capture: capture ?? { kind: "viewport" },
+              fixture: scene.fixture ?? null,
+              seed_revision: catalog.seed_revision,
+              project: info.project.name,
+              viewport: page.viewportSize(),
+              theme: axis.theme,
+              locale: axis.locale,
+              browser: {
+                name: page.context().browser()?.browserType().name() ?? "chromium",
+                version: page.context().browser()?.version() ?? "unknown",
+              },
+            }),
+          ),
           contentType: "application/json",
         });
       } finally {

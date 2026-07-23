@@ -12,12 +12,7 @@
  */
 
 import { useMemo } from "react";
-import type {
-  AttributeSchema,
-  ClassesConfig,
-  ProjectResponse,
-  ToolBindings,
-} from "@/api/projects";
+import type { AttributeSchema, ClassesConfig, ProjectResponse, ToolBindings } from "@/api/projects";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { ToolId } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
@@ -72,17 +67,11 @@ export function useToolBindings(
  * 镜像后端 lookup_classes_for_tool_unit (强隔离), 供采纳预测时按预测单位列出可选类别。
  * 未启用 / 未配置类时返回空数组。
  */
-export function classesForUnit(
-  tb: ToolBindings | null | undefined,
-  unit: ToolUnitId,
-): string[] {
+export function classesForUnit(tb: ToolBindings | null | undefined, unit: ToolUnitId): string[] {
   return _materialize((tb ?? {}) as ToolBindings, unit).classes;
 }
 
-function _materialize(
-  tb: ToolBindings,
-  unit: ToolUnitId,
-): ToolBindingsView {
+function _materialize(tb: ToolBindings, unit: ToolUnitId): ToolBindingsView {
   const binding = tb[unit];
   if (!binding || !binding.enabled) {
     return {
@@ -94,9 +83,7 @@ function _materialize(
       hasOwnClasses: false,
     };
   }
-  const ordered = (binding.classes ?? [])
-    .slice()
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const ordered = (binding.classes ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const classes = ordered.map((c) => c.name);
   const classesConfig: ClassesConfig = {};
   ordered.forEach((c, i) => {
@@ -106,10 +93,11 @@ function _materialize(
       alias: c.alias ?? null,
     };
   });
-  const attributeSchema: AttributeSchema =
-    (binding.attribute_schema as AttributeSchema | undefined) ?? {
-      fields: [],
-    };
+  const attributeSchema: AttributeSchema = (binding.attribute_schema as
+    | AttributeSchema
+    | undefined) ?? {
+    fields: [],
+  };
   return {
     classes,
     classesConfig,

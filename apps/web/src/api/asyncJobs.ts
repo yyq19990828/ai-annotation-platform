@@ -2,12 +2,7 @@
 
 import { apiClient } from "./client";
 
-export type AsyncJobStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type AsyncJobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export type AsyncJobKind =
   | "batch_predict"
@@ -71,26 +66,18 @@ export const asyncJobsApi = {
         ? [params.status]
         : [];
     statuses.forEach((status) => q.append("status", status));
-    const kinds = Array.isArray(params.kind)
-      ? params.kind
-      : params.kind
-        ? [params.kind]
-        : [];
+    const kinds = Array.isArray(params.kind) ? params.kind : params.kind ? [params.kind] : [];
     kinds.forEach((kind) => q.append("kind", kind));
     if (params.project_id) q.set("project_id", params.project_id);
     if (params.search) q.set("search", params.search);
     if (params.limit !== undefined) q.set("limit", String(params.limit));
     if (params.offset !== undefined) q.set("offset", String(params.offset));
     const qs = q.toString();
-    return apiClient.get<AsyncJobListResponse>(
-      `/async-jobs${qs ? `?${qs}` : ""}`,
-    );
+    return apiClient.get<AsyncJobListResponse>(`/async-jobs${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => apiClient.get<AsyncJob>(`/async-jobs/${id}`),
   cancel: (id: string) =>
     apiClient.post<{ status: string; id: string }>(`/async-jobs/${id}/cancel`),
   retryFailed: (id: string) =>
-    apiClient.post<AsyncJobRetryFailedResponse>(
-      `/async-jobs/${id}/retry-failed`,
-    ),
+    apiClient.post<AsyncJobRetryFailedResponse>(`/async-jobs/${id}/retry-failed`),
 };

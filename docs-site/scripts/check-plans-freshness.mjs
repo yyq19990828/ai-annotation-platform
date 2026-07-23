@@ -17,8 +17,7 @@ const STALE_DAYS = 30;
 const now = Date.now();
 const cutoff = now - STALE_DAYS * 24 * 3600 * 1000;
 
-const files = readdirSync(PLANS_DIR)
-  .filter((f) => f.endsWith(".md") && f !== "README.md");
+const files = readdirSync(PLANS_DIR).filter((f) => f.endsWith(".md") && f !== "README.md");
 
 let warned = 0;
 for (const f of files) {

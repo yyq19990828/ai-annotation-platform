@@ -195,15 +195,12 @@ function buildUnitBindingsFromSource(src: {
     base[defaultUnit] = {
       enabled: true,
       classRows,
-      attributeFields:
-        (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
+      attributeFields: (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
     };
   }
 
   // activeUnit = 第一个 enabled 的 unit, 没有就选 bbox
-  const firstEnabled = (Object.keys(base) as ToolUnitId[]).find(
-    (k) => base[k]?.enabled,
-  );
+  const firstEnabled = (Object.keys(base) as ToolUnitId[]).find((k) => base[k]?.enabled);
   return { unitBindings: base, activeUnit: firstEnabled ?? "bbox" };
 }
 
@@ -212,9 +209,7 @@ function buildFormFromSource(src: ProjectResponse): FormState {
   return {
     ...INITIAL,
     name: src.name ? `${src.name} (副本)` : "",
-    dataType: src.data_type
-      ? (src.data_type as ProjectDataType)
-      : dataTypeFromLegacy(src.type_key),
+    dataType: src.data_type ? (src.data_type as ProjectDataType) : dataTypeFromLegacy(src.type_key),
     typeKey: src.type_key,
     unitBindings,
     activeUnit,
@@ -235,9 +230,7 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
   return {
     ...INITIAL,
     name: "",
-    dataType: t.data_type
-      ? (t.data_type as ProjectDataType)
-      : dataTypeFromLegacy(t.type_key),
+    dataType: t.data_type ? (t.data_type as ProjectDataType) : dataTypeFromLegacy(t.type_key),
     typeKey: t.type_key,
     unitBindings,
     activeUnit,
@@ -330,15 +323,17 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
     // v0.10.11 · 复制模式不写草稿 (避免下次普通新建被他人项目模板污染).
     // v0.10.14 · E2 · 模板模式同理.
     if (open && !created && !sourceProjectId && !templateId) {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {/* */}
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
+      } catch {
+        /* */
+      }
     }
   }, [form, open, created, sourceProjectId, templateId]);
 
   // v0.10.28 · B 路线: 媒体维度选项 (image / video / lidar) 取代任务级 PROJECT_TYPES.
   const selectedDataType = useMemo(
-    () =>
-      PROJECT_DATA_TYPES.find((t) => t.id === form.dataType) ??
-      PROJECT_DATA_TYPES[0],
+    () => PROJECT_DATA_TYPES.find((t) => t.id === form.dataType) ?? PROJECT_DATA_TYPES[0],
     [form.dataType],
   );
 
@@ -348,15 +343,12 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
   const enabledUnitCount = (Object.keys(form.unitBindings) as ToolUnitId[]).filter(
     (k) => form.unitBindings[k]?.enabled,
   ).length;
-  const step1Valid =
-    nameValid && !!form.dataType && dueValid && enabledUnitCount > 0;
+  const step1Valid = nameValid && !!form.dataType && dueValid && enabledUnitCount > 0;
 
   // v0.10.17 · 各 enabled unit 各自的 attribute_schema 必须独立校验通过.
   const enabledUnitIds = useMemo(
     () =>
-      (Object.keys(form.unitBindings) as ToolUnitId[]).filter(
-        (k) => form.unitBindings[k]?.enabled,
-      ),
+      (Object.keys(form.unitBindings) as ToolUnitId[]).filter((k) => form.unitBindings[k]?.enabled),
     [form.unitBindings],
   );
   const step3AttrError = useMemo<string | null>(() => {
@@ -389,15 +381,12 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
           ...(r.alias ? { alias: r.alias } : {}),
         })),
         attribute_schema:
-          ub.attributeFields.length > 0
-            ? { fields: ub.attributeFields }
-            : { fields: [] },
+          ub.attributeFields.length > 0 ? { fields: ub.attributeFields } : { fields: [] },
       };
     }
     // 老 reader 兜底: 派生 classes / classes_config / attribute_schema 自 activeUnit
     const activeRows = form.unitBindings[form.activeUnit]?.classRows ?? [];
-    const activeFields =
-      form.unitBindings[form.activeUnit]?.attributeFields ?? [];
+    const activeFields = form.unitBindings[form.activeUnit]?.attributeFields ?? [];
     const classes = activeRows.map((r) => r.name);
     const classes_config: ClassesConfig = {};
     activeRows.forEach((r, i) => {
@@ -454,7 +443,11 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
 
   // step 5 / 6 完成后的最终落地
   const finishWizard = (_linkedDatasets: number, _addedMembers: number) => {
-    try { localStorage.removeItem(DRAFT_KEY); } catch {/* */}
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      /* */
+    }
     setStep(7);
   };
 
@@ -523,9 +516,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
           <Step3AttributesPerUnit form={form} setForm={setForm} error={step3AttrError} />
         )}
 
-        {step === 4 && (
-          <Step4Ai form={form} setForm={setForm} />
-        )}
+        {step === 4 && <Step4Ai form={form} setForm={setForm} />}
 
         {step === 5 && created && (
           <Step5Datasets
@@ -573,10 +564,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
           <Footer
             step={step}
             canNext={
-              (step === 1 && step1Valid) ||
-              step === 2 ||
-              (step === 3 && step3Valid) ||
-              step === 4
+              (step === 1 && step1Valid) || step === 2 || (step === 3 && step3Valid) || step === 4
             }
             loading={createProject.isPending}
             onCancel={onClose}
@@ -613,7 +601,13 @@ function Stepper({ current }: { current: StepperStep }) {
             >
               {done ? <Icon name="check" size={11} /> : n}
             </div>
-            <span className={clsx(styles.stepperLabel, (done || active) && styles.stepperLabelActive, active && styles.stepperLabelCurrent)}>
+            <span
+              className={clsx(
+                styles.stepperLabel,
+                (done || active) && styles.stepperLabelActive,
+                active && styles.stepperLabelCurrent,
+              )}
+            >
               {STEP_LABELS[n]}
             </span>
             {i < lastIdx && (
@@ -644,10 +638,13 @@ function Footer({
   const isFinalEditStep = step === 4;
   return (
     <div className={styles.footer}>
-      <Button variant="ghost" onClick={onCancel}>取消</Button>
+      <Button variant="ghost" onClick={onCancel}>
+        取消
+      </Button>
       {step > 1 && (
         <Button onClick={onPrev}>
-          <Icon name="chevLeft" size={12} />上一步
+          <Icon name="chevLeft" size={12} />
+          上一步
         </Button>
       )}
       <Button variant="primary" onClick={onNext} disabled={!canNext || loading}>

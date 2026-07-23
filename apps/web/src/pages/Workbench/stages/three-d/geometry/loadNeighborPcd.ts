@@ -7,10 +7,7 @@
  */
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 import type * as THREE from "three";
-import {
-  applyConventionToPositions,
-  type LidarAxisConvention,
-} from "./axisConvention";
+import { applyConventionToPositions, type LidarAxisConvention } from "./axisConvention";
 
 export async function loadNeighborPcdPositions(
   url: string,

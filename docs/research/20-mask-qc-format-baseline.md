@@ -38,11 +38,11 @@ exact 4,375、held 1,465、absent 10、outside 100、occluded 50。runner 会在
 样本由确定性稀疏 donut 和 detached island 组成，runner 直接生成 uncompressed COCO RLE，
 不先构造大尺寸输入 alpha；被测的生产 `analyze_mask` 仍会完整 decode 并执行两次 dense 分析。
 
-| 分辨率 | 像素 | RLE runs | RLE JSON bytes | 两轮耗时 (ms) | p50 / p95 (ms) |
-|---|---:|---:|---:|---:|---:|
-| 1920 × 1080 | 2,073,600 | 1,075 | 4,016 | 497.9 / 490.3 | 494.1 / 497.6 |
-| 3840 × 2160 | 8,294,400 | 2,149 | 9,426 | 2,021.1 / 2,004.1 | 2,012.6 / 2,020.2 |
-| 8192 × 8192 | 67,108,864 | 4,587 | 21,360 | 16,270.0 / 16,202.3 | 16,236.2 / 16,266.6 |
+| 分辨率      |       像素 | RLE runs | RLE JSON bytes |       两轮耗时 (ms) |      p50 / p95 (ms) |
+| ----------- | ---------: | -------: | -------------: | ------------------: | ------------------: |
+| 1920 × 1080 |  2,073,600 |    1,075 |          4,016 |       497.9 / 490.3 |       494.1 / 497.6 |
+| 3840 × 2160 |  8,294,400 |    2,149 |          9,426 |   2,021.1 / 2,004.1 |   2,012.6 / 2,020.2 |
+| 8192 × 8192 | 67,108,864 |    4,587 |         21,360 | 16,270.0 / 16,202.3 | 16,236.2 / 16,266.6 |
 
 峰值 RSS 是进程级累计值，不能拆成单个分辨率的独占内存；它说明当前 8K dense 路径与后续
 “QC kernel 不 materialize 全幅 alpha”的目标存在显著距离。后续优化应继续用同一 fixture 对比，
@@ -52,13 +52,13 @@ exact 4,375、held 1,465、absent 10、outside 100、occluded 50。runner 会在
 
 同一个 8 × 6、11 前景像素的 donut + island 样本经过以下真实 consumer 校验：
 
-| 合同 | consumer | 校验结果 |
-|---|---|---|
-| AAP uncompressed COCO RLE | 平台 codec | 像素级 round-trip 通过 |
-| COCO instance RLE | `pycocotools.COCO.annToMask` | 11 pixels，通过 |
-| Binary PNG | Pillow `L` mode | 11 pixels，通过 |
-| Indexed PNG / DAVIS 像素 ID | Pillow `P` mode | instance IDs `[0, 7]`，通过 |
-| MOTS RLE line | `pycocotools.mask.decode` | frame / track / class 与 11 pixels，通过 |
+| 合同                        | consumer                     | 校验结果                                 |
+| --------------------------- | ---------------------------- | ---------------------------------------- |
+| AAP uncompressed COCO RLE   | 平台 codec                   | 像素级 round-trip 通过                   |
+| COCO instance RLE           | `pycocotools.COCO.annToMask` | 11 pixels，通过                          |
+| Binary PNG                  | Pillow `L` mode              | 11 pixels，通过                          |
+| Indexed PNG / DAVIS 像素 ID | Pillow `P` mode              | instance IDs `[0, 7]`，通过              |
+| MOTS RLE line               | `pycocotools.mask.decode`    | frame / track / class 与 11 pixels，通过 |
 
 所有样例包只写入 `TemporaryDirectory`，consumer 读取完成后目录自动删除；聚合 JSON 中
 `temporary_artifacts_retained` 固定校验为 `0`。

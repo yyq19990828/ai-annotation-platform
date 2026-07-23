@@ -8,7 +8,7 @@ import {
 } from "./rasterMaskRender";
 
 function alpha(rows: number[][]): Uint8Array {
-  return Uint8Array.from(rows.flat().map((value) => value ? 255 : 0));
+  return Uint8Array.from(rows.flat().map((value) => (value ? 255 : 0)));
 }
 
 describe("analyzeRasterMaskAlpha", () => {
@@ -27,22 +27,22 @@ describe("analyzeRasterMaskAlpha", () => {
     expect(result.boundaryPixelCount).toBe(5);
     expect(result.bounds).toEqual({ x: 1 / 5, y: 0, w: 4 / 5, h: 1 });
     expect(result.crop).toMatchObject({ x: 1, y: 0, width: 4, height: 3 });
-    expect([...result.crop.alpha]).toEqual([
-      255, 255, 0, 0,
-      255, 0, 0, 255,
-      0, 0, 0, 255,
-    ]);
+    expect([...result.crop.alpha]).toEqual([255, 255, 0, 0, 255, 0, 0, 255, 0, 0, 0, 255]);
     expect(rasterMaskAlphaBounds(source, 5, 3)).toEqual(result.bounds);
   });
 
   it("keeps a hole as background without counting it as a component", () => {
-    const result = analyzeRasterMaskAlpha(alpha([
-      [1, 1, 1, 1, 1],
-      [1, 0, 0, 0, 1],
-      [1, 0, 0, 0, 1],
-      [1, 0, 0, 0, 1],
-      [1, 1, 1, 1, 1],
-    ]), 5, 5);
+    const result = analyzeRasterMaskAlpha(
+      alpha([
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+      ]),
+      5,
+      5,
+    );
 
     expect(result.area).toBe(16);
     expect(result.componentCount).toBe(1);
@@ -53,13 +53,17 @@ describe("analyzeRasterMaskAlpha", () => {
   });
 
   it("counts three 4-connected components", () => {
-    const result = analyzeRasterMaskAlpha(alpha([
-      [1, 0, 0, 0, 0, 0, 0],
-      [1, 0, 0, 1, 0, 0, 0],
-      [0, 0, 0, 1, 1, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 1],
-    ]), 7, 5);
+    const result = analyzeRasterMaskAlpha(
+      alpha([
+        [1, 0, 0, 0, 0, 0, 0],
+        [1, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1],
+      ]),
+      7,
+      5,
+    );
 
     expect(result.area).toBe(6);
     expect(result.componentCount).toBe(3);
@@ -80,13 +84,17 @@ describe("analyzeRasterMaskAlpha", () => {
   });
 
   it("counts multiple enclosed background regions without treating diagonal gaps as open", () => {
-    const result = analyzeRasterMaskAlpha(alpha([
-      [1, 1, 1, 1, 1, 1, 1],
-      [1, 0, 1, 0, 1, 0, 1],
-      [1, 0, 1, 0, 1, 0, 1],
-      [1, 0, 1, 0, 1, 0, 1],
-      [1, 1, 1, 1, 1, 1, 1],
-    ]), 7, 5);
+    const result = analyzeRasterMaskAlpha(
+      alpha([
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1],
+      ]),
+      7,
+      5,
+    );
 
     expect(result.componentCount).toBe(1);
     expect(result.holeCount).toBe(3);

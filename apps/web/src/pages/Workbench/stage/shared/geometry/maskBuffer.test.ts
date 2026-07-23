@@ -69,10 +69,8 @@ describe("MaskBuffer · brush / erase / clear", () => {
   it("方笔刷与方橡皮遵循同一硬边 footprint", () => {
     const m = new MaskBuffer({ width: 5, height: 3 });
     m.brush(0, 1, 1, 255, "square");
-    expect(Array.from(m.data, (value) => value ? 1 : 0)).toEqual([
-      1, 1, 0, 0, 0,
-      1, 1, 0, 0, 0,
-      1, 1, 0, 0, 0,
+    expect(Array.from(m.data, (value) => (value ? 1 : 0))).toEqual([
+      1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0,
     ]);
     m.erase(0, 1, 1, "square");
     expect(m.countSet()).toBe(0);
@@ -97,7 +95,12 @@ describe("MaskBuffer · brush / erase / clear", () => {
 describe("MaskBuffer · fromPolygon", () => {
   it("矩形 polygon 填出矩形 mask", () => {
     const m = new MaskBuffer({ width: 50, height: 50 });
-    m.fromPolygon([[10, 10], [30, 10], [30, 30], [10, 30]]);
+    m.fromPolygon([
+      [10, 10],
+      [30, 10],
+      [30, 30],
+      [10, 30],
+    ]);
     // 20x20 ≈ 400 像素（±5% 容差）
     const n = m.countSet();
     expect(n).toBeGreaterThan(360);
@@ -110,7 +113,11 @@ describe("MaskBuffer · fromPolygon", () => {
   it("三角形 polygon 大致填出三角形面积", () => {
     const m = new MaskBuffer({ width: 100, height: 100 });
     // 直角三角形 边长 40,40 → 面积 = 800
-    m.fromPolygon([[10, 10], [50, 10], [10, 50]]);
+    m.fromPolygon([
+      [10, 10],
+      [50, 10],
+      [10, 50],
+    ]);
     const n = m.countSet();
     expect(n).toBeGreaterThan(700);
     expect(n).toBeLessThan(900);
@@ -118,27 +125,45 @@ describe("MaskBuffer · fromPolygon", () => {
 
   it("顶点 < 3 时静默不画", () => {
     const m = new MaskBuffer({ width: 20, height: 20 });
-    m.fromPolygon([[1, 1], [10, 10]]);
+    m.fromPolygon([
+      [1, 1],
+      [10, 10],
+    ]);
     expect(m.countSet()).toBe(0);
   });
 
   it("polygon 部分越界仍能填到有效区域", () => {
     const m = new MaskBuffer({ width: 20, height: 20 });
     // 大部分在画布外
-    m.fromPolygon([[-10, -10], [25, -10], [25, 25], [-10, 25]]);
+    m.fromPolygon([
+      [-10, -10],
+      [25, -10],
+      [25, 25],
+      [-10, 25],
+    ]);
     // 应该填满整个画布
     expect(m.countSet()).toBe(20 * 20);
   });
 
   it("polygon subtract 与 add 使用相同像素中心规则", () => {
     const m = new MaskBuffer({ width: 6, height: 4 });
-    m.fromPolygon([[1, 1], [5, 1], [5, 3], [1, 3]]);
-    m.fromPolygon([[2, 0], [4, 0], [4, 4], [2, 4]], 0);
-    expect(Array.from(m.data, (value) => value ? 1 : 0)).toEqual([
-      0, 0, 0, 0, 0, 0,
-      0, 1, 0, 0, 1, 0,
-      0, 1, 0, 0, 1, 0,
-      0, 0, 0, 0, 0, 0,
+    m.fromPolygon([
+      [1, 1],
+      [5, 1],
+      [5, 3],
+      [1, 3],
+    ]);
+    m.fromPolygon(
+      [
+        [2, 0],
+        [4, 0],
+        [4, 4],
+        [2, 4],
+      ],
+      0,
+    );
+    expect(Array.from(m.data, (value) => (value ? 1 : 0))).toEqual([
+      0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
     ]);
   });
 });
@@ -218,7 +243,12 @@ describe("MaskBuffer · dirtyRect (v0.10.10)", () => {
 
   it("fromPolygon 的脏区 = polygon bbox（clamp 到画布）", () => {
     const m = new MaskBuffer({ width: 100, height: 100 });
-    m.fromPolygon([[10, 20], [60, 20], [60, 80], [10, 80]]);
+    m.fromPolygon([
+      [10, 20],
+      [60, 20],
+      [60, 80],
+      [10, 80],
+    ]);
     const rect = m.consumeDirty()!;
     expect(rect.x0).toBeLessThanOrEqual(10);
     expect(rect.x1).toBeGreaterThanOrEqual(60);

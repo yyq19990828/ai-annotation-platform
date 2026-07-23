@@ -129,12 +129,12 @@
 }
 
 .severityCritical {
-  color: oklch(0.60 0.22 25);
+  color: oklch(0.6 0.22 25);
 }
 
 .reopenPill,
 .reopenPillLarge {
-  border: 1px solid oklch(0.85 0.10 45);
+  border: 1px solid oklch(0.85 0.1 45);
   border-radius: 3px;
   background: oklch(0.95 0.04 45);
   color: oklch(0.55 0.18 45);

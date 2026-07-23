@@ -101,22 +101,14 @@ describe("AnnotationGuideSection", () => {
   });
 
   it("加载初值并默认进入编辑 tab", async () => {
-    render(
-      <AnnotationGuideSection
-        project={makeProject({ annotation_guide: "# 初始指引" })}
-      />,
-    );
+    render(<AnnotationGuideSection project={makeProject({ annotation_guide: "# 初始指引" })} />);
     const editor = await screen.findByTestId("markdown-editor");
     expect((editor as HTMLTextAreaElement).value).toBe("# 初始指引");
     expect(screen.getByTestId("guide-tab-edit")).toHaveAttribute("aria-selected", "true");
   });
 
   it("修改 markdown 后失焦 → mutation 携带 annotation_guide", async () => {
-    render(
-      <AnnotationGuideSection
-        project={makeProject({ annotation_guide: "" })}
-      />,
-    );
+    render(<AnnotationGuideSection project={makeProject({ annotation_guide: "" })} />);
     const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: "# 新指引\n第一条" } });
     fireEvent.blur(editor);
@@ -127,27 +119,17 @@ describe("AnnotationGuideSection", () => {
   });
 
   it("内容未变化失焦 → 不触发 mutation", async () => {
-    render(
-      <AnnotationGuideSection
-        project={makeProject({ annotation_guide: "# 初始" })}
-      />,
-    );
+    render(<AnnotationGuideSection project={makeProject({ annotation_guide: "# 初始" })} />);
     const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
     fireEvent.blur(editor);
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
   it("切到预览 tab 渲染 markdown 内容", async () => {
-    render(
-      <AnnotationGuideSection
-        project={makeProject({ annotation_guide: "# 预览标题" })}
-      />,
-    );
+    render(<AnnotationGuideSection project={makeProject({ annotation_guide: "# 预览标题" })} />);
     fireEvent.click(screen.getByTestId("guide-tab-preview"));
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { level: 1, name: "预览标题" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "预览标题" })).toBeInTheDocument();
     });
   });
 

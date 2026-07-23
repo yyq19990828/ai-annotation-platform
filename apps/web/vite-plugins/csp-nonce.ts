@@ -31,10 +31,7 @@ export function cspNoncePlugin(): Plugin {
           /<script\b(?![^>]*\bnonce=)([^>]*)>/g,
           `<script$1 nonce="${PLACEHOLDER}">`,
         );
-        out = out.replace(
-          /<style\b(?![^>]*\bnonce=)([^>]*)>/g,
-          `<style$1 nonce="${PLACEHOLDER}">`,
-        );
+        out = out.replace(/<style\b(?![^>]*\bnonce=)([^>]*)>/g, `<style$1 nonce="${PLACEHOLDER}">`);
         // 在 <head> 内注入 csp-nonce meta（供 turnstile.ts 等动态 script 注入读取）
         if (!/name=["']csp-nonce["']/.test(out)) {
           out = out.replace(

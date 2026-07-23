@@ -109,7 +109,11 @@ function DatasetStorageRow({ ds }: { ds: DatasetResponse & { total_size?: number
     <tr>
       <td className={`${cellClass} pl-4`}>
         <div className="flex items-center gap-2">
-          <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} className="text-muted-foreground" />
+          <Icon
+            name={TYPE_ICONS[ds.data_type] || "layers"}
+            size={14}
+            className="text-muted-foreground"
+          />
           <div>
             <div className="text-sm font-medium">{ds.name}</div>
             <div className="text-xs text-muted-foreground">{ds.display_id}</div>
@@ -145,10 +149,7 @@ function assetDetail(asset: VideoAssetFailureItem): string {
 function VideoAssetFailuresPanel() {
   const [page, setPage] = useState(0);
   const offset = page * VIDEO_ASSET_FAILURE_PAGE_SIZE;
-  const { data, isLoading, isError } = useVideoAssetFailures(
-    VIDEO_ASSET_FAILURE_PAGE_SIZE,
-    offset,
-  );
+  const { data, isLoading, isError } = useVideoAssetFailures(VIDEO_ASSET_FAILURE_PAGE_SIZE, offset);
   const retry = useRetryVideoAsset();
   const pushToast = useToastStore((s) => s.push);
   const items = data?.items ?? [];
@@ -187,111 +188,116 @@ function VideoAssetFailuresPanel() {
   return (
     <div className="mt-4">
       <Card>
-      <div className="flex justify-between gap-3 border-b border-border px-4 py-3.5">
-        <div>
-          <h3 className={CARD_TITLE_CLASS}>视频资产失败</h3>
-          <p className="mt-[3px] text-xs text-muted-foreground">
-            probe、poster、时间表和帧缓存失败会在这里集中处理。
-          </p>
-        </div>
-        <span className="self-center">
-          <Badge variant={total ? "danger" : "success"} dot>
-            {total ? `${total} 个失败` : "正常"}
-          </Badge>
-        </span>
-      </div>
-      {isLoading ? (
-        <div className="px-4 py-8.5 text-center text-sm text-muted-foreground">加载中...</div>
-      ) : isError ? (
-        <div className="px-4 py-8.5 text-center text-sm text-status-danger">无法加载视频资产状态</div>
-      ) : items.length === 0 ? (
-        <div className="px-4 py-8.5 text-center text-sm text-muted-foreground">
-          <Icon name="check" size={26} className="mb-2 opacity-[0.28]" />
-          <div>暂无视频资产失败</div>
-        </div>
-      ) : (
-        <div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className={thClass}>类型</th>
-                  <th className={thClass}>视频</th>
-                  <th className={thClass}>项目 / 任务</th>
-                  <th className={thClass}>错误</th>
-                  <th className={thClass}>更新时间</th>
-                  <th className={thClass}>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((asset) => (
-                  <tr key={asset.asset_key} className="border-b border-border">
-                    <td className={tdClass}>
-                      <Badge variant="outline">{VIDEO_ASSET_LABELS[asset.asset_type]}</Badge>
-                    </td>
-                    <td className={tdClass}>
-                      <div className="font-medium">{asset.file_name}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {assetDetail(asset)}
-                      </div>
-                    </td>
-                    <td className={tdClass}>
-                      <div>{asset.project_name ?? "—"}</div>
-                      <div className="mono mt-0.5 text-xs text-muted-foreground">
-                        {asset.task_display_id ?? "—"}
-                      </div>
-                    </td>
-                    <td className={`${tdClass} max-w-[420px]`}>
-                      <div title={asset.error} className="overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground">
-                        {asset.error}
-                      </div>
-                    </td>
-                    <td className={`${tdClass} text-xs text-muted-foreground`}>
-                      {asset.updated_at ? new Date(asset.updated_at).toLocaleString() : "—"}
-                    </td>
-                    <td className={`${tdClass} whitespace-nowrap`}>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={retry.isPending}
-                        onClick={() => onRetry(asset)}
-                      >
-                        <Icon name="refresh" size={11} />
-                        重试
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="flex justify-between gap-3 border-b border-border px-4 py-3.5">
+          <div>
+            <h3 className={CARD_TITLE_CLASS}>视频资产失败</h3>
+            <p className="mt-[3px] text-xs text-muted-foreground">
+              probe、poster、时间表和帧缓存失败会在这里集中处理。
+            </p>
           </div>
-          {(page > 0 || hasNext) && (
-            <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-2.5">
-              <span className="text-xs text-muted-foreground">
-                第 {page + 1} 页 · {pageStart}-{pageEnd} / 共 {total} 条
-              </span>
-              <div className="inline-flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                >
-                  <Icon name="chevLeft" size={11} /> 上一页
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!hasNext}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  下一页 <Icon name="chevRight" size={11} />
-                </Button>
-              </div>
-            </div>
-          )}
+          <span className="self-center">
+            <Badge variant={total ? "danger" : "success"} dot>
+              {total ? `${total} 个失败` : "正常"}
+            </Badge>
+          </span>
         </div>
-      )}
+        {isLoading ? (
+          <div className="px-4 py-8.5 text-center text-sm text-muted-foreground">加载中...</div>
+        ) : isError ? (
+          <div className="px-4 py-8.5 text-center text-sm text-status-danger">
+            无法加载视频资产状态
+          </div>
+        ) : items.length === 0 ? (
+          <div className="px-4 py-8.5 text-center text-sm text-muted-foreground">
+            <Icon name="check" size={26} className="mb-2 opacity-[0.28]" />
+            <div>暂无视频资产失败</div>
+          </div>
+        ) : (
+          <div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className={thClass}>类型</th>
+                    <th className={thClass}>视频</th>
+                    <th className={thClass}>项目 / 任务</th>
+                    <th className={thClass}>错误</th>
+                    <th className={thClass}>更新时间</th>
+                    <th className={thClass}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((asset) => (
+                    <tr key={asset.asset_key} className="border-b border-border">
+                      <td className={tdClass}>
+                        <Badge variant="outline">{VIDEO_ASSET_LABELS[asset.asset_type]}</Badge>
+                      </td>
+                      <td className={tdClass}>
+                        <div className="font-medium">{asset.file_name}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {assetDetail(asset)}
+                        </div>
+                      </td>
+                      <td className={tdClass}>
+                        <div>{asset.project_name ?? "—"}</div>
+                        <div className="mono mt-0.5 text-xs text-muted-foreground">
+                          {asset.task_display_id ?? "—"}
+                        </div>
+                      </td>
+                      <td className={`${tdClass} max-w-[420px]`}>
+                        <div
+                          title={asset.error}
+                          className="overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground"
+                        >
+                          {asset.error}
+                        </div>
+                      </td>
+                      <td className={`${tdClass} text-xs text-muted-foreground`}>
+                        {asset.updated_at ? new Date(asset.updated_at).toLocaleString() : "—"}
+                      </td>
+                      <td className={`${tdClass} whitespace-nowrap`}>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={retry.isPending}
+                          onClick={() => onRetry(asset)}
+                        >
+                          <Icon name="refresh" size={11} />
+                          重试
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(page > 0 || hasNext) && (
+              <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-2.5">
+                <span className="text-xs text-muted-foreground">
+                  第 {page + 1} 页 · {pageStart}-{pageEnd} / 共 {total} 条
+                </span>
+                <div className="inline-flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={page === 0}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  >
+                    <Icon name="chevLeft" size={11} /> 上一页
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!hasNext}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    下一页 <Icon name="chevRight" size={11} />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -380,13 +386,18 @@ export function StoragePage() {
               <thead>
                 <tr>
                   {["数据集", "类型", "文件数", "容量", "关联项目"].map((h, i) => (
-                    <th key={i} className={i === 0 ? `${datasetThClass} pl-4` : datasetThClass}>{h}</th>
+                    <th key={i} className={i === 0 ? `${datasetThClass} pl-4` : datasetThClass}>
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {datasets.map((ds) => (
-                  <DatasetStorageRow key={ds.id} ds={ds as DatasetResponse & { total_size?: number }} />
+                  <DatasetStorageRow
+                    key={ds.id}
+                    ds={ds as DatasetResponse & { total_size?: number }}
+                  />
                 ))}
               </tbody>
             </table>

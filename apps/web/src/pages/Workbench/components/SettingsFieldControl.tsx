@@ -9,7 +9,6 @@ import type {
   WorkbenchSettingValue,
 } from "../state/workbenchSettingsFields";
 
-
 const LOCKED_TITLE = "由项目统一配置";
 
 interface SettingsFieldControlProps {
@@ -57,12 +56,19 @@ export function SettingsFieldControl({
       <div className="flex flex-1 min-w-0 items-center gap-1.5 text-muted-foreground text-xs font-medium">
         {labelText}
         {field.description && !locked && (
-          <span className="inline-flex shrink-0 items-center text-muted-foreground" aria-label={field.description} title={field.description}>
+          <span
+            className="inline-flex shrink-0 items-center text-muted-foreground"
+            aria-label={field.description}
+            title={field.description}
+          >
             <Icon name="info" size={11} />
           </span>
         )}
         {locked && (
-          <span className="inline-flex shrink-0 items-center gap-1 px-1.5 py-px border border-border rounded-full bg-muted text-muted-foreground text-2xs font-medium" title={LOCKED_TITLE}>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 px-1.5 py-px border border-border rounded-full bg-muted text-muted-foreground text-2xs font-medium"
+            title={LOCKED_TITLE}
+          >
             <Icon name="lock" size={10} />
             项目锁定
           </span>
@@ -70,13 +76,11 @@ export function SettingsFieldControl({
       </div>
       {control.type === "toggle" && (
         <span className="inline-flex items-center gap-2 shrink-0">
-          <Switch
-            checked={Boolean(value)}
-            disabled={disabled || locked}
-            onChange={onCommit}
-          />
+          <Switch checked={Boolean(value)} disabled={disabled || locked} onChange={onCommit} />
           {(control.onText || control.offText) && (
-            <span className="text-muted-foreground text-xs whitespace-nowrap">{value ? control.onText : control.offText}</span>
+            <span className="text-muted-foreground text-xs whitespace-nowrap">
+              {value ? control.onText : control.offText}
+            </span>
           )}
         </span>
       )}
@@ -108,9 +112,7 @@ export function SettingsFieldControl({
           value={String(value)}
           disabled={disabled || locked}
           onChange={(e) => {
-            const selected = control.options.find(
-              (opt) => String(opt.value) === e.target.value,
-            );
+            const selected = control.options.find((opt) => String(opt.value) === e.target.value);
             if (selected) onCommit(selected.value);
           }}
           className="appearance-none box-border w-full max-w-[130px] px-2 py-1.5 pr-6 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -172,9 +174,7 @@ function LabelContentByTypeControl({
   disabled: boolean;
   onCommit: (value: LabelContentByType) => void;
 }) {
-  const [active, setActive] = useState<"single" | "track" | "ai">(
-    segments[0]?.key ?? "single",
-  );
+  const [active, setActive] = useState<"single" | "track" | "ai">(segments[0]?.key ?? "single");
   const activeSeg = segments.find((s) => s.key === active) ?? segments[0];
   const selected: string[] = value[active] ?? [];
   const toggle = (optValue: string) => {
@@ -187,7 +187,10 @@ function LabelContentByTypeControl({
   };
   return (
     <div className="flex flex-col gap-2">
-      <div className="inline-flex gap-1 p-0.5 border border-border rounded-[var(--radius-sm)] bg-muted" role="tablist">
+      <div
+        className="inline-flex gap-1 p-0.5 border border-border rounded-[var(--radius-sm)] bg-muted"
+        role="tablist"
+      >
         {segments.map((s) => (
           <button
             key={s.key}
@@ -205,10 +208,15 @@ function LabelContentByTypeControl({
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-default text-muted-foreground">
           <span>类别名</span>
-          <span className="px-1.5 py-px rounded-full bg-muted text-muted-foreground text-2xs">必选</span>
+          <span className="px-1.5 py-px rounded-full bg-muted text-muted-foreground text-2xs">
+            必选
+          </span>
         </div>
         {activeSeg.options.map((opt) => (
-          <label key={opt.value} className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-pointer">
+          <label
+            key={opt.value}
+            className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-pointer"
+          >
             <span>{opt.label}</span>
             <Switch
               checked={selected.includes(opt.value)}
@@ -325,7 +333,12 @@ function SliderControl({
       onPointerUp={commit}
       onBlur={commit}
       onKeyUp={(e) => {
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") {
+        if (
+          e.key === "ArrowLeft" ||
+          e.key === "ArrowRight" ||
+          e.key === "Home" ||
+          e.key === "End"
+        ) {
           commit();
         }
       }}

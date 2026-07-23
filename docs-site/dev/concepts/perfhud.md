@@ -64,19 +64,19 @@ Grounded-SAM-2 / SAM-3 等 GPU backend 跑预标时，运维侧需要实时看 G
 
 ## 关键文件
 
-| 层 | 路径 | 改动点 |
-|---|---|---|
-| GPU backend | `apps/grounded-sam2-backend/observability.py` | 5 个 Gauge + `init_perfhud_collectors` / `sample_perfhud` |
-| GPU backend | `apps/grounded-sam2-backend/main.py` `/health` | 调 `sample_perfhud()`, 扩 `gpu_info` + `host` 段 |
-| GPU backend | `apps/grounded-sam2-backend/pyproject.toml` | 加 `pynvml>=11.5` + `psutil>=5.9` |
-| API schema | `apps/api/app/schemas/ml_backend.py` | `GpuInfo` / `HostInfo` / `CacheStats` / `HealthMeta` / `MLBackendStatsSnapshot` Pydantic |
-| API client | `apps/api/app/services/ml_client.py` | `health_meta()` 透传 `host` 段 |
-| API WS | `apps/api/app/api/v1/ws.py` | `/ws/ml-backend-stats` (admin only + 订阅者计数) |
-| API worker | `apps/api/app/workers/ml_health.py` | `publish_ml_backend_stats` 任务 |
-| API beat | `apps/api/app/workers/celery_app.py` | `publish-ml-backend-stats` schedule (1s) |
-| 前端组件 | `apps/web/src/components/PerfHud/` | 浮窗 + hook + zustand store |
-| 前端入口 | `apps/web/src/App.tsx` | 全局 `Ctrl+Shift+P` listener + `<PerfHud />` 挂载 |
-| 前端入口 | `apps/web/src/components/shell/TopBar.tsx` | activity icon button (admin only) |
+| 层          | 路径                                           | 改动点                                                                                   |
+| ----------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| GPU backend | `apps/grounded-sam2-backend/observability.py`  | 5 个 Gauge + `init_perfhud_collectors` / `sample_perfhud`                                |
+| GPU backend | `apps/grounded-sam2-backend/main.py` `/health` | 调 `sample_perfhud()`, 扩 `gpu_info` + `host` 段                                         |
+| GPU backend | `apps/grounded-sam2-backend/pyproject.toml`    | 加 `pynvml>=11.5` + `psutil>=5.9`                                                        |
+| API schema  | `apps/api/app/schemas/ml_backend.py`           | `GpuInfo` / `HostInfo` / `CacheStats` / `HealthMeta` / `MLBackendStatsSnapshot` Pydantic |
+| API client  | `apps/api/app/services/ml_client.py`           | `health_meta()` 透传 `host` 段                                                           |
+| API WS      | `apps/api/app/api/v1/ws.py`                    | `/ws/ml-backend-stats` (admin only + 订阅者计数)                                         |
+| API worker  | `apps/api/app/workers/ml_health.py`            | `publish_ml_backend_stats` 任务                                                          |
+| API beat    | `apps/api/app/workers/celery_app.py`           | `publish-ml-backend-stats` schedule (1s)                                                 |
+| 前端组件    | `apps/web/src/components/PerfHud/`             | 浮窗 + hook + zustand store                                                              |
+| 前端入口    | `apps/web/src/App.tsx`                         | 全局 `Ctrl+Shift+P` listener + `<PerfHud />` 挂载                                        |
+| 前端入口    | `apps/web/src/components/shell/TopBar.tsx`     | activity icon button (admin only)                                                        |
 
 > **新接入 backend 须遵守同一 `/health` 观测契约**：把 GPU/容器指标放进顶层 `gpu_info` + `host` 段（字段名见 gsam2 参考实现 / `_PERFHUD_META_KEYS`），而非自定义扁平 envelope —— 否则 `publish_ml_backend_stats` 拿不到指标，PerfHud 四条 bar 全显示 "—"。yolo-backend `main.py` `/health` 也按此映射。
 

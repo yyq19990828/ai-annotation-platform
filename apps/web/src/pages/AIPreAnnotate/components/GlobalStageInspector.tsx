@@ -22,11 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { VariantSelector } from "@/components/ml/VariantSelector";
-import {
-  hasInput,
-  INPUT_BBOX_PROMPT_ID,
-  INPUT_CROP_ID,
-} from "@/api/capabilityInputs";
+import { hasInput, INPUT_BBOX_PROMPT_ID, INPUT_CROP_ID } from "@/api/capabilityInputs";
 import type { CapabilityInstanceModel } from "@/api/mlCapabilities";
 import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
@@ -82,8 +78,7 @@ function stageCapsFromModel(model: CapabilityInstanceModel | undefined): StageCa
     knownInputs: supportedInputs.length > 0,
     acceptsCrop: hasInput(supportedInputs, INPUT_CROP_ID),
     acceptsBboxPrompt: hasInput(supportedInputs, INPUT_BBOX_PROMPT_ID),
-    producesAttributes:
-      outputTypes.length > 0 || (model.output_attribute_schema?.length ?? 0) > 0,
+    producesAttributes: outputTypes.length > 0 || (model.output_attribute_schema?.length ?? 0) > 0,
     producesClass: outputTypes.length > 0 ? outputTypes.includes("class") : undefined,
     batchable: typeof rpBatchable === "boolean" ? rpBatchable : undefined,
   };
@@ -117,11 +112,8 @@ export function GlobalStageInspector({
   //   (全局 /instances 已下发, 与项目侧同源); 空对象=未选, VariantSelector 按 default/recommended 回落.
   const [variantValue, setVariantValue] = useState<Record<string, unknown>>({});
 
-  const optionByKey = useMemo(
-    () => new Map(pool.map((o) => [o.key, o])),
-    [pool],
-  );
-  const selectedOption = modelKey ? optionByKey.get(modelKey) ?? null : null;
+  const optionByKey = useMemo(() => new Map(pool.map((o) => [o.key, o])), [pool]);
+  const selectedOption = modelKey ? (optionByKey.get(modelKey) ?? null) : null;
 
   // 下游阶段的内生形态 (roi/input/write); 源阶段恒 null (源吃整图、恒产几何、不写属性)。
   const shape = useMemo<DownstreamShape | null>(
@@ -134,10 +126,7 @@ export function GlobalStageInspector({
     () => (selectedOption?.model.supported_variants ?? []) as MLBackendSupportedVariantGroup[],
     [selectedOption],
   );
-  const variantAxisKeys = useMemo(
-    () => variantGroups.map((g) => g.key),
-    [variantGroups],
-  );
+  const variantAxisKeys = useMemo(() => variantGroups.map((g) => g.key), [variantGroups]);
   const defaultVariants = useMemo(
     () => selectedOption?.model.default_variants ?? {},
     [selectedOption],
@@ -156,9 +145,7 @@ export function GlobalStageInspector({
   const writeKeyOptions = useMemo(() => {
     if (kind !== "stage") return [];
     const schema = selectedOption?.model.output_attribute_schema ?? [];
-    return schema
-      .filter((a) => !!a?.key)
-      .map((a) => ({ value: a.key, label: a.label || a.key }));
+    return schema.filter((a) => !!a?.key).map((a) => ({ value: a.key, label: a.label || a.key }));
   }, [kind, selectedOption]);
 
   const parentClassChipOptions = useMemo(() => {
@@ -259,8 +246,7 @@ export function GlobalStageInspector({
       if (value.roi?.pad != null) setRoiPad(String(value.roi.pad));
       if (value.write?.keys?.length) setWriteKeysSet(new Set(value.write.keys));
       if (value.label) setLabel(value.label);
-      if (value.parent_class_filter?.length)
-        setParentClassSet(new Set(value.parent_class_filter));
+      if (value.parent_class_filter?.length) setParentClassSet(new Set(value.parent_class_filter));
     } else {
       if (value.class_filter?.length)
         setSourceClassIdxSet(new Set(value.class_filter.map((n) => String(n))));
@@ -300,9 +286,7 @@ export function GlobalStageInspector({
           className={styles.selectInput}
           value={modelKey}
           onChange={(e) => setModelKey(e.target.value)}
-          aria-label={
-            kind === "source" ? "源阶段模型" : `阶段 ${displayIndex} 模型`
-          }
+          aria-label={kind === "source" ? "源阶段模型" : `阶段 ${displayIndex} 模型`}
         >
           {pool.length === 0 ? (
             <option value="">暂无全局模型</option>
@@ -335,9 +319,7 @@ export function GlobalStageInspector({
 
       {kind === "source" ? (
         <div className={styles.field}>
-          <span className={styles.fieldLabel}>
-            类别白名单（留空=全部；勾选 model 原生类别）
-          </span>
+          <span className={styles.fieldLabel}>类别白名单（留空=全部；勾选 model 原生类别）</span>
           {selectedOption == null ? (
             <span className={styles.fieldHint}>请先选择模型以加载类别表</span>
           ) : sourceClassOptions.length === 0 ? (
@@ -397,9 +379,7 @@ export function GlobalStageInspector({
           {shape?.isAttributes && (
             <>
               <div className={styles.field}>
-                <span className={styles.fieldLabel}>
-                  写回属性键（留空=接收下游返回的全部键）
-                </span>
+                <span className={styles.fieldLabel}>写回属性键（留空=接收下游返回的全部键）</span>
                 <ChipMultiSelect
                   options={writeKeyOptions}
                   selected={writeKeysSet}

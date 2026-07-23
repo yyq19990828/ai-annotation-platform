@@ -7,11 +7,9 @@ describe("CanvasDrawingPreview · v0.10.21 I4 笔画 timeline", () => {
     render(
       <CanvasDrawingPreview
         drawing={{
-          shapes: [
-            { type: "line", points: [0.1, 0.1, 0.5, 0.5], stroke: "#ef4444" },
-          ],
+          shapes: [{ type: "line", points: [0.1, 0.1, 0.5, 0.5], stroke: "#ef4444" }],
         }}
-      />
+      />,
     );
     expect(screen.queryByTestId("canvas-drawing-timeline")).toBeNull();
   });
@@ -21,12 +19,33 @@ describe("CanvasDrawingPreview · v0.10.21 I4 笔画 timeline", () => {
       <CanvasDrawingPreview
         drawing={{
           shapes: [
-            { type: "line", points: [0, 0, 1, 1], stroke: "#ef4444", id: "a", started_at: 1000, ended_at: 2000 },
-            { type: "line", points: [0, 0, 1, 1], stroke: "#10b981", id: "b", started_at: 3000, ended_at: 6000 },
-            { type: "line", points: [0, 0, 1, 1], stroke: "#3b82f6", id: "c", started_at: 7000, ended_at: 8000 },
+            {
+              type: "line",
+              points: [0, 0, 1, 1],
+              stroke: "#ef4444",
+              id: "a",
+              started_at: 1000,
+              ended_at: 2000,
+            },
+            {
+              type: "line",
+              points: [0, 0, 1, 1],
+              stroke: "#10b981",
+              id: "b",
+              started_at: 3000,
+              ended_at: 6000,
+            },
+            {
+              type: "line",
+              points: [0, 0, 1, 1],
+              stroke: "#3b82f6",
+              id: "c",
+              started_at: 7000,
+              ended_at: 8000,
+            },
           ],
         }}
-      />
+      />,
     );
     expect(screen.getByTestId("canvas-drawing-timeline")).toBeInTheDocument();
     const segments = screen.getAllByTestId("canvas-drawing-timeline-segment");
@@ -38,11 +57,17 @@ describe("CanvasDrawingPreview · v0.10.21 I4 笔画 timeline", () => {
       <CanvasDrawingPreview
         drawing={{
           shapes: [
-            { type: "line", points: [0, 0, 1, 1], stroke: "#ef4444", started_at: 1000, ended_at: 2000 },
+            {
+              type: "line",
+              points: [0, 0, 1, 1],
+              stroke: "#ef4444",
+              started_at: 1000,
+              ended_at: 2000,
+            },
             { type: "line", points: [0, 0, 1, 1], stroke: "#10b981" },
           ],
         }}
-      />
+      />,
     );
     expect(screen.queryByTestId("canvas-drawing-timeline")).toBeNull();
   });
@@ -52,11 +77,25 @@ describe("CanvasDrawingPreview · v0.10.21 I4 笔画 timeline", () => {
       <CanvasDrawingPreview
         drawing={{
           shapes: [
-            { type: "line", points: [0, 0, 1, 1], stroke: "#ef4444", id: "a", started_at: 1000, ended_at: 2000 },
-            { type: "line", points: [0, 0, 1, 1], stroke: "#10b981", id: "b", started_at: 3000, ended_at: 6000 },
+            {
+              type: "line",
+              points: [0, 0, 1, 1],
+              stroke: "#ef4444",
+              id: "a",
+              started_at: 1000,
+              ended_at: 2000,
+            },
+            {
+              type: "line",
+              points: [0, 0, 1, 1],
+              stroke: "#10b981",
+              id: "b",
+              started_at: 3000,
+              ended_at: 6000,
+            },
           ],
         }}
-      />
+      />,
     );
     const segments = screen.getAllByTestId("canvas-drawing-timeline-segment");
     fireEvent.mouseEnter(segments[0]);

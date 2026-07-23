@@ -80,12 +80,7 @@ export function GPUResourcesSection({ scope }: { scope: RegistryScope }): ReactN
   }
 
   if (gpuResources.length === 0) {
-    return (
-      <EmptyState
-        icon="activity"
-        message="尚未配置 GPU_ARBITER_RESOURCES_JSON"
-      />
-    );
+    return <EmptyState icon="activity" message="尚未配置 GPU_ARBITER_RESOURCES_JSON" />;
   }
 
   return (
@@ -135,9 +130,7 @@ function GpuResourceRow({
   const staticPct = allocatable > 0 ? (claimed / allocatable) * 100 : 0;
   const staticProgressPct = Math.min(100, staticPct);
   const runtimePct =
-    committed != null && allocatable > 0
-      ? Math.min(100, (committed / allocatable) * 100)
-      : null;
+    committed != null && allocatable > 0 ? Math.min(100, (committed / allocatable) * 100) : null;
   const maxDiagnostic = pickMaxSeverityGpuDiagnostic(resource.gpu_resource_id, scope.diagnostics);
   const affectedInstances = collectAffectedInstances(resource.gpu_resource_id, scope);
 
@@ -159,7 +152,10 @@ function GpuResourceRow({
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <Badge variant={GPU_STATUS_VARIANT[resource.status]}>
-                <Icon name={resource.status === "ok" ? "checkCircle" : "alert-triangle"} size={11} />
+                <Icon
+                  name={resource.status === "ok" ? "checkCircle" : "alert-triangle"}
+                  size={11}
+                />
                 <span>{gpuStatusLabel(resource.status)}</span>
               </Badge>
               <CopyableId value={resource.gpu_resource_id} label="GPU 资源 ID" />
@@ -183,9 +179,7 @@ function GpuResourceRow({
               value={staticProgressPct}
               className={staticPct > 100 ? "bg-status-caution-soft" : undefined}
             />
-            {staticPct > 100 && (
-              <span className="text-2xs text-status-caution">弹性超售</span>
-            )}
+            {staticPct > 100 && <span className="text-2xs text-status-caution">弹性超售</span>}
           </div>
         </TableCell>
         <TableCell>
@@ -262,9 +256,7 @@ function AffectedInstancesSubRow({
   }
   return (
     <div className="flex flex-col gap-1 py-2">
-      <div className="text-2xs text-muted-foreground">
-        受影响实例（{instances.length}）
-      </div>
+      <div className="text-2xs text-muted-foreground">受影响实例（{instances.length}）</div>
       <ul className="m-0 flex list-none flex-col gap-1 p-0 text-xs">
         {instances.map((it) => (
           <li key={it.registry_id} className="flex items-center gap-2">
@@ -297,9 +289,7 @@ function pickMaxSeverityGpuDiagnostic(
   };
   const related = diagnostics.filter((d) => d.affected_gpu_resource_ids.includes(gpuResourceId));
   if (related.length === 0) return null;
-  return related.reduce((max, d) =>
-    sevRank[d.severity] > sevRank[max.severity] ? d : max,
-  );
+  return related.reduce((max, d) => (sevRank[d.severity] > sevRank[max.severity] ? d : max));
 }
 
 function collectAffectedInstances(

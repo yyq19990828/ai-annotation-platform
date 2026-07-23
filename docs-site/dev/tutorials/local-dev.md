@@ -50,6 +50,7 @@ docker compose ps celery-worker celery-worker-gpu celery-worker-cpu celery-worke
 ```
 
 API 文档：
+
 - 实时 Swagger UI：http://localhost:8000/docs
 - 静态化文档：[/api/](/api/)（来自 openapi.snapshot.json）
 
@@ -67,10 +68,12 @@ pnpm openapi:export        # 重新生成 snapshot（改了 API 后必须）
 pnpm openapi:check         # 校验 snapshot 与运行时一致
 
 # Lint / Typecheck
+pnpm format:check
 pnpm lint
 pnpm typecheck
-cd apps/api && uv run ruff check .
-cd apps/api && uv run ruff format --check .
+
+# 自动修复全仓格式
+pnpm format
 
 # 文档
 pnpm docs:dev              # VitePress 本地预览 :5173

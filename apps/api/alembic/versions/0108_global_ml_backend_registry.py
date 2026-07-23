@@ -45,7 +45,9 @@ def upgrade() -> None:
             postgresql.JSONB(astext_type=sa.Text()),
             server_default="{}",
         ),
-        sa.Column("health_meta", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "health_meta", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("source", sa.String(20), server_default="manual"),
         sa.Column("error_message", sa.String(), nullable=True),
         sa.Column("last_checked_at", sa.DateTime(timezone=True), nullable=True),
@@ -74,15 +76,11 @@ def upgrade() -> None:
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
         ),
-        sa.ForeignKeyConstraint(
-            ["project_id"], ["projects.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["registry_id"], ["ml_backend_registry.id"], ondelete="CASCADE"
         ),
-        sa.UniqueConstraint(
-            "project_id", "registry_id", name="uq_project_ml_backend"
-        ),
+        sa.UniqueConstraint("project_id", "registry_id", name="uq_project_ml_backend"),
     )
     op.create_index(
         "ix_project_ml_backend_project_id", "project_ml_backend", ["project_id"]
@@ -198,19 +196,33 @@ def upgrade() -> None:
         "predictions_ml_backend_id_fkey1", "predictions", type_="foreignkey"
     )
     op.drop_constraint(
-        "failed_predictions_ml_backend_id_fkey", "failed_predictions", type_="foreignkey"
+        "failed_predictions_ml_backend_id_fkey",
+        "failed_predictions",
+        type_="foreignkey",
     )
     op.create_foreign_key(
-        "projects_ml_backend_id_fkey", "projects", "ml_backend_registry",
-        ["ml_backend_id"], ["id"], ondelete="SET NULL",
+        "projects_ml_backend_id_fkey",
+        "projects",
+        "ml_backend_registry",
+        ["ml_backend_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.create_foreign_key(
-        "predictions_ml_backend_id_fkey", "predictions", "ml_backend_registry",
-        ["ml_backend_id"], ["id"], ondelete="SET NULL",
+        "predictions_ml_backend_id_fkey",
+        "predictions",
+        "ml_backend_registry",
+        ["ml_backend_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.create_foreign_key(
-        "failed_predictions_ml_backend_id_fkey", "failed_predictions",
-        "ml_backend_registry", ["ml_backend_id"], ["id"], ondelete="SET NULL",
+        "failed_predictions_ml_backend_id_fkey",
+        "failed_predictions",
+        "ml_backend_registry",
+        ["ml_backend_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.drop_table("ml_backends")
 
@@ -231,7 +243,9 @@ def downgrade() -> None:
         sa.Column(
             "extra_params", postgresql.JSONB(astext_type=sa.Text()), server_default="{}"
         ),
-        sa.Column("health_meta", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "health_meta", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("last_checked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
@@ -269,21 +283,35 @@ def downgrade() -> None:
         "predictions_ml_backend_id_fkey", "predictions", type_="foreignkey"
     )
     op.drop_constraint(
-        "failed_predictions_ml_backend_id_fkey", "failed_predictions", type_="foreignkey"
+        "failed_predictions_ml_backend_id_fkey",
+        "failed_predictions",
+        type_="foreignkey",
     )
     # 折叠后被多项目共享的 registry 行只还原成 1 个 backend 行(复用 registry id);
     # 指向它的 prediction/projects FK 仍有效(id 未变)。空窗口下两者一致。
     op.create_foreign_key(
-        "projects_ml_backend_id_fkey", "projects", "ml_backends",
-        ["ml_backend_id"], ["id"], ondelete="SET NULL",
+        "projects_ml_backend_id_fkey",
+        "projects",
+        "ml_backends",
+        ["ml_backend_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.create_foreign_key(
-        "predictions_ml_backend_id_fkey1", "predictions", "ml_backends",
-        ["ml_backend_id"], ["id"], ondelete="SET NULL",
+        "predictions_ml_backend_id_fkey1",
+        "predictions",
+        "ml_backends",
+        ["ml_backend_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
     op.create_foreign_key(
-        "failed_predictions_ml_backend_id_fkey", "failed_predictions",
-        "ml_backends", ["ml_backend_id"], ["id"], ondelete="SET NULL",
+        "failed_predictions_ml_backend_id_fkey",
+        "failed_predictions",
+        "ml_backends",
+        ["ml_backend_id"],
+        ["id"],
+        ondelete="SET NULL",
     )
 
     op.drop_index("ix_project_ml_backend_registry_id", "project_ml_backend")

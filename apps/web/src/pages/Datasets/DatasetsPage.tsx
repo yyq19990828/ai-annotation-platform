@@ -11,7 +11,17 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { useDatasets, useDatasetItems, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia, useUpdateDataset } from "@/hooks/useDatasets";
+import {
+  useDatasets,
+  useDatasetItems,
+  useDatasetProjects,
+  useUnlinkProject,
+  useLinkProject,
+  useScanDatasetItems,
+  useBackfillDimensions,
+  useBackfillMedia,
+  useUpdateDataset,
+} from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { LinkJobProgress } from "@/components/datasets/LinkJobProgress";
@@ -50,11 +60,11 @@ const TYPE_VARIANTS: Record<string, "accent" | "ai" | "warning" | "success" | "o
 
 const TYPE_FILTERS = ["全部", "图像", "视频", "3D", "多模态"] as const;
 const FILTER_MAP: Record<string, string | undefined> = {
-  "全部": undefined,
-  "图像": "image",
-  "视频": "video",
+  全部: undefined,
+  图像: "image",
+  视频: "video",
   "3D": "point_cloud",
-  "多模态": "multimodal",
+  多模态: "multimodal",
 };
 
 // 主表头单元 / 文件子表头单元
@@ -73,10 +83,15 @@ function getErrorMessage(err: unknown) {
 
 function getVideoMeta(item: { metadata: Record<string, unknown> }) {
   const video = item.metadata?.video;
-  return video && typeof video === "object" ? video as Record<string, unknown> : null;
+  return video && typeof video === "object" ? (video as Record<string, unknown>) : null;
 }
 
-function formatMediaInfo(item: { file_type: string; width: number | null; height: number | null; metadata: Record<string, unknown> }) {
+function formatMediaInfo(item: {
+  file_type: string;
+  width: number | null;
+  height: number | null;
+  metadata: Record<string, unknown>;
+}) {
   if (item.file_type === "image") {
     return item.width && item.height ? `${item.width}×${item.height}` : "待回填";
   }
@@ -96,7 +111,15 @@ function formatMediaInfo(item: { file_type: string; width: number | null; height
   return "—";
 }
 
-function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpanded: boolean; onToggle: () => void }) {
+function DatasetRow({
+  ds,
+  isExpanded,
+  onToggle,
+}: {
+  ds: DatasetResponse;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
   const created = new Date(ds.created_at).toLocaleDateString("zh-CN");
   return (
     <tr
@@ -113,7 +136,13 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
             <div className="truncate text-sm font-medium">{ds.name}</div>
             <div className="mt-px truncate text-xs text-muted-foreground">
               {ds.display_id}
-              {ds.description && <> · {ds.description.length > 30 ? ds.description.slice(0, 30) + "…" : ds.description}</>}
+              {ds.description && (
+                <>
+                  {" "}
+                  ·{" "}
+                  {ds.description.length > 30 ? ds.description.slice(0, 30) + "…" : ds.description}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -141,7 +170,8 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
       </td>
       <td className={`${TD_CLASS} pr-4 text-right`}>
         <Button size="sm">
-          {isExpanded ? "收起" : "展开"} <Icon name={isExpanded ? "chevDown" : "chevRight"} size={11} />
+          {isExpanded ? "收起" : "展开"}{" "}
+          <Icon name={isExpanded ? "chevDown" : "chevRight"} size={11} />
         </Button>
       </td>
     </tr>
@@ -155,7 +185,10 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   // v0.12.0 · 大 dataset 关联后异步建 task 的进度
   const [linkJob, setLinkJob] = useState<{ jobId: string; projectId: string } | null>(null);
   const queryClient = useQueryClient();
-  const { data: itemsData, isLoading: itemsLoading } = useDatasetItems(ds.id, { limit: 10, offset: itemPage * 10 });
+  const { data: itemsData, isLoading: itemsLoading } = useDatasetItems(ds.id, {
+    limit: 10,
+    offset: itemPage * 10,
+  });
   const { data: linkedProjects = [] } = useDatasetProjects(ds.id);
   const { data: allProjects } = useProjects();
   const unlinkMutation = useUnlinkProject(ds.id);
@@ -216,16 +249,18 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                       scanMutation.mutate(undefined, {
                         onSuccess: (res) => {
                           pushToast({
-                            msg: res.new_items > 0
-                              ? `扫描完成，新增 ${res.new_items} 个文件`
-                              : "扫描完成，无新文件",
+                            msg:
+                              res.new_items > 0
+                                ? `扫描完成，新增 ${res.new_items} 个文件`
+                                : "扫描完成，无新文件",
                           });
                         },
                       });
                     }}
                     disabled={scanMutation.isPending}
                   >
-                    <Icon name="refresh" size={12} /> {scanMutation.isPending ? "扫描中..." : "扫描导入"}
+                    <Icon name="refresh" size={12} />{" "}
+                    {scanMutation.isPending ? "扫描中..." : "扫描导入"}
                   </Button>
                   {isImageDataset && (
                     <Button
@@ -234,7 +269,8 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                         backfillMutation.mutate(undefined, {
                           onSuccess: (res) => {
                             pushToast({
-                              msg: `回填完成 · 处理 ${res.processed} / 失败 ${res.failed}` +
+                              msg:
+                                `回填完成 · 处理 ${res.processed} / 失败 ${res.failed}` +
                                 (res.remaining_hint ? "，仍有未处理项，可再次点击" : ""),
                             });
                           },
@@ -246,7 +282,8 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                       disabled={backfillMutation.isPending}
                       title="对缺失 width/height 的图片执行维度回填"
                     >
-                      <Icon name="refresh" size={12} /> {backfillMutation.isPending ? "回填中..." : "回填维度"}
+                      <Icon name="refresh" size={12} />{" "}
+                      {backfillMutation.isPending ? "回填中..." : "回填维度"}
                     </Button>
                   )}
                   {isVideoDataset && (
@@ -255,7 +292,10 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                       onClick={() => {
                         backfillMediaMutation.mutate(undefined, {
                           onSuccess: () => {
-                            pushToast({ msg: "已提交视频元数据补生成任务", sub: "稍后刷新文件列表可查看处理结果" });
+                            pushToast({
+                              msg: "已提交视频元数据补生成任务",
+                              sub: "稍后刷新文件列表可查看处理结果",
+                            });
                           },
                           onError: (err: unknown) => {
                             pushToast({ msg: `提交失败: ${getErrorMessage(err)}`, kind: "error" });
@@ -265,7 +305,8 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                       disabled={backfillMediaMutation.isPending}
                       title="对缺失视频元数据、poster 或播放转码结果的文件重新入队"
                     >
-                      <Icon name="refresh" size={12} /> {backfillMediaMutation.isPending ? "提交中..." : "补生成元数据"}
+                      <Icon name="refresh" size={12} />{" "}
+                      {backfillMediaMutation.isPending ? "提交中..." : "补生成元数据"}
                     </Button>
                   )}
                   <Button size="sm" onClick={() => setUploadOpen(true)}>
@@ -284,7 +325,6 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                       queryClient.invalidateQueries({ queryKey: ["project-stats"] });
                     }}
                   />
-
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -292,54 +332,78 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   <thead>
                     <tr>
                       {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
-                        <th key={i} className={ITEMS_TH_CLASS}>{h}</th>
+                        <th key={i} className={ITEMS_TH_CLASS}>
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {itemsLoading && (
-                      <tr><td colSpan={5} className="p-5 text-center text-muted-foreground">加载中...</td></tr>
-                    )}
-                    {!itemsLoading && items.map((item) => (
-                      <tr key={item.id}>
-                        <td className={ITEM_TD_CLASS}>
-                          <div className="flex min-w-0 items-center gap-2">
-                            <Thumbnail src={item.thumbnail_url} blurhash={item.blurhash} width={32} height={32} />
-                            <span className="max-w-[240px] truncate">{item.file_name}</span>
-                          </div>
-                        </td>
-                        <td className={ITEM_TD_CLASS}>
-                          <Badge variant="outline">{item.file_type}</Badge>
-                        </td>
-                        <td className={`${ITEM_TD_CLASS} text-muted-foreground`}>
-                          {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
-                        </td>
-                        <td
-                          title={formatMediaInfo(item)}
-                          className={`${ITEM_TD_CLASS} max-w-[220px] truncate ${formatMediaInfo(item).includes("失败") ? "text-status-danger" : "text-muted-foreground"}`}
-                        >
-                          {formatMediaInfo(item)}
-                        </td>
-                        <td className={`${ITEM_TD_CLASS} text-muted-foreground`}>
-                          {new Date(item.created_at).toLocaleDateString("zh-CN")}
+                      <tr>
+                        <td colSpan={5} className="p-5 text-center text-muted-foreground">
+                          加载中...
                         </td>
                       </tr>
-                    ))}
+                    )}
+                    {!itemsLoading &&
+                      items.map((item) => (
+                        <tr key={item.id}>
+                          <td className={ITEM_TD_CLASS}>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Thumbnail
+                                src={item.thumbnail_url}
+                                blurhash={item.blurhash}
+                                width={32}
+                                height={32}
+                              />
+                              <span className="max-w-[240px] truncate">{item.file_name}</span>
+                            </div>
+                          </td>
+                          <td className={ITEM_TD_CLASS}>
+                            <Badge variant="outline">{item.file_type}</Badge>
+                          </td>
+                          <td className={`${ITEM_TD_CLASS} text-muted-foreground`}>
+                            {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
+                          </td>
+                          <td
+                            title={formatMediaInfo(item)}
+                            className={`${ITEM_TD_CLASS} max-w-[220px] truncate ${formatMediaInfo(item).includes("失败") ? "text-status-danger" : "text-muted-foreground"}`}
+                          >
+                            {formatMediaInfo(item)}
+                          </td>
+                          <td className={`${ITEM_TD_CLASS} text-muted-foreground`}>
+                            {new Date(item.created_at).toLocaleDateString("zh-CN")}
+                          </td>
+                        </tr>
+                      ))}
                     {!itemsLoading && items.length === 0 && (
-                      <tr><td colSpan={5} className="p-5 text-center text-muted-foreground">暂无文件</td></tr>
+                      <tr>
+                        <td colSpan={5} className="p-5 text-center text-muted-foreground">
+                          暂无文件
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
               </div>
               {totalPages > 1 && (
                 <div className="mt-2 flex justify-center gap-1">
-                  <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} className={itemPage > 0 ? undefined : "invisible"}>
+                  <Button
+                    size="sm"
+                    onClick={() => setItemPage(Math.max(0, itemPage - 1))}
+                    className={itemPage > 0 ? undefined : "invisible"}
+                  >
                     <Icon name="chevLeft" size={11} />
                   </Button>
                   <span className="px-2 py-1 text-xs text-muted-foreground">
                     {itemPage + 1} / {totalPages}
                   </span>
-                  <Button size="sm" onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))} className={itemPage < totalPages - 1 ? undefined : "invisible"}>
+                  <Button
+                    size="sm"
+                    onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))}
+                    className={itemPage < totalPages - 1 ? undefined : "invisible"}
+                  >
                     <Icon name="chevRight" size={11} />
                   </Button>
                 </div>
@@ -382,16 +446,29 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
               )}
               <div className={DETAIL_HEADER_CLASS}>
                 <h4 className={DETAIL_TITLE_CLASS}>
-                  关联项目 <span className="font-normal text-muted-foreground">({linkedProjects.length})</span>
+                  关联项目{" "}
+                  <span className="font-normal text-muted-foreground">
+                    ({linkedProjects.length})
+                  </span>
                 </h4>
               </div>
               {linkedProjects.map((p) => (
-                <div key={p.id} className="flex items-center justify-between border-b border-border py-2">
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between border-b border-border py-2"
+                >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
-                    <div className="truncate text-xs text-muted-foreground">{p.display_id} · {p.type_label}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {p.display_id} · {p.type_label}
+                    </div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmUnlink(p)} title="取消关联">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmUnlink(p)}
+                    title="取消关联"
+                  >
                     <Icon name="x" size={11} />
                   </Button>
                 </div>
@@ -417,9 +494,13 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   defaultValue=""
                   className="mt-2 w-full cursor-pointer appearance-none rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-foreground"
                 >
-                  <option value="" disabled>关联到项目...</option>
+                  <option value="" disabled>
+                    关联到项目...
+                  </option>
                   {availableProjects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.display_id})</option>
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.display_id})
+                    </option>
                   ))}
                 </select>
               )}
@@ -452,7 +533,8 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     });
                     setConfirmUnlink(null);
                   },
-                  onError: (err: Error) => pushToast({ msg: "取消关联失败", sub: err.message, kind: "error" }),
+                  onError: (err: Error) =>
+                    pushToast({ msg: "取消关联失败", sub: err.message, kind: "error" }),
                 });
               }}
             />
@@ -476,7 +558,11 @@ function UnlinkConfirmModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const [preview, setPreview] = useState<{ tasks: number; annotations: number; batches: number } | null>(null);
+  const [preview, setPreview] = useState<{
+    tasks: number;
+    annotations: number;
+    batches: number;
+  } | null>(null);
   // v0.7.0：删除强度对齐 DangerSection — 必须输入数据集名称才能确认
   const [confirmText, setConfirmText] = useState("");
   const dangerous = (preview?.tasks ?? 0) > 0;
@@ -484,23 +570,30 @@ function UnlinkConfirmModal({
 
   useEffect(() => {
     let cancelled = false;
-    datasetsApi.previewUnlink(datasetId, project.id)
+    datasetsApi
+      .previewUnlink(datasetId, project.id)
       .then((r) => {
-        if (!cancelled) setPreview({
-          tasks: r.will_delete_tasks,
-          annotations: r.will_delete_annotations,
-          batches: r.will_delete_batches,
-        });
+        if (!cancelled)
+          setPreview({
+            tasks: r.will_delete_tasks,
+            annotations: r.will_delete_annotations,
+            batches: r.will_delete_batches,
+          });
       })
-      .catch(() => { if (!cancelled) setPreview({ tasks: 0, annotations: 0, batches: 0 }); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setPreview({ tasks: 0, annotations: 0, batches: 0 });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [datasetId, project.id]);
 
   return (
     <Modal open onClose={onClose} title="确认取消关联">
       <div className="text-sm leading-relaxed">
         <p className="mb-2">
-          确认取消数据集 <strong>{datasetName}</strong> 与项目 <strong>{project.name}</strong> 的关联？
+          确认取消数据集 <strong>{datasetName}</strong> 与项目 <strong>{project.name}</strong>{" "}
+          的关联？
         </p>
         <div className="mb-2 text-muted-foreground">
           {preview === null ? (
@@ -509,14 +602,22 @@ function UnlinkConfirmModal({
             "项目中没有由该数据集创建的任务，可放心取消。"
           ) : (
             <>
-              <strong className="text-status-danger">将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
+              <strong className="text-status-danger">将一并删除</strong>项目中由该数据集创建的{" "}
+              <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
-                <>（含 <strong className="text-status-danger">{preview.annotations}</strong> 个已有标注）</>
+                <>
+                  （含 <strong className="text-status-danger">{preview.annotations}</strong>{" "}
+                  个已有标注）
+                </>
               )}
               {preview.batches > 0 && (
-                <>，并清理 <strong className="text-status-danger">{preview.batches}</strong> 个失去全部任务的空批次</>
+                <>
+                  ，并清理 <strong className="text-status-danger">{preview.batches}</strong>{" "}
+                  个失去全部任务的空批次
+                </>
               )}
-              。<br />此操作不可恢复。
+              。<br />
+              此操作不可恢复。
             </>
           )}
         </div>
@@ -652,37 +753,53 @@ export function DatasetsPage() {
                 <h3 className="m-0 text-sm font-semibold">全部数据集</h3>
                 <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={setFilter} />
               </div>
-              <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
+              <SearchInput
+                placeholder="搜索数据集..."
+                value={query}
+                onChange={setQuery}
+                width={220}
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
-                    {["数据集", "类型", "Scene", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
-                      <th key={i} className={TH_CLASS}>
-                        {h}
-                      </th>
-                    ))}
+                    {["数据集", "类型", "Scene", "文件数", "关联项目", "创建时间", ""].map(
+                      (h, i) => (
+                        <th key={i} className={TH_CLASS}>
+                          {h}
+                        </th>
+                      ),
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading && (
-                    <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">加载中...</td></tr>
+                    <tr>
+                      <td colSpan={7} className="p-10 text-center text-muted-foreground">
+                        加载中...
+                      </td>
+                    </tr>
                   )}
-                  {!isLoading && datasets.map((ds) => (
-                    <Fragment key={ds.id}>
-                      <DatasetRow
-                        ds={ds}
-                        isExpanded={expandedId === ds.id}
-                        onToggle={() => setExpandedId(expandedId === ds.id ? null : ds.id)}
-                      />
-                      {expandedId === ds.id && <DatasetDetail ds={ds} />}
-                    </Fragment>
-                  ))}
+                  {!isLoading &&
+                    datasets.map((ds) => (
+                      <Fragment key={ds.id}>
+                        <DatasetRow
+                          ds={ds}
+                          isExpanded={expandedId === ds.id}
+                          onToggle={() => setExpandedId(expandedId === ds.id ? null : ds.id)}
+                        />
+                        {expandedId === ds.id && <DatasetDetail ds={ds} />}
+                      </Fragment>
+                    ))}
                   {!isLoading && datasets.length === 0 && (
-                    <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">
-                      {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
-                    </td></tr>
+                    <tr>
+                      <td colSpan={7} className="p-10 text-center text-muted-foreground">
+                        {query || filter !== "全部"
+                          ? "没有匹配的数据集"
+                          : "暂无数据集，点击「新建数据集」开始"}
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>

@@ -37,8 +37,12 @@ def upgrade() -> None:
         sa.Column("is_default", sa.Boolean, nullable=False, server_default=sa.false()),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("usage_count", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["organization_id"], ["organizations.id"], ondelete="CASCADE"
@@ -122,6 +126,8 @@ def downgrade() -> None:
         "uq_project_pipelines_default_per_project", table_name="project_pipelines"
     )
     op.drop_index("ix_project_pipelines_created_by", table_name="project_pipelines")
-    op.drop_index("ix_project_pipelines_organization_id", table_name="project_pipelines")
+    op.drop_index(
+        "ix_project_pipelines_organization_id", table_name="project_pipelines"
+    )
     op.drop_index("ix_project_pipelines_project_id", table_name="project_pipelines")
     op.drop_table("project_pipelines")

@@ -54,8 +54,7 @@ function pointInRing(x: number, y: number, ring: readonly Point[]): boolean {
   for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
     const [xi, yi] = ring[index];
     const [xj, yj] = ring[previous];
-    if ((yi > y) !== (yj > y)
-      && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
 }
@@ -102,9 +101,8 @@ function direction(edge: DirectedEdge): number {
 }
 
 function boundaryEdges(alpha: Uint8Array, width: number, height: number): DirectedEdge[] {
-  const solid = (x: number, y: number) => (
-    x >= 0 && y >= 0 && x < width && y < height && alpha[y * width + x] !== 0
-  );
+  const solid = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < width && y < height && alpha[y * width + x] !== 0;
   const edges: DirectedEdge[] = [];
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -188,17 +186,17 @@ function geometryFromAlpha(alpha: Uint8Array, width: number, height: number): Re
   for (const polygon of polygons) {
     if (polygon.holes?.length === 0) delete polygon.holes;
   }
-  return polygons.length === 1
-    ? polygons[0]
-    : { type: "multi_polygon", polygons };
+  return polygons.length === 1 ? polygons[0] : { type: "multi_polygon", polygons };
 }
 
 function geometryStats(geometry: RegionGeometry): { holes: number; vertices: number } {
   return ringsOf(geometry).reduce(
     (result, component) => ({
       holes: result.holes + component.holes.length,
-      vertices: result.vertices + component.outer.length
-        + component.holes.reduce((sum, hole) => sum + hole.length, 0),
+      vertices:
+        result.vertices +
+        component.outer.length +
+        component.holes.reduce((sum, hole) => sum + hole.length, 0),
     }),
     { holes: 0, vertices: 0 },
   );
@@ -261,12 +259,8 @@ export function compareRegionToRasterResult(
   const sourceAnalysis = analyzeRasterMaskAlpha(source, width, height);
   const targetAnalysis = analyzeRasterMaskAlpha(target, width, height);
   const sourceStats = geometryStats(geometry);
-  const targetGeometry = targetAnalysis.area > 0
-    ? geometryFromAlpha(target, width, height)
-    : null;
-  const targetStats = targetGeometry
-    ? geometryStats(targetGeometry)
-    : { holes: 0, vertices: 0 };
+  const targetGeometry = targetAnalysis.area > 0 ? geometryFromAlpha(target, width, height) : null;
+  const targetStats = targetGeometry ? geometryStats(targetGeometry) : { holes: 0, vertices: 0 };
   const pixelDiff = changedPixelCounts(source, target);
   const reasons = pixelDiff.changedPixels > 0 ? ["edited_pixels_changed"] : [];
   return {

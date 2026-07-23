@@ -1,9 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  getTurnstileSiteKey,
-  renderTurnstile,
-  removeTurnstile,
-} from "@/lib/turnstile";
+import { getTurnstileSiteKey, renderTurnstile, removeTurnstile } from "@/lib/turnstile";
 import styles from "./Captcha.module.css";
 
 /**

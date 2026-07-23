@@ -38,7 +38,10 @@ export async function runVideoDraw(
   const surface = page.getByTestId("video-konva-stage");
   const box = await surface.boundingBox();
   if (!box) throw new Error("[video-draw] video-konva-stage 没有可见边界");
-  const at = (fx: number, fy: number) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy });
+  const at = (fx: number, fy: number) => ({
+    x: box.x + box.width * fx,
+    y: box.y + box.height * fy,
+  });
 
   const drawStartMs = Date.now();
 

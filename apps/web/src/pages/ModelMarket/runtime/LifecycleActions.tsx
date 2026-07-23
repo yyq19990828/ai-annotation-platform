@@ -50,9 +50,7 @@ export interface LifecycleActionsProps {
 /** Whether the backend contract ships a force-unload endpoint (v0.23.3: no). */
 export const FORCE_UNLOAD_CONTRACT_AVAILABLE = false;
 
-function ledgerFreshFromTopology(
-  topology: RuntimeTopologyViewModel | null,
-): boolean {
+function ledgerFreshFromTopology(topology: RuntimeTopologyViewModel | null): boolean {
   if (!topology) return false;
   const ledger = topology.sources.find((s) => s.name === "router_ledger");
   // No router_ledger source at all → off mode is fine (no inflight claim);
@@ -78,8 +76,7 @@ export function LifecycleActions({
   const gate = evaluateUnloadGate(member, routerMode, ledgerFresh);
 
   const drain = useMutation({
-    mutationFn: () =>
-      adminMlIntegrationsApi.drainPoolMember(poolId, member.registry_id),
+    mutationFn: () => adminMlIntegrationsApi.drainPoolMember(poolId, member.registry_id),
     onSuccess: () => {
       invalidateRuntimeQueries(qc);
       pushToast({
@@ -87,13 +84,11 @@ export function LifecycleActions({
         kind: "success",
       });
     },
-    onError: (e) =>
-      pushToast({ msg: "停流失败", sub: (e as Error).message, kind: "error" }),
+    onError: (e) => pushToast({ msg: "停流失败", sub: (e as Error).message, kind: "error" }),
   });
 
   const resume = useMutation({
-    mutationFn: () =>
-      adminMlIntegrationsApi.resumePoolMember(poolId, member.registry_id),
+    mutationFn: () => adminMlIntegrationsApi.resumePoolMember(poolId, member.registry_id),
     onSuccess: () => {
       invalidateRuntimeQueries(qc);
       pushToast({ msg: `${member.name} 已恢复接流（active）`, kind: "success" });
@@ -117,8 +112,7 @@ export function LifecycleActions({
             : `${member.name} 未报告需要卸载`,
           kind: "success",
         }),
-      onError: (e) =>
-        pushToast({ msg: "卸载失败", sub: (e as Error).message, kind: "error" }),
+      onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message, kind: "error" }),
     });
   };
 
@@ -138,8 +132,7 @@ export function LifecycleActions({
     });
   };
 
-  const drainShadow =
-    routerMode !== "enforce" && member.traffic_state === "active";
+  const drainShadow = routerMode !== "enforce" && member.traffic_state === "active";
   const drainLabel = drainShadow ? "停流（预配置）" : "停流";
   const drainTip = drainShadow
     ? `router_mode=${routerMode}，drain 仅预配置未实际停流`
@@ -190,11 +183,7 @@ export function LifecycleActions({
             {/* span wraps the disabled button: Radix TooltipTrigger won't
                 forward its ref onto a disabled <button>, so anchor on span. */}
             <span tabIndex={0} aria-label="卸载状态">
-              <Button
-                size="xs"
-                onClick={onUnload}
-                disabled={!gate.can_unload || unload.isPending}
-              >
+              <Button size="xs" onClick={onUnload} disabled={!gate.can_unload || unload.isPending}>
                 <Icon name="pause" size={10} />
                 卸载
               </Button>
@@ -206,12 +195,7 @@ export function LifecycleActions({
         </Tooltip>
       </TooltipProvider>
 
-      <Button
-        size="xs"
-        onClick={onHealth}
-        disabled={health.isPending}
-        title="触发健康检查"
-      >
+      <Button size="xs" onClick={onHealth} disabled={health.isPending} title="触发健康检查">
         <Icon name="refresh" size={10} />
         健康检查
       </Button>
@@ -231,9 +215,7 @@ export function LifecycleActions({
 }
 
 /** Invalidate the three runtime queries + legacy registry lists. */
-export function invalidateRuntimeQueries(
-  qc: ReturnType<typeof useQueryClient>,
-): void {
+export function invalidateRuntimeQueries(qc: ReturnType<typeof useQueryClient>): void {
   qc.invalidateQueries({ queryKey: ["admin", "ml-integrations", "topology"] });
   qc.invalidateQueries({
     queryKey: ["admin", "ml-integrations", "runtime-snapshot"],

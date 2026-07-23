@@ -9,12 +9,12 @@
 
 为什么现在要做这个决策？业务/技术背景、约束、痛点。
 
-如果有候选方案，先在这里给出对比表（要点级），详细论证放到下方 *Alternatives Considered*：
+如果有候选方案，先在这里给出对比表（要点级），详细论证放到下方 _Alternatives Considered_：
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
-| **方案 A** | … | … |
-| 方案 B | … | … |
+| 选项       | 主要卖点 | 主要劣势 |
+| ---------- | -------- | -------- |
+| **方案 A** | …        | …        |
+| 方案 B     | …        | …        |
 
 ## Decision
 
@@ -38,7 +38,7 @@
 
 **方案 C**：同上。
 
-> 区别于 *Context* 中的对比表：这里写**论证过程**，对比表只是要点。
+> 区别于 _Context_ 中的对比表：这里写**论证过程**，对比表只是要点。
 
 ## Notes
 
@@ -53,6 +53,6 @@
 
 - **文件名**：`NNNN-short-kebab-title.md`，编号单调递增、不复用、不删除。
 - **状态变更**：被推翻时新建一份 ADR，把旧的状态改为 `Superseded by ADR-XXXX`，但**保留旧文档**。
-- **章节可裁剪**：*Alternatives Considered* / *Notes* 没有内容时可省略；*Context / Decision / Consequences* 必填。
+- **章节可裁剪**：_Alternatives Considered_ / _Notes_ 没有内容时可省略；_Context / Decision / Consequences_ 必填。
 - **引用代码**：用 `path/to/file.py:NN` 而非纯文字描述，便于跳转。
 - **回填 ADR**：Date 写"回填日期（实际决策发生于 vX.Y.Z 阶段）"。

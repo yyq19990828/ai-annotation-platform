@@ -36,7 +36,11 @@ describe("AnnotationHistoryTimeline", () => {
   });
 
   it("audit annotation.create + class_name → 显示「类别：xxx」", () => {
-    render(<AnnotationHistoryTimeline entries={[audit("annotation.create", { class_name: "person" })]} />);
+    render(
+      <AnnotationHistoryTimeline
+        entries={[audit("annotation.create", { class_name: "person" })]}
+      />,
+    );
     expect(screen.getByText("创建标注")).toBeInTheDocument();
     expect(screen.getByText("类别：person")).toBeInTheDocument();
   });
@@ -44,7 +48,13 @@ describe("AnnotationHistoryTimeline", () => {
   it("audit annotation.attribute_change → 显示「<field>: <before> → <after>」", () => {
     render(
       <AnnotationHistoryTimeline
-        entries={[audit("annotation.attribute_change", { field_key: "color", before: "red", after: "blue" })]}
+        entries={[
+          audit("annotation.attribute_change", {
+            field_key: "color",
+            before: "red",
+            after: "blue",
+          }),
+        ]}
       />,
     );
     expect(screen.getByText("属性变更")).toBeInTheDocument();
@@ -52,20 +62,14 @@ describe("AnnotationHistoryTimeline", () => {
   });
 
   it("audit task.reject + reason → 显示原因摘要", () => {
-    render(
-      <AnnotationHistoryTimeline
-        entries={[audit("task.reject", { reason: "类别错误" })]}
-      />,
-    );
+    render(<AnnotationHistoryTimeline entries={[audit("task.reject", { reason: "类别错误" })]} />);
     expect(screen.getByText("驳回")).toBeInTheDocument();
     expect(screen.getByText("类别错误")).toBeInTheDocument();
   });
 
   it("audit annotation.update + fields → 显示「字段：a、b」", () => {
     render(
-      <AnnotationHistoryTimeline
-        entries={[audit("annotation.update", { fields: ["x", "y"] })]}
-      />,
+      <AnnotationHistoryTimeline entries={[audit("annotation.update", { fields: ["x", "y"] })]} />,
     );
     expect(screen.getByText("修改标注")).toBeInTheDocument();
     expect(screen.getByText("字段：x、y")).toBeInTheDocument();

@@ -73,7 +73,7 @@
 - [0027](archive/0027-annotation-feedback-unified-table.md) — AnnotationFeedback 统一反馈表(三段式迁移)
 - [0028](archive/0028-annotations-import-semantics.md) — 标注导入语义
 - [0029](archive/0029-task-dataset-item-multi-link.md) — 点云任务-数据项多文件关联中间表（保留 2D 1:1）
-- [0030](archive/0030-sensor-calibration-in-dataset-item-metadata.md) — 相机标定存进 DatasetItem.metadata_（不加列）
+- [0030](archive/0030-sensor-calibration-in-dataset-item-metadata.md) — 相机标定存进 DatasetItem.metadata\_（不加列）
 - [0031](archive/0031-dual-canvas-konva-three.md) — 双画布架构：Konva 2D / Three.js 3D 双栈并存
 - [0032](archive/0032-3d-box-editing-main-view-gizmo.md) — 3D 框编辑交互形态：主视图 gizmo + 数值面板（推迟三正交视图）
 - [0033](archive/0033-3d-to-2d-projection-overlay.md) — 3D→2D 投影联动：实时纯函数投影 + canvas overlay（不预存）

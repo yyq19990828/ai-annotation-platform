@@ -9,6 +9,7 @@ last_reviewed: 2026-07-23
 # Mask 标注导入与数据导出格式
 
 ![导出格式选择](../images/export/format-select.png)
+
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / AAP JSON 选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
@@ -21,30 +22,30 @@ last_reviewed: 2026-07-23
 
 导出弹窗里能勾哪些目标，**取决于项目的媒体类型**（图像 / 视频 / 点云）。跨模态目标会被后端拒绝（400），所以弹窗只展示当前项目可用的目标。下表是三套 `EXPORT_TARGETS` 的实际可选项与「选哪个」决策：
 
-| 项目类型 | 可选导出目标 | 内部 target 名 | 选它的时机 |
-|---|---|---|---|
-| **图像** | COCO | `coco` | 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点） |
-| 图像 | YOLO 检测 | `yolo-det`（`yolo` 为旧别名） | 训练 YOLOv8 检测（矩形框） |
-| 图像 | YOLO 旋转框 | `yolo-obb` | 训练 YOLOv8 OBB（rotated_bbox） |
-| 图像 | YOLO 分割 | `yolo-seg` | 训练 YOLOv8 分割（polygon / mask） |
-| 图像 | Label Studio Brush | `label-studio-brush` | 与 Label Studio BrushLabels 交换实例 Mask |
-| 图像 | 逐实例 Binary PNG | `binary-png` | 以独立 0/255 PNG 无损保留重叠实例 |
-| 图像 | Indexed PNG | `indexed-png` | 交换单张 palette instance map；重叠时需显式 winner 策略 |
-| 图像 | AAP JSON | `aap_json` | 跨实例无损迁移 / 客户自训模型预测灌入 / 备份 |
-| **视频轨迹** | Video JSON | `video_json` | 轨迹备份 / 质检 / 继续编辑 |
-| 视频轨迹 | YOLO 逐帧检测 | `yolo-frames-det` | 视频逐帧检测训练（polygon / polyline 降级为顶点外接框） |
-| 视频轨迹 | YOLO 逐帧分割 | `yolo-frames-seg` | 视频逐帧分割训练（保留多边形顶点；bbox / polyline 跳过） |
-| 视频轨迹 | COCO 逐帧分割 | `coco-frames-seg` | 视频逐帧分割训练（标准 COCO；保留多边形顶点；bbox / polyline 跳过） |
-| 视频轨迹 | DAVIS Mask | `davis` | 视频对象分割训练 / 评测（序列级 palette PNG） |
-| 视频轨迹 | YouTube-VOS | `youtube-vos` | 稀疏关键帧对象分割数据交换 |
-| 视频轨迹 | MOTS | `mots` | compressed RLE 多对象跟踪与分割数据交换 |
-| 视频轨迹 | AAP JSON | `aap_json` | 视频跨实例无损迁移 |
-| 视频轨迹 | MOT 16/17/20 | `mot` | 多目标跟踪评测（trackeval） |
-| 视频轨迹 | KITTI Tracking | `kitti` | KITTI 跟踪工具链 |
-| **点云** | AAP JSON | `aap_json` | 点云跨实例无损迁移 / 备份（保留 3D 几何） |
-| 点云 | KITTI 3D | `kitti` | KITTI 3D 检测训练前处理（KITTI camera 坐标） |
-| 点云 | nuScenes JSON | `nuscenes` | 单帧 3D 检测训练前处理（nuScenes 风格表集） |
-| 点云 | Point Mask | `pointmask` | 逐点语义分割训练前处理 |
+| 项目类型     | 可选导出目标       | 内部 target 名                | 选它的时机                                                          |
+| ------------ | ------------------ | ----------------------------- | ------------------------------------------------------------------- |
+| **图像**     | COCO               | `coco`                        | 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点）               |
+| 图像         | YOLO 检测          | `yolo-det`（`yolo` 为旧别名） | 训练 YOLOv8 检测（矩形框）                                          |
+| 图像         | YOLO 旋转框        | `yolo-obb`                    | 训练 YOLOv8 OBB（rotated_bbox）                                     |
+| 图像         | YOLO 分割          | `yolo-seg`                    | 训练 YOLOv8 分割（polygon / mask）                                  |
+| 图像         | Label Studio Brush | `label-studio-brush`          | 与 Label Studio BrushLabels 交换实例 Mask                           |
+| 图像         | 逐实例 Binary PNG  | `binary-png`                  | 以独立 0/255 PNG 无损保留重叠实例                                   |
+| 图像         | Indexed PNG        | `indexed-png`                 | 交换单张 palette instance map；重叠时需显式 winner 策略             |
+| 图像         | AAP JSON           | `aap_json`                    | 跨实例无损迁移 / 客户自训模型预测灌入 / 备份                        |
+| **视频轨迹** | Video JSON         | `video_json`                  | 轨迹备份 / 质检 / 继续编辑                                          |
+| 视频轨迹     | YOLO 逐帧检测      | `yolo-frames-det`             | 视频逐帧检测训练（polygon / polyline 降级为顶点外接框）             |
+| 视频轨迹     | YOLO 逐帧分割      | `yolo-frames-seg`             | 视频逐帧分割训练（保留多边形顶点；bbox / polyline 跳过）            |
+| 视频轨迹     | COCO 逐帧分割      | `coco-frames-seg`             | 视频逐帧分割训练（标准 COCO；保留多边形顶点；bbox / polyline 跳过） |
+| 视频轨迹     | DAVIS Mask         | `davis`                       | 视频对象分割训练 / 评测（序列级 palette PNG）                       |
+| 视频轨迹     | YouTube-VOS        | `youtube-vos`                 | 稀疏关键帧对象分割数据交换                                          |
+| 视频轨迹     | MOTS               | `mots`                        | compressed RLE 多对象跟踪与分割数据交换                             |
+| 视频轨迹     | AAP JSON           | `aap_json`                    | 视频跨实例无损迁移                                                  |
+| 视频轨迹     | MOT 16/17/20       | `mot`                         | 多目标跟踪评测（trackeval）                                         |
+| 视频轨迹     | KITTI Tracking     | `kitti`                       | KITTI 跟踪工具链                                                    |
+| **点云**     | AAP JSON           | `aap_json`                    | 点云跨实例无损迁移 / 备份（保留 3D 几何）                           |
+| 点云         | KITTI 3D           | `kitti`                       | KITTI 3D 检测训练前处理（KITTI camera 坐标）                        |
+| 点云         | nuScenes JSON      | `nuscenes`                    | 单帧 3D 检测训练前处理（nuScenes 风格表集）                         |
+| 点云         | Point Mask         | `pointmask`                   | 逐点语义分割训练前处理                                              |
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
 
@@ -91,13 +92,13 @@ COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio �
 
 为了控制体积、并尊重「用户本地往往已有原图」的现实，图片导出的 ZIP **只包含标注与回源脚本，不打包图片本体**。无论图片项目选哪种格式，包内都含以下公共文件：
 
-| 文件 | 条件 | 说明 |
-|---|---|---|
-| `classes.txt` | 总是 | 类别清单（每行一个类名，行号即类别索引） |
-| `attribute_schema.json` | **仅 `include_attributes=True`**（导出弹窗「包含属性数据」勾选，默认勾选） | 属性 schema；取消勾选则**不产出**此文件 |
-| `data.yaml` | 总是 | YOLO 训练入口，`path` / `train` / `val` / `nc` / `names` 已配好 |
-| `images_manifest.json` | 总是 | 每张图一条记录，含相对路径、所属 dataset，以及 **7 天有效的预签名下载 URL + `expires_at`** |
-| `fetch_images.py` | 总是 | 回源脚本（纯 Python stdlib），跑它把原图按相对路径下载到 `images/`，与 `labels/` 平行 |
+| 文件                    | 条件                                                                       | 说明                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `classes.txt`           | 总是                                                                       | 类别清单（每行一个类名，行号即类别索引）                                                   |
+| `attribute_schema.json` | **仅 `include_attributes=True`**（导出弹窗「包含属性数据」勾选，默认勾选） | 属性 schema；取消勾选则**不产出**此文件                                                    |
+| `data.yaml`             | 总是                                                                       | YOLO 训练入口，`path` / `train` / `val` / `nc` / `names` 已配好                            |
+| `images_manifest.json`  | 总是                                                                       | 每张图一条记录，含相对路径、所属 dataset，以及 **7 天有效的预签名下载 URL + `expires_at`** |
+| `fetch_images.py`       | 总是                                                                       | 回源脚本（纯 Python stdlib），跑它把原图按相对路径下载到 `images/`，与 `labels/` 平行      |
 
 **回源脚本用法**：解压 ZIP 后执行
 
@@ -121,7 +122,6 @@ COCO 单文件可同时承载多种几何：
 - `segmentation`：polygon / multi_polygon 标注的多边形顶点（像素坐标；孔洞/多连通域的完整还原留作后续）。
 - `keypoints` + `num_keypoints`：keypoint 标注的 `[x,y,v,…]`（v=0 未标注 / 1 遮挡 / 2 可见）。骨架拓扑写在对应 `categories[].keypoints`（节点名）+ `categories[].skeleton`（连线，COCO 1-indexed），直接来自项目 keypoint 工具单位的 `keypoint_schema`。
 - `attributes.__track_id`：跨帧同一对象的 `track_id`（启用 `include_attributes` 时）。<!-- since v0.21.2 · ADR-0045：原 `__group_id`（Ctrl+G 组号），编组下线后统一到 track_id -->
-
 
 > `rotated_bbox` / `polyline` 无 COCO 原生表示，不进 COCO（rotated 走 `YOLO 旋转框`，polyline 走 AAP JSON）；被跳过的条数记在 `info.skipped_annotations`。
 
@@ -159,11 +159,11 @@ COCO 单文件可同时承载多种几何：
 
 YOLO 不同变体的标注行格式互不相同，因此导出拆成三个可独立选择的目标：
 
-| 目标 | 行格式 | 取哪种几何 |
-|---|---|---|
-| `YOLO 检测`(det) | `<cls> <cx> <cy> <w> <h>`（归一化） | bbox |
-| `YOLO 旋转框`(obb) | `<cls> <x1> <y1> … <x4> <y4>`（归一化四角） | rotated_bbox |
-| `YOLO 分割`(seg) | `<cls> <x1> <y1> <x2> <y2> …`（归一化多边形） | polygon / multi_polygon / raster_mask |
+| 目标               | 行格式                                        | 取哪种几何                            |
+| ------------------ | --------------------------------------------- | ------------------------------------- |
+| `YOLO 检测`(det)   | `<cls> <cx> <cy> <w> <h>`（归一化）           | bbox                                  |
+| `YOLO 旋转框`(obb) | `<cls> <x1> <y1> … <x4> <y4>`（归一化四角）   | rotated_bbox                          |
+| `YOLO 分割`(seg)   | `<cls> <x1> <y1> <x2> <y2> …`（归一化多边形） | polygon / multi_polygon / raster_mask |
 
 > OBB 四角在像素空间按旋转角计算后再归一化（图像非正方形时直接在归一化坐标旋转会变形）。seg 对 multi_polygon 和 Mask 的每个连通域各出一行。Mask 转 polygon 无法保留孔洞、细结构与曲线边界，预检会以 `holes_polygonized` / `components_split` 报告并要求有损确认。
 
@@ -250,6 +250,7 @@ names:
 ## AAP JSON 1.3（无损）
 
 > AAP JSON 是平台原生无损中间格式。当前 schema 1.3 在 task 层包含 `media_type` 与视频元数据，并可无损透传图片 `raster_mask` 和视频 `video_track_mask`。`mask_objects` 携带内容寻址 RLE 对象，使引用在导出后仍可移植并校验哈希。与 COCO / YOLO 并列，但**包含**它们丢失的项目、来源、属性与渲染配置。
+
 <!-- history: 1.1 added tool bindings, 1.2 added media blocks, 1.3 added portable raster mask objects. -->
 
 适合场景：
@@ -275,7 +276,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
   "project": {
     "name": "Traffic Sign",
     "type_key": "image-det",
-    "classes_config": { },
+    "classes_config": {},
     "attribute_schema": { "fields": [] },
     "tool_bindings": {
       "bbox": {
@@ -335,11 +336,11 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 `lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源（点云回源脚本是 `fetch_pointclouds.py`，把点云拉到 `velodyne/`；图片回源脚本是 `fetch_images.py`，把图片拉到 `images/<camera>/`）。
 
-| 目标 | 主要文件 | 用途 |
-|---|---|---|
-| KITTI 3D | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json` | 3D 检测训练前处理，box 输出为 KITTI camera 坐标 |
-| nuScenes JSON | **9 个表 JSON**（见下） | 单帧 3D 检测训练前处理 |
-| Point Mask | `segmentation/<frame>.label`、`category_map.json` | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
+| 目标          | 主要文件                                                                      | 用途                                                           |
+| ------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| KITTI 3D      | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json` | 3D 检测训练前处理，box 输出为 KITTI camera 坐标                |
+| nuScenes JSON | **9 个表 JSON**（见下）                                                       | 单帧 3D 检测训练前处理                                         |
+| Point Mask    | `segmentation/<frame>.label`、`category_map.json`                             | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
 
 **nuScenes JSON 实际产出 9 个表文件**（不是早期文档误写的 4 个），每个表落一个同名 `.json`：
 
@@ -458,20 +459,20 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 
 页首的「格式 × 项目类型对照」表按项目模态列出可选项；下表是同一信息的「按用途」视角速查：
 
-| 用途 | 推荐 |
-|---|---|
-| 训练 YOLOv8 检测 | YOLO 检测 |
-| 训练 YOLOv8 旋转框 (OBB) | YOLO 旋转框 |
-| 训练 YOLOv8 分割 | YOLO 分割 |
-| 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点） | COCO |
-| **跨实例无损迁移 / 客户自训模型预测灌入** | **AAP JSON** |
-| 数据迁移 / 备份 | AAP JSON |
-| 视频轨迹备份 / 质检 | Video JSON（关键帧） |
-| 视频逐帧训练（目标检测） | YOLO 逐帧 |
-| 视频逐帧质检 / 自定义脚本处理 | Video JSON（所有帧） |
-| 视频对象分割训练 / DAVIS 评测 | DAVIS Mask |
-| 稀疏视频对象分割数据交换 | YouTube-VOS |
-| 多对象跟踪与分割数据交换 | MOTS |
-| 视频多目标跟踪评测（trackeval） | MOT 16/17/20 |
-| 视频跟踪（KITTI 工具链） | KITTI Tracking |
-| 视频跨实例无损迁移 | AAP JSON |
+| 用途                                                  | 推荐                 |
+| ----------------------------------------------------- | -------------------- |
+| 训练 YOLOv8 检测                                      | YOLO 检测            |
+| 训练 YOLOv8 旋转框 (OBB)                              | YOLO 旋转框          |
+| 训练 YOLOv8 分割                                      | YOLO 分割            |
+| 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点） | COCO                 |
+| **跨实例无损迁移 / 客户自训模型预测灌入**             | **AAP JSON**         |
+| 数据迁移 / 备份                                       | AAP JSON             |
+| 视频轨迹备份 / 质检                                   | Video JSON（关键帧） |
+| 视频逐帧训练（目标检测）                              | YOLO 逐帧            |
+| 视频逐帧质检 / 自定义脚本处理                         | Video JSON（所有帧） |
+| 视频对象分割训练 / DAVIS 评测                         | DAVIS Mask           |
+| 稀疏视频对象分割数据交换                              | YouTube-VOS          |
+| 多对象跟踪与分割数据交换                              | MOTS                 |
+| 视频多目标跟踪评测（trackeval）                       | MOT 16/17/20         |
+| 视频跟踪（KITTI 工具链）                              | KITTI Tracking       |
+| 视频跨实例无损迁移                                    | AAP JSON             |

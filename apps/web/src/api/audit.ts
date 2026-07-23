@@ -28,8 +28,7 @@ function toQuery(params?: AuditQuery): string {
 }
 
 export const auditApi = {
-  list: (params?: AuditQuery) =>
-    apiClient.get<AuditLogList>(`/audit-logs${toQuery(params)}`),
+  list: (params?: AuditQuery) => apiClient.get<AuditLogList>(`/audit-logs${toQuery(params)}`),
 
   export: async (params?: AuditQuery, format: "csv" | "json" = "csv"): Promise<void> => {
     const token = localStorage.getItem("token");

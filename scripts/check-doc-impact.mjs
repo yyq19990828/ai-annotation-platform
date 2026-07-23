@@ -29,8 +29,7 @@ function parseArgs(argv) {
         .split(",")
         .map((x) => x.trim())
         .filter(Boolean);
-    }
-    else if (arg.startsWith("--format=")) out.format = arg.slice("--format=".length);
+    } else if (arg.startsWith("--format=")) out.format = arg.slice("--format=".length);
     else if (arg.startsWith("--write=")) out.write = arg.slice("--write=".length);
     else if (arg.startsWith("--write-markdown=")) {
       out.writeMarkdown = arg.slice("--write-markdown=".length);
@@ -99,9 +98,7 @@ function buildReport(changedFiles, impactMap) {
     });
   }
 
-  const recommendedDocs = uniq(
-    matchedRules.flatMap((rule) => rule.recommendDocs),
-  ).sort();
+  const recommendedDocs = uniq(matchedRules.flatMap((rule) => rule.recommendDocs)).sort();
 
   const unmatchedRules = matchedRules.filter((rule) => !rule.hasAcceptedDocChanges);
 
@@ -125,9 +122,7 @@ function toMarkdown(report) {
 
   lines.push(`- Matched rules: ${report.matchedRules.length}`);
   lines.push(`- Recommended docs/artifacts to review: ${report.recommendedDocs.length}`);
-  lines.push(
-    `- Potential missing doc updates: ${report.hasPotentialMiss ? "yes" : "no"}`,
-  );
+  lines.push(`- Potential missing doc updates: ${report.hasPotentialMiss ? "yes" : "no"}`);
   lines.push("");
   lines.push("### Recommended Docs");
   for (const doc of report.recommendedDocs) {
@@ -142,9 +137,7 @@ function toMarkdown(report) {
       : "_none_";
     lines.push(`#### ${rule.name}`);
     lines.push(`- Changed code: ${changed}`);
-    lines.push(
-      `- Suggested docs: ${rule.recommendDocs.map((x) => `\`${x}\``).join(", ")}`,
-    );
+    lines.push(`- Suggested docs: ${rule.recommendDocs.map((x) => `\`${x}\``).join(", ")}`);
     lines.push(`- Docs touched in this PR: ${touched}`);
   }
 
@@ -180,9 +173,7 @@ function toText(report) {
     lines.push(`[${rule.id}] ${rule.name}`);
     lines.push(`changed code: ${rule.matchedFiles.join(", ")}`);
     lines.push(`suggested docs: ${rule.recommendDocs.join(", ")}`);
-    lines.push(
-      `docs touched: ${rule.docsTouched.length ? rule.docsTouched.join(", ") : "none"}`,
-    );
+    lines.push(`docs touched: ${rule.docsTouched.length ? rule.docsTouched.join(", ") : "none"}`);
   }
 
   return lines.join("\n") + "\n";

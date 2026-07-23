@@ -6,7 +6,7 @@ name: Visual Regression
 
 on:
   schedule:
-    - cron: "0 1 * * 1"   # 每周一 01:00 UTC
+    - cron: "0 1 * * 1" # 每周一 01:00 UTC
   workflow_dispatch:
     inputs:
       update_snapshots:

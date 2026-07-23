@@ -24,7 +24,12 @@ interface TopBarProps {
   onOpenDrawer?: () => void;
 }
 
-export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, onOpenDrawer }: TopBarProps) {
+export function TopBar({
+  workspace,
+  onWorkspaceChange,
+  showHamburger = false,
+  onOpenDrawer,
+}: TopBarProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const qc = useQueryClient();
@@ -72,7 +77,12 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             </button>
           )}
           <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-semibold tracking-[0.01em]">
-            <img src="/ai-annotation-platform-icon.svg" alt="" aria-hidden="true" className="size-[22px] shrink-0 rounded-md" />
+            <img
+              src="/ai-annotation-platform-icon.svg"
+              alt=""
+              aria-hidden="true"
+              className="size-[22px] shrink-0 rounded-md"
+            />
             <span>标注中心</span>
             <span className="ml-1 text-xs font-normal text-muted-foreground">v2.5</span>
           </div>
@@ -101,12 +111,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
         <div className="flex shrink-0 items-center gap-2">
           {/* 刷新按钮 */}
-          <button
-            type="button"
-            title="刷新"
-            onClick={handleRefresh}
-            className={ICON_BTN_CLASS}
-          >
+          <button type="button" title="刷新" onClick={handleRefresh} className={ICON_BTN_CLASS}>
             <Icon
               name="refresh"
               size={15}
@@ -159,12 +164,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               <span className="text-2xs text-muted-foreground">{user?.role ?? "—"}</span>
             </div>
           </div>
-          <button
-            type="button"
-            title="退出登录"
-            onClick={logout}
-            className={ICON_BTN_CLASS}
-          >
+          <button type="button" title="退出登录" onClick={logout} className={ICON_BTN_CLASS}>
             <Icon name="logout" size={15} />
           </button>
         </div>

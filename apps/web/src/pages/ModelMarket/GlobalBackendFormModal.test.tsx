@@ -7,8 +7,7 @@ vi.mock("@/components/ui/Toast", async () => {
   const actual = await vi.importActual<any>("@/components/ui/Toast");
   return {
     ...actual,
-    useToastStore: <T,>(selector: (state: any) => T) =>
-      selector({ push: mockPushToast }),
+    useToastStore: <T,>(selector: (state: any) => T) => selector({ push: mockPushToast }),
   };
 });
 
@@ -30,10 +29,7 @@ vi.mock("./useGlobalRegistry", () => ({
   useUpdateRegistry: () => ({ mutateAsync: mockUpdate, isPending: false }),
 }));
 
-import {
-  GlobalBackendFormModal,
-  type GlobalRegistryEditTarget,
-} from "./GlobalBackendFormModal";
+import { GlobalBackendFormModal, type GlobalRegistryEditTarget } from "./GlobalBackendFormModal";
 
 const RESOURCE = {
   gpu_resource_id: "node-a/index:0",

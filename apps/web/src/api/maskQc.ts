@@ -194,66 +194,80 @@ function queryString(params: Record<string, string | number | null | undefined>)
 }
 
 export const maskQcApi = {
-  issues: (projectId: string, params: {
-    taskId?: string;
-    status?: MaskQcIssueStatus;
-    severity?: MaskQcSeverity;
-    code?: string;
-    limit?: number;
-    cursor?: string;
-  }, signal?: AbortSignal) => apiClient.get<MaskQcIssuePage>(
-    `/projects/${projectId}/mask-qc/issues${queryString({
-      task_id: params.taskId,
-      status: params.status,
-      severity: params.severity,
-      code: params.code,
-      limit: params.limit ?? 100,
-      cursor: params.cursor,
-    })}`,
-    { signal },
-  ),
+  issues: (
+    projectId: string,
+    params: {
+      taskId?: string;
+      status?: MaskQcIssueStatus;
+      severity?: MaskQcSeverity;
+      code?: string;
+      limit?: number;
+      cursor?: string;
+    },
+    signal?: AbortSignal,
+  ) =>
+    apiClient.get<MaskQcIssuePage>(
+      `/projects/${projectId}/mask-qc/issues${queryString({
+        task_id: params.taskId,
+        status: params.status,
+        severity: params.severity,
+        code: params.code,
+        limit: params.limit ?? 100,
+        cursor: params.cursor,
+      })}`,
+      { signal },
+    ),
   summary: (taskId: string, signal?: AbortSignal) =>
     apiClient.get<TaskMaskQcSummary>(`/tasks/${taskId}/mask-qc/summary`, { signal }),
-  runTask: (projectId: string, taskId: string) => apiClient.post<MaskQcRun>(
-    `/projects/${projectId}/mask-qc/runs`,
-    { scope: "task_ids", task_ids: [taskId], annotation_ids: [], expected_versions: {} },
-  ),
+  runTask: (projectId: string, taskId: string) =>
+    apiClient.post<MaskQcRun>(`/projects/${projectId}/mask-qc/runs`, {
+      scope: "task_ids",
+      task_ids: [taskId],
+      annotation_ids: [],
+      expected_versions: {},
+    }),
   patchIssue: (issueId: string, status: "open" | "resolved" | "wont_fix") =>
     apiClient.patch<MaskQcIssue>(`/mask-qc/issues/${issueId}`, { status }),
-  compare: (params: {
-    annotationId: string;
-    annotationVersion: number;
-    baseline: MaskCompareBaseline;
-    frameIndex?: number | null;
-    candidateJobId?: string | null;
-    candidateJobRevision?: number | null;
-    candidateDigest?: string | null;
-    candidateInstanceId?: string | null;
-  }, signal?: AbortSignal) => apiClient.get<MaskCompareResult>(
-    `/annotations/${params.annotationId}/mask-compare${queryString({
-      annotation_version: params.annotationVersion,
-      baseline: params.baseline,
-      frame_index: params.frameIndex,
-      candidate_job_id: params.candidateJobId,
-      candidate_job_revision: params.candidateJobRevision,
-      candidate_digest: params.candidateDigest,
-      candidate_instance_id: params.candidateInstanceId,
-    })}`,
-    { signal },
-  ),
+  compare: (
+    params: {
+      annotationId: string;
+      annotationVersion: number;
+      baseline: MaskCompareBaseline;
+      frameIndex?: number | null;
+      candidateJobId?: string | null;
+      candidateJobRevision?: number | null;
+      candidateDigest?: string | null;
+      candidateInstanceId?: string | null;
+    },
+    signal?: AbortSignal,
+  ) =>
+    apiClient.get<MaskCompareResult>(
+      `/annotations/${params.annotationId}/mask-compare${queryString({
+        annotation_version: params.annotationVersion,
+        baseline: params.baseline,
+        frame_index: params.frameIndex,
+        candidate_job_id: params.candidateJobId,
+        candidate_job_revision: params.candidateJobRevision,
+        candidate_digest: params.candidateDigest,
+        candidate_instance_id: params.candidateInstanceId,
+      })}`,
+      { signal },
+    ),
   content: (contentPath: string, signal?: AbortSignal) =>
     apiClient.get<CocoRle>(contentPath, { signal }),
   issueRegion: (issueId: string, digest: string, signal?: AbortSignal) =>
-    apiClient.get<CocoRle>(
-      `/mask-qc/issues/${issueId}/region-content${queryString({ digest })}`,
-      { signal },
-    ),
-  versionContent: (params: {
-    annotationId: string;
-    annotationVersion: number;
-    digest: string;
-    frameIndex: number | null;
-  }, signal?: AbortSignal) =>
+    apiClient.get<CocoRle>(`/mask-qc/issues/${issueId}/region-content${queryString({ digest })}`, {
+      signal,
+    }),
+  versionContent: (
+    params: {
+      annotationId: string;
+      annotationVersion: number;
+      digest: string;
+      frameIndex: number | null;
+    },
+    signal?: AbortSignal,
+  ) =>
     apiClient.get<CocoRle>(
       `/annotations/${params.annotationId}/mask-compare/content${queryString({
         annotation_version: params.annotationVersion,
@@ -263,10 +277,7 @@ export const maskQcApi = {
       { signal },
     ),
   dryRunRepairs: (projectId: string, actions: MaskRepairAction[]) =>
-    apiClient.post<MaskRepairDryRun>(
-      `/projects/${projectId}/mask-qc/repairs:dry-run`,
-      { actions },
-    ),
+    apiClient.post<MaskRepairDryRun>(`/projects/${projectId}/mask-qc/repairs:dry-run`, { actions }),
   executeRepairs: (projectId: string, receipt: string, planDigest: string) =>
     apiClient.post<MaskRepairBatch>(`/projects/${projectId}/mask-qc/repairs`, {
       receipt,

@@ -104,7 +104,9 @@ class Context(BaseModel):
                     raise ValueError(f"context.points[{index}] must be finite [x,y]")
                 if not all(0.0 <= value <= 1.0 for value in point):
                     raise ValueError(f"context.points[{index}] must be normalized")
-            if self.labels is not None and any(label not in (0, 1) for label in self.labels):
+            if self.labels is not None and any(
+                label not in (0, 1) for label in self.labels
+            ):
                 raise ValueError("context.labels values must be 0 or 1")
         if self.type == "interactive_box":
             if self.bbox is None or len(self.bbox) != 4:
@@ -160,7 +162,9 @@ class WarmupRequest(BaseModel):
     实际加载逻辑用 ModelPool, 缺失字段回退 backend env 默认.
     """
 
-    task: Literal["detection", "segmentation", "interactive_seg", "tracker"] | None = None
+    task: Literal["detection", "segmentation", "interactive_seg", "tracker"] | None = (
+        None
+    )
     variants: dict[str, str] = {}
 
 

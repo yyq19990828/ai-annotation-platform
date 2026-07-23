@@ -41,7 +41,13 @@ const TABS: { key: DiscussionTab; label: string }[] = [
 // 在此重新接上 (修复 v0.11.2 复用 CommentsPanel 时漏传导致的功能回退)。
 type CommentsBridgeProps = Pick<
   ComponentProps<typeof CommentsPanel>,
-  "backgroundUrl" | "imageWidth" | "imageHeight" | "enableCanvasDrawing" | "liveCanvas" | "commentAnchor" | "onSeekFrame"
+  | "backgroundUrl"
+  | "imageWidth"
+  | "imageHeight"
+  | "enableCanvasDrawing"
+  | "liveCanvas"
+  | "commentAnchor"
+  | "onSeekFrame"
 >;
 
 interface DiscussionPanelProps extends CommentsBridgeProps {
@@ -60,8 +66,17 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
 
 export function DiscussionPanel({
   maskQc,
-  annotationId, taskId, projectId, currentUserId,
-  backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame,
+  annotationId,
+  taskId,
+  projectId,
+  currentUserId,
+  backgroundUrl,
+  imageWidth,
+  imageHeight,
+  enableCanvasDrawing,
+  liveCanvas,
+  commentAnchor,
+  onSeekFrame,
   onDetach,
   floating = false,
   collapsed: collapsedProp,
@@ -83,8 +98,8 @@ export function DiscussionPanel({
       // v0.20.22 · IssueLayer 图钉切 tab 时若讨论区处于收起态, 顺手展开让用户看到 issue 列表。
       if (collapsed) toggleCollapsed();
     }
-  // toggleCollapsed / collapsed 依赖漂移会引起循环触发, 故按 tick 一路径走。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // toggleCollapsed / collapsed 依赖漂移会引起循环触发, 故按 tick 一路径走。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabRequestTick]);
 
   useEffect(() => {
@@ -95,9 +110,9 @@ export function DiscussionPanel({
     if (!maskQc?.activeIssue) return;
     setTab("mask_qc");
     if (collapsed) toggleCollapsed();
-  // An active QC navigation is an explicit request to expose this tab. The
-  // collapsed callbacks are intentionally omitted to avoid replaying it.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // An active QC navigation is an explicit request to expose this tab. The
+    // collapsed callbacks are intentionally omitted to avoid replaying it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maskQc?.activeIssue?.id]);
 
   return (
@@ -151,7 +166,9 @@ export function DiscussionPanel({
       {!collapsed && (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" role="tabpanel">
           {tab === "mask_qc" ? (
-            maskQc ? <MaskQcPanel {...maskQc} /> : null
+            maskQc ? (
+              <MaskQcPanel {...maskQc} />
+            ) : null
           ) : tab === "issues" ? (
             projectId && taskId ? (
               <DiscussionIssuesTab projectId={projectId} taskId={taskId} />

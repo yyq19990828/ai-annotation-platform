@@ -59,16 +59,24 @@ async def assert_screenshot_ocr_scope(
 
     task = await db.get(Task, task_id)
     if task is None or task.project_id != project_id:
-        raise RuntimeError(f"cleanup task does not belong to screenshot OCR project: {task_id}")
+        raise RuntimeError(
+            f"cleanup task does not belong to screenshot OCR project: {task_id}"
+        )
 
     datasets = (
-        await db.execute(
-            select(Dataset).join(
-                ProjectDataset,
-                ProjectDataset.dataset_id == Dataset.id,
-            ).where(ProjectDataset.project_id == project_id)
+        (
+            await db.execute(
+                select(Dataset)
+                .join(
+                    ProjectDataset,
+                    ProjectDataset.dataset_id == Dataset.id,
+                )
+                .where(ProjectDataset.project_id == project_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     managed = any(
         isinstance(dataset.metadata_, dict)
         and isinstance(dataset.metadata_.get("seed"), dict)
@@ -77,7 +85,9 @@ async def assert_screenshot_ocr_scope(
         for dataset in datasets
     )
     if not managed:
-        raise RuntimeError("cleanup refused: OCR project is not screenshot-seed managed")
+        raise RuntimeError(
+            "cleanup refused: OCR project is not screenshot-seed managed"
+        )
 
 
 async def cleanup(args: argparse.Namespace) -> dict[str, int]:
@@ -111,7 +121,10 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
     try:
         celery_app.AsyncResult(args.celery_task_id).forget()
     except Exception as exc:  # noqa: BLE001 - DB cleanup remains authoritative
-        print(f"[cleanup-screenshot-ocr] WARN celery forget failed: {exc}", file=sys.stderr)
+        print(
+            f"[cleanup-screenshot-ocr] WARN celery forget failed: {exc}",
+            file=sys.stderr,
+        )
 
     return {
         **prediction_counts,

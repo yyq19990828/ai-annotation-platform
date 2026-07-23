@@ -66,7 +66,14 @@ describe("geometryToShape", () => {
   });
 
   it("video_bbox → 忽略 frame_index 并返回当前帧 bbox 几何", () => {
-    const s = geometryToShape({ type: "video_bbox", frame_index: 12, x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
+    const s = geometryToShape({
+      type: "video_bbox",
+      frame_index: 12,
+      x: 0.1,
+      y: 0.2,
+      w: 0.3,
+      h: 0.4,
+    });
     expect(s).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
   });
 
@@ -224,8 +231,16 @@ describe("predictionsToBoxes", () => {
         id: "p1",
         tool_unit_id: "bbox",
         result: [
-          { geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 }, class_name: "car", confidence: 0.8 },
-          { geometry: { type: "bbox", x: 1, y: 1, w: 1, h: 1 }, class_name: "tree", confidence: 0.7 },
+          {
+            geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 },
+            class_name: "car",
+            confidence: 0.8,
+          },
+          {
+            geometry: { type: "bbox", x: 1, y: 1, w: 1, h: 1 },
+            class_name: "tree",
+            confidence: 0.7,
+          },
         ],
       },
     ] as any;
@@ -236,7 +251,16 @@ describe("predictionsToBoxes", () => {
 
   it("无 toolBindings 时保持 class_name 原样 (向后兼容)", () => {
     const preds = [
-      { id: "p1", result: [{ geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 }, class_name: "car", confidence: 0.8 }] },
+      {
+        id: "p1",
+        result: [
+          {
+            geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 },
+            class_name: "car",
+            confidence: 0.8,
+          },
+        ],
+      },
     ] as any;
     expect(predictionsToBoxes(preds)[0].cls).toBe("car");
   });
@@ -259,14 +283,26 @@ describe("predictionsToBoxes 黄金样本 (v0.9.8 schema 边界)", () => {
       {
         id: "p-a",
         result: [
-          { geometry: { type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 }, class_name: "car", confidence: 0.9 },
-          { geometry: { type: "bbox", x: 0.5, y: 0.5, w: 0.2, h: 0.2 }, class_name: "person", confidence: 0.8 },
+          {
+            geometry: { type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 },
+            class_name: "car",
+            confidence: 0.9,
+          },
+          {
+            geometry: { type: "bbox", x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+            class_name: "person",
+            confidence: 0.8,
+          },
         ],
       },
       {
         id: "p-b",
         result: [
-          { geometry: { type: "bbox", x: 0.3, y: 0.3, w: 0.1, h: 0.1 }, class_name: "dog", confidence: 0.7 },
+          {
+            geometry: { type: "bbox", x: 0.3, y: 0.3, w: 0.1, h: 0.1 },
+            class_name: "dog",
+            confidence: 0.7,
+          },
         ],
       },
     ] as any;
@@ -370,7 +406,14 @@ describe("v0.9.14 mask 多连通域 / 空洞", () => {
       type: "multi_polygon",
       polygons: [
         // 小三角
-        { type: "polygon", points: [[0, 0], [1, 0], [0.5, 1]] },
+        {
+          type: "polygon",
+          points: [
+            [0, 0],
+            [1, 0],
+            [0.5, 1],
+          ],
+        },
         // 大五边形 (顶点最多, 选作主环)
         {
           type: "polygon",
@@ -407,8 +450,23 @@ describe("v0.9.14 mask 多连通域 / 空洞", () => {
       geometry: {
         type: "multi_polygon",
         polygons: [
-          { type: "polygon", points: [[0, 0], [1, 0], [1, 1]] },
-          { type: "polygon", points: [[2, 2], [3, 2], [3, 3], [2, 3]] },
+          {
+            type: "polygon",
+            points: [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+            ],
+          },
+          {
+            type: "polygon",
+            points: [
+              [2, 2],
+              [3, 2],
+              [3, 3],
+              [2, 3],
+            ],
+          },
         ],
       },
       class_name: "donut",
@@ -459,16 +517,18 @@ describe("v0.9.14 mask 多连通域 / 空洞", () => {
 
 describe("v0.23.6 raster_mask", () => {
   it("同步转换不猜测外接框", () => {
-    expect(geometryToShape({
-      type: "raster_mask",
-      mask: {
-        encoding: "coco_rle_ref",
-        size: [10, 20],
-        object_key: "raster-masks/sha256/aa/bb/digest.json",
-        sha256: "a".repeat(64),
-        runs: 4,
-        bytes: 32,
-      },
-    })).toMatchObject({ x: 0, y: 0, w: 0, h: 0 });
+    expect(
+      geometryToShape({
+        type: "raster_mask",
+        mask: {
+          encoding: "coco_rle_ref",
+          size: [10, 20],
+          object_key: "raster-masks/sha256/aa/bb/digest.json",
+          sha256: "a".repeat(64),
+          runs: 4,
+          bytes: 32,
+        },
+      }),
+    ).toMatchObject({ x: 0, y: 0, w: 0, h: 0 });
   });
 });

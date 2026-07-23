@@ -6,10 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  adminPreannotateApi,
-  type BulkClearRequest,
-} from "@/api/adminPreannotate";
+import { adminPreannotateApi, type BulkClearRequest } from "@/api/adminPreannotate";
 
 const SUMMARY_KEY = ["admin", "preannotate-summary"] as const;
 const QUEUE_KEY = ["admin", "preannotate-queue"] as const;
@@ -17,8 +14,7 @@ const QUEUE_KEY = ["admin", "preannotate-queue"] as const;
 export function useBulkPreannotateClear() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: BulkClearRequest) =>
-      adminPreannotateApi.bulkClear(payload),
+    mutationFn: (payload: BulkClearRequest) => adminPreannotateApi.bulkClear(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUEUE_KEY });
       qc.invalidateQueries({ queryKey: SUMMARY_KEY });

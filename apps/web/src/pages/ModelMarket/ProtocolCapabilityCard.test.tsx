@@ -31,13 +31,15 @@ function makeTask(overrides: Partial<ProtocolTask> = {}): ProtocolTask {
 }
 
 // 协议卡内已接入模型现复用 ModelCard, 入参为 FlatModel。
-function makeFlat(custom: {
-  id?: string;
-  display_name?: string;
-  backendName?: string;
-  projectName?: string;
-  source?: FlatModel["source"];
-} = {}): FlatModel {
+function makeFlat(
+  custom: {
+    id?: string;
+    display_name?: string;
+    backendName?: string;
+    projectName?: string;
+    source?: FlatModel["source"];
+  } = {},
+): FlatModel {
   const source = custom.source ?? "registered";
   return {
     model: {
@@ -85,7 +87,10 @@ describe("ProtocolCapabilityCard", () => {
     renderCard(
       <ProtocolCapabilityCard
         task={makeTask({ id: "detection", label: "目标检测" })}
-        mounted={[makeFlat(), makeFlat({ id: "yolov8n", display_name: "YOLOv8n", backendName: "prod-yolo-2" })]}
+        mounted={[
+          makeFlat(),
+          makeFlat({ id: "yolov8n", display_name: "YOLOv8n", backendName: "prod-yolo-2" }),
+        ]}
         infraLabel={noopLabel}
         modalityLabel={noopLabel}
       />,

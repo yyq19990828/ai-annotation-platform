@@ -37,7 +37,9 @@ def test_create_project_fills_type_label(client, respx_mock):
     route = respx_mock.post(f"{API}/projects").mock(
         return_value=httpx.Response(200, json=PROJECT)
     )
-    p = client.projects.create(name="demo", type_key="object_detection", data_type="image")
+    p = client.projects.create(
+        name="demo", type_key="object_detection", data_type="image"
+    )
     body = json.loads(route.calls.last.request.content)
     assert body["name"] == "demo"
     assert body["type_key"] == "object_detection"

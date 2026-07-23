@@ -21,9 +21,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "users",
-        sa.Column(
-            "password_admin_reset_at", sa.DateTime(timezone=True), nullable=True
-        ),
+        sa.Column("password_admin_reset_at", sa.DateTime(timezone=True), nullable=True),
     )
 
 

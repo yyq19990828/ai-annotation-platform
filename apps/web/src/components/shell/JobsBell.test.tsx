@@ -126,16 +126,14 @@ describe("JobsBell", () => {
     fireEvent.click(await screen.findByTestId("job-dismiss-done1"));
     fireEvent.click(screen.getByTestId("jobs-bell-filter-active"));
     expect(localStorage.getItem("wb:jobsbell:filter")).toBe("active");
-    expect(
-      JSON.parse(localStorage.getItem("wb:jobsbell:dismissed") ?? "[]"),
-    ).toContain("done1");
+    expect(JSON.parse(localStorage.getItem("wb:jobsbell:dismissed") ?? "[]")).toContain("done1");
 
     first.unmount();
     renderBell();
     fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
-    expect(
-      screen.getByTestId("jobs-bell-filter-active").getAttribute("aria-selected"),
-    ).toBe("true");
+    expect(screen.getByTestId("jobs-bell-filter-active").getAttribute("aria-selected")).toBe(
+      "true",
+    );
     // 切回「全部」仍隐藏已 dismiss 的 done1
     fireEvent.click(screen.getByTestId("jobs-bell-filter-all"));
     expect(await screen.findByTestId("job-row-fail1")).toBeInTheDocument();
@@ -143,22 +141,15 @@ describe("JobsBell", () => {
   });
 
   it("dismiss 集合收敛：滑出窗口的 id 从 localStorage 清掉", async () => {
-    localStorage.setItem(
-      "wb:jobsbell:dismissed",
-      JSON.stringify(["done1", "slid-out-id"]),
-    );
+    localStorage.setItem("wb:jobsbell:dismissed", JSON.stringify(["done1", "slid-out-id"]));
     mockList.mockResolvedValue({
-      items: [
-        { ...baseRow, id: "done1", status: "completed" as const, progress_pct: 100 },
-      ],
+      items: [{ ...baseRow, id: "done1", status: "completed" as const, progress_pct: 100 }],
       total: 1,
     });
     renderBell();
     await screen.findByTestId("jobs-bell-trigger");
     await waitFor(() => {
-      expect(
-        JSON.parse(localStorage.getItem("wb:jobsbell:dismissed") ?? "[]"),
-      ).toEqual(["done1"]);
+      expect(JSON.parse(localStorage.getItem("wb:jobsbell:dismissed") ?? "[]")).toEqual(["done1"]);
     });
   });
 });

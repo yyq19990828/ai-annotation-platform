@@ -45,7 +45,18 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
         </colgroup>
         <thead>
           <tr>
-            {["模型", "task", "infra", "模态", "输出几何", "变体", "运行时", "来源", "注册状态", "状态"].map((head) => (
+            {[
+              "模型",
+              "task",
+              "infra",
+              "模态",
+              "输出几何",
+              "变体",
+              "运行时",
+              "来源",
+              "注册状态",
+              "状态",
+            ].map((head) => (
               <th key={head}>{head}</th>
             ))}
           </tr>
@@ -62,7 +73,10 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
                   <span className={`${TRUNCATE_CLASS} font-semibold`} title={row.primaryLabel}>
                     {row.primaryLabel}
                   </span>
-                  <div className={`${TRUNCATE_CLASS} mono mt-0.5 text-2xs text-muted-foreground`} title={row.primaryId}>
+                  <div
+                    className={`${TRUNCATE_CLASS} mono mt-0.5 text-2xs text-muted-foreground`}
+                    title={row.primaryId}
+                  >
                     {row.primaryId}
                   </div>
                 </td>
@@ -80,18 +94,25 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
                   <span className={TRUNCATE_CLASS}>{row.secondaryLabel}</span>
                 </td>
                 <td>
-                  <RuntimeCell item={item} variants={row.warmVariants} runtimeKey={row.runtimeKey} />
+                  <RuntimeCell
+                    item={item}
+                    variants={row.warmVariants}
+                    runtimeKey={row.runtimeKey}
+                  />
                 </td>
                 <td className="text-muted-foreground">
                   <span className={TRUNCATE_CLASS} title={item.backendName}>
                     {item.backendName}
                   </span>
                 </td>
-                <td className="text-muted-foreground" title={
-                  item.source === "registered" && item.registeredProjects.length > 0
-                    ? `已注册至项目: ${item.registeredProjects.join(" / ")}`
-                    : undefined
-                }>
+                <td
+                  className="text-muted-foreground"
+                  title={
+                    item.source === "registered" && item.registeredProjects.length > 0
+                      ? `已注册至项目: ${item.registeredProjects.join(" / ")}`
+                      : undefined
+                  }
+                >
                   {item.source === "env_only" ? (
                     <Badge variant="outline">平台内置</Badge>
                   ) : item.registeredProjects.length > 1 ? (
@@ -102,7 +123,13 @@ export function ModelListTable({ items }: { items: FlatModel[] }) {
                     <Badge variant="accent">{item.projectName}</Badge>
                   )}
                 </td>
-                <td>{item.stale ? <Badge variant="warning">缓存</Badge> : <Badge variant="success">在线</Badge>}</td>
+                <td>
+                  {item.stale ? (
+                    <Badge variant="warning">缓存</Badge>
+                  ) : (
+                    <Badge variant="success">在线</Badge>
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -124,7 +151,9 @@ function RuntimeCell({
   const loaded = isLoadedRuntimeKey(item, variants, runtimeKey);
   return (
     <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
-      <span className="whitespace-nowrap text-xs text-muted-foreground">池 {currentPoolSize(item)}</span>
+      <span className="whitespace-nowrap text-xs text-muted-foreground">
+        池 {currentPoolSize(item)}
+      </span>
       <Badge variant={loaded ? "success" : "outline"}>{loaded ? "已加载" : "未加载"}</Badge>
       <WarmButton item={item} variants={variants} compact size="xs" />
     </div>

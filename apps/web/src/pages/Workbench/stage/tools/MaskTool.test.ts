@@ -64,7 +64,10 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
   };
 }
 
-function baseCtx(maskEditor: UseMaskEditorReturn | undefined, readOnly = false): ToolPointerContext {
+function baseCtx(
+  maskEditor: UseMaskEditorReturn | undefined,
+  readOnly = false,
+): ToolPointerContext {
   return {
     pt: { x: 0.5, y: 0.5 },
     evt: {} as unknown as MouseEvent,

@@ -7,12 +7,27 @@
 import { describe, expect, it } from "vitest";
 import { boxIsOnFrame, filterBoxesByFrame, firstTrackFrame } from "./annotationFrameScope";
 describe("boxIsOnFrame / firstTrackFrame · 六种视频几何", () => {
-  const ann = (geometry: unknown) => ({ id: "a", geometry } as never);
+  const ann = (geometry: unknown) => ({ id: "a", geometry }) as never;
 
   const SINGLE = [
     { type: "video_bbox", frame_index: 7, x: 0, y: 0, w: 0.1, h: 0.1 },
-    { type: "video_polygon", frame_index: 7, points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
-    { type: "video_polyline", frame_index: 7, points: [[0, 0], [0.1, 0.1]] },
+    {
+      type: "video_polygon",
+      frame_index: 7,
+      points: [
+        [0, 0],
+        [0.1, 0],
+        [0.1, 0.1],
+      ],
+    },
+    {
+      type: "video_polyline",
+      frame_index: 7,
+      points: [
+        [0, 0],
+        [0.1, 0.1],
+      ],
+    },
   ];
 
   it.each(SINGLE)("单帧几何 $type: 只在所属帧显示, 跳转到该帧", (geometry) => {
@@ -34,16 +49,46 @@ describe("boxIsOnFrame / firstTrackFrame · 六种视频几何", () => {
       type: "video_track_polygon",
       track_id: "t",
       keyframes: [
-        { frame_index: 2, points: [[0, 0], [0.1, 0], [0.1, 0.1]], source: "manual" },
-        { frame_index: 6, points: [[0.2, 0.2], [0.3, 0.2], [0.3, 0.3]], source: "manual" },
+        {
+          frame_index: 2,
+          points: [
+            [0, 0],
+            [0.1, 0],
+            [0.1, 0.1],
+          ],
+          source: "manual",
+        },
+        {
+          frame_index: 6,
+          points: [
+            [0.2, 0.2],
+            [0.3, 0.2],
+            [0.3, 0.3],
+          ],
+          source: "manual",
+        },
       ],
     },
     {
       type: "video_track_polyline",
       track_id: "t",
       keyframes: [
-        { frame_index: 2, points: [[0, 0], [0.1, 0.1]], source: "manual" },
-        { frame_index: 6, points: [[0.2, 0.2], [0.3, 0.3]], source: "manual" },
+        {
+          frame_index: 2,
+          points: [
+            [0, 0],
+            [0.1, 0.1],
+          ],
+          source: "manual",
+        },
+        {
+          frame_index: 6,
+          points: [
+            [0.2, 0.2],
+            [0.3, 0.3],
+          ],
+          source: "manual",
+        },
       ],
     },
   ];

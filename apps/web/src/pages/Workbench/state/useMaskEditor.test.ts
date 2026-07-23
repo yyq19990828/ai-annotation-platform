@@ -19,7 +19,10 @@ import { MaskBuffer } from "../stage/shared/geometry/maskBuffer";
 import { decodeCocoRle, type CocoRle } from "../stage/shared/geometry/maskRle";
 import { applyMaskMorphology } from "../stage/shared/geometry/maskOperations";
 import type { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
-import type { RasterMaskTileOverride, RasterMaskTileRect } from "../stage/shared/rasterMaskWorkerProtocol";
+import type {
+  RasterMaskTileOverride,
+  RasterMaskTileRect,
+} from "../stage/shared/rasterMaskWorkerProtocol";
 import {
   buildRasterMaskWorkerSession,
   decodeRasterMaskSessionTile,
@@ -31,11 +34,18 @@ class HookTileBackend {
   readonly sessions = new Map<string, RasterMaskWorkerSession>();
   mergeGate: Promise<void> | null = null;
 
-  registerSession(sessionId: string, sha256: string, rle: { size: [number, number]; counts: number[] }): void {
-    this.sessions.set(sessionId, buildRasterMaskWorkerSession(sha256, {
-      size: rle.size,
-      counts: Uint32Array.from(rle.counts),
-    }));
+  registerSession(
+    sessionId: string,
+    sha256: string,
+    rle: { size: [number, number]; counts: number[] },
+  ): void {
+    this.sessions.set(
+      sessionId,
+      buildRasterMaskWorkerSession(sha256, {
+        size: rle.size,
+        counts: Uint32Array.from(rle.counts),
+      }),
+    );
   }
 
   releaseSession(sessionId: string): void {
@@ -82,22 +92,32 @@ describe("useMaskEditor · 初始态", () => {
 describe("useMaskEditor · beginBlank / initFromPolygon", () => {
   it("initFromRle / commitToRle 保持像素合同", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 3, height: 2 }));
-    const rle = { encoding: "coco_rle" as const, size: [2, 3] as [number, number], counts: [1, 2, 2, 1] };
-    act(() => { result.current.initFromRle(rle); });
+    const rle = {
+      encoding: "coco_rle" as const,
+      size: [2, 3] as [number, number],
+      counts: [1, 2, 2, 1],
+    };
+    act(() => {
+      result.current.initFromRle(rle);
+    });
     expect(result.current.buffer?.countSet()).toBe(3);
     expect(result.current.commitToRle()).toEqual(rle);
   });
 
   it("initFromRle 拒绝尺寸不匹配", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 3, height: 2 }));
-    expect(() => act(() => {
-      result.current.initFromRle({ encoding: "coco_rle", size: [3, 2], counts: [6] });
-    })).toThrow(/does not match/);
+    expect(() =>
+      act(() => {
+        result.current.initFromRle({ encoding: "coco_rle", size: [3, 2], counts: [6] });
+      }),
+    ).toThrow(/does not match/);
   });
 
   it("beginBlank 进入 active；buffer 全 0", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
-    act(() => { result.current.beginBlank(); });
+    act(() => {
+      result.current.beginBlank();
+    });
     expect(result.current.active).toBe(true);
     expect(result.current.buffer).not.toBeNull();
     expect(result.current.buffer!.countSet()).toBe(0);
@@ -106,7 +126,12 @@ describe("useMaskEditor · beginBlank / initFromPolygon", () => {
   it("initFromPolygon 填充矩形 buffer", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
     act(() => {
-      result.current.initFromPolygon([[5, 5], [25, 5], [25, 25], [5, 25]]);
+      result.current.initFromPolygon([
+        [5, 5],
+        [25, 5],
+        [25, 25],
+        [5, 25],
+      ]);
     });
     expect(result.current.active).toBe(true);
     expect(result.current.buffer!.countSet()).toBeGreaterThan(300);
@@ -115,10 +140,16 @@ describe("useMaskEditor · beginBlank / initFromPolygon", () => {
 
 describe("useMaskEditor · paintAt / mode / radius", () => {
   it("paintAt brush 模式在 buffer 留下圆形", () => {
-    const { result } = renderHook(() => useMaskEditor({ width: 80, height: 80, initialRadius: 10 }));
-    act(() => { result.current.beginBlank(); });
+    const { result } = renderHook(() =>
+      useMaskEditor({ width: 80, height: 80, initialRadius: 10 }),
+    );
+    act(() => {
+      result.current.beginBlank();
+    });
     const revAfterBegin = result.current.revision;
-    act(() => { result.current.paintAt(40, 40); });
+    act(() => {
+      result.current.paintAt(40, 40);
+    });
     expect(result.current.dirty).toBe(true);
     expect(result.current.buffer!.get(40, 40)).toBe(255);
     expect(result.current.buffer!.countSet()).toBeGreaterThan(250);
@@ -127,31 +158,51 @@ describe("useMaskEditor · paintAt / mode / radius", () => {
   });
 
   it("paintAt erase 模式抹掉已画区域", () => {
-    const { result } = renderHook(() => useMaskEditor({ width: 80, height: 80, initialRadius: 10 }));
-    act(() => { result.current.beginBlank(); });
-    act(() => { result.current.paintAt(40, 40); });
+    const { result } = renderHook(() =>
+      useMaskEditor({ width: 80, height: 80, initialRadius: 10 }),
+    );
+    act(() => {
+      result.current.beginBlank();
+    });
+    act(() => {
+      result.current.paintAt(40, 40);
+    });
     const before = result.current.buffer!.countSet();
     expect(before).toBeGreaterThan(0);
-    act(() => { result.current.setMode("erase"); });
-    act(() => { result.current.setRadius(12); });
-    act(() => { result.current.paintAt(40, 40); });
+    act(() => {
+      result.current.setMode("erase");
+    });
+    act(() => {
+      result.current.setRadius(12);
+    });
+    act(() => {
+      result.current.paintAt(40, 40);
+    });
     expect(result.current.buffer!.countSet()).toBe(0);
   });
 
   it("paintAt 非 active 时静默", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
-    act(() => { result.current.paintAt(15, 15); });
+    act(() => {
+      result.current.paintAt(15, 15);
+    });
     expect(result.current.dirty).toBe(false);
     expect(result.current.buffer).toBeNull();
   });
 
   it("setRadius clamp", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
-    act(() => { result.current.setRadius(-5); });
+    act(() => {
+      result.current.setRadius(-5);
+    });
     expect(result.current.radius).toBe(MASK_BRUSH_MIN_PX);
-    act(() => { result.current.setRadius(1e6); });
+    act(() => {
+      result.current.setRadius(1e6);
+    });
     expect(result.current.radius).toBe(MASK_BRUSH_MAX_PX);
-    act(() => { result.current.setRadius(NaN); });
+    act(() => {
+      result.current.setRadius(NaN);
+    });
     // NaN 走 default
     expect(result.current.radius).toBe(MASK_BRUSH_DEFAULT_PX);
   });
@@ -160,10 +211,16 @@ describe("useMaskEditor · paintAt / mode / radius", () => {
 describe("useMaskEditor · cancel / commitToPolygon", () => {
   it("cancel 清空 buffer 与 active", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 50, height: 50 }));
-    act(() => { result.current.beginBlank(); });
-    act(() => { result.current.paintAt(25, 25); });
+    act(() => {
+      result.current.beginBlank();
+    });
+    act(() => {
+      result.current.paintAt(25, 25);
+    });
     expect(result.current.dirty).toBe(true);
-    act(() => { result.current.cancel(); });
+    act(() => {
+      result.current.cancel();
+    });
     expect(result.current.active).toBe(false);
     expect(result.current.buffer).toBeNull();
     expect(result.current.dirty).toBe(false);
@@ -171,14 +228,22 @@ describe("useMaskEditor · cancel / commitToPolygon", () => {
 
   it("commitToPolygon 空 mask 返回 null", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 30, height: 30 }));
-    act(() => { result.current.beginBlank(); });
+    act(() => {
+      result.current.beginBlank();
+    });
     expect(result.current.commitToPolygon()).toBeNull();
   });
 
   it("commitToPolygon 有内容时返回外环顶点", () => {
-    const { result } = renderHook(() => useMaskEditor({ width: 80, height: 80, initialRadius: 15 }));
-    act(() => { result.current.beginBlank(); });
-    act(() => { result.current.paintAt(40, 40); });
+    const { result } = renderHook(() =>
+      useMaskEditor({ width: 80, height: 80, initialRadius: 15 }),
+    );
+    act(() => {
+      result.current.beginBlank();
+    });
+    act(() => {
+      result.current.paintAt(40, 40);
+    });
     const out = result.current.commitToPolygon();
     expect(out).not.toBeNull();
     expect(out!.points.length).toBeGreaterThanOrEqual(3);
@@ -215,12 +280,14 @@ describe("useMaskEditor · stroke undo / redo", () => {
 
   it("does not encode before/after RLE and records cross-tile strokes as bit patches", () => {
     const toRle = vi.spyOn(MaskBuffer.prototype, "toRle");
-    const { result } = renderHook(() => useMaskEditor({
-      width: 514,
-      height: 4,
-      initialRadius: 1,
-      deviceMemory: 2,
-    }));
+    const { result } = renderHook(() =>
+      useMaskEditor({
+        width: 514,
+        height: 4,
+        initialRadius: 1,
+        deviceMemory: 2,
+      }),
+    );
     act(() => {
       result.current.beginBlank();
       result.current.beginStroke();
@@ -257,12 +324,14 @@ describe("useMaskEditor · stroke undo / redo", () => {
   });
 
   it("evicts the oldest undo by byte budget and clears redo on a new stroke", () => {
-    const { result } = renderHook(() => useMaskEditor({
-      width: 8,
-      height: 8,
-      initialRadius: 1,
-      historyMaxBytes: 110,
-    }));
+    const { result } = renderHook(() =>
+      useMaskEditor({
+        width: 8,
+        height: 8,
+        initialRadius: 1,
+        historyMaxBytes: 110,
+      }),
+    );
     act(() => {
       result.current.beginBlank();
       result.current.beginStroke();
@@ -293,7 +362,12 @@ describe("useMaskEditor · operation preview / command", () => {
     act(() => result.current.beginBlank());
     const sourceRevision = result.current.revision;
     const operation = applyMaskPolygon(result.current.buffer!.data, 6, 4, {
-      points: [[1, 1], [5, 1], [5, 3], [1, 3]],
+      points: [
+        [1, 1],
+        [5, 1],
+        [5, 3],
+        [1, 3],
+      ],
       value: 255,
     });
 
@@ -328,7 +402,9 @@ describe("useMaskEditor · operation preview / command", () => {
     });
     act(() => result.current.previewOperation("no-op", noOp));
     let confirmed = true;
-    act(() => { confirmed = result.current.confirmOperation(); });
+    act(() => {
+      confirmed = result.current.confirmOperation();
+    });
     expect(confirmed).toBe(false);
     expect(result.current.operationPreview).toBeNull();
     expect(result.current.canUndo).toBe(false);
@@ -340,7 +416,12 @@ describe("useMaskEditor · operation preview / command", () => {
     act(() => result.current.beginBlank());
     const staleRevision = result.current.revision;
     const stale = applyMaskPolygon(result.current.buffer!.data, 5, 5, {
-      points: [[0, 0], [3, 0], [3, 3], [0, 3]],
+      points: [
+        [0, 0],
+        [3, 0],
+        [3, 3],
+        [0, 3],
+      ],
       value: 255,
     });
     act(() => result.current.paintAt(4, 4));
@@ -353,7 +434,12 @@ describe("useMaskEditor · operation preview / command", () => {
     expect(result.current.operationPreview).toBeNull();
 
     const current = applyMaskPolygon(result.current.buffer!.data, 5, 5, {
-      points: [[0, 0], [2, 0], [2, 2], [0, 2]],
+      points: [
+        [0, 0],
+        [2, 0],
+        [2, 2],
+        [0, 2],
+      ],
       value: 255,
     });
     act(() => {
@@ -374,7 +460,12 @@ describe("useMaskEditor · operation preview / command", () => {
     });
     const retainedBytes = result.current.historyResources.retainedBytes;
     const preview = applyMaskPolygon(result.current.buffer!.data, 8, 8, {
-      points: [[4, 4], [7, 4], [7, 7], [4, 7]],
+      points: [
+        [4, 4],
+        [7, 4],
+        [7, 7],
+        [4, 7],
+      ],
       value: 255,
     });
     act(() => {
@@ -419,13 +510,15 @@ describe("useMaskEditor · operation preview / command", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 4, height: 3 }));
     act(() => result.current.beginBlank());
     await act(async () => {
-      expect(await result.current.runOperation("fill_add", {
-        type: "flood_fill",
-        x: 0,
-        y: 0,
-        value: 255,
-        connectivity: 4,
-      })).toBe(true);
+      expect(
+        await result.current.runOperation("fill_add", {
+          type: "flood_fill",
+          x: 0,
+          y: 0,
+          value: 255,
+          connectivity: 4,
+        }),
+      ).toBe(true);
     });
     expect(result.current.operationStatus).toBe("preview");
     expect(result.current.operationPreview?.report.afterArea).toBe(12);
@@ -434,17 +527,21 @@ describe("useMaskEditor · operation preview / command", () => {
 
   it("instance plan 只进入待提交预览，不能绕过原子提交修改 Buffer", async () => {
     const { result } = renderHook(() => useMaskEditor({ width: 5, height: 1 }));
-    act(() => result.current.initFromRle({
-      encoding: "coco_rle",
-      size: [1, 5],
-      counts: [0, 1, 2, 2],
-    }));
+    act(() =>
+      result.current.initFromRle({
+        encoding: "coco_rle",
+        size: [1, 5],
+        counts: [0, 1, 2, 2],
+      }),
+    );
     await act(async () => {
-      expect(await result.current.runInstanceOperation("split_components", {
-        type: "split_components",
-        keep: "largest",
-        connectivity: 4,
-      })).toBe(true);
+      expect(
+        await result.current.runInstanceOperation("split_components", {
+          type: "split_components",
+          keep: "largest",
+          connectivity: 4,
+        }),
+      ).toBe(true);
     });
 
     expect(result.current.instanceOperationPreview?.plan.resultAreas).toEqual([2, 1]);
@@ -459,16 +556,15 @@ describe("useMaskEditor · operation preview / command", () => {
 
   it("外部 join plan 复用同一 stale revision 隔离边界", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 3, height: 1 }));
-    act(() => result.current.initFromRle({
-      encoding: "coco_rle",
-      size: [1, 3],
-      counts: [0, 1, 2],
-    }));
+    act(() =>
+      result.current.initFromRle({
+        encoding: "coco_rle",
+        size: [1, 3],
+        counts: [0, 1, 2],
+      }),
+    );
     const sourceRevision = result.current.revision;
-    const plan = planMaskJoin([
-      Uint8Array.of(255, 0, 0),
-      Uint8Array.of(0, 255, 0),
-    ], 3, 1);
+    const plan = planMaskJoin([Uint8Array.of(255, 0, 0), Uint8Array.of(0, 255, 0)], 3, 1);
     act(() => result.current.paintAt(2, 0));
     expect(result.current.previewInstanceOperation("join_masks", plan, sourceRevision)).toBe(false);
     expect(result.current.instanceOperationPreview).toBeNull();
@@ -478,27 +574,35 @@ describe("useMaskEditor · operation preview / command", () => {
 describe("useMaskEditor · tiled large canvas", () => {
   it("rejects full-canvas polygon initialization with a stable reason", () => {
     const backend = new HookTileBackend();
-    const { result } = renderHook(() => useMaskEditor({
-      width: 4097,
-      height: 512,
-      workerPool: backend as unknown as RasterMaskWorkerPool,
-    }));
-
-    expect(() => result.current.initFromPolygon([[0, 0], [10, 0], [10, 10]])).toThrow(
-      expect.objectContaining({ reason: "large_mask_full_scan_required" }),
+    const { result } = renderHook(() =>
+      useMaskEditor({
+        width: 4097,
+        height: 512,
+        workerPool: backend as unknown as RasterMaskWorkerPool,
+      }),
     );
+
+    expect(() =>
+      result.current.initFromPolygon([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+    ).toThrow(expect.objectContaining({ reason: "large_mask_full_scan_required" }));
     expect(result.current.active).toBe(false);
   });
 
   it("keeps 8K brush/lasso/history/save on sparse tiles without a dense buffer", async () => {
     const backend = new HookTileBackend();
-    const { result, unmount } = renderHook(() => useMaskEditor({
-      width: 8192,
-      height: 8192,
-      initialRadius: 2,
-      workerPool: backend as unknown as RasterMaskWorkerPool,
-      deviceMemory: 2,
-    }));
+    const { result, unmount } = renderHook(() =>
+      useMaskEditor({
+        width: 8192,
+        height: 8192,
+        initialRadius: 2,
+        workerPool: backend as unknown as RasterMaskWorkerPool,
+        deviceMemory: 2,
+      }),
+    );
 
     act(() => {
       result.current.beginBlank();
@@ -539,12 +643,14 @@ describe("useMaskEditor · tiled large canvas", () => {
     const backend = new HookTileBackend();
     const width = 4097;
     const height = 16;
-    const { result } = renderHook(() => useMaskEditor({
-      width,
-      height,
-      initialRadius: 1,
-      workerPool: backend as unknown as RasterMaskWorkerPool,
-    }));
+    const { result } = renderHook(() =>
+      useMaskEditor({
+        width,
+        height,
+        initialRadius: 1,
+        workerPool: backend as unknown as RasterMaskWorkerPool,
+      }),
+    );
     act(() => {
       result.current.beginBlank();
       result.current.beginStroke();
@@ -555,12 +661,14 @@ describe("useMaskEditor · tiled large canvas", () => {
     let before = new Uint8Array();
     await act(async () => {
       before = decodeCocoRle(await result.current.commitToRleAsync());
-      expect(await result.current.runOperation("dilate", {
-        type: "morphology",
-        operation: "dilate",
-        kernelShape: "disk",
-        radius: 2,
-      })).toBe(true);
+      expect(
+        await result.current.runOperation("dilate", {
+          type: "morphology",
+          operation: "dilate",
+          kernelShape: "disk",
+          radius: 2,
+        }),
+      ).toBe(true);
     });
     let finalRle: CocoRle | null = null;
     await act(async () => {
@@ -580,13 +688,15 @@ describe("useMaskEditor · tiled large canvas", () => {
     expect(after[0]).toBe(before[0]);
 
     await act(async () => {
-      expect(await result.current.runOperation("fill_add", {
-        type: "flood_fill",
-        x: 100,
-        y: 8,
-        value: 255,
-        connectivity: 4,
-      })).toBe(false);
+      expect(
+        await result.current.runOperation("fill_add", {
+          type: "flood_fill",
+          x: 100,
+          y: 8,
+          value: 255,
+          connectivity: 4,
+        }),
+      ).toBe(false);
     });
     expect(result.current.operationStatus).toBe("error");
     expect(result.current.operationError).toMatchObject({
@@ -596,12 +706,14 @@ describe("useMaskEditor · tiled large canvas", () => {
 
   it("enters a stable read-only state when visible tiles cannot fit the cache budget", async () => {
     const backend = new HookTileBackend();
-    const { result } = renderHook(() => useMaskEditor({
-      width: 4097,
-      height: 512,
-      workerPool: backend as unknown as RasterMaskWorkerPool,
-      tileMaxBytes: 1,
-    }));
+    const { result } = renderHook(() =>
+      useMaskEditor({
+        width: 4097,
+        height: 512,
+        workerPool: backend as unknown as RasterMaskWorkerPool,
+        tileMaxBytes: 1,
+      }),
+    );
 
     act(() => {
       result.current.beginBlank();
@@ -620,12 +732,16 @@ describe("useMaskEditor · tiled large canvas", () => {
   it("locks the editor while a tiled merge is in flight", async () => {
     const backend = new HookTileBackend();
     let releaseMerge!: () => void;
-    backend.mergeGate = new Promise<void>((resolve) => { releaseMerge = resolve; });
-    const { result } = renderHook(() => useMaskEditor({
-      width: 4097,
-      height: 512,
-      workerPool: backend as unknown as RasterMaskWorkerPool,
-    }));
+    backend.mergeGate = new Promise<void>((resolve) => {
+      releaseMerge = resolve;
+    });
+    const { result } = renderHook(() =>
+      useMaskEditor({
+        width: 4097,
+        height: 512,
+        workerPool: backend as unknown as RasterMaskWorkerPool,
+      }),
+    );
     act(() => {
       result.current.beginBlank();
       result.current.beginStroke();
@@ -633,11 +749,15 @@ describe("useMaskEditor · tiled large canvas", () => {
       result.current.endStroke();
     });
     let commit!: Promise<unknown>;
-    act(() => { commit = result.current.commitToRleAsync(); });
+    act(() => {
+      commit = result.current.commitToRleAsync();
+    });
 
     await waitFor(() => expect(result.current.commitInFlight).toBe(true));
     act(() => releaseMerge());
-    await act(async () => { await commit; });
+    await act(async () => {
+      await commit;
+    });
     expect(result.current.commitInFlight).toBe(false);
   });
 });

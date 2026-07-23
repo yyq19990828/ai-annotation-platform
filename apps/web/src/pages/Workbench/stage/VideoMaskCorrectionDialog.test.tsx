@@ -73,18 +73,20 @@ describe("VideoMaskCorrectionDialog", () => {
     expect(screen.getByText(/生效窗口 F50–F65/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保存并启动传播" }));
 
-    await waitFor(() => expect(props.onSubmit).toHaveBeenCalledWith({
-      mode: "forward",
-      direction: "forward",
-      fromFrame: 50,
-      toFrame: 65,
-      modelKey: "sam3_video_interactive",
-      modelId: "sam3-video-interactive-tracker",
-      backendId: "backend-native",
-      allowBboxFallback: false,
-      text: undefined,
-      segmentId: "segment-1",
-    }));
+    await waitFor(() =>
+      expect(props.onSubmit).toHaveBeenCalledWith({
+        mode: "forward",
+        direction: "forward",
+        fromFrame: 50,
+        toFrame: 65,
+        modelKey: "sam3_video_interactive",
+        modelId: "sam3-video-interactive-tracker",
+        backendId: "backend-native",
+        allowBboxFallback: false,
+        text: undefined,
+        segmentId: "segment-1",
+      }),
+    );
   });
 
   it("分段边界禁用无效方向，未加载 segment 时阻止传播", () => {
@@ -118,13 +120,15 @@ describe("VideoMaskCorrectionDialog", () => {
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
 
-    await waitFor(() => expect(props.onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        modelKey: "sam3_video",
-        allowBboxFallback: true,
-        text: "red car",
-      }),
-    ));
+    await waitFor(() =>
+      expect(props.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelKey: "sam3_video",
+          allowBboxFallback: true,
+          text: "red car",
+        }),
+      ),
+    );
   });
 
   it("创建失败后明确只重试传播，提交中禁止关闭", () => {

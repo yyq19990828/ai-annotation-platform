@@ -1,12 +1,5 @@
-import type {
-  AnnotationResponse,
-  CocoRleMaskRef,
-  VideoTrackMaskGeometry,
-} from "@/types";
-import type {
-  MaskMutationCommitRequest,
-  MaskMutationScope,
-} from "@/api/maskMutations";
+import type { AnnotationResponse, CocoRleMaskRef, VideoTrackMaskGeometry } from "@/types";
+import type { MaskMutationCommitRequest, MaskMutationScope } from "@/api/maskMutations";
 import type { CocoRle } from "./shared/geometry/maskRle";
 import {
   maskMutationExpectedVersions,
@@ -36,15 +29,18 @@ export function validateVideoMaskClipboard(
 ): string | null {
   if (!clipboard) return "请先复制一个 Mask";
   if (!context.taskId || clipboard.taskId !== context.taskId) return "剪贴板属于其他任务";
-  if (!context.source || context.source.geometry.type !== "video_track_mask") return "复制来源已不存在";
-  if (Number(context.source.version) !== clipboard.sourceVersion) return "复制来源已更新，请重新复制";
+  if (!context.source || context.source.geometry.type !== "video_track_mask")
+    return "复制来源已不存在";
+  if (Number(context.source.version) !== clipboard.sourceVersion)
+    return "复制来源已更新，请重新复制";
   if (context.source.class_name !== clipboard.className) return "复制来源类别已变化，请重新复制";
   if (
-    clipboard.rle.size[0] !== context.height
-    || clipboard.rle.size[1] !== context.width
-    || clipboard.mask.size[0] !== context.height
-    || clipboard.mask.size[1] !== context.width
-  ) return "Mask 尺寸与当前视频不一致";
+    clipboard.rle.size[0] !== context.height ||
+    clipboard.rle.size[1] !== context.width ||
+    clipboard.mask.size[0] !== context.height ||
+    clipboard.mask.size[1] !== context.width
+  )
+    return "Mask 尺寸与当前视频不一致";
   return null;
 }
 
@@ -79,15 +75,18 @@ export async function buildVideoMaskCopyKeyframeRequest(input: {
   const geometry: VideoTrackMaskGeometry = {
     type: "video_track_mask",
     track_id: `trk_${crypto.randomUUID().replace(/-/g, "")}`,
-    semantic_label: input.source.geometry.type === "video_track_mask"
-      ? input.source.geometry.semantic_label
-      : undefined,
-    keyframes: [{
-      frame_index: input.frameIndex,
-      mask: input.clipboard.mask,
-      source: "manual",
-      occluded: false,
-    }],
+    semantic_label:
+      input.source.geometry.type === "video_track_mask"
+        ? input.source.geometry.semantic_label
+        : undefined,
+    keyframes: [
+      {
+        frame_index: input.frameIndex,
+        mask: input.clipboard.mask,
+        source: "manual",
+        occluded: false,
+      },
+    ],
     outside: [],
   };
   return {
@@ -97,10 +96,12 @@ export async function buildVideoMaskCopyKeyframeRequest(input: {
     source_frame_index: input.clipboard.sourceFrameIndex,
     scope_fingerprint: await maskMutationScopeFingerprint(scope, members),
     expected_versions: maskMutationExpectedVersions(members),
-    mutations: [{
-      kind: "create",
-      source_annotation_ids: [input.source.id],
-      geometry,
-    }],
+    mutations: [
+      {
+        kind: "create",
+        source_annotation_ids: [input.source.id],
+        geometry,
+      },
+    ],
   };
 }

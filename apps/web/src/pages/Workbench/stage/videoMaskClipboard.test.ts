@@ -68,24 +68,30 @@ describe("videoMaskClipboard", () => {
     });
     const copied = clipboard(source);
 
-    expect(validateVideoMaskClipboard(copied, {
-      taskId: "task-2",
-      source,
-      width: 3,
-      height: 2,
-    })).toBe("剪贴板属于其他任务");
-    expect(validateVideoMaskClipboard(copied, {
-      taskId: "task-1",
-      source: { ...source, version: 4 },
-      width: 3,
-      height: 2,
-    })).toBe("复制来源已更新，请重新复制");
-    expect(validateVideoMaskClipboard(copied, {
-      taskId: "task-1",
-      source,
-      width: 2,
-      height: 3,
-    })).toBe("Mask 尺寸与当前视频不一致");
+    expect(
+      validateVideoMaskClipboard(copied, {
+        taskId: "task-2",
+        source,
+        width: 3,
+        height: 2,
+      }),
+    ).toBe("剪贴板属于其他任务");
+    expect(
+      validateVideoMaskClipboard(copied, {
+        taskId: "task-1",
+        source: { ...source, version: 4 },
+        width: 3,
+        height: 2,
+      }),
+    ).toBe("复制来源已更新，请重新复制");
+    expect(
+      validateVideoMaskClipboard(copied, {
+        taskId: "task-1",
+        source,
+        width: 2,
+        height: 3,
+      }),
+    ).toBe("Mask 尺寸与当前视频不一致");
   });
 
   it("新轨粘贴把目标帧不可见的外部来源纳入版本指纹", async () => {
@@ -99,7 +105,13 @@ describe("videoMaskClipboard", () => {
     const visible = annotation("visible", 7, {
       type: "video_track_mask",
       track_id: "trk_visible",
-      keyframes: [{ frame_index: 10, mask: { ...mask, object_key: "raster-masks/visible.json" }, source: "manual" }],
+      keyframes: [
+        {
+          frame_index: 10,
+          mask: { ...mask, object_key: "raster-masks/visible.json" },
+          source: "manual",
+        },
+      ],
       outside: [],
     });
 
@@ -114,7 +126,11 @@ describe("videoMaskClipboard", () => {
 
     expect(request.operation).toBe("copy_keyframe");
     expect(request.source_frame_index).toBe(0);
-    expect(request.scope).toMatchObject({ media: "video", frame_index: 10, segment_id: "segment-1" });
+    expect(request.scope).toMatchObject({
+      media: "video",
+      frame_index: 10,
+      segment_id: "segment-1",
+    });
     expect(request.expected_versions).toEqual([
       { annotation_id: "source", version: 3 },
       { annotation_id: "visible", version: 7 },

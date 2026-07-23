@@ -13,7 +13,9 @@ const video = { readyState: 4, videoWidth: 1920, videoHeight: 1080 } as unknown 
 describe("useVideoBitmapCache · capture 去重", () => {
   beforeEach(() => {
     // jsdom 默认无 createImageBitmap;每次返回一个新的假位图,便于断言"是否重抓"。
-    (window as unknown as { createImageBitmap: unknown }).createImageBitmap = vi.fn(async () => makeBitmap());
+    (window as unknown as { createImageBitmap: unknown }).createImageBitmap = vi.fn(async () =>
+      makeBitmap(),
+    );
   });
 
   afterEach(() => {
@@ -23,7 +25,8 @@ describe("useVideoBitmapCache · capture 去重", () => {
 
   it("同一帧重复 capture 复用缓存位图:不重抓、不 close 正在显示的位图", async () => {
     const { result } = renderHook(() => useVideoBitmapCache({ taskId: "task-1" }));
-    const createBitmap = (window as unknown as { createImageBitmap: ReturnType<typeof vi.fn> }).createImageBitmap;
+    const createBitmap = (window as unknown as { createImageBitmap: ReturnType<typeof vi.fn> })
+      .createImageBitmap;
 
     let first: Awaited<ReturnType<typeof result.current.capture>> = null;
     await act(async () => {
@@ -41,14 +44,17 @@ describe("useVideoBitmapCache · capture 去重", () => {
     expect(second).toBe(first);
     expect(createBitmap).toHaveBeenCalledTimes(1);
     // 关键回归点:正在显示的位图不能被 close(close 后 width=0 → Konva drawImage 黑屏/“image source is detached”)。
-    expect((first as unknown as { bitmap: { close: ReturnType<typeof vi.fn> } }).bitmap.close).not.toHaveBeenCalled();
+    expect(
+      (first as unknown as { bitmap: { close: ReturnType<typeof vi.fn> } }).bitmap.close,
+    ).not.toHaveBeenCalled();
     // 复用路径仍把该帧置为 active,保证立即显示。
     expect(result.current.activeBitmap).toBe(first);
   });
 
   it("不同帧分别 capture 各自解码一次", async () => {
     const { result } = renderHook(() => useVideoBitmapCache({ taskId: "task-1" }));
-    const createBitmap = (window as unknown as { createImageBitmap: ReturnType<typeof vi.fn> }).createImageBitmap;
+    const createBitmap = (window as unknown as { createImageBitmap: ReturnType<typeof vi.fn> })
+      .createImageBitmap;
 
     await act(async () => {
       await result.current.capture(video, 0);

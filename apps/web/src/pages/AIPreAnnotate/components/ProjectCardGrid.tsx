@@ -21,9 +21,7 @@ export function ProjectCardGrid({ items, isLoading, onSelect }: Props) {
   if (isLoading) {
     return (
       <Card>
-        <div className={styles.loadingState}>
-          加载项目列表…
-        </div>
+        <div className={styles.loadingState}>加载项目列表…</div>
       </Card>
     );
   }
@@ -41,25 +39,12 @@ export function ProjectCardGrid({ items, isLoading, onSelect }: Props) {
   );
 }
 
-function ProjectCard({
-  item,
-  onClick,
-}: {
-  item: PreannotateProjectSummary;
-  onClick: () => void;
-}) {
+function ProjectCard({ item, onClick }: { item: PreannotateProjectSummary; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={styles.projectCard}
-    >
+    <button type="button" onClick={onClick} className={styles.projectCard}>
       <div className={styles.cardTopRow}>
         <div className={styles.cardTitleBlock}>
-          <div
-            className={styles.projectName}
-            title={item.project_name}
-          >
+          <div className={styles.projectName} title={item.project_name}>
             {item.project_name}
           </div>
           <div className={styles.projectMeta}>
@@ -70,9 +55,7 @@ function ProjectCard({
       </div>
 
       <div className={styles.backendRow}>
-        <span
-          className={`${styles.backendChip} ${backendStateClass(item.ml_backend_state)}`}
-        >
+        <span className={`${styles.backendChip} ${backendStateClass(item.ml_backend_state)}`}>
           <Icon name="bot" size={10} />
           {item.ml_backend_name ?? "(未绑定)"}
           {item.ml_backend_state && ` · ${item.ml_backend_state}`}
@@ -85,8 +68,16 @@ function ProjectCard({
       </div>
 
       <div className={styles.statsRow}>
-        <BadgeStat label="可预标" value={item.active_batches} variant={item.active_batches > 0 ? "ai" : "muted"} />
-        <BadgeStat label="已就绪" value={item.ready_batches} variant={item.ready_batches > 0 ? "success" : "muted"} />
+        <BadgeStat
+          label="可预标"
+          value={item.active_batches}
+          variant={item.active_batches > 0 ? "ai" : "muted"}
+        />
+        <BadgeStat
+          label="已就绪"
+          value={item.ready_batches}
+          variant={item.ready_batches > 0 ? "success" : "muted"}
+        />
         <BadgeStat
           label="近期失败"
           value={item.recent_failures}
@@ -95,9 +86,7 @@ function ProjectCard({
       </div>
 
       {item.last_job_at && (
-        <div className={styles.lastJobText}>
-          最近 job · {formatRelative(item.last_job_at)}
-        </div>
+        <div className={styles.lastJobText}>最近 job · {formatRelative(item.last_job_at)}</div>
       )}
     </button>
   );
@@ -131,9 +120,7 @@ function EmptyState() {
     <Card>
       <div className={styles.emptyState}>
         <Icon name="bot" size={28} />
-        <div className={styles.emptyTitle}>
-          暂无接入 ML backend 的项目
-        </div>
+        <div className={styles.emptyTitle}>暂无接入 ML backend 的项目</div>
         <div className={styles.emptyHint}>
           先在「模式市场」注册 backend 或在项目设置中绑定一个 backend，再回到这里跑预标。
         </div>

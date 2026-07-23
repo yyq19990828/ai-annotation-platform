@@ -52,11 +52,7 @@ function mergeFileResults(items: FileImportPreview[]): PredictionImportResult {
   };
 }
 
-function failedFileResult(
-  fileName: string,
-  err: unknown,
-  dryRun: boolean,
-): PredictionImportResult {
+function failedFileResult(fileName: string, err: unknown, dryRun: boolean): PredictionImportResult {
   return {
     imported: 0,
     skipped: 1,
@@ -85,9 +81,7 @@ export function PredictionImportWizard({
   const [yoloVariant, setYoloVariant] = useState<YoloImportVariant>("det");
   const [files, setFiles] = useState<File[]>([]);
   const [modelVersion, setModelVersion] = useState("");
-  const [overwriteExisting, setOverwriteExisting] = useState(
-    initialTarget === "predictions",
-  );
+  const [overwriteExisting, setOverwriteExisting] = useState(initialTarget === "predictions");
   const [imageWidth, setImageWidth] = useState("");
   const [imageHeight, setImageHeight] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -156,12 +150,7 @@ export function PredictionImportWizard({
 
     const width = Number(widthText);
     const height = Number(heightText);
-    if (
-      !Number.isInteger(width) ||
-      !Number.isInteger(height) ||
-      width <= 0 ||
-      height <= 0
-    ) {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
       pushToast({ msg: "COCO 默认宽高必须是正整数", kind: "warning" });
       return null;
     }
@@ -185,11 +174,7 @@ export function PredictionImportWizard({
         setPreview(result);
         return result;
       } catch (err) {
-        const fallback = failedFileResult(
-          files.map((file) => file.name).join(", "),
-          err,
-          dryRun,
-        );
+        const fallback = failedFileResult(files.map((file) => file.name).join(", "), err, dryRun);
         setFileResults([]);
         setPreview(fallback);
         return fallback;
@@ -322,10 +307,7 @@ export function PredictionImportWizard({
               <label className={styles.formLabel}>文件</label>
               <label
                 htmlFor="pi-file"
-                className={clsx(
-                  styles.fileDrop,
-                  dragOver && styles.fileDropActive,
-                )}
+                className={clsx(styles.fileDrop, dragOver && styles.fileDropActive)}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(true);
@@ -336,9 +318,7 @@ export function PredictionImportWizard({
                 {files.length > 0 ? (
                   <>
                     <div>已选 {files.length} 个文件</div>
-                    <div className={styles.fileName}>
-                      {files.map((f) => f.name).join(", ")}
-                    </div>
+                    <div className={styles.fileName}>{files.map((f) => f.name).join(", ")}</div>
                   </>
                 ) : (
                   <div>
@@ -350,11 +330,7 @@ export function PredictionImportWizard({
                 <input
                   id="pi-file"
                   type="file"
-                  accept={
-                    format === "yolo"
-                      ? "application/zip,.zip"
-                      : "application/json,.json"
-                  }
+                  accept={format === "yolo" ? "application/zip,.zip" : "application/json,.json"}
                   multiple={format !== "yolo"}
                   hidden
                   onChange={(e) => handleFiles(e.target.files)}
@@ -435,11 +411,7 @@ export function PredictionImportWizard({
           <>
             <PreviewBox preview={preview} fileResults={fileResults} />
             <div className={styles.actions}>
-              <Button
-                variant="ghost"
-                onClick={() => setStep("select")}
-                disabled={submitting}
-              >
+              <Button variant="ghost" onClick={() => setStep("select")} disabled={submitting}>
                 返回修改
               </Button>
               <Button
@@ -479,12 +451,7 @@ function StepBar({ step }: { step: WizardStep }) {
     <div className={styles.stepBar}>
       {items.map((it, i) => (
         <span key={it.key}>
-          <span
-            className={clsx(
-              styles.stepDot,
-              i <= activeIdx && styles.stepDotActive,
-            )}
-          >
+          <span className={clsx(styles.stepDot, i <= activeIdx && styles.stepDotActive)}>
             {i + 1}
           </span>
           <span className={styles.stepLabel}>{it.label}</span>
@@ -515,9 +482,7 @@ function PreviewBox({
         </div>
         <div className={styles.previewStat}>
           <span className={styles.previewStatLabel}>错误</span>
-          <span className={styles.previewStatValue}>
-            {preview.errors.length}
-          </span>
+          <span className={styles.previewStatValue}>{preview.errors.length}</span>
         </div>
       </div>
 

@@ -4,11 +4,20 @@ import type { Pt } from "./polygon";
 
 describe("simplifyPolygon", () => {
   it("returns copy unchanged when n<4 or epsilon<=0", () => {
-    const tri: Pt[] = [[0, 0], [1, 0], [0.5, 1]];
+    const tri: Pt[] = [
+      [0, 0],
+      [1, 0],
+      [0.5, 1],
+    ];
     expect(simplifyPolygon(tri, 0.1)).toEqual(tri);
     expect(simplifyPolygon(tri, 0.1)).not.toBe(tri); // copy
 
-    const sq: Pt[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const sq: Pt[] = [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ];
     expect(simplifyPolygon(sq, 0)).toEqual(sq);
   });
 

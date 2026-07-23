@@ -21,7 +21,7 @@ export function isPointInPolygon(point: ScreenPoint, polygon: readonly ScreenPoi
     const a = polygon[j];
     const b = polygon[i];
     if (pointOnSegment(point, a, b)) return true;
-    const crosses = (a.y > point.y) !== (b.y > point.y);
+    const crosses = a.y > point.y !== b.y > point.y;
     if (!crosses) continue;
     const xAtY = ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
     if (point.x < xAtY) inside = !inside;
@@ -29,12 +29,7 @@ export function isPointInPolygon(point: ScreenPoint, polygon: readonly ScreenPoi
   return inside;
 }
 
-export function rectToPolygon(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): ScreenPoint[] {
+export function rectToPolygon(x0: number, y0: number, x1: number, y1: number): ScreenPoint[] {
   return [
     { x: x0, y: y0 },
     { x: x1, y: y0 },

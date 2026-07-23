@@ -73,7 +73,8 @@ export function buildSelectedTrackTimeline(
     const before = visibleKeyframes[i - 1];
     const after = visibleKeyframes[i];
     if (after.frame_index <= before.frame_index + 1) continue;
-    if (outsideRangesIntersect(outsideRanges, before.frame_index + 1, after.frame_index - 1)) continue;
+    if (outsideRangesIntersect(outsideRanges, before.frame_index + 1, after.frame_index - 1))
+      continue;
     interpolated.push({
       from: before.frame_index,
       to: after.frame_index,
@@ -112,7 +113,9 @@ export function buildGlobalTimelineDensity(
 
   const binOf = (frameIndex: number) => {
     const frame = Math.max(0, Math.min(safeMaxFrame, Math.floor(frameIndex)));
-    return safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
+    return safeMaxFrame > 0
+      ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount))
+      : 0;
   };
 
   for (const track of tracks) {
@@ -161,7 +164,9 @@ export function buildPredictionDensity(
   const counts = Array.from({ length: binCount }, () => 0);
   const binOf = (frameIndex: number) => {
     const frame = Math.max(0, Math.min(safeMaxFrame, Math.floor(frameIndex)));
-    return safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
+    return safeMaxFrame > 0
+      ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount))
+      : 0;
   };
   for (const frameIndex of predictedFrames) counts[binOf(frameIndex)] += 1;
   return counts.map((count, index) => {

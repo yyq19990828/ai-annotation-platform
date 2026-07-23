@@ -57,12 +57,10 @@ function ProjectRow({
   const total = p.total_tasks || 1;
   const pct = Math.round((p.completed_tasks / total) * 100);
   // v0.7.0：aiPct = AI 派生标注覆盖的任务数 / 总任务数（替换 v0.6.x 的启发式 pct * 0.6）
-  const aiPct = p.ai_enabled
-    ? Math.round(((p.ai_completed_tasks ?? 0) / total) * 100)
-    : 0;
+  const aiPct = p.ai_enabled ? Math.round(((p.ai_completed_tasks ?? 0) / total) * 100) : 0;
   // v0.6.7：「已动工」副条 = (in_progress + review + completed) / total，让 0 完成但有进度的项目可见
   const startedPct = Math.round(
-    ((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total * 100,
+    (((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total) * 100,
   );
   const due = p.due_date ?? "—";
   const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "—";
@@ -119,17 +117,22 @@ function ProjectRow({
             {(p.batch_summary?.total ?? 0) > 0 && (
               <div className="mt-[3px] text-xs text-muted-foreground">
                 {p.batch_summary?.total} 个批次
-                {(p.batch_summary?.assigned ?? 0) > 0 && (
-                  <> · {p.batch_summary?.assigned} 已分派</>
-                )}
+                {(p.batch_summary?.assigned ?? 0) > 0 && <> · {p.batch_summary?.assigned} 已分派</>}
                 {(p.batch_summary?.in_review ?? 0) > 0 && (
-                  <> · <span className="text-status-caution">{p.batch_summary?.in_review} 审核中</span></>
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span className="text-status-caution">{p.batch_summary?.in_review} 审核中</span>
+                  </>
                 )}
               </div>
             )}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onSettings(p, "batches"); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSettings(p, "batches");
+              }}
               className={BATCH_LINK_CLASS}
               title="跳转到项目设置 → 批次管理"
             >
@@ -149,9 +152,21 @@ function ProjectRow({
         )}
       </td>
       <td className={TD_CLASS}>
-        {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-        {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-        {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
+        {p.status === "in_progress" && (
+          <Badge variant="accent" dot>
+            进行中
+          </Badge>
+        )}
+        {p.status === "completed" && (
+          <Badge variant="success" dot>
+            已完成
+          </Badge>
+        )}
+        {p.status === "pending_review" && (
+          <Badge variant="warning" dot>
+            待审核
+          </Badge>
+        )}
       </td>
       <td className={TD_CLASS}>
         <div className="whitespace-nowrap text-xs">{due}</div>
@@ -164,7 +179,8 @@ function ProjectRow({
         <div className="flex justify-end gap-1">
           {canManage && (
             <Button size="sm" variant="ghost" onClick={() => onSettings(p)}>
-              <Icon name="settings" size={12} />设置
+              <Icon name="settings" size={12} />
+              设置
             </Button>
           )}
           <Button size="sm" onClick={() => onOpen(p)}>
@@ -179,10 +195,10 @@ function ProjectRow({
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
-  "全部": undefined,
-  "进行中": "in_progress",
-  "待审核": "pending_review",
-  "已完成": "completed",
+  全部: undefined,
+  进行中: "in_progress",
+  待审核: "pending_review",
+  已完成: "completed",
 };
 
 export function DashboardPage() {
@@ -222,7 +238,10 @@ export function DashboardPage() {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
+      pushToast({
+        msg: `项目 "${p.name}" 已打开`,
+        sub: `${projectDisplayType(p)} 的标注界面尚未实现`,
+      });
     }
   };
 
@@ -272,7 +291,8 @@ export function DashboardPage() {
         <div className="flex gap-2">
           <Can permission="dataset.create">
             <Button onClick={() => setImportOpen(true)}>
-              <Icon name="upload" size={13} />导入数据集
+              <Icon name="upload" size={13} />
+              导入数据集
             </Button>
             <ImportDatasetWizard
               open={importOpen}
@@ -282,9 +302,14 @@ export function DashboardPage() {
           </Can>
           <Can permission="project.create">
             <Button variant="primary" onClick={openWizard}>
-              <Icon name="plus" size={13} />新建项目
+              <Icon name="plus" size={13} />
+              新建项目
             </Button>
-            <CreateProjectWizard open={wizardOpen} onClose={closeWizard} sourceProjectId={wizardSourceProjectId} />
+            <CreateProjectWizard
+              open={wizardOpen}
+              onClose={closeWizard}
+              sourceProjectId={wizardSourceProjectId}
+            />
           </Can>
         </div>
       </div>
@@ -337,7 +362,8 @@ export function DashboardPage() {
           <div className="flex gap-2 max-[900px]:flex-wrap">
             <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
             <Button onClick={() => setFilterOpen(true)}>
-              <Icon name="filter" size={13} />筛选
+              <Icon name="filter" size={13} />
+              筛选
               {advancedActiveCount > 0 && (
                 <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-1.5 text-2xs leading-none text-brand">
                   {advancedActiveCount}
@@ -384,15 +410,16 @@ export function DashboardPage() {
                     </td>
                   </tr>
                 )}
-                {!isLoading && projects.map((p) => (
-                  <ProjectRow
-                    key={p.id}
-                    p={p}
-                    onOpen={onOpenProject}
-                    canManage={canManageProject(p)}
-                    onSettings={onSettings}
-                  />
-                ))}
+                {!isLoading &&
+                  projects.map((p) => (
+                    <ProjectRow
+                      key={p.id}
+                      p={p}
+                      onOpen={onOpenProject}
+                      canManage={canManageProject(p)}
+                      onSettings={onSettings}
+                    />
+                  ))}
                 {!isLoading && projects.length === 0 && (
                   <tr>
                     <td colSpan={7} className="p-10 text-center text-muted-foreground">
@@ -451,7 +478,9 @@ export function DashboardPage() {
                           {it.target_type}
                           {it.target_id && (
                             <span className="mono ml-1">
-                              {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
+                              {it.target_id.length > 24
+                                ? it.target_id.slice(0, 8) + "…"
+                                : it.target_id}
                             </span>
                           )}
                         </span>

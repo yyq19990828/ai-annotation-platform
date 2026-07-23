@@ -69,105 +69,105 @@ graph TB
 
 ### 2.1 数据库 (PostgreSQL)
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `DATABASE_URL` **必填** | dev 连本机 | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。 |
+| 变量                                                  | 默认                           | 说明                                                                                                                                                                                                                                          |
+| ----------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` **必填**                               | dev 连本机                     | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。                                                                     |
 
 容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）在启动时**自动** `alembic upgrade head`，无需手动跑。进程式部署才需手动 `uv run alembic upgrade head`（见 §4.5）。
 
 ### 2.2 缓存 / 消息队列 (Redis)
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
+| 变量                 | 默认                       | 说明                                                                                               |
+| -------------------- | -------------------------- | -------------------------------------------------------------------------------------------------- |
 | `REDIS_URL` **必填** | `redis://localhost:6379/0` | 同时承担：Celery broker、result backend、WebSocket pub/sub、限流计数、token 黑名单，无需单独配置。 |
-| `CELERY_BROKER_URL` | 空 → 复用 `REDIS_URL` | 想拆开 broker（如换 RabbitMQ）时单独设。 |
+| `CELERY_BROKER_URL`  | 空 → 复用 `REDIS_URL`      | 想拆开 broker（如换 RabbitMQ）时单独设。                                                           |
 
 > Redis 建议为生产挂 AOF volume——dev 容器**没**挂 volume，重启即清空所有队列与限流计数。详见 [后端基础设施](/dev/concepts/backend-infrastructure)。
 
 ### 2.3 对象存储 (MinIO / S3 兼容)
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `MINIO_ENDPOINT` **必填** | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。 |
-| `MINIO_ACCESS_KEY` **必填** | `minioadmin` | 等价 AWS Access Key ID。 |
-| `MINIO_SECRET_KEY` **必填** | `minioadmin` | 生产**必须**换。 |
-| `MINIO_BUCKET` | `annotations` | 主标注文件桶（图像 / 视频帧）。 |
-| `MINIO_DATASETS_BUCKET` | `datasets` | 上传 dataset 桶。 |
-| `MINIO_BUG_REPORTS_BUCKET` | `bug-reports` | bug 反馈附件桶。 |
-| `MINIO_DATA_DIR` | `miniodata` | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。 |
-| `MINIO_PUBLIC_URL` | 空 | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。 |
-| `MINIO_USE_SSL` | `false` | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。 |
-| `ML_BACKEND_STORAGE_HOST` | 空 | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
-| `ML_BACKEND_DEFAULT_URL` | 空 | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。 |
-| `MASK_FORMAT_TEMP_QUOTA_BYTES` | `8589934592` | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。 |
-| `MASK_FORMAT_MAX_ENTRY_BYTES` | `536870912` | 安全 archive 单 entry 的最大展开字节数。 |
-| `MASK_FORMAT_MAX_ARCHIVE_FILES` | `200000` | 单个 Mask 格式包允许的最大文件数。 |
-| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100` | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。 |
+| 变量                                | 默认             | 说明                                                                                                                                                                 |
+| ----------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MINIO_ENDPOINT` **必填**           | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。                                                                                                |
+| `MINIO_ACCESS_KEY` **必填**         | `minioadmin`     | 等价 AWS Access Key ID。                                                                                                                                             |
+| `MINIO_SECRET_KEY` **必填**         | `minioadmin`     | 生产**必须**换。                                                                                                                                                     |
+| `MINIO_BUCKET`                      | `annotations`    | 主标注文件桶（图像 / 视频帧）。                                                                                                                                      |
+| `MINIO_DATASETS_BUCKET`             | `datasets`       | 上传 dataset 桶。                                                                                                                                                    |
+| `MINIO_BUG_REPORTS_BUCKET`          | `bug-reports`    | bug 反馈附件桶。                                                                                                                                                     |
+| `MINIO_DATA_DIR`                    | `miniodata`      | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。                        |
+| `MINIO_PUBLIC_URL`                  | 空               | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。                                                                     |
+| `MINIO_USE_SSL`                     | `false`          | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。                                                                                                      |
+| `ML_BACKEND_STORAGE_HOST`           | 空               | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
+| `ML_BACKEND_DEFAULT_URL`            | 空               | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。                                                                                              |
+| `MASK_FORMAT_TEMP_QUOTA_BYTES`      | `8589934592`     | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。                                                                                         |
+| `MASK_FORMAT_MAX_ENTRY_BYTES`       | `536870912`      | 安全 archive 单 entry 的最大展开字节数。                                                                                                                             |
+| `MASK_FORMAT_MAX_ARCHIVE_FILES`     | `200000`         | 单个 Mask 格式包允许的最大文件数。                                                                                                                                   |
+| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100`            | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。                                                                                                       |
 
 Mask 格式 staged object 使用 import bucket，导出产物使用 export bucket，两者均由 API 初始化为 7 天 lifecycle。
 调小配额时应同时观察 `media` / `export` 队列的失败率；只需修改 `.env` 并重建容器，不需要重建镜像。
 
 ### 2.4 认证 / 安全
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `SECRET_KEY` **必填** | `change-this-...` | JWT 签名密钥，≥ 32 字节随机串。`ENVIRONMENT=production` 仍是默认值时启动会 RuntimeError（`apps/api/app/main.py:50-57`）。生成：`python -c "import secrets; print(secrets.token_hex(32))"`。 |
-| `ALLOW_OPEN_REGISTRATION` | `false` | 自助注册开关，可在 SettingsPage 热更新覆盖。 |
-| `REQUIRE_EMAIL_VERIFICATION` | 空（按环境派生） | 开放注册是否强制邮箱验证。留空时 production 默认开、dev/staging 默认关；显式 `true`/`false` 覆盖。开启后注册需点邮件链接验证才能登录，邀请注册恒视为已验证。依赖 SMTP 配置（未配时验证链接仅写日志）。 |
-| `TURNSTILE_ENABLED` | `false` | Cloudflare Turnstile CAPTCHA。开启后 `/auth/register-open` `/auth/forgot-password` 必须带 `captcha_token`。 |
-| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 空 | 启用 Turnstile 时配套；secret 绝不暴露给前端。 |
-| `AUDIT_RETENTION_MONTHS` | `12` | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP。 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`（24h） | 未列入 `.env.example`；高敏环境调到 `480`（8h）。 |
+| 变量                                          | 默认              | 说明                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SECRET_KEY` **必填**                         | `change-this-...` | JWT 签名密钥，≥ 32 字节随机串。`ENVIRONMENT=production` 仍是默认值时启动会 RuntimeError（`apps/api/app/main.py:50-57`）。生成：`python -c "import secrets; print(secrets.token_hex(32))"`。            |
+| `ALLOW_OPEN_REGISTRATION`                     | `false`           | 自助注册开关，可在 SettingsPage 热更新覆盖。                                                                                                                                                           |
+| `REQUIRE_EMAIL_VERIFICATION`                  | 空（按环境派生）  | 开放注册是否强制邮箱验证。留空时 production 默认开、dev/staging 默认关；显式 `true`/`false` 覆盖。开启后注册需点邮件链接验证才能登录，邀请注册恒视为已验证。依赖 SMTP 配置（未配时验证链接仅写日志）。 |
+| `TURNSTILE_ENABLED`                           | `false`           | Cloudflare Turnstile CAPTCHA。开启后 `/auth/register-open` `/auth/forgot-password` 必须带 `captcha_token`。                                                                                            |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 空                | 启用 Turnstile 时配套；secret 绝不暴露给前端。                                                                                                                                                         |
+| `AUDIT_RETENTION_MONTHS`                      | `12`              | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP。                                                                                   |
+| `ACCESS_TOKEN_EXPIRE_MINUTES`                 | `1440`（24h）     | 未列入 `.env.example`；高敏环境调到 `480`（8h）。                                                                                                                                                      |
 
 ### 2.5 前端
 
 > 前端 API base 是硬编码的同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），**不读 `VITE_API_URL`**——dev 由 vite proxy、生产由 web 容器内 nginx 反代 `/api/`→`api:8000`，故无需构建时注入 API 地址。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `VITE_TURNSTILE_SITE_KEY` | 空 | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。 |
-| `VITE_SENTRY_DSN` | 空 | 前端 Sentry DSN；留空禁用前端错误上报。 |
-| `FRONTEND_BASE_URL` | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
+| 变量                      | 默认                    | 说明                                                           |
+| ------------------------- | ----------------------- | -------------------------------------------------------------- |
+| `VITE_TURNSTILE_SITE_KEY` | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。    |
+| `VITE_SENTRY_DSN`         | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                        |
+| `FRONTEND_BASE_URL`       | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
 
 ### 2.6 错误监控 (Sentry)
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `SENTRY_DSN` | 空 | 后端 DSN；留空完全不启用 SDK（不会偷偷上报）。 |
-| `SENTRY_ENVIRONMENT` | `development` | 环境标签 → Sentry 看板按 `development / staging / production` 分组。 |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | 性能追踪采样率（0–1）。流量大时按比例降。 |
+| 变量                        | 默认          | 说明                                                                 |
+| --------------------------- | ------------- | -------------------------------------------------------------------- |
+| `SENTRY_DSN`                | 空            | 后端 DSN；留空完全不启用 SDK（不会偷偷上报）。                       |
+| `SENTRY_ENVIRONMENT`        | `development` | 环境标签 → Sentry 看板按 `development / staging / production` 分组。 |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1`         | 性能追踪采样率（0–1）。流量大时按比例降。                            |
 
 > production 启动若 `ENVIRONMENT=production` 但 `SENTRY_DSN` 为空，lifespan 会打 WARN（不阻断启动），便于 Sentry 失踪不悄悄发生。
 
 ### 2.7 跨域 (CORS)
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
+| 变量                                     | 默认                            | 说明                                                                                                          |
+| ---------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `CORS_ALLOW_ORIGINS` **production 必填** | dev 默认放行 localhost 常用端口 | 支持 JSON 数组 `["https://app.example.com"]` 或逗号分隔。即便前后端同源也要显式列；`main.py:71-74` 启动断言。 |
-| `CORS_ALLOW_ORIGIN_REGEX` | dev `http://localhost:\d+` | 仅 `dev / staging` 生效，production 自动忽略以防误把本机正则上线。 |
+| `CORS_ALLOW_ORIGIN_REGEX`                | dev `http://localhost:\d+`      | 仅 `dev / staging` 生效，production 自动忽略以防误把本机正则上线。                                            |
 
 ### 2.8 Grounded-SAM-2 ML Backend (GPU profile)
 
 仅当启用 `docker-compose.ml.yml` 的 `--profile gpu` 拉起 grounded-sam2-backend 时生效。详见 §8.5。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `SAM_VARIANT` | `tiny` | 精度 / 显存递增：`tiny` → `small` → `base_plus` → `large`（4060 8G 选 tiny）。 |
-| `DINO_VARIANT` | `T` | `T`（Swin-T 默认）/ `B`（Swin-B 更准但显存翻倍）。 |
-| `BOX_THRESHOLD` | `0.35` | DINO 检测阈值；召回不足 → `0.25`，误检多 → `0.45`。 |
-| `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值；短语 prompt 一般 0.25 即可。 |
-| `GSAM2_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
-| `MODEL_POOL_CAP` | `1` | 同容器内并存的 `(sam_variant, dino_variant)` 变体数上限（LRU 驱逐）。`1` = 维持单变体常驻；切变体走「驱逐旧 + 冷启新」。按显存预算调，见下表。 |
-| `MODEL_POOL_BUILD_TIMEOUT` | `30` | pool 满 + 并发 miss 时排队等显存腾挪的超时（秒），超时返回 503「显存繁忙，稍后重试」。 |
-| `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的 SAM 变体 checkpoint（主变体 `SAM_VARIANT` 之外）。逗号分隔。pool 能服务多变体，但只有这里声明（+ 主变体）的 checkpoint 会落盘，**运行期请求未预拉的变体返回 503**。磁盘紧张时裁剪。 |
-| `PREFETCH_DINO_VARIANTS` | `T,B` | 同上，GroundingDINO 变体。 |
-| `IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存；`<=0` 关闭定时卸载（仍可手动 `POST /unload`）。 |
-| `IDLE_CHECK_INTERVAL` | `60` | 上面空闲判断的轮询间隔（秒）。 |
-| `VIDEO_MODEL_POOL_CAP` | `1` | v0.10.35 · sam2_video tracker 的**独立**显存池上限，与图片池预算分离、互不驱逐。 |
-| `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 时排队等显存的超时（秒）。 |
-| `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 `init_state` 一次性加载的最大帧数（安全上限，防超长窗口灌爆显存）。 |
-| `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载（与图片池 `IDLE_UNLOAD_SECONDS` 各自计时）；`<=0` 关闭。 |
+| 变量                              | 默认                         | 说明                                                                                                                                                                                                            |
+| --------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SAM_VARIANT`                     | `tiny`                       | 精度 / 显存递增：`tiny` → `small` → `base_plus` → `large`（4060 8G 选 tiny）。                                                                                                                                  |
+| `DINO_VARIANT`                    | `T`                          | `T`（Swin-T 默认）/ `B`（Swin-B 更准但显存翻倍）。                                                                                                                                                              |
+| `BOX_THRESHOLD`                   | `0.35`                       | DINO 检测阈值；召回不足 → `0.25`，误检多 → `0.45`。                                                                                                                                                             |
+| `TEXT_THRESHOLD`                  | `0.25`                       | DINO 文本-标签匹配阈值；短语 prompt 一般 0.25 即可。                                                                                                                                                            |
+| `GSAM2_LOG_LEVEL`                 | `INFO`                       | `DEBUG / INFO / WARNING`。                                                                                                                                                                                      |
+| `MODEL_POOL_CAP`                  | `1`                          | 同容器内并存的 `(sam_variant, dino_variant)` 变体数上限（LRU 驱逐）。`1` = 维持单变体常驻；切变体走「驱逐旧 + 冷启新」。按显存预算调，见下表。                                                                  |
+| `MODEL_POOL_BUILD_TIMEOUT`        | `30`                         | pool 满 + 并发 miss 时排队等显存腾挪的超时（秒），超时返回 503「显存繁忙，稍后重试」。                                                                                                                          |
+| `PREFETCH_SAM_VARIANTS`           | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的 SAM 变体 checkpoint（主变体 `SAM_VARIANT` 之外）。逗号分隔。pool 能服务多变体，但只有这里声明（+ 主变体）的 checkpoint 会落盘，**运行期请求未预拉的变体返回 503**。磁盘紧张时裁剪。 |
+| `PREFETCH_DINO_VARIANTS`          | `T,B`                        | 同上，GroundingDINO 变体。                                                                                                                                                                                      |
+| `IDLE_UNLOAD_SECONDS`             | `600`                        | 空闲 N 秒后自动卸载模型释放显存；`<=0` 关闭定时卸载（仍可手动 `POST /unload`）。                                                                                                                                |
+| `IDLE_CHECK_INTERVAL`             | `60`                         | 上面空闲判断的轮询间隔（秒）。                                                                                                                                                                                  |
+| `VIDEO_MODEL_POOL_CAP`            | `1`                          | v0.10.35 · sam2_video tracker 的**独立**显存池上限，与图片池预算分离、互不驱逐。                                                                                                                                |
+| `VIDEO_MODEL_POOL_BUILD_TIMEOUT`  | `60`                         | video 池满 + 并发 miss 时排队等显存的超时（秒）。                                                                                                                                                               |
+| `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300`                        | 单次 `init_state` 一次性加载的最大帧数（安全上限，防超长窗口灌爆显存）。                                                                                                                                        |
+| `VIDEO_IDLE_UNLOAD_SECONDS`       | `600`                        | video 池独立 idle 卸载（与图片池 `IDLE_UNLOAD_SECONDS` 各自计时）；`<=0` 关闭。                                                                                                                                 |
 
 > **多变体 checkpoint 预拉**：ModelPool 让运行期能切任意 `(sam_variant, dino_variant)`，但 checkpoint 必须先落盘。磁盘预算大致 `tiny ~150M / small ~180M / base_plus ~320M / large ~900M`，DINO `T ~680M / B(SwinB) ~940M`；全量约 3.2GB。
 >
@@ -175,11 +175,11 @@ Mask 格式 staged object 使用 import bucket，导出产物使用 export bucke
 >
 > **按显存预算配 `MODEL_POOL_CAP`**：变体热切换让前端可按会话切 `(sam_variant, dino_variant)`，pool 把多个变体常驻显存以省冷启。cap 越大并存越多、切换越快，但显存占用线性上升（单变体 tiny/small ~2–4GB，large + SwinB 峰值 ~6–8GB）。
 >
-> | GPU | 显存 | 建议 `MODEL_POOL_CAP` | 说明 |
-> |---|---|---|---|
-> | RTX 4060 | 8G | `1` | 仅够单变体常驻；切变体冷启 1–3s，可接受。 |
-> | RTX 3090 | 24G | `1–2` | 2 时 tiny/large 可并存，切换无冷启。 |
-> | A100 | 40/80G | `2–4` | 多变体并存，团队多人并发切换最顺。 |
+> | GPU      | 显存   | 建议 `MODEL_POOL_CAP` | 说明                                      |
+> | -------- | ------ | --------------------- | ----------------------------------------- |
+> | RTX 4060 | 8G     | `1`                   | 仅够单变体常驻；切变体冷启 1–3s，可接受。 |
+> | RTX 3090 | 24G    | `1–2`                 | 2 时 tiny/large 可并存，切换无冷启。      |
+> | A100     | 40/80G | `2–4`                 | 多变体并存，团队多人并发切换最顺。        |
 >
 > cap 设过大触发 OOM 时，pool 在驱逐前先腾位（驱逐到 cap-1 再 build 新变体），并发 miss 排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503 而非 OOM。保守起步用 `1`，观察 `/health.pool.evict_count` 与显存占用再调高。
 
@@ -187,41 +187,41 @@ Mask 格式 staged object 使用 import bucket，导出产物使用 export bucke
 
 v0.10.0+ 的高精度 backend（`facebookresearch/sam3` + `facebook/sam3.1` 权重），独立 profile `gpu-sam3`，与 grounded-sam2 的 `gpu` profile 解耦、两者可并存（sam3 高精度首选，grounded-sam2 4060 友好兜底）。仅当启用 `docker-compose.ml.yml` 的 `--profile gpu-sam3` 拉起 sam3-backend 时生效，监听 `8002`。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `HF_TOKEN` **必填** | 空 | sam3（图像）与 sam3.1（视频，预留）权重均为 gated repo（合计 ~6.6GB），首次启动下载必须带；`start_period=180s`。 |
-| `SAM3_DOWNLOAD_VIDEO` | `1` | 启动时是否下载 sam3.1 视频权重与 config；设 `0` 可只运行图像能力，但 `sam3_video*` 调用会不可用。 |
-| `SAM3_EMBEDDING_CACHE_SIZE` | `32` | 图像 embedding LRU 缓存条数。 |
-| `SAM3_SCORE_THRESHOLD` | `0.5` | 检测置信度阈值；召回不足下调、误检多上调。 |
-| `SAM3_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
-| `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒自动卸载释放显存（sam3 ~7GB FP16，与 grounded-sam2 并存时强烈建议保留）；`<=0` 关闭。前缀与 grounded-sam2 的 `IDLE_*` 解耦，可独立调。 |
-| `SAM3_IDLE_CHECK_INTERVAL` | `60` | 空闲判断轮询间隔（秒）。 |
-| `SAM3_GPU_DEVICE_ID` | `1` | Compose 绑定的物理 GPU。默认与其它 backend 错开到卡 1；单卡机器必须改为 `0`。每个 backend 只能绑定一个 GPU/MIG，多值或已暴露 GPU 的 `all` 会在启动时被拒绝。 |
+| 变量                        | 默认   | 说明                                                                                                                                                         |
+| --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `HF_TOKEN` **必填**         | 空     | sam3（图像）与 sam3.1（视频，预留）权重均为 gated repo（合计 ~6.6GB），首次启动下载必须带；`start_period=180s`。                                             |
+| `SAM3_DOWNLOAD_VIDEO`       | `1`    | 启动时是否下载 sam3.1 视频权重与 config；设 `0` 可只运行图像能力，但 `sam3_video*` 调用会不可用。                                                            |
+| `SAM3_EMBEDDING_CACHE_SIZE` | `32`   | 图像 embedding LRU 缓存条数。                                                                                                                                |
+| `SAM3_SCORE_THRESHOLD`      | `0.5`  | 检测置信度阈值；召回不足下调、误检多上调。                                                                                                                   |
+| `SAM3_LOG_LEVEL`            | `INFO` | `DEBUG / INFO / WARNING`。                                                                                                                                   |
+| `SAM3_IDLE_UNLOAD_SECONDS`  | `600`  | 空闲 N 秒自动卸载释放显存（sam3 ~7GB FP16，与 grounded-sam2 并存时强烈建议保留）；`<=0` 关闭。前缀与 grounded-sam2 的 `IDLE_*` 解耦，可独立调。              |
+| `SAM3_IDLE_CHECK_INTERVAL`  | `60`   | 空闲判断轮询间隔（秒）。                                                                                                                                     |
+| `SAM3_GPU_DEVICE_ID`        | `1`    | Compose 绑定的物理 GPU。默认与其它 backend 错开到卡 1；单卡机器必须改为 `0`。每个 backend 只能绑定一个 GPU/MIG，多值或已暴露 GPU 的 `all` 会在启动时被拒绝。 |
 
 > 镜像基础 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`（比 grounded-sam2 的 2.3.1-cuda12.1 更新，注意宿主 nvidia 驱动需支持 CUDA 12.8）。`docker-compose.ml.yml` 会显式透传 `SAM3_DOWNLOAD_VIDEO`；修改 `.env` 后需 recreate `sam3-backend`。
 
 ### 2.9 部署环境
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
+| 变量                   | 默认          | 说明                                                                                                                                   |
+| ---------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `ENVIRONMENT` **必填** | `development` | `development / staging / production`。决定多个安全开关：CORS 严格断言、SECRET_KEY 默认值检测、Sentry 缺失告警、CORS regex 是否生效等。 |
 
 ### 2.10 未列入 `.env.example` 的可选项
 
 `config.py` 支持但 `.env.example` 没列出，按需在 `.env.production` 显式添加：
 
-| 变量 | 默认 | 何时改 |
-|---|---|---|
-| `MAX_INVITATIONS_PER_DAY` | `30` | 邀请活动期临时调高 |
-| `INVITATION_TTL_DAYS` | `7` | 合规要求短链 → `1–3` |
-| `ML_PREDICT_TIMEOUT` | `100` 秒 | LLM 慢 backend 调到 ≥ 180 |
-| `ML_HEALTH_TIMEOUT` | `10` 秒 | 通常不需动；冷启动慢的 backend 适当上调 |
-| `AUDIT_ASYNC` | `true` | broker 故障时回退 `false`（强一致但慢） |
-| `TASK_EVENTS_ASYNC` | `true` | 同上，针对 task event 流 |
-| `OFFLINE_THRESHOLD_MINUTES` | `5` | 在线状态心跳判断窗口 |
-| `LOGIN_CAPTCHA_THRESHOLD` | `5` | 同 IP 登录失败几次后强制 Turnstile |
-| `LOGIN_FAILED_WINDOW_SECONDS` | `3600` | 上面失败计数的窗口长度 |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_FROM` | 空 | 启用密码重置邮件 / bug digest 时配齐 |
+| 变量                                                            | 默认     | 何时改                                  |
+| --------------------------------------------------------------- | -------- | --------------------------------------- |
+| `MAX_INVITATIONS_PER_DAY`                                       | `30`     | 邀请活动期临时调高                      |
+| `INVITATION_TTL_DAYS`                                           | `7`      | 合规要求短链 → `1–3`                    |
+| `ML_PREDICT_TIMEOUT`                                            | `100` 秒 | LLM 慢 backend 调到 ≥ 180               |
+| `ML_HEALTH_TIMEOUT`                                             | `10` 秒  | 通常不需动；冷启动慢的 backend 适当上调 |
+| `AUDIT_ASYNC`                                                   | `true`   | broker 故障时回退 `false`（强一致但慢） |
+| `TASK_EVENTS_ASYNC`                                             | `true`   | 同上，针对 task event 流                |
+| `OFFLINE_THRESHOLD_MINUTES`                                     | `5`      | 在线状态心跳判断窗口                    |
+| `LOGIN_CAPTCHA_THRESHOLD`                                       | `5`      | 同 IP 登录失败几次后强制 Turnstile      |
+| `LOGIN_FAILED_WINDOW_SECONDS`                                   | `3600`   | 上面失败计数的窗口长度                  |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_FROM` | 空       | 启用密码重置邮件 / bug digest 时配齐    |
 
 ---
 
@@ -272,6 +272,7 @@ server {
 ```
 
 注意：
+
 - `proxy_read_timeout` 必须 ≥ WS 心跳间隔（30s，`apps/api/app/api/v1/ws.py:33`）。建议 300s 给一定缓冲。
 - `X-Forwarded-For` 是必传——审计日志的 IP 字段从这里拿（`apps/api/app/services/audit.py:69-77`）。
 - Web 静态资源上 `Cache-Control: public, max-age=31536000, immutable` 给 hashed assets，HTML 走 `no-cache`。
@@ -331,6 +332,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec \
 ```
 
 脚本：[`apps/api/scripts/bootstrap_admin.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/scripts/bootstrap_admin.py)。
+
 - 已存在同邮箱用户时跳过（不更新角色）
 - 写一行 `audit_logs.action = system.bootstrap_admin`，可在 SettingsPage 审计日志页搜索追溯
 - **跑完后立即从 shell history 清除明文密码**，并要求该账号首次登录后改密
@@ -389,6 +391,7 @@ pg_dump -Fc -U user -d annotation -f /backup/anno-$(date +%F).pgdump
 ```
 
 恢复：
+
 ```bash
 pg_restore -U user -d annotation_new -j 4 /backup/anno-2026-05-06.pgdump
 ```
@@ -408,6 +411,7 @@ mc mirror anno/datasets    s3-backup/anno/datasets
 ### 5.3 Redis
 
 不需要持久备份——Redis 当前只装：
+
 - Celery 队列（短暂）
 - 限流计数（5 分钟窗口）
 - token 黑名单（≤ token 剩余有效期）
@@ -459,14 +463,14 @@ docker compose -f docker-compose.yml -f docker-compose.hostvols.yml up -d
 
 平台暴露多个健康检查（不需鉴权）：
 
-| 端点 | 检查项 | 用途 |
-|---|---|---|
-| `/health` | 基础进程存活 | LB liveness |
-| `/health/db` | PG 可读 | k8s readinessProbe |
-| `/health/redis` | Redis ping | 同上 |
-| `/health/minio` | MinIO bucket 存在 | 同上 |
-| `/health/celery` | broker + 一个 worker 应答 | DataDog / Grafana |
-| `/metrics` | Prometheus exposition | 仅内网 |
+| 端点             | 检查项                    | 用途               |
+| ---------------- | ------------------------- | ------------------ |
+| `/health`        | 基础进程存活              | LB liveness        |
+| `/health/db`     | PG 可读                   | k8s readinessProbe |
+| `/health/redis`  | Redis ping                | 同上               |
+| `/health/minio`  | MinIO bucket 存在         | 同上               |
+| `/health/celery` | broker + 一个 worker 应答 | DataDog / Grafana  |
+| `/metrics`       | Prometheus exposition     | 仅内网             |
 
 LB 配置 `livenessProbe → /health`、`readinessProbe → /health/db`。`/metrics` 不要暴露公网（包含 path 维度 label，可能泄露内部路由）。
 
@@ -683,6 +687,7 @@ backend `/health` 返回新增 `gpu_info` / `cache` 子对象，便于运维一�
 ## 9. 待补（roadmap）
 
 参考 ROADMAP.md：
+
 - HTTPS 强制 / HSTS / CSP middleware（B §安全）
 - 审计日志归档按月 PARTITION + S3 冷备（B §治理）
 - 真正的 K8s helm chart / terraform module — 暂未维护，进 P3

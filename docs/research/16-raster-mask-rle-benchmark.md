@@ -10,54 +10,54 @@ The storage decision is driven by uncompressed JSONB rewrite and staged-candidat
 
 ## Gate measurements
 
-| Measurement | Bytes | Limit |
-|---|---:|---:|
-| Real SAM 1080p p95 single RLE | 3,727 | 1,000,000 runs |
-| Actual 30 frames x 1 track geometry | 114,419 | 8 MiB |
-| Projected 3000 frames x 1 track geometry | 11,431,900 | 8 MiB |
-| Actual 30 frames x 10 targets staged JSON | 1,144,550 | 64 MiB |
-| Actual 30 x 10 staged gzip | 9,664 | informational |
-| Projected 300 frames x 10 targets staged JSON | 11,431,900 | 64 MiB |
+| Measurement                                   |      Bytes |          Limit |
+| --------------------------------------------- | ---------: | -------------: |
+| Real SAM 1080p p95 single RLE                 |      3,727 | 1,000,000 runs |
+| Actual 30 frames x 1 track geometry           |    114,419 |          8 MiB |
+| Projected 3000 frames x 1 track geometry      | 11,431,900 |          8 MiB |
+| Actual 30 frames x 10 targets staged JSON     |  1,144,550 |         64 MiB |
+| Actual 30 x 10 staged gzip                    |      9,664 |  informational |
+| Projected 300 frames x 10 targets staged JSON | 11,431,900 |         64 MiB |
 
 ## Real SAM samples
 
-| Resolution | Sample | Runs | RLE JSON bytes | Gzip bytes | Python decode p95 ms |
-|---|---|---:|---:|---:|---:|
-| 720p | real_sam_01_building | 635 | 2,440 | 724 | 1.87 |
-| 720p | real_sam_01_car | 561 | 2,099 | 705 | 1.26 |
-| 720p | real_sam_01_person | 297 | 1,071 | 501 | 0.43 |
-| 720p | real_sam_02_building | 651 | 2,473 | 751 | 1.91 |
-| 720p | real_sam_02_car | 579 | 2,144 | 725 | 1.32 |
-| 720p | real_sam_02_person | 191 | 706 | 352 | 0.28 |
-| 1080p | real_sam_01_building | 953 | 3,659 | 1,078 | 4.25 |
-| 1080p | real_sam_01_car | 845 | 3,192 | 1,085 | 2.82 |
-| 1080p | real_sam_01_person | 455 | 1,684 | 728 | 0.87 |
-| 1080p | real_sam_02_building | 981 | 3,727 | 1,114 | 3.98 |
-| 1080p | real_sam_02_car | 867 | 3,245 | 1,091 | 2.86 |
-| 1080p | real_sam_02_person | 295 | 1,117 | 516 | 0.59 |
-| 4k | real_sam_01_building | 1,905 | 8,143 | 1,340 | 16.37 |
-| 4k | real_sam_01_car | 1,689 | 7,100 | 1,386 | 11.95 |
-| 4k | real_sam_01_person | 909 | 3,717 | 1,005 | 3.54 |
-| 4k | real_sam_02_building | 1,961 | 8,299 | 1,402 | 16.38 |
-| 4k | real_sam_02_car | 1,733 | 7,232 | 1,402 | 11.70 |
-| 4k | real_sam_02_person | 589 | 2,423 | 697 | 2.41 |
+| Resolution | Sample               |  Runs | RLE JSON bytes | Gzip bytes | Python decode p95 ms |
+| ---------- | -------------------- | ----: | -------------: | ---------: | -------------------: |
+| 720p       | real_sam_01_building |   635 |          2,440 |        724 |                 1.87 |
+| 720p       | real_sam_01_car      |   561 |          2,099 |        705 |                 1.26 |
+| 720p       | real_sam_01_person   |   297 |          1,071 |        501 |                 0.43 |
+| 720p       | real_sam_02_building |   651 |          2,473 |        751 |                 1.91 |
+| 720p       | real_sam_02_car      |   579 |          2,144 |        725 |                 1.32 |
+| 720p       | real_sam_02_person   |   191 |            706 |        352 |                 0.28 |
+| 1080p      | real_sam_01_building |   953 |          3,659 |      1,078 |                 4.25 |
+| 1080p      | real_sam_01_car      |   845 |          3,192 |      1,085 |                 2.82 |
+| 1080p      | real_sam_01_person   |   455 |          1,684 |        728 |                 0.87 |
+| 1080p      | real_sam_02_building |   981 |          3,727 |      1,114 |                 3.98 |
+| 1080p      | real_sam_02_car      |   867 |          3,245 |      1,091 |                 2.86 |
+| 1080p      | real_sam_02_person   |   295 |          1,117 |        516 |                 0.59 |
+| 4k         | real_sam_01_building | 1,905 |          8,143 |      1,340 |                16.37 |
+| 4k         | real_sam_01_car      | 1,689 |          7,100 |      1,386 |                11.95 |
+| 4k         | real_sam_01_person   |   909 |          3,717 |      1,005 |                 3.54 |
+| 4k         | real_sam_02_building | 1,961 |          8,299 |      1,402 |                16.38 |
+| 4k         | real_sam_02_car      | 1,733 |          7,232 |      1,402 |                11.70 |
+| 4k         | real_sam_02_person   |   589 |          2,423 |        697 |                 2.41 |
 
 ## Node decode
 
-| Resolution | Sample | p50 ms | p95 ms |
-|---|---|---:|---:|
-| 1080p | real_sam_01_building | 0.17 | 0.23 |
-| 1080p | real_sam_01_car | 0.14 | 0.14 |
-| 1080p | real_sam_01_person | 0.08 | 0.14 |
-| 1080p | real_sam_02_building | 0.16 | 0.16 |
-| 1080p | real_sam_02_car | 0.09 | 0.11 |
-| 1080p | real_sam_02_person | 0.05 | 0.13 |
-| 4k | real_sam_01_building | 0.65 | 0.86 |
-| 4k | real_sam_01_car | 0.55 | 0.81 |
-| 4k | real_sam_01_person | 0.15 | 0.40 |
-| 4k | real_sam_02_building | 0.52 | 0.55 |
-| 4k | real_sam_02_car | 0.38 | 0.46 |
-| 4k | real_sam_02_person | 0.11 | 0.16 |
+| Resolution | Sample               | p50 ms | p95 ms |
+| ---------- | -------------------- | -----: | -----: |
+| 1080p      | real_sam_01_building |   0.17 |   0.23 |
+| 1080p      | real_sam_01_car      |   0.14 |   0.14 |
+| 1080p      | real_sam_01_person   |   0.08 |   0.14 |
+| 1080p      | real_sam_02_building |   0.16 |   0.16 |
+| 1080p      | real_sam_02_car      |   0.09 |   0.11 |
+| 1080p      | real_sam_02_person   |   0.05 |   0.13 |
+| 4k         | real_sam_01_building |   0.65 |   0.86 |
+| 4k         | real_sam_01_car      |   0.55 |   0.81 |
+| 4k         | real_sam_01_person   |   0.15 |   0.40 |
+| 4k         | real_sam_02_building |   0.52 |   0.55 |
+| 4k         | real_sam_02_car      |   0.38 |   0.46 |
+| 4k         | real_sam_02_person   |   0.11 |   0.16 |
 
 ## Reproduction metadata
 

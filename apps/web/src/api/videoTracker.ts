@@ -157,22 +157,23 @@ interface VideoTrackerDecisionCommon {
   override_manual?: boolean;
 }
 
-export type VideoTrackerDecisionPayload = VideoTrackerDecisionCommon & (
-  | {
-      instance_ids: string[];
-      from_frame: number;
-      to_frame: number;
-      qc_issue_id?: never;
-      candidate_digest?: never;
-    }
-  | {
-      qc_issue_id: string;
-      candidate_digest: string;
-      instance_ids?: never;
-      from_frame?: never;
-      to_frame?: never;
-    }
-);
+export type VideoTrackerDecisionPayload = VideoTrackerDecisionCommon &
+  (
+    | {
+        instance_ids: string[];
+        from_frame: number;
+        to_frame: number;
+        qc_issue_id?: never;
+        candidate_digest?: never;
+      }
+    | {
+        qc_issue_id: string;
+        candidate_digest: string;
+        instance_ids?: never;
+        from_frame?: never;
+        to_frame?: never;
+      }
+  );
 
 export const videoTrackerApi = {
   segments: (taskId: string) =>
@@ -211,11 +212,7 @@ export const videoTrackerApi = {
       { operation },
       { headers: { "If-Match": `W/"${sourceVersion}"` } },
     ),
-  correct: (
-    taskId: string,
-    annotationId: string,
-    payload: VideoMaskCorrectionPayload,
-  ) =>
+  correct: (taskId: string, annotationId: string, payload: VideoMaskCorrectionPayload) =>
     apiClient.post<VideoTrackerJob>(
       `/tasks/${taskId}/video/tracks/${annotationId}/correction-jobs`,
       payload,
@@ -229,19 +226,13 @@ export const videoTrackerApi = {
   // 该轨迹, 缺省则为无源检测。
   track: (taskId: string, payload: VideoTrackerPropagatePayload) =>
     apiClient.post<VideoTrackerJob>(`/tasks/${taskId}/video:track`, payload),
-  get: (jobId: string) =>
-    apiClient.get<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
+  get: (jobId: string) => apiClient.get<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   reviewable: (taskId: string) =>
-    apiClient.get<VideoTrackerJob[]>(
-      `/tasks/${taskId}/video/tracker-jobs/reviewable`,
-    ),
+    apiClient.get<VideoTrackerJob[]>(`/tasks/${taskId}/video/tracker-jobs/reviewable`),
   // v0.21.28 · 刷新后重连: 该 task 下仍在运行 (queued/running) 的追踪任务。
   active: (taskId: string) =>
-    apiClient.get<VideoTrackerJob[]>(
-      `/tasks/${taskId}/video/tracker-jobs/active`,
-    ),
-  cancel: (jobId: string) =>
-    apiClient.delete<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
+    apiClient.get<VideoTrackerJob[]>(`/tasks/${taskId}/video/tracker-jobs/active`),
+  cancel: (jobId: string) => apiClient.delete<VideoTrackerJob>(`/video-tracker-jobs/${jobId}`),
   // v0.21.28 · 候选/接受流。
   preview: (jobId: string) =>
     apiClient.get<VideoTrackerJobPreview>(`/video-tracker-jobs/${jobId}/preview`),

@@ -6,7 +6,13 @@ import { VideoAttributesEditor } from "./VideoAttributesEditor";
 
 const schema: AttributeSchema = {
   fields: [
-    { key: "state", label: "状态", type: "select", mutable: true, options: [{ value: "open", label: "开" }] },
+    {
+      key: "state",
+      label: "状态",
+      type: "select",
+      mutable: true,
+      options: [{ value: "open", label: "开" }],
+    },
     { key: "team", label: "队伍", type: "text", mutable: false },
   ],
 };

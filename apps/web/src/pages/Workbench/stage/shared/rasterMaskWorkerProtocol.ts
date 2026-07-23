@@ -1,4 +1,7 @@
-import type { MaskInstanceOperationPlan, MaskInstanceOperationSpec } from "./geometry/maskInstanceOperations";
+import type {
+  MaskInstanceOperationPlan,
+  MaskInstanceOperationSpec,
+} from "./geometry/maskInstanceOperations";
 import type { MaskOperationResult, MaskOperationSpec } from "./geometry/maskOperations";
 import type { RasterMaskAnalysis } from "./rasterMaskRender";
 

@@ -45,11 +45,11 @@ Data Manager 同时显示两种数量：
 
 ## 三种查看粒度
 
-| 粒度 | 一行代表 | 适合回答 |
-|---|---|---|
-| 任务 | 一个标注任务 | 哪些任务包含 AI 待审、特定来源、类别、属性或反馈 |
-| 对象 | 一个 active、非取消的单帧 annotation | 哪些具体对象满足类别 + 属性 + 来源条件，它们位于哪个任务或帧 |
-| 轨迹 | 一条逻辑轨迹 | 哪些轨迹跨越哪些帧，来源、关键帧、outside / occluded 与质量是否异常 |
+| 粒度 | 一行代表                             | 适合回答                                                            |
+| ---- | ------------------------------------ | ------------------------------------------------------------------- |
+| 任务 | 一个标注任务                         | 哪些任务包含 AI 待审、特定来源、类别、属性或反馈                    |
+| 对象 | 一个 active、非取消的单帧 annotation | 哪些具体对象满足类别 + 属性 + 来源条件，它们位于哪个任务或帧        |
+| 轨迹 | 一条逻辑轨迹                         | 哪些轨迹跨越哪些帧，来源、关键帧、outside / occluded 与质量是否异常 |
 
 对象视图不会先分页任务再展开，因此总数和分页都以对象为单位。视频 compact track 在轨迹视图中一条 annotation 对应一行，不会按关键帧重复；Scene 图片或点云按项目内共享的 track ID 聚合跨任务实例。没有轨迹能力的项目只显示任务和对象，不显示空的轨迹入口。
 
@@ -59,13 +59,13 @@ Data Manager 同时显示两种数量：
 
 所有项目都有以下 5 个只读视图：
 
-| 视图 | 用途 |
-|---|---|
-| 全部任务 | 项目内所有任务 |
-| 待标注 | `task.status in ["pending"]` |
-| 待审核 | `task.status in ["review"]` |
-| 有未解决反馈 | `feedback.unresolved_count > 0` |
-| AI 待审 | 存在尚未接受/拒绝的 AI 检测 shape，或仍可审阅的 AI 追踪结果 |
+| 视图         | 用途                                                        |
+| ------------ | ----------------------------------------------------------- |
+| 全部任务     | 项目内所有任务                                              |
+| 待标注       | `task.status in ["pending"]`                                |
+| 待审核       | `task.status in ["review"]`                                 |
+| 有未解决反馈 | `feedback.unresolved_count > 0`                             |
+| AI 待审      | 存在尚未接受/拒绝的 AI 检测 shape，或仍可审阅的 AI 追踪结果 |
 
 系统还会按项目能力补充内置视图：配置了必填属性时显示“缺少必填属性”；视频项目显示“追踪候选待审”和“含轨迹”；Scene 项目显示“含插值标注”。没有对应能力时不显示空视图。
 
@@ -92,16 +92,16 @@ Data Manager 同时显示两种数量：
 
 当前页面可选字段（字段名含命名空间前缀）：
 
-| 字段族 | 完整字段名 |
-|---|---|
-| task | `task.keyword`、`task.status`、`task.assignee`、`task.reviewer`、`task.batch_id` |
-| annotation | `annotation.annotation_count`、`annotation.source`、`annotation.imported`、`annotation.annotation_type`、`annotation.tool_unit_id`、`annotation.class_name`、`annotation.has_track`、`annotation.track_id` |
-| attribute | `annotation.attribute.<tool_unit>.<key>`、`annotation.attribute_origin.<tool_unit>.<key>` |
-| AI review | `ai.pending_prediction_shape_count`、`ai.low_confidence_prediction_shape_count`、`ai.pending_tracker_job_count` |
-| AI trace | `prediction.model_version`（历史预测追溯） |
-| feedback | `feedback.unresolved_count`、`feedback.status` |
-| video track | `keyframe.source`（启用视频轨迹能力时） |
-| scene | `scene.scene_name`、`scene.frame_index`（仅 scene 项目） |
+| 字段族      | 完整字段名                                                                                                                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| task        | `task.keyword`、`task.status`、`task.assignee`、`task.reviewer`、`task.batch_id`                                                                                                                           |
+| annotation  | `annotation.annotation_count`、`annotation.source`、`annotation.imported`、`annotation.annotation_type`、`annotation.tool_unit_id`、`annotation.class_name`、`annotation.has_track`、`annotation.track_id` |
+| attribute   | `annotation.attribute.<tool_unit>.<key>`、`annotation.attribute_origin.<tool_unit>.<key>`                                                                                                                  |
+| AI review   | `ai.pending_prediction_shape_count`、`ai.low_confidence_prediction_shape_count`、`ai.pending_tracker_job_count`                                                                                            |
+| AI trace    | `prediction.model_version`（历史预测追溯）                                                                                                                                                                 |
+| feedback    | `feedback.unresolved_count`、`feedback.status`                                                                                                                                                             |
+| video track | `keyframe.source`（启用视频轨迹能力时）                                                                                                                                                                    |
+| scene       | `scene.scene_name`、`scene.frame_index`（仅 scene 项目）                                                                                                                                                   |
 
 常见例子：
 
@@ -118,6 +118,7 @@ Data Manager 同时显示两种数量：
 任务视图一次显示 50 条任务。对象和轨迹视图按 100 条一批使用游标继续加载，并对已加载结果做虚拟化；服务端实体查询的单次上限为 200 条，不会把全部标注拉到浏览器聚合。
 
 **硬限制**：
+
 - `in` 操作符值列表最多 **200** 项。
 - 保存视图名称长度 **1–120** 字符。
 

@@ -21,10 +21,7 @@ import {
   useTaskMaskQcSummary,
 } from "@/hooks/useMaskQc";
 import type { RasterMaskCompareMode } from "../stage/shared/rasterMaskWorkerProtocol";
-import type {
-  MaskQcNavigationPhase,
-  MaskQcTrackerCandidate,
-} from "../state/useMaskQcReview";
+import type { MaskQcNavigationPhase, MaskQcTrackerCandidate } from "../state/useMaskQcReview";
 import { MaskRepairSheet } from "./MaskRepairSheet";
 
 const MODE_LABELS: Array<{ mode: RasterMaskCompareMode; label: string }> = [
@@ -147,14 +144,17 @@ export function MaskQcPanel({
   const summary = useTaskMaskQcSummary(taskId);
   const run = useRunTaskMaskQc(projectId, taskId);
   const patchIssue = usePatchMaskQcIssue(projectId, taskId);
-  const feedbackParams = useMemo(() => ({
-    project_id: projectId,
-    task_id: activeIssue?.task_id ?? taskId,
-    annotation_id: activeIssue?.annotation_id,
-    kind: "comment" as const,
-    anchor_type: "pixel" as const,
-    limit: 100,
-  }), [activeIssue?.annotation_id, activeIssue?.task_id, projectId, taskId]);
+  const feedbackParams = useMemo(
+    () => ({
+      project_id: projectId,
+      task_id: activeIssue?.task_id ?? taskId,
+      annotation_id: activeIssue?.annotation_id,
+      kind: "comment" as const,
+      anchor_type: "pixel" as const,
+      limit: 100,
+    }),
+    [activeIssue?.annotation_id, activeIssue?.task_id, projectId, taskId],
+  );
   const feedbackQuery = useInfiniteFeedbacks(feedbackParams, !!activeIssue);
   const createFeedback = useCreateFeedback(feedbackParams);
   const lastCompletedRunRef = useRef<string | null>(null);
@@ -164,61 +164,73 @@ export function MaskQcPanel({
     () => query.data?.pages.flatMap((page) => page.items) ?? [],
     [query.data?.pages],
   );
-  const repairActions = useMemo<MaskRepairAction[]>(() => issues
-    .filter((issue) => selectedRepairIssueIds.has(issue.id))
-    .map((issue) => ({
-      issue_id: issue.id,
-      kind: DETERMINISTIC_REPAIR_BY_RULE[issue.code]!,
-    })), [issues, selectedRepairIssueIds]);
-  const issueComments = feedbackQuery.data?.pages
-    .flatMap((page) => page.items)
-    .filter((feedback) => {
-      const anchor = feedback.anchor_position;
-      if (!activeIssue || !anchor) return false;
-      if (anchor.mask_qc_issue_id && anchor.mask_qc_issue_id !== activeIssue.id) return false;
-      if ((anchor.frame ?? null) !== (activeIssue.frame_start ?? null)) return false;
-      if (activeIssue.region_digest) return anchor.region_digest === activeIssue.region_digest;
-      const bbox = activeIssue.region_bbox;
-      const anchorBbox = anchor.region_bbox;
-      return bbox && anchorBbox
-        ? anchorBbox[0] === bbox.x0
-          && anchorBbox[1] === bbox.y0
-          && anchorBbox[2] === bbox.x1
-          && anchorBbox[3] === bbox.y1
-        : bbox == null && anchorBbox == null;
-    }) ?? [];
+  const repairActions = useMemo<MaskRepairAction[]>(
+    () =>
+      issues
+        .filter((issue) => selectedRepairIssueIds.has(issue.id))
+        .map((issue) => ({
+          issue_id: issue.id,
+          kind: DETERMINISTIC_REPAIR_BY_RULE[issue.code]!,
+        })),
+    [issues, selectedRepairIssueIds],
+  );
+  const issueComments =
+    feedbackQuery.data?.pages
+      .flatMap((page) => page.items)
+      .filter((feedback) => {
+        const anchor = feedback.anchor_position;
+        if (!activeIssue || !anchor) return false;
+        if (anchor.mask_qc_issue_id && anchor.mask_qc_issue_id !== activeIssue.id) return false;
+        if ((anchor.frame ?? null) !== (activeIssue.frame_start ?? null)) return false;
+        if (activeIssue.region_digest) return anchor.region_digest === activeIssue.region_digest;
+        const bbox = activeIssue.region_bbox;
+        const anchorBbox = anchor.region_bbox;
+        return bbox && anchorBbox
+          ? anchorBbox[0] === bbox.x0 &&
+              anchorBbox[1] === bbox.y0 &&
+              anchorBbox[2] === bbox.x1 &&
+              anchorBbox[3] === bbox.y1
+          : bbox == null && anchorBbox == null;
+      }) ?? [];
   const counts = summary.data?.counts ?? {};
-  const total = (["open", "resolved", "wont_fix", "stale"] as const)
-    .reduce((sum, key) => sum + (counts[key] ?? 0), 0);
+  const total = (["open", "resolved", "wont_fix", "stale"] as const).reduce(
+    (sum, key) => sum + (counts[key] ?? 0),
+    0,
+  );
   const busy = phase !== "idle" && phase !== "ready" && phase !== "error";
   const stale = activeIssue?.effective_status === "stale";
-  const iou = compare && compare.metrics.iou_denominator > 0
-    ? compare.metrics.iou_numerator / compare.metrics.iou_denominator
-    : compare ? 1 : null;
-  const dice = compare && compare.metrics.dice_denominator > 0
-    ? compare.metrics.dice_numerator / compare.metrics.dice_denominator
-    : compare ? 1 : null;
-  const selectedTrackerCandidate = trackerCandidates.find(
-    (candidate) => candidate.key === trackerCandidateKey,
-  ) ?? trackerCandidates[0] ?? null;
+  const iou =
+    compare && compare.metrics.iou_denominator > 0
+      ? compare.metrics.iou_numerator / compare.metrics.iou_denominator
+      : compare
+        ? 1
+        : null;
+  const dice =
+    compare && compare.metrics.dice_denominator > 0
+      ? compare.metrics.dice_numerator / compare.metrics.dice_denominator
+      : compare
+        ? 1
+        : null;
+  const selectedTrackerCandidate =
+    trackerCandidates.find((candidate) => candidate.key === trackerCandidateKey) ??
+    trackerCandidates[0] ??
+    null;
   const canDecideTrackerRegion = Boolean(
-    !stale
-    && activeIssue?.effective_status === "open"
-    && activeIssue.region_digest
-    && activeIssue.frame_start != null
-    && activeIssue.frame_start === activeIssue.frame_end
-    && baseline === "tracker_candidate"
-    && compare?.baseline.candidate_job_id
-    && compare.baseline.candidate_digest
-    && selectedTrackerCandidate
-    && compare.baseline.candidate_job_id === selectedTrackerCandidate.jobId
-    && compare.baseline.candidate_digest === selectedTrackerCandidate.digest,
+    !stale &&
+    activeIssue?.effective_status === "open" &&
+    activeIssue.region_digest &&
+    activeIssue.frame_start != null &&
+    activeIssue.frame_start === activeIssue.frame_end &&
+    baseline === "tracker_candidate" &&
+    compare?.baseline.candidate_job_id &&
+    compare.baseline.candidate_digest &&
+    selectedTrackerCandidate &&
+    compare.baseline.candidate_job_id === selectedTrackerCandidate.jobId &&
+    compare.baseline.candidate_digest === selectedTrackerCandidate.digest,
   );
 
   useEffect(() => {
-    const completedRunId = summary.data?.status === "completed"
-      ? summary.data.run_id
-      : null;
+    const completedRunId = summary.data?.status === "completed" ? summary.data.run_id : null;
     if (!completedRunId || lastCompletedRunRef.current === completedRunId) return;
     lastCompletedRunRef.current = completedRunId;
     void refetchIssues();
@@ -235,19 +247,21 @@ export function MaskQcPanel({
     const latest = issues.find((issue) => issue.id === activeIssue.id);
     if (!latest || latest === activeIssue) return;
     if (
-      latest.updated_at !== activeIssue.updated_at
-      || latest.effective_status !== activeIssue.effective_status
-      || latest.annotation_version !== activeIssue.annotation_version
-    ) onUpdateIssue(latest);
+      latest.updated_at !== activeIssue.updated_at ||
+      latest.effective_status !== activeIssue.effective_status ||
+      latest.annotation_version !== activeIssue.annotation_version
+    )
+      onUpdateIssue(latest);
   }, [activeIssue, issues, onUpdateIssue]);
 
   useEffect(() => {
-    const eligibleIds = new Set(issues
-      .filter((issue) => (
-        issue.effective_status === "open"
-        && DETERMINISTIC_REPAIR_BY_RULE[issue.code]
-      ))
-      .map((issue) => issue.id));
+    const eligibleIds = new Set(
+      issues
+        .filter(
+          (issue) => issue.effective_status === "open" && DETERMINISTIC_REPAIR_BY_RULE[issue.code],
+        )
+        .map((issue) => issue.id),
+    );
     setSelectedRepairIssueIds((current) => {
       const next = new Set([...current].filter((issueId) => eligibleIds.has(issueId)));
       return next.size === current.size && [...next].every((issueId) => current.has(issueId))
@@ -265,43 +279,53 @@ export function MaskQcPanel({
   const submitComment = async () => {
     if (!activeIssue || stale || !comment.trim()) return;
     const bbox = activeIssue.region_bbox;
-    const boundaryDigest = mode === "boundary" && compare && activeIssue.region_digest
-      ? await sha256Text(JSON.stringify({
-          current: compare.current.digest,
-          baseline: compare.baseline.digest,
-          bbox,
+    const boundaryDigest =
+      mode === "boundary" && compare && activeIssue.region_digest
+        ? await sha256Text(
+            JSON.stringify({
+              current: compare.current.digest,
+              baseline: compare.baseline.digest,
+              bbox,
+              frame: activeIssue.frame_start,
+            }),
+          )
+        : null;
+    createFeedback.mutate(
+      {
+        kind: "comment",
+        anchor_type: "pixel",
+        project_id: projectId,
+        task_id: activeIssue.task_id,
+        annotation_id: activeIssue.annotation_id,
+        anchor_position: {
+          x: bbox ? (bbox.x0 + bbox.x1) / 2 : 0.5,
+          y: bbox ? (bbox.y0 + bbox.y1) / 2 : 0.5,
           frame: activeIssue.frame_start,
-        }))
-      : null;
-    createFeedback.mutate({
-      kind: "comment",
-      anchor_type: "pixel",
-      project_id: projectId,
-      task_id: activeIssue.task_id,
-      annotation_id: activeIssue.annotation_id,
-      anchor_position: {
-        x: bbox ? (bbox.x0 + bbox.x1) / 2 : 0.5,
-        y: bbox ? (bbox.y0 + bbox.y1) / 2 : 0.5,
-        frame: activeIssue.frame_start,
-        region_bbox: bbox ? [bbox.x0, bbox.y0, bbox.x1, bbox.y1] : null,
-        region_digest: activeIssue.region_digest,
-        boundary_digest: boundaryDigest,
-        mask_qc_issue_id: activeIssue.id,
-        compare_locator: compare ? {
-          baseline_kind: compare.baseline_kind,
-          mode,
-          current_digest: compare.current.digest,
-          baseline_digest: compare.baseline.digest,
-          candidate_job_id: compare.baseline.candidate_job_id,
-          candidate_job_revision: baseline === "tracker_candidate"
-            ? trackerCandidates.find((candidate) => candidate.key === trackerCandidateKey)?.jobRevision ?? null
+          region_bbox: bbox ? [bbox.x0, bbox.y0, bbox.x1, bbox.y1] : null,
+          region_digest: activeIssue.region_digest,
+          boundary_digest: boundaryDigest,
+          mask_qc_issue_id: activeIssue.id,
+          compare_locator: compare
+            ? {
+                baseline_kind: compare.baseline_kind,
+                mode,
+                current_digest: compare.current.digest,
+                baseline_digest: compare.baseline.digest,
+                candidate_job_id: compare.baseline.candidate_job_id,
+                candidate_job_revision:
+                  baseline === "tracker_candidate"
+                    ? (trackerCandidates.find((candidate) => candidate.key === trackerCandidateKey)
+                        ?.jobRevision ?? null)
+                    : null,
+                candidate_digest: compare.baseline.candidate_digest,
+                candidate_instance_id: compare.baseline.candidate_instance_id,
+              }
             : null,
-          candidate_digest: compare.baseline.candidate_digest,
-          candidate_instance_id: compare.baseline.candidate_instance_id,
-        } : null,
+        },
+        body: comment.trim(),
       },
-      body: comment.trim(),
-    }, { onSuccess: () => setComment("") });
+      { onSuccess: () => setComment("") },
+    );
   };
 
   const decideTrackerRegion = async (decision: "accept" | "reject") => {
@@ -313,11 +337,7 @@ export function MaskQcPanel({
     setRegionDecision(decision);
     setRegionDecisionError(null);
     try {
-      const outcome = await onDecideTrackerRegion(
-        activeIssue,
-        selectedTrackerCandidate,
-        decision,
-      );
+      const outcome = await onDecideTrackerRegion(activeIssue, selectedTrackerCandidate, decision);
       if (!outcome.ok) {
         setRegionDecisionError(outcome.reason ?? "区域决定失败，请刷新候选后重试");
         return;
@@ -332,19 +352,26 @@ export function MaskQcPanel({
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 text-xs text-muted-foreground">
-          {summary.isLoading ? "正在读取质检状态…" : (
-            <><span className="font-semibold text-foreground">{total}</span> 个问题 · {summary.data?.status ?? "未知"}</>
+          {summary.isLoading ? (
+            "正在读取质检状态…"
+          ) : (
+            <>
+              <span className="font-semibold text-foreground">{total}</span> 个问题 ·{" "}
+              {summary.data?.status ?? "未知"}
+            </>
           )}
         </div>
         <Button
           variant="ghost"
           size="sm"
-          title={summary.data?.status === "not_applicable" ? "当前任务没有可质检的 Mask" : undefined}
+          title={
+            summary.data?.status === "not_applicable" ? "当前任务没有可质检的 Mask" : undefined
+          }
           disabled={
-            run.isPending
-            || summary.data?.status === "running"
-            || summary.data?.status === "pending"
-            || summary.data?.status === "not_applicable"
+            run.isPending ||
+            summary.data?.status === "running" ||
+            summary.data?.status === "pending" ||
+            summary.data?.status === "not_applicable"
           }
           onClick={() => run.mutate()}
         >
@@ -373,7 +400,9 @@ export function MaskQcPanel({
           </button>
         ))}
         {scope === "project" && (
-          <span className="ml-auto self-center text-2xs text-muted-foreground">已加载 {issues.length} 条</span>
+          <span className="ml-auto self-center text-2xs text-muted-foreground">
+            已加载 {issues.length} 条
+          </span>
         )}
       </div>
 
@@ -388,7 +417,15 @@ export function MaskQcPanel({
               status === value && "border-brand text-foreground",
             )}
           >
-            {value === "all" ? "全部" : value === "open" ? "未解决" : value === "resolved" ? "已解决" : value === "wont_fix" ? "搁置" : "已过期"}
+            {value === "all"
+              ? "全部"
+              : value === "open"
+                ? "未解决"
+                : value === "resolved"
+                  ? "已解决"
+                  : value === "wont_fix"
+                    ? "搁置"
+                    : "已过期"}
           </button>
         ))}
       </div>
@@ -412,7 +449,11 @@ export function MaskQcPanel({
           className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
         >
           <option value="all">全部规则</option>
-          {Object.entries(RULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {Object.entries(RULE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -424,7 +465,9 @@ export function MaskQcPanel({
         </div>
       )}
 
-      {issues.some((issue) => issue.effective_status === "open" && DETERMINISTIC_REPAIR_BY_RULE[issue.code]) && (
+      {issues.some(
+        (issue) => issue.effective_status === "open" && DETERMINISTIC_REPAIR_BY_RULE[issue.code],
+      ) && (
         <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5">
           <span className="text-xs text-muted-foreground">
             已选 {selectedRepairIssueIds.size} 个可确定修复的问题
@@ -474,19 +517,37 @@ export function MaskQcPanel({
                 className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-left"
               >
                 <span className="flex items-center gap-1.5 text-xs">
-                  <span className={cx(
-                    "rounded px-1.5 py-px text-2xs",
-                    issue.severity === "blocker" ? "bg-status-danger-soft text-status-danger"
-                      : issue.severity === "warning" ? "bg-status-caution-soft text-status-caution"
-                        : "bg-status-info-soft text-status-info-alt",
-                  )}>
-                    {issue.severity === "blocker" ? "阻断" : issue.severity === "warning" ? "警告" : "提示"}
+                  <span
+                    className={cx(
+                      "rounded px-1.5 py-px text-2xs",
+                      issue.severity === "blocker"
+                        ? "bg-status-danger-soft text-status-danger"
+                        : issue.severity === "warning"
+                          ? "bg-status-caution-soft text-status-caution"
+                          : "bg-status-info-soft text-status-info-alt",
+                    )}
+                  >
+                    {issue.severity === "blocker"
+                      ? "阻断"
+                      : issue.severity === "warning"
+                        ? "警告"
+                        : "提示"}
                   </span>
-                  <span className="font-semibold text-foreground">{RULE_LABELS[issue.code] ?? issue.code}</span>
-                  {issue.frame_start != null && <span className="ml-auto text-2xs text-muted-foreground">F{issue.frame_start}</span>}
+                  <span className="font-semibold text-foreground">
+                    {RULE_LABELS[issue.code] ?? issue.code}
+                  </span>
+                  {issue.frame_start != null && (
+                    <span className="ml-auto text-2xs text-muted-foreground">
+                      F{issue.frame_start}
+                    </span>
+                  )}
                 </span>
-                {issue.suggestion && <span className="text-2xs text-muted-foreground">{issue.suggestion}</span>}
-                <span className="text-2xs text-muted-foreground">状态：{issue.effective_status}</span>
+                {issue.suggestion && (
+                  <span className="text-2xs text-muted-foreground">{issue.suggestion}</span>
+                )}
+                <span className="text-2xs text-muted-foreground">
+                  状态：{issue.effective_status}
+                </span>
               </button>
             </Field>
           );
@@ -497,7 +558,9 @@ export function MaskQcPanel({
           variant="ghost"
           size="sm"
           disabled={query.isFetchingNextPage}
-          onClick={() => { void query.fetchNextPage(); }}
+          onClick={() => {
+            void query.fetchNextPage();
+          }}
         >
           {query.isFetchingNextPage ? "加载中…" : "加载更多问题"}
         </Button>
@@ -507,7 +570,12 @@ export function MaskQcPanel({
         <div className="mt-1 flex flex-col gap-2 rounded-md border border-border bg-card p-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-foreground">问题对比</span>
-            <button type="button" onClick={onClearIssue} className="cursor-pointer border-0 bg-transparent text-muted-foreground" aria-label="关闭对比">
+            <button
+              type="button"
+              onClick={onClearIssue}
+              className="cursor-pointer border-0 bg-transparent text-muted-foreground"
+              aria-label="关闭对比"
+            >
               <Icon name="x" size={13} />
             </button>
           </div>
@@ -520,7 +588,9 @@ export function MaskQcPanel({
           {error && (
             <div className="flex items-center justify-between gap-2 text-xs text-status-danger">
               <span>{error}</span>
-              <Button variant="ghost" size="sm" onClick={onRetryNavigation}>重试</Button>
+              <Button variant="ghost" size="sm" onClick={onRetryNavigation}>
+                重试
+              </Button>
             </div>
           )}
           <select
@@ -541,7 +611,9 @@ export function MaskQcPanel({
             <option value="tracker_candidate" disabled={trackerCandidates.length === 0}>
               Tracker 候选{trackerCandidates.length === 0 ? "（无匹配项）" : ""}
             </option>
-            <option value="ai_candidate" disabled={!aiCandidateAvailable}>当前 AI 候选</option>
+            <option value="ai_candidate" disabled={!aiCandidateAvailable}>
+              当前 AI 候选
+            </option>
             <option value="neighbor_keyframe">邻近关键帧</option>
           </select>
           {baseline === "tracker_candidate" && trackerCandidates.length > 0 && (
@@ -565,18 +637,50 @@ export function MaskQcPanel({
           {compare && (
             <>
               <div className="grid grid-cols-2 gap-1 text-2xs">
-                <div className="rounded bg-muted px-2 py-1">当前 v{compare.current.annotation_version} · {compare.current.source}</div>
-                <div className="rounded bg-muted px-2 py-1">基线 v{compare.baseline.annotation_version} · {compare.baseline.source}</div>
+                <div className="rounded bg-muted px-2 py-1">
+                  当前 v{compare.current.annotation_version} · {compare.current.source}
+                </div>
+                <div className="rounded bg-muted px-2 py-1">
+                  基线 v{compare.baseline.annotation_version} · {compare.baseline.source}
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-1 text-center text-2xs">
-                <div className="rounded bg-muted px-1 py-1"><div className="text-muted-foreground">IoU</div><div className="font-semibold text-foreground">{(iou! * 100).toFixed(1)}%</div></div>
-                <div className="rounded bg-muted px-1 py-1"><div className="text-muted-foreground">Dice</div><div className="font-semibold text-foreground">{(dice! * 100).toFixed(1)}%</div></div>
-                <div className="rounded bg-muted px-1 py-1"><div className="text-muted-foreground">变化</div><div className="font-semibold text-foreground">{compare.metrics.changed_pixels}</div></div>
-                <div className="rounded bg-muted px-1 py-1"><div className="text-muted-foreground">当前面积</div><div className="font-semibold text-foreground">{compare.metrics.current_area_pixels}</div></div>
-                <div className="rounded bg-muted px-1 py-1"><div className="text-muted-foreground">基线面积</div><div className="font-semibold text-foreground">{compare.metrics.baseline_area_pixels}</div></div>
-                <div className="rounded bg-muted px-1 py-1"><div className="text-muted-foreground">帧</div><div className="font-semibold text-foreground">{compare.current.frame_index ?? "图片"}</div></div>
+                <div className="rounded bg-muted px-1 py-1">
+                  <div className="text-muted-foreground">IoU</div>
+                  <div className="font-semibold text-foreground">{(iou! * 100).toFixed(1)}%</div>
+                </div>
+                <div className="rounded bg-muted px-1 py-1">
+                  <div className="text-muted-foreground">Dice</div>
+                  <div className="font-semibold text-foreground">{(dice! * 100).toFixed(1)}%</div>
+                </div>
+                <div className="rounded bg-muted px-1 py-1">
+                  <div className="text-muted-foreground">变化</div>
+                  <div className="font-semibold text-foreground">
+                    {compare.metrics.changed_pixels}
+                  </div>
+                </div>
+                <div className="rounded bg-muted px-1 py-1">
+                  <div className="text-muted-foreground">当前面积</div>
+                  <div className="font-semibold text-foreground">
+                    {compare.metrics.current_area_pixels}
+                  </div>
+                </div>
+                <div className="rounded bg-muted px-1 py-1">
+                  <div className="text-muted-foreground">基线面积</div>
+                  <div className="font-semibold text-foreground">
+                    {compare.metrics.baseline_area_pixels}
+                  </div>
+                </div>
+                <div className="rounded bg-muted px-1 py-1">
+                  <div className="text-muted-foreground">帧</div>
+                  <div className="font-semibold text-foreground">
+                    {compare.current.frame_index ?? "图片"}
+                  </div>
+                </div>
               </div>
-              {compare.loss.length > 0 && <div className="text-2xs text-status-caution">损失：{compare.loss.join("、")}</div>}
+              {compare.loss.length > 0 && (
+                <div className="text-2xs text-status-caution">损失：{compare.loss.join("、")}</div>
+              )}
               <div className="flex flex-wrap gap-1">
                 {MODE_LABELS.map((item) => (
                   <button
@@ -604,7 +708,9 @@ export function MaskQcPanel({
                   variant="ghost"
                   size="sm"
                   disabled={regionDecision !== null}
-                  onClick={() => { void decideTrackerRegion("accept"); }}
+                  onClick={() => {
+                    void decideTrackerRegion("accept");
+                  }}
                 >
                   {regionDecision === "accept" ? "提交中…" : "区域接受"}
                 </Button>
@@ -612,7 +718,9 @@ export function MaskQcPanel({
                   variant="ghost"
                   size="sm"
                   disabled={regionDecision !== null}
-                  onClick={() => { void decideTrackerRegion("reject"); }}
+                  onClick={() => {
+                    void decideTrackerRegion("reject");
+                  }}
                 >
                   {regionDecision === "reject" ? "提交中…" : "区域拒绝"}
                 </Button>
@@ -624,9 +732,48 @@ export function MaskQcPanel({
           )}
           {!stale && (
             <div className="flex gap-1">
-              {activeIssue.status !== "resolved" && <Button variant="ghost" size="sm" onClick={() => patchIssue.mutate({ issueId: activeIssue.id, status: "resolved" }, { onSuccess: onUpdateIssue })}>解决</Button>}
-              {activeIssue.status !== "wont_fix" && <Button variant="ghost" size="sm" onClick={() => patchIssue.mutate({ issueId: activeIssue.id, status: "wont_fix" }, { onSuccess: onUpdateIssue })}>搁置</Button>}
-              {activeIssue.status !== "open" && <Button variant="ghost" size="sm" onClick={() => patchIssue.mutate({ issueId: activeIssue.id, status: "open" }, { onSuccess: onUpdateIssue })}>重开</Button>}
+              {activeIssue.status !== "resolved" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    patchIssue.mutate(
+                      { issueId: activeIssue.id, status: "resolved" },
+                      { onSuccess: onUpdateIssue },
+                    )
+                  }
+                >
+                  解决
+                </Button>
+              )}
+              {activeIssue.status !== "wont_fix" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    patchIssue.mutate(
+                      { issueId: activeIssue.id, status: "wont_fix" },
+                      { onSuccess: onUpdateIssue },
+                    )
+                  }
+                >
+                  搁置
+                </Button>
+              )}
+              {activeIssue.status !== "open" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    patchIssue.mutate(
+                      { issueId: activeIssue.id, status: "open" },
+                      { onSuccess: onUpdateIssue },
+                    )
+                  }
+                >
+                  重开
+                </Button>
+              )}
             </div>
           )}
           <div className="flex flex-col gap-1">
@@ -638,7 +785,10 @@ export function MaskQcPanel({
               <span className="text-2xs text-muted-foreground">当前区域暂无评论。</span>
             )}
             {issueComments.map((feedback) => (
-              <div key={feedback.id} className="rounded border border-border bg-muted px-2 py-1.5 text-2xs">
+              <div
+                key={feedback.id}
+                className="rounded border border-border bg-muted px-2 py-1.5 text-2xs"
+              >
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <span>{feedback.author_name ?? "未知用户"}</span>
                   {feedback.anchor_position?.boundary_digest && <span>· 边界</span>}
@@ -656,9 +806,11 @@ export function MaskQcPanel({
                 </div>
                 <div className="mt-0.5 whitespace-pre-wrap text-foreground">{feedback.body}</div>
                 <div className="mt-0.5 font-mono text-muted-foreground">
-                  {(feedback.anchor_position?.boundary_digest
-                    ?? feedback.anchor_position?.region_digest
-                    ?? "无摘要").slice(0, 12)}
+                  {(
+                    feedback.anchor_position?.boundary_digest ??
+                    feedback.anchor_position?.region_digest ??
+                    "无摘要"
+                  ).slice(0, 12)}
                 </div>
               </div>
             ))}
@@ -667,7 +819,9 @@ export function MaskQcPanel({
                 variant="ghost"
                 size="sm"
                 disabled={feedbackQuery.isFetchingNextPage}
-                onClick={() => { void feedbackQuery.fetchNextPage(); }}
+                onClick={() => {
+                  void feedbackQuery.fetchNextPage();
+                }}
               >
                 {feedbackQuery.isFetchingNextPage ? "加载中…" : "加载更多评论"}
               </Button>
@@ -685,7 +839,9 @@ export function MaskQcPanel({
               variant="ghost"
               size="sm"
               disabled={stale || !comment.trim() || createFeedback.isPending}
-              onClick={() => { void submitComment(); }}
+              onClick={() => {
+                void submitComment();
+              }}
             >
               发送
             </Button>

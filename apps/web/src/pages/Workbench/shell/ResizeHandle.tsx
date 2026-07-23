@@ -19,7 +19,14 @@ interface ResizeHandleProps {
  * VS Code 风格 拖拽条：默认透明，hover/拖拽中显示 accent 高亮。
  * 绝对定位贴在容器边沿外侧，不占容器内布局空间。
  */
-export function ResizeHandle({ side, width, onResize, min = 200, max = 600, resetTo }: ResizeHandleProps) {
+export function ResizeHandle({
+  side,
+  width,
+  onResize,
+  min = 200,
+  max = 600,
+  resetTo,
+}: ResizeHandleProps) {
   const [hover, setHover] = useState(false);
   const [dragging, setDragging] = useState(false);
   const start = useRef(0);
@@ -27,44 +34,54 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600, rese
 
   const vertical = side === "top" || side === "bottom";
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    start.current = vertical ? e.clientY : e.clientX;
-    startW.current = width;
-    setDragging(true);
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      start.current = vertical ? e.clientY : e.clientX;
+      startW.current = width;
+      setDragging(true);
 
-    const onMove = (ev: MouseEvent) => {
-      const pos = vertical ? ev.clientY : ev.clientX;
-      const delta = pos - start.current;
-      const next = side === "left" || side === "top" ? startW.current - delta : startW.current + delta;
-      onResize(Math.max(min, Math.min(max, next)));
-    };
-    const onUp = () => {
-      setDragging(false);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    document.body.style.cursor = vertical ? "row-resize" : "col-resize";
-    document.body.style.userSelect = "none";
-  }, [width, side, vertical, onResize, min, max]);
+      const onMove = (ev: MouseEvent) => {
+        const pos = vertical ? ev.clientY : ev.clientX;
+        const delta = pos - start.current;
+        const next =
+          side === "left" || side === "top" ? startW.current - delta : startW.current + delta;
+        onResize(Math.max(min, Math.min(max, next)));
+      };
+      const onUp = () => {
+        setDragging(false);
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      document.body.style.cursor = vertical ? "row-resize" : "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [width, side, vertical, onResize, min, max],
+  );
 
   const active = hover || dragging;
 
   // 容器贴边定位 + 命中区方向；grip 高亮条用子 span 呈现（原 ::after）。
   const containerClass =
-    side === "right" ? "inset-y-0 right-0 w-3.5 cursor-col-resize"
-    : side === "left" ? "inset-y-0 left-0 w-3.5 cursor-col-resize"
-    : side === "top" ? "inset-x-0 top-0 h-3.5 cursor-row-resize"
-    : "inset-x-0 bottom-0 h-3.5 cursor-row-resize";
+    side === "right"
+      ? "inset-y-0 right-0 w-3.5 cursor-col-resize"
+      : side === "left"
+        ? "inset-y-0 left-0 w-3.5 cursor-col-resize"
+        : side === "top"
+          ? "inset-x-0 top-0 h-3.5 cursor-row-resize"
+          : "inset-x-0 bottom-0 h-3.5 cursor-row-resize";
   const barClass =
-    side === "right" ? "inset-y-0 right-0 w-0.5"
-    : side === "left" ? "inset-y-0 left-0 w-0.5"
-    : side === "top" ? "inset-x-0 top-0 h-0.5"
-    : "inset-x-0 bottom-0 h-0.5";
+    side === "right"
+      ? "inset-y-0 right-0 w-0.5"
+      : side === "left"
+        ? "inset-y-0 left-0 w-0.5"
+        : side === "top"
+          ? "inset-x-0 top-0 h-0.5"
+          : "inset-x-0 bottom-0 h-0.5";
 
   return (
     <div

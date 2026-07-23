@@ -78,7 +78,11 @@ function uniqFilter<T extends string>(val: unknown, allowed: readonly T[]): T[] 
   if (!Array.isArray(val)) return [];
   const out: T[] = [];
   for (const t of val) {
-    if (typeof t === "string" && (allowed as readonly string[]).includes(t) && !out.includes(t as T)) {
+    if (
+      typeof t === "string" &&
+      (allowed as readonly string[]).includes(t) &&
+      !out.includes(t as T)
+    ) {
       out.push(t as T);
     }
   }
@@ -402,8 +406,7 @@ export interface MeResponse {
 }
 
 export const authApi = {
-  login: (payload: LoginPayload) =>
-    apiClient.post<TokenResponse>("/auth/login", payload),
+  login: (payload: LoginPayload) => apiClient.post<TokenResponse>("/auth/login", payload),
   me: () => apiClient.get<MeResponse>("/auth/me"),
   logout: () => apiClient.post<void>("/auth/logout", {}),
   logoutAll: () => apiClient.post<TokenResponse>("/auth/logout-all", {}),

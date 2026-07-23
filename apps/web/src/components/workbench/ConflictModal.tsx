@@ -22,22 +22,13 @@ export function ConflictModal({ open, onReload, onOverwrite, onClose }: Conflict
           该标注已被其他用户修改。你可以重载以获取最新数据，或强制覆盖对方的修改。
         </p>
         <div className={styles.actions}>
-          <button
-            onClick={onClose}
-            className={`${styles.button} ${styles.cancelButton}`}
-          >
+          <button onClick={onClose} className={`${styles.button} ${styles.cancelButton}`}>
             取消
           </button>
-          <button
-            onClick={onOverwrite}
-            className={`${styles.button} ${styles.overwriteButton}`}
-          >
+          <button onClick={onOverwrite} className={`${styles.button} ${styles.overwriteButton}`}>
             强制覆盖
           </button>
-          <button
-            onClick={onReload}
-            className={`${styles.button} ${styles.reloadButton}`}
-          >
+          <button onClick={onReload} className={`${styles.button} ${styles.reloadButton}`}>
             重载（放弃本地）
           </button>
         </div>

@@ -33,9 +33,19 @@ export function DataManagerAnalyticsPanel({
       className="max-h-[42vh] shrink-0 overflow-auto rounded-md border border-border bg-card p-3"
     >
       {scope === "tasks" ? (
-        <DataManagerAnalyticsContent summary={summary} isLoading={isLoading} fields={fields} onSelect={onSelect} />
+        <DataManagerAnalyticsContent
+          summary={summary}
+          isLoading={isLoading}
+          fields={fields}
+          onSelect={onSelect}
+        />
       ) : (
-        <DataManagerCharts scope={scope} facets={facets} isLoading={isLoading} onSelect={onSelect} />
+        <DataManagerCharts
+          scope={scope}
+          facets={facets}
+          isLoading={isLoading}
+          onSelect={onSelect}
+        />
       )}
     </section>
   );

@@ -81,11 +81,10 @@ export function useMLCapabilities(
   const models = useMemo<MLModelCapability[]>(() => {
     if (!requirement) return allModels;
     return allModels.filter(
-      (model) => (model.supported_prompts ?? []).includes(requirement.prompt)
-        && (model.supported_geometric_outputs ?? []).includes(requirement.output)
-        && requirement.requiredInputs.every(
-          (input) => (model.supported_inputs ?? []).includes(input),
-        ),
+      (model) =>
+        (model.supported_prompts ?? []).includes(requirement.prompt) &&
+        (model.supported_geometric_outputs ?? []).includes(requirement.output) &&
+        requirement.requiredInputs.every((input) => (model.supported_inputs ?? []).includes(input)),
     );
   }, [allModels, requirement]);
 
@@ -94,12 +93,8 @@ export function useMLCapabilities(
   const activeModel = useMemo<MLModelCapability | undefined>(() => {
     if (models.length === 0) return undefined;
     // 优先级: 本会话显式选择 > 服务端持久化偏好 > 默认; 各级都校验仍是合法 model (后端被删/换档自愈)。
-    const bySession = selectedModelId
-      ? models.find((m) => m.id === selectedModelId)
-      : undefined;
-    const byPref = preferredModelId
-      ? models.find((m) => m.id === preferredModelId)
-      : undefined;
+    const bySession = selectedModelId ? models.find((m) => m.id === selectedModelId) : undefined;
+    const byPref = preferredModelId ? models.find((m) => m.id === preferredModelId) : undefined;
     return bySession ?? byPref ?? pickDefaultModel(models);
   }, [models, selectedModelId, preferredModelId]);
 

@@ -92,7 +92,9 @@ export function useMLBackendStats() {
   const visible = usePerfHudStore((s) => s.visible);
   const [snapshots, setSnapshots] = useState<Record<string, BackendSnapshot>>({});
   const [history, setHistory] = useState<Record<string, BackendHistory>>({});
-  const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "closed" | "auth_failed">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "connecting" | "connected" | "closed" | "auth_failed"
+  >("idle");
   const lastTickRef = useRef<number>(0);
 
   useEffect(() => {

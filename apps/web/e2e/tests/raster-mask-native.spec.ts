@@ -49,7 +49,9 @@ function authHeaders(token: string): Record<string, string> {
 
 async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) {
-    throw new Error(`${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`);
+    throw new Error(
+      `${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`,
+    );
   }
   return (await response.json()) as T;
 }
@@ -59,10 +61,11 @@ async function listAnnotations(
   taskId: string,
   token: string,
 ): Promise<AnnotationDto[]> {
-  return json<AnnotationDto[]>(await request.get(
-    `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-    { headers: authHeaders(token) },
-  ));
+  return json<AnnotationDto[]>(
+    await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
+      headers: authHeaders(token),
+    }),
+  );
 }
 
 async function getMaskContent(
@@ -70,10 +73,11 @@ async function getMaskContent(
   annotationId: string,
   token: string,
 ): Promise<CocoRle> {
-  return json<CocoRle>(await request.get(
-    `${API_BASE}/api/v1/annotations/${annotationId}/mask-content`,
-    { headers: authHeaders(token) },
-  ));
+  return json<CocoRle>(
+    await request.get(`${API_BASE}/api/v1/annotations/${annotationId}/mask-content`, {
+      headers: authHeaders(token),
+    }),
+  );
 }
 
 async function openTask(
@@ -103,11 +107,7 @@ async function paintStroke(
   if (!box) throw new Error("workbench stage has no bounding box");
   await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
   await page.mouse.down();
-  await page.mouse.move(
-    box.x + box.width * to[0],
-    box.y + box.height * to[1],
-    { steps: 10 },
-  );
+  await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 10 });
   await page.mouse.up();
 }
 
@@ -123,21 +123,28 @@ async function beginRasterEdit(page: Page, annotationId: string): Promise<void> 
 test.describe("raster mask native write matrix", () => {
   test.skip(MATRIX !== "native", "requires RASTER_MASK_CREATE_ENABLED=true");
 
-  test("1. blank create, refresh and re-edit preserve the committed pixels", async ({ page, request, seed }) => {
+  test("1. blank create, refresh and re-edit preserve the committed pixels", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await openTask(page, seed, data, taskId);
     const token = await seed.accessToken(data.annotator_email);
 
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toContainText("\u5c31\u7eea", { timeout: 10_000 });
+    await expect(page.getByTestId("mask-toolbar")).toContainText("\u5c31\u7eea", {
+      timeout: 10_000,
+    });
     await paintStroke(page);
     await expect(page.getByTestId("mask-toolbar")).toContainText("\u672a\u4fdd\u5b58");
 
-    const createResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`)
-      && response.request().method() === "POST"
-      && response.status() === 201,
+    const createResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`) &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
     );
     await page.keyboard.press("Enter");
     const created = await json<AnnotationDto>(await createResponse);
@@ -146,13 +153,17 @@ test.describe("raster mask native write matrix", () => {
     const firstContent = await getMaskContent(request, created.id, token);
 
     await page.reload();
-    await expect(page.getByTestId(`box-list-item-${created.id}`)).toContainText("\u6805\u683c\u63a9\u7801", { timeout: 15_000 });
+    await expect(page.getByTestId(`box-list-item-${created.id}`)).toContainText(
+      "\u6805\u683c\u63a9\u7801",
+      { timeout: 15_000 },
+    );
     await beginRasterEdit(page, created.id);
     await paintStroke(page, [0.62, 0.56], [0.7, 0.62]);
-    const updateResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${created.id}`)
-      && response.request().method() === "PATCH"
-      && response.ok(),
+    const updateResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${created.id}`) &&
+        response.request().method() === "PATCH" &&
+        response.ok(),
     );
     await page.keyboard.press("Enter");
     const updated = await json<AnnotationDto>(await updateResponse);
@@ -166,7 +177,11 @@ test.describe("raster mask native write matrix", () => {
     expect(await getMaskContent(request, created.id, token)).toEqual(editedContent);
   });
 
-  test("2. one hole and three components survive persistence and refresh", async ({ page, request, seed }) => {
+  test("2. one hole and three components survive persistence and refresh", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -180,8 +195,9 @@ test.describe("raster mask native write matrix", () => {
     const row = page.getByTestId(`box-list-item-${fixture.annotation_id}`);
     await expect(row).toContainText("3 \u7ec4\u4ef6", { timeout: 15_000 });
     await expect(row).toContainText("1 \u5b54\u6d1e");
-    const [annotation] = (await listAnnotations(request, taskId, token))
-      .filter((item) => item.id === fixture.annotation_id);
+    const [annotation] = (await listAnnotations(request, taskId, token)).filter(
+      (item) => item.id === fixture.annotation_id,
+    );
     const saved = await request.patch(
       `${API_BASE}/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`,
       {
@@ -196,7 +212,10 @@ test.describe("raster mask native write matrix", () => {
     await expect(row).toContainText("1 \u5b54\u6d1e");
   });
 
-  test("3. failed save keeps the buffer and stroke history; retry commits once", async ({ page, seed }) => {
+  test("3. failed save keeps the buffer and stroke history; retry commits once", async ({
+    page,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
@@ -205,20 +224,23 @@ test.describe("raster mask native write matrix", () => {
 
     let patchAttempts = 0;
     let successfulMutations = 0;
-    await page.route(`**/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`, async (route) => {
-      if (route.request().method() !== "PATCH") return route.continue();
-      patchAttempts += 1;
-      if (patchAttempts === 1) {
-        await route.fulfill({
-          status: 503,
-          contentType: "application/json",
-          body: JSON.stringify({ detail: { reason: "temporary_failure", message: "retry" } }),
-        });
-        return;
-      }
-      successfulMutations += 1;
-      await route.continue();
-    });
+    await page.route(
+      `**/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`,
+      async (route) => {
+        if (route.request().method() !== "PATCH") return route.continue();
+        patchAttempts += 1;
+        if (patchAttempts === 1) {
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: { reason: "temporary_failure", message: "retry" } }),
+          });
+          return;
+        }
+        successfulMutations += 1;
+        await route.continue();
+      },
+    );
 
     await paintStroke(page, [0.55, 0.48], [0.65, 0.5]);
     await page.keyboard.press("Enter");
@@ -228,10 +250,11 @@ test.describe("raster mask native write matrix", () => {
     await expect(toolbar).toContainText("\u672a\u4fdd\u5b58");
     await expect(toolbar.getByTitle("\u64a4\u9500\u7b14\u753b (Ctrl+Z)")).toBeEnabled();
 
-    const success = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`)
-      && response.request().method() === "PATCH"
-      && response.ok(),
+    const success = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`) &&
+        response.request().method() === "PATCH" &&
+        response.ok(),
     );
     await page.keyboard.press("Enter");
     await success;
@@ -239,22 +262,34 @@ test.describe("raster mask native write matrix", () => {
     expect(successfulMutations).toBe(1);
   });
 
-  test("4. late content from the previous task cannot flash back after rapid switching", async ({ page, request, seed }) => {
+  test("4. late content from the previous task cannot flash back after rapid switching", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const firstTaskId = data.task_ids[0];
     const secondTaskId = data.task_ids[1];
-    const first = await seed.injectRasterMask({ taskId: firstTaskId, userEmail: data.annotator_email });
+    const first = await seed.injectRasterMask({
+      taskId: firstTaskId,
+      userEmail: data.annotator_email,
+    });
     const second = await seed.injectRasterMask({
       taskId: secondTaskId,
       userEmail: data.annotator_email,
       variant: "donut_three",
     });
-    await seed.advanceTask({ taskId: secondTaskId, toStatus: "pending", annotatorEmail: data.annotator_email });
+    await seed.advanceTask({
+      taskId: secondTaskId,
+      toStatus: "pending",
+      annotatorEmail: data.annotator_email,
+    });
     const token = await seed.accessToken(data.annotator_email);
-    const secondTask = await json<{ display_id: string }>(await request.get(
-      `${API_BASE}/api/v1/tasks/${secondTaskId}`,
-      { headers: authHeaders(token) },
-    ));
+    const secondTask = await json<{ display_id: string }>(
+      await request.get(`${API_BASE}/api/v1/tasks/${secondTaskId}`, {
+        headers: authHeaders(token),
+      }),
+    );
 
     await page.route(`**/api/v1/annotations/${first.annotation_id}/mask-content`, async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 900));
@@ -263,12 +298,18 @@ test.describe("raster mask native write matrix", () => {
     await openTask(page, seed, data, firstTaskId);
     await page.getByText(secondTask.display_id, { exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`task=${secondTaskId}`));
-    await expect(page.getByTestId(`box-list-item-${second.annotation_id}`)).toContainText("3 \u7ec4\u4ef6", { timeout: 15_000 });
+    await expect(page.getByTestId(`box-list-item-${second.annotation_id}`)).toContainText(
+      "3 \u7ec4\u4ef6",
+      { timeout: 15_000 },
+    );
     await page.waitForTimeout(1_000);
     await expect(page.getByTestId(`box-list-item-${first.annotation_id}`)).toHaveCount(0);
   });
 
-  test("5. locked raster masks reject pointer, hotkeys, Enter and Delete", async ({ page, seed }) => {
+  test("5. locked raster masks reject pointer, hotkeys, Enter and Delete", async ({
+    page,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -286,8 +327,11 @@ test.describe("raster mask native write matrix", () => {
 
     let mutationCount = 0;
     page.on("request", (request) => {
-      if (request.url().includes("/annotations")
-        && ["POST", "PATCH", "PUT", "DELETE"].includes(request.method())) mutationCount += 1;
+      if (
+        request.url().includes("/annotations") &&
+        ["POST", "PATCH", "PUT", "DELETE"].includes(request.method())
+      )
+        mutationCount += 1;
     });
     await page.keyboard.press("b");
     await page.keyboard.press("e");
@@ -298,19 +342,34 @@ test.describe("raster mask native write matrix", () => {
     expect(mutationCount).toBe(0);
   });
 
-  test("6. polygon with a hole replaces to Mask while preserving identity", async ({ page, request, seed }) => {
+  test("6. polygon with a hole replaces to Mask while preserving identity", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await openTask(page, seed, data, taskId);
     const token = await seed.accessToken(data.annotator_email);
     const sourceGeometry = {
       type: "polygon",
-      points: [[0.1, 0.1], [0.85, 0.1], [0.85, 0.85], [0.1, 0.85]],
-      holes: [[[0.35, 0.3], [0.62, 0.3], [0.62, 0.6], [0.35, 0.6]]],
+      points: [
+        [0.1, 0.1],
+        [0.85, 0.1],
+        [0.85, 0.85],
+        [0.1, 0.85],
+      ],
+      holes: [
+        [
+          [0.35, 0.3],
+          [0.62, 0.3],
+          [0.62, 0.6],
+          [0.35, 0.6],
+        ],
+      ],
     };
-    const created = await json<AnnotationDto>(await request.post(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      {
+    const created = await json<AnnotationDto>(
+      await request.post(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
         headers: authHeaders(token),
         data: {
           annotation_type: "polygon",
@@ -318,14 +377,15 @@ test.describe("raster mask native write matrix", () => {
           class_name: "car",
           geometry: sourceGeometry,
         },
-      },
-    ));
+      }),
+    );
     await page.reload();
     await page.getByTestId(`box-list-item-${created.id}`).click();
-    const convertedResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-      && response.ok(),
+    const convertedResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
     );
     await page.getByRole("button", { name: "\u8f6c\u4e3a Mask" }).click();
     const dialog = page.getByRole("dialog", { name: "\u6807\u6ce8\u8f6c\u6362\u4e2d\u5fc3" });
@@ -336,8 +396,10 @@ test.describe("raster mask native write matrix", () => {
     const report = dialog.getByLabel("\u8f6c\u6362\u9884\u89c8\u62a5\u544a");
     await expect(report).toContainText("\u5b54\u6d1e 1 \u2192 1");
     await dialog.getByRole("button", { name: "\u6267\u884c\u8f6c\u6362" }).click();
-    await page.getByRole("alertdialog", { name: "\u786e\u8ba4\u6267\u884c\u8f6c\u6362\uff1f" })
-      .getByRole("button", { name: "\u786e\u8ba4\u6267\u884c" }).click();
+    await page
+      .getByRole("alertdialog", { name: "\u786e\u8ba4\u6267\u884c\u8f6c\u6362\uff1f" })
+      .getByRole("button", { name: "\u786e\u8ba4\u6267\u884c" })
+      .click();
     const conversion = await json<ConversionResponse>(await convertedResponse);
     const converted = conversion.updated_annotations[0];
     expect(converted.id).toBe(created.id);
@@ -348,7 +410,11 @@ test.describe("raster mask native write matrix", () => {
     expect(conversion.report).toMatchObject({ source_count: 1, result_count: 1, lossy_count: 0 });
   });
 
-  test("7. Mask to multi-polygon reports loss, cancel is inert, confirm syncs both types", async ({ page, request, seed }) => {
+  test("7. Mask to multi-polygon reports loss, cancel is inert, confirm syncs both types", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -372,13 +438,20 @@ test.describe("raster mask native write matrix", () => {
     await expect(report).toContainText("\u5b54\u6d1e 1 \u2192 1");
     await dialog.getByRole("button", { name: "\u53d6\u6d88" }).click();
     await expect(dialog).not.toBeVisible();
-    await expect.poll(async () => (await listAnnotations(request, taskId, token))
-      .find((item) => item.id === fixture.annotation_id)?.geometry.type).toBe("raster_mask");
+    await expect
+      .poll(
+        async () =>
+          (await listAnnotations(request, taskId, token)).find(
+            (item) => item.id === fixture.annotation_id,
+          )?.geometry.type,
+      )
+      .toBe("raster_mask");
 
-    const convertedResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-      && response.ok(),
+    const convertedResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
     );
     await page.getByRole("button", { name: "\u8f6c\u4e3a\u77e2\u91cf\u51e0\u4f55" }).click();
     dialog = page.getByRole("dialog", { name: "\u6807\u6ce8\u8f6c\u6362\u4e2d\u5fc3" });
@@ -388,18 +461,25 @@ test.describe("raster mask native write matrix", () => {
     report = dialog.getByLabel("\u8f6c\u6362\u9884\u89c8\u62a5\u544a");
     await expect(report).toContainText("\u6709\u635f\u9879");
     await dialog.getByRole("button", { name: "\u6267\u884c\u8f6c\u6362" }).click();
-    await page.getByRole("alertdialog", { name: "\u786e\u8ba4\u6267\u884c\u8f6c\u6362\uff1f" })
-      .getByRole("button", { name: "\u786e\u8ba4\u6267\u884c" }).click();
+    await page
+      .getByRole("alertdialog", { name: "\u786e\u8ba4\u6267\u884c\u8f6c\u6362\uff1f" })
+      .getByRole("button", { name: "\u786e\u8ba4\u6267\u884c" })
+      .click();
     const conversion = await json<ConversionResponse>(await convertedResponse);
     const converted = conversion.updated_annotations[0];
     expect(converted.id).toBe(fixture.annotation_id);
     expect(converted.annotation_type).toBe("multi_polygon");
     expect(converted.geometry.type).toBe("multi_polygon");
     expect(converted.geometry.polygons).toHaveLength(3);
-    expect(converted.geometry.polygons?.some((polygon) => (polygon.holes?.length ?? 0) === 1)).toBeTruthy();
+    expect(
+      converted.geometry.polygons?.some((polygon) => (polygon.holes?.length ?? 0) === 1),
+    ).toBeTruthy();
   });
 
-  test("8. corrupt content is diagnosed on its own row while a healthy sibling remains usable", async ({ page, seed }) => {
+  test("8. corrupt content is diagnosed on its own row while a healthy sibling remains usable", async ({
+    page,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const healthy = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
@@ -410,15 +490,24 @@ test.describe("raster mask native write matrix", () => {
     });
     await openTask(page, seed, data, taskId);
 
-    await expect(page.getByTestId(`box-list-item-${healthy.annotation_id}`)).toContainText("px", { timeout: 15_000 });
+    await expect(page.getByTestId(`box-list-item-${healthy.annotation_id}`)).toContainText("px", {
+      timeout: 15_000,
+    });
     const corruptRow = page.getByTestId(`box-list-item-${corrupt.annotation_id}`);
     await expect(corruptRow).toContainText("missing_object", { timeout: 15_000 });
     await corruptRow.click();
-    await expect(page.getByRole("button", { name: "\u590d\u5236 Mask \u8bca\u65ad" })).toBeVisible();
-    await expect(page.getByLabel("Mask \u52a0\u8f7d\u72b6\u6001")).toContainText("mask object is invalid");
+    await expect(
+      page.getByRole("button", { name: "\u590d\u5236 Mask \u8bca\u65ad" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Mask \u52a0\u8f7d\u72b6\u6001")).toContainText(
+      "mask object is invalid",
+    );
   });
 
-  test("10. deployment create-on does not regress the legacy polygon Mask flow", async ({ page, seed }) => {
+  test("10. deployment create-on does not regress the legacy polygon Mask flow", async ({
+    page,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await openTask(page, seed, data, taskId, false);
@@ -426,10 +515,11 @@ test.describe("raster mask native write matrix", () => {
     await page.keyboard.press("m");
     await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
     await paintStroke(page);
-    const createdResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`)
-      && response.request().method() === "POST"
-      && response.status() === 201,
+    const createdResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotations`) &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
     );
     await page.keyboard.press("Enter");
     const created = await json<AnnotationDto>(await createdResponse);
@@ -437,7 +527,10 @@ test.describe("raster mask native write matrix", () => {
     expect(created.geometry.type).toBe("polygon");
   });
 
-  test("12. retry reloads only the failed Mask and never reloads a healthy sibling", async ({ page, seed }) => {
+  test("12. retry reloads only the failed Mask and never reloads a healthy sibling", async ({
+    page,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const healthy = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
@@ -462,12 +555,18 @@ test.describe("raster mask native write matrix", () => {
     expect(reads.get(healthy.annotation_id)).toBe(1);
     expect(reads.get(corrupt.annotation_id)).toBe(1);
 
-    await corruptRow.getByRole("button", { name: new RegExp(`Mask ${corrupt.annotation_id}`) }).click();
+    await corruptRow
+      .getByRole("button", { name: new RegExp(`Mask ${corrupt.annotation_id}`) })
+      .click();
     await expect.poll(() => reads.get(corrupt.annotation_id)).toBe(2);
     expect(reads.get(healthy.annotation_id)).toBe(1);
   });
 
-  test("13. 8K sparse Mask edits, saves and reloads through the tiled workbench", async ({ page, request, seed }) => {
+  test("13. 8K sparse Mask edits, saves and reloads through the tiled workbench", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -493,10 +592,11 @@ test.describe("raster mask native write matrix", () => {
 
     await paintStroke(page, [0.35, 0.35], [0.46, 0.42]);
     await expect(toolbar).toContainText("未保存");
-    const updateResponse = page.waitForResponse((response) =>
-      response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`)
-      && response.request().method() === "PATCH"
-      && response.ok(),
+    const updateResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`) &&
+        response.request().method() === "PATCH" &&
+        response.ok(),
     );
     await page.keyboard.press("Enter");
     await updateResponse;
@@ -514,13 +614,21 @@ test.describe("raster mask native write matrix", () => {
 test.describe("raster mask read-only and closed-gate matrix", () => {
   test.skip(MATRIX !== "readonly", "requires RASTER_MASK_CREATE_ENABLED=false");
 
-  test("9. read-on/create-off renders existing content but exposes no native create or edit", async ({ page, request, seed }) => {
+  test("9. read-on/create-off renders existing content but exposes no native create or edit", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
     await openTask(page, seed, data, taskId);
     const token = await seed.accessToken(data.annotator_email);
-    const capabilities = await json<{ read_enabled: boolean; write_enabled: boolean; legacy_polygon_commit_enabled: boolean }>(
+    const capabilities = await json<{
+      read_enabled: boolean;
+      write_enabled: boolean;
+      legacy_polygon_commit_enabled: boolean;
+    }>(
       await request.get(`${API_BASE}/api/v1/tasks/${taskId}/mask-capabilities`, {
         headers: authHeaders(token),
       }),
@@ -543,14 +651,20 @@ test.describe("raster mask read-only and closed-gate matrix", () => {
     expect((await upload.json()).detail.reason).toBe("raster_mask_create_disabled");
   });
 
-  test("11. closed gate rejects upload, direct create, prediction accept and import without new rows", async ({ request, seed }) => {
+  test("11. closed gate rejects upload, direct create, prediction accept and import without new rows", async ({
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await seed.configureRasterMask(data.project_id, true);
     await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
     const token = await seed.accessToken(data.admin_email);
     const existing = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
-    const prediction = await seed.injectRasterPrediction({ taskId, userEmail: data.annotator_email });
+    const prediction = await seed.injectRasterPrediction({
+      taskId,
+      userEmail: data.annotator_email,
+    });
     const before = await listAnnotations(request, taskId, token);
     const rle = await getMaskContent(request, existing.annotation_id, token);
 
@@ -579,24 +693,27 @@ test.describe("raster mask read-only and closed-gate matrix", () => {
     expect(accepted.status()).toBe(409);
     expect((await accepted.json()).detail.reason).toBe("raster_mask_create_disabled");
 
-    const task = await json<{ display_id: string }>(await request.get(
-      `${API_BASE}/api/v1/tasks/${taskId}`,
-      { headers: authHeaders(token) },
-    ));
+    const task = await json<{ display_id: string }>(
+      await request.get(`${API_BASE}/api/v1/tasks/${taskId}`, { headers: authHeaders(token) }),
+    );
     const envelope = {
       schema_version: "1.3",
       exported_from: { platform: "aap" },
       project: { name: "E2E", type_key: "image-det" },
       mask_objects: { [existing.mask.sha256]: rle },
-      tasks: [{
-        task_match: { display_id: task.display_id },
-        annotations: [{
-          geometry: { type: "raster_mask", mask: existing.mask },
-          class_name: "car",
-          tool_unit_id: "region",
-          source: "manual",
-        }],
-      }],
+      tasks: [
+        {
+          task_match: { display_id: task.display_id },
+          annotations: [
+            {
+              geometry: { type: "raster_mask", mask: existing.mask },
+              class_name: "car",
+              tool_unit_id: "region",
+              source: "manual",
+            },
+          ],
+        },
+      ],
     };
     const imported = await request.post(
       `${API_BASE}/api/v1/projects/${data.project_id}/annotations/import?format=aap_json`,

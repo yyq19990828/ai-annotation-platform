@@ -17,13 +17,9 @@ export const rasterMasksApi = {
     if (!gzip) {
       return apiClient.post<CocoRleMaskRef>(`/tasks/${taskId}/mask-content`, rle);
     }
-    return apiClient.post<CocoRleMaskRef>(
-      `/tasks/${taskId}/mask-content`,
-      undefined,
-      {
-        body: gzip.body,
-        headers: { "Content-Encoding": "gzip" },
-      },
-    );
+    return apiClient.post<CocoRleMaskRef>(`/tasks/${taskId}/mask-content`, undefined, {
+      body: gzip.body,
+      headers: { "Content-Encoding": "gzip" },
+    });
   },
 };

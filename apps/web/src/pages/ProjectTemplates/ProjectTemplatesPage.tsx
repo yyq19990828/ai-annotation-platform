@@ -50,7 +50,9 @@ export function ProjectTemplatesPage() {
 
   const scopeFilter = SCOPE_BY_TAB[activeTab];
   const list = useProjectTemplates(
-    scopeFilter ? { scope: scopeFilter, search: search || undefined } : { search: search || undefined },
+    scopeFilter
+      ? { scope: scopeFilter, search: search || undefined }
+      : { search: search || undefined },
   );
   const remove = useDeleteProjectTemplate();
   const duplicate = useDuplicateProjectTemplate();
@@ -78,7 +80,11 @@ export function ProjectTemplatesPage() {
   };
 
   const handleDelete = (t: ProjectTemplateOut) => {
-    if (!confirm(`确定删除模板「${t.name}」?\n已使用 ${t.usage_count} 次, 删除不会影响历史已创建的项目.`)) {
+    if (
+      !confirm(
+        `确定删除模板「${t.name}」?\n已使用 ${t.usage_count} 次, 删除不会影响历史已创建的项目.`,
+      )
+    ) {
       return;
     }
     remove.mutate(t.id, {
@@ -104,8 +110,8 @@ export function ProjectTemplatesPage() {
         <div>
           <h2 className={styles.title}>项目模板库</h2>
           <p className={styles.titleHint}>
-            v0.10.14 · 模板是独立资产, 应用模板时把字段复制进新项目;
-            后续修改模板不影响已有项目. 与"从已有项目复制"功能并存.
+            v0.10.14 · 模板是独立资产, 应用模板时把字段复制进新项目; 后续修改模板不影响已有项目.
+            与"从已有项目复制"功能并存.
           </p>
         </div>
         <div className={styles.toolbar}>
@@ -119,18 +125,9 @@ export function ProjectTemplatesPage() {
       </div>
 
       <div className={styles.toolbar}>
-        <TabRow
-          tabs={[...TABS]}
-          active={activeTab}
-          onChange={(t) => setActiveTab(t as TabLabel)}
-        />
+        <TabRow tabs={[...TABS]} active={activeTab} onChange={(t) => setActiveTab(t as TabLabel)} />
         <div className={styles.grow} />
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="搜索模板名称…"
-          width={220}
-        />
+        <SearchInput value={search} onChange={setSearch} placeholder="搜索模板名称…" width={220} />
       </div>
 
       {list.isLoading ? (
@@ -156,16 +153,9 @@ export function ProjectTemplatesPage() {
         </div>
       )}
 
-      <TemplateEditModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        initial={editTarget}
-      />
+      <TemplateEditModal open={editOpen} onClose={() => setEditOpen(false)} initial={editTarget} />
 
-      <CreateFromProjectDialog
-        open={fromProjectOpen}
-        onClose={() => setFromProjectOpen(false)}
-      />
+      <CreateFromProjectDialog open={fromProjectOpen} onClose={() => setFromProjectOpen(false)} />
 
       <Suspense fallback={null}>
         {applyTemplateId ? (

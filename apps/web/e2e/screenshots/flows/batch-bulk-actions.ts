@@ -9,7 +9,10 @@
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 
-export async function runBatchBulkActions(page: Page, catalog: ScreenshotSeedCatalog): Promise<void> {
+export async function runBatchBulkActions(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<void> {
   // ── Step 1：进项目设置「批次管理」────────────────────────────
   await page.goto(`/projects/${catalog.projects.image_demo.id}/settings?section=batches`);
   await page.waitForLoadState("networkidle");
@@ -32,9 +35,6 @@ export async function runBatchBulkActions(page: Page, catalog: ScreenshotSeedCat
   }
 
   // ── Step 4：停留展示「已选 … 通过/驳回/改派/归档/删除」─────
-  await page
-    .getByText(/已选/)
-    .first()
-    .waitFor({ timeout: 2000 });
+  await page.getByText(/已选/).first().waitFor({ timeout: 2000 });
   await page.waitForTimeout(2000);
 }

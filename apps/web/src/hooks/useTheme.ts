@@ -12,12 +12,18 @@ function readLocalPref(): ThemePref {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
-  } catch { /* SSR / private mode */ }
+  } catch {
+    /* SSR / private mode */
+  }
   return "system";
 }
 
 function writeLocalPref(pref: ThemePref) {
-  try { localStorage.setItem(STORAGE_KEY, pref); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, pref);
+  } catch {
+    /* ignore */
+  }
 }
 
 function systemResolved(): Resolved {

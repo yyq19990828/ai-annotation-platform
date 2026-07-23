@@ -331,8 +331,7 @@ async def seed(
                 for key, value in backend_report["bindings"].items()
             )
             print(
-                f"  ready screenshots ML binding mode={ml_backend_mode} "
-                f"{binding_names}"
+                f"  ready screenshots ML binding mode={ml_backend_mode} {binding_names}"
             )
             try:
                 await build_screenshot_seed_catalog(db)

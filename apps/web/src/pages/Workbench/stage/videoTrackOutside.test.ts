@@ -19,22 +19,26 @@ const track: VideoTrackGeometry = {
 
 describe("videoTrackOutside", () => {
   it("normalizes outside ranges by sorting and merging adjacent ranges", () => {
-    expect(normalizeOutsideRanges([
-      { from: 7, to: 8 },
-      { from: 3, to: 4 },
-      { from: 5, to: 6 },
-      { from: 12, to: 10, source: "prediction" },
-    ])).toEqual([
+    expect(
+      normalizeOutsideRanges([
+        { from: 7, to: 8 },
+        { from: 3, to: 4 },
+        { from: 5, to: 6 },
+        { from: 12, to: 10, source: "prediction" },
+      ]),
+    ).toEqual([
       { from: 3, to: 8, source: "manual" },
       { from: 10, to: 12, source: "prediction" },
     ]);
   });
 
   it("preserves ownership when manual and prediction ranges touch", () => {
-    expect(normalizeOutsideRanges([
-      { from: 0, to: 3, source: "prediction" },
-      { from: 4, to: 4, source: "manual" },
-    ])).toEqual([
+    expect(
+      normalizeOutsideRanges([
+        { from: 0, to: 3, source: "prediction" },
+        { from: 4, to: 4, source: "manual" },
+      ]),
+    ).toEqual([
       { from: 0, to: 3, source: "prediction" },
       { from: 4, to: 4, source: "manual" },
     ]);

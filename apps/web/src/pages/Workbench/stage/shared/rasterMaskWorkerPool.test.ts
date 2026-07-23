@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  RasterMaskWorkerRequest,
-  RasterMaskWorkerResponse,
-} from "./rasterMaskWorkerProtocol";
+import type { RasterMaskWorkerRequest, RasterMaskWorkerResponse } from "./rasterMaskWorkerProtocol";
 import {
   RasterMaskWorkerCancelledError,
   RasterMaskWorkerError,
@@ -47,72 +44,82 @@ class FakeWorker {
     const request = this.jobRequests().find((candidate) => candidate.id === id);
     if (!request || request.kind !== "analyze") throw new Error(`analyze request ${id} not found`);
     const [height, width] = request.rle.size;
-    this.onmessage?.({ data: {
-      kind: "analyze",
-      id,
-      ok: true,
-      analysis: {
-        sourceWidth: width,
-        sourceHeight: height,
-        area: 0,
-        componentCount: 0,
-        holeCount: 0,
-        boundaryPixelCount: 0,
-        bounds: { x: 0, y: 0, w: 0, h: 0 },
-        crop: { x: 0, y: 0, width: 0, height: 0, alpha: new Uint8Array() },
+    this.onmessage?.({
+      data: {
+        kind: "analyze",
+        id,
+        ok: true,
+        analysis: {
+          sourceWidth: width,
+          sourceHeight: height,
+          area: 0,
+          componentCount: 0,
+          holeCount: 0,
+          boundaryPixelCount: 0,
+          bounds: { x: 0, y: 0, w: 0, h: 0 },
+          crop: { x: 0, y: 0, width: 0, height: 0, alpha: new Uint8Array() },
+        },
       },
-    } } as MessageEvent<RasterMaskWorkerResponse>);
+    } as MessageEvent<RasterMaskWorkerResponse>);
   }
 
   respondTile(id: number, alpha: Uint8Array) {
     const request = this.jobRequests().find((candidate) => candidate.id === id);
     if (!request || request.kind !== "tile_decode") throw new Error(`tile request ${id} not found`);
-    this.onmessage?.({ data: {
-      kind: "tile_decode",
-      id,
-      ok: true,
-      sessionId: request.sessionId,
-      sha256: request.sha256,
-      rect: request.rect,
-      alpha,
-    } } as MessageEvent<RasterMaskWorkerResponse>);
+    this.onmessage?.({
+      data: {
+        kind: "tile_decode",
+        id,
+        ok: true,
+        sessionId: request.sessionId,
+        sha256: request.sha256,
+        rect: request.rect,
+        alpha,
+      },
+    } as MessageEvent<RasterMaskWorkerResponse>);
   }
 
   respondCompare(id: number, codes: Uint8Array) {
     const request = this.jobRequests().find((candidate) => candidate.id === id);
-    if (!request || request.kind !== "compare_tile") throw new Error(`compare request ${id} not found`);
-    this.onmessage?.({ data: {
-      kind: "compare_tile",
-      id,
-      ok: true,
-      current: request.current,
-      baseline: request.baseline,
-      rect: request.rect,
-      mode: request.mode,
-      sampleStep: request.sampleStep,
-      codes,
-    } } as MessageEvent<RasterMaskWorkerResponse>);
+    if (!request || request.kind !== "compare_tile")
+      throw new Error(`compare request ${id} not found`);
+    this.onmessage?.({
+      data: {
+        kind: "compare_tile",
+        id,
+        ok: true,
+        current: request.current,
+        baseline: request.baseline,
+        rect: request.rect,
+        mode: request.mode,
+        sampleStep: request.sampleStep,
+        codes,
+      },
+    } as MessageEvent<RasterMaskWorkerResponse>);
   }
 
   respondCompareMetrics(id: number) {
     const request = this.jobRequests().find((candidate) => candidate.id === id);
-    if (!request || request.kind !== "compare_metrics") throw new Error(`metrics request ${id} not found`);
-    this.onmessage?.({ data: {
-      kind: "compare_metrics",
-      id,
-      ok: true,
-      current: request.current,
-      baseline: request.baseline,
-      metrics: {
-        currentAreaPixels: 2,
-        baselineAreaPixels: 1,
-        intersectionPixels: 1,
-        unionPixels: 2,
-        changedPixels: 1,
-        addedPixels: 1,
-        removedPixels: 0,
+    if (!request || request.kind !== "compare_metrics")
+      throw new Error(`metrics request ${id} not found`);
+    this.onmessage?.({
+      data: {
+        kind: "compare_metrics",
+        id,
+        ok: true,
+        current: request.current,
+        baseline: request.baseline,
+        metrics: {
+          currentAreaPixels: 2,
+          baselineAreaPixels: 1,
+          intersectionPixels: 1,
+          unionPixels: 2,
+          changedPixels: 1,
+          addedPixels: 1,
+          removedPixels: 0,
+        },
       },
-    } } as MessageEvent<RasterMaskWorkerResponse>);
+    } as MessageEvent<RasterMaskWorkerResponse>);
   }
 
   respond(response: RasterMaskWorkerResponse) {
@@ -162,7 +169,8 @@ describe("RasterMaskWorkerPool", () => {
     await Promise.all(Array.from({ length: 20 }, () => pool.analyze(input)));
 
     expect(workers).toHaveLength(2);
-    const first = workers.flatMap((worker) => worker.messages)
+    const first = workers
+      .flatMap((worker) => worker.messages)
       .find((entry) => entry.request.kind === "analyze");
     expect(first?.request.kind).toBe("analyze");
     if (!first || first.request.kind !== "analyze") throw new Error("missing analyze request");
@@ -243,7 +251,10 @@ describe("RasterMaskWorkerPool", () => {
         },
       },
     });
-    await expect(operation).resolves.toMatchObject({ context, result: { alpha: Uint8Array.from([255, 0]) } });
+    await expect(operation).resolves.toMatchObject({
+      context,
+      result: { alpha: Uint8Array.from([255, 0]) },
+    });
 
     const instance = pool.executeInstanceOperation(
       zeroRle(2),
@@ -289,7 +300,8 @@ describe("RasterMaskWorkerPool", () => {
     expect(workers[0].terminateCalls).toBe(1);
     expect(workers[1].terminateCalls).toBe(0);
     const healthyRequest = workers[1].jobRequests()[0];
-    if (!healthyRequest || healthyRequest.kind !== "analyze") throw new Error("missing healthy request");
+    if (!healthyRequest || healthyRequest.kind !== "analyze")
+      throw new Error("missing healthy request");
     workers[1].respondAnalyze(healthyRequest.id);
     await cancellation;
     await healthy;
@@ -352,11 +364,7 @@ describe("RasterMaskWorkerPool", () => {
     if (registration.request.kind !== "register_session") throw new Error("missing registration");
     expect(registration.transfer).toEqual([registration.request.rle.counts.buffer]);
 
-    const tile = pool.decodeTile(
-      "session-a",
-      "sha-a",
-      { x: 1, y: 1, width: 2, height: 2 },
-    );
+    const tile = pool.decodeTile("session-a", "sha-a", { x: 1, y: 1, width: 2, height: 2 });
     const rejected = expect(tile).rejects.toBeInstanceOf(RasterMaskWorkerError);
     workers[0].crash();
     await rejected;
@@ -394,7 +402,9 @@ describe("RasterMaskWorkerPool", () => {
     });
 
     const metrics = pool.compareMetrics(current, baseline);
-    const metricsRequest = worker.jobRequests().find((candidate) => candidate.kind === "compare_metrics");
+    const metricsRequest = worker
+      .jobRequests()
+      .find((candidate) => candidate.kind === "compare_metrics");
     if (!metricsRequest) throw new Error("missing compare metrics request");
     worker.respondCompareMetrics(metricsRequest.id);
     await expect(metrics).resolves.toMatchObject({

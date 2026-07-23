@@ -26,10 +26,7 @@ function cap(
 describe("buildSecondaryInferencePayload", () => {
   it("geometry: 带 model_variants (协议 v2), 无 write_keys", () => {
     const payload = buildSecondaryInferencePayload(
-      cap(
-        { id: "yolo-det", task: "detection", default_variants: { size: "l" } },
-        "geometry",
-      ),
+      cap({ id: "yolo-det", task: "detection", default_variants: { size: "l" } }, "geometry"),
     );
     expect(payload.ml_backend_id).toBe("be-1");
     expect(payload.write_target).toBe("geometry");
@@ -67,17 +64,15 @@ describe("buildSecondaryInferencePayload", () => {
   });
 
   it("attributes: 无输出 schema → write_keys=null (全取)", () => {
-    const payload = buildSecondaryInferencePayload(
-      cap({ id: "ocr", task: "ocr" }, "attributes"),
-    );
+    const payload = buildSecondaryInferencePayload(cap({ id: "ocr", task: "ocr" }, "attributes"));
     expect(payload.write_keys).toBeNull();
   });
 
   it("params: 用户调过的参数带进请求; 空 → null", () => {
     const c = cap({ id: "det", task: "detection" }, "geometry");
-    expect(
-      buildSecondaryInferencePayload(c, { score_threshold: 0.4 }).params,
-    ).toEqual({ score_threshold: 0.4 });
+    expect(buildSecondaryInferencePayload(c, { score_threshold: 0.4 }).params).toEqual({
+      score_threshold: 0.4,
+    });
     expect(buildSecondaryInferencePayload(c, {}).params).toBeNull();
     expect(buildSecondaryInferencePayload(c).params).toBeNull();
   });
@@ -88,9 +83,10 @@ describe("buildSecondaryInferencePayload", () => {
       "geometry",
     );
     // 用户只改 size, series 保留默认。
-    expect(
-      buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
-    ).toEqual({ series: "yolo11", size: "s" });
+    expect(buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants).toEqual({
+      series: "yolo11",
+      size: "s",
+    });
     // 未传 variants → 纯默认。
     expect(buildSecondaryInferencePayload(c).model_variants).toEqual({
       series: "yolo11",
@@ -100,9 +96,7 @@ describe("buildSecondaryInferencePayload", () => {
 
   it("variants: 无变体轴的 attributes 能力 → null (走扁平路径)", () => {
     const c = cap({ id: "cls", task: "classification" }, "attributes");
-    expect(
-      buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants,
-    ).toBeNull();
+    expect(buildSecondaryInferencePayload(c, undefined, { size: "s" }).model_variants).toBeNull();
   });
 
   it("variants: 有变体轴的 OCR 属性能力 → 带 model_variants (协议 v2)", () => {
@@ -119,28 +113,25 @@ describe("buildSecondaryInferencePayload", () => {
       "attributes",
     );
     // 用户改 lang, version/size 保留默认。
-    expect(
-      buildSecondaryInferencePayload(c, undefined, { lang: "en" }).model_variants,
-    ).toEqual({ version: "v5", size: "mobile", lang: "en" });
+    expect(buildSecondaryInferencePayload(c, undefined, { lang: "en" }).model_variants).toEqual({
+      version: "v5",
+      size: "mobile",
+      lang: "en",
+    });
   });
 
   it("prompt: 开集文本带进请求 (trim); 空/空白 → null", () => {
     const c = cap({ id: "gdino", task: "detection" }, "geometry");
-    expect(
-      buildSecondaryInferencePayload(c, undefined, undefined, "  car . person  ")
-        .prompt,
-    ).toBe("car . person");
+    expect(buildSecondaryInferencePayload(c, undefined, undefined, "  car . person  ").prompt).toBe(
+      "car . person",
+    );
     expect(buildSecondaryInferencePayload(c, undefined, undefined, "   ").prompt).toBeNull();
     expect(buildSecondaryInferencePayload(c).prompt).toBeNull();
   });
 
   it("needsTextPrompt: supported_prompts 含 text → true", () => {
-    expect(
-      needsTextPrompt(cap({ id: "g", supported_prompts: ["text"] }, "geometry")),
-    ).toBe(true);
-    expect(
-      needsTextPrompt(cap({ id: "y", supported_prompts: ["none"] }, "geometry")),
-    ).toBe(false);
+    expect(needsTextPrompt(cap({ id: "g", supported_prompts: ["text"] }, "geometry"))).toBe(true);
+    expect(needsTextPrompt(cap({ id: "y", supported_prompts: ["none"] }, "geometry"))).toBe(false);
     expect(needsTextPrompt(cap({ id: "z" }, "geometry"))).toBe(false);
   });
 });
@@ -163,10 +154,7 @@ describe("mergeSecondaryResult", () => {
 
   it("子框直接追加进缓存 (无需 refetch, 画布/侧栏立即可见)", () => {
     const prev = [box("a")];
-    const out = mergeSecondaryResult(
-      prev,
-      resp(box("a"), [box("c1"), box("c2")]),
-    );
+    const out = mergeSecondaryResult(prev, resp(box("a"), [box("c1"), box("c2")]));
     expect(out?.map((a) => a.id)).toEqual(["a", "c1", "c2"]);
   });
 

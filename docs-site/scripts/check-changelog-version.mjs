@@ -36,9 +36,7 @@ if (!m) {
 
 const changelogVersion = m[1];
 if (cmp(changelogVersion, tagVersion) < 0) {
-  console.log(
-    `::warning::CHANGELOG.md 最新版本 v${changelogVersion} 落后于 git tag ${latestTag}`,
-  );
+  console.log(`::warning::CHANGELOG.md 最新版本 v${changelogVersion} 落后于 git tag ${latestTag}`);
   process.exit(0);
 }
 console.log(`changelog version check OK: CHANGELOG v${changelogVersion} >= tag ${latestTag}`);

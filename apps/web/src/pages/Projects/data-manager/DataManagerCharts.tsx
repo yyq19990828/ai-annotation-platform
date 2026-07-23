@@ -1,13 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
-import {
-  Bar,
-  BarChart,
-  LabelList,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import type {
   DataManagerEntityFacets,
@@ -72,9 +64,7 @@ function rows(
 ) {
   return Object.entries(values)
     .filter(([, value]) => value > 0)
-    .sort((a, b) => order
-      ? order.indexOf(a[0]) - order.indexOf(b[0])
-      : b[1] - a[1])
+    .sort((a, b) => (order ? order.indexOf(a[0]) - order.indexOf(b[0]) : b[1] - a[1]))
     .slice(0, 8)
     .map(([key, value]) => ({ key, name: labels[key] ?? key, value }));
 }
@@ -161,11 +151,12 @@ export function DataManagerCharts({
         {
           title: "待审置信度",
           description: "候选级分布，低于 50% 计为低置信",
-          data: rows(
-            summary.ai_review.confidence_buckets,
-            CONFIDENCE_BUCKET_LABELS,
-            ["lt_025", "025_049", "050_074", "gte_075"],
-          ),
+          data: rows(summary.ai_review.confidence_buckets, CONFIDENCE_BUCKET_LABELS, [
+            "lt_025",
+            "025_049",
+            "050_074",
+            "gte_075",
+          ]),
         },
       ];
       // 每个 select / boolean 属性追加一张「属性值分布」图，点柱子下钻到含该值的任务。
@@ -203,12 +194,8 @@ export function DataManagerCharts({
       },
       {
         title: scope === "tracks" ? "质量异常" : "几何类型",
-        description:
-          scope === "tracks" ? "需要进一步审阅的轨迹异常" : "对象按几何类型统计",
-        data:
-          scope === "tracks"
-            ? rows(facets.by_quality, QUALITY_LABELS)
-            : rows(facets.by_type),
+        description: scope === "tracks" ? "需要进一步审阅的轨迹异常" : "对象按几何类型统计",
+        data: scope === "tracks" ? rows(facets.by_quality, QUALITY_LABELS) : rows(facets.by_type),
         filterField: scope === "objects" ? "annotation.annotation_type" : undefined,
       },
     ];
@@ -219,7 +206,10 @@ export function DataManagerCharts({
 
   return (
     <section aria-label="标注统计图表" className="grid gap-x-6 gap-y-5 lg:grid-cols-2">
-      {(isLoading ? Array.from({ length: scope === "tasks" ? 5 : 3 }, (_, index) => index) : specs).map((spec) => (
+      {(isLoading
+        ? Array.from({ length: scope === "tasks" ? 5 : 3 }, (_, index) => index)
+        : specs
+      ).map((spec) => (
         <div key={typeof spec === "number" ? spec : spec.title} className="min-w-0">
           {typeof spec === "number" ? (
             <Skeleton className="h-40 w-full" />
@@ -247,7 +237,10 @@ export function DataManagerCharts({
                   >
                     <BarChart
                       accessibilityLayer={false}
-                      data={spec.data.map((entry) => ({ ...entry, fill: barColor(spec, entry.key) }))}
+                      data={spec.data.map((entry) => ({
+                        ...entry,
+                        fill: barColor(spec, entry.key),
+                      }))}
                       layout="vertical"
                       margin={{ top: 0, right: 44, bottom: 0, left: 4 }}
                     >

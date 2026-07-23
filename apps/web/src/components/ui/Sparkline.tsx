@@ -9,7 +9,12 @@ interface SparklineProps {
   height?: number;
 }
 
-export function Sparkline({ values, color = "var(--sc-brand)", width = 120, height = 28 }: SparklineProps) {
+export function Sparkline({
+  values,
+  color = "var(--sc-brand)",
+  width = 120,
+  height = 28,
+}: SparklineProps) {
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = max - min || 1;

@@ -166,15 +166,14 @@
   --sc-code-bg: #ececef;
   --sc-code-fg: #18181b;
 
-  --font: "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont,
-    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial,
-    sans-serif;
-  --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", "Menlo", "Consolas",
-    monospace;
+  --font:
+    "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
   --radius-pill: 9999px;
   --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.06);
   --shadow-md: 0 2px 8px rgba(24, 24, 27, 0.08), 0 1px 2px rgba(24, 24, 27, 0.05);
-  --shadow-lg: 0 16px 40px rgba(24, 24, 27, 0.10), 0 2px 6px rgba(24, 24, 27, 0.06);
+  --shadow-lg: 0 16px 40px rgba(24, 24, 27, 0.1), 0 2px 6px rgba(24, 24, 27, 0.06);
 }
 
 /* —— Geist 调色板 · 深色(墨色画布 / 近白字,主场) —— */

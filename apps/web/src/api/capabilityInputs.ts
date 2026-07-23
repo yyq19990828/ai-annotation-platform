@@ -1,8 +1,4 @@
-import {
-  INPUTS,
-  INPUT_IDS,
-  type InputId,
-} from "./generated/capabilityVocab.gen";
+import { INPUTS, INPUT_IDS, type InputId } from "./generated/capabilityVocab.gen";
 
 const INPUT_ID_SET = new Set<string>(INPUT_IDS);
 
@@ -23,10 +19,7 @@ export function isInputId(value: string): value is InputId {
   return INPUT_ID_SET.has(value);
 }
 
-export function hasInput(
-  inputs: readonly string[] | null | undefined,
-  input: InputId,
-): boolean {
+export function hasInput(inputs: readonly string[] | null | undefined, input: InputId): boolean {
   return (inputs ?? []).includes(input);
 }
 

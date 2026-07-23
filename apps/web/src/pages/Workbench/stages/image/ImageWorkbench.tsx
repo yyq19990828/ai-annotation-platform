@@ -67,11 +67,12 @@ export interface ImageWorkbenchProps {
   onCommitRotatedBbox: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle。 */
   onCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
-  onSamPrompt: (prompt:
-    | { kind: "point"; pt: [number, number]; alt: boolean }
-    | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
-    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
+  onSamPrompt: (
+    prompt:
+      | { kind: "point"; pt: [number, number]; alt: boolean }
+      | { kind: "bbox"; bbox: [number, number, number, number] }
+      | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
+      | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean },
   ) => void;
   samCandidates: {
     id: string;
@@ -101,7 +102,11 @@ export interface ImageWorkbenchProps {
     childMoves?: { id: string; before: Geometry; after: Geometry }[],
   ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
-  onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  onCommitPolygonGeometry: (
+    id: string,
+    before: [number, number][],
+    after: [number, number][],
+  ) => void;
   onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onChangeUserBoxClass: (id: string) => void;
@@ -231,15 +236,18 @@ export function ImageWorkbench({
   onIssuePinDrop,
 }: ImageWorkbenchProps) {
   const displayedRasterMaskRecords = useMemo(() => {
-    const hiddenIds = new Set(userBoxes.filter((annotation) => annotation.is_hidden).map((annotation) => annotation.id));
+    const hiddenIds = new Set(
+      userBoxes.filter((annotation) => annotation.is_hidden).map((annotation) => annotation.id),
+    );
     return rasterMaskRecords
       .filter((record) => !hiddenIds.has(record.id) && record.id !== editingRasterMaskId)
       .sort((left, right) => left.zOrder - right.zOrder);
   }, [editingRasterMaskId, rasterMaskRecords, userBoxes]);
   const editingRasterMaskRecord = useMemo(
-    () => editingRasterMaskId
-      ? rasterMaskRecords.find((record) => record.id === editingRasterMaskId) ?? null
-      : null,
+    () =>
+      editingRasterMaskId
+        ? (rasterMaskRecords.find((record) => record.id === editingRasterMaskId) ?? null)
+        : null,
     [editingRasterMaskId, rasterMaskRecords],
   );
   // v0.21.11 · 图片焦点联动: 选中对象(键盘两级循环 / 点选)若出视口或过小则平移居中 + 适度放大。
@@ -261,12 +269,11 @@ export function ImageWorkbench({
     setVp,
     rasterMaskStatusById,
   };
-  const selectedRasterMaskStatus = selectedId
-    ? rasterMaskStatusById.get(selectedId)
-    : undefined;
-  const selectedRasterMaskFocusRevision = selectedRasterMaskStatus?.state === "ready"
-    ? selectedRasterMaskStatus.cacheKey
-    : selectedRasterMaskStatus?.state ?? null;
+  const selectedRasterMaskStatus = selectedId ? rasterMaskStatusById.get(selectedId) : undefined;
+  const selectedRasterMaskFocusRevision =
+    selectedRasterMaskStatus?.state === "ready"
+      ? selectedRasterMaskStatus.cacheKey
+      : (selectedRasterMaskStatus?.state ?? null);
   useEffect(() => {
     if (!focusSelectionEnabled || !selectedId) return;
     const {
@@ -293,8 +300,10 @@ export function ImageWorkbench({
       const screenCx = cx * scale + cur.tx;
       const screenCy = cy * scale + cur.ty;
       const outOfView =
-        screenCx < margin || screenCx > vpSize.w - margin ||
-        screenCy < margin || screenCy > vpSize.h - margin;
+        screenCx < margin ||
+        screenCx > vpSize.w - margin ||
+        screenCy < margin ||
+        screenCy > vpSize.h - margin;
       if (!outOfView && scale === cur.scale) return cur;
       return { scale, tx: vpSize.w / 2 - cx * scale, ty: vpSize.h / 2 - cy * scale };
     });

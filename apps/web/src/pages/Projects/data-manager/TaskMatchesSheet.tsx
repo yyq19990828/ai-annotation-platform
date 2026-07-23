@@ -51,42 +51,58 @@ export function TaskMatchesSheet({
         </SheetHeader>
         <ScrollArea className="min-h-0 flex-1 px-4">
           <div className="flex flex-col gap-2 pb-4">
-            {matchesQ.isLoading && Array.from({ length: 4 }, (_, index) => (
-              <Skeleton key={index} className="h-24 w-full" />
-            ))}
+            {matchesQ.isLoading &&
+              Array.from({ length: 4 }, (_, index) => (
+                <Skeleton key={index} className="h-24 w-full" />
+              ))}
             {matchesQ.isError && (
               <div className="rounded-md border border-destructive p-3 text-sm text-destructive">
                 无法加载匹配对象
               </div>
             )}
             {matchesQ.data?.items.map((item) => (
-              <article key={`${item.entity_kind}-${item.id}-${item.shape_index ?? ""}`} className="rounded-md border border-border bg-card p-3">
+              <article
+                key={`${item.entity_kind}-${item.id}-${item.shape_index ?? ""}`}
+                className="rounded-md border border-border bg-card p-3"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{item.class_name ?? item.track_id ?? item.id}</div>
+                    <div className="truncate text-sm font-medium">
+                      {item.class_name ?? item.track_id ?? item.id}
+                    </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {[item.tool_unit_id, item.annotation_type, item.source].filter(Boolean).join(" · ") || "候选结果"}
+                      {[item.tool_unit_id, item.annotation_type, item.source]
+                        .filter(Boolean)
+                        .join(" · ") || "候选结果"}
                     </div>
                   </div>
                   <Badge variant={item.entity_kind === "annotation" ? "default" : "warning"}>
                     {ENTITY_LABEL[item.entity_kind]}
                   </Badge>
                 </div>
-                {item.track_id && <div className="mt-2 font-mono text-xs text-muted-foreground">{item.track_id}</div>}
+                {item.track_id && (
+                  <div className="mt-2 font-mono text-xs text-muted-foreground">
+                    {item.track_id}
+                  </div>
+                )}
                 {Object.keys(item.attributes).length > 0 && (
                   <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                    {Object.entries(item.attributes).slice(0, 6).map(([key, value]) => (
-                      <div key={key} className="contents">
-                        <dt className="text-muted-foreground">{key}</dt>
-                        <dd className="truncate text-right">{String(value)}</dd>
-                      </div>
-                    ))}
+                    {Object.entries(item.attributes)
+                      .slice(0, 6)
+                      .map(([key, value]) => (
+                        <div key={key} className="contents">
+                          <dt className="text-muted-foreground">{key}</dt>
+                          <dd className="truncate text-right">{String(value)}</dd>
+                        </div>
+                      ))}
                   </dl>
                 )}
               </article>
             ))}
             {!matchesQ.isLoading && !matchesQ.isError && !matchesQ.data?.items.length && (
-              <div className="py-12 text-center text-sm text-muted-foreground">当前条件没有对象级明细</div>
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                当前条件没有对象级明细
+              </div>
             )}
           </div>
         </ScrollArea>
@@ -94,7 +110,15 @@ export function TaskMatchesSheet({
           <Button
             variant="primary"
             disabled={!task}
-            onClick={() => task && navigate(buildWorkbenchUrl(projectId, { taskId: task.id, returnTo: window.location.pathname + window.location.search }))}
+            onClick={() =>
+              task &&
+              navigate(
+                buildWorkbenchUrl(projectId, {
+                  taskId: task.id,
+                  returnTo: window.location.pathname + window.location.search,
+                }),
+              )
+            }
           >
             在工作台打开任务
           </Button>

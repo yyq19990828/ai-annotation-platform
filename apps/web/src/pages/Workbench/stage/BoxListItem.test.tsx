@@ -23,13 +23,7 @@ describe("BoxListItem", () => {
       geometry: { type: "bbox", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
     };
     const { getByText } = render(
-      <BoxListItem
-        b={b}
-        selected={false}
-        imageWidth={1000}
-        imageHeight={500}
-        onSelect={vi.fn()}
-      />,
+      <BoxListItem b={b} selected={false} imageWidth={1000} imageHeight={500} onSelect={vi.fn()} />,
     );
 
     expect(getByText("矩形框")).toBeInTheDocument();
@@ -40,7 +34,14 @@ describe("BoxListItem", () => {
     const b: Annotation = {
       ...base,
       annotation_type: "polygon",
-      geometry: { type: "polygon", points: [[0, 0], [1, 0], [0.5, 1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [1, 0],
+          [0.5, 1],
+        ],
+      },
     };
     const onRefine = vi.fn();
     const { getByLabelText } = render(
@@ -105,7 +106,14 @@ describe("BoxListItem", () => {
     const b: Annotation = {
       ...base,
       annotation_type: "polygon",
-      geometry: { type: "polygon", points: [[0, 0], [1, 0], [0.5, 1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [1, 0],
+          [0.5, 1],
+        ],
+      },
     };
     const onRefine = vi.fn();
     const { getByLabelText } = render(
@@ -131,20 +139,19 @@ describe("BoxListItem", () => {
         track_id: "trk_abcdefgh12345678",
         keyframes: [
           { frame_index: 0, bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" },
-          { frame_index: 10, bbox: { x: 0.3, y: 0.2, w: 0.3, h: 0.4 }, source: "manual", occluded: true },
+          {
+            frame_index: 10,
+            bbox: { x: 0.3, y: 0.2, w: 0.3, h: 0.4 },
+            source: "manual",
+            occluded: true,
+          },
           { frame_index: 12, bbox: { x: 0.3, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" },
         ],
         outside: [{ from: 12, to: 12 }],
       },
     };
     const { getByText } = render(
-      <BoxListItem
-        b={b}
-        selected={false}
-        imageWidth={1000}
-        imageHeight={500}
-        onSelect={vi.fn()}
-      />,
+      <BoxListItem b={b} selected={false} imageWidth={1000} imageHeight={500} onSelect={vi.fn()} />,
     );
 
     expect(getByText("轨迹")).toBeInTheDocument();

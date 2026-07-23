@@ -97,33 +97,42 @@ export function useVideoMaskFrames(params: {
       if (!isVideoMaskTrack(annotation)) return [];
       const resolved = resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex);
       if (!resolved) return [];
-      return [{
-        id: annotation.id,
-        source: "annotation" as const,
-        ref: resolved.mask,
-        color: colorForAnnotation(annotation),
-        zOrder: annotation.z_order ?? 0,
-        selected: annotation.id === selectedId,
-        cachePrefix: `annotation:${annotation.id}:version:${annotation.version ?? 0}`,
-        frameKey: resolved.keyframeFrame,
-        load: () => rasterMasksApi.annotationVideoMaskContent(annotation.id, frameIndex),
-      }];
+      return [
+        {
+          id: annotation.id,
+          source: "annotation" as const,
+          ref: resolved.mask,
+          color: colorForAnnotation(annotation),
+          zOrder: annotation.z_order ?? 0,
+          selected: annotation.id === selectedId,
+          cachePrefix: `annotation:${annotation.id}:version:${annotation.version ?? 0}`,
+          frameKey: resolved.keyframeFrame,
+          load: () => rasterMasksApi.annotationVideoMaskContent(annotation.id, frameIndex),
+        },
+      ];
     });
     const staged = candidates.flatMap((candidate, index) => {
       const geometry = candidate.result.geometry;
-      if (candidate.result.outside || geometry.type !== "mask" || candidate.result.frame_index !== frameIndex) return [];
+      if (
+        candidate.result.outside ||
+        geometry.type !== "mask" ||
+        candidate.result.frame_index !== frameIndex
+      )
+        return [];
       const instance = candidate.result.instance_id ?? String(index + 1);
-      return [{
-        id: `tracker:${candidate.jobId}:${instance}:${frameIndex}`,
-        source: "tracker" as const,
-        ref: geometry.mask,
-        color: "#a855f7",
-        zOrder: Number.MAX_SAFE_INTEGER - index,
-        selected: false,
-        cachePrefix: `tracker:${candidate.jobId}:instance:${instance}`,
-        frameKey: frameIndex,
-        load: () => videoTrackerApi.maskContent(candidate.jobId, geometry.mask.sha256),
-      }];
+      return [
+        {
+          id: `tracker:${candidate.jobId}:${instance}:${frameIndex}`,
+          source: "tracker" as const,
+          ref: geometry.mask,
+          color: "#a855f7",
+          zOrder: Number.MAX_SAFE_INTEGER - index,
+          selected: false,
+          cachePrefix: `tracker:${candidate.jobId}:instance:${instance}`,
+          frameKey: frameIndex,
+          load: () => videoTrackerApi.maskContent(candidate.jobId, geometry.mask.sha256),
+        },
+      ];
     });
     return [...committed, ...staged];
   }, [annotations, candidates, colorForAnnotation, frameIndex, selectedId]);
@@ -132,26 +141,34 @@ export function useVideoMaskFrames(params: {
     generationRef.current += 1;
     for (const cached of cacheRef.current.values()) closeImage(cached.image);
     cacheRef.current.clear();
-    setRecords((current) => current.length > 0 ? [] : current);
+    setRecords((current) => (current.length > 0 ? [] : current));
   }, [taskId]);
 
   useEffect(() => {
     const generation = ++generationRef.current;
     let cancelled = false;
     if (descriptors.length === 0) {
-      setRecords((current) => current.length > 0 ? [] : current);
-      return () => { cancelled = true; };
+      setRecords((current) => (current.length > 0 ? [] : current));
+      return () => {
+        cancelled = true;
+      };
     }
     const activeKeys = new Set(descriptors.map(cacheKey));
     const committedIds = new Set(
-      descriptors.filter((descriptor) => descriptor.source === "annotation").map((descriptor) => descriptor.id),
+      descriptors
+        .filter((descriptor) => descriptor.source === "annotation")
+        .map((descriptor) => descriptor.id),
     );
     for (const [key, cached] of cacheRef.current) {
       const superseded = [...committedIds].some((id) => {
-        const descriptor = descriptors.find((item) => item.id === id && item.source === "annotation");
-        return key.startsWith(`annotation:${id}:version:`)
-          && descriptor != null
-          && !key.startsWith(`${descriptor.cachePrefix}:`);
+        const descriptor = descriptors.find(
+          (item) => item.id === id && item.source === "annotation",
+        );
+        return (
+          key.startsWith(`annotation:${id}:version:`) &&
+          descriptor != null &&
+          !key.startsWith(`${descriptor.cachePrefix}:`)
+        );
       });
       if (superseded) {
         closeImage(cached.image);
@@ -160,40 +177,42 @@ export function useVideoMaskFrames(params: {
     }
 
     const resolveRecords = async () => {
-      const next = await Promise.all(descriptors.map(async (descriptor) => {
-        const key = cacheKey(descriptor);
-        let cached = cacheRef.current.get(key);
-        if (!cached) {
-          const rle = await descriptor.load();
-          if (rle.size[0] !== descriptor.ref.size[0] || rle.size[1] !== descriptor.ref.size[1]) {
-            throw new Error("mask content size does not match its reference");
+      const next = await Promise.all(
+        descriptors.map(async (descriptor) => {
+          const key = cacheKey(descriptor);
+          let cached = cacheRef.current.get(key);
+          if (!cached) {
+            const rle = await descriptor.load();
+            if (rle.size[0] !== descriptor.ref.size[0] || rle.size[1] !== descriptor.ref.size[1]) {
+              throw new Error("mask content size does not match its reference");
+            }
+            const alpha = decodeCocoRle(rle);
+            const [height, width] = rle.size;
+            const image = await createMaskImage(alpha, width, height, descriptor.color);
+            if (cancelled || generation !== generationRef.current) {
+              closeImage(image);
+              return null;
+            }
+            cached = { image, alpha, width, height, geom: maskAlphaBounds(alpha, width, height) };
+            cacheRef.current.set(key, cached);
+          } else {
+            cacheRef.current.delete(key);
+            cacheRef.current.set(key, cached);
           }
-          const alpha = decodeCocoRle(rle);
-          const [height, width] = rle.size;
-          const image = await createMaskImage(alpha, width, height, descriptor.color);
-          if (cancelled || generation !== generationRef.current) {
-            closeImage(image);
-            return null;
-          }
-          cached = { image, alpha, width, height, geom: maskAlphaBounds(alpha, width, height) };
-          cacheRef.current.set(key, cached);
-        } else {
-          cacheRef.current.delete(key);
-          cacheRef.current.set(key, cached);
-        }
-        return {
-          id: descriptor.id,
-          source: descriptor.source,
-          image: cached.image,
-          alpha: cached.alpha,
-          width: cached.width,
-          height: cached.height,
-          geom: cached.geom,
-          zOrder: descriptor.zOrder,
-          selected: descriptor.selected,
-          cacheKey: key,
-        } satisfies VideoMaskRenderRecord;
-      }));
+          return {
+            id: descriptor.id,
+            source: descriptor.source,
+            image: cached.image,
+            alpha: cached.alpha,
+            width: cached.width,
+            height: cached.height,
+            geom: cached.geom,
+            zOrder: descriptor.zOrder,
+            selected: descriptor.selected,
+            cacheKey: key,
+          } satisfies VideoMaskRenderRecord;
+        }),
+      );
       if (cancelled || generation !== generationRef.current) return;
       while (cacheRef.current.size > MAX_CACHED_MASKS) {
         const evictKey = [...cacheRef.current.keys()].find((key) => !activeKeys.has(key));
@@ -207,17 +226,22 @@ export function useVideoMaskFrames(params: {
 
     void resolveRecords().catch(() => {
       if (!cancelled && generation === generationRef.current) {
-        setRecords((current) => current.length > 0 ? [] : current);
+        setRecords((current) => (current.length > 0 ? [] : current));
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [descriptors]);
 
-  useEffect(() => () => {
-    generationRef.current += 1;
-    for (const cached of cacheRef.current.values()) closeImage(cached.image);
-    cacheRef.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      generationRef.current += 1;
+      for (const cached of cacheRef.current.values()) closeImage(cached.image);
+      cacheRef.current.clear();
+    },
+    [],
+  );
 
   return records;
 }

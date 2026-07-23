@@ -55,15 +55,19 @@ def issue_ai_mask_session(
         "raw": raw,
         **claims,
     }
-    token = _session_cipher().encrypt_at_time(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode(),
-        current_time=issued_at,
-    ).decode()
+    token = (
+        _session_cipher()
+        .encrypt_at_time(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode(),
+            current_time=issued_at,
+        )
+        .decode()
+    )
     if len(token) > MAX_MASK_SESSION_TOKEN_CHARS:
         raise ValueError("Mask session token exceeds the byte budget")
     return token
@@ -100,7 +104,9 @@ def verify_ai_mask_session(token: str, *, now: int | None = None) -> dict[str, A
             raise AiMaskSessionError(
                 "mask_session_expired", "Mask session has expired"
             ) from exc
-        raise AiMaskSessionError("invalid_mask_session", "Mask session is invalid") from exc
+        raise AiMaskSessionError(
+            "invalid_mask_session", "Mask session is invalid"
+        ) from exc
     if not isinstance(payload, dict) or payload.get("v") != _SESSION_VERSION:
         raise AiMaskSessionError("invalid_mask_session", "Mask session is invalid")
     issued_at = payload.get("iat")
@@ -120,7 +126,9 @@ def verify_ai_mask_session(token: str, *, now: int | None = None) -> dict[str, A
             raise ValueError
         decode_low_res_mask(raw)
     except ValueError as exc:
-        raise AiMaskSessionError("invalid_mask_session", "Mask session is invalid") from exc
+        raise AiMaskSessionError(
+            "invalid_mask_session", "Mask session is invalid"
+        ) from exc
     return payload
 
 

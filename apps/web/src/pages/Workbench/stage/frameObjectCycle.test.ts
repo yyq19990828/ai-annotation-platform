@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { buildFrameCategories, collectFrameCategories, nextInCategory, nextCategory } from "./frameObjectCycle";
+import {
+  buildFrameCategories,
+  collectFrameCategories,
+  nextInCategory,
+  nextCategory,
+} from "./frameObjectCycle";
 
 describe("buildFrameCategories", () => {
   it("sorts each category by y↑ then x↑ then id", () => {
     const cats = buildFrameCategories(
-      [{ id: "a2", x: 0.5, y: 0.5 }, { id: "a1", x: 0.1, y: 0.1 }],
-      [{ id: "u2", x: 0.9, y: 0.2 }, { id: "u1", x: 0.1, y: 0.2 }],
+      [
+        { id: "a2", x: 0.5, y: 0.5 },
+        { id: "a1", x: 0.1, y: 0.1 },
+      ],
+      [
+        { id: "u2", x: 0.9, y: 0.2 },
+        { id: "u1", x: 0.1, y: 0.2 },
+      ],
       [],
     );
     expect(cats.ai).toEqual(["a1", "a2"]);
@@ -16,7 +27,10 @@ describe("buildFrameCategories", () => {
 
   it("tie-breaks equal x/y deterministically by id", () => {
     const cats = buildFrameCategories(
-      [{ id: "b", x: 0.3, y: 0.3 }, { id: "a", x: 0.3, y: 0.3 }],
+      [
+        { id: "b", x: 0.3, y: 0.3 },
+        { id: "a", x: 0.3, y: 0.3 },
+      ],
       [],
       [],
     );

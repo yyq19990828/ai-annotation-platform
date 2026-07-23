@@ -1,4 +1,9 @@
-import type { VideoFrameEntry, VideoPoint, VideoStageGeom, VideoTrackGhost } from "./videoStageTypes";
+import type {
+  VideoFrameEntry,
+  VideoPoint,
+  VideoStageGeom,
+  VideoTrackGhost,
+} from "./videoStageTypes";
 import type { VideoMaskRenderRecord } from "./videoMaskFrames";
 import { pickTopRasterMaskAt } from "./shared/rasterMaskRender";
 

@@ -5,7 +5,11 @@
   height: 100dvh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--sc-brand) 8%, transparent), transparent 30rem),
+    radial-gradient(
+      circle at 18% 0%,
+      color-mix(in srgb, var(--sc-brand) 8%, transparent),
+      transparent 30rem
+    ),
     var(--sc-background);
 }
 

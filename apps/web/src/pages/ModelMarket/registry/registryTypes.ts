@@ -14,14 +14,8 @@ import type {
   GlobalBackendItem,
   MLIntegrationsOverview,
 } from "@/api/adminMlIntegrations";
-import type {
-  ServicePoolAdminItem,
-  TopologyResponse,
-} from "@/api/generated/types.gen";
-import type {
-  Diagnostic,
-  RuntimeTopologyViewModel,
-} from "../runtimeTopology";
+import type { ServicePoolAdminItem, TopologyResponse } from "@/api/generated/types.gen";
+import type { Diagnostic, RuntimeTopologyViewModel } from "../runtimeTopology";
 
 /** Search + status filter state shared by every section that has a header row. */
 export interface RegistryFilters {

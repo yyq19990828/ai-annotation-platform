@@ -11,7 +11,9 @@ import { useToastStore } from "@/components/ui/Toast";
 
 async function sha256(file: File): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 async function uploadFile(url: string, file: File): Promise<void> {
@@ -44,26 +46,26 @@ export function MaskFormatImportWizard({
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
   const [staged, setStaged] = useState<{ objectKey: string; digest: string } | null>(null);
-  const [sparseGapPolicy, setSparseGapPolicy] = useState<"outside_gaps" | "nearest_hold">("outside_gaps");
+  const [sparseGapPolicy, setSparseGapPolicy] = useState<"outside_gaps" | "nearest_hold">(
+    "outside_gaps",
+  );
   const [frameBase, setFrameBase] = useState<0 | 1>(0);
 
   const availableFormats = useMemo(
-    () => formats.filter((format) => (
-      format.import_capability.supported
-      && format.import_capability.verified
-      && format.import_capability.enabled_for_ui
-    )),
+    () =>
+      formats.filter(
+        (format) =>
+          format.import_capability.supported &&
+          format.import_capability.verified &&
+          format.import_capability.enabled_for_ui,
+      ),
     [formats],
   );
 
   useEffect(() => {
-    const defaultFrameBase = formats.find((format) => format.format_id === formatId)
-      ?.option_schema.frame_base;
-    if (
-      defaultFrameBase
-      && typeof defaultFrameBase === "object"
-      && "default" in defaultFrameBase
-    ) {
+    const defaultFrameBase = formats.find((format) => format.format_id === formatId)?.option_schema
+      .frame_base;
+    if (defaultFrameBase && typeof defaultFrameBase === "object" && "default" in defaultFrameBase) {
       setFrameBase(defaultFrameBase.default === 1 ? 1 : 0);
     }
   }, [formatId, formats]);
@@ -71,14 +73,16 @@ export function MaskFormatImportWizard({
   useEffect(() => {
     if (!open) return;
     let active = true;
-    maskFormatsApi.list(projectId)
+    maskFormatsApi
+      .list(projectId)
       .then((rows) => {
         if (!active) return;
-        const available = rows.filter((format) => (
-          format.import_capability.supported
-          && format.import_capability.verified
-          && format.import_capability.enabled_for_ui
-        ));
+        const available = rows.filter(
+          (format) =>
+            format.import_capability.supported &&
+            format.import_capability.verified &&
+            format.import_capability.enabled_for_ui,
+        );
         setFormats(rows);
         setFormatId((current) => current || available[0]?.format_id || "");
       })
@@ -89,7 +93,9 @@ export function MaskFormatImportWizard({
           kind: "error",
         });
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [open, projectId, pushToast]);
 
   const resetPlan = () => {
@@ -118,9 +124,7 @@ export function MaskFormatImportWizard({
         staged_object_key: uploaded.objectKey,
         staged_sha256: uploaded.digest,
         mapping: {
-          labels: Object.fromEntries(
-            Object.entries(mapping).filter(([, target]) => target.trim()),
-          ),
+          labels: Object.fromEntries(Object.entries(mapping).filter(([, target]) => target.trim())),
         },
         options: {
           overwrite: false,
@@ -131,7 +135,9 @@ export function MaskFormatImportWizard({
       setPreflight(result);
       setLossyConfirmed(false);
       setMapping((current) => ({
-        ...Object.fromEntries(result.plan.unknown_labels.map((label) => [label, current[label] ?? ""])),
+        ...Object.fromEntries(
+          result.plan.unknown_labels.map((label) => [label, current[label] ?? ""]),
+        ),
         ...current,
       }));
     } catch (error) {
@@ -170,10 +176,19 @@ export function MaskFormatImportWizard({
   };
 
   return (
-    <Modal open={open} onClose={() => { if (!busy) onClose(); }} title="导入 Mask 标注" width={600}>
+    <Modal
+      open={open}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      title="导入 Mask 标注"
+      width={600}
+    >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-          <label htmlFor="mask-import-format" className="text-xs font-semibold text-foreground">格式</label>
+          <label htmlFor="mask-import-format" className="text-xs font-semibold text-foreground">
+            格式
+          </label>
           <select
             id="mask-import-format"
             value={formatId}
@@ -186,10 +201,14 @@ export function MaskFormatImportWizard({
             className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
           >
             {availableFormats.map((format) => (
-              <option key={format.format_id} value={format.format_id}>{format.label}</option>
+              <option key={format.format_id} value={format.format_id}>
+                {format.label}
+              </option>
             ))}
           </select>
-          <label htmlFor="mask-import-file" className="text-xs font-semibold text-foreground">文件</label>
+          <label htmlFor="mask-import-file" className="text-xs font-semibold text-foreground">
+            文件
+          </label>
           <input
             id="mask-import-file"
             type="file"
@@ -203,7 +222,10 @@ export function MaskFormatImportWizard({
           />
           {formatId === "youtube-vos" && (
             <>
-              <label htmlFor="mask-import-gap-policy" className="text-xs font-semibold text-foreground">
+              <label
+                htmlFor="mask-import-gap-policy"
+                className="text-xs font-semibold text-foreground"
+              >
                 稀疏帧策略
               </label>
               <select
@@ -222,7 +244,10 @@ export function MaskFormatImportWizard({
           )}
           {["coco-frames-seg", "mots"].includes(formatId) && (
             <>
-              <label htmlFor="mask-import-frame-base" className="text-xs font-semibold text-foreground">
+              <label
+                htmlFor="mask-import-frame-base"
+                className="text-xs font-semibold text-foreground"
+              >
                 帧号基准
               </label>
               <select
@@ -253,14 +278,22 @@ export function MaskFormatImportWizard({
             }`}
           >
             <div className="flex justify-between gap-3 font-semibold text-foreground">
-              <span>{preflight.plan.loss_class === "lossless" ? "无损，可执行" : preflight.plan.loss_class === "lossy" ? "有损，需确认" : "存在阻断项"}</span>
+              <span>
+                {preflight.plan.loss_class === "lossless"
+                  ? "无损，可执行"
+                  : preflight.plan.loss_class === "lossy"
+                    ? "有损，需确认"
+                    : "存在阻断项"}
+              </span>
               <span>{preflight.plan.estimated_objects} 个实例</span>
             </div>
-            {[...preflight.plan.losses, ...preflight.plan.skips, ...preflight.plan.warnings].map((entry, index) => (
-              <div key={`${entry.code}-${index}`} className="text-muted-foreground">
-                <code className="text-foreground">{entry.code}</code> · {entry.message}
-              </div>
-            ))}
+            {[...preflight.plan.losses, ...preflight.plan.skips, ...preflight.plan.warnings].map(
+              (entry, index) => (
+                <div key={`${entry.code}-${index}`} className="text-muted-foreground">
+                  <code className="text-foreground">{entry.code}</code> · {entry.message}
+                </div>
+              ),
+            )}
             {preflight.plan.unknown_labels.length > 0 && (
               <div className="flex flex-col gap-2 border-t border-border pt-2">
                 <div className="font-semibold text-foreground">类别映射</div>
@@ -269,33 +302,55 @@ export function MaskFormatImportWizard({
                     <span className="truncate text-muted-foreground">{label}</span>
                     <input
                       value={mapping[label] ?? ""}
-                      onChange={(event) => setMapping((current) => ({ ...current, [label]: event.target.value }))}
+                      onChange={(event) =>
+                        setMapping((current) => ({ ...current, [label]: event.target.value }))
+                      }
                       placeholder="项目类别名"
                       className="rounded-sm border border-border bg-card px-2 py-1.5 text-foreground"
                     />
                   </label>
                 ))}
-                <Button size="sm" onClick={runPreflight} disabled={busy}>应用映射并重新预检</Button>
+                <Button size="sm" onClick={runPreflight} disabled={busy}>
+                  应用映射并重新预检
+                </Button>
               </div>
             )}
             {preflight.plan.loss_class === "lossy" && (
               <label className="flex items-center gap-2 text-foreground">
-                <input type="checkbox" checked={lossyConfirmed} onChange={(event) => setLossyConfirmed(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={lossyConfirmed}
+                  onChange={(event) => setLossyConfirmed(event.target.checked)}
+                />
                 我已了解上述像素或结构损失
               </label>
             )}
           </div>
         )}
 
-        {queued && <div className="rounded-md border border-status-success/40 bg-status-success/10 px-3 py-2 text-xs text-foreground">任务已入队，可关闭窗口。</div>}
+        {queued && (
+          <div className="rounded-md border border-status-success/40 bg-status-success/10 px-3 py-2 text-xs text-foreground">
+            任务已入队，可关闭窗口。
+          </div>
+        )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={busy}>关闭</Button>
-          {!queued && !preflight && <Button onClick={runPreflight} disabled={busy || !file || !formatId}>{busy ? "上传并检查中…" : "上传并预检"}</Button>}
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            关闭
+          </Button>
+          {!queued && !preflight && (
+            <Button onClick={runPreflight} disabled={busy || !file || !formatId}>
+              {busy ? "上传并检查中…" : "上传并预检"}
+            </Button>
+          )}
           {!queued && preflight && preflight.plan.unknown_labels.length === 0 && (
             <Button
               onClick={execute}
-              disabled={busy || preflight.plan.loss_class === "unsupported" || (preflight.plan.loss_class === "lossy" && !lossyConfirmed)}
+              disabled={
+                busy ||
+                preflight.plan.loss_class === "unsupported" ||
+                (preflight.plan.loss_class === "lossy" && !lossyConfirmed)
+              }
             >
               {busy ? "提交中…" : "确认导入"}
             </Button>

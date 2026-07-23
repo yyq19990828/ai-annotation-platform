@@ -21,10 +21,10 @@ const STYLE_CONFIG: Record<
   NonNullable<AnnotateEntry["style"]>,
   { stroke: string; fill: string }
 > = {
-  "rect-red":  { stroke: "#E53E3E", fill: "rgba(229,62,62,0.08)" },
+  "rect-red": { stroke: "#E53E3E", fill: "rgba(229,62,62,0.08)" },
   "rect-blue": { stroke: "#3182CE", fill: "rgba(49,130,206,0.08)" },
-  "arrow":     { stroke: "#D69E2E", fill: "rgba(214,158,46,0.08)" },
-  "numbered":  { stroke: "#38A169", fill: "rgba(56,161,105,0.08)" },
+  arrow: { stroke: "#D69E2E", fill: "rgba(214,158,46,0.08)" },
+  numbered: { stroke: "#38A169", fill: "rgba(56,161,105,0.08)" },
 };
 
 /** 注入 SVG overlay；返回清除函数。 */
@@ -35,7 +35,10 @@ export async function injectAnnotations(
   if (!entries || entries.length === 0) return async () => {};
 
   type BoxEntry = {
-    x: number; y: number; width: number; height: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
     style: NonNullable<AnnotateEntry["style"]>;
     label?: string;
     index: number;
@@ -49,7 +52,7 @@ export async function injectAnnotations(
     const style = entry.style ?? "rect-red";
     const locator = page.locator(entry.selector).first();
     // count() 不重试，立即返回当前 DOM 中匹配数；0 → 跳过，不等待
-    if (await locator.count() === 0) continue;
+    if ((await locator.count()) === 0) continue;
     const box = await locator.boundingBox();
     if (!box) continue;
     boxes.push({ ...box, style, label: entry.label, index: i + 1 });
@@ -69,8 +72,13 @@ export async function injectAnnotations(
       svg.setAttribute("width", String(vw));
       svg.setAttribute("height", String(vh));
       svg.style.cssText = [
-        "position:fixed", "top:0", "left:0", "width:100%", "height:100%",
-        "pointer-events:none", "z-index:99998",
+        "position:fixed",
+        "top:0",
+        "left:0",
+        "width:100%",
+        "height:100%",
+        "pointer-events:none",
+        "z-index:99998",
       ].join(";");
 
       for (const b of bs) {
@@ -79,7 +87,7 @@ export async function injectAnnotations(
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         rect.setAttribute("x", String(b.x));
         rect.setAttribute("y", String(b.y));
-        rect.setAttribute("width",  String(b.width));
+        rect.setAttribute("width", String(b.width));
         rect.setAttribute("height", String(b.height));
         rect.setAttribute("stroke", cfg.stroke);
         rect.setAttribute("stroke-width", "2");

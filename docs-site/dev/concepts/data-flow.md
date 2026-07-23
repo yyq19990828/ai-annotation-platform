@@ -45,6 +45,7 @@ sequenceDiagram
 ```
 
 代码索引：
+
 - 取下一题：`apps/api/app/api/v1/tasks/list.py` (get_next_task / next_smart 端点)
 - 任务锁：`apps/api/app/services/task_lock.py:acquire/heartbeat/release`
 - 提交：`apps/api/app/api/v1/tasks/lifecycle.py:submit_task`
@@ -85,6 +86,7 @@ sequenceDiagram
 ```
 
 代码索引：
+
 - 触发端点：`apps/api/app/api/v1/projects.py` 或 `ml_backends.py`
 - ML client：`apps/api/app/services/ml_client.py:predict` (`ml_client.py:41-62`)
 - ML 协议契约：[`docs-site/dev/ml-backend-protocol.md`](../reference/ml-backend-protocol)
@@ -124,6 +126,7 @@ sequenceDiagram
 ```
 
 代码索引：
+
 - 项目导出端点：`apps/api/app/api/v1/projects.py:export_project`
 - 批次导出端点：`apps/api/app/api/v1/batches.py:export_batch`
 - 作业状态与下载 URL：`apps/api/app/api/v1/async_jobs.py:get_async_job`
@@ -183,6 +186,7 @@ sequenceDiagram
 - 评论 @ 提及（type=`comment.mention`）
 
 代码索引：
+
 - WS 端点：`apps/api/app/api/v1/ws.py` (`ws.py:70-114`)
 - 通知服务：`apps/api/app/services/notification.py:NotificationService.notify` (`notification.py:51-94`)
 - 通知模型：`apps/api/app/db/models/notification.py`

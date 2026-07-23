@@ -7,9 +7,7 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
   try {
     const response = await context.post("/api/v1/__test/seed/cleanup");
     if (!response.ok()) {
-      throw new Error(
-        `seed/cleanup failed: ${response.status()} ${await response.text()}`,
-      );
+      throw new Error(`seed/cleanup failed: ${response.status()} ${await response.text()}`);
     }
   } finally {
     await context.dispose();

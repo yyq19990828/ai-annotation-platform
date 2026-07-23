@@ -8,8 +8,7 @@ from mask_utils.rle import decode_coco_rle, encode_coco_rle, validate_coco_rle
 
 
 FIXTURE_PATH = (
-    Path(__file__).resolve().parents[4]
-    / "apps/web/src/__fixtures__/rasterMaskRle.json"
+    Path(__file__).resolve().parents[4] / "apps/web/src/__fixtures__/rasterMaskRle.json"
 )
 FIXTURE = json.loads(FIXTURE_PATH.read_text())
 

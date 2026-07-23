@@ -94,9 +94,8 @@ export function MyPerformancePage() {
     if (!data) return [];
     return data.reject_reason_breakdown.map((r) => ({
       name:
-        REJECT_REASON_TYPE_LABELS[
-          r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
-        ] ?? r.reason_type,
+        REJECT_REASON_TYPE_LABELS[r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS] ??
+        r.reason_type,
       value: r.count,
     }));
   }, [data]);
@@ -134,11 +133,7 @@ export function MyPerformancePage() {
   }, [data]);
 
   const qualityTone: KpiTone =
-    !data || data.quality_score >= 90
-      ? "success"
-      : data.quality_score >= 70
-        ? "warning"
-        : "danger";
+    !data || data.quality_score >= 90 ? "success" : data.quality_score >= 70 ? "warning" : "danger";
 
   const firstPassTone: KpiTone =
     !data || data.first_pass_yield === null
@@ -160,9 +155,7 @@ export function MyPerformancePage() {
         </div>
       </div>
 
-      {perfQ.isError && (
-        <div className={styles.notReady}>绩效数据暂不可用，请稍后再试。</div>
-      )}
+      {perfQ.isError && <div className={styles.notReady}>绩效数据暂不可用，请稍后再试。</div>}
 
       {data && (
         <>
@@ -192,12 +185,8 @@ export function MyPerformancePage() {
                   ? "—"
                   : `${data.weekly_compare_pct > 0 ? "+" : ""}${data.weekly_compare_pct}%`
               }
-              positive={
-                data.weekly_compare_pct !== null && data.weekly_compare_pct >= 0
-              }
-              caption={
-                data.weekly_compare_pct === null ? "暂无上周对比" : "相对上周产出"
-              }
+              positive={data.weekly_compare_pct !== null && data.weekly_compare_pct >= 0}
+              caption={data.weekly_compare_pct === null ? "暂无上周对比" : "相对上周产出"}
               tone={
                 data.weekly_compare_pct === null
                   ? "neutral"
@@ -223,9 +212,7 @@ export function MyPerformancePage() {
               icon="shield"
               label="首过率"
               value={
-                data.first_pass_yield === null
-                  ? "—"
-                  : `${Math.round(data.first_pass_yield * 100)}%`
+                data.first_pass_yield === null ? "—" : `${Math.round(data.first_pass_yield * 100)}%`
               }
               suffix={data.first_pass_yield === null ? undefined : "一次通过"}
               caption={`Reject ${rejectTotal.toLocaleString()} 次`}
@@ -238,28 +225,19 @@ export function MyPerformancePage() {
             <div className={`${styles.card} ${styles.cardWide}`}>
               <div className={styles.cardHeader}>
                 <div>
-                  <h2 className={styles.cardTitle}>
-                    产出趋势 · 我 vs 团队均线（近 4 周）
-                  </h2>
+                  <h2 className={styles.cardTitle}>产出趋势 · 我 vs 团队均线（近 4 周）</h2>
                   <p className={styles.cardHint}>
-                    本周个人 {formatMaybeNumber(latestMine)}，团队均线 {formatMaybeNumber(latestTeam)}
+                    本周个人 {formatMaybeNumber(latestMine)}，团队均线{" "}
+                    {formatMaybeNumber(latestTeam)}
                   </p>
                 </div>
                 <span className={styles.cardBadge}>4 周</span>
               </div>
               <div className={styles.chartWrap}>
                 <ResponsiveContainer width="100%" height={280}>
-                  <LineChart
-                    data={trendData}
-                    margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-                  >
+                  <LineChart data={trendData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                    <XAxis
-                      dataKey="name"
-                      tick={axisTick}
-                      axisLine={axisLine}
-                      tickLine={axisLine}
-                    />
+                    <XAxis dataKey="name" tick={axisTick} axisLine={axisLine} tickLine={axisLine} />
                     <YAxis
                       tick={axisTick}
                       axisLine={axisLine}
@@ -332,12 +310,7 @@ export function MyPerformancePage() {
                         itemStyle={tooltipItemStyle}
                         cursor={{ fill: "var(--sc-muted)" }}
                       />
-                      <Bar
-                        dataKey="count"
-                        name="次数"
-                        fill={accent}
-                        radius={[3, 3, 0, 0]}
-                      />
+                      <Bar dataKey="count" name="次数" fill={accent} radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -384,12 +357,7 @@ export function MyPerformancePage() {
                         itemStyle={tooltipItemStyle}
                         cursor={{ fill: "var(--sc-muted)" }}
                       />
-                      <Bar
-                        dataKey="value"
-                        name="次数"
-                        fill={danger}
-                        radius={[0, 3, 3, 0]}
-                      />
+                      <Bar dataKey="value" name="次数" fill={danger} radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -412,10 +380,7 @@ export function MyPerformancePage() {
                 <EmptyState icon="tag" text="所选范围内暂无标注" />
               ) : (
                 <div className={styles.chartWrap}>
-                  <ResponsiveContainer
-                    width="100%"
-                    height={240}
-                  >
+                  <ResponsiveContainer width="100%" height={240}>
                     <BarChart
                       layout="vertical"
                       data={classData}
@@ -443,20 +408,13 @@ export function MyPerformancePage() {
                         itemStyle={tooltipItemStyle}
                         cursor={{ fill: "var(--sc-muted)" }}
                       />
-                      <Bar
-                        dataKey="value"
-                        name="标注数"
-                        fill={accent}
-                        radius={[0, 3, 3, 0]}
-                      />
+                      <Bar dataKey="value" name="标注数" fill={accent} radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
               {classData.length > 0 && otherClassPct > 0 && (
-                <div className={styles.cardFooter}>
-                  其他类别合计 {otherClassPct}%
-                </div>
+                <div className={styles.cardFooter}>其他类别合计 {otherClassPct}%</div>
               )}
             </div>
           </div>

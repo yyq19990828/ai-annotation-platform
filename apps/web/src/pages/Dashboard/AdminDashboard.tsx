@@ -66,16 +66,15 @@ export function AdminDashboard() {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
+      pushToast({
+        msg: `项目 "${p.name}" 已打开`,
+        sub: `${projectDisplayType(p)} 的标注界面尚未实现`,
+      });
     }
   };
 
   if (isLoading || !stats) {
-    return (
-      <div className="px-7 py-15 text-center text-muted-foreground">
-        加载中...
-      </div>
-    );
+    return <div className="px-7 py-15 text-center text-muted-foreground">加载中...</div>;
   }
 
   const projectsTotal = stats.total_projects || 1;
@@ -89,7 +88,8 @@ export function AdminDashboard() {
         </div>
         <div className="flex gap-2 max-[900px]:flex-wrap">
           <Button onClick={() => setImportOpen(true)}>
-            <Icon name="upload" size={13} />导入数据集
+            <Icon name="upload" size={13} />
+            导入数据集
           </Button>
           <ImportDatasetWizard
             open={importOpen}
@@ -97,7 +97,8 @@ export function AdminDashboard() {
             onUploaded={() => navigate("/datasets")}
           />
           <Button variant="primary" onClick={openWizard}>
-            <Icon name="plus" size={13} />新建项目
+            <Icon name="plus" size={13} />
+            新建项目
           </Button>
           <CreateProjectWizard
             open={wizardOpen}
@@ -108,8 +109,18 @@ export function AdminDashboard() {
       </div>
 
       <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-        <StatCard icon="users" label="用户总数" value={stats.total_users} hint={`${stats.active_users} 在线`} />
-        <StatCard icon="layers" label="项目总数" value={stats.total_projects} hint={`${stats.projects_in_progress} 进行中`} />
+        <StatCard
+          icon="users"
+          label="用户总数"
+          value={stats.total_users}
+          hint={`${stats.active_users} 在线`}
+        />
+        <StatCard
+          icon="layers"
+          label="项目总数"
+          value={stats.total_projects}
+          hint={`${stats.projects_in_progress} 进行中`}
+        />
         <StatCard icon="target" label="任务总量" value={stats.total_tasks.toLocaleString()} />
         <StatCard icon="check" label="标注总量" value={stats.total_annotations.toLocaleString()} />
       </div>
@@ -122,9 +133,7 @@ export function AdminDashboard() {
               <Icon name="users" size={16} />
               <div>
                 <div className="text-sm font-semibold">成员绩效</div>
-                <div className="text-xs text-muted-foreground">
-                  全员效率卡片网格 + 抽屉下钻
-                </div>
+                <div className="text-xs text-muted-foreground">全员效率卡片网格 + 抽屉下钻</div>
               </div>
             </div>
             <span className={ENTRY_LINK_CLASS}>
@@ -140,10 +149,30 @@ export function AdminDashboard() {
             <h3 className={CARD_TITLE_CLASS}>项目状态分布</h3>
           </div>
           <div className={CARD_BODY_CLASS}>
-            <StatusBar label="进行中" count={stats.projects_in_progress} total={projectsTotal} color="var(--sc-brand)" />
-            <StatusBar label="已完成" count={stats.projects_completed} total={projectsTotal} color="var(--sc-positive)" />
-            <StatusBar label="待审核" count={stats.projects_pending_review} total={projectsTotal} color="var(--sc-caution)" />
-            <StatusBar label="已归档" count={stats.projects_archived} total={projectsTotal} color="var(--sc-muted-foreground)" />
+            <StatusBar
+              label="进行中"
+              count={stats.projects_in_progress}
+              total={projectsTotal}
+              color="var(--sc-brand)"
+            />
+            <StatusBar
+              label="已完成"
+              count={stats.projects_completed}
+              total={projectsTotal}
+              color="var(--sc-positive)"
+            />
+            <StatusBar
+              label="待审核"
+              count={stats.projects_pending_review}
+              total={projectsTotal}
+              color="var(--sc-caution)"
+            />
+            <StatusBar
+              label="已归档"
+              count={stats.projects_archived}
+              total={projectsTotal}
+              color="var(--sc-muted-foreground)"
+            />
           </div>
         </Card>
 
@@ -215,142 +244,187 @@ export function AdminDashboard() {
         </Card>
       </div>
 
-
       <div className="mt-4">
         <Card>
-        <div className={CARD_HEADER_SPLIT_CLASS}>
-          <h3 className={CARD_TITLE_CLASS}>近期审计活动</h3>
-          <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
-            查看全部<Icon name="chevRight" size={11} />
-          </Button>
-        </div>
-        {recentActivity.length === 0 ? (
-          <div className="flex flex-col items-center px-4 py-6 text-center text-sm text-muted-foreground">
-            <Icon name="activity" size={26} className="mb-2 opacity-25" />
-            <div>暂无业务事件</div>
+          <div className={CARD_HEADER_SPLIT_CLASS}>
+            <h3 className={CARD_TITLE_CLASS}>近期审计活动</h3>
+            <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
+              查看全部
+              <Icon name="chevRight" size={11} />
+            </Button>
           </div>
-        ) : (
-          <ul className="m-0 list-none p-0">
-            {recentActivity.map((it) => (
-              <li
-                key={it.id}
-                className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-sm"
-              >
-                <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium">{it.actor_email ?? "匿名"}</span>
-                    <span className="[&>*]:text-2xs">
-                      <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
-                    </span>
-                    {it.target_type && (
-                      <span className="text-xs text-muted-foreground">
-                        {it.target_type}
-                        {it.target_id && (
-                          <span className="mono ml-1">
-                            {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
-                          </span>
-                        )}
+          {recentActivity.length === 0 ? (
+            <div className="flex flex-col items-center px-4 py-6 text-center text-sm text-muted-foreground">
+              <Icon name="activity" size={26} className="mb-2 opacity-25" />
+              <div>暂无业务事件</div>
+            </div>
+          ) : (
+            <ul className="m-0 list-none p-0">
+              {recentActivity.map((it) => (
+                <li
+                  key={it.id}
+                  className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-sm"
+                >
+                  <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{it.actor_email ?? "匿名"}</span>
+                      <span className="[&>*]:text-2xs">
+                        <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
                       </span>
-                    )}
+                      {it.target_type && (
+                        <span className="text-xs text-muted-foreground">
+                          {it.target_type}
+                          {it.target_id && (
+                            <span className="mono ml-1">
+                              {it.target_id.length > 24
+                                ? it.target_id.slice(0, 8) + "…"
+                                : it.target_id}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  {relativeTime(it.created_at)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                    {relativeTime(it.created_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
       <div className="mt-4">
         <Card>
-        <div className={CARD_HEADER_SPLIT_CLASS}>
-          <h3 className={CARD_TITLE_CLASS}>全平台项目</h3>
-          <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
-        </div>
-        {projectsLoading && (
-          <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
-        )}
-        {!projectsLoading && projects.length === 0 && (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            暂无项目，点击右上角「新建项目」开始
+          <div className={CARD_HEADER_SPLIT_CLASS}>
+            <h3 className={CARD_TITLE_CLASS}>全平台项目</h3>
+            <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
           </div>
-        )}
-        {!projectsLoading && projects.length > 0 && (
-          <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
-              <thead>
-                <tr>
-                  {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
-                    <th
-                      key={i}
-                      className={[
-                        TABLE_HEAD_CELL_CLASS,
-                        i === 0 ? "pl-4" : "",
-                        i === 4 ? "pr-4" : "",
-                      ].filter(Boolean).join(" ")}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((p) => (
-                  <tr key={p.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.id}/settings`)}>
-                    <td className={`${TABLE_CELL_CLASS} py-2.5 pl-4`}>
-                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
-                      <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-                        <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
-                      </div>
-                    </td>
-                    <td className={TABLE_CELL_CLASS}>
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
-                        <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">{p.owner_name ?? "—"}</span>
-                      </div>
-                    </td>
-                    <td className={`${TABLE_CELL_CLASS} text-muted-foreground`}>
-                      {p.member_count}
-                    </td>
-                    <td className={TABLE_CELL_CLASS}>
-                      {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-                      {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-                      {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
-                      {p.status === "archived" && <Badge variant="outline" dot>已归档</Badge>}
-                    </td>
-                    <td className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}>
-                      <div className="inline-flex items-center gap-1 whitespace-nowrap">
-                        {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/dashboard?new=1&from=${p.id}`);
-                          }}
-                          title="复制项目配置（不复制数据集 / 任务 / 成员）"
-                        >
-                          <Icon name="copy" size={13} />复制
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/settings`); }}>
-                          <Icon name="settings" size={13} />设置
-                        </Button>
-                        {/* B-46 · 「打开」入口 — 进工作台标注界面（样式与项目总览统一） */}
-                        <Button size="sm" onClick={(e) => { e.stopPropagation(); onOpenProject(p); }}>
-                          打开 <Icon name="chevRight" size={11} />
-                        </Button>
-                      </div>
-                    </td>
+          {projectsLoading && (
+            <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
+          )}
+          {!projectsLoading && projects.length === 0 && (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              暂无项目，点击右上角「新建项目」开始
+            </div>
+          )}
+          {!projectsLoading && projects.length > 0 && (
+            <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
+              <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+                <thead>
+                  <tr>
+                    {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
+                      <th
+                        key={i}
+                        className={[
+                          TABLE_HEAD_CELL_CLASS,
+                          i === 0 ? "pl-4" : "",
+                          i === 4 ? "pr-4" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {projects.map((p) => (
+                    <tr
+                      key={p.id}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/projects/${p.id}/settings`)}
+                    >
+                      <td className={`${TABLE_CELL_CLASS} py-2.5 pl-4`}>
+                        <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">
+                          {p.name}
+                        </div>
+                        <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+                          <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
+                        </div>
+                      </td>
+                      <td className={TABLE_CELL_CLASS}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
+                          <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+                            {p.owner_name ?? "—"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className={`${TABLE_CELL_CLASS} text-muted-foreground`}>
+                        {p.member_count}
+                      </td>
+                      <td className={TABLE_CELL_CLASS}>
+                        {p.status === "in_progress" && (
+                          <Badge variant="accent" dot>
+                            进行中
+                          </Badge>
+                        )}
+                        {p.status === "completed" && (
+                          <Badge variant="success" dot>
+                            已完成
+                          </Badge>
+                        )}
+                        {p.status === "pending_review" && (
+                          <Badge variant="warning" dot>
+                            待审核
+                          </Badge>
+                        )}
+                        {p.status === "archived" && (
+                          <Badge variant="outline" dot>
+                            已归档
+                          </Badge>
+                        )}
+                      </td>
+                      <td
+                        className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}
+                      >
+                        <div className="inline-flex items-center gap-1 whitespace-nowrap">
+                          {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/dashboard?new=1&from=${p.id}`);
+                            }}
+                            title="复制项目配置（不复制数据集 / 任务 / 成员）"
+                          >
+                            <Icon name="copy" size={13} />
+                            复制
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/projects/${p.id}/settings`);
+                            }}
+                          >
+                            <Icon name="settings" size={13} />
+                            设置
+                          </Button>
+                          {/* B-46 · 「打开」入口 — 进工作台标注界面（样式与项目总览统一） */}
+                          <Button
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenProject(p);
+                            }}
+                          >
+                            打开 <Icon name="chevRight" size={11} />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -369,13 +443,25 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString("zh-CN");
 }
 
-function StatusBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
+function StatusBar({
+  label,
+  count,
+  total,
+  color,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  color: string;
+}) {
   const pct = Math.round((count / total) * 100);
   return (
     <div className="mb-3">
       <div className="mb-1 flex justify-between text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className="mono font-medium">{count} ({pct}%)</span>
+        <span className="mono font-medium">
+          {count} ({pct}%)
+        </span>
       </div>
       <ProgressBar value={pct} color={color} />
     </div>
@@ -482,7 +568,8 @@ function MLBackendsAndCostCard({
         </div>
         <div className="flex items-center gap-1">
           <Button size="sm" variant="ghost" onClick={() => navigate("/model-market")}>
-            集成总览<Icon name="chevRight" size={11} />
+            集成总览
+            <Icon name="chevRight" size={11} />
           </Button>
           {(["7d", "30d"] as const).map((r) => (
             <Button
@@ -512,18 +599,8 @@ function MLBackendsAndCostCard({
           <StatCard
             icon="clock"
             label="平均耗时"
-            value={
-              isLoading
-                ? "…"
-                : avgMs !== null
-                  ? `${Math.round(avgMs)} ms`
-                  : "—"
-            }
-            hint={
-              p95Ms !== null && !isLoading
-                ? `P95 ${Math.round(p95Ms)} ms`
-                : undefined
-            }
+            value={isLoading ? "…" : avgMs !== null ? `${Math.round(avgMs)} ms` : "—"}
+            hint={p95Ms !== null && !isLoading ? `P95 ${Math.round(p95Ms)} ms` : undefined}
           />
           <StatCard
             icon="warning"

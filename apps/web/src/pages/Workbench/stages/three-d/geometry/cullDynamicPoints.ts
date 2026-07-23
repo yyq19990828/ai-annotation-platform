@@ -55,11 +55,7 @@ export function cullPointsInBoxes(
       boxAxisWorldDir(b.rotation, 1),
       boxAxisWorldDir(b.rotation, 2),
     ] as const,
-    half: [
-      b.size[0] / 2 + margin,
-      b.size[1] / 2 + margin,
-      b.size[2] / 2 + margin,
-    ] as const,
+    half: [b.size[0] / 2 + margin, b.size[1] / 2 + margin, b.size[2] / 2 + margin] as const,
   }));
 
   const n = Math.floor(positions.length / 3);

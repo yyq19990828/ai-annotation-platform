@@ -178,9 +178,7 @@ class VideoTrackerDecisionRequest(BaseModel):
     from_frame: int | None = Field(default=None, ge=0)
     to_frame: int | None = Field(default=None, ge=0)
     qc_issue_id: UUID | None = None
-    candidate_digest: str | None = Field(
-        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
-    )
+    candidate_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     decision: Literal["accept", "reject"]
     expected_source_versions: dict[UUID, int] = Field(default_factory=dict)
     job_revision: int = Field(ge=1)
@@ -200,7 +198,9 @@ class VideoTrackerDecisionRequest(BaseModel):
 
     @model_validator(mode="after")
     def _valid_window(self) -> "VideoTrackerDecisionRequest":
-        region_selector = self.qc_issue_id is not None or self.candidate_digest is not None
+        region_selector = (
+            self.qc_issue_id is not None or self.candidate_digest is not None
+        )
         legacy_selector = any(
             value is not None
             for value in (self.instance_ids, self.from_frame, self.to_frame)
@@ -215,7 +215,11 @@ class VideoTrackerDecisionRequest(BaseModel):
                     "QC issue and instance/window decision selectors are mutually exclusive"
                 )
             return self
-        if self.instance_ids is None or self.from_frame is None or self.to_frame is None:
+        if (
+            self.instance_ids is None
+            or self.from_frame is None
+            or self.to_frame is None
+        ):
             raise ValueError(
                 "instance_ids, from_frame and to_frame are required together"
             )

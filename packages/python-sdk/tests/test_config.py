@@ -24,7 +24,10 @@ def test_load_config_priority(monkeypatch, tmp_path):
     assert load_config() == ("http://env", "ak_env")
 
     # 3. 显式参数最高
-    assert load_config(base_url="http://arg", api_key="ak_arg") == ("http://arg", "ak_arg")
+    assert load_config(base_url="http://arg", api_key="ak_arg") == (
+        "http://arg",
+        "ak_arg",
+    )
 
 
 def test_load_config_missing_file(monkeypatch, tmp_path):

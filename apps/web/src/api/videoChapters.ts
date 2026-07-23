@@ -50,15 +50,8 @@ export const videoChaptersApi = {
       .then((res) => res.chapters ?? []),
   create: (datasetItemId: string, payload: VideoChapterCreatePayload) =>
     apiClient.post<VideoChapter>(`/videos/${datasetItemId}/chapters`, payload),
-  update: (
-    datasetItemId: string,
-    chapterId: string,
-    payload: VideoChapterUpdatePayload,
-  ) =>
-    apiClient.patch<VideoChapter>(
-      `/videos/${datasetItemId}/chapters/${chapterId}`,
-      payload,
-    ),
+  update: (datasetItemId: string, chapterId: string, payload: VideoChapterUpdatePayload) =>
+    apiClient.patch<VideoChapter>(`/videos/${datasetItemId}/chapters/${chapterId}`, payload),
   delete: (datasetItemId: string, chapterId: string) =>
     apiClient.delete<void>(`/videos/${datasetItemId}/chapters/${chapterId}`),
 };

@@ -37,11 +37,21 @@ function ann(
 
 const left: Geometry = {
   type: "polygon",
-  points: [[0, 0], [0.5, 0], [0.5, 1], [0, 1]],
+  points: [
+    [0, 0],
+    [0.5, 0],
+    [0.5, 1],
+    [0, 1],
+  ],
 };
 const right: Geometry = {
   type: "polygon",
-  points: [[0.5, 0], [1, 0], [1, 1], [0.5, 1]],
+  points: [
+    [0.5, 0],
+    [1, 0],
+    [1, 1],
+    [0.5, 1],
+  ],
 };
 
 describe("polygon join helpers", () => {
@@ -55,7 +65,15 @@ describe("polygon join helpers", () => {
   it("returns multi_polygon for disjoint polygon union", () => {
     const out = joinPolygonGeometries([
       left,
-      { type: "polygon", points: [[0.7, 0], [0.9, 0], [0.9, 0.2], [0.7, 0.2]] },
+      {
+        type: "polygon",
+        points: [
+          [0.7, 0],
+          [0.9, 0],
+          [0.9, 0.2],
+          [0.7, 0.2],
+        ],
+      },
     ]);
 
     expect(out?.type).toBe("multi_polygon");
@@ -93,14 +111,15 @@ describe("polygon join helpers", () => {
   });
 
   it("rejects mixed classes and non-polygon inputs", () => {
-    expect(buildPolygonJoinPayload([
-      ann("a", left),
-      ann("b", right, { class_name: "sidewalk" }),
-    ])).toBeNull();
-    expect(buildPolygonJoinPayload([
-      ann("a", left),
-      ann("b", { type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 }),
-    ])).toBeNull();
+    expect(
+      buildPolygonJoinPayload([ann("a", left), ann("b", right, { class_name: "sidewalk" })]),
+    ).toBeNull();
+    expect(
+      buildPolygonJoinPayload([
+        ann("a", left),
+        ann("b", { type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 }),
+      ]),
+    ).toBeNull();
   });
 
   it("blocks locked annotations from join eligibility", () => {
@@ -111,14 +130,24 @@ describe("polygon join helpers", () => {
 
 const fullSquare: Geometry = {
   type: "polygon",
-  points: [[0, 0], [1, 0], [1, 1], [0, 1]],
+  points: [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+  ],
 };
 
 describe("polygon crop helpers", () => {
   it("punches a hole when the cutter sits fully inside the base", () => {
     const inner: Geometry = {
       type: "polygon",
-      points: [[0.3, 0.3], [0.6, 0.3], [0.6, 0.6], [0.3, 0.6]],
+      points: [
+        [0.3, 0.3],
+        [0.6, 0.3],
+        [0.6, 0.6],
+        [0.3, 0.6],
+      ],
     };
     const out = cropPolygonGeometry(fullSquare, [inner]);
 
@@ -146,6 +175,8 @@ describe("polygon crop helpers", () => {
 
   it("returns null when there is no valid cutter", () => {
     expect(cropPolygonGeometry(fullSquare, [])).toBeNull();
-    expect(cropPolygonGeometry(fullSquare, [{ type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 }])).toBeNull();
+    expect(
+      cropPolygonGeometry(fullSquare, [{ type: "bbox", x: 0, y: 0, w: 0.1, h: 0.1 }]),
+    ).toBeNull();
   });
 });

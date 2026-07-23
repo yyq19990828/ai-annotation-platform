@@ -39,20 +39,24 @@ describe("COCO uncompressed RLE", () => {
 
   for (const testCase of fixture.invalid as InvalidCase[]) {
     it(`rejects ${testCase.name}`, () => {
-      expect(() => validateCocoRle({
-        encoding: "coco_rle",
-        size: testCase.size,
-        counts: testCase.counts,
-      })).toThrow();
+      expect(() =>
+        validateCocoRle({
+          encoding: "coco_rle",
+          size: testCase.size,
+          counts: testCase.counts,
+        }),
+      ).toThrow();
     });
   }
 
   it("accepts the structural 8K image envelope without decoding it", () => {
-    expect(validateCocoRle({
-      encoding: "coco_rle",
-      size: [8192, 8192],
-      counts: [MAX_IMAGE_MASK_PIXELS],
-    }).size).toEqual([8192, 8192]);
+    expect(
+      validateCocoRle({
+        encoding: "coco_rle",
+        size: [8192, 8192],
+        counts: [MAX_IMAGE_MASK_PIXELS],
+      }).size,
+    ).toEqual([8192, 8192]);
   });
 
   it("prepares HTTP gzip with a separate storage preference", async () => {
@@ -76,10 +80,7 @@ describe("COCO uncompressed RLE", () => {
   });
 
   it("looks up exact pixels in column-major RLE without decoding a full alpha plane", () => {
-    const rle = encodeCocoRle([
-      1, 0, 1,
-      0, 1, 0,
-    ], 3, 2);
+    const rle = encodeCocoRle([1, 0, 1, 0, 1, 0], 3, 2);
 
     expect(cocoRleContainsPixel(rle, 0, 0)).toBe(true);
     expect(cocoRleContainsPixel(rle, 1, 0)).toBe(false);
@@ -91,11 +92,7 @@ describe("COCO uncompressed RLE", () => {
   });
 
   it("computes exact foreground bounds without waiting for bitmap decoding", () => {
-    const rle = encodeCocoRle([
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 0,
-    ], 4, 3);
+    const rle = encodeCocoRle([0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], 4, 3);
 
     expect(cocoRleBounds(rle)).toEqual({
       x: 0.25,
@@ -103,11 +100,13 @@ describe("COCO uncompressed RLE", () => {
       w: 0.5,
       h: 2 / 3,
     });
-    expect(cocoRleBounds({
-      encoding: "coco_rle",
-      size: [3, 4],
-      counts: [12],
-    })).toBeNull();
+    expect(
+      cocoRleBounds({
+        encoding: "coco_rle",
+        size: [3, 4],
+        counts: [12],
+      }),
+    ).toBeNull();
   });
 
   it("falls back when gzip would exceed the shared expansion ratio", async () => {

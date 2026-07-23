@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  deriveSamplingStep,
-  gridNext,
-  gridPrev,
-  microStep,
-  snapToGrid,
-} from "./videoSamplingGrid";
+import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from "./videoSamplingGrid";
 
 describe("deriveSamplingStep", () => {
   it("defaults to 1 for nullish / none / empty config", () => {

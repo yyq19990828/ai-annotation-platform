@@ -65,7 +65,9 @@ def upgrade() -> None:
         ),
         sa.Column("capability_fingerprint", sa.String(64), nullable=True),
         sa.Column(
-            "capability_snapshot", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            "capability_snapshot",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
         ),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
@@ -113,9 +115,7 @@ def upgrade() -> None:
             "pool_id", "registry_id", name="uq_ml_backend_pool_members"
         ),
         # registry_id 单列 unique — 一实例最多属于一个 pool (ADR-0050 D2)
-        sa.UniqueConstraint(
-            "registry_id", name="uq_ml_backend_pool_members_registry"
-        ),
+        sa.UniqueConstraint("registry_id", name="uq_ml_backend_pool_members_registry"),
         sa.CheckConstraint(
             "traffic_state IN ('active', 'draining', 'disabled')",
             name="ck_ml_backend_pool_members_traffic_state",
@@ -666,7 +666,9 @@ def downgrade() -> None:
     )
 
     # 1-3. 撤 pool/member 表
-    op.drop_index("ix_ml_backend_pool_members_pool_id", table_name="ml_backend_pool_members")
+    op.drop_index(
+        "ix_ml_backend_pool_members_pool_id", table_name="ml_backend_pool_members"
+    )
     op.drop_table("ml_backend_pool_members")
     op.drop_table("ml_backend_service_pools")
 

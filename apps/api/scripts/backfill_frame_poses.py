@@ -70,7 +70,9 @@ async def backfill_frame_poses(
         .all()
     )
     if not scenes:
-        raise ValueError(f"dataset {ds.display_id} 下无 source_format=nuscenes 的 scene")
+        raise ValueError(
+            f"dataset {ds.display_id} 下无 source_format=nuscenes 的 scene"
+        )
 
     # 元数据表按 version 子目录缓存(同 dataset 各 scene 通常同 version)
     tables_cache: dict[str, dict] = {}
@@ -112,7 +114,10 @@ async def backfill_frame_poses(
         poses: list[FramePose] = []
         for frame_idx, sample in enumerate(samples):
             by_channel = _key_sample_data_by_channel(
-                sample["token"], t["sample_data"], t["cs_by_token"], t["sensor_by_token"]
+                sample["token"],
+                t["sample_data"],
+                t["cs_by_token"],
+                t["sensor_by_token"],
             )
             lidar_sd = None
             for sd in by_channel.values():

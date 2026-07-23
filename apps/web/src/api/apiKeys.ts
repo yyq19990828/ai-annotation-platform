@@ -32,11 +32,9 @@ export interface ApiKeyUpdatePayload {
 
 export const apiKeysApi = {
   list: () => apiClient.get<ApiKey[]>("/me/api-keys"),
-  create: (payload: ApiKeyCreatePayload) =>
-    apiClient.post<ApiKeyCreated>("/me/api-keys", payload),
+  create: (payload: ApiKeyCreatePayload) => apiClient.post<ApiKeyCreated>("/me/api-keys", payload),
   update: (id: string, payload: ApiKeyUpdatePayload) =>
     apiClient.patch<ApiKey>(`/me/api-keys/${id}`, payload),
-  rotate: (id: string) =>
-    apiClient.post<ApiKeyCreated>(`/me/api-keys/${id}/rotate`, {}),
+  rotate: (id: string) => apiClient.post<ApiKeyCreated>(`/me/api-keys/${id}/rotate`, {}),
   revoke: (id: string) => apiClient.delete<void>(`/me/api-keys/${id}`),
 };

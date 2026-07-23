@@ -67,7 +67,9 @@ def _rows(rle: dict) -> list[str]:
 
 
 def _patch_mask_storage(monkeypatch, *rles: dict) -> dict[str, dict]:
-    objects = {build_rle_reference(item)["sha256"]: copy.deepcopy(item) for item in rles}
+    objects = {
+        build_rle_reference(item)["sha256"]: copy.deepcopy(item) for item in rles
+    }
 
     async def load(reference: dict) -> dict:
         return copy.deepcopy(objects[str(reference["sha256"])])
@@ -183,7 +185,9 @@ async def _seed_region_review(
     return task, item, annotation, job, issue, candidate_row
 
 
-def _decision(annotation: Annotation, job: VideoTrackerJob, issue: MaskQCIssue, digest: str):
+def _decision(
+    annotation: Annotation, job: VideoTrackerJob, issue: MaskQCIssue, digest: str
+):
     return {
         "qc_issue_id": str(issue.id),
         "candidate_digest": digest,
@@ -503,7 +507,9 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
     )
     assert response.status_code == 200, response.text
 
-    await db_session.execute(text("DELETE FROM mask_review_scopes WHERE source_job_id = :id"), {"id": job.id})
+    await db_session.execute(
+        text("DELETE FROM mask_review_scopes WHERE source_job_id = :id"), {"id": job.id}
+    )
     job.status = VideoTrackerJobStatus.PENDING_REVIEW.value
     job.revision = 1
     job.prompt = {"expected_source_versions": {str(annotation.id): 1}}

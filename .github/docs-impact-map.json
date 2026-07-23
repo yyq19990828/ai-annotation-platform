@@ -3,10 +3,7 @@
     {
       "id": "api-contract",
       "name": "API contract and public endpoints",
-      "codeMatchers": [
-        "apps/api/app/api/v1/",
-        "apps/api/app/schemas/"
-      ],
+      "codeMatchers": ["apps/api/app/api/v1/", "apps/api/app/schemas/"],
       "recommendDocs": [
         "apps/api/openapi.snapshot.json",
         "docs-site/api/guides/_routes.generated.md",
@@ -299,9 +296,7 @@
     {
       "id": "gpu-arbitration-domain",
       "name": "GPU arbitration contracts, policy, ledger, and orchestration",
-      "codeMatchers": [
-        "apps/api/app/services/gpu_arbitration/"
-      ],
+      "codeMatchers": ["apps/api/app/services/gpu_arbitration/"],
       "recommendDocs": [
         "docs-site/dev/concepts/backend-layers.md",
         "docs-site/dev/reference/ml-backend-protocol.md",
@@ -318,10 +313,7 @@
     {
       "id": "exporting-domain",
       "name": "Export services, packaging, cache, and format adapters",
-      "codeMatchers": [
-        "apps/api/app/services/exporting/",
-        "apps/api/app/workers/export.py"
-      ],
+      "codeMatchers": ["apps/api/app/services/exporting/", "apps/api/app/workers/export.py"],
       "recommendDocs": [
         "docs-site/dev/concepts/data-flow.md",
         "docs-site/api/guides/export.md",
@@ -337,9 +329,7 @@
     {
       "id": "data-management-domain",
       "name": "Data Manager schema, entity queries, views, and pagination",
-      "codeMatchers": [
-        "apps/api/app/services/data_management/"
-      ],
+      "codeMatchers": ["apps/api/app/services/data_management/"],
       "recommendDocs": [
         "docs-site/dev/reference/data-manager-query.md",
         "docs-site/user-guide/projects/data-manager.md",
@@ -385,16 +375,8 @@
         "compose.yaml",
         "docker-compose.override.yml"
       ],
-      "recommendDocs": [
-        ".env.example",
-        "DEV.md",
-        "docs-site/dev/reference/env-vars.md"
-      ],
-      "acceptDocs": [
-        ".env.example",
-        "DEV.md",
-        "docs-site/dev/reference/env-vars.md"
-      ]
+      "recommendDocs": [".env.example", "DEV.md", "docs-site/dev/reference/env-vars.md"],
+      "acceptDocs": [".env.example", "DEV.md", "docs-site/dev/reference/env-vars.md"]
     }
   ]
 }

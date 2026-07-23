@@ -32,29 +32,14 @@ import type {
 
 /** Four independent status axes (plan Appendix A.1). */
 export type HealthAxis = "healthy" | "degraded" | "offline" | "unknown";
-export type RoutingAxis =
-  | "routable"
-  | "draining"
-  | "bypassed"
-  | "blocked"
-  | "unknown";
+export type RoutingAxis = "routable" | "draining" | "bypassed" | "blocked" | "unknown";
 export type CapacityAxis = "idle" | "serving" | "saturated" | "unknown";
-export type ResidencyAxis =
-  | "empty"
-  | "loading"
-  | "resident"
-  | "draining"
-  | "unloading"
-  | "unknown";
+export type ResidencyAxis = "empty" | "loading" | "resident" | "draining" | "unloading" | "unknown";
 
 export type Severity = "info" | "warning" | "critical" | "blocker";
 
 /** Stable dedup key — same code+subject_type+subject_id → one record (§7.1). */
-export type DiagnosticSubjectType =
-  | "service_pool"
-  | "instance"
-  | "gpu_resource"
-  | "model_pool";
+export type DiagnosticSubjectType = "service_pool" | "instance" | "gpu_resource" | "model_pool";
 
 export interface Diagnostic {
   /** Stable id = `${code}:${subject_type}:${subject_id}` (16-char sha-free form). */
@@ -208,10 +193,7 @@ export function mergeTopologyAndSnapshot(
   } as RuntimeTopologyViewModel;
 }
 
-function toPoolViewModel(
-  pool: TopologyPoolEntry,
-  snap: RuntimePoolSnapshot | null,
-): PoolViewModel {
+function toPoolViewModel(pool: TopologyPoolEntry, snap: RuntimePoolSnapshot | null): PoolViewModel {
   const snapMembers = new Map<string, RuntimeMemberSnapshot>();
   if (snap) {
     for (const m of snap.members ?? []) snapMembers.set(m.registry_id, m);
@@ -231,9 +213,7 @@ function toPoolViewModel(
       : null;
   // No max_concurrency in v0.23.3 contract → limit unknown.
   const limit = null;
-  const saturated = snap
-    ? (snap.members ?? []).some((m) => m.circuit_open)
-    : false;
+  const saturated = snap ? (snap.members ?? []).some((m) => m.circuit_open) : false;
 
   return {
     id: pool.id,
@@ -402,9 +382,7 @@ export function collectDiagnostics(
             remediation: "检查实例可达性，恢复后熔断会自动半开试探",
             affected_service_pool_ids: [pool.id],
             affected_instance_ids: [m.registry_id],
-            affected_gpu_resource_ids: m.gpu_resource_id
-              ? [m.gpu_resource_id]
-              : [],
+            affected_gpu_resource_ids: m.gpu_resource_id ? [m.gpu_resource_id] : [],
             observed_at: snapshot.observed_at,
             source: "runtime_snapshot",
           });
@@ -508,16 +486,12 @@ function pushDiagnostic(map: Map<string, Diagnostic>, d: Diagnostic): void {
       ...existing.affected_service_pool_ids,
       ...d.affected_service_pool_ids,
     ]),
-    affected_instance_ids: dedup([
-      ...existing.affected_instance_ids,
-      ...d.affected_instance_ids,
-    ]),
+    affected_instance_ids: dedup([...existing.affected_instance_ids, ...d.affected_instance_ids]),
     affected_gpu_resource_ids: dedup([
       ...existing.affected_gpu_resource_ids,
       ...d.affected_gpu_resource_ids,
     ]),
-    observed_at:
-      existing.observed_at < d.observed_at ? existing.observed_at : d.observed_at,
+    observed_at: existing.observed_at < d.observed_at ? existing.observed_at : d.observed_at,
   };
   map.set(d.id, merged);
 }
@@ -564,8 +538,7 @@ export function evaluateUnloadGate(
   if (blocked_inflight) {
     reasons.push(`仍有 ${inflight} 个活动请求，需等待归零`);
   }
-  const blocked_stale =
-    member.runtime === undefined || inflight == null || !ledgerFresh;
+  const blocked_stale = member.runtime === undefined || inflight == null || !ledgerFresh;
   if (blocked_stale) {
     reasons.push("路由账本数据陈旧，无法确认 inflight 已归零");
   }
@@ -574,10 +547,7 @@ export function evaluateUnloadGate(
     reasons.push(`router_mode=${routerMode}，drain 仅预配置未实际停流`);
   }
   const can_unload =
-    !blocked_routable &&
-    !blocked_inflight &&
-    !blocked_stale &&
-    !blocked_shadow_mode;
+    !blocked_routable && !blocked_inflight && !blocked_stale && !blocked_shadow_mode;
   return {
     blocked_routable,
     blocked_inflight,
@@ -613,22 +583,11 @@ export interface DiagnosticFilter {
   code?: string;
 }
 
-export function filterDiagnostics(
-  list: Diagnostic[],
-  filter: DiagnosticFilter,
-): Diagnostic[] {
+export function filterDiagnostics(list: Diagnostic[], filter: DiagnosticFilter): Diagnostic[] {
   return list.filter((d) => {
-    if (filter.pool_id && !d.affected_service_pool_ids.includes(filter.pool_id))
-      return false;
-    if (
-      filter.instance_id &&
-      !d.affected_instance_ids.includes(filter.instance_id)
-    )
-      return false;
-    if (
-      filter.gpu_resource_id &&
-      !d.affected_gpu_resource_ids.includes(filter.gpu_resource_id)
-    )
+    if (filter.pool_id && !d.affected_service_pool_ids.includes(filter.pool_id)) return false;
+    if (filter.instance_id && !d.affected_instance_ids.includes(filter.instance_id)) return false;
+    if (filter.gpu_resource_id && !d.affected_gpu_resource_ids.includes(filter.gpu_resource_id))
       return false;
     if (filter.code && d.code !== filter.code) return false;
     return true;

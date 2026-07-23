@@ -44,16 +44,15 @@ export function BatchAuditLogDrawer({
   const { data: logs = [], isLoading } = useBatchAuditLogs(projectId, batch.id, true);
 
   return (
-    <Modal open onClose={onClose} title={`操作历史 · ${batch.display_id} ${batch.name}`} width={680}>
-      {isLoading && (
-        <div className="p-6 text-center text-sm text-muted-foreground">
-          加载中…
-        </div>
-      )}
+    <Modal
+      open
+      onClose={onClose}
+      title={`操作历史 · ${batch.display_id} ${batch.name}`}
+      width={680}
+    >
+      {isLoading && <div className="p-6 text-center text-sm text-muted-foreground">加载中…</div>}
       {!isLoading && logs.length === 0 && (
-        <div className="p-6 text-center text-sm text-muted-foreground">
-          暂无操作记录
-        </div>
+        <div className="p-6 text-center text-sm text-muted-foreground">暂无操作记录</div>
       )}
       {!isLoading && logs.length > 0 && (
         <div className="max-h-[60vh] overflow-y-auto pr-1">

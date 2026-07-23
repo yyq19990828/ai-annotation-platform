@@ -14,9 +14,17 @@ import {
   upsertKeyframe,
   upsertPointsKeyframe,
 } from "./videoStageGeometry";
-import type { VideoTrackGeometry, VideoTrackMaskGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
+import type {
+  VideoTrackGeometry,
+  VideoTrackMaskGeometry,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolylineGeometry,
+} from "@/types";
 
-function track(keyframes: VideoTrackGeometry["keyframes"], patch?: Partial<VideoTrackGeometry>): VideoTrackGeometry {
+function track(
+  keyframes: VideoTrackGeometry["keyframes"],
+  patch?: Partial<VideoTrackGeometry>,
+): VideoTrackGeometry {
   return {
     type: "video_track_bbox",
     track_id: "trk_1",
@@ -43,13 +51,16 @@ describe("videoStageGeometry", () => {
   });
 
   it("does not interpolate across an outside keyframe", () => {
-    const geometry = track([
-      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
-      { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, source: "manual" },
-      { frame_index: 10, bbox: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, source: "manual" },
-    ], {
-      outside: [{ from: 5, to: 5 }],
-    });
+    const geometry = track(
+      [
+        { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+        { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, source: "manual" },
+        { frame_index: 10, bbox: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, source: "manual" },
+      ],
+      {
+        outside: [{ from: 5, to: 5 }],
+      },
+    );
 
     expect(resolveTrackAtFrame(geometry, 5)).toBeNull();
     expect(resolveTrackAtFrame(geometry, 7)).toBeNull();
@@ -57,12 +68,15 @@ describe("videoStageGeometry", () => {
   });
 
   it("treats outside ranges as higher-priority absence", () => {
-    const geometry = track([
-      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
-      { frame_index: 6, bbox: { x: 0.6, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
-    ], {
-      outside: [{ from: 3, to: 4 }],
-    });
+    const geometry = track(
+      [
+        { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+        { frame_index: 6, bbox: { x: 0.6, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+      ],
+      {
+        outside: [{ from: 3, to: 4 }],
+      },
+    );
 
     expect(resolveTrackAtFrame(geometry, 3)).toBeNull();
     expect(resolveTrackAtFrame(geometry, 5)).toBeNull();
@@ -99,7 +113,9 @@ describe("videoStageGeometry", () => {
     });
 
     it("预测档但先行关键帧不足两个 → 回退最近关键帧", () => {
-      const single = track([{ frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" }]);
+      const single = track([
+        { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+      ]);
       expect(trackReferenceAtFrame(single, 8, "linear")?.predicted).toBe(false);
       const k = trackReferenceAtFrame(single, 8, "kalman");
       expect(k?.predicted).toBe(false);
@@ -108,11 +124,12 @@ describe("videoStageGeometry", () => {
   });
 
   it("clears explicit outside coverage when upserting a visible keyframe", () => {
-    const geometry = track([
-      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
-    ], {
-      outside: [{ from: 2, to: 4 }],
-    });
+    const geometry = track(
+      [{ frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" }],
+      {
+        outside: [{ from: 2, to: 4 }],
+      },
+    );
 
     const next = upsertKeyframe(geometry, 3, { x: 0.3, y: 0, w: 0.2, h: 0.2 });
     const updated = resolveTrackAtFrame(next, 3);
@@ -127,8 +144,18 @@ describe("videoStageGeometry", () => {
 
 // ── v0.21.20 · polygon track 弧长参数化插值 (前端, 镜像后端 lerp_polygon) ──
 
-const SQUARE_A: [number, number][] = [[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]];
-const SQUARE_B: [number, number][] = [[0.4, 0], [0.6, 0], [0.6, 0.2], [0.4, 0.2]];
+const SQUARE_A: [number, number][] = [
+  [0, 0],
+  [0.2, 0],
+  [0.2, 0.2],
+  [0, 0.2],
+];
+const SQUARE_B: [number, number][] = [
+  [0.4, 0],
+  [0.6, 0],
+  [0.6, 0.2],
+  [0.4, 0.2],
+];
 
 function polygonTrack(
   keyframes: VideoTrackPolygonGeometry["keyframes"],
@@ -149,11 +176,24 @@ describe("videoStageGeometry · polygon track", () => {
   it("interpolatePolygon 等顶点同朝向中点 = x 平移一半", () => {
     const a = { frame_index: 0, points: SQUARE_A, source: "manual" as const };
     const b = { frame_index: 10, points: SQUARE_B, source: "manual" as const };
-    expect(interpolatePolygon(a, b, 5)).toEqual([[0.2, 0], [0.4, 0], [0.4, 0.2], [0.2, 0.2]]);
+    expect(interpolatePolygon(a, b, 5)).toEqual([
+      [0.2, 0],
+      [0.4, 0],
+      [0.4, 0.2],
+      [0.2, 0.2],
+    ]);
   });
 
   it("interpolatePolygon 顶点数不等时重采样到公共 n, 不抛异常", () => {
-    const tri = { frame_index: 0, points: [[0, 0], [0.4, 0], [0.2, 0.4]] as [number, number][], source: "manual" as const };
+    const tri = {
+      frame_index: 0,
+      points: [
+        [0, 0],
+        [0.4, 0],
+        [0.2, 0.4],
+      ] as [number, number][],
+      source: "manual" as const,
+    };
     const sq = { frame_index: 10, points: SQUARE_B, source: "manual" as const };
     expect(interpolatePolygon(tri, sq, 5)).toHaveLength(4);
   });
@@ -166,7 +206,12 @@ describe("videoStageGeometry · polygon track", () => {
     expect(resolveVideoPolygonTrackAtFrame(geom, 0)?.points).toEqual(SQUARE_A);
     const mid = resolveVideoPolygonTrackAtFrame(geom, 5);
     expect(mid?.source).toBe("interpolated");
-    expect(mid?.points).toEqual([[0.2, 0], [0.4, 0], [0.4, 0.2], [0.2, 0.2]]);
+    expect(mid?.points).toEqual([
+      [0.2, 0],
+      [0.4, 0],
+      [0.4, 0.2],
+      [0.2, 0.2],
+    ]);
 
     const withOutside = polygonTrack(
       [
@@ -183,7 +228,12 @@ describe("videoStageGeometry · polygon track", () => {
       { frame_index: 0, points: SQUARE_A, source: "manual" },
       { frame_index: 10, points: SQUARE_B, source: "manual" },
     ]);
-    const edited: [number, number][] = [[0.05, 0.05], [0.2, 0], [0.2, 0.2], [0, 0.2]];
+    const edited: [number, number][] = [
+      [0.05, 0.05],
+      [0.2, 0],
+      [0.2, 0.2],
+      [0, 0.2],
+    ];
     const next = upsertPointsKeyframe(geom, 0, edited);
     expect(next.keyframes).toHaveLength(2);
     expect(next.keyframes[0]).toMatchObject({ frame_index: 0, points: edited, source: "manual" });
@@ -198,19 +248,38 @@ describe("videoStageGeometry · polygon track", () => {
       ],
       { outside: [{ from: 4, to: 6, source: "manual" }] },
     );
-    const materialized: [number, number][] = [[0.25, 0], [0.45, 0], [0.45, 0.2], [0.25, 0.2]];
+    const materialized: [number, number][] = [
+      [0.25, 0],
+      [0.45, 0],
+      [0.45, 0.2],
+      [0.25, 0.2],
+    ];
     const next = upsertPointsKeyframe(geom, 5, materialized);
     expect(next.keyframes).toHaveLength(3);
-    expect(next.keyframes.find((kf) => kf.frame_index === 5)).toMatchObject({ points: materialized, source: "manual" });
+    expect(next.keyframes.find((kf) => kf.frame_index === 5)).toMatchObject({
+      points: materialized,
+      source: "manual",
+    });
     // 落新可见关键帧 → outside [4,6] 被拆成 [4,4] 与 [6,6]。
-    expect(next.outside).toEqual([{ from: 4, to: 4, source: "manual" }, { from: 6, to: 6, source: "manual" }]);
+    expect(next.outside).toEqual([
+      { from: 4, to: 4, source: "manual" },
+      { from: 6, to: 6, source: "manual" },
+    ]);
   });
 });
 
 // ── v0.21.20 · polyline (开路径) track 插值 (前端, 镜像后端 lerp_polyline) ──
 
-const LINE_A: [number, number][] = [[0, 0], [0.2, 0], [0.4, 0]];
-const LINE_B: [number, number][] = [[0, 0.2], [0.2, 0.2], [0.4, 0.2]];
+const LINE_A: [number, number][] = [
+  [0, 0],
+  [0.2, 0],
+  [0.4, 0],
+];
+const LINE_B: [number, number][] = [
+  [0, 0.2],
+  [0.2, 0.2],
+  [0.4, 0.2],
+];
 
 function polylineTrack(
   keyframes: VideoTrackPolylineGeometry["keyframes"],
@@ -222,7 +291,13 @@ function polylineTrack(
 describe("videoStageGeometry · polyline track", () => {
   it("resampleOpenPolyline 保端点 + 等距三点线不变", () => {
     expect(resampleOpenPolyline(LINE_A, 3)).toEqual(LINE_A);
-    const out = resampleOpenPolyline([[0, 0], [0.4, 0]], 5);
+    const out = resampleOpenPolyline(
+      [
+        [0, 0],
+        [0.4, 0],
+      ],
+      5,
+    );
     expect(out[0]).toEqual([0, 0]);
     expect(out[4]).toEqual([0.4, 0]);
     expect(out).toHaveLength(5);
@@ -231,7 +306,11 @@ describe("videoStageGeometry · polyline track", () => {
   it("interpolatePolyline 中点 = y 平移一半", () => {
     const a = { frame_index: 0, points: LINE_A, source: "manual" as const };
     const b = { frame_index: 10, points: LINE_B, source: "manual" as const };
-    expect(interpolatePolyline(a, b, 5)).toEqual([[0, 0.1], [0.2, 0.1], [0.4, 0.1]]);
+    expect(interpolatePolyline(a, b, 5)).toEqual([
+      [0, 0.1],
+      [0.2, 0.1],
+      [0.4, 0.1],
+    ]);
   });
 
   it("resolveVideoPolylineTrackAtFrame: 精确/插值/outside→null", () => {
@@ -241,7 +320,11 @@ describe("videoStageGeometry · polyline track", () => {
     ]);
     expect(resolveVideoPolylineTrackAtFrame(geom, 0)?.points).toEqual(LINE_A);
     expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.source).toBe("interpolated");
-    expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.points).toEqual([[0, 0.1], [0.2, 0.1], [0.4, 0.1]]);
+    expect(resolveVideoPolylineTrackAtFrame(geom, 5)?.points).toEqual([
+      [0, 0.1],
+      [0.2, 0.1],
+      [0.4, 0.1],
+    ]);
   });
 });
 

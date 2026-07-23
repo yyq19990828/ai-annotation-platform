@@ -7,7 +7,9 @@ const DATA_TYPE_LABELS: Record<ProjectDataType, string> = {
   lidar: "3D 点云",
 };
 
-export function projectDataType(project: Pick<ProjectResponse, "data_type" | "type_key">): ProjectDataType {
+export function projectDataType(
+  project: Pick<ProjectResponse, "data_type" | "type_key">,
+): ProjectDataType {
   if (
     project.data_type === "image" ||
     project.data_type === "video" ||

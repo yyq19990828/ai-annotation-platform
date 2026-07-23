@@ -38,10 +38,7 @@ function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function useAiParamPresets(
-  backendId: string | null,
-  taskType: string,
-) {
+export function useAiParamPresets(backendId: string | null, taskType: string) {
   const key = backendId ? storageKey(backendId, taskType) : null;
   const [presets, setPresets] = useState<AiParamPreset[]>([]);
 

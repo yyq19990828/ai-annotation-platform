@@ -13,11 +13,11 @@ last_reviewed: 2026-07-22
 
 ## 三种 AI 数据不要混用
 
-| 数据 | 用途 | 是否已落标注 | 人工决策 |
-|---|---|---:|---|
-| `Prediction` | 图片 / 视频当前帧批量预标候选 | 否 | 逐 shape 采纳 / 忽略 |
-| `VideoTrackerJob.staged_result` | 一次视频传播产生的逐帧、多目标候选 | 否 | 按目标与帧窗口接受 / 拒绝 |
-| `Annotation(source="ai_tracker")` 或 prediction keyframe | 已接受的视频追踪结果 | 是 | 后续按轨迹 / 关键帧继续人工编辑 |
+| 数据                                                     | 用途                               | 是否已落标注 | 人工决策                        |
+| -------------------------------------------------------- | ---------------------------------- | -----------: | ------------------------------- |
+| `Prediction`                                             | 图片 / 视频当前帧批量预标候选      |           否 | 逐 shape 采纳 / 忽略            |
+| `VideoTrackerJob.staged_result`                          | 一次视频传播产生的逐帧、多目标候选 |           否 | 按目标与帧窗口接受 / 拒绝       |
+| `Annotation(source="ai_tracker")` 或 prediction keyframe | 已接受的视频追踪结果               |           是 | 后续按轨迹 / 关键帧继续人工编辑 |
 
 `staged_result` 的存在保证 tracker 完成、取消或模型返回坏结果时不会先污染 committed annotation。它不是 `Prediction` 的另一种序列化，也不参与 `task.total_predictions` 或批量预标状态机。
 

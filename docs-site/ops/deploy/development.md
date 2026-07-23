@@ -96,15 +96,15 @@ uv run python -m scripts.bootstrap_admin
 
 完整规则见 CLAUDE.md §8 与[升级指南](/ops/upgrade-guide)，开发态高频场景速查：
 
-| 改动 | 操作 |
-|---|---|
-| `apps/api/app/**` 业务码（API 进程） | 自动 reload，无需手动 |
-| `apps/api/app/workers/**` worker 码 | `docker restart ai-annotation-platform-celery-worker-1`（Celery 无 reload） |
-| 新增 alembic 迁移 | `uv run alembic upgrade head`（worker 改码同样 restart） |
-| `apps/web/src/**` | HMR 自动 |
-| `.env` 运行期变量 | 重启对应进程 / `docker compose up -d` 重建容器 |
-| `pyproject.toml` / `uv.lock` | `uv sync`；worker 容器需 `docker compose build` |
-| `package.json` / `pnpm-lock.yaml` | `pnpm install` |
+| 改动                                 | 操作                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `apps/api/app/**` 业务码（API 进程） | 自动 reload，无需手动                                                       |
+| `apps/api/app/workers/**` worker 码  | `docker restart ai-annotation-platform-celery-worker-1`（Celery 无 reload） |
+| 新增 alembic 迁移                    | `uv run alembic upgrade head`（worker 改码同样 restart）                    |
+| `apps/web/src/**`                    | HMR 自动                                                                    |
+| `.env` 运行期变量                    | 重启对应进程 / `docker compose up -d` 重建容器                              |
+| `pyproject.toml` / `uv.lock`         | `uv sync`；worker 容器需 `docker compose build`                             |
+| `package.json` / `pnpm-lock.yaml`    | `pnpm install`                                                              |
 
 ---
 

@@ -13,6 +13,7 @@ last_reviewed: 2026-07-14
 项目管理员从左侧 **项目总览** 进入项目管理页；超级管理员从左侧 **项目管理** 进入同一类项目管理页。这里可以查看全部项目、按状态筛选、进入项目设置，也可以从右上角创建新项目。
 
 ![创建项目入口](../images/projects/create-entry.png)
+
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
 
 ![创建项目入口（深色主题）](../images/projects/create-entry.dark.png)
@@ -53,6 +54,7 @@ last_reviewed: 2026-07-14
 类别与属性 schema 按**工具单位**强隔离绑定（每个工具单位独立持有自己的类别列表与属性 schema，可同名不同色），并涉及「遮挡样式」「视频单帧 / 轨迹框」等配置开关。完整说明、典型场景与后续修改方式见 [工具维度类别 / 属性](./tool-units.md)。
 
 ![向导步骤](../images/projects/wizard-steps.png)
+
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（类型 / 类别 / 属性 / AI 接入 / 数据 / 成员），可拼成一张长图。 -->
 
 ![向导 ML Backend 配置](../images/projects/wizard-step4-backend.png)

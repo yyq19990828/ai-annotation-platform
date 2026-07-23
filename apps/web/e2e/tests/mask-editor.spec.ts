@@ -45,22 +45,21 @@ test.describe("mask editor (I11)", () => {
     await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
 
     // Enter 提交 → 监听 POST /annotations
-    const annoPost = page.waitForResponse(
-      (resp) =>
-        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
-        resp.request().method() === "POST" &&
-        resp.status() < 400,
-      { timeout: 10_000 },
-    ).catch(() => null);
+    const annoPost = page
+      .waitForResponse(
+        (resp) =>
+          /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
+          resp.request().method() === "POST" &&
+          resp.status() < 400,
+        { timeout: 10_000 },
+      )
+      .catch(() => null);
     await page.keyboard.press("Enter");
     const resp = await annoPost;
     expect(resp).not.toBeNull();
   });
 
-  test("AI prediction polygon 精修 → reject 原候选 + 新 polygon 入库", async ({
-    page,
-    seed,
-  }) => {
+  test("AI prediction polygon 精修 → reject 原候选 + 新 polygon 入库", async ({ page, seed }) => {
     const data = await seed.reset();
     await seed.advanceTask({
       taskId: data.task_ids[0],
@@ -84,9 +83,7 @@ test.describe("mask editor (I11)", () => {
     await seed.injectToken(page, data.annotator_email);
     // 显式带 ?task= 定位到注入了 prediction 的 task，避免依赖工作台默认 tasks[0] 选择顺序
     // （后端 list_tasks 排序变化曾导致默认载入别的任务、AI 候选为空）。
-    await page.goto(
-      `/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`,
-    );
+    await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
     // 右侧 AI 行的精修按钮（data-testid 由 BoxListItem 渲染：ai-refine-{annotation 行 id}）。
@@ -98,9 +95,7 @@ test.describe("mask editor (I11)", () => {
     const aiRow = page.locator('[data-testid^="box-list-item-"]').first();
     await expect(aiRow).toBeVisible({ timeout: 10_000 });
     await aiRow.getByRole("button", { name: "更多操作" }).hover();
-    const refineBtn = page
-      .locator('[data-testid^="ai-refine-"]')
-      .first();
+    const refineBtn = page.locator('[data-testid^="ai-refine-"]').first();
     await expect(refineBtn).toBeVisible({ timeout: 10_000 });
     await refineBtn.click();
 
@@ -127,13 +122,15 @@ test.describe("mask editor (I11)", () => {
     await page.mouse.up();
 
     // commit 触发：reject prediction + create new polygon
-    const annoPost = page.waitForResponse(
-      (resp) =>
-        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
-        resp.request().method() === "POST" &&
-        resp.status() < 400,
-      { timeout: 10_000 },
-    ).catch(() => null);
+    const annoPost = page
+      .waitForResponse(
+        (resp) =>
+          /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
+          resp.request().method() === "POST" &&
+          resp.status() < 400,
+        { timeout: 10_000 },
+      )
+      .catch(() => null);
     await page.keyboard.press("Enter");
     const resp = await annoPost;
     expect(resp).not.toBeNull();

@@ -4,13 +4,13 @@
 
 ## 3.1 五种典型 AI 赋能模式
 
-| 模式 | 触发方式 | 后端形态 | 代表实现 | 你应该实现哪个 |
-|---|---|---|---|---|
-| **A. 批量预标** | 上传/创建项目时跑一次 | 异步队列 | LS `MLBackend.predict`、CVAT `auto-annotate` | ✅ 优先 |
-| **B. 交互式提示** | 鼠标点 / 拖框 | 同步低延迟 | SAM（LS interactive、CVAT interactor、X-AL marks） | ✅ 优先 |
-| **C. Active Learning** | 标完一个再下一个 | 调度器 | LS uncertainty sampling | ⏰ 中期 |
-| **D. 持续训练** | 累计 N 条标注后 | 异步训练 + 部署 | LS `MLBackend.train` + webhook | ⏰ 中期 |
-| **E. Agent 自动化** | 全自动跑 + HITL 抽检 | LLM 流水线 | Adala / Refuel / CVAT AI Agents | 🎯 你说要重点研究 |
+| 模式                   | 触发方式              | 后端形态        | 代表实现                                           | 你应该实现哪个    |
+| ---------------------- | --------------------- | --------------- | -------------------------------------------------- | ----------------- |
+| **A. 批量预标**        | 上传/创建项目时跑一次 | 异步队列        | LS `MLBackend.predict`、CVAT `auto-annotate`       | ✅ 优先           |
+| **B. 交互式提示**      | 鼠标点 / 拖框         | 同步低延迟      | SAM（LS interactive、CVAT interactor、X-AL marks） | ✅ 优先           |
+| **C. Active Learning** | 标完一个再下一个      | 调度器          | LS uncertainty sampling                            | ⏰ 中期           |
+| **D. 持续训练**        | 累计 N 条标注后       | 异步训练 + 部署 | LS `MLBackend.train` + webhook                     | ⏰ 中期           |
+| **E. Agent 自动化**    | 全自动跑 + HITL 抽检  | LLM 流水线      | Adala / Refuel / CVAT AI Agents                    | 🎯 你说要重点研究 |
 
 ## 3.2 模式 A:批量预标（最简单,先做这个）
 
@@ -30,6 +30,7 @@
 ```
 
 **关键点**:
+
 - `Prediction` 表独立于 `Annotation` —— 模型预测多次不污染人工标注
 - 前端显示时,如果该 task 没有 `Annotation`,就把 `Prediction.result` 渲染为"待确认"状态
 - 用户编辑/确认时,从 `Prediction` 派生一条 `Annotation`,设置 `parent_prediction_id`
@@ -63,12 +64,14 @@ POST /api/v1/ml-backends/{id}/interactive-annotating
 ```
 
 **前端要点**:
+
 - 鼠标松开后立刻调,**不等保存**
 - 显示"AI 思考中"占位形状
 - 失败 toast 但不影响人工继续标
 - 同一帧的点连续点,前端做请求合并（debounce 80-120ms）
 
 **模型部署**:
+
 - SAM 系列建议**单独部署**到一个常驻 GPU 容器（预热 + 缓存 image embedding）
 - 输入图像 embedding 在第一次进入图片时预计算,后续点击只跑 mask decoder（<50ms）
 - 这一点 X-AnyLabeling 实现得很细,可以照抄 `segment_anything_2.py`
@@ -97,12 +100,14 @@ def get_next_task(user, project):
 ```
 
 **前置数据准备**:
+
 - 给 task 跑一次预标注后,**用聚类算法**（k-means on embeddings）把 prediction 标 cluster
 - 这部分 LS 自己也是"留口子由用户跑脚本",企业版自带
 
 ## 3.5 模式 D:持续训练 + 自动部署（高级）
 
 **LS 的设计**（可以学但别一开始就上）:
+
 - 项目设置 `min_annotations_to_start_training=100`
 - 每次有 `Annotation` 创建,触发 webhook 给 ML Backend
 - ML Backend 内部决定是否要训练（攒够 N 条 → 开始训练 → 训完更新 `model_version`）

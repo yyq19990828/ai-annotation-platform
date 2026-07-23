@@ -334,7 +334,10 @@ async def test_discovered_instance_reuses_one_annotation_across_windows(
         .all()
     )
     assert len(annotations) == 1
-    assert [item["frame_index"] for item in annotations[0].geometry["keyframes"]] == [1, 2]
+    assert [item["frame_index"] for item in annotations[0].geometry["keyframes"]] == [
+        1,
+        2,
+    ]
 
 
 async def test_selector_overlapping_opposite_decision_is_rejected(

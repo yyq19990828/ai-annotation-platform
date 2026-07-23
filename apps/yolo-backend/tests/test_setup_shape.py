@@ -15,13 +15,16 @@ import pytest
 @pytest.fixture(scope="module", autouse=True)
 def _stub_torch_and_ultralytics() -> None:
     """让 main 在无 GPU / 无 ultralytics 环境也可以 import."""
-    sys.modules.setdefault("torch", MagicMock(cuda=MagicMock(is_available=MagicMock(return_value=False))))
+    sys.modules.setdefault(
+        "torch", MagicMock(cuda=MagicMock(is_available=MagicMock(return_value=False)))
+    )
     sys.modules.setdefault("ultralytics", MagicMock())
 
 
 @pytest.fixture(scope="module")
 def setup_dict() -> dict:
     import main  # noqa: PLC0415
+
     return main.setup()
 
 
@@ -94,7 +97,12 @@ def test_setup_exemplar_model_shape(setup_dict: dict) -> None:
     assert ex["resource_profile"] == {"device": "gpu", "batchable": False}
     assert ex["supported_inputs"] == ["full_image"]
     assert ex["supported_geometric_outputs"] == ["bbox", "polygon"]
-    series = {v["value"] for a in ex["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    series = {
+        v["value"]
+        for a in ex["supported_variants"]
+        if a["key"] == "series"
+        for v in a["variants"]
+    }
     assert series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
     assert ex["default_variants"] == {"series": "yoloe-11", "size": "s"}
 
@@ -116,7 +124,12 @@ def test_setup_tracker_model_shape(setup_dict: dict) -> None:
     assert tracker_param["default"] == "bytetrack"
     assert "conf" in trk["params"]["properties"]
     # 复用 detection 权重矩阵: series 含 rtdetr, 默认 yolo11/s。
-    series = {v["value"] for a in trk["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    series = {
+        v["value"]
+        for a in trk["supported_variants"]
+        if a["key"] == "series"
+        for v in a["variants"]
+    }
     assert "rtdetr" in series
     assert trk["default_variants"] == {"series": "yolo11", "size": "s"}
 
@@ -133,7 +146,12 @@ def test_setup_openvocab_text_outputs(setup_dict: dict) -> None:
 def test_setup_segment_yoloe_yoloe_series_only(setup_dict: dict) -> None:
     """segment-yoloe 只暴露 yoloe series (world 无分割头)。"""
     seg = next(m for m in setup_dict["models"] if m["id"] == "segment-yoloe")
-    series = {v["value"] for a in seg["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    series = {
+        v["value"]
+        for a in seg["supported_variants"]
+        if a["key"] == "series"
+        for v in a["variants"]
+    }
     assert series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
 
 
@@ -141,8 +159,18 @@ def test_setup_openvocab_series_namespaces(setup_dict: dict) -> None:
     """detect-world 只暴露 world series, detect-yoloe 只暴露 yoloe series."""
     world = next(m for m in setup_dict["models"] if m["id"] == "detect-world")
     yoloe = next(m for m in setup_dict["models"] if m["id"] == "detect-yoloe")
-    world_series = {v["value"] for a in world["supported_variants"] if a["key"] == "series" for v in a["variants"]}
-    yoloe_series = {v["value"] for a in yoloe["supported_variants"] if a["key"] == "series" for v in a["variants"]}
+    world_series = {
+        v["value"]
+        for a in world["supported_variants"]
+        if a["key"] == "series"
+        for v in a["variants"]
+    }
+    yoloe_series = {
+        v["value"]
+        for a in yoloe["supported_variants"]
+        if a["key"] == "series"
+        for v in a["variants"]
+    }
     assert world_series == {"yolo-worldv2", "yolo-world"}
     assert yoloe_series == {"yoloe-v8", "yoloe-11", "yoloe-26"}
 
@@ -176,7 +204,14 @@ def test_setup_models_declare_resource_profile(setup_dict: dict) -> None:
 
 def test_setup_models_carry_protocol_task(setup_dict: dict) -> None:
     tasks = {m["task"] for m in setup_dict["models"]}
-    assert tasks == {"detection", "segmentation", "keypoint", "obb", "interactive_seg", "tracker"}
+    assert tasks == {
+        "detection",
+        "segmentation",
+        "keypoint",
+        "obb",
+        "interactive_seg",
+        "tracker",
+    }
 
 
 def test_setup_models_all_family_yolo(setup_dict: dict) -> None:
@@ -249,8 +284,10 @@ def test_setup_yolo11_recommended_in_each_model(setup_dict: dict) -> None:
             continue  # 开集模型无 yolo11 系列 (单独 test 校验其推荐项).
         series_axis = next(a for a in m["supported_variants"] if a["key"] == "series")
         # yolo11 在 4 个 model 中都有, 应被标推荐.
-        assert any(v["value"] == "yolo11" and v.get("recommended") for v in series_axis["variants"]), \
-            f"yolo11 should be recommended for model {m['id']}"
+        assert any(
+            v["value"] == "yolo11" and v.get("recommended")
+            for v in series_axis["variants"]
+        ), f"yolo11 should be recommended for model {m['id']}"
 
 
 def test_setup_params_schema_keys(setup_dict: dict) -> None:
@@ -329,6 +366,7 @@ def test_setup_obb_variant_combinations_count(setup_dict: dict) -> None:
 def test_setup_variant_combinations_all_legal(setup_dict: dict) -> None:
     """每个 combo 必须在对应矩阵中确实存在 (闭集 MODEL_MATRIX / 开集 openvocab)."""
     import main as m  # noqa: PLC0415
+
     for entry in setup_dict["models"]:
         if entry["id"] in OPENVOCAB_IDS:
             for series, size in entry["variant_combinations"]:
@@ -350,6 +388,7 @@ def test_setup_each_model_has_default_variants(setup_dict: dict) -> None:
 def test_setup_default_variants_legal(setup_dict: dict) -> None:
     """default_variants 必须是合法 (series, size) 组合 (闭集 / 开集各自矩阵)."""
     import main as m  # noqa: PLC0415
+
     for entry in setup_dict["models"]:
         dv = entry["default_variants"]
         if entry["id"] in OPENVOCAB_IDS:
@@ -364,7 +403,9 @@ def test_setup_default_variants_prefer_yolo11_s(setup_dict: dict) -> None:
     for entry in setup_dict["models"]:
         if entry["id"] in OPENVOCAB_IDS:
             continue
-        assert entry["default_variants"] == {"series": "yolo11", "size": "s"}, entry["id"]
+        assert entry["default_variants"] == {"series": "yolo11", "size": "s"}, entry[
+            "id"
+        ]
 
 
 def test_setup_openvocab_default_variants(setup_dict: dict) -> None:

@@ -80,18 +80,20 @@ describe("VideoTrackSidebar Mask 多选", () => {
       geometry: {
         type: "video_track_mask",
         track_id: "trk_mask_1",
-        keyframes: [{
-          frame_index: 0,
-          source: "manual",
-          mask: {
-            encoding: "coco_rle_ref",
-            size: [2, 3],
-            object_key: "raster-masks/test.json",
-            sha256: "a".repeat(64),
-            runs: 3,
-            bytes: 12,
+        keyframes: [
+          {
+            frame_index: 0,
+            source: "manual",
+            mask: {
+              encoding: "coco_rle_ref",
+              size: [2, 3],
+              object_key: "raster-masks/test.json",
+              sha256: "a".repeat(64),
+              runs: 3,
+              bytes: 12,
+            },
           },
-        }],
+        ],
         outside: [],
       },
       confidence: null,

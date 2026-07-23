@@ -91,10 +91,7 @@ def _backend_detail(resp: httpx.Response) -> str | dict:
             for key in ("detail", "error", "message"):
                 val = data.get(key)
                 if val:
-                    if (
-                        isinstance(val, dict)
-                        and isinstance(val.get("reason"), str)
-                    ):
+                    if isinstance(val, dict) and isinstance(val.get("reason"), str):
                         return {
                             k: v
                             for k, v in val.items()
@@ -122,9 +119,7 @@ def _raise_for_backend_status(resp: httpx.Response) -> None:
     retry_after = resp.headers.get("Retry-After")
     if retry_after:
         headers = {"Retry-After": retry_after}
-    client_detail = (
-        detail if isinstance(detail, dict) else f"ML backend: {detail}"
-    )
+    client_detail = detail if isinstance(detail, dict) else f"ML backend: {detail}"
     if resp.status_code < 500 or resp.status_code == 503:
         raise HTTPException(
             status_code=resp.status_code,

@@ -308,7 +308,9 @@ export const mlBackendsApi = {
     ),
 
   predictTest: (projectId: string, backendId: string, taskId: string) =>
-    apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),
+    apiClient.post(
+      `/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`,
+    ),
 
   // v0.18.x · 可选 signal: 交互阈值/文本连发时, 新请求 abort 掉被取代的旧请求, 避免后端
   // GPU 洪泛 (见 issue 0002)。被 abort 的请求在前端 fetch 层抛 AbortError, 调用方静默忽略。
@@ -328,11 +330,7 @@ export const mlBackendsApi = {
   //   yolo:  { task: "detection", variants: { series: "yolo11", size: "s" } }
   //   gsam2: { variants: { sam_variant: "small", dino_variant: "B" } }
   //   sam3:  {} 或 { variants: { model_variant: "sam3" } }
-  warmup: (
-    projectId: string,
-    backendId: string,
-    body?: Record<string, unknown>,
-  ) =>
+  warmup: (projectId: string, backendId: string, body?: Record<string, unknown>) =>
     apiClient.post<{
       ok: boolean;
       model_load_ms: number | null;

@@ -36,9 +36,11 @@ vi.mock("./MaskRepairSheet", () => ({
 import { MaskQcPanel, type MaskQcPanelProps } from "./MaskQcPanel";
 
 function currentFeedbackAnchor(): FeedbackAnchorPosition {
-  return (mocks.feedback as {
-    data: { pages: Array<{ items: Array<{ anchor_position: FeedbackAnchorPosition }> }> };
-  }).data.pages[0].items[0].anchor_position;
+  return (
+    mocks.feedback as {
+      data: { pages: Array<{ items: Array<{ anchor_position: FeedbackAnchorPosition }> }> };
+    }
+  ).data.pages[0].items[0].anchor_position;
 }
 
 function issue(overrides: Partial<MaskQcIssue> = {}): MaskQcIssue {
@@ -122,22 +124,29 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   mocks.feedback = {
-    data: { pages: [{
-      items: [{
-        id: "feedback-1",
-        body: "边界需要复核",
-        author_name: "审核员",
-        anchor_position: {
-          x: 0.2,
-          y: 0.3,
-          frame: 3,
-          region_bbox: [0.1, 0.2, 0.3, 0.4],
-          region_digest: "region-digest",
-          boundary_digest: "boundary-digest",
+    data: {
+      pages: [
+        {
+          items: [
+            {
+              id: "feedback-1",
+              body: "边界需要复核",
+              author_name: "审核员",
+              anchor_position: {
+                x: 0.2,
+                y: 0.3,
+                frame: 3,
+                region_bbox: [0.1, 0.2, 0.3, 0.4],
+                region_digest: "region-digest",
+                boundary_digest: "boundary-digest",
+              },
+            },
+          ],
+          next_cursor: null,
         },
-      }],
-      next_cursor: null,
-    }], pageParams: [null] },
+      ],
+      pageParams: [null],
+    },
     isLoading: false,
     hasNextPage: false,
     isFetchingNextPage: false,
@@ -159,7 +168,9 @@ describe("MaskQcPanel", () => {
     render(<MaskQcPanel {...props()} />);
     expect(mocks.useIssues).toHaveBeenLastCalledWith(expect.objectContaining({ taskId: "task-1" }));
     fireEvent.click(screen.getByRole("button", { name: "整个项目" }));
-    expect(mocks.useIssues).toHaveBeenLastCalledWith(expect.objectContaining({ taskId: undefined }));
+    expect(mocks.useIssues).toHaveBeenLastCalledWith(
+      expect.objectContaining({ taskId: undefined }),
+    );
   });
 
   it("选择 Tracker 基线时传递精确候选三元组", () => {
@@ -172,9 +183,13 @@ describe("MaskQcPanel", () => {
   });
 
   it("刷新后展示 digest 匹配的区域评论，并让 stale 问题保持只读", () => {
-    render(<MaskQcPanel {...props({
-      activeIssue: issue({ effective_status: "stale" }),
-    })} />);
+    render(
+      <MaskQcPanel
+        {...props({
+          activeIssue: issue({ effective_status: "stale" }),
+        })}
+      />,
+    );
     expect(screen.getByText("边界需要复核")).toBeTruthy();
     expect(screen.getByText("boundary-dig")).toBeTruthy();
     expect(screen.getByPlaceholderText("旧版本问题仅可查看")).toBeDisabled();
@@ -217,54 +232,58 @@ describe("MaskQcPanel", () => {
   it("对精确 Tracker 候选提交区域决定", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const onDecideTrackerRegion = vi.fn().mockResolvedValue({ ok: true });
-    render(<MaskQcPanel {...props({
-      baseline: "tracker_candidate",
-      trackerCandidateKey: trackerCandidate.key,
-      onDecideTrackerRegion,
-      compare: {
-        baseline_kind: "tracker_candidate",
-        current: {
-          annotation_id: "annotation-1",
-          annotation_version: 7,
-          frame_index: 3,
-          source: "prediction",
-          state: "exact",
-          digest: "current",
-          size: [4, 4],
-          content_path: "/current",
-          candidate_job_id: null,
-          candidate_digest: null,
-          candidate_instance_id: null,
-        },
-        baseline: {
-          annotation_id: "annotation-1",
-          annotation_version: 7,
-          frame_index: 3,
-          source: "tracker_candidate",
-          state: "candidate",
-          digest: "candidate",
-          size: [4, 4],
-          content_path: "/candidate",
-          candidate_job_id: trackerCandidate.jobId,
-          candidate_digest: trackerCandidate.digest,
-          candidate_instance_id: trackerCandidate.instanceId,
-        },
-        metrics: {
-          current_area_pixels: 4,
-          baseline_area_pixels: 5,
-          intersection_pixels: 4,
-          union_pixels: 5,
-          changed_pixels: 1,
-          added_pixels: 1,
-          removed_pixels: 0,
-          iou_numerator: 4,
-          iou_denominator: 5,
-          dice_numerator: 8,
-          dice_denominator: 9,
-        },
-        loss: [],
-      },
-    })} />);
+    render(
+      <MaskQcPanel
+        {...props({
+          baseline: "tracker_candidate",
+          trackerCandidateKey: trackerCandidate.key,
+          onDecideTrackerRegion,
+          compare: {
+            baseline_kind: "tracker_candidate",
+            current: {
+              annotation_id: "annotation-1",
+              annotation_version: 7,
+              frame_index: 3,
+              source: "prediction",
+              state: "exact",
+              digest: "current",
+              size: [4, 4],
+              content_path: "/current",
+              candidate_job_id: null,
+              candidate_digest: null,
+              candidate_instance_id: null,
+            },
+            baseline: {
+              annotation_id: "annotation-1",
+              annotation_version: 7,
+              frame_index: 3,
+              source: "tracker_candidate",
+              state: "candidate",
+              digest: "candidate",
+              size: [4, 4],
+              content_path: "/candidate",
+              candidate_job_id: trackerCandidate.jobId,
+              candidate_digest: trackerCandidate.digest,
+              candidate_instance_id: trackerCandidate.instanceId,
+            },
+            metrics: {
+              current_area_pixels: 4,
+              baseline_area_pixels: 5,
+              intersection_pixels: 4,
+              union_pixels: 5,
+              changed_pixels: 1,
+              added_pixels: 1,
+              removed_pixels: 0,
+              iou_numerator: 4,
+              iou_denominator: 5,
+              dice_numerator: 8,
+              dice_denominator: 9,
+            },
+            loss: [],
+          },
+        })}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "区域接受" }));
     await waitFor(() => {

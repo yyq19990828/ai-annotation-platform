@@ -1,6 +1,10 @@
 import type { PendingDrawing, EditingClass, Geom } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
-import { ClassPickerPopover, type ClassPickerCancelReason, type ClassPickerAttrEditing } from "./ClassPickerPopover";
+import {
+  ClassPickerPopover,
+  type ClassPickerCancelReason,
+  type ClassPickerAttrEditing,
+} from "./ClassPickerPopover";
 
 type StageGeometry = {
   imgW: number;
@@ -128,7 +132,11 @@ export function WorkbenchOverlays({
               ? `采纳 → 选项目标签 (模型类别: ${editingClass.currentClass})`
               : `改类别 (当前: ${editingClass.currentClass})`
           }
-          onPick={changeClassAttrEditing && onChangeClassKeepOpen ? onChangeClassKeepOpen : onCommitChangeClass}
+          onPick={
+            changeClassAttrEditing && onChangeClassKeepOpen
+              ? onChangeClassKeepOpen
+              : onCommitChangeClass
+          }
           onCancel={onCancelChangeClass}
           attrEditing={changeClassAttrEditing}
         />
@@ -147,7 +155,11 @@ export function WorkbenchOverlays({
               ? `采纳 → 选项目标签 (模型类别: ${editingClass.currentClass})`
               : `改类别 (当前: ${editingClass.currentClass})`
           }
-          onPick={changeClassAttrEditing && onChangeClassKeepOpen ? onChangeClassKeepOpen : onCommitChangeClass}
+          onPick={
+            changeClassAttrEditing && onChangeClassKeepOpen
+              ? onChangeClassKeepOpen
+              : onCommitChangeClass
+          }
           onCancel={onCancelChangeClass}
           attrEditing={changeClassAttrEditing}
         />
@@ -164,46 +176,59 @@ export function WorkbenchOverlays({
           onCancel={onSamCancelClass}
         />
       )}
-      {samPendingGeom && !samPendingAnchor && canUseImagePosition && !pendingDrawing && !editingClass && (
-        <ClassPickerPopover
-          geom={samPendingGeom}
-          imgW={stageGeom.imgW}
-          imgH={stageGeom.imgH}
-          vp={vp}
-          classes={classes}
-          recent={recentClasses}
-          defaultClass={samDefaultClass}
-          title="接受 SAM 候选 → 选类别"
-          onPick={onSamCommitClass}
-          onCancel={onSamCancelClass}
-        />
-      )}
-      {batchChanging && batchChangeTarget && hasFixedAnchor(batchChangeTarget) && !pendingDrawing && !editingClass && (
-        <ClassPickerPopover
-          position="fixed"
-          anchor={batchChangeTarget.anchor}
-          classes={classes}
-          recent={recentClasses}
-          defaultClass={batchChangeTarget.className}
-          title={`批量改类别 (${batchChangeTarget.count} 个)`}
-          onPick={onCommitBatchChangeClass}
-          onCancel={onCancelBatchChange}
-        />
-      )}
-      {batchChanging && batchChangeTarget && !hasFixedAnchor(batchChangeTarget) && canUseImagePosition && !pendingDrawing && !editingClass && (
-        <ClassPickerPopover
-          geom={batchChangeTarget.geom}
-          imgW={stageGeom.imgW}
-          imgH={stageGeom.imgH}
-          vp={vp}
-          classes={classes}
-          recent={recentClasses}
-          defaultClass={batchChangeTarget.className}
-          title={`批量改类别 (${batchChangeTarget.count} 个)`}
-          onPick={onCommitBatchChangeClass}
-          onCancel={onCancelBatchChange}
-        />
-      )}
+      {samPendingGeom &&
+        !samPendingAnchor &&
+        canUseImagePosition &&
+        !pendingDrawing &&
+        !editingClass && (
+          <ClassPickerPopover
+            geom={samPendingGeom}
+            imgW={stageGeom.imgW}
+            imgH={stageGeom.imgH}
+            vp={vp}
+            classes={classes}
+            recent={recentClasses}
+            defaultClass={samDefaultClass}
+            title="接受 SAM 候选 → 选类别"
+            onPick={onSamCommitClass}
+            onCancel={onSamCancelClass}
+          />
+        )}
+      {batchChanging &&
+        batchChangeTarget &&
+        hasFixedAnchor(batchChangeTarget) &&
+        !pendingDrawing &&
+        !editingClass && (
+          <ClassPickerPopover
+            position="fixed"
+            anchor={batchChangeTarget.anchor}
+            classes={classes}
+            recent={recentClasses}
+            defaultClass={batchChangeTarget.className}
+            title={`批量改类别 (${batchChangeTarget.count} 个)`}
+            onPick={onCommitBatchChangeClass}
+            onCancel={onCancelBatchChange}
+          />
+        )}
+      {batchChanging &&
+        batchChangeTarget &&
+        !hasFixedAnchor(batchChangeTarget) &&
+        canUseImagePosition &&
+        !pendingDrawing &&
+        !editingClass && (
+          <ClassPickerPopover
+            geom={batchChangeTarget.geom}
+            imgW={stageGeom.imgW}
+            imgH={stageGeom.imgH}
+            vp={vp}
+            classes={classes}
+            recent={recentClasses}
+            defaultClass={batchChangeTarget.className}
+            title={`批量改类别 (${batchChangeTarget.count} 个)`}
+            onPick={onCommitBatchChangeClass}
+            onCancel={onCancelBatchChange}
+          />
+        )}
     </>
   );
 }

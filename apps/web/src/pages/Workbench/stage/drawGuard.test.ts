@@ -34,9 +34,7 @@ describe("guardDrawnBox", () => {
     const toast = vi.fn();
     const existing: ShapeForIoU[] = [{ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }];
     // 几乎完全重叠
-    expect(
-      guardDrawnBox({ x: 0.1005, y: 0.1005, w: 0.2, h: 0.2 }, existing, toast),
-    ).toBeNull();
+    expect(guardDrawnBox({ x: 0.1005, y: 0.1005, w: 0.2, h: 0.2 }, existing, toast)).toBeNull();
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ msg: "疑似重复，未保存", kind: "warning" }),
     );

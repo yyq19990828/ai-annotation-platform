@@ -31,17 +31,19 @@ const TERMINAL = new Set([
 ]);
 
 function statusLabel(status: string): string {
-  return {
-    pending: "等待执行",
-    running: "正在执行",
-    completed: "修复完成",
-    partial: "部分完成",
-    failed: "执行失败",
-    cancelled: "已取消",
-    rolling_back: "正在回滚",
-    rolled_back: "已回滚",
-    rollback_failed: "回滚失败",
-  }[status] ?? status;
+  return (
+    {
+      pending: "等待执行",
+      running: "正在执行",
+      completed: "修复完成",
+      partial: "部分完成",
+      failed: "执行失败",
+      cancelled: "已取消",
+      rolling_back: "正在回滚",
+      rolled_back: "已回滚",
+      rollback_failed: "回滚失败",
+    }[status] ?? status
+  );
 }
 
 function errorText(error: unknown): string {
@@ -53,7 +55,7 @@ function rollbackFailure(result: Record<string, unknown>): Record<string, unknow
   const value = result.rollback;
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return (value as Record<string, unknown>).status === "failed"
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : null;
 }
 
@@ -84,10 +86,10 @@ export function MaskRepairSheet({
   const currentBatch = batch.data ?? execute.data ?? null;
   const isTerminal = currentBatch ? TERMINAL.has(currentBatch.status) : false;
   const canRollback = Boolean(
-    currentBatch
-    && ["completed", "partial"].includes(currentBatch.status)
-    && currentBatch.rollback_expires_at
-    && new Date(currentBatch.rollback_expires_at).getTime() > Date.now(),
+    currentBatch &&
+    ["completed", "partial"].includes(currentBatch.status) &&
+    currentBatch.rollback_expires_at &&
+    new Date(currentBatch.rollback_expires_at).getTime() > Date.now(),
   );
   const rollbackReport = currentBatch ? rollbackFailure(currentBatch.result) : null;
 
@@ -206,12 +208,14 @@ export function MaskRepairSheet({
                         {item.kind}
                       </span>
                       {item.frame_index != null && (
-                        <span className="ml-auto text-xs text-muted-foreground">F{item.frame_index}</span>
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          F{item.frame_index}
+                        </span>
                       )}
                     </div>
                     <div className="mt-2 text-xs text-muted-foreground">
-                      {item.skip_detail
-                        ?? `${item.annotation_ids.length} 个对象 · ${item.changed_pixels.toLocaleString()} 像素`}
+                      {item.skip_detail ??
+                        `${item.annotation_ids.length} 个对象 · ${item.changed_pixels.toLocaleString()} 像素`}
                     </div>
                     {item.skip_code && (
                       <div className="mt-1 font-mono text-xs text-muted-foreground">
@@ -229,10 +233,17 @@ export function MaskRepairSheet({
           )}
 
           {currentBatch && (
-            <Alert variant={currentBatch.status === "failed" || currentBatch.status === "rollback_failed" ? "destructive" : "default"}>
+            <Alert
+              variant={
+                currentBatch.status === "failed" || currentBatch.status === "rollback_failed"
+                  ? "destructive"
+                  : "default"
+              }
+            >
               <AlertTitle>{statusLabel(currentBatch.status)}</AlertTitle>
               <AlertDescription>
-                批次 {currentBatch.id.slice(0, 8)} · 结果摘要 {currentBatch.result_digest.slice(0, 12)}
+                批次 {currentBatch.id.slice(0, 8)} · 结果摘要{" "}
+                {currentBatch.result_digest.slice(0, 12)}
               </AlertDescription>
             </Alert>
           )}
@@ -251,7 +262,9 @@ export function MaskRepairSheet({
           {!currentBatch && (
             <Button
               variant="primary"
-              disabled={!dryRun.data || dryRun.data.summary.executable_count === 0 || execute.isPending}
+              disabled={
+                !dryRun.data || dryRun.data.summary.executable_count === 0 || execute.isPending
+              }
               onClick={submit}
             >
               {execute.isPending && <Spinner data-icon="inline-start" />}
@@ -274,10 +287,9 @@ export function MaskRepairSheet({
             <Button
               variant="ghost"
               onClick={() => {
-                const blob = new Blob(
-                  [JSON.stringify(rollbackReport, null, 2)],
-                  { type: "application/json" },
-                );
+                const blob = new Blob([JSON.stringify(rollbackReport, null, 2)], {
+                  type: "application/json",
+                });
                 const url = URL.createObjectURL(blob);
                 const anchor = document.createElement("a");
                 anchor.href = url;
@@ -289,7 +301,9 @@ export function MaskRepairSheet({
               下载回滚冲突报告
             </Button>
           )}
-          <Button variant="ghost" onClick={close}>{isTerminal ? "完成" : "关闭"}</Button>
+          <Button variant="ghost" onClick={close}>
+            {isTerminal ? "完成" : "关闭"}
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

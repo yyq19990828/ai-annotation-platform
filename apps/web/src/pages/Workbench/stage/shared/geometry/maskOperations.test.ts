@@ -12,13 +12,13 @@ import {
 } from "./maskOperations";
 
 function alpha(rows: number[][]): Uint8Array {
-  return Uint8Array.from(rows.flat().map((value) => value ? 255 : 0));
+  return Uint8Array.from(rows.flat().map((value) => (value ? 255 : 0)));
 }
 
 function rows(value: Uint8Array, width: number): number[][] {
   const result: number[][] = [];
   for (let offset = 0; offset < value.length; offset += width) {
-    result.push([...value.slice(offset, offset + width)].map((pixel) => pixel ? 1 : 0));
+    result.push([...value.slice(offset, offset + width)].map((pixel) => (pixel ? 1 : 0)));
   }
   return result;
 }
@@ -63,7 +63,12 @@ describe("Mask operations · brush and polygon", () => {
 
   it("uses one pixel-center even-odd rule for polygon add and subtract", () => {
     const added = applyMaskPolygon(new Uint8Array(24), 6, 4, {
-      points: [[1, 1], [5, 1], [5, 3], [1, 3]],
+      points: [
+        [1, 1],
+        [5, 1],
+        [5, 3],
+        [1, 3],
+      ],
       value: 255,
     });
     expect(rows(added.alpha, 6)).toEqual([
@@ -74,7 +79,12 @@ describe("Mask operations · brush and polygon", () => {
     ]);
 
     const subtracted = applyMaskPolygon(added.alpha, 6, 4, {
-      points: [[2, 0], [4, 0], [4, 4], [2, 4]],
+      points: [
+        [2, 0],
+        [4, 0],
+        [4, 4],
+        [2, 4],
+      ],
       value: 0,
     });
     expect(rows(subtracted.alpha, 6)).toEqual([
@@ -89,7 +99,10 @@ describe("Mask operations · brush and polygon", () => {
   it("does not mutate the source and reports a no-op polygon", () => {
     const source = alpha([[1, 0, 0]]);
     const result = applyMaskPolygon(source, 3, 1, {
-      points: [[0, 0], [1, 0]],
+      points: [
+        [0, 0],
+        [1, 0],
+      ],
       value: 0,
     });
     expect([...source]).toEqual([255, 0, 0]);
@@ -99,13 +112,15 @@ describe("Mask operations · brush and polygon", () => {
   });
 
   it("rejects brush radii outside the editor contract", () => {
-    expect(() => applyMaskBrush(new Uint8Array(1), 1, 1, {
-      cx: 0,
-      cy: 0,
-      radius: 0,
-      shape: "circle",
-      value: 255,
-    })).toThrow(/radius/);
+    expect(() =>
+      applyMaskBrush(new Uint8Array(1), 1, 1, {
+        cx: 0,
+        cy: 0,
+        radius: 0,
+        shape: "circle",
+        value: 255,
+      }),
+    ).toThrow(/radius/);
   });
 });
 
@@ -246,16 +261,20 @@ describe("Mask operations · morphology", () => {
   });
 
   it("rejects non-binary input and out-of-contract radii", () => {
-    expect(() => applyMaskMorphology(Uint8Array.of(128), 1, 1, {
-      operation: "dilate",
-      kernelShape: "disk",
-      radius: 1,
-    })).toThrow(/binary/);
-    expect(() => applyMaskMorphology(Uint8Array.of(255), 1, 1, {
-      operation: "dilate",
-      kernelShape: "disk",
-      radius: 33,
-    })).toThrow(/radius/);
+    expect(() =>
+      applyMaskMorphology(Uint8Array.of(128), 1, 1, {
+        operation: "dilate",
+        kernelShape: "disk",
+        radius: 1,
+      }),
+    ).toThrow(/binary/);
+    expect(() =>
+      applyMaskMorphology(Uint8Array.of(255), 1, 1, {
+        operation: "dilate",
+        kernelShape: "disk",
+        radius: 33,
+      }),
+    ).toThrow(/radius/);
   });
 
   it("clips a radius-32 kernel on empty and full non-square masks", () => {
@@ -266,11 +285,16 @@ describe("Mask operations · morphology", () => {
     });
     expect(empty.report.afterArea).toBe(0);
 
-    const full = applyMaskMorphology(Uint8Array.from({ length: 6 }, () => 255), 3, 2, {
-      operation: "erode",
-      kernelShape: "disk",
-      radius: 32,
-    });
+    const full = applyMaskMorphology(
+      Uint8Array.from({ length: 6 }, () => 255),
+      3,
+      2,
+      {
+        operation: "erode",
+        kernelShape: "disk",
+        radius: 32,
+      },
+    );
     expect(full.report.afterArea).toBe(0);
   });
 });

@@ -295,7 +295,7 @@ export class TrackerJobStore {
       return;
     }
     const delay = Math.min(
-      POLL_AFTER_DISCONNECT_MS * (2 ** Math.max(0, failures - 1)),
+      POLL_AFTER_DISCONNECT_MS * 2 ** Math.max(0, failures - 1),
       MAX_POLL_DELAY_MS,
     );
     this.schedulePoll(jobId, delay);
@@ -305,10 +305,8 @@ export class TrackerJobStore {
     if (this.pollTimers.has(jobId)) return;
     const current = this.jobs[jobId];
     if (
-      !current
-      || !["queued", "running", "pending_review", "partially_reviewed"].includes(
-        current.status,
-      )
+      !current ||
+      !["queued", "running", "pending_review", "partially_reviewed"].includes(current.status)
     ) {
       return;
     }
@@ -328,10 +326,11 @@ export class TrackerJobStore {
     try {
       const job = await videoTrackerApi.get(jobId);
       if (
-        this.currentTaskId !== current.taskId
-        || (this.jobGenerations.get(jobId) ?? 0) !== generation
-        || !this.jobs[jobId]
-      ) return;
+        this.currentTaskId !== current.taskId ||
+        (this.jobGenerations.get(jobId) ?? 0) !== generation ||
+        !this.jobs[jobId]
+      )
+        return;
       this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
       this.emit();
       if (job.status === "queued" || job.status === "running") {
@@ -389,15 +388,13 @@ export class TrackerJobStore {
   }
 
   private handleMessage(jobId: string, evt: MessageEvent): void {
-    let payload:
-      | {
-          type?: string;
-          status?: VideoTrackerJobStatus;
-          error_message?: string;
-          current?: number;
-          total?: number;
-        }
-      | null = null;
+    let payload: {
+      type?: string;
+      status?: VideoTrackerJobStatus;
+      error_message?: string;
+      current?: number;
+      total?: number;
+    } | null = null;
     try {
       const data = JSON.parse(evt.data);
       if (data?.type === "ping") return;
@@ -442,7 +439,9 @@ export class TrackerJobStore {
         });
         this.scheduleTerminalCleanup(jobId);
       } else {
-        useToastStore.getState().push({ msg: "AI 追踪已取消 (部分结果待审)", sub: range, kind: "warning" });
+        useToastStore
+          .getState()
+          .push({ msg: "AI 追踪已取消 (部分结果待审)", sub: range, kind: "warning" });
         void this.enterReview(jobId);
       }
     } else if (payload.type === "job_failed") {
@@ -550,9 +549,10 @@ export class TrackerJobStore {
     try {
       updated = await videoTrackerApi.decide(jobId, payload);
     } catch (err) {
-      const detail = err instanceof ApiError && err.detailRaw && typeof err.detailRaw === "object"
-        ? err.detailRaw as { reason?: string }
-        : undefined;
+      const detail =
+        err instanceof ApiError && err.detailRaw && typeof err.detailRaw === "object"
+          ? (err.detailRaw as { reason?: string })
+          : undefined;
       const reason = detail?.reason;
       if (reason === "manual_keyframe_protected") return { ok: false, reason };
       if (reason === "job_revision_conflict" || reason === "source_version_conflict") {
@@ -669,9 +669,7 @@ export class TrackerJobStore {
       updated = await videoTrackerApi.cancel(jobId);
     } catch (error) {
       useToastStore.getState().push({
-        msg: cur.jobKind === "correction"
-          ? "取消 Mask 纠错传播失败"
-          : "取消 AI 追踪失败",
+        msg: cur.jobKind === "correction" ? "取消 Mask 纠错传播失败" : "取消 AI 追踪失败",
         sub: error instanceof Error ? error.message : "请重试",
         kind: "error",
       });
@@ -756,7 +754,11 @@ const trackerStore = new TrackerJobStore();
 export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
-  const [state, setState] = useState<TrackerStoreState>({ jobs: {}, candidates: {}, submitting: {} });
+  const [state, setState] = useState<TrackerStoreState>({
+    jobs: {},
+    candidates: {},
+    submitting: {},
+  });
 
   useEffect(() => {
     trackerStore.setAnnotationInvalidator((taskId: string) => {
@@ -791,10 +793,7 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
 
   // v0.22.1 · B · 无源检测发起 (画布级入口, 不绑选中轨迹)。
   const track = useCallback(
-    async (
-      taskId: string,
-      payload: Parameters<typeof videoTrackerApi.track>[1],
-    ) => {
+    async (taskId: string, payload: Parameters<typeof videoTrackerApi.track>[1]) => {
       const job = await videoTrackerApi.track(taskId, payload);
       if (tokenRef.current) trackerStore.addJob(job, tokenRef.current);
       return job;

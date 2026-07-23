@@ -40,7 +40,5 @@ export interface SearchResponse {
 
 export const searchApi = {
   query: (q: string, limit = 5) =>
-    apiClient.get<SearchResponse>(
-      `/search?q=${encodeURIComponent(q)}&limit=${limit}`,
-    ),
+    apiClient.get<SearchResponse>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 };

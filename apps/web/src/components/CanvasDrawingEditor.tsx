@@ -42,7 +42,15 @@ function aspectRatioPercent(w: number | null | undefined, h: number | null | und
  *  Annotator 端用 CanvasDrawingPreview 只读渲染。 */
 type Shape = NonNullable<CommentCanvasDrawing["shapes"]>[number];
 
-export function CanvasDrawingEditor({ open, onClose, onSave, initial, backgroundUrl, imageWidth, imageHeight }: Props) {
+export function CanvasDrawingEditor({
+  open,
+  onClose,
+  onSave,
+  initial,
+  backgroundUrl,
+  imageWidth,
+  imageHeight,
+}: Props) {
   const [shapes, setShapes] = useState<Shape[]>(initial?.shapes ?? []);
   const [stroke, setStroke] = useState<string>("#ef4444");
   const [drawing, setDrawing] = useState<number[] | null>(null); // 当前正在画的折线点 [x1, y1, x2, y2, ...]
@@ -52,12 +60,18 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
   const drawingActiveRef = useRef(false);
   const strokeStartedAtRef = useRef<number | null>(null); // v0.10.21 I4 · 当前 stroke 起点 ms epoch
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const canvasRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({
-    "--canvas-drawing-aspect-padding": `${aspectRatioPercent(imageWidth, imageHeight)}%`,
-    "--canvas-drawing-bg": backgroundUrl
-      ? `center/contain no-repeat url(${backgroundUrl})`
-      : "var(--sc-muted)",
-  } as CSSProperties), [backgroundUrl, imageHeight, imageWidth]));
+  const canvasRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(
+      () =>
+        ({
+          "--canvas-drawing-aspect-padding": `${aspectRatioPercent(imageWidth, imageHeight)}%`,
+          "--canvas-drawing-bg": backgroundUrl
+            ? `center/contain no-repeat url(${backgroundUrl})`
+            : "var(--sc-muted)",
+        }) as CSSProperties,
+      [backgroundUrl, imageHeight, imageWidth],
+    ),
+  );
 
   // 重置 shapes（每次打开同步 initial）
   useEffect(() => {
@@ -138,9 +152,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
               data-color={c.value}
             />
           ))}
-          <span className={styles.hint}>
-            按住鼠标拖动绘制 · {shapes.length} 条线
-          </span>
+          <span className={styles.hint}>按住鼠标拖动绘制 · {shapes.length} 条线</span>
         </div>
         <div ref={canvasRef} className={styles.canvas}>
           <svg
@@ -213,17 +225,29 @@ interface PreviewProps {
 /** 只读小缩略：annotator 端在评论卡片里展示 reviewer 的画布批注。
  *  v0.10.21 · 若所有 shape 都带 started_at/ended_at, 下方渲染迷你 timeline bar:
  *  每段颜色 = stroke 颜色, 宽度 ∝ 持续时长; hover 段 → 仅该 stroke 高亮(其他 dim). */
-export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imageWidth, imageHeight }: PreviewProps) {
+export function CanvasDrawingPreview({
+  drawing,
+  width = 220,
+  backgroundUrl,
+  imageWidth,
+  imageHeight,
+}: PreviewProps) {
   const aw = imageWidth && imageWidth > 0 ? imageWidth : DEFAULT_W;
   const ah = imageHeight && imageHeight > 0 ? imageHeight : DEFAULT_H;
   const height = (ah / aw) * width;
-  const previewRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({
-    "--canvas-drawing-preview-width": width,
-    "--canvas-drawing-preview-height": height,
-    "--canvas-drawing-bg": backgroundUrl
-      ? `center/contain no-repeat url(${backgroundUrl})`
-      : "var(--sc-muted)",
-  } as CSSProperties), [backgroundUrl, height, width]));
+  const previewRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(
+      () =>
+        ({
+          "--canvas-drawing-preview-width": width,
+          "--canvas-drawing-preview-height": height,
+          "--canvas-drawing-bg": backgroundUrl
+            ? `center/contain no-repeat url(${backgroundUrl})`
+            : "var(--sc-muted)",
+        }) as CSSProperties,
+      [backgroundUrl, height, width],
+    ),
+  );
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const shapes = useMemo(() => drawing.shapes ?? [], [drawing.shapes]);
@@ -241,11 +265,7 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imag
   return (
     <div>
       <div ref={previewRef} className={styles.preview}>
-        <svg
-          viewBox="0 0 1 1"
-          preserveAspectRatio="none"
-          className={styles.previewSvg}
-        >
+        <svg viewBox="0 0 1 1" preserveAspectRatio="none" className={styles.previewSvg}>
           {shapes.map((s, i) => (
             <polyline
               key={s.id ?? i}
@@ -283,9 +303,13 @@ interface TimelineBarProps {
 function TimelineBar({ width, segments, hoveredIdx, onHover }: TimelineBarProps) {
   const total = segments.reduce((sum, s) => sum + s.durationMs, 0) || 1;
   const wrapperRef = useElementStyle<HTMLDivElement>(
-    useMemo<CSSProperties>(() => ({
-      "--canvas-drawing-preview-width": `${width}px`,
-    }) as CSSProperties, [width])
+    useMemo<CSSProperties>(
+      () =>
+        ({
+          "--canvas-drawing-preview-width": `${width}px`,
+        }) as CSSProperties,
+      [width],
+    ),
   );
   return (
     <div ref={wrapperRef} className={styles.timelineWrapper} data-testid="canvas-drawing-timeline">
@@ -316,10 +340,14 @@ interface TimelineSegmentProps {
 
 function TimelineSegment({ grow, color, dimmed, onEnter, onLeave }: TimelineSegmentProps) {
   const segRef = useElementStyle<HTMLDivElement>(
-    useMemo<CSSProperties>(() => ({
-      "--seg-grow": grow,
-      "--seg-color": color,
-    }) as CSSProperties, [grow, color])
+    useMemo<CSSProperties>(
+      () =>
+        ({
+          "--seg-grow": grow,
+          "--seg-color": color,
+        }) as CSSProperties,
+      [grow, color],
+    ),
   );
   return (
     <div

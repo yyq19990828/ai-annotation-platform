@@ -7,7 +7,15 @@
 //
 // 与 mirror-adr.mjs 同样模式：源文件不动；镜像产物 gitignore；改源后 build 时重建。
 
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, existsSync, statSync } from "node:fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  statSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,10 +54,7 @@ function escapeForVue(text) {
         // inline code：含 `{{`/`}}` 的改用 <code v-pre> 关掉 Vue 编译
         const code = parts[j];
         if (/\{\{|\}\}/.test(code)) {
-          const escaped = code
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+          const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
           rebuilt += `<code v-pre>${escaped}</code>`;
         } else {
           rebuilt += "`" + code + "`";
@@ -67,7 +72,10 @@ function encodeRouteStem(stem) {
   if (stem.startsWith("archive/")) {
     return `archived-${stem.slice("archive/".length)}`;
   }
-  return stem.replace(/^\[archived\]/, "archived-").replace(/\[/g, "").replace(/\]/g, "");
+  return stem
+    .replace(/^\[archived\]/, "archived-")
+    .replace(/\[/g, "")
+    .replace(/\]/g, "");
 }
 
 // 链接改写：把仓库内引用改成 VitePress 站点路径或 GitHub blob URL。
@@ -80,44 +88,67 @@ function rewriteLinks(text, srcRel) {
 
   let rewritten = text
     // changelogs 子文件 → /changelog/<ver>
-    .replace(new RegExp(`\\]\\(${REL}docs\\/changelogs\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), "](/changelog/$1$2)")
+    .replace(
+      new RegExp(`\\]\\(${REL}docs\\/changelogs\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"),
+      "](/changelog/$1$2)",
+    )
     // changelogs 目录 → /changelog/
     .replace(new RegExp(`\\]\\(${REL}docs\\/changelogs\\/?\\)`, "g"), "](/changelog/)")
     // CHANGELOG.md → /changelog/
     .replace(new RegExp(`\\]\\(${REL}CHANGELOG\\.md${HASH}\\)`, "g"), "](/changelog/$1)")
     // ROADMAP/<ver>.md → /roadmap/<ver>
-    .replace(new RegExp(`\\]\\(${REL}ROADMAP\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), (_m, stem, hash = "") =>
-      `](/roadmap/${encodeRouteStem(stem)}${hash})`)
+    .replace(
+      new RegExp(`\\]\\(${REL}ROADMAP\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"),
+      (_m, stem, hash = "") => `](/roadmap/${encodeRouteStem(stem)}${hash})`,
+    )
     // ROADMAP.md → /roadmap/
     .replace(new RegExp(`\\]\\(${REL}ROADMAP\\.md${HASH}\\)`, "g"), "](/roadmap/$1)")
     // ADR → /dev/adr/<id>
-    .replace(new RegExp(`\\]\\(${REL}(?:docs\\/)?adr\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), "](/dev/adr/$1$2)")
+    .replace(
+      new RegExp(`\\]\\(${REL}(?:docs\\/)?adr\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"),
+      "](/dev/adr/$1$2)",
+    )
     // plans / research 不进站点：指向 GitHub blob URL（保留 hash）
-    .replace(new RegExp(`\\]\\(${REL}docs\\/(plans|research)\\/([^)#\\s]+?\\.md)${HASH}\\)`, "g"),
-      `](${GITHUB_BLOB}/docs/$1/$2$3)`)
+    .replace(
+      new RegExp(`\\]\\(${REL}docs\\/(plans|research)\\/([^)#\\s]+?\\.md)${HASH}\\)`, "g"),
+      `](${GITHUB_BLOB}/docs/$1/$2$3)`,
+    )
     // 同目录 ./0.10.x.md（在 ROADMAP/ 内或 docs/changelogs/ 内的版本互引）→ 站点干净 URL
-    .replace(/\]\((?:\.\/)?archive\/([^)#\s]+?)\.md(#[^)\s]*)?\)/g, (_m, stem, hash = "") =>
-      `](/roadmap/archived-${stem}${hash})`)
+    .replace(
+      /\]\((?:\.\/)?archive\/([^)#\s]+?)\.md(#[^)\s]*)?\)/g,
+      (_m, stem, hash = "") => `](/roadmap/archived-${stem}${hash})`,
+    )
     // 兼容旧 Roadmap 源里的 `[archived]xxx.md` 相对链接。
-    .replace(/\]\((?:\.\/)?(\[archived\][^)#\s]+?)\.md(#[^)\s]*)?\)/g, (_m, stem, hash = "") =>
-      `](./${encodeRouteStem(stem)}${hash})`)
+    .replace(
+      /\]\((?:\.\/)?(\[archived\][^)#\s]+?)\.md(#[^)\s]*)?\)/g,
+      (_m, stem, hash = "") => `](./${encodeRouteStem(stem)}${hash})`,
+    )
     .replace(/\]\((?:\.\/)?(\d+(?:\.\d+)*\.x)\.md(#[^)\s]*)?\)/g, (_m, stem, hash = "") =>
       srcRel.startsWith("ROADMAP/archive/")
         ? `](/roadmap/archived-${stem}${hash})`
-        : `](./${stem}${hash})`)
+        : `](./${stem}${hash})`,
+    )
     // maintainers/ 被排除在站点渲染之外，镜像中应链到仓库源文件。
-    .replace(new RegExp(`\\]\\(${REL}docs-site\/maintainers\/([^)#\\s]+?)\.md${HASH}\\)`, "g"),
-      (_m, rel, hash = "") => `](${GITHUB_BLOB}/docs-site/maintainers/${rel}.md${hash})`)
+    .replace(
+      new RegExp(`\\]\\(${REL}docs-site\/maintainers\/([^)#\\s]+?)\.md${HASH}\\)`, "g"),
+      (_m, rel, hash = "") => `](${GITHUB_BLOB}/docs-site/maintainers/${rel}.md${hash})`,
+    )
     // docs-site/<x>.md 引用：CHANGELOG / ROADMAP 用相对仓库根的路径指向站点页面，
     // 镜像后落到站点内需要改成站点绝对 URL。
-    .replace(new RegExp(`\\]\\(${REL}docs-site\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"),
-      (_m, rel, hash = "") => `](/${rel}${hash})`)
+    .replace(
+      new RegExp(`\\]\\(${REL}docs-site\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"),
+      (_m, rel, hash = "") => `](/${rel}${hash})`,
+    )
     // DEV.md / AGENTS.md / README.md 在仓库根，没有站点镜像 → 指向 GitHub blob URL
-    .replace(new RegExp(`\\]\\(${REL}(DEV|AGENTS|README)\\.md${HASH}\\)`, "g"),
-      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}.md${hash})`)
+    .replace(
+      new RegExp(`\\]\\(${REL}(DEV|AGENTS|README)\\.md${HASH}\\)`, "g"),
+      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}.md${hash})`,
+    )
     // 仓库根配置文件（.env.example / docker-compose.yml 等，无站点镜像）→ GitHub blob URL
-    .replace(new RegExp(`\\]\\(${REL}(\\.env\\.example|\\.env|docker-compose\\.ya?ml)${HASH}\\)`, "g"),
-      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}${hash})`);
+    .replace(
+      new RegExp(`\\]\\(${REL}(\\.env\\.example|\\.env|docker-compose\\.ya?ml)${HASH}\\)`, "g"),
+      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}${hash})`,
+    );
 
   if (srcRel.startsWith("ROADMAP/archive/")) {
     rewritten = rewritten
@@ -136,8 +167,14 @@ function rewriteLinks(text, srcRel) {
 
 // 版本号自然倒序：0.10.x 在 0.9.x 之前
 function compareVersionDesc(a, b) {
-  const pa = a.replace(/\.md$/, "").split(".").map((s) => parseInt(s, 10) || 0);
-  const pb = b.replace(/\.md$/, "").split(".").map((s) => parseInt(s, 10) || 0);
+  const pa = a
+    .replace(/\.md$/, "")
+    .split(".")
+    .map((s) => parseInt(s, 10) || 0);
+  const pb = b
+    .replace(/\.md$/, "")
+    .split(".")
+    .map((s) => parseInt(s, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const da = pa[i] ?? 0;
     const db = pb[i] ?? 0;
@@ -178,12 +215,18 @@ function buildGroup({
   });
 
   // 2. 子目录 → <name>.md
-  const versionFiles = existsSync(dirSrc) && statSync(dirSrc).isDirectory()
-    ? readdirSync(dirSrc).filter((f) => f.endsWith(".md")).sort(compareVersionDesc)
-    : [];
-  const archivedFiles = archiveDirSrc && existsSync(archiveDirSrc) && statSync(archiveDirSrc).isDirectory()
-    ? readdirSync(archiveDirSrc).filter((f) => f.endsWith(".md")).sort(compareVersionDesc)
-    : [];
+  const versionFiles =
+    existsSync(dirSrc) && statSync(dirSrc).isDirectory()
+      ? readdirSync(dirSrc)
+          .filter((f) => f.endsWith(".md"))
+          .sort(compareVersionDesc)
+      : [];
+  const archivedFiles =
+    archiveDirSrc && existsSync(archiveDirSrc) && statSync(archiveDirSrc).isDirectory()
+      ? readdirSync(archiveDirSrc)
+          .filter((f) => f.endsWith(".md"))
+          .sort(compareVersionDesc)
+      : [];
   const entries = [
     ...versionFiles.map((file) => ({
       file,
@@ -213,10 +256,7 @@ function buildGroup({
   for (const entry of entries) {
     sidebar.push({ text: entry.sidebarText, link: `${urlPrefix}/${entry.routeStem}` });
   }
-  writeFileSync(
-    resolve(dstDir, "sidebar.generated.json"),
-    JSON.stringify(sidebar, null, 2) + "\n",
-  );
+  writeFileSync(resolve(dstDir, "sidebar.generated.json"), JSON.stringify(sidebar, null, 2) + "\n");
 
   console.log(
     `[mirror-changelog] ${name}: 1 root + ${versionFiles.length} active + ${archivedFiles.length} archived → ${dstDir}`,

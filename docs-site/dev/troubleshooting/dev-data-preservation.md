@@ -17,12 +17,12 @@ last_reviewed: 2026-07-23
 
 本地 Playwright 不应连接开发进程或开发库：
 
-| 用途 | Web | API | 数据库 |
-|---|---:|---:|---|
-| 日常开发 | `3000` | `8000` | `annotation` |
-| Playwright E2E | `3001` | `8010` | `annotation_e2e` |
+| 用途                |    Web |    API | 数据库                        |
+| ------------------- | -----: | -----: | ----------------------------- |
+| 日常开发            | `3000` | `8000` | `annotation`                  |
+| Playwright E2E      | `3001` | `8010` | `annotation_e2e`              |
 | 本地截图 / 视觉回归 | `3001` | `8010` | `annotation_screenshots_test` |
-| 视觉回归 CI | `3000` | `8000` | `annotation_screenshots_test` |
+| 视觉回归 CI         | `3000` | `8000` | `annotation_screenshots_test` |
 
 `pnpm test:e2e` 会幂等创建 `annotation_e2e`、执行迁移，再启动专用 Web/API。
 `reuseExistingServer` 保持关闭，所以 `3001/8010` 被占用时测试直接失败，不会

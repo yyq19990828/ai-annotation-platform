@@ -43,14 +43,14 @@ flowchart TD
 
 ## 参与者与真值源
 
-| 角色 / 模块 | 负责什么 |
-|---|---|
-| owner / super_admin | 建批、分派、激活、逆向迁移、重置 |
-| annotator | 编辑 task、推动 `annotating`、提交批次送审 |
-| reviewer | task 审核、batch 放行或驳回 |
-| `BatchService` | batch 状态机、计数、reset、reject |
-| `AnnotationService` | annotation 写入后触发 task / batch 自动推进 |
-| `scheduler.get_next_task()` | 工作台按可见性与采样策略发题 |
+| 角色 / 模块                     | 负责什么                                                       |
+| ------------------------------- | -------------------------------------------------------------- |
+| owner / super_admin             | 建批、分派、激活、逆向迁移、重置                               |
+| annotator                       | 编辑 task、推动 `annotating`、提交批次送审                     |
+| reviewer                        | task 审核、batch 放行或驳回                                    |
+| `BatchService`                  | batch 状态机、计数、reset、reject                              |
+| `AnnotationService`             | annotation 写入后触发 task / batch 自动推进                    |
+| `scheduler.get_next_task()`     | 工作台按可见性与采样策略发题                                   |
 | `workers/tasks.py:_run_batch()` | AI 预标 worker，写 predictions 并把 batch 置为 `pre_annotated` |
 
 ## 阶段 1：创建与分派

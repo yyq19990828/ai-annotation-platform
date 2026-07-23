@@ -19,11 +19,11 @@ ADR-0050 发布的 `topology` / `runtime-snapshot` 读模型在 v0.23.3 首版�
 
 候选方案：
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
+| 选项                                                         | 主要卖点                                                                                                                                          | 主要劣势                                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **A. 四状态轴 + 诊断去重 + 卸载安全门 + 合同补齐（本 ADR）** | 把「连通 / 路由 / 容量 / 驻留」拆成四条独立轴；同一诊断只渲染一次；卸载走 drain→quiescent→unload 门控；后端只读字段补齐让 generated TS 真正 typed | 新增一层 view-model + 5+5 组件；需要后端 response_model 补齐（属 §1 允许的只读修正） |
-| B. 单「在线」徽标 + 卡片墙换皮 | 改动最小 | 治标不治本：状态语义继续混在一起；URL join 仍漂移；安全卸载仍可绕过 |
-| C. 引入图表库 / 状态管理框架 / SSE | 实时趋势、动态拓扑 | 违反 §4.2「不引入新图表库 / 状态管理框架 / 实时协议」；首版不需要 |
+| B. 单「在线」徽标 + 卡片墙换皮                               | 改动最小                                                                                                                                          | 治标不治本：状态语义继续混在一起；URL join 仍漂移；安全卸载仍可绕过                  |
+| C. 引入图表库 / 状态管理框架 / SSE                           | 实时趋势、动态拓扑                                                                                                                                | 违反 §4.2「不引入新图表库 / 状态管理框架 / 实时协议」；首版不需要                    |
 
 ## Decision
 
@@ -31,12 +31,12 @@ ADR-0050 发布的 `topology` / `runtime-snapshot` 读模型在 v0.23.3 首版�
 
 主视图按以下四轴分别判定，每条轴的来源不可互推：
 
-| 状态轴 | 枚举 | 数据来源 | 禁止推断 |
-|---|---|---|---|
-| 连通/健康 | `healthy / degraded / offline / unknown` | runtime-snapshot `registry_state` + `health_fresh` | `connected` 缓存不冒充实时 healthy |
-| 路由 | configured `active / draining / disabled` + effective `routable / draining / bypassed / blocked / unknown` | topology `traffic_state` + runtime `circuit_open` + `router_mode` | health 200 或 configured draining ≠ 已停流；`router_mode != enforce` 时 draining 只能显示 shadow |
-| 容量 | `idle / serving / saturated / unknown` | runtime `route_inflight` | GPU lease/queue/semaphore ≠ 路由 inflight；`limit=null`（v0.23.4 合同无 max_concurrency）时不可推算饱和百分比 |
-| 驻留 | `empty / loading / resident / draining / unloading / unknown` | `/observe` residency（InstanceDetailSheet 透出） | CPU compute ≠ GPU 已释放 |
+| 状态轴    | 枚举                                                                                                       | 数据来源                                                          | 禁止推断                                                                                                      |
+| --------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 连通/健康 | `healthy / degraded / offline / unknown`                                                                   | runtime-snapshot `registry_state` + `health_fresh`                | `connected` 缓存不冒充实时 healthy                                                                            |
+| 路由      | configured `active / draining / disabled` + effective `routable / draining / bypassed / blocked / unknown` | topology `traffic_state` + runtime `circuit_open` + `router_mode` | health 200 或 configured draining ≠ 已停流；`router_mode != enforce` 时 draining 只能显示 shadow              |
+| 容量      | `idle / serving / saturated / unknown`                                                                     | runtime `route_inflight`                                          | GPU lease/queue/semaphore ≠ 路由 inflight；`limit=null`（v0.23.4 合同无 max_concurrency）时不可推算饱和百分比 |
+| 驻留      | `empty / loading / resident / draining / unloading / unknown`                                              | `/observe` residency（InstanceDetailSheet 透出）                  | CPU compute ≠ GPU 已释放                                                                                      |
 
 派生规则集中在 `runtimeTopology.ts:deriveMemberRouting` / `deriveMemberCapacity`（纯函数，无业务真值猜测）。
 

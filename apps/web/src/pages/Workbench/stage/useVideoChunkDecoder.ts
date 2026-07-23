@@ -192,12 +192,35 @@ export function useVideoChunkDecoder({
 
   const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
 
-  const remember = useCallback((key: string, entry: DecodedVideoFrameBitmap) => {
+  const remember = useCallback(
+    (key: string, entry: DecodedVideoFrameBitmap) => {
+      const cache = cacheRef.current;
+      const old = cache.get(key);
+      if (old) closeBitmap(old.bitmap);
+      cache.delete(key);
+      cache.set(key, entry);
+      while (cache.size > maxItems) {
+        const oldestKey = cache.keys().next().value;
+        if (!oldestKey) break;
+        const oldest = cache.get(oldestKey);
+        if (oldest) closeBitmap(oldest.bitmap);
+        cache.delete(oldestKey);
+      }
+      setDiagnostics((cur) => ({
+        ...cur,
+        supported,
+        enabled: resolvedEnabled,
+        cacheSize: cache.size,
+        activeFrameIndex: entry.frameIndex,
+        decodes: cur.decodes + 1,
+      }));
+      bumpVersion();
+    },
+    [bumpVersion, maxItems, resolvedEnabled, supported],
+  );
+
+  useEffect(() => {
     const cache = cacheRef.current;
-    const old = cache.get(key);
-    if (old) closeBitmap(old.bitmap);
-    cache.delete(key);
-    cache.set(key, entry);
     while (cache.size > maxItems) {
       const oldestKey = cache.keys().next().value;
       if (!oldestKey) break;
@@ -210,22 +233,7 @@ export function useVideoChunkDecoder({
       supported,
       enabled: resolvedEnabled,
       cacheSize: cache.size,
-      activeFrameIndex: entry.frameIndex,
-      decodes: cur.decodes + 1,
     }));
-    bumpVersion();
-  }, [bumpVersion, maxItems, resolvedEnabled, supported]);
-
-  useEffect(() => {
-    const cache = cacheRef.current;
-    while (cache.size > maxItems) {
-      const oldestKey = cache.keys().next().value;
-      if (!oldestKey) break;
-      const oldest = cache.get(oldestKey);
-      if (oldest) closeBitmap(oldest.bitmap);
-      cache.delete(oldestKey);
-    }
-    setDiagnostics((cur) => ({ ...cur, supported, enabled: resolvedEnabled, cacheSize: cache.size }));
     bumpVersion();
   }, [bumpVersion, maxItems, resolvedEnabled, supported]);
 
@@ -266,27 +274,30 @@ export function useVideoChunkDecoder({
   );
 
   /** 命中缓存则把它提到 LRU 末尾并设为 active；未命中返回 null（调用方走解码 / <video>）。 */
-  const showFrame = useCallback((frameIndex: number) => {
-    if (!taskId || !active) return null;
-    const normalizedFrame = Math.max(0, Math.round(frameIndex));
-    const key = chunkDecoderCacheKey(taskId, normalizedFrame);
-    const cached = cacheRef.current.get(key);
-    if (cached) {
-      cacheRef.current.delete(key);
-      cacheRef.current.set(key, cached);
-      setActiveFrameIndex(normalizedFrame);
-      setDiagnostics((cur) => ({
-        ...cur,
-        cacheSize: cacheRef.current.size,
-        activeFrameIndex: normalizedFrame,
-        hits: cur.hits + 1,
-      }));
-      bumpVersion();
-      return cached;
-    }
-    setDiagnostics((cur) => ({ ...cur, misses: cur.misses + 1 }));
-    return null;
-  }, [active, bumpVersion, taskId]);
+  const showFrame = useCallback(
+    (frameIndex: number) => {
+      if (!taskId || !active) return null;
+      const normalizedFrame = Math.max(0, Math.round(frameIndex));
+      const key = chunkDecoderCacheKey(taskId, normalizedFrame);
+      const cached = cacheRef.current.get(key);
+      if (cached) {
+        cacheRef.current.delete(key);
+        cacheRef.current.set(key, cached);
+        setActiveFrameIndex(normalizedFrame);
+        setDiagnostics((cur) => ({
+          ...cur,
+          cacheSize: cacheRef.current.size,
+          activeFrameIndex: normalizedFrame,
+          hits: cur.hits + 1,
+        }));
+        bumpVersion();
+        return cached;
+      }
+      setDiagnostics((cur) => ({ ...cur, misses: cur.misses + 1 }));
+      return null;
+    },
+    [active, bumpVersion, taskId],
+  );
 
   const clear = useCallback(() => {
     for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
@@ -298,11 +309,14 @@ export function useVideoChunkDecoder({
   }, [bumpVersion]);
 
   // 卸载清理：释放全部 ImageBitmap（仿 useVideoBitmapCache）。
-  useEffect(() => () => {
-    for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
-    cacheRef.current.clear();
-    inFlightRef.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
+      cacheRef.current.clear();
+      inFlightRef.current.clear();
+    },
+    [],
+  );
 
   // taskId 切换时清空缓存。
   useEffect(() => {

@@ -18,7 +18,10 @@ import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNa
 import styles from "./AnnotatePage.module.css";
 import type { CSSProperties } from "react";
 
-const STATUS_BADGE: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "outline" }> = {
+const STATUS_BADGE: Record<
+  string,
+  { label: string; variant: "accent" | "warning" | "danger" | "outline" }
+> = {
   active: { label: "未开始", variant: "outline" },
   annotating: { label: "标注中", variant: "accent" },
   reviewing: { label: "审核中", variant: "warning" },
@@ -38,44 +41,52 @@ function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
   const isLocked = task.status === "review" || task.status === "completed";
   // 与工作台任务队列 (TaskQueuePanel) 的标签 + 配色保持一致
   const statusLabel =
-    task.status === "completed" ? "已完成"
-    : task.status === "review" ? "待审核"
-    : task.status === "rejected" ? "待重做"
-    : task.total_annotations > 0 ? "进行中"
-    : task.total_predictions > 0 ? "AI 已预标"
-    : "未开始";
+    task.status === "completed"
+      ? "已完成"
+      : task.status === "review"
+        ? "待审核"
+        : task.status === "rejected"
+          ? "待重做"
+          : task.total_annotations > 0
+            ? "进行中"
+            : task.total_predictions > 0
+              ? "AI 已预标"
+              : "未开始";
   const statusVariant =
-    task.status === "completed" ? "success" as const
-    : task.status === "review" ? "warning" as const
-    : task.status === "rejected" ? "danger" as const
-    : task.total_annotations > 0 ? "accent" as const
-    : task.total_predictions > 0 ? "ai" as const
-    : "outline" as const;
+    task.status === "completed"
+      ? ("success" as const)
+      : task.status === "review"
+        ? ("warning" as const)
+        : task.status === "rejected"
+          ? ("danger" as const)
+          : task.total_annotations > 0
+            ? ("accent" as const)
+            : task.total_predictions > 0
+              ? ("ai" as const)
+              : ("outline" as const);
 
   return (
-    <div
-      onClick={onOpen}
-      className={styles.taskRow}
-    >
+    <div onClick={onOpen} className={styles.taskRow}>
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
       <div className={styles.taskMain}>
         <div className={styles.taskTitleRow}>
           <span className={`mono ${styles.taskId}`}>{task.display_id}</span>
-          <span className={styles.taskFileName}>
-            {task.file_name}
-          </span>
+          <span className={styles.taskFileName}>{task.file_name}</span>
         </div>
         <div className={styles.taskMeta}>
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
         </div>
       </div>
       <div className={styles.taskStatus}>
-        <Badge variant={statusVariant} dot>{statusLabel}</Badge>
+        <Badge variant={statusVariant} dot>
+          {statusLabel}
+        </Badge>
       </div>
       <div className={styles.lockCell}>
         {isLocked && (
           <span title="已锁定" className={styles.lockBadge}>
-            <Icon name="lock" size={11} />已锁定
+            <Icon name="lock" size={11} />
+            已锁定
           </span>
         )}
       </div>
@@ -83,9 +94,13 @@ function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
         <Button
           size="sm"
           variant="primary"
-          onClick={(e) => { e.stopPropagation(); onOpen(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
         >
-          <Icon name="target" size={11} />打开
+          <Icon name="target" size={11} />
+          打开
         </Button>
       </div>
     </div>
@@ -143,11 +158,13 @@ export function AnnotatePage() {
 
   const openWorkbench = (taskId?: string) => {
     if (!selectedBatch) return;
-    navigate(buildWorkbenchUrl(selectedBatch.project_id, {
-      batchId: selectedBatch.batch_id,
-      taskId,
-      returnTo: currentWorkbenchReturnTo(location),
-    }));
+    navigate(
+      buildWorkbenchUrl(selectedBatch.project_id, {
+        batchId: selectedBatch.batch_id,
+        taskId,
+        returnTo: currentWorkbenchReturnTo(location),
+      }),
+    );
   };
 
   // B-20：分三档进度 — 已动工 / 送审 / 已通过；提交按钮不再以 allDone 强制门禁，
@@ -156,9 +173,7 @@ export function AnnotatePage() {
   const startedDone = selectedBatch
     ? inProgress + selectedBatch.review_tasks + selectedBatch.completed_tasks
     : 0;
-  const reviewDone = selectedBatch
-    ? selectedBatch.review_tasks + selectedBatch.completed_tasks
-    : 0;
+  const reviewDone = selectedBatch ? selectedBatch.review_tasks + selectedBatch.completed_tasks : 0;
   const approvedDone = selectedBatch?.completed_tasks ?? 0;
   const totalTasks = selectedBatch?.total_tasks ?? 0;
   const startedPct = totalTasks ? Math.round((startedDone / totalTasks) * 1000) / 10 : 0;
@@ -171,9 +186,7 @@ export function AnnotatePage() {
       <aside className={styles.sidebarShell}>
         <div className={styles.sidebarHeader}>
           <div className={styles.sidebarTitle}>项目 · 批次</div>
-          <div className={styles.sidebarSubtitle}>
-            按项目分组的我的批次
-          </div>
+          <div className={styles.sidebarSubtitle}>按项目分组的我的批次</div>
         </div>
         {batchesLoading ? (
           <div className={styles.sidebarLoading}>加载中...</div>
@@ -195,7 +208,8 @@ export function AnnotatePage() {
                 className={styles.backLink}
                 onClick={() => handleSelectBatch(null)}
               >
-                <Icon name="chevLeft" size={12} />返回全部批次
+                <Icon name="chevLeft" size={12} />
+                返回全部批次
               </button>
             )}
             <h1 className={styles.title}>
@@ -204,13 +218,19 @@ export function AnnotatePage() {
             <p className={styles.subtitle}>
               {selectedBatch ? (
                 <>
-                  <span className={`mono ${styles.accentText}`}>{selectedBatch.batch_display_id}</span>
+                  <span className={`mono ${styles.accentText}`}>
+                    {selectedBatch.batch_display_id}
+                  </span>
                   <span> · {selectedBatch.project_name}</span>
                   <span> · 共 {selectedBatch.total_tasks} 任务</span>
                   {pendingTasks > 0 && <span> · 待标 {pendingTasks}</span>}
                   {inProgress > 0 && <span> · 标注中 {inProgress}</span>}
-                  {selectedBatch.review_tasks > 0 && <span> · 送审 {selectedBatch.review_tasks}</span>}
-                  {selectedBatch.completed_tasks > 0 && <span> · 已通过 {selectedBatch.completed_tasks}</span>}
+                  {selectedBatch.review_tasks > 0 && (
+                    <span> · 送审 {selectedBatch.review_tasks}</span>
+                  )}
+                  {selectedBatch.completed_tasks > 0 && (
+                    <span> · 已通过 {selectedBatch.completed_tasks}</span>
+                  )}
                 </>
               ) : (
                 <>选择一个批次开始标注；任务进度在画布内自动同步</>
@@ -224,20 +244,27 @@ export function AnnotatePage() {
                   variant="primary"
                   size="sm"
                   disabled={submitMut.isPending}
-                  title={pendingTasks > 0 ? `仍有 ${pendingTasks} 个未开始；确认后整批提交` : "整批提交质检"}
+                  title={
+                    pendingTasks > 0
+                      ? `仍有 ${pendingTasks} 个未开始；确认后整批提交`
+                      : "整批提交质检"
+                  }
                   onClick={() => {
-                    const warn = pendingTasks > 0
-                      ? `批次「${selectedBatch.batch_name}」仍有 ${pendingTasks} 个任务未开始。确认整批提交质检？提交后无法继续修改。`
-                      : `确认将批次「${selectedBatch.batch_name}」提交质检？提交后无法继续修改。`;
+                    const warn =
+                      pendingTasks > 0
+                        ? `批次「${selectedBatch.batch_name}」仍有 ${pendingTasks} 个任务未开始。确认整批提交质检？提交后无法继续修改。`
+                        : `确认将批次「${selectedBatch.batch_name}」提交质检？提交后无法继续修改。`;
                     if (!window.confirm(warn)) return;
                     submitMut.mutate(selectedBatch);
                   }}
                 >
-                  <Icon name="check" size={11} />提交质检
+                  <Icon name="check" size={11} />
+                  提交质检
                 </Button>
               )}
               <Button size="sm" onClick={() => openWorkbench()}>
-                <Icon name="target" size={11} />打开画布
+                <Icon name="target" size={11} />
+                打开画布
               </Button>
             </div>
           )}
@@ -300,9 +327,7 @@ export function AnnotatePage() {
               <span>
                 共 {total} 个任务{tasks.length < total && `（已加载 ${tasks.length}）`}
               </span>
-              <span className={styles.taskListHint}>
-                点击行打开画布 · 进度自动保存
-              </span>
+              <span className={styles.taskListHint}>点击行打开画布 · 进度自动保存</span>
             </div>
             {tasks.map((t) => (
               <TaskRow key={t.id} task={t} onOpen={() => openWorkbench(t.id)} />

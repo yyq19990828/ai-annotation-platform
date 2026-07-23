@@ -32,9 +32,10 @@ export interface UsersStats {
 export const usersApi = {
   list: (params?: { role?: string; project_id?: string }) => {
     const q = new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(params ?? {}).filter(([, v]) => v !== undefined),
-      ) as Record<string, string>,
+      Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v !== undefined)) as Record<
+        string,
+        string
+      >,
     ).toString();
     return apiClient.get<UserResponse[]>(`/users${q ? `?${q}` : ""}`);
   },
@@ -42,14 +43,12 @@ export const usersApi = {
   // v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」聚合（last_seen_at >= now-7d）
   stats: () => apiClient.get<UsersStats>("/users/stats"),
 
-  invite: (payload: InvitePayload) =>
-    apiClient.post<InvitationCreated>("/users/invite", payload),
+  invite: (payload: InvitePayload) => apiClient.post<InvitationCreated>("/users/invite", payload),
 
   changeRole: (userId: string, role: string) =>
     apiClient.patch<UserResponse>(`/users/${userId}/role`, { role }),
 
-  deactivate: (userId: string) =>
-    apiClient.post<UserResponse>(`/users/${userId}/deactivate`, {}),
+  deactivate: (userId: string) => apiClient.post<UserResponse>(`/users/${userId}/deactivate`, {}),
 
   remove: (userId: string, opts?: { transfer_to_user_id?: string }) =>
     apiClient.delete<UserResponse>(
@@ -61,10 +60,7 @@ export const usersApi = {
     apiClient.patch<UserResponse>(`/users/${userId}/group`, { group_id: groupId }),
 
   adminResetPassword: (userId: string) =>
-    apiClient.post<AdminResetPasswordResult>(
-      `/users/${userId}/admin-reset-password`,
-      {},
-    ),
+    apiClient.post<AdminResetPasswordResult>(`/users/${userId}/admin-reset-password`, {}),
 
   exportUsers: async (format: UserExportFormat = "csv"): Promise<void> => {
     const token = localStorage.getItem("token");

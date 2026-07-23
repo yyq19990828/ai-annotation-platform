@@ -23,13 +23,23 @@ import type {
 } from "@/api/auth";
 import type { ProjectRenderingConfig } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
-import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
+import type {
+  PendingDrawing,
+  SamPolarity,
+  SamSubTool,
+  ThreeDTool,
+  Tool,
+  VideoTool,
+} from "../state/useWorkbenchState";
 import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/videoStageControls";
-import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
+import type {
+  VideoTimelineChapter,
+  VideoTimelineChapterControls,
+} from "../stage/VideoPlaybackOverlay";
 import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../stage/videoStageTypes";
 import type { VideoMaskCandidate } from "../stage/videoMaskFrames";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
@@ -38,7 +48,10 @@ import type { StageKind } from "../stages/types";
 const ThreeDWorkbench = lazy(() => import("../stages/three-d/ThreeDWorkbench"));
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoSamCandidateShape } from "../stage/VideoSamCandidateOverlay";
-import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
+import type {
+  VideoConvertOptions,
+  VideoTrackCompositionOptions,
+} from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
 import type { RasterMaskRenderRecord } from "../stage/shared/rasterMaskRender";
@@ -48,7 +61,14 @@ import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore"
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry =
+  | VideoBboxGeometry
+  | VideoTrackGeometry
+  | VideoTrackMaskGeometry
+  | VideoPolygonGeometry
+  | VideoPolylineGeometry
+  | VideoTrackPolygonGeometry
+  | VideoTrackPolylineGeometry;
 
 /**
  * v0.10.39 · WorkbenchStageHostProps 按语义嵌套:
@@ -208,11 +228,12 @@ interface WorkbenchStageHostImageProps {
   onCommitRotatedBbox: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle。 */
   onCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
-  onSamPrompt: (prompt:
-    | { kind: "point"; pt: [number, number]; alt: boolean }
-    | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
-    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
+  onSamPrompt: (
+    prompt:
+      | { kind: "point"; pt: [number, number]; alt: boolean }
+      | { kind: "bbox"; bbox: [number, number, number, number] }
+      | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
+      | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean },
   ) => void;
   onCommitMove: (
     id: string,
@@ -221,9 +242,17 @@ interface WorkbenchStageHostImageProps {
     childMoves?: { id: string; before: Geometry; after: Geometry }[],
   ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
-  onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  onCommitPolygonGeometry: (
+    id: string,
+    before: [number, number][],
+    after: [number, number][],
+  ) => void;
   // v0.10.28 · keypoint 节点几何/可见性变更。
-  onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
+  onCommitKeypointGeometry?: (
+    id: string,
+    before: import("@/types").Keypoint[],
+    after: import("@/types").Keypoint[],
+  ) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
   onStageGeometry: (g: StageGeometry) => void;
@@ -336,10 +365,13 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onWorkbenchConfigUpdate,
       projectRenderingConfig: stageProjectRenderingConfig,
     } = common;
-    const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
-    const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
+    const videoProps =
+      stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
+    const imageProps =
+      stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
     const aiProps = stageKind === "image" ? requireStageGroup(ai, "ai", stageKind) : undefined;
-    const editorProps = stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
+    const editorProps =
+      stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
     const {
       videoManifest,
       videoFrameTimetable,
@@ -472,7 +504,13 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     return (
       <div className="relative flex min-h-0 flex-1 flex-col" data-workbench-stage>
         {stageKind === "3d" ? (
-          <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">加载点云查看器…</div>}>
+          <Suspense
+            fallback={
+              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                加载点云查看器…
+              </div>
+            }
+          >
             <ThreeDWorkbench
               taskId={taskId}
               readOnly={readOnly}

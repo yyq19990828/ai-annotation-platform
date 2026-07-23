@@ -15,7 +15,11 @@ import { useToastStore } from "@/components/ui/Toast";
 import type { BatchResponse } from "@/api/batches";
 import { cn } from "@/lib/utils";
 
-const COLUMNS: { id: string; label: string; variant: "default" | "accent" | "warning" | "success" | "danger" | "ai" }[] = [
+const COLUMNS: {
+  id: string;
+  label: string;
+  variant: "default" | "accent" | "warning" | "success" | "danger" | "ai";
+}[] = [
   { id: "draft", label: "草稿", variant: "default" },
   { id: "active", label: "激活", variant: "accent" },
   // v0.9.6 · pre_annotated: 让 admin 跑完 /ai-pre 后能在 Kanban 看到「AI 预标已就绪」紫色列
@@ -57,7 +61,7 @@ export function BatchesKanbanView({ batches, isOwner, onTransition }: Props) {
     return acc;
   }, {});
 
-  const draggingBatch = draggingId ? batches.find((b) => b.id === draggingId) ?? null : null;
+  const draggingBatch = draggingId ? (batches.find((b) => b.id === draggingId) ?? null) : null;
 
   const handleDrop = (targetStatus: string) => {
     if (!draggingBatch) return;
@@ -119,9 +123,7 @@ export function BatchesKanbanView({ batches, isOwner, onTransition }: Props) {
               <span className="text-xs text-muted-foreground">{items.length}</span>
             </div>
             {items.length === 0 && (
-              <div className="py-4 text-center text-xs text-muted-foreground">
-                —
-              </div>
+              <div className="py-4 text-center text-xs text-muted-foreground">—</div>
             )}
             {items.map((b) => (
               <KanbanCard
@@ -171,9 +173,7 @@ function KanbanCard({
       )}
     >
       <div className="flex items-center justify-between gap-1.5">
-        <span className="mono text-xs text-muted-foreground">
-          {batch.display_id}
-        </span>
+        <span className="mono text-xs text-muted-foreground">{batch.display_id}</span>
         <AssigneeAvatarStack users={stackUsers} size="sm" max={2} />
       </div>
       <div

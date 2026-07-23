@@ -15,7 +15,12 @@ import { useGroups } from "@/hooks/useGroups";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS, ROLE_DESC } from "@/constants/roles";
-import { ROLE_PERMISSIONS, PERMISSION_LABELS, PERMISSION_GROUPS, type Permission } from "@/constants/permissions";
+import {
+  ROLE_PERMISSIONS,
+  PERMISSION_LABELS,
+  PERMISSION_GROUPS,
+  type Permission,
+} from "@/constants/permissions";
 import { Can } from "@/components/guards/Can";
 import { InviteUserModal } from "@/components/users/InviteUserModal";
 import { EditUserModal } from "@/components/users/EditUserModal";
@@ -34,13 +39,14 @@ const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
   viewer: [],
 };
 
-const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "outline" | "danger"> = {
-  super_admin: "danger",
-  project_admin: "accent",
-  reviewer: "ai",
-  annotator: "outline",
-  viewer: "success",
-};
+const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "outline" | "danger"> =
+  {
+    super_admin: "danger",
+    project_admin: "accent",
+    reviewer: "ai",
+    annotator: "outline",
+    viewer: "success",
+  };
 
 const STATUS_LABEL: Record<string, string> = {
   online: "在线",
@@ -49,9 +55,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, "success" | "warning" | "outline"> = {
-  "在线": "success",
-  "忙碌": "warning",
-  "离线": "outline",
+  在线: "success",
+  忙碌: "warning",
+  离线: "outline",
 };
 
 // 表头单元 / 主表数据单元
@@ -76,7 +82,10 @@ export function UsersPage() {
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [deleting, setDeleting] = useState<UserResponse | null>(null);
   const [resettingPwd, setResettingPwd] = useState<UserResponse | null>(null);
-  const [tempPwdResult, setTempPwdResult] = useState<{ user: UserResponse; password: string } | null>(null);
+  const [tempPwdResult, setTempPwdResult] = useState<{
+    user: UserResponse;
+    password: string;
+  } | null>(null);
   const [pwdResetSubmitting, setPwdResetSubmitting] = useState(false);
   /** 后端 409 返回的待转交任务详情（pending_task_count / locked_task_count / sample_task_ids）。 */
   const [transferStage, setTransferStage] = useState<{
@@ -101,7 +110,8 @@ export function UsersPage() {
 
   const filtered = allUsers.filter((u: UserResponse) => {
     if (selectedRole !== "全部" && u.role !== selectedRole) return false;
-    if (query && !u.name.includes(query) && !u.email.toLowerCase().includes(query.toLowerCase())) return false;
+    if (query && !u.name.includes(query) && !u.email.toLowerCase().includes(query.toLowerCase()))
+      return false;
     return true;
   });
 
@@ -142,19 +152,28 @@ export function UsersPage() {
         <div className="flex gap-2">
           <Can permission="user.export">
             <Button onClick={handleExport} disabled={exporting}>
-              <Icon name="download" size={13} />{exporting ? "导出中…" : "导出名单"}
+              <Icon name="download" size={13} />
+              {exporting ? "导出中…" : "导出名单"}
             </Button>
           </Can>
           <Can permission="user.invite">
             <Button variant="primary" onClick={() => setInviteOpen(true)}>
-              <Icon name="plus" size={13} />邀请成员
+              <Icon name="plus" size={13} />
+              邀请成员
             </Button>
           </Can>
         </div>
       </div>
 
       <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-        <StatCard icon="users" label="团队成员" value={allUsers.length} hint="活跃" sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]} sparkColor="var(--sc-brand)" />
+        <StatCard
+          icon="users"
+          label="团队成员"
+          value={allUsers.length}
+          hint="活跃"
+          sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]}
+          sparkColor="var(--sc-brand)"
+        />
         <StatCard icon="shield" label="角色组" value={roleKeys.length} hint="自定义" />
         <StatCard icon="folder" label="数据组" value={groupsData.length} hint="可分配" />
         <StatCard
@@ -185,9 +204,18 @@ export function UsersPage() {
                 className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
               >
                 <option>全部</option>
-                {roleKeys.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
+                {roleKeys.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r] ?? r}
+                  </option>
+                ))}
               </select>
-              <SearchInput placeholder="搜索姓名或邮箱..." value={query} onChange={setQuery} width={240} />
+              <SearchInput
+                placeholder="搜索姓名或邮箱..."
+                value={query}
+                onChange={setQuery}
+                width={240}
+              />
             </div>
           )}
           {tab === "groups" && (
@@ -204,17 +232,21 @@ export function UsersPage() {
             <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map((h, i) => (
-                    <th key={i} className={`${TH_CLASS} ${i === 0 ? "pl-4" : ""}`}>
-                      {h}
-                    </th>
-                  ))}
+                  {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map(
+                    (h, i) => (
+                      <th key={i} className={`${TH_CLASS} ${i === 0 ? "pl-4" : ""}`}>
+                        {h}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={8} className="p-10 text-center text-muted-foreground">加载中...</td>
+                    <td colSpan={8} className="p-10 text-center text-muted-foreground">
+                      加载中...
+                    </td>
                   </tr>
                 )}
                 {filtered.map((u: UserResponse) => {
@@ -225,19 +257,27 @@ export function UsersPage() {
                         <div className="flex items-center gap-2.5">
                           <Avatar initial={u.name[0]} size="md" />
                           <div className="min-w-0">
-                            <div className="max-w-[240px] truncate text-sm font-medium">{u.name}</div>
-                            <div className="mono max-w-[240px] truncate text-xs text-muted-foreground">{u.email}</div>
+                            <div className="max-w-[240px] truncate text-sm font-medium">
+                              {u.name}
+                            </div>
+                            <div className="mono max-w-[240px] truncate text-xs text-muted-foreground">
+                              {u.email}
+                            </div>
                           </div>
                         </div>
                       </td>
                       <td className={TD_CLASS}>
-                        <Badge variant={ROLE_COLORS[u.role] || "outline"}>{ROLE_LABELS[u.role as UserRole] ?? u.role}</Badge>
+                        <Badge variant={ROLE_COLORS[u.role] || "outline"}>
+                          {ROLE_LABELS[u.role as UserRole] ?? u.role}
+                        </Badge>
                       </td>
                       <td className={`${TD_CLASS} max-w-[160px] truncate`}>
                         {u.group_name ?? "—"}
                       </td>
                       <td className={TD_CLASS}>
-                        <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>{statusLabel}</Badge>
+                        <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>
+                          {statusLabel}
+                        </Badge>
                       </td>
                       <td className={TD_CLASS}>
                         <span className="text-xs text-muted-foreground">—</span>
@@ -262,7 +302,12 @@ export function UsersPage() {
                           )}
                           {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
                             <>
-                              <Button variant="ghost" size="sm" onClick={() => setEditing(u)} title="编辑成员">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEditing(u)}
+                                title="编辑成员"
+                              >
                                 <Icon name="edit" size={11} />
                               </Button>
                               {u.is_active && (
@@ -287,7 +332,12 @@ export function UsersPage() {
                               )}
                             </>
                           ) : (
-                            <Button variant="ghost" size="sm" disabled title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled
+                              title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}
+                            >
                               <Icon name="edit" size={11} className="opacity-40" />
                             </Button>
                           )}
@@ -310,9 +360,7 @@ export function UsersPage() {
               return (
                 <div key={rk} className="rounded-lg border border-border bg-card p-3.5">
                   <div className="mb-1.5 flex items-center gap-2">
-                    <Badge variant={ROLE_COLORS[rk] || "outline"}>
-                      {ROLE_LABELS[rk] ?? rk}
-                    </Badge>
+                    <Badge variant={ROLE_COLORS[rk] || "outline"}>{ROLE_LABELS[rk] ?? rk}</Badge>
                     <span className="mono text-xs text-muted-foreground">{memberCount} 人</span>
                   </div>
                   <div className="mb-2.5 text-sm text-muted-foreground">{ROLE_DESC[rk]}</div>
@@ -329,7 +377,8 @@ export function UsersPage() {
                           <div className="flex flex-wrap gap-1">
                             {granted.map((p) => (
                               <Badge key={p} variant="success">
-                                <Icon name="check" size={9} />{PERMISSION_LABELS[p]}
+                                <Icon name="check" size={9} />
+                                {PERMISSION_LABELS[p]}
                               </Badge>
                             ))}
                             {denied.map((p) => (
@@ -352,27 +401,38 @@ export function UsersPage() {
           <div className="p-4">
             {groupsData.length === 0 && (
               <div className="p-7.5 text-center text-sm text-muted-foreground">
-                暂无数据组。<Can permission="group.manage"><a onClick={() => setManageGroupsOpen(true)} className="cursor-pointer text-brand">新建一个</a></Can>
+                暂无数据组。
+                <Can permission="group.manage">
+                  <a
+                    onClick={() => setManageGroupsOpen(true)}
+                    className="cursor-pointer text-brand"
+                  >
+                    新建一个
+                  </a>
+                </Can>
               </div>
             )}
             {groupsData.map((g) => {
               const members = allUsers.filter((u: UserResponse) => u.group_id === g.id);
               return (
-                <div key={g.id} className="mb-2 flex items-center justify-between rounded-md border border-border bg-card px-3.5 py-3">
+                <div
+                  key={g.id}
+                  className="mb-2 flex items-center justify-between rounded-md border border-border bg-card px-3.5 py-3"
+                >
                   <div className="flex items-center gap-3">
                     <Icon name="folder" size={18} className="text-muted-foreground" />
                     <div>
                       <div className="text-sm font-medium">{g.name}</div>
-                      <div className="text-xs text-muted-foreground">{members.length} 名成员{g.description ? ` · ${g.description}` : ""}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {members.length} 名成员{g.description ? ` · ${g.description}` : ""}
+                      </div>
                     </div>
                   </div>
                   <div className="flex [&>div+div]:-ml-1.5 [&>div]:border-2 [&>div]:border-card">
                     {members.slice(0, 5).map((m) => (
                       <Avatar key={m.id} initial={m.name[0]} size="sm" />
                     ))}
-                    {members.length > 5 && (
-                      <Avatar initial={`+${members.length - 5}`} size="sm" />
-                    )}
+                    {members.length > 5 && <Avatar initial={`+${members.length - 5}`} size="sm" />}
                   </div>
                 </div>
               );
@@ -415,7 +475,9 @@ export function UsersPage() {
               </span>
             </div>
             <div className="flex justify-end gap-2">
-              <Button onClick={() => setResettingPwd(null)} disabled={pwdResetSubmitting}>取消</Button>
+              <Button onClick={() => setResettingPwd(null)} disabled={pwdResetSubmitting}>
+                取消
+              </Button>
               <Button
                 variant="primary"
                 disabled={pwdResetSubmitting}
@@ -512,8 +574,14 @@ export function UsersPage() {
               <>
                 <div className="flex flex-col gap-1 rounded-md border border-amber-500 bg-status-caution-soft px-3 py-2.5 text-sm">
                   <div>
-                    <Icon name="warning" size={12} /> 未完成任务 <strong>{transferStage.pending}</strong> 个
-                    {transferStage.locked > 0 && <> · 锁定任务 <strong>{transferStage.locked}</strong> 个</>}
+                    <Icon name="warning" size={12} /> 未完成任务{" "}
+                    <strong>{transferStage.pending}</strong> 个
+                    {transferStage.locked > 0 && (
+                      <>
+                        {" "}
+                        · 锁定任务 <strong>{transferStage.locked}</strong> 个
+                      </>
+                    )}
                   </div>
                   {transferStage.sample.length > 0 && (
                     <div className="mono text-xs text-muted-foreground">
@@ -533,10 +601,14 @@ export function UsersPage() {
                   >
                     <option value="">— 选择接收用户 —</option>
                     {allUsers
-                      .filter((u: UserResponse) =>
-                        u.id !== deleting.id &&
-                        u.is_active &&
-                        (u.role === "annotator" || u.role === "reviewer" || u.role === "project_admin"))
+                      .filter(
+                        (u: UserResponse) =>
+                          u.id !== deleting.id &&
+                          u.is_active &&
+                          (u.role === "annotator" ||
+                            u.role === "reviewer" ||
+                            u.role === "project_admin"),
+                      )
                       .map((u: UserResponse) => (
                         <option key={u.id} value={u.id}>
                           {u.name} ({ROLE_LABELS[u.role as UserRole] ?? u.role}) · {u.email}
@@ -549,7 +621,8 @@ export function UsersPage() {
 
             {deleteUser.error && (
               <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-sm text-status-danger">
-                <Icon name="warning" size={12} /> {(deleteUser.error as Error)?.message ?? "删除失败"}
+                <Icon name="warning" size={12} />{" "}
+                {(deleteUser.error as Error)?.message ?? "删除失败"}
               </div>
             )}
             <div className="flex justify-end gap-2">
@@ -585,7 +658,12 @@ export function UsersPage() {
                     // 检测 409 + has_pending_tasks → 切到二阶段
                     if (err instanceof ApiError && err.status === 409) {
                       const raw = err.detailRaw as
-                        | { reason?: string; pending_task_count?: number; locked_task_count?: number; sample_task_ids?: string[] }
+                        | {
+                            reason?: string;
+                            pending_task_count?: number;
+                            locked_task_count?: number;
+                            sample_task_ids?: string[];
+                          }
                         | undefined;
                       if (raw?.reason === "has_pending_tasks") {
                         setTransferStage({
@@ -604,10 +682,12 @@ export function UsersPage() {
               >
                 <Icon name="trash" size={12} />
                 {deleteUser.isPending
-                  ? (transferStage ? "转交并删除中…" : "删除中…")
+                  ? transferStage
+                    ? "转交并删除中…"
+                    : "删除中…"
                   : transferStage
-                  ? "转交并删除"
-                  : "确认删除"}
+                    ? "转交并删除"
+                    : "确认删除"}
               </Button>
             </div>
           </div>

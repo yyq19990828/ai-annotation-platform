@@ -127,7 +127,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_video_frame_cache_status_accessed", table_name="video_frame_cache")
+    op.drop_index(
+        "ix_video_frame_cache_status_accessed", table_name="video_frame_cache"
+    )
     op.drop_index("ix_video_frame_cache_item_frame", table_name="video_frame_cache")
     op.drop_index(
         op.f("ix_video_frame_cache_dataset_item_id"),

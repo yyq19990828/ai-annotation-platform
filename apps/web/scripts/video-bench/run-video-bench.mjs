@@ -80,7 +80,11 @@ async function main() {
 
   const runDir = resolve(args.outDir, runId);
   await mkdir(runDir, { recursive: true });
-  await writeFile(resolve(runDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(
+    resolve(runDir, "manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf8",
+  );
   await writeFile(
     resolve(runDir, "README.md"),
     [

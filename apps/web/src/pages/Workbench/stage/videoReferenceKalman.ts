@@ -109,10 +109,26 @@ export function runReferenceKalman(
   const span = Math.max(1, k1.frame - k0.frame);
 
   const dims = [
-    { get: (kf: ReferenceKalmanKeyframe) => kf.cx, q: qPos, f: makeFilter(k0.cx, (k1.cx - k0.cx) / span) },
-    { get: (kf: ReferenceKalmanKeyframe) => kf.cy, q: qPos, f: makeFilter(k0.cy, (k1.cy - k0.cy) / span) },
-    { get: (kf: ReferenceKalmanKeyframe) => kf.w, q: qSize, f: makeFilter(k0.w, (k1.w - k0.w) / span) },
-    { get: (kf: ReferenceKalmanKeyframe) => kf.h, q: qSize, f: makeFilter(k0.h, (k1.h - k0.h) / span) },
+    {
+      get: (kf: ReferenceKalmanKeyframe) => kf.cx,
+      q: qPos,
+      f: makeFilter(k0.cx, (k1.cx - k0.cx) / span),
+    },
+    {
+      get: (kf: ReferenceKalmanKeyframe) => kf.cy,
+      q: qPos,
+      f: makeFilter(k0.cy, (k1.cy - k0.cy) / span),
+    },
+    {
+      get: (kf: ReferenceKalmanKeyframe) => kf.w,
+      q: qSize,
+      f: makeFilter(k0.w, (k1.w - k0.w) / span),
+    },
+    {
+      get: (kf: ReferenceKalmanKeyframe) => kf.h,
+      q: qSize,
+      f: makeFilter(k0.h, (k1.h - k0.h) / span),
+    },
   ];
 
   for (let i = 1; i < keyframes.length; i++) {

@@ -35,8 +35,7 @@ export function RejectBatchModal({
           pushToast({ msg: "批次已驳回，已通知被分派的标注员", kind: "success" });
           onClose();
         },
-        onError: (e) =>
-          pushToast({ msg: "驳回失败", sub: (e as Error).message, kind: "warning" }),
+        onError: (e) => pushToast({ msg: "驳回失败", sub: (e as Error).message, kind: "warning" }),
       },
     );
   };
@@ -45,7 +44,8 @@ export function RejectBatchModal({
     <Modal open title={`驳回批次 ${batch.display_id}`} onClose={onClose}>
       <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">
-          驳回后批次状态变为「已退回」，被分派的标注员会收到通知。已提交质检 / 已通过的任务回退到待标注，**已有标注内容会保留**，标注员可在 reviewer 留言指引下继续修改。
+          驳回后批次状态变为「已退回」，被分派的标注员会收到通知。已提交质检 /
+          已通过的任务回退到待标注，**已有标注内容会保留**，标注员可在 reviewer 留言指引下继续修改。
         </p>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
@@ -60,18 +60,12 @@ export function RejectBatchModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-xs text-status-danger">
-              超出 {FEEDBACK_MAX} 字上限
-            </span>
+            <span className="text-xs text-status-danger">超出 {FEEDBACK_MAX} 字上限</span>
           )}
         </label>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
-          <Button
-            variant="danger"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
+          <Button variant="danger" onClick={handleSubmit} disabled={!canSubmit}>
             {rejectBatch.isPending ? "驳回中…" : "确认驳回"}
           </Button>
         </div>

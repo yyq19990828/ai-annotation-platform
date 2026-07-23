@@ -11,16 +11,10 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/shadcn/ui/badge";
 import { Input } from "@/components/shadcn/ui/input";
 import { Progress } from "@/components/shadcn/ui/progress";
-import type {
-  VideoTrackerDirection,
-  VideoTrackerPropagatePayload,
-} from "@/api/videoTracker";
+import type { VideoTrackerDirection, VideoTrackerPropagatePayload } from "@/api/videoTracker";
 import { cn } from "@/lib/utils";
 import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
-import type {
-  FloatingPanelPosition,
-  FloatingPanelSize,
-} from "../state/useFloatingPanelFrame";
+import type { FloatingPanelPosition, FloatingPanelSize } from "../state/useFloatingPanelFrame";
 import {
   AI_PANEL_HEADER_CLASS,
   AI_PANEL_ICON_CLASS,
@@ -33,18 +27,12 @@ import {
 } from "../shell/floatingPanelSizing";
 
 const SPAN_PRESETS = ["10", "30", "60"] as const;
-const RANGE_PRESETS = [
-  ...SPAN_PRESETS,
-  "next-keyframe",
-  "end",
-] as const;
+const RANGE_PRESETS = [...SPAN_PRESETS, "next-keyframe", "end"] as const;
 
 const TRACKER_SELECT_CLASS =
   "h-8 w-full cursor-pointer appearance-none rounded-md border border-input bg-background px-2.5 text-xs text-foreground shadow-xs outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
-const TRACKER_FIELD_LABEL_CLASS =
-  "text-xs font-medium leading-none text-foreground";
-const TRACKER_FIELD_HELP_CLASS =
-  "text-2xs leading-relaxed text-muted-foreground";
+const TRACKER_FIELD_LABEL_CLASS = "text-xs font-medium leading-none text-foreground";
+const TRACKER_FIELD_HELP_CLASS = "text-2xs leading-relaxed text-muted-foreground";
 const TRACKER_PANEL_EDGE_MARGIN = 8;
 
 function clamp(value: number, min: number, max: number): number {
@@ -52,7 +40,8 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function trackerPanelParentRect(panel: HTMLElement): DOMRect {
-  const parent = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : panel.parentElement;
+  const parent =
+    panel.offsetParent instanceof HTMLElement ? panel.offsetParent : panel.parentElement;
   return parent?.getBoundingClientRect() ?? panel.getBoundingClientRect();
 }
 
@@ -107,10 +96,7 @@ const SAM_VARIANTS: Array<{ value: string; label: string }> = [
 
 // v0.21.27 · U-pvs-3 · U1: 方向标签消歧。forward/backward 用「更晚/更早帧」+ 箭头,
 // 避免「向后追踪」被误读成倒放; title 补全语义。
-const DIRECTION_META: Record<
-  VideoTrackerDirection,
-  { label: string; title: string }
-> = {
+const DIRECTION_META: Record<VideoTrackerDirection, { label: string; title: string }> = {
   forward: { label: "更晚帧 →", title: "向后追踪: 追踪到更晚 (时间轴更右) 的帧" },
   backward: { label: "← 更早帧", title: "向前追踪: 追踪到更早 (时间轴更左) 的帧" },
   bidirectional: { label: "⇆ 双向", title: "双向: 同时向更早与更晚帧追踪" },
@@ -146,9 +132,10 @@ export function visibleTrackerModelOptions(
   isDev: boolean,
   supportedTrackers?: string[],
 ): typeof TRACKER_MODEL_OPTIONS {
-  const visible = preferNonMockModel || !isDev
-    ? TRACKER_MODEL_OPTIONS.filter((m) => m.value !== "mock_bbox")
-    : TRACKER_MODEL_OPTIONS;
+  const visible =
+    preferNonMockModel || !isDev
+      ? TRACKER_MODEL_OPTIONS.filter((m) => m.value !== "mock_bbox")
+      : TRACKER_MODEL_OPTIONS;
   if (supportedTrackers === undefined) return visible;
   const supported = new Set(supportedTrackers);
   return visible.filter(
@@ -186,13 +173,10 @@ export function resolveTrackerDefaultModel({
     const realModel = options.find((model) => model.value !== "mock_bbox");
     if (realModel) return realModel.value;
   }
-  return values.has("mock_bbox") ? "mock_bbox" : options[0]?.value ?? "";
+  return values.has("mock_bbox") ? "mock_bbox" : (options[0]?.value ?? "");
 }
 
-function hasOption<T extends string>(
-  options: readonly T[],
-  value: unknown,
-): value is T {
+function hasOption<T extends string>(options: readonly T[], value: unknown): value is T {
   return typeof value === "string" && options.includes(value as T);
 }
 
@@ -394,26 +378,30 @@ export function VideoTrackerPropagateDialog({
   // 无源入口还是选中源入口打开, 选 combo 都按无源处理 (显类别选择器 + payload 带 target)。
   const sourcelessLike = sourceless || modelKey === "sam3_video_combo";
   const operationScope = sourceCount >= 2 ? "batch" : sourceless ? "canvas" : "single";
-  const scopeTitle = operationScope === "canvas"
-    ? "发现新目标"
-    : operationScope === "batch"
-      ? `批量延展 ${sourceCount} 条轨迹`
-      : "延展当前轨迹";
-  const scopeDescription = operationScope === "canvas"
-    ? "画布级操作：发现或播种多个新目标，不修改当前选中轨迹。"
-    : operationScope === "batch"
-      ? "只延展已选轨迹，结果分别回填原轨迹。"
-      : `只延展当前选中轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}。`;
-  const submitLabel = operationScope === "canvas"
-    ? "开始发现"
-    : operationScope === "batch"
-      ? "开始批量延展"
-      : "开始延展";
-  const progressLabel = operationScope === "canvas"
-    ? "正在发现目标…"
-    : operationScope === "batch"
-      ? "正在批量延展…"
-      : "正在延展轨迹…";
+  const scopeTitle =
+    operationScope === "canvas"
+      ? "发现新目标"
+      : operationScope === "batch"
+        ? `批量延展 ${sourceCount} 条轨迹`
+        : "延展当前轨迹";
+  const scopeDescription =
+    operationScope === "canvas"
+      ? "画布级操作：发现或播种多个新目标，不修改当前选中轨迹。"
+      : operationScope === "batch"
+        ? "只延展已选轨迹，结果分别回填原轨迹。"
+        : `只延展当前选中轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}。`;
+  const submitLabel =
+    operationScope === "canvas"
+      ? "开始发现"
+      : operationScope === "batch"
+        ? "开始批量延展"
+        : "开始延展";
+  const progressLabel =
+    operationScope === "canvas"
+      ? "正在发现目标…"
+      : operationScope === "batch"
+        ? "正在批量延展…"
+        : "正在延展轨迹…";
 
   useEffect(() => {
     if (open) {
@@ -422,12 +410,14 @@ export function VideoTrackerPropagateDialog({
         DEFAULT_TRACKER_MEMORY;
       setDirection(remembered.direction);
       setRangePreset(remembered.rangePreset);
-      setModelKey(resolveTrackerDefaultModel({
-        projectDefaultModel,
-        rememberedModel: remembered.modelKey,
-        preferNonMockModel,
-        options: modelOptions,
-      }));
+      setModelKey(
+        resolveTrackerDefaultModel({
+          projectDefaultModel,
+          rememberedModel: remembered.modelKey,
+          preferNonMockModel,
+          options: modelOptions,
+        }),
+      );
       setSamVariant(remembered.samVariant);
       setText("");
       setError(null);
@@ -560,16 +550,20 @@ export function VideoTrackerPropagateDialog({
       const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxAvailableH);
       const nextSize = size
         ? {
-            w: Math.round(clamp(
-              size.w,
-              minW,
-              Math.max(minW, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW)),
-            )),
-            h: Math.round(clamp(
-              size.h,
-              minH,
-              Math.max(minH, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH)),
-            )),
+            w: Math.round(
+              clamp(
+                size.w,
+                minW,
+                Math.max(minW, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW)),
+              ),
+            ),
+            h: Math.round(
+              clamp(
+                size.h,
+                minH,
+                Math.max(minH, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH)),
+              ),
+            ),
           }
         : null;
 
@@ -586,16 +580,26 @@ export function VideoTrackerPropagateDialog({
         const panelW = nextSize?.w ?? panelRect.width;
         const panelH = nextSize?.h ?? panelRect.height;
         const nextPosition = {
-          left: Math.round(clamp(
-            position.left,
-            TRACKER_PANEL_EDGE_MARGIN,
-            Math.max(TRACKER_PANEL_EDGE_MARGIN, parentRect.width - panelW - TRACKER_PANEL_EDGE_MARGIN),
-          )),
-          top: Math.round(clamp(
-            position.top,
-            TRACKER_PANEL_EDGE_MARGIN,
-            Math.max(TRACKER_PANEL_EDGE_MARGIN, parentRect.height - panelH - TRACKER_PANEL_EDGE_MARGIN),
-          )),
+          left: Math.round(
+            clamp(
+              position.left,
+              TRACKER_PANEL_EDGE_MARGIN,
+              Math.max(
+                TRACKER_PANEL_EDGE_MARGIN,
+                parentRect.width - panelW - TRACKER_PANEL_EDGE_MARGIN,
+              ),
+            ),
+          ),
+          top: Math.round(
+            clamp(
+              position.top,
+              TRACKER_PANEL_EDGE_MARGIN,
+              Math.max(
+                TRACKER_PANEL_EDGE_MARGIN,
+                parentRect.height - panelH - TRACKER_PANEL_EDGE_MARGIN,
+              ),
+            ),
+          ),
         };
         panel.style.setProperty("--tracker-panel-left", `${nextPosition.left}px`);
         panel.style.setProperty("--tracker-panel-top", `${nextPosition.top}px`);
@@ -610,7 +614,8 @@ export function VideoTrackerPropagateDialog({
 
     applyFrame();
     window.addEventListener("resize", applyFrame);
-    const parent = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : panel.parentElement;
+    const parent =
+      panel.offsetParent instanceof HTMLElement ? panel.offsetParent : panel.parentElement;
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(applyFrame);
     if (parent && observer) observer.observe(parent);
     return () => {
@@ -648,16 +653,26 @@ export function VideoTrackerPropagateDialog({
     const parentRect = trackerPanelParentRect(panel);
     const panelRect = panel.getBoundingClientRect();
     onPositionChange({
-      left: Math.round(clamp(
-        event.clientX - parentRect.left - dragOffset.x,
-        TRACKER_PANEL_EDGE_MARGIN,
-        Math.max(TRACKER_PANEL_EDGE_MARGIN, parentRect.width - panelRect.width - TRACKER_PANEL_EDGE_MARGIN),
-      )),
-      top: Math.round(clamp(
-        event.clientY - parentRect.top - dragOffset.y,
-        TRACKER_PANEL_EDGE_MARGIN,
-        Math.max(TRACKER_PANEL_EDGE_MARGIN, parentRect.height - panelRect.height - TRACKER_PANEL_EDGE_MARGIN),
-      )),
+      left: Math.round(
+        clamp(
+          event.clientX - parentRect.left - dragOffset.x,
+          TRACKER_PANEL_EDGE_MARGIN,
+          Math.max(
+            TRACKER_PANEL_EDGE_MARGIN,
+            parentRect.width - panelRect.width - TRACKER_PANEL_EDGE_MARGIN,
+          ),
+        ),
+      ),
+      top: Math.round(
+        clamp(
+          event.clientY - parentRect.top - dragOffset.y,
+          TRACKER_PANEL_EDGE_MARGIN,
+          Math.max(
+            TRACKER_PANEL_EDGE_MARGIN,
+            parentRect.height - panelRect.height - TRACKER_PANEL_EDGE_MARGIN,
+          ),
+        ),
+      ),
     });
   };
 
@@ -694,11 +709,17 @@ export function VideoTrackerPropagateDialog({
     const parentRect = trackerPanelParentRect(panel);
     const maxW = Math.max(
       1,
-      Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, parentRect.width - start.left - TRACKER_PANEL_EDGE_MARGIN),
+      Math.min(
+        SIDE_FLOATING_PANEL_MAX_SIZE.w,
+        parentRect.width - start.left - TRACKER_PANEL_EDGE_MARGIN,
+      ),
     );
     const maxH = Math.max(
       1,
-      Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, parentRect.height - start.top - TRACKER_PANEL_EDGE_MARGIN),
+      Math.min(
+        SIDE_FLOATING_PANEL_MAX_SIZE.h,
+        parentRect.height - start.top - TRACKER_PANEL_EDGE_MARGIN,
+      ),
     );
     const minW = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.w, maxW);
     const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxH);
@@ -733,11 +754,7 @@ export function VideoTrackerPropagateDialog({
       setError("文本驱动追踪需填写文本描述");
       return;
     }
-    if (
-      sourceless &&
-      supportsSeedCapture(modelKey) &&
-      seedPointCount + seedBoxCount === 0
-    ) {
+    if (sourceless && supportsSeedCapture(modelKey) && seedPointCount + seedBoxCount === 0) {
       setError("画布级点框追踪需先在画布添加点或框种子");
       return;
     }
@@ -771,9 +788,10 @@ export function VideoTrackerPropagateDialog({
   };
 
   const activeModelOption = modelOptions.find((option) => option.value === modelKey);
-  const trackingProgressValue = trackingWindow && trackingWindow.total > 0
-    ? Math.min(100, Math.round((trackingWindow.current / trackingWindow.total) * 100))
-    : null;
+  const trackingProgressValue =
+    trackingWindow && trackingWindow.total > 0
+      ? Math.min(100, Math.round((trackingWindow.current / trackingWindow.total) * 100))
+      : null;
 
   return (
     <div
@@ -828,7 +846,12 @@ export function VideoTrackerPropagateDialog({
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="xs" onClick={onCancel} aria-label={`关闭${scopeTitle}进度`}>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onCancel}
+              aria-label={`关闭${scopeTitle}进度`}
+            >
               <X data-icon="inline-start" />
             </Button>
           </div>
@@ -889,39 +912,52 @@ export function VideoTrackerPropagateDialog({
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-              <section
-                data-testid="tracker-scope-summary"
-                className={cn(AI_PANEL_SECTION_CLASS, "flex items-start gap-2.5 bg-muted/40")}
-              >
-                <Info className="mt-0.5 size-4 shrink-0 text-status-info" />
-                <div className="flex min-w-0 flex-col gap-1">
-                  <span className="w-fit rounded-full border border-border bg-background px-2 py-0.5 text-2xs font-medium text-foreground">
-                    {operationScope === "canvas" ? "画布级 · 新建" : operationScope === "batch" ? "多选 · 延展" : "单轨 · 延展"}
-                  </span>
-                  <span data-testid="tracker-impact-summary" className="text-xs leading-relaxed text-foreground">
-                    {operationScope === "batch"
-                      ? `批量延展 ${sourceCount} 条轨迹 · ${sourceClassNames.length === 1 ? `「${sourceClassNames[0]}」` : `${sourceClassNames.length} 类`}`
-                      : operationScope === "canvas"
-                        ? `画布新建多目标轨迹${targetClass ? ` · 类别「${targetClass}」` : ""}`
-                        : `延展当前轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}`}
-                  </span>
-                </div>
-              </section>
-              <section
-                aria-labelledby="tracker-settings-heading"
-                data-testid="tracker-settings-section"
-                className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2.5")}
-              >
-                <h3 id="tracker-settings-heading" className="text-xs font-semibold text-foreground">本次追踪</h3>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <fieldset className="col-span-2 m-0 min-w-0 border-0 p-0">
-                    <legend
-                      className={cn(TRACKER_FIELD_LABEL_CLASS, "mb-1.5 block w-full p-0 leading-normal")}
-                    >
-                      追踪方向
-                    </legend>
-                    <div className="grid h-8 grid-cols-3 gap-1 rounded-md bg-muted p-1 ring-1 ring-border">
-                      {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map((d) => (
+            <section
+              data-testid="tracker-scope-summary"
+              className={cn(AI_PANEL_SECTION_CLASS, "flex items-start gap-2.5 bg-muted/40")}
+            >
+              <Info className="mt-0.5 size-4 shrink-0 text-status-info" />
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="w-fit rounded-full border border-border bg-background px-2 py-0.5 text-2xs font-medium text-foreground">
+                  {operationScope === "canvas"
+                    ? "画布级 · 新建"
+                    : operationScope === "batch"
+                      ? "多选 · 延展"
+                      : "单轨 · 延展"}
+                </span>
+                <span
+                  data-testid="tracker-impact-summary"
+                  className="text-xs leading-relaxed text-foreground"
+                >
+                  {operationScope === "batch"
+                    ? `批量延展 ${sourceCount} 条轨迹 · ${sourceClassNames.length === 1 ? `「${sourceClassNames[0]}」` : `${sourceClassNames.length} 类`}`
+                    : operationScope === "canvas"
+                      ? `画布新建多目标轨迹${targetClass ? ` · 类别「${targetClass}」` : ""}`
+                      : `延展当前轨迹${sourceTrackClassName ? `「${sourceTrackClassName}」` : ""}`}
+                </span>
+              </div>
+            </section>
+            <section
+              aria-labelledby="tracker-settings-heading"
+              data-testid="tracker-settings-section"
+              className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2.5")}
+            >
+              <h3 id="tracker-settings-heading" className="text-xs font-semibold text-foreground">
+                本次追踪
+              </h3>
+              <div className="grid grid-cols-2 gap-2.5">
+                <fieldset className="col-span-2 m-0 min-w-0 border-0 p-0">
+                  <legend
+                    className={cn(
+                      TRACKER_FIELD_LABEL_CLASS,
+                      "mb-1.5 block w-full p-0 leading-normal",
+                    )}
+                  >
+                    追踪方向
+                  </legend>
+                  <div className="grid h-8 grid-cols-3 gap-1 rounded-md bg-muted p-1 ring-1 ring-border">
+                    {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map(
+                      (d) => (
                         <button
                           key={d}
                           type="button"
@@ -941,335 +977,368 @@ export function VideoTrackerPropagateDialog({
                         >
                           {DIRECTION_META[d].label}
                         </button>
-                      ))}
-                    </div>
-                  </fieldset>
-
-                  <div className="flex min-w-0 flex-col gap-1.5">
-                    <label htmlFor="tracker-range-preset" className={TRACKER_FIELD_LABEL_CLASS}>
-                      帧范围
-                    </label>
-                    <select
-                      id="tracker-range-preset"
-                      value={rangePreset}
-                      onChange={(e) => {
-                        setRangePreset(e.target.value as RangePresetValue);
-                        setCustomRange(null);
-                      }}
-                      className={TRACKER_SELECT_CLASS}
-                    >
-                      {RANGE_PRESETS.map((preset) => (
-                        <option key={preset} value={preset}>
-                          {presetLabel(preset, grid)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex min-w-0 flex-col gap-1.5">
-                    <label htmlFor="tracker-model" className={TRACKER_FIELD_LABEL_CLASS}>
-                      追踪模型
-                    </label>
-                    <select
-                      id="tracker-model"
-                      value={modelKey}
-                      onChange={(e) => setModelKey(e.target.value)}
-                      disabled={modelOptions.length === 0}
-                      className={TRACKER_SELECT_CLASS}
-                    >
-                      {modelOptions.length === 0 && <option value="">无可用追踪模型</option>}
-                      {modelOptions.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                          {trackerModelProviders[m.value]?.length
-                            ? ` · ${trackerModelProviders[m.value].join(" / ")}`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                    {activeModelOption?.note && (
-                      <p className={TRACKER_FIELD_HELP_CLASS}>{activeModelOption.note}</p>
+                      ),
                     )}
+                  </div>
+                </fieldset>
+
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <label htmlFor="tracker-range-preset" className={TRACKER_FIELD_LABEL_CLASS}>
+                    帧范围
+                  </label>
+                  <select
+                    id="tracker-range-preset"
+                    value={rangePreset}
+                    onChange={(e) => {
+                      setRangePreset(e.target.value as RangePresetValue);
+                      setCustomRange(null);
+                    }}
+                    className={TRACKER_SELECT_CLASS}
+                  >
+                    {RANGE_PRESETS.map((preset) => (
+                      <option key={preset} value={preset}>
+                        {presetLabel(preset, grid)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <label htmlFor="tracker-model" className={TRACKER_FIELD_LABEL_CLASS}>
+                    追踪模型
+                  </label>
+                  <select
+                    id="tracker-model"
+                    value={modelKey}
+                    onChange={(e) => setModelKey(e.target.value)}
+                    disabled={modelOptions.length === 0}
+                    className={TRACKER_SELECT_CLASS}
+                  >
+                    {modelOptions.length === 0 && <option value="">无可用追踪模型</option>}
+                    {modelOptions.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                        {trackerModelProviders[m.value]?.length
+                          ? ` · ${trackerModelProviders[m.value].join(" / ")}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {activeModelOption?.note && (
+                    <p className={TRACKER_FIELD_HELP_CLASS}>{activeModelOption.note}</p>
+                  )}
+                </div>
+              </div>
+
+              {(sourcelessLike || usesSamVariant(modelKey) || modelKey !== "mock_bbox") && (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {sourcelessLike && (
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <label htmlFor="tracker-target-class" className={TRACKER_FIELD_LABEL_CLASS}>
+                        目标类别
+                      </label>
+                      <select
+                        id="tracker-target-class"
+                        value={targetClass}
+                        onChange={(e) => setTargetClass(e.target.value)}
+                        data-testid="tracker-target-class"
+                        className={TRACKER_SELECT_CLASS}
+                      >
+                        {availableClasses.length === 0 && <option value="">(无类别)</option>}
+                        {availableClasses.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {usesSamVariant(modelKey) && (
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <label htmlFor="tracker-sam-variant" className={TRACKER_FIELD_LABEL_CLASS}>
+                        尺寸
+                      </label>
+                      <select
+                        id="tracker-sam-variant"
+                        value={samVariant}
+                        onChange={(e) => setSamVariant(e.target.value)}
+                        className={TRACKER_SELECT_CLASS}
+                      >
+                        {SAM_VARIANTS.map((v) => (
+                          <option key={v.value} value={v.value}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {modelKey !== "mock_bbox" && (
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <label
+                        htmlFor="tracker-output-geometry"
+                        className={TRACKER_FIELD_LABEL_CLASS}
+                      >
+                        输出几何
+                      </label>
+                      <select
+                        id="tracker-output-geometry"
+                        data-testid="tracker-output-geometry"
+                        value={outputGeometry}
+                        onChange={(event) =>
+                          setOutputGeometry(event.target.value as typeof outputGeometry)
+                        }
+                        className={TRACKER_SELECT_CLASS}
+                      >
+                        <option value="">跟随当前轨迹</option>
+                        <option value="mask">栅格 mask</option>
+                        <option value="polygon">多边形</option>
+                        <option value="bbox">矩形框</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {(supportsSeedCapture(modelKey) || textDrivenActive) && (
+              <section
+                aria-labelledby="tracker-prompt-heading"
+                className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2.5")}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+                    {textDrivenActive ? (
+                      <Type className="size-3.5" />
+                    ) : (
+                      <MousePointer2 className="size-3.5" />
+                    )}
+                  </span>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <h3 id="tracker-prompt-heading" className="text-xs font-medium text-foreground">
+                      {textDrivenActive ? "文本目标" : "目标种子"}
+                    </h3>
+                    <p className={TRACKER_FIELD_HELP_CLASS}>
+                      {textDrivenActive
+                        ? "模型会按描述在每帧发现并追踪目标。"
+                        : "可在不同帧添加点或框，用于首帧定位和后续纠偏。"}
+                    </p>
                   </div>
                 </div>
 
-                {(sourcelessLike || usesSamVariant(modelKey) || modelKey !== "mock_bbox") && (
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {sourcelessLike && (
-                      <div className="flex min-w-0 flex-col gap-1.5">
-                        <label htmlFor="tracker-target-class" className={TRACKER_FIELD_LABEL_CLASS}>
-                          目标类别
-                        </label>
-                        <select
-                          id="tracker-target-class"
-                          value={targetClass}
-                          onChange={(e) => setTargetClass(e.target.value)}
-                          data-testid="tracker-target-class"
-                          className={TRACKER_SELECT_CLASS}
-                        >
-                          {availableClasses.length === 0 && <option value="">(无类别)</option>}
-                          {availableClasses.map((c) => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
+                {supportsSeedCapture(modelKey) && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div
+                        className="grid h-8 grid-cols-2 gap-1 rounded-md bg-background p-1 ring-1 ring-border"
+                        role="group"
+                        aria-label="种子类型"
+                      >
+                        {(["point", "box"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            data-testid={`tracker-seed-mode-${m}`}
+                            onClick={() => onChangeSeedMode?.(m)}
+                            disabled={submitting}
+                            aria-pressed={seedMode === m}
+                            className={cn(
+                              "cursor-pointer rounded-sm px-3 text-xs font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+                              seedMode === m
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                            )}
+                          >
+                            {m === "point" ? "点" : "框"}
+                          </button>
+                        ))}
                       </div>
-                    )}
-
-                    {usesSamVariant(modelKey) && (
-                      <div className="flex min-w-0 flex-col gap-1.5">
-                        <label htmlFor="tracker-sam-variant" className={TRACKER_FIELD_LABEL_CLASS}>
-                          尺寸
-                        </label>
-                        <select
-                          id="tracker-sam-variant"
-                          value={samVariant}
-                          onChange={(e) => setSamVariant(e.target.value)}
-                          className={TRACKER_SELECT_CLASS}
-                        >
-                          {SAM_VARIANTS.map((v) => (
-                            <option key={v.value} value={v.value}>{v.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {modelKey !== "mock_bbox" && (
-                      <div className="flex min-w-0 flex-col gap-1.5">
-                        <label htmlFor="tracker-output-geometry" className={TRACKER_FIELD_LABEL_CLASS}>
-                          输出几何
-                        </label>
-                        <select
-                          id="tracker-output-geometry"
-                          data-testid="tracker-output-geometry"
-                          value={outputGeometry}
-                          onChange={(event) => setOutputGeometry(event.target.value as typeof outputGeometry)}
-                          className={TRACKER_SELECT_CLASS}
-                        >
-                          <option value="">跟随当前轨迹</option>
-                          <option value="mask">栅格 mask</option>
-                          <option value="polygon">多边形</option>
-                          <option value="bbox">矩形框</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
-
-              {(supportsSeedCapture(modelKey) || textDrivenActive) && (
-                  <section
-                    aria-labelledby="tracker-prompt-heading"
-                    className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2.5")}
-                  >
-                  <div className="flex items-start gap-2.5">
-                    <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
-                      {textDrivenActive ? <Type className="size-3.5" /> : <MousePointer2 className="size-3.5" />}
-                    </span>
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <h3 id="tracker-prompt-heading" className="text-xs font-medium text-foreground">
-                        {textDrivenActive ? "文本目标" : "目标种子"}
-                      </h3>
-                      <p className={TRACKER_FIELD_HELP_CLASS}>
-                        {textDrivenActive
-                          ? "模型会按描述在每帧发现并追踪目标。"
-                          : "可在不同帧添加点或框，用于首帧定位和后续纠偏。"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {supportsSeedCapture(modelKey) && (
-                    <>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="grid h-8 grid-cols-2 gap-1 rounded-md bg-background p-1 ring-1 ring-border" role="group" aria-label="种子类型">
-                          {(["point", "box"] as const).map((m) => (
-                            <button
-                              key={m}
-                              type="button"
-                              data-testid={`tracker-seed-mode-${m}`}
-                              onClick={() => onChangeSeedMode?.(m)}
-                              disabled={submitting}
-                              aria-pressed={seedMode === m}
-                              className={cn(
-                                "cursor-pointer rounded-sm px-3 text-xs font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
-                                seedMode === m
-                                  ? "bg-primary text-primary-foreground shadow-sm"
-                                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                              )}
-                            >
-                              {m === "point" ? "点" : "框"}
-                            </button>
-                          ))}
-                        </div>
+                      <Button
+                        type="button"
+                        variant={seedCollecting ? "ai" : "default"}
+                        size="sm"
+                        onClick={onToggleSeedCollecting}
+                        disabled={submitting}
+                        data-testid="tracker-seed-toggle"
+                        aria-pressed={seedCollecting}
+                      >
+                        <MousePointer2 data-icon="inline-start" />
+                        {seedCollecting
+                          ? seedMode === "box"
+                            ? "画框中…"
+                            : "落点中…"
+                          : seedMode === "box"
+                            ? "画框选目标"
+                            : "落点选目标"}
+                      </Button>
+                      {(seedPointCount > 0 || seedBoxCount > 0) && sourceless && (
                         <Button
                           type="button"
-                          variant={seedCollecting ? "ai" : "default"}
                           size="sm"
-                          onClick={onToggleSeedCollecting}
+                          onClick={onNewSeedTarget}
                           disabled={submitting}
-                          data-testid="tracker-seed-toggle"
-                          aria-pressed={seedCollecting}
+                          data-testid="tracker-seed-new-target"
+                          title="后续落点或框归入新目标，各成一条轨迹"
                         >
-                          <MousePointer2 data-icon="inline-start" />
-                          {seedCollecting
-                            ? seedMode === "box" ? "画框中…" : "落点中…"
-                            : seedMode === "box" ? "画框选目标" : "落点选目标"}
+                          + 新目标
                         </Button>
-                        {(seedPointCount > 0 || seedBoxCount > 0) && sourceless && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={onNewSeedTarget}
-                            disabled={submitting}
-                            data-testid="tracker-seed-new-target"
-                            title="后续落点或框归入新目标，各成一条轨迹"
-                          >
-                            + 新目标
-                          </Button>
-                        )}
-                        {(seedPointCount > 0 || seedBoxCount > 0) && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            onClick={onClearSeeds}
-                            disabled={submitting}
-                          >
-                            清空
-                          </Button>
-                        )}
-                      </div>
-
-                      {displayedSeedTargets.length > 0 && (
-                        <div
-                          data-testid="tracker-seed-count"
-                          className="flex flex-col overflow-hidden rounded-md border border-border bg-background"
-                          aria-label="目标种子摘要"
+                      )}
+                      {(seedPointCount > 0 || seedBoxCount > 0) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={onClearSeeds}
+                          disabled={submitting}
                         >
-                          {displayedSeedTargets.map((target) => {
-                            const isActive = target.targetId === activeSeedTargetId;
-                            const frames = [...new Set(target.frames)].sort((a, b) => a - b);
-                            return (
-                              <div
-                                key={target.targetId}
-                                data-testid={`tracker-seed-target-${target.targetId}`}
-                                aria-current={isActive ? "true" : undefined}
-                                className={cn(
-                                  "flex min-w-0 items-start justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
-                                  isActive && "bg-primary/5",
-                                )}
-                              >
-                                <div className="flex min-w-0 items-start gap-2.5">
-                                  <span className={cn(
+                          清空
+                        </Button>
+                      )}
+                    </div>
+
+                    {displayedSeedTargets.length > 0 && (
+                      <div
+                        data-testid="tracker-seed-count"
+                        className="flex flex-col overflow-hidden rounded-md border border-border bg-background"
+                        aria-label="目标种子摘要"
+                      >
+                        {displayedSeedTargets.map((target) => {
+                          const isActive = target.targetId === activeSeedTargetId;
+                          const frames = [...new Set(target.frames)].sort((a, b) => a - b);
+                          return (
+                            <div
+                              key={target.targetId}
+                              data-testid={`tracker-seed-target-${target.targetId}`}
+                              aria-current={isActive ? "true" : undefined}
+                              className={cn(
+                                "flex min-w-0 items-start justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
+                                isActive && "bg-primary/5",
+                              )}
+                            >
+                              <div className="flex min-w-0 items-start gap-2.5">
+                                <span
+                                  className={cn(
                                     "flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-xs font-semibold tabular-nums text-muted-foreground",
-                                    isActive && "border-primary/30 bg-primary text-primary-foreground",
-                                  )}>
-                                    {target.targetId}
-                                  </span>
-                                  <div className="flex min-w-0 flex-col gap-1">
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      <span className="text-xs font-medium text-foreground">
-                                        目标 {target.targetId}
-                                      </span>
-                                      {isActive && <Badge variant="secondary">当前</Badge>}
-                                    </div>
-                                    <span className="mono text-2xs leading-relaxed text-muted-foreground">
-                                      {frames.length > 0
-                                        ? `帧 ${frames.map((frame) => `F${frame}`).join("、")}`
-                                        : "等待在画布添加种子"}
+                                    isActive &&
+                                      "border-primary/30 bg-primary text-primary-foreground",
+                                  )}
+                                >
+                                  {target.targetId}
+                                </span>
+                                <div className="flex min-w-0 flex-col gap-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-xs font-medium text-foreground">
+                                      目标 {target.targetId}
                                     </span>
+                                    {isActive && <Badge variant="secondary">当前</Badge>}
                                   </div>
-                                </div>
-                                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                                  <Badge variant="outline" className="tabular-nums">
-                                    {target.pointCount} 点
-                                  </Badge>
-                                  <Badge variant="outline" className="tabular-nums">
-                                    {target.boxCount} 框
-                                  </Badge>
+                                  <span className="mono text-2xs leading-relaxed text-muted-foreground">
+                                    {frames.length > 0
+                                      ? `帧 ${frames.map((frame) => `F${frame}`).join("、")}`
+                                      : "等待在画布添加种子"}
+                                  </span>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {textDrivenActive && (
-                    <div className="flex min-w-0 flex-col gap-1.5">
-                      <label htmlFor="tracker-text-input" className={TRACKER_FIELD_LABEL_CLASS}>
-                        目标描述
-                      </label>
-                      <Input
-                        id="tracker-text-input"
-                        type="text"
-                        value={text}
-                        onChange={(e) => setText(e.target.value)}
-                        placeholder="例如：the red car"
-                        data-testid="tracker-text-input"
-                      />
-                    </div>
-                  )}
-                  </section>
-              )}
-
-              <section
-                aria-labelledby="tracker-impact-heading"
-                className={cn(
-                  AI_PANEL_SECTION_CLASS,
-                  "flex items-start justify-between gap-3",
+                              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                <Badge variant="outline" className="tabular-nums">
+                                  {target.pointCount} 点
+                                </Badge>
+                                <Badge variant="outline" className="tabular-nums">
+                                  {target.boxCount} 框
+                                </Badge>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 )}
-              >
-                <div className="flex items-start gap-2">
-                  <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  <div className="flex flex-col gap-1">
-                    <h3 id="tracker-impact-heading" className="text-xs font-medium text-foreground">处理范围</h3>
-                    <span className="mono text-xs font-medium text-foreground">
-                      {grid > 1 ? (
-                        <>G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F{range.from} → F{range.to})</>
-                      ) : (
-                        <>F{range.from} → F{range.to}</>
-                      )}
-                      {customRange && (
-                        <span data-testid="tracker-range-custom" className="ml-1.5 text-brand">
-                          · 自定义
-                        </span>
-                      )}
-                    </span>
-                    {estimatedWindows > 1 && (
-                      <span data-testid="tracker-window-estimate" className={TRACKER_FIELD_HELP_CLASS}>
-                        ≈{estimatedWindows} 窗，将分段处理
+
+                {textDrivenActive && (
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <label htmlFor="tracker-text-input" className={TRACKER_FIELD_LABEL_CLASS}>
+                      目标描述
+                    </label>
+                    <Input
+                      id="tracker-text-input"
+                      type="text"
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      placeholder="例如：the red car"
+                      data-testid="tracker-text-input"
+                    />
+                  </div>
+                )}
+              </section>
+            )}
+
+            <section
+              aria-labelledby="tracker-impact-heading"
+              className={cn(AI_PANEL_SECTION_CLASS, "flex items-start justify-between gap-3")}
+            >
+              <div className="flex items-start gap-2">
+                <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div className="flex flex-col gap-1">
+                  <h3 id="tracker-impact-heading" className="text-xs font-medium text-foreground">
+                    处理范围
+                  </h3>
+                  <span className="mono text-xs font-medium text-foreground">
+                    {grid > 1 ? (
+                      <>
+                        G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F
+                        {range.from} → F{range.to})
+                      </>
+                    ) : (
+                      <>
+                        F{range.from} → F{range.to}
+                      </>
+                    )}
+                    {customRange && (
+                      <span data-testid="tracker-range-custom" className="ml-1.5 text-brand">
+                        · 自定义
                       </span>
                     )}
-                  </div>
-                </div>
-              </section>
-
-              {(selectedModelDisabled || isPolylineTrack || error) && (
-                <div
-                  className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2")}
-                  aria-live="polite"
-                >
-                  {selectedModelDisabled && (
-                    <p className="rounded-md bg-status-caution-soft px-3 py-2 text-xs leading-relaxed text-status-caution">
-                      当前项目没有可执行的追踪模型。请在项目设置中启用并连接支持视频追踪的 ML Backend。
-                    </p>
-                  )}
-                  {isPolylineTrack && (
-                    <p
-                      data-testid="tracker-polyline-unsupported"
-                      className="rounded-md bg-status-danger-soft px-3 py-2 text-xs text-status-danger"
+                  </span>
+                  {estimatedWindows > 1 && (
+                    <span
+                      data-testid="tracker-window-estimate"
+                      className={TRACKER_FIELD_HELP_CLASS}
                     >
-                      polyline 轨迹追踪暂不支持
-                    </p>
-                  )}
-                  {error && (
-                    <p role="alert" className="rounded-md bg-status-danger-soft px-3 py-2 text-xs text-status-danger">
-                      {error}
-                    </p>
+                      ≈{estimatedWindows} 窗，将分段处理
+                    </span>
                   )}
                 </div>
-              )}
+              </div>
+            </section>
+
+            {(selectedModelDisabled || isPolylineTrack || error) && (
+              <div className={cn(AI_PANEL_SECTION_CLASS, "flex flex-col gap-2")} aria-live="polite">
+                {selectedModelDisabled && (
+                  <p className="rounded-md bg-status-caution-soft px-3 py-2 text-xs leading-relaxed text-status-caution">
+                    当前项目没有可执行的追踪模型。请在项目设置中启用并连接支持视频追踪的 ML
+                    Backend。
+                  </p>
+                )}
+                {isPolylineTrack && (
+                  <p
+                    data-testid="tracker-polyline-unsupported"
+                    className="rounded-md bg-status-danger-soft px-3 py-2 text-xs text-status-danger"
+                  >
+                    polyline 轨迹追踪暂不支持
+                  </p>
+                )}
+                {error && (
+                  <p
+                    role="alert"
+                    className="rounded-md bg-status-danger-soft px-3 py-2 text-xs text-status-danger"
+                  >
+                    {error}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <footer className="flex items-center justify-between gap-2 bg-card px-3.5 py-2.5">
@@ -1288,7 +1357,10 @@ export function VideoTrackerPropagateDialog({
                 title={isPolylineTrack ? "polyline 轨迹追踪暂不支持" : undefined}
               >
                 {submitting ? (
-                  <Loader2 data-icon="inline-start" className="animate-spin motion-reduce:animate-none" />
+                  <Loader2
+                    data-icon="inline-start"
+                    className="animate-spin motion-reduce:animate-none"
+                  />
                 ) : (
                   <Bot data-icon="inline-start" />
                 )}

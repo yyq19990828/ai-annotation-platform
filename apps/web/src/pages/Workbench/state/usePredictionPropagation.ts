@@ -137,14 +137,7 @@ export function usePredictionPropagation({
         crossFrameInFlightRef.current = false;
       }
     },
-    [
-      taskId,
-      selectedId,
-      settleCrossFrameTarget,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
+    [taskId, selectedId, settleCrossFrameTarget, pushToast, queryClient, warnNoMotionCompensation],
   );
 
   // v0.15.1 · 批量延续: 当前帧全部 box_3d 一次运动补偿 propagate 到邻帧。
@@ -233,14 +226,7 @@ export function usePredictionPropagation({
         crossFrameInFlightRef.current = false;
       }
     },
-    [
-      taskId,
-      selectedId,
-      settleCrossFrameTarget,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
+    [taskId, selectedId, settleCrossFrameTarget, pushToast, queryClient, warnNoMotionCompensation],
   );
 
   // v0.15.1 · 区间插值: 当前 task(起点帧)与 toTask(终点帧)的同 track 框之间,
@@ -251,8 +237,11 @@ export function usePredictionPropagation({
       if (crossFrameInFlightRef.current) return;
       crossFrameInFlightRef.current = true;
       try {
-        const { annotations, motion_compensated, skipped_frames } =
-          await tasksApi.interpolateRange(taskId, trackId, toTaskId);
+        const { annotations, motion_compensated, skipped_frames } = await tasksApi.interpolateRange(
+          taskId,
+          trackId,
+          toTaskId,
+        );
         const affectedTasks = new Set(annotations.map((a) => a.task_id));
         for (const tid of affectedTasks) {
           queryClient.invalidateQueries({ queryKey: ["annotations", tid] });

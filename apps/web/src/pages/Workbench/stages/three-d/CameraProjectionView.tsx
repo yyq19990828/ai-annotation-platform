@@ -84,7 +84,9 @@ export function CameraProjectionView({
   // v0.13.6 · 深度提示:相机深度栅格(state,变化时驱动一次重绘)+ hover 读数(不入 draw 依赖,不触发重绘)。
   const [raster, setRaster] = useState<DepthRaster | null>(null);
   const [natSize, setNatSize] = useState<{ w: number; h: number } | null>(null);
-  const [hover, setHover] = useState<{ depth: number; point: [number, number, number] } | null>(null);
+  const [hover, setHover] = useState<{ depth: number; point: [number, number, number] } | null>(
+    null,
+  );
 
   // 深度栅格:开关开 + 有点 + 有标定 + 知道原图尺寸时建一次(换帧/换相机重建);否则清空。
   useEffect(() => {
@@ -145,9 +147,7 @@ export function CameraProjectionView({
       const { pixels, visible } = projectPoints(corners, calibration);
       if (!visible.some(Boolean)) continue; // 全角点在相机后方 / 不可见 → 该相机不画此框
 
-      const disp = pixels.map(
-        ([u, v]) => [u * sx, v * sy] as [number, number],
-      );
+      const disp = pixels.map(([u, v]) => [u * sx, v * sy] as [number, number]);
       const hl = highlightedIds.has(b.id);
 
       // 12 边线:两端都可见才连(MVP:出画角点的边不画,不做画面裁剪)。
@@ -194,8 +194,7 @@ export function CameraProjectionView({
     // v0.15.24 · 种框橡皮筋矩形(显示坐标,虚线 + 淡填充)。从 shadcn token 取品牌色。
     const seed = seedRectRef.current;
     if (seedMode && seed) {
-      const accent =
-        getComputedStyle(canvas).getPropertyValue("--sc-brand").trim() || "#3b82f6";
+      const accent = getComputedStyle(canvas).getPropertyValue("--sc-brand").trim() || "#3b82f6";
       const w = seed.x1 - seed.x0;
       const h = seed.y1 - seed.y0;
       ctx.save();
@@ -329,7 +328,14 @@ export function CameraProjectionView({
   return (
     <figure className={CAMERA_ITEM}>
       <div className={CAMERA_VIEW}>
-        <img ref={imgRef} src={imageUrl} alt={name} className={CAMERA_IMG} loading="lazy" onLoad={handleImgLoad} />
+        <img
+          ref={imgRef}
+          src={imageUrl}
+          alt={name}
+          className={CAMERA_IMG}
+          loading="lazy"
+          onLoad={handleImgLoad}
+        />
         <canvas
           ref={canvasRef}
           className={seedMode ? `${CAMERA_CANVAS} ${CAMERA_CANVAS_SEED}` : CAMERA_CANVAS}

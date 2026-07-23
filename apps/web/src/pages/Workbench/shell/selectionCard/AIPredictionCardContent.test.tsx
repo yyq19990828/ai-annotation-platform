@@ -85,7 +85,14 @@ describe("AIPredictionCardContent", () => {
   it("polygon 渲染精修按钮并透传 box", () => {
     const onRefine = vi.fn();
     const box = makeAiBox({
-      geometry: { type: "polygon", points: [[0, 0], [0.5, 0], [0.5, 0.5]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [0.5, 0],
+          [0.5, 0.5],
+        ],
+      },
     });
     const { getByTitle } = render(
       <AIPredictionCardContent

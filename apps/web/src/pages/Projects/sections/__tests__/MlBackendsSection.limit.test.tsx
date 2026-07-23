@@ -28,7 +28,8 @@ vi.mock("@/hooks/usePermissions", () => ({
   usePermissions: () => ({ role: "project_admin" }),
 }));
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
+  const actual =
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: ReturnType<typeof vi.fn> }) => T) =>
@@ -83,7 +84,10 @@ beforeEach(() => {
   mockSetup.mockReset();
   mockUpdateMutate.mockReset();
   mockSetEnablementMutate.mockReset();
-  mockSetup.mockResolvedValue({ name: "grounded-sam2", supported_prompts: ["point", "bbox", "text"] });
+  mockSetup.mockResolvedValue({
+    name: "grounded-sam2",
+    supported_prompts: ["point", "bbox", "text"],
+  });
 });
 
 describe("MlBackendsSection 启用清单", () => {

@@ -35,9 +35,7 @@ def donut_mask(size: int = 256, outer: int = 80, inner: int = 30) -> np.ndarray:
     return mask
 
 
-def two_circles_mask(
-    size: int = 256, radius: int = 40, gap: int = 30
-) -> np.ndarray:
+def two_circles_mask(size: int = 256, radius: int = 40, gap: int = 30) -> np.ndarray:
     """两个分离的圆 mask：RETR_CCOMP 应抓出 2 个外环, 各无 hole。"""
     mask = np.zeros((size, size), dtype=np.uint8)
     cy = size // 2

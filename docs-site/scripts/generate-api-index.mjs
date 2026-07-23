@@ -62,4 +62,6 @@ for (const mod of modules) {
 md += `---\n\n_共 ${modules.length} 模块 / ${totalRoutes} 路由_\n`;
 
 writeFileSync(OUT, md);
-console.log(`[generate-api-index] wrote ${totalRoutes} routes from ${modules.length} modules → ${OUT}`);
+console.log(
+  `[generate-api-index] wrote ${totalRoutes} routes from ${modules.length} modules → ${OUT}`,
+);

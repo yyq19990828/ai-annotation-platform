@@ -42,9 +42,7 @@ const COMMON_PROPS = {
 
 describe("KonvaBox · konva mock 范式样板", () => {
   it("渲染出主体 Rect,几何 props 按 imgW/imgH 透传", () => {
-    render(
-      <KonvaBox b={makeBox()} selected={false} onClick={vi.fn()} {...COMMON_PROPS} />,
-    );
+    render(<KonvaBox b={makeBox()} selected={false} onClick={vi.fn()} {...COMMON_PROPS} />);
     // mock 把 Konva 组件渲染成 <div data-konva="Rect" data-*>;主体框是第一个 Rect。
     const rects = document.querySelectorAll('[data-konva="Rect"]');
     expect(rects.length).toBeGreaterThanOrEqual(1);
@@ -61,44 +59,47 @@ describe("KonvaBox · konva mock 范式样板", () => {
       <KonvaBox b={makeBox()} selected={false} onClick={vi.fn()} {...COMMON_PROPS} />,
     );
     // 未选中:strokeWidth = 1.5 / scale(1) = 1.5
-    expect(
-      document.querySelector('[data-konva="Rect"]')!.getAttribute("data-strokewidth"),
-    ).toBe("1.5");
-
-    rerender(
-      <KonvaBox b={makeBox()} selected onClick={vi.fn()} {...COMMON_PROPS} />,
+    expect(document.querySelector('[data-konva="Rect"]')!.getAttribute("data-strokewidth")).toBe(
+      "1.5",
     );
+
+    rerender(<KonvaBox b={makeBox()} selected onClick={vi.fn()} {...COMMON_PROPS} />);
     // 选中:strokeWidth = (1.5 + 0.5) / scale(1) = 2
-    expect(
-      document.querySelector('[data-konva="Rect"]')!.getAttribute("data-strokewidth"),
-    ).toBe("2");
+    expect(document.querySelector('[data-konva="Rect"]')!.getAttribute("data-strokewidth")).toBe(
+      "2",
+    );
   });
 
   it("AI 框走虚线(dash 透传),人工框不带 dash", () => {
     const { rerender } = render(
-      <KonvaBox b={makeBox()} selected={false} isAi onClick={vi.fn()}
-        editable={false} faded={false} visual={DEFAULT_ANNOTATION_VISUAL}
-        imgW={1000} imgH={800} scale={1} onMoveStart={null} onResizeStart={null} />,
+      <KonvaBox
+        b={makeBox()}
+        selected={false}
+        isAi
+        onClick={vi.fn()}
+        editable={false}
+        faded={false}
+        visual={DEFAULT_ANNOTATION_VISUAL}
+        imgW={1000}
+        imgH={800}
+        scale={1}
+        onMoveStart={null}
+        onResizeStart={null}
+      />,
     );
     // isAi → dash = [4/scale, 3/scale] = [4,3]
-    expect(
-      document.querySelector('[data-konva="Rect"]')!.getAttribute("data-dash"),
-    ).toBe(JSON.stringify([4, 3]));
-
-    rerender(
-      <KonvaBox b={makeBox()} selected={false} onClick={vi.fn()} {...COMMON_PROPS} />,
+    expect(document.querySelector('[data-konva="Rect"]')!.getAttribute("data-dash")).toBe(
+      JSON.stringify([4, 3]),
     );
+
+    rerender(<KonvaBox b={makeBox()} selected={false} onClick={vi.fn()} {...COMMON_PROPS} />);
     // 人工框 dash = undefined → data-dash 不存在
-    expect(
-      document.querySelector('[data-konva="Rect"]')!.hasAttribute("data-dash"),
-    ).toBe(false);
+    expect(document.querySelector('[data-konva="Rect"]')!.hasAttribute("data-dash")).toBe(false);
   });
 
   it("fireEvent 点击主体 Rect 触发 onClick 回调,回调收到近似 Konva 事件", () => {
     const onClick = vi.fn();
-    render(
-      <KonvaBox b={makeBox()} selected={false} onClick={onClick} {...COMMON_PROPS} />,
-    );
+    render(<KonvaBox b={makeBox()} selected={false} onClick={onClick} {...COMMON_PROPS} />);
     const main = document.querySelector('[data-konva="Rect"]')!;
     fireEvent.click(main);
     expect(onClick).toHaveBeenCalledTimes(1);
@@ -110,8 +111,13 @@ describe("KonvaBox · konva mock 范式样板", () => {
 
   it("选中 + 可编辑时渲染 8 个 resize 手柄(getByTestId/data-konva 计数)", () => {
     render(
-      <KonvaBox b={makeBox()} selected onClick={vi.fn()}
-        {...COMMON_PROPS} onResizeStart={vi.fn()} />,
+      <KonvaBox
+        b={makeBox()}
+        selected
+        onClick={vi.fn()}
+        {...COMMON_PROPS}
+        onResizeStart={vi.fn()}
+      />,
     );
     // 主体 1 个 Rect + 8 个手柄 Rect = 9(label 用 Label/Tag/Text,不计入 Rect)。
     const rects = document.querySelectorAll('[data-konva="Rect"]');

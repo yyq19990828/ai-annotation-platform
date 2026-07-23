@@ -21,7 +21,9 @@ export interface ScreenshotFixture {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function modelValues(project: ScreenshotCatalogProject, key: string): string[] {
@@ -32,7 +34,10 @@ function modelValues(project: ScreenshotCatalogProject, key: string): string[] {
   });
 }
 
-function hasCapability(project: ScreenshotCatalogProject, requirement: ScreenshotCapability): boolean {
+function hasCapability(
+  project: ScreenshotCatalogProject,
+  requirement: ScreenshotCapability,
+): boolean {
   const backend = project.ml_backend;
   if (!backend) return false;
   const separator = requirement.indexOf(":");
@@ -65,7 +70,9 @@ export function validateScreenshotFixture(
 ): void {
   if (!fixture) return;
   if (!fixture.project) {
-    throw new Error(`${sceneName}: fixture 声明 task/batch/backend/capabilities 时必须声明 project`);
+    throw new Error(
+      `${sceneName}: fixture 声明 task/batch/backend/capabilities 时必须声明 project`,
+    );
   }
   const project = catalog.projects[fixture.project];
   if (!project) {

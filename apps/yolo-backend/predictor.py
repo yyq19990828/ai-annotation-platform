@@ -86,19 +86,39 @@ def _ensure_open_classes(model: Any, classes: list[str], family: str) -> None:
         model.set_classes(list(classes))
     model._aap_classes = key
 
+
 # COCO 17 keypoints (与 ultralytics pose 模型默认顺序一致). 用作 keypointlabels
 # value.keypointlabels 的节点名 / value.points 的 v(可见性)填充顺序参考.
 COCO_KEYPOINT_NAMES: tuple[str, ...] = (
-    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
-    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-    "left_wrist", "right_wrist", "left_hip", "right_hip",
-    "left_knee", "right_knee", "left_ankle", "right_ankle",
+    "nose",
+    "left_eye",
+    "right_eye",
+    "left_ear",
+    "right_ear",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
 )
 
 
 def _bbox_to_rectanglelabels(
-    x1: float, y1: float, x2: float, y2: float,
-    cls_name: str, score: float, img_w: int, img_h: int,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    cls_name: str,
+    score: float,
+    img_w: int,
+    img_h: int,
     normalized: bool = False,
 ) -> dict[str, Any]:
     # 批量入库走 Label Studio 百分比 (0-100); 交互候选浮层 (sam3/gsam2 约定) 走归一化 (0-1)。
@@ -119,7 +139,10 @@ def _bbox_to_rectanglelabels(
 
 def _polygon_to_polygonlabels(
     points_xy: list[tuple[float, float]],
-    cls_name: str, score: float, img_w: int, img_h: int,
+    cls_name: str,
+    score: float,
+    img_w: int,
+    img_h: int,
     normalized: bool = False,
 ) -> dict[str, Any] | None:
     """ultralytics mask 已经吐出 polygon 点列 (像素), 这里只做缩放.
@@ -140,7 +163,10 @@ def _polygon_to_polygonlabels(
 
 def _keypoints_to_keypointlabels(
     kp_xyv: list[tuple[float, float, float]],
-    cls_name: str, score: float, img_w: int, img_h: int,
+    cls_name: str,
+    score: float,
+    img_w: int,
+    img_h: int,
 ) -> dict[str, Any]:
     """COCO 17 点. v 阈值: ultralytics keypoints.conf > 0.5 视为可见, > 0 为遮挡."""
     points: list[dict[str, float | int]] = []
@@ -151,11 +177,13 @@ def _keypoints_to_keypointlabels(
             visibility = 1
         else:
             visibility = 0
-        points.append({
-            "x": (x / img_w) * 100.0,
-            "y": (y / img_h) * 100.0,
-            "v": visibility,
-        })
+        points.append(
+            {
+                "x": (x / img_w) * 100.0,
+                "y": (y / img_h) * 100.0,
+                "v": visibility,
+            }
+        )
     return {
         "type": "keypointlabels",
         "value": {
@@ -167,8 +195,15 @@ def _keypoints_to_keypointlabels(
 
 
 def _obb_to_rectanglelabels(
-    cx: float, cy: float, w: float, h: float, rot_rad: float,
-    cls_name: str, score: float, img_w: int, img_h: int,
+    cx: float,
+    cy: float,
+    w: float,
+    h: float,
+    rot_rad: float,
+    cls_name: str,
+    score: float,
+    img_w: int,
+    img_h: int,
 ) -> dict[str, Any]:
     """OBB → rectanglelabels + value.rotation (度). apps/api 走 rectanglelabels +
     rotation 分支转 internal rotated_bbox."""
@@ -269,7 +304,9 @@ class YoloPredictor:
             return [], inference_ms
 
         result = results[0]
-        names: dict[int, str] = getattr(result, "names", {}) or getattr(model, "names", {})
+        names: dict[int, str] = getattr(result, "names", {}) or getattr(
+            model, "names", {}
+        )
         if task == "detection":
             items = _emit_detection(result, names, img_w, img_h)
         elif task == "segmentation":
@@ -343,7 +380,9 @@ class YoloPredictor:
             return [], inference_ms
 
         result = results[0]
-        names: dict[int, str] = getattr(result, "names", {}) or getattr(model, "names", {})
+        names: dict[int, str] = getattr(result, "names", {}) or getattr(
+            model, "names", {}
+        )
         want_mask = ctx.output in ("mask", "both") and family == "yoloe"
         want_box = ctx.output == "box" or ctx.output == "both" or not want_mask
         items: list[dict[str, Any]] = []
@@ -397,7 +436,9 @@ class YoloPredictor:
             "bboxes": np.array(pos_boxes, dtype=float),
             "cls": np.zeros(len(pos_boxes), dtype=int),
         }
-        conf = ctx.score_threshold if ctx.score_threshold is not None else ctx.params.conf
+        conf = (
+            ctx.score_threshold if ctx.score_threshold is not None else ctx.params.conf
+        )
         started = time.monotonic()
         results = model.predict(
             img,
@@ -412,13 +453,17 @@ class YoloPredictor:
         )
         elapsed = time.monotonic() - started
         variants = ctx.variants
-        record_inference(POOL_TASK_OPENVOCAB_VP, variants.series, variants.size, elapsed)
+        record_inference(
+            POOL_TASK_OPENVOCAB_VP, variants.series, variants.size, elapsed
+        )
         inference_ms = int(elapsed * 1000)
         if not results:
             return [], inference_ms
 
         result = results[0]
-        names: dict[int, str] = getattr(result, "names", {}) or getattr(model, "names", {})
+        names: dict[int, str] = getattr(result, "names", {}) or getattr(
+            model, "names", {}
+        )
         items: list[dict[str, Any]] = []
         if ctx.output in ("box", "both"):
             items += _emit_detection(result, names, img_w, img_h, normalized=True)
@@ -432,7 +477,9 @@ class YoloPredictor:
         ctx: Context,
     ) -> tuple[list[dict[str, Any]], bool, int | None, int]:
         variants = ctx.variants
-        async with self._pool.borrow("tracker", variants.series, variants.size) as lease:
+        async with self._pool.borrow(
+            "tracker", variants.series, variants.size
+        ) as lease:
             items, inference_ms = await _run_blocking_until_complete(
                 partial(self._predict_tracker_sync, lease.model, file_path, ctx)
             )
@@ -518,9 +565,12 @@ def _fetch_video(file_path: str) -> tuple[str, bool]:
         suffix = os.path.splitext(parsed.path)[1] or ".mp4"
         fd, tmp = tempfile.mkstemp(suffix=suffix, prefix="yolo-track-")
         try:
-            with os.fdopen(fd, "wb") as f, httpx.stream(
-                "GET", file_path, timeout=60.0, follow_redirects=True
-            ) as resp:
+            with (
+                os.fdopen(fd, "wb") as f,
+                httpx.stream(
+                    "GET", file_path, timeout=60.0, follow_redirects=True
+                ) as resp,
+            ):
                 resp.raise_for_status()
                 for chunk in resp.iter_bytes(chunk_size=1 << 20):
                     f.write(chunk)
@@ -540,7 +590,9 @@ def _safe_unlink(path: str) -> None:
         pass
 
 
-def _accumulate_track_frame(r: Any, frame_idx: int, tracks: dict[int, dict[str, Any]]) -> None:
+def _accumulate_track_frame(
+    r: Any, frame_idx: int, tracks: dict[int, dict[str, Any]]
+) -> None:
     """把一帧 ultralytics Results 的带 id 检测框累加进 track 聚合器 (id=None 的帧/框跳过)。"""
     boxes = getattr(r, "boxes", None)
     if boxes is None or getattr(boxes, "id", None) is None:
@@ -551,7 +603,11 @@ def _accumulate_track_frame(r: Any, frame_idx: int, tracks: dict[int, dict[str, 
     ids = boxes.id.int().cpu().tolist()
     xyxy = boxes.xyxy.cpu().numpy() if hasattr(boxes.xyxy, "cpu") else boxes.xyxy
     confs = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else boxes.conf
-    clss = boxes.cls.int().cpu().tolist() if hasattr(boxes.cls, "cpu") else [int(c) for c in boxes.cls]
+    clss = (
+        boxes.cls.int().cpu().tolist()
+        if hasattr(boxes.cls, "cpu")
+        else [int(c) for c in boxes.cls]
+    )
     names: dict[int, str] = getattr(r, "names", {}) or {}
     for i, tid in enumerate(ids):
         x1, y1, x2, y2 = (float(v) for v in xyxy[i])
@@ -563,8 +619,12 @@ def _accumulate_track_frame(r: Any, frame_idx: int, tracks: dict[int, dict[str, 
             "h": min(max((y2 - y1) / h, 0.0), 1.0),
         }
         score = float(confs[i])
-        entry = tracks.setdefault(tid, {"class_counts": {}, "scores": [], "keyframes": []})
-        entry["keyframes"].append({"frame_index": frame_idx, "bbox": bbox, "score": score})
+        entry = tracks.setdefault(
+            tid, {"class_counts": {}, "scores": [], "keyframes": []}
+        )
+        entry["keyframes"].append(
+            {"frame_index": frame_idx, "bbox": bbox, "score": score}
+        )
         cls_name = names.get(clss[i], str(clss[i]))
         entry["class_counts"][cls_name] = entry["class_counts"].get(cls_name, 0) + 1
         entry["scores"].append(score)
@@ -585,7 +645,9 @@ def _emit_tracks(tracks: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
         items.append(
             {
                 "type": "video_track_bbox",
-                "track_id": int(tid),  # ultralytics 原生 int; 平台 ingestion 映射 trk_<uuid>
+                "track_id": int(
+                    tid
+                ),  # ultralytics 原生 int; 平台 ingestion 映射 trk_<uuid>
                 "class_name": class_name,
                 "score": track_score,
                 "keyframes": entry["keyframes"],
@@ -595,7 +657,11 @@ def _emit_tracks(tracks: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _emit_detection(
-    r0: Any, names: dict[int, str], img_w: int, img_h: int, normalized: bool = False,
+    r0: Any,
+    names: dict[int, str],
+    img_w: int,
+    img_h: int,
+    normalized: bool = False,
 ) -> list[dict]:
     out: list[dict] = []
     boxes = getattr(r0, "boxes", None)
@@ -603,19 +669,37 @@ def _emit_detection(
         return out
     xyxy = boxes.xyxy.cpu().numpy() if hasattr(boxes.xyxy, "cpu") else boxes.xyxy
     confs = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else boxes.conf
-    clss = boxes.cls.cpu().numpy().astype(int) if hasattr(boxes.cls, "cpu") else boxes.cls.astype(int)
+    clss = (
+        boxes.cls.cpu().numpy().astype(int)
+        if hasattr(boxes.cls, "cpu")
+        else boxes.cls.astype(int)
+    )
     for i in range(len(xyxy)):
         x1, y1, x2, y2 = (float(v) for v in xyxy[i])
         cls_idx = int(clss[i])
         cls_name = names.get(cls_idx, str(cls_idx))
-        out.append(_bbox_to_rectanglelabels(
-            x1, y1, x2, y2, cls_name, float(confs[i]), img_w, img_h, normalized=normalized
-        ))
+        out.append(
+            _bbox_to_rectanglelabels(
+                x1,
+                y1,
+                x2,
+                y2,
+                cls_name,
+                float(confs[i]),
+                img_w,
+                img_h,
+                normalized=normalized,
+            )
+        )
     return out
 
 
 def _emit_segmentation(
-    r0: Any, names: dict[int, str], img_w: int, img_h: int, normalized: bool = False,
+    r0: Any,
+    names: dict[int, str],
+    img_w: int,
+    img_h: int,
+    normalized: bool = False,
 ) -> list[dict]:
     out: list[dict] = []
     masks = getattr(r0, "masks", None)
@@ -625,19 +709,27 @@ def _emit_segmentation(
     # ultralytics masks.xy 是 list[ndarray[N,2]], 每项一个 polygon 点列 (像素).
     polys_xy = masks.xy if hasattr(masks, "xy") else []
     confs = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else boxes.conf
-    clss = boxes.cls.cpu().numpy().astype(int) if hasattr(boxes.cls, "cpu") else boxes.cls.astype(int)
+    clss = (
+        boxes.cls.cpu().numpy().astype(int)
+        if hasattr(boxes.cls, "cpu")
+        else boxes.cls.astype(int)
+    )
     for i, poly in enumerate(polys_xy):
         pts = [(float(p[0]), float(p[1])) for p in poly]
         cls_idx = int(clss[i]) if i < len(clss) else 0
         cls_name = names.get(cls_idx, str(cls_idx))
         score = float(confs[i]) if i < len(confs) else 0.0
-        item = _polygon_to_polygonlabels(pts, cls_name, score, img_w, img_h, normalized=normalized)
+        item = _polygon_to_polygonlabels(
+            pts, cls_name, score, img_w, img_h, normalized=normalized
+        )
         if item is not None:
             out.append(item)
     return out
 
 
-def _emit_keypoint(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> list[dict]:
+def _emit_keypoint(
+    r0: Any, names: dict[int, str], img_w: int, img_h: int
+) -> list[dict]:
     out: list[dict] = []
     kp = getattr(r0, "keypoints", None)
     boxes = getattr(r0, "boxes", None)
@@ -646,7 +738,11 @@ def _emit_keypoint(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> li
     # ultralytics keypoints.data: tensor[N,17,3] (x,y,v).
     data = kp.data.cpu().numpy() if hasattr(kp.data, "cpu") else kp.data
     confs = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else boxes.conf
-    clss = boxes.cls.cpu().numpy().astype(int) if hasattr(boxes.cls, "cpu") else boxes.cls.astype(int)
+    clss = (
+        boxes.cls.cpu().numpy().astype(int)
+        if hasattr(boxes.cls, "cpu")
+        else boxes.cls.astype(int)
+    )
     for i in range(len(data)):
         kp_xyv = [(float(p[0]), float(p[1]), float(p[2])) for p in data[i]]
         cls_idx = int(clss[i]) if i < len(clss) else 0
@@ -664,12 +760,18 @@ def _emit_obb(r0: Any, names: dict[int, str], img_w: int, img_h: int) -> list[di
     # ultralytics obb.xywhr: tensor[N,5] = cx, cy, w, h, rotation(弧度).
     xywhr = obb.xywhr.cpu().numpy() if hasattr(obb.xywhr, "cpu") else obb.xywhr
     confs = obb.conf.cpu().numpy() if hasattr(obb.conf, "cpu") else obb.conf
-    clss = obb.cls.cpu().numpy().astype(int) if hasattr(obb.cls, "cpu") else obb.cls.astype(int)
+    clss = (
+        obb.cls.cpu().numpy().astype(int)
+        if hasattr(obb.cls, "cpu")
+        else obb.cls.astype(int)
+    )
     for i in range(len(xywhr)):
         cx, cy, w, h, rot = (float(v) for v in xywhr[i])
         cls_idx = int(clss[i])
         cls_name = names.get(cls_idx, str(cls_idx))
-        out.append(_obb_to_rectanglelabels(
-            cx, cy, w, h, rot, cls_name, float(confs[i]), img_w, img_h
-        ))
+        out.append(
+            _obb_to_rectanglelabels(
+                cx, cy, w, h, rot, cls_name, float(confs[i]), img_w, img_h
+            )
+        )
     return out

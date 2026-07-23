@@ -12,29 +12,43 @@ interface ThumbnailProps {
   style?: React.CSSProperties;
 }
 
-export function Thumbnail({ src, blurhash, alt = "", width = 48, height = 48, style }: ThumbnailProps) {
+export function Thumbnail({
+  src,
+  blurhash,
+  alt = "",
+  width = 48,
+  height = 48,
+  style,
+}: ThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rootStyle = useMemo<React.CSSProperties>(() => ({
-    width,
-    height,
-    ...style,
-  }), [height, style, width]);
+  const rootStyle = useMemo<React.CSSProperties>(
+    () => ({
+      width,
+      height,
+      ...style,
+    }),
+    [height, style, width],
+  );
   const rootRef = useElementStyle<HTMLDivElement>(rootStyle);
 
   useEffect(() => {
     if (!blurhash || !canvasRef.current) return;
-    import("blurhash").then(({ decode }) => {
-      const pixels = decode(blurhash, width, height);
-      const canvas = canvasRef.current!;
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d")!;
-      const imageData = ctx.createImageData(width, height);
-      imageData.data.set(pixels);
-      ctx.putImageData(imageData, 0, 0);
-    }).catch(() => {/* ignore */});
+    import("blurhash")
+      .then(({ decode }) => {
+        const pixels = decode(blurhash, width, height);
+        const canvas = canvasRef.current!;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d")!;
+        const imageData = ctx.createImageData(width, height);
+        imageData.data.set(pixels);
+        ctx.putImageData(imageData, 0, 0);
+      })
+      .catch(() => {
+        /* ignore */
+      });
   }, [blurhash, width, height]);
 
   if (!src && !blurhash) {
@@ -48,12 +62,7 @@ export function Thumbnail({ src, blurhash, alt = "", width = 48, height = 48, st
   return (
     <div ref={rootRef} className={styles.root}>
       {/* blurhash canvas placeholder */}
-      {blurhash && !loaded && (
-        <canvas
-          ref={canvasRef}
-          className={styles.media}
-        />
-      )}
+      {blurhash && !loaded && <canvas ref={canvasRef} className={styles.media} />}
       {/* actual image */}
       {src && !errored && (
         <img

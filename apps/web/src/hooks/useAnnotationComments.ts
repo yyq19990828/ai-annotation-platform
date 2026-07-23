@@ -26,9 +26,7 @@ export function useAnnotationComments(annotationId: string | null | undefined) {
 // 简单场景兜底（list_attachments 等）。
 const COMMENTS_PAGE_LIMIT = 50;
 
-export function useAnnotationCommentsInfinite(
-  annotationId: string | null | undefined,
-) {
+export function useAnnotationCommentsInfinite(annotationId: string | null | undefined) {
   return useInfiniteQuery({
     queryKey: ["annotation-comments-page", annotationId],
     queryFn: ({ pageParam }) =>
@@ -45,10 +43,7 @@ export function useAnnotationCommentsInfinite(
 /**
  * I4 · 任务级评论 — DiscussionPanel 未选中标注时降级展示.
  */
-export function useTaskCommentsInfinite(
-  taskId: string | null | undefined,
-  enabled = true,
-) {
+export function useTaskCommentsInfinite(taskId: string | null | undefined, enabled = true) {
   return useInfiniteQuery({
     queryKey: ["task-comments-page", taskId],
     queryFn: ({ pageParam }) =>
@@ -86,8 +81,13 @@ export function useCreateComment(annotationId: string | null | undefined) {
 export function usePatchComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: { body?: string; is_resolved?: boolean } }) =>
-      commentsApi.patch(id, payload),
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: { body?: string; is_resolved?: boolean };
+    }) => commentsApi.patch(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotation-comments", annotationId] });
       qc.invalidateQueries({ queryKey: ["annotation-comments-page", annotationId] });
@@ -96,12 +96,14 @@ export function usePatchComment(annotationId: string | null | undefined) {
   });
 }
 
-const removeFromPages = (id: string) => (
-  old: InfiniteData<AnnotationCommentListPage> | undefined,
-) =>
-  old
-    ? { ...old, pages: old.pages.map((p) => ({ ...p, items: p.items.filter((c) => c.id !== id) })) }
-    : old;
+const removeFromPages =
+  (id: string) => (old: InfiniteData<AnnotationCommentListPage> | undefined) =>
+    old
+      ? {
+          ...old,
+          pages: old.pages.map((p) => ({ ...p, items: p.items.filter((c) => c.id !== id) })),
+        }
+      : old;
 
 export function useDeleteComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();

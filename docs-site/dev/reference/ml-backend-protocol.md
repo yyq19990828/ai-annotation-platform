@@ -11,6 +11,7 @@ last_reviewed: 2026-07-22
 > 适用读者：要把自家推理服务接入到本平台的工程师；项目管理员配置 ML Backend 时遇到调试问题。
 >
 > 平台侧实现：
+>
 > - 服务: `apps/api/app/services/ml_backend.py` · `ml_client.py`
 > - HTTP 接入点: `apps/api/app/api/v1/ml_backends.py`
 > - 数据模型: `apps/api/app/db/models/{ml_backend,prediction}.py`
@@ -93,13 +94,13 @@ ACK + fresh health 提交 Resident 或保守 Unknown。冻结 marker 不随 owne
 
 ## 端点总览
 
-| 端点 | 方法 | 用途 | 必需 | 平台调用点 |
-|---|---|---|---|---|
-| `/health` | GET | 健康检查 | ✅ | `MLBackendClient.health` (`ml_client.py:31`) |
-| `/predict` | POST | 批量 / 交互式预测 | ✅ | `MLBackendClient.predict` (`ml_client.py:41`) / `predict_interactive` (`ml_client.py:64`) |
-| `/setup` | GET | 返回模型配置（schema、超参） | ⚪ | `MLBackendClient.setup` (`ml_client.py:84`) |
-| `/warmup` | POST | 显式预热模型权重到 pool | ⚪ | `MLBackendClient.warmup` |
-| `/versions` | GET | 列出可用模型版本 | ⚪ | `MLBackendClient.get_versions` (`ml_client.py:90`) |
+| 端点        | 方法 | 用途                         | 必需 | 平台调用点                                                                                |
+| ----------- | ---- | ---------------------------- | ---- | ----------------------------------------------------------------------------------------- |
+| `/health`   | GET  | 健康检查                     | ✅   | `MLBackendClient.health` (`ml_client.py:31`)                                              |
+| `/predict`  | POST | 批量 / 交互式预测            | ✅   | `MLBackendClient.predict` (`ml_client.py:41`) / `predict_interactive` (`ml_client.py:64`) |
+| `/setup`    | GET  | 返回模型配置（schema、超参） | ⚪   | `MLBackendClient.setup` (`ml_client.py:84`)                                               |
+| `/warmup`   | POST | 显式预热模型权重到 pool      | ⚪   | `MLBackendClient.warmup`                                                                  |
+| `/versions` | GET  | 列出可用模型版本             | ⚪   | `MLBackendClient.get_versions` (`ml_client.py:90`)                                        |
 
 base URL 由超级管理员在「模型市场 → 注册管理」录入；项目管理员只在
 项目设置中启用已注册 backend。末尾 `/` 会被平台自动 `rstrip`
@@ -129,6 +130,7 @@ base URL 由超级管理员在「模型市场 → 注册管理」录入；项目
 **超时**：服务端配置 `ml_health_timeout`（默认 10s，`config.py:55`）。超时或任何 `httpx.RequestError` 视为不健康，平台将 `ml_backends.state` 改写为 `"error"`（`ml_backend.py:63`）。
 
 平台侧调用时机：
+
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
 - 周期健康检查可按 ROADMAP 的 ML Backend 健康检查方案扩展。
 
@@ -256,7 +258,7 @@ SAM3 已实现 image、multiplex video 与 PVS video 三池 single-flight、borr
     "evictable": true,
     "generation": "42",
     "pools": {
-      "models": {"resident": true, "device": "cuda:0", "provider": null}
+      "models": { "resident": true, "device": "cuda:0", "provider": null }
     },
     "boot_id": "<random-per-process-boot-id>",
     "lifecycle_gate": "enforce",
@@ -366,16 +368,16 @@ active、builder、borrower 全部归零后用同 generation、owner、operation
 
 backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}`：
 
-| 场景 | HTTP / `error_code` |
-|---|---|
-| draining 拒绝新 workload | `503 gpu_backend_draining`，可带 `Retry-After` |
-| active 时请求 unload/reset | `409 gpu_backend_active` |
-| 旧 generation | `409 gpu_generation_conflict` |
-| 非法或冲突 transition | `409 gpu_transition_conflict` |
-| generation 格式错误 | `422 gpu_generation_invalid` |
-| header/body/token generation 不一致 | `422 gpu_generation_mismatch` |
-| token 缺失、验签失败、过期或重放 | `403 gpu_admission_denied` |
-| 全池清理失败 | `500 gpu_unload_failed`，residency 保持 unknown |
+| 场景                                | HTTP / `error_code`                             |
+| ----------------------------------- | ----------------------------------------------- |
+| draining 拒绝新 workload            | `503 gpu_backend_draining`，可带 `Retry-After`  |
+| active 时请求 unload/reset          | `409 gpu_backend_active`                        |
+| 旧 generation                       | `409 gpu_generation_conflict`                   |
+| 非法或冲突 transition               | `409 gpu_transition_conflict`                   |
+| generation 格式错误                 | `422 gpu_generation_invalid`                    |
+| header/body/token generation 不一致 | `422 gpu_generation_mismatch`                   |
+| token 缺失、验签失败、过期或重放    | `403 gpu_admission_denied`                      |
+| 全池清理失败                        | `500 gpu_unload_failed`，residency 保持 unknown |
 
 ---
 
@@ -388,6 +390,7 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 适用：项目级「自动预标注」。Celery worker 把 task 切片成 batch，逐 batch 调一次 `/predict`。
 
 **请求**：
+
 ```json
 {
   "tasks": [
@@ -400,6 +403,7 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 `tasks` 是一个数组；具体每项的字段由平台与 backend 协商，但平台调用方至少传 `id` + 可访问的 `file_path`。详见 `app/workers/tasks.py:batch_predict` 任务（自动预标注的实际生产者）。
 
 **响应**：
+
 ```json
 {
   "results": [
@@ -485,6 +489,7 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 只有 `is_interactive=True` 且 `state="connected"` 的 backend 才会被路由到这条路径（`ml_backend.py:67-75`）。
 
 **请求**：
+
 ```json
 {
   "task": { "id": "<task_uuid>", "file_path": "..." },
@@ -526,18 +531,25 @@ Mask 候选的响应字面为：
 
 ```json
 {
-  "result": [{
-    "type": "mask",
-    "value": {
-      "rle": {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1]},
-      "masklabels": ["object"],
-      "preview": {
-        "points": [[0.0, 0.0], [0.67, 0.0], [0.67, 1.0], [0.0, 1.0]]
-      }
-    },
-    "score": 0.91,
-    "candidate_id": "sha256:<64 hex>"
-  }],
+  "result": [
+    {
+      "type": "mask",
+      "value": {
+        "rle": { "encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 2, 1] },
+        "masklabels": ["object"],
+        "preview": {
+          "points": [
+            [0.0, 0.0],
+            [0.67, 0.0],
+            [0.67, 1.0],
+            [0.0, 1.0]
+          ]
+        }
+      },
+      "score": 0.91,
+      "candidate_id": "sha256:<64 hex>"
+    }
+  ],
   "diagnostic": null,
   "prompt_revision": "sha256:<64 hex>",
   "output_geometry": "mask",
@@ -609,6 +621,7 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 > **`type=video_tracker`**：由 `VideoTrackerJob` worker 使用。平台按模型窗口配置拆分长区间，并从项目已启用 backend 中按 `/setup.supported_trackers` 选择能力匹配项；项目主后端支持该 tracker 时优先，否则选择其它 connected 匹配 backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video` / `sam3_video_interactive`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt`、`source_geometry` 和种子驱动模型使用的 `seeds`。其中 `sam3_video_interactive` 是 SAM3 的 **PVS 交互追踪**（点/框 seed + 跨帧 memory），与 `sam2_video` 同为 caller 指定 obj_id 的种子驱动多目标；`sam3_video` 则是 multiplex 文本开集检测。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside?, instance_id?, primary? }`；低于平台阈值的 `confidence` 标为 outside。`instance_id` / `primary` 用于 job 内多目标身份，单目标 backend 可整体省略。
 >
 > 落地细节：
+>
 > - **输出几何**：`context.output_geometry` 受控取 `bbox / polygon / mask`。`mask` 返回 `{type:"mask", rle:{encoding:"coco_rle", size:[h,w], counts:[...]}}`；counts 使用 COCO column-major runs，平台会校验并转换为内容寻址引用。空 mask 用 `outside=true`，不能返回全零 bbox 冒充对象。
 > - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），按 `output_geometry` 直接返回 mask、polygon 或外接 bbox。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
 > - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/archive/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
@@ -628,6 +641,7 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 > **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（PoolStatus：`cap/current_size/loaded_keys/last_evict`，外加 `active_sessions/idle_seconds`）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类。
 
 > **`output: "box" | "mask" | "both"`**（仅 `type=text` 生效）：
+>
 > - `box`：仅 GroundingDINO 出框，跳过 SAM image embedding + mask 推理 + cv2/shapely 简化。返回 `result[]` 全为 `rectanglelabels`，单图 ~50-100ms（4060 / tiny），相比 mask 全链路 200-500ms 快 50-80%。**适用 image-det 项目**：标注员要的就是 bbox annotation。
 > - `mask`（**默认**）：DINO + SAM mask → polygon，返回 `polygonlabels`。
 > - `both`：同 instance 配对返回 `[rectanglelabels, polygonlabels, ...]` 严格交错（box 优先，对应 polygon 在后）。前端 `Tab` 切活跃几何，`Enter` 接受当前形态。
@@ -636,12 +650,14 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 > - **point/interactive_box/polygon 类型**：`output` 字段无意义，始终走 SAM mask → polygon。
 
 > **`simplify_tolerance: number`**（可选；缺省走 backend 默认 1.0）：
+>
 > - 像素级 shapely.simplify 容差。**大物体 / 大致形状** 调高（2-3）减顶点、提速；**精细物体** 调低（0.3-0.5）保细节。
 > - 仅 `output ∈ {"mask", "both"}` 路径生效；`output="box"` 不简化。
 > - 单次请求级覆盖；项目级常量化未实现（运维 / dev 通过 `Context.simplify_tolerance` 注入足够，未来可加 ProjectSettings 字段，触发条件：客户提需求）。
 > - 后端在返回 polygon 顶点 > 200 时 `logger.warning`（非阻塞，仅运维信号）。
 
 **响应**：单条 `PredictionResult`，**没有外层 `results` 数组**：
+
 ```json
 {
   "result": [<annotation>, ...],
@@ -657,6 +673,7 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 **与 §2.2 的 `type=video_tracker` 是两条不同的链**。§2.2 是「人在环、单对象、种子传播」的交互式追踪（SAM2/SAM3，`predict_interactive`，平台分窗续追）；这里的**检测式追踪**（detect-then-track）是「无种子、多对象、全自动、离线批量」：检测器逐帧出框 + 内建关联算法（ByteTrack / BoT-SORT），**时间关联全在 backend 内**，平台只投整段视频、收已聚合的轨迹，自己不做任何时间编排。它走**标准批量 `/predict`**（复数 `tasks` wire），不进交互式那条链。
 
 **请求**：`context.type="tracker"`，`task.file_path` 是整段视频（presigned URL 或本地路径，backend 内部解帧）：
+
 ```json
 {
   "tasks": [{ "id": "v1", "file_path": "https://.../clip.mp4" }],
@@ -664,28 +681,31 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
     "type": "tracker",
     "model_variants": { "series": "yolo11", "size": "s" },
     "params": { "conf": 0.35, "iou": 0.7, "tracker": "bytetrack" },
-    "classes": [2]                              // 可选类别白名单 (模型原生 index)
+    "classes": [2] // 可选类别白名单 (模型原生 index)
   }
 }
 ```
+
 - `params.tracker` 从 `/setup.models[].supported_trackers` 选定（缺省取首项）；enum 约束到 backend 内建的 tracker 配置（yolo：`bytetrack` / `botsort`）。追踪算法是 **param**（apply-time 选、不换权重），不是 variant 轴。
 - `supported_inputs=["video"]`：检测式追踪**只接受视频**——单帧图像无跨帧状态、产不出有意义的 `track_id`。
 
 **响应**：`result[]` 每项是一条**已聚合好的轨迹**（backend 已 stream 整段视频、按原生 track id 聚合，平台不再聚合），`type="video_track_bbox"`：
+
 ```jsonc
 {
   "type": "video_track_bbox",
-  "track_id": 3,                    // backend 原生 int; 平台 ingestion 映射成 trk_<uuid>
+  "track_id": 3, // backend 原生 int; 平台 ingestion 映射成 trk_<uuid>
   "class_name": "car",
-  "score": 0.87,                    // 轨迹级 (帧置信度均值)
+  "score": 0.87, // 轨迹级 (帧置信度均值)
   "keyframes": [
     // bbox 用 {x,y,w,h}、直接 0-1 归一化 (不发百分比、平台不做百分比自动探测)
-    { "frame_index": 0, "bbox": { "x": 0.10, "y": 0.20, "w": 0.08, "h": 0.06 }, "score": 0.90 },
-    { "frame_index": 1, "bbox": { "x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06 }, "score": 0.88 }
+    { "frame_index": 0, "bbox": { "x": 0.1, "y": 0.2, "w": 0.08, "h": 0.06 }, "score": 0.9 },
+    { "frame_index": 1, "bbox": { "x": 0.11, "y": 0.21, "w": 0.08, "h": 0.06 }, "score": 0.88 },
     // 某帧无 track id (低置信) 直接不出该帧关键帧
-  ]
+  ],
 }
 ```
+
 平台把它落成 `VideoTrackGeometry` 预标注（每帧 `source="prediction"`），视频工作台按轨迹渲染、人工审核接受。**首版限制**：单次整段追踪（不分窗），帧数超上限（yolo `YOLO_TRACKER_MAX_FRAMES`，默认 900）截断并 `log`（不静默丢）；长超时须配 tracker 专属超时 + 独立 queue / 限并发（长视频整段追踪独占 worker slot）。
 
 ---
@@ -733,14 +753,14 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 
 ```jsonc
 {
-  "name": "sam3-backend",                       // 必填. backend 标识
-  "version": "0.10.1",                          // 必填. backend 镜像/代码版本
-  "protocol_version": "2.1",                     // v0.14.15 起推荐；缺省按 2.0/legacy 兼容
-  "compat_protocol_versions": ["2.0"],           // 本 backend 仍接受的旧 minor 版本
-  "model_version": "sam3",                    // 必填. 实际加载的模型 ckpt 版本
+  "name": "sam3-backend", // 必填. backend 标识
+  "version": "0.10.1", // 必填. backend 镜像/代码版本
+  "protocol_version": "2.1", // v0.14.15 起推荐；缺省按 2.0/legacy 兼容
+  "compat_protocol_versions": ["2.0"], // 本 backend 仍接受的旧 minor 版本
+  "model_version": "sam3", // 必填. 实际加载的模型 ckpt 版本
   "is_interactive": true,
-  "labels": [],                                 // 可选. backend 已知类别 hint
-  "supported_prompts": ["point", "interactive_box", "text", "exemplar"],  // sam3 开 inst_interactivity 后: point/interactive_box (SAM-style 单实例) + exemplar (PCS 找相似) + text
+  "labels": [], // 可选. backend 已知类别 hint
+  "supported_prompts": ["point", "interactive_box", "text", "exemplar"], // sam3 开 inst_interactivity 后: point/interactive_box (SAM-style 单实例) + exemplar (PCS 找相似) + text
   "supported_text_outputs": ["box", "mask", "both"],
   "supported_variants": [
     {
@@ -748,25 +768,36 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
       "title": "SAM 2 变体",
       "variants": [
         { "value": "tiny", "label": "SAM 2.1 Tiny", "vram_gb": 1.5, "tier": "fast" },
-        { "value": "small", "label": "SAM 2.1 Small", "vram_gb": 2.5, "tier": "balanced", "recommended": true }
-      ]
-    }
+        {
+          "value": "small",
+          "label": "SAM 2.1 Small",
+          "vram_gb": 2.5,
+          "tier": "balanced",
+          "recommended": true,
+        },
+      ],
+    },
   ],
   "params": {
     "type": "object",
     "properties": {
       "box_threshold": {
-        "type": "number", "minimum": 0, "maximum": 1,
-        "default": 0.35, "title": "Box 置信度阈值",
-        "x-platform-role": "confidence"
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.35,
+        "title": "Box 置信度阈值",
+        "x-platform-role": "confidence",
       },
       "sam_variant": {
-        "type": "string", "enum": ["tiny", "small", "base_plus", "large"],
-        "default": "tiny", "title": "SAM 2 变体",
-        "x-platform-role": "modelVariant"
-      }
-    }
-  }
+        "type": "string",
+        "enum": ["tiny", "small", "base_plus", "large"],
+        "default": "tiny",
+        "title": "SAM 2 变体",
+        "x-platform-role": "modelVariant",
+      },
+    },
+  },
 }
 ```
 
@@ -812,22 +843,24 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 {
   // ── 必填三元组（协议 v1 已有，不变）──
   "name": "yolo-ultralytics-backend",
-  "version": "0.1.0",              // backend 镜像/代码版本
-  "protocol_version": "2.1",       // v0.14.15: model_variants + x-platform-role + 422/503 错误模型
+  "version": "0.1.0", // backend 镜像/代码版本
+  "protocol_version": "2.1", // v0.14.15: model_variants + x-platform-role + 422/503 错误模型
   "compat_protocol_versions": ["2.0"],
   "model_version": "ultralytics-8.3.x",
 
   // ── v2 新增 ──
-  "infra": "pytorch",             // backend 默认基础设施；可被 model.infra 覆盖
-  "warmup_endpoint": true,        // v0.14.14: 声明本 backend 支持 POST /warmup（详见 §4.4）
-  "models": [ /* §4.1.2 model 条目数组 */ ],
+  "infra": "pytorch", // backend 默认基础设施；可被 model.infra 覆盖
+  "warmup_endpoint": true, // v0.14.14: 声明本 backend 支持 POST /warmup（详见 §4.4）
+  "models": [
+    /* §4.1.2 model 条目数组 */
+  ],
 
   // ── v1 顶层字段：仍可用，作为「隐式单 model」的兜底（§4.1.5）──
   "is_interactive": false,
   "supported_prompts": [],
   "supported_geometric_outputs": [],
   "supported_variants": [],
-  "params": {}
+  "params": {},
 }
 ```
 
@@ -840,29 +873,38 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 
 ```jsonc
 {
-  "id": "detect",                       // 必填. backend 内唯一,(backend_id,id) 构成目录主键
-  "display_name": "YOLO 目标检测",       // UI 展示名
-  "task": "detection",                  // 必填. 受控词表,条目边界,决定输出几何与项目兼容性
-  "model_family": "yolo",               // 可选. 家族标签(yolo/sam/paddleocr…),UI 二级分组用
-  "infra": "pytorch",                   // 可选. 缺省继承 backend.infra
-  "is_interactive": false,              // 该 model 是否支持交互式 /predict
-  "composition": "atom",                // 可选. atom=单次推理原子; composite=内部编排多原子. 缺省 atom
+  "id": "detect", // 必填. backend 内唯一,(backend_id,id) 构成目录主键
+  "display_name": "YOLO 目标检测", // UI 展示名
+  "task": "detection", // 必填. 受控词表,条目边界,决定输出几何与项目兼容性
+  "model_family": "yolo", // 可选. 家族标签(yolo/sam/paddleocr…),UI 二级分组用
+  "infra": "pytorch", // 可选. 缺省继承 backend.infra
+  "is_interactive": false, // 该 model 是否支持交互式 /predict
+  "composition": "atom", // 可选. atom=单次推理原子; composite=内部编排多原子. 缺省 atom
 
-  "supported_prompts": ["none"],        // 受控. none = 纯批量,无交互 prompt
+  "supported_prompts": ["none"], // 受控. none = 纯批量,无交互 prompt
   "supported_inputs": ["full_image", "crop"], // 可选. full_image/crop/bbox_prompt/point_prompt; 缺省由平台合成
-  "supported_geometric_outputs": ["bbox"],   // 受控,复用现有字段名
-  "output_attribute_types": [],         // 受控. OCR: ["text","language"]; cls: ["class"]
-  "output_attribute_schema": [],        // 可选. 属性 key/label/type/options 的结构化声明
-  "supported_text_outputs": [],         // v1 已有,text 路径专用(box/mask/both)
-  "supported_trackers": [],             // v1 已有,video tracker 专用
+  "supported_geometric_outputs": ["bbox"], // 受控,复用现有字段名
+  "output_attribute_types": [], // 受控. OCR: ["text","language"]; cls: ["class"]
+  "output_attribute_schema": [], // 可选. 属性 key/label/type/options 的结构化声明
+  "supported_text_outputs": [], // v1 已有,text 路径专用(box/mask/both)
+  "supported_trackers": [], // v1 已有,video tracker 专用
 
-  "supported_variants": [ /* series/size 多轴,§4.1.6 */ ],
-  "variant_combinations": [ /* 可选,§4.1.6: 多轴非真笛卡尔积时显式列举合法组合 */ ],
-  "variants_shared_across_tasks": false, /* 可选,§4.1.6: True 表同 backend 内多 task 共享同一份物理权重 */
-  "default_variants": { "series": "yolo11", "size": "s" }, /* 可选,§4.1.6: backend 自报该 model 默认 variant 组合 */
+  "supported_variants": [
+    /* series/size 多轴,§4.1.6 */
+  ],
+  "variant_combinations": [
+    /* 可选,§4.1.6: 多轴非真笛卡尔积时显式列举合法组合 */
+  ],
+  "variants_shared_across_tasks": false /* 可选,§4.1.6: True 表同 backend 内多 task 共享同一份物理权重 */,
+  "default_variants": {
+    "series": "yolo11",
+    "size": "s",
+  } /* 可选,§4.1.6: backend 自报该 model 默认 variant 组合 */,
   "default_thresholds": { "conf": 0.25, "iou": 0.7 },
   "resource_profile": { "device": "gpu", "batchable": true },
-  "params": { /* 该 model 专属 JSON Schema(Draft-07 子集),前端 schema-form 渲染 */ }
+  "params": {
+    /* 该 model 专属 JSON Schema(Draft-07 子集),前端 schema-form 渲染 */
+  },
 }
 ```
 
@@ -872,17 +914,17 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 
 **`task`（任务能力，条目边界，必填）** —— 项目兼容性校验的主轴；`model_family` 仅作展示分组，不参与校验：
 
-| `task` | 输出几何 | 对应 result type | 备注 |
-|---|---|---|---|
-| `detection` | `bbox` | `rectanglelabels` | |
-| `obb` | `rotated_bbox` | `rectanglelabels`（带 `rotation`） | 与 detection 输出几何不同，单列 |
-| `segmentation` | `polygon` | `polygonlabels` | 实例/语义分割统一 polygon 落地 |
-| `keypoint` | `keypoint` | `keypointlabels` | pose / 关键点 |
-| `classification` | `none` | 无几何，写 attribute | 整图/区域分类 |
-| `ocr` | `bbox`/`rotated_bbox`/`polygon` | 对应几何 + `attributes.text` | §4.1.8 |
-| `doc_layout` | `bbox`/`polygon` | 对应几何，class=版面类别 | §4.1.8 |
-| `tracker` | per-frame geometry | （video tracker 协议，§2.2） | 模态=video |
-| `interactive_seg` | `polygon`/`mask` | `polygonlabels` | SAM 类，prompt 驱动 |
+| `task`            | 输出几何                        | 对应 result type                   | 备注                            |
+| ----------------- | ------------------------------- | ---------------------------------- | ------------------------------- |
+| `detection`       | `bbox`                          | `rectanglelabels`                  |                                 |
+| `obb`             | `rotated_bbox`                  | `rectanglelabels`（带 `rotation`） | 与 detection 输出几何不同，单列 |
+| `segmentation`    | `polygon`                       | `polygonlabels`                    | 实例/语义分割统一 polygon 落地  |
+| `keypoint`        | `keypoint`                      | `keypointlabels`                   | pose / 关键点                   |
+| `classification`  | `none`                          | 无几何，写 attribute               | 整图/区域分类                   |
+| `ocr`             | `bbox`/`rotated_bbox`/`polygon` | 对应几何 + `attributes.text`       | §4.1.8                          |
+| `doc_layout`      | `bbox`/`polygon`                | 对应几何，class=版面类别           | §4.1.8                          |
+| `tracker`         | per-frame geometry              | （video tracker 协议，§2.2）       | 模态=video                      |
+| `interactive_seg` | `polygon`/`mask`                | `polygonlabels`                    | SAM 类，prompt 驱动             |
 
 **`supported_geometric_outputs`（几何输出，复用现有字段）** —— 枚举与 `TOOL_UNIT_IDS` 对齐：
 
@@ -918,20 +960,36 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 
 ```jsonc
 {
-  "infra": "pytorch",                 // backend 默认
+  "infra": "pytorch", // backend 默认
   "models": [
-    { "id": "detect", "task": "detection", "model_family": "yolo", "infra": "pytorch",
-      "supported_prompts": ["none"], "supported_inputs": ["full_image", "crop"],
+    {
+      "id": "detect",
+      "task": "detection",
+      "model_family": "yolo",
+      "infra": "pytorch",
+      "supported_prompts": ["none"],
+      "supported_inputs": ["full_image", "crop"],
       "supported_geometric_outputs": ["bbox"],
-      "output_attribute_types": [], "supported_variants": [/*…*/],
-      "default_thresholds": {/*…*/}, "resource_profile": {/*…*/}, "modality": "image" }
+      "output_attribute_types": [],
+      "supported_variants": [
+        /*…*/
+      ],
+      "default_thresholds": {
+        /*…*/
+      },
+      "resource_profile": {
+        /*…*/
+      },
+      "modality": "image",
+    },
     /* … */
   ],
   // 兼容字段:老消费方仍能读到「扁平并集」(所有 model 的 prompts/geometry 去重合并)
-  "supported_prompts": ["none"], "supported_inputs": ["full_image","crop"],
-  "supported_geometric_outputs": ["bbox","polygon","keypoint","rotated_bbox"],
+  "supported_prompts": ["none"],
+  "supported_inputs": ["full_image", "crop"],
+  "supported_geometric_outputs": ["bbox", "polygon", "keypoint", "rotated_bbox"],
   "modalities": ["image"],
-  "warnings": []
+  "warnings": [],
 }
 ```
 
@@ -941,11 +999,11 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 
 ### 4.1.5 向后兼容规则
 
-| backend 形态 | 平台解析 |
-|---|---|
-| 无 `models[]` | 顶层 `supported_*` / `params` 合成 1 个隐式 model：`id="default"`，`task` 由现有信号推断（`supported_trackers` 非空 → `tracker`、`supported_prompts` 含 point/interactive_box/text/exemplar → `interactive_seg`、否则 `detection`），`infra="unknown"` |
-| 无 `infra` | model.infra = backend.infra = `"unknown"` |
-| 有 `models[]` 但条目缺 `task` | 该条目按 `unknown` task 入目录，UI 标「能力未声明」，兼容性校验 fail-open（放行，留到 `/predict` 暴露） |
+| backend 形态                  | 平台解析                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 无 `models[]`                 | 顶层 `supported_*` / `params` 合成 1 个隐式 model：`id="default"`，`task` 由现有信号推断（`supported_trackers` 非空 → `tracker`、`supported_prompts` 含 point/interactive_box/text/exemplar → `interactive_seg`、否则 `detection`），`infra="unknown"` |
+| 无 `infra`                    | model.infra = backend.infra = `"unknown"`                                                                                                                                                                                                              |
+| 有 `models[]` 但条目缺 `task` | 该条目按 `unknown` task 入目录，UI 标「能力未声明」，兼容性校验 fail-open（放行，留到 `/predict` 暴露）                                                                                                                                                |
 
 老 backend（grounded-sam2 / sam3 / echo）**不需要任何改动**即可继续工作 —— 它们落到「隐式单 model」路径。
 
@@ -957,43 +1015,114 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 
 ```jsonc
 {
-  "name": "yolo-backend",                         // 与 apps/yolo-backend 实仓对齐
+  "name": "yolo-backend", // 与 apps/yolo-backend 实仓对齐
   "version": "0.1.0",
   "model_version": "ultralytics-8.4.x",
   "infra": "pytorch",
   "is_interactive": false,
   "models": [
     {
-      "id": "detect", "display_name": "YOLO 目标检测",
-      "task": "detection", "model_family": "yolo",
+      "id": "detect",
+      "display_name": "YOLO 目标检测",
+      "task": "detection",
+      "model_family": "yolo",
       "supported_prompts": ["none"],
       "supported_geometric_outputs": ["bbox"],
       "supported_variants": [
-        { "key": "series", "title": "版本系列", "variants": [
-          { "value": "yolov8", "label": "YOLOv8" },
-          { "value": "yolo11", "label": "YOLO11", "recommended": true },
-          { "value": "yolo12", "label": "YOLO12" } ] },
-        { "key": "size", "title": "尺寸 / 精度档", "variants": [
-          { "value": "n", "label": "nano",  "vram_gb": 1, "tier": "fast" },
-          { "value": "s", "label": "small", "vram_gb": 2, "tier": "balanced", "recommended": true },
-          { "value": "m", "label": "medium","vram_gb": 4 },
-          { "value": "l", "label": "large", "vram_gb": 6 },
-          { "value": "x", "label": "xlarge","vram_gb": 8, "tier": "accurate" } ] }
+        {
+          "key": "series",
+          "title": "版本系列",
+          "variants": [
+            { "value": "yolov8", "label": "YOLOv8" },
+            { "value": "yolo11", "label": "YOLO11", "recommended": true },
+            { "value": "yolo12", "label": "YOLO12" },
+          ],
+        },
+        {
+          "key": "size",
+          "title": "尺寸 / 精度档",
+          "variants": [
+            { "value": "n", "label": "nano", "vram_gb": 1, "tier": "fast" },
+            {
+              "value": "s",
+              "label": "small",
+              "vram_gb": 2,
+              "tier": "balanced",
+              "recommended": true,
+            },
+            { "value": "m", "label": "medium", "vram_gb": 4 },
+            { "value": "l", "label": "large", "vram_gb": 6 },
+            { "value": "x", "label": "xlarge", "vram_gb": 8, "tier": "accurate" },
+          ],
+        },
       ],
       "default_thresholds": { "conf": 0.25, "iou": 0.7 },
       "resource_profile": { "device": "gpu", "batchable": true },
-      "params": { "type": "object", "properties": {
-        "conf":   { "type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值", "x-platform-role": "confidence" },
-        "iou":    { "type": "number", "minimum": 0, "maximum": 1, "default": 0.7,  "title": "NMS IoU", "x-platform-role": "iou" },
-        "max_det": { "type": "integer", "minimum": 1, "maximum": 300, "default": 100, "x-platform-role": "maxDet" },
-        "series": { "type": "string", "enum": ["yolov8","yolo11","yolo12"], "default": "yolo11" },
-        "size":   { "type": "string", "enum": ["n","s","m","l","x"], "default": "s" } } }
+      "params": {
+        "type": "object",
+        "properties": {
+          "conf": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.25,
+            "title": "置信度阈值",
+            "x-platform-role": "confidence",
+          },
+          "iou": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.7,
+            "title": "NMS IoU",
+            "x-platform-role": "iou",
+          },
+          "max_det": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 100,
+            "x-platform-role": "maxDet",
+          },
+          "series": {
+            "type": "string",
+            "enum": ["yolov8", "yolo11", "yolo12"],
+            "default": "yolo11",
+          },
+          "size": { "type": "string", "enum": ["n", "s", "m", "l", "x"], "default": "s" },
+        },
+      },
     },
-    { "id": "segment",  "task": "segmentation",   "supported_geometric_outputs": ["polygon"],       "model_family": "yolo", "/* variants 同上 */": null },
-    { "id": "pose",     "task": "keypoint",       "supported_geometric_outputs": ["keypoint"],      "model_family": "yolo", "/* … */": null },
-    { "id": "obb",      "task": "obb",            "supported_geometric_outputs": ["rotated_bbox"],  "model_family": "yolo", "/* … */": null },
-    { "id": "classify", "task": "classification", "supported_geometric_outputs": ["none"], "output_attribute_types": ["class"], "model_family": "yolo", "/* … */": null }
-  ]
+    {
+      "id": "segment",
+      "task": "segmentation",
+      "supported_geometric_outputs": ["polygon"],
+      "model_family": "yolo",
+      "/* variants 同上 */": null,
+    },
+    {
+      "id": "pose",
+      "task": "keypoint",
+      "supported_geometric_outputs": ["keypoint"],
+      "model_family": "yolo",
+      "/* … */": null,
+    },
+    {
+      "id": "obb",
+      "task": "obb",
+      "supported_geometric_outputs": ["rotated_bbox"],
+      "model_family": "yolo",
+      "/* … */": null,
+    },
+    {
+      "id": "classify",
+      "task": "classification",
+      "supported_geometric_outputs": ["none"],
+      "output_attribute_types": ["class"],
+      "model_family": "yolo",
+      "/* … */": null,
+    },
+  ],
 }
 ```
 
@@ -1007,15 +1136,34 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 {
   "id": "detect",
   "supported_variants": [
-    { "key": "series", "variants": [/* 7 个: v8/v9/v10/v11/v12/v26/rtdetr */] },
-    { "key": "size",   "variants": [/* 9 个 union: n/t/s/m/b/c/l/e/x */] }
+    {
+      "key": "series",
+      "variants": [
+        /* 7 个: v8/v9/v10/v11/v12/v26/rtdetr */
+      ],
+    },
+    {
+      "key": "size",
+      "variants": [
+        /* 9 个 union: n/t/s/m/b/c/l/e/x */
+      ],
+    },
   ],
   "variant_combinations": [
-    ["yolov8","n"], ["yolov8","s"], ["yolov8","m"], ["yolov8","l"], ["yolov8","x"],
-    ["yolov9","t"], ["yolov9","s"], ["yolov9","m"], ["yolov9","c"], ["yolov9","e"],
+    ["yolov8", "n"],
+    ["yolov8", "s"],
+    ["yolov8", "m"],
+    ["yolov8", "l"],
+    ["yolov8", "x"],
+    ["yolov9", "t"],
+    ["yolov9", "s"],
+    ["yolov9", "m"],
+    ["yolov9", "c"],
+    ["yolov9", "e"],
     // ...
-    ["rtdetr","l"], ["rtdetr","x"]   // 注意 rtdetr 只有 l/x
-  ]
+    ["rtdetr", "l"],
+    ["rtdetr", "x"], // 注意 rtdetr 只有 l/x
+  ],
 }
 ```
 
@@ -1061,14 +1209,37 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 ```jsonc
 {
   "name": "onnx-zoo-backend",
-  "version": "0.1.0", "model_version": "onnxruntime-1.x",
-  "infra": "onnx", "is_interactive": false,
+  "version": "0.1.0",
+  "model_version": "onnxruntime-1.x",
+  "infra": "onnx",
+  "is_interactive": false,
   "models": [
-    { "id": "yolov8n-coco", "task": "detection",      "model_family": "yolo",      "supported_geometric_outputs": ["bbox"] },
-    { "id": "rtmpose",      "task": "keypoint",        "model_family": "rtmpose",   "supported_geometric_outputs": ["keypoint"] },
-    { "id": "ppocr",        "task": "ocr",             "model_family": "paddleocr", "supported_geometric_outputs": ["polygon"], "output_attribute_types": ["text","language"] },
-    { "id": "u2net",        "task": "segmentation",    "model_family": "u2net",     "supported_geometric_outputs": ["polygon"] }
-  ]
+    {
+      "id": "yolov8n-coco",
+      "task": "detection",
+      "model_family": "yolo",
+      "supported_geometric_outputs": ["bbox"],
+    },
+    {
+      "id": "rtmpose",
+      "task": "keypoint",
+      "model_family": "rtmpose",
+      "supported_geometric_outputs": ["keypoint"],
+    },
+    {
+      "id": "ppocr",
+      "task": "ocr",
+      "model_family": "paddleocr",
+      "supported_geometric_outputs": ["polygon"],
+      "output_attribute_types": ["text", "language"],
+    },
+    {
+      "id": "u2net",
+      "task": "segmentation",
+      "model_family": "u2net",
+      "supported_geometric_outputs": ["polygon"],
+    },
+  ],
 }
 ```
 
@@ -1198,11 +1369,11 @@ cd ../.. && pnpm codegen
 
 **协议与实例的关系**：
 
-| 端点 | 数据源 | 何时可用 | 视角 | 鉴权 |
-|------|--------|----------|------|------|
-| `GET /v1/ml-capabilities/protocol` | `capability_registry.py` SSOT | 启动即可（与注册无关） | 协议层「平台支持什么」 | 登录用户 |
-| `GET /v1/ml-capabilities/instances` | 注册实例探测 + `ml_backend_registry.health_meta` 合并 | docker-compose 启动或手动注册任一即可 | 实例层「现在跑着哪些 model 可用」 | 登录用户 |
-| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backend_registry.health_meta["capabilities"]` | backend 注册并 health 探测后 | 实例层「该项目启用的 backend 暴露了什么」 | 项目成员 |
+| 端点                                                 | 数据源                                                | 何时可用                              | 视角                                      | 鉴权     |
+| ---------------------------------------------------- | ----------------------------------------------------- | ------------------------------------- | ----------------------------------------- | -------- |
+| `GET /v1/ml-capabilities/protocol`                   | `capability_registry.py` SSOT                         | 启动即可（与注册无关）                | 协议层「平台支持什么」                    | 登录用户 |
+| `GET /v1/ml-capabilities/instances`                  | 注册实例探测 + `ml_backend_registry.health_meta` 合并 | docker-compose 启动或手动注册任一即可 | 实例层「现在跑着哪些 model 可用」         | 登录用户 |
+| `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backend_registry.health_meta["capabilities"]`     | backend 注册并 health 探测后          | 实例层「该项目启用的 backend 暴露了什么」 | 项目成员 |
 
 ### 4.1.12 实例能力清单端点（v0.14.11）
 
@@ -1216,13 +1387,13 @@ cd ../.. && pnpm codegen
 
 **字段裁剪**（与项目级 `/capabilities` 的差别）：
 
-| 字段 | `/projects/.../capabilities` | `/v1/ml-capabilities/instances` |
-|------|------------------------------|--------------------------------|
-| url | ✓ | ✗（避免暴露内网拓扑） |
-| gpu_info / cache / pool / video_pool | ✓ | ✗（运维敏感） |
-| params | ✓ | ✗（运维细节给项目级视图） |
-| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality / output_attribute_types / supported_variants） | ✓ | ✓ |
-| supported_inputs / resource_profile | ✓ | ✓（全局编排选择器需投递契约 + 批量画像，故透传） |
+| 字段                                                                                                                                               | `/projects/.../capabilities` | `/v1/ml-capabilities/instances`                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------ |
+| url                                                                                                                                                | ✓                            | ✗（避免暴露内网拓扑）                            |
+| gpu_info / cache / pool / video_pool                                                                                                               | ✓                            | ✗（运维敏感）                                    |
+| params                                                                                                                                             | ✓                            | ✗（运维细节给项目级视图）                        |
+| `models[]` 的核心字段（id / display_name / task / infra / prompts / geometry / trackers / modality / output_attribute_types / supported_variants） | ✓                            | ✓                                                |
+| supported_inputs / resource_profile                                                                                                                | ✓                            | ✓（全局编排选择器需投递契约 + 批量画像，故透传） |
 
 **响应结构**：
 
@@ -1230,10 +1401,10 @@ cd ../.. && pnpm codegen
 {
   "instances": [
     {
-      "backend_id": "9f1c…",                         // ml_backend_registry.id
-      "state": "connected",                          // 注册表状态; disconnected 已在服务层过滤
-      "source": "env",                               // ml_backend_registry.source: "env"(docker-compose/env 自动注册) | "manual"(superadmin 手动注册)
-      "name": "grounded-sam2",                       // ml_backend_registry.name
+      "backend_id": "9f1c…", // ml_backend_registry.id
+      "state": "connected", // 注册表状态; disconnected 已在服务层过滤
+      "source": "env", // ml_backend_registry.source: "env"(docker-compose/env 自动注册) | "manual"(superadmin 手动注册)
+      "name": "grounded-sam2", // ml_backend_registry.name
       "infra": "pytorch",
       "models": [
         {
@@ -1247,12 +1418,12 @@ cd ../.. && pnpm codegen
           "supported_geometric_outputs": ["bbox"],
           "supported_trackers": [],
           "resource_profile": { "device": "gpu", "batchable": true },
-          "modality": "image"
-        }
+          "modality": "image",
+        },
         // ...
-      ]
-    }
-  ]
+      ],
+    },
+  ],
 }
 ```
 
@@ -1264,11 +1435,11 @@ cd ../.. && pnpm codegen
 
 为了让前端把"猜测冷启动"换成"真信号"，`PredictionResult` 新增三个**可选**字段。语义只与本次请求挂钩，不影响存储与协议主路径。
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `cache_hit` | `bool \| null` | 本次推理是否命中 pool 内已加载权重。`true` = 权重已在内存，本次跳过加载；`false` = 触发了加载（冷启动 / pool evict 后 / 首次拉取 ckpt）；`null` = backend 未上报（前端按"未知"处理） |
-| `model_load_ms` | `int \| null` | 本次加载耗时毫秒。`cache_hit=true` 时通常为 `0`；`cache_hit=false` 时是从 disk → GPU 的真实耗时；`null` 同上 |
-| `pool_state` | `{current_size: int, cap: int} \| null` | 轻量 pool 快照，仅供 debug。常态下为 `null`，按需开启（避免每次响应都带） |
+| 字段            | 类型                                    | 含义                                                                                                                                                                                 |
+| --------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cache_hit`     | `bool \| null`                          | 本次推理是否命中 pool 内已加载权重。`true` = 权重已在内存，本次跳过加载；`false` = 触发了加载（冷启动 / pool evict 后 / 首次拉取 ckpt）；`null` = backend 未上报（前端按"未知"处理） |
+| `model_load_ms` | `int \| null`                           | 本次加载耗时毫秒。`cache_hit=true` 时通常为 `0`；`cache_hit=false` 时是从 disk → GPU 的真实耗时；`null` 同上                                                                         |
+| `pool_state`    | `{current_size: int, cap: int} \| null` | 轻量 pool 快照，仅供 debug。常态下为 `null`，按需开启（避免每次响应都带）                                                                                                            |
 
 **gsam2 组合判断**：SAM + DINO 双池架构，`cache_hit = sam_hit AND dino_hit`；`model_load_ms = max(sam_load_ms, dino_load_ms)`（取最慢的一边）。若只 SAM hit、DINO miss，`cache_hit=false`，前端感知"冷启动"够用；分轴粒度留给未来扩展。
 
@@ -1285,32 +1456,33 @@ v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `poo
 ```jsonc
 {
   "pool": {
-    "cap": 4,                          // 池容量
-    "current_size": 2,                 // 当前已加载条数
+    "cap": 4, // 池容量
+    "current_size": 2, // 当前已加载条数
     "loaded_keys": [
       {
         "key": "yolov11/s/detection", // backend-defined opaque 字符串，前端只做相等比较
         "loaded_at": "2026-06-08T03:11:22Z",
         "last_used_at": "2026-06-08T03:15:00Z",
-        "hit_count": 12               // 命中次数（不含 warmup）
-      }
+        "hit_count": 12, // 命中次数（不含 warmup）
+      },
     ],
-    "last_evict": {                    // 可为 null
+    "last_evict": {
+      // 可为 null
       "key": "yolov8/x/detection",
       "at": "2026-06-08T03:14:00Z",
-      "reason": "lru"                 // 受控：lru | manual | idle_timeout
-    }
-  }
+      "reason": "lru", // 受控：lru | manual | idle_timeout
+    },
+  },
 }
 ```
 
 **key 命名约定**（backend 自由选择，前端不解析，只做相等匹配）：
 
-| backend | key 形式 |
-|---|---|
-| yolo-backend | `{series}/{size}/{task}`，如 `yolov11/s/detection` |
+| backend               | key 形式                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| yolo-backend          | `{series}/{size}/{task}`，如 `yolov11/s/detection`                                                                       |
 | grounded-sam2-backend | image pool 用 `sam={sam_variant}/dino={dino_variant}`，如 `sam=tiny/dino=B`；video pool 的 key 就是 `sam_variant` 字符串 |
-| sam3-backend | 模型变体字符串，如 `sam3`；cap 永远 `1` |
+| sam3-backend          | 模型变体字符串，如 `sam3`；cap 永远 `1`                                                                                  |
 
 **LRU evict 触发**：pool 满 + miss 时按 LRU 头部淘汰，`last_evict.reason="lru"`。`/unload` 手动卸载用 `"manual"`，sam3 的 idle 超时用 `"idle_timeout"`。
 
@@ -1362,9 +1534,9 @@ POST /warmup
 ```jsonc
 {
   "ok": true,
-  "model_load_ms": 4500,             // 加载耗时(ms)，cache_hit=true 时 null/0
-  "cache_hit": false,                // 已经在 pool 内时 true
-  "evicted": "yolov8/n/detection"    // 可选；本次因 cap 上限淘汰的 key（前端 toast）
+  "model_load_ms": 4500, // 加载耗时(ms)，cache_hit=true 时 null/0
+  "cache_hit": false, // 已经在 pool 内时 true
+  "evicted": "yolov8/n/detection", // 可选；本次因 cap 上限淘汰的 key（前端 toast）
 }
 ```
 
@@ -1383,6 +1555,7 @@ POST /warmup
 ## 5. `GET /versions`（可选）
 
 **响应**：
+
 ```json
 { "versions": ["v1.0.0", "v1.1.0", "v1.2.3"] }
 ```
@@ -1395,13 +1568,13 @@ POST /warmup
 
 v2.1 推荐 backend 使用结构化错误体。平台代理会保留上游 4xx；503 会保留为 503 并透传 `Retry-After`；其它上游 5xx / 连接超时仍映射为 502 Bad Gateway。
 
-| 场景 | HTTP | 响应体 |
-|---|---:|---|
-| variant 字段缺失 / 类型错 | 422 | FastAPI/Pydantic 默认 validation error |
-| variant 值合法字段但不受支持，或组合不在 `variant_combinations` 内 | 422 | `{ "detail": { "error_code": "variant_not_supported", "axis": "size", "value": "x", "allowed": ["n","s"] } }` |
-| variant 合法但当前 backend 暂不可服务（权重缺失、未预下载、显存池不可用） | 503 | `{ "detail": { "error_code": "model_unavailable", "key": "yolov11/s/detection", "reason": "checkpoint missing" } }` + `Retry-After` |
-| 输入图片 / prompt 本身非法 | 422 | backend 自定义 detail |
-| backend bug / 未预期异常 | 500 | backend 自定义 detail；平台交互式代理会映射为 502 |
+| 场景                                                                      | HTTP | 响应体                                                                                                                              |
+| ------------------------------------------------------------------------- | ---: | ----------------------------------------------------------------------------------------------------------------------------------- |
+| variant 字段缺失 / 类型错                                                 |  422 | FastAPI/Pydantic 默认 validation error                                                                                              |
+| variant 值合法字段但不受支持，或组合不在 `variant_combinations` 内        |  422 | `{ "detail": { "error_code": "variant_not_supported", "axis": "size", "value": "x", "allowed": ["n","s"] } }`                       |
+| variant 合法但当前 backend 暂不可服务（权重缺失、未预下载、显存池不可用） |  503 | `{ "detail": { "error_code": "model_unavailable", "key": "yolov11/s/detection", "reason": "checkpoint missing" } }` + `Retry-After` |
+| 输入图片 / prompt 本身非法                                                |  422 | backend 自定义 detail                                                                                                               |
+| backend bug / 未预期异常                                                  |  500 | backend 自定义 detail；平台交互式代理会映射为 502                                                                                   |
 
 共享实现位于 `apps/_shared/protocol_v2/src/aap_protocol_v2/errors.py`：`VariantNotSupportedError` 与 `ModelUnavailableError`。三家内置 backend 已统一使用这两个错误类。
 
@@ -1418,15 +1591,15 @@ v2.1 推荐 backend 使用结构化错误体。平台代理会保留上游 4xx�
 
 如果你的 backend 是 LLM（Anthropic、OpenAI、本地 vLLM），可以在 `inference_time_ms` 之外补这些字段，平台会写到 `prediction_metas` 表（`prediction.py:34-56`）以后做成本卡片：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `prompt_tokens` | int | 输入 token 数 |
-| `completion_tokens` | int | 输出 token 数 |
-| `total_tokens` | int | = prompt + completion |
-| `prompt_cost` | float | 美元；按 backend 计价 |
-| `completion_cost` | float | 美元 |
-| `total_cost` | float | 美元 |
-| `extra` | object | 任意 JSON，写到 `prediction_metas.extra` |
+| 字段                | 类型   | 说明                                     |
+| ------------------- | ------ | ---------------------------------------- |
+| `prompt_tokens`     | int    | 输入 token 数                            |
+| `completion_tokens` | int    | 输出 token 数                            |
+| `total_tokens`      | int    | = prompt + completion                    |
+| `prompt_cost`       | float  | 美元；按 backend 计价                    |
+| `completion_cost`   | float  | 美元                                     |
+| `total_cost`        | float  | 美元                                     |
+| `extra`             | object | 任意 JSON，写到 `prediction_metas.extra` |
 
 > 当前 ROADMAP §A「预测成本统计」前端可视化未做；后端字段已经在表里。
 
@@ -1437,6 +1610,7 @@ v2.1 推荐 backend 使用结构化错误体。平台代理会保留上游 4xx�
 > 完整可跑样板（含 Dockerfile + curl 测试脚本 + README）见 [`docs-site/dev/examples/echo-ml-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/docs-site/dev/examples/echo-ml-backend)。下面的代码块由 `check-doc-snippets.mjs` 锁定到样板源文件，源端改一字 `pnpm docs:build` 即报漂移。
 
 <!-- snippet:docs-site/dev/examples/echo-ml-backend/main.py -->
+
 ```python
 """Echo ML backend — 协议 v2.1 参考实现（最小可跑版）。
 
@@ -1531,6 +1705,7 @@ async def predict(req: PredictRequest):
         )
     return {"results": results}
 ```
+
 <!-- /snippet -->
 
 启动（任选其一）：
@@ -1566,13 +1741,13 @@ cd docs-site/dev/examples/echo-ml-backend && docker build -t echo-ml-backend . &
 
 v0.14.15 是 protocol v2.1 minor bump，不是 v3。平台与内置 backend 保留 v2.0 兼容期，避免外部自建 backend 立刻中断。
 
-| 旧字段 | 新字段 | 兼容行为 |
-|---|---|---|
-| `context.variants.{series,size}` | `context.model_variants.{series,size}` | yolo-backend normalize 并记录 deprecation warning |
-| `context.sam_variant` / `context.dino_variant` | `context.model_variants.{sam_variant,dino_variant}` | grounded-sam2-backend normalize；新字段优先 |
-| `context.model_variant` | `context.model_variants.model_variant` | sam3-backend normalize；非 `sam3` 仍返回 422 |
-| `params.*_variant.enum` 无 role | `supported_variants[]` 或 `x-platform-role=modelVariant` | 前端仍回落渲染 legacy enum；新 backend 应声明 `supported_variants` |
-| `projects.ai_model` | `projects.ml_backend_id` + backend name 展示 | v0.14.15 DB 迁移删除列；解绑过的项目若残留旧 `ai_model` 字符串会被直接丢弃 |
+| 旧字段                                         | 新字段                                                   | 兼容行为                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `context.variants.{series,size}`               | `context.model_variants.{series,size}`                   | yolo-backend normalize 并记录 deprecation warning                          |
+| `context.sam_variant` / `context.dino_variant` | `context.model_variants.{sam_variant,dino_variant}`      | grounded-sam2-backend normalize；新字段优先                                |
+| `context.model_variant`                        | `context.model_variants.model_variant`                   | sam3-backend normalize；非 `sam3` 仍返回 422                               |
+| `params.*_variant.enum` 无 role                | `supported_variants[]` 或 `x-platform-role=modelVariant` | 前端仍回落渲染 legacy enum；新 backend 应声明 `supported_variants`         |
+| `projects.ai_model`                            | `projects.ml_backend_id` + backend name 展示             | v0.14.15 DB 迁移删除列；解绑过的项目若残留旧 `ai_model` 字符串会被直接丢弃 |
 
 迁移建议：
 
@@ -1585,6 +1760,7 @@ v0.14.15 是 protocol v2.1 minor bump，不是 v3。平台与内置 backend 保�
 ## 11. 参考实现
 
 社区已有几种现成接入：
+
 - **Label Studio ML Backends 模板**（兼容平台 schema）：https://github.com/HumanSignal/label-studio-ml-backend
 - **GroundingDINO + SAM**：调研报告 [`docs/research/06-ai-patterns.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/research/06-ai-patterns.md) §模式 B
 - **X-AnyLabeling SAM 工厂**：调研报告 [`docs/research/04-x-anylabeling.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/research/04-x-anylabeling.md)

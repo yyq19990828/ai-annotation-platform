@@ -41,7 +41,10 @@ export function clampGeom(g: VideoStageGeom): VideoStageGeom {
   };
 }
 
-export function normalizeGeom(a: { x: number; y: number }, b: { x: number; y: number }): VideoStageGeom {
+export function normalizeGeom(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): VideoStageGeom {
   const x1 = clamp01(Math.min(a.x, b.x));
   const y1 = clamp01(Math.min(a.y, b.y));
   const x2 = clamp01(Math.max(a.x, b.x));
@@ -49,7 +52,9 @@ export function normalizeGeom(a: { x: number; y: number }, b: { x: number; y: nu
   return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
 }
 
-export function isVideoBbox(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoBboxGeometry } {
+export function isVideoBbox(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoBboxGeometry } {
   return ann.geometry.type === "video_bbox";
 }
 
@@ -76,17 +81,30 @@ export function isVideoRotatedBbox(
 
 /** v0.21.22 · 旋转矩形四角 (归一化)。cx,cy 中心, w,h 边长, angle 顺时针度。供渲染 <Line closed> / 外接盒。 */
 export function rotatedBboxCorners(g: {
-  cx: number; cy: number; w: number; h: number; angle: number;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  angle: number;
 }): [number, number][] {
   const rad = (g.angle * Math.PI) / 180;
-  const cos = Math.cos(rad), sin = Math.sin(rad);
-  const hw = g.w / 2, hh = g.h / 2;
-  return ([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as [number, number][]).map(
-    ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
-  );
+  const cos = Math.cos(rad),
+    sin = Math.sin(rad);
+  const hw = g.w / 2,
+    hh = g.h / 2;
+  return (
+    [
+      [-hw, -hh],
+      [hw, -hh],
+      [hw, hh],
+      [-hw, hh],
+    ] as [number, number][]
+  ).map(([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number]);
 }
 
-export function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {
+export function isVideoTrack(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {
   return ann.geometry.type === "video_track_bbox";
 }
 
@@ -122,9 +140,7 @@ export function isAnyVideoSingleFrame(ann: AnnotationResponse): boolean {
 }
 
 /** 单帧「点集 / 旋转」几何 (polygon / polyline / rotated_bbox), 排除 bbox (bbox 有专属交互)。 */
-export function isVideoPointsSingleFrame(
-  ann: AnnotationResponse,
-): ann is AnnotationResponse & {
+export function isVideoPointsSingleFrame(ann: AnnotationResponse): ann is AnnotationResponse & {
   geometry: VideoPolygonGeometry | VideoPolylineGeometry | VideoRotatedBboxGeometry;
 } {
   return isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
@@ -132,7 +148,12 @@ export function isVideoPointsSingleFrame(
 
 /** 任意视频轨迹几何 (bbox / polygon / polyline track)。 */
 export function isAnyVideoTrack(ann: AnnotationResponse): boolean {
-  return isVideoTrack(ann) || isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann) || isVideoMaskTrack(ann);
+  return (
+    isVideoTrack(ann) ||
+    isVideoPolygonTrack(ann) ||
+    isVideoPolylineTrack(ann) ||
+    isVideoMaskTrack(ann)
+  );
 }
 
 export type ResolvedMaskFrame = {
@@ -149,13 +170,15 @@ export function resolveVideoMaskTrackAtFrame(
 ): ResolvedMaskFrame | null {
   const outside = effectiveOutsideRanges(track);
   if (isFrameInOutsideRanges(outside, frameIndex)) return null;
-  const visible = track.keyframes.filter((keyframe) => !isFrameInOutsideRanges(outside, keyframe.frame_index));
+  const visible = track.keyframes.filter(
+    (keyframe) => !isFrameInOutsideRanges(outside, keyframe.frame_index),
+  );
   if (visible.length === 0) return null;
   const selected = visible.reduce((best, candidate) => {
     const bestDistance = Math.abs(best.frame_index - frameIndex);
     const candidateDistance = Math.abs(candidate.frame_index - frameIndex);
-    return candidateDistance < bestDistance
-      || (candidateDistance === bestDistance && candidate.frame_index < best.frame_index)
+    return candidateDistance < bestDistance ||
+      (candidateDistance === bestDistance && candidate.frame_index < best.frame_index)
       ? candidate
       : best;
   });
@@ -169,9 +192,7 @@ export function resolveVideoMaskTrackAtFrame(
 }
 
 /** 点集轨迹 (polygon / polyline track), 排除 bbox track (bbox track 有完整关键帧卡)。 */
-export function isVideoPointsTrack(
-  ann: AnnotationResponse,
-): ann is AnnotationResponse & {
+export function isVideoPointsTrack(ann: AnnotationResponse): ann is AnnotationResponse & {
   geometry: VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
 } {
   return isVideoPolygonTrack(ann) || isVideoPolylineTrack(ann);
@@ -191,7 +212,11 @@ export function resolvePointsTrackAtFrame(
   return nearest ? { points: nearest.points, open } : null;
 }
 
-type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };
+type ResolvedTrackFrame = {
+  geom: VideoStageGeom;
+  source: VideoFrameEntry["source"];
+  occluded?: boolean;
+};
 type TrackIndex = {
   keyframes: VideoTrackKeyframe[];
   visibleKeyframes: VideoTrackKeyframe[];
@@ -199,7 +224,10 @@ type TrackIndex = {
 };
 
 const trackIndexCache = new WeakMap<VideoTrackGeometry, TrackIndex>();
-const resolvedFrameCache = new WeakMap<VideoTrackGeometry, Map<number, ResolvedTrackFrame | null>>();
+const resolvedFrameCache = new WeakMap<
+  VideoTrackGeometry,
+  Map<number, ResolvedTrackFrame | null>
+>();
 const resolvedFrameCacheOrder: Array<{ track: VideoTrackGeometry; frameIndex: number }> = [];
 const RESOLVED_FRAME_CACHE_LIMIT = 1000;
 
@@ -219,7 +247,9 @@ function getTrackIndex(track: VideoTrackGeometry): TrackIndex {
   if (cached) return cached;
   const keyframes = [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
   const outsideRanges = effectiveOutsideRanges(track);
-  const visibleKeyframes = keyframes.filter((kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+  const visibleKeyframes = keyframes.filter(
+    (kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index),
+  );
   const index = { keyframes, visibleKeyframes, outsideRanges };
   trackIndexCache.set(track, index);
   return index;
@@ -234,7 +264,11 @@ function getResolvedCache(track: VideoTrackGeometry) {
   return cache;
 }
 
-function setResolvedCache(track: VideoTrackGeometry, frameIndex: number, value: ResolvedTrackFrame | null) {
+function setResolvedCache(
+  track: VideoTrackGeometry,
+  frameIndex: number,
+  value: ResolvedTrackFrame | null,
+) {
   const cache = getResolvedCache(track);
   if (cache.has(frameIndex)) {
     cache.set(frameIndex, value);
@@ -285,8 +319,9 @@ export function upsertPointsKeyframe<
   G extends VideoTrackPolygonGeometry | VideoTrackPolylineGeometry,
 >(track: G, frameIndex: number, points: [number, number][]): G {
   const frame = Math.max(0, Math.floor(frameIndex));
-  const kept = (track.keyframes as (VideoTrackPolygonKeyframe | VideoTrackPolylineKeyframe)[])
-    .filter((kf) => kf.frame_index !== frame);
+  const kept = (
+    track.keyframes as (VideoTrackPolygonKeyframe | VideoTrackPolylineKeyframe)[]
+  ).filter((kf) => kf.frame_index !== frame);
   const keyframes = [
     ...kept,
     { frame_index: frame, points, source: "manual", occluded: false },
@@ -294,7 +329,11 @@ export function upsertPointsKeyframe<
   return removeOutsideFrame({ ...track, keyframes } as G, frame);
 }
 
-function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: number): VideoStageGeom {
+function interpolate(
+  a: VideoTrackKeyframe,
+  b: VideoTrackKeyframe,
+  frameIndex: number,
+): VideoStageGeom {
   const span = Math.max(1, b.frame_index - a.frame_index);
   const t = (frameIndex - a.frame_index) / span;
   return {
@@ -321,7 +360,11 @@ export function resolveTrackAtFrame(
   const exactIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index);
   const exact = keyframes[exactIndex]?.frame_index === frameIndex ? keyframes[exactIndex] : null;
   if (exact) {
-    const resolved = { geom: exact.bbox, source: exact.source === "prediction" ? "prediction" : "manual", occluded: exact.occluded } satisfies ResolvedTrackFrame;
+    const resolved = {
+      geom: exact.bbox,
+      source: exact.source === "prediction" ? "prediction" : "manual",
+      occluded: exact.occluded,
+    } satisfies ResolvedTrackFrame;
     setResolvedCache(track, frameIndex, resolved);
     return resolved;
   }
@@ -337,7 +380,10 @@ export function resolveTrackAtFrame(
     setResolvedCache(track, frameIndex, null);
     return null;
   }
-  const resolved = { geom: interpolate(before, after, frameIndex), source: "interpolated" } satisfies ResolvedTrackFrame;
+  const resolved = {
+    geom: interpolate(before, after, frameIndex),
+    source: "interpolated",
+  } satisfies ResolvedTrackFrame;
   setResolvedCache(track, frameIndex, resolved);
   return resolved;
 }
@@ -540,7 +586,10 @@ export function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number):
   return nearestTrackKeyframe(track, frameIndex)?.bbox ?? { x: 0, y: 0, w: 0.1, h: 0.1 };
 }
 
-export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: number): VideoTrackKeyframe | null {
+export function nearestTrackKeyframe(
+  track: VideoTrackGeometry,
+  frameIndex: number,
+): VideoTrackKeyframe | null {
   const keyframes = getTrackIndex(track).visibleKeyframes;
   if (keyframes.length === 0) return null;
   const afterIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index);
@@ -548,7 +597,9 @@ export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: numb
   if (afterIndex >= keyframes.length) return keyframes[keyframes.length - 1];
   const before = keyframes[afterIndex - 1];
   const after = keyframes[afterIndex];
-  return Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
+  return Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex)
+    ? before
+    : after;
 }
 
 /**
@@ -571,9 +622,15 @@ export function nearestPointsTrackKeyframe(
   else {
     const before = visible[afterIndex - 1];
     const after = visible[afterIndex];
-    nearest = Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
+    nearest =
+      Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex)
+        ? before
+        : after;
   }
-  return { points: nearest.points.map((p) => [p[0], p[1]] as Point), originFrame: nearest.frame_index };
+  return {
+    points: nearest.points.map((p) => [p[0], p[1]] as Point),
+    originFrame: nearest.frame_index,
+  };
 }
 
 export interface TrackReferenceResult {
@@ -607,7 +664,8 @@ export function trackReferenceAtFrame(
 ): TrackReferenceResult | null {
   const nearest = nearestTrackKeyframe(track, frameIndex);
   if (!nearest) return null;
-  if (mode === "off") return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
+  if (mode === "off")
+    return { bbox: nearest.bbox, predicted: false, originFrame: nearest.frame_index };
 
   const keyframes = getTrackIndex(track).visibleKeyframes;
   const priorIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index) - 1;
@@ -678,9 +736,22 @@ export function shortTrackId(trackId: string) {
  * 返回 `Map<annotationId, number>`。
  */
 export function deriveTrackNumber(
-  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry | VideoTrackMaskGeometry }>,
+  tracks: ReadonlyArray<{
+    id: string;
+    geometry:
+      | VideoTrackGeometry
+      | VideoTrackPolygonGeometry
+      | VideoTrackPolylineGeometry
+      | VideoTrackMaskGeometry;
+  }>,
 ): Map<string, number> {
-  const firstFrame = (geometry: VideoTrackGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry | VideoTrackMaskGeometry) => {
+  const firstFrame = (
+    geometry:
+      | VideoTrackGeometry
+      | VideoTrackPolygonGeometry
+      | VideoTrackPolylineGeometry
+      | VideoTrackMaskGeometry,
+  ) => {
     const frames = geometry.keyframes.map((kf) => kf.frame_index);
     return frames.length > 0 ? Math.min(...frames) : 0;
   };

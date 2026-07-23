@@ -18,7 +18,6 @@
 - **[点云 + 图像联合标注（2026-06-14）](./ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)**：待开工 Phase 2-3——投影手柄微调与多相机一致性。
 - **[视频工作台剩余路线（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：WebCodecs demux、segment 导出聚合、长视频协同 / overlap 与 Track 级质量评估。
 
-
 ---
 
 ## 当前焦点（按"何时触发"分组）
@@ -31,11 +30,13 @@
 - **视频侧折线 / 多边形轨迹 / 折线轨迹的快捷键**（暂缓分配）：单帧多边形已拿到 `P`、Magic Box 拿到 `G`（均与图片侧同键）。但折线、多边形轨迹、折线轨迹三者目前**无快捷键**——它们的工具栏角标已在 v0.21.23 收尾时清掉（此前 `L` / `Shift+G` / `Shift+L` 是死标签，其中视频 `L` 实为播放快进）。分配时须避开已占键：视频 `L`=播放 jog、`G`=Magic Box、`P`=多边形、`Shift+G`/`Shift+L` 在视频里当前为空但语义上应留给「轨迹版」。候选方案：折线给 `Shift+P`？轨迹版沿用图片侧的 `Shift+G`/`Shift+L`？需与图片侧键位表一起定，避免再造不一致。
 
 ### 等业务规模 / 监控触发（先观察、不做）
+
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile）：极大图 > 50MP 才必要，等真有此规模图片触发再做。
 - **审计日志归档物化视图**：partition + archive + 冷数据回源（`/audit-logs/archives`）已落（v0.10.25）；剩月度汇总 BI 物化视图，等 10M+ 行触发。
 - **OAuth2 / SSO**：等具体客户驱动（企业场景需求触发再做）
 
 ### 等独立 epic（体量大、不适合塞进收尾版）
+
 - **大文件分片上传**（>5GB 视频 / 点云）
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做，长期规划 L1 / L2）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
@@ -45,6 +46,7 @@
 ## A · 代码观察到的硬占位 / 残留 mock
 
 ### 项目模块
+
 - **多模态工作台延伸**：
   - `video-mm` / `mm` 多模态工作台尚未实现；视频侧剩余能力详见 [视频工作台路线图](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
   - **点云 + 图像联合标注**待做投影手柄微调与多相机一致性，见 [`ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md`](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)。
@@ -57,12 +59,14 @@
   - **模板审计专项 detail**（**P3**）：在 `app/services/audit.py` 加 `template_detail()` helper。触发：审计期反馈模板侧 detail 不足。
 
 ### 数据 & 存储
+
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
 - **批次 hard pause（严格暂停语义）**（**P3**，源自 [ADR-0008](docs/adr/archive/0008-batch-admin-locked-status.md)）：v0.9.15 `admin_locked` 是 **soft hold**（冻结自动推进 + 阻断 `/tasks/next` 派单），不保证锁后只读（`GET /tasks` 仍可见、写接口放行）。硬只读需收敛任务可见性查询 + task lock 归属校验 + 写门禁，是更重的设计题。触发：客户反馈 soft hold 不够。
 
 ### AI / 模型
+
 - **模型市场扩展 — 二期剩余 defer 项**：加权 AB 路由（按 task 自动分流打标，需路由配置 + 结果打标协议）、同输入双变体并排对比（工作台级独立 epic）、带 token 的观测容器（当前 observe URL 假定免鉴权）。触发条件按客户驱动。
 - **Predictions Import / AAP JSON 后续延伸**（按客户反馈触发）：
   - **Task 表加 `external_id` 字段**（**P3**）：当前 display_id + file_path 两元组匹配够用。走 `tasks.external_id UNIQUE(project_id, external_id)`，[`AAPTaskMatch`](apps/api/app/schemas/aap_json.py) 已留 forward compat。触发：跨实例迁移改 display_id / 路径。
@@ -79,13 +83,16 @@
   - **方向 C · 图片序列（scene 抽帧）作为源**：打破 pipeline per-task 独立执行、逼执行单位从 task/frame 再升到 **scene**（跨帧聚合），是执行单位维度**最贵的一块**。`execution_unit` 字段与 frame 单位已就位（v0.21.7），scene 是其上待补的值。**触发**：scene 跨帧聚合标注单独立项（计划已判「最贵、单独立项」）。
 
 ### 设置页（SettingsPage）
+
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
 - **语言与时区偏好**：语言依赖 §B i18n 框架；时区尚未提供用户级配置。
 
 ### TopBar / Dashboard 控件
+
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
 
 ### 登录 / 注册 / 认证
+
 - **开放注册二阶段剩余**：
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
 
@@ -100,12 +107,15 @@
 ## B · 架构 & 治理向前演进
 
 ### 安全
+
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
 
 ### 治理 / 合规
+
 - **Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组（通用 Webhook，对接企业微信 / 钉钉 / 飞书）。`event_envelope.py` 的信封 schema + 事件名 Literal 已占位（v0.10.16），**仅差 publisher / outbox / delivery 实现**。
 
 ### 可观测性
+
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，SMTP 配置框架已就位（`config.py` + Alertmanager 邮件投递）；剩 LLM 聚类 + `bug_reports` 加 `cluster_id` / `llm_distance` 字段 + 邮件 digest 工作流；与通知偏好（按 type 静音）协同。
 
 ### 性能 / 扩展
@@ -113,12 +123,14 @@
 - **ML 后端 GPU 失效诊断与 CPU fallback 地基（已完成）**：五个 backend 已统一暴露 `/health.compute`，共享 torch 设备 latch 已改为线程安全、向 CPU 单调且只在 CPU replacement 成功后提交。Grounded-SAM2 与 YOLO 支持受控 CPU fallback；SAM3 image / Multiplex / PVS 明确为 GPU-only；RapidOCR / ONNXTools 从已加载业务 session 读取实际 primary provider。平台可将 `compute` 通过注册表快照、实时 observe 与 PerfHUD 完整观测，但该信号不代表 GPU 驻留已释放。实施与纠偏记录见 [ML backend CPU fallback 审计计划](docs/plans/2026-07-13-v0.22.3-ml-backend-cpu-fallback-audit.md)；后续资源仲裁按 [跨 Backend GPU 显存互斥编排计划](docs/plans/2026-07-14-v0.22.4-cross-backend-gpu-memory-arbitration.md) 分阶段推进。
 
 ### 测试 / 开发体验
+
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座（v0.7.4）。v0.10.48 起覆盖率口径已排除测试文件，当前真实源码 lines 47.68% / 阈值 45（branches 70）。下阶段目标 47→55：补 `BatchesSection`（~32%）/ `useWorkbenchShellModel` / `useImageAnnotationActions` 等复杂 hook；Konva 渲染层（`ImageStage` / `ImageStageShapes`）难测，留待。
 - **size-limit / scripts 脚本测试**：`apps/web/scripts/check-bundle-size.mjs` 已有基础单测覆盖 glob match / 单位解析 / 格式化输出；当前脚本数量少，暂不拆独立 vitest 项目。若后续 build-time 脚本增多，再为 `apps/web/scripts/` 建独立测试项目（不算主分母覆盖率）。
 - **vite proxy `/ws` 多并发偶发 CONNECTING 卡死（P3 dev experience）**：dev 直连 `localhost:8000` 绕法保留；根因待追，必要时给 vite 上游提 minimal repro[不影响生产环境]。
 - **`useStageViewport` 拆分（图片工作台 paint 时序）**：ImageStage 翻页首帧 jank 涉及 render-time setState + 双 `useLayoutEffect` 顺序，jsdom 测不到。**触发**：先立 Playwright 视觉回归基线再拆。
 
 ### i18n / 主题 / 无障碍
+
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
 - **无障碍**：ARIA 属性极少；Lighthouse Accessibility 分数应作为 PR gate。
 
@@ -134,9 +146,11 @@
 > 横向参考：CVAT（Konva + 关键帧 + 骨架）、Label Studio（interactive ML backend）、X-AnyLabeling（SAM 工厂）、Encord（SAM2 Smart Polygon + SAM3 文本驱动批量检测）。
 
 ### C.1 渲染性能 / 大图大量框
+
 - **PipelineGraphCanvas 运行态每 tick 无谓 re-render**（**P3**，可选）：运行态轮询每 1.5s 无条件 `setNodes`，可避免无实际变化时的 re-render；低收益、回归面广（DAG 交互 + 运行进度实时性），保留待触发。
 
 ### C.3 标注体验（核心生产力杠杆）
+
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
 
 ### C.7 工作台能力扩展剩余
@@ -155,23 +169,23 @@
 
 > 已完成的项不再列出，参考 [docs/changelogs/](docs/changelogs/)。下面只是当前 open 的优先级。
 
-| 优先级 | 候选项 | 触发 / 理由 | Related ADR |
-|---|---|---|---|
-| **P0/P1** | 视频工作台剩余路线 | AAP JSON `video_track` 导入、segment 导出聚合、长视频协同 / overlap 与 Track 级质量评估；详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I21） | 大图 tile、快捷键自定义；详见 §C.7 | [0004](docs/adr/archive/0004-canvas-stack-konva.md) [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md) |
-| **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/archive/0013-mask-to-polygon-server-side.md) |
-| **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
-| **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
-| **P3** | 截图 fixture 实际重跑 | v0.10.18 已落 `page.route` mock 注入式 prepare；maintainer 跑 `playwright test --config=playwright.screenshots.config.ts` 验证 | — |
-| **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
-| **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
-| **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | I18 视频帧 pin | ADR-0027 第三段切单源（legacy-table-retirement）+ IssueLayer 视频帧 pin；详见 §C.7 | [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md) |
-| **P3** | 新几何 ML 预测协议按客户 backend 输出补齐 | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账 | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) |
-| **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/archive/0007-audit-log-partitioning.md) |
-| **P3** | 未标注动态目标的学习式动静分割 | 不依赖既有标注即可抑制邻帧点云拖影，但模型 / 几何成本高，非必要不做 | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | `useStageViewport` 图片工作台 paint 时序拆分 | render-time setState + 双 useLayoutEffect 顺序，需先立 Playwright 视觉基线再开工 | — |
+| 优先级    | 候选项                                                                            | 触发 / 理由                                                                                                                                                                                                                                           | Related ADR                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P0/P1** | 视频工作台剩余路线                                                                | AAP JSON `video_track` 导入、segment 导出聚合、长视频协同 / overlap 与 Track 级质量评估；详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md)                                                        | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md) |
+| **P2**    | 图片工作台能力扩展剩余（I1 / I21）                                                | 大图 tile、快捷键自定义；详见 §C.7                                                                                                                                                                                                                    | [0004](docs/adr/archive/0004-canvas-stack-konva.md) [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md)                         |
+| **P3**    | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/archive/0013-mask-to-polygon-server-side.md)                                                                                   |
+| **P2**    | OAuth2 / 社交登录（Google / GitHub SSO）                                          | 降低注册门槛，企业场景 SSO；客户驱动                                                                                                                                                                                                                  | —                                                                                                                                              |
+| **P2**    | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest                                      | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启                                                                                                                                                                                          | —                                                                                                                                              |
+| **P3**    | 截图 fixture 实际重跑                                                             | v0.10.18 已落 `page.route` mock 注入式 prepare；maintainer 跑 `playwright test --config=playwright.screenshots.config.ts` 验证                                                                                                                        | —                                                                                                                                              |
+| **P3**    | 首次登录 UI walkthrough（onboarding tooltip）                                     | 新客户上线前低优；客户反馈触发再做                                                                                                                                                                                                                    | —                                                                                                                                              |
+| **P3**    | i18n、2FA                                                                         | 客户具体需求驱动（SSO 已单独提升到 P2）                                                                                                                                                                                                               | —                                                                                                                                              |
+| **P3**    | C.3 SAM 后续延伸: 类别确认 hint                                                   | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议)                                                                                                                                                                                | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)                                                                         |
+| **P3**    | I18 视频帧 pin                                                                    | ADR-0027 第三段切单源（legacy-table-retirement）+ IssueLayer 视频帧 pin；详见 §C.7                                                                                                                                                                    | [0027](docs/adr/archive/0027-annotation-feedback-unified-table.md)                                                                             |
+| **P3**    | 新几何 ML 预测协议按客户 backend 输出补齐                                         | 平台读路径 (`to_internal_shape`) + 协议文档 + 导入(AAP/YOLO)/导出/测试均已支持 rotated_bbox/polyline/keypoint；等真实客户 backend 产出这些几何时按实际输出对账                                                                                        | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)                                                                         |
+| **P3**    | ML backend storage endpoint 选择机制（生产化）                                    | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表                                                                                                                 | [0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)                                                                        |
+| **P3**    | 审计日志月度汇总物化视图                                                          | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发                                                                                                                                                                | [0007](docs/adr/archive/0007-audit-log-partitioning.md)                                                                                        |
+| **P3**    | 未标注动态目标的学习式动静分割                                                    | 不依赖既有标注即可抑制邻帧点云拖影，但模型 / 几何成本高，非必要不做                                                                                                                                                                                   | [0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)                                                                         |
+| **P3**    | `useStageViewport` 图片工作台 paint 时序拆分                                      | render-time setState + 双 useLayoutEffect 顺序，需先立 Playwright 视觉基线再开工                                                                                                                                                                      | —                                                                                                                                              |
 
 ---
 
@@ -179,20 +193,20 @@
 
 > 这一节**不是 TODO**，是 PR review 时的参考底线。记录"当前正确选择不要走回头路"的决策，避免后续重新踩 CVAT / Label Studio 已经踩过的坑。完整对照表与出处见 [取经合集 §6](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#6-避坑清单保持当前选择不要走回头路)。
 
-| 主题 | 反模式（来源） | 当前正确选择 | 何时检查 |
-|---|---|---|---|
-| 状态字段 | 同时存 status/stage/state 三字段（CVAT Job） | 单 status enum | 加新状态前看一眼现有 enum 能否表达 |
-| 标注配置 | XML DSL（Label Studio） | JSONB `tool_bindings` 按 tool_unit 嵌套（v0.10.17+; v0.10.22 起为**唯一存储真值**, 扁平 `classes_config` 仅响应/导出读时派生, 无 DB 列） | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema；不要重新引入扁平存储列 |
-| 类别绑定 | 项目级扁平类别表（v0.10.16 之前的本平台 / Label Studio） | 按工具单位 `tool_bindings` **强隔离**（v0.10.17+, [ADR-0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)） | 不要回到"项目级扁平 classes_config"; 跨工具复用类需求出现时走可选 `alias_to` 链而不是合并表 |
-| Task 双重含义 | task 既是标注题目也是后台 job（Label Studio） | 题目 / Celery 分离；async_jobs 作 job 索引 + batch_predict 单一真值（v0.10.49），但带活实体 FK + 运行时状态的 job（VideoTrackerJob）保留专表 | 新 job 类型默认进 async_jobs；仅当需 FK 级联到活标注 / 复杂运行时状态机时才建专表 |
-| 模块化拆分 | 24+ Django apps 跨依赖（Label Studio） | apps/api 单仓 | 不要因"模块化"动机拆出新 apps/* |
-| OSS/EE 分叉 | `if settings.EE` 满地（Label Studio） | 单分支无功能开关 | 商业化前不要拆，灰度走 feature flags |
-| 格式适配 | 自己维护 25+ 格式（CVAT） | COCO/YOLO/VOC + 平台原生 AAP JSON | 客户要新格式走 datumaro 中转，不自己加 |
-| 权限引擎 | Rego / OPA policy DSL（CVAT） | 单 RBAC 中间件 | 权限复杂化时先看 RBAC 内能否表达 |
-| AI backend | 自管 serverless（CVAT Nuclio） | HTTP `/predict` 协议 + 独立容器（[ADR-0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)） | 保持；Plugin tool 也走 HTTP |
-| Skeleton 嵌套 | 无限 sublabel 递归（CVAT） | §C.7 I10 实现时**只支持 2 层**（label + sublabel） | 不开放任意嵌套 |
-| 标注 / 预测合并 | 同一数组用 type 字段区分（CVAT 部分格式） | `annotations[]` 和 `predictions[]` 双数组分开 | 设计任何新协议（导出、SDK、Plugin、AAP JSON）时保持双数组 |
-| 内部主键当稳定 ID | 用 user_id / annotation_id 数字 ID 跨实例匹配 | 导出可写内部 ID 审计用，导入匹配走 `external_id` + `file_path` + `schema_version` 三元组 | 设计 import 端点 / SDK / Plugin I/O 时 |
+| 主题              | 反模式（来源）                                           | 当前正确选择                                                                                                                                 | 何时检查                                                                                    |
+| ----------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 状态字段          | 同时存 status/stage/state 三字段（CVAT Job）             | 单 status enum                                                                                                                               | 加新状态前看一眼现有 enum 能否表达                                                          |
+| 标注配置          | XML DSL（Label Studio）                                  | JSONB `tool_bindings` 按 tool_unit 嵌套（v0.10.17+; v0.10.22 起为**唯一存储真值**, 扁平 `classes_config` 仅响应/导出读时派生, 无 DB 列）     | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema；不要重新引入扁平存储列               |
+| 类别绑定          | 项目级扁平类别表（v0.10.16 之前的本平台 / Label Studio） | 按工具单位 `tool_bindings` **强隔离**（v0.10.17+, [ADR-0026](docs/adr/archive/0026-tool-unit-class-and-attribute-binding.md)）               | 不要回到"项目级扁平 classes_config"; 跨工具复用类需求出现时走可选 `alias_to` 链而不是合并表 |
+| Task 双重含义     | task 既是标注题目也是后台 job（Label Studio）            | 题目 / Celery 分离；async_jobs 作 job 索引 + batch_predict 单一真值（v0.10.49），但带活实体 FK + 运行时状态的 job（VideoTrackerJob）保留专表 | 新 job 类型默认进 async_jobs；仅当需 FK 级联到活标注 / 复杂运行时状态机时才建专表           |
+| 模块化拆分        | 24+ Django apps 跨依赖（Label Studio）                   | apps/api 单仓                                                                                                                                | 不要因"模块化"动机拆出新 apps/\*                                                            |
+| OSS/EE 分叉       | `if settings.EE` 满地（Label Studio）                    | 单分支无功能开关                                                                                                                             | 商业化前不要拆，灰度走 feature flags                                                        |
+| 格式适配          | 自己维护 25+ 格式（CVAT）                                | COCO/YOLO/VOC + 平台原生 AAP JSON                                                                                                            | 客户要新格式走 datumaro 中转，不自己加                                                      |
+| 权限引擎          | Rego / OPA policy DSL（CVAT）                            | 单 RBAC 中间件                                                                                                                               | 权限复杂化时先看 RBAC 内能否表达                                                            |
+| AI backend        | 自管 serverless（CVAT Nuclio）                           | HTTP `/predict` 协议 + 独立容器（[ADR-0012](docs/adr/archive/0012-sam-backend-as-independent-gpu-service.md)）                               | 保持；Plugin tool 也走 HTTP                                                                 |
+| Skeleton 嵌套     | 无限 sublabel 递归（CVAT）                               | §C.7 I10 实现时**只支持 2 层**（label + sublabel）                                                                                           | 不开放任意嵌套                                                                              |
+| 标注 / 预测合并   | 同一数组用 type 字段区分（CVAT 部分格式）                | `annotations[]` 和 `predictions[]` 双数组分开                                                                                                | 设计任何新协议（导出、SDK、Plugin、AAP JSON）时保持双数组                                   |
+| 内部主键当稳定 ID | 用 user_id / annotation_id 数字 ID 跨实例匹配            | 导出可写内部 ID 审计用，导入匹配走 `external_id` + `file_path` + `schema_version` 三元组                                                     | 设计 import 端点 / SDK / Plugin I/O 时                                                      |
 
 ---
 

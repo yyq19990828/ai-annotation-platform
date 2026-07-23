@@ -2,7 +2,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./CommentsPanel", () => ({
-  CommentsPanel: ({ forceTab }: { forceTab: string }) => <div data-testid={`comments-${forceTab}`} />,
+  CommentsPanel: ({ forceTab }: { forceTab: string }) => (
+    <div data-testid={`comments-${forceTab}`} />
+  ),
 }));
 vi.mock("./DiscussionIssuesTab", () => ({
   DiscussionIssuesTab: () => <div data-testid="human-issues" />,
@@ -46,10 +48,7 @@ describe("DiscussionPanel Mask 质检", () => {
   });
 
   it("跨任务重挂载时根据活动质检问题恢复页签", () => {
-    render(<DiscussionPanel
-      {...baseProps}
-      maskQc={{ activeIssue: { id: "issue-1" } } as never}
-    />);
+    render(<DiscussionPanel {...baseProps} maskQc={{ activeIssue: { id: "issue-1" } } as never} />);
     expect(screen.getByRole("tab", { name: "Mask 质检" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("mask-qc-panel")).toBeTruthy();
   });

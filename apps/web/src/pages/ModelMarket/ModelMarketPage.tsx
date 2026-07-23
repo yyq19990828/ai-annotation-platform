@@ -31,8 +31,7 @@ export function ModelMarketPage() {
   const isSuperAdmin = role === "super_admin";
   const rawTab = parseTab(params.get("tab"));
   // 非超管深链到 ?tab=runtime → 回落到能力目录 (该 tab 对其不可见)。
-  const activeTab: MarketTab =
-    !isSuperAdmin && rawTab === "runtime" ? "catalog" : rawTab;
+  const activeTab: MarketTab = !isSuperAdmin && rawTab === "runtime" ? "catalog" : rawTab;
 
   const overviewQ = useQuery({
     queryKey: ["admin", "ml-integrations", "overview"],
@@ -110,9 +109,7 @@ export function ModelMarketPage() {
           <StatCard
             icon="layers"
             label="模型条目"
-            value={
-              !capabilityEnabled ? "—" : modelCountLoading ? "探测中" : String(modelCount)
-            }
+            value={!capabilityEnabled ? "—" : modelCountLoading ? "探测中" : String(modelCount)}
             hint={capabilityEnabled ? "能力目录 models[] 汇总" : "切换到能力目录查看"}
           />
         </div>

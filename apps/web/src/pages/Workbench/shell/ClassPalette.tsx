@@ -42,8 +42,15 @@ export function shortcutForIndex(idx: number): string {
 }
 
 export function ClassPalette({
-  classes, recent = [], activeClass, classesConfig, onPick,
-  enableSearch, highlightIndex, dense = false, readOnly = false,
+  classes,
+  recent = [],
+  activeClass,
+  classesConfig,
+  onPick,
+  enableSearch,
+  highlightIndex,
+  dense = false,
+  readOnly = false,
 }: ClassPaletteProps) {
   const handlePick = (c: string) => {
     if (readOnly) return;
@@ -53,7 +60,9 @@ export function ClassPalette({
   const showSearch = enableSearch ?? classes.length > 9;
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setQuery(""); }, [classes]);
+  useEffect(() => {
+    setQuery("");
+  }, [classes]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return classes;
@@ -82,9 +91,7 @@ export function ClassPalette({
 
       {visibleRecent.length > 0 && !query.trim() && (
         <div>
-          <div className="mb-1 text-2xs tracking-[0.5px] text-muted-foreground">
-            最近使用
-          </div>
+          <div className="mb-1 text-2xs tracking-[0.5px] text-muted-foreground">最近使用</div>
           <div className="flex flex-wrap gap-1">
             {visibleRecent.map((c) => (
               <button
@@ -109,7 +116,8 @@ export function ClassPalette({
           const idx = classes.indexOf(c);
           const sk = shortcutForIndex(idx);
           const isActive = activeClass === c;
-          const isHighlighted = typeof highlightIndex === "number" && filtered.indexOf(c) === highlightIndex;
+          const isHighlighted =
+            typeof highlightIndex === "number" && filtered.indexOf(c) === highlightIndex;
           return (
             <div
               key={c}
@@ -126,16 +134,12 @@ export function ClassPalette({
                 <rect width="10" height="10" rx="2" fill={classColor(c, classesConfig)} />
               </svg>
               <span className="flex-1 truncate">{c}</span>
-              {sk && (
-                <span className={SHORTCUT_CLASS}>{sk}</span>
-              )}
+              {sk && <span className={SHORTCUT_CLASS}>{sk}</span>}
             </div>
           );
         })}
         {filtered.length === 0 && (
-          <div className="px-1 py-2 text-center text-xs text-muted-foreground">
-            没有匹配的类别
-          </div>
+          <div className="px-1 py-2 text-center text-xs text-muted-foreground">没有匹配的类别</div>
         )}
       </div>
     </div>

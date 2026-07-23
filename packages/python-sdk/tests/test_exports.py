@@ -29,7 +29,9 @@ def test_create_export_returns_job_id(client, respx_mock):
         return_value=httpx.Response(202, json={"job_id": JOB_ID})
     )
     job_id = client.exports.create(
-        PROJECT_ID, targets=["coco", "yolo-det"], include_attributes=True,
+        PROJECT_ID,
+        targets=["coco", "yolo-det"],
+        include_attributes=True,
         video_frame_mode="keyframes",
     )
     params = route.calls.last.request.url.params
@@ -54,7 +56,9 @@ def test_download_presigned_absolute_url_no_auth(client, respx_mock, tmp_path):
 def test_download_relative_url_with_auth(client, respx_mock, tmp_path):
     # 传 job_id 时先 GET job, 再按相对路径拼回平台 origin 下载 (带 auth)
     respx_mock.get(f"{API}/async-jobs/{JOB_ID}").mock(
-        return_value=httpx.Response(200, json=_completed_job("/api/v1/files/export.zip"))
+        return_value=httpx.Response(
+            200, json=_completed_job("/api/v1/files/export.zip")
+        )
     )
     dl = respx_mock.get(f"{BASE}/api/v1/files/export.zip").mock(
         return_value=httpx.Response(200, content=b"zip2")

@@ -27,15 +27,15 @@ image_height=<optional COCO fallback height>
 
 参数：
 
-| 参数 | 位置 | 类型 | 必填 | 说明 |
-|---|---|---|---|---|
-| `format` | query | `aap_json` \| `coco` \| `yolo` | 是 | input 格式. 默认 `aap_json`. |
-| `yolo_variant` | query | `det` \| `obb` \| `seg` | 否 | 仅 `format=yolo` 生效,默认 `det`. |
-| `dry_run` | query | bool | 否 | true 时走全部校验路径但**不入库**, 供前端 wizard 预览. |
-| `file` | form | File | 是 | AAP/COCO 为 JSON 文件,可重复提交多个 `file` 字段; YOLO 为 zip 包. |
-| `model_version` | form | string | 否 | AAP JSON 内 `model_version` 缺失时的兜底值. |
-| `overwrite_existing` | form | bool | 否 | 默认 true。true 时按 task 维度删该 task 下 `source='external_import'` 的旧 prediction 后再写入;显式 false 时追加. |
-| `image_width` / `image_height` | form | int | 否 | 仅 `format=coco` 生效。COCO `images[]` 缺 `width/height` 时作为全局兜底；图片自带尺寸优先。两个字段必须同时提供。 |
+| 参数                           | 位置  | 类型                           | 必填 | 说明                                                                                                              |
+| ------------------------------ | ----- | ------------------------------ | ---- | ----------------------------------------------------------------------------------------------------------------- |
+| `format`                       | query | `aap_json` \| `coco` \| `yolo` | 是   | input 格式. 默认 `aap_json`.                                                                                      |
+| `yolo_variant`                 | query | `det` \| `obb` \| `seg`        | 否   | 仅 `format=yolo` 生效,默认 `det`.                                                                                 |
+| `dry_run`                      | query | bool                           | 否   | true 时走全部校验路径但**不入库**, 供前端 wizard 预览.                                                            |
+| `file`                         | form  | File                           | 是   | AAP/COCO 为 JSON 文件,可重复提交多个 `file` 字段; YOLO 为 zip 包.                                                 |
+| `model_version`                | form  | string                         | 否   | AAP JSON 内 `model_version` 缺失时的兜底值.                                                                       |
+| `overwrite_existing`           | form  | bool                           | 否   | 默认 true。true 时按 task 维度删该 task 下 `source='external_import'` 的旧 prediction 后再写入;显式 false 时追加. |
+| `image_width` / `image_height` | form  | int                            | 否   | 仅 `format=coco` 生效。COCO `images[]` 缺 `width/height` 时作为全局兜底；图片自带尺寸优先。两个字段必须同时提供。 |
 
 权限：项目 owner 或 super_admin（与 ML backend 配置同位）。
 
@@ -46,8 +46,8 @@ image_height=<optional COCO fallback height>
   "imported": 42,
   "skipped": 3,
   "errors": [
-    {"task_match": {"display_id": "T-999"}, "reason": "task not found in project"},
-    {"task_match": {"file_path": "x.jpg"}, "reason": "unsupported geometry kind: 'polyline'"}
+    { "task_match": { "display_id": "T-999" }, "reason": "task not found in project" },
+    { "task_match": { "file_path": "x.jpg" }, "reason": "unsupported geometry kind: 'polyline'" }
   ],
   "dry_run": false
 }
@@ -94,7 +94,13 @@ COCO 导入同时识别 bbox、polygon segmentation 与 uncompressed RLE segment
   "score": 0.88,
   "shapes": [
     { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
-    { "type": "polyline", "points": [[0.1, 0.2], [0.4, 0.5]] }
+    {
+      "type": "polyline",
+      "points": [
+        [0.1, 0.2],
+        [0.4, 0.5]
+      ]
+    }
   ]
 }
 ```
@@ -120,11 +126,11 @@ COCO 导入同时识别 bbox、polygon segmentation 与 uncompressed RLE segment
 
 支持的 label 行由 `yolo_variant` 决定：
 
-| `yolo_variant` | 行格式 | 写入 geometry |
-|---|---|---|
-| `det` | `<cls> <cx> <cy> <w> <h>` | `bbox` |
-| `obb` | `<cls> <x1> <y1> ... <x4> <y4>` | 矩形四角写 `rotated_bbox`,否则降级为 `polygon` |
-| `seg` | `<cls> <x1> <y1> <x2> <y2> ...` | `polygon` |
+| `yolo_variant` | 行格式                          | 写入 geometry                                  |
+| -------------- | ------------------------------- | ---------------------------------------------- |
+| `det`          | `<cls> <cx> <cy> <w> <h>`       | `bbox`                                         |
+| `obb`          | `<cls> <x1> <y1> ... <x4> <y4>` | 矩形四角写 `rotated_bbox`,否则降级为 `polygon` |
+| `seg`          | `<cls> <x1> <y1> <x2> <y2> ...` | `polygon`                                      |
 
 所有坐标都是归一化 `[0,1]`。`obb` 需要匹配 task 的 `DatasetItem.width/height`，用于在像素空间还原角度与宽高；不接受用户手填尺寸。
 

@@ -15,12 +15,12 @@
 // Fail-open: if the payload lacks the fields we need, we allow (never wedge the
 // session on malformed input). A debug line is appended to a log for auditing.
 
-import { resolve, sep } from 'node:path';
-import { appendFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { resolve, sep } from "node:path";
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const LOG = join(tmpdir(), 'claude-worktree-guard.log');
+const LOG = join(tmpdir(), "claude-worktree-guard.log");
 
 function log(line) {
   try {
@@ -39,8 +39,8 @@ function deny(reason) {
   log(`DENY ${reason}`);
   emit({
     hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
       permissionDecisionReason: reason,
     },
   });
@@ -51,21 +51,21 @@ function isInside(child, parent) {
   return child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
 }
 
-let raw = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
   raw += chunk;
 });
-process.stdin.on('end', () => {
+process.stdin.on("end", () => {
   let event;
   try {
-    event = JSON.parse(raw || '{}');
+    event = JSON.parse(raw || "{}");
   } catch {
     emit({}); // malformed -> allow
   }
 
   const toolInput = event.tool_input ?? {};
-  const toolName = event.tool_name ?? '';
+  const toolName = event.tool_name ?? "";
   const cwd = event.cwd;
 
   if (!cwd) {

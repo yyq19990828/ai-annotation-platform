@@ -13,16 +13,9 @@ import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { TabRow } from "@/components/ui/TabRow";
-import {
-  asyncJobsApi,
-  type AsyncJob,
-  type AsyncJobStatus,
-} from "@/api/asyncJobs";
+import { asyncJobsApi, type AsyncJob, type AsyncJobStatus } from "@/api/asyncJobs";
 import { VideoTrackerJobsPanel } from "@/pages/ModelMarket/VideoTrackerJobsPage";
-import {
-  buildWorkbenchUrl,
-  currentWorkbenchReturnTo,
-} from "@/utils/workbenchNavigation";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { useToastStore } from "@/components/ui/Toast";
 import styles from "./AIPreAnnotateJobsPage.module.css";
 
@@ -31,13 +24,7 @@ type StatusFilter = "" | AsyncJobStatus;
 const JOB_TABS = ["图像", "视频"];
 const PAGE_SIZE = 20;
 const IMAGE_JOB_KINDS = ["batch_predict", "prediction_retry"];
-const STATUS_ORDER: AsyncJobStatus[] = [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-];
+const STATUS_ORDER: AsyncJobStatus[] = ["pending", "running", "completed", "failed", "cancelled"];
 
 const STATUS_LABEL: Record<AsyncJobStatus, string> = {
   pending: "排队中",
@@ -68,9 +55,7 @@ export default function AIPreAnnotateJobsPage() {
     <div className={styles.page}>
       <div className={styles.pageIntro}>
         <h1 className={styles.pageTitle}>AI 任务历史</h1>
-        <span className={styles.pageSubtitle}>
-          图像批量预标 + 视频追踪，一处看全模态后台任务。
-        </span>
+        <span className={styles.pageSubtitle}>图像批量预标 + 视频追踪，一处看全模态后台任务。</span>
       </div>
       <TabRow
         tabs={JOB_TABS}
@@ -105,14 +90,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const offset = page * PAGE_SIZE;
 
   const jobsQ = useQuery({
-    queryKey: [
-      "async-jobs",
-      "image",
-      projectId,
-      search,
-      statusFilter,
-      page,
-    ],
+    queryKey: ["async-jobs", "image", projectId, search, statusFilter, page],
     queryFn: () =>
       asyncJobsApi.list({
         kind: IMAGE_JOB_KINDS,
@@ -270,75 +248,52 @@ function JobRow({
   const batchId = payloadString(job.payload, "batch_id");
   const failedPredictionId = payloadString(job.payload, "failed_prediction_id");
   const taskDisplayId = payloadString(job.payload, "task_display_id");
-  const batchLabel =
-    isRetry
-      ? taskDisplayId ?? failedPredictionId?.slice(0, 8)
-      : payloadString(job.payload, "batch_display_id") ?? batchId?.slice(0, 8);
+  const batchLabel = isRetry
+    ? (taskDisplayId ?? failedPredictionId?.slice(0, 8))
+    : (payloadString(job.payload, "batch_display_id") ?? batchId?.slice(0, 8));
   const prompt = isRetry
-    ? (payloadString(job.payload, "error_type") ??
-      payloadString(job.payload, "message") ??
-      "")
-    : payloadString(job.payload, "prompt") ?? "";
+    ? (payloadString(job.payload, "error_type") ?? payloadString(job.payload, "message") ?? "")
+    : (payloadString(job.payload, "prompt") ?? "");
   const promptShort = prompt.length > 50 ? prompt.slice(0, 50) + "…" : prompt;
   // 几何 backend (yolo): 展示实际模型 (如 yolov8l, 由 worker 从 model_variants 派生);
   // 文本 prompt 路径: 展示 output_mode (box/mask/both)。retry job 固定 "retry"。
   const modelLabel = payloadString(job.payload, "model_label");
   const outputMode = isRetry
     ? "retry"
-    : modelLabel ?? payloadString(job.payload, "output_mode") ?? "—";
-  const totalTasks = isRetry ? 1 : payloadNumber(job.payload, "total_tasks") ?? 0;
+    : (modelLabel ?? payloadString(job.payload, "output_mode") ?? "—");
+  const totalTasks = isRetry ? 1 : (payloadNumber(job.payload, "total_tasks") ?? 0);
   const isTerminal = ["completed", "failed", "cancelled"].includes(job.status);
-  const failedCount =
-    isTerminal
-      ? payloadNumber(job.result, "failed_count") ?? 0
-      : null;
-  const durationMs =
-    isTerminal ? payloadNumber(job.result, "duration_ms") : null;
+  const failedCount = isTerminal ? (payloadNumber(job.result, "failed_count") ?? 0) : null;
+  const durationMs = isTerminal ? payloadNumber(job.result, "duration_ms") : null;
   const cost = payloadNumber(job.result, "total_cost");
   const canCancel =
-    job.kind === "batch_predict" &&
-    (job.status === "pending" || job.status === "running");
+    job.kind === "batch_predict" && (job.status === "pending" || job.status === "running");
 
   return (
-    <tr
-      className={styles.clickableRow}
-      onClick={() => onOpenDetail(job.id)}
-      title="查看 job 详情"
-    >
+    <tr className={styles.clickableRow} onClick={() => onOpenDetail(job.id)} title="查看 job 详情">
       <td className={styles.tableCell}>
         {job.project_name ?? "(已删除)"}
         {job.project_display_id && (
-          <span className={styles.projectDisplayId}>
-            ({job.project_display_id})
-          </span>
+          <span className={styles.projectDisplayId}>({job.project_display_id})</span>
         )}
       </td>
       <td
         className={`${styles.tableCell} ${styles.batchCell}`}
-        title={isRetry ? failedPredictionId ?? "" : batchId ?? ""}
+        title={isRetry ? (failedPredictionId ?? "") : (batchId ?? "")}
       >
         {batchLabel ?? "—"}
       </td>
-      <td
-        className={styles.tableCell}
-        title={prompt || "(无文本 prompt — image-only batch)"}
-      >
-        {prompt ? promptShort : (
-          <span className={styles.subtle}>—</span>
-        )}
+      <td className={styles.tableCell} title={prompt || "(无文本 prompt — image-only batch)"}>
+        {prompt ? promptShort : <span className={styles.subtle}>—</span>}
       </td>
-      <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-        {outputMode}
-      </td>
+      <td className={`${styles.tableCell} ${styles.mutedCell}`}>{outputMode}</td>
       <td className={styles.tableCell}>
         <StatusBadge status={job.status} />
       </td>
       <td className={styles.tableCell}>
         <JobProgress job={job} />
       </td>
-      <td className={`${styles.tableCell} ${styles.numeric}`}>
-        {totalTasks}
-      </td>
+      <td className={`${styles.tableCell} ${styles.numeric}`}>{totalTasks}</td>
       <td className={styles.tableCell}>
         {failedCount == null ? (
           <span className={styles.subtle}>—</span>
@@ -348,12 +303,8 @@ function JobRow({
           <span className={styles.subtle}>0</span>
         )}
       </td>
-      <td className={`${styles.tableCell} ${styles.numeric}`}>
-        {formatCost(cost)}
-      </td>
-      <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-        {formatDuration(durationMs)}
-      </td>
+      <td className={`${styles.tableCell} ${styles.numeric}`}>{formatCost(cost)}</td>
+      <td className={`${styles.tableCell} ${styles.mutedCell}`}>{formatDuration(durationMs)}</td>
       <td className={`${styles.tableCell} ${styles.mutedCell}`}>
         {formatRelative(job.started_at)}
       </td>
@@ -378,10 +329,12 @@ function JobRow({
           onClick={(event) => {
             event.stopPropagation();
             if (!job.project_id) return;
-            navigate(buildWorkbenchUrl(job.project_id, {
-              batchId,
-              returnTo,
-            }));
+            navigate(
+              buildWorkbenchUrl(job.project_id, {
+                batchId,
+                returnTo,
+              }),
+            );
           }}
           title="去工作台"
           disabled={!job.project_id || !batchId}
@@ -409,10 +362,10 @@ function JobProgress({ job }: { job: AsyncJob }) {
     job.status === "failed"
       ? "var(--sc-destructive)"
       : job.status === "completed"
-      ? "var(--sc-positive)"
-      : job.status === "cancelled"
-      ? "var(--sc-muted-foreground)"
-      : "var(--sc-chart-4)";
+        ? "var(--sc-positive)"
+        : job.status === "cancelled"
+          ? "var(--sc-muted-foreground)"
+          : "var(--sc-chart-4)";
   return (
     <div className={styles.progressCell}>
       <ProgressBar value={job.progress_pct} color={color} />
@@ -449,10 +402,8 @@ function JobDetailModal({
   if (!jobId) return null;
 
   const job = jobQ.data;
-  const failedCount = job ? payloadNumber(job.result, "failed_count") ?? 0 : 0;
-  const failedPredictionIds = job
-    ? payloadStringArray(job.result, "failed_prediction_ids")
-    : [];
+  const failedCount = job ? (payloadNumber(job.result, "failed_count") ?? 0) : 0;
+  const failedPredictionIds = job ? payloadStringArray(job.result, "failed_prediction_ids") : [];
   const canRetryFailed =
     Boolean(job) &&
     job?.kind === "batch_predict" &&
@@ -475,10 +426,16 @@ function JobDetailModal({
 
           <div className={styles.detailStats}>
             <DetailStat label="进度" value={`${job.progress_pct}%`} />
-            <DetailStat label="成功" value={String(payloadNumber(job.result, "success_count") ?? "—")} />
+            <DetailStat
+              label="成功"
+              value={String(payloadNumber(job.result, "success_count") ?? "—")}
+            />
             <DetailStat label="失败" value={String(failedCount || "—")} />
             <DetailStat label="成本" value={formatCost(payloadNumber(job.result, "total_cost"))} />
-            <DetailStat label="耗时" value={formatDuration(payloadNumber(job.result, "duration_ms"))} />
+            <DetailStat
+              label="耗时"
+              value={formatDuration(payloadNumber(job.result, "duration_ms"))}
+            />
           </div>
 
           <div className={styles.detailTimeline}>
@@ -513,9 +470,7 @@ function JobDetailModal({
                     ? `${failedPredictionIds.length} 条失败项可通过失败预测重试链路重新排队。`
                     : "此 job 未记录 failed_prediction_ids，无法快捷重试旧失败项。"}
                 </div>
-                {retryMut.isError && (
-                  <div className={styles.retryError}>重试排队失败</div>
-                )}
+                {retryMut.isError && <div className={styles.retryError}>重试排队失败</div>}
               </div>
               <Button
                 size="sm"
@@ -555,29 +510,19 @@ function EmptyState() {
   return (
     <div className={styles.emptyState}>
       <Icon name="sparkles" size={28} />
-      <div className={styles.emptyTitle}>
-        暂无 prediction job 历史
-      </div>
-      <div className={styles.emptyHint}>
-        在「执行预标」页跑一次预标，结果会出现在这里。
-      </div>
+      <div className={styles.emptyTitle}>暂无 prediction job 历史</div>
+      <div className={styles.emptyHint}>在「执行预标」页跑一次预标，结果会出现在这里。</div>
     </div>
   );
 }
 
-function payloadString(
-  record: Record<string, unknown>,
-  key: string,
-): string | null {
+function payloadString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   if (typeof value === "string" && value) return value;
   return null;
 }
 
-function payloadNumber(
-  record: Record<string, unknown>,
-  key: string,
-): number | null {
+function payloadNumber(record: Record<string, unknown>, key: string): number | null {
   const value = record[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -587,10 +532,7 @@ function payloadNumber(
   return null;
 }
 
-function payloadStringArray(
-  record: Record<string, unknown>,
-  key: string,
-): string[] {
+function payloadStringArray(record: Record<string, unknown>, key: string): string[] {
   const value = record[key];
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.length > 0);

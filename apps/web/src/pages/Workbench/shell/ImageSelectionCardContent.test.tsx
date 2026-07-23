@@ -47,7 +47,15 @@ describe("ImageSelectionCardContent", () => {
 
   it("polygon 指标网格显示顶点数", () => {
     const ann = makeAnnotation({
-      geometry: { type: "polygon", points: [[0, 0], [1, 0], [1, 1], [0, 1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+        ],
+      },
     });
     const { getByText } = render(
       <ImageSelectionCardContent
@@ -71,18 +79,35 @@ describe("ImageSelectionCardContent", () => {
       name: "polygon holes",
       geometry: {
         type: "polygon" as const,
-        points: [[0, 0], [1, 0], [1, 1], [0, 1]] as [number, number][],
-        holes: [[[0.2, 0.2], [0.4, 0.2], [0.3, 0.4]]] as [number, number][][],
+        points: [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+        ] as [number, number][],
+        holes: [
+          [
+            [0.2, 0.2],
+            [0.4, 0.2],
+            [0.3, 0.4],
+          ],
+        ] as [number, number][][],
       },
     },
     {
       name: "multi_polygon",
       geometry: {
         type: "multi_polygon" as const,
-        polygons: [{
-          type: "polygon" as const,
-          points: [[0, 0], [1, 0], [1, 1]] as [number, number][],
-        }],
+        polygons: [
+          {
+            type: "polygon" as const,
+            points: [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+            ] as [number, number][],
+          },
+        ],
       },
     },
   ])("$name 显示防降级编辑提示", ({ geometry }) => {
@@ -140,7 +165,9 @@ describe("ImageSelectionCardContent", () => {
       />,
     );
 
-    expect(getByRole("status").textContent).toContain("已按真实像素渲染 · 17 px · 2 个组件 · 1 个孔洞 · 12 边界像素");
+    expect(getByRole("status").textContent).toContain(
+      "已按真实像素渲染 · 17 px · 2 个组件 · 1 个孔洞 · 12 边界像素",
+    );
     expect((getByLabelText("修改类别") as HTMLButtonElement).disabled).toBe(false);
     expect((getByLabelText("删除标注") as HTMLButtonElement).disabled).toBe(false);
   });
@@ -184,12 +211,14 @@ describe("ImageSelectionCardContent", () => {
 
     expect(getByRole("status").textContent).toContain("missing_object：Mask object is missing");
     fireEvent.click(getByLabelText("复制 Mask 诊断"));
-    expect(writeText).toHaveBeenCalledWith(JSON.stringify({
-      annotationId: "anno-1",
-      reason: "missing_object",
-      message: "Mask object is missing",
-      httpStatus: 409,
-    }));
+    expect(writeText).toHaveBeenCalledWith(
+      JSON.stringify({
+        annotationId: "anno-1",
+        reason: "missing_object",
+        message: "Mask object is missing",
+        httpStatus: 409,
+      }),
+    );
   });
 
   it("raster_mask 预算延后状态可从选中卡重试", () => {

@@ -13,9 +13,7 @@ export interface VideoTrackerReviewBarProps {
   open: boolean;
   preview: VideoTrackerJobPreview | null;
   submitting?: boolean;
-  onDecide: (
-    selection: TrackerReviewDecision,
-  ) => Promise<TrackerReviewDecisionOutcome>;
+  onDecide: (selection: TrackerReviewDecision) => Promise<TrackerReviewDecisionOutcome>;
   onRefresh: () => void;
 }
 
@@ -38,7 +36,8 @@ export function VideoTrackerReviewBar({
   onRefresh,
 }: VideoTrackerReviewBarProps) {
   const instances = useMemo(
-    () => [...new Set((preview?.results ?? []).map((item) => instanceKey(item.instance_id)))].sort(),
+    () =>
+      [...new Set((preview?.results ?? []).map((item) => instanceKey(item.instance_id)))].sort(),
     [preview?.results],
   );
   const frames = (preview?.results ?? []).map((item) => item.frame_index);
@@ -55,16 +54,17 @@ export function VideoTrackerReviewBar({
   }, [instances, maxFrame, minFrame, preview?.job_id, preview?.job_revision]);
 
   const selected = (preview?.results ?? []).filter(
-    (item) => selectedInstances.includes(instanceKey(item.instance_id))
-      && item.frame_index >= fromFrame
-      && item.frame_index <= toFrame,
+    (item) =>
+      selectedInstances.includes(instanceKey(item.instance_id)) &&
+      item.frame_index >= fromFrame &&
+      item.frame_index <= toFrame,
   );
   const manualCount = selected.filter((item) => item.manual_protected).length;
-  const total = preview?.candidate_total ?? (
-    (preview?.results.length ?? 0)
-    + (preview?.candidate_accepted ?? 0)
-    + (preview?.candidate_rejected ?? 0)
-  );
+  const total =
+    preview?.candidate_total ??
+    (preview?.results.length ?? 0) +
+      (preview?.candidate_accepted ?? 0) +
+      (preview?.candidate_rejected ?? 0);
   const resolved = (preview?.candidate_accepted ?? 0) + (preview?.candidate_rejected ?? 0);
   const disabled = submitting || selected.length === 0 || fromFrame > toFrame;
   const isCorrection = preview?.job_kind === "correction";
@@ -103,8 +103,12 @@ export function VideoTrackerReviewBar({
                 已审 {resolved}/{total}，当前选区 {selected.length} 个候选；确认后才写入轨迹。
               </p>
               {isCorrection ? (
-                <p className="text-xs leading-relaxed text-muted-foreground" data-testid="tracker-review-correction-summary">
-                  F{preview.correction_frame} 人工纠错帧 · 窗口 F{preview.from_frame}–F{preview.to_frame} · {directionLabel(preview.direction)} ·
+                <p
+                  className="text-xs leading-relaxed text-muted-foreground"
+                  data-testid="tracker-review-correction-summary"
+                >
+                  F{preview.correction_frame} 人工纠错帧 · 窗口 F{preview.from_frame}–F
+                  {preview.to_frame} · {directionLabel(preview.direction)} ·
                   {preview.seed_mode === "native_mask" ? " 原生 Mask seed" : " bbox seed 降级"}
                   {preview.protect_manual ? " · 保护人工帧" : ""}
                 </p>
@@ -125,9 +129,13 @@ export function VideoTrackerReviewBar({
                 <input
                   type="checkbox"
                   checked={selectedInstances.includes(instanceId)}
-                  onChange={(event) => setSelectedInstances((current) => event.target.checked
-                    ? [...current, instanceId]
-                    : current.filter((item) => item !== instanceId))}
+                  onChange={(event) =>
+                    setSelectedInstances((current) =>
+                      event.target.checked
+                        ? [...current, instanceId]
+                        : current.filter((item) => item !== instanceId),
+                    )
+                  }
                   data-testid={`tracker-review-instance-${instanceId}`}
                 />
                 {instanceId}
@@ -163,14 +171,20 @@ export function VideoTrackerReviewBar({
         </div>
 
         {manualCount > 0 ? (
-          <div className="flex items-center gap-2 text-xs text-status-warning" data-testid="tracker-review-manual-warning">
+          <div
+            className="flex items-center gap-2 text-xs text-status-warning"
+            data-testid="tracker-review-manual-warning"
+          >
             <ShieldAlert className="size-4" />
             选区包含 {manualCount} 个受保护的人工关键帧，审阅条不会覆盖这些帧。
           </div>
         ) : null}
 
         {isCorrection && preview.fallback_reason ? (
-          <div className="flex items-center gap-2 text-xs text-status-warning" data-testid="tracker-review-fallback-warning">
+          <div
+            className="flex items-center gap-2 text-xs text-status-warning"
+            data-testid="tracker-review-fallback-warning"
+          >
             <ShieldAlert className="size-4" />
             当前候选使用 bbox seed 降级：{preview.fallback_reason}。输出仍为 Mask。
           </div>

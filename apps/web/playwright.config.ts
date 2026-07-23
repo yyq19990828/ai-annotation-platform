@@ -14,12 +14,9 @@ if (useIsolatedServers) {
   process.env.PLAYWRIGHT_API_BASE = "http://127.0.0.1:8010";
 }
 
-const defaultBaseURL = useIsolatedServers
-  ? "http://127.0.0.1:3001"
-  : "http://127.0.0.1:3000";
+const defaultBaseURL = useIsolatedServers ? "http://127.0.0.1:3001" : "http://127.0.0.1:3000";
 const e2eDatabaseURL = isCI
-  ? (process.env.DATABASE_URL ??
-    "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
+  ? (process.env.DATABASE_URL ?? "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
   : (process.env.PLAYWRIGHT_E2E_DATABASE_URL ??
     "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_e2e");
 
@@ -97,9 +94,9 @@ export default defineConfig({
             E2E_SEED_ENABLED: "true",
             ...(rasterMaskMatrix
               ? {
-                RASTER_MASK_READ_ENABLED: "true",
-                RASTER_MASK_CREATE_ENABLED: rasterMaskCreateEnabled ? "true" : "false",
-              }
+                  RASTER_MASK_READ_ENABLED: "true",
+                  RASTER_MASK_CREATE_ENABLED: rasterMaskCreateEnabled ? "true" : "false",
+                }
               : {}),
           },
           url: "http://127.0.0.1:8010/health/db",

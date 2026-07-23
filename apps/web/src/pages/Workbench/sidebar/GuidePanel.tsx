@@ -76,7 +76,11 @@ export function GuidePanel({ projectId, content }: GuidePanelProps) {
       >
         <Icon name="book" size={14} />
         <span className="text-sm font-semibold text-foreground">标注指引</span>
-        <button type="button" className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer px-1.5 py-0.5 text-sm" aria-label={open ? "折叠" : "展开"}>
+        <button
+          type="button"
+          className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer px-1.5 py-0.5 text-sm"
+          aria-label={open ? "折叠" : "展开"}
+        >
           {open ? "▾" : "▸"}
         </button>
       </div>

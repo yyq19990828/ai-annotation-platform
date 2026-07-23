@@ -59,9 +59,7 @@ export function AssignMemberModal({ open, projectId, existing, onClose }: Props)
 
   const toggleSelected = (userId: string) => {
     setSelectedIds((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId],
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
     );
   };
 
@@ -111,15 +109,9 @@ export function AssignMemberModal({ open, projectId, existing, onClose }: Props)
           className={styles.searchInput}
         />
         <div className={styles.list}>
-          {isLoading && (
-            <div className={styles.emptyState}>
-              加载中...
-            </div>
-          )}
+          {isLoading && <div className={styles.emptyState}>加载中...</div>}
           {!isLoading && candidates.length === 0 && (
-            <div className={styles.emptyState}>
-              没有可添加的{ROLE_LABEL[role]}
-            </div>
+            <div className={styles.emptyState}>没有可添加的{ROLE_LABEL[role]}</div>
           )}
           {candidates.map((u) => {
             const active = selectedIds.includes(u.id);
@@ -152,8 +144,14 @@ export function AssignMemberModal({ open, projectId, existing, onClose }: Props)
           已选择 {selectedIds.length} 名{ROLE_LABEL[role]}
         </div>
         <div className={styles.actions}>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button variant="primary" disabled={selectedIds.length === 0 || add.isPending} onClick={onConfirm}>
+          <Button variant="ghost" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            disabled={selectedIds.length === 0 || add.isPending}
+            onClick={onConfirm}
+          >
             {add.isPending ? "指派中..." : `确认指派 ${selectedIds.length} 人`}
           </Button>
         </div>

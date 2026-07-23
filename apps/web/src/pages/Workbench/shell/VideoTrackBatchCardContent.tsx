@@ -4,8 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ActionBar } from "./selectionCard/ActionBar";
 import { VideoTrackComposeDialog, type VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const SUMMARY_CLASS = "flex items-center justify-between gap-2 text-sm text-foreground";
 const COUNT_CLASS = "text-brand tabular-nums";
 const SELECT_CLASS =
@@ -101,7 +100,8 @@ export function VideoTrackBatchCardContent({
           disabled={readOnly || !onBatchTrack}
           onClick={onBatchTrack}
         >
-          <Icon name="bot" size={14} />批量延展
+          <Icon name="bot" size={14} />
+          批量延展
         </Button>
         <Button
           variant="ghost"
@@ -137,14 +137,25 @@ export function VideoTrackBatchCardContent({
         <Button
           variant="ghost"
           size="sm"
-          title={canJoin ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : (joinDisabledReason ?? "只支持跳连两条同类且帧号不重叠的轨迹")}
+          title={
+            canJoin
+              ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)"
+              : (joinDisabledReason ?? "只支持跳连两条同类且帧号不重叠的轨迹")
+          }
           aria-label="跳连"
           disabled={readOnly || !canJoin}
           onClick={() => setJoinOpen(true)}
         >
           <Icon name="link" size={14} />
         </Button>
-        <Button variant="danger" size="sm" title="批量删除" aria-label="批量删除" disabled={readOnly} onClick={onDelete}>
+        <Button
+          variant="danger"
+          size="sm"
+          title="批量删除"
+          aria-label="批量删除"
+          disabled={readOnly}
+          onClick={onDelete}
+        >
           <Icon name="trash" size={14} />
         </Button>
         <Button variant="ghost" size="sm" title="取消选中" aria-label="取消选中" onClick={onClear}>

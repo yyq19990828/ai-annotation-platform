@@ -68,7 +68,10 @@ export function KeypointSchemaEditor({
     const i = nodes.length;
     const pos = keypointNodePos({ name: "" }, i, i + 1);
     onChange({
-      nodes: [...nodes, { name: `node_${i + 1}`, color: keypointColorByIndex(i), x: pos.x, y: pos.y }],
+      nodes: [
+        ...nodes,
+        { name: `node_${i + 1}`, color: keypointColorByIndex(i), x: pos.x, y: pos.y },
+      ],
       edges,
     });
   };
@@ -111,7 +114,10 @@ export function KeypointSchemaEditor({
     if (!svg) return null;
     const rect = svg.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return null;
-    return { x: clamp01((clientX - rect.left) / rect.width), y: clamp01((clientY - rect.top) / rect.height) };
+    return {
+      x: clamp01((clientX - rect.left) / rect.width),
+      y: clamp01((clientY - rect.top) / rect.height),
+    };
   };
 
   const onNodePointerDown = (i: number, e: React.PointerEvent) => {
@@ -241,12 +247,19 @@ export function KeypointSchemaEditor({
           </Button>
         </div>
         {nodes.length === 0 ? (
-          <p className="m-0 text-xs text-muted-foreground">尚无节点。点击「新增节点」开始定义骨骼。</p>
+          <p className="m-0 text-xs text-muted-foreground">
+            尚无节点。点击「新增节点」开始定义骨骼。
+          </p>
         ) : (
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {nodes.map((n, i) => (
-              <li key={i} className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5">
-                <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">{i + 1}</span>
+              <li
+                key={i}
+                className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5"
+              >
+                <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">
+                  {i + 1}
+                </span>
                 <input
                   type="color"
                   value={n.color ?? keypointColorByIndex(i)}
@@ -301,7 +314,9 @@ export function KeypointSchemaEditor({
           </ul>
         )}
         {edges.length > 0 && (
-          <p className="m-0 text-xs text-muted-foreground">骨骼连线 {edges.length} 条（在画布点击连线可删除）。</p>
+          <p className="m-0 text-xs text-muted-foreground">
+            骨骼连线 {edges.length} 条（在画布点击连线可删除）。
+          </p>
         )}
       </div>
     </div>

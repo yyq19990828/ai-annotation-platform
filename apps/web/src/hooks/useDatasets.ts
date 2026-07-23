@@ -5,7 +5,11 @@ import {
   type DatasetImportFromConnectionPayload,
 } from "@/api/storageConnections";
 
-export function useDatasets(params?: { search?: string; data_type?: string; has_scenes?: boolean }) {
+export function useDatasets(params?: {
+  search?: string;
+  data_type?: string;
+  has_scenes?: boolean;
+}) {
   return useQuery({
     queryKey: ["datasets", params],
     queryFn: () => datasetsApi.list(params),
@@ -51,7 +55,10 @@ export function useDeleteDataset() {
   });
 }
 
-export function useDatasetItems(datasetId: string | undefined, params?: { limit?: number; offset?: number }) {
+export function useDatasetItems(
+  datasetId: string | undefined,
+  params?: { limit?: number; offset?: number },
+) {
   return useQuery({
     queryKey: ["dataset-items", datasetId, params],
     queryFn: () => datasetsApi.listItems(datasetId!, params),
@@ -102,8 +109,7 @@ export function useImportFromConnection() {
     }: {
       datasetId: string;
       payload: DatasetImportFromConnectionPayload;
-    }) =>
-      storageConnectionsApi.importFromConnection(datasetId, payload),
+    }) => storageConnectionsApi.importFromConnection(datasetId, payload),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["async-job", res.job_id] });
     },

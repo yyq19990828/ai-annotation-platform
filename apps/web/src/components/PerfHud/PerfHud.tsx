@@ -37,7 +37,9 @@ function MetricBar({
   pct: number | null | undefined;
 }) {
   const color = colorFor(pct);
-  const valueRef = useElementStyle<HTMLSpanElement>({ "--perf-hud-metric-color": color } as CSSProperties);
+  const valueRef = useElementStyle<HTMLSpanElement>({
+    "--perf-hud-metric-color": color,
+  } as CSSProperties);
   const fillRef = useElementStyle<HTMLDivElement>({
     "--perf-hud-metric-width": `${Math.max(0, Math.min(100, pct ?? 0))}%`,
     "--perf-hud-metric-color": color,
@@ -125,27 +127,15 @@ function BackendPanel({
 
   return (
     <div className={styles.backendPanel}>
-      <MetricBar
-        label="GPU util"
-        value={gpuUtil != null ? `${gpuUtil}%` : "—"}
-        pct={gpuUtil}
-      />
+      <MetricBar label="GPU util" value={gpuUtil != null ? `${gpuUtil}%` : "—"} pct={gpuUtil} />
       <MetricBar
         label="VRAM"
         value={vramUsed != null && vramTotal ? `${vramUsed} / ${vramTotal}` : "—"}
         unit="MB"
         pct={vramPct}
       />
-      <MetricBar
-        label="CPU"
-        value={cpu != null ? `${cpu.toFixed(1)}%` : "—"}
-        pct={cpu}
-      />
-      <MetricBar
-        label="RAM"
-        value={mem != null ? `${mem.toFixed(1)}%` : "—"}
-        pct={mem}
-      />
+      <MetricBar label="CPU" value={cpu != null ? `${cpu.toFixed(1)}%` : "—"} pct={cpu} />
+      <MetricBar label="RAM" value={mem != null ? `${mem.toFixed(1)}%` : "—"} pct={mem} />
       {expanded && hist ? (
         <div className={styles.sparkGrid}>
           <SparkRow label="GPU" values={hist.gpuUtil} color="var(--sc-positive)" />
@@ -181,14 +171,8 @@ function BrowserPanel({ enabled }: { enabled: boolean }) {
     <div className={styles.browserPanel}>
       <h4 className={styles.browserSectionTitle}>Browser</h4>
       <Kv label="FPS" value={stats.fps != null ? `${stats.fps}` : "—"} />
-      <Kv
-        label="JS heap"
-        value={stats.jsHeapMB != null ? `${stats.jsHeapMB} MB` : "N/A"}
-      />
-      <Kv
-        label="API p95"
-        value={stats.apiP95Ms != null ? `${stats.apiP95Ms} ms` : "—"}
-      />
+      <Kv label="JS heap" value={stats.jsHeapMB != null ? `${stats.jsHeapMB} MB` : "N/A"} />
+      <Kv label="API p95" value={stats.apiP95Ms != null ? `${stats.apiP95Ms} ms` : "—"} />
       <Kv
         label="Longtask 60s"
         value={
@@ -233,7 +217,7 @@ export function PerfHud() {
   const { snapshots, history, connected, status } = useMLBackendStats();
   const backendIds = useMemo(() => Object.keys(snapshots), [snapshots]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const activeId = selectedId && snapshots[selectedId] ? selectedId : backendIds[0] ?? null;
+  const activeId = selectedId && snapshots[selectedId] ? selectedId : (backendIds[0] ?? null);
   const activeSnap = activeId ? snapshots[activeId] : null;
   const activeHist = activeId ? history[activeId] : undefined;
   const activeLabel = activeSnap ? getBackendLabel(activeSnap) : undefined;
@@ -276,12 +260,7 @@ export function PerfHud() {
         >
           <Icon name={expanded ? "chevUp" : "chevDown"} size={14} />
         </button>
-        <button
-          type="button"
-          onClick={close}
-          aria-label="关闭"
-          className={styles.closeButton}
-        >
+        <button type="button" onClick={close} aria-label="关闭" className={styles.closeButton}>
           <Icon name="x" size={14} />
         </button>
       </div>
@@ -294,25 +273,20 @@ export function PerfHud() {
             {status === "auth_failed" ? (
               <>
                 鉴权失败 (1008)
-                <div className={styles.emptyHint}>
-                  仅 super_admin / project_admin 可见此面板
-                </div>
+                <div className={styles.emptyHint}>仅 super_admin / project_admin 可见此面板</div>
               </>
             ) : null}
             {status === "closed" ? (
               <>
                 连接关闭
-                <div className={styles.emptyHint}>
-                  确认 API + Celery beat 已重启
-                </div>
+                <div className={styles.emptyHint}>确认 API + Celery beat 已重启</div>
               </>
             ) : null}
             {status === "connected" ? (
               <>
                 等待 backend 上报…
                 <div className={styles.emptyHint}>
-                  Celery beat 1s task 是否在跑？(check{" "}
-                  <code>publish-ml-backend-stats</code>)
+                  Celery beat 1s task 是否在跑？(check <code>publish-ml-backend-stats</code>)
                 </div>
               </>
             ) : null}

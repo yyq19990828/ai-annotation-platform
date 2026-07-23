@@ -55,9 +55,7 @@ class _RecordingEngine:
             if self.release is not None:
                 assert self.release.wait(timeout=1.0)
 
-            box = np.array(
-                [[[0.0, 0.0], [200.0, 0.0], [200.0, 100.0], [0.0, 100.0]]]
-            )
+            box = np.array([[[0.0, 0.0], [200.0, 0.0], [200.0, 100.0], [0.0, 100.0]]])
             if self.mode == "det":
                 return (
                     SimpleNamespace(boxes=box),
@@ -189,7 +187,9 @@ async def test_det_rec_and_e2e_mapping_share_one_composite_engine() -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_runtime_params_reset_all_mutable_thresholds_to_defaults() -> None:
+async def test_missing_runtime_params_reset_all_mutable_thresholds_to_defaults() -> (
+    None
+):
     engine = _RecordingEngine()
     predictor, _pool = _predictor(engine)
     resolved = _resolved(catalog.E2E_MODEL_ID)
@@ -210,15 +210,16 @@ async def test_missing_runtime_params_reset_all_mutable_thresholds_to_defaults()
         "box_thresh": 0.2,
         "unclip_ratio": 2.5,
     }
-    assert engine.updates[1]["text_score"] == catalog.RUNTIME_PARAM_DEFAULTS[
-        "text_score"
-    ]
-    assert engine.updates[1]["box_thresh"] == catalog.RUNTIME_PARAM_DEFAULTS[
-        "box_thresh"
-    ]
-    assert engine.updates[1]["unclip_ratio"] == catalog.RUNTIME_PARAM_DEFAULTS[
-        "unclip_ratio"
-    ]
+    assert (
+        engine.updates[1]["text_score"] == catalog.RUNTIME_PARAM_DEFAULTS["text_score"]
+    )
+    assert (
+        engine.updates[1]["box_thresh"] == catalog.RUNTIME_PARAM_DEFAULTS["box_thresh"]
+    )
+    assert (
+        engine.updates[1]["unclip_ratio"]
+        == catalog.RUNTIME_PARAM_DEFAULTS["unclip_ratio"]
+    )
 
 
 def test_orientation_alignment_skips_filtered_low_score_text() -> None:
@@ -233,7 +234,9 @@ def test_orientation_alignment_skips_filtered_low_score_text() -> None:
 
 
 @pytest.mark.asyncio
-async def test_same_engine_predicts_are_serialized_while_waiters_count_as_borrowers() -> None:
+async def test_same_engine_predicts_are_serialized_while_waiters_count_as_borrowers() -> (
+    None
+):
     engine = _RecordingEngine()
     engine.started = threading.Event()
     engine.release = threading.Event()
@@ -258,7 +261,9 @@ async def test_same_engine_predicts_are_serialized_while_waiters_count_as_borrow
 
 
 @pytest.mark.asyncio
-async def test_cancelled_predict_keeps_borrower_until_executor_really_finishes() -> None:
+async def test_cancelled_predict_keeps_borrower_until_executor_really_finishes() -> (
+    None
+):
     engine = _RecordingEngine()
     engine.started = threading.Event()
     engine.release = threading.Event()

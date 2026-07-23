@@ -91,10 +91,7 @@ export function FloatingCameraPanel({
     },
     [onPositionChange, position, role],
   );
-  const resetPosition = useCallback(
-    () => onPositionChange(role, null),
-    [onPositionChange, role],
-  );
+  const resetPosition = useCallback(() => onPositionChange(role, null), [onPositionChange, role]);
   const { handleProps, isDragging } = useDragMove({
     position: dragPosition,
     size: CAM_PANEL_SIZE,
@@ -108,12 +105,18 @@ export function FloatingCameraPanel({
   // v0.17.6 · useElementStyle replaces style={floatingStyle} for dynamic CSS variables.
   const panelRef = useElementStyle<HTMLDivElement>(
     floatingPoint
-      ? ({ "--cam-panel-x": `${floatingPoint.x}px`, "--cam-panel-y": `${floatingPoint.y}px` } as CSSProperties)
+      ? ({
+          "--cam-panel-x": `${floatingPoint.x}px`,
+          "--cam-panel-y": `${floatingPoint.y}px`,
+        } as CSSProperties)
       : undefined,
   );
   const tabRef = useElementStyle<HTMLButtonElement>(
     floatingPoint
-      ? ({ "--cam-panel-x": `${floatingPoint.x}px`, "--cam-panel-y": `${floatingPoint.y}px` } as CSSProperties)
+      ? ({
+          "--cam-panel-x": `${floatingPoint.x}px`,
+          "--cam-panel-y": `${floatingPoint.y}px`,
+        } as CSSProperties)
       : undefined,
   );
 
@@ -134,7 +137,11 @@ export function FloatingCameraPanel({
   return (
     <div
       ref={panelRef}
-      className={[CAM_PANEL, floatingPoint ? CAM_PANEL_FLOATING : "", isDragging ? CAM_PANEL_DRAGGING : ""]
+      className={[
+        CAM_PANEL,
+        floatingPoint ? CAM_PANEL_FLOATING : "",
+        isDragging ? CAM_PANEL_DRAGGING : "",
+      ]
         .filter(Boolean)
         .join(" ")}
       data-floating-panel
@@ -146,22 +153,12 @@ export function FloatingCameraPanel({
         {...handleProps}
       >
         {onEnlarge && (
-          <button
-            type="button"
-            className={FLOAT_TOGGLE_BTN}
-            onClick={onEnlarge}
-            title="放大相机"
-          >
+          <button type="button" className={FLOAT_TOGGLE_BTN} onClick={onEnlarge} title="放大相机">
             ⛶
           </button>
         )}
         {position && (
-          <button
-            type="button"
-            className={FLOAT_TOGGLE_BTN}
-            onClick={resetPosition}
-            title="归位"
-          >
+          <button type="button" className={FLOAT_TOGGLE_BTN} onClick={resetPosition} title="归位">
             归位
           </button>
         )}

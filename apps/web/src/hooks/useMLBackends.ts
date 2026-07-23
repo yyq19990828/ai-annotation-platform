@@ -81,13 +81,8 @@ export function useMLBackendReload(projectId: string) {
 export function useMLBackendWarmup(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      backendId,
-      body,
-    }: {
-      backendId: string;
-      body?: Record<string, unknown>;
-    }) => mlBackendsApi.warmup(projectId, backendId, body),
+    mutationFn: ({ backendId, body }: { backendId: string; body?: Record<string, unknown> }) =>
+      mlBackendsApi.warmup(projectId, backendId, body),
     onSuccess: () => invalidateBackendQueries(qc, projectId),
   });
 }

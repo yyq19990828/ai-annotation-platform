@@ -183,9 +183,7 @@ def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(
     ]
 
     for headers in workload_headers:
-        response = _run(
-            _request("POST", "/warmup", headers=headers, content=b"{")
-        )
+        response = _run(_request("POST", "/warmup", headers=headers, content=b"{"))
         assert response.status_code == 403
         assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
 
@@ -368,7 +366,9 @@ def test_cancelled_video_keeps_source_and_borrower_until_thread_finishes(
                 "to_frame": 1,
                 "seeds": [{"obj_id": 1, "bbox": {"x": 0, "y": 0, "w": 1, "h": 1}}],
             }
-        task = asyncio.create_task(target("https://example.invalid/video.mp4", ctx, operation))
+        task = asyncio.create_task(
+            target("https://example.invalid/video.mp4", ctx, operation)
+        )
         while not started.is_set():
             await asyncio.sleep(0)
         task.cancel()

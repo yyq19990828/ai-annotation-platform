@@ -15,9 +15,21 @@ import { describe, expect, it } from "vitest";
 import { MaskBuffer } from "./maskBuffer";
 import { maskToPolygon } from "./maskToPolygon";
 
-function makeRect(w: number, h: number, x0: number, y0: number, x1: number, y1: number): MaskBuffer {
+function makeRect(
+  w: number,
+  h: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): MaskBuffer {
   const m = new MaskBuffer({ width: w, height: h });
-  m.fromPolygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+  m.fromPolygon([
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ]);
   return m;
 }
 
@@ -66,9 +78,19 @@ describe("maskToPolygon", () => {
   it("两个分量 → 取面积更大的；multipleComponents=true", () => {
     const m = new MaskBuffer({ width: 60, height: 60 });
     // 大方块 20x20
-    m.fromPolygon([[5, 5], [25, 5], [25, 25], [5, 25]]);
+    m.fromPolygon([
+      [5, 5],
+      [25, 5],
+      [25, 25],
+      [5, 25],
+    ]);
     // 小方块 5x5
-    m.fromPolygon([[40, 40], [45, 40], [45, 45], [40, 45]]);
+    m.fromPolygon([
+      [40, 40],
+      [45, 40],
+      [45, 45],
+      [40, 45],
+    ]);
     const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
     expect(out.multipleComponents).toBe(true);
     // 取的应该是大方块（x 范围在 0..30）
@@ -110,8 +132,18 @@ describe("maskToPolygon · lossy 显式报告 (v0.23.5 WS-E)", () => {
   it("test_mask_to_polygon_marks_lossy_on_multiple_components: 2 个分量 → lossy=true, droppedComponents=1", () => {
     const m = new MaskBuffer({ width: 60, height: 60 });
     // 两个互不相交的方块 → 2 个连通分量。
-    m.fromPolygon([[5, 5], [25, 5], [25, 25], [5, 25]]);
-    m.fromPolygon([[35, 35], [50, 35], [50, 50], [35, 50]]);
+    m.fromPolygon([
+      [5, 5],
+      [25, 5],
+      [25, 25],
+      [5, 25],
+    ]);
+    m.fromPolygon([
+      [35, 35],
+      [50, 35],
+      [50, 50],
+      [35, 50],
+    ]);
     const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
     expect(out.multipleComponents).toBe(true);
     expect(out.lossy).toBe(true);
@@ -179,9 +211,24 @@ describe("maskToPolygon · lossy 显式报告 (v0.23.5 WS-E)", () => {
 
   it("三个分量 → droppedComponents=2 (诊断准确, 不只是布尔)", () => {
     const m = new MaskBuffer({ width: 80, height: 80 });
-    m.fromPolygon([[5, 5], [20, 5], [20, 20], [5, 20]]);
-    m.fromPolygon([[30, 30], [40, 30], [40, 40], [30, 40]]);
-    m.fromPolygon([[55, 55], [65, 55], [65, 65], [55, 65]]);
+    m.fromPolygon([
+      [5, 5],
+      [20, 5],
+      [20, 20],
+      [5, 20],
+    ]);
+    m.fromPolygon([
+      [30, 30],
+      [40, 30],
+      [40, 40],
+      [30, 40],
+    ]);
+    m.fromPolygon([
+      [55, 55],
+      [65, 55],
+      [65, 65],
+      [55, 65],
+    ]);
     const out = maskToPolygon(m, { simplifyEpsilon: 0.5 });
     expect(out.lossy).toBe(true);
     expect(out.droppedComponents).toBe(2);

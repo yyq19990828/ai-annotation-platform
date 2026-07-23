@@ -8,7 +8,10 @@ interface Props {
   loading?: boolean;
 }
 
-const ACTION_LABEL: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "success" | "outline" | "default" }> = {
+const ACTION_LABEL: Record<
+  string,
+  { label: string; variant: "accent" | "warning" | "danger" | "success" | "outline" | "default" }
+> = {
   "annotation.create": { label: "创建标注", variant: "accent" },
   "annotation.update": { label: "修改标注", variant: "default" },
   "annotation.delete": { label: "删除标注", variant: "danger" },
@@ -60,27 +63,18 @@ function summarizeDetail(action: string | null, detail: Record<string, unknown> 
 
 export function AnnotationHistoryTimeline({ entries, loading }: Props) {
   if (loading) {
-    return (
-      <div className={styles.emptyState}>
-        加载历史…
-      </div>
-    );
+    return <div className={styles.emptyState}>加载历史…</div>;
   }
   if (entries.length === 0) {
-    return (
-      <div className={styles.emptyState}>
-        暂无历史记录
-      </div>
-    );
+    return <div className={styles.emptyState}>暂无历史记录</div>;
   }
 
   return (
     <div className={styles.root}>
       {entries.map((e, i) => {
         const meta = e.action ? ACTION_LABEL[e.action] : undefined;
-        const summary = e.kind === "audit"
-          ? summarizeDetail(e.action, e.detail)
-          : (e.body ?? "").slice(0, 200);
+        const summary =
+          e.kind === "audit" ? summarizeDetail(e.action, e.detail) : (e.body ?? "").slice(0, 200);
         const isInactive = e.kind === "comment" && e.detail && e.detail["is_active"] === false;
 
         return (
@@ -91,14 +85,16 @@ export function AnnotationHistoryTimeline({ entries, loading }: Props) {
             <div className={styles.avatarCell}>
               <Avatar
                 size="sm"
-                initial={(e.actor?.avatar_initial ?? e.actor?.name?.slice(0, 1) ?? "?").toUpperCase()}
+                initial={(
+                  e.actor?.avatar_initial ??
+                  e.actor?.name?.slice(0, 1) ??
+                  "?"
+                ).toUpperCase()}
               />
             </div>
             <div className={styles.content}>
               <div className={styles.header}>
-                <span className={styles.actor}>
-                  {e.actor?.name ?? "—"}
-                </span>
+                <span className={styles.actor}>{e.actor?.name ?? "—"}</span>
                 {e.kind === "audit" && meta ? (
                   <Badge variant={meta.variant} dot>
                     {meta.label}
@@ -108,15 +104,9 @@ export function AnnotationHistoryTimeline({ entries, loading }: Props) {
                 ) : (
                   <Badge variant="outline">评论{isInactive ? "（已撤回）" : ""}</Badge>
                 )}
-                <span className={styles.time}>
-                  {formatRelative(e.timestamp)}
-                </span>
+                <span className={styles.time}>{formatRelative(e.timestamp)}</span>
               </div>
-              {summary && (
-                <div className={styles.summary}>
-                  {summary}
-                </div>
-              )}
+              {summary && <div className={styles.summary}>{summary}</div>}
             </div>
           </div>
         );

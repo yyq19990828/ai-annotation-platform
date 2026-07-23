@@ -106,9 +106,9 @@ def test_emit_keypoint_visibility_thresholds() -> None:
     r0.keypoints = MagicMock()
     # 17 点: 不同 v 值测三档可见性 (v>0.5→2, v>0→1, 否则 0).
     kp = np.zeros((1, 17, 3), dtype=np.float32)
-    kp[0, 0] = (10, 20, 0.9)   # 可见
-    kp[0, 1] = (30, 40, 0.3)   # 遮挡
-    kp[0, 2] = (50, 60, 0.0)   # 未标注
+    kp[0, 0] = (10, 20, 0.9)  # 可见
+    kp[0, 1] = (30, 40, 0.3)  # 遮挡
+    kp[0, 2] = (50, 60, 0.0)  # 未标注
     r0.keypoints.data = _mk_tensor(kp)
 
     out = _emit_keypoint(r0, {0: "person"}, img_w=100, img_h=100)

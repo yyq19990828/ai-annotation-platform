@@ -15,7 +15,14 @@ import {
   runtimeKeyFor,
   tierLabel,
 } from "./catalogModel";
-import { COMPOSITION_BADGE, infraLabel, inputLabel, modalityLabel, taskLabel, taskVariant } from "./labels";
+import {
+  COMPOSITION_BADGE,
+  infraLabel,
+  inputLabel,
+  modalityLabel,
+  taskLabel,
+  taskVariant,
+} from "./labels";
 import { WarmButton } from "./WarmButton";
 
 const TAG_CLASS =
@@ -34,7 +41,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
   const attrs =
     m.output_attribute_schema && m.output_attribute_schema.length > 0
       ? m.output_attribute_schema.map((s) => s.label || s.key)
-      : m.output_attribute_types ?? [];
+      : (m.output_attribute_types ?? []);
   const variantGroups = (m.supported_variants ?? []).filter(
     (g) => Array.isArray(g.variants) && g.variants.length > 0,
   );
@@ -63,9 +70,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
         <div className="flex shrink-0 items-center gap-1.5">
           {item.warnings && item.warnings.length > 0 && (
             <span
-              title={item.warnings
-                .map((w) => `${w.field}=${w.value}: ${w.message}`)
-                .join("\n")}
+              title={item.warnings.map((w) => `${w.field}=${w.value}: ${w.message}`).join("\n")}
             >
               <Badge variant="warning">⚠ 协议 {item.warnings.length}</Badge>
             </span>
@@ -187,7 +192,9 @@ export function ModelCard({ item }: { item: FlatModel }) {
         <div className="flex flex-col gap-1.5 border-t border-dashed border-border pt-1">
           {variantGroups.map((g) => (
             <div key={g.key} className="flex flex-col gap-1">
-              <span className="text-2xs font-semibold text-muted-foreground">{g.title ?? g.key}</span>
+              <span className="text-2xs font-semibold text-muted-foreground">
+                {g.title ?? g.key}
+              </span>
               <div className="flex flex-wrap gap-1.5">
                 {g.variants!.map((v) => {
                   const metaBits = [
@@ -208,9 +215,7 @@ export function ModelCard({ item }: { item: FlatModel }) {
                       {metaBits.length > 0 && (
                         <span className="text-muted-foreground"> · {metaBits.join(" · ")}</span>
                       )}
-                      {v.recommended && (
-                        <span className="text-status-caution"> ★</span>
-                      )}
+                      {v.recommended && <span className="text-status-caution"> ★</span>}
                     </span>
                   );
                 })}

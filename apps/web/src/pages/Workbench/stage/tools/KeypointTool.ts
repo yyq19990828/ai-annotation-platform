@@ -17,7 +17,13 @@ export const KeypointTool: CanvasTool = {
   label: "关键点",
   icon: "point",
   cursor: "crosshair",
-  onPointerDown: ({ pt, evt, readOnly, pendingDrawing, keypointDraft }: ToolPointerContext): DragInit | null => {
+  onPointerDown: ({
+    pt,
+    evt,
+    readOnly,
+    pendingDrawing,
+    keypointDraft,
+  }: ToolPointerContext): DragInit | null => {
     if (readOnly || pendingDrawing || !keypointDraft) return null;
     // 未配置 schema (nodeCount=0) → 无可放节点; 已放满 → 不再吃事件
     if (keypointDraft.nodeCount === 0) return null;

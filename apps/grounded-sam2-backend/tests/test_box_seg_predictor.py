@@ -57,7 +57,9 @@ def test_predict_boxes_sets_image_once_and_tags_parent_idx(predictor):
 
     boxes = [([0.0, 0.0, 0.5, 0.5], 0), ([0.5, 0.5, 1.0, 1.0], 7)]
     # cache_key=None 绕过 embedding cache, 走 set_image 路径。
-    results, hit = predictor.predict_boxes(img, boxes, cache_key=None, simplify_tolerance=1.0)
+    results, hit = predictor.predict_boxes(
+        img, boxes, cache_key=None, simplify_tolerance=1.0
+    )
 
     # 一图一次 encode, 两框各跑一次轻量 decoder。
     assert predictor._sam_predictor.set_image.call_count == 1

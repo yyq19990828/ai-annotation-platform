@@ -6,8 +6,8 @@
 
 历史版本详情见 [`docs/changelogs/`](docs/changelogs/)：
 
-| 版本组 | 文件 |
-|--------|------|
+| 版本组 | 文件                                                   |
+| ------ | ------------------------------------------------------ |
 | 0.22.x | [docs/changelogs/0.22.x.md](docs/changelogs/0.22.x.md) |
 | 0.21.x | [docs/changelogs/0.21.x.md](docs/changelogs/0.21.x.md) |
 | 0.20.x | [docs/changelogs/0.20.x.md](docs/changelogs/0.20.x.md) |
@@ -21,22 +21,26 @@
 | 0.12.x | [docs/changelogs/0.12.x.md](docs/changelogs/0.12.x.md) |
 | 0.11.x | [docs/changelogs/0.11.x.md](docs/changelogs/0.11.x.md) |
 | 0.10.x | [docs/changelogs/0.10.x.md](docs/changelogs/0.10.x.md) |
-| 0.9.x | [docs/changelogs/0.9.x.md](docs/changelogs/0.9.x.md) |
-| 0.8.x | [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md) |
-| 0.7.x | [docs/changelogs/0.7.x.md](docs/changelogs/0.7.x.md) |
-| 0.6.x | [docs/changelogs/0.6.x.md](docs/changelogs/0.6.x.md) |
-| 0.5.x | [docs/changelogs/0.5.x.md](docs/changelogs/0.5.x.md) |
-| 0.4.x | [docs/changelogs/0.4.x.md](docs/changelogs/0.4.x.md) |
-| 0.3.x | [docs/changelogs/0.3.x.md](docs/changelogs/0.3.x.md) |
-| 0.2.x | [docs/changelogs/0.2.x.md](docs/changelogs/0.2.x.md) |
-| 0.1.x | [docs/changelogs/0.1.x.md](docs/changelogs/0.1.x.md) |
-
+| 0.9.x  | [docs/changelogs/0.9.x.md](docs/changelogs/0.9.x.md)   |
+| 0.8.x  | [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md)   |
+| 0.7.x  | [docs/changelogs/0.7.x.md](docs/changelogs/0.7.x.md)   |
+| 0.6.x  | [docs/changelogs/0.6.x.md](docs/changelogs/0.6.x.md)   |
+| 0.5.x  | [docs/changelogs/0.5.x.md](docs/changelogs/0.5.x.md)   |
+| 0.4.x  | [docs/changelogs/0.4.x.md](docs/changelogs/0.4.x.md)   |
+| 0.3.x  | [docs/changelogs/0.3.x.md](docs/changelogs/0.3.x.md)   |
+| 0.2.x  | [docs/changelogs/0.2.x.md](docs/changelogs/0.2.x.md)   |
+| 0.1.x  | [docs/changelogs/0.1.x.md](docs/changelogs/0.1.x.md)   |
 
 ---
 
 ## [Unreleased]
 
+### Changed
+
+- **全仓格式化改为可复现双层门禁**. 第一方 Python 统一由固定版 Ruff 检查和格式化，前端、文档与配置文件统一由 Prettier 管理；CI 先执行全仓只读格式与静态检查，再以 manual 阶段复核 pre-commit 全文件行为，不再修改分支并自动提交局部 API 修复。pre-commit 与根命令使用相同边界并明确排除 vendor、生成物和锁文件。
+
 ### Fixed
+
 - **远程 HTTP 工作台可以采纳原生 Mask 候选**. 非安全上下文缺少 `crypto.randomUUID`
   时，备用幂等键现在始终满足服务端长度约束；请求校验失败也会直接显示具体字段与原因，
   不再只提示 `Unprocessable Entity`。
@@ -55,6 +59,7 @@
   `annotation_screenshots_test`。
 
 ### Security
+
 - **测试 seed 路由改为显式授权**. Seed、login 与 cleanup 端点只在
   `E2E_SEED_ENABLED=true` 且当前数据库名以 `_e2e` 或 `_test` 结尾时可用；
   production 始终不挂载这组路由，避免开发或 staging 配置被误用为测试数据入口。
@@ -62,6 +67,7 @@
 ## [0.23.11] - 2026-07-23
 
 ### Added
+
 - **Mask 修订账本与质量内核**. Raster / Video Mask 的几何变更现在会在同一数据库事务中
   保留不可变前置版本，为版本对比、冲突安全修复和回滚提供真值依据；新的稀疏 RLE
   质量内核以前景 8 连通 / 背景 4 连通计算组件、孔洞、边界、重叠、桥接、边界噪声与
@@ -91,6 +97,7 @@
   标准 compressed RLE，稀疏帧、帧号基准和 palette 重叠都必须选择明确策略并进入预检报告。
 
 ### Changed
+
 - **图片原生 Mask 编辑正式默认开启**. 新建和既有项目现在默认允许原生 Raster Mask 写入，
   项目管理员仍可按项目关闭；部署创建总闸继续优先于项目选择，可紧急将所有项目切为只读。
 - **审阅接入 Mask 质检证据**. 提交任务后自动排队当前 Mask 扫描，阻断配置下必须拥有
@@ -106,10 +113,12 @@
   非可移植媒体引用；需要跨实例无损迁移时应选择 AAP JSON。
 
 ### Fixed
+
 - **Mask prompt 源内容冲突返回精确原因**. refine 收据绑定的源 Mask 像素已变化时，现在优先返回
   `mask_prompt_source_changed`，不再被通用 annotation 版本冲突提前覆盖。
 
 ### Security
+
 - **Mask 质检权限与旧结果隔离**. 项目级列表只返回当前审核员可见批次中的任务，审阅操作
   在行锁下复核可见性与 claim owner；标注版本、活性或配置改变后，旧 issue 立即变为
   只读 stale，不再参与阻断、告警接受或状态修改。
@@ -129,11 +138,13 @@
 ## [0.23.10] - 2026-07-22
 
 ### Added
+
 - **8K 图片 Mask 分块编辑**. 图片 Mask 最大支持 8192 像素单边与 67,108,864 总像素；
   任一边超过 4096 或总像素超过 16,777,216 时，工作台自动使用稀疏 tile 后端，保留
   笔刷、橡皮、套索加减、撤销重做、保存刷新与当前视口 ROI 形态学，不分配整图 alpha 或 canvas。
 
 ### Changed
+
 - **Mask 显示缓存硬预算**. 工作台按设备内存使用 Low / Standard / High 缓存与下载并发档位，在插入前执行
   retained bytes 准入并优先保护正在编辑或选中的对象；同一内容摘要的并发读取合并为一次请求。无法准入的
   对象进入可重试的延后状态，单个超大对象改用受限 bitmap 预览并继续按原始 RLE 做精确像素命中，避免
@@ -154,6 +165,7 @@
 ## [0.23.9] - 2026-07-22
 
 ### Added
+
 - **Mask 高级像素操作内核**. 图片与视频共用的二值 Buffer 现具备圆形 / 方形硬边写入、像素中心
   polygon 加减、4 / 8 邻域 flood fill、可命中的连通域 / hole membership，以及方形 / 圆盘 kernel
   的膨胀、腐蚀、开闭运算；所有操作返回统一的面积、拓扑、变化像素与脏区报告。
@@ -170,11 +182,13 @@
 - **标注转换中心**. 图片与视频的 polygon、Mask 和紧致 bbox 转换统一为带逐对象损失报告的 dry-run / token / execute 工作流；支持同类型批量 copy / replace、视频 current-frame / keyframes 与显式 held 物化。预览不写 Mask 内容或占用配额，执行时以版本摘要、报告重算、幂等 operation、lineage 和单事务提交保证冲突时零部分写入。
 
 ### Changed
+
 - **实例预览保留与重算**. 蓝色实例预览现在冻结生成时的范围与版本；冲突或网络失败保留 Buffer、选择和
   幂等键，只有用户选择「刷新范围」时才基于最新 Mask 重算。恢复动作按错误类型收窄，删除图片实例前显示二次确认；视频 Mask 轨迹清单也支持 `Shift` 多选合并。
 - **Mask 帧状态来源保真**. 撤销 / 重做保留关键帧的 manual / prediction 来源、遮挡和属性；manual 与 prediction `outside` 区间分别归并，人工恢复不再改写预测区间。
 
 ### Fixed
+
 - **Mask 高级预览与多选合并可达性**. 选择 8 邻域时，预览中的组件前后数量现在按同一邻域统计，
   不再显示实际合并但报告仍按 4 邻域计算的矛盾结果；从多选对象进入 Mask 编辑也会保留选择集合，
   「合并已选 Mask」不再因入口把多选收敛成单选而保持禁用。
@@ -185,6 +199,7 @@
 ## [0.23.8] - 2026-07-22
 
 ### Added
+
 - **原生 Mask AI 交互协议地基**. 扩展 ML capability 受控词表与共享协议包，冻结原生 COCO RLE
   候选、Mask prompt、正负 scribble、视频纠错帧、空结果诊断和显式 fallback lineage；Tracker
   同时按真实输入声明 `video`，未实现的 Mask 交互能力继续保持不声明。
@@ -210,6 +225,7 @@
   Tracker 局部决定、人工纠错关键帧、定向重传播与 staged 引用 TTL 的统一边界。
 
 ### Changed
+
 - **交互候选代理返回路由 lineage**. 图片与视频单帧响应补充请求 backend、实际实例、
   服务池、目标 model 与模型版本，为后续原子接受提供可追溯输入。
 - **图片 Mask 部署写能力默认开启**. reader / exporter / 浏览器退出矩阵通过后，部署总闸改为默认
@@ -220,6 +236,7 @@
   并使用平台与 backend 能力的较小单窗上限；同轨迹仅允许一个活跃纠错作业。
 
 ### Fixed
+
 - **SAM3 Tracker Mask 像素与空帧保真**. Multiplex 的原生 Mask 输出不再做形态学开运算或丢弃
   小连通区，无目标帧返回尺寸正确的全背景 RLE 与 `outside=true`，不再误报 bbox。
 - **原生候选失败恢复**. 网络错误、版本冲突或服务端失败不再提前清空候选、prompt 与幂等键；
@@ -234,6 +251,7 @@
   `/api/unmatched`，不再为含 UUID 的真实 URL 创建无界时序。
 
 ### Security
+
 - **原生 Mask 安全代理**. 平台按同一目标 model 同时检查 prompt 与输出能力，重建 prompt
   revision，校验候选 RLE、媒体尺寸、ID 与空结果诊断；单对象 4 MiB 和整体 16 MiB
   上限在读取 backend 响应流时执行，超限返回稳定 413 reason。
@@ -251,6 +269,7 @@
 ## [0.23.7] - 2026-07-21
 
 ### Added
+
 - **Raster Mask 内容可观测性**. 新增低基数的内容 load / store / verify 成功与错误计数、固定错误原因分类，
   并由健康巡检和保守 GC 精确刷新活跃图片 Mask 标注与预测 Gauge；指标不携带任务、对象或标注标识。
 - **图片原生 RasterMaskGeometry schema**. 新增 `raster_mask` 几何类型，用于图片任务的栅格掩码标注。
@@ -265,6 +284,7 @@
 - **Raster Mask 发布观测与浏览器矩阵**. Prometheus 告警与 Grafana 面板覆盖内容损坏、存储不可用和活跃几何指标缺失；独立的只读与原生写入 Playwright 矩阵固化 12 条发布退出门。
 
 ### Changed
+
 - **共享掩码验证逻辑**. `validate_mask_geometry_for_task` 扩展支持 `raster_mask` 类型，
   验证图片掩码尺寸与数据集项匹配。
 - **前端类型定义**. `Geometry` union 添加 `RasterMaskGeometry` 类型，`rasterMasksApi`
@@ -275,6 +295,7 @@
 - **数据库迁移 0135**. 为项目增加默认关闭的原生 Raster Mask 编辑开关；回滚会删除该列，已创建的 Raster Mask 内容仍保留，应优先采用 forward-fix。
 
 ### Fixed
+
 - **Raster Mask 持久化门禁**. 预测结果写入与预测采纳现与标注创建共用同一个写入边界，
   在创建开关关闭或媒体、尺寸、前景、引用校验失败时，不再留下 Prediction / Annotation 行或提前关联上传对象。
 - **Mask 转换并发与类型一致性**. 替换 raster 内容或转换 geometry 类型缺少 `If-Match`
@@ -292,6 +313,7 @@
 - **点云相邻任务预取**. 无 DatasetItem 的点云任务现从 datasets 桶签发文件 URL，工作台也不再把 PCD 当图片预取，避免切入点云工作台时产生后台 404。
 
 ### Security
+
 - **Mask 任务级授权与灰度门禁**. 图片和视频 Mask 内容读取统一执行批次状态与标注员分派校验，
   防止同项目跨任务读取；有效写能力同时受部署 read / create 开关、项目 opt-in 和
   `region` 工具绑定约束，直接写入、预测、采纳及 AAP / COCO 导入均无法绕过。
@@ -307,8 +329,9 @@
 - **图片 polygon 的 hole / multi_polygon 渲染**. `KonvaPolygon` 现使用 even-odd 填充渲染
   `holes` 与全部 `multi_polygon` 外环，不再只画单个外环；`maskToPolygon` 在多连通 / 含孔时
   显式标记 `lossy` 并阻止有损的 polygon 提交（提示等待原生 Mask 工作台），不再静默取最大环。
-- **Mask 编辑会话状态机**. 新增 `useMaskEditorSession`，统一 `idle → loading → ready → dirty →
-  saving → error` 相位；`sessionId + generation` 隔离过期 GET 回包；保存走单飞 Promise，失败
+- **Mask 编辑会话状态机**. 新增 `useMaskEditorSession`，统一
+  `idle → loading → ready → dirty → saving → error` 相位；`sessionId + generation`
+  隔离过期 GET 回包；保存走单飞 Promise，失败
   保留 buffer / history 并可 retry。`canEditMask` 单一闸门同时检查 task 只读、annotation
   `is_locked`、轨迹 lock、segment lock 与编辑器相位，供 toolbar / 快捷键 / pointer / commit 复用。
 
@@ -338,9 +361,9 @@
 
 - **Mask 内容 gzip 传输 + bounded decompress**. 上传正文继续使用 `coco_rle`，HTTP 压缩由
   `Content-Encoding: gzip` 表示，对象存储压缩由 `storage_encoding: gzip` 表示；引用保持
-  `coco_rle_ref` 并使用 `.json.gz` 对象 key。流式 `zlib` 解压在压缩输入 > 8 MiB、解压输出
-  > 4 MiB 或膨胀比 > 20× 时立即拒绝，关闭 zip bomb 向量；SHA-256 仍对未压缩 canonical
-  bytes 计算，旧未压缩引用及历史混合编码继续可读。
+  `coco_rle_ref` 并使用 `.json.gz` 对象 key。流式 `zlib` 解压在压缩输入超过 8 MiB、
+  解压输出超过 4 MiB 或膨胀比超过 20× 时立即拒绝，关闭 zip bomb 向量；SHA-256
+  仍对未压缩 canonical bytes 计算，旧未压缩引用及历史混合编码继续可读。
 - **交互式帧上传 size cap**. `predict-frame` 与 `interactive-annotating-frame` 现检查
   `Content-Length` 并流式累计字节，超过 32 MiB 返回 413；解码后校验宽高 ≤ 4096、总像素
   ≤ 16M、格式 ∈ {JPEG, PNG}。此前 `await frame.read()` 无任何上限。

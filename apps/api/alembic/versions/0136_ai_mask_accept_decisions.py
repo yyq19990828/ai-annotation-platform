@@ -32,7 +32,9 @@ def upgrade() -> None:
         sa.Column("source_version", sa.Integer(), nullable=True),
         sa.Column("result_version", sa.Integer(), nullable=False),
         sa.Column("actor_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("response_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "response_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

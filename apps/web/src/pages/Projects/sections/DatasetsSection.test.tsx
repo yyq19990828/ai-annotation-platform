@@ -106,9 +106,7 @@ describe("DatasetsSection", () => {
     mockUseProjectDatasets.mockReturnValue({ data: [], isLoading: false });
     mockUseDatasets.mockReturnValue({
       data: {
-        items: [
-          { id: "d2", name: "Foggy Coast", display_id: "DS-2", data_type: "image" },
-        ],
+        items: [{ id: "d2", name: "Foggy Coast", display_id: "DS-2", data_type: "image" }],
       },
     });
     renderUI();
@@ -121,9 +119,7 @@ describe("DatasetsSection", () => {
     mockUseProjectDatasets.mockReturnValue({ data: [], isLoading: false });
     mockUseDatasets.mockReturnValue({
       data: {
-        items: [
-          { id: "d2", name: "Foggy Coast", display_id: "DS-2", data_type: "image" },
-        ],
+        items: [{ id: "d2", name: "Foggy Coast", display_id: "DS-2", data_type: "image" }],
       },
     });
     renderUI();
@@ -136,7 +132,17 @@ describe("DatasetsSection", () => {
 
   it("「关联数据集」按钮在无候选时 disabled", () => {
     mockUseProjectDatasets.mockReturnValue({
-      data: [{ id: "d1", name: "X", display_id: "DS-X", data_type: "image", items_count: 0, tasks_in_project: 0, linked_at: null }],
+      data: [
+        {
+          id: "d1",
+          name: "X",
+          display_id: "DS-X",
+          data_type: "image",
+          items_count: 0,
+          tasks_in_project: 0,
+          linked_at: null,
+        },
+      ],
       isLoading: false,
     });
     mockUseDatasets.mockReturnValue({
@@ -170,8 +176,6 @@ describe("DatasetsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: /取消关联/ }));
     expect(mockPreviewUnlink).toHaveBeenCalledWith("d1", "p1");
     // dangerous 路径下 modal 渲染输入框 + 数据集名 placeholder
-    await waitFor(() =>
-      expect(screen.getByPlaceholderText("City Streets")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByPlaceholderText("City Streets")).toBeInTheDocument());
   });
 });

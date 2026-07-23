@@ -6,7 +6,11 @@ import type { AnnotationResponse } from "@/types";
 function entry(id: string, x: number): VideoFrameEntry {
   return {
     id,
-    ann: { id, class_name: "car", geometry: { type: "video_bbox", frame_index: 0, x, y: 0.1, w: 0.3, h: 0.3 } } as AnnotationResponse,
+    ann: {
+      id,
+      class_name: "car",
+      geometry: { type: "video_bbox", frame_index: 0, x, y: 0.1, w: 0.3, h: 0.3 },
+    } as AnnotationResponse,
     geom: { x, y: 0.1, w: 0.3, h: 0.3 },
     className: "car",
     source: "legacy",
@@ -21,7 +25,9 @@ describe("videoStagePicking", () => {
 
   it("supports small hit padding", () => {
     expect(pickTopVideoEntryAt([entry("box", 0.1)], { x: 0.09, y: 0.2 })).toBeNull();
-    expect(pickTopVideoEntryAt([entry("box", 0.1)], { x: 0.09, y: 0.2 }, { padding: 0.02 })?.id).toBe("box");
+    expect(
+      pickTopVideoEntryAt([entry("box", 0.1)], { x: 0.09, y: 0.2 }, { padding: 0.02 })?.id,
+    ).toBe("box");
   });
 });
 

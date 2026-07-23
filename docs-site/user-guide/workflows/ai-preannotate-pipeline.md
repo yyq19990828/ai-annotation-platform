@@ -52,6 +52,7 @@ last_reviewed: 2026-07-12
 ## Step 4：标注员采用预测结果
 
 预标注完成后，标注员打开工作台：
+
 - **紫色候选框** = AI 预测（Prediction）
 - 点击选中某个 Prediction 框后：按 `A` 采纳选中框 / 按 `D` 驳回选中框
 - 也可在右侧 AI 面板逐条点击接受 / 拒绝按钮
@@ -62,8 +63,8 @@ last_reviewed: 2026-07-12
 
 ## 错误处理
 
-| 情况 | 原因 | 处理 |
-|---|---|---|
-| Job 停在 `running` 超过 10 分钟 | Worker 崩溃或 Backend 超时 | 查 Celery Worker 日志（`docker logs ai-annotation-platform-celery-worker-1 --tail 100`）；参考 [Runbook: ML Backend 不可用](/ops/runbooks/ml-backend-down) |
-| 部分 Task 无 Prediction | Backend 返回空结果（置信度低） | 检查 Backend 日志，调整阈值配置 |
-| 连接 Backend 失败 | URL 配置错误或网络隔离 | 参考 [容器网络排查](/dev/troubleshooting/container-networking) |
+| 情况                            | 原因                           | 处理                                                                                                                                                       |
+| ------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Job 停在 `running` 超过 10 分钟 | Worker 崩溃或 Backend 超时     | 查 Celery Worker 日志（`docker logs ai-annotation-platform-celery-worker-1 --tail 100`）；参考 [Runbook: ML Backend 不可用](/ops/runbooks/ml-backend-down) |
+| 部分 Task 无 Prediction         | Backend 返回空结果（置信度低） | 检查 Backend 日志，调整阈值配置                                                                                                                            |
+| 连接 Backend 失败               | URL 配置错误或网络隔离         | 参考 [容器网络排查](/dev/troubleshooting/container-networking)                                                                                             |

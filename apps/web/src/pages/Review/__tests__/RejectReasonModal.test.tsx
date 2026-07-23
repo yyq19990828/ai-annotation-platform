@@ -8,9 +8,7 @@ import { RejectReasonModal } from "../RejectReasonModal";
 describe("RejectReasonModal", () => {
   it("默认选中第一个 type (missing)，确认时回调返回 reason_type", () => {
     const onConfirm = vi.fn();
-    render(
-      <RejectReasonModal open count={3} onClose={() => {}} onConfirm={onConfirm} />,
-    );
+    render(<RejectReasonModal open count={3} onClose={() => {}} onConfirm={onConfirm} />);
     fireEvent.click(screen.getByTestId("reject-confirm"));
     expect(onConfirm).toHaveBeenCalledWith({
       reason_type: "missing",
@@ -20,9 +18,7 @@ describe("RejectReasonModal", () => {
 
   it("切换 type 后 payload 带新 type", () => {
     const onConfirm = vi.fn();
-    render(
-      <RejectReasonModal open count={1} onClose={() => {}} onConfirm={onConfirm} />,
-    );
+    render(<RejectReasonModal open count={1} onClose={() => {}} onConfirm={onConfirm} />);
     fireEvent.click(screen.getByTestId("reject-type-wrong_geometry"));
     fireEvent.click(screen.getByTestId("reject-confirm"));
     expect(onConfirm).toHaveBeenCalledWith({
@@ -33,9 +29,7 @@ describe("RejectReasonModal", () => {
 
   it("comment 文本填写后 payload 同时带 reason", () => {
     const onConfirm = vi.fn();
-    render(
-      <RejectReasonModal open count={1} onClose={() => {}} onConfirm={onConfirm} />,
-    );
+    render(<RejectReasonModal open count={1} onClose={() => {}} onConfirm={onConfirm} />);
     fireEvent.change(screen.getByTestId("reject-comment"), {
       target: { value: "框漏了 3 处行人" },
     });
@@ -69,14 +63,7 @@ describe("RejectReasonModal", () => {
   });
 
   it("无 skipReasonHint 时不显示紫色提示", () => {
-    render(
-      <RejectReasonModal
-        open
-        count={1}
-        onClose={() => {}}
-        onConfirm={() => {}}
-      />,
-    );
+    render(<RejectReasonModal open count={1} onClose={() => {}} onConfirm={() => {}} />);
     expect(screen.queryByTestId("reject-skip-hint")).toBeNull();
   });
 });

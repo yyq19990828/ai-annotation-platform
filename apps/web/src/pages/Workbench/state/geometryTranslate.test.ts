@@ -17,7 +17,14 @@ describe("clamp01 / translatePoints", () => {
     // 点集 x∈[0.1,0.9] (宽 0.8), 要求平移 +0.2: 右侧界 = 1 - 0.9 = 0.1, dx clamp 到 0.1
     // → 平移后 x∈[0.2, 1.0] (宽仍 0.8, 未被拉伸)。y 未越界 → dy = -0.05 直接施加。
     // (浮点尾巴: 0.1 + 0.1 = 0.19999999999999998, 保持形状这条不变量本身仍成立)
-    const out = translatePoints([[0.1, 0.1], [0.9, 0.9]], 0.2, -0.05);
+    const out = translatePoints(
+      [
+        [0.1, 0.1],
+        [0.9, 0.9],
+      ],
+      0.2,
+      -0.05,
+    );
     expect(out[0][0]).toBeCloseTo(0.2, 10);
     expect(out[0][1]).toBeCloseTo(0.05, 10);
     expect(out[1][0]).toBeCloseTo(1.0, 10);
@@ -48,7 +55,14 @@ describe("translateGeometry", () => {
 
   it("polygon 逐顶点平移", () => {
     const { geometry } = translateGeometry(
-      anno({ type: "polygon", points: [[0.1, 0.1], [0.2, 0.2], [0.3, 0.1]] }),
+      anno({
+        type: "polygon",
+        points: [
+          [0.1, 0.1],
+          [0.2, 0.2],
+          [0.3, 0.1],
+        ],
+      }),
       0.1,
       0.1,
     );
@@ -64,7 +78,14 @@ describe("translateGeometry", () => {
     // → 结果 x∈[0.2, 1.0] (宽仍 0.8)。原逐点 clamp 会得到 [[0.6,...], [0.7,...], [1.0,...]]
     // 宽度被压到 0.4, 形状拉扁。此测试守护「保持形状」这条不变量。
     const { geometry } = translateGeometry(
-      anno({ type: "polygon", points: [[0.1, 0.2], [0.5, 0.4], [0.9, 0.2]] }),
+      anno({
+        type: "polygon",
+        points: [
+          [0.1, 0.2],
+          [0.5, 0.4],
+          [0.9, 0.2],
+        ],
+      }),
       0.5,
       0,
     );
@@ -84,8 +105,22 @@ describe("translateGeometry", () => {
       anno({
         type: "multi_polygon",
         polygons: [
-          { type: "polygon", points: [[0.1, 0.2], [0.3, 0.2], [0.2, 0.4]] },
-          { type: "polygon", points: [[0.6, 0.2], [0.8, 0.2], [0.7, 0.4]] },
+          {
+            type: "polygon",
+            points: [
+              [0.1, 0.2],
+              [0.3, 0.2],
+              [0.2, 0.4],
+            ],
+          },
+          {
+            type: "polygon",
+            points: [
+              [0.6, 0.2],
+              [0.8, 0.2],
+              [0.7, 0.4],
+            ],
+          },
         ],
       }),
       0.5,
@@ -95,8 +130,12 @@ describe("translateGeometry", () => {
     // 各顶点被同一 dx=0.2 平移 (allow tiny float tail)。
     const flat = polys.flatMap((p) => p.points);
     const expected: [number, number][] = [
-      [0.3, 0.2], [0.5, 0.2], [0.4, 0.4],
-      [0.8, 0.2], [1.0, 0.2], [0.9, 0.4],
+      [0.3, 0.2],
+      [0.5, 0.2],
+      [0.4, 0.4],
+      [0.8, 0.2],
+      [1.0, 0.2],
+      [0.9, 0.4],
     ];
     flat.forEach(([x, y], i) => {
       expect(x).toBeCloseTo(expected[i][0], 10);

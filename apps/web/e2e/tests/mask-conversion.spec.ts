@@ -26,7 +26,9 @@ interface ConversionSummary {
 
 async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) {
-    throw new Error(`${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`);
+    throw new Error(
+      `${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`,
+    );
   }
   return (await response.json()) as T;
 }
@@ -53,9 +55,8 @@ test.describe("annotation conversion center", () => {
     const className = project.tool_bindings?.region?.classes?.[0]?.name;
     if (!className) throw new Error("seed project has no region class");
 
-    const source = await json<AnnotationDto>(await request.post(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      {
+    const source = await json<AnnotationDto>(
+      await request.post(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
         headers,
         data: {
           annotation_type: "polygon",
@@ -63,11 +64,16 @@ test.describe("annotation conversion center", () => {
           class_name: className,
           geometry: {
             type: "polygon",
-            points: [[0.2, 0.2], [0.7, 0.2], [0.7, 0.7], [0.2, 0.7]],
+            points: [
+              [0.2, 0.2],
+              [0.7, 0.2],
+              [0.7, 0.7],
+              [0.2, 0.7],
+            ],
           },
         },
-      },
-    ));
+      }),
+    );
 
     await seed.injectToken(page, data.annotator_email);
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
@@ -77,21 +83,23 @@ test.describe("annotation conversion center", () => {
 
     const dialog = page.getByRole("dialog", { name: "标注转换中心" });
     await expect(dialog).toContainText("Polygon · 1 个对象");
-    const dryRun = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotation-conversions:dry-run`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const dryRun = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotation-conversions:dry-run`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await dialog.getByRole("button", { name: "生成预览" }).click();
     const copyPreview = await json<{ summary: ConversionSummary }>(await dryRun);
     await expect(dialog.getByLabel("转换预览报告")).toContainText("polygon");
     await expect(dialog.getByLabel("转换预览报告")).toContainText("raster_mask");
 
-    const copyExecute = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const copyExecute = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await dialog.getByRole("button", { name: "执行转换" }).click();
     const copyResult = await json<{
       created_annotations: AnnotationDto[];
@@ -110,10 +118,11 @@ test.describe("annotation conversion center", () => {
     await replaceDialog.getByRole("button", { name: "生成预览" }).click();
     await expect(replaceDialog.getByLabel("转换预览报告")).toContainText("替换来源");
 
-    const beforeConflict = (await json<AnnotationDto[]>(await request.get(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      { headers },
-    ))).find((annotation) => annotation.id === raster.id);
+    const beforeConflict = (
+      await json<AnnotationDto[]>(
+        await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers }),
+      )
+    ).find((annotation) => annotation.id === raster.id);
     if (!beforeConflict) throw new Error("raster source disappeared before conflict check");
     const bumped = await request.patch(
       `${API_BASE}/api/v1/tasks/${taskId}/annotations/${raster.id}`,
@@ -127,19 +136,21 @@ test.describe("annotation conversion center", () => {
     await replaceDialog.getByRole("button", { name: "执行转换" }).click();
     let confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("来源对象会被替换");
-    const conflictExecute = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-    ));
+    const conflictExecute = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST",
+    );
     await confirm.getByRole("button", { name: "确认执行" }).click();
     expect((await conflictExecute).status()).toBe(409);
     await expect(replaceDialog).toContainText("转换未完成");
-    const afterConflict = await json<AnnotationDto[]>(await request.get(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      { headers },
-    ));
+    const afterConflict = await json<AnnotationDto[]>(
+      await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers }),
+    );
     expect(afterConflict).toHaveLength(2);
-    expect(afterConflict.find((annotation) => annotation.id === raster.id)?.geometry.type).toBe("raster_mask");
+    expect(afterConflict.find((annotation) => annotation.id === raster.id)?.geometry.type).toBe(
+      "raster_mask",
+    );
 
     await replaceDialog.getByRole("button", { name: "重新配置" }).click();
     await replaceDialog.getByRole("button", { name: "生成预览" }).click();
@@ -148,11 +159,12 @@ test.describe("annotation conversion center", () => {
     confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("来源对象会被替换");
 
-    const replaceExecute = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const replaceExecute = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await confirm.getByRole("button", { name: "确认执行" }).click();
     const replaceResult = await json<{
       updated_annotations: AnnotationDto[];
@@ -160,24 +172,28 @@ test.describe("annotation conversion center", () => {
     expect(replaceResult.updated_annotations[0].id).toBe(raster.id);
     expect(replaceResult.updated_annotations[0].geometry.type).toMatch(/polygon/);
 
-    const annotations = await json<AnnotationDto[]>(await request.get(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      { headers },
-    ));
+    const annotations = await json<AnnotationDto[]>(
+      await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers }),
+    );
     expect(annotations).toHaveLength(2);
-    expect(annotations.every((annotation) => annotation.geometry.type.includes("polygon"))).toBe(true);
+    expect(annotations.every((annotation) => annotation.geometry.type.includes("polygon"))).toBe(
+      true,
+    );
   });
 
-  test("video polygon track keyframes convert to Mask and held preview stays side-effect free", async ({ page, request, seed }) => {
+  test("video polygon track keyframes convert to Mask and held preview stays side-effect free", async ({
+    page,
+    request,
+    seed,
+  }) => {
     test.setTimeout(90_000);
     const data = await seed.reset();
     await seed.configureRasterMask(data.project_id, true);
     const { task_id: taskId } = await seed.videoTask(data.project_id);
     const token = await seed.accessToken(data.admin_email);
     const headers = { Authorization: `Bearer ${token}` };
-    const source = await json<AnnotationDto>(await request.post(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      {
+    const source = await json<AnnotationDto>(
+      await request.post(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
         headers,
         data: {
           annotation_type: "video_track_polygon",
@@ -189,20 +205,30 @@ test.describe("annotation conversion center", () => {
             keyframes: [
               {
                 frame_index: 0,
-                points: [[0.1, 0.1], [0.4, 0.1], [0.4, 0.4], [0.1, 0.4]],
+                points: [
+                  [0.1, 0.1],
+                  [0.4, 0.1],
+                  [0.4, 0.4],
+                  [0.1, 0.4],
+                ],
                 source: "manual",
               },
               {
                 frame_index: 10,
-                points: [[0.5, 0.5], [0.8, 0.5], [0.8, 0.8], [0.5, 0.8]],
+                points: [
+                  [0.5, 0.5],
+                  [0.8, 0.5],
+                  [0.8, 0.8],
+                  [0.5, 0.8],
+                ],
                 source: "manual",
               },
             ],
             outside: [],
           },
         },
-      },
-    ));
+      }),
+    );
 
     await seed.injectToken(page, data.admin_email);
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
@@ -219,11 +245,12 @@ test.describe("annotation conversion center", () => {
     await expect(report).toContainText("帧 0, 10");
     await expect(report.getByText("物化帧").locator("..")).toContainText("0");
 
-    const executed = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const executed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await dialog.getByRole("button", { name: "执行转换" }).click();
     const keyframeResult = await json<{
       created_annotations: AnnotationDto[];
@@ -234,7 +261,9 @@ test.describe("annotation conversion center", () => {
 
     await expect(dialog).toBeHidden({ timeout: 10_000 });
     await sourceRow.dispatchEvent("click");
-    await expect(page.locator('button[aria-label="转 Mask"]:visible')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('button[aria-label="转 Mask"]:visible')).toBeVisible({
+      timeout: 10_000,
+    });
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     for (let frame = 1; frame <= 5; frame += 1) {
       await page.keyboard.press("ArrowRight");
@@ -249,13 +278,18 @@ test.describe("annotation conversion center", () => {
     await expect(heldReport).toContainText("帧 5");
     await expect(heldReport.getByText("物化帧").locator("..")).toContainText("1");
     await dialog.getByRole("button", { name: "取消" }).click();
-    expect(await json<AnnotationDto[]>(await request.get(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      { headers },
-    ))).toHaveLength(2);
+    expect(
+      await json<AnnotationDto[]>(
+        await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers }),
+      ),
+    ).toHaveLength(2);
   });
 
-  test("raster Mask converts to an exact tight BBox without pretending to be rotated", async ({ page, request, seed }) => {
+  test("raster Mask converts to an exact tight BBox without pretending to be rotated", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await seed.configureRasterMask(data.project_id, true);
@@ -286,11 +320,12 @@ test.describe("annotation conversion center", () => {
     await dialog.getByRole("button", { name: "执行转换" }).click();
     const confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("会改变像素真值");
-    const executed = page.waitForResponse((response) => (
-      response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`)
-      && response.request().method() === "POST"
-      && response.ok()
-    ));
+    const executed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/tasks/${taskId}/annotation-conversions:execute`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await confirm.getByRole("button", { name: "确认执行" }).click();
     const result = await json<{ created_annotations: AnnotationDto[] }>(await executed);
     const bbox = result.created_annotations[0].geometry;
@@ -299,10 +334,9 @@ test.describe("annotation conversion center", () => {
     expect(bbox.y).toBeCloseTo(3 / 48, 8);
     expect(bbox.w).toBeCloseTo(57 / 64, 8);
     expect(bbox.h).toBeCloseTo(40 / 48, 8);
-    const final = await json<AnnotationDto[]>(await request.get(
-      `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-      { headers },
-    ));
+    const final = await json<AnnotationDto[]>(
+      await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers }),
+    );
     expect(final).toHaveLength(2);
     expect(final.some((annotation) => annotation.geometry.type === "rotated_bbox")).toBe(false);
   });

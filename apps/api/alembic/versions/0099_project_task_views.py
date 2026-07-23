@@ -63,12 +63,8 @@ def upgrade() -> None:
             "visibility IN ('private', 'project')",
             name="ck_project_task_views_visibility",
         ),
-        sa.ForeignKeyConstraint(
-            ["owner_id"], ["users.id"], ondelete="SET NULL"
-        ),
-        sa.ForeignKeyConstraint(
-            ["project_id"], ["projects.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "project_id",

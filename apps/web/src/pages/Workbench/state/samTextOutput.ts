@@ -32,7 +32,7 @@ const VALID: ReadonlySet<TextOutputMode> = new Set(["box", "mask", "both"]);
 
 function readMode(storage: Storage, key: string): TextOutputMode | null {
   const raw = storage.getItem(key);
-  return raw && VALID.has(raw as TextOutputMode) ? raw as TextOutputMode : null;
+  return raw && VALID.has(raw as TextOutputMode) ? (raw as TextOutputMode) : null;
 }
 
 export function readStoredOutputMode(

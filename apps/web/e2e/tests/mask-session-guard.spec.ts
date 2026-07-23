@@ -27,12 +27,14 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
 
     // 未涂抹: Enter 不应产生 POST。
-    const noPrematurePost = page.waitForResponse(
-      (resp) =>
-        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
-        resp.request().method() === "POST",
-      { timeout: 3_000 },
-    ).catch(() => null);
+    const noPrematurePost = page
+      .waitForResponse(
+        (resp) =>
+          /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
+          resp.request().method() === "POST",
+        { timeout: 3_000 },
+      )
+      .catch(() => null);
     await page.keyboard.press("Enter");
     expect(await noPrematurePost).toBeNull();
 
@@ -49,8 +51,11 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     // Enter → 恰好一次 POST。
     let commitPostCount = 0;
     page.on("request", (request) => {
-      if (/\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(request.url())
-        && request.method() === "POST") commitPostCount += 1;
+      if (
+        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(request.url()) &&
+        request.method() === "POST"
+      )
+        commitPostCount += 1;
     });
     const commitPost = page.waitForResponse(
       (resp) =>

@@ -11,9 +11,7 @@ import { useAuthStore } from "@/stores/authStore";
  * (后端 ui 子树深合并, 不冲掉 theme)。缺省 false = 显示 (不回归现状)。
  */
 export function useSecondaryBarHiddenPref() {
-  const hidden = useAuthStore(
-    (s) => s.user?.preferences?.ui?.secondary_bar_hidden ?? false,
-  );
+  const hidden = useAuthStore((s) => s.user?.preferences?.ui?.secondary_bar_hidden ?? false);
 
   const setHidden = useCallback((next: boolean) => {
     const { user, setUser } = useAuthStore.getState();
@@ -26,9 +24,7 @@ export function useSecondaryBarHiddenPref() {
         ui: { ...prevPrefs.ui, secondary_bar_hidden: next },
       },
     });
-    void authApi.updatePreferences({ ui: { secondary_bar_hidden: next } }).catch(
-      () => {},
-    );
+    void authApi.updatePreferences({ ui: { secondary_bar_hidden: next } }).catch(() => {});
   }, []);
 
   return { hidden, setHidden };

@@ -83,8 +83,12 @@ function sameRef(left: RasterMaskCompareSessionRef, right: RasterMaskCompareSess
 }
 
 function sameRect(left: RasterMaskTileRect, right: RasterMaskTileRect): boolean {
-  return left.x === right.x && left.y === right.y
-    && left.width === right.width && left.height === right.height;
+  return (
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height
+  );
 }
 
 function tileKey(tileX: number, tileY: number): string {
@@ -133,7 +137,11 @@ export class MaskCompareTileStore {
     this.baseline = { sessionId: `${prefix}:baseline`, sha256: options.baseline.sha256 };
     this.backend.registerSession(this.current.sessionId, this.current.sha256, options.current.rle);
     try {
-      this.backend.registerSession(this.baseline.sessionId, this.baseline.sha256, options.baseline.rle);
+      this.backend.registerSession(
+        this.baseline.sessionId,
+        this.baseline.sha256,
+        options.baseline.rle,
+      );
     } catch (error) {
       this.backend.releaseSession(this.current.sessionId);
       throw error;
@@ -169,11 +177,23 @@ export class MaskCompareTileStore {
     const centerY = (visibleMinY + visibleMaxY) / 2;
     const maxTileX = Math.ceil(this.width / tileWorldSize) - 1;
     const maxTileY = Math.ceil(this.height / tileWorldSize) - 1;
-    const candidates: Array<{ tileX: number; tileY: number; visible: boolean; distance: number }> = [];
-    for (let tileY = Math.max(0, visibleMinY - 1); tileY <= Math.min(maxTileY, visibleMaxY + 1); tileY += 1) {
-      for (let tileX = Math.max(0, visibleMinX - 1); tileX <= Math.min(maxTileX, visibleMaxX + 1); tileX += 1) {
-        const visible = tileX >= visibleMinX && tileX <= visibleMaxX
-          && tileY >= visibleMinY && tileY <= visibleMaxY;
+    const candidates: Array<{ tileX: number; tileY: number; visible: boolean; distance: number }> =
+      [];
+    for (
+      let tileY = Math.max(0, visibleMinY - 1);
+      tileY <= Math.min(maxTileY, visibleMaxY + 1);
+      tileY += 1
+    ) {
+      for (
+        let tileX = Math.max(0, visibleMinX - 1);
+        tileX <= Math.min(maxTileX, visibleMaxX + 1);
+        tileX += 1
+      ) {
+        const visible =
+          tileX >= visibleMinX &&
+          tileX <= visibleMaxX &&
+          tileY >= visibleMinY &&
+          tileY <= visibleMaxY;
         candidates.push({
           tileX,
           tileY,
@@ -183,10 +203,13 @@ export class MaskCompareTileStore {
       }
     }
     return candidates
-      .sort((left, right) => Number(right.visible) - Number(left.visible)
-        || left.distance - right.distance
-        || left.tileY - right.tileY
-        || left.tileX - right.tileX)
+      .sort(
+        (left, right) =>
+          Number(right.visible) - Number(left.visible) ||
+          left.distance - right.distance ||
+          left.tileY - right.tileY ||
+          left.tileX - right.tileX,
+      )
       .slice(0, MAX_COMPARE_TILES)
       .map(({ tileX, tileY }) => {
         const x = tileX * tileWorldSize;
@@ -206,7 +229,9 @@ export class MaskCompareTileStore {
 
   viewportSignature(viewport: MaskCompareViewportRect): string {
     if (this.disposed) return "disposed";
-    return this.selectedTiles(viewport).map((item) => item.key).join("|");
+    return this.selectedTiles(viewport)
+      .map((item) => item.key)
+      .join("|");
   }
 
   async loadViewport(viewport: MaskCompareViewportRect): Promise<MaskCompareRenderableTile[]> {
@@ -217,11 +242,8 @@ export class MaskCompareTileStore {
     this.desiredSignature = signature;
     if (this.inFlight?.signature === signature) {
       const resolved = await this.inFlight.promise;
-      if (
-        this.disposed
-        || generation !== this.generation
-        || this.desiredSignature !== signature
-      ) throw new MaskCompareStaleGenerationError();
+      if (this.disposed || generation !== this.generation || this.desiredSignature !== signature)
+        throw new MaskCompareStaleGenerationError();
       const selectedKeys = new Set(selected.map((item) => item.key));
       for (const key of this.tiles.keys()) {
         if (!selectedKeys.has(key)) this.tiles.delete(key);
@@ -234,48 +256,48 @@ export class MaskCompareTileStore {
       } catch {
         // The newest viewport still gets a chance to load after an older failure.
       }
-      if (
-        this.disposed
-        || generation !== this.generation
-        || this.desiredSignature !== signature
-      ) {
+      if (this.disposed || generation !== this.generation || this.desiredSignature !== signature) {
         throw new MaskCompareStaleGenerationError();
       }
     }
     const selectedKeys = new Set(selected.map((item) => item.key));
     const mode = this.mode;
-    const promise = Promise.all(selected.map(async ({ key, rect, sampleStep }) => {
-      const cached = this.tiles.get(key);
-      if (cached) return cached;
-      const response = await this.backend.compareTile(
-        this.current,
-        this.baseline,
-        rect,
-        mode,
-        sampleStep,
-        { priority: "current", signal: this.lifecycleController.signal },
-      );
-      if (this.disposed) throw new MaskCompareStaleGenerationError();
-      if (
-        !sameRef(response.current, this.current)
-        || !sameRef(response.baseline, this.baseline)
-        || response.mode !== mode
-        || response.sampleStep !== sampleStep
-        || !sameRect(response.rect, rect)
-        || !(response.codes instanceof Uint8Array)
-        || response.codes.length !== Math.ceil(rect.width / sampleStep) * Math.ceil(rect.height / sampleStep)
-      ) throw new Error("Mask comparison tile response does not match its request");
-      const tile = {
-        key,
-        ...rect,
-        sampleStep,
-        rasterWidth: Math.ceil(rect.width / sampleStep),
-        rasterHeight: Math.ceil(rect.height / sampleStep),
-        codes: response.codes,
-      };
-      this.tiles.set(key, tile);
-      return tile;
-    }));
+    const promise = Promise.all(
+      selected.map(async ({ key, rect, sampleStep }) => {
+        const cached = this.tiles.get(key);
+        if (cached) return cached;
+        const response = await this.backend.compareTile(
+          this.current,
+          this.baseline,
+          rect,
+          mode,
+          sampleStep,
+          { priority: "current", signal: this.lifecycleController.signal },
+        );
+        if (this.disposed) throw new MaskCompareStaleGenerationError();
+        if (
+          !sameRef(response.current, this.current) ||
+          !sameRef(response.baseline, this.baseline) ||
+          response.mode !== mode ||
+          response.sampleStep !== sampleStep ||
+          !sameRect(response.rect, rect) ||
+          !(response.codes instanceof Uint8Array) ||
+          response.codes.length !==
+            Math.ceil(rect.width / sampleStep) * Math.ceil(rect.height / sampleStep)
+        )
+          throw new Error("Mask comparison tile response does not match its request");
+        const tile = {
+          key,
+          ...rect,
+          sampleStep,
+          rasterWidth: Math.ceil(rect.width / sampleStep),
+          rasterHeight: Math.ceil(rect.height / sampleStep),
+          codes: response.codes,
+        };
+        this.tiles.set(key, tile);
+        return tile;
+      }),
+    );
     this.inFlight = { signature, promise };
     let resolved: MaskCompareRenderableTile[];
     try {
@@ -283,11 +305,8 @@ export class MaskCompareTileStore {
     } finally {
       if (this.inFlight?.promise === promise) this.inFlight = null;
     }
-    if (
-      this.disposed
-      || generation !== this.generation
-      || this.desiredSignature !== signature
-    ) throw new MaskCompareStaleGenerationError();
+    if (this.disposed || generation !== this.generation || this.desiredSignature !== signature)
+      throw new MaskCompareStaleGenerationError();
     for (const key of this.tiles.keys()) {
       if (!selectedKeys.has(key)) this.tiles.delete(key);
     }

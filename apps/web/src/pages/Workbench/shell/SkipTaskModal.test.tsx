@@ -11,9 +11,7 @@ import { SkipTaskModal } from "./SkipTaskModal";
 describe("SkipTaskModal", () => {
   it("默认 image_corrupt 可直接提交", () => {
     const onConfirm = vi.fn();
-    const { getByTestId } = render(
-      <SkipTaskModal open onClose={() => {}} onConfirm={onConfirm} />,
-    );
+    const { getByTestId } = render(<SkipTaskModal open onClose={() => {}} onConfirm={onConfirm} />);
     const confirm = getByTestId("skip-confirm") as HTMLButtonElement;
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
@@ -22,9 +20,7 @@ describe("SkipTaskModal", () => {
 
   it("选 other 不填 note 时提交禁用", () => {
     const onConfirm = vi.fn();
-    const { getByTestId } = render(
-      <SkipTaskModal open onClose={() => {}} onConfirm={onConfirm} />,
-    );
+    const { getByTestId } = render(<SkipTaskModal open onClose={() => {}} onConfirm={onConfirm} />);
     // 选 other（点击 label 内的 radio input）
     const otherInput = getByTestId("skip-reason-other").querySelector("input")!;
     fireEvent.click(otherInput);
@@ -34,9 +30,7 @@ describe("SkipTaskModal", () => {
 
   it("选 other 填 note 后提交透传 (other, note)", () => {
     const onConfirm = vi.fn();
-    const { getByTestId } = render(
-      <SkipTaskModal open onClose={() => {}} onConfirm={onConfirm} />,
-    );
+    const { getByTestId } = render(<SkipTaskModal open onClose={() => {}} onConfirm={onConfirm} />);
     const otherInput = getByTestId("skip-reason-other").querySelector("input")!;
     fireEvent.click(otherInput);
     const note = getByTestId("skip-reason-note") as HTMLTextAreaElement;
@@ -49,12 +43,7 @@ describe("SkipTaskModal", () => {
 
   it("isSubmitting 时禁用确认按钮", () => {
     const { getByTestId } = render(
-      <SkipTaskModal
-        open
-        isSubmitting
-        onClose={() => {}}
-        onConfirm={() => {}}
-      />,
+      <SkipTaskModal open isSubmitting onClose={() => {}} onConfirm={() => {}} />,
     );
     const confirm = getByTestId("skip-confirm") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);

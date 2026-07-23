@@ -38,9 +38,10 @@ export function useRafThrottle() {
   const schedule = useCallback((fn: () => void) => {
     pendingRef.current = fn;
     if (rafRef.current !== null) return;
-    const raf = typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame
-      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const raf =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
     rafRef.current = raf(() => {
       rafRef.current = null;
       const next = pendingRef.current;

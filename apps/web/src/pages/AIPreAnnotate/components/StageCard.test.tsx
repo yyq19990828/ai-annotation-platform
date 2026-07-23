@@ -69,9 +69,7 @@ describe("StageCard v0.18.5/6", () => {
       data: {
         models: [
           {
-            output_attribute_schema: [
-              { key: "vehicle_color", label: "车辆颜色", type: "select" },
-            ],
+            output_attribute_schema: [{ key: "vehicle_color", label: "车辆颜色", type: "select" }],
           },
         ],
       },
@@ -84,9 +82,7 @@ describe("StageCard v0.18.5/6", () => {
 
   it("backend 未自报属性时, 给 ⚠ 警示 + 写回键回落项目属性 key", () => {
     renderCard();
-    expect(
-      screen.getByText(/该后端未自报输出属性/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/该后端未自报输出属性/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "color" })).toBeInTheDocument();
   });
 
@@ -128,9 +124,7 @@ describe("StageCard v0.18.5/6", () => {
             task: "classification",
             display_name: "纯分类·吃 ROI",
             supported_variants: [{ key: "conf_size", variants: [{ value: "L" }] }],
-            output_attribute_schema: [
-              { key: "color", label: "颜色", type: "select" },
-            ],
+            output_attribute_schema: [{ key: "color", label: "颜色", type: "select" }],
           },
         ],
       },
@@ -249,9 +243,7 @@ describe("StageCard v0.18.5/6", () => {
               { key: "lang", variants: [{ value: "universal" }] },
             ],
             output_attribute_types: ["text", "orientation", "language"],
-            output_attribute_schema: [
-              { key: "text", label: "识别文本", type: "text" },
-            ],
+            output_attribute_schema: [{ key: "text", label: "识别文本", type: "text" }],
           },
         ],
       },

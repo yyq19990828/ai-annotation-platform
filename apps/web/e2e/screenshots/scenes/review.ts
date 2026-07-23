@@ -12,10 +12,7 @@ async function waitForReviewWorkbench(page: Page): Promise<void> {
   await page.waitForTimeout(300);
 }
 
-const reviewRoute = (
-  catalog: Parameters<ScreenshotScene["route"]>[0],
-  openTask: boolean,
-) => {
+const reviewRoute = (catalog: Parameters<ScreenshotScene["route"]>[0], openTask: boolean) => {
   const project = catalog.projects.image_demo;
   const params = new URLSearchParams({
     project: project.id,

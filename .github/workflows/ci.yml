@@ -147,32 +147,25 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   lint:
-    name: Lint (ruff + eslint)
+    name: Format + lint (ruff + prettier + eslint)
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install ruff
-        # Pinned to an exact version shared with the local pre-commit hook so the CI
-        # formatter and the local gate never disagree (v0.23.1 P0 baseline).
-        run: pip install "ruff==0.15.22"
-      - name: ruff check --fix apps/api
-        run: ruff check --fix apps/api/app apps/api/tests
-      - name: ruff format (auto-fix)
-        run: ruff format apps/api/app apps/api/tests
+      - name: Install uv
+        run: pip install uv
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
       - uses: pnpm/action-setup@v4
       - name: pnpm install
-        working-directory: apps/web
         run: pnpm install --frozen-lockfile
+      - name: Repository format check
+        run: pnpm format:check
       - name: codegen (read snapshot for typecheck)
         working-directory: apps/web
         env:
@@ -181,14 +174,12 @@ jobs:
       - name: tsc --noEmit
         working-directory: apps/web
         run: pnpm typecheck
-      - name: eslint
-        working-directory: apps/web
+      - name: Repository lint
         run: pnpm lint
-      - name: Auto-commit lint & format fixes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "style: auto-fix (ruff check --fix + format)"
-          file_pattern: "apps/api/**/*.py"
+      - name: Pre-commit full repository check
+        run: >-
+          uv tool run --from pre-commit==4.6.1 pre-commit run
+          --all-files --hook-stage manual --show-diff-on-failure
 
   docs-build:
     name: Docs build (VitePress)

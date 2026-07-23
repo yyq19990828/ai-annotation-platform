@@ -72,7 +72,10 @@ describe("clampWindow", () => {
 
   it("shifts (not shrinks) a window that overflows the right edge, preserving span", () => {
     // span 60, from 60 → 越界, 整体左移到 [40,100]
-    expect(clampWindow({ from: 60, to: 120 }, 100, MIN_VISIBLE_SPAN)).toEqual({ from: 40, to: 100 });
+    expect(clampWindow({ from: 60, to: 120 }, 100, MIN_VISIBLE_SPAN)).toEqual({
+      from: 40,
+      to: 100,
+    });
   });
 
   it("shifts a window overflowing the left edge to start at 0", () => {
@@ -85,7 +88,10 @@ describe("clampWindow", () => {
   });
 
   it("caps span to maxFrame", () => {
-    expect(clampWindow({ from: -10, to: 200 }, 100, MIN_VISIBLE_SPAN)).toEqual({ from: 0, to: 100 });
+    expect(clampWindow({ from: -10, to: 200 }, 100, MIN_VISIBLE_SPAN)).toEqual({
+      from: 0,
+      to: 100,
+    });
   });
 
   it("returns an empty window for an empty video", () => {
@@ -125,11 +131,17 @@ describe("zoomWindow", () => {
 
 describe("panWindow", () => {
   it("shifts the window by the given frames", () => {
-    expect(panWindow({ from: 20, to: 80 }, 100, 10, MIN_VISIBLE_SPAN)).toEqual({ from: 30, to: 90 });
+    expect(panWindow({ from: 20, to: 80 }, 100, 10, MIN_VISIBLE_SPAN)).toEqual({
+      from: 30,
+      to: 90,
+    });
   });
 
   it("clamps at the right edge without shrinking", () => {
-    expect(panWindow({ from: 50, to: 100 }, 100, 50, MIN_VISIBLE_SPAN)).toEqual({ from: 50, to: 100 });
+    expect(panWindow({ from: 50, to: 100 }, 100, 50, MIN_VISIBLE_SPAN)).toEqual({
+      from: 50,
+      to: 100,
+    });
   });
 
   it("clamps at the left edge without shrinking", () => {

@@ -127,11 +127,7 @@ export interface UseMaskEditorReturn {
   setBrushShape: (shape: MaskBrushShape) => void;
   setConnectivity: (connectivity: MaskConnectivity) => void;
   setRadius: (radius: number) => void;
-  previewOperation: (
-    name: string,
-    result: MaskOperationResult,
-    sourceRevision?: number,
-  ) => boolean;
+  previewOperation: (name: string, result: MaskOperationResult, sourceRevision?: number) => boolean;
   runOperation: (
     name: string,
     operation: MaskOperationSpec,
@@ -170,13 +166,7 @@ function clampRadius(radius: number): number {
   return Math.max(MASK_BRUSH_MIN_PX, Math.min(MASK_BRUSH_MAX_PX, Math.round(radius)));
 }
 
-function brushBounds(
-  x: number,
-  y: number,
-  radius: number,
-  width: number,
-  height: number,
-) {
+function brushBounds(x: number, y: number, radius: number, width: number, height: number) {
   const effectiveRadius = Math.max(0.5, radius);
   const x0 = Math.max(0, Math.floor(x - effectiveRadius));
   const y0 = Math.max(0, Math.floor(y - effectiveRadius));
@@ -194,8 +184,9 @@ export function useMaskEditor({
   historyMaxBytes,
   tileMaxBytes,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
-  const resolvedHistoryMaxBytes = historyMaxBytes
-    ?? (deviceMemory === undefined
+  const resolvedHistoryMaxBytes =
+    historyMaxBytes ??
+    (deviceMemory === undefined
       ? navigatorMaskHistoryBudgetBytes()
       : maskHistoryBudgetBytes(deviceMemory));
   const bufferRef = useRef<MaskBuffer | null>(null);
@@ -231,14 +222,16 @@ export function useMaskEditor({
   const [revision, setRevision] = useState(0);
   const [historyRevision, setHistoryRevision] = useState(0);
   const [operationPreview, setOperationPreview] = useState<MaskOperationPreview | null>(null);
-  const [instanceOperationPreview, setInstanceOperationPreview] = useState<MaskInstanceOperationPreview | null>(null);
+  const [instanceOperationPreview, setInstanceOperationPreview] =
+    useState<MaskInstanceOperationPreview | null>(null);
   const [operationStatus, setOperationStatus] = useState<MaskOperationStatus>("idle");
   const [operationError, setOperationError] = useState<unknown>(undefined);
   void historyRevision;
 
-  const shouldUseTiled = width > MAX_VIDEO_MASK_DIMENSION
-    || height > MAX_VIDEO_MASK_DIMENSION
-    || width * height > MAX_DENSE_MASK_PIXELS;
+  const shouldUseTiled =
+    width > MAX_VIDEO_MASK_DIMENSION ||
+    height > MAX_VIDEO_MASK_DIMENSION ||
+    width * height > MAX_DENSE_MASK_PIXELS;
 
   const bump = useCallback(() => {
     revisionRef.current += 1;
@@ -260,21 +253,24 @@ export function useMaskEditor({
     clearOperationPreview();
   }, [clearOperationPreview]);
 
-  const resetHistory = useCallback((store: SparseMaskTileStore | null = null) => {
-    historyRef.current.clear();
-    historyRef.current = new MaskHistoryStore(
-      resolvedHistoryMaxBytes,
-      undefined,
-      store
-        ? {
-            onRetain: (command) => store.retainHistoryCommand(command),
-            onRelease: (command) => store.releaseHistoryCommand(command),
-          }
-        : {},
-    );
-    strokeCheckpointRef.current = null;
-    setHistoryRevision((value) => value + 1);
-  }, [historyRef, resolvedHistoryMaxBytes]);
+  const resetHistory = useCallback(
+    (store: SparseMaskTileStore | null = null) => {
+      historyRef.current.clear();
+      historyRef.current = new MaskHistoryStore(
+        resolvedHistoryMaxBytes,
+        undefined,
+        store
+          ? {
+              onRetain: (command) => store.retainHistoryCommand(command),
+              onRelease: (command) => store.releaseHistoryCommand(command),
+            }
+          : {},
+      );
+      strokeCheckpointRef.current = null;
+      setHistoryRevision((value) => value + 1);
+    },
+    [historyRef, resolvedHistoryMaxBytes],
+  );
 
   const refreshTiledState = useCallback((store: SparseMaskTileStore) => {
     if (tiledStoreRef.current !== store) return;
@@ -300,193 +296,230 @@ export function useMaskEditor({
     setCommitInFlight(false);
   }, [resetHistory]);
 
-  const enqueueTiledAction = useCallback((
-    store: SparseMaskTileStore,
-    action: () => void | Promise<void>,
-  ): Promise<boolean> => {
-    let succeeded = false;
-    const next = tiledQueueRef.current.then(async () => {
-      if (tiledStoreRef.current !== store) return;
-      await action();
-      if (tiledStoreRef.current !== store) return;
-      succeeded = true;
-      refreshTiledState(store);
-      bump();
-    }).catch((error: unknown) => {
-      if (tiledStoreRef.current !== store) return;
-      if (error instanceof RasterMaskWorkerCancelledError) {
-        setOperationStatus("idle");
-        return;
+  const enqueueTiledAction = useCallback(
+    (store: SparseMaskTileStore, action: () => void | Promise<void>): Promise<boolean> => {
+      let succeeded = false;
+      const next = tiledQueueRef.current
+        .then(async () => {
+          if (tiledStoreRef.current !== store) return;
+          await action();
+          if (tiledStoreRef.current !== store) return;
+          succeeded = true;
+          refreshTiledState(store);
+          bump();
+        })
+        .catch((error: unknown) => {
+          if (tiledStoreRef.current !== store) return;
+          if (error instanceof RasterMaskWorkerCancelledError) {
+            setOperationStatus("idle");
+            return;
+          }
+          setOperationError(error);
+          setOperationStatus("error");
+          refreshTiledState(store);
+        });
+      tiledQueueRef.current = next;
+      return next.then(() => succeeded);
+    },
+    [bump, refreshTiledState],
+  );
+
+  const validateRleSize = useCallback(
+    (rle: CocoRle) => {
+      const [rleHeight, rleWidth] = rle.size;
+      if (rleWidth !== width || rleHeight !== height) {
+        throw new Error(
+          `mask RLE size ${rleWidth}x${rleHeight} does not match editor ${width}x${height}`,
+        );
       }
-      setOperationError(error);
-      setOperationStatus("error");
-      refreshTiledState(store);
-    });
-    tiledQueueRef.current = next;
-    return next.then(() => succeeded);
-  }, [bump, refreshTiledState]);
+    },
+    [height, width],
+  );
 
-  const validateRleSize = useCallback((rle: CocoRle) => {
-    const [rleHeight, rleWidth] = rle.size;
-    if (rleWidth !== width || rleHeight !== height) {
-      throw new Error(`mask RLE size ${rleWidth}x${rleHeight} does not match editor ${width}x${height}`);
-    }
-  }, [height, width]);
+  const installBuffer = useCallback(
+    (buffer: MaskBuffer, isDirty: boolean) => {
+      disposeTiledStore();
+      bufferRef.current = buffer;
+      setBackend("dense");
+      setActive(true);
+      setDirty(isDirty);
+      resetHistory();
+      cancelActiveOperation();
+      bump();
+    },
+    [bump, cancelActiveOperation, disposeTiledStore, resetHistory],
+  );
 
-  const installBuffer = useCallback((buffer: MaskBuffer, isDirty: boolean) => {
-    disposeTiledStore();
-    bufferRef.current = buffer;
-    setBackend("dense");
-    setActive(true);
-    setDirty(isDirty);
-    resetHistory();
-    cancelActiveOperation();
-    bump();
-  }, [bump, cancelActiveOperation, disposeTiledStore, resetHistory]);
-
-  const installTiledStore = useCallback((rle: CocoRle, isDirty: boolean) => {
-    if (!workerPool) {
-      throw new LargeMaskFullScanRequiredError(
-        "large Mask editing requires the Raster Mask Worker pool",
-      );
-    }
-    disposeTiledStore();
-    bufferRef.current = null;
-    const sequence = ++sparseEditorSessionSequence;
-    const store = new SparseMaskTileStore({
-      sessionId: `mask-editor-${sequence}`,
-      sha256: sequence.toString(16).padStart(64, "0"),
-      baseRle: rle,
-      backend: workerPool,
-      ...(deviceMemory === undefined ? {} : { deviceMemory }),
-      ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
-    });
-    tiledStoreRef.current = store;
-    resetHistory(store);
-    tiledQueueRef.current = Promise.resolve();
-    tiledCommitPromiseRef.current = null;
-    setBackend("tiled");
-    setActive(true);
-    setDirty(isDirty);
-    setTiledTiles([]);
-    setTiledResources(store.snapshot());
-    setTiledReadOnly(false);
-    cancelActiveOperation();
-    bump();
-  }, [
-    bump,
-    cancelActiveOperation,
-    deviceMemory,
-    disposeTiledStore,
-    resetHistory,
-    tileMaxBytes,
-    workerPool,
-  ]);
+  const installTiledStore = useCallback(
+    (rle: CocoRle, isDirty: boolean) => {
+      if (!workerPool) {
+        throw new LargeMaskFullScanRequiredError(
+          "large Mask editing requires the Raster Mask Worker pool",
+        );
+      }
+      disposeTiledStore();
+      bufferRef.current = null;
+      const sequence = ++sparseEditorSessionSequence;
+      const store = new SparseMaskTileStore({
+        sessionId: `mask-editor-${sequence}`,
+        sha256: sequence.toString(16).padStart(64, "0"),
+        baseRle: rle,
+        backend: workerPool,
+        ...(deviceMemory === undefined ? {} : { deviceMemory }),
+        ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
+      });
+      tiledStoreRef.current = store;
+      resetHistory(store);
+      tiledQueueRef.current = Promise.resolve();
+      tiledCommitPromiseRef.current = null;
+      setBackend("tiled");
+      setActive(true);
+      setDirty(isDirty);
+      setTiledTiles([]);
+      setTiledResources(store.snapshot());
+      setTiledReadOnly(false);
+      cancelActiveOperation();
+      bump();
+    },
+    [
+      bump,
+      cancelActiveOperation,
+      deviceMemory,
+      disposeTiledStore,
+      resetHistory,
+      tileMaxBytes,
+      workerPool,
+    ],
+  );
 
   const beginBlank = useCallback(() => {
     if (shouldUseTiled) {
-      installTiledStore({
-        encoding: "coco_rle",
-        size: [height, width],
-        counts: [height * width],
-      }, false);
+      installTiledStore(
+        {
+          encoding: "coco_rle",
+          size: [height, width],
+          counts: [height * width],
+        },
+        false,
+      );
       return;
     }
     installBuffer(new MaskBuffer({ width, height }), false);
   }, [height, installBuffer, installTiledStore, shouldUseTiled, width]);
 
-  const initFromPolygon = useCallback((points: ReadonlyArray<readonly [number, number]>) => {
-    if (shouldUseTiled) {
-      throw new LargeMaskFullScanRequiredError(
-        "large image polygon refinement requires an explicit bounded ROI",
-      );
-    }
-    const buffer = new MaskBuffer({ width, height });
-    buffer.fromPolygon(points);
-    installBuffer(buffer, false);
-  }, [height, installBuffer, shouldUseTiled, width]);
+  const initFromPolygon = useCallback(
+    (points: ReadonlyArray<readonly [number, number]>) => {
+      if (shouldUseTiled) {
+        throw new LargeMaskFullScanRequiredError(
+          "large image polygon refinement requires an explicit bounded ROI",
+        );
+      }
+      const buffer = new MaskBuffer({ width, height });
+      buffer.fromPolygon(points);
+      installBuffer(buffer, false);
+    },
+    [height, installBuffer, shouldUseTiled, width],
+  );
 
-  const initFromRle = useCallback((rle: CocoRle) => {
-    validateRleSize(rle);
-    if (shouldUseTiled) {
-      installTiledStore(rle, false);
-      return;
-    }
-    installBuffer(MaskBuffer.fromRle(rle), false);
-  }, [installBuffer, installTiledStore, shouldUseTiled, validateRleSize]);
+  const initFromRle = useCallback(
+    (rle: CocoRle) => {
+      validateRleSize(rle);
+      if (shouldUseTiled) {
+        installTiledStore(rle, false);
+        return;
+      }
+      installBuffer(MaskBuffer.fromRle(rle), false);
+    },
+    [installBuffer, installTiledStore, shouldUseTiled, validateRleSize],
+  );
 
-  const materializeFromRle = useCallback((rle: CocoRle) => {
-    validateRleSize(rle);
-    if (shouldUseTiled) {
-      installTiledStore(rle, true);
-      return;
-    }
-    installBuffer(MaskBuffer.fromRle(rle), true);
-  }, [installBuffer, installTiledStore, shouldUseTiled, validateRleSize]);
+  const materializeFromRle = useCallback(
+    (rle: CocoRle) => {
+      validateRleSize(rle);
+      if (shouldUseTiled) {
+        installTiledStore(rle, true);
+        return;
+      }
+      installBuffer(MaskBuffer.fromRle(rle), true);
+    },
+    [installBuffer, installTiledStore, shouldUseTiled, validateRleSize],
+  );
 
   const setRadius = useCallback((nextRadius: number) => {
     setRadiusState(clampRadius(nextRadius));
   }, []);
 
-  const setMode = useCallback((nextMode: MaskMode) => {
-    setModeState(nextMode);
-    setToolState(nextMode);
-    cancelActiveOperation();
-  }, [cancelActiveOperation]);
+  const setMode = useCallback(
+    (nextMode: MaskMode) => {
+      setModeState(nextMode);
+      setToolState(nextMode);
+      cancelActiveOperation();
+    },
+    [cancelActiveOperation],
+  );
 
-  const setTool = useCallback((nextTool: MaskEditorTool) => {
-    setToolState(nextTool);
-    if (nextTool === "brush" || nextTool === "erase") setModeState(nextTool);
-    cancelActiveOperation();
-  }, [cancelActiveOperation]);
+  const setTool = useCallback(
+    (nextTool: MaskEditorTool) => {
+      setToolState(nextTool);
+      if (nextTool === "brush" || nextTool === "erase") setModeState(nextTool);
+      cancelActiveOperation();
+    },
+    [cancelActiveOperation],
+  );
 
-  const paintAt = useCallback((x: number, y: number) => {
-    const tiledStore = tiledStoreRef.current;
-    if (tiledStore) {
-      if (
-        operationPreviewRef.current
-        || instanceOperationPreviewRef.current
-        || (tool !== "brush" && tool !== "erase")
-      ) return;
-      const checkpoint = strokeCheckpointRef.current?.checkpoint;
-      void enqueueTiledAction(tiledStore, async () => {
-        const changed = await tiledStore.brush({
-          cx: x,
-          cy: y,
-          radius,
-          value: mode === "erase" ? 0 : 255,
-          shape: brushShape,
-          ...(checkpoint ? { checkpoint } : {}),
+  const paintAt = useCallback(
+    (x: number, y: number) => {
+      const tiledStore = tiledStoreRef.current;
+      if (tiledStore) {
+        if (
+          operationPreviewRef.current ||
+          instanceOperationPreviewRef.current ||
+          (tool !== "brush" && tool !== "erase")
+        )
+          return;
+        const checkpoint = strokeCheckpointRef.current?.checkpoint;
+        void enqueueTiledAction(tiledStore, async () => {
+          const changed = await tiledStore.brush({
+            cx: x,
+            cy: y,
+            radius,
+            value: mode === "erase" ? 0 : 255,
+            shape: brushShape,
+            ...(checkpoint ? { checkpoint } : {}),
+          });
+          if (changed > 0) setDirty(true);
         });
-        if (changed > 0) setDirty(true);
-      });
-      return;
-    }
-    const buffer = bufferRef.current;
-    if (
-      !buffer
-      || operationPreviewRef.current
-      || instanceOperationPreviewRef.current
-      || (tool !== "brush" && tool !== "erase")
-    ) return;
-    strokeCheckpointRef.current?.checkpoint.captureDenseRect(
-      buffer.data,
-      brushBounds(x, y, radius, width, height),
-    );
-    if (mode === "erase") buffer.erase(x, y, radius, brushShape);
-    else buffer.brush(x, y, radius, 255, brushShape);
-    setDirty(true);
-    bump();
-  }, [brushShape, bump, enqueueTiledAction, height, mode, radius, tool, width]);
+        return;
+      }
+      const buffer = bufferRef.current;
+      if (
+        !buffer ||
+        operationPreviewRef.current ||
+        instanceOperationPreviewRef.current ||
+        (tool !== "brush" && tool !== "erase")
+      )
+        return;
+      strokeCheckpointRef.current?.checkpoint.captureDenseRect(
+        buffer.data,
+        brushBounds(x, y, radius, width, height),
+      );
+      if (mode === "erase") buffer.erase(x, y, radius, brushShape);
+      else buffer.brush(x, y, radius, 255, brushShape);
+      setDirty(true);
+      bump();
+    },
+    [brushShape, bump, enqueueTiledAction, height, mode, radius, tool, width],
+  );
 
   const beginStroke = useCallback(() => {
     if (
-      (!bufferRef.current && !tiledStoreRef.current)
-      || strokeCheckpointRef.current
-      || operationPreviewRef.current
-      || instanceOperationPreviewRef.current
-      || (tool !== "brush" && tool !== "erase")
-    ) return;
+      (!bufferRef.current && !tiledStoreRef.current) ||
+      strokeCheckpointRef.current ||
+      operationPreviewRef.current ||
+      instanceOperationPreviewRef.current ||
+      (tool !== "brush" && tool !== "erase")
+    )
+      return;
     strokeCheckpointRef.current = {
       sourceRevision: revisionRef.current,
       checkpoint: new MaskHistoryCheckpoint(width, height),
@@ -519,29 +552,32 @@ export function useMaskEditor({
     setHistoryRevision((value) => value + 1);
   }, [enqueueTiledAction, historyRef]);
 
-  const applyHistoryCommand = useCallback((command: MaskHistoryCommand) => {
-    const tiledStore = tiledStoreRef.current;
-    if (tiledStore) {
-      tiledStore.applyHistoryCommand(command);
+  const applyHistoryCommand = useCallback(
+    (command: MaskHistoryCommand) => {
+      const tiledStore = tiledStoreRef.current;
+      if (tiledStore) {
+        tiledStore.applyHistoryCommand(command);
+        cancelActiveOperation();
+        setDirty(true);
+        return;
+      }
+      const current = bufferRef.current;
+      if (!current) return;
+      for (const patch of command.patches) {
+        current.applyXorBits(
+          patch.tileX * MASK_HISTORY_TILE_SIZE,
+          patch.tileY * MASK_HISTORY_TILE_SIZE,
+          patch.width,
+          patch.height,
+          patch.xorBits,
+        );
+      }
       cancelActiveOperation();
       setDirty(true);
-      return;
-    }
-    const current = bufferRef.current;
-    if (!current) return;
-    for (const patch of command.patches) {
-      current.applyXorBits(
-        patch.tileX * MASK_HISTORY_TILE_SIZE,
-        patch.tileY * MASK_HISTORY_TILE_SIZE,
-        patch.width,
-        patch.height,
-        patch.xorBits,
-      );
-    }
-    cancelActiveOperation();
-    setDirty(true);
-    bump();
-  }, [bump, cancelActiveOperation]);
+      bump();
+    },
+    [bump, cancelActiveOperation],
+  );
 
   const undo = useCallback(() => {
     if (operationPreviewRef.current || instanceOperationPreviewRef.current) {
@@ -579,200 +615,222 @@ export function useMaskEditor({
     setHistoryRevision((value) => value + 1);
   }, [applyHistoryCommand, enqueueTiledAction, historyRef]);
 
-  const previewOperation = useCallback((
-    name: string,
-    result: MaskOperationResult,
-    sourceRevision = revisionRef.current,
-  ): boolean => {
-    const current = bufferRef.current;
-    if (!current || sourceRevision !== revisionRef.current) return false;
-    if (result.alpha.length !== current.data.length) {
-      throw new Error("mask operation preview dimensions do not match the editor buffer");
-    }
-    operationIdRef.current += 1;
-    const preview: MaskOperationPreview = {
-      id: operationIdRef.current,
-      name,
-      sourceRevision,
-      alpha: result.alpha,
-      report: result.report,
-    };
-    operationPreviewRef.current = preview;
-    setOperationPreview(preview);
-    setOperationError(undefined);
-    setOperationStatus("preview");
-    return true;
-  }, []);
+  const previewOperation = useCallback(
+    (name: string, result: MaskOperationResult, sourceRevision = revisionRef.current): boolean => {
+      const current = bufferRef.current;
+      if (!current || sourceRevision !== revisionRef.current) return false;
+      if (result.alpha.length !== current.data.length) {
+        throw new Error("mask operation preview dimensions do not match the editor buffer");
+      }
+      operationIdRef.current += 1;
+      const preview: MaskOperationPreview = {
+        id: operationIdRef.current,
+        name,
+        sourceRevision,
+        alpha: result.alpha,
+        report: result.report,
+      };
+      operationPreviewRef.current = preview;
+      setOperationPreview(preview);
+      setOperationError(undefined);
+      setOperationStatus("preview");
+      return true;
+    },
+    [],
+  );
 
-  const runOperation = useCallback(async (
-    name: string,
-    operation: MaskOperationSpec,
-    context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
-  ): Promise<boolean> => {
-    const tiledStore = tiledStoreRef.current;
-    if (tiledStore) {
+  const runOperation = useCallback(
+    async (
+      name: string,
+      operation: MaskOperationSpec,
+      context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
+    ): Promise<boolean> => {
+      const tiledStore = tiledStoreRef.current;
+      if (tiledStore) {
+        cancelActiveOperation();
+        const sourceRevision = revisionRef.current;
+        const controller = new AbortController();
+        operationAbortRef.current = controller;
+        setOperationStatus("computing");
+        setOperationError(undefined);
+        const checkpoint = tiledStore.beginHistoryCheckpoint();
+        let changedPixels = 0;
+        const succeeded = await enqueueTiledAction(tiledStore, async () => {
+          if (operation.type === "polygon") {
+            changedPixels = await tiledStore.lasso(operation.points, operation.value, {
+              checkpoint,
+              signal: controller.signal,
+            });
+          } else if (operation.type === "morphology" && viewportRef.current) {
+            changedPixels = await tiledStore.morphologyRoi(viewportRef.current, operation, {
+              checkpoint,
+              signal: controller.signal,
+            });
+          } else {
+            throw new LargeMaskFullScanRequiredError();
+          }
+          const command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
+          if (!command) return;
+          historyRef.current.push(command);
+          setDirty(true);
+          setHistoryRevision((value) => value + 1);
+        });
+        if (operationAbortRef.current === controller) operationAbortRef.current = null;
+        if (succeeded) setOperationStatus("idle");
+        return succeeded && changedPixels > 0;
+      }
+      const current = bufferRef.current;
+      if (!current) return false;
       cancelActiveOperation();
       const sourceRevision = revisionRef.current;
+      const rle = current.toRle();
+      operationIdRef.current += 1;
+      const operationId = operationIdRef.current;
       const controller = new AbortController();
       operationAbortRef.current = controller;
       setOperationStatus("computing");
       setOperationError(undefined);
-      const checkpoint = tiledStore.beginHistoryCheckpoint();
-      let changedPixels = 0;
-      const succeeded = await enqueueTiledAction(tiledStore, async () => {
-        if (operation.type === "polygon") {
-          changedPixels = await tiledStore.lasso(operation.points, operation.value, {
-            checkpoint,
-            signal: controller.signal,
-          });
-        } else if (operation.type === "morphology" && viewportRef.current) {
-          changedPixels = await tiledStore.morphologyRoi(
-            viewportRef.current,
-            operation,
-            { checkpoint, signal: controller.signal },
-          );
-        } else {
-          throw new LargeMaskFullScanRequiredError();
+      try {
+        const shouldUseWorker =
+          width * height > 1_000_000 ||
+          ((operation.type === "morphology" || operation.type === "smooth") &&
+            operation.radius > 4);
+        const result = shouldUseWorker
+          ? (
+              await executeRasterMaskOperationAsync(
+                rle,
+                operation,
+                { ...context, operationId },
+                {
+                  ...(workerPool ? { pool: workerPool } : {}),
+                  priority: "editing",
+                  signal: controller.signal,
+                },
+              )
+            ).result
+          : applyMaskOperation(current.data, width, height, operation);
+        if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
+        operationAbortRef.current = null;
+        const accepted = previewOperation(name, result, sourceRevision);
+        if (!accepted) setOperationStatus("idle");
+        return accepted;
+      } catch (error) {
+        if (operationAbortRef.current === controller) operationAbortRef.current = null;
+        const isCurrent = operationIdRef.current === operationId;
+        if (error instanceof RasterMaskWorkerCancelledError || controller.signal.aborted) {
+          if (isCurrent) setOperationStatus("idle");
+          return false;
         }
-        const command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
-        if (!command) return;
-        historyRef.current.push(command);
-        setDirty(true);
-        setHistoryRevision((value) => value + 1);
-      });
-      if (operationAbortRef.current === controller) operationAbortRef.current = null;
-      if (succeeded) setOperationStatus("idle");
-      return succeeded && changedPixels > 0;
-    }
-    const current = bufferRef.current;
-    if (!current) return false;
-    cancelActiveOperation();
-    const sourceRevision = revisionRef.current;
-    const rle = current.toRle();
-    operationIdRef.current += 1;
-    const operationId = operationIdRef.current;
-    const controller = new AbortController();
-    operationAbortRef.current = controller;
-    setOperationStatus("computing");
-    setOperationError(undefined);
-    try {
-      const shouldUseWorker = width * height > 1_000_000
-        || ((operation.type === "morphology" || operation.type === "smooth") && operation.radius > 4);
-      const result = shouldUseWorker
-        ? (await executeRasterMaskOperationAsync(
-            rle,
-            operation,
-            { ...context, operationId },
-            {
-              ...(workerPool ? { pool: workerPool } : {}),
-              priority: "editing",
-              signal: controller.signal,
-            },
-          )).result
-        : applyMaskOperation(current.data, width, height, operation);
-      if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
-      operationAbortRef.current = null;
-      const accepted = previewOperation(name, result, sourceRevision);
-      if (!accepted) setOperationStatus("idle");
-      return accepted;
-    } catch (error) {
-      if (operationAbortRef.current === controller) operationAbortRef.current = null;
-      const isCurrent = operationIdRef.current === operationId;
-      if (error instanceof RasterMaskWorkerCancelledError || controller.signal.aborted) {
-        if (isCurrent) setOperationStatus("idle");
+        if (!isCurrent) return false;
+        setOperationError(error);
+        setOperationStatus("error");
         return false;
       }
-      if (!isCurrent) return false;
-      setOperationError(error);
-      setOperationStatus("error");
-      return false;
-    }
-  }, [cancelActiveOperation, enqueueTiledAction, height, historyRef, previewOperation, width, workerPool]);
+    },
+    [
+      cancelActiveOperation,
+      enqueueTiledAction,
+      height,
+      historyRef,
+      previewOperation,
+      width,
+      workerPool,
+    ],
+  );
 
-  const previewInstanceOperation = useCallback((
-    name: string,
-    plan: MaskInstanceOperationPlan,
-    sourceRevision = revisionRef.current,
-  ): boolean => {
-    const current = bufferRef.current;
-    if (!current || sourceRevision !== revisionRef.current) return false;
-    const allAlphas = [plan.primary, plan.focusAlpha, ...plan.created];
-    if (allAlphas.some((alpha) => alpha.length !== current.data.length)) {
-      throw new Error("mask instance preview dimensions do not match the editor buffer");
-    }
-    operationIdRef.current += 1;
-    const preview: MaskInstanceOperationPreview = {
-      id: operationIdRef.current,
-      name,
-      sourceRevision,
-      plan,
-    };
-    operationPreviewRef.current = null;
-    instanceOperationPreviewRef.current = preview;
-    setOperationPreview(null);
-    setInstanceOperationPreview(preview);
-    setOperationError(undefined);
-    setOperationStatus("preview");
-    return true;
-  }, []);
+  const previewInstanceOperation = useCallback(
+    (
+      name: string,
+      plan: MaskInstanceOperationPlan,
+      sourceRevision = revisionRef.current,
+    ): boolean => {
+      const current = bufferRef.current;
+      if (!current || sourceRevision !== revisionRef.current) return false;
+      const allAlphas = [plan.primary, plan.focusAlpha, ...plan.created];
+      if (allAlphas.some((alpha) => alpha.length !== current.data.length)) {
+        throw new Error("mask instance preview dimensions do not match the editor buffer");
+      }
+      operationIdRef.current += 1;
+      const preview: MaskInstanceOperationPreview = {
+        id: operationIdRef.current,
+        name,
+        sourceRevision,
+        plan,
+      };
+      operationPreviewRef.current = null;
+      instanceOperationPreviewRef.current = preview;
+      setOperationPreview(null);
+      setInstanceOperationPreview(preview);
+      setOperationError(undefined);
+      setOperationStatus("preview");
+      return true;
+    },
+    [],
+  );
 
-  const runInstanceOperation = useCallback(async (
-    name: string,
-    operation: MaskInstanceOperationSpec,
-    context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
-  ): Promise<boolean> => {
-    if (tiledStoreRef.current) {
+  const runInstanceOperation = useCallback(
+    async (
+      name: string,
+      operation: MaskInstanceOperationSpec,
+      context: { sessionId: string; generation: number } = { sessionId: "local", generation: 0 },
+    ): Promise<boolean> => {
+      if (tiledStoreRef.current) {
+        cancelActiveOperation();
+        setOperationError(new LargeMaskFullScanRequiredError());
+        setOperationStatus("error");
+        return false;
+      }
+      const current = bufferRef.current;
+      if (!current) return false;
       cancelActiveOperation();
-      setOperationError(new LargeMaskFullScanRequiredError());
-      setOperationStatus("error");
-      return false;
-    }
-    const current = bufferRef.current;
-    if (!current) return false;
-    cancelActiveOperation();
-    const sourceRevision = revisionRef.current;
-    const rle = current.toRle();
-    operationIdRef.current += 1;
-    const operationId = operationIdRef.current;
-    const controller = new AbortController();
-    operationAbortRef.current = controller;
-    setOperationStatus("computing");
-    setOperationError(undefined);
-    try {
-      const plan = width * height > 1_000_000
-        ? (await executeRasterMaskInstanceOperationAsync(
-            rle,
-            operation,
-            { ...context, operationId },
-            {
-              ...(workerPool ? { pool: workerPool } : {}),
-              priority: "editing",
-              signal: controller.signal,
-            },
-          )).plan
-        : applyMaskInstanceOperation(current.data, width, height, operation);
-      if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
-      operationAbortRef.current = null;
-      if (!plan) {
-        setOperationStatus("idle");
+      const sourceRevision = revisionRef.current;
+      const rle = current.toRle();
+      operationIdRef.current += 1;
+      const operationId = operationIdRef.current;
+      const controller = new AbortController();
+      operationAbortRef.current = controller;
+      setOperationStatus("computing");
+      setOperationError(undefined);
+      try {
+        const plan =
+          width * height > 1_000_000
+            ? (
+                await executeRasterMaskInstanceOperationAsync(
+                  rle,
+                  operation,
+                  { ...context, operationId },
+                  {
+                    ...(workerPool ? { pool: workerPool } : {}),
+                    priority: "editing",
+                    signal: controller.signal,
+                  },
+                )
+              ).plan
+            : applyMaskInstanceOperation(current.data, width, height, operation);
+        if (controller.signal.aborted || operationIdRef.current !== operationId) return false;
+        operationAbortRef.current = null;
+        if (!plan) {
+          setOperationStatus("idle");
+          return false;
+        }
+        const accepted = previewInstanceOperation(name, plan, sourceRevision);
+        if (!accepted) setOperationStatus("idle");
+        return accepted;
+      } catch (error) {
+        if (operationAbortRef.current === controller) operationAbortRef.current = null;
+        const isCurrent = operationIdRef.current === operationId;
+        if (error instanceof RasterMaskWorkerCancelledError || controller.signal.aborted) {
+          if (isCurrent) setOperationStatus("idle");
+          return false;
+        }
+        if (!isCurrent) return false;
+        setOperationError(error);
+        setOperationStatus("error");
         return false;
       }
-      const accepted = previewInstanceOperation(name, plan, sourceRevision);
-      if (!accepted) setOperationStatus("idle");
-      return accepted;
-    } catch (error) {
-      if (operationAbortRef.current === controller) operationAbortRef.current = null;
-      const isCurrent = operationIdRef.current === operationId;
-      if (error instanceof RasterMaskWorkerCancelledError || controller.signal.aborted) {
-        if (isCurrent) setOperationStatus("idle");
-        return false;
-      }
-      if (!isCurrent) return false;
-      setOperationError(error);
-      setOperationStatus("error");
-      return false;
-    }
-  }, [cancelActiveOperation, height, previewInstanceOperation, width, workerPool]);
+    },
+    [cancelActiveOperation, height, previewInstanceOperation, width, workerPool],
+  );
 
   const confirmOperation = useCallback((): boolean => {
     if (instanceOperationPreviewRef.current) return false;
@@ -855,41 +913,46 @@ export function useMaskEditor({
     return promise;
   }, []);
 
-  const setViewport = useCallback((rect: SparseMaskViewportRect | null) => {
-    viewportRef.current = rect;
-    const store = tiledStoreRef.current;
-    if (!store) return;
-    const generation = ++viewportGenerationRef.current;
-    try {
-      store.setViewport(rect);
-      refreshTiledState(store);
-      void store.loadViewport().then(() => {
-        if (
-          tiledStoreRef.current !== store
-          || viewportGenerationRef.current !== generation
-        ) return;
+  const setViewport = useCallback(
+    (rect: SparseMaskViewportRect | null) => {
+      viewportRef.current = rect;
+      const store = tiledStoreRef.current;
+      if (!store) return;
+      const generation = ++viewportGenerationRef.current;
+      try {
+        store.setViewport(rect);
         refreshTiledState(store);
-        bump();
-      }).catch((error: unknown) => {
-        if (
-          tiledStoreRef.current !== store
-          || viewportGenerationRef.current !== generation
-        ) return;
+        void store
+          .loadViewport()
+          .then(() => {
+            if (tiledStoreRef.current !== store || viewportGenerationRef.current !== generation)
+              return;
+            refreshTiledState(store);
+            bump();
+          })
+          .catch((error: unknown) => {
+            if (tiledStoreRef.current !== store || viewportGenerationRef.current !== generation)
+              return;
+            setOperationError(error);
+            setOperationStatus("error");
+            refreshTiledState(store);
+          });
+      } catch (error: unknown) {
         setOperationError(error);
         setOperationStatus("error");
-        refreshTiledState(store);
-      });
-    } catch (error: unknown) {
-      setOperationError(error);
-      setOperationStatus("error");
-    }
-  }, [bump, refreshTiledState]);
+      }
+    },
+    [bump, refreshTiledState],
+  );
 
-  useEffect(() => () => {
-    historyRef.current.clear();
-    tiledStoreRef.current?.dispose();
-    tiledStoreRef.current = null;
-  }, [historyRef]);
+  useEffect(
+    () => () => {
+      historyRef.current.clear();
+      tiledStoreRef.current?.dispose();
+      tiledStoreRef.current = null;
+    },
+    [historyRef],
+  );
 
   const historyResources = historyRef.current.snapshot();
 

@@ -34,9 +34,7 @@ export const handlers = [
     }),
   ),
 
-  http.get(`${API}/projects`, () =>
-    HttpResponse.json({ items: [], total: 0, page: 1, size: 20 }),
-  ),
+  http.get(`${API}/projects`, () => HttpResponse.json({ items: [], total: 0, page: 1, size: 20 })),
 
   http.get(`${API}/projects/stats`, () =>
     HttpResponse.json({

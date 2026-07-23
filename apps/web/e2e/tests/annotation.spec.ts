@@ -82,13 +82,15 @@ test.describe("annotation workbench", () => {
     // v0.8.7 F3 · 监听 POST /annotations 真实落库
     //    （Konva 是 canvas 渲染，单个 bbox 没有 DOM 节点可 selector 断言；
     //     用 network response 200 间接验证 onCommit 链路通到后端）
-    const annotationPostPromise = page.waitForResponse(
-      (resp) =>
-        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
-        resp.request().method() === "POST" &&
-        resp.status() < 400,
-      { timeout: 15_000 },
-    ).catch(() => null);
+    const annotationPostPromise = page
+      .waitForResponse(
+        (resp) =>
+          /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
+          resp.request().method() === "POST" &&
+          resp.status() < 400,
+        { timeout: 15_000 },
+      )
+      .catch(() => null);
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();
@@ -131,29 +133,32 @@ test.describe("annotation workbench", () => {
     await seed.injectToken(page, data.annotator_email);
 
     // mock /setup → grounded-sam2 (无 exemplar)
-    await page.route(
-      /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            name: "grounded-sam2",
-            version: "0.9.0",
-            is_interactive: true,
-            labels: [],
-            supported_prompts: ["point", "bbox", "text"],
-            supported_text_outputs: ["box", "mask", "both"],
-            params: {
-              type: "object",
-              properties: {
-                box_threshold: { type: "number", minimum: 0, maximum: 1, default: 0.25, title: "Box 阈值" },
+    await page.route(/\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "grounded-sam2",
+          version: "0.9.0",
+          is_interactive: true,
+          labels: [],
+          supported_prompts: ["point", "bbox", "text"],
+          supported_text_outputs: ["box", "mask", "both"],
+          params: {
+            type: "object",
+            properties: {
+              box_threshold: {
+                type: "number",
+                minimum: 0,
+                maximum: 1,
+                default: 0.25,
+                title: "Box 阈值",
               },
             },
-          }),
-        });
-      },
-    );
+          },
+        }),
+      });
+    });
 
     let interactiveCalls = 0;
     const state: { lastBody: { context?: { type?: string } } | null } = { lastBody: null };
@@ -161,7 +166,11 @@ test.describe("annotation workbench", () => {
       /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating/,
       async (route, req) => {
         interactiveCalls += 1;
-        try { state.lastBody = req.postDataJSON() as { context?: { type?: string } }; } catch { /* noop */ }
+        try {
+          state.lastBody = req.postDataJSON() as { context?: { type?: string } };
+        } catch {
+          /* noop */
+        }
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -169,7 +178,15 @@ test.describe("annotation workbench", () => {
             result: [
               {
                 type: "polygonlabels",
-                value: { points: [[0.3, 0.3], [0.6, 0.3], [0.6, 0.6], [0.3, 0.6]], polygonlabels: ["object"] },
+                value: {
+                  points: [
+                    [0.3, 0.3],
+                    [0.6, 0.3],
+                    [0.6, 0.6],
+                    [0.3, 0.6],
+                  ],
+                  polygonlabels: ["object"],
+                },
                 score: 0.95,
               },
             ],
@@ -224,24 +241,21 @@ test.describe("annotation workbench", () => {
     });
     await seed.injectToken(page, data.annotator_email);
 
-    await page.route(
-      /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            name: "sam3-backend",
-            version: "0.10.0",
-            is_interactive: true,
-            labels: [],
-            supported_prompts: ["bbox", "text", "exemplar"],
-            supported_text_outputs: ["box", "mask", "both"],
-            params: { type: "object", properties: {} },
-          }),
-        });
-      },
-    );
+    await page.route(/\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "sam3-backend",
+          version: "0.10.0",
+          is_interactive: true,
+          labels: [],
+          supported_prompts: ["bbox", "text", "exemplar"],
+          supported_text_outputs: ["box", "mask", "both"],
+          params: { type: "object", properties: {} },
+        }),
+      });
+    });
 
     let interactiveCalls = 0;
     const state: { lastBody: { context?: { type?: string } } | null } = { lastBody: null };
@@ -249,7 +263,11 @@ test.describe("annotation workbench", () => {
       /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating/,
       async (route, req) => {
         interactiveCalls += 1;
-        try { state.lastBody = req.postDataJSON() as { context?: { type?: string } }; } catch { /* noop */ }
+        try {
+          state.lastBody = req.postDataJSON() as { context?: { type?: string } };
+        } catch {
+          /* noop */
+        }
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -257,7 +275,15 @@ test.describe("annotation workbench", () => {
             result: [
               {
                 type: "polygonlabels",
-                value: { points: [[0.2, 0.2], [0.4, 0.2], [0.4, 0.4], [0.2, 0.4]], polygonlabels: ["object"] },
+                value: {
+                  points: [
+                    [0.2, 0.2],
+                    [0.4, 0.2],
+                    [0.4, 0.4],
+                    [0.2, 0.4],
+                  ],
+                  polygonlabels: ["object"],
+                },
                 score: 0.88,
               },
             ],

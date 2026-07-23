@@ -17,12 +17,11 @@ function auth(token: string) {
 }
 
 async function annotations(request: APIRequestContext, taskId: string, token: string) {
-  const response = await request.get(
-    `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-    { headers: auth(token) },
-  );
+  const response = await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
+    headers: auth(token),
+  });
   expect(response.ok(), await response.text()).toBe(true);
-  return await response.json() as AnnotationDto[];
+  return (await response.json()) as AnnotationDto[];
 }
 
 async function setWindow(page: Page, from: number, to: number) {
@@ -31,16 +30,14 @@ async function setWindow(page: Page, from: number, to: number) {
 }
 
 function decisionResponse(response: APIResponse) {
-  return response.url().includes("/video-tracker-jobs/")
-    && response.url().endsWith("/decisions")
-    && response.request().method() === "POST";
+  return (
+    response.url().includes("/video-tracker-jobs/") &&
+    response.url().endsWith("/decisions") &&
+    response.request().method() === "POST"
+  );
 }
 
-test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", async ({
-  page,
-  request,
-  seed,
-}) => {
+test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", async ({ page, request, seed }) => {
   const data = await seed.reset();
   const video = await seed.videoTask(data.project_id);
   const fixture = await seed.trackerReview(video.task_id, data.admin_email);
@@ -85,8 +82,11 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
   await rejected;
   await expect(review).toContainText("已审 12/20");
   rows = await annotations(request, video.task_id, token);
-  expect(rows.find((item) => item.id === fixture.source_annotation_ids[1])
-    ?.geometry.keyframes?.map((item) => item.frame_index)).toEqual([9]);
+  expect(
+    rows
+      .find((item) => item.id === fixture.source_annotation_ids[1])
+      ?.geometry.keyframes?.map((item) => item.frame_index),
+  ).toEqual([9]);
 
   // A/F16 是人工关键帧：第一次 409，确认后同 selector 以 override=true 成功。
   await page.getByTestId("tracker-review-instance-B").click();
@@ -102,8 +102,9 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
 
   rows = await annotations(request, video.task_id, token);
   const overridden = rows.find((item) => item.id === fixture.source_annotation_ids[0]);
-  expect(overridden?.geometry.keyframes?.find((item) => item.frame_index === 16)?.source)
-    .toBe("prediction");
+  expect(overridden?.geometry.keyframes?.find((item) => item.frame_index === 16)?.source).toBe(
+    "prediction",
+  );
 
   const preview = await request.get(
     `${API_BASE}/api/v1/video-tracker-jobs/${fixture.job_id}/preview`,

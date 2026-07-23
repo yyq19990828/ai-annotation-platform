@@ -34,10 +34,7 @@ export const commentsApi = {
     apiClient.get<AnnotationCommentResponse[]>(`/annotations/${annotationId}/comments`),
 
   // v0.8.8 · keyset 分页：单标注 100+ 评论时按需「加载更早」，避免初始化卡顿。
-  listByAnnotationKeyset: (
-    annotationId: string,
-    params?: { limit?: number; cursor?: string },
-  ) => {
+  listByAnnotationKeyset: (annotationId: string, params?: { limit?: number; cursor?: string }) => {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", String(params.limit));
     if (params?.cursor) search.set("cursor", params.cursor);
@@ -48,10 +45,7 @@ export const commentsApi = {
   },
 
   // I4 · 任务级评论 — DiscussionPanel 在未选中标注时降级展示, 聚合 task 下所有 annotation 的评论.
-  listByTaskKeyset: (
-    taskId: string,
-    params?: { limit?: number; cursor?: string },
-  ) => {
+  listByTaskKeyset: (taskId: string, params?: { limit?: number; cursor?: string }) => {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", String(params.limit));
     if (params?.cursor) search.set("cursor", params.cursor);
@@ -70,7 +64,10 @@ export const commentsApi = {
   remove: (id: string) => apiClient.delete<void>(`/comments/${id}`),
 
   /** 评论附件上传初始化：返回预签名 PUT URL 与 storageKey；前端需直接 PUT 到 url 上传文件。 */
-  attachmentUploadInit: (annotationId: string, payload: { file_name: string; content_type: string }) =>
+  attachmentUploadInit: (
+    annotationId: string,
+    payload: { file_name: string; content_type: string },
+  ) =>
     apiClient.post<AttachmentUploadInit>(
       `/annotations/${annotationId}/comment-attachments/upload-init`,
       payload,

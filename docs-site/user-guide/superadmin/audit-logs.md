@@ -18,13 +18,13 @@ last_reviewed: 2026-07-23
 
 ![详情 Modal detail_json + 时间线追溯按钮](../images/superadmin/audit-logs/detail-modal.png)
 
-| 字段 | 含义 |
-|---|---|
-| `actor_id` | 触发动作的用户；`ON DELETE SET NULL` 保留历史 |
-| `action` | 命名空间动作，如 `project.create` / `task.approve` |
-| `target_type` / `target_id` | 操作对象类型与 ID |
-| `detail_json` | JSONB，存上下文（旧值、IP、UA、filter_criteria 等） |
-| `created_at` | timestamptz |
+| 字段                        | 含义                                                |
+| --------------------------- | --------------------------------------------------- |
+| `actor_id`                  | 触发动作的用户；`ON DELETE SET NULL` 保留历史       |
+| `action`                    | 命名空间动作，如 `project.create` / `task.approve`  |
+| `target_type` / `target_id` | 操作对象类型与 ID                                   |
+| `detail_json`               | JSONB，存上下文（旧值、IP、UA、filter_criteria 等） |
+| `created_at`                | timestamptz                                         |
 
 `audit_logs` 受 trigger 守护——**任何 UPDATE/DELETE 默认被拒**（"audit_logs rows are immutable"）。例外：受三重门禁保护的 E2E fixture reset/cleanup 流程通过 `SET LOCAL "app.allow_audit_update" = 'true'` 临时豁免（详见 [E2E 数据隔离](../../dev/troubleshooting/dev-data-preservation)）。
 
@@ -33,16 +33,19 @@ last_reviewed: 2026-07-23
 按命名空间组织（命名规则：`命名空间.动词`，下面列出主要动作，完整列表见 `apps/api/app/services/audit.py` 的 `AuditAction` 枚举）。前端 `auditLabels` 提供翻译。
 
 ### 用户与权限
+
 - `auth.login` / `auth.logout` / `auth.logout_all`
 - `user.invite` / `user.register` / `user.role_change` / `user.deactivate` / `user.delete`
 - `user.profile_update` / `user.password_change` / `user.password_admin_reset`
 
 ### 项目
+
 - `project.create` / `project.update` / `project.delete` / `project.transfer`
 - `project.member_add` / `project.member_remove`
 - `project.export`
 
 ### 数据
+
 - `dataset.create` / `dataset.delete` / `dataset.import`
 - `dataset.link` / `dataset.unlink`
 - `storage_connection.create` / `storage_connection.update` / `storage_connection.delete`
@@ -51,6 +54,7 @@ last_reviewed: 2026-07-23
 - `batch.export`
 
 ### AI / ML
+
 - `predictions.import` / `predictions.purge`
 - `failed_prediction.dismissed` / `failed_prediction.restored`
 - `video_tracker_job.create` / `video_tracker_job.cancel` / `video_tracker_job.accept` / `video_tracker_job.discard` / `video_tracker_job.decision`
@@ -67,16 +71,19 @@ last_reviewed: 2026-07-23
 原生 Mask、实例原子操作、标注转换与视频纠错审计只保存有界摘要和 lineage：对象 / 版本、窗口、backend / pool / model、候选数量、fallback、digest 与人工覆盖前后摘要。审计和普通日志都不保存 RLE counts、完整 geometry、笔迹坐标、logits、receipt 或原始 prompt 正文。
 
 ### 标注
+
 - `annotation.create` / `annotation.update` / `annotation.delete`
 - `annotation.import` / `annotation.group` / `annotation.bulk_update`
 - `annotation.comment_add` / `annotation.comment_delete`
 
 ### 审核
+
 - `task.submit` / `task.withdraw`
 - `task.review_claim` / `task.approve` / `task.reject`
 - `task.reopen` / `task.accept_rejection` / `task.skip`
 
 ### 系统
+
 - `system.settings_update` / `system.bootstrap_admin`
 - `audit.export` / `audit.archive`
 

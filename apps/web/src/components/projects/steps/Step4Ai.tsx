@@ -17,23 +17,17 @@ export function Step4Ai({
 }) {
   return (
     <div className={styles.formStackAi}>
-      <label
-        className={clsx(styles.aiToggle, form.aiEnabled && styles.aiToggleEnabled)}
-      >
+      <label className={clsx(styles.aiToggle, form.aiEnabled && styles.aiToggleEnabled)}>
         <input
           type="checkbox"
           checked={form.aiEnabled}
-          onChange={(e) =>
-            setForm((s) => ({ ...s, aiEnabled: e.target.checked }))
-          }
+          onChange={(e) => setForm((s) => ({ ...s, aiEnabled: e.target.checked }))}
           className={styles.aiCheckbox}
         />
         <Icon name="sparkles" size={14} className={styles.aiIcon} />
         <div className={styles.aiToggleText}>
           <span className={styles.aiToggleTitle}>启用 AI 预标注</span>
-          <span className={styles.aiToggleHint}>
-            创建后可在项目内挂接真实 ML Backend 推理服务
-          </span>
+          <span className={styles.aiToggleHint}>创建后可在项目内挂接真实 ML Backend 推理服务</span>
         </div>
       </label>
 
@@ -44,9 +38,7 @@ export function Step4Ai({
           <BackendSourceSelect
             value={form.mlBackendSourceId}
             dataType={form.dataType}
-            onChange={(v) =>
-              setForm((s) => ({ ...s, mlBackendSourceId: v }))
-            }
+            onChange={(v) => setForm((s) => ({ ...s, mlBackendSourceId: v }))}
           />
 
           <div className={styles.aiHelpBox}>
@@ -89,15 +81,10 @@ function BackendSourceSelect({
   return (
     <div>
       <label className={styles.label}>
-        ML Backend{" "}
-        <span className={styles.labelNote}>
-          （可选, 复用其它项目已注册的 backend）
-        </span>
+        ML Backend <span className={styles.labelNote}>（可选, 复用其它项目已注册的 backend）</span>
       </label>
       {q.isLoading ? (
-        <div className={clsx(styles.input, styles.readonlyInput)}>
-          加载中…
-        </div>
+        <div className={clsx(styles.input, styles.readonlyInput)}>加载中…</div>
       ) : items.length === 0 ? (
         <div className={clsx(styles.input, styles.readonlyInput)}>
           系统内尚无已注册 backend; 项目创建后到设置页注册一个.

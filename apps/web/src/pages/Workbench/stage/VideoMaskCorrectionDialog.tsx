@@ -22,10 +22,7 @@ import {
 } from "@/components/shadcn/ui/field";
 import { Input } from "@/components/shadcn/ui/input";
 import { Spinner } from "@/components/shadcn/ui/spinner";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/shadcn/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@/components/shadcn/ui/toggle-group";
 import type { VideoTrackerDirection } from "@/api/videoTracker";
 
 type CorrectionMode = "save_only" | "backward" | "forward" | "bidirectional";
@@ -118,21 +115,12 @@ export function VideoMaskCorrectionDialog({
   const [mode, setMode] = useState<CorrectionMode>("save_only");
   const [allowFallback, setAllowFallback] = useState(false);
   const [text, setText] = useState("");
-  const model = useMemo(
-    () => preferredCorrectionModel(models),
-    [models],
-  );
+  const model = useMemo(() => preferredCorrectionModel(models), [models]);
   const nativeMask = model?.nativeMask === true;
   const fallback = model !== null && !nativeMask;
   const span = nativeMask ? Math.max(0, model.maxWindowFrames - 1) : DEFAULT_SPAN;
   const propagationAvailable = !nativeMask || model.maxWindowFrames > 1;
-  const window = correctionWindow(
-    mode,
-    frameIndex,
-    maxFrame,
-    span,
-    minFrame,
-  );
+  const window = correctionWindow(mode, frameIndex, maxFrame, span, minFrame);
 
   useEffect(() => {
     if (!open) return;
@@ -142,25 +130,20 @@ export function VideoMaskCorrectionDialog({
   }, [open, frameIndex]);
 
   const propagationRequested = mode !== "save_only";
-  const validDirectionalWindow = mode === "save_only"
-    || (mode === "backward" && window.fromFrame < frameIndex)
-    || (mode === "forward" && frameIndex < window.toFrame)
-    || (
-      mode === "bidirectional"
-      && window.fromFrame < frameIndex
-      && frameIndex < window.toFrame
-    );
-  const canSubmit = !submitting
-    && (!keyframeSaved || !createError || createRetryable)
-    && validDirectionalWindow && (
-    !propagationRequested
-    || (
-      model !== null
-      && segmentId !== undefined
-      && (!fallback || (allowFallback && (!model.textRequired || text.trim().length > 0)))
-      && window.fromFrame < window.toFrame
-    )
-  );
+  const validDirectionalWindow =
+    mode === "save_only" ||
+    (mode === "backward" && window.fromFrame < frameIndex) ||
+    (mode === "forward" && frameIndex < window.toFrame) ||
+    (mode === "bidirectional" && window.fromFrame < frameIndex && frameIndex < window.toFrame);
+  const canSubmit =
+    !submitting &&
+    (!keyframeSaved || !createError || createRetryable) &&
+    validDirectionalWindow &&
+    (!propagationRequested ||
+      (model !== null &&
+        segmentId !== undefined &&
+        (!fallback || (allowFallback && (!model.textRequired || text.trim().length > 0))) &&
+        window.fromFrame < window.toFrame));
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -220,11 +203,7 @@ export function VideoMaskCorrectionDialog({
               </ToggleGroupItem>
               <ToggleGroupItem
                 value="bidirectional"
-                disabled={
-                  !propagationAvailable
-                  || frameIndex <= minFrame
-                  || frameIndex >= maxFrame
-                }
+                disabled={!propagationAvailable || frameIndex <= minFrame || frameIndex >= maxFrame}
               >
                 ⇆ 双向
               </ToggleGroupItem>
@@ -244,9 +223,7 @@ export function VideoMaskCorrectionDialog({
             <Alert variant="destructive">
               <InfoIcon />
               <AlertTitle>尚未取得当前视频分段</AlertTitle>
-              <AlertDescription>
-                可以先仅保存纠错帧；分段加载后再启动定向传播。
-              </AlertDescription>
+              <AlertDescription>可以先仅保存纠错帧；分段加载后再启动定向传播。</AlertDescription>
             </Alert>
           ) : null}
 
@@ -268,8 +245,8 @@ export function VideoMaskCorrectionDialog({
             <FieldSet>
               <FieldLegend variant="label">显式 bbox 降级</FieldLegend>
               <FieldDescription>
-                当前模型不能消费 Mask seed。服务端会从已保存 RLE 计算 bbox，并在 lineage
-                记录 mask_prompt_unsupported；结果仍要求输出 Mask。
+                当前模型不能消费 Mask seed。服务端会从已保存 RLE 计算 bbox，并在 lineage 记录
+                mask_prompt_unsupported；结果仍要求输出 Mask。
               </FieldDescription>
               <FieldGroup>
                 <Field data-invalid={model?.textRequired === true && text.trim().length === 0}>
@@ -306,9 +283,13 @@ export function VideoMaskCorrectionDialog({
           <Button onClick={() => void submit()} disabled={!canSubmit}>
             {submitting ? <Spinner aria-hidden="true" data-icon="inline-start" /> : null}
             {submitting
-              ? keyframeSaved ? "启动中…" : "保存中…"
+              ? keyframeSaved
+                ? "启动中…"
+                : "保存中…"
               : propagationRequested
-                ? keyframeSaved ? "重试启动传播" : "保存并启动传播"
+                ? keyframeSaved
+                  ? "重试启动传播"
+                  : "保存并启动传播"
                 : "仅保存"}
           </Button>
         </DialogFooter>

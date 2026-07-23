@@ -1,7 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DataManagerEntityFacets, DataManagerFilterField, DataManagerSummary } from "@/api/taskViews";
+import type {
+  DataManagerEntityFacets,
+  DataManagerFilterField,
+  DataManagerSummary,
+} from "@/api/taskViews";
 import { DataManagerCharts } from "./DataManagerCharts";
 
 const facets: DataManagerEntityFacets = {
@@ -49,14 +53,18 @@ describe("DataManagerCharts", () => {
     expect(screen.getByRole("heading", { name: "轨迹类别" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "质量异常" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /轨迹来源：人工 7，AI 追踪 5/ })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /质量异常：同帧重复 2，属性不一致 1/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /质量异常：同帧重复 2，属性不一致 1/ }),
+    ).toBeInTheDocument();
   });
 
   it("renders pending model and candidate confidence distributions for tasks", () => {
     render(<DataManagerCharts scope="tasks" summary={summary} />);
 
     expect(screen.getByRole("img", { name: "待审模型版本：detector-v2 5" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "待审置信度：25–49% 3，75–100% 2" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "待审置信度：25–49% 3，75–100% 2" }),
+    ).toBeInTheDocument();
   });
 
   it("clicking a selectable bar emits onSelect(field, key)", () => {
@@ -106,7 +114,12 @@ describe("DataManagerCharts", () => {
       },
     ];
     const { container } = render(
-      <DataManagerCharts scope="tasks" summary={summaryWithAttr} fields={fields} onSelect={onSelect} />,
+      <DataManagerCharts
+        scope="tasks"
+        summary={summaryWithAttr}
+        fields={fields}
+        onSelect={onSelect}
+      />,
     );
 
     // value→label 映射生效、按数量降序

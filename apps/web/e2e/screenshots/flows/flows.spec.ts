@@ -25,11 +25,7 @@ import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
-import {
-  runSamInteractive,
-  runSamToolRecording,
-  type SamRecordingTool,
-} from "./sam-interactive";
+import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif, convertToWebm } from "../_helpers/recorder";
@@ -63,17 +59,18 @@ test.afterAll(() => {
   const backends = Object.values(cached.projects)
     .map((project) => project.ml_backend?.name)
     .filter((name): name is string => Boolean(name));
-  const mode = backends.length > 0 && backends.every((name) => name === "mock-v2-backend")
-    ? "stub"
-    : "live";
+  const mode =
+    backends.length > 0 && backends.every((name) => name === "mock-v2-backend") ? "stub" : "live";
   execFileSync(
     path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
     [
       "scripts/seed.py",
-      "--profile", "screenshots",
+      "--profile",
+      "screenshots",
       "--offline",
       "--repair",
-      "--ml-backend-mode", mode,
+      "--ml-backend-mode",
+      mode,
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
@@ -88,9 +85,12 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
     path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
     [
       "scripts/cleanup_screenshot_ocr_flow.py",
-      "--project-id", record.projectId,
-      "--task-id", record.taskId,
-      "--celery-task-id", record.celeryTaskId,
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      "--celery-task-id",
+      record.celeryTaskId,
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
@@ -123,7 +123,7 @@ async function finalize(
   }
 
   const outWebm = path.join(FLOWS_OUT, `${gifName}.webm`);
-  const outGif  = path.join(FLOWS_OUT, `${gifName}.gif`);
+  const outGif = path.join(FLOWS_OUT, `${gifName}.gif`);
 
   // video 只在 page 关闭后才写完整；先 close 再 saveAs（saveAs 会等视频落盘），
   // 避免直接读 video.path() 拿到半截 webm 导致 ffmpeg palettegen 失败（短流程必踩）。
@@ -301,7 +301,11 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await runBatchBulkActions(page, cached);
-    await finalize(page, "batch-bulk-actions", path.join(DOCS_IMAGES, "projects/batch-bulk-actions.gif"));
+    await finalize(
+      page,
+      "batch-bulk-actions",
+      path.join(DOCS_IMAGES, "projects/batch-bulk-actions.gif"),
+    );
   });
 
   test("ai-pre-variant-selector — 变体两轴联动", async ({ page, seed }) => {
@@ -309,7 +313,11 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await runAiPreVariantSelector(page, cached);
-    await finalize(page, "ai-pre-variant-selector", path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"));
+    await finalize(
+      page,
+      "ai-pre-variant-selector",
+      path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"),
+    );
   });
 
   test("ocr-inference — 真实 RapidOCR 当前题推理", async ({ page, seed }) => {
@@ -344,12 +352,11 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runRotatedBbox(page, cached);
-    await finalize(
-      page,
-      "rotated-bbox",
-      path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"),
-      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), {
+      fps: 8,
+      maxWidth: 900,
+      ...drawTrim(win, t0),
+    });
   });
 
   test("bbox-draw — 矩形绘制", async ({ page, seed }) => {
@@ -360,12 +367,11 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runBboxDraw(page, cached);
-    await finalize(
-      page,
-      "bbox-draw",
-      path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"),
-      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
+      fps: 8,
+      maxWidth: 900,
+      ...drawTrim(win, t0),
+    });
   });
 
   test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
@@ -376,12 +382,11 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolylineDraw(page, cached);
-    await finalize(
-      page,
-      "polyline-draw",
-      path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"),
-      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"), {
+      fps: 8,
+      maxWidth: 900,
+      ...drawTrim(win, t0),
+    });
   });
 
   test("polygon-draw — 多边形逐点绘制", async ({ page, seed }) => {
@@ -392,12 +397,11 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolygonDraw(page, cached);
-    await finalize(
-      page,
-      "polygon-draw",
-      path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"),
-      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "polygon-draw", path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"), {
+      fps: 8,
+      maxWidth: 900,
+      ...drawTrim(win, t0),
+    });
   });
 
   test("mask-draw — Mask 笔刷涂抹", async ({ page, seed }) => {
@@ -408,12 +412,11 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runMaskDraw(page, cached);
-    await finalize(
-      page,
-      "mask-draw",
-      path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"),
-      { fps: 8, maxWidth: 900, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "mask-draw", path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"), {
+      fps: 8,
+      maxWidth: 900,
+      ...drawTrim(win, t0),
+    });
   });
 
   test("video-track — 视频时序工作台", async ({ page, seed }) => {

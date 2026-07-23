@@ -49,10 +49,12 @@ def test_versions_shape() -> None:
 def test_predict_echoes_each_task() -> None:
     resp = client.post(
         "/predict",
-        json={"tasks": [
-            {"id": "t1", "file_path": "s3://bucket/a.jpg"},
-            {"id": "t2", "file_path": "s3://bucket/b.jpg"},
-        ]},
+        json={
+            "tasks": [
+                {"id": "t1", "file_path": "s3://bucket/a.jpg"},
+                {"id": "t2", "file_path": "s3://bucket/b.jpg"},
+            ]
+        },
     )
     assert resp.status_code == 200
     results = resp.json()["results"]

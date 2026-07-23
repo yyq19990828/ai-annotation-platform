@@ -29,19 +29,26 @@ import {
 import type { PipelineStagePayload } from "@/hooks/usePreannotation";
 
 const geom = (input: "crop" | "geometry" = "crop"): PipelineStagePayload =>
-  ({ stage: 0, ml_backend_id: "bk", model_id: "det", input: { mode: input }, write: { target: "geometry" } }) as PipelineStagePayload;
+  ({
+    stage: 0,
+    ml_backend_id: "bk",
+    model_id: "det",
+    input: { mode: input },
+    write: { target: "geometry" },
+  }) as PipelineStagePayload;
 const attr = (keys?: string[], label?: string): PipelineStagePayload =>
-  ({ stage: 0, ml_backend_id: "bk", write: { target: "attributes", keys }, label }) as PipelineStagePayload;
+  ({
+    stage: 0,
+    ml_backend_id: "bk",
+    write: { target: "attributes", keys },
+    label,
+  }) as PipelineStagePayload;
 // v0.21.5 · 输入节点 entry (parentSid=null); 新模型 root 常驻 stagesGraph, 夹具须含它。
 const R: StageEntry = { sid: ROOT_SID, parentSid: null };
 
 describe("派生", () => {
   it("depthBySid: 输入节点 0, 链 a→b 深度 1/2 (v0.21.6 输入节点不计模型层)", () => {
-    const g: StageEntry[] = [
-      R,
-      { sid: "a", parentSid: ROOT_SID },
-      { sid: "b", parentSid: "a" },
-    ];
+    const g: StageEntry[] = [R, { sid: "a", parentSid: ROOT_SID }, { sid: "b", parentSid: "a" }];
     expect(depthBySid(g)).toEqual({ root: 0, a: 1, b: 2 });
   });
 
@@ -228,9 +235,12 @@ describe("输入节点归类 sourceNodeShape (v0.21.5 · 源类型/执行单位�
 
   it("角色随 model.task, 源类型随 source.data_type (二者解耦)", () => {
     // data_type=video 但 model 是 detection → 视频源 + 目标检测 (逐帧检测场景)。
-    const s = sourceNodeShape({ kind: "dataset", data_type: "video", execution_unit: "frame" }, {
-      task: "detection",
-    });
+    const s = sourceNodeShape(
+      { kind: "dataset", data_type: "video", execution_unit: "frame" },
+      {
+        task: "detection",
+      },
+    );
     expect(s.sourceType).toBe("video");
     expect(s.executionUnitLabel).toBe("逐帧");
     expect(s.role.label).toBe("目标检测");
@@ -375,9 +385,39 @@ describe("§13 信息 helper", () => {
 
 describe("buildFlow 派生 + 分层布局", () => {
   const models: GraphNodeModel[] = [
-    { sid: ROOT_SID, parentSid: null, role: roleOf(geom()), detail: "src", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
-    { sid: "a", parentSid: ROOT_SID, role: roleOf(geom()), detail: "a", runState: "pending", producesGeometry: true, canAddChild: true, conflict: false, ready: true },
-    { sid: "b", parentSid: "a", role: roleOf(attr()), detail: "b", runState: "pending", producesGeometry: false, canAddChild: false, conflict: false, ready: true },
+    {
+      sid: ROOT_SID,
+      parentSid: null,
+      role: roleOf(geom()),
+      detail: "src",
+      runState: "pending",
+      producesGeometry: true,
+      canAddChild: true,
+      conflict: false,
+      ready: true,
+    },
+    {
+      sid: "a",
+      parentSid: ROOT_SID,
+      role: roleOf(geom()),
+      detail: "a",
+      runState: "pending",
+      producesGeometry: true,
+      canAddChild: true,
+      conflict: false,
+      ready: true,
+    },
+    {
+      sid: "b",
+      parentSid: "a",
+      role: roleOf(attr()),
+      detail: "b",
+      runState: "pending",
+      producesGeometry: false,
+      canAddChild: false,
+      conflict: false,
+      ready: true,
+    },
   ];
 
   it("节点数 = 模型数; 边连 parent→child", () => {
@@ -404,7 +444,9 @@ describe("buildFlow 派生 + 分层布局", () => {
     expect(nodes.find((n) => n.id === ROOT_SID)!.type).toBe("stage");
     expect(nodes.find((n) => n.id === "a")!.type).toBe("stage");
     // 输入节点 parentSid=null (组件据此不渲染入 handle)。
-    expect((nodes.find((n) => n.id === ROOT_SID)!.data as { parentSid: string | null }).parentSid).toBeNull();
+    expect(
+      (nodes.find((n) => n.id === ROOT_SID)!.data as { parentSid: string | null }).parentSid,
+    ).toBeNull();
   });
 
   // claude[bot] P2 · DAG 三个已修回归此前只覆盖 "新建节点 depth>3"; 补两条:

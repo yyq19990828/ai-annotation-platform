@@ -81,8 +81,12 @@ CONTAINER_CPU = Gauge("container_cpu_percent", "容器 CPU 利用率 (%) — sam
 CONTAINER_MEM = Gauge("container_memory_percent", "容器内存利用率 (%) — sam3-backend")
 
 
-def record_inference(prompt_type: str, cache_status: str, duration_seconds: float) -> None:
-    INFERENCE_LATENCY.labels(prompt_type=prompt_type, cache=cache_status).observe(duration_seconds)
+def record_inference(
+    prompt_type: str, cache_status: str, duration_seconds: float
+) -> None:
+    INFERENCE_LATENCY.labels(prompt_type=prompt_type, cache=cache_status).observe(
+        duration_seconds
+    )
 
 
 def record_mask_ai_backend_inference(
@@ -111,7 +115,9 @@ def record_mask_ai_backend_inference(
         else "none"
     )
     normalized_outcome = outcome if outcome in {"success", "error"} else "error"
-    normalized_operation = operation if operation in {"tracking", "correction"} else "tracking"
+    normalized_operation = (
+        operation if operation in {"tracking", "correction"} else "tracking"
+    )
     try:
         MASK_AI_BACKEND_INFERENCE_TOTAL.labels(
             model_role=model_role,

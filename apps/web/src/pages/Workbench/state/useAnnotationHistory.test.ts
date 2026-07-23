@@ -14,7 +14,7 @@ import {
 
 function makeHandlers(over: Partial<HistoryHandlers> = {}): HistoryHandlers {
   return {
-    createAnnotation: vi.fn(async () => ({ id: "real-1" } as never)),
+    createAnnotation: vi.fn(async () => ({ id: "real-1" }) as never),
     deleteAnnotation: vi.fn(async () => ({})),
     updateAnnotation: vi.fn(async () => ({})),
     ...over,
@@ -28,11 +28,7 @@ describe("applyLeaf · create undo (v0.6.3 P0 tmpId 本地分支)", () => {
     const removeLocalCreate = vi.fn(async () => {});
     const h = makeHandlers({ removeLocalCreate });
 
-    await applyLeaf(
-      { kind: "create", annotationId: "tmp_abc", payload: dummyPayload },
-      "undo",
-      h,
-    );
+    await applyLeaf({ kind: "create", annotationId: "tmp_abc", payload: dummyPayload }, "undo", h);
 
     expect(removeLocalCreate).toHaveBeenCalledWith("tmp_abc");
     expect(h.deleteAnnotation).not.toHaveBeenCalled();
@@ -55,11 +51,7 @@ describe("applyLeaf · create undo (v0.6.3 P0 tmpId 本地分支)", () => {
   it("annotationId 是 tmpId 但 removeLocalCreate 未提供 → 退回 deleteAnnotation（向后兼容）", async () => {
     const h = makeHandlers(); // removeLocalCreate undefined
 
-    await applyLeaf(
-      { kind: "create", annotationId: "tmp_xyz", payload: dummyPayload },
-      "undo",
-      h,
-    );
+    await applyLeaf({ kind: "create", annotationId: "tmp_xyz", payload: dummyPayload }, "undo", h);
 
     expect(h.deleteAnnotation).toHaveBeenCalledWith("tmp_xyz");
   });
@@ -68,7 +60,7 @@ describe("applyLeaf · create undo (v0.6.3 P0 tmpId 本地分支)", () => {
 describe("applyLeaf · create redo / update / delete 不受 tmpId 分支影响", () => {
   it("redo create → 调 createAnnotation，cmd.annotationId 改写为新 id", async () => {
     const h = makeHandlers({
-      createAnnotation: vi.fn(async () => ({ id: "fresh-1" } as never)),
+      createAnnotation: vi.fn(async () => ({ id: "fresh-1" }) as never),
     });
     const cmd = { kind: "create" as const, annotationId: "tmp_x", payload: dummyPayload };
 
@@ -81,7 +73,12 @@ describe("applyLeaf · create redo / update / delete 不受 tmpId 分支影响",
   it("update undo → 用 before 调 updateAnnotation", async () => {
     const h = makeHandlers();
     await applyLeaf(
-      { kind: "update", annotationId: "id", before: { class_name: "A" }, after: { class_name: "B" } },
+      {
+        kind: "update",
+        annotationId: "id",
+        before: { class_name: "A" },
+        after: { class_name: "B" },
+      },
       "undo",
       h,
     );
@@ -91,7 +88,12 @@ describe("applyLeaf · create redo / update / delete 不受 tmpId 分支影响",
   it("update redo → 用 after 调 updateAnnotation", async () => {
     const h = makeHandlers();
     await applyLeaf(
-      { kind: "update", annotationId: "id", before: { class_name: "A" }, after: { class_name: "B" } },
+      {
+        kind: "update",
+        annotationId: "id",
+        before: { class_name: "A" },
+        after: { class_name: "B" },
+      },
       "redo",
       h,
     );
@@ -117,10 +119,13 @@ describe("applyLeaf · acceptPrediction undo (v0.20.22 parent_prediction_id 防�
   });
 
   it("getAnnotation 返回 parent_prediction_id === cmd.predictionId → 删", async () => {
-    const getAnnotation = vi.fn((id: string) => ({
-      id,
-      parent_prediction_id: "pred-1",
-    } as never));
+    const getAnnotation = vi.fn(
+      (id: string) =>
+        ({
+          id,
+          parent_prediction_id: "pred-1",
+        }) as never,
+    );
     const h = makeHandlers({ getAnnotation });
     await applyLeaf(
       {
@@ -286,7 +291,6 @@ describe("applyLeaf · video Mask frame undo / redo", () => {
     expect(updateVideoMaskFrame).toHaveBeenCalledWith("mask-1", 4, after);
   });
 });
-
 
 // ── v0.8.7 F8 · sessionStorage 持久化 ────────────────────────────────
 

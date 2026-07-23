@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 需要 tag 用于 changelog 校验
+          fetch-depth: 0 # 需要 tag 用于 changelog 校验
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

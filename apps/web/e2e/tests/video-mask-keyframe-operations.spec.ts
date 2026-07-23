@@ -29,7 +29,7 @@ function auth(token: string) {
 
 async function json<T>(response: APIResponse): Promise<T> {
   expect(response.ok(), await response.text()).toBe(true);
-  return await response.json() as T;
+  return (await response.json()) as T;
 }
 
 async function listAnnotations(
@@ -37,10 +37,9 @@ async function listAnnotations(
   taskId: string,
   token: string,
 ): Promise<VideoMaskAnnotation[]> {
-  return await json<VideoMaskAnnotation[]>(await request.get(
-    `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-    { headers: auth(token) },
-  ));
+  return await json<VideoMaskAnnotation[]>(
+    await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers: auth(token) }),
+  );
 }
 
 function isKeyframeResponse(
@@ -50,15 +49,20 @@ function isKeyframeResponse(
   frameIndex: number,
   method: "PATCH" | "PUT",
 ) {
-  return response.url().endsWith(
-    `/api/v1/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/${frameIndex}`,
-  ) && response.request().method() === method;
+  return (
+    response
+      .url()
+      .endsWith(
+        `/api/v1/tasks/${taskId}/video/tracks/${annotationId}/mask-keyframes/${frameIndex}`,
+      ) && response.request().method() === method
+  );
 }
 
 function isMutationResponse(response: APIResponse, taskId: string) {
-  return response.url().endsWith(
-    `/api/v1/tasks/${taskId}/annotations/mask-mutations:commit`,
-  ) && response.request().method() === "POST";
+  return (
+    response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/mask-mutations:commit`) &&
+    response.request().method() === "POST"
+  );
 }
 
 async function seedVideoMask(
@@ -67,13 +71,14 @@ async function seedVideoMask(
   taskId: string,
   token: string,
 ): Promise<VideoMaskAnnotation> {
-  const mask = await json<MaskReference>(await request.post(
-    `${API_BASE}/api/v1/tasks/${taskId}/mask-content`,
-    { headers: auth(token), data: seedRle },
-  ));
-  return await json<VideoMaskAnnotation>(await request.post(
-    `${API_BASE}/api/v1/tasks/${taskId}/annotations`,
-    {
+  const mask = await json<MaskReference>(
+    await request.post(`${API_BASE}/api/v1/tasks/${taskId}/mask-content`, {
+      headers: auth(token),
+      data: seedRle,
+    }),
+  );
+  return await json<VideoMaskAnnotation>(
+    await request.post(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
       headers: auth(token),
       data: {
         annotation_type: "video_track_mask",
@@ -89,8 +94,8 @@ async function seedVideoMask(
           outside: [],
         },
       },
-    },
-  ));
+    }),
+  );
 }
 
 test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持原子语义", async ({
@@ -105,12 +110,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
     variant: "multimask_donut",
   });
   const token = await seed.accessToken(data.admin_email);
-  const source = await seedVideoMask(
-    request,
-    fixture.rles.at(-1) ?? fixture.rle,
-    taskId,
-    token,
-  );
+  const source = await seedVideoMask(request, fixture.rles.at(-1) ?? fixture.rle, taskId, token);
 
   await seed.injectToken(page, data.admin_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
@@ -120,9 +120,9 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   await row.click();
   await expect(page.getByRole("button", { name: "复制当前帧" })).toBeEnabled();
 
-  const copiedAtZero = page.waitForResponse((response) => response.url().endsWith(
-    `/api/v1/annotations/${source.id}/mask-content/0`,
-  ));
+  const copiedAtZero = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/v1/annotations/${source.id}/mask-content/0`),
+  );
   await page.getByRole("button", { name: "复制当前帧" }).click();
   expect((await copiedAtZero).status()).toBe(200);
 
@@ -133,37 +133,33 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   let keyframeWrites = 0;
   page.on("request", (outgoing) => {
     if (
-      outgoing.url().includes(`/video/tracks/${source.id}/mask-keyframes/1`)
-      && ["PATCH", "PUT"].includes(outgoing.method())
-    ) keyframeWrites += 1;
+      outgoing.url().includes(`/video/tracks/${source.id}/mask-keyframes/1`) &&
+      ["PATCH", "PUT"].includes(outgoing.method())
+    )
+      keyframeWrites += 1;
   });
   await page.getByRole("button", { name: "粘贴当前轨迹" }).click();
   const toolbar = page.getByTestId("mask-toolbar");
   await expect(toolbar).toContainText("未保存", { timeout: 15_000 });
   expect(keyframeWrites).toBe(0);
-  const materialized = page.waitForResponse((response) => isKeyframeResponse(
-    response,
-    taskId,
-    source.id,
-    1,
-    "PUT",
-  ));
+  const materialized = page.waitForResponse((response) =>
+    isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
+  );
   await toolbar.getByRole("button", { name: "确认", exact: true }).click();
   expect((await materialized).status()).toBe(200);
   // 网络响应先于保存成功后的会话清理；等 UI 真正回到选择态再发起下一项操作。
   await expect(toolbar).toBeHidden({ timeout: 10_000 });
 
-  const copiedAtOne = page.waitForResponse((response) => response.url().endsWith(
-    `/api/v1/annotations/${source.id}/mask-content/1`,
-  ));
+  const copiedAtOne = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/v1/annotations/${source.id}/mask-content/1`),
+  );
   await page.getByRole("button", { name: "复制当前帧" }).click();
   expect((await copiedAtOne).status()).toBe(200);
 
   let mutationWrites = 0;
   page.on("request", (outgoing) => {
-    if (outgoing.url().endsWith(
-      `/api/v1/tasks/${taskId}/annotations/mask-mutations:commit`,
-    )) mutationWrites += 1;
+    if (outgoing.url().endsWith(`/api/v1/tasks/${taskId}/annotations/mask-mutations:commit`))
+      mutationWrites += 1;
   });
   await page.getByRole("button", { name: "粘贴新轨迹" }).click();
   await expect(toolbar).toContainText("粘贴为新轨迹", { timeout: 15_000 });
@@ -178,52 +174,35 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
     source_frame_index: 1,
   });
   expect((await copyResponse.json()).created_annotations).toHaveLength(1);
-  await expect.poll(async () => (await listAnnotations(request, taskId, token)).length)
-    .toBe(2);
+  await expect.poll(async () => (await listAnnotations(request, taskId, token)).length).toBe(2);
 
   await row.click();
-  const markedOutside = page.waitForResponse((response) => isKeyframeResponse(
-    response,
-    taskId,
-    source.id,
-    1,
-    "PATCH",
-  ));
+  const markedOutside = page.waitForResponse((response) =>
+    isKeyframeResponse(response, taskId, source.id, 1, "PATCH"),
+  );
   await page.getByRole("button", { name: "标记消失" }).click();
   expect((await markedOutside).status()).toBe(200);
   await expect(page.getByRole("button", { name: "恢复保持" })).toBeEnabled();
 
-  const restoredHeld = page.waitForResponse((response) => isKeyframeResponse(
-    response,
-    taskId,
-    source.id,
-    1,
-    "PATCH",
-  ));
+  const restoredHeld = page.waitForResponse((response) =>
+    isKeyframeResponse(response, taskId, source.id, 1, "PATCH"),
+  );
   await page.getByRole("button", { name: "恢复保持" }).click();
   expect((await restoredHeld).status()).toBe(200);
   await expect(page.getByRole("button", { name: "删除关键帧" })).toBeEnabled();
 
-  const deleted = page.waitForResponse((response) => isKeyframeResponse(
-    response,
-    taskId,
-    source.id,
-    1,
-    "PATCH",
-  ));
+  const deleted = page.waitForResponse((response) =>
+    isKeyframeResponse(response, taskId, source.id, 1, "PATCH"),
+  );
   await page.keyboard.press("Delete");
   const deleteResponse = await deleted;
   expect(deleteResponse.status(), await deleteResponse.text()).toBe(200);
   expect((await deleteResponse.allHeaders())["x-resolved-keyframe-frame"]).toBe("0");
   await expect(page.getByText(/当前帧保持 F0 的 Mask/)).toBeVisible();
 
-  const undone = page.waitForResponse((response) => isKeyframeResponse(
-    response,
-    taskId,
-    source.id,
-    1,
-    "PUT",
-  ));
+  const undone = page.waitForResponse((response) =>
+    isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
+  );
   await page.keyboard.press("Control+z");
   const undoResponse = await undone;
   expect(undoResponse.status(), await undoResponse.text()).toBe(200);
@@ -241,6 +220,5 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
     operation: "split_components",
   });
   expect((await splitResponse.json()).created_annotations).toHaveLength(2);
-  await expect.poll(async () => (await listAnnotations(request, taskId, token)).length)
-    .toBe(4);
+  await expect.poll(async () => (await listAnnotations(request, taskId, token)).length).toBe(4);
 });

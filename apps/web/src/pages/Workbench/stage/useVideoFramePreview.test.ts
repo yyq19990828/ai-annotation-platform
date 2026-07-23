@@ -122,9 +122,11 @@ describe("useVideoFramePreview", () => {
       error: null,
     };
     let resolveFrame: ((value: typeof readyFrame) => void) | undefined;
-    api.getVideoFrame.mockReturnValue(new Promise((resolve) => {
-      resolveFrame = resolve;
-    }));
+    api.getVideoFrame.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFrame = resolve;
+      }),
+    );
 
     const { result } = renderHook(() => useVideoFramePreview({ taskId: "task-1", maxFrame: 9 }));
 
@@ -156,11 +158,12 @@ describe("useVideoFramePreview", () => {
 
     act(() => result.current.prefetch([1, 1, 20, -2]));
 
-    await waitFor(() => expect(api.prefetchVideoFrames).toHaveBeenCalledWith(
-      "task-1",
-      [1, 9, 0],
-      { width: 320, format: "webp" },
-    ));
+    await waitFor(() =>
+      expect(api.prefetchVideoFrames).toHaveBeenCalledWith("task-1", [1, 9, 0], {
+        width: 320,
+        format: "webp",
+      }),
+    );
     expect(result.current.preview).toBeNull();
   });
 

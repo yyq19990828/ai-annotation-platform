@@ -1,12 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { DataManagerEntityScope } from "@/api/taskViews";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/shadcn/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadcn/ui/tabs";
 
 const LABELS: Record<DataManagerEntityScope, string> = {
   tasks: "任务",
@@ -38,7 +33,9 @@ export function DataManagerLensTabs({
           </TabsTrigger>
         ))}
       </TabsList>
-      <TabsContent value={scope} className="min-h-0 overflow-hidden">{children}</TabsContent>
+      <TabsContent value={scope} className="min-h-0 overflow-hidden">
+        {children}
+      </TabsContent>
     </Tabs>
   );
 }

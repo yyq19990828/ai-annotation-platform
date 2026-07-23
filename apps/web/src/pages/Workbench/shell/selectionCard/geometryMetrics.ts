@@ -147,11 +147,9 @@ function polygonMetrics(
   ];
   if (hasDims) {
     metrics.push({ label: "面积", value: `≈ ${group(netArea * imgW! * imgH!)} px²` });
-    const perimeter = polylinePerimeterPx(points, imgW!, imgH!, true) +
-      (holes ?? []).reduce(
-        (sum, ring) => sum + polylinePerimeterPx(ring, imgW!, imgH!, true),
-        0,
-      );
+    const perimeter =
+      polylinePerimeterPx(points, imgW!, imgH!, true) +
+      (holes ?? []).reduce((sum, ring) => sum + polylinePerimeterPx(ring, imgW!, imgH!, true), 0);
     metrics.push({
       label: "周长",
       value: `≈ ${group(perimeter)} px`,

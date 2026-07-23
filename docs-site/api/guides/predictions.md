@@ -10,10 +10,10 @@ last_reviewed: 2026-05-27
 
 候选预测和后台任务分离：
 
-| 表 | 用途 | 端点前缀 |
-|---|---|---|
-| `predictions` | 当前可采纳的候选框（按 task） | `/tasks/:id/predictions` |
-| `async_jobs` | 批量预标、失败重试、导出、视频追踪、连接器导入等后台任务历史 | `/async-jobs` |
+| 表            | 用途                                                         | 端点前缀                 |
+| ------------- | ------------------------------------------------------------ | ------------------------ |
+| `predictions` | 当前可采纳的候选框（按 task）                                | `/tasks/:id/predictions` |
+| `async_jobs`  | 批量预标、失败重试、导出、视频追踪、连接器导入等后台任务历史 | `/async-jobs`            |
 
 <!-- history: batch prediction history used to live in prediction_jobs; current SoT is async_jobs(kind=batch_predict). -->
 
@@ -59,9 +59,9 @@ GET /api/v1/tasks/:task_id/predictions?model_version=&min_confidence=&limit=&off
 
 返回 `PredictionOut[]`。每条 prediction 的 `source` 表示候选来源：
 
-| source | 含义 |
-|---|---|
-| `ml_backend` | 平台内 ML backend 生成的预标 |
+| source            | 含义                           |
+| ----------------- | ------------------------------ |
+| `ml_backend`      | 平台内 ML backend 生成的预标   |
 | `external_import` | 通过预测导入端点写入的外部预测 |
 
 Workbench 会用该字段显示来源标识，并支持按来源隐藏 / 恢复候选框。
@@ -79,11 +79,11 @@ POST /api/v1/projects/:project_id/predictions/purge
 
 权限：项目 owner 或 super_admin。`source_scope` 可为：
 
-| source_scope | 含义 |
-|---|---|
-| `external_import` | 只清外部导入预测，适合重导前预览或手动回滚导入 |
-| `ml_backend` | 只清平台 ML Backend 生成的预标，清理后需重新运行模型恢复 |
-| `all` | 清理当前项目范围内全部 prediction |
+| source_scope      | 含义                                                     |
+| ----------------- | -------------------------------------------------------- |
+| `external_import` | 只清外部导入预测，适合重导前预览或手动回滚导入           |
+| `ml_backend`      | 只清平台 ML Backend 生成的预标，清理后需重新运行模型恢复 |
+| `all`             | 清理当前项目范围内全部 prediction                        |
 
 `task_ids=null` 表示项目级清理；传 UUID 数组时仅清这些 task。建议先传 `dry_run=true` 读取计数，再用同一参数正式执行：
 
@@ -117,10 +117,10 @@ POST /api/v1/admin/batches/:id/reset
 
 ## WebSocket 进度
 
-| 通道 | 何时订阅 |
-|---|---|
-| `project:{id}:preannotate` | 工作台 / `/ai-pre` 该项目页 |
-| `global:prediction-jobs` | 任何 admin（Topbar 进度徽章） |
+| 通道                       | 何时订阅                      |
+| -------------------------- | ----------------------------- |
+| `project:{id}:preannotate` | 工作台 / `/ai-pre` 该项目页   |
+| `global:prediction-jobs`   | 任何 admin（Topbar 进度徽章） |
 
 消息体：
 

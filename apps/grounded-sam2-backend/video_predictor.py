@@ -47,7 +47,12 @@ import cv2  # opencv-python-headless, 已在镜像内
 import numpy as np
 import torch
 
-from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
+from aap_backend_runtime import (
+    effective_device,
+    free_gpu_memory,
+    is_device_error,
+    latch_cpu,
+)
 from aap_protocol_v2 import MaskPromptPayload
 from mask_utils import decode_coco_rle
 from mask_utils.polygon import mask_to_polygon  # 与图片栈共用的 mask→polygon 矢量化
@@ -104,7 +109,9 @@ class SAM2VideoTracker:
             free_gpu_memory()
             predictor = self._build_for_device("cpu")
             self.device = "cpu"
-            latch_cpu(f"GPU video predictor build failed; CPU replacement committed: {exc}")
+            latch_cpu(
+                f"GPU video predictor build failed; CPU replacement committed: {exc}"
+            )
         return predictor
 
     def _build_for_device(self, device: str):
@@ -115,7 +122,9 @@ class SAM2VideoTracker:
         if not os.path.isfile(ckpt_path):
             # 与图片池一致: checkpoint 未预置交给 main.py 翻成 503。
             raise FileNotFoundError(ckpt_path)
-        logger.info("building video predictor variant=%s ckpt=%s", self.sam_variant, ckpt_name)
+        logger.info(
+            "building video predictor variant=%s ckpt=%s", self.sam_variant, ckpt_name
+        )
         return build_sam2_video_predictor(cfg_name, ckpt_path, device=device)
 
     # ---------- 公开接口 ----------
@@ -186,7 +195,11 @@ class SAM2VideoTracker:
             # 4) 逐帧传播: video_res_masks 是 [num_obj,1,H,W] logits, 逐对象各出一条结果
             #    (instance_id = 该 obj_id, 平台按 instance_id 分组落库)。
             results: list[dict[str, Any]] = []
-            for local_idx, obj_ids, video_res_masks in self._predictor.propagate_in_video(
+            for (
+                local_idx,
+                obj_ids,
+                video_res_masks,
+            ) in self._predictor.propagate_in_video(
                 inference_state,
                 start_frame_idx=local_seed,
                 reverse=reverse,
@@ -207,7 +220,9 @@ class SAM2VideoTracker:
                             mask, frame_w, frame_h
                         )
                     else:
-                        bbox_norm, outside = self._mask_to_bbox_norm(mask, frame_w, frame_h)
+                        bbox_norm, outside = self._mask_to_bbox_norm(
+                            mask, frame_w, frame_h
+                        )
                         geometry = {"type": "bbox", **bbox_norm}
                     # confidence 用 SAM2 每帧每对象自评的 object score 取代写死 0/1: 平台低置信
                     # 阈值据此把「有 mask 但模型判为部分遮挡」的帧也标 outside。空 mask 记 0.0;
@@ -215,7 +230,9 @@ class SAM2VideoTracker:
                     if outside:
                         confidence = 0.0
                     else:
-                        score = self._object_score(inference_state, int(oid), int(local_idx))
+                        score = self._object_score(
+                            inference_state, int(oid), int(local_idx)
+                        )
                         confidence = score if score is not None else 1.0
                     results.append(
                         {
@@ -323,9 +340,7 @@ class SAM2VideoTracker:
                 )
             decoded = decode_coco_rle(payload.rle.model_dump(mode="json"))
             mask = torch.from_numpy(
-                np.frombuffer(decoded, dtype=np.uint8)
-                .reshape(height, width)
-                .copy()
+                np.frombuffer(decoded, dtype=np.uint8).reshape(height, width).copy()
             ).to(dtype=torch.bool)
             self._predictor.add_new_mask(
                 inference_state=state,

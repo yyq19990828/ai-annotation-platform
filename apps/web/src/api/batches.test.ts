@@ -146,8 +146,8 @@ describe("batchesApi · endpoint 契约", () => {
       motsFrameBase: 1,
     });
     expect(post).toHaveBeenCalledWith(
-      "/projects/p1/batches/b1/export?include_attributes=true&targets=davis&targets=mots"
-        + "&video_overlap_policy=z_order&mots_frame_base=1",
+      "/projects/p1/batches/b1/export?include_attributes=true&targets=davis&targets=mots" +
+        "&video_overlap_policy=z_order&mots_frame_base=1",
     );
   });
 });

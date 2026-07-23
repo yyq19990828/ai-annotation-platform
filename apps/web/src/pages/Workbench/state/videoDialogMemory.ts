@@ -1,9 +1,6 @@
 export type VideoDialogMemoryKey = "kfPropagate" | "trackerPropagate";
 
-export function videoDialogMemoryStorageKey(
-  userId: string,
-  key: VideoDialogMemoryKey,
-): string {
+export function videoDialogMemoryStorageKey(userId: string, key: VideoDialogMemoryKey): string {
   return `workbench.${userId}.video.${key}`;
 }
 
@@ -29,10 +26,7 @@ export function writeDialogMemory<T>(
 ): void {
   if (!userId || typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(
-      videoDialogMemoryStorageKey(userId, key),
-      JSON.stringify(value),
-    );
+    window.localStorage.setItem(videoDialogMemoryStorageKey(userId, key), JSON.stringify(value));
   } catch {
     /* local dialog memory is best-effort */
   }

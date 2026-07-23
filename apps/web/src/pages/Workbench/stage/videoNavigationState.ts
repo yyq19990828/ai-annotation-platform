@@ -95,7 +95,10 @@ export function videoNavigationStorageKey(taskId: string, kind: "loop" | "bookma
   return `workbench.video.${kind}.${taskId}`;
 }
 
-export function parseStoredLoopRegion(value: string | null, maxFrame: number): VideoLoopRegion | null {
+export function parseStoredLoopRegion(
+  value: string | null,
+  maxFrame: number,
+): VideoLoopRegion | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as Partial<VideoLoopRegion>;
@@ -112,16 +115,20 @@ export function parseStoredBookmarks(value: string | null, maxFrame: number): Vi
     const parsed = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .filter((bookmark): bookmark is VideoBookmark => (
-        bookmark &&
-        typeof bookmark.id === "string" &&
-        typeof bookmark.frameIndex === "number" &&
-        typeof bookmark.createdAt === "number"
-      ))
+      .filter(
+        (bookmark): bookmark is VideoBookmark =>
+          bookmark &&
+          typeof bookmark.id === "string" &&
+          typeof bookmark.frameIndex === "number" &&
+          typeof bookmark.createdAt === "number",
+      )
       .map((bookmark) => ({
         ...bookmark,
         frameIndex: cleanFrame(bookmark.frameIndex, maxFrame),
-        label: typeof bookmark.label === "string" ? bookmark.label : `F ${cleanFrame(bookmark.frameIndex, maxFrame)}`,
+        label:
+          typeof bookmark.label === "string"
+            ? bookmark.label
+            : `F ${cleanFrame(bookmark.frameIndex, maxFrame)}`,
       }))
       .sort((a, b) => a.frameIndex - b.frameIndex || a.createdAt - b.createdAt);
   } catch {
@@ -141,7 +148,10 @@ export function parseStoredJumpHistory(value: string | null, maxFrame: number): 
     if (entries.length === 0) return emptyVideoJumpHistory();
     return {
       entries,
-      cursor: Math.max(0, Math.min(entries.length - 1, Math.round(parsed.cursor ?? entries.length - 1))),
+      cursor: Math.max(
+        0,
+        Math.min(entries.length - 1, Math.round(parsed.cursor ?? entries.length - 1)),
+      ),
     };
   } catch {
     return emptyVideoJumpHistory();

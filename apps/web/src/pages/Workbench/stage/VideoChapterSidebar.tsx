@@ -233,7 +233,8 @@ export function VideoChapterSidebar({
                 title={timelineDraftArmed ? "取消时间轴圈选" : "在时间轴上拖选章节范围"}
                 aria-pressed={timelineDraftArmed}
               >
-                <Icon name="scan" size={13} />圈选
+                <Icon name="scan" size={13} />
+                圈选
               </Button>
             )}
             <Button
@@ -243,7 +244,8 @@ export function VideoChapterSidebar({
               onClick={startCreate}
               title="新建章节"
             >
-              <Icon name="plus" size={13} />新建
+              <Icon name="plus" size={13} />
+              新建
             </Button>
           </div>
         )}
@@ -299,13 +301,17 @@ export function VideoChapterSidebar({
                 <b className="overflow-hidden text-sm text-ellipsis whitespace-nowrap">
                   {idx + 1}. {chapter.title}
                   {chapter.source === "sampled" && (
-                    <span className="ml-1.5 px-1.5 py-px rounded-full bg-brand/10 text-brand text-2xs font-medium align-middle" title="由采样网格派生">
+                    <span
+                      className="ml-1.5 px-1.5 py-px rounded-full bg-brand/10 text-brand text-2xs font-medium align-middle"
+                      title="由采样网格派生"
+                    >
                       采样
                     </span>
                   )}
                 </b>
                 <span className="mono text-muted-foreground text-xs">
-                  F{chapter.start_frame}–F{chapter.end_frame} · {formatChapterDuration(chapter.start_frame, chapter.end_frame, timebase)}
+                  F{chapter.start_frame}–F{chapter.end_frame} ·{" "}
+                  {formatChapterDuration(chapter.start_frame, chapter.end_frame, timebase)}
                   {chapter.frame_step != null && ` · 步长 ${chapter.frame_step}`}
                 </span>
               </button>
@@ -375,9 +381,7 @@ export function VideoChapterSidebar({
                   className="!px-1.5 !rounded-md"
                   title="使用当前帧"
                   onClick={() =>
-                    setEditing((prev) =>
-                      prev ? { ...prev, startFrame: frameIndex } : prev,
-                    )
+                    setEditing((prev) => (prev ? { ...prev, startFrame: frameIndex } : prev))
                   }
                 >
                   当前
@@ -404,9 +408,7 @@ export function VideoChapterSidebar({
                   className="!px-1.5 !rounded-md"
                   title="使用当前帧"
                   onClick={() =>
-                    setEditing((prev) =>
-                      prev ? { ...prev, endFrame: frameIndex } : prev,
-                    )
+                    setEditing((prev) => (prev ? { ...prev, endFrame: frameIndex } : prev))
                   }
                 >
                   当前
@@ -427,9 +429,7 @@ export function VideoChapterSidebar({
               ))}
             </div>
           </label>
-          {error && (
-            <div className="text-status-danger text-xs">{error}</div>
-          )}
+          {error && <div className="text-status-danger text-xs">{error}</div>}
           <div className="flex gap-1.5 justify-end">
             <Button size="sm" className="!rounded-md" variant="ghost" onClick={cancelForm}>
               取消

@@ -60,12 +60,7 @@ function formatAgreement(sniff: SniffAxisConventionResponse) {
   return `${matched}/${sniff.per_camera.length} 个相机一致，侧/后向相机可能误导，已优先正前相机`;
 }
 
-export function AxisConventionPicker({
-  value,
-  onChange,
-  disabled = false,
-  datasetId,
-}: Props) {
+export function AxisConventionPicker({ value, onChange, disabled = false, datasetId }: Props) {
   const current = value ?? "iso_8855";
   const [sniffing, setSniffing] = useState(false);
   const [sniff, setSniff] = useState<SniffAxisConventionResponse | null>(null);

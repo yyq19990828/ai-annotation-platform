@@ -201,7 +201,8 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
     <div className={styles.root}>
       <div className={styles.panelHeader}>
         <div className={styles.muted}>
-          密钥用于程序化访问 API（CI / 脚本 / SDK）；创建后请立即复制保存，离开本页后将无法再次查看明文。
+          密钥用于程序化访问 API（CI / 脚本 /
+          SDK）；创建后请立即复制保存，离开本页后将无法再次查看明文。
         </div>
         <Button variant="primary" onClick={openCreate} className={styles.newKeyBtn}>
           <Icon name="plus" size={12} /> 新建密钥
@@ -218,219 +219,212 @@ export function ApiKeysPanel({ active }: { active: boolean }) {
           <SecretReveal data={secret} onAck={() => setSecret(null)} onCopy={onCopySecret} />
         ) : editing ? (
           <form onSubmit={submit} className={styles.modalForm}>
-              <Field label="名称">
-                <input
-                  type="text"
-                  autoFocus
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={60}
-                  placeholder="如 ci-bot / 数据导出脚本"
-                  className={styles.input}
-                />
-              </Field>
+            <Field label="名称">
+              <input
+                type="text"
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={60}
+                placeholder="如 ci-bot / 数据导出脚本"
+                className={styles.input}
+              />
+            </Field>
 
-              <Field label="权限范围（scope）">
-                <div className={styles.scopeList}>
-                  <label className={`${styles.scopeOption} ${styles.fullAccessOption}`}>
+            <Field label="权限范围（scope）">
+              <div className={styles.scopeList}>
+                <label className={`${styles.scopeOption} ${styles.fullAccessOption}`}>
+                  <input
+                    type="checkbox"
+                    checked={fullAccess}
+                    onChange={(e) => setFullAccess(e.target.checked)}
+                  />
+                  <code className={styles.scopeCode}>{FULL_ACCESS}</code>
+                  <span className={styles.muted}>完全访问（full-access，等同所有权限）</span>
+                </label>
+                {SCOPE_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.id}
+                    className={`${styles.scopeOption} ${fullAccess ? styles.scopeDisabled : ""}`}
+                  >
                     <input
                       type="checkbox"
-                      checked={fullAccess}
-                      onChange={(e) => setFullAccess(e.target.checked)}
+                      disabled={fullAccess}
+                      checked={!fullAccess && scopes.includes(opt.id)}
+                      onChange={(e) => {
+                        setScopes((prev) =>
+                          e.target.checked ? [...prev, opt.id] : prev.filter((s) => s !== opt.id),
+                        );
+                      }}
                     />
-                    <code className={styles.scopeCode}>{FULL_ACCESS}</code>
-                    <span className={styles.muted}>完全访问（full-access，等同所有权限）</span>
+                    <code className={styles.scopeCode}>{opt.id}</code>
+                    <span className={styles.muted}>{opt.label}</span>
                   </label>
-                  {SCOPE_OPTIONS.map((opt) => (
-                    <label
-                      key={opt.id}
-                      className={`${styles.scopeOption} ${fullAccess ? styles.scopeDisabled : ""}`}
-                    >
-                      <input
-                        type="checkbox"
-                        disabled={fullAccess}
-                        checked={!fullAccess && scopes.includes(opt.id)}
-                        onChange={(e) => {
-                          setScopes((prev) =>
-                            e.target.checked
-                              ? [...prev, opt.id]
-                              : prev.filter((s) => s !== opt.id),
-                          );
-                        }}
-                      />
-                      <code className={styles.scopeCode}>{opt.id}</code>
-                      <span className={styles.muted}>{opt.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </Field>
+                ))}
+              </div>
+            </Field>
 
-              <Field label="有效期">
-                <select
+            <Field label="有效期">
+              <select
+                className={styles.input}
+                value={expiryMode}
+                onChange={(e) => setExpiryMode(e.target.value as ExpiryMode)}
+              >
+                {editing.id !== null && <option value="keep">保持不变</option>}
+                {EXPIRY_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              {expiryMode === "custom" && (
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={customDays}
+                  onChange={(e) => setCustomDays(Number(e.target.value))}
                   className={styles.input}
-                  value={expiryMode}
-                  onChange={(e) => setExpiryMode(e.target.value as ExpiryMode)}
-                >
-                  {editing.id !== null && <option value="keep">保持不变</option>}
-                  {EXPIRY_PRESETS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                {expiryMode === "custom" && (
-                  <input
-                    type="number"
-                    min={1}
-                    max={3650}
-                    value={customDays}
-                    onChange={(e) => setCustomDays(Number(e.target.value))}
-                    className={styles.input}
-                    placeholder="天数（1–3650）"
-                  />
-                )}
-              </Field>
+                  placeholder="天数（1–3650）"
+                />
+              )}
+            </Field>
 
-              <div className={styles.note}>
-                scope 目前仅对标注 / 数据集读 / 预测读等部分端点在路由层强制；未覆盖的端点（含多数写操作）仍遵从你的账号角色——所选 scope 不等于只读隔离。需要真正受限的程序化访问，请改用低权限账号创建 key。
-              </div>
-              {formError && <div className={styles.errorText}>{formError ?? "提交失败"}</div>}
-              <div className={styles.actions}>
-                <Button type="button" onClick={resetForm} disabled={pending}>
-                  取消
-                </Button>
-                <Button type="submit" variant="primary" disabled={!name.trim() || pending}>
-                  {pending
-                    ? editing.id === null
-                      ? "创建中..."
-                      : "保存中..."
-                    : editing.id === null
-                      ? "创建"
-                      : "保存"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
+            <div className={styles.note}>
+              scope 目前仅对标注 / 数据集读 /
+              预测读等部分端点在路由层强制；未覆盖的端点（含多数写操作）仍遵从你的账号角色——所选
+              scope 不等于只读隔离。需要真正受限的程序化访问，请改用低权限账号创建 key。
+            </div>
+            {formError && <div className={styles.errorText}>{formError ?? "提交失败"}</div>}
+            <div className={styles.actions}>
+              <Button type="button" onClick={resetForm} disabled={pending}>
+                取消
+              </Button>
+              <Button type="submit" variant="primary" disabled={!name.trim() || pending}>
+                {pending
+                  ? editing.id === null
+                    ? "创建中..."
+                    : "保存中..."
+                  : editing.id === null
+                    ? "创建"
+                    : "保存"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
       </Modal>
 
       <div className={styles.tableShell}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  {["名称", "前缀", "权限", "有效期", "最后使用", "创建", ""].map((h, i) => (
-                    <th key={i} className={styles.th}>
-                      {h}
-                    </th>
-                  ))}
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              {["名称", "前缀", "权限", "有效期", "最后使用", "创建", ""].map((h, i) => (
+                <th key={i} className={styles.th}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={7} className={styles.emptyCell}>
+                  加载中…
+                </td>
+              </tr>
+            )}
+            {!isLoading && keys.length === 0 && (
+              <tr>
+                <td colSpan={7} className={styles.emptyCell}>
+                  尚未创建任何密钥
+                </td>
+              </tr>
+            )}
+            {keys.map((k) => {
+              const revoked = !!k.revoked_at;
+              const expired = !revoked && isExpired(k.expires_at);
+              return (
+                <tr key={k.id} className={revoked ? styles.revokedRow : undefined}>
+                  <td className={`${styles.cell} ${styles.nameCell}`} title={k.name}>
+                    {k.name}
+                    {revoked && (
+                      <span className={styles.revokedBadge}>
+                        <Badge variant="outline">已吊销</Badge>
+                      </span>
+                    )}
+                  </td>
+                  <td className={`${styles.cell} mono ${styles.keyPrefix}`}>{k.key_prefix}…</td>
+                  <td className={styles.cell}>
+                    {k.scopes.length === 0 ? (
+                      <span className={styles.subtle}>—</span>
+                    ) : k.scopes.includes(FULL_ACCESS) ? (
+                      <Badge variant="outline">完全访问</Badge>
+                    ) : (
+                      <Tooltip
+                        side="top"
+                        name="权限范围"
+                        desc={
+                          <div className={styles.scopeTipList}>
+                            {k.scopes.map((s) => (
+                              <code key={s}>{s}</code>
+                            ))}
+                          </div>
+                        }
+                      >
+                        <span className={styles.scopeSummary} tabIndex={0}>
+                          {k.scopes.length} 项权限
+                        </span>
+                      </Tooltip>
+                    )}
+                  </td>
+                  <td className={`${styles.cell} ${styles.dateCell}`}>
+                    {k.expires_at === null ? (
+                      <span className={styles.subtle}>永不</span>
+                    ) : expired ? (
+                      <Badge variant="outline">已过期</Badge>
+                    ) : (
+                      formatDate(k.expires_at)
+                    )}
+                  </td>
+                  <td className={`${styles.cell} ${styles.dateCell}`}>
+                    {formatDate(k.last_used_at)}
+                  </td>
+                  <td className={`${styles.cell} ${styles.dateCell}`}>
+                    {formatDate(k.created_at)}
+                  </td>
+                  <td className={`${styles.cell} ${styles.actionsCell}`}>
+                    {!revoked && (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(k)} title="编辑">
+                          <Icon name="edit" size={11} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRotate(k)}
+                          disabled={rotateKey.isPending}
+                          title="轮换（生成新密钥，旧的失效）"
+                        >
+                          <Icon name="refresh" size={11} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRevoke(k)}
+                          disabled={revokeKey.isPending}
+                          title="吊销密钥"
+                        >
+                          <Icon name="trash" size={11} className={styles.dangerIcon} />
+                        </Button>
+                      </>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {isLoading && (
-                  <tr>
-                    <td colSpan={7} className={styles.emptyCell}>
-                      加载中…
-                    </td>
-                  </tr>
-                )}
-                {!isLoading && keys.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className={styles.emptyCell}>
-                      尚未创建任何密钥
-                    </td>
-                  </tr>
-                )}
-                {keys.map((k) => {
-                  const revoked = !!k.revoked_at;
-                  const expired = !revoked && isExpired(k.expires_at);
-                  return (
-                    <tr key={k.id} className={revoked ? styles.revokedRow : undefined}>
-                      <td className={`${styles.cell} ${styles.nameCell}`} title={k.name}>
-                        {k.name}
-                        {revoked && (
-                          <span className={styles.revokedBadge}>
-                            <Badge variant="outline">已吊销</Badge>
-                          </span>
-                        )}
-                      </td>
-                      <td className={`${styles.cell} mono ${styles.keyPrefix}`}>
-                        {k.key_prefix}…
-                      </td>
-                      <td className={styles.cell}>
-                        {k.scopes.length === 0 ? (
-                          <span className={styles.subtle}>—</span>
-                        ) : k.scopes.includes(FULL_ACCESS) ? (
-                          <Badge variant="outline">完全访问</Badge>
-                        ) : (
-                          <Tooltip
-                            side="top"
-                            name="权限范围"
-                            desc={
-                              <div className={styles.scopeTipList}>
-                                {k.scopes.map((s) => (
-                                  <code key={s}>{s}</code>
-                                ))}
-                              </div>
-                            }
-                          >
-                            <span className={styles.scopeSummary} tabIndex={0}>
-                              {k.scopes.length} 项权限
-                            </span>
-                          </Tooltip>
-                        )}
-                      </td>
-                      <td className={`${styles.cell} ${styles.dateCell}`}>
-                        {k.expires_at === null ? (
-                          <span className={styles.subtle}>永不</span>
-                        ) : expired ? (
-                          <Badge variant="outline">已过期</Badge>
-                        ) : (
-                          formatDate(k.expires_at)
-                        )}
-                      </td>
-                      <td className={`${styles.cell} ${styles.dateCell}`}>
-                        {formatDate(k.last_used_at)}
-                      </td>
-                      <td className={`${styles.cell} ${styles.dateCell}`}>
-                        {formatDate(k.created_at)}
-                      </td>
-                      <td className={`${styles.cell} ${styles.actionsCell}`}>
-                        {!revoked && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEdit(k)}
-                              title="编辑"
-                            >
-                              <Icon name="edit" size={11} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onRotate(k)}
-                              disabled={rotateKey.isPending}
-                              title="轮换（生成新密钥，旧的失效）"
-                            >
-                              <Icon name="refresh" size={11} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onRevoke(k)}
-                              disabled={revokeKey.isPending}
-                              title="吊销密钥"
-                            >
-                              <Icon name="trash" size={11} className={styles.dangerIcon} />
-                            </Button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

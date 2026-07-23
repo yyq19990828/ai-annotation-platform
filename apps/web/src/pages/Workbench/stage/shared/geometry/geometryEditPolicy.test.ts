@@ -9,16 +9,39 @@ import {
 describe("geometryEditPolicy", () => {
   const simple: Geometry = {
     type: "polygon",
-    points: [[0, 0], [1, 0], [1, 1]],
+    points: [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ],
   };
   const withHole: Geometry = {
     type: "polygon",
-    points: [[0, 0], [1, 0], [1, 1]],
-    holes: [[[0.2, 0.2], [0.4, 0.2], [0.3, 0.4]]],
+    points: [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ],
+    holes: [
+      [
+        [0.2, 0.2],
+        [0.4, 0.2],
+        [0.3, 0.4],
+      ],
+    ],
   };
   const multi: Geometry = {
     type: "multi_polygon",
-    polygons: [{ type: "polygon", points: [[0, 0], [1, 0], [1, 1]] }],
+    polygons: [
+      {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+        ],
+      },
+    ],
   };
 
   it("仅 holes / multi_polygon 被视为复杂 polygon", () => {

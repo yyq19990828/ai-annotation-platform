@@ -30,8 +30,20 @@ const CI = !!process.env.GITHUB_ACTIONS;
 
 // 设计规范 §2.2 的固定语义色相 + 常见基础色相 (限定范围, 降噪).
 const SEMANTIC_HUES = [
-  "sky", "emerald", "violet", "amber", "rose",
-  "red", "green", "blue", "yellow", "orange", "purple", "indigo", "teal", "cyan",
+  "sky",
+  "emerald",
+  "violet",
+  "amber",
+  "rose",
+  "red",
+  "green",
+  "blue",
+  "yellow",
+  "orange",
+  "purple",
+  "indigo",
+  "teal",
+  "cyan",
 ];
 
 function walkSourceFiles(dir, predicate, out = []) {
@@ -39,8 +51,7 @@ function walkSourceFiles(dir, predicate, out = []) {
     const p = join(dir, name);
     const s = statSync(p);
     if (s.isDirectory()) {
-      if (name === "node_modules" || name === "dist" || name === "coverage")
-        continue;
+      if (name === "node_modules" || name === "dist" || name === "coverage") continue;
       walkSourceFiles(p, predicate, out);
     } else if (s.isFile() && predicate(name)) {
       out.push(p);
@@ -104,8 +115,7 @@ function lineOf(text, index) {
 }
 
 // 裸色字面: #hex (3/4/6/8 位) / rgb( / rgba( / hsl( / hsla( / oklch( / oklab( / color(
-const BARE_COLOR_RE =
-  /#[0-9a-fA-F]{3,8}\b|(?:rgba?|hsla?|oklch|oklab|color)\s*\(/;
+const BARE_COLOR_RE = /#[0-9a-fA-F]{3,8}\b|(?:rgba?|hsla?|oklch|oklab|color)\s*\(/;
 // Tailwind 任意色值: <util>-[<color>]  (color = #hex / rgb()/hsl()/oklch() / var(--...))
 const ARBITRARY_COLOR_RE =
   /\b(?:bg|text|border|ring|ring-offset|fill|stroke|from|via|to|outline|shadow|decoration|caret|accent|divide)-\[\s*(#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?|oklch|oklab|color)\s*\(|var\(--)/;
@@ -124,8 +134,7 @@ const STATUS_SOFT_BG_RE = new RegExp(
   `\\b(?:[a-z-]+:)*!?bg-(${Object.keys(STATUS_CLASS_BY_HUE).join("|")})-500/10!?\\b`,
   "g",
 );
-const ARBITRARY_TEXT_SIZE_RE =
-  /(?:^|[\s"'`])((?:[^\s"'`]+:)*!?text-\[[0-9.]+px\]!?)(?=$|[\s"'`])/g;
+const ARBITRARY_TEXT_SIZE_RE = /(?:^|[\s"'`])((?:[^\s"'`]+:)*!?text-\[[0-9.]+px\]!?)(?=$|[\s"'`])/g;
 const RAW_Z_INDEX_RE =
   /(?:^|[\s"'`])((?:[^\s"'`]+:)*!?z-(?:\[[0-9]+\]|[1-9][0-9]*)!?)(?=$|[\s"'`])/g;
 const SHADCN_CSS = "src/styles/shadcn.css";
@@ -146,10 +155,7 @@ function checkChunk(value) {
 
   // 暗色配对: 对每个 (text|bg|border)-<hue>-600 检查同 className 是否有 dark:(...)-<hue>-400.
   // v0.17.7: 修正匹配 — 容许 `!` 修饰符 + 中间变体前缀(hover:/focus: 等).
-  const hueRe = new RegExp(
-    `\\b(!)?(text|bg|border)-(${SEMANTIC_HUES.join("|")})-600\\b`,
-    "g",
-  );
+  const hueRe = new RegExp(`\\b(!)?(text|bg|border)-(${SEMANTIC_HUES.join("|")})-600\\b`, "g");
   let hm;
   while ((hm = hueRe.exec(value)) !== null) {
     const [, , prefix, hue] = hm;
@@ -214,10 +220,7 @@ function checkCssColorTokenRefs() {
     const text = stripComments(raw);
     for (const match of text.matchAll(/var\(\s*(--color-[a-z0-9-]+)/g)) {
       const filePath = relative(ROOT, file);
-      if (
-        filePath === SHADCN_CSS &&
-        ALLOWED_SHADCN_TAILWIND_PALETTE_RE.test(match[1])
-      ) {
+      if (filePath === SHADCN_CSS && ALLOWED_SHADCN_TAILWIND_PALETTE_RE.test(match[1])) {
         continue;
       }
       usages.push({
@@ -290,9 +293,7 @@ function main() {
   };
 
   printWarnings(warnings);
-  console.warn(
-    `✗ check-tw-tokens (blocking): ${findings.length} 处违反颜色规范\n`,
-  );
+  console.warn(`✗ check-tw-tokens (blocking): ${findings.length} 处违反颜色规范\n`);
   for (const kind of ["bare-color", "arbitrary-color", "dark-pair", "legacy-css-token"]) {
     const list = byKind[kind];
     if (!list?.length) continue;
@@ -323,9 +324,7 @@ function printWarnings(warnings) {
     "z-scale": "z-index 应走语义 z-* utility",
   };
 
-  console.warn(
-    `⚠ check-tw-tokens (warning): ${warnings.length} 处样式可继续语义化\n`,
-  );
+  console.warn(`⚠ check-tw-tokens (warning): ${warnings.length} 处样式可继续语义化\n`);
   for (const f of warnings) {
     console.warn(`  ${f.file}:${f.line}  ${f.detail}`);
     if (CI) {

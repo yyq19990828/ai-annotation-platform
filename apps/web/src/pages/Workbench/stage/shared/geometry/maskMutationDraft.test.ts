@@ -67,11 +67,7 @@ describe("maskMutationDraft", () => {
       { type: "raster_mask", mask: maskRef },
       { version: 3 },
     );
-    const ignored = annotation(
-      "tmp_local",
-      { type: "raster_mask", mask: maskRef },
-      { version: 4 },
-    );
+    const ignored = annotation("tmp_local", { type: "raster_mask", mask: maskRef }, { version: 4 });
 
     const members = maskMutationScopeMembers([second, ignored, first], imageScope);
 
@@ -130,14 +126,9 @@ describe("maskMutationDraft", () => {
   });
 
   it("检测范围内任意两个最终 Mask 的像素重叠", () => {
-    expect(maskAlphasIntersect(
-      new Uint8Array([255, 0, 255]),
-      new Uint8Array([0, 255, 255]),
-    )).toBe(true);
-    expect(maskAlphasIntersect(
-      new Uint8Array([255, 0]),
-      new Uint8Array([0, 255]),
-    )).toBe(false);
+    expect(maskAlphasIntersect(new Uint8Array([255, 0, 255]), new Uint8Array([0, 255, 255]))).toBe(
+      true,
+    );
+    expect(maskAlphasIntersect(new Uint8Array([255, 0]), new Uint8Array([0, 255]))).toBe(false);
   });
-
 });

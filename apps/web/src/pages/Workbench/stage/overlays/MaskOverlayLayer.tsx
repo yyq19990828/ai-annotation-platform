@@ -56,9 +56,10 @@ export function MaskOverlayLayer({
     const opacityChanged = lastOpacityByteRef.current !== opacityByte;
     lastOpacityByteRef.current = opacityByte;
     // 首次看到该 buffer → 全图；后续 → 取脏区，无脏区直接 skip
-    const rect = isFirstSight || opacityChanged
-      ? { x0: 0, y0: 0, x1: buffer.width, y1: buffer.height }
-      : buffer.consumeDirty();
+    const rect =
+      isFirstSight || opacityChanged
+        ? { x0: 0, y0: 0, x1: buffer.width, y1: buffer.height }
+        : buffer.consumeDirty();
     if (!rect) return;
     // 首次全量时也把 buffer 内部脏区一并清空，避免下一笔被首次全量「吃掉」
     if (isFirstSight || opacityChanged) buffer.consumeDirty();

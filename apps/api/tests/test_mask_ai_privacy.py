@@ -34,7 +34,9 @@ def test_mask_ai_logs_do_not_receive_prompt_or_mask_payload_variables() -> None:
     for path in LOG_SOURCES:
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            if not isinstance(node, ast.Call) or not isinstance(
+                node.func, ast.Attribute
+            ):
                 continue
             if node.func.attr not in LOG_METHODS:
                 continue

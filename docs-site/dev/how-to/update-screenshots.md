@@ -158,9 +158,7 @@ export const PROJECT_SCENES: ScreenshotScene[] = [
     capture: { kind: "locator", selector: '[data-testid="my-panel"]', padding: 8 },
 
     // 自动注释（可选）
-    annotate: [
-      { selector: '[data-testid="key-button"]', style: "rect-red", label: "点击这里" },
-    ],
+    annotate: [{ selector: '[data-testid="key-button"]', style: "rect-red", label: "点击这里" }],
 
     // 数据脱敏（可选，叠加到默认 mask 之上）
     mask: ["[data-testid='sensitive-info']"],
@@ -222,19 +220,19 @@ node docs-site/scripts/check-orphan-images.mjs --strict
 
 ## `ScreenshotScene` 完整字段说明
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `name` | `string` | 唯一标识，用于 `--grep` 过滤 |
-| `role` | `Role \| Role[]` | 登录角色（admin / annotator / reviewer） |
-| `fixture` | 可选对象 | 场景依赖的 catalog 项目、任务、批次、backend 和 capability |
-| `route` | `(catalog: ScreenshotSeedCatalog) => string` | 用 catalog 逻辑键构造页面路由 |
-| `prepare` | 可选函数 | 截图前交互（打开 modal / 切 tab 等） |
-| `capture` | 可选 | 截图模式：fullPage / locator / clip |
-| `annotate` | 可选数组 | 自动红框 / 编号注释 |
-| `mask` | 可选 `string[]` | 额外脱敏选择器 |
-| `mockState` | 可选 | 网络状态：empty / error / loading / rate-limited |
-| `matrix` | 可选 | 矩阵维度：viewports / themes / locales |
-| `target` | `string` | 输出 PNG 路径（相对仓库根） |
+| 字段        | 类型                                         | 说明                                                       |
+| ----------- | -------------------------------------------- | ---------------------------------------------------------- |
+| `name`      | `string`                                     | 唯一标识，用于 `--grep` 过滤                               |
+| `role`      | `Role \| Role[]`                             | 登录角色（admin / annotator / reviewer）                   |
+| `fixture`   | 可选对象                                     | 场景依赖的 catalog 项目、任务、批次、backend 和 capability |
+| `route`     | `(catalog: ScreenshotSeedCatalog) => string` | 用 catalog 逻辑键构造页面路由                              |
+| `prepare`   | 可选函数                                     | 截图前交互（打开 modal / 切 tab 等）                       |
+| `capture`   | 可选                                         | 截图模式：fullPage / locator / clip                        |
+| `annotate`  | 可选数组                                     | 自动红框 / 编号注释                                        |
+| `mask`      | 可选 `string[]`                              | 额外脱敏选择器                                             |
+| `mockState` | 可选                                         | 网络状态：empty / error / loading / rate-limited           |
+| `matrix`    | 可选                                         | 矩阵维度：viewports / themes / locales                     |
+| `target`    | `string`                                     | 输出 PNG 路径（相对仓库根）                                |
 
 ## 视觉回归基线更新
 

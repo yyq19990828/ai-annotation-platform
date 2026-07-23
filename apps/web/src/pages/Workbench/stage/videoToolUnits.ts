@@ -45,10 +45,7 @@ export function videoToolUnit(t: VideoTool): ToolUnitId | null {
  * select 恒可用; 几何工具需其单位已启用且该变体 (单帧/轨迹) 开关开。
  * tool_bindings 为空 (老项目未 backfill) 时保守放行, 交由工作台其它兜底。
  */
-export function videoToolEnabled(
-  t: VideoTool,
-  tb: ToolBindings | null | undefined,
-): boolean {
+export function videoToolEnabled(t: VideoTool, tb: ToolBindings | null | undefined): boolean {
   const target = VIDEO_TOOL_TARGET[t];
   if (!target) return true; // select / 未知工具
   if (!tb || Object.keys(tb).length === 0) return true; // 老项目兜底

@@ -24,8 +24,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute(
-        "ALTER TABLE ml_backends "
-        "ADD COLUMN IF NOT EXISTS health_meta JSONB NULL"
+        "ALTER TABLE ml_backends ADD COLUMN IF NOT EXISTS health_meta JSONB NULL"
     )
 
 

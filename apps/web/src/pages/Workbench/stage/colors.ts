@@ -41,17 +41,20 @@ function directColorToHex(cssColor: string): string | null {
   const longHex = raw.match(/^#([0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?$/);
   if (longHex) return `#${longHex[1]}`.toLowerCase();
 
-  const rgb = raw.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i);
+  const rgb = raw.match(
+    /^rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i,
+  );
   if (!rgb) return null;
-  const toByte = (value: string) =>
-    Math.max(0, Math.min(255, Math.round(Number(value))));
+  const toByte = (value: string) => Math.max(0, Math.min(255, Math.round(Number(value))));
   const [r, g, b] = [toByte(rgb[1]), toByte(rgb[2]), toByte(rgb[3])];
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
 function hasCanvasColorParser(): boolean {
-  return typeof document !== "undefined" &&
-    !(typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent));
+  return (
+    typeof document !== "undefined" &&
+    !(typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent))
+  );
 }
 
 export function colorToHex(cssColor: string): string {
@@ -142,7 +145,7 @@ export const TRACK_COLOR_PALETTE: { label: string; value: string }[] = [
 ];
 
 const TRACK_LIGHTNESS_BANDS = [0.56, 0.62, 0.68, 0.74] as const;
-const TRACK_CHROMA_BANDS = [0.23, 0.20, 0.17, 0.14] as const;
+const TRACK_CHROMA_BANDS = [0.23, 0.2, 0.17, 0.14] as const;
 
 export function defaultTrackColor(trackId: string, className: string): string {
   if (!trackId) return classColor(className);

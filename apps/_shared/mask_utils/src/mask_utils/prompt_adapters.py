@@ -52,12 +52,9 @@ def mask_prompt_to_low_res_logits(
         raise PromptAdapterError("mask_prompt source_digest does not match its RLE")
     if expected_size is not None and (width, height) != expected_size:
         raise PromptAdapterError(
-            "mask_prompt size must match image "
-            f"{expected_size[0]}x{expected_size[1]}"
+            f"mask_prompt size must match image {expected_size[0]}x{expected_size[1]}"
         )
-    binary = np.frombuffer(decode_coco_rle(rle), dtype=np.uint8).reshape(
-        height, width
-    )
+    binary = np.frombuffer(decode_coco_rle(rle), dtype=np.uint8).reshape(height, width)
     ys = np.minimum(
         ((np.arange(LOW_RES_MASK_SIDE) + 0.5) * height / LOW_RES_MASK_SIDE).astype(int),
         height - 1,
@@ -127,8 +124,10 @@ def scribbles_to_point_prompts(
                 x, y = float(point[0]), float(point[1])
             except (TypeError, ValueError) as exc:
                 raise PromptAdapterError("scribble points must be numeric") from exc
-            if not math.isfinite(x) or not math.isfinite(y) or not (
-                0.0 <= x <= 1.0 and 0.0 <= y <= 1.0
+            if (
+                not math.isfinite(x)
+                or not math.isfinite(y)
+                or not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0)
             ):
                 raise PromptAdapterError(
                     "scribble points must be finite and normalized"

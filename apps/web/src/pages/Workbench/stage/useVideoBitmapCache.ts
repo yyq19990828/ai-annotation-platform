@@ -73,28 +73,31 @@ export function useVideoBitmapCache({
 
   const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
 
-  const remember = useCallback((key: string, entry: CachedVideoBitmap) => {
-    const cache = cacheRef.current;
-    const old = cache.get(key);
-    if (old) closeBitmap(old.bitmap);
-    cache.delete(key);
-    cache.set(key, entry);
-    while (cache.size > maxItems) {
-      const oldestKey = cache.keys().next().value;
-      if (!oldestKey) break;
-      const oldest = cache.get(oldestKey);
-      if (oldest) closeBitmap(oldest.bitmap);
-      cache.delete(oldestKey);
-    }
-    setDiagnostics((cur) => ({
-      ...cur,
-      supported,
-      cacheSize: cache.size,
-      activeFrameIndex: entry.frameIndex,
-      captures: cur.captures + 1,
-    }));
-    bumpVersion();
-  }, [bumpVersion, maxItems, supported]);
+  const remember = useCallback(
+    (key: string, entry: CachedVideoBitmap) => {
+      const cache = cacheRef.current;
+      const old = cache.get(key);
+      if (old) closeBitmap(old.bitmap);
+      cache.delete(key);
+      cache.set(key, entry);
+      while (cache.size > maxItems) {
+        const oldestKey = cache.keys().next().value;
+        if (!oldestKey) break;
+        const oldest = cache.get(oldestKey);
+        if (oldest) closeBitmap(oldest.bitmap);
+        cache.delete(oldestKey);
+      }
+      setDiagnostics((cur) => ({
+        ...cur,
+        supported,
+        cacheSize: cache.size,
+        activeFrameIndex: entry.frameIndex,
+        captures: cur.captures + 1,
+      }));
+      bumpVersion();
+    },
+    [bumpVersion, maxItems, supported],
+  );
 
   useEffect(() => {
     const cache = cacheRef.current;
@@ -109,80 +112,86 @@ export function useVideoBitmapCache({
     bumpVersion();
   }, [bumpVersion, maxItems, supported]);
 
-  const capture = useCallback(async (video: HTMLVideoElement | null, frameIndex: number) => {
-    if (!taskId || !supported || !video) return null;
-    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
-    if (!video.videoWidth || !video.videoHeight) return null;
-    const normalizedFrame = Math.max(0, Math.round(frameIndex));
-    const key = bitmapKey(taskId, normalizedFrame);
-    // 已缓存该帧 → 复用,绝不重抓。首帧冷加载时同一帧(frame 0)会被多条路径反复抓取
-    // (primeFirstFrame seek / loadeddata / seeked / 暂停态 rAF 持续抓),每次重抓都会在
-    // remember() 里 closeBitmap(old) 把旧位图释放掉;而旧位图此刻可能正被 media-bg 的
-    // Konva.Image 引用(react-konva 重渲染 + Konva batchDraw 均为异步),close 后其 width=0,
-    // 等到 rAF 真正 draw 时画出的是空白 → 首帧黑屏直到用户 scrub。同一视频帧解码结果确定不变,
-    // 复用既正确又省一次 createImageBitmap;active 帧指针仍刷新以保证立即显示。
-    const cached = cacheRef.current.get(key);
-    if (cached) {
-      setActiveFrameIndex(normalizedFrame);
-      return cached;
-    }
-    if (inFlightRef.current.has(key)) return cacheRef.current.get(key) ?? null;
-    inFlightRef.current.add(key);
-    try {
-      const bitmap = await window.createImageBitmap(video);
-      if (taskIdRef.current !== taskId) {
-        closeBitmap(bitmap);
-        return null;
+  const capture = useCallback(
+    async (video: HTMLVideoElement | null, frameIndex: number) => {
+      if (!taskId || !supported || !video) return null;
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
+      if (!video.videoWidth || !video.videoHeight) return null;
+      const normalizedFrame = Math.max(0, Math.round(frameIndex));
+      const key = bitmapKey(taskId, normalizedFrame);
+      // 已缓存该帧 → 复用,绝不重抓。首帧冷加载时同一帧(frame 0)会被多条路径反复抓取
+      // (primeFirstFrame seek / loadeddata / seeked / 暂停态 rAF 持续抓),每次重抓都会在
+      // remember() 里 closeBitmap(old) 把旧位图释放掉;而旧位图此刻可能正被 media-bg 的
+      // Konva.Image 引用(react-konva 重渲染 + Konva batchDraw 均为异步),close 后其 width=0,
+      // 等到 rAF 真正 draw 时画出的是空白 → 首帧黑屏直到用户 scrub。同一视频帧解码结果确定不变,
+      // 复用既正确又省一次 createImageBitmap;active 帧指针仍刷新以保证立即显示。
+      const cached = cacheRef.current.get(key);
+      if (cached) {
+        setActiveFrameIndex(normalizedFrame);
+        return cached;
       }
-      const entry: CachedVideoBitmap = {
-        frameIndex: normalizedFrame,
-        bitmap,
-        width: bitmap.width || video.videoWidth,
-        height: bitmap.height || video.videoHeight,
-      };
-      remember(key, entry);
-      setActiveFrameIndex(normalizedFrame);
-      return entry;
-    } catch {
+      if (inFlightRef.current.has(key)) return cacheRef.current.get(key) ?? null;
+      inFlightRef.current.add(key);
+      try {
+        const bitmap = await window.createImageBitmap(video);
+        if (taskIdRef.current !== taskId) {
+          closeBitmap(bitmap);
+          return null;
+        }
+        const entry: CachedVideoBitmap = {
+          frameIndex: normalizedFrame,
+          bitmap,
+          width: bitmap.width || video.videoWidth,
+          height: bitmap.height || video.videoHeight,
+        };
+        remember(key, entry);
+        setActiveFrameIndex(normalizedFrame);
+        return entry;
+      } catch {
+        setDiagnostics((cur) => ({
+          ...cur,
+          supported,
+          errors: cur.errors + 1,
+          cacheSize: cacheRef.current.size,
+        }));
+        return null;
+      } finally {
+        inFlightRef.current.delete(key);
+      }
+    },
+    [remember, supported, taskId],
+  );
+
+  const showFrame = useCallback(
+    (frameIndex: number) => {
+      if (!taskId || !supported) return null;
+      const normalizedFrame = Math.max(0, Math.round(frameIndex));
+      const key = bitmapKey(taskId, normalizedFrame);
+      const cached = cacheRef.current.get(key);
+      if (cached) {
+        cacheRef.current.delete(key);
+        cacheRef.current.set(key, cached);
+        setActiveFrameIndex(normalizedFrame);
+        setDiagnostics((cur) => ({
+          ...cur,
+          supported,
+          cacheSize: cacheRef.current.size,
+          activeFrameIndex: normalizedFrame,
+          hits: cur.hits + 1,
+        }));
+        bumpVersion();
+        return cached;
+      }
       setDiagnostics((cur) => ({
         ...cur,
         supported,
-        errors: cur.errors + 1,
         cacheSize: cacheRef.current.size,
+        misses: cur.misses + 1,
       }));
       return null;
-    } finally {
-      inFlightRef.current.delete(key);
-    }
-  }, [remember, supported, taskId]);
-
-  const showFrame = useCallback((frameIndex: number) => {
-    if (!taskId || !supported) return null;
-    const normalizedFrame = Math.max(0, Math.round(frameIndex));
-    const key = bitmapKey(taskId, normalizedFrame);
-    const cached = cacheRef.current.get(key);
-    if (cached) {
-      cacheRef.current.delete(key);
-      cacheRef.current.set(key, cached);
-      setActiveFrameIndex(normalizedFrame);
-      setDiagnostics((cur) => ({
-        ...cur,
-        supported,
-        cacheSize: cacheRef.current.size,
-        activeFrameIndex: normalizedFrame,
-        hits: cur.hits + 1,
-      }));
-      bumpVersion();
-      return cached;
-    }
-    setDiagnostics((cur) => ({
-      ...cur,
-      supported,
-      cacheSize: cacheRef.current.size,
-      misses: cur.misses + 1,
-    }));
-    return null;
-  }, [bumpVersion, supported, taskId]);
+    },
+    [bumpVersion, supported, taskId],
+  );
 
   const clear = useCallback(() => {
     for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
@@ -198,11 +207,14 @@ export function useVideoBitmapCache({
     bumpVersion();
   }, [bumpVersion, supported]);
 
-  useEffect(() => () => {
-    for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
-    cacheRef.current.clear();
-    inFlightRef.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
+      cacheRef.current.clear();
+      inFlightRef.current.clear();
+    },
+    [],
+  );
 
   useEffect(() => {
     clear();

@@ -58,13 +58,15 @@ function actions(): VideoMaskKeyframeActionHandlers {
   };
 }
 
-function renderCard(input: {
-  annotation?: AnnotationResponse;
-  frameIndex?: number;
-  maskActions?: VideoMaskKeyframeActionHandlers;
-  onSeekFrame?: (frame: number) => void;
-  onConvert?: (id: string) => void;
-} = {}) {
+function renderCard(
+  input: {
+    annotation?: AnnotationResponse;
+    frameIndex?: number;
+    maskActions?: VideoMaskKeyframeActionHandlers;
+    onSeekFrame?: (frame: number) => void;
+    onConvert?: (id: string) => void;
+  } = {},
+) {
   const annotation = input.annotation ?? maskTrack();
   const maskActions = input.maskActions ?? actions();
   const onSeekFrame = input.onSeekFrame ?? vi.fn();
@@ -110,9 +112,15 @@ describe("VideoPointsTrackCardContent Mask 关键帧操作", () => {
     const annotation = maskTrack([{ from: 5, to: 5, source: "manual" }]);
     renderCard({ annotation, frameIndex: 5, maskActions });
 
-    expect((screen.getByRole("button", { name: "复制当前帧" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "删除关键帧" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "组件拆轨" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "复制当前帧" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole("button", { name: "删除关键帧" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole("button", { name: "组件拆轨" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     fireEvent.click(screen.getByRole("button", { name: "恢复保持" }));
     expect(maskActions.toggleCurrentOutside).toHaveBeenCalledWith(annotation);
   });

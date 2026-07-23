@@ -63,10 +63,7 @@ export const storageConnectionsApi = {
   test: (id: string) =>
     apiClient.post<StorageConnectionTestResult>(`/storage-connections/${id}/test`),
 
-  importFromConnection: (
-    datasetId: string,
-    payload: DatasetImportFromConnectionPayload,
-  ) =>
+  importFromConnection: (datasetId: string, payload: DatasetImportFromConnectionPayload) =>
     apiClient.post<DatasetImportFromConnectionResponse>(
       `/datasets/${datasetId}/import-from-connection`,
       payload,

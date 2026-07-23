@@ -35,14 +35,14 @@ docker compose --env-file .env.production \
 
 ## 三态对照
 
-| 维度 | development（默认） | staging | production |
-|---|---|---|---|
-| API / Web | 宿主机进程（`uvicorn --reload` + `pnpm dev:web`）；不在任何 compose 文件 | 同生产：`docker-compose.prod.yml` 容器 + nginx 反代 | `docker-compose.prod.yml` 容器 + 外层 nginx/Caddy 终结 TLS |
-| 基础设施（PG/Redis/MinIO） | compose 拉起，本地默认值 | 独立实例，贴近生产 | 托管 RDS、Redis 挂 AOF、MinIO 换 S3/OSS |
-| Celery worker/beat | 容器内 + 源码热挂载（`./apps/api:/app`），改码 `docker restart` 即可 | 镜像冻结源码 | 镜像冻结源码 |
-| GPU ML Backend | `gpu` / `gpu-sam3` / `gpu-yolo` / `gpu-onnxtools` / `gpu-rapidocr` 默认不启动 | 按需 | 按需，调显存预算 |
-| 监控（Prometheus/Grafana） | `profile: monitoring` 默认不启动 | 按需 | 按需 |
-| 邮件 | mailpit 假收件箱（`:8025`），不外发 | 真实 SMTP | 真实 SMTP |
+| 维度                       | development（默认）                                                           | staging                                             | production                                                 |
+| -------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| API / Web                  | 宿主机进程（`uvicorn --reload` + `pnpm dev:web`）；不在任何 compose 文件      | 同生产：`docker-compose.prod.yml` 容器 + nginx 反代 | `docker-compose.prod.yml` 容器 + 外层 nginx/Caddy 终结 TLS |
+| 基础设施（PG/Redis/MinIO） | compose 拉起，本地默认值                                                      | 独立实例，贴近生产                                  | 托管 RDS、Redis 挂 AOF、MinIO 换 S3/OSS                    |
+| Celery worker/beat         | 容器内 + 源码热挂载（`./apps/api:/app`），改码 `docker restart` 即可          | 镜像冻结源码                                        | 镜像冻结源码                                               |
+| GPU ML Backend             | `gpu` / `gpu-sam3` / `gpu-yolo` / `gpu-onnxtools` / `gpu-rapidocr` 默认不启动 | 按需                                                | 按需，调显存预算                                           |
+| 监控（Prometheus/Grafana） | `profile: monitoring` 默认不启动                                              | 按需                                                | 按需                                                       |
+| 邮件                       | mailpit 假收件箱（`:8025`），不外发                                           | 真实 SMTP                                           | 真实 SMTP                                                  |
 
 ## `ENVIRONMENT` 的代码行为差异
 
@@ -56,14 +56,14 @@ environment: Literal["development", "staging", "production"] = "development"
 但测试 seed 路由不再随非 production 环境自动开放：它有独立的显式开关和
 数据库名守卫。
 
-| 行为 | development | staging | production | 出处 |
-|---|---|---|---|---|
-| `SECRET_KEY` 仍为默认值 → 启动 RuntimeError | 跳过 | 跳过 | 强制 | `main.py:57` |
-| `CORS_ALLOW_ORIGINS` 为空 → 启动断言失败 | 跳过 | 跳过 | 强制 | `main.py:93` |
-| `CORS_ALLOW_ORIGIN_REGEX`（放行 localhost）生效 | ✅ | ✅ | 自动忽略 | `main.py:101` |
-| 测试路由 `/api/v1/__test/seed/*` | 仅 `E2E_SEED_ENABLED=true` 且库名以 `_e2e` / `_test` 结尾 | 同 development | 永不挂载 | `router.py` / `_test_seed.py` |
-| `scripts/seed.py` 允许灌数据 | ✅ | ✅ | 拒绝 | `scripts/seed.py` |
-| `SENTRY_DSN` 为空 → 启动 WARN | 否 | 否 | 是 | `main.py:66` |
+| 行为                                            | development                                               | staging        | production | 出处                          |
+| ----------------------------------------------- | --------------------------------------------------------- | -------------- | ---------- | ----------------------------- |
+| `SECRET_KEY` 仍为默认值 → 启动 RuntimeError     | 跳过                                                      | 跳过           | 强制       | `main.py:57`                  |
+| `CORS_ALLOW_ORIGINS` 为空 → 启动断言失败        | 跳过                                                      | 跳过           | 强制       | `main.py:93`                  |
+| `CORS_ALLOW_ORIGIN_REGEX`（放行 localhost）生效 | ✅                                                        | ✅             | 自动忽略   | `main.py:101`                 |
+| 测试路由 `/api/v1/__test/seed/*`                | 仅 `E2E_SEED_ENABLED=true` 且库名以 `_e2e` / `_test` 结尾 | 同 development | 永不挂载   | `router.py` / `_test_seed.py` |
+| `scripts/seed.py` 允许灌数据                    | ✅                                                        | ✅             | 拒绝       | `scripts/seed.py`             |
+| `SENTRY_DSN` 为空 → 启动 WARN                   | 否                                                        | 否             | 是         | `main.py:66`                  |
 
 ::: warning staging ≠ 真生产
 如果你想用 staging 做「贴近生产」的上线前验收，注意宽松 CORS 和部分启动校验仍与

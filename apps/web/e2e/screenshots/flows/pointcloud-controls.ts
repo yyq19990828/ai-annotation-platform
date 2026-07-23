@@ -43,9 +43,7 @@ export async function runPointcloudControls(
   await page.waitForTimeout(1600);
 
   // ── 点大小调大：拖滑块(键盘步进)放大点径, 点云更饱满 ──
-  const sizeSlider = page
-    .getByTestId("setting-field-pointcloud.pointSize")
-    .getByRole("slider");
+  const sizeSlider = page.getByTestId("setting-field-pointcloud.pointSize").getByRole("slider");
   await sizeSlider.scrollIntoViewIfNeeded();
   await sizeSlider.focus();
   for (let i = 0; i < 8; i++) {

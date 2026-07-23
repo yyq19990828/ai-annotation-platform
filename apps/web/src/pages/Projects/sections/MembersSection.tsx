@@ -38,20 +38,15 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
           <h3 className="text-sm font-semibold">项目成员</h3>
           <div className="flex gap-2">
             <Button onClick={() => setAssignOpen(true)}>
-              <Icon name="plus" size={12} />添加成员
+              <Icon name="plus" size={12} />
+              添加成员
             </Button>
           </div>
         </div>
 
-        {isLoading && (
-          <div className={PLACEHOLDER_CLASS}>
-            加载中...
-          </div>
-        )}
+        {isLoading && <div className={PLACEHOLDER_CLASS}>加载中...</div>}
         {!isLoading && members.length === 0 && (
-          <div className={PLACEHOLDER_CLASS}>
-            暂无成员，点击右上角按钮添加标注员或审核员
-          </div>
+          <div className={PLACEHOLDER_CLASS}>暂无成员，点击右上角按钮添加标注员或审核员</div>
         )}
         {!isLoading && members.length > 0 && (
           <div className="w-full overflow-x-auto">
@@ -75,8 +70,15 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
                       <div className="flex min-w-0 items-center gap-2.5">
                         <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium" title={m.user_name}>{m.user_name}</div>
-                          <div className="truncate text-xs text-muted-foreground" title={m.user_email}>{m.user_email}</div>
+                          <div className="truncate text-sm font-medium" title={m.user_name}>
+                            {m.user_name}
+                          </div>
+                          <div
+                            className="truncate text-xs text-muted-foreground"
+                            title={m.user_email}
+                          >
+                            {m.user_email}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -92,7 +94,8 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
                     </td>
                     <td className="border-b border-border py-2.5 pr-4 pl-3 text-right whitespace-nowrap">
                       <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(m)}>
-                        <Icon name="x" size={11} />移除
+                        <Icon name="x" size={11} />
+                        移除
                       </Button>
                     </td>
                   </tr>
@@ -112,13 +115,25 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         />
       )}
 
-      <Modal open={!!confirmRemove} onClose={() => setConfirmRemove(null)} title="移除成员" width={420}>
+      <Modal
+        open={!!confirmRemove}
+        onClose={() => setConfirmRemove(null)}
+        title="移除成员"
+        width={420}
+      >
         <div className="mb-[18px] text-sm text-muted-foreground">
-          确认将 <strong className="text-foreground">{confirmRemove?.user_name}</strong> 从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
+          确认将 <strong className="text-foreground">{confirmRemove?.user_name}</strong>{" "}
+          从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirmRemove(null)}>取消</Button>
-          <Button variant="danger" disabled={remove.isPending} onClick={() => confirmRemove && onRemove(confirmRemove)}>
+          <Button variant="ghost" onClick={() => setConfirmRemove(null)}>
+            取消
+          </Button>
+          <Button
+            variant="danger"
+            disabled={remove.isPending}
+            onClick={() => confirmRemove && onRemove(confirmRemove)}
+          >
             {remove.isPending ? "处理中..." : "确认移除"}
           </Button>
         </div>

@@ -1,7 +1,7 @@
-import type { CSSProperties } from "react"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import type { CSSProperties } from "react";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-import { useTheme } from "@/hooks/useTheme"
+import { useTheme } from "@/hooks/useTheme";
 
 /**
  * sonner Toaster —— 适配本项目主题机制。
@@ -11,7 +11,7 @@ import { useTheme } from "@/hooks/useTheme"
  *   保证 toast 与卡片/浮层表面同源。
  */
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { resolved } = useTheme()
+  const { resolved } = useTheme();
 
   return (
     <Sonner
@@ -28,7 +28,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Toaster }
+export { Toaster };

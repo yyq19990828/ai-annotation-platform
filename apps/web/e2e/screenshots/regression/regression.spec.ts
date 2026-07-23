@@ -46,7 +46,8 @@ function selectedScenes(): ResolvedScreenshotScene[] {
 async function captureRegression(page: Page, scene: ResolvedScreenshotScene): Promise<void> {
   const name = `${scene.name.replaceAll("/", "--")}.png`;
   const mask = [...DEFAULT_MASK_SELECTORS, ...(scene.mask ?? [])].map((selector) =>
-    page.locator(selector));
+    page.locator(selector),
+  );
   const common = { animations: "disabled" as const, maxDiffPixelRatio: 0.01, mask };
   const capture = scene.capture;
   if (!capture) {

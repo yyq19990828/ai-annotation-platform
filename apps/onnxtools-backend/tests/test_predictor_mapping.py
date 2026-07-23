@@ -13,8 +13,13 @@ class TestDetectionsToResults:
     def test_motor_vehicle_maps_to_rectanglelabels_with_attributes(self):
         """机动车检测 → rectanglelabels + 百分比坐标 + attributes{vehicle_type,color}."""
         output = [
-            {"type": "car", "box2d": [50.0, 100.0, 150.0, 300.0], "score": 0.9,
-             "vehicle_type": "school_bus", "color": "blue"}
+            {
+                "type": "car",
+                "box2d": [50.0, 100.0, 150.0, 300.0],
+                "score": 0.9,
+                "vehicle_type": "school_bus",
+                "color": "blue",
+            }
         ]
         items = detections_to_results(output, img_w=500, img_h=1000)
 

@@ -32,9 +32,7 @@ def upgrade() -> None:
             server_default="{}",
         ),
         sa.Column("secret_enc", sa.LargeBinary(), nullable=True),
-        sa.Column(
-            "scope", sa.String(20), nullable=False, server_default="project"
-        ),
+        sa.Column("scope", sa.String(20), nullable=False, server_default="project"),
         sa.Column(
             "project_id",
             postgresql.UUID(as_uuid=True),

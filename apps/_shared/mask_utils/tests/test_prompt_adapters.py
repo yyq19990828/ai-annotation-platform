@@ -67,10 +67,14 @@ def test_scribble_adapter_applies_width_and_later_stroke_wins() -> None:
         max_rasterized_pixels=2_000_000,
         max_points=1_600,
     )
-    labelled = {(round(x, 3), round(y, 3)): label for (x, y), label in zip(points, labels)}
+    labelled = {
+        (round(x, 3), round(y, 3)): label for (x, y), label in zip(points, labels)
+    }
     center = min(labelled, key=lambda point: abs(point[0] - 0.5) + abs(point[1] - 0.5))
     assert labelled[center] == 0
-    assert any(label == 1 and abs(y - 0.5) < 0.1 for (x, y), label in zip(points, labels))
+    assert any(
+        label == 1 and abs(y - 0.5) < 0.1 for (x, y), label in zip(points, labels)
+    )
 
 
 def test_scribble_adapter_rejects_raster_work_before_densifying() -> None:

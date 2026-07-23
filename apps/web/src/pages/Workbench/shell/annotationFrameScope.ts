@@ -21,13 +21,20 @@ export function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number): boole
   const geometry = box.geometry;
   if (!geometry) return true;
   // 单帧几何: 帧号相等即在该帧。
-  if (geometry.type === "video_bbox" || geometry.type === "video_polygon" || geometry.type === "video_polyline") {
+  if (
+    geometry.type === "video_bbox" ||
+    geometry.type === "video_polygon" ||
+    geometry.type === "video_polyline"
+  ) {
     return geometry.frame_index === frameIndex;
   }
   // 轨迹几何: 该帧能解析出形状即在该帧。
-  if (geometry.type === "video_track_bbox") return resolveTrackAtFrame(geometry, frameIndex) !== null;
-  if (geometry.type === "video_track_polygon") return resolveVideoPolygonTrackAtFrame(geometry, frameIndex) !== null;
-  if (geometry.type === "video_track_polyline") return resolveVideoPolylineTrackAtFrame(geometry, frameIndex) !== null;
+  if (geometry.type === "video_track_bbox")
+    return resolveTrackAtFrame(geometry, frameIndex) !== null;
+  if (geometry.type === "video_track_polygon")
+    return resolveVideoPolygonTrackAtFrame(geometry, frameIndex) !== null;
+  if (geometry.type === "video_track_polyline")
+    return resolveVideoPolylineTrackAtFrame(geometry, frameIndex) !== null;
   return true;
 }
 
@@ -35,14 +42,19 @@ export function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number): boole
 export function firstTrackFrame(box: Annotation | AiBox): number | null {
   const geometry = box.geometry;
   if (!geometry) return null;
-  if (geometry.type === "video_bbox" || geometry.type === "video_polygon" || geometry.type === "video_polyline") {
+  if (
+    geometry.type === "video_bbox" ||
+    geometry.type === "video_polygon" ||
+    geometry.type === "video_polyline"
+  ) {
     return geometry.frame_index;
   }
   if (
-    geometry.type !== "video_track_bbox"
-    && geometry.type !== "video_track_polygon"
-    && geometry.type !== "video_track_polyline"
-  ) return null;
+    geometry.type !== "video_track_bbox" &&
+    geometry.type !== "video_track_polygon" &&
+    geometry.type !== "video_track_polyline"
+  )
+    return null;
   if (geometry.keyframes.length === 0) return null;
   const visible = geometry.keyframes.filter((kf) => !isFrameOutside(geometry, kf.frame_index));
   const frames = (visible.length > 0 ? visible : geometry.keyframes).map((kf) => kf.frame_index);

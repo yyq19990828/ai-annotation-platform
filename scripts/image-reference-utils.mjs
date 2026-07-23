@@ -47,11 +47,7 @@ export function resolveImageReference({ src, kind, mdPath, repoRoot, docsRoot })
     } else if (cleaned.startsWith("/")) {
       absolute = path.join(docsRoot, cleaned.slice(1));
     } else {
-      absolute = path.join(
-        docsRoot,
-        "user-guide/images",
-        cleaned.replace(/^images\//, ""),
-      );
+      absolute = path.join(docsRoot, "user-guide/images", cleaned.replace(/^images\//, ""));
     }
   } else {
     absolute = cleaned.startsWith("/")

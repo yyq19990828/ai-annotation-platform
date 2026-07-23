@@ -223,27 +223,27 @@ aap tui
 
 各命令的 JSON 输出形状:
 
-| 命令 | stdout JSON |
-|---|---|
-| `login` | `{"config_path": "...", "base_url": "..."}` |
-| `projects list` | Project 对象数组 |
-| `projects create` | Project 对象 |
-| `batches list` | Batch 对象数组 |
-| `members list` | Member 对象数组 |
-| `me` | Me 对象(`id` / `email` / `name` / `role` …) |
-| `datasets create` | Dataset 对象 |
-| `datasets upload`(逐文件) | UploadedItem 对象数组 |
-| `datasets upload --zip` | ZipUploadResult 对象 |
-| `datasets link` | `{"link": LinkResult, "job": Job \| null}` |
-| `predictions import` | ImportResult 对象 |
-| `jobs wait` | 终态 Job 对象 |
-| `jobs cancel` | `{"job_id": "...", "cancel_requested": true}` |
-| `ml-backends list` | MLBackend 对象数组 |
-| `ml-backends get` | MLBackend 对象 |
-| `stats` | ProjectStats 对象(标量 + 4 条 12 周序列) |
-| `dashboard people` | PersonStat 对象数组 |
-| `dashboard me` | MyPerformance 对象 |
-| `export project` | `--wait`: `{"job_id": "...", "status": "...", "out": "..."}` · `--no-wait`: `{"job_id": "...", "waited": false}` |
+| 命令                      | stdout JSON                                                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `login`                   | `{"config_path": "...", "base_url": "..."}`                                                                      |
+| `projects list`           | Project 对象数组                                                                                                 |
+| `projects create`         | Project 对象                                                                                                     |
+| `batches list`            | Batch 对象数组                                                                                                   |
+| `members list`            | Member 对象数组                                                                                                  |
+| `me`                      | Me 对象(`id` / `email` / `name` / `role` …)                                                                      |
+| `datasets create`         | Dataset 对象                                                                                                     |
+| `datasets upload`(逐文件) | UploadedItem 对象数组                                                                                            |
+| `datasets upload --zip`   | ZipUploadResult 对象                                                                                             |
+| `datasets link`           | `{"link": LinkResult, "job": Job \| null}`                                                                       |
+| `predictions import`      | ImportResult 对象                                                                                                |
+| `jobs wait`               | 终态 Job 对象                                                                                                    |
+| `jobs cancel`             | `{"job_id": "...", "cancel_requested": true}`                                                                    |
+| `ml-backends list`        | MLBackend 对象数组                                                                                               |
+| `ml-backends get`         | MLBackend 对象                                                                                                   |
+| `stats`                   | ProjectStats 对象(标量 + 4 条 12 周序列)                                                                         |
+| `dashboard people`        | PersonStat 对象数组                                                                                              |
+| `dashboard me`            | MyPerformance 对象                                                                                               |
+| `export project`          | `--wait`: `{"job_id": "...", "status": "...", "out": "..."}` · `--no-wait`: `{"job_id": "...", "waited": false}` |
 
 对象字段与 [SDK 响应模型](./python-client#响应模型与前向兼容)一致(`model_dump(mode="json")` 序列化);服务端新增字段会原样透传,脚本应容忍未知字段。
 
@@ -261,11 +261,11 @@ aap predictions import "$pid" preds.json --format aap_json --json
 
 所有命令的错误统一为 **stderr 一行提示 + 退出码 1**,不向用户输出 traceback:
 
-| 错误 | 输出 |
-|---|---|
-| 401 未认证 | `认证失败 (HTTP 401): <detail>; 请先运行 \`aap login\` 配置有效 API key` |
-| 其他 HTTP 4xx/5xx | `请求失败 (HTTP <code>): <detail>` |
-| SDK 异常(如 job 失败、超时) | 异常消息原文 |
-| 网络错误(连接失败、超时) | `网络错误: <原因>` |
+| 错误                        | 输出                                                                     |
+| --------------------------- | ------------------------------------------------------------------------ |
+| 401 未认证                  | `认证失败 (HTTP 401): <detail>; 请先运行 \`aap login\` 配置有效 API key` |
+| 其他 HTTP 4xx/5xx           | `请求失败 (HTTP <code>): <detail>`                                       |
+| SDK 异常(如 job 失败、超时) | 异常消息原文                                                             |
+| 网络错误(连接失败、超时)    | `网络错误: <原因>`                                                       |
 
 非 `--json` 模式下错误以红色渲染;`--json` 模式下为纯文本。

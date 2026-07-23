@@ -80,7 +80,9 @@ def upgrade() -> None:
     # 触发器自动跟随重命名后的表，且 legacy 即将 DROP，无需特别处理
 
     # 2. 取 legacy 最小 created_at（决定起始分区）
-    res = bind.execute(sa.text("SELECT MIN(created_at), MAX(id) FROM audit_logs_legacy"))
+    res = bind.execute(
+        sa.text("SELECT MIN(created_at), MAX(id) FROM audit_logs_legacy")
+    )
     row = res.first()
     min_created_at = row[0] if row and row[0] else datetime.now(timezone.utc)
     max_id = row[1] if row and row[1] else 0

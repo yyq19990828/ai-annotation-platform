@@ -157,9 +157,9 @@ export function useCapabilityValidation({
       const schemaItem = (activeModel.output_attribute_schema ?? []).find((s) => s.key === type);
       let fillable: AttributeField | undefined;
       if (schemaItem) {
-        const fieldType = (ALLOWED_ATTR_TYPES.includes(schemaItem.type)
-          ? schemaItem.type
-          : "text") as AttributeField["type"];
+        const fieldType = (
+          ALLOWED_ATTR_TYPES.includes(schemaItem.type) ? schemaItem.type : "text"
+        ) as AttributeField["type"];
         fillable = {
           key: schemaItem.key,
           label: schemaItem.label || schemaItem.key,

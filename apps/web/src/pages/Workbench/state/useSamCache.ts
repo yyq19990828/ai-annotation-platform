@@ -102,11 +102,13 @@ export interface SamCacheOptions {
 export function estimatePendingCandidateBytes(candidate: PendingCandidate): number {
   const common = candidate.id.length * 2 + candidate.label.length * 2 + 128;
   if (candidate.type === "mask") {
-    return common
-      + candidate.rle.counts.length * 8
-      + candidate.receipt.length * 2
-      + candidate.promptRevision.length * 2
-      + 512;
+    return (
+      common +
+      candidate.rle.counts.length * 8 +
+      candidate.receipt.length * 2 +
+      candidate.promptRevision.length * 2 +
+      512
+    );
   }
   if (candidate.type === "polygonlabels") {
     return common + candidate.points.length * 16;
@@ -178,9 +180,7 @@ export function createSamCache(options: number | SamCacheOptions = {}): SamCache
       byteSize += entryBytes;
       evict();
       const entry = map.get(key);
-      return entry
-        ? { candidates: entry.candidates, expiresAt: entry.expiresAt }
-        : undefined;
+      return entry ? { candidates: entry.candidates, expiresAt: entry.expiresAt } : undefined;
     },
     delete(key) {
       remove(key);

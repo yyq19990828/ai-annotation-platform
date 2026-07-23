@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import typer
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from ai_annotation import Client
-from ai_annotation.cli._output import cli_errors, console, get_client, print_json, progress_console
+from ai_annotation.cli._output import (
+    cli_errors,
+    console,
+    get_client,
+    print_json,
+    progress_console,
+)
 from ai_annotation.models import Job
 
 app = typer.Typer(
@@ -35,7 +47,9 @@ def wait_job(client: Client, job_id: str, json_mode: bool = False) -> Job:
 
         def _on_progress(job: Job) -> None:
             progress.update(
-                task, completed=job.progress_pct, description=f"{job.kind} · {job.status}"
+                task,
+                completed=job.progress_pct,
+                description=f"{job.kind} · {job.status}",
             )
 
         job = client.jobs.wait(job_id, on_progress=_on_progress)

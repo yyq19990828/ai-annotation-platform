@@ -106,13 +106,7 @@ function formatSignedDeg(rad: number, whole = false) {
  * 把实时框投到取景参考系的屏幕坐标: 4 角 / 框心 / 8 个 resize 柄 / 方向线末端旋转柄。
  * 角由实时 box 的 u/v 世界轴张成 → 旋转时倾斜; 参考系 (ref) 决定相机基与米→px 比例。
  */
-function projectBox(
-  view: TriView,
-  selected: TriSelected,
-  ref: Psr,
-  cssW: number,
-  cssH: number,
-) {
+function projectBox(view: TriView, selected: TriSelected, ref: Psr, cssW: number, cssH: number) {
   const { u, v } = VIEW_AXES[view];
   const { halfW } = frameOrtho(ref.size, view, cssW / cssH);
   const s = cssW / 2 / halfW;
@@ -130,7 +124,12 @@ function projectBox(
     return [cssW / 2 + d.dot(refU) * s, cssH / 2 - d.dot(refV) * s]; // 屏幕 y 朝下 → v 取负
   };
   const at = (su: number, sv: number) =>
-    toScreen(boxC.clone().addScaledVector(boxU, su * hu).addScaledVector(boxV, sv * hv));
+    toScreen(
+      boxC
+        .clone()
+        .addScaledVector(boxU, su * hu)
+        .addScaledVector(boxV, sv * hv),
+    );
   const ne = at(1, 1);
   const nw = at(-1, 1);
   const sw = at(-1, -1);
@@ -162,11 +161,7 @@ function projectBox(
   return { s, center, corners: [ne, nw, sw, se] as [number, number][], handlePts, rotKnob };
 }
 
-function hitTest(
-  px: number,
-  py: number,
-  proj: ReturnType<typeof projectBox>,
-): Grab | null {
+function hitTest(px: number, py: number, proj: ReturnType<typeof projectBox>): Grab | null {
   const [kx, ky] = proj.rotKnob;
   if (Math.abs(px - kx) <= ROT_TOL && Math.abs(py - ky) <= ROT_TOL) return "rot";
   for (const h of RESIZE_ORDER) {
@@ -189,8 +184,24 @@ export function TriOrthoView({
   const [angleHud, setAngleHud] = useState<{ label: string; value: string } | null>(null);
   // 拖拽态: resize (边/角) 用起始 PSR + 累计位移; rot 用绕框心(屏幕中心)的角度增量。用 ref 避重渲。
   const dragRef = useRef<
-    | { kind: "resize"; handle: Handle; startPsr: Psr; s0: number; startX: number; startY: number; last: Psr }
-    | { kind: "rot"; startPsr: Psr; cxC: number; cyC: number; startAng: number; sign: 1 | -1; last: Psr }
+    | {
+        kind: "resize";
+        handle: Handle;
+        startPsr: Psr;
+        s0: number;
+        startX: number;
+        startY: number;
+        last: Psr;
+      }
+    | {
+        kind: "rot";
+        startPsr: Psr;
+        cxC: number;
+        cyC: number;
+        startAng: number;
+        sign: 1 | -1;
+        last: Psr;
+      }
     | null
   >(null);
 
@@ -312,7 +323,15 @@ export function TriOrthoView({
         const cxC = rect.left + proj.center[0];
         const cyC = rect.top + proj.center[1];
         const startAng = Math.atan2(-(e.clientY - cyC), e.clientX - cxC);
-        dragRef.current = { kind: "rot", startPsr, cxC, cyC, startAng, sign: ROT_SIGN[view], last: startPsr };
+        dragRef.current = {
+          kind: "rot",
+          startPsr,
+          cxC,
+          cyC,
+          startAng,
+          sign: ROT_SIGN[view],
+          last: startPsr,
+        };
         setAngleHud({ label: ANGLE_LABEL[view], value: "+0.00°" });
       } else {
         dragRef.current = {
@@ -355,7 +374,11 @@ export function TriOrthoView({
     <>
       <canvas
         ref={canvasRef}
-        className={editable ? `${TRI_OVERLAY} ${TRI_OVERLAY_EDITABLE}` : `${TRI_OVERLAY} ${TRI_OVERLAY_READONLY}`}
+        className={
+          editable
+            ? `${TRI_OVERLAY} ${TRI_OVERLAY_EDITABLE}`
+            : `${TRI_OVERLAY} ${TRI_OVERLAY_READONLY}`
+        }
       />
       {angleHud && (
         <div className={TRI_ANGLE_HUD} aria-hidden="true">

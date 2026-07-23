@@ -39,14 +39,22 @@ describe("Mask QC candidate identity", () => {
       refineSource: { annotationId: "annotation-1", sourceVersion: 7 },
     };
     expect(() => assertMaskQcLocalAiCandidate(candidate, issue, 3)).not.toThrow();
-    expect(() => assertMaskQcLocalAiCandidate({ ...candidate, taskId: "task-2" }, issue, 3))
-      .toThrow(/目标任务/);
-    expect(() => assertMaskQcLocalAiCandidate({ ...candidate, frameIndex: 4 }, issue, 3))
-      .toThrow(/当前帧/);
-    expect(() => assertMaskQcLocalAiCandidate({
-      ...candidate,
-      refineSource: { annotationId: "annotation-2", sourceVersion: 7 },
-    }, issue, 3)).toThrow(/目标标注版本/);
+    expect(() =>
+      assertMaskQcLocalAiCandidate({ ...candidate, taskId: "task-2" }, issue, 3),
+    ).toThrow(/目标任务/);
+    expect(() => assertMaskQcLocalAiCandidate({ ...candidate, frameIndex: 4 }, issue, 3)).toThrow(
+      /当前帧/,
+    );
+    expect(() =>
+      assertMaskQcLocalAiCandidate(
+        {
+          ...candidate,
+          refineSource: { annotationId: "annotation-2", sourceVersion: 7 },
+        },
+        issue,
+        3,
+      ),
+    ).toThrow(/目标标注版本/);
   });
 
   it("Tracker 候选必须精确匹配 annotation、frame、revision 与 digest", () => {
@@ -61,12 +69,15 @@ describe("Mask QC candidate identity", () => {
       label: "Tracker",
     };
     expect(() => assertMaskQcTrackerCandidate(candidate, issue, 3)).not.toThrow();
-    expect(() => assertMaskQcTrackerCandidate({ ...candidate, annotationId: "annotation-2" }, issue, 3))
-      .toThrow(/目标标注/);
-    expect(() => assertMaskQcTrackerCandidate({ ...candidate, frameIndex: 4 }, issue, 3))
-      .toThrow(/目标帧/);
-    expect(() => assertMaskQcTrackerCandidate({ ...candidate, jobRevision: 0 }, issue, 3))
-      .toThrow(/revision/);
+    expect(() =>
+      assertMaskQcTrackerCandidate({ ...candidate, annotationId: "annotation-2" }, issue, 3),
+    ).toThrow(/目标标注/);
+    expect(() => assertMaskQcTrackerCandidate({ ...candidate, frameIndex: 4 }, issue, 3)).toThrow(
+      /目标帧/,
+    );
+    expect(() => assertMaskQcTrackerCandidate({ ...candidate, jobRevision: 0 }, issue, 3)).toThrow(
+      /revision/,
+    );
   });
 
   it("从多源 staged preview 只选择目标 annotation 的不可变候选", () => {
@@ -106,14 +117,16 @@ describe("Mask QC candidate identity", () => {
         "job-1": { taskId: "task-1", revision: 4, modelKey: "SAM2" },
       },
     );
-    expect(candidates).toEqual([expect.objectContaining({
-      jobId: "job-1",
-      jobRevision: 4,
-      digest: "digest-a",
-      annotationId: "annotation-1",
-      frameIndex: 3,
-      instanceId: "a",
-    })]);
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        jobId: "job-1",
+        jobRevision: 4,
+        digest: "digest-a",
+        annotationId: "annotation-1",
+        frameIndex: 3,
+        instanceId: "a",
+      }),
+    ]);
   });
 });
 
@@ -136,7 +149,9 @@ describe("maskQcReadyContextMatches", () => {
   it("任一 task/frame/selection/version 偏离都会让旧 compare 失效", () => {
     expect(maskQcReadyContextMatches(current, expected)).toBe(true);
     expect(maskQcReadyContextMatches({ ...current, taskId: "task-2" }, expected)).toBe(false);
-    expect(maskQcReadyContextMatches({ ...current, selectedId: "annotation-2" }, expected)).toBe(false);
+    expect(maskQcReadyContextMatches({ ...current, selectedId: "annotation-2" }, expected)).toBe(
+      false,
+    );
     expect(maskQcReadyContextMatches({ ...current, frameIndex: 4 }, expected)).toBe(false);
     expect(maskQcReadyContextMatches({ ...current, annotationVersion: 8 }, expected)).toBe(false);
   });
@@ -144,7 +159,9 @@ describe("maskQcReadyContextMatches", () => {
   it("加载与回退区域期间也会校验 task/frame/selection", () => {
     expect(maskQcNavigationContextMatches(current, expected)).toBe(true);
     expect(maskQcNavigationContextMatches({ ...current, taskId: "task-2" }, expected)).toBe(false);
-    expect(maskQcNavigationContextMatches({ ...current, selectedId: "annotation-2" }, expected)).toBe(false);
+    expect(
+      maskQcNavigationContextMatches({ ...current, selectedId: "annotation-2" }, expected),
+    ).toBe(false);
     expect(maskQcNavigationContextMatches({ ...current, frameIndex: 4 }, expected)).toBe(false);
     const versionDrift = {
       ...current,

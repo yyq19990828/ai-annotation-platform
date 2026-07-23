@@ -4,9 +4,10 @@
   position: relative;
   overflow: hidden;
   background: repeating-conic-gradient(
-    var(--sc-canvas-checker-a) 0% 25%,
-    var(--sc-canvas-checker-b) 0% 50%
-  ) 0 0 / 16px 16px;
+      var(--sc-canvas-checker-a) 0% 25%,
+      var(--sc-canvas-checker-b) 0% 50%
+    )
+    0 0 / 16px 16px;
   cursor: var(--image-stage-cursor, default);
   filter: var(--image-stage-filter, none);
 }

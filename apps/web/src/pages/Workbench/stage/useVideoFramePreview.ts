@@ -82,7 +82,12 @@ function clampFrame(frameIndex: number, maxFrame: number) {
   return Math.max(0, Math.min(maxFrame, Math.round(frameIndex)));
 }
 
-function cacheKey(taskId: string, frameIndex: number, width: number, format: VideoFramePreviewFormat) {
+function cacheKey(
+  taskId: string,
+  frameIndex: number,
+  width: number,
+  format: VideoFramePreviewFormat,
+) {
   return `${taskId}:${frameIndex}:${width}:${format}`;
 }
 
@@ -151,28 +156,34 @@ export function useVideoFramePreview({
     }
   }, []);
 
-  const patchDiagnostics = useCallback((patch: Partial<VideoFramePreviewDiagnostics>) => {
-    setDiagnostics((cur) => ({
-      ...cur,
-      ...patch,
-      cacheSize: patch.cacheSize ?? cacheRef.current.size,
-      inFlight: patch.inFlight ?? inFlightRef.current.size,
-      unsupported: patch.unsupported ?? (taskId ? unsupportedTaskRef.current === taskId : false),
-    }));
-  }, [taskId]);
+  const patchDiagnostics = useCallback(
+    (patch: Partial<VideoFramePreviewDiagnostics>) => {
+      setDiagnostics((cur) => ({
+        ...cur,
+        ...patch,
+        cacheSize: patch.cacheSize ?? cacheRef.current.size,
+        inFlight: patch.inFlight ?? inFlightRef.current.size,
+        unsupported: patch.unsupported ?? (taskId ? unsupportedTaskRef.current === taskId : false),
+      }));
+    },
+    [taskId],
+  );
 
-  const remember = useCallback((key: string, value: VideoFramePreview) => {
-    if (value.status === "pending") return;
-    const cache = cacheRef.current;
-    cache.delete(key);
-    cache.set(key, value);
-    while (cache.size > maxCacheItems) {
-      const oldest = cache.keys().next().value;
-      if (!oldest) break;
-      cache.delete(oldest);
-    }
-    patchDiagnostics({ cacheSize: cache.size });
-  }, [maxCacheItems, patchDiagnostics]);
+  const remember = useCallback(
+    (key: string, value: VideoFramePreview) => {
+      if (value.status === "pending") return;
+      const cache = cacheRef.current;
+      cache.delete(key);
+      cache.set(key, value);
+      while (cache.size > maxCacheItems) {
+        const oldest = cache.keys().next().value;
+        if (!oldest) break;
+        cache.delete(oldest);
+      }
+      patchDiagnostics({ cacheSize: cache.size });
+    },
+    [maxCacheItems, patchDiagnostics],
+  );
 
   useEffect(() => {
     const cache = cacheRef.current;
@@ -184,80 +195,80 @@ export function useVideoFramePreview({
     patchDiagnostics({ cacheSize: cache.size });
   }, [maxCacheItems, patchDiagnostics]);
 
-  const fetchFrame = useCallback((
-    frameIndex: number,
-    requestId: number,
-    retryAttempt: number,
-  ) => {
-    if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
-    const key = cacheKey(taskId, frameIndex, width, format);
-    inFlightRef.current.add(key);
-    setDiagnostics((cur) => ({
-      ...cur,
-      requests: cur.requests + 1,
-      cacheSize: cacheRef.current.size,
-      inFlight: inFlightRef.current.size,
-      unsupported: taskId ? unsupportedTaskRef.current === taskId : false,
-    }));
-    void tasksApi.getVideoFrame(taskId, frameIndex, { width, format })
-      .then((frame) => {
-        inFlightRef.current.delete(key);
-        if (requestSeqRef.current !== requestId) return;
-        const next = previewFromFrame(frame, width, format);
-        if (next.status !== "pending") remember(key, next);
-        setPreview(next);
-        setDiagnostics((cur) => ({
-          ...cur,
-          cacheSize: cacheRef.current.size,
-          inFlight: inFlightRef.current.size,
-          lastFrameIndex: next.frameIndex,
-          lastStatus: next.status,
-          errors: next.status === "error" ? cur.errors + 1 : cur.errors,
-        }));
-        if (next.status === "pending" && retryAttempt < MAX_PENDING_RETRIES) {
-          // Exponential backoff: poll quickly after the first miss so frames
-          // that finish extraction fast show up promptly, then back off to the
-          // server hint / cap so a slow worker is not hammered.
-          const expBase = Math.min(
-            RETRY_INITIAL_DELAY_MS * Math.pow(2, retryAttempt),
-            RETRY_DELAY_MS,
-          );
-          const hintMs = frame.retry_after ? frame.retry_after * 1000 : 0;
-          const retryDelay = Math.min(Math.max(expBase, hintMs), RETRY_DELAY_MS);
-          retryTimerRef.current = setTimeout(() => {
-            fetchFrame(frameIndex, requestId, retryAttempt + 1);
-          }, retryDelay);
-        }
-      })
-      .catch((err: unknown) => {
-        inFlightRef.current.delete(key);
-        if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
-          unsupportedTaskRef.current = taskId;
-          if (requestSeqRef.current === requestId) setPreview(null);
-          patchDiagnostics({ inFlight: inFlightRef.current.size, unsupported: true });
-          return;
-        }
-        if (requestSeqRef.current !== requestId) return;
-        const next: VideoFramePreview = {
-          frameIndex,
-          status: "error",
-          url: null,
-          width,
-          format,
-          error: err instanceof Error ? err.message : "frame preview failed",
-        };
-        remember(key, next);
-        setPreview(next);
-        setDiagnostics((cur) => ({
-          ...cur,
-          cacheSize: cacheRef.current.size,
-          inFlight: inFlightRef.current.size,
-          lastFrameIndex: next.frameIndex,
-          lastStatus: next.status,
-          errors: cur.errors + 1,
-        }));
-      });
-  }, [enabled, format, patchDiagnostics, remember, taskId, width]);
+  const fetchFrame = useCallback(
+    (frameIndex: number, requestId: number, retryAttempt: number) => {
+      if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
+      const key = cacheKey(taskId, frameIndex, width, format);
+      inFlightRef.current.add(key);
+      setDiagnostics((cur) => ({
+        ...cur,
+        requests: cur.requests + 1,
+        cacheSize: cacheRef.current.size,
+        inFlight: inFlightRef.current.size,
+        unsupported: taskId ? unsupportedTaskRef.current === taskId : false,
+      }));
+      void tasksApi
+        .getVideoFrame(taskId, frameIndex, { width, format })
+        .then((frame) => {
+          inFlightRef.current.delete(key);
+          if (requestSeqRef.current !== requestId) return;
+          const next = previewFromFrame(frame, width, format);
+          if (next.status !== "pending") remember(key, next);
+          setPreview(next);
+          setDiagnostics((cur) => ({
+            ...cur,
+            cacheSize: cacheRef.current.size,
+            inFlight: inFlightRef.current.size,
+            lastFrameIndex: next.frameIndex,
+            lastStatus: next.status,
+            errors: next.status === "error" ? cur.errors + 1 : cur.errors,
+          }));
+          if (next.status === "pending" && retryAttempt < MAX_PENDING_RETRIES) {
+            // Exponential backoff: poll quickly after the first miss so frames
+            // that finish extraction fast show up promptly, then back off to the
+            // server hint / cap so a slow worker is not hammered.
+            const expBase = Math.min(
+              RETRY_INITIAL_DELAY_MS * Math.pow(2, retryAttempt),
+              RETRY_DELAY_MS,
+            );
+            const hintMs = frame.retry_after ? frame.retry_after * 1000 : 0;
+            const retryDelay = Math.min(Math.max(expBase, hintMs), RETRY_DELAY_MS);
+            retryTimerRef.current = setTimeout(() => {
+              fetchFrame(frameIndex, requestId, retryAttempt + 1);
+            }, retryDelay);
+          }
+        })
+        .catch((err: unknown) => {
+          inFlightRef.current.delete(key);
+          if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
+            unsupportedTaskRef.current = taskId;
+            if (requestSeqRef.current === requestId) setPreview(null);
+            patchDiagnostics({ inFlight: inFlightRef.current.size, unsupported: true });
+            return;
+          }
+          if (requestSeqRef.current !== requestId) return;
+          const next: VideoFramePreview = {
+            frameIndex,
+            status: "error",
+            url: null,
+            width,
+            format,
+            error: err instanceof Error ? err.message : "frame preview failed",
+          };
+          remember(key, next);
+          setPreview(next);
+          setDiagnostics((cur) => ({
+            ...cur,
+            cacheSize: cacheRef.current.size,
+            inFlight: inFlightRef.current.size,
+            lastFrameIndex: next.frameIndex,
+            lastStatus: next.status,
+            errors: cur.errors + 1,
+          }));
+        });
+    },
+    [enabled, format, patchDiagnostics, remember, taskId, width],
+  );
 
   const cancelScheduledFetch = useCallback(() => {
     if (rafHandleRef.current !== null) {
@@ -267,73 +278,79 @@ export function useVideoFramePreview({
     scheduledFrameRef.current = null;
   }, []);
 
-  const prefetch = useCallback((rawFrames: readonly number[]) => {
-    if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
-    const frames = [...new Set(rawFrames.map((frame) => clampFrame(frame, maxFrame)))]
-      .filter((frame) => !cacheRef.current.has(cacheKey(taskId, frame, width, format)))
-      .slice(0, 50);
-    if (frames.length === 0) return;
-    setDiagnostics((cur) => ({
-      ...cur,
-      prefetchRequests: cur.prefetchRequests + 1,
-      prefetchFrames: cur.prefetchFrames + frames.length,
-    }));
-    void Promise.resolve(tasksApi.prefetchVideoFrames(taskId, frames, { width, format }))
-      .then((response) => {
-        if (!response || !Array.isArray(response.frames)) return;
-        for (const frame of response.frames) {
-          const next = previewFromFrame(frame, width, format);
-          if (next.status !== "pending") {
-            remember(cacheKey(taskId, next.frameIndex, width, format), next);
+  const prefetch = useCallback(
+    (rawFrames: readonly number[]) => {
+      if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
+      const frames = [...new Set(rawFrames.map((frame) => clampFrame(frame, maxFrame)))]
+        .filter((frame) => !cacheRef.current.has(cacheKey(taskId, frame, width, format)))
+        .slice(0, 50);
+      if (frames.length === 0) return;
+      setDiagnostics((cur) => ({
+        ...cur,
+        prefetchRequests: cur.prefetchRequests + 1,
+        prefetchFrames: cur.prefetchFrames + frames.length,
+      }));
+      void Promise.resolve(tasksApi.prefetchVideoFrames(taskId, frames, { width, format }))
+        .then((response) => {
+          if (!response || !Array.isArray(response.frames)) return;
+          for (const frame of response.frames) {
+            const next = previewFromFrame(frame, width, format);
+            if (next.status !== "pending") {
+              remember(cacheKey(taskId, next.frameIndex, width, format), next);
+            }
           }
-        }
-      })
-      .catch((err: unknown) => {
-        if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
-          unsupportedTaskRef.current = taskId;
-          patchDiagnostics({ unsupported: true });
-        }
-      });
-  }, [enabled, format, maxFrame, patchDiagnostics, remember, taskId, width]);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
+            unsupportedTaskRef.current = taskId;
+            patchDiagnostics({ unsupported: true });
+          }
+        });
+    },
+    [enabled, format, maxFrame, patchDiagnostics, remember, taskId, width],
+  );
 
-  const scrubPrefetch = useCallback((anchor: number) => {
-    if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
-    const last = lastPrefetchAnchorRef.current;
-    if (last !== null && Math.abs(anchor - last) < SCRUB_PREFETCH_MIN_STEP) return;
-    lastPrefetchAnchorRef.current = anchor;
-    const frames: number[] = [];
-    for (let offset = -scrubPrefetchHalfWindow; offset <= scrubPrefetchHalfWindow; offset++) {
-      if (offset === 0) continue;
-      const f = anchor + offset;
-      if (f < 0 || f > maxFrame) continue;
-      const key = cacheKey(taskId, f, width, format);
-      if (cacheRef.current.has(key) || inFlightRef.current.has(key)) continue;
-      frames.push(f);
-    }
-    if (frames.length === 0) return;
-    setDiagnostics((cur) => ({
-      ...cur,
-      prefetchRequests: cur.prefetchRequests + 1,
-      prefetchFrames: cur.prefetchFrames + frames.length,
-    }));
-    const pending = tasksApi.prefetchVideoFrames(taskId, frames, { width, format });
-    void Promise.resolve(pending)
-      .then((response) => {
-        if (!response || !Array.isArray(response.frames)) return;
-        for (const frame of response.frames) {
-          const next = previewFromFrame(frame, width, format);
-          if (next.status !== "pending") {
-            remember(cacheKey(taskId, next.frameIndex, width, format), next);
+  const scrubPrefetch = useCallback(
+    (anchor: number) => {
+      if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
+      const last = lastPrefetchAnchorRef.current;
+      if (last !== null && Math.abs(anchor - last) < SCRUB_PREFETCH_MIN_STEP) return;
+      lastPrefetchAnchorRef.current = anchor;
+      const frames: number[] = [];
+      for (let offset = -scrubPrefetchHalfWindow; offset <= scrubPrefetchHalfWindow; offset++) {
+        if (offset === 0) continue;
+        const f = anchor + offset;
+        if (f < 0 || f > maxFrame) continue;
+        const key = cacheKey(taskId, f, width, format);
+        if (cacheRef.current.has(key) || inFlightRef.current.has(key)) continue;
+        frames.push(f);
+      }
+      if (frames.length === 0) return;
+      setDiagnostics((cur) => ({
+        ...cur,
+        prefetchRequests: cur.prefetchRequests + 1,
+        prefetchFrames: cur.prefetchFrames + frames.length,
+      }));
+      const pending = tasksApi.prefetchVideoFrames(taskId, frames, { width, format });
+      void Promise.resolve(pending)
+        .then((response) => {
+          if (!response || !Array.isArray(response.frames)) return;
+          for (const frame of response.frames) {
+            const next = previewFromFrame(frame, width, format);
+            if (next.status !== "pending") {
+              remember(cacheKey(taskId, next.frameIndex, width, format), next);
+            }
           }
-        }
-      })
-      .catch((err: unknown) => {
-        if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
-          unsupportedTaskRef.current = taskId;
-          patchDiagnostics({ unsupported: true });
-        }
-      });
-  }, [enabled, format, maxFrame, patchDiagnostics, remember, scrubPrefetchHalfWindow, taskId, width]);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
+            unsupportedTaskRef.current = taskId;
+            patchDiagnostics({ unsupported: true });
+          }
+        });
+    },
+    [enabled, format, maxFrame, patchDiagnostics, remember, scrubPrefetchHalfWindow, taskId, width],
+  );
 
   const seedAnchorsIfNeeded = useCallback(() => {
     if (!taskId || maxFrame <= 0) return;
@@ -373,59 +390,71 @@ export function useVideoFramePreview({
     seedAnchorsIfNeeded();
   }, [enabled, fetchFrame, format, maxFrame, scrubPrefetch, seedAnchorsIfNeeded, taskId, width]);
 
-  const previewFor = useCallback((rawFrameIndex: number | null) => {
-    if (rawFrameIndex === null || !taskId || !enabled || unsupportedTaskRef.current === taskId) {
-      cancelScheduledFetch();
-      clearRetry();
-      activeRequestKeyRef.current = null;
-      requestSeqRef.current += 1;
-      setPreview(null);
-      return;
-    }
-    const frameIndex = clampFrame(rawFrameIndex, maxFrame);
-    const key = cacheKey(taskId, frameIndex, width, format);
-    const sameActiveRequest = activeRequestKeyRef.current === key;
-    if (!sameActiveRequest) {
-      clearRetry();
-      activeRequestKeyRef.current = key;
-      requestSeqRef.current += 1;
-    }
-    const cached = cacheRef.current.get(key);
-    if (cached) {
-      cancelScheduledFetch();
-      setPreview(cached);
+  const previewFor = useCallback(
+    (rawFrameIndex: number | null) => {
+      if (rawFrameIndex === null || !taskId || !enabled || unsupportedTaskRef.current === taskId) {
+        cancelScheduledFetch();
+        clearRetry();
+        activeRequestKeyRef.current = null;
+        requestSeqRef.current += 1;
+        setPreview(null);
+        return;
+      }
+      const frameIndex = clampFrame(rawFrameIndex, maxFrame);
+      const key = cacheKey(taskId, frameIndex, width, format);
+      const sameActiveRequest = activeRequestKeyRef.current === key;
+      if (!sameActiveRequest) {
+        clearRetry();
+        activeRequestKeyRef.current = key;
+        requestSeqRef.current += 1;
+      }
+      const cached = cacheRef.current.get(key);
+      if (cached) {
+        cancelScheduledFetch();
+        setPreview(cached);
+        setDiagnostics((cur) => ({
+          ...cur,
+          cacheHits: cur.cacheHits + 1,
+          cacheSize: cacheRef.current.size,
+          inFlight: inFlightRef.current.size,
+          lastFrameIndex: cached.frameIndex,
+          lastStatus: cached.status,
+        }));
+        return;
+      }
+      // Cache miss while scrubbing: keep the previous ready preview on screen so
+      // the popover does not flash back to "Loading F X" between adjacent frames.
+      // Only fall back to a pending placeholder if nothing has been shown yet.
+      setPreview((prev) => {
+        if (prev && prev.status === "ready") return prev;
+        return { frameIndex, status: "pending", url: null, width, format, error: null };
+      });
       setDiagnostics((cur) => ({
         ...cur,
-        cacheHits: cur.cacheHits + 1,
+        cacheMisses: cur.cacheMisses + 1,
         cacheSize: cacheRef.current.size,
         inFlight: inFlightRef.current.size,
-        lastFrameIndex: cached.frameIndex,
-        lastStatus: cached.status,
+        lastFrameIndex: frameIndex,
+        lastStatus: "pending",
       }));
-      return;
-    }
-    // Cache miss while scrubbing: keep the previous ready preview on screen so
-    // the popover does not flash back to "Loading F X" between adjacent frames.
-    // Only fall back to a pending placeholder if nothing has been shown yet.
-    setPreview((prev) => {
-      if (prev && prev.status === "ready") return prev;
-      return { frameIndex, status: "pending", url: null, width, format, error: null };
-    });
-    setDiagnostics((cur) => ({
-      ...cur,
-      cacheMisses: cur.cacheMisses + 1,
-      cacheSize: cacheRef.current.size,
-      inFlight: inFlightRef.current.size,
-      lastFrameIndex: frameIndex,
-      lastStatus: "pending",
-    }));
-    // Coalesce rapid scrub events to one fetch per animation frame so fast
-    // pointer moves don't fire one request per pixel.
-    scheduledFrameRef.current = frameIndex;
-    if (rafHandleRef.current === null) {
-      rafHandleRef.current = requestAnimationFrame(flushScheduledFetch);
-    }
-  }, [cancelScheduledFetch, clearRetry, enabled, flushScheduledFetch, format, maxFrame, taskId, width]);
+      // Coalesce rapid scrub events to one fetch per animation frame so fast
+      // pointer moves don't fire one request per pixel.
+      scheduledFrameRef.current = frameIndex;
+      if (rafHandleRef.current === null) {
+        rafHandleRef.current = requestAnimationFrame(flushScheduledFetch);
+      }
+    },
+    [
+      cancelScheduledFetch,
+      clearRetry,
+      enabled,
+      flushScheduledFetch,
+      format,
+      maxFrame,
+      taskId,
+      width,
+    ],
+  );
 
   const clear = useCallback(() => {
     cancelScheduledFetch();
@@ -448,10 +477,13 @@ export function useVideoFramePreview({
     clear();
   }, [clear, taskId]);
 
-  useEffect(() => () => {
-    cancelScheduledFetch();
-    clearRetry();
-  }, [cancelScheduledFetch, clearRetry]);
+  useEffect(
+    () => () => {
+      cancelScheduledFetch();
+      clearRetry();
+    },
+    [cancelScheduledFetch, clearRetry],
+  );
 
   return { preview, previewFor, prefetch, clear, diagnostics };
 }

@@ -247,7 +247,9 @@ def test_pool_status_with_loaded_keys_and_evict() -> None:
         cap=4,
         current_size=1,
         loaded_keys=[
-            LoadedKey(key="yolov11/s/detection", loaded_at=now, last_used_at=now, hit_count=3),
+            LoadedKey(
+                key="yolov11/s/detection", loaded_at=now, last_used_at=now, hit_count=3
+            ),
         ],
         last_evict=EvictRecord(key="yolov8/x/detection", at=now, reason="lru"),
     )
@@ -260,7 +262,9 @@ def test_pool_status_with_loaded_keys_and_evict() -> None:
 def test_evict_record_rejects_unknown_reason() -> None:
     with pytest.raises(Exception):
         EvictRecord(
-            key="k", at=datetime(2026, 6, 8, tzinfo=timezone.utc), reason="nope"  # type: ignore[arg-type]
+            key="k",
+            at=datetime(2026, 6, 8, tzinfo=timezone.utc),
+            reason="nope",  # type: ignore[arg-type]
         )
 
 
@@ -273,7 +277,9 @@ def test_warmup_response_defaults() -> None:
 
 
 def test_warmup_response_with_evicted() -> None:
-    r = WarmupResponse(model_load_ms=4500, cache_hit=False, evicted="yolov8/n/detection")
+    r = WarmupResponse(
+        model_load_ms=4500, cache_hit=False, evicted="yolov8/n/detection"
+    )
     assert r.model_load_ms == 4500
     assert r.evicted == "yolov8/n/detection"
 

@@ -39,6 +39,7 @@ from aap_backend_runtime import (
 )
 from aap_protocol_v2 import MaskPromptPayload
 from mask_utils import decode_coco_rle
+
 # 复用 multiplex 封装里的通用几何/IO 静态工具(抽窗解码、mask→几何、临时目录清理),
 # 避免重复实现; 这些与 multiplex 逻辑无关, 纯 OpenCV/几何。
 from video_predictor import SAM3MultiplexVideoTracker, _to_numpy
@@ -79,9 +80,7 @@ class SAM3PVSVideoTracker:
     session 结束即 reset_state 释放, 模型权重留给下个 job 复用(由 main.py 持有/idle 卸载)。
     """
 
-    def __init__(
-        self, *, max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES
-    ) -> None:
+    def __init__(self, *, max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES) -> None:
         self.max_window_frames = max_window_frames
         self.device = require_gpu_device("cuda")
         self.active_sessions = 0
@@ -231,7 +230,9 @@ class SAM3PVSVideoTracker:
                     if outside:
                         confidence = 0.0
                     elif scores is not None and i < len(scores):
-                        confidence = _sigmoid(float(np.asarray(scores[i]).reshape(-1)[0]))
+                        confidence = _sigmoid(
+                            float(np.asarray(scores[i]).reshape(-1)[0])
+                        )
                     else:
                         confidence = 1.0
                     results.append(
@@ -275,9 +276,7 @@ class SAM3PVSVideoTracker:
                 )
             decoded = decode_coco_rle(payload.rle.model_dump(mode="json"))
             mask = torch.from_numpy(
-                np.frombuffer(decoded, dtype=np.uint8)
-                .reshape(height, width)
-                .copy()
+                np.frombuffer(decoded, dtype=np.uint8).reshape(height, width).copy()
             ).to(dtype=torch.bool)
             self._predictor.add_new_mask(
                 inference_state=state,
@@ -355,9 +354,7 @@ class SAM3PVSVideoTracker:
                 if self._add_prompt(state, local_f, obj_id, p):
                     added += 1
             if added == 0:
-                raise ValueError(
-                    f"seed obj_id={obj_id} 的 prompts 无有效框/点/Mask"
-                )
+                raise ValueError(f"seed obj_id={obj_id} 的 prompts 无有效框/点/Mask")
         elif not self._add_prompt(state, local_seed, obj_id, seed):
             raise ValueError(
                 f"seed for obj_id={obj_id} has neither bbox, points nor mask_prompt"

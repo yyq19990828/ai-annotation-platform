@@ -43,8 +43,7 @@ export function ResetBatchModal({
           pushToast({ msg: "已重置到草稿", kind: "success" });
           onClose();
         },
-        onError: (e) =>
-          pushToast({ msg: "重置失败", sub: (e as Error).message, kind: "warning" }),
+        onError: (e) => pushToast({ msg: "重置失败", sub: (e as Error).message, kind: "warning" }),
       },
     );
   };
@@ -53,11 +52,18 @@ export function ResetBatchModal({
     <Modal open title={`重置到草稿 · ${batch.display_id}`} onClose={onClose}>
       <div className="flex flex-col gap-3 text-sm">
         <div className="border-l-[3px] border-amber-500 bg-status-caution-soft p-2.5 text-sm leading-[1.55] text-foreground">
-          <strong>这是 owner 兜底操作。</strong>批次将从 <code>{batch.status}</code> 强制回到 <code>draft</code>：
+          <strong>这是 owner 兜底操作。</strong>批次将从 <code>{batch.status}</code> 强制回到{" "}
+          <code>draft</code>：
           <ul className="mt-1.5 mb-0 ml-4 p-0 text-xs text-muted-foreground">
-            <li>批次内 <strong>{batch.total_tasks}</strong> 个 task 全部回 pending</li>
-            <li>已有标注记录 <strong>保留</strong>（不删 annotation，不改 is_active）</li>
-            <li>会 <strong>释放</strong> 所有标注员锁，原审核反馈 / 审核人会被清空</li>
+            <li>
+              批次内 <strong>{batch.total_tasks}</strong> 个 task 全部回 pending
+            </li>
+            <li>
+              已有标注记录 <strong>保留</strong>（不删 annotation，不改 is_active）
+            </li>
+            <li>
+              会 <strong>释放</strong> 所有标注员锁，原审核反馈 / 审核人会被清空
+            </li>
           </ul>
         </div>
         <label className="flex flex-col gap-1">
@@ -72,24 +78,12 @@ export function ResetBatchModal({
             className={`${TEXTAREA_BASE} ${tooLong || tooShort ? "border-rose-500" : ""}`}
             autoFocus
           />
-          {tooShort && (
-            <span className="text-xs text-status-danger">
-              至少 {REASON_MIN} 字
-            </span>
-          )}
-          {tooLong && (
-            <span className="text-xs text-status-danger">
-              超出 {REASON_MAX} 字上限
-            </span>
-          )}
+          {tooShort && <span className="text-xs text-status-danger">至少 {REASON_MIN} 字</span>}
+          {tooLong && <span className="text-xs text-status-danger">超出 {REASON_MAX} 字上限</span>}
         </label>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
-          <Button
-            variant="danger"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
+          <Button variant="danger" onClick={handleSubmit} disabled={!canSubmit}>
             {reset.isPending ? "重置中…" : "确认重置"}
           </Button>
         </div>

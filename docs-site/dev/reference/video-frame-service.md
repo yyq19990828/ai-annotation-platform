@@ -66,11 +66,11 @@ stateDiagram-v2
     end note
 ```
 
-| 状态 | 触发 / 含义 |
-|---|---|
+| 状态      | 触发 / 含义                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
 | `pending` | 行刚创建或 retry 后，Celery 任务在排队 / 执行中。API 返回 `202` + `Retry-After: 3s` |
-| `ready` | worker 完成 chunk 生成（含 ffprobe 写 `diagnostics.samples`），返回 signed URL |
-| `failed` | ffmpeg 失败 / 超时；行携带 `error` 字段；客户端可触发 retry |
+| `ready`   | worker 完成 chunk 生成（含 ffprobe 写 `diagnostics.samples`），返回 signed URL      |
+| `failed`  | ffmpeg 失败 / 超时；行携带 `error` 字段；客户端可触发 retry                         |
 
 > 实现：`apps/api/app/services/video_frame_service.py` 第 200、217、344 行。chunk 状态白名单见 `{"pending", "ready", "failed"}`；越界值视为 `pending`。
 
@@ -111,7 +111,14 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples
   "width": 1920,
   "height": 1080,
   "samples": [
-    { "frame_index": 0, "pts_ms": 0, "duration_ms": 33, "is_keyframe": true, "size_bytes": 45123, "offset_in_chunk": 1024 }
+    {
+      "frame_index": 0,
+      "pts_ms": 0,
+      "duration_ms": 33,
+      "is_keyframe": true,
+      "size_bytes": 45123,
+      "offset_in_chunk": 1024
+    }
   ]
 }
 ```
@@ -166,13 +173,13 @@ POST /api/v1/storage/video-assets/retry
 
 失败列表覆盖五类资产：
 
-| asset_type | 来源 | 重试任务 |
-|---|---|---|
-| `probe` | `dataset_items.metadata["video"]["probe_error"]` | `generate_video_metadata` |
-| `poster` | `dataset_items.metadata["video"]["poster_error"]` | `generate_video_metadata` |
+| asset_type        | 来源                                                       | 重试任务                  |
+| ----------------- | ---------------------------------------------------------- | ------------------------- |
+| `probe`           | `dataset_items.metadata["video"]["probe_error"]`           | `generate_video_metadata` |
+| `poster`          | `dataset_items.metadata["video"]["poster_error"]`          | `generate_video_metadata` |
 | `frame_timetable` | `dataset_items.metadata["video"]["frame_timetable_error"]` | `generate_video_metadata` |
-| `chunk` | `video_chunks.status = "failed"` | `ensure_video_chunks` |
-| `frame` | `video_frame_cache.status = "failed"` | `extract_video_frames` |
+| `chunk`           | `video_chunks.status = "failed"`                           | `ensure_video_chunks`     |
+| `frame`           | `video_frame_cache.status = "failed"`                      | `extract_video_frames`    |
 
 `probe` / `poster` / `frame_timetable` 共用 metadata 任务，因此重试任一项都会重新跑视频 metadata 生成链路。`chunk` / `frame` 重试会先把对应行恢复到 `pending` 并清空 `error`，再投递 media 队列。
 
@@ -233,12 +240,12 @@ POST /api/v1/video-tracker-jobs/{job_id}/decisions
 
 创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。当前支持四类 `model_key`：
 
-| model_key | 用途 |
-|---|---|
-| `mock_bbox` | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。 |
-| `sam2_video` | 种子驱动的 SAM2 视频追踪；可消费源轨迹框或 `prompt.seeds` 点 / 框、多目标、多帧提示。 |
-| `sam3_video` | 文本驱动的多目标自动发现；每窗检测后由平台在窗口边界做 IoU 身份关联。 |
-| `sam3_video_interactive` | 种子驱动的 SAM3 PVS 追踪；点 / 框提示通过视频 memory 跨帧传播。 |
+| model_key                | 用途                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `mock_bbox`              | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。               |
+| `sam2_video`             | 种子驱动的 SAM2 视频追踪；可消费源轨迹框或 `prompt.seeds` 点 / 框、多目标、多帧提示。 |
+| `sam3_video`             | 文本驱动的多目标自动发现；每窗检测后由平台在窗口边界做 IoU 身份关联。                 |
+| `sam3_video_interactive` | 种子驱动的 SAM3 PVS 追踪；点 / 框提示通过视频 memory 跨帧传播。                       |
 
 真实 tracker 不再固定调用 `project.ml_backend_id`。`MLBackendService.get_tracker_backend()` 会在项目所有已启用 backend 中按 `health_meta.capabilities.supported_trackers` 选择：项目主后端支持该 tracker 时优先，否则选择其它 connected 的匹配 backend。没有能力匹配时返回不支持；`mock_bbox` 不需要 backend。
 
@@ -257,7 +264,13 @@ POST /api/v1/video-tracker-jobs/{job_id}/decisions
         "obj_id": 1,
         "prompts": [
           { "frame_index": 0, "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 } },
-          { "frame_index": 24, "points": [[0.45, 0.5, 1], [0.7, 0.5, 0]] }
+          {
+            "frame_index": 24,
+            "points": [
+              [0.45, 0.5, 1],
+              [0.7, 0.5, 0]
+            ]
+          }
         ]
       }
     ]
@@ -421,18 +434,18 @@ Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数�
 
 ## 配置与指标
 
-| 配置 | 默认值 | 用途 |
-|---|---:|---|
-| `VIDEO_CHUNK_SIZE_FRAMES` | 60 | chunk 帧数 |
-| `VIDEO_CHUNK_WARMUP_LOOKAHEAD` | 1 | chunk warmup look-ahead，命中 chunk N 时顺带预解码 N+1..N+K；设 0 关闭 |
-| `VIDEO_FRAME_CACHE_TTL_DAYS` | 14 | 单帧缓存 TTL |
-| `VIDEO_CHUNK_CACHE_TTL_DAYS` | 30 | chunk 缓存 TTL |
-| `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | 64 | 进程内 frame array LRU 上限 |
-| `VIDEO_SEGMENT_SIZE_FRAMES` | 18000 | 协作 segment 帧数 |
-| `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | 300 | segment lock 心跳 TTL |
-| `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | 300 | tracker 调 ML Backend 的单次 frame window 上限 |
-| `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES` | 16 | SAM3 文本 / PVS tracker 的单次 frame window 上限 |
-| `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | 0.15 | 低置信度 tracker 结果写 outside 的阈值 |
+| 配置                                             | 默认值 | 用途                                                                   |
+| ------------------------------------------------ | -----: | ---------------------------------------------------------------------- |
+| `VIDEO_CHUNK_SIZE_FRAMES`                        |     60 | chunk 帧数                                                             |
+| `VIDEO_CHUNK_WARMUP_LOOKAHEAD`                   |      1 | chunk warmup look-ahead，命中 chunk N 时顺带预解码 N+1..N+K；设 0 关闭 |
+| `VIDEO_FRAME_CACHE_TTL_DAYS`                     |     14 | 单帧缓存 TTL                                                           |
+| `VIDEO_CHUNK_CACHE_TTL_DAYS`                     |     30 | chunk 缓存 TTL                                                         |
+| `VIDEO_FRAME_MEMORY_CACHE_ITEMS`                 |     64 | 进程内 frame array LRU 上限                                            |
+| `VIDEO_SEGMENT_SIZE_FRAMES`                      |  18000 | 协作 segment 帧数                                                      |
+| `VIDEO_SEGMENT_LOCK_TTL_SECONDS`                 |    300 | segment lock 心跳 TTL                                                  |
+| `VIDEO_TRACKER_WINDOW_SIZE_FRAMES`               |    300 | tracker 调 ML Backend 的单次 frame window 上限                         |
+| `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`          |     16 | SAM3 文本 / PVS tracker 的单次 frame window 上限                       |
+| `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` |   0.15 | 低置信度 tracker 结果写 outside 的阈值                                 |
 
 Celery route：
 

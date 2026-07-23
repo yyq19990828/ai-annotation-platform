@@ -21,9 +21,7 @@ def _ensure_dino_module_stub():
     fake_dino_mod = types.ModuleType("groundingdino.util.inference")
     fake_dino_mod.predict = MagicMock()
     sys.modules.setdefault("groundingdino", types.ModuleType("groundingdino"))
-    sys.modules.setdefault(
-        "groundingdino.util", types.ModuleType("groundingdino.util")
-    )
+    sys.modules.setdefault("groundingdino.util", types.ModuleType("groundingdino.util"))
     sys.modules["groundingdino.util.inference"] = fake_dino_mod
     return fake_dino_mod
 
@@ -115,18 +113,14 @@ def test_two_disconnected_emits_multi_polygon(predictor):
 
 def test_score_propagated_to_top_level(predictor):
     mask = _solid_circle(size=128, r=30)
-    out = predictor._masks_to_results(
-        mask[None, ...], np.array([0.77]), 128, 128
-    )
+    out = predictor._masks_to_results(mask[None, ...], np.array([0.77]), 128, 128)
     assert out[0]["score"] == pytest.approx(0.77)
 
 
 def test_score_omitted_when_none(predictor):
     """SAM scores=None → 输出不带 score 字段 (point/bbox 路径单独 prompt 时常出现)."""
     mask = _solid_circle(size=128, r=30)
-    out = predictor._masks_to_results(
-        mask[None, ...], None, 128, 128
-    )
+    out = predictor._masks_to_results(mask[None, ...], None, 128, 128)
     assert "score" not in out[0]
 
 

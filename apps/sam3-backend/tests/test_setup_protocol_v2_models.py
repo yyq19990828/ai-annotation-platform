@@ -90,9 +90,18 @@ def test_setup_models_declare_output_attribute_types(setup_fn):
 def test_setup_models_declare_resource_profile(setup_fn):
     """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互分割逐次 batchable=False (不填 vram)。"""
     by_id = {m["id"]: m for m in setup_fn()["models"]}
-    assert by_id["sam3-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["sam3-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["sam3-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert by_id["sam3-detection"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["sam3-segmentation"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["sam3-interactive-seg"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": False,
+    }
 
 
 def test_detection_model_text_to_bbox(setup_fn):
@@ -141,9 +150,7 @@ def test_image_mask_and_scribble_consumers_are_advertised(
     """SAM3 image advertises Mask/scribble only after consumer coverage."""
     inter = next(m for m in setup_fn()["models"] if m["task"] == "interactive_seg")
     assert {"mask", "scribble"}.issubset(inter["supported_prompts"])
-    assert {"mask_prompt", "scribble_prompt"}.issubset(
-        inter["supported_inputs"]
-    )
+    assert {"mask_prompt", "scribble_prompt"}.issubset(inter["supported_inputs"])
     assert "correction_frame" not in inter["supported_prompts"]
     assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
 

@@ -568,4 +568,6 @@ async def test_compare_content_endpoints_require_annotations_read_scope(
         ),
     ]
     assert [response.status_code for response in responses] == [403, 403, 403, 403]
-    assert all("annotations:read" in response.json()["detail"] for response in responses)
+    assert all(
+        "annotations:read" in response.json()["detail"] for response in responses
+    )

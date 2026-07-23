@@ -19,17 +19,17 @@ ML Backend 是平台对接外部推理服务的契约层。注册表是**全局*
 
 ![注册表单全貌含 max_concurrency/extra_params](../images/superadmin/ml-backend/register-form.png)
 
-| 字段 | 含义 | 约束 |
-|---|---|---|
-| 名称 | 显示名 | 无全局唯一性约束（`ml_backends` 表无 UNIQUE 索引） |
-| URL | Backend HTTP 入口 | **全局唯一**（同一 URL 只能注册一次）；**不能填 loopback**（详见下） |
-| 交互式 | 是否支持工作台一键推理 | 布尔开关，默认关 |
-| API Key | 可选，header `Authorization: Bearer ...` | — |
-| GPU 物理资源 | 稳定 `gpu_resource_id` | 从运维显式配置的逐卡资源中选择；留空不等于已确认 CPU |
-| 显存预算 | `vram_budget_mb` | 与 GPU 资源成对填写，正整数 MiB，不得超过该卡 `allocatable_mb` |
-| 驱逐优先级 | `eviction_priority` | 数值越大越难被驱逐，可为负数，不是请求队列优先级 |
-| 最大并发 | `max_concurrency` | 1–32；始终作为单进程 / 事件循环的本地背压；`ML_BACKEND_ROUTER_MODE=enforce` 时还作为 Redis route lease 的跨进程实例上限 |
-| 额外参数 | JSON 扩展字段 | 不得与上述强类型字段冲突 |
+| 字段         | 含义                                     | 约束                                                                                                                    |
+| ------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 名称         | 显示名                                   | 无全局唯一性约束（`ml_backends` 表无 UNIQUE 索引）                                                                      |
+| URL          | Backend HTTP 入口                        | **全局唯一**（同一 URL 只能注册一次）；**不能填 loopback**（详见下）                                                    |
+| 交互式       | 是否支持工作台一键推理                   | 布尔开关，默认关                                                                                                        |
+| API Key      | 可选，header `Authorization: Bearer ...` | —                                                                                                                       |
+| GPU 物理资源 | 稳定 `gpu_resource_id`                   | 从运维显式配置的逐卡资源中选择；留空不等于已确认 CPU                                                                    |
+| 显存预算     | `vram_budget_mb`                         | 与 GPU 资源成对填写，正整数 MiB，不得超过该卡 `allocatable_mb`                                                          |
+| 驱逐优先级   | `eviction_priority`                      | 数值越大越难被驱逐，可为负数，不是请求队列优先级                                                                        |
+| 最大并发     | `max_concurrency`                        | 1–32；始终作为单进程 / 事件循环的本地背压；`ML_BACKEND_ROUTER_MODE=enforce` 时还作为 Redis route lease 的跨进程实例上限 |
+| 额外参数     | JSON 扩展字段                            | 不得与上述强类型字段冲突                                                                                                |
 
 > **已删除的虚构字段**：`type`（类型选择器）、默认 prompt、默认阈值均**不是**注册表单的真实字段。backend 类型由 backend 自身通过 `/setup` 声明，不在注册时指定。`max_concurrency` 由表单单独填写后保存到 `extra_params` JSONB；其他扩展参数仍在高级 JSON 中编辑。
 
@@ -46,11 +46,11 @@ ML Backend 是平台对接外部推理服务的契约层。注册表是**全局*
 
 **正确填法：**
 
-| 场景 | URL |
-|---|---|
-| Backend 在同一个 docker-compose | `http://grounded-sam2-backend:8001` |
-| Backend 在宿主机 / 局域网 | `http://172.17.0.1:8001`（Linux 默认 bridge）/ `http://host.docker.internal:8001`（mac/win） |
-| Backend 在另一台机器 | LAN IP / 域名 |
+| 场景                            | URL                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------- |
+| Backend 在同一个 docker-compose | `http://grounded-sam2-backend:8001`                                                          |
+| Backend 在宿主机 / 局域网       | `http://172.17.0.1:8001`（Linux 默认 bridge）/ `http://host.docker.internal:8001`（mac/win） |
+| Backend 在另一台机器            | LAN IP / 域名                                                                                |
 
 dev 环境 placeholder 已默认填 `172.17.0.1:8001`。
 

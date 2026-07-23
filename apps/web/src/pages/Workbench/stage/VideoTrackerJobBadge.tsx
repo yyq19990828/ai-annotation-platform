@@ -75,11 +75,7 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
     >
       <Icon name="bot" size={12} />
       <span>{statusMeta.label}</span>
-      {progressLabel && (
-        <span className="mono text-muted-foreground">
-          {progressLabel}
-        </span>
-      )}
+      {progressLabel && <span className="mono text-muted-foreground">{progressLabel}</span>}
       {canCancel && (
         <Button
           size="sm"

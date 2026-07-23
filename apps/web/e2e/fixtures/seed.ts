@@ -26,11 +26,7 @@ export interface SeedData {
 }
 
 export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
-export type ScreenshotProjectKey =
-  | "image_demo"
-  | "video_demo"
-  | "pointcloud_demo"
-  | "ocr_demo";
+export type ScreenshotProjectKey = "image_demo" | "video_demo" | "pointcloud_demo" | "ocr_demo";
 export type ScreenshotBackendRequirement = "image_interactive" | "video_tracker" | "ocr";
 
 export interface ScreenshotCatalogUser {
@@ -196,22 +192,18 @@ export class SeedAPI {
 
   /** 只切项目 opt-in；部署级 read/create 总闸由 API 进程环境决定。 */
   async configureRasterMask(projectId: string, enabled: boolean): Promise<void> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/configure-raster-mask`,
-      { data: { project_id: projectId, enabled } },
-    );
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/configure-raster-mask`, {
+      data: { project_id: projectId, enabled },
+    });
     if (!res.ok()) {
-      throw new Error(
-        `seed/configure-raster-mask failed: ${res.status()} ${await res.text()}`,
-      );
+      throw new Error(`seed/configure-raster-mask failed: ${res.status()} ${await res.text()}`);
     }
   }
 
   async videoTask(projectId: string): Promise<{ task_id: string }> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/video-task`,
-      { data: { project_id: projectId } },
-    );
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/video-task`, {
+      data: { project_id: projectId },
+    });
     if (!res.ok()) {
       throw new Error(`seed/video-task failed: ${res.status()} ${await res.text()}`);
     }
@@ -219,10 +211,9 @@ export class SeedAPI {
   }
 
   async trackerReview(taskId: string, userEmail: string): Promise<SeedTrackerReviewData> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/tracker-review`,
-      { data: { task_id: taskId, user_email: userEmail } },
-    );
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/tracker-review`, {
+      data: { task_id: taskId, user_email: userEmail },
+    });
     if (!res.ok()) {
       throw new Error(`seed/tracker-review failed: ${res.status()} ${await res.text()}`);
     }
@@ -242,28 +233,23 @@ export class SeedAPI {
       };
     },
   ): Promise<SeedNativeMaskCandidateData> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/native-mask-candidate`,
-      {
-        data: {
-          task_id: taskId,
-          variant: options?.variant ?? "default",
-          prompt_family: options?.promptFamily ?? "point",
-          negative_scribbles: options?.negativeScribbles ?? 0,
-          prompt_source: options?.promptSource
-            ? {
-                annotation_id: options.promptSource.annotationId,
-                source_version: options.promptSource.sourceVersion,
-                source_digest: options.promptSource.sourceDigest,
-              }
-            : null,
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/native-mask-candidate`, {
+      data: {
+        task_id: taskId,
+        variant: options?.variant ?? "default",
+        prompt_family: options?.promptFamily ?? "point",
+        negative_scribbles: options?.negativeScribbles ?? 0,
+        prompt_source: options?.promptSource
+          ? {
+              annotation_id: options.promptSource.annotationId,
+              source_version: options.promptSource.sourceVersion,
+              source_digest: options.promptSource.sourceDigest,
+            }
+          : null,
       },
-    );
+    });
     if (!res.ok()) {
-      throw new Error(
-        `seed/native-mask-candidate failed: ${res.status()} ${await res.text()}`,
-      );
+      throw new Error(`seed/native-mask-candidate failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedNativeMaskCandidateData;
   }
@@ -277,23 +263,18 @@ export class SeedAPI {
     locked?: boolean;
     canvas?: RasterMaskFixtureCanvas;
   }): Promise<SeedRasterMaskData> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/inject-raster-mask`,
-      {
-        data: {
-          task_id: opts.taskId,
-          user_email: opts.userEmail,
-          variant: opts.variant ?? "single",
-          label: opts.label ?? "car",
-          locked: opts.locked ?? false,
-          canvas: opts.canvas ?? "default",
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-raster-mask`, {
+      data: {
+        task_id: opts.taskId,
+        user_email: opts.userEmail,
+        variant: opts.variant ?? "single",
+        label: opts.label ?? "car",
+        locked: opts.locked ?? false,
+        canvas: opts.canvas ?? "default",
       },
-    );
+    });
     if (!res.ok()) {
-      throw new Error(
-        `seed/inject-raster-mask failed: ${res.status()} ${await res.text()}`,
-      );
+      throw new Error(`seed/inject-raster-mask failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedRasterMaskData;
   }
@@ -304,21 +285,16 @@ export class SeedAPI {
     userEmail: string;
     label?: string;
   }): Promise<SeedRasterPredictionData> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/inject-raster-prediction`,
-      {
-        data: {
-          task_id: opts.taskId,
-          user_email: opts.userEmail,
-          variant: "single",
-          label: opts.label ?? "car",
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-raster-prediction`, {
+      data: {
+        task_id: opts.taskId,
+        user_email: opts.userEmail,
+        variant: "single",
+        label: opts.label ?? "car",
       },
-    );
+    });
     if (!res.ok()) {
-      throw new Error(
-        `seed/inject-raster-prediction failed: ${res.status()} ${await res.text()}`,
-      );
+      throw new Error(`seed/inject-raster-prediction failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedRasterPredictionData;
   }
@@ -339,8 +315,7 @@ export class SeedAPI {
     });
     if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
-    const target =
-      baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
+    const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
     await page.goto(target);
     await page.evaluate(
       ({ token, user }) => {
@@ -377,18 +352,15 @@ export class SeedAPI {
     polygon: [number, number][];
     score?: number;
   }): Promise<{ prediction_id: string }> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/inject-prediction`,
-      {
-        data: {
-          task_id: opts.taskId,
-          project_id: opts.projectId,
-          label: opts.label,
-          polygon: opts.polygon,
-          score: opts.score ?? 0.9,
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-prediction`, {
+      data: {
+        task_id: opts.taskId,
+        project_id: opts.projectId,
+        label: opts.label,
+        polygon: opts.polygon,
+        score: opts.score ?? 0.9,
       },
-    );
+    });
     if (!res.ok()) {
       throw new Error(`seed/inject-prediction failed: ${res.status()} ${await res.text()}`);
     }
@@ -405,21 +377,16 @@ export class SeedAPI {
     annotatorEmail?: string;
     reviewerEmail?: string;
   }): Promise<void> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/advance_task`,
-      {
-        data: {
-          task_id: opts.taskId,
-          to_status: opts.toStatus,
-          annotator_email: opts.annotatorEmail,
-          reviewer_email: opts.reviewerEmail,
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/advance_task`, {
+      data: {
+        task_id: opts.taskId,
+        to_status: opts.toStatus,
+        annotator_email: opts.annotatorEmail,
+        reviewer_email: opts.reviewerEmail,
       },
-    );
+    });
     if (!res.ok()) {
-      throw new Error(
-        `seed/advance_task failed: ${res.status()} ${await res.text()}`,
-      );
+      throw new Error(`seed/advance_task failed: ${res.status()} ${await res.text()}`);
     }
   }
 }

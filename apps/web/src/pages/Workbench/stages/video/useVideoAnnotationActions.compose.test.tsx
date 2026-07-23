@@ -156,31 +156,24 @@ describe("handleVideoMaskCommit", () => {
     const saved = await result.current.handleVideoMaskCommit(rle, 5, maskTrack);
 
     expect(apiMocks.uploadTaskContent).toHaveBeenCalledWith("task-1", rle);
-    expect(apiMocks.saveMaskKeyframe).toHaveBeenCalledWith(
-      "task-1",
-      "mask-1",
-      5,
-      reference,
-      3,
-    );
+    expect(apiMocks.saveMaskKeyframe).toHaveBeenCalledWith("task-1", "mask-1", 5, reference, 3);
     expect(saved).toMatchObject({
       annotation: { id: "mask-1", version: 4 },
       mask: reference,
       frameIndex: 5,
     });
     expect(history.push).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"])?.[0])
-      .toMatchObject({ id: "mask-1", version: 4 });
+    expect(
+      queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"])?.[0],
+    ).toMatchObject({ id: "mask-1", version: 4 });
   });
 
   it("版本缺失时在上传前稳定失败", async () => {
     const { result } = setup();
 
-    await expect(result.current.handleVideoMaskCommit(
-      rle,
-      5,
-      { ...maskTrack, version: undefined },
-    )).rejects.toThrow("version is missing");
+    await expect(
+      result.current.handleVideoMaskCommit(rle, 5, { ...maskTrack, version: undefined }),
+    ).rejects.toThrow("version is missing");
     expect(apiMocks.uploadTaskContent).not.toHaveBeenCalled();
     expect(apiMocks.saveMaskKeyframe).not.toHaveBeenCalled();
   });

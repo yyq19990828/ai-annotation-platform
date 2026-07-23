@@ -1,11 +1,12 @@
 import { analyzeRasterMaskAlpha } from "../rasterMaskRender";
-import {
-  labelMaskRegions,
-  type MaskConnectivity,
-  type MaskRegion,
-} from "./maskOperations";
+import { labelMaskRegions, type MaskConnectivity, type MaskRegion } from "./maskOperations";
 
-export type MaskInstanceOperationKind = "copy_component" | "copy_keyframe" | "split_components" | "join_masks" | "overlap";
+export type MaskInstanceOperationKind =
+  | "copy_component"
+  | "copy_keyframe"
+  | "split_components"
+  | "join_masks"
+  | "overlap";
 
 export type MaskInstanceOperationSpec =
   | {
@@ -38,7 +39,8 @@ function assertSource(source: Uint8Array, width: number, height: number): void {
   if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
     throw new Error("mask dimensions must be positive integers");
   }
-  if (source.length !== width * height) throw new Error("mask alpha length must equal width * height");
+  if (source.length !== width * height)
+    throw new Error("mask alpha length must equal width * height");
   for (const value of source) {
     if (value !== 0 && value !== 255) throw new Error("mask alpha must be binary (0 or 255)");
   }
@@ -107,9 +109,9 @@ export function planMaskComponentSplit(
     primaryRegion = labels.hit(options.x!, options.y!);
     if (!primaryRegion) return null;
   } else {
-    primaryRegion = labels.regions.reduce((best, region) => (
-      region.area > best.area || (region.area === best.area && region.id < best.id) ? region : best
-    ));
+    primaryRegion = labels.regions.reduce((best, region) =>
+      region.area > best.area || (region.area === best.area && region.id < best.id) ? region : best,
+    );
   }
   const primary = alphaForRegion(primaryRegion, width, source.length);
   const created = labels.regions

@@ -20,8 +20,7 @@ const STATUS_CLASS: Record<SystemHealthStatus, string> = {
   down: "border-rose-500/30 bg-status-danger-soft text-status-danger",
 };
 
-const PILL_BASE =
-  "inline-flex items-center rounded-sm border px-1.5 py-0.5 text-xs font-semibold";
+const PILL_BASE = "inline-flex items-center rounded-sm border px-1.5 py-0.5 text-xs font-semibold";
 
 const TABLE_CLASS =
   "w-full border-collapse text-xs [&_td]:border-b [&_td]:border-border [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-left [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-2.5 [&_th]:py-2 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_tr:last-child_td]:border-b-0";
@@ -68,7 +67,9 @@ export function SystemHealthPage() {
         )}
       </div>
 
-      {healthQ.isLoading && <div className="p-5 text-center text-xs text-muted-foreground">加载中…</div>}
+      {healthQ.isLoading && (
+        <div className="p-5 text-center text-xs text-muted-foreground">加载中…</div>
+      )}
       {healthQ.isError && (
         <div className="p-5 text-center text-xs text-muted-foreground">系统健康数据加载失败</div>
       )}
@@ -103,7 +104,9 @@ export function SystemHealthPage() {
             <section className="overflow-hidden rounded-md border border-border bg-card">
               <div className="flex items-center justify-between gap-2.5 border-b border-border px-3.5 py-3">
                 <h2 className="text-sm font-semibold">Celery 队列</h2>
-                <span className="text-xs text-muted-foreground">{data.celery.queues.length} 个队列</span>
+                <span className="text-xs text-muted-foreground">
+                  {data.celery.queues.length} 个队列
+                </span>
               </div>
               {data.celery.queues.length === 0 ? (
                 <div className="p-5 text-center text-xs text-muted-foreground">暂无积压任务</div>
@@ -136,10 +139,14 @@ export function SystemHealthPage() {
             <section className="overflow-hidden rounded-md border border-border bg-card">
               <div className="flex items-center justify-between gap-2.5 border-b border-border px-3.5 py-3">
                 <h2 className="text-sm font-semibold">Celery Workers</h2>
-                <span className="text-xs text-muted-foreground">active {data.celery.active_count}</span>
+                <span className="text-xs text-muted-foreground">
+                  active {data.celery.active_count}
+                </span>
               </div>
               {data.celery.workers.length === 0 ? (
-                <div className="p-5 text-center text-xs text-muted-foreground">没有 worker 响应</div>
+                <div className="p-5 text-center text-xs text-muted-foreground">
+                  没有 worker 响应
+                </div>
               ) : (
                 <table className={TABLE_CLASS}>
                   <thead>

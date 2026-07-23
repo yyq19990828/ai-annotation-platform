@@ -22,7 +22,12 @@ import type {
 } from "@/api/comments";
 // v0.10.20 · D1 · 任务级评论复用 POST /feedbacks (kind=comment, anchor_type=task).
 // v0.10.21 · D4 · 任务级 feedback patch/delete UI 入口开放.
-import { useFeedbacks, useCreateFeedback, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
+import {
+  useFeedbacks,
+  useCreateFeedback,
+  usePatchFeedback,
+  useDeleteFeedback,
+} from "@/hooks/useFeedbacks";
 
 type Tab = "comments" | "history";
 
@@ -80,7 +85,23 @@ function anchorLabel(anchor: AnnotationCommentAnchor): string {
   return parts.join(" · ");
 }
 
-export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame, annotationClassById, onSelectAnnotation, hideTabs, forceTab }: Props) {
+export function CommentsPanel({
+  annotationId,
+  taskId,
+  projectId,
+  currentUserId,
+  backgroundUrl,
+  imageWidth,
+  imageHeight,
+  enableCanvasDrawing,
+  liveCanvas,
+  commentAnchor,
+  onSeekFrame,
+  annotationClassById,
+  onSelectAnnotation,
+  hideTabs,
+  forceTab,
+}: Props) {
   const navigate = useNavigate();
   const [localTab, setTab] = useState<Tab>("comments");
   const tab = forceTab ?? localTab;
@@ -106,36 +127,31 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   const patchTaskFeedbackMut = usePatchFeedback(taskLevelFeedbacksParams);
   const deleteTaskFeedbackMut = useDeleteFeedback(taskLevelFeedbacksParams);
   const commentsQuery = annotationId ? annotationCommentsQuery : taskCommentsQuery;
-  const comments = useMemo(
-    () => {
-      const annComments = (commentsQuery.data?.pages ?? []).flatMap((p) => p.items);
-      if (annotationId) return annComments;
-      // 任务级模式: merge annotation_comments + 任务级 feedback (kind=comment), 按 created_at desc.
-      const fb = (taskLevelFeedbacksQuery.data?.items ?? []).map((f) => ({
-        id: f.id,
-        annotation_id: null as string | null,
-        author_id: f.author_id,
-        author_name: f.author_name,
-        body: f.body,
-        is_resolved: f.status === "resolved",
-        is_active: f.is_active,
-        mentions: [] as CommentMention[],
-        attachments: (f.attachments ?? []) as CommentAttachment[],
-        canvas_drawing: null as CommentCanvasDrawing | null,
-        anchor: null as AnnotationCommentAnchor | null,
-        created_at: f.created_at,
-        updated_at: f.updated_at,
-        // v0.10.20 · 标记任务级 feedback 行, UI 上不允许 patch/delete (走不同端点).
-        __source: "feedback" as const,
-      }));
-      const merged = [...annComments.map((c) => ({ ...c, __source: "comment" as const })), ...fb];
-      merged.sort((a, b) =>
-        (b.created_at ?? "").localeCompare(a.created_at ?? ""),
-      );
-      return merged;
-    },
-    [commentsQuery.data, taskLevelFeedbacksQuery.data, annotationId],
-  );
+  const comments = useMemo(() => {
+    const annComments = (commentsQuery.data?.pages ?? []).flatMap((p) => p.items);
+    if (annotationId) return annComments;
+    // 任务级模式: merge annotation_comments + 任务级 feedback (kind=comment), 按 created_at desc.
+    const fb = (taskLevelFeedbacksQuery.data?.items ?? []).map((f) => ({
+      id: f.id,
+      annotation_id: null as string | null,
+      author_id: f.author_id,
+      author_name: f.author_name,
+      body: f.body,
+      is_resolved: f.status === "resolved",
+      is_active: f.is_active,
+      mentions: [] as CommentMention[],
+      attachments: (f.attachments ?? []) as CommentAttachment[],
+      canvas_drawing: null as CommentCanvasDrawing | null,
+      anchor: null as AnnotationCommentAnchor | null,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      // v0.10.20 · 标记任务级 feedback 行, UI 上不允许 patch/delete (走不同端点).
+      __source: "feedback" as const,
+    }));
+    const merged = [...annComments.map((c) => ({ ...c, __source: "comment" as const })), ...fb];
+    merged.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+    return merged;
+  }, [commentsQuery.data, taskLevelFeedbacksQuery.data, annotationId]);
   const { data: members } = useProjectMembers(projectId ?? "");
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
@@ -169,7 +185,9 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
     tab === "history" && !annotationId,
   );
   const history = annotationId ? annotationHistoryQuery.data : taskHistoryQuery.data;
-  const historyLoading = annotationId ? annotationHistoryQuery.isLoading : taskHistoryQuery.isLoading;
+  const historyLoading = annotationId
+    ? annotationHistoryQuery.isLoading
+    : taskHistoryQuery.isLoading;
 
   // I4 · annotationId 与 taskId 都无 → 真正没东西显示, return null.
   if (!annotationId && !taskId) return null;
@@ -221,231 +239,246 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   return (
     <div className="flex flex-col gap-2 border-t border-border px-3 py-2.5">
       {!hideTabs && (
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => setTab("comments")}
-          className={cn(TAB_BUTTON, tab === "comments" && TAB_BUTTON_ACTIVE)}
-        >
-          评论 {comments && comments.length > 0 && `(${comments.length})`}
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("history")}
-          className={cn(TAB_BUTTON, tab === "history" && TAB_BUTTON_ACTIVE)}
-        >
-          历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
-        </button>
-      </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setTab("comments")}
+            className={cn(TAB_BUTTON, tab === "comments" && TAB_BUTTON_ACTIVE)}
+          >
+            评论 {comments && comments.length > 0 && `(${comments.length})`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("history")}
+            className={cn(TAB_BUTTON, tab === "history" && TAB_BUTTON_ACTIVE)}
+          >
+            历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
+          </button>
+        </div>
       )}
 
       {tab === "history" ? (
-        <AnnotationHistoryTimeline
-          entries={history?.entries ?? []}
-          loading={historyLoading}
-        />
+        <AnnotationHistoryTimeline entries={history?.entries ?? []} loading={historyLoading} />
       ) : (
-      <>
-      {annotationId ? (
-        <CommentInput
-          annotationId={annotationId}
-          members={memberOptions}
-          busy={createMut.isPending}
-          backgroundUrl={backgroundUrl}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
-          enableCanvasDrawing={enableCanvasDrawing}
-          liveCanvas={liveCanvas}
-          anchor={commentAnchor}
-          onPendingDrawingChange={reportPendingDrawing}
-          onSubmit={handleSubmit}
-        />
-      ) : taskId && projectId ? (
-        // 未选中标注时禁用评论框：先要求选中一个标注再评论。
-        // 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) 的后端路径保留，
-        // 待后续有更好的交互方案再开启（handleSubmit 的 task 分支仍在）。
-        <div
-          className="cursor-not-allowed rounded border border-dashed border-border bg-card px-3 py-2.5 text-xs text-muted-foreground/70"
-          data-testid="comment-input-disabled"
-        >
-          请先选中一个标注后再评论
-        </div>
-      ) : null}
-
-      <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
-        {comments.length === 0 && (
-          <div className="text-xs text-muted-foreground/70">{annotationId ? "暂无评论" : "该任务暂无任何评论"}</div>
-        )}
-        {comments.map((c) => {
-          const isMine = !!currentUserId && currentUserId === c.author_id;
-          const hoverShapes = c.canvas_drawing?.shapes && c.canvas_drawing.shapes.length > 0
-            ? c.canvas_drawing.shapes : null;
-          return (
+        <>
+          {annotationId ? (
+            <CommentInput
+              annotationId={annotationId}
+              members={memberOptions}
+              busy={createMut.isPending}
+              backgroundUrl={backgroundUrl}
+              imageWidth={imageWidth}
+              imageHeight={imageHeight}
+              enableCanvasDrawing={enableCanvasDrawing}
+              liveCanvas={liveCanvas}
+              anchor={commentAnchor}
+              onPendingDrawingChange={reportPendingDrawing}
+              onSubmit={handleSubmit}
+            />
+          ) : taskId && projectId ? (
+            // 未选中标注时禁用评论框：先要求选中一个标注再评论。
+            // 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) 的后端路径保留，
+            // 待后续有更好的交互方案再开启（handleSubmit 的 task 分支仍在）。
             <div
-              key={c.id}
-              onMouseEnter={() => { if (hoverShapes) setHoveredShapes(hoverShapes); }}
-              onMouseLeave={() => { if (hoverShapes) setHoveredShapes(null); }}
-              onClick={(e) => {
-                // 卡片内的按钮 / 链接（解决、删除、跳标注、跳帧、附件）各有自己的动作，
-                // 点它们不应顺带 toggle pin；其余区域点击 = pin 这条评论的批注到画布。
-                if (!hoverShapes) return;
-                if ((e.target as HTMLElement).closest("button, a")) return;
-                togglePinnedComment(c.id, hoverShapes);
-              }}
-              className={cn(
-                "rounded border border-border bg-card p-2",
-                c.is_resolved && "bg-muted opacity-70",
-                hoverShapes && "cursor-crosshair",
-                pinnedCommentId === c.id && "border-brand shadow-[inset_2px_0_0_0_var(--sc-brand)]",
-              )}
+              className="cursor-not-allowed rounded border border-dashed border-border bg-card px-3 py-2.5 text-xs text-muted-foreground/70"
+              data-testid="comment-input-disabled"
             >
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs font-medium text-foreground">
-                  {c.author_name ?? "—"}
-                  {c.is_resolved && (
-                    <span className="ml-1.5 text-2xs text-status-positive">已解决</span>
-                  )}
-                </span>
-                <div className="flex gap-1">
-                  {/* v0.10.21 · D4 · 任务级 feedback 行走 PATCH/DELETE /feedbacks; annotation_comments 行走原路径. */}
-                  {"__source" in c && c.__source === "feedback" ? (
-                    <>
-                      <button
-                        type="button"
-                        title={c.is_resolved ? "重开" : "标为已解决"}
-                        onClick={() =>
-                          patchTaskFeedbackMut.mutate({
-                            id: c.id,
-                            payload: { status: c.is_resolved ? "open" : "resolved" },
-                          })
-                        }
-                        className={ICON_BUTTON}
-                      >
-                        <Icon name="check" size={11} />
-                      </button>
-                      {isMine && (
-                        <button
-                          type="button"
-                          title="删除"
-                          onClick={() => {
-                            clearShapesPreviewFor(c.id);
-                            deleteTaskFeedbackMut.mutate(c.id);
-                          }}
-                          className={ICON_BUTTON}
-                        >
-                          <Icon name="trash" size={11} />
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        title={c.is_resolved ? "标为未解决" : "标为已解决"}
-                        onClick={() => patchMut.mutate({ id: c.id, payload: { is_resolved: !c.is_resolved } })}
-                        className={ICON_BUTTON}
-                      >
-                        <Icon name="check" size={11} />
-                      </button>
-                      {isMine && (
-                        <button
-                          type="button"
-                          title="删除"
-                          onClick={() => {
-                            clearShapesPreviewFor(c.id);
-                            deleteMut.mutate(c.id);
-                          }}
-                          className={ICON_BUTTON}
-                        >
-                          <Icon name="trash" size={11} />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-              {c.annotation_id && onSelectAnnotation && (
-                <button
-                  type="button"
-                  data-testid="comment-annotation-chip"
-                  onClick={() => onSelectAnnotation(c.annotation_id!)}
-                  className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground"
-                  title="跳转到该评论绑定的标注框"
-                >
-                  <Icon name="crosshair" size={11} />
-                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-                    {annotationClassById?.[c.annotation_id] ?? "标注框"}
-                  </span>
-                </button>
-              )}
-              <div className="whitespace-pre-wrap text-xs text-foreground">
-                {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
-              </div>
-              {c.anchor?.kind === "video_frame" && (
-                <button
-                  type="button"
-                  data-testid="comment-anchor-chip"
-                  onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
-                  className={cn(
-                    "mt-1.5 inline-flex appearance-none items-center gap-1.5 rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground [font:inherit]",
-                    onSeekFrame ? "cursor-pointer" : "cursor-default",
-                  )}
-                  title="跳转到评论锚定的视频帧"
-                >
-                  <Icon name="film" size={12} />
-                  <span className="mono">{anchorLabel(c.anchor)}</span>
-                </button>
-              )}
-              {c.canvas_drawing && c.canvas_drawing.shapes && c.canvas_drawing.shapes.length > 0 && (
-                <div className="mt-1.5">
-                  <CanvasDrawingPreview
-                    drawing={c.canvas_drawing}
-                    width={220}
-                    backgroundUrl={backgroundUrl}
-                    imageWidth={imageWidth}
-                    imageHeight={imageHeight}
-                  />
-                </div>
-              )}
-              {(c.attachments ?? []).length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {(c.attachments ?? []).map((a) => (
-                    <a
-                      key={a.storageKey}
-                      href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground no-underline"
-                      title={`${(a.size / 1024).toFixed(1)} KB`}
-                    >
-                      <Icon name="folder" size={11} />
-                      <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
-                        {a.fileName}
-                      </span>
-                    </a>
-                  ))}
-                </div>
-              )}
-              <div className="mt-1 text-2xs text-muted-foreground/70">
-                {new Date(c.created_at).toLocaleString()}
-              </div>
+              请先选中一个标注后再评论
             </div>
-          );
-        })}
-        {/* v0.8.8 · keyset 分页 「加载更早评论」按钮 */}
-        {commentsQuery.hasNextPage && (
-          <button
-            type="button"
-            onClick={() => commentsQuery.fetchNextPage()}
-            disabled={commentsQuery.isFetchingNextPage}
-            data-testid="comments-load-more"
-            className="mt-1 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-xs text-muted-foreground"
-          >
-            {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
-          </button>
-        )}
-      </div>
-      </>
+          ) : null}
+
+          <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
+            {comments.length === 0 && (
+              <div className="text-xs text-muted-foreground/70">
+                {annotationId ? "暂无评论" : "该任务暂无任何评论"}
+              </div>
+            )}
+            {comments.map((c) => {
+              const isMine = !!currentUserId && currentUserId === c.author_id;
+              const hoverShapes =
+                c.canvas_drawing?.shapes && c.canvas_drawing.shapes.length > 0
+                  ? c.canvas_drawing.shapes
+                  : null;
+              return (
+                <div
+                  key={c.id}
+                  onMouseEnter={() => {
+                    if (hoverShapes) setHoveredShapes(hoverShapes);
+                  }}
+                  onMouseLeave={() => {
+                    if (hoverShapes) setHoveredShapes(null);
+                  }}
+                  onClick={(e) => {
+                    // 卡片内的按钮 / 链接（解决、删除、跳标注、跳帧、附件）各有自己的动作，
+                    // 点它们不应顺带 toggle pin；其余区域点击 = pin 这条评论的批注到画布。
+                    if (!hoverShapes) return;
+                    if ((e.target as HTMLElement).closest("button, a")) return;
+                    togglePinnedComment(c.id, hoverShapes);
+                  }}
+                  className={cn(
+                    "rounded border border-border bg-card p-2",
+                    c.is_resolved && "bg-muted opacity-70",
+                    hoverShapes && "cursor-crosshair",
+                    pinnedCommentId === c.id &&
+                      "border-brand shadow-[inset_2px_0_0_0_var(--sc-brand)]",
+                  )}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-medium text-foreground">
+                      {c.author_name ?? "—"}
+                      {c.is_resolved && (
+                        <span className="ml-1.5 text-2xs text-status-positive">已解决</span>
+                      )}
+                    </span>
+                    <div className="flex gap-1">
+                      {/* v0.10.21 · D4 · 任务级 feedback 行走 PATCH/DELETE /feedbacks; annotation_comments 行走原路径. */}
+                      {"__source" in c && c.__source === "feedback" ? (
+                        <>
+                          <button
+                            type="button"
+                            title={c.is_resolved ? "重开" : "标为已解决"}
+                            onClick={() =>
+                              patchTaskFeedbackMut.mutate({
+                                id: c.id,
+                                payload: { status: c.is_resolved ? "open" : "resolved" },
+                              })
+                            }
+                            className={ICON_BUTTON}
+                          >
+                            <Icon name="check" size={11} />
+                          </button>
+                          {isMine && (
+                            <button
+                              type="button"
+                              title="删除"
+                              onClick={() => {
+                                clearShapesPreviewFor(c.id);
+                                deleteTaskFeedbackMut.mutate(c.id);
+                              }}
+                              className={ICON_BUTTON}
+                            >
+                              <Icon name="trash" size={11} />
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            title={c.is_resolved ? "标为未解决" : "标为已解决"}
+                            onClick={() =>
+                              patchMut.mutate({
+                                id: c.id,
+                                payload: { is_resolved: !c.is_resolved },
+                              })
+                            }
+                            className={ICON_BUTTON}
+                          >
+                            <Icon name="check" size={11} />
+                          </button>
+                          {isMine && (
+                            <button
+                              type="button"
+                              title="删除"
+                              onClick={() => {
+                                clearShapesPreviewFor(c.id);
+                                deleteMut.mutate(c.id);
+                              }}
+                              className={ICON_BUTTON}
+                            >
+                              <Icon name="trash" size={11} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {c.annotation_id && onSelectAnnotation && (
+                    <button
+                      type="button"
+                      data-testid="comment-annotation-chip"
+                      onClick={() => onSelectAnnotation(c.annotation_id!)}
+                      className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground"
+                      title="跳转到该评论绑定的标注框"
+                    >
+                      <Icon name="crosshair" size={11} />
+                      <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                        {annotationClassById?.[c.annotation_id] ?? "标注框"}
+                      </span>
+                    </button>
+                  )}
+                  <div className="whitespace-pre-wrap text-xs text-foreground">
+                    {renderCommentBody(c.body, c.mentions ?? [], (uid) =>
+                      navigate(`/audit?actor=${uid}`),
+                    )}
+                  </div>
+                  {c.anchor?.kind === "video_frame" && (
+                    <button
+                      type="button"
+                      data-testid="comment-anchor-chip"
+                      onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
+                      className={cn(
+                        "mt-1.5 inline-flex appearance-none items-center gap-1.5 rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground [font:inherit]",
+                        onSeekFrame ? "cursor-pointer" : "cursor-default",
+                      )}
+                      title="跳转到评论锚定的视频帧"
+                    >
+                      <Icon name="film" size={12} />
+                      <span className="mono">{anchorLabel(c.anchor)}</span>
+                    </button>
+                  )}
+                  {c.canvas_drawing &&
+                    c.canvas_drawing.shapes &&
+                    c.canvas_drawing.shapes.length > 0 && (
+                      <div className="mt-1.5">
+                        <CanvasDrawingPreview
+                          drawing={c.canvas_drawing}
+                          width={220}
+                          backgroundUrl={backgroundUrl}
+                          imageWidth={imageWidth}
+                          imageHeight={imageHeight}
+                        />
+                      </div>
+                    )}
+                  {(c.attachments ?? []).length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {(c.attachments ?? []).map((a) => (
+                        <a
+                          key={a.storageKey}
+                          href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground no-underline"
+                          title={`${(a.size / 1024).toFixed(1)} KB`}
+                        >
+                          <Icon name="folder" size={11} />
+                          <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
+                            {a.fileName}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-1 text-2xs text-muted-foreground/70">
+                    {new Date(c.created_at).toLocaleString()}
+                  </div>
+                </div>
+              );
+            })}
+            {/* v0.8.8 · keyset 分页 「加载更早评论」按钮 */}
+            {commentsQuery.hasNextPage && (
+              <button
+                type="button"
+                onClick={() => commentsQuery.fetchNextPage()}
+                disabled={commentsQuery.isFetchingNextPage}
+                data-testid="comments-load-more"
+                className="mt-1 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-xs text-muted-foreground"
+              >
+                {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

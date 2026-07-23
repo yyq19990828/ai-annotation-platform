@@ -39,12 +39,7 @@ const preview: VideoTrackerJobPreview = {
 describe("VideoTrackerReviewBar", () => {
   it("open=false 不渲染", () => {
     render(
-      <VideoTrackerReviewBar
-        open={false}
-        preview={null}
-        onDecide={vi.fn()}
-        onRefresh={vi.fn()}
-      />,
+      <VideoTrackerReviewBar open={false} preview={null} onDecide={vi.fn()} onRefresh={vi.fn()} />,
     );
     expect(screen.queryByTestId("video-tracker-review-bar")).toBeNull();
   });
@@ -52,12 +47,7 @@ describe("VideoTrackerReviewBar", () => {
   it("按目标和帧窗提交局部 selector", async () => {
     const onDecide = vi.fn().mockResolvedValue({ ok: true });
     render(
-      <VideoTrackerReviewBar
-        open
-        preview={preview}
-        onDecide={onDecide}
-        onRefresh={vi.fn()}
-      />,
+      <VideoTrackerReviewBar open preview={preview} onDecide={onDecide} onRefresh={vi.fn()} />,
     );
     expect(screen.getByText(/已审 2\/5/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("tracker-review-instance-B"));
@@ -68,24 +58,21 @@ describe("VideoTrackerReviewBar", () => {
       target: { value: "10" },
     });
     fireEvent.click(screen.getByTestId("tracker-review-accept"));
-    await waitFor(() => expect(onDecide).toHaveBeenCalledWith({
-      instance_ids: ["A"],
-      from_frame: 10,
-      to_frame: 10,
-      decision: "accept",
-      override_manual: false,
-    }));
+    await waitFor(() =>
+      expect(onDecide).toHaveBeenCalledWith({
+        instance_ids: ["A"],
+        from_frame: 10,
+        to_frame: 10,
+        decision: "accept",
+        override_manual: false,
+      }),
+    );
   });
 
   it("选区含 manual 时不从审阅条提供覆盖入口", () => {
     const onDecide = vi.fn();
     render(
-      <VideoTrackerReviewBar
-        open
-        preview={preview}
-        onDecide={onDecide}
-        onRefresh={vi.fn()}
-      />,
+      <VideoTrackerReviewBar open preview={preview} onDecide={onDecide} onRefresh={vi.fn()} />,
     );
     expect(screen.getByTestId("tracker-review-manual-warning")).toHaveTextContent("1 个");
     expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();

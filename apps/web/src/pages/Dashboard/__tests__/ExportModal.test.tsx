@@ -30,9 +30,7 @@ function preflight(
   lossClass: "lossless" | "lossy" | "unsupported" = "lossless",
   lossCode?: string,
 ) {
-  const losses = lossCode
-    ? [{ code: lossCode, message: "格式损失说明", detail: {} }]
-    : [];
+  const losses = lossCode ? [{ code: lossCode, message: "格式损失说明", detail: {} }] : [];
   return {
     plans: [
       {
@@ -157,16 +155,14 @@ describe("ExportModal", () => {
     submitExport();
 
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
-    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith(
-      "p-indexed",
-      ["indexed-png"],
-      { includeAttributes: true, indexedOverlapPolicy: "z_order" },
-    );
-    expect(projectsApi.exportProject).toHaveBeenCalledWith(
-      "p-indexed",
-      ["indexed-png"],
-      { includeAttributes: true, indexedOverlapPolicy: "z_order" },
-    );
+    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith("p-indexed", ["indexed-png"], {
+      includeAttributes: true,
+      indexedOverlapPolicy: "z_order",
+    });
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p-indexed", ["indexed-png"], {
+      includeAttributes: true,
+      indexedOverlapPolicy: "z_order",
+    });
   });
 
   it("视频项目展示视频目标并传递 Video JSON frame mode", async () => {
@@ -328,9 +324,7 @@ describe("ExportModal", () => {
   });
 
   it("unsupported 预检阻止导出", async () => {
-    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(
-      preflight("unsupported"),
-    );
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight("unsupported"));
     render(<ExportModalHarness projectId="p-unsupported" />);
 
     submitExport();

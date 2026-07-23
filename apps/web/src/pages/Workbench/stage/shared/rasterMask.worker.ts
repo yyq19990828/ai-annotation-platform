@@ -1,10 +1,7 @@
 import { applyMaskInstanceOperation } from "./geometry/maskInstanceOperations";
 import { applyMaskOperation } from "./geometry/maskOperations";
 import { analyzeRasterMaskAlpha } from "./rasterMaskRender";
-import type {
-  RasterMaskWorkerRequest,
-  RasterMaskWorkerResponse,
-} from "./rasterMaskWorkerProtocol";
+import type { RasterMaskWorkerRequest, RasterMaskWorkerResponse } from "./rasterMaskWorkerProtocol";
 import {
   buildRasterMaskWorkerSession,
   compareRasterMaskSessionTile,
@@ -52,15 +49,18 @@ workerScope.onmessage = (event) => {
         sessionFor(request.sessionId, request.sha256),
         request.rect,
       );
-      workerScope.postMessage({
-        kind: "tile_decode",
-        id: request.id,
-        ok: true,
-        sessionId: request.sessionId,
-        sha256: request.sha256,
-        rect: request.rect,
-        alpha,
-      }, [alpha.buffer]);
+      workerScope.postMessage(
+        {
+          kind: "tile_decode",
+          id: request.id,
+          ok: true,
+          sessionId: request.sessionId,
+          sha256: request.sha256,
+          rect: request.rect,
+          alpha,
+        },
+        [alpha.buffer],
+      );
       return;
     }
     if (request.kind === "tile_merge") {
@@ -68,14 +68,17 @@ workerScope.onmessage = (event) => {
         sessionFor(request.sessionId, request.sha256),
         request.tiles,
       );
-      workerScope.postMessage({
-        kind: "tile_merge",
-        id: request.id,
-        ok: true,
-        sessionId: request.sessionId,
-        sha256: request.sha256,
-        rle,
-      }, [rle.counts.buffer]);
+      workerScope.postMessage(
+        {
+          kind: "tile_merge",
+          id: request.id,
+          ok: true,
+          sessionId: request.sessionId,
+          sha256: request.sha256,
+          rle,
+        },
+        [rle.counts.buffer],
+      );
       return;
     }
     if (request.kind === "compare_tile") {
@@ -86,17 +89,20 @@ workerScope.onmessage = (event) => {
         request.mode,
         request.sampleStep,
       );
-      workerScope.postMessage({
-        kind: "compare_tile",
-        id: request.id,
-        ok: true,
-        current: request.current,
-        baseline: request.baseline,
-        rect: request.rect,
-        mode: request.mode,
-        sampleStep: request.sampleStep,
-        codes,
-      }, [codes.buffer]);
+      workerScope.postMessage(
+        {
+          kind: "compare_tile",
+          id: request.id,
+          ok: true,
+          current: request.current,
+          baseline: request.baseline,
+          rect: request.rect,
+          mode: request.mode,
+          sampleStep: request.sampleStep,
+          codes,
+        },
+        [codes.buffer],
+      );
       return;
     }
     if (request.kind === "compare_metrics") {
@@ -119,10 +125,9 @@ workerScope.onmessage = (event) => {
     const alpha = decodeRasterMaskTransferredRle(request.rle);
     if (request.kind === "analyze") {
       const analysis = analyzeRasterMaskAlpha(alpha, width, height);
-      workerScope.postMessage(
-        { kind: "analyze", id: request.id, ok: true, analysis },
-        [analysis.crop.alpha.buffer],
-      );
+      workerScope.postMessage({ kind: "analyze", id: request.id, ok: true, analysis }, [
+        analysis.crop.alpha.buffer,
+      ]);
       return;
     }
     if (request.kind === "instance_operation") {

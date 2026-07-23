@@ -60,8 +60,6 @@ export const videoTrackerJobsApi = {
     if (params.cursor) qs.set("cursor", params.cursor);
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return apiClient.get<VideoTrackerJobsResponse>(
-      `/video-tracker-jobs${suffix}`,
-    );
+    return apiClient.get<VideoTrackerJobsResponse>(`/video-tracker-jobs${suffix}`);
   },
 };

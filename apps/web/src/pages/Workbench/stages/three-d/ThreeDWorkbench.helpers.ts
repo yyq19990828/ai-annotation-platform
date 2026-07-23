@@ -52,12 +52,10 @@ export function resolveTriViewFloatRect(
   };
 }
 
-export function resolveBox3dDefaultSize(value?: [number, number, number] | null): [number, number, number] {
-  if (
-    value &&
-    value.length === 3 &&
-    value.every((n) => Number.isFinite(n) && n > 0)
-  ) {
+export function resolveBox3dDefaultSize(
+  value?: [number, number, number] | null,
+): [number, number, number] {
+  if (value && value.length === 3 && value.every((n) => Number.isFinite(n) && n > 0)) {
     return [value[0], value[1], value[2]];
   }
   return DEFAULT_BOX_SIZE;
@@ -160,9 +158,10 @@ export function isPsrFieldBad(field: PsrField, value: string): boolean {
 }
 
 // 解析整张表单为数值 + 是否全部有效(所有字段有限,且 l/w/h > 0)。防抖 PATCH 前校验。
-export function parsePsrForm(
-  form: Record<PsrField, string>,
-): { values: Record<PsrField, number>; valid: boolean } {
+export function parsePsrForm(form: Record<PsrField, string>): {
+  values: Record<PsrField, number>;
+  valid: boolean;
+} {
   const values = {} as Record<PsrField, number>;
   for (const k of PSR_FIELDS) values[k] = Number(form[k]);
   const valid =

@@ -227,7 +227,11 @@ def mask_ai_candidate_count_bucket(count: int) -> str:
 def mask_ai_operation(context: dict | None) -> str:
     """Classify a single-frame request without retaining prompt contents."""
     payload = context or {}
-    return "refine" if payload.get("mask_prompt") or payload.get("mask_input") else "single_frame"
+    return (
+        "refine"
+        if payload.get("mask_prompt") or payload.get("mask_input")
+        else "single_frame"
+    )
 
 
 def mask_ai_prompt_family(context: dict | None) -> str:
@@ -262,7 +266,9 @@ def record_mask_ai_operation(
         "fallback_reason": (
             fallback_reason
             if fallback_reason in MASK_AI_FALLBACK_REASONS
-            else "none" if fallback_reason is None else "unknown"
+            else "none"
+            if fallback_reason is None
+            else "unknown"
         ),
         "outcome": outcome if outcome in MASK_AI_OUTCOMES else "error",
     }

@@ -492,7 +492,9 @@
   border-radius: 8px;
   cursor: pointer;
   background: var(--sc-card);
-  transition: border-color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 }
 
 .unitChip:hover {

@@ -11,7 +11,6 @@ Revises: 0038
 Create Date: 2026-05-06
 """
 
-import sqlalchemy as sa
 from alembic import op
 
 
@@ -23,9 +22,7 @@ depends_on = None
 
 def upgrade() -> None:
     # idempotent：迁移应用过半失败的 DB 直接 retry 也安全
-    op.execute(
-        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ"
-    )
+    op.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ")
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_tasks_assignee_assigned_at "
         "ON tasks (assignee_id, assigned_at DESC) "

@@ -60,13 +60,16 @@ function ManageBackendsPanel({
   return (
     <Modal open={open} onClose={onClose} title="管理项目 ML backend" width={720}>
       <div className="mb-3 text-xs text-muted-foreground">
-        勾选启用本项目要用的全局 backend，并可按项目调整阈值覆盖；全局 backend 由超管在「模型市场」注册。
+        勾选启用本项目要用的全局 backend，并可按项目调整阈值覆盖；全局 backend
+        由超管在「模型市场」注册。
       </div>
       {items.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           <Icon name="bot" size={28} className="mb-1.5 opacity-25" />
           <div>暂无可用的全局 ML backend</div>
-          <div className="mt-1 text-xs">请由超管在「模型市场」注册全局 backend 后，在此勾选启用</div>
+          <div className="mt-1 text-xs">
+            请由超管在「模型市场」注册全局 backend 后，在此勾选启用
+          </div>
         </div>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -97,10 +100,7 @@ function ManageBackendsPanel({
                       {b.state}
                     </Badge>
                   </div>
-                  <div
-                    className="mono mt-0.5 truncate text-xs text-muted-foreground"
-                    title={b.url}
-                  >
+                  <div className="mono mt-0.5 truncate text-xs text-muted-foreground" title={b.url}>
                     {b.url}
                   </div>
                 </div>
@@ -130,9 +130,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   // 行内「设为主后端」快捷设置项目主后端，免回基本信息 tab 手选。
   const updateProject = useUpdateProject(project.id);
   // v0.19.0 · ai_enabled 不再手动开关, 自动派生「设了项目主后端即视为启用 AI」。
-  const [mlBackendId, setMlBackendId] = useState<string | null>(
-    project.ml_backend_id ?? null,
-  );
+  const [mlBackendId, setMlBackendId] = useState<string | null>(project.ml_backend_id ?? null);
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
 
   // 改动即时生效:下拉 / 行内「设为主后端」/ IoU 滑块都各自直接落库,不再有「保存」批量提交。
@@ -150,9 +148,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
       {
         onSuccess: () =>
           pushToast({
-            msg: id
-              ? `已设为项目主后端「${name ?? ""}」`
-              : "已清除项目主后端（AI 预标注停用）",
+            msg: id ? `已设为项目主后端「${name ?? ""}」` : "已清除项目主后端（AI 预标注停用）",
             kind: "success",
           }),
         onError: (e) => {
@@ -186,8 +182,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     updateProject.mutate(
       { iou_dedup_threshold: value },
       {
-        onSuccess: () =>
-          pushToast({ msg: `去重阈值已保存 ${value.toFixed(2)}`, kind: "success" }),
+        onSuccess: () => pushToast({ msg: `去重阈值已保存 ${value.toFixed(2)}`, kind: "success" }),
         onError: (e) => {
           setIouThreshold(project.iou_dedup_threshold ?? 0.7);
           pushToast({ msg: "保存失败", sub: (e as Error).message });
@@ -250,7 +245,8 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
             </span>
           </h3>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            本表仅显示本项目已启用的 ML backend；点「管理 backend」可启用/停用全局 backend。推理参数在工作台 / 预标运行时按 backend 自报的 /setup 调。
+            本表仅显示本项目已启用的 ML backend；点「管理 backend」可启用/停用全局
+            backend。推理参数在工作台 / 预标运行时按 backend 自报的 /setup 调。
           </div>
         </div>
         {canManage && (
@@ -296,7 +292,9 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               ))}
             </select>
             <div className="mt-1 text-xs leading-normal text-muted-foreground">
-              设了项目主后端即视为启用 AI 预标注（留空 = 不启用）。主后端用于工作台 AI 与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model 仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
+              设了项目主后端即视为启用 AI 预标注（留空 = 不启用）。主后端用于工作台 AI
+              与新建预标配置的初始选择 / fallback；多阶段预标注中，每个阶段显式选择的 backend/model
+              仍然独立生效。平台所有“模型名”展示均直接来自 backend.name。
               {enabledBackends.length === 0 && (
                 <span className="ml-1 text-status-caution">
                   暂无已启用 backend；请点右上「管理 backend」勾选启用。
@@ -307,7 +305,10 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
 
           <div>
             <label className={LABEL_CLASS}>
-              AI 框去重阈值 <span className="font-normal text-muted-foreground">同类 AI 框与人工框 IoU 高于此值时淡化</span>
+              AI 框去重阈值{" "}
+              <span className="font-normal text-muted-foreground">
+                同类 AI 框与人工框 IoU 高于此值时淡化
+              </span>
             </label>
             <div className="flex min-h-9 items-center gap-3">
               <input
@@ -358,11 +359,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
       </div>
 
       <div className="p-3">
-        {isLoading && (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            加载中…
-          </div>
-        )}
+        {isLoading && <div className="p-6 text-center text-sm text-muted-foreground">加载中…</div>}
         {isError && (
           <div className="p-6 text-center text-sm text-status-danger">
             <Icon name="warning" size={14} className="mr-1.5" />
@@ -386,10 +383,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               <thead>
                 <tr>
                   {["名称", "URL", "类型", "能力", "状态", "操作"].map((h) => (
-                    <th
-                      key={h}
-                      className={TABLE_HEAD_CELL}
-                    >
+                    <th key={h} className={TABLE_HEAD_CELL}>
                       {h}
                     </th>
                   ))}
@@ -403,9 +397,17 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                   return (
                     <tr key={b.id}>
                       <td className={TABLE_CELL}>
-                        <div className="max-w-[180px] truncate" title={b.name}>{b.name}</div>
+                        <div className="max-w-[180px] truncate" title={b.name}>
+                          {b.name}
+                        </div>
                       </td>
-                      <td className={cn(TABLE_CELL, "mono max-w-[280px] truncate text-xs text-muted-foreground")} title={b.url}>
+                      <td
+                        className={cn(
+                          TABLE_CELL,
+                          "mono max-w-[280px] truncate text-xs text-muted-foreground",
+                        )}
+                        title={b.url}
+                      >
                         {b.url}
                       </td>
                       <td className={cn(TABLE_CELL, "whitespace-nowrap")}>
@@ -417,9 +419,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         {capQ?.isLoading && (
                           <span className="text-xs text-muted-foreground">…</span>
                         )}
-                        {capQ?.isError && (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        {capQ?.isError && <span className="text-xs text-muted-foreground">—</span>}
                         {cap?.supported_prompts && (
                           <div className="inline-flex flex-wrap gap-1">
                             {cap.supported_prompts.map((p) => (
@@ -444,30 +444,30 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                       </td>
                       <td className={TABLE_CELL}>
                         <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                        {project.ml_backend_id !== b.id && (
+                          {project.ml_backend_id !== b.id && (
+                            <Button
+                              size="xs"
+                              variant="ai"
+                              onClick={() => onBind(b)}
+                              disabled={!canManage || updateProject.isPending}
+                              title={
+                                canManage
+                                  ? "设为本项目主后端（同时启用 AI）"
+                                  : "需要 PROJECT_ADMIN 权限"
+                              }
+                            >
+                              设为主后端
+                            </Button>
+                          )}
+                          {project.ml_backend_id === b.id && <Badge variant="ai">主后端</Badge>}
                           <Button
                             size="xs"
-                            variant="ai"
-                            onClick={() => onBind(b)}
-                            disabled={!canManage || updateProject.isPending}
-                            title={canManage ? "设为本项目主后端（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
+                            onClick={() => onHealth(b)}
+                            disabled={health.isPending}
+                            title="健康检查"
                           >
-                            设为主后端
+                            <Icon name="refresh" />
                           </Button>
-                        )}
-                        {project.ml_backend_id === b.id && (
-                          <Badge variant="ai">
-                            主后端
-                          </Badge>
-                        )}
-                        <Button
-                          size="xs"
-                          onClick={() => onHealth(b)}
-                          disabled={health.isPending}
-                          title="健康检查"
-                        >
-                          <Icon name="refresh" />
-                        </Button>
                         </div>
                       </td>
                     </tr>

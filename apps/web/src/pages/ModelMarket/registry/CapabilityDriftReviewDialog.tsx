@@ -14,10 +14,7 @@ import {
   DialogTitle,
 } from "@/components/shadcn/ui/dialog";
 
-import {
-  useAcceptCapabilityDrift,
-  useCapabilityDriftPreview,
-} from "../useGlobalRegistry";
+import { useAcceptCapabilityDrift, useCapabilityDriftPreview } from "../useGlobalRegistry";
 
 export function CapabilityDriftReviewDialog({
   open,
@@ -76,9 +73,7 @@ export function CapabilityDriftReviewDialog({
   const data = preview.data;
   const differingFields = data?.differing_fields ?? [];
   const blockingMembers = data?.blocking_members ?? [];
-  const canSubmit = Boolean(
-    data?.can_accept && data.candidate_fingerprint && !accept.isPending,
-  );
+  const canSubmit = Boolean(data?.can_accept && data.candidate_fingerprint && !accept.isPending);
 
   return (
     <Dialog
@@ -93,7 +88,8 @@ export function CapabilityDriftReviewDialog({
         <DialogHeader>
           <DialogTitle>审核「{registryName}」能力变更</DialogTitle>
           <DialogDescription>
-            服务池「{poolName}」要求成员能力合同一致。确认后会重新探活，并仅在指纹仍与当前审核结果一致时恢复接流。
+            服务池「{poolName}
+            」要求成员能力合同一致。确认后会重新探活，并仅在指纹仍与当前审核结果一致时恢复接流。
           </DialogDescription>
         </DialogHeader>
 
@@ -134,7 +130,8 @@ export function CapabilityDriftReviewDialog({
 
             {blockingMembers.length > 0 && (
               <div className="rounded-md border border-status-caution bg-status-caution-soft p-3 text-xs text-status-caution">
-                仍有 {blockingMembers.length} 个 active / draining 成员与候选能力不一致，需先停用或升级这些成员。
+                仍有 {blockingMembers.length} 个 active / draining
+                成员与候选能力不一致，需先停用或升级这些成员。
               </div>
             )}
 

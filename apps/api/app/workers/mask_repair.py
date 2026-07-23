@@ -363,7 +363,9 @@ async def _mark_batch_start(
             raise RuntimeError("mask repair async job not found")
         if job is not None and celery_task_id and not job.celery_task_id:
             job.celery_task_id = celery_task_id
-        if job.status == "cancelled" or bool((job.payload or {}).get("cancel_requested")):
+        if job.status == "cancelled" or bool(
+            (job.payload or {}).get("cancel_requested")
+        ):
             completed_shards = [
                 value
                 for value in (_result_copy(batch).get("shards") or {}).values()
@@ -459,7 +461,7 @@ async def _run_mask_repair(batch_id: str, celery_task_id: str | None) -> None:
                 batch = await db.get(MaskRepairBatch, repair_id)
                 if batch is None:
                     raise RuntimeError("mask repair batch disappeared")
-                existing = ((_result_copy(batch).get("shards") or {}).get(shard_id))
+                existing = (_result_copy(batch).get("shards") or {}).get(shard_id)
                 if isinstance(existing, dict) and existing.get("status") == "completed":
                     completed += 1
                     continue
@@ -477,7 +479,9 @@ async def _run_mask_repair(batch_id: str, celery_task_id: str | None) -> None:
                     result = _result_copy(batch)
                     result["shards"][shard_id] = shard_result
                     batch.result_json = result
-                    batch.rollback_expires_at = datetime.now(timezone.utc) + ROLLBACK_TTL
+                    batch.rollback_expires_at = (
+                        datetime.now(timezone.utc) + ROLLBACK_TTL
+                    )
                     await db.commit()
                     completed += 1
                 except Exception as exc:
@@ -516,7 +520,7 @@ async def _run_mask_repair(batch_id: str, celery_task_id: str | None) -> None:
                 batch = await db.get(MaskRepairBatch, repair_id)
                 if batch is None:
                     raise RuntimeError("mask repair batch disappeared")
-                existing = ((_result_copy(batch).get("candidates") or {}).get(key))
+                existing = (_result_copy(batch).get("candidates") or {}).get(key)
                 if isinstance(existing, dict) and existing.get("status") == "completed":
                     completed += 1
                     continue
@@ -581,7 +585,9 @@ async def _run_mask_repair(batch_id: str, celery_task_id: str | None) -> None:
                     .with_for_update()
                 )
             ).scalar_one()
-            batch.status = "completed" if failed == 0 else ("partial" if completed else "failed")
+            batch.status = (
+                "completed" if failed == 0 else ("partial" if completed else "failed")
+            )
             batch.completed_at = datetime.now(timezone.utc)
             summary = {
                 "batch_id": str(batch.id),
@@ -593,7 +599,10 @@ async def _run_mask_repair(batch_id: str, celery_task_id: str | None) -> None:
                 await async_job_svc.mark_complete(db, async_job_id, result=summary)
             else:
                 await async_job_svc.mark_failed(
-                    db, async_job_id, error="all mask repair shards failed", result=summary
+                    db,
+                    async_job_id,
+                    error="all mask repair shards failed",
+                    result=summary,
                 )
             await notify_job_terminal(db, job_id=async_job_id)
             await db.commit()

@@ -66,7 +66,11 @@ export function useCanvasDraftPersistence({ taskId, canvasDraft, beginCanvasDraf
         shapes: canvasDraft.shapes,
         ts: Date.now(),
       };
-      try { sessionStorage.setItem(key, JSON.stringify(payload)); } catch { /* quota */ }
+      try {
+        sessionStorage.setItem(key, JSON.stringify(payload));
+      } catch {
+        /* quota */
+      }
     } else if (!canvasDraft.active) {
       // 退出 canvas 模式（commit / cancel）时清掉，避免下次回来又被恢复
       sessionStorage.removeItem(key);

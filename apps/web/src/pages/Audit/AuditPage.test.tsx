@@ -99,22 +99,16 @@ describe("AuditPage", () => {
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /CSV/ }));
     await waitFor(() => expect(mockExport).toHaveBeenCalledTimes(1));
-    expect(mockExport.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ business_only: true }),
-    );
+    expect(mockExport.mock.calls[0][0]).toEqual(expect.objectContaining({ business_only: true }));
     expect(mockExport.mock.calls[0][1]).toBe("csv");
     await waitFor(() =>
-      expect(mockPushToast).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "success" }),
-      ),
+      expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" })),
     );
   });
 
   it("detail 键值输入框在键名为空时 disabled", () => {
     renderUI();
-    const valueInput = screen.getByPlaceholderText(
-      /detail 键值/,
-    ) as HTMLInputElement;
+    const valueInput = screen.getByPlaceholderText(/detail 键值/) as HTMLInputElement;
     expect(valueInput.disabled).toBe(true);
     const keyInput = screen.getByPlaceholderText(/detail 键名/);
     fireEvent.change(keyInput, { target: { value: "role" } });
@@ -141,9 +135,7 @@ describe("AuditPage", () => {
     expect(screen.getByText(/追溯模式/)).toBeInTheDocument();
     // badge 文本 "操作人 Alice · a@x.com"; select option 同样含 "Alice", 用更精确匹配
     expect(
-      screen.getByText((_, node) =>
-        Boolean(node?.textContent?.match(/^操作人 Alice/)),
-      ),
+      screen.getByText((_, node) => Boolean(node?.textContent?.match(/^操作人 Alice/))),
     ).toBeInTheDocument();
   });
 

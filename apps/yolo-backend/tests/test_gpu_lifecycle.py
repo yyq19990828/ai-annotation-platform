@@ -171,8 +171,9 @@ async def test_legacy_workload_rejects_partial_or_invalid_managed_headers(
 
 
 @pytest.mark.asyncio
-async def test_legacy_workload_rejects_valid_managed_headers_without_open_generation(
-) -> None:
+async def test_legacy_workload_rejects_valid_managed_headers_without_open_generation() -> (
+    None
+):
     lifecycle, _pool, key = _domain()
 
     with pytest.raises(LifecycleHTTPError) as error:

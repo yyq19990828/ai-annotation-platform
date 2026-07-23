@@ -146,11 +146,7 @@ async def test_dry_run_freezes_exact_pixels_and_hashes_receipt(
 
     response = await httpx_client.post(
         f"/api/v1/projects/{project.id}/mask-qc/repairs:dry-run",
-        json={
-            "actions": [
-                {"issue_id": str(issue.id), "kind": "delete_small_islands"}
-            ]
-        },
+        json={"actions": [{"issue_id": str(issue.id), "kind": "delete_small_islands"}]},
         headers=_bearer(token),
     )
 
@@ -204,11 +200,7 @@ async def test_dry_run_reports_stable_locked_skip(
 
     response = await httpx_client.post(
         f"/api/v1/projects/{project.id}/mask-qc/repairs:dry-run",
-        json={
-            "actions": [
-                {"issue_id": str(issue.id), "kind": "delete_small_islands"}
-            ]
-        },
+        json={"actions": [{"issue_id": str(issue.id), "kind": "delete_small_islands"}]},
         headers=_bearer(token),
     )
 
@@ -256,11 +248,7 @@ async def test_dry_run_skips_issue_from_changed_qc_policy(
 
     response = await httpx_client.post(
         f"/api/v1/projects/{project.id}/mask-qc/repairs:dry-run",
-        json={
-            "actions": [
-                {"issue_id": str(issue.id), "kind": "delete_small_islands"}
-            ]
-        },
+        json={"actions": [{"issue_id": str(issue.id), "kind": "delete_small_islands"}]},
         headers=_bearer(token),
     )
 
@@ -289,11 +277,7 @@ async def test_execute_rejects_expired_receipt(
     await db_session.commit()
     dry_run = await httpx_client.post(
         f"/api/v1/projects/{project.id}/mask-qc/repairs:dry-run",
-        json={
-            "actions": [
-                {"issue_id": str(issue.id), "kind": "delete_small_islands"}
-            ]
-        },
+        json={"actions": [{"issue_id": str(issue.id), "kind": "delete_small_islands"}]},
         headers=_bearer(token),
     )
     body = dry_run.json()
@@ -337,11 +321,7 @@ async def test_execute_dispatches_once_and_rollback_rejects_newer_annotation(
     await db_session.commit()
     dry_run = await httpx_client.post(
         f"/api/v1/projects/{project.id}/mask-qc/repairs:dry-run",
-        json={
-            "actions": [
-                {"issue_id": str(issue.id), "kind": "delete_small_islands"}
-            ]
-        },
+        json={"actions": [{"issue_id": str(issue.id), "kind": "delete_small_islands"}]},
         headers=_bearer(token),
     )
     plan = dry_run.json()

@@ -22,10 +22,12 @@ function context(overrides: Partial<ToolPointerContext> = {}): ToolPointerContex
 describe("SmartScribbleTool", () => {
   it("仅在已鉴权 Mask 选中态下开始笔迹，且不清选中", () => {
     const onClearSelection = vi.fn();
-    const result = SmartScribbleTool.onPointerDown?.(context({
-      preserveSelectionForPrompt: true,
-      onClearSelection,
-    }));
+    const result = SmartScribbleTool.onPointerDown?.(
+      context({
+        preserveSelectionForPrompt: true,
+        onClearSelection,
+      }),
+    );
     expect(result).toEqual({ kind: "samScribble", points: [[0.25, 0.5]], alt: false });
     expect(onClearSelection).not.toHaveBeenCalled();
   });
@@ -33,13 +35,21 @@ describe("SmartScribbleTool", () => {
   it("Alt 或负极性产生负向 scribble，无 Mask 选中则不起笔", () => {
     expect(SmartScribbleTool.onPointerDown?.(context())).toBeNull();
     const altEvent = new MouseEvent("pointerdown", { altKey: true });
-    expect(SmartScribbleTool.onPointerDown?.(context({
-      evt: altEvent,
-      preserveSelectionForPrompt: true,
-    }))).toMatchObject({ kind: "samScribble", alt: true });
-    expect(SmartScribbleTool.onPointerDown?.(context({
-      preserveSelectionForPrompt: true,
-      samPolarity: "negative",
-    }))).toMatchObject({ kind: "samScribble", alt: true });
+    expect(
+      SmartScribbleTool.onPointerDown?.(
+        context({
+          evt: altEvent,
+          preserveSelectionForPrompt: true,
+        }),
+      ),
+    ).toMatchObject({ kind: "samScribble", alt: true });
+    expect(
+      SmartScribbleTool.onPointerDown?.(
+        context({
+          preserveSelectionForPrompt: true,
+          samPolarity: "negative",
+        }),
+      ),
+    ).toMatchObject({ kind: "samScribble", alt: true });
   });
 });

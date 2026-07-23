@@ -35,12 +35,7 @@ describe("PredictionPurgeModal", () => {
     const onComplete = vi.fn();
 
     render(
-      <PredictionPurgeModal
-        open
-        projectId="p-1"
-        onClose={() => {}}
-        onComplete={onComplete}
-      />,
+      <PredictionPurgeModal open projectId="p-1" onClose={() => {}} onComplete={onComplete} />,
     );
 
     await waitFor(() => {
@@ -70,9 +65,7 @@ describe("PredictionPurgeModal", () => {
       counts: { ml_backend: 2, external_import: 0, unknown: 0, total: 2 },
     });
 
-    render(
-      <PredictionPurgeModal open projectId="p-2" onClose={() => {}} />,
-    );
+    render(<PredictionPurgeModal open projectId="p-2" onClose={() => {}} />);
 
     fireEvent.change(screen.getByLabelText(/来源范围/), {
       target: { value: "ml_backend" },

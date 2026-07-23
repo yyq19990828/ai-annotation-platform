@@ -1,18 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  useApproveTask,
-  useRejectTask,
-  useReviewClaim,
-} from "@/hooks/useTasks";
+import { useApproveTask, useRejectTask, useReviewClaim } from "@/hooks/useTasks";
 import { ReviewerMiniPanel } from "@/pages/Review/ReviewerMiniPanel";
 import type { ReviewClaimResponse, TaskResponse } from "@/types";
-import type {
-  DiffMode,
-  NavigateTask,
-  PushToast,
-  WorkbenchMode,
-  WorkbenchModeState,
-} from "./types";
+import type { DiffMode, NavigateTask, PushToast, WorkbenchMode, WorkbenchModeState } from "./types";
 
 interface UseReviewModeParams {
   mode: WorkbenchMode;
@@ -74,14 +64,17 @@ export function useReviewMode({
       reason?: string;
     }) => {
       if (!taskId) return;
-      rejectMut.mutate({ taskId, ...payload }, {
-        onSuccess: () => {
-          pushToast({ msg: "任务已退回", kind: "success" });
-          setRejectingTask(false);
-          navigateTask("next");
+      rejectMut.mutate(
+        { taskId, ...payload },
+        {
+          onSuccess: () => {
+            pushToast({ msg: "任务已退回", kind: "success" });
+            setRejectingTask(false);
+            navigateTask("next");
+          },
+          onError: () => pushToast({ msg: "退回失败，请重试", kind: "error" }),
         },
-        onError: () => pushToast({ msg: "退回失败，请重试", kind: "error" }),
-      });
+      );
     },
     [taskId, rejectMut, pushToast, navigateTask],
   );
@@ -91,7 +84,12 @@ export function useReviewMode({
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable
+      )
+        return;
       if (e.key === "a" || e.key === "A") {
         e.preventDefault();
         handleApproveTask();
@@ -125,13 +123,14 @@ export function useReviewMode({
     claimInfo,
     topbarActions,
     bannerActions: emptyBannerActions,
-    rejectModal: mode === "review"
-      ? {
-          open: rejectingTask,
-          onClose: () => setRejectingTask(false),
-          onConfirm: handleRejectTask,
-          skipReasonHint: task?.skip_reason ?? null,
-        }
-      : undefined,
+    rejectModal:
+      mode === "review"
+        ? {
+            open: rejectingTask,
+            onClose: () => setRejectingTask(false),
+            onConfirm: handleRejectTask,
+            skipReasonHint: task?.skip_reason ?? null,
+          }
+        : undefined,
   };
 }

@@ -80,6 +80,7 @@ docker compose up -d
 ```
 
 这会启动：
+
 - PostgreSQL 16 — `localhost:5432` (user/pass/annotation)
 - Redis 7 — `localhost:6379`
 - MinIO — `localhost:9000` (控制台 `localhost:9001`, minioadmin/minioadmin)
@@ -95,9 +96,11 @@ MINIO_DATA_DIR=/mnt/fast-disk/ai-annotation-platform/minio
 该变量只影响 MinIO 的 `/data` 挂载；留空时仍使用 Docker 托管的 `miniodata` 命名卷。切换前后数据不会自动迁移，已有对象需要先复制到新目录。
 
 > **GPU profile（可选，需要标注工作台 SAM 工具或 `/ai-pre` 文本批量预标）**：GPU backend 在叠加文件 `docker-compose.ml.yml`，须同时 `-f` 两个文件：
+>
 > ```bash
 > docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 > ```
+>
 > 嫌麻烦可在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.ml.yml`，之后省去 `-f`。首次启动自动下载 ~900MB checkpoints（cache 在 `gsam2_checkpoints` volume）；启动 health 探活周期 120s，`curl http://localhost:8001/health` 应返回 `{"ok":true,"loaded":true}`。需 NVIDIA driver ≥ 525 + nvidia-container-toolkit。
 >
 > **多卡机器指定 GPU backend 用哪张卡**：`docker-compose.ml.yml` 里各 GPU profile backend 固定绑定一张物理卡（`deploy.reservations.devices.device_ids`），不再是 `count: 1` 由 Docker 自动挑卡。默认 GSAM2/YOLO/ONNXTOOLS/RAPIDOCR 用卡 0、SAM3 用卡 1（双卡机器错开显存）；可在 `.env` 用 `GSAM2_GPU_DEVICE_ID` / `SAM3_GPU_DEVICE_ID` / `YOLO_GPU_DEVICE_ID` / `ONNXTOOLS_GPU_DEVICE_ID` / `RAPIDOCR_GPU_DEVICE_ID` 覆盖。**单卡机器必须把 `SAM3_GPU_DEVICE_ID=0`**，否则容器找不到卡 1 起不来。
@@ -136,18 +139,18 @@ API 文档：http://localhost:8000/docs
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 前端框架 | React 18 + TypeScript |
-| 构建工具 | Vite 6 |
-| 状态管理 | Zustand |
-| 后端框架 | FastAPI (Python 3.12) |
-| ORM | SQLAlchemy 2.0 (async) |
-| 数据库 | PostgreSQL 16 |
-| 缓存/队列 | Redis 7 |
-| 对象存储 | MinIO (开发) / 阿里云 OSS (生产) |
-| 任务队列 | Celery（default / GPU / CPU / export worker + beat） |
-| 容器化 | Docker Compose |
+| 层        | 技术                                                 |
+| --------- | ---------------------------------------------------- |
+| 前端框架  | React 18 + TypeScript                                |
+| 构建工具  | Vite 6                                               |
+| 状态管理  | Zustand                                              |
+| 后端框架  | FastAPI (Python 3.12)                                |
+| ORM       | SQLAlchemy 2.0 (async)                               |
+| 数据库    | PostgreSQL 16                                        |
+| 缓存/队列 | Redis 7                                              |
+| 对象存储  | MinIO (开发) / 阿里云 OSS (生产)                     |
+| 任务队列  | Celery（default / GPU / CPU / export worker + beat） |
+| 容器化    | Docker Compose                                       |
 
 ## 前端开发
 
@@ -289,6 +292,14 @@ docker compose --env-file .env.production \
 ## 测试与文档
 
 ```bash
+# 全仓格式与静态检查
+pnpm format:check                # Ruff + Prettier，只读校验
+pnpm lint                        # 全仓 Python Ruff + Web ESLint / CSS token
+pnpm format                      # 自动修复 Ruff / Prettier 格式
+pnpm typecheck                   # Web TypeScript
+uv tool run --from pre-commit==4.6.1 pre-commit run \
+  --all-files --hook-stage manual --show-diff-on-failure  # CI 同款第二层复核
+
 # 前端测试
 pnpm test                        # vitest 单测
 pnpm --filter @anno/web test:coverage  # 前端带覆盖率
@@ -430,15 +441,15 @@ node docs-site/scripts/check-orphan-images.mjs --strict
 
 > 仅 `development` / `staging` 环境可用（seed.py 拒绝在 production 执行）。
 
-| 账号 | 角色 | 密码 | 初始视图 |
-|------|------|------|---------|
-| `admin` | super_admin | 123456 | Dashboard |
-| `pm` | project_admin | 123456 | 项目总览 |
-| `qa` | reviewer | 123456 | ReviewerDashboard |
-| `anno` | annotator | 123456 | AnnotatorDashboard |
-| `viewer` | viewer | 123456 | ViewerDashboard |
-| `anno2` | annotator | 123456 | (标注组A) |
-| `anno3` | annotator | 123456 | (标注组B) |
+| 账号     | 角色          | 密码   | 初始视图           |
+| -------- | ------------- | ------ | ------------------ |
+| `admin`  | super_admin   | 123456 | Dashboard          |
+| `pm`     | project_admin | 123456 | 项目总览           |
+| `qa`     | reviewer      | 123456 | ReviewerDashboard  |
+| `anno`   | annotator     | 123456 | AnnotatorDashboard |
+| `viewer` | viewer        | 123456 | ViewerDashboard    |
+| `anno2`  | annotator     | 123456 | (标注组A)          |
+| `anno3`  | annotator     | 123456 | (标注组B)          |
 
 初始化：`cd apps/api && uv run python scripts/seed.py`
 

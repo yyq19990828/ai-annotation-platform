@@ -119,7 +119,9 @@ async def test_resolver_rejects_cross_task_and_stale_sources() -> None:
     assert stale.value.detail["reason"] == "mask_prompt_source_version_mismatch"
 
 
-async def test_resolver_maps_storage_failure_without_leaking_content(monkeypatch) -> None:
+async def test_resolver_maps_storage_failure_without_leaking_content(
+    monkeypatch,
+) -> None:
     task = _task()
     annotation = _annotation(task)
     db = SimpleNamespace(get=AsyncMock(return_value=annotation))

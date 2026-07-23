@@ -59,7 +59,10 @@ def test_wait_polls_until_completed(client, respx_mock):
     )
     seen = []
     job = client.jobs.wait(
-        JOB_ID, timeout=5, poll_interval=0.001, on_progress=lambda j: seen.append(j.status)
+        JOB_ID,
+        timeout=5,
+        poll_interval=0.001,
+        on_progress=lambda j: seen.append(j.status),
     )
     assert job.status == "completed"
     assert seen == ["pending", "running", "completed"]

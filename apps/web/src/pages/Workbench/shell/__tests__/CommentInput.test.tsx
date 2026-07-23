@@ -25,20 +25,16 @@ describe("CommentInput.serialize", () => {
   });
 
   it("单个 chip + 后续文本 → mention offset/length 正确", () => {
-    const root = makeRoot(
-      '<span data-mention-uid="u1" data-mention-name="alice">@alice</span> hi',
-    );
+    const root = makeRoot('<span data-mention-uid="u1" data-mention-name="alice">@alice</span> hi');
     const { body, mentions } = serialize(root);
     expect(body).toBe("@alice hi");
-    expect(mentions).toEqual([
-      { userId: "u1", displayName: "alice", offset: 0, length: 6 },
-    ]);
+    expect(mentions).toEqual([{ userId: "u1", displayName: "alice", offset: 0, length: 6 }]);
   });
 
   it("chip 紧邻 chip（无中间文本） → 两个 mention 偏移连续", () => {
     const root = makeRoot(
       '<span data-mention-uid="u1" data-mention-name="alice">@alice</span>' +
-      '<span data-mention-uid="u2" data-mention-name="bob">@bob</span>',
+        '<span data-mention-uid="u2" data-mention-name="bob">@bob</span>',
     );
     const { body, mentions } = serialize(root);
     expect(body).toBe("@alice@bob");
@@ -51,7 +47,7 @@ describe("CommentInput.serialize", () => {
   it("chip 在 block 元素首尾 → 块间换行注入不污染 mention offset", () => {
     const root = makeRoot(
       '<div><span data-mention-uid="u1" data-mention-name="alice">@alice</span></div>' +
-      '<div>line2</div>',
+        "<div>line2</div>",
     );
     const { body, mentions } = serialize(root);
     expect(body).toBe("@alice\nline2");

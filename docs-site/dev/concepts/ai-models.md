@@ -18,13 +18,13 @@ last_reviewed: 2026-07-20
 
 平台当前自维护 **5 个 ML backend**(各为独立 FastAPI 微服务、独立 docker-compose profile,按显存预算自由组合启动)。所有 backend 走同一套[能力声明协议](../reference/ml-backend-protocol),由平台经 `/setup` 探能力 + `/predict` 调推理。
 
-| Backend | 端口 | profile | 模型族 | 主用途 | composition |
-|---|---|---|---|---|---|
-| `grounded-sam2-backend` | 8001 | `gpu` | GroundingDINO + SAM 2.1 | 文本/点/框交互式实例分割;暴露 `box-seg` 几何原子(多阶段下游) | `composite` + `atom` |
-| `sam3-backend` | 8002 | `gpu-sam3` | SAM 3 | 交互式分割(下一代 SAM) | `composite` |
-| `yolo-backend` | 8003 | `gpu-yolo` | ultralytics(v8/v11/v12 × det/seg/pose/obb/cls) | 纯批量预标(`supported_prompts=["none"]`),不挤占交互式工具栏 | `composite` |
-| `onnxtools-backend` | 8004 | `gpu-onnxtools` | rtdetr + va | 二阶段车辆属性预标注;多阶段编排原子组合(上游纯检测 + 下游纯分类) | `atom` × 2 + `composite` × 1 |
-| `rapidocr-backend` | 8005 | `gpu-rapidocr` | RapidOCR(ONNX)PP-OCRv5/v6 | OCR 文本检测 / 识别;`det → cls → rec` 拆原子 + 端到端,落点 `text`/`orientation`/`language` | `atom` × 2 + `composite` × 1 |
+| Backend                 | 端口 | profile         | 模型族                                         | 主用途                                                                                     | composition                  |
+| ----------------------- | ---- | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------- |
+| `grounded-sam2-backend` | 8001 | `gpu`           | GroundingDINO + SAM 2.1                        | 文本/点/框交互式实例分割;暴露 `box-seg` 几何原子(多阶段下游)                               | `composite` + `atom`         |
+| `sam3-backend`          | 8002 | `gpu-sam3`      | SAM 3                                          | 交互式分割(下一代 SAM)                                                                     | `composite`                  |
+| `yolo-backend`          | 8003 | `gpu-yolo`      | ultralytics(v8/v11/v12 × det/seg/pose/obb/cls) | 纯批量预标(`supported_prompts=["none"]`),不挤占交互式工具栏                                | `composite`                  |
+| `onnxtools-backend`     | 8004 | `gpu-onnxtools` | rtdetr + va                                    | 二阶段车辆属性预标注;多阶段编排原子组合(上游纯检测 + 下游纯分类)                           | `atom` × 2 + `composite` × 1 |
+| `rapidocr-backend`      | 8005 | `gpu-rapidocr`  | RapidOCR(ONNX)PP-OCRv5/v6                      | OCR 文本检测 / 识别;`det → cls → rec` 拆原子 + 端到端,落点 `text`/`orientation`/`language` | `atom` × 2 + `composite` × 1 |
 
 SAM 系列特化(image embedding 缓存、prompt 路由)集中在 §1–§5。`yolo-backend` / `onnxtools-backend` / `rapidocr-backend` 的差异化说明放在 §6。
 
@@ -52,22 +52,22 @@ apps/api (FastAPI 3.11) ──HTTP /predict──▶ grounded-sam2-backend
 # docker-compose.yml 节选
 services:
   grounded-sam2-backend:
-    profiles: ["gpu"]                     # 默认不启, --profile gpu opt-in
+    profiles: ["gpu"] # 默认不启, --profile gpu opt-in
     build:
       context: ./apps/grounded-sam2-backend
       dockerfile: Dockerfile
     image: ai-annotation/grounded-sam2-backend:0.9
     ports:
-      - "8001:8000"                       # host:container
+      - "8001:8000" # host:container
     environment:
-      SAM_VARIANT: tiny                   # tiny|small|base_plus|large; 显存预算见 §1.2
-      DINO_VARIANT: T                     # T|B
+      SAM_VARIANT: tiny # tiny|small|base_plus|large; 显存预算见 §1.2
+      DINO_VARIANT: T # T|B
       CHECKPOINT_DIR: /app/checkpoints
     volumes:
-      - ./checkpoints:/app/checkpoints    # 持久化, 避免 image 重建拉权重
+      - ./checkpoints:/app/checkpoints # 持久化, 避免 image 重建拉权重
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      start_period: 120s                  # 首次冷启 + checkpoint 加载
+      start_period: 120s # 首次冷启 + checkpoint 加载
       interval: 30s
       timeout: 10s
       retries: 3
@@ -76,29 +76,29 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1                    # 每 backend 1 张卡; 多变体并存看 §1.2
+              count: 1 # 每 backend 1 张卡; 多变体并存看 §1.2
               capabilities: [gpu]
 ```
 
 **dev vs 生产差异**（下表 `--profile gpu` 命令省略了叠加文件前缀；GPU backend 在 `docker-compose.ml.yml`，实际须 `docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu ...`，或设 `COMPOSE_FILE` 固化）：
 
-| 场景 | 启动命令 | GPU 需求 | 显存预算 | 备注 |
-|---|---|---|---|---|
-| **dev (无 GPU 机)** | `docker compose up` | 0 | 0 | GPU backend 不启动，注册表实例不可用，标注页前端走 disabled UI |
-| **dev (有 GPU)** | `docker compose --profile gpu up` | 1 卡 | ~3GB (tiny) | 默认启动 grounded-sam2 主变体，额外变体按 prefetch / model pool 配置 |
-| **生产 (单租户)** | `docker compose --profile gpu up -d` | ≥ 1 卡 | 见 §1.2 | 按显存档位选 SAM_VARIANT |
-| **生产 (多变体并存)** | 拆 service: `gsam2-tiny` / `gsam2-large` (各自 profile) | ≥ 2 卡 (推荐) 或 1 张 ≥ 24GB | 累加 §1.2 | C → B 升级路径见 ROADMAP §A 注册 backend 选变体 |
+| 场景                  | 启动命令                                                | GPU 需求                     | 显存预算    | 备注                                                                 |
+| --------------------- | ------------------------------------------------------- | ---------------------------- | ----------- | -------------------------------------------------------------------- |
+| **dev (无 GPU 机)**   | `docker compose up`                                     | 0                            | 0           | GPU backend 不启动，注册表实例不可用，标注页前端走 disabled UI       |
+| **dev (有 GPU)**      | `docker compose --profile gpu up`                       | 1 卡                         | ~3GB (tiny) | 默认启动 grounded-sam2 主变体，额外变体按 prefetch / model pool 配置 |
+| **生产 (单租户)**     | `docker compose --profile gpu up -d`                    | ≥ 1 卡                       | 见 §1.2     | 按显存档位选 SAM_VARIANT                                             |
+| **生产 (多变体并存)** | 拆 service: `gsam2-tiny` / `gsam2-large` (各自 profile) | ≥ 2 卡 (推荐) 或 1 张 ≥ 24GB | 累加 §1.2   | C → B 升级路径见 ROADMAP §A 注册 backend 选变体                      |
 
 ### 1.2 显存预算 + variant 选型
 
 每个 backend 常驻 = SAM 模型权重 + GroundingDINO 权重 + 推理时 mask buffer + embedding cache buffer。`SAM_VARIANT` / `DINO_VARIANT` 是默认主变体；请求也可以通过 `/predict context` 携带 `sam_variant` / `dino_variant`，由 backend 内部 ModelPool 按 LRU 缓存和驱逐。
 
-| SAM 变体 | 模型权重 | 推理时峰值 | 推荐显存 | 推荐卡 |
-|---|---|---|---|---|
-| `tiny` (default) | ~155MB | ~3GB | 6GB+ | 4060 8GB / 3070 8GB |
-| `small` | ~185MB | ~4GB | 8GB+ | 3070 / 4070 |
-| `base_plus` | ~320MB | ~5GB | 10GB+ | 3080 / 4070 Ti |
-| `large` | ~895MB | ~7GB | 12GB+ | 3090 24GB / A4000 |
+| SAM 变体         | 模型权重 | 推理时峰值 | 推荐显存 | 推荐卡              |
+| ---------------- | -------- | ---------- | -------- | ------------------- |
+| `tiny` (default) | ~155MB   | ~3GB       | 6GB+     | 4060 8GB / 3070 8GB |
+| `small`          | ~185MB   | ~4GB       | 8GB+     | 3070 / 4070         |
+| `base_plus`      | ~320MB   | ~5GB       | 10GB+    | 3080 / 4070 Ti      |
+| `large`          | ~895MB   | ~7GB       | 12GB+    | 3090 24GB / A4000   |
 
 GroundingDINO 额外占用：`T` ~700MB / `B` ~1.5GB（仅 mask + box 模式需要，box 模式跳过 SAM 仍占 DINO）。
 
@@ -106,12 +106,12 @@ embedding cache buffer：`EMBEDDING_CACHE_SIZE` 默认 16 entries；按 GPU 显�
 
 **显存预算表（典型 dev / 生产组合）**：
 
-| GPU | 推荐 SAM | 推荐 DINO | 单实例总显存 | 可同卡跑变体数 |
-|---|---|---|---|---|
-| 4060 / 3060 (8GB) | tiny | T | ~3.7GB | 1 (单变体) |
-| 3070 / 4070 (12GB) | small / base_plus | T | ~4.7-5.7GB | 1-2 |
-| 3090 / A4000 (24GB) | large | T 或 B | ~7.7-8.5GB | 2-3 (多容器并存) |
-| A100 40GB / H100 | large | B | ~8.5GB | 4+ (整租户多变体池) |
+| GPU                 | 推荐 SAM          | 推荐 DINO | 单实例总显存 | 可同卡跑变体数      |
+| ------------------- | ----------------- | --------- | ------------ | ------------------- |
+| 4060 / 3060 (8GB)   | tiny              | T         | ~3.7GB       | 1 (单变体)          |
+| 3070 / 4070 (12GB)  | small / base_plus | T         | ~4.7-5.7GB   | 1-2                 |
+| 3090 / A4000 (24GB) | large             | T 或 B    | ~7.7-8.5GB   | 2-3 (多容器并存)    |
+| A100 40GB / H100    | large             | B         | ~8.5GB       | 4+ (整租户多变体池) |
 
 **多容器并存**（生产高负载）：把 `grounded-sam2-backend` 拆成 `gsam2-tiny` / `gsam2-large` 两个 service（独立 profile + 独立端口），按业务 tier 路由不同 batch（tier-A 高精度走 large，tier-B 快通走 tiny）。单容器内需要少量变体切换时，优先使用 ModelPool 并配置 `PREFETCH_SAM_VARIANTS` / `PREFETCH_DINO_VARIANTS`。
 
@@ -140,11 +140,13 @@ context.type == "text"   ┘   先 GroundingDINO(caption→boxes)，再 SAM
 ## 3. SAM 2 image embedding 缓存
 
 ### 3.1 为什么缓存
+
 工作台 `S` 工具的典型操作是同一张图反复点击 / 拖框（先 positive point 再 negative point 修边、调 bbox 看效果）。每次 SAM 2 `set_image()` 计算 image embedding ≈ 1.5 s（4060 / tiny），是热点。
 
 DINO 端不缓存：每条 caption 不同，命中率低，且 DINO 输出是 box 不是 embedding。
 
 ### 3.2 Cache key
+
 ```
 cache_key = sha1(url_path + "|" + sam_variant)
 ```
@@ -154,26 +156,28 @@ cache_key = sha1(url_path + "|" + sam_variant)
 - 本地路径（dev 用）直接以原串作 key。
 
 ### 3.3 命中后做什么
+
 SAM2ImagePredictor `set_image()` 之后状态写在 `_features` / `_orig_hw` / `_is_image_set` / `_is_batch` 几个实例属性。命中时把这些字段从 `CacheEntry` 写回，等价于 `set_image()` 但跳过 image encoder。
 
-| prompt | 命中能省 | 命中不能省 |
-|---|---|---|
-| `point` | `_fetch_image()` + SAM `set_image()` | SAM `predict()`（每次 prompt 不同） |
-| `bbox` | `_fetch_image()` + SAM `set_image()` | SAM `predict()` |
-| `text` | SAM `set_image()` | DINO 推理（每次 caption 不同） + image fetch（DINO 要原图） |
+| prompt  | 命中能省                             | 命中不能省                                                  |
+| ------- | ------------------------------------ | ----------------------------------------------------------- |
+| `point` | `_fetch_image()` + SAM `set_image()` | SAM `predict()`（每次 prompt 不同）                         |
+| `bbox`  | `_fetch_image()` + SAM `set_image()` | SAM `predict()`                                             |
+| `text`  | SAM `set_image()`                    | DINO 推理（每次 caption 不同） + image fetch（DINO 要原图） |
 
 > 工程注意：`features` 里的 tensor 在 GPU。我们存引用、不 deepcopy；GPU 内存上限由 LRU 容量物理保证。
 
 ### 3.4 容量与显存预算
 
-| 变体 | 单条 embedding ≈ | 默认 capacity | 总占用 ≈ |
-|---|---|---|---|
-| `tiny` | 4 MB | 16 | 64 MB |
-| `small` | 8 MB | 16 | 128 MB |
-| `base_plus` | 16 MB | 16 | 256 MB |
-| `large` | 24 MB | 8 | 192 MB |
+| 变体        | 单条 embedding ≈ | 默认 capacity | 总占用 ≈ |
+| ----------- | ---------------- | ------------- | -------- |
+| `tiny`      | 4 MB             | 16            | 64 MB    |
+| `small`     | 8 MB             | 16            | 128 MB   |
+| `base_plus` | 16 MB            | 16            | 256 MB   |
+| `large`     | 24 MB            | 8             | 192 MB   |
 
 经验值，仅供参考。`EMBEDDING_CACHE_SIZE` 环境变量可调：
+
 - 4060 8 GB → 16
 - 3090 24 GB → 32
 - A100 40 GB → 64
@@ -181,6 +185,7 @@ SAM2ImagePredictor `set_image()` 之后状态写在 `_features` / `_orig_hw` / `
 > ⚠️ `large` 变体下不要把 cache size 设到 64+：单次能吃 ~1.5 GB，叠加 SAM/DINO 模型本体 + 推理临时显存可能 OOM。
 
 ### 3.5 vendor 升级风险
+
 `_features` / `_orig_hw` / `_is_image_set` / `_is_batch` 是 vendor `IDEA-Research/Grounded-SAM-2` 的内部 API（commit `b7a9c29`）。`scripts/sync_vendor.sh` 升级后必须人肉跑 5-clicks 集成验收（README §性能参考）。
 
 ---
@@ -188,21 +193,23 @@ SAM2ImagePredictor `set_image()` 之后状态写在 `_features` / `_orig_hw` / `
 ## 4. 观测
 
 ### 4.1 端点
+
 - `GET /metrics` — Prometheus exposition（`generate_latest()` 原始格式）。
 - `GET /cache/stats` — 人类可读 JSON：`{size, capacity, hits, misses, hit_rate, variant}`。
 
 ### 4.2 指标
 
-| metric | 类型 | labels | 含义 |
-|---|---|---|---|
-| `embedding_cache_hits_total` | Counter | `prompt_type` | 命中次数（按 `point`/`bbox`/`text`/`unknown` 分） |
-| `embedding_cache_misses_total` | Counter | `prompt_type` | 未命中次数 |
-| `embedding_cache_size` | Gauge | — | 当前缓存条目数 |
-| `inference_latency_seconds` | Histogram | `prompt_type`, `cache` | 端到端 `/predict` 延迟，`cache ∈ {hit,miss}` |
+| metric                         | 类型      | labels                 | 含义                                              |
+| ------------------------------ | --------- | ---------------------- | ------------------------------------------------- |
+| `embedding_cache_hits_total`   | Counter   | `prompt_type`          | 命中次数（按 `point`/`bbox`/`text`/`unknown` 分） |
+| `embedding_cache_misses_total` | Counter   | `prompt_type`          | 未命中次数                                        |
+| `embedding_cache_size`         | Gauge     | —                      | 当前缓存条目数                                    |
+| `inference_latency_seconds`    | Histogram | `prompt_type`, `cache` | 端到端 `/predict` 延迟，`cache ∈ {hit,miss}`      |
 
 bucket：`[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]`，专为「miss 长尾秒级 + hit 短尾毫秒级」打的两段。
 
 ### 4.3 Prometheus scrape
+
 本 backend 默认监听 8001。在 monitoring profile 的 prometheus 配置里增加 job：
 
 ```yaml
@@ -210,7 +217,7 @@ scrape_configs:
   - job_name: grounded-sam2-backend
     metrics_path: /metrics
     static_configs:
-      - targets: ['grounded-sam2-backend:8001']
+      - targets: ["grounded-sam2-backend:8001"]
 ```
 
 ### 4.4 关键查询
@@ -291,11 +298,11 @@ ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `
 
 **三 model 暴露(原子化范式)**:`/setup` 广播三个 model,各架在自己的单模型推理类上、按需懒加载——detect-only 部署只加载 `RtdetrORT`、classify-only 只加载 `VehicleAttributeORT`。
 
-| `model_id` | `task` | `composition` | 推理类 | 编排定位 |
-|---|---|---|---|---|
-| `vehicle-detect` | `detection` | `atom` | 独立 `RtdetrORT` | 多阶段编排**上游**(只出 bbox,属性留空交下游) |
-| `vehicle-attr-classify` | `classification` | `atom` | 独立 `VehicleAttributeORT` | 多阶段编排**下游**(整图当一辆车,跳过 rtdetr,写车型 / 颜色) |
-| `vehicle-attr` | `detection` | `composite` | `VehicleAttributePipeline`(内部串 detect + classify) | 单阶段一锅端(开箱即用,内部编排复合) |
+| `model_id`              | `task`           | `composition` | 推理类                                               | 编排定位                                                   |
+| ----------------------- | ---------------- | ------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
+| `vehicle-detect`        | `detection`      | `atom`        | 独立 `RtdetrORT`                                     | 多阶段编排**上游**(只出 bbox,属性留空交下游)               |
+| `vehicle-attr-classify` | `classification` | `atom`        | 独立 `VehicleAttributeORT`                           | 多阶段编排**下游**(整图当一辆车,跳过 rtdetr,写车型 / 颜色) |
+| `vehicle-attr`          | `detection`      | `composite`   | `VehicleAttributePipeline`(内部串 detect + classify) | 单阶段一锅端(开箱即用,内部编排复合)                        |
 
 `composition` 由能力声明协议(详 [ADR 0043 — 多阶段预标注编排](../adr/archive/0043-staged-preannotation-pipeline))引入:`atom` 才能进**编排下游 stage** 选择器(只组合 atom,避免重复编排);`composite` 在单阶段配置可直接选用。模型市场目录 ModelCard / 列表视图均补「原子 / 内置流程」徽标。
 
@@ -307,11 +314,11 @@ ultralytics 多任务多系列(`detection` / `segmentation` / `pose` / `obb` / `
 
 **平台首个真实 OCR backend**:基于 RapidOCR(ONNX),把 `det → cls → rec` 三段拆为「原子能力 + 端到端编排」,对外自报三个 model,激活协议早留好的 `ocr` 任务族,并成为 `attributes.text` / `orientation` / `language` 落点校验的首个真实 producer。
 
-| `model_id` | `task` | `composition` | `supported_inputs` | 编排定位 |
-|---|---|---|---|---|
-| `ocr-det` | `detection` | `atom` | `full_image` | 整图文本检测,出文本 polygon 框,不写 `attributes` |
-| `ocr-rec` | `ocr` | `atom` | `crop` | 吃裁剪图,内部跑 cls 做 180° 校正,写回 `text` / `orientation` / `language` |
-| `ocr-e2e` | `ocr` | `composite` | `full_image` | 单阶段一锅端 det + cls + rec,出 polygon + 文本属性 |
+| `model_id` | `task`      | `composition` | `supported_inputs` | 编排定位                                                                  |
+| ---------- | ----------- | ------------- | ------------------ | ------------------------------------------------------------------------- |
+| `ocr-det`  | `detection` | `atom`        | `full_image`       | 整图文本检测,出文本 polygon 框,不写 `attributes`                          |
+| `ocr-rec`  | `ocr`       | `atom`        | `crop`             | 吃裁剪图,内部跑 cls 做 180° 校正,写回 `text` / `orientation` / `language` |
+| `ocr-e2e`  | `ocr`       | `composite`   | `full_image`       | 单阶段一锅端 det + cls + rec,出 polygon + 文本属性                        |
 
 cls(文本行方向 0/180)**语言/版本无关**,内化进 rec 与 e2e,不单独暴露 model 条目。
 
@@ -328,6 +335,7 @@ cls(文本行方向 0/180)**语言/版本无关**,内化进 rec 与 e2e,不单�
 ## 7. 能力协商 + 模态派生
 
 平台对 backend 的「能力 / 模态」有持久化感知。实现集中在两个文件：
+
 - `apps/api/app/services/ml_capabilities.py`（`extract_capabilities` + `derive_modalities`）
 - `apps/api/app/services/ml_backend.py`（`check_health`）
 
@@ -350,14 +358,14 @@ backend.health_meta = meta
 
 `health_meta["capabilities"]` 由 `extract_capabilities(setup_resp)` 填充，字段来自 backend `/setup` 响应：
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `is_interactive` | `bool` | backend 是否为交互式（点/框/文本 prompt 模式） |
-| `supported_prompts` | `list[str]` | 支持的 prompt 类型，如 `["point","bbox","text"]` |
-| `supported_trackers` | `list[str]` | 支持的 tracker，如 `["sam2_video"]` |
-| `supported_text_outputs` | `list[str]` | 文本类输出，如 `["caption"]` |
+| 字段                          | 类型        | 含义                                                 |
+| ----------------------------- | ----------- | ---------------------------------------------------- |
+| `is_interactive`              | `bool`      | backend 是否为交互式（点/框/文本 prompt 模式）       |
+| `supported_prompts`           | `list[str]` | 支持的 prompt 类型，如 `["point","bbox","text"]`     |
+| `supported_trackers`          | `list[str]` | 支持的 tracker，如 `["sam2_video"]`                  |
+| `supported_text_outputs`      | `list[str]` | 文本类输出，如 `["caption"]`                         |
 | `supported_geometric_outputs` | `list[str]` | 几何类输出，如 `["polygonlabels","rectanglelabels"]` |
-| `modalities` | `list[str]` | 派生字段，见 §7.3 |
+| `modalities`                  | `list[str]` | 派生字段，见 §7.3                                    |
 
 ### 7.3 模态派生规则
 

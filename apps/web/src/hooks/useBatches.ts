@@ -26,8 +26,7 @@ export function useBatch(projectId: string, batchId: string) {
 export function useCreateBatch(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: BatchCreatePayload) =>
-      batchesApi.create(projectId, payload),
+    mutationFn: (payload: BatchCreatePayload) => batchesApi.create(projectId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
     },
@@ -37,13 +36,8 @@ export function useCreateBatch(projectId: string) {
 export function useUpdateBatch(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      batchId,
-      payload,
-    }: {
-      batchId: string;
-      payload: BatchUpdatePayload;
-    }) => batchesApi.update(projectId, batchId, payload),
+    mutationFn: ({ batchId, payload }: { batchId: string; payload: BatchUpdatePayload }) =>
+      batchesApi.update(projectId, batchId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
     },
@@ -111,8 +105,7 @@ export function useBulkDeleteBatches(projectId: string) {
 export function useBulkReassignBatches(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: BulkBatchReassignPayload) =>
-      batchesApi.bulkReassign(projectId, payload),
+    mutationFn: (payload: BulkBatchReassignPayload) => batchesApi.bulkReassign(projectId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
@@ -152,8 +145,7 @@ export function useUnclassifiedTaskCount(projectId: string) {
 export function useSplitBatches(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: BatchSplitPayload) =>
-      batchesApi.split(projectId, payload),
+    mutationFn: (payload: BatchSplitPayload) => batchesApi.split(projectId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
       qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });

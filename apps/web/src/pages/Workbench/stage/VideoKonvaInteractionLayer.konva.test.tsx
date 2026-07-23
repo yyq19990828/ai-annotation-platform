@@ -23,11 +23,20 @@ describe("VideoKonvaInteractionLayer", () => {
         onResizeHandlePointerDown={vi.fn()}
       />,
     );
-    expect(document.querySelector('[data-konva="Layer"]')!.getAttribute("data-testid")).toBe("interaction");
+    expect(document.querySelector('[data-konva="Layer"]')!.getAttribute("data-testid")).toBe(
+      "interaction",
+    );
     expect(document.querySelectorAll('[data-testid="video-resize-handle"]').length).toBe(8);
 
     rerender(
-      <VideoKonvaInteractionLayer size={size} scale={1} drag={null} handleBox={null} preview={null} onResizeHandlePointerDown={vi.fn()} />,
+      <VideoKonvaInteractionLayer
+        size={size}
+        scale={1}
+        drag={null}
+        handleBox={null}
+        preview={null}
+        onResizeHandlePointerDown={vi.fn()}
+      />,
     );
     expect(document.querySelectorAll('[data-testid="video-resize-handle"]').length).toBe(0);
   });
@@ -72,7 +81,11 @@ describe("VideoKonvaInteractionLayer", () => {
   });
 
   it("draw 拖拽 → video-pending-draft 虚线预览,像素空间几何", () => {
-    const drag: VideoDragState = { kind: "draw", start: { x: 0.1, y: 0.2 }, current: { x: 0.4, y: 0.6 } };
+    const drag: VideoDragState = {
+      kind: "draw",
+      start: { x: 0.1, y: 0.2 },
+      current: { x: 0.4, y: 0.6 },
+    };
     render(
       <VideoKonvaInteractionLayer
         size={size}

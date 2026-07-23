@@ -490,9 +490,7 @@ class EnginePool:
         logger.info("RapidOCR engine evicted %s (reason=%s)", key, reason)
 
     def _assert_capacity_locked(self) -> None:
-        reserved_builders = sum(
-            key not in self._entries for key in self._builders
-        )
+        reserved_builders = sum(key not in self._entries for key in self._builders)
         if len(self._entries) + reserved_builders > self._cap:
             raise RuntimeError("engine pool capacity invariant violated")
 
@@ -707,7 +705,11 @@ class EnginePool:
                 )
                 if has_gpu:
                     resident: bool | None = True
-                elif engine_unknown or has_non_cpu or len(known_groups) != len(COMPONENTS):
+                elif (
+                    engine_unknown
+                    or has_non_cpu
+                    or len(known_groups) != len(COMPONENTS)
+                ):
                     resident = None
                 else:
                     resident = False
@@ -719,8 +721,8 @@ class EnginePool:
                     and len(set(primaries)) == 1
                     else None
                 )
-                provider_unknown = provider_unknown or engine_unknown or (
-                    has_non_cpu and not has_gpu
+                provider_unknown = (
+                    provider_unknown or engine_unknown or (has_non_cpu and not has_gpu)
                 )
                 per_engine[key] = {
                     "resident": resident,
@@ -742,9 +744,7 @@ class EnginePool:
             borrowers = sum(entry.borrowers for entry in self._entries.values())
             resident_values = [item["resident"] for item in per_engine.values()]
             uncertain = (
-                builders > 0
-                or self._cleanup_in_progress
-                or self._cleanup_failed
+                builders > 0 or self._cleanup_in_progress or self._cleanup_failed
             )
             if True in resident_values:
                 gpu_resident: bool | None = True

@@ -14,20 +14,20 @@ export type VideoFrameBucketMarker = VideoFrameBucket & {
 
 export type VideoTimelineMarker =
   | {
-    type: "keyframe";
-    frame: number;
-    trackIds: string[];
-    hasManual: boolean;
-    hasPrediction: boolean;
-    density: number;
-  }
+      type: "keyframe";
+      frame: number;
+      trackIds: string[];
+      hasManual: boolean;
+      hasPrediction: boolean;
+      density: number;
+    }
   | {
-    type: "outside";
-    from: number;
-    to: number;
-    trackIds: string[];
-    hasPrediction: boolean;
-  };
+      type: "outside";
+      from: number;
+      to: number;
+      trackIds: string[];
+      hasPrediction: boolean;
+    };
 
 function ensureBucket(buckets: Map<number, VideoFrameBucket>, frame: number) {
   let bucket = buckets.get(frame);
@@ -43,7 +43,9 @@ function ensureBucket(buckets: Map<number, VideoFrameBucket>, frame: number) {
   return bucket;
 }
 
-export function buildVideoFrameBuckets(tracks: readonly VideoTrackGeometry[]): Map<number, VideoFrameBucket> {
+export function buildVideoFrameBuckets(
+  tracks: readonly VideoTrackGeometry[],
+): Map<number, VideoFrameBucket> {
   const buckets = new Map<number, VideoFrameBucket>();
 
   for (const track of tracks) {
@@ -67,7 +69,9 @@ export function buildVideoFrameBuckets(tracks: readonly VideoTrackGeometry[]): M
   return buckets;
 }
 
-export function videoFrameBucketMarkers(buckets: Map<number, VideoFrameBucket>): VideoFrameBucketMarker[] {
+export function videoFrameBucketMarkers(
+  buckets: Map<number, VideoFrameBucket>,
+): VideoFrameBucketMarker[] {
   return [...buckets.values()]
     .map((bucket) => ({
       ...bucket,

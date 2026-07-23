@@ -20,13 +20,13 @@
 
 候选方案：
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
-| **A. 版本化质量账本 + adapter / preflight + 显式有损 sparse gap（本 ADR）** | 当前真值不变；问题、修复和审阅都可追溯；格式损失在执行前可见；后续 adapter 共享安全与并发合同 | 增加 revision / run / issue / repair / review-scope 领域表和 consumer fixtures |
-| B. 把 QC 结果与历史 geometry 全塞进 Annotation JSONB | 表少、读取看似直接 | 热行持续膨胀；历史和当前写入争用；无法独立保留、分页、去重和 GC |
-| C. 只复用 `annotation_feedbacks` 保存自动 QC | 不新增 issue 表 | 人工讨论与可重复计算结果生命周期不同；缺 run/config/snapshot 证据，stale 和 dedupe 不可靠 |
-| D. 为 sparse gap 新增 geometry 状态 | 可无损表达 YouTube-VOS 未知帧 | 修改所有视频 resolver、渲染、Tracker、QC、AAP 和导出合同，收益只服务单一交换格式 |
-| E. 每个格式继续在打包函数内加分支 | 局部实现快 | 能力声明、预检、安全限制、缓存版本与 UI 持续漂移，无法证明无损 |
+| 选项                                                                        | 主要卖点                                                                                      | 主要劣势                                                                                  |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **A. 版本化质量账本 + adapter / preflight + 显式有损 sparse gap（本 ADR）** | 当前真值不变；问题、修复和审阅都可追溯；格式损失在执行前可见；后续 adapter 共享安全与并发合同 | 增加 revision / run / issue / repair / review-scope 领域表和 consumer fixtures            |
+| B. 把 QC 结果与历史 geometry 全塞进 Annotation JSONB                        | 表少、读取看似直接                                                                            | 热行持续膨胀；历史和当前写入争用；无法独立保留、分页、去重和 GC                           |
+| C. 只复用 `annotation_feedbacks` 保存自动 QC                                | 不新增 issue 表                                                                               | 人工讨论与可重复计算结果生命周期不同；缺 run/config/snapshot 证据，stale 和 dedupe 不可靠 |
+| D. 为 sparse gap 新增 geometry 状态                                         | 可无损表达 YouTube-VOS 未知帧                                                                 | 修改所有视频 resolver、渲染、Tracker、QC、AAP 和导出合同，收益只服务单一交换格式          |
+| E. 每个格式继续在打包函数内加分支                                           | 局部实现快                                                                                    | 能力声明、预检、安全限制、缓存版本与 UI 持续漂移，无法证明无损                            |
 
 ## Decision
 

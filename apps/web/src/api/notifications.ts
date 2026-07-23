@@ -40,23 +40,17 @@ export const notificationsApi = {
     return apiClient.get<NotificationsResponse>(`/notifications${qs ? `?${qs}` : ""}`);
   },
 
-  unreadCount: () =>
-    apiClient.get<UnreadCountResponse>("/notifications/unread-count"),
+  unreadCount: () => apiClient.get<UnreadCountResponse>("/notifications/unread-count"),
 
-  markRead: (id: string) =>
-    apiClient.post<{ ok: boolean }>(`/notifications/${id}/read`, {}),
+  markRead: (id: string) => apiClient.post<{ ok: boolean }>(`/notifications/${id}/read`, {}),
 
-  markAllRead: () =>
-    apiClient.post<{ updated: number }>("/notifications/mark-all-read", {}),
+  markAllRead: () => apiClient.post<{ updated: number }>("/notifications/mark-all-read", {}),
 
-  delete: (id: string) =>
-    apiClient.delete<{ ok: boolean }>(`/notifications/${id}`),
+  delete: (id: string) => apiClient.delete<{ ok: boolean }>(`/notifications/${id}`),
 
-  clearRead: () =>
-    apiClient.post<{ deleted: number }>("/notifications/clear-read", {}),
+  clearRead: () => apiClient.post<{ deleted: number }>("/notifications/clear-read", {}),
 
-  getPreferences: () =>
-    apiClient.get<NotificationPreferencesResponse>("/notification-preferences"),
+  getPreferences: () => apiClient.get<NotificationPreferencesResponse>("/notification-preferences"),
 
   updatePreference: (type: string, in_app: boolean) =>
     apiClient.put<{ ok: boolean }>("/notification-preferences", { type, in_app }),

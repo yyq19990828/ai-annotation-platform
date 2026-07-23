@@ -39,7 +39,13 @@ describe("VideoKonvaMediaLayer · konva mock", () => {
 
   it("渲染 media-bg Layer + Konva.Image,world 尺寸按 size 透传", () => {
     render(
-      <VideoKonvaMediaLayer videoEl={null} bitmap={bitmap} size={size} viewport={viewport} isPlaybackActive={false} />,
+      <VideoKonvaMediaLayer
+        videoEl={null}
+        bitmap={bitmap}
+        size={size}
+        viewport={viewport}
+        isPlaybackActive={false}
+      />,
     );
     const layer = document.querySelector('[data-konva="Layer"]');
     expect(layer?.getAttribute("data-testid")).toBe("media-bg");
@@ -53,7 +59,13 @@ describe("VideoKonvaMediaLayer · konva mock", () => {
 
   it("无可画源时只渲染空 Layer,不渲染 Image", () => {
     render(
-      <VideoKonvaMediaLayer videoEl={null} bitmap={null} size={size} viewport={viewport} isPlaybackActive={false} />,
+      <VideoKonvaMediaLayer
+        videoEl={null}
+        bitmap={null}
+        size={size}
+        viewport={viewport}
+        isPlaybackActive={false}
+      />,
     );
     expect(document.querySelector('[data-konva="Layer"]')).not.toBeNull();
     expect(document.querySelector('[data-konva="Image"]')).toBeNull();

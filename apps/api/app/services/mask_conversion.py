@@ -364,8 +364,7 @@ def region_to_mask_conversion(
     mask_stats = analyze_mask(rle)
     source_components, source_holes, source_vertices = _region_stats(geometry)
     topology_changed = (
-        source_components != mask_stats.components
-        or source_holes != mask_stats.holes
+        source_components != mask_stats.components or source_holes != mask_stats.holes
     )
     return rle, ConversionMetrics(
         source_area_pixels=mask_stats.area,

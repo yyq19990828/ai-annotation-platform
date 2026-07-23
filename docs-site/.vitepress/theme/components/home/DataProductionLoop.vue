@@ -14,9 +14,7 @@ const steps = [
     <div class="flow-layout">
       <div class="flow-sticky reveal">
         <h2>ONE LOOP.<br />EVERY<br />DECISION.</h2>
-        <p>
-          数据从进入平台的那一刻起，就拥有完整上下文。模型负责提速，人负责判断，系统负责记录。
-        </p>
+        <p>数据从进入平台的那一刻起，就拥有完整上下文。模型负责提速，人负责判断，系统负责记录。</p>
       </div>
       <div class="steps">
         <div v-for="s in steps" :key="s.no" class="step reveal">

@@ -16,17 +16,17 @@ last_reviewed: 2026-05-27
 
 ## 1. 威胁模型摘要
 
-| 威胁 | 缓解 | 实现位置 |
-|---|---|---|
-| 凭证泄露（撞库 / 钓鱼） | 密码强度 8+ 大小写数字 + 失败登录限流 + JWT 黑名单 | `apps/api/app/core/password.py`、`auth.py:48`（5/min）、`apps/api/app/core/token_blacklist.py` |
-| 越权访问 | RBAC 5 级 + project_members 表细粒度授权 | `apps/api/app/core/permissions.py`、各路由 `Depends(require_roles(...))` |
-| 邀请滥用 / 注册刷号 | `MAX_INVITATIONS_PER_DAY` + 开放注册 3/min 限流 + viewer 默认零权限 | `apps/api/app/services/invitation.py`、`auth.py:173` |
-| 审计日志篡改 | PG `BEFORE UPDATE/DELETE` 触发器拒写 | `alembic/versions/0032_audit_log_immutability.py` |
-| 数据泄露（导出滥用） | 导出端点写审计 + 计划中下载者签名水印 | `audit.py:AuditAction.PROJECT_EXPORT/BATCH_EXPORT` |
-| CSRF | JWT 走 `Authorization: Bearer` + CORS 白名单 + production methods/headers 收紧 | `main.py:71-83` |
-| XSS | React 默认转义 + 不允许 `dangerouslySetInnerHTML` 用户输入 | （前端约定） |
-| 拒绝服务 | 请求级 SlowAPI 限流 + ML 调用超时 + Redis ConnectionPool 上限 | `core/ratelimit.py`、`config.py:54-55`、`api/v1/ws.py:26` |
-| 敏感字段进日志 | Sentry `before_send` 屏蔽 Authorization | `main.py:28-36` |
+| 威胁                    | 缓解                                                                           | 实现位置                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| 凭证泄露（撞库 / 钓鱼） | 密码强度 8+ 大小写数字 + 失败登录限流 + JWT 黑名单                             | `apps/api/app/core/password.py`、`auth.py:48`（5/min）、`apps/api/app/core/token_blacklist.py` |
+| 越权访问                | RBAC 5 级 + project_members 表细粒度授权                                       | `apps/api/app/core/permissions.py`、各路由 `Depends(require_roles(...))`                       |
+| 邀请滥用 / 注册刷号     | `MAX_INVITATIONS_PER_DAY` + 开放注册 3/min 限流 + viewer 默认零权限            | `apps/api/app/services/invitation.py`、`auth.py:173`                                           |
+| 审计日志篡改            | PG `BEFORE UPDATE/DELETE` 触发器拒写                                           | `alembic/versions/0032_audit_log_immutability.py`                                              |
+| 数据泄露（导出滥用）    | 导出端点写审计 + 计划中下载者签名水印                                          | `audit.py:AuditAction.PROJECT_EXPORT/BATCH_EXPORT`                                             |
+| CSRF                    | JWT 走 `Authorization: Bearer` + CORS 白名单 + production methods/headers 收紧 | `main.py:71-83`                                                                                |
+| XSS                     | React 默认转义 + 不允许 `dangerouslySetInnerHTML` 用户输入                     | （前端约定）                                                                                   |
+| 拒绝服务                | 请求级 SlowAPI 限流 + ML 调用超时 + Redis ConnectionPool 上限                  | `core/ratelimit.py`、`config.py:54-55`、`api/v1/ws.py:26`                                      |
+| 敏感字段进日志          | Sentry `before_send` 屏蔽 Authorization                                        | `main.py:28-36`                                                                                |
 
 威胁模型不包含：物理访问 PG、root SSH 入侵 API 主机——这些走部署侧的访问控制。
 
@@ -42,18 +42,18 @@ super_admin  > project_admin > reviewer > annotator > viewer
 
 ### 2.1 全局能力矩阵
 
-| 能力 | super_admin | project_admin | reviewer | annotator | viewer |
-|---|:-:|:-:|:-:|:-:|:-:|
-| 创建项目 | ✅ | ✅ | ❌ | ❌ | ❌ |
-| 删除项目 | ✅ | 仅 owner | ❌ | ❌ | ❌ |
-| 邀请用户 | ✅ | ✅（≤ MAX/day） | ❌ | ❌ | ❌ |
-| 改他人角色 | ✅ | annotator ↔ reviewer | ❌ | ❌ | ❌ |
-| 查看审计日志 | 全部 | 项目相关 | ❌ | ❌ | ❌ |
-| 系统设置（`/settings/*`） | 读+写 | 仅读 | ❌ | ❌ | ❌ |
-| 导出数据 | ✅ | ✅ | ❌ | ❌ | ❌ |
-| 标注任务 | ✅（演示） | ✅ | ✅ | ✅ | ❌ |
-| 审核 / 通过-退回 | ✅ | ✅ | ✅ | ❌ | ❌ |
-| 看 Dashboard | 全平台 | 项目相关 | 项目相关 | 自己 | 受邀的 |
+| 能力                      | super_admin |    project_admin     | reviewer | annotator | viewer |
+| ------------------------- | :---------: | :------------------: | :------: | :-------: | :----: |
+| 创建项目                  |     ✅      |          ✅          |    ❌    |    ❌     |   ❌   |
+| 删除项目                  |     ✅      |       仅 owner       |    ❌    |    ❌     |   ❌   |
+| 邀请用户                  |     ✅      |   ✅（≤ MAX/day）    |    ❌    |    ❌     |   ❌   |
+| 改他人角色                |     ✅      | annotator ↔ reviewer |    ❌    |    ❌     |   ❌   |
+| 查看审计日志              |    全部     |       项目相关       |    ❌    |    ❌     |   ❌   |
+| 系统设置（`/settings/*`） |    读+写    |         仅读         |    ❌    |    ❌     |   ❌   |
+| 导出数据                  |     ✅      |          ✅          |    ❌    |    ❌     |   ❌   |
+| 标注任务                  | ✅（演示）  |          ✅          |    ✅    |    ✅     |   ❌   |
+| 审核 / 通过-退回          |     ✅      |          ✅          |    ✅    |    ❌     |   ❌   |
+| 看 Dashboard              |   全平台    |       项目相关       | 项目相关 |   自己    | 受邀的 |
 
 > 注：`project_admin` 不能创建 `super_admin` / 不能改对方为 `viewer`（`apps/api/app/api/v1/users.py:27` 的注释）。
 >
@@ -64,6 +64,7 @@ super_admin  > project_admin > reviewer > annotator > viewer
 `project_members(project_id, user_id, role)` 表给予某用户在指定项目内**临时角色覆盖**——例如全局是 `annotator`、但在某项目里被设为 `reviewer`。
 
 权限解析顺序（`core/permissions.py`）：
+
 1. `super_admin` 直接放行
 2. project owner 放行
 3. project_members 角色覆盖
@@ -83,8 +84,8 @@ Token claims：
 {
   "sub": "<user_uuid>",
   "role": "<UserRole value>",
-  "jti": "<token_uuid>",      // 用于黑名单
-  "gen": 0,                   // 用户代际号；改变即旧 token 全失效
+  "jti": "<token_uuid>", // 用于黑名单
+  "gen": 0, // 用户代际号；改变即旧 token 全失效
   "exp": 1745020800,
   "iat": 1744934400
 }
@@ -114,6 +115,7 @@ sequenceDiagram
 ```
 
 实现：
+
 - `apps/api/app/core/token_blacklist.py` — `blacklist_token` / `is_blacklisted` / `increment_user_generation` / `get_user_generation`
 - `apps/api/app/core/security.py:decode_access_token` 在解析后查 jti 黑名单 + gen 比对
 - 前端 hook：`apps/web/src/api/auth.ts` 调 `/auth/logout` 后清 localStorage + 跳登录页
@@ -123,6 +125,7 @@ sequenceDiagram
 ### 3.3 密码
 
 `apps/api/app/core/password.py:validate_password_strength`：
+
 - 长度 ≥ 8（`auth.py:36`）
 - 至少包含一个大写字母、一个小写字母、一个数字
 - 不限符号（兼容性优先）
@@ -163,6 +166,7 @@ sequenceDiagram
 ```
 
 要点：
+
 - `MAX_INVITATIONS_PER_DAY` 默认 30（`config.py:66`）。计数按发起人 + UTC 日期。
 - TTL 默认 7 天（`INVITATION_TTL_DAYS`）。过期后 token 直接拒绝、不返回 email 防枚举。
 - `super_admin` 邀请 super_admin 时 audit detail 含特殊标记，便于复盘。
@@ -183,17 +187,17 @@ CAPTCHA 已在 v0.8.7 落地（Turnstile，见 §3）。
 
 `audit_logs` 表（`apps/api/app/db/models/audit_log.py`）：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid | 主键 |
-| `actor_id` `actor_email` `actor_role` | — | 行为发起人三元组（actor 删除后仍保留 email/role 快照） |
-| `action` | str | `AuditAction` 枚举值，见 `services/audit.py:14-66` |
-| `target_type` `target_id` | str | 受影响实体（`task` / `user` / `project` / `batch` / ...） |
-| `method` `path` `status_code` | — | HTTP 请求三元组（来自 AuditMiddleware 或显式打点） |
-| `ip` | str | `X-Forwarded-For` 头第一个值，否则 `request.client.host` |
-| `detail_json` | jsonb | 自由结构；常见键：`user_agent`、`result`、`new_generation`、`from_role` / `to_role` |
-| `request_id` | str | 关联同请求其它日志 / Sentry |
-| `created_at` | timestamptz | 默认 `now()` |
+| 字段                                  | 类型        | 说明                                                                                |
+| ------------------------------------- | ----------- | ----------------------------------------------------------------------------------- |
+| `id`                                  | uuid        | 主键                                                                                |
+| `actor_id` `actor_email` `actor_role` | —           | 行为发起人三元组（actor 删除后仍保留 email/role 快照）                              |
+| `action`                              | str         | `AuditAction` 枚举值，见 `services/audit.py:14-66`                                  |
+| `target_type` `target_id`             | str         | 受影响实体（`task` / `user` / `project` / `batch` / ...）                           |
+| `method` `path` `status_code`         | —           | HTTP 请求三元组（来自 AuditMiddleware 或显式打点）                                  |
+| `ip`                                  | str         | `X-Forwarded-For` 头第一个值，否则 `request.client.host`                            |
+| `detail_json`                         | jsonb       | 自由结构；常见键：`user_agent`、`result`、`new_generation`、`from_role` / `to_role` |
+| `request_id`                          | str         | 关联同请求其它日志 / Sentry                                                         |
+| `created_at`                          | timestamptz | 默认 `now()`                                                                        |
 
 ### 5.2 不可变性
 
@@ -210,6 +214,7 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 ### 5.3 已打点的 action 一览
 
 参见 `apps/api/app/services/audit.py:AuditAction` 枚举。涵盖：
+
 - 认证：`auth.login` / `auth.logout` / `auth.logout_all`
 - 用户：`user.invite` / `user.register` / `user.role_change` / `user.password_change` / `user.deactivate`
 - 项目：`project.create/update/delete/transfer/member_add/member_remove`
@@ -232,13 +237,13 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 
 `apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](/dev/adr/archive/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
 
-| Header | Value |
-|---|---|
+| Header                      | Value                                 |
+| --------------------------- | ------------------------------------- |
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
-| `X-Content-Type-Options` | `nosniff` |
-| `X-Frame-Options` | `DENY` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Content-Security-Policy` | 见下文 |
+| `X-Content-Type-Options`    | `nosniff`                             |
+| `X-Frame-Options`           | `DENY`                                |
+| `Referrer-Policy`           | `strict-origin-when-cross-origin`     |
+| `Content-Security-Policy`   | 见下文                                |
 
 **CSP 当前为 nonce 收紧版**：
 
@@ -269,13 +274,13 @@ object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 由 `apps/api/app/main.py` 注册：
 
-| 维度 | development / staging | production |
-|---|---|---|
-| `allow_origins` | 默认 `localhost:3000/3001/5173` | 必填 `CORS_ALLOW_ORIGINS`（启动断言） |
-| `allow_origin_regex` | `http://localhost:\d+` | 自动失效（`config.py:36-41`） |
-| `allow_methods` | `*` | 显式白名单 `cors_allow_methods` |
-| `allow_headers` | `*` | 显式白名单 `cors_allow_headers` |
-| `allow_credentials` | `True` | `True` |
+| 维度                 | development / staging           | production                            |
+| -------------------- | ------------------------------- | ------------------------------------- |
+| `allow_origins`      | 默认 `localhost:3000/3001/5173` | 必填 `CORS_ALLOW_ORIGINS`（启动断言） |
+| `allow_origin_regex` | `http://localhost:\d+`          | 自动失效（`config.py:36-41`）         |
+| `allow_methods`      | `*`                             | 显式白名单 `cors_allow_methods`       |
+| `allow_headers`      | `*`                             | 显式白名单 `cors_allow_headers`       |
+| `allow_credentials`  | `True`                          | `True`                                |
 
 production 收紧的目的：避免误把 dev regex 上线放任何 localhost 端口；避免接受未声明的 method 让某些奇怪 path 被探到。
 
@@ -318,18 +323,18 @@ MinIO 的 presigned **GET / download URL** 默认 1 小时 TTL（`apps/api/app/s
 
 ## 9. 关键文件索引
 
-| 主题 | 路径 |
-|---|---|
-| 角色枚举 | `apps/api/app/db/enums.py` |
-| 路由权限装饰器 | `apps/api/app/core/permissions.py` |
-| 密码策略 | `apps/api/app/core/password.py` |
-| JWT 编解码 | `apps/api/app/core/security.py` |
-| Token 黑名单 | `apps/api/app/core/token_blacklist.py` |
-| 限流 | `apps/api/app/core/ratelimit.py` |
-| 审计服务 | `apps/api/app/services/audit.py` |
-| 审计中间件 | `apps/api/app/middleware/audit.py` |
-| 审计不可变 trigger | `apps/api/alembic/versions/0032_audit_log_immutability.py` |
-| 邀请服务 | `apps/api/app/services/invitation.py` |
-| Bootstrap super_admin | `apps/api/scripts/bootstrap_admin.py` |
-| 认证路由 | `apps/api/app/api/v1/auth.py` |
-| CORS / production 启动断言 | `apps/api/app/main.py:50-83` |
+| 主题                       | 路径                                                       |
+| -------------------------- | ---------------------------------------------------------- |
+| 角色枚举                   | `apps/api/app/db/enums.py`                                 |
+| 路由权限装饰器             | `apps/api/app/core/permissions.py`                         |
+| 密码策略                   | `apps/api/app/core/password.py`                            |
+| JWT 编解码                 | `apps/api/app/core/security.py`                            |
+| Token 黑名单               | `apps/api/app/core/token_blacklist.py`                     |
+| 限流                       | `apps/api/app/core/ratelimit.py`                           |
+| 审计服务                   | `apps/api/app/services/audit.py`                           |
+| 审计中间件                 | `apps/api/app/middleware/audit.py`                         |
+| 审计不可变 trigger         | `apps/api/alembic/versions/0032_audit_log_immutability.py` |
+| 邀请服务                   | `apps/api/app/services/invitation.py`                      |
+| Bootstrap super_admin      | `apps/api/scripts/bootstrap_admin.py`                      |
+| 认证路由                   | `apps/api/app/api/v1/auth.py`                              |
+| CORS / production 启动断言 | `apps/api/app/main.py:50-83`                               |

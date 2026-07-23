@@ -16,16 +16,16 @@ last_reviewed: 2026-05-27
 
 ## 端点一览
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/storage-connections` | 登录用户 | 列表（超管看全部，普通用户看 global + 自建） |
-| POST | `/storage-connections` | 项目管理员 / 超管 | 新建连接器 |
-| GET | `/storage-connections/{id}` | 可见该连接器者 | 获取单个 |
-| PATCH | `/storage-connections/{id}` | 创建者 / 超管 | 更新名称 / 配置 / 密钥 |
-| DELETE | `/storage-connections/{id}` | 创建者 / 超管 | 删除（`204`） |
-| POST | `/storage-connections/{id}/test` | 可见该连接器者 | 测试连通性 |
-| GET | `/storage-connections/allowlist` | 仅超管 | 读主机白名单 |
-| PUT | `/storage-connections/allowlist` | 仅超管 | 更新主机白名单 |
+| 方法   | 路径                             | 权限              | 说明                                         |
+| ------ | -------------------------------- | ----------------- | -------------------------------------------- |
+| GET    | `/storage-connections`           | 登录用户          | 列表（超管看全部，普通用户看 global + 自建） |
+| POST   | `/storage-connections`           | 项目管理员 / 超管 | 新建连接器                                   |
+| GET    | `/storage-connections/{id}`      | 可见该连接器者    | 获取单个                                     |
+| PATCH  | `/storage-connections/{id}`      | 创建者 / 超管     | 更新名称 / 配置 / 密钥                       |
+| DELETE | `/storage-connections/{id}`      | 创建者 / 超管     | 删除（`204`）                                |
+| POST   | `/storage-connections/{id}/test` | 可见该连接器者    | 测试连通性                                   |
+| GET    | `/storage-connections/allowlist` | 仅超管            | 读主机白名单                                 |
+| PUT    | `/storage-connections/allowlist` | 仅超管            | 更新主机白名单                               |
 
 `global` 作用域的连接器仅超管可创建。
 
@@ -36,10 +36,14 @@ last_reviewed: 2026-05-27
 ```jsonc
 {
   "name": "aliyun-oss-prod",
-  "kind": "s3",                  // "s3" | "sftp"，创建后不可改
-  "scope": "owner",             // "owner" | "global"，默认 owner
-  "config": { /* 见下 */ },
-  "secret": { /* 见下，写入时加密 */ }
+  "kind": "s3", // "s3" | "sftp"，创建后不可改
+  "scope": "owner", // "owner" | "global"，默认 owner
+  "config": {
+    /* 见下 */
+  },
+  "secret": {
+    /* 见下，写入时加密 */
+  },
 }
 ```
 
@@ -64,10 +68,10 @@ PATCH 中 `secret` 可省略——省略表示不轮换，沿用已存密钥；�
   "kind": "s3",
   "config": { "endpoint": "…", "bucket": "…", "use_ssl": true },
   "scope": "owner",
-  "secret_set": true,            // 是否已配密钥；明文绝不回吐
+  "secret_set": true, // 是否已配密钥；明文绝不回吐
   "created_by": "…",
   "created_at": "2026-05-26T…",
-  "updated_at": "2026-05-26T…"
+  "updated_at": "2026-05-26T…",
 }
 ```
 
@@ -83,7 +87,7 @@ POST /api/v1/storage-connections/{id}/test
 {
   "ok": true,
   "message": "连接成功",
-  "sample_count": 12            // 探测到的样本对象数，可能为 null
+  "sample_count": 12, // 探测到的样本对象数，可能为 null
 }
 ```
 
@@ -119,9 +123,9 @@ POST /api/v1/datasets/{dataset_id}/import-from-connection   →  202 Accepted
 ```jsonc
 {
   "connection_id": "…",
-  "source_path": "batch-a/",     // 相对连接器 base_prefix / base_path
+  "source_path": "batch-a/", // 相对连接器 base_prefix / base_path
   "recursive": true,
-  "include_globs": ["*.jpg", "*.png"]   // 可空
+  "include_globs": ["*.jpg", "*.png"], // 可空
 }
 ```
 

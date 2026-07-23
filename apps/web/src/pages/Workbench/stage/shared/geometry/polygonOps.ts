@@ -33,9 +33,7 @@ function geometryToMultiPolygon(geometry: Geometry): MultiPolygon | null {
   if (geometry.type === "polygon") {
     const outer = pointsToRing(geometry.points);
     if (!outer) return null;
-    const holes = (geometry.holes ?? [])
-      .map(pointsToRing)
-      .filter((ring): ring is Ring => !!ring);
+    const holes = (geometry.holes ?? []).map(pointsToRing).filter((ring): ring is Ring => !!ring);
     return [[outer, ...holes]];
   }
   if (geometry.type === "multi_polygon") {
@@ -43,9 +41,7 @@ function geometryToMultiPolygon(geometry: Geometry): MultiPolygon | null {
     for (const polygon of geometry.polygons) {
       const outer = pointsToRing(polygon.points);
       if (!outer) continue;
-      const holes = (polygon.holes ?? [])
-        .map(pointsToRing)
-        .filter((ring): ring is Ring => !!ring);
+      const holes = (polygon.holes ?? []).map(pointsToRing).filter((ring): ring is Ring => !!ring);
       polygons.push([outer, ...holes]);
     }
     return polygons.length > 0 ? polygons : null;
@@ -69,7 +65,8 @@ function multiPolygonToGeometry(multiPolygon: MultiPolygon): JoinGeometry | null
     if (polygon.length === 0) continue;
     const points = stripClosingPoint(polygon[0]);
     if (points.length < 3) continue;
-    const holes = polygon.slice(1)
+    const holes = polygon
+      .slice(1)
       .map(stripClosingPoint)
       .filter((ring) => ring.length >= 3);
     polygons.push({
@@ -100,15 +97,21 @@ function sameJson(a: unknown, b: unknown): boolean {
   return stableStringify(a ?? {}) === stableStringify(b ?? {});
 }
 
-function sharedAttributes(inputs: readonly PolygonJoinInput[]): Record<string, unknown> | undefined {
+function sharedAttributes(
+  inputs: readonly PolygonJoinInput[],
+): Record<string, unknown> | undefined {
   const first = inputs[0]?.attributes ?? {};
   if (!inputs.every((input) => sameJson(input.attributes ?? {}, first))) return {};
   return { ...first };
 }
 
-export function canJoinPolygonAnnotation(annotation: Pick<AnnotationResponse, "geometry" | "is_locked">): boolean {
-  return !annotation.is_locked
-    && (annotation.geometry.type === "polygon" || annotation.geometry.type === "multi_polygon");
+export function canJoinPolygonAnnotation(
+  annotation: Pick<AnnotationResponse, "geometry" | "is_locked">,
+): boolean {
+  return (
+    !annotation.is_locked &&
+    (annotation.geometry.type === "polygon" || annotation.geometry.type === "multi_polygon")
+  );
 }
 
 export function joinPolygonGeometries(geometries: readonly Geometry[]): JoinGeometry | null {
@@ -151,9 +154,11 @@ export function cropPolygonGeometry(
   }
 }
 
-export function buildPolygonJoinPayload(inputs: readonly PolygonJoinInput[]): PolygonJoinPayloadResult | null {
-  const sources = inputs.filter((input) =>
-    input.geometry.type === "polygon" || input.geometry.type === "multi_polygon",
+export function buildPolygonJoinPayload(
+  inputs: readonly PolygonJoinInput[],
+): PolygonJoinPayloadResult | null {
+  const sources = inputs.filter(
+    (input) => input.geometry.type === "polygon" || input.geometry.type === "multi_polygon",
   );
   if (sources.length < 2) return null;
   const firstClass = sources[0].class_name;

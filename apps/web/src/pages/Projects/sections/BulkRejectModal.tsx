@@ -27,7 +27,8 @@ export function BulkRejectModal({
     <Modal open title={`批量驳回 ${count} 个批次`} onClose={onClose}>
       <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">
-          所选「审核中」批次将全部变为「已退回」，已提交质检 / 已通过的任务回退到待标注，标注内容保留。同一条反馈留言将发送给各批次的被分派标注员。
+          所选「审核中」批次将全部变为「已退回」，已提交质检 /
+          已通过的任务回退到待标注，标注内容保留。同一条反馈留言将发送给各批次的被分派标注员。
         </p>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
@@ -42,9 +43,7 @@ export function BulkRejectModal({
             autoFocus
           />
           {tooLong && (
-            <span className="text-xs text-status-danger">
-              超出 {FEEDBACK_MAX} 字上限
-            </span>
+            <span className="text-xs text-status-danger">超出 {FEEDBACK_MAX} 字上限</span>
           )}
         </label>
         <div className="flex justify-end gap-2">

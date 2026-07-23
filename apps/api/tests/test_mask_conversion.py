@@ -98,9 +98,7 @@ def test_region_to_mask_reports_hole_lost_below_pixel_resolution() -> None:
         {
             "type": "polygon",
             "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
-            "holes": [
-                [[0.45, 0.45], [0.55, 0.45], [0.55, 0.55], [0.45, 0.55]]
-            ],
+            "holes": [[[0.45, 0.45], [0.55, 0.45], [0.55, 0.55], [0.45, 0.55]]],
         },
         width=4,
         height=4,

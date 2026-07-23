@@ -33,25 +33,12 @@ class MaskRepairAction(BaseModel):
 
     @model_validator(mode="after")
     def _kind_options(self) -> "MaskRepairAction":
-        ai_options = any(
-            value is not None
-            for value in (
-                self.backend_id,
-                self.model_id,
-                self.model_key,
-                self.from_frame,
-                self.to_frame,
-                self.direction,
-                self.segment_id,
-                self.text,
-            )
-        ) or self.allow_bbox_fallback
-        if self.kind == "rerun_local_sam":
-            if self.backend_id is None:
-                raise ValueError("rerun_local_sam requires backend_id")
-            if any(
+        ai_options = (
+            any(
                 value is not None
                 for value in (
+                    self.backend_id,
+                    self.model_id,
                     self.model_key,
                     self.from_frame,
                     self.to_frame,
@@ -59,7 +46,26 @@ class MaskRepairAction(BaseModel):
                     self.segment_id,
                     self.text,
                 )
-            ) or self.allow_bbox_fallback:
+            )
+            or self.allow_bbox_fallback
+        )
+        if self.kind == "rerun_local_sam":
+            if self.backend_id is None:
+                raise ValueError("rerun_local_sam requires backend_id")
+            if (
+                any(
+                    value is not None
+                    for value in (
+                        self.model_key,
+                        self.from_frame,
+                        self.to_frame,
+                        self.direction,
+                        self.segment_id,
+                        self.text,
+                    )
+                )
+                or self.allow_bbox_fallback
+            ):
                 raise ValueError("rerun_local_sam received tracker-only options")
         elif self.kind == "rerun_tracker":
             required = (
@@ -105,9 +111,7 @@ class MaskRepairPlanItem(BaseModel):
     changed_pixels: int = Field(default=0, ge=0)
     mutation_count: int = Field(default=0, ge=0)
     candidate_count: int = Field(default=0, ge=0)
-    scope_fingerprint: str | None = Field(
-        default=None, pattern=r"^[0-9a-f]{64}$"
-    )
+    scope_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     skip_code: str | None = None
     skip_detail: str | None = None
 

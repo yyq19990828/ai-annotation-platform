@@ -7,7 +7,9 @@ import { count, subscribe } from "@/pages/Workbench/state/offlineQueue";
  * 注：autoflush 由调用方注册到 online 事件；这个 hook 仅暴露状态。
  */
 export function useOnlineStatus() {
-  const [online, setOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [online, setOnline] = useState<boolean>(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
   const [queueCount, setQueueCount] = useState<number>(0);
 
   useEffect(() => {

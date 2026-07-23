@@ -39,7 +39,9 @@ export function VerifyEmailPage() {
         </div>
 
         <div className="rounded-2xl border border-border bg-card px-8 py-7 text-center shadow-xl">
-          {phase === "verifying" && <div className="text-sm text-muted-foreground">正在验证邮箱…</div>}
+          {phase === "verifying" && (
+            <div className="text-sm text-muted-foreground">正在验证邮箱…</div>
+          )}
 
           {phase === "done" && (
             <>

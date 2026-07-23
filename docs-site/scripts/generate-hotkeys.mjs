@@ -74,8 +74,7 @@ lines.push("<!-- AUTO-GENERATED — 由 docs-site/scripts/generate-hotkeys.mjs �
 lines.push("<!-- apps/web/src/pages/Workbench/state/hotkeys.ts 生成。请勿手改。 -->");
 lines.push("");
 
-const formatKey = (k) =>
-  k.includes("+") || k.includes(" ") ? `\`${k}\`` : `\`${k}\``;
+const formatKey = (k) => (k.includes("+") || k.includes(" ") ? `\`${k}\`` : `\`${k}\``);
 const formatKeys = (keys) => keys.map(formatKey).join(" + ");
 
 for (const g of groupOrder) {

@@ -30,9 +30,7 @@ export function usePreannotationProgress(projectId: string | undefined): {
 } {
   const [progress, setProgress] = useState<PreannotationProgress | null>(null);
 
-  const url = projectId
-    ? buildWsUrl(`/ws/projects/${projectId}/preannotate`)
-    : null;
+  const url = projectId ? buildWsUrl(`/ws/projects/${projectId}/preannotate`) : null;
 
   const onMessage = useCallback((e: MessageEvent) => {
     try {

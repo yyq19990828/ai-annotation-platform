@@ -91,7 +91,9 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
       {isLoading && <div className="px-1 py-2 text-xs text-muted-foreground">加载中…</div>}
       {isError && <div className="px-1 py-2 text-xs text-status-danger">加载失败</div>}
       {!isLoading && !isError && filtered.length === 0 && (
-        <div className="px-1 py-2 text-xs text-muted-foreground">当前任务暂无 issue。在画布工具栏「落点」可记录第一条。</div>
+        <div className="px-1 py-2 text-xs text-muted-foreground">
+          当前任务暂无 issue。在画布工具栏「落点」可记录第一条。
+        </div>
       )}
 
       {filtered.map((it) => {
@@ -102,7 +104,9 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             ref={(node) => {
               if (highlightId === it.id && node) node.scrollIntoView({ block: "nearest" });
             }}
-            onClick={() => { if (hasPin) focusIssue(it.id); }}
+            onClick={() => {
+              if (hasPin) focusIssue(it.id);
+            }}
             className={cn(
               "flex flex-col gap-1 rounded-md border border-border bg-muted px-2.5 py-2",
               STATUS_CARD_DIM[it.status],
@@ -112,17 +116,25 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             data-testid={`discussion-issue-card-${it.id}`}
           >
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span className={cn("rounded-[10px] border px-2 py-px text-2xs", STATUS_CHIP[it.status])}>
+              <span
+                className={cn("rounded-[10px] border px-2 py-px text-2xs", STATUS_CHIP[it.status])}
+              >
                 {it.status === "open" ? "未解决" : it.status === "resolved" ? "已解决" : "搁置"}
               </span>
               {it.severity && (
-                <span className={cn("rounded-[10px] border border-border px-2 py-px text-2xs", SEVERITY_CHIP[it.severity])}>
+                <span
+                  className={cn(
+                    "rounded-[10px] border border-border px-2 py-px text-2xs",
+                    SEVERITY_CHIP[it.severity],
+                  )}
+                >
                   {it.severity === "blocker" ? "阻断" : it.severity === "warn" ? "警告" : "提示"}
                 </span>
               )}
               {hasPin && (
                 <span className="text-2xs text-muted-foreground" title="像素锚点 · 单击定位">
-                  <Icon name="crosshair" size={11} /> ({it.anchor_position!.x.toFixed(2)}, {it.anchor_position!.y.toFixed(2)})
+                  <Icon name="crosshair" size={11} /> ({it.anchor_position!.x.toFixed(2)},{" "}
+                  {it.anchor_position!.y.toFixed(2)})
                 </span>
               )}
               {hasPin && typeof it.anchor_position!.frame === "number" && (
@@ -138,21 +150,41 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             <div className="whitespace-pre-wrap text-xs text-foreground">{it.body}</div>
             <div className="mt-1 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
               {it.status !== "resolved" && (
-                <Button variant="ghost" size="sm" onClick={() => setStatus(it.id, "resolved")} title="标为已解决">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStatus(it.id, "resolved")}
+                  title="标为已解决"
+                >
                   <Icon name="check" size={11} /> 解决
                 </Button>
               )}
               {it.status !== "wont_fix" && (
-                <Button variant="ghost" size="sm" onClick={() => setStatus(it.id, "wont_fix")} title="搁置">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStatus(it.id, "wont_fix")}
+                  title="搁置"
+                >
                   搁置
                 </Button>
               )}
               {it.status !== "open" && (
-                <Button variant="ghost" size="sm" onClick={() => setStatus(it.id, "open")} title="重开">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStatus(it.id, "open")}
+                  title="重开"
+                >
                   重开
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={() => deleteMut.mutate(it.id)} title="删除">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => deleteMut.mutate(it.id)}
+                title="删除"
+              >
                 <Icon name="trash" size={11} />
               </Button>
             </div>

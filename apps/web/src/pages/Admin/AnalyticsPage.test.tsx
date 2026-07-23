@@ -64,14 +64,10 @@ describe("AnalyticsPage", () => {
     renderPage();
 
     expect(await screen.findByText("离线分析（DuckDB）")).toBeInTheDocument();
-    expect(
-      screen.getByText("团队日吞吐（task_events.kind=annotate）"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("团队日吞吐（task_events.kind=annotate）")).toBeInTheDocument();
     expect(screen.getByText("Reject 原因分布")).toBeInTheDocument();
     expect(screen.getByText("标注耗时分布")).toBeInTheDocument();
-    expect(
-      screen.getByText("工时热力图（started_at · 星期 × 小时）"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("工时热力图（started_at · 星期 × 小时）")).toBeInTheDocument();
 
     // 耗时 KPI 数据流通
     await waitFor(() => expect(screen.getByText("5")).toBeInTheDocument());
@@ -92,8 +88,6 @@ describe("AnalyticsPage", () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText("所选范围内暂无工时数据"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("所选范围内暂无工时数据")).toBeInTheDocument();
   });
 });

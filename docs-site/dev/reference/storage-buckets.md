@@ -12,13 +12,13 @@ last_reviewed: 2026-07-11
 
 ## 桶清单
 
-| 桶名 | env 变量 | 数据类型 | Key 前缀约定 | Lifecycle | 备份建议 |
-|---|---|---|---|---|---|
-| `annotations` | `MINIO_BUCKET` | 标注任务源文件、评论附件、引导手册资产 | `{project_id}/{task_id}/...`、`comment-attachments/{aid}/...`、`projects/{pid}/guide/...` | 评论附件 90 天 | 备份 |
-| `datasets` | `MINIO_DATASETS_BUCKET` | 数据集源文件(原始图/视频/文本) | `{dataset_name}/{file_name}` | 永久 | 备份 |
-| `bug-reports` | `MINIO_BUG_REPORTS_BUCKET` | Bug 反馈截图 | `bug-report-attachments/{user_id}/{uuid}-{name}` | 整桶 180 天 | 不备份 |
-| `media-cache` | `MINIO_MEDIA_CACHE_BUCKET` | **派生缓存**: 缩略图、视频帧、chunk、playback 转码 | `thumbnails/{item_id}.webp`、`videos/{item_id}/frames/{idx}_{w}.{fmt}`、`videos/{item_id}/chunks/{id}.mp4`、`playback/{item_id}.mp4` | **仅 `videos/` 30 天**;`playback/`、`thumbnails/` 不过期 | **不备份**(`videos/` 帧/chunk 按需重生;`playback/`、`thumbnails/` 入库一次性生成、不惰性重建,丢失需重跑 `generate_video_metadata`) |
-| `audit-archive` | `MINIO_AUDIT_ARCHIVE_BUCKET` | 审计冷分区归档 | `{YYYY}/{MM}.jsonl.gz` | **永久**(合规) | 强备份,建议开 versioning + object lock |
+| 桶名            | env 变量                     | 数据类型                                           | Key 前缀约定                                                                                                                         | Lifecycle                                                | 备份建议                                                                                                                           |
+| --------------- | ---------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `annotations`   | `MINIO_BUCKET`               | 标注任务源文件、评论附件、引导手册资产             | `{project_id}/{task_id}/...`、`comment-attachments/{aid}/...`、`projects/{pid}/guide/...`                                            | 评论附件 90 天                                           | 备份                                                                                                                               |
+| `datasets`      | `MINIO_DATASETS_BUCKET`      | 数据集源文件(原始图/视频/文本)                     | `{dataset_name}/{file_name}`                                                                                                         | 永久                                                     | 备份                                                                                                                               |
+| `bug-reports`   | `MINIO_BUG_REPORTS_BUCKET`   | Bug 反馈截图                                       | `bug-report-attachments/{user_id}/{uuid}-{name}`                                                                                     | 整桶 180 天                                              | 不备份                                                                                                                             |
+| `media-cache`   | `MINIO_MEDIA_CACHE_BUCKET`   | **派生缓存**: 缩略图、视频帧、chunk、playback 转码 | `thumbnails/{item_id}.webp`、`videos/{item_id}/frames/{idx}_{w}.{fmt}`、`videos/{item_id}/chunks/{id}.mp4`、`playback/{item_id}.mp4` | **仅 `videos/` 30 天**;`playback/`、`thumbnails/` 不过期 | **不备份**(`videos/` 帧/chunk 按需重生;`playback/`、`thumbnails/` 入库一次性生成、不惰性重建,丢失需重跑 `generate_video_metadata`) |
+| `audit-archive` | `MINIO_AUDIT_ARCHIVE_BUCKET` | 审计冷分区归档                                     | `{YYYY}/{MM}.jsonl.gz`                                                                                                               | **永久**(合规)                                           | 强备份,建议开 versioning + object lock                                                                                             |
 
 ## 路由规则
 

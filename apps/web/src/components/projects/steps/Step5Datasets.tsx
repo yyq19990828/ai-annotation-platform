@@ -145,7 +145,8 @@ export function Step5Datasets({
   return (
     <div className={styles.formStack}>
       <div className={styles.sectionHint}>
-        选择要关联到本项目的数据集（可空 / 多选）。关联后任务会作为「未归类」加入项目；可在下方选择初始分包方式。
+        选择要关联到本项目的数据集（可空 /
+        多选）。关联后任务会作为「未归类」加入项目；可在下方选择初始分包方式。
       </div>
 
       {isLoading && <div className={styles.inlineLoading}>加载数据集…</div>}
@@ -167,24 +168,16 @@ export function Step5Datasets({
                 key={d.id}
                 type="button"
                 onClick={() => toggle(d.id)}
-                className={clsx(
-                  styles.choiceButton,
-                  checked && styles.choiceButtonChecked,
-                )}
+                className={clsx(styles.choiceButton, checked && styles.choiceButtonChecked)}
               >
-                <span
-                  className={clsx(
-                    styles.checkMark,
-                    checked && styles.checkMarkChecked,
-                  )}
-                >
+                <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
                   {checked && <Icon name="check" size={10} />}
                 </span>
                 <span className={styles.choiceBody}>
                   <div className={styles.choiceTitle}>{d.name}</div>
                   <div className={styles.choiceMeta}>
-                    <span className="mono">{d.display_id}</span> · {d.file_count}{" "}
-                    个文件 · {d.data_type}
+                    <span className="mono">{d.display_id}</span> · {d.file_count} 个文件 ·{" "}
+                    {d.data_type}
                     {d.has_scenes ? " · 时序" : ""}
                   </div>
                 </span>
@@ -211,9 +204,7 @@ export function Step5Datasets({
                 <input
                   type="radio"
                   checked={form.splitStrategy === "by_scene"}
-                  onChange={() =>
-                    setForm((s) => ({ ...s, splitStrategy: "by_scene" }))
-                  }
+                  onChange={() => setForm((s) => ({ ...s, splitStrategy: "by_scene" }))}
                 />
                 按 scene 分包
               </label>
@@ -241,10 +232,7 @@ export function Step5Datasets({
                   setForm((s) => ({
                     ...s,
                     splitStrategy: "random",
-                    splitNBatches: Math.max(
-                      2,
-                      Math.min(20, Number(e.target.value)),
-                    ),
+                    splitNBatches: Math.max(2, Math.min(20, Number(e.target.value))),
                   }))
                 }
                 className={clsx(styles.input, styles.batchCountInput)}
@@ -262,9 +250,7 @@ export function Step5Datasets({
               key={jid}
               jobId={jid}
               projectId={project.id}
-              onDone={() =>
-                setLinkJobIds((prev) => prev.filter((x) => x !== jid))
-              }
+              onDone={() => setLinkJobIds((prev) => prev.filter((x) => x !== jid))}
             />
           ))}
         </div>
@@ -272,10 +258,7 @@ export function Step5Datasets({
 
       <div className={styles.stepActions}>
         {linkJobIds.length > 0 ? (
-          <Button
-            variant="primary"
-            onClick={() => onNext(form.datasetIds.length)}
-          >
+          <Button variant="primary" onClick={() => onNext(form.datasetIds.length)}>
             下一步
           </Button>
         ) : (

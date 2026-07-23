@@ -34,7 +34,11 @@ export const useHoveredCommentStore = create<HoveredCommentState>((set) => ({
   pinnedId: null,
   pinnedShapes: null,
   togglePin: (id, shapes) =>
-    set((s) => (s.pinnedId === id ? { pinnedId: null, pinnedShapes: null } : { pinnedId: id, pinnedShapes: shapes })),
+    set((s) =>
+      s.pinnedId === id
+        ? { pinnedId: null, pinnedShapes: null }
+        : { pinnedId: id, pinnedShapes: shapes },
+    ),
   clearPin: () => set({ pinnedId: null, pinnedShapes: null }),
   composingShapes: null,
   setComposing: (shapes) => set({ composingShapes: shapes }),

@@ -86,9 +86,7 @@ const baseDetail = {
   weekly_compare_pct: 10,
   trend_throughput: [100, 110, 120, 130],
   trend_quality: [85, 87, 89, 90],
-  project_distribution: [
-    { project_id: "p1", project_name: "项目A", count: 50 },
-  ],
+  project_distribution: [{ project_id: "p1", project_name: "项目A", count: 50 }],
   duration_histogram: [],
   p50_duration_ms: null,
   p95_duration_ms: null,
@@ -131,7 +129,10 @@ describe("AdminPeoplePage", () => {
   });
 
   it("空列表 → 显示「暂无成员数据」提示", () => {
-    mockUseAdminPeople.mockReturnValue({ data: { items: [], total: 0, period: "7d" }, isLoading: false });
+    mockUseAdminPeople.mockReturnValue({
+      data: { items: [], total: 0, period: "7d" },
+      isLoading: false,
+    });
     renderUI();
     expect(screen.getByText("暂无成员数据")).toBeInTheDocument();
   });
@@ -216,13 +217,14 @@ describe("AdminPeoplePage", () => {
     await waitFor(() => expect(screen.getByLabelText("关闭")).toBeInTheDocument());
     fireEvent.click(screen.getByLabelText("关闭"));
     // 抽屉关闭后详情不在 DOM 中
-    await waitFor(() =>
-      expect(screen.queryByText("4 周趋势")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("4 周趋势")).not.toBeInTheDocument());
   });
 
   it("页面标题「成员绩效」始终可见", () => {
-    mockUseAdminPeople.mockReturnValue({ data: { items: [], total: 0, period: "7d" }, isLoading: false });
+    mockUseAdminPeople.mockReturnValue({
+      data: { items: [], total: 0, period: "7d" },
+      isLoading: false,
+    });
     renderUI();
     expect(screen.getByText("成员绩效")).toBeInTheDocument();
   });

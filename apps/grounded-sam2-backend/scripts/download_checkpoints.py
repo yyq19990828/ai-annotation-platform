@@ -40,23 +40,50 @@ def _parse_variants(raw: str | None) -> list[str]:
             seen[v] = None
     return list(seen)
 
+
 # (filename, hf_repo_id, hf_filename)
 SAM2_FILES = {
-    "tiny":      ("sam2.1_hiera_tiny.pt",      "facebook/sam2.1-hiera-tiny",      "sam2.1_hiera_tiny.pt"),
-    "small":     ("sam2.1_hiera_small.pt",     "facebook/sam2.1-hiera-small",     "sam2.1_hiera_small.pt"),
-    "base_plus": ("sam2.1_hiera_base_plus.pt", "facebook/sam2.1-hiera-base-plus", "sam2.1_hiera_base_plus.pt"),
-    "large":     ("sam2.1_hiera_large.pt",     "facebook/sam2.1-hiera-large",     "sam2.1_hiera_large.pt"),
+    "tiny": (
+        "sam2.1_hiera_tiny.pt",
+        "facebook/sam2.1-hiera-tiny",
+        "sam2.1_hiera_tiny.pt",
+    ),
+    "small": (
+        "sam2.1_hiera_small.pt",
+        "facebook/sam2.1-hiera-small",
+        "sam2.1_hiera_small.pt",
+    ),
+    "base_plus": (
+        "sam2.1_hiera_base_plus.pt",
+        "facebook/sam2.1-hiera-base-plus",
+        "sam2.1_hiera_base_plus.pt",
+    ),
+    "large": (
+        "sam2.1_hiera_large.pt",
+        "facebook/sam2.1-hiera-large",
+        "sam2.1_hiera_large.pt",
+    ),
 }
 
 DINO_FILES = {
-    "T": ("groundingdino_swint_ogc.pth",      "ShilongLiu/GroundingDINO", "groundingdino_swint_ogc.pth"),
-    "B": ("groundingdino_swinb_cogcoor.pth",  "ShilongLiu/GroundingDINO", "groundingdino_swinb_cogcoor.pth"),
+    "T": (
+        "groundingdino_swint_ogc.pth",
+        "ShilongLiu/GroundingDINO",
+        "groundingdino_swint_ogc.pth",
+    ),
+    "B": (
+        "groundingdino_swinb_cogcoor.pth",
+        "ShilongLiu/GroundingDINO",
+        "groundingdino_swinb_cogcoor.pth",
+    ),
 }
 
 
 def _download(target: Path, repo_id: str, filename: str) -> None:
     if target.exists() and target.stat().st_size > 0:
-        print(f"[skip] {target.name} already exists ({target.stat().st_size // 1024} KB)")
+        print(
+            f"[skip] {target.name} already exists ({target.stat().st_size // 1024} KB)"
+        )
         return
     print(f"[download] {repo_id}/{filename} → {target}")
     from huggingface_hub import hf_hub_download
@@ -79,7 +106,9 @@ def main() -> int:
     #       both / 缺省 = 全下 (手动一次性跑).
     mode = sys.argv[1] if len(sys.argv) > 1 else "both"
     if mode not in ("primary", "prefetch", "both"):
-        print(f"ERROR: unknown mode={mode!r}; want primary|prefetch|both", file=sys.stderr)
+        print(
+            f"ERROR: unknown mode={mode!r}; want primary|prefetch|both", file=sys.stderr
+        )
         return 1
 
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,9 +121,15 @@ def main() -> int:
         return 1
 
     # 主变体: 必须成功; 额外预拉变体 (PREFETCH): best-effort.
-    sam_extra = [v for v in _parse_variants(os.getenv("PREFETCH_SAM_VARIANTS")) if v != SAM_VARIANT]
+    sam_extra = [
+        v
+        for v in _parse_variants(os.getenv("PREFETCH_SAM_VARIANTS"))
+        if v != SAM_VARIANT
+    ]
     dino_extra = [
-        v for v in _parse_variants(os.getenv("PREFETCH_DINO_VARIANTS")) if v != DINO_VARIANT
+        v
+        for v in _parse_variants(os.getenv("PREFETCH_DINO_VARIANTS"))
+        if v != DINO_VARIANT
     ]
     for v in sam_extra:
         if v not in SAM2_FILES:
@@ -109,14 +144,38 @@ def main() -> int:
     plan: list[tuple[Path, str, str, bool]] = []
     if mode in ("primary", "both"):
         plan += [
-            (CHECKPOINT_DIR / SAM2_FILES[SAM_VARIANT][0], SAM2_FILES[SAM_VARIANT][1], SAM2_FILES[SAM_VARIANT][2], True),
-            (CHECKPOINT_DIR / DINO_FILES[DINO_VARIANT][0], DINO_FILES[DINO_VARIANT][1], DINO_FILES[DINO_VARIANT][2], True),
+            (
+                CHECKPOINT_DIR / SAM2_FILES[SAM_VARIANT][0],
+                SAM2_FILES[SAM_VARIANT][1],
+                SAM2_FILES[SAM_VARIANT][2],
+                True,
+            ),
+            (
+                CHECKPOINT_DIR / DINO_FILES[DINO_VARIANT][0],
+                DINO_FILES[DINO_VARIANT][1],
+                DINO_FILES[DINO_VARIANT][2],
+                True,
+            ),
         ]
     if mode in ("prefetch", "both"):
         for v in sam_extra:
-            plan.append((CHECKPOINT_DIR / SAM2_FILES[v][0], SAM2_FILES[v][1], SAM2_FILES[v][2], False))
+            plan.append(
+                (
+                    CHECKPOINT_DIR / SAM2_FILES[v][0],
+                    SAM2_FILES[v][1],
+                    SAM2_FILES[v][2],
+                    False,
+                )
+            )
         for v in dino_extra:
-            plan.append((CHECKPOINT_DIR / DINO_FILES[v][0], DINO_FILES[v][1], DINO_FILES[v][2], False))
+            plan.append(
+                (
+                    CHECKPOINT_DIR / DINO_FILES[v][0],
+                    DINO_FILES[v][1],
+                    DINO_FILES[v][2],
+                    False,
+                )
+            )
         if sam_extra or dino_extra:
             print(f"[prefetch] extra SAM={sam_extra} DINO={dino_extra}")
 
@@ -125,7 +184,10 @@ def main() -> int:
             _download(target, repo_id, filename)
         except Exception as exc:  # noqa: BLE001
             if mandatory:
-                print(f"ERROR: failed to fetch primary {repo_id}/{filename}: {exc}", file=sys.stderr)
+                print(
+                    f"ERROR: failed to fetch primary {repo_id}/{filename}: {exc}",
+                    file=sys.stderr,
+                )
                 return 1
             print(
                 f"[warn] prefetch failed for {repo_id}/{filename}: {exc} — "

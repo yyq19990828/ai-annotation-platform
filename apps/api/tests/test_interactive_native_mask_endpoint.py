@@ -106,8 +106,7 @@ def _candidate(prompt_revision: str) -> dict:
 
 def _url(project, backend) -> str:
     return (
-        f"/api/v1/projects/{project.id}/ml-backends/{backend.id}"
-        "/interactive-annotating"
+        f"/api/v1/projects/{project.id}/ml-backends/{backend.id}/interactive-annotating"
     )
 
 
@@ -281,9 +280,7 @@ async def test_native_endpoint_returns_valid_candidate_with_route_lineage(
         return _setup(["polygon", "mask"])
 
     async def fake_predict(self, task_data, context, **kwargs):
-        raw_mask_input = encode_low_res_mask(
-            np.zeros((256, 256), dtype=np.float32)
-        )
+        raw_mask_input = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
         return PredictionResult(
             task_id=task_data["id"],
             result=[_candidate(context["prompt_revision"])],

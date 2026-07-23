@@ -16,7 +16,14 @@ export function colorizeMaskCompareCodes(codes: Uint8Array, opacity = 0.72): Uin
   const output = new Uint8ClampedArray(codes.length * 4);
   const alpha = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
   for (let index = 0; index < codes.length; index += 1) {
-    const color = codes[index] === 1 ? BASELINE : codes[index] === 2 ? CURRENT : codes[index] === 3 ? OVERLAP : null;
+    const color =
+      codes[index] === 1
+        ? BASELINE
+        : codes[index] === 2
+          ? CURRENT
+          : codes[index] === 3
+            ? OVERLAP
+            : null;
     if (!color) continue;
     const offset = index * 4;
     output[offset] = color[0];
@@ -80,39 +87,38 @@ export function MaskCompareTileLayer({
       setLoaded(null);
       return;
     }
-    setLoaded((current) => (
-      current && (current.store !== store || current.mode !== storeMode) ? null : current
-    ));
+    setLoaded((current) =>
+      current && (current.store !== store || current.mode !== storeMode) ? null : current,
+    );
     let active = true;
     const run = () => {
       const currentViewport = viewportRef.current;
       if (!currentViewport) return;
-      void store.loadViewport(currentViewport).then((next) => {
-        if (active) setLoaded({ store, mode: store.mode, tiles: next });
-      }).catch((error: unknown) => {
-        if (!active || error instanceof MaskCompareStaleGenerationError) return;
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setLoaded(null);
-      });
+      void store
+        .loadViewport(currentViewport)
+        .then((next) => {
+          if (active) setLoaded({ store, mode: store.mode, tiles: next });
+        })
+        .catch((error: unknown) => {
+          if (!active || error instanceof MaskCompareStaleGenerationError) return;
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setLoaded(null);
+        });
     };
-    const frame = typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame(run)
-      : null;
+    const frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : null;
     if (frame === null) run();
     return () => {
       active = false;
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [signature, store, storeMode]);
-  if (
-    !store
-    || loaded?.store !== store
-    || loaded.mode !== store.mode
-    || loaded.tiles.length === 0
-  ) return null;
+  if (!store || loaded?.store !== store || loaded.mode !== store.mode || loaded.tiles.length === 0)
+    return null;
   return (
     <Layer name="mask-compare" listening={false}>
-      {loaded.tiles.map((tile) => <TileImage key={tile.key} tile={tile} />)}
+      {loaded.tiles.map((tile) => (
+        <TileImage key={tile.key} tile={tile} />
+      ))}
     </Layer>
   );
 }

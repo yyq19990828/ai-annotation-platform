@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import type { AnnotationResponse, VideoBboxGeometry, VideoPolygonGeometry, VideoPolylineGeometry, VideoTrackGeometry, VideoTrackPolygonGeometry, VideoTrackPolylineGeometry } from "@/types";
+import type {
+  AnnotationResponse,
+  VideoBboxGeometry,
+  VideoPolygonGeometry,
+  VideoPolylineGeometry,
+  VideoTrackGeometry,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolylineGeometry,
+} from "@/types";
 import type { Viewport } from "../state/useViewportTransform";
 import type { VideoTool } from "../state/useWorkbenchState";
 import { applyResize } from "./ResizeHandles";
@@ -22,11 +30,7 @@ import {
 import { moveVertex } from "./shared/geometry/polygon";
 import { pickTopVideoEntryAt, pickTopVideoMaskAt } from "./videoStagePicking";
 import type { VideoMaskRenderRecord } from "./videoMaskFrames";
-import {
-  clientToVideoNorm,
-  videoNormToClient,
-  type VideoPixelSize,
-} from "./videoKonvaCoordinates";
+import { clientToVideoNorm, videoNormToClient, type VideoPixelSize } from "./videoKonvaCoordinates";
 import type {
   VideoDragState,
   VideoResizeDirection,
@@ -92,16 +96,19 @@ export function advanceDrag(
     const dy = pt.y - drag.start.y;
     return {
       ...drag,
-      current: drag.origin.map(([px, py]) => [clamp01(px + dx), clamp01(py + dy)] as [number, number]),
+      current: drag.origin.map(
+        ([px, py]) => [clamp01(px + dx), clamp01(py + dy)] as [number, number],
+      ),
     };
   }
-  const next = drag.kind === "resize"
-    ? applyResize(drag.origin, drag.start, pt, drag.dir, modifiers)
-    : clampGeom({
-      ...drag.origin,
-      x: drag.origin.x + (pt.x - drag.start.x),
-      y: drag.origin.y + (pt.y - drag.start.y),
-    });
+  const next =
+    drag.kind === "resize"
+      ? applyResize(drag.origin, drag.start, pt, drag.dir, modifiers)
+      : clampGeom({
+          ...drag.origin,
+          x: drag.origin.x + (pt.x - drag.start.x),
+          y: drag.origin.y + (pt.y - drag.start.y),
+        });
   return { ...drag, current: next };
 }
 
@@ -117,7 +124,12 @@ export type VideoDragCommit =
   // 坐标归一化 [0,1]; bbox 形如 [x1,y1,x2,y2] (与图片侧 onSamPrompt 同契约)。
   | { type: "samProbe"; mode: "point"; pt: [number, number]; alt: boolean }
   // bbox = interactive_box 提示; exemplar = 视觉示例框 (同为拖框, 但派发到 runExemplar)。
-  | { type: "samProbe"; mode: "bbox" | "exemplar"; bbox: [number, number, number, number]; alt: boolean };
+  | {
+      type: "samProbe";
+      mode: "bbox" | "exemplar";
+      bbox: [number, number, number, number];
+      alt: boolean;
+    };
 
 export interface ResolveDragCommitCtx {
   annotations: readonly AnnotationResponse[];
@@ -159,8 +171,14 @@ export function resolveDragCommit(
     // v0.21.12 · 断吞框:同帧再画框(该帧已有关键帧)几乎总是「标第二个物体」,而非重做本帧关键帧。
     // 此时跳过 track 分支、落到下方 draw 新建分支,避免 upsertKeyframe 静默替换第一个框。
     // 跨帧画框(该帧无关键帧)仍延展当前轨迹,保留插值这一轨迹标注的核心价值。
-    if (videoTool === "track" && selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
-      const hasKeyframeAtFrame = selectedTrack.geometry.keyframes.some((kf) => kf.frame_index === frameIndex);
+    if (
+      videoTool === "track" &&
+      selectedTrack &&
+      !lockedTrackIds.has(selectedTrack.geometry.track_id)
+    ) {
+      const hasKeyframeAtFrame = selectedTrack.geometry.keyframes.some(
+        (kf) => kf.frame_index === frameIndex,
+      );
       if (!hasKeyframeAtFrame) return { type: "track", ann: selectedTrack, geom };
     }
     const kind = videoTool === "track" ? "video_track_bbox" : "video_bbox";
@@ -171,8 +189,12 @@ export function resolveDragCommit(
   // 单帧 → 替换 points; 轨迹 → 由 commit 在当前帧 upsert 关键帧 (据几何类型分流)。
   if (drag.kind === "polyVertex" || drag.kind === "polyMove") {
     const polyAnn = annotations.find((a) => a.id === drag.id);
-    const isPoly = polyAnn && (isVideoPolygon(polyAnn) || isVideoPolyline(polyAnn)
-      || isVideoPolygonTrack(polyAnn) || isVideoPolylineTrack(polyAnn));
+    const isPoly =
+      polyAnn &&
+      (isVideoPolygon(polyAnn) ||
+        isVideoPolyline(polyAnn) ||
+        isVideoPolygonTrack(polyAnn) ||
+        isVideoPolylineTrack(polyAnn));
     if (!polyAnn || !isPoly) return { type: "none" };
     return { type: "poly", ann: polyAnn, points: drag.current };
   }
@@ -180,7 +202,8 @@ export function resolveDragCommit(
   const ann = annotations.find((a) => a.id === drag.id);
   if (!ann) return { type: "none" };
   const geom = drag.current;
-  if (drag.kind === "resize" && (geom.w < VIDEO_MIN_BOX || geom.h < VIDEO_MIN_BOX)) return { type: "none" };
+  if (drag.kind === "resize" && (geom.w < VIDEO_MIN_BOX || geom.h < VIDEO_MIN_BOX))
+    return { type: "none" };
   if (isVideoTrack(ann)) return { type: "track", ann, geom };
   if (isVideoBbox(ann)) return { type: "bbox", ann, geom };
   return { type: "none" };
@@ -198,11 +221,16 @@ function trackIdOf(ann: AnnotationResponse): string | null {
  * polygon/polyline 几何在某帧的可编辑顶点(整体平移的 origin);非点集几何返回 null。
  * 单帧取几何自身 points;轨迹解析当前帧(精确关键帧 / 插值),outside 帧无解析 → null。
  */
-function pointsAtFrame(ann: AnnotationResponse | undefined, frameIndex: number): [number, number][] | null {
+function pointsAtFrame(
+  ann: AnnotationResponse | undefined,
+  frameIndex: number,
+): [number, number][] | null {
   if (!ann) return null;
   if (isVideoPolygon(ann) || isVideoPolyline(ann)) return ann.geometry.points;
-  if (isVideoPolygonTrack(ann)) return resolveVideoPolygonTrackAtFrame(ann.geometry, frameIndex)?.points ?? null;
-  if (isVideoPolylineTrack(ann)) return resolveVideoPolylineTrackAtFrame(ann.geometry, frameIndex)?.points ?? null;
+  if (isVideoPolygonTrack(ann))
+    return resolveVideoPolygonTrackAtFrame(ann.geometry, frameIndex)?.points ?? null;
+  if (isVideoPolylineTrack(ann))
+    return resolveVideoPolylineTrackAtFrame(ann.geometry, frameIndex)?.points ?? null;
   return null;
 }
 
@@ -242,7 +270,16 @@ export interface UseVideoKonvaInteractionParams {
     geom: VideoStageGeom,
     anchor: { left: number; top: number },
   ) => void;
-  onUpdate: (annotation: AnnotationResponse, geometry: VideoBboxGeometry | VideoTrackGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry) => void;
+  onUpdate: (
+    annotation: AnnotationResponse,
+    geometry:
+      | VideoBboxGeometry
+      | VideoTrackGeometry
+      | VideoPolygonGeometry
+      | VideoPolylineGeometry
+      | VideoTrackPolygonGeometry
+      | VideoTrackPolylineGeometry,
+  ) => void;
   /**
    * v0.21.23 · 交互式 SAM 提示松手回调 (smart-point / smart-box)。
    * 坐标归一化 [0,1]，与图片侧 onSamPrompt 同契约；由 shell 取当前帧图请求候选。
@@ -276,7 +313,9 @@ export interface VideoKonvaInteraction {
  * 视频 Konva 交互 hook:持有 drag 状态,分流 pointerdown,拖拽过程/松手挂 window 跟踪。
  * 易变输入用 ref 快照,使 window 监听只在「是否拖拽中」切换时装卸一次,避免逐帧重装。
  */
-export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams): VideoKonvaInteraction {
+export function useVideoKonvaInteraction(
+  params: UseVideoKonvaInteractionParams,
+): VideoKonvaInteraction {
   const [drag, setDrag] = useState<VideoDragState>(null);
   const dragRef = useRef<VideoDragState>(null);
   dragRef.current = drag;
@@ -291,129 +330,153 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
     return clientToVideoNorm(clientX, clientY, rect, p.vpRef.current, p.size);
   }, []);
 
-  const beginDraw = useCallback((native: PointerEvent) => {
-    const p = paramsRef.current;
-    if (p.readOnly || p.isPlaybackActive) return;
-    // v0.21.23 · 交互式 SAM 工具不画几何, 起 samProbe 拖拽 (point 零位移 / bbox 拖框)。
-    // 放在 creationEnabled 之前: 提示不创建标注, 其可用性已由工具栏三层门控裁决。
-    if (isSamProbeTool(p.videoTool)) {
-      const probePt = pointFromClient(native.clientX, native.clientY);
-      if (!probePt) return;
-      p.onSelect(null);
-      setDrag({
-        kind: "samProbe",
-        mode: samProbeMode(p.videoTool),
-        start: probePt,
-        current: probePt,
-        // 负点 = Alt 按住 或 工具条切到「负向」(与图片侧 SmartPointTool 同式)。
-        alt: !!native.altKey || p.samPolarity === "negative",
-      });
-      return;
-    }
-    if (!p.creationEnabled) return;
-    const trackLocked = p.selectedTrack ? p.lockedTrackIds.has(p.selectedTrack.geometry.track_id) : false;
-    if (p.videoTool === "track" && trackLocked) return;
-    const pt = pointFromClient(native.clientX, native.clientY);
-    if (!pt) return;
-    if (p.videoTool !== "track" || !p.selectedTrack) p.onSelect(null);
-    setDrag({ kind: "draw", start: pt, current: pt });
-  }, [pointFromClient]);
+  const beginDraw = useCallback(
+    (native: PointerEvent) => {
+      const p = paramsRef.current;
+      if (p.readOnly || p.isPlaybackActive) return;
+      // v0.21.23 · 交互式 SAM 工具不画几何, 起 samProbe 拖拽 (point 零位移 / bbox 拖框)。
+      // 放在 creationEnabled 之前: 提示不创建标注, 其可用性已由工具栏三层门控裁决。
+      if (isSamProbeTool(p.videoTool)) {
+        const probePt = pointFromClient(native.clientX, native.clientY);
+        if (!probePt) return;
+        p.onSelect(null);
+        setDrag({
+          kind: "samProbe",
+          mode: samProbeMode(p.videoTool),
+          start: probePt,
+          current: probePt,
+          // 负点 = Alt 按住 或 工具条切到「负向」(与图片侧 SmartPointTool 同式)。
+          alt: !!native.altKey || p.samPolarity === "negative",
+        });
+        return;
+      }
+      if (!p.creationEnabled) return;
+      const trackLocked = p.selectedTrack
+        ? p.lockedTrackIds.has(p.selectedTrack.geometry.track_id)
+        : false;
+      if (p.videoTool === "track" && trackLocked) return;
+      const pt = pointFromClient(native.clientX, native.clientY);
+      if (!pt) return;
+      if (p.videoTool !== "track" || !p.selectedTrack) p.onSelect(null);
+      setDrag({ kind: "draw", start: pt, current: pt });
+    },
+    [pointFromClient],
+  );
 
-  const beginMove = useCallback((hit: VideoPickable, native: PointerEvent) => {
-    const p = paramsRef.current;
-    const ann = p.annotations.find((a) => a.id === hit.id);
-    const trackId = ann ? trackIdOf(ann) : null;
-    const toggle = native.shiftKey || native.metaKey || native.ctrlKey;
-    if (toggle) {
-      p.onSelect(hit.id, { shift: true });
-      return;
-    }
-    p.onSelect(hit.id);
-    if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
-    const pt = pointFromClient(native.clientX, native.clientY);
-    if (!pt) return;
-    // polygon/polyline: 命中框内 → 整体平移 (origin 是 points, 非 bbox geom)。
-    // 单帧取几何自身 points; 轨迹取当前帧解析后的多边形/折线 (插值帧也可整体移动 → 物化关键帧)。
-    const pts = pointsAtFrame(ann, p.frameIndex);
-    if (pts) {
-      setDrag({ kind: "polyMove", id: hit.id, start: pt, origin: pts, current: pts });
-      return;
-    }
-    setDrag({ kind: "move", id: hit.id, start: pt, origin: hit.geom, current: hit.geom });
-  }, [pointFromClient]);
+  const beginMove = useCallback(
+    (hit: VideoPickable, native: PointerEvent) => {
+      const p = paramsRef.current;
+      const ann = p.annotations.find((a) => a.id === hit.id);
+      const trackId = ann ? trackIdOf(ann) : null;
+      const toggle = native.shiftKey || native.metaKey || native.ctrlKey;
+      if (toggle) {
+        p.onSelect(hit.id, { shift: true });
+        return;
+      }
+      p.onSelect(hit.id);
+      if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
+      const pt = pointFromClient(native.clientX, native.clientY);
+      if (!pt) return;
+      // polygon/polyline: 命中框内 → 整体平移 (origin 是 points, 非 bbox geom)。
+      // 单帧取几何自身 points; 轨迹取当前帧解析后的多边形/折线 (插值帧也可整体移动 → 物化关键帧)。
+      const pts = pointsAtFrame(ann, p.frameIndex);
+      if (pts) {
+        setDrag({ kind: "polyMove", id: hit.id, start: pt, origin: pts, current: pts });
+        return;
+      }
+      setDrag({ kind: "move", id: hit.id, start: pt, origin: hit.geom, current: hit.geom });
+    },
+    [pointFromClient],
+  );
 
-  const onResizeHandlePointerDown = useCallback((
-    dir: VideoResizeDirection,
-    entryId: string,
-    geom: VideoStageGeom,
-    e: Konva.KonvaEventObject<PointerEvent>,
-  ) => {
-    e.cancelBubble = true;
-    const native = e.evt;
-    const p = paramsRef.current;
-    const ann = p.annotations.find((a) => a.id === entryId);
-    const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
-    p.onSelect(entryId);
-    if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
-    const pt = pointFromClient(native.clientX, native.clientY);
-    if (!pt) return;
-    setDrag({ kind: "resize", id: entryId, dir, start: pt, origin: geom, current: geom });
-  }, [pointFromClient]);
+  const onResizeHandlePointerDown = useCallback(
+    (
+      dir: VideoResizeDirection,
+      entryId: string,
+      geom: VideoStageGeom,
+      e: Konva.KonvaEventObject<PointerEvent>,
+    ) => {
+      e.cancelBubble = true;
+      const native = e.evt;
+      const p = paramsRef.current;
+      const ann = p.annotations.find((a) => a.id === entryId);
+      const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
+      p.onSelect(entryId);
+      if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
+      const pt = pointFromClient(native.clientX, native.clientY);
+      if (!pt) return;
+      setDrag({ kind: "resize", id: entryId, dir, start: pt, origin: geom, current: geom });
+    },
+    [pointFromClient],
+  );
 
   // 单帧 polygon/polyline 顶点句柄按下: 拖该顶点。cancelBubble 防冒泡到 Stage 触发平移/选择。
-  const onVertexPointerDown = useCallback((
-    entryId: string,
-    vidx: number,
-    points: [number, number][],
-    e: Konva.KonvaEventObject<PointerEvent>,
-  ) => {
-    e.cancelBubble = true;
-    if (e.evt.button !== 0) return;
-    const p = paramsRef.current;
-    p.onSelect(entryId);
-    const ann = p.annotations.find((a) => a.id === entryId);
-    const trackId = ann ? trackIdOf(ann) : null;
-    if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
-    const pt = pointFromClient(e.evt.clientX, e.evt.clientY);
-    if (!pt) return;
-    setDrag({ kind: "polyVertex", id: entryId, vidx, start: pt, origin: points, current: points });
-  }, [pointFromClient]);
+  const onVertexPointerDown = useCallback(
+    (
+      entryId: string,
+      vidx: number,
+      points: [number, number][],
+      e: Konva.KonvaEventObject<PointerEvent>,
+    ) => {
+      e.cancelBubble = true;
+      if (e.evt.button !== 0) return;
+      const p = paramsRef.current;
+      p.onSelect(entryId);
+      const ann = p.annotations.find((a) => a.id === entryId);
+      const trackId = ann ? trackIdOf(ann) : null;
+      if (p.readOnly || p.isPlaybackActive || (trackId && p.lockedTrackIds.has(trackId))) return;
+      const pt = pointFromClient(e.evt.clientX, e.evt.clientY);
+      if (!pt) return;
+      setDrag({
+        kind: "polyVertex",
+        id: entryId,
+        vidx,
+        start: pt,
+        origin: points,
+        current: points,
+      });
+    },
+    [pointFromClient],
+  );
 
-  const onStagePointerDown = useCallback((e: Konva.KonvaEventObject<PointerEvent>) => {
-    const native = e.evt;
-    if (native.button !== 0) return; // 右键/中键平移由容器层处理
-    const p = paramsRef.current;
-    const pt = pointFromClient(native.clientX, native.clientY);
-    if (!pt) return;
-    // v0.21.23 · AI 工具下不做命中拾取: 点在已有标注上也应发 SAM 提示 (对齐图片侧)。
-    if (isSamProbeTool(p.videoTool)) {
-      beginDraw(native);
-      return;
-    }
-    const maskHit = pickTopVideoMaskAt(p.maskEntries, pt);
-    if (maskHit) {
-      p.onSelect(maskHit.id, { shift: native.shiftKey || native.metaKey || native.ctrlKey });
-      return;
-    }
-    // z 序:carryOver(最低) → entries → 选中 ghost(最高);pickTop 逆序取「最后命中」为 top,
-    // 故 carryOver 置首,让实框 / 选中 ghost 覆盖时优先。
-    const pickables: VideoPickable[] = [
-      ...p.carryOverGhosts,
-      ...p.entries,
-      ...(p.ghost ? [p.ghost] : []),
-    ];
-    const hit = pickTopVideoEntryAt(pickables, pt);
-    if (!hit) {
-      beginDraw(native);
-      return;
-    }
-    // 点中待续轨迹 ghost → 仅选中(不落关键帧);续写交给随后画框(WS1)或拖其 ghost。
-    if (p.carryOverGhosts.some((g) => g.id === hit.id)) {
-      p.onSelect(hit.id, { shift: native.shiftKey || native.metaKey || native.ctrlKey });
-      return;
-    }
-    beginMove(hit, native);
-  }, [beginDraw, beginMove, pointFromClient]);
+  const onStagePointerDown = useCallback(
+    (e: Konva.KonvaEventObject<PointerEvent>) => {
+      const native = e.evt;
+      if (native.button !== 0) return; // 右键/中键平移由容器层处理
+      const p = paramsRef.current;
+      const pt = pointFromClient(native.clientX, native.clientY);
+      if (!pt) return;
+      // v0.21.23 · AI 工具下不做命中拾取: 点在已有标注上也应发 SAM 提示 (对齐图片侧)。
+      if (isSamProbeTool(p.videoTool)) {
+        beginDraw(native);
+        return;
+      }
+      const maskHit = pickTopVideoMaskAt(p.maskEntries, pt);
+      if (maskHit) {
+        p.onSelect(maskHit.id, { shift: native.shiftKey || native.metaKey || native.ctrlKey });
+        return;
+      }
+      // z 序:carryOver(最低) → entries → 选中 ghost(最高);pickTop 逆序取「最后命中」为 top,
+      // 故 carryOver 置首,让实框 / 选中 ghost 覆盖时优先。
+      const pickables: VideoPickable[] = [
+        ...p.carryOverGhosts,
+        ...p.entries,
+        ...(p.ghost ? [p.ghost] : []),
+      ];
+      const hit = pickTopVideoEntryAt(pickables, pt);
+      if (!hit) {
+        beginDraw(native);
+        return;
+      }
+      // 点中待续轨迹 ghost → 仅选中(不落关键帧);续写交给随后画框(WS1)或拖其 ghost。
+      if (p.carryOverGhosts.some((g) => g.id === hit.id)) {
+        p.onSelect(hit.id, { shift: native.shiftKey || native.metaKey || native.ctrlKey });
+        return;
+      }
+      beginMove(hit, native);
+    },
+    [beginDraw, beginMove, pointFromClient],
+  );
 
   const commit = useCallback((finalDrag: VideoDragState, finalPt: { x: number; y: number }) => {
     const p = paramsRef.current;
@@ -457,7 +520,7 @@ export function useVideoKonvaInteraction(params: UseVideoKonvaInteractionParams)
         p.onUpdate(action.ann, { ...g, points: action.points });
       } else if (g.type === "video_polyline") {
         p.onUpdate(action.ann, { ...g, points: action.points });
-      // 轨迹: 在当前帧 upsert 一个 manual 关键帧 (精确帧替换 / 插值帧物化)。
+        // 轨迹: 在当前帧 upsert 一个 manual 关键帧 (精确帧替换 / 插值帧物化)。
       } else if (g.type === "video_track_polygon") {
         p.onUpdate(action.ann, upsertPointsKeyframe(g, p.frameIndex, action.points));
       } else if (g.type === "video_track_polyline") {

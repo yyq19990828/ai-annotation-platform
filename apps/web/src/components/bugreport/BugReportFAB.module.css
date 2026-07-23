@@ -14,7 +14,9 @@
   border: none;
   border-radius: 50%;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
-  transition: transform 0.15s, opacity 0.15s;
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
 }
 
 .button:hover {

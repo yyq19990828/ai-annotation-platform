@@ -32,7 +32,11 @@ function expectColors(out: Float32Array, expected: number[]) {
 }
 
 /** 造 w×h 的 RGBA buffer,fill 用 (px,py)→[r,g,b] 回调(0..255)。 */
-function image(w: number, h: number, fill: (px: number, py: number) => [number, number, number]): Uint8ClampedArray {
+function image(
+  w: number,
+  h: number,
+  fill: (px: number, py: number) => [number, number, number],
+): Uint8ClampedArray {
   const data = new Uint8ClampedArray(w * h * 4);
   for (let py = 0; py < h; py++) {
     for (let px = 0; px < w; px++) {
@@ -193,29 +197,28 @@ describe("adjustColors", () => {
   });
 
   it("contrast>1 绕 0.5 灰点拉伸", () => {
-    const out = adjustColors(
-      new Float32Array([0.25, 0.5, 0.75]),
-      { contrast: 2, brightness: 0, gamma: 1 },
-    );
+    const out = adjustColors(new Float32Array([0.25, 0.5, 0.75]), {
+      contrast: 2,
+      brightness: 0,
+      gamma: 1,
+    });
     expect(out[0]).toBeLessThan(0.25);
     expect(out[1]).toBeCloseTo(0.5, 2);
     expect(out[2]).toBeGreaterThan(0.75);
   });
 
   it("brightness 正向整体提亮并夹到 [0,1]", () => {
-    const out = adjustColors(
-      new Float32Array([0.1, 0.9]),
-      { contrast: 1, brightness: 0.2, gamma: 1 },
-    );
+    const out = adjustColors(new Float32Array([0.1, 0.9]), {
+      contrast: 1,
+      brightness: 0.2,
+      gamma: 1,
+    });
     expect(out[0]).toBeCloseTo(0.3, 2);
     expect(out[1]).toBe(1);
   });
 
   it("gamma>1 提亮中间调", () => {
-    const out = adjustColors(
-      new Float32Array([0.5]),
-      { contrast: 1, brightness: 0, gamma: 2 },
-    );
+    const out = adjustColors(new Float32Array([0.5]), { contrast: 1, brightness: 0, gamma: 2 });
     expect(out[0]).toBeGreaterThan(0.5);
   });
 

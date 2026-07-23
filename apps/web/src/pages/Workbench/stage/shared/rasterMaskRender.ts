@@ -43,8 +43,9 @@ export interface RasterMaskPickSurface {
 }
 
 /** Shared committed-mask view model for image and video renderers. */
-export interface RasterMaskRenderRecord<TSource extends string = string>
-  extends RasterMaskPickSurface {
+export interface RasterMaskRenderRecord<
+  TSource extends string = string,
+> extends RasterMaskPickSurface {
   id: string;
   source: TSource;
   image: CanvasImageSource;
@@ -141,14 +142,14 @@ function scanRasterMaskAlpha(
       for (let foregroundX = start; foregroundX <= end; foregroundX += 1) {
         const offset = y * width + foregroundX;
         if (
-          foregroundX === 0
-          || foregroundX === width - 1
-          || y === 0
-          || y === height - 1
-          || alpha[offset - 1] === 0
-          || alpha[offset + 1] === 0
-          || alpha[offset - width] === 0
-          || alpha[offset + width] === 0
+          foregroundX === 0 ||
+          foregroundX === width - 1 ||
+          y === 0 ||
+          y === height - 1 ||
+          alpha[offset - 1] === 0 ||
+          alpha[offset + 1] === 0 ||
+          alpha[offset - width] === 0 ||
+          alpha[offset + width] === 0
         ) {
           boundaryPixelCount += 1;
         }
@@ -230,10 +231,7 @@ function countRasterMaskHoles(alpha: Uint8Array, width: number, height: number):
     const root = Math.min(leftRoot, rightRoot);
     const merged = Math.max(leftRoot, rightRoot);
     parents.set(merged, root);
-    touchesBorder.set(
-      root,
-      !!touchesBorder.get(leftRoot) || !!touchesBorder.get(rightRoot),
-    );
+    touchesBorder.set(root, !!touchesBorder.get(leftRoot) || !!touchesBorder.get(rightRoot));
     touchesBorder.delete(merged);
     return root;
   };
@@ -259,10 +257,7 @@ function countRasterMaskHoles(alpha: Uint8Array, width: number, height: number):
         label = nextLabel;
         nextLabel += 1;
         parents.set(label, label);
-        touchesBorder.set(
-          label,
-          y === 0 || y === height - 1 || start === 0 || end === width - 1,
-        );
+        touchesBorder.set(label, y === 0 || y === height - 1 || start === 0 || end === width - 1);
       } else {
         label = overlappingLabels[0];
         for (let index = 1; index < overlappingLabels.length; index += 1) {
@@ -386,20 +381,21 @@ export async function createTintedRasterMaskImage(
   if (crop.width === 0 || crop.height === 0) return null;
   const rgba = buildTintedMaskRgba(crop.alpha, color);
   const imageData = new ImageData(rgba, crop.width, crop.height);
-  const image = typeof createImageBitmap === "function"
-    ? await createImageBitmap(imageData)
-    : (() => {
-        if (typeof document === "undefined") {
-          throw new Error("canvas is unavailable");
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = crop.width;
-        canvas.height = crop.height;
-        const context = canvas.getContext("2d");
-        if (!context) throw new Error("2D canvas context is unavailable");
-        context.putImageData(imageData, 0, 0);
-        return canvas;
-      })();
+  const image =
+    typeof createImageBitmap === "function"
+      ? await createImageBitmap(imageData)
+      : (() => {
+          if (typeof document === "undefined") {
+            throw new Error("canvas is unavailable");
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = crop.width;
+          canvas.height = crop.height;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("2D canvas context is unavailable");
+          context.putImageData(imageData, 0, 0);
+          return canvas;
+        })();
   return { image, x: crop.x, y: crop.y, width: crop.width, height: crop.height };
 }
 
@@ -415,7 +411,8 @@ export function rasterMaskPreviewDimensions(
   let previewWidth = Math.max(1, Math.floor(width * scale));
   let previewHeight = Math.max(1, Math.floor(height * scale));
   if (previewWidth * previewHeight > pixelBudget) {
-    if (previewWidth <= previewHeight) previewHeight = Math.max(1, Math.floor(pixelBudget / previewWidth));
+    if (previewWidth <= previewHeight)
+      previewHeight = Math.max(1, Math.floor(pixelBudget / previewWidth));
     else previewWidth = Math.max(1, Math.floor(pixelBudget / previewHeight));
   }
   return { width: previewWidth, height: previewHeight };
@@ -435,24 +432,35 @@ export async function createTintedRasterMaskPreviewImage(
   }
   const previewAlpha = new Uint8Array(preview.width * preview.height);
   for (let y = 0; y < crop.height; y += 1) {
-    const previewY = Math.min(preview.height - 1, Math.floor(y * preview.height / crop.height));
+    const previewY = Math.min(preview.height - 1, Math.floor((y * preview.height) / crop.height));
     for (let x = 0; x < crop.width; x += 1) {
       if (crop.alpha[y * crop.width + x] === 0) continue;
-      const previewX = Math.min(preview.width - 1, Math.floor(x * preview.width / crop.width));
+      const previewX = Math.min(preview.width - 1, Math.floor((x * preview.width) / crop.width));
       previewAlpha[previewY * preview.width + previewX] = 255;
     }
   }
-  const rendered = await createTintedRasterMaskImage({
-    ...analysis,
-    crop: { x: crop.x, y: crop.y, width: preview.width, height: preview.height, alpha: previewAlpha },
-  }, color);
-  return rendered && {
-    ...rendered,
-    x: crop.x,
-    y: crop.y,
-    width: preview.width,
-    height: preview.height,
-  };
+  const rendered = await createTintedRasterMaskImage(
+    {
+      ...analysis,
+      crop: {
+        x: crop.x,
+        y: crop.y,
+        width: preview.width,
+        height: preview.height,
+        alpha: previewAlpha,
+      },
+    },
+    color,
+  );
+  return (
+    rendered && {
+      ...rendered,
+      x: crop.x,
+      y: crop.y,
+      width: preview.width,
+      height: preview.height,
+    }
+  );
 }
 
 export function closeRasterMaskImage(image: CanvasImageSource | null | undefined) {
@@ -467,21 +475,21 @@ function surfaceContainsPoint(surface: RasterMaskPickSurface, point: RasterMaskP
     return cocoRleContainsPixel(surface.rle, sourceX, sourceY);
   }
   if (
-    sourceWidth <= 0
-    || sourceHeight <= 0
-    || crop.width <= 0
-    || crop.height <= 0
-    || crop.alpha.length !== crop.width * crop.height
+    sourceWidth <= 0 ||
+    sourceHeight <= 0 ||
+    crop.width <= 0 ||
+    crop.height <= 0 ||
+    crop.alpha.length !== crop.width * crop.height
   ) {
     return false;
   }
   const sourceX = Math.min(sourceWidth - 1, Math.floor(point.x * sourceWidth));
   const sourceY = Math.min(sourceHeight - 1, Math.floor(point.y * sourceHeight));
   if (
-    sourceX < crop.x
-    || sourceX >= crop.x + crop.width
-    || sourceY < crop.y
-    || sourceY >= crop.y + crop.height
+    sourceX < crop.x ||
+    sourceX >= crop.x + crop.width ||
+    sourceY < crop.y ||
+    sourceY >= crop.y + crop.height
   ) {
     return false;
   }
@@ -505,9 +513,7 @@ export function pickTopRasterMaskAt<T extends { zOrder: number }>(
   let pickedIndex = -1;
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
-    const surface = surfaceFor
-      ? surfaceFor(record)
-      : record as T & RasterMaskPickSurface;
+    const surface = surfaceFor ? surfaceFor(record) : (record as T & RasterMaskPickSurface);
     if (!surfaceContainsPoint(surface, point)) continue;
     if (record.zOrder > pickedZ || (record.zOrder === pickedZ && index > pickedIndex)) {
       picked = record;

@@ -63,15 +63,11 @@ export interface AiMaskAcceptResponse {
 
 export const aiMasksApi = {
   accept: (taskId: string, payload: AiMaskAcceptRequest) => {
-    const expectedVersion = payload.target.mode === "refine"
-      ? payload.target.source_version
-      : null;
+    const expectedVersion = payload.target.mode === "refine" ? payload.target.source_version : null;
     return apiClient.post<AiMaskAcceptResponse>(
       `/tasks/${taskId}/ai-mask-candidates/accept`,
       payload,
-      expectedVersion == null
-        ? undefined
-        : { headers: { "If-Match": `W/"${expectedVersion}"` } },
+      expectedVersion == null ? undefined : { headers: { "If-Match": `W/"${expectedVersion}"` } },
     );
   },
 };

@@ -18,12 +18,12 @@ Dense full-frame masks retain about 9.89 MiB each. Twenty simultaneously visible
 
 All times are milliseconds. Worker total includes module startup, decode, analysis and transfer. Pipeline includes Worker total plus main-thread bitmap construction.
 
-| Fixture | Area | Components | Holes | Decode p50 / p95 | Analyze p50 / p95 | Worker p50 / p95 | Bitmap p50 / p95 | Pipeline p50 / p95 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Sparse | 99,468 | 1 | 0 | 2.10 / 2.40 | 53.70 / 57.30 | 67.40 / 70.50 | 3.70 / 5.30 | 71.10 / 75.90 |
-| Dense | 2,073,600 | 1 | 0 | 12.00 / 13.10 | 47.80 / 57.60 | 74.00 / 86.70 | 36.80 / 41.60 | 115.40 / 124.70 |
-| Hole | 933,120 | 1 | 1 | 8.90 / 9.60 | 100.20 / 111.60 | 120.20 / 135.00 | 19.10 / 19.80 | 139.40 / 155.00 |
-| Three components | 220,816 | 3 | 0 | 4.20 / 4.20 | 72.40 / 79.80 | 90.00 / 97.70 | 15.00 / 18.10 | 107.00 / 114.80 |
+| Fixture          |      Area | Components | Holes | Decode p50 / p95 | Analyze p50 / p95 | Worker p50 / p95 | Bitmap p50 / p95 | Pipeline p50 / p95 |
+| ---------------- | --------: | ---------: | ----: | ---------------: | ----------------: | ---------------: | ---------------: | -----------------: |
+| Sparse           |    99,468 |          1 |     0 |      2.10 / 2.40 |     53.70 / 57.30 |    67.40 / 70.50 |      3.70 / 5.30 |      71.10 / 75.90 |
+| Dense            | 2,073,600 |          1 |     0 |    12.00 / 13.10 |     47.80 / 57.60 |    74.00 / 86.70 |    36.80 / 41.60 |    115.40 / 124.70 |
+| Hole             |   933,120 |          1 |     1 |      8.90 / 9.60 |   100.20 / 111.60 |  120.20 / 135.00 |    19.10 / 19.80 |    139.40 / 155.00 |
+| Three components |   220,816 |          3 |     0 |      4.20 / 4.20 |     72.40 / 79.80 |    90.00 / 97.70 |    15.00 / 18.10 |    107.00 / 114.80 |
 
 The analysis values above exceed 50 ms for topology-heavy masks, which is why production has no silent synchronous fallback: decode, AABB, area, components, holes and boundary analysis stay inside the Worker. The only measured main-thread stage is bitmap creation, and its maximum was 41.60 ms.
 
@@ -41,12 +41,12 @@ The benchmark's conservative temporary upper bound is:
 full decoded alpha + cropped alpha + RGBA/bitmap transfer surfaces = fullPixels + cropPixels * 6
 ```
 
-| Fixture | Retained bytes / Mask | Temporary upper bound |
-|---|---:|---:|
-| Sparse | 497,340 | 2,670,408 |
-| Dense | 10,368,000 | 14,515,200 |
-| Hole | 5,080,320 | 8,169,984 |
-| Three components | 7,745,780 | 11,368,536 |
+| Fixture          | Retained bytes / Mask | Temporary upper bound |
+| ---------------- | --------------------: | --------------------: |
+| Sparse           |               497,340 |             2,670,408 |
+| Dense            |            10,368,000 |            14,515,200 |
+| Hole             |             5,080,320 |             8,169,984 |
+| Three components |             7,745,780 |            11,368,536 |
 
 Five masks of each fixture produce a 20-Mask working set of `118,457,200` bytes. Chromium reported `24,500,000` used JS heap bytes before and after the run; the measured delta was zero.
 

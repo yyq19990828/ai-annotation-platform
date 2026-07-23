@@ -32,8 +32,20 @@ function makePolygonWithHole(): Annotation {
     cls: "商品",
     conf: 1,
     source: "manual",
-    polygon: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]],
-    holes: [[[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]]],
+    polygon: [
+      [0, 0],
+      [0.5, 0],
+      [0.5, 0.5],
+      [0, 0.5],
+    ],
+    holes: [
+      [
+        [0.1, 0.1],
+        [0.3, 0.1],
+        [0.3, 0.3],
+        [0.1, 0.3],
+      ],
+    ],
   };
 }
 
@@ -49,13 +61,37 @@ function makeMultiPolygon(): Annotation {
     conf: 1,
     source: "manual",
     // geometryToShape 在 multi_polygon 时把 pickPrimaryPolygon 的外环挂到 polygon。
-    polygon: [[0, 0], [0.4, 0], [0.4, 0.4], [0, 0.4]],
+    polygon: [
+      [0, 0],
+      [0.4, 0],
+      [0.4, 0.4],
+      [0, 0.4],
+    ],
     multiPolygon: [
       {
-        points: [[0, 0], [0.4, 0], [0.4, 0.4], [0, 0.4]],
-        holes: [[[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]]],
+        points: [
+          [0, 0],
+          [0.4, 0],
+          [0.4, 0.4],
+          [0, 0.4],
+        ],
+        holes: [
+          [
+            [0.1, 0.1],
+            [0.3, 0.1],
+            [0.3, 0.3],
+            [0.1, 0.3],
+          ],
+        ],
       },
-      { points: [[0.6, 0.6], [1, 0.6], [1, 1], [0.6, 1]] },
+      {
+        points: [
+          [0.6, 0.6],
+          [1, 0.6],
+          [1, 1],
+          [0.6, 1],
+        ],
+      },
     ],
   };
 }
@@ -74,9 +110,19 @@ describe("KonvaPolygon · holes / multi_polygon even-odd 分支", () => {
   it("单 polygon 无 holes → 不启用 fillRule (快路径, 不回归)", () => {
     const b: Annotation = {
       id: "p0",
-      x: 0, y: 0, w: 0.5, h: 0.5,
-      cls: "商品", conf: 1, source: "manual",
-      polygon: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]],
+      x: 0,
+      y: 0,
+      w: 0.5,
+      h: 0.5,
+      cls: "商品",
+      conf: 1,
+      source: "manual",
+      polygon: [
+        [0, 0],
+        [0.5, 0],
+        [0.5, 0.5],
+        [0, 0.5],
+      ],
     };
     render(<KonvaPolygon b={b} onClick={vi.fn()} {...COMMON_PROPS} />);
     const line = document.querySelector('[data-konva="Line"]')!;
@@ -103,12 +149,7 @@ describe("KonvaPolygon · holes / multi_polygon even-odd 分支", () => {
   it("显式 holes prop 覆盖 b.holes (空数组 → 退回快路径)", () => {
     // b 带 holes, 但显式传 holes=[] → 视为无 holes, 不启用 even-odd。
     render(
-      <KonvaPolygon
-        b={makePolygonWithHole()}
-        holes={[]}
-        onClick={vi.fn()}
-        {...COMMON_PROPS}
-      />,
+      <KonvaPolygon b={makePolygonWithHole()} holes={[]} onClick={vi.fn()} {...COMMON_PROPS} />,
     );
     const line = document.querySelector('[data-konva="Line"]')!;
     expect(line.hasAttribute("data-fillrule")).toBe(false);
@@ -117,9 +158,19 @@ describe("KonvaPolygon · holes / multi_polygon even-odd 分支", () => {
   it("holes ring < 2 点 (退化) → 不触发 even-odd 分支", () => {
     const b: Annotation = {
       id: "p2",
-      x: 0, y: 0, w: 0.5, h: 0.5,
-      cls: "商品", conf: 1, source: "manual",
-      polygon: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]],
+      x: 0,
+      y: 0,
+      w: 0.5,
+      h: 0.5,
+      cls: "商品",
+      conf: 1,
+      source: "manual",
+      polygon: [
+        [0, 0],
+        [0.5, 0],
+        [0.5, 0.5],
+        [0, 0.5],
+      ],
       holes: [[[0.1, 0.1]]], // 单点 hole, 退化
     };
     render(<KonvaPolygon b={b} onClick={vi.fn()} {...COMMON_PROPS} />);
@@ -139,10 +190,12 @@ describe("KonvaPolygon · sceneFunc 喂给 buildEvenOddPaths 的路径", () => {
     calls: { fn: string; args: number[] }[];
   } {
     const calls: { fn: string; args: number[] }[] = [];
-    const rec = (fn: string) => (...args: number[]) => {
-      calls.push({ fn, args });
-      return undefined;
-    };
+    const rec =
+      (fn: string) =>
+      (...args: number[]) => {
+        calls.push({ fn, args });
+        return undefined;
+      };
     return {
       beginPath: rec("beginPath") as unknown as PathCanvasContext["beginPath"],
       moveTo: rec("moveTo") as unknown as PathCanvasContext["moveTo"],

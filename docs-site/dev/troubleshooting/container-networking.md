@@ -30,11 +30,11 @@ v0.9.8 在 `MLBackendCreate.url` / `MLBackendUpdate.url` 上加了 `field_valida
 
 ## 修复 / 规避
 
-| 场景 | 应填 URL |
-|---|---|
-| ML Backend 跑在**同一个 docker-compose** | `http://<service-name>:<port>`（例 `http://grounded-sam2-backend:8001`） |
-| ML Backend 跑在**宿主机本地**进程 | `http://172.17.0.1:<port>`（Linux 默认 bridge 网关；macOS/Windows 用 `host.docker.internal`） |
-| ML Backend 跑在**另一台机器** | 该机器的 LAN IP / 公网域名 |
+| 场景                                     | 应填 URL                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| ML Backend 跑在**同一个 docker-compose** | `http://<service-name>:<port>`（例 `http://grounded-sam2-backend:8001`）                      |
+| ML Backend 跑在**宿主机本地**进程        | `http://172.17.0.1:<port>`（Linux 默认 bridge 网关；macOS/Windows 用 `host.docker.internal`） |
+| ML Backend 跑在**另一台机器**            | 该机器的 LAN IP / 公网域名                                                                    |
 
 **自检命令：**
 

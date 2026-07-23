@@ -52,9 +52,7 @@ describe("cullPointsInBoxes", () => {
   it("margin 放宽剔除区", () => {
     const pt = new Float32Array([1.2, 0, 0]); // 半边长 1 外、1.5 内
     expect(cullPointsInBoxes(pt, I(), [unitBoxAtOrigin]).culledCount).toBe(0);
-    expect(
-      cullPointsInBoxes(pt, I(), [unitBoxAtOrigin], { margin: 0.5 }).culledCount,
-    ).toBe(1);
+    expect(cullPointsInBoxes(pt, I(), [unitBoxAtOrigin], { margin: 0.5 }).culledCount).toBe(1);
   });
 
   it("先施加 relMatrix 再判定:对齐到当前帧后落框内才剔", () => {
@@ -71,7 +69,9 @@ describe("cullPointsInBoxes", () => {
   });
 
   it("多框任一命中即剔", () => {
-    const pts = new Float32Array([3, 0, 0 /* 在 boxB 内 */, 0, 0, 0 /* 在 boxA 内 */, 8, 8, 8 /* 都不在 */]);
+    const pts = new Float32Array([
+      3, 0, 0 /* 在 boxB 内 */, 0, 0, 0 /* 在 boxA 内 */, 8, 8, 8 /* 都不在 */,
+    ]);
     const boxA: CullBox = { center: [0, 0, 0], size: [2, 2, 2], rotation: [0, 0, 0] };
     const boxB: CullBox = { center: [3, 0, 0], size: [2, 2, 2], rotation: [0, 0, 0] };
     const r = cullPointsInBoxes(pts, I(), [boxA, boxB]);

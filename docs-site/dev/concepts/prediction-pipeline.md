@@ -28,13 +28,13 @@ stateDiagram-v2
   completed --> [*]
 ```
 
-| 状态 | 何时进入 | 关键字段 |
-|---|---|---|
-| `pending` | API 入队 Celery 时 | `created_at`, `payload.prompt`, `payload.ml_backend_id` |
-| `running` | worker 在 task body 第一步写入 | `started_at`, `celery_task_id`, `progress_pct` |
-| `completed` | task 正常返回 | `completed_at`, `result.success_count`, `result.failed_count` |
-| `failed` | worker 或 Celery signal 兜底 | `completed_at`, `error_message` |
-| `cancelled` | 用户取消或 Celery revoke 被兜底标记 | `completed_at`, `result.cancelled_at_index` |
+| 状态        | 何时进入                            | 关键字段                                                      |
+| ----------- | ----------------------------------- | ------------------------------------------------------------- |
+| `pending`   | API 入队 Celery 时                  | `created_at`, `payload.prompt`, `payload.ml_backend_id`       |
+| `running`   | worker 在 task body 第一步写入      | `started_at`, `celery_task_id`, `progress_pct`                |
+| `completed` | task 正常返回                       | `completed_at`, `result.success_count`, `result.failed_count` |
+| `failed`    | worker 或 Celery signal 兜底        | `completed_at`, `error_message`                               |
+| `cancelled` | 用户取消或 Celery revoke 被兜底标记 | `completed_at`, `result.cancelled_at_index`                   |
 
 ## 端到端时序
 
@@ -71,12 +71,12 @@ sequenceDiagram
 
 ## 与 `predictions` 表的边界
 
-| 用途 | 查哪张表 |
-|---|---|
-| 列出"现在能采纳的候选框" | `predictions`（按 task 过滤） |
+| 用途                                  | 查哪张表                                                  |
+| ------------------------------------- | --------------------------------------------------------- |
+| 列出"现在能采纳的候选框"              | `predictions`（按 task 过滤）                             |
 | 列出"AI 跑了哪几次、成功失败、谁触发" | `async_jobs`（`kind=batch_predict` / `prediction_retry`） |
-| 重置批次后回看历史 | **只能** `async_jobs`（`predictions` 已被清） |
-| 工作台读取候选 → 渲染紫框 | `predictions` 经 `to_internal_shape` adapter |
+| 重置批次后回看历史                    | **只能** `async_jobs`（`predictions` 已被清）             |
+| 工作台读取候选 → 渲染紫框             | `predictions` 经 `to_internal_shape` adapter              |
 
 详见 [API Schema 边界](./api-schema-boundary)。
 
@@ -96,11 +96,11 @@ sequenceDiagram
 
 ## WebSocket 通道
 
-| 通道 | 谁订阅 | 内容 |
-|---|---|---|
-| `project:{id}:preannotate` | 该项目工作台 | 单项目进度 / 错误 |
-| `global:prediction-jobs` | 任何 admin | 兼容全局 in-flight 进度推送 |
-| `/api/v1/async-jobs` polling | 登录用户 | Topbar `JobsBell` 与 `/ai-pre/jobs` 任务历史 |
+| 通道                         | 谁订阅       | 内容                                         |
+| ---------------------------- | ------------ | -------------------------------------------- |
+| `project:{id}:preannotate`   | 该项目工作台 | 单项目进度 / 错误                            |
+| `global:prediction-jobs`     | 任何 admin   | 兼容全局 in-flight 进度推送                  |
+| `/api/v1/async-jobs` polling | 登录用户     | Topbar `JobsBell` 与 `/ai-pre/jobs` 任务历史 |
 
 `JobsBell` 是当前用户可见任务的主入口；WebSocket 仍用于更快地刷新预标注进度。
 
@@ -116,14 +116,14 @@ sequenceDiagram
 
 `check_health`（`apps/api/app/services/ml_backend.py`）在拉完 `/health` 后 best-effort 探一次 backend `/setup`，调 `extract_capabilities`（`apps/api/app/services/ml_capabilities.py`）把能力快照写进 `ml_backend_registry.health_meta["capabilities"]`：
 
-| 字段 | 来源 | 含义 |
-|---|---|---|
-| `supported_prompts` | `/setup` 直传 | 支持的图像提示类型（text/point/interactive_box/exemplar 等）|
-| `supported_inputs` | `/setup.models[]` 或平台兼容合成 | 支持的投递形态（整图 / 裁剪图 / 框提示 / 点提示），多阶段父子可达性用它判断 |
-| `supported_trackers` | `/setup` 直传 | 支持的视频追踪器（如 `sam2_video`）|
-| `modalities` | `derive_modalities()` 派生 | `supported_prompts` 非空 → `image`；`supported_trackers` 非空 → `video` |
-| `is_interactive` | `/setup.is_interactive` | 健康检查时回写，不再手填 |
-| `warnings` | 平台校验派生 | 受控词表越界诊断（task / infra / prompt / geometry），模型市场显示为 `⚠ 协议 N` |
+| 字段                 | 来源                             | 含义                                                                            |
+| -------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
+| `supported_prompts`  | `/setup` 直传                    | 支持的图像提示类型（text/point/interactive_box/exemplar 等）                    |
+| `supported_inputs`   | `/setup.models[]` 或平台兼容合成 | 支持的投递形态（整图 / 裁剪图 / 框提示 / 点提示），多阶段父子可达性用它判断     |
+| `supported_trackers` | `/setup` 直传                    | 支持的视频追踪器（如 `sam2_video`）                                             |
+| `modalities`         | `derive_modalities()` 派生       | `supported_prompts` 非空 → `image`；`supported_trackers` 非空 → `video`         |
+| `is_interactive`     | `/setup.is_interactive`          | 健康检查时回写，不再手填                                                        |
+| `warnings`           | 平台校验派生                     | 受控词表越界诊断（task / infra / prompt / geometry），模型市场显示为 `⚠ 协议 N` |
 
 `health_meta` 字段类型为 `HealthMeta(extra="allow")`，无需 alembic 迁移。探测失败时静默跳过，不影响健康检查结果（fail-open）。
 
@@ -135,11 +135,11 @@ sequenceDiagram
 
 `/ai-pre` 执行页按项目 `data_type` 在前端分流，不再统一进入批量预标流水线：
 
-| `data_type` | `/ai-pre` 行为 |
-|---|---|
-| `image` | 文本批量预标面板 → 走本页描述的 `batch_predict` 流水线 |
-| `video` | 引导卡片（`VideoPreannotateGuide`）→ 跳工作台逐轨迹 Shift+T 发起追踪，**不进入批量 predict 流水线** |
-| `lidar` | 显示占位提示，批量预标注入口暂不执行 |
+| `data_type` | `/ai-pre` 行为                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------- |
+| `image`     | 文本批量预标面板 → 走本页描述的 `batch_predict` 流水线                                              |
+| `video`     | 引导卡片（`VideoPreannotateGuide`）→ 跳工作台逐轨迹 Shift+T 发起追踪，**不进入批量 predict 流水线** |
+| `lidar`     | 显示占位提示，批量预标注入口暂不执行                                                                |
 
 视频项目的 AI 标注通过工作台 video tracker 发起，运行态保留 `video_tracker_jobs` 专表；历史汇总在 `/ai-pre/jobs?tab=video`，由 `async_jobs(kind=video_tracker)` 提供。
 
@@ -162,11 +162,11 @@ if params:
 
 `PreannotateRequest.predict_mode`（`apps/api/app/api/v1/projects.py`）是 `Literal["skip_predicted", "overwrite", "append"]`，默认 `skip_predicted`，由 worker（`apps/api/app/workers/tasks.py::batch_predict` / `_run_batch`）透传决定 task 选取与旧预测处理：
 
-| 模式 | task 选取 | 旧预测处理 | 用途 |
-|---|---|---|---|
-| `skip_predicted`（默认） | task 选取追加 `.where(Task.total_predictions == 0)`，跳过已预标 task | 不动 | 重复点"批量预标"时幂等，只补没跑过的 task |
-| `overwrite` | 不过滤已预标 task | 预标前先 `BatchService(db).clean_task_predictions([t.id])` + flush 清旧预测（**不重置 task 状态**） | 改了 prompt / 阈值想重跑 |
-| `append` | 不过滤 | 不清，无脑追加 | 兼容旧行为，仅特殊场景 |
+| 模式                     | task 选取                                                            | 旧预测处理                                                                                          | 用途                                      |
+| ------------------------ | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `skip_predicted`（默认） | task 选取追加 `.where(Task.total_predictions == 0)`，跳过已预标 task | 不动                                                                                                | 重复点"批量预标"时幂等，只补没跑过的 task |
+| `overwrite`              | 不过滤已预标 task                                                    | 预标前先 `BatchService(db).clean_task_predictions([t.id])` + flush 清旧预测（**不重置 task 状态**） | 改了 prompt / 阈值想重跑                  |
+| `append`                 | 不过滤                                                               | 不清，无脑追加                                                                                      | 兼容旧行为，仅特殊场景                    |
 
 注意：
 
@@ -182,26 +182,26 @@ if params:
 ```jsonc
 // POST /api/v1/projects/{id}/preannotate 请求体节选
 {
-  "ml_backend_id": "<source-backend-uuid>",     // 源阶段 backend（兼容字段，等价 stages[0].ml_backend_id）
-  "model_id": "vehicle-detect",                  // 源阶段 model
+  "ml_backend_id": "<source-backend-uuid>", // 源阶段 backend（兼容字段，等价 stages[0].ml_backend_id）
+  "model_id": "vehicle-detect", // 源阶段 model
   "pipeline_stages": [
     {
-      "stage": 1,                                // 1-based 阶段序号
+      "stage": 1, // 1-based 阶段序号
       "ml_backend_id": "<source-backend-uuid>",
-      "model_id": "vehicle-detect"
+      "model_id": "vehicle-detect",
     },
     {
       "stage": 2,
-      "parent_stage": 1,                         // 父阶段（声明并行兄弟时同 parent_stage 即可挂多个 stage=2）
+      "parent_stage": 1, // 父阶段（声明并行兄弟时同 parent_stage 即可挂多个 stage=2）
       "ml_backend_id": "<onnxtools-uuid>",
       "model_id": "vehicle-attr-classify",
-      "parent_class_filter": ["car", "truck"],   // 只对父框 class_name 命中时启动；其余降级保留纯检测
-      "roi": { "pad": 0.05, "mode": "crop" },    // 仅 crop 模式有效，pad ∈ [0, 0.5]
-      "on_failure": "keep_parent",               // keep_parent（默认）/ drop_box
-      "on_key_conflict": "reject",               // reject（默认 422）/ last_wins（并行兄弟写同 key 时）
-      "write": { "keys": ["vehicle_type", "color"] }  // 限定写回的属性 key 白名单（chip 多选）
-    }
-  ]
+      "parent_class_filter": ["car", "truck"], // 只对父框 class_name 命中时启动；其余降级保留纯检测
+      "roi": { "pad": 0.05, "mode": "crop" }, // 仅 crop 模式有效，pad ∈ [0, 0.5]
+      "on_failure": "keep_parent", // keep_parent（默认）/ drop_box
+      "on_key_conflict": "reject", // reject（默认 422）/ last_wins（并行兄弟写同 key 时）
+      "write": { "keys": ["vehicle_type", "color"] }, // 限定写回的属性 key 白名单（chip 多选）
+    },
+  ],
 }
 ```
 
@@ -209,13 +209,13 @@ if params:
 
 worker 解析投递模式：端点（`apps/api/app/api/v1/projects.py`）按下游 model 的 `supported_inputs` + `write.target` 烘焙 `input.mode`，worker（`apps/api/app/workers/tasks.py::_resolve_input_mode`）只读已烘焙的字段，缺省回落 `write.target` 启发式（产几何→`geometry`，产属性→`crop`）。
 
-| `write.target` × 下游 `supported_inputs` | 投递模式 | 投递内容 | 典型场景 |
-|---|---|---|---|
-| `attributes`（产属性，纯分类） | `crop` | 平台按 `parent_class_filter` 裁父框 ROI（pad 按深度，root+1=5% / root+2=8% / root+3=12%） | yolo/onnxtools 纯分类，回属性合并进父框 |
-| `geometry` × box-prompt seg（`supported_inputs` 含 `geometry`） | `geometry` | 全图 URL + 父框归一化坐标列表（`tasks[].prompts[]`） | gsam2 `box-seg`：`set_image` 一次、N 框共享 embedding 出 polygon |
-| `geometry` × 普通检测器（`supported_inputs` 含 `crop`） | `crop` | 同上裁父框 ROI 喂下游 → 检出几何按 crop transform 回映回原图坐标 | depth-3 crop-detect：父框 ROI 内检出新子物体，落库为新 polygon |
-| `intermediate` | `geometry` / `crop` | 同上，但产出仅供下游消费，不落库 | 中间几何（如 box-seg → 给孙子阶段做 ROI） |
-| 缺省（旧 payload / 端点未烘焙） | 按 `write.target` 推断 | 产几何 `geometry`，产属性 `crop` | 向后兼容回落 |
+| `write.target` × 下游 `supported_inputs`                        | 投递模式               | 投递内容                                                                                  | 典型场景                                                         |
+| --------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `attributes`（产属性，纯分类）                                  | `crop`                 | 平台按 `parent_class_filter` 裁父框 ROI（pad 按深度，root+1=5% / root+2=8% / root+3=12%） | yolo/onnxtools 纯分类，回属性合并进父框                          |
+| `geometry` × box-prompt seg（`supported_inputs` 含 `geometry`） | `geometry`             | 全图 URL + 父框归一化坐标列表（`tasks[].prompts[]`）                                      | gsam2 `box-seg`：`set_image` 一次、N 框共享 embedding 出 polygon |
+| `geometry` × 普通检测器（`supported_inputs` 含 `crop`）         | `crop`                 | 同上裁父框 ROI 喂下游 → 检出几何按 crop transform 回映回原图坐标                          | depth-3 crop-detect：父框 ROI 内检出新子物体，落库为新 polygon   |
+| `intermediate`                                                  | `geometry` / `crop`    | 同上，但产出仅供下游消费，不落库                                                          | 中间几何（如 box-seg → 给孙子阶段做 ROI）                        |
+| 缺省（旧 payload / 端点未烘焙）                                 | 按 `write.target` 推断 | 产几何 `geometry`，产属性 `crop`                                                          | 向后兼容回落                                                     |
 
 ### crop 投递通用化
 
@@ -234,11 +234,11 @@ crop 模式默认走 **presigned URL** 而非 `data:` base64：平台把裁好�
 
 下游阶段按上游父框裁 crop 或转 `bbox_prompt` 作 ROI 时，只有 **bbox / polygon** 是可裁几何（`roi._box_bbox_pct`）。若上游模型自报的 `supported_geometric_outputs` 只输出其它形态（如仅 `keypoint` / `polyline`），该阶段的所有父框会在运行期被跳过、零富集。为把这种"跑完才发现是空"的场景提前到配置期暴露，`check_parent_geometry_roi`（`apps/api/app/services/pipeline_validation.py`）作为**上游输出侧的对称门**，与已有的「下游能否吃框」门（`supported_inputs` 含 `bbox_prompt` / `crop`）形成上下游对称：
 
-| 上游 `supported_geometric_outputs` | 判决 | 说明 |
-|---|---|---|
-| 未自报（老 backend） | 放过 | 保零退化 |
-| 至少含一种可裁几何（bbox / polygon） | 放过 | 部分不可裁交由运行期 `skipped_geometry` 兜底 |
-| 完全不含可裁几何（如仅 `keypoint`） | 违例 `no_roi_geometry` | 保存编排时软提示 `capability_warnings`，触发预标时 **422 硬挡** |
+| 上游 `supported_geometric_outputs`   | 判决                   | 说明                                                            |
+| ------------------------------------ | ---------------------- | --------------------------------------------------------------- |
+| 未自报（老 backend）                 | 放过                   | 保零退化                                                        |
+| 至少含一种可裁几何（bbox / polygon） | 放过                   | 部分不可裁交由运行期 `skipped_geometry` 兜底                    |
+| 完全不含可裁几何（如仅 `keypoint`）  | 违例 `no_roi_geometry` | 保存编排时软提示 `capability_warnings`，触发预标时 **422 硬挡** |
 
 两条通道复用同一纯函数：
 
@@ -267,13 +267,13 @@ crop 模式默认走 **presigned URL** 而非 `data:` base64：平台把裁好�
 
 `apps/api/app/workers/roi.py` 集中所有 ROI 路由纯函数：
 
-| 函数 | 作用 |
-|---|---|
-| `crop_inputs_from_boxes` | 按父框裁 ROI crop（`pad` 加边、`parent_class_filter` 过滤），返回 `CropBatch(inputs, skipped_geometry)` |
-| `geometry_prompts_from_boxes` | 父框 → 归一化 prompts 列表（带 `parent_box_idx`），供 box-seg 出多边形与父框对齐 |
-| `collect_geometry_shapes` | 把 box-seg 返回的 polygon 按 `parent_box_idx` 还原到原图坐标，追加进父框预测 |
-| `merge_classify_attributes` | 把下游分类结果按 `write.keys` 白名单 union 进父框 `attributes` |
-| `box_class_name` | 从 LS shape 提取 `class_name`（`value.rectanglelabels[0]` / `value.labels[0]`），供 `parent_class_filter` 命中判定 |
+| 函数                          | 作用                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `crop_inputs_from_boxes`      | 按父框裁 ROI crop（`pad` 加边、`parent_class_filter` 过滤），返回 `CropBatch(inputs, skipped_geometry)`            |
+| `geometry_prompts_from_boxes` | 父框 → 归一化 prompts 列表（带 `parent_box_idx`），供 box-seg 出多边形与父框对齐                                   |
+| `collect_geometry_shapes`     | 把 box-seg 返回的 polygon 按 `parent_box_idx` 还原到原图坐标，追加进父框预测                                       |
+| `merge_classify_attributes`   | 把下游分类结果按 `write.keys` 白名单 union 进父框 `attributes`                                                     |
+| `box_class_name`              | 从 LS shape 提取 `class_name`（`value.rectanglelabels[0]` / `value.labels[0]`），供 `parent_class_filter` 命中判定 |
 
 旋转框 / 多边形 / 退化框命中阶段路由但几何不支持时计入 `stats[si].skipped_geometry`，不再静默——见下文逐阶段统计。
 
@@ -295,8 +295,20 @@ worker 累加各阶段 stats（源阶段 `{detected}`、下游 `{targeted, ok, f
   "stage_count": 2,
   "enriched_attr_keys": ["color", "vehicle_type"],
   "stages": [
-    { "stage": 1, "ml_backend_id": "...", "model_id": "vehicle-detect", "parent_class_filter": null, "write_keys": null },
-    { "stage": 2, "ml_backend_id": "...", "model_id": "vehicle-attr-classify", "parent_class_filter": ["car"], "write_keys": ["color", "vehicle_type"] }
+    {
+      "stage": 1,
+      "ml_backend_id": "...",
+      "model_id": "vehicle-detect",
+      "parent_class_filter": null,
+      "write_keys": null
+    },
+    {
+      "stage": 2,
+      "ml_backend_id": "...",
+      "model_id": "vehicle-attr-classify",
+      "parent_class_filter": ["car"],
+      "write_keys": ["color", "vehicle_type"]
+    }
   ]
 }
 ```

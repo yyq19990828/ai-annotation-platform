@@ -88,9 +88,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_mask_review_scopes_issue", table_name="mask_review_scopes")
-    op.drop_index(
-        "ix_mask_review_scopes_source_job", table_name="mask_review_scopes"
-    )
+    op.drop_index("ix_mask_review_scopes_source_job", table_name="mask_review_scopes")
     op.drop_index(
         "ix_mask_review_scopes_current_range", table_name="mask_review_scopes"
     )

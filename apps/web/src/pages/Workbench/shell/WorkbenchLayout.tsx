@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentPropsWithoutRef, type CSSProperties, type ReactNode, type Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ComponentPropsWithoutRef,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
@@ -99,9 +110,7 @@ function carriedSelectionFromPet(
   return { ...selectionPosition, x: clamped.x, y: clamped.y };
 }
 
-function petPositionFromCarriedSelection(
-  panelPosition: FloatingPanelRect,
-): FloatingPanelPoint {
+function petPositionFromCarriedSelection(panelPosition: FloatingPanelRect): FloatingPanelPoint {
   return clampFloatingPosition(
     {
       x: panelPosition.x + panelPosition.w / 2 - WORKBENCH_PET_SIZE.w / 2,
@@ -150,9 +159,10 @@ export function WorkbenchLayout({
   const upperExpandsToFill = discussionDetached || discussionCollapsed;
   const rightHasEmbeddedPanel = !inspectorDetached || !discussionDetached;
   const rightShouldRenderEmbeddedPanel = inspector.open && rightHasEmbeddedPanel;
-  const linkedFloatingSelection = pet?.enabled && floatingSelection && !floatingSelection.collapsed
-    ? carriedSelectionFromPet(floatingSelection.position, petPosition)
-    : null;
+  const linkedFloatingSelection =
+    pet?.enabled && floatingSelection && !floatingSelection.collapsed
+      ? carriedSelectionFromPet(floatingSelection.position, petPosition)
+      : null;
 
   const setPetPosition = useCallback((next: FloatingPanelPoint) => {
     setPetPositionState(next);
@@ -191,14 +201,14 @@ export function WorkbenchLayout({
   // --right-split-top-height → 高度回退到默认（B-56「展开收起后回到原位 / 第一次拖拽不跟手」）。
   // useElementStyle 用 state 持有元素，重挂载会重跑 effect 把变量重新写上。
   const splitTopStyleRef = useElementStyle<HTMLDivElement>(
-    useMemo<CSSProperties>(() => ({ "--right-split-top-height": `${splitTopHeight}px` }) as CSSProperties, [splitTopHeight]),
+    useMemo<CSSProperties>(
+      () => ({ "--right-split-top-height": `${splitTopHeight}px` }) as CSSProperties,
+      [splitTopHeight],
+    ),
   );
 
   return (
-    <div
-      ref={rootRef}
-      className="relative flex h-full flex-col overflow-hidden bg-muted"
-    >
+    <div ref={rootRef} className="relative flex h-full flex-col overflow-hidden bg-muted">
       <Topbar {...topbar} />
 
       <div className="grid min-h-0 flex-1 overflow-hidden [grid-template-columns:var(--workbench-grid-template)]">
@@ -287,11 +297,7 @@ export function WorkbenchLayout({
           minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
           maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
         >
-          <TaskQueuePanel
-            {...taskQueue}
-            open
-            floatingSection="queue"
-          />
+          <TaskQueuePanel {...taskQueue} open floatingSection="queue" />
         </FloatingPanelShell>
       )}
 
@@ -305,11 +311,7 @@ export function WorkbenchLayout({
           minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
           maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
         >
-          <TaskQueuePanel
-            {...taskQueue}
-            open
-            floatingSection="palette"
-          />
+          <TaskQueuePanel {...taskQueue} open floatingSection="palette" />
         </FloatingPanelShell>
       )}
 
@@ -323,12 +325,7 @@ export function WorkbenchLayout({
           minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
           maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
         >
-          <AIInspectorPanel
-            {...inspector}
-            open
-            floating
-            onDetach={undefined}
-          />
+          <AIInspectorPanel {...inspector} open floating onDetach={undefined} />
         </FloatingPanelShell>
       )}
 
@@ -342,11 +339,7 @@ export function WorkbenchLayout({
           minSize={SIDE_FLOATING_PANEL_MIN_SIZE}
           maxSize={SIDE_FLOATING_PANEL_MAX_SIZE}
         >
-          <DiscussionPanel
-            {...discussionPanel}
-            floating
-            onDetach={undefined}
-          />
+          <DiscussionPanel {...discussionPanel} floating onDetach={undefined} />
         </FloatingPanelShell>
       )}
 
@@ -356,7 +349,9 @@ export function WorkbenchLayout({
           {...floatingSelection}
           position={linkedFloatingSelection ?? floatingSelection.position}
           onPositionChange={
-            linkedFloatingSelection ? linkedSelectionPositionChange : floatingSelection.onPositionChange
+            linkedFloatingSelection
+              ? linkedSelectionPositionChange
+              : floatingSelection.onPositionChange
           }
           linkedToPet={Boolean(linkedFloatingSelection)}
         />

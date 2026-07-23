@@ -154,7 +154,10 @@ def test_exemplar_score_threshold_override(predictor_with_mocks, fake_image):
     inst._processor.reset_all_prompts = MagicMock()
 
     inst.predict_exemplar(
-        fake_image, exemplar_bbox=[0.1, 0.1, 0.2, 0.2], cache_key="k4", score_threshold=0.85
+        fake_image,
+        exemplar_bbox=[0.1, 0.1, 0.2, 0.2],
+        cache_key="k4",
+        score_threshold=0.85,
     )
 
     assert inst._processor.confidence_threshold == 0.85
@@ -404,9 +407,7 @@ def test_cache_hit_skips_set_image(predictor_with_mocks, fake_image):
     inst._processor.reset_all_prompts = MagicMock()
 
     # image=None: 命中时 _prime_state 不应调 set_image, 不需要 image
-    results, hit = inst.predict_bbox(
-        None, bbox=[0.1, 0.1, 0.2, 0.2], cache_key="ch1"
-    )
+    results, hit = inst.predict_bbox(None, bbox=[0.1, 0.1, 0.2, 0.2], cache_key="ch1")
 
     assert hit is True
     inst._processor.set_image.assert_not_called()
@@ -486,7 +487,9 @@ def test_interactive_point_pixel_scaling(predictor_with_mocks, fake_image):
     inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
     inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
 
-    inst.predict_interactive(fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip2")
+    inst.predict_interactive(
+        fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip2"
+    )
 
     kw = inst._model.predict_inst.call_args.kwargs
     assert kw["point_coords"].tolist() == [[320.0, 240.0]]
@@ -516,8 +519,11 @@ def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_im
 
     encoded = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
     inst.predict_interactive(
-        fake_image, points=[[0.5, 0.5], [0.6, 0.6]], labels=[1, 1],
-        mask_input=encoded, cache_key="imi1",
+        fake_image,
+        points=[[0.5, 0.5], [0.6, 0.6]],
+        labels=[1, 1],
+        mask_input=encoded,
+        cache_key="imi1",
     )
     kw = inst._model.predict_inst.call_args.kwargs
     assert kw["mask_input"].shape == (1, 256, 256)
@@ -576,7 +582,11 @@ def test_interactive_multimask_sorted_by_iou(predictor_with_mocks, fake_image):
     inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(3))
 
     results, _, mask_next = inst.predict_interactive(
-        fake_image, points=[[0.5, 0.5]], labels=[1], multimask_output=True, cache_key="im1"
+        fake_image,
+        points=[[0.5, 0.5]],
+        labels=[1],
+        multimask_output=True,
+        cache_key="im1",
     )
     assert len(results) == 3
     scores = [r["score"] for r in results]

@@ -43,15 +43,17 @@ export function apiErrorDetailMessage(rawDetail: unknown): string | undefined {
     return rawDetail.map(validationIssueMessage).find(Boolean);
   }
   if (rawDetail && typeof rawDetail === "object" && "message" in rawDetail) {
-    const message = String(
-      (rawDetail as { message?: unknown }).message ?? "",
-    );
+    const message = String((rawDetail as { message?: unknown }).message ?? "");
     return message || undefined;
   }
   return undefined;
 }
 
-async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean; silent?: boolean }): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  opts?: { anonymous?: boolean; silent?: boolean },
+): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");
   // v0.10.18 · PerfHud 浏览器侧 API p95 指标; recordApiDuration 内部包 try/catch 不会抛.
   const t0 = performance.now();
@@ -128,17 +130,14 @@ export const apiClient = {
   patch: <T>(path: string, body?: unknown, extra?: RequestInit) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}), ...extra }),
   delete: <T>(path: string, body?: unknown) =>
-    request<T>(path, body !== undefined
-      ? { method: "DELETE", body: JSON.stringify(body) }
-      : { method: "DELETE" }),
+    request<T>(
+      path,
+      body !== undefined ? { method: "DELETE", body: JSON.stringify(body) } : { method: "DELETE" },
+    ),
   /** 公开请求：不携带 Authorization；401 不触发全局 logout（用于 /auth/register 等公开端点）。 */
   publicGet: <T>(path: string) => request<T>(path, undefined, { anonymous: true }),
   publicPost: <T>(path: string, body?: unknown) =>
-    request<T>(
-      path,
-      { method: "POST", body: JSON.stringify(body ?? {}) },
-      { anonymous: true },
-    ),
+    request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, { anonymous: true }),
 };
 
 export { ApiError };

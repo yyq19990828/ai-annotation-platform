@@ -3,6 +3,7 @@
 平台据 model.params.properties 渲染阈值滑块;此处守住三个 model 各自暴露的阈值键
 与取值域,避免回退到「无可调参数」。
 """
+
 from __future__ import annotations
 
 import catalog
@@ -51,8 +52,12 @@ def test_output_attribute_select_options_are_value_label_objects():
                 continue
             assert field["options"], f"{model_id}.{field['key']} select 缺 options"
             for opt in field["options"]:
-                assert isinstance(opt, dict), f"{model_id}.{field['key']} 选项须为 dict,非纯字符串"
-                assert opt.get("value") and opt.get("label"), "选项 value/label 不能为空"
+                assert isinstance(opt, dict), (
+                    f"{model_id}.{field['key']} 选项须为 dict,非纯字符串"
+                )
+                assert opt.get("value") and opt.get("label"), (
+                    "选项 value/label 不能为空"
+                )
 
 
 def test_orientation_language_options_match_predict_values():

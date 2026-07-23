@@ -24,20 +24,20 @@ last_reviewed: 2026-06-10
 
 ## 把数据导进来
 
-| 我要做的事 | 去哪里 |
-|---|---|
-| 导入图像数据集（多文件 / ZIP / 扫描导入） | [导入图像数据集](./import-images) |
-| 导入点云 / 多模态（lidar + 相机）数据 | [导入点云 / 多模态数据集格式](./import-formats) |
-| 配置 S3 / OSS / SFTP 连接器，按路径批量拉取 | [存储连接器导入](./storage-connections) |
-| 点云坐标系（axis_convention）怎么选 | [点云坐标系约定](./lidar-axis-convention) |
+| 我要做的事                                  | 去哪里                                          |
+| ------------------------------------------- | ----------------------------------------------- |
+| 导入图像数据集（多文件 / ZIP / 扫描导入）   | [导入图像数据集](./import-images)               |
+| 导入点云 / 多模态（lidar + 相机）数据       | [导入点云 / 多模态数据集格式](./import-formats) |
+| 配置 S3 / OSS / SFTP 连接器，按路径批量拉取 | [存储连接器导入](./storage-connections)         |
+| 点云坐标系（axis_convention）怎么选         | [点云坐标系约定](./lidar-axis-convention)       |
 
 ## 预测与导出
 
-| 我要做的事 | 去哪里 |
-|---|---|
-| 导入外部模型预测 / 按来源清理预测 | [导入 / 导出外部预测](./prediction-import-export) |
-| 使用平台启用的 ML Backend 批量生成预测 | [AI 预标](../projects/ai-preannotate) |
-| 导出标注成果（COCO / YOLO / nuScenes / KITTI / AAP JSON） | [数据导出格式](../reference/export-formats) |
+| 我要做的事                                                | 去哪里                                            |
+| --------------------------------------------------------- | ------------------------------------------------- |
+| 导入外部模型预测 / 按来源清理预测                         | [导入 / 导出外部预测](./prediction-import-export) |
+| 使用平台启用的 ML Backend 批量生成预测                    | [AI 预标](../projects/ai-preannotate)             |
+| 导出标注成果（COCO / YOLO / nuScenes / KITTI / AAP JSON） | [数据导出格式](../reference/export-formats)       |
 
 ## 几个关键概念
 

@@ -190,9 +190,7 @@ def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(
     ]
 
     for headers in workload_headers:
-        response = _run(
-            _request("POST", "/warmup", headers=headers, content=b"{")
-        )
+        response = _run(_request("POST", "/warmup", headers=headers, content=b"{"))
         assert response.status_code == 403
         assert response.json()["detail"]["error_code"] == "gpu_admission_denied"
 

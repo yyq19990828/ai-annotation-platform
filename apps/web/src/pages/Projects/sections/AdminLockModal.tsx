@@ -28,7 +28,8 @@ export function AdminLockModal({
     <Modal open title={`锁定批次 ${batch.display_id}`} onClose={onClose}>
       <div className="flex flex-col gap-3 text-sm">
         <p className="m-0 text-muted-foreground">
-          锁定后，自动状态推进将被冻结，不再向该批次派发新任务。锁定原因将记录在审计日志中，并通知被分派的标注员 / 审核员。
+          锁定后，自动状态推进将被冻结，不再向该批次派发新任务。锁定原因将记录在审计日志中，并通知被分派的标注员
+          / 审核员。
         </p>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
@@ -42,11 +43,7 @@ export function AdminLockModal({
             className={`${TEXTAREA_BASE} ${tooLong ? "border-rose-500" : ""}`}
             autoFocus
           />
-          {tooLong && (
-            <span className="text-xs text-status-danger">
-              超出 {REASON_MAX} 字上限
-            </span>
-          )}
+          {tooLong && <span className="text-xs text-status-danger">超出 {REASON_MAX} 字上限</span>}
         </label>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>

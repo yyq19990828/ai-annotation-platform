@@ -5,17 +5,8 @@ import type { CameraSample } from "./colorize";
 import { colorizePointsAsync, colorizePointsOnMainThread } from "./pointcloudCompute";
 
 const calib: SensorCalibration = {
-  extrinsic: [
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1,
-  ],
-  intrinsic: [
-    10, 0, 1,
-    0, 10, 1,
-    0, 0, 1,
-  ],
+  extrinsic: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+  intrinsic: [10, 0, 1, 0, 10, 1, 0, 0, 1],
 };
 
 function sample(): CameraSample {
@@ -24,9 +15,8 @@ function sample(): CameraSample {
     width: 3,
     height: 3,
     data: new Uint8ClampedArray([
-      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
-      255, 255, 0, 255, 20, 40, 60, 255, 0, 255, 255, 255,
-      255, 0, 255, 255, 128, 128, 128, 255, 255, 255, 255, 255,
+      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 20, 40, 60, 255, 0, 255,
+      255, 255, 255, 0, 255, 255, 128, 128, 128, 255, 255, 255, 255, 255,
     ]),
   };
 }

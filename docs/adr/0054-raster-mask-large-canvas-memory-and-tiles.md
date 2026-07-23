@@ -13,12 +13,12 @@
 
 候选方案：
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
+| 选项                                             | 主要卖点                                                                   | 主要劣势                                                    |
+| ------------------------------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | **A. canonical RLE + 浏览器稀疏 tile（本 ADR）** | 不迁移持久格式；局部编辑成本与可见 / 修改 tile 相关；可继续精确 round-trip | 需要 run index、tile merge、分块 overlay 和更明确的降级合同 |
-| B. 放宽尺寸后继续整图 alpha / canvas | 改动最少 | 8K 约 576 MiB，无法满足低内存设备与交互门 |
-| C. tile 成为服务端持久格式 | 局部读写自然 | 破坏 AAP / COCO 互操作并引入迁移、对象一致性和 GC 复杂度 |
-| D. WebGPU / WASM 重写 | 有更高计算吞吐潜力 | 不能消除整图真值内存；兼容、部署和测试成本超过当前证据 |
+| B. 放宽尺寸后继续整图 alpha / canvas             | 改动最少                                                                   | 8K 约 576 MiB，无法满足低内存设备与交互门                   |
+| C. tile 成为服务端持久格式                       | 局部读写自然                                                               | 破坏 AAP / COCO 互操作并引入迁移、对象一致性和 GC 复杂度    |
+| D. WebGPU / WASM 重写                            | 有更高计算吞吐潜力                                                         | 不能消除整图真值内存；兼容、部署和测试成本超过当前证据      |
 
 ## Decision
 
@@ -31,11 +31,11 @@
 
 ### D2. 设备档位是硬预算
 
-| 档位 | 判定 | 只读缓存 | 下载 / decode 并发 | Worker pool | tile 缓存 | history |
-|---|---|---:|---:|---:|---:|---:|
-| Low | `deviceMemory <= 2` | 64 MiB | 1 | 1 | 32 MiB | 16 MiB |
-| Standard | 未知或 `2 < deviceMemory < 8` | 128 MiB | 2 | 2 | 64 MiB | 32 MiB |
-| High | `deviceMemory >= 8` | 192 MiB | 4 | 2 | 128 MiB | 64 MiB |
+| 档位     | 判定                          | 只读缓存 | 下载 / decode 并发 | Worker pool | tile 缓存 | history |
+| -------- | ----------------------------- | -------: | -----------------: | ----------: | --------: | ------: |
+| Low      | `deviceMemory <= 2`           |   64 MiB |                  1 |           1 |    32 MiB |  16 MiB |
+| Standard | 未知或 `2 < deviceMemory < 8` |  128 MiB |                  2 |           2 |    64 MiB |  32 MiB |
+| High     | `deviceMemory >= 8`           |  192 MiB |                  4 |           2 |   128 MiB |  64 MiB |
 
 admission 在插入前完成；只有当前编辑和 selected 对象可 pin。无法进入预算的对象保持轻量 bounds 与 `deferred` / `budget_exceeded`，不得先超额再等待 LRU。bitmap、Worker、queue、tile、history 和 retained bytes 必须有显式 created / closed / live 计数。
 

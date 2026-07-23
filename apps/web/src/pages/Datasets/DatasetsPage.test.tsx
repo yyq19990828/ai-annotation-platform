@@ -37,7 +37,11 @@ vi.mock("@/hooks/useProjects", () => ({
 
 vi.mock("@/api/datasets", () => ({
   datasetsApi: {
-    previewUnlink: vi.fn().mockResolvedValue({ will_delete_tasks: 0, will_delete_annotations: 0, will_delete_batches: 0 }),
+    previewUnlink: vi.fn().mockResolvedValue({
+      will_delete_tasks: 0,
+      will_delete_annotations: 0,
+      will_delete_batches: 0,
+    }),
   },
 }));
 

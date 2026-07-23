@@ -32,11 +32,7 @@ type Vec3 = readonly [number, number, number];
  * 渲染用法: 一个 unit `BoxGeometry(1,1,1)` / 其 `EdgesGeometry` 直接
  * `geometry.applyMatrix4(m)`, 或设到 `mesh.matrixAutoUpdate=false; mesh.matrix.copy(m)`。
  */
-export function boxToMatrix4(
-  center: Vec3,
-  size: Vec3,
-  rotation: Vec3,
-): THREE.Matrix4 {
+export function boxToMatrix4(center: Vec3, size: Vec3, rotation: Vec3): THREE.Matrix4 {
   const position = new THREE.Vector3(center[0], center[1], center[2]);
   const euler = new THREE.Euler(rotation[0], rotation[1], rotation[2], "XYZ");
   const quaternion = new THREE.Quaternion().setFromEuler(euler);
@@ -72,24 +68,14 @@ const UNIT_CUBE_CORNERS: ReadonlyArray<Vec3> = [
  * 故 ±0.5 经缩放后即半边长 (±length/2, ±width/2, ±height/2), 再旋转 + 平移。
  * 角点顺序见 `UNIT_CUBE_CORNERS` (底面逆时针 4 点, 再顶面 4 点)。
  */
-export function psrToCorners(
-  center: Vec3,
-  size: Vec3,
-  rotation: Vec3,
-): THREE.Vector3[] {
+export function psrToCorners(center: Vec3, size: Vec3, rotation: Vec3): THREE.Vector3[] {
   const m = boxToMatrix4(center, size, rotation);
-  return UNIT_CUBE_CORNERS.map((c) =>
-    new THREE.Vector3(c[0], c[1], c[2]).applyMatrix4(m),
-  );
+  return UNIT_CUBE_CORNERS.map((c) => new THREE.Vector3(c[0], c[1], c[2]).applyMatrix4(m));
 }
 
 /** 局部轴单位向量 (axis: 0=X / 1=Y / 2=Z)。 */
 function unitAxis(axis: 0 | 1 | 2): THREE.Vector3 {
-  return new THREE.Vector3(
-    axis === 0 ? 1 : 0,
-    axis === 1 ? 1 : 0,
-    axis === 2 ? 1 : 0,
-  );
+  return new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
 }
 
 /**

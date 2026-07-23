@@ -151,19 +151,9 @@ export function useResumePoolMember() {
   });
 }
 
-export function useCapabilityDriftPreview(
-  poolId: string,
-  registryId: string,
-  enabled: boolean,
-) {
+export function useCapabilityDriftPreview(poolId: string, registryId: string, enabled: boolean) {
   return useQuery({
-    queryKey: [
-      "admin",
-      "ml-integrations",
-      "capability-drift",
-      poolId,
-      registryId,
-    ],
+    queryKey: ["admin", "ml-integrations", "capability-drift", poolId, registryId],
     queryFn: () => adminMlIntegrationsApi.previewCapabilityDrift(poolId, registryId),
     enabled,
     staleTime: 0,

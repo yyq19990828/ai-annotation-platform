@@ -54,9 +54,10 @@ export function rasterizeMaskBrush(
     for (let globalX = globalX0; globalX <= globalX1; globalX += 1) {
       const dx = globalX - options.cx;
       if (
-        (options.shape === "circle" && dx * dx + dy * dy > radiusSquared)
-        || (options.shape === "square" && (Math.abs(dx) > radius || Math.abs(dy) > radius))
-      ) continue;
+        (options.shape === "circle" && dx * dx + dy * dy > radiusSquared) ||
+        (options.shape === "square" && (Math.abs(dx) > radius || Math.abs(dy) > radius))
+      )
+        continue;
       const index = row + globalX - originX;
       if (alpha[index] === options.value) continue;
       alpha[index] = options.value;
@@ -132,13 +133,14 @@ export function rasterizeMaskPolygon(
   const touchedY1 = Math.min(originY + height, Math.ceil(yMax + 1));
   return {
     changedPixels,
-    touchedBounds: touchedX1 <= touchedX0 || touchedY1 <= touchedY0
-      ? null
-      : {
-          x0: touchedX0 - originX,
-          y0: touchedY0 - originY,
-          x1: touchedX1 - originX,
-          y1: touchedY1 - originY,
-        },
+    touchedBounds:
+      touchedX1 <= touchedX0 || touchedY1 <= touchedY0
+        ? null
+        : {
+            x0: touchedX0 - originX,
+            y0: touchedY0 - originY,
+            x1: touchedX1 - originX,
+            y1: touchedY1 - originY,
+          },
   };
 }

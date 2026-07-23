@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import {
-  type OfflineOp,
-  clearAll,
-  getAll,
-  removeById,
-  subscribe,
-} from "../state/offlineQueue";
+import { type OfflineOp, clearAll, getAll, removeById, subscribe } from "../state/offlineQueue";
 
 interface OfflineQueueDrawerProps {
   open: boolean;
@@ -53,7 +47,13 @@ function retryBadgeClassName(rc: number): string {
 type TaskFilter = "all" | "current";
 type RetryFilter = "all" | "failed";
 
-export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, onFlushAll }: OfflineQueueDrawerProps) {
+export function OfflineQueueDrawer({
+  open,
+  onClose,
+  currentTaskId,
+  onFlushOne,
+  onFlushAll,
+}: OfflineQueueDrawerProps) {
   const [items, setItems] = useState<OfflineOp[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flushAllBusy, setFlushAllBusy] = useState(false);
@@ -67,7 +67,9 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
     if (!open) return;
     let cancelled = false;
     const refresh = () => {
-      getAll().then((q) => { if (!cancelled) setItems(q); });
+      getAll().then((q) => {
+        if (!cancelled) setItems(q);
+      });
     };
     const unsub = subscribe(() => refresh());
     refresh();
@@ -79,7 +81,9 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -114,28 +118,34 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
     return items.filter((op) => op.taskId === currentTaskId).length;
   }, [items, currentTaskId]);
 
-  const handleRetry = useCallback(async (op: OfflineOp) => {
-    setBusyId(op.id);
-    try {
-      await onFlushOne(op);
-      await removeById(op.id);
-      pushToast({ msg: "已同步该操作", kind: "success" });
-    } catch (err) {
-      pushToast({ msg: "同步失败", sub: String(err), kind: "error" });
-    } finally {
-      setBusyId(null);
-    }
-  }, [onFlushOne, pushToast]);
+  const handleRetry = useCallback(
+    async (op: OfflineOp) => {
+      setBusyId(op.id);
+      try {
+        await onFlushOne(op);
+        await removeById(op.id);
+        pushToast({ msg: "已同步该操作", kind: "success" });
+      } catch (err) {
+        pushToast({ msg: "同步失败", sub: String(err), kind: "error" });
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [onFlushOne, pushToast],
+  );
 
-  const handleDelete = useCallback(async (op: OfflineOp) => {
-    setBusyId(op.id);
-    try {
-      await removeById(op.id);
-      pushToast({ msg: "已从队列删除", kind: "success" });
-    } finally {
-      setBusyId(null);
-    }
-  }, [pushToast]);
+  const handleDelete = useCallback(
+    async (op: OfflineOp) => {
+      setBusyId(op.id);
+      try {
+        await removeById(op.id);
+        pushToast({ msg: "已从队列删除", kind: "success" });
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [pushToast],
+  );
 
   const handleClearAll = useCallback(async () => {
     if (items.length === 0) return;
@@ -158,10 +168,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
   return createPortal(
     <>
       {/* 背景遮罩，仅供点击关闭，不阻塞画布交互 */}
-      <div
-        onClick={onClose}
-        className="fixed inset-0 z-drawer-backdrop bg-black/25"
-      />
+      <div onClick={onClose} className="fixed inset-0 z-drawer-backdrop bg-black/25" />
       <aside
         role="dialog"
         aria-label="离线队列"
@@ -193,7 +200,11 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
         {items.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-4 py-2 border-b border-border text-muted-foreground text-xs">
             <span className="mr-1">范围：</span>
-            <FilterChip label="全部" active={taskFilter === "all"} onClick={() => setTaskFilter("all")} />
+            <FilterChip
+              label="全部"
+              active={taskFilter === "all"}
+              onClick={() => setTaskFilter("all")}
+            />
             <FilterChip
               label="当前题"
               active={taskFilter === "current"}
@@ -201,7 +212,11 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
               onClick={() => setTaskFilter("current")}
             />
             <span className="mr-1 ml-2">状态：</span>
-            <FilterChip label="全部" active={retryFilter === "all"} onClick={() => setRetryFilter("all")} />
+            <FilterChip
+              label="全部"
+              active={retryFilter === "all"}
+              onClick={() => setRetryFilter("all")}
+            />
             <FilterChip
               label="失败 ≥ 3"
               active={retryFilter === "failed"}
@@ -216,7 +231,9 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
               <Icon name="check" size={18} className="mb-2 text-status-positive" />
               <div>{items.length === 0 ? "暂无离线操作" : "当前筛选无匹配项"}</div>
               <div className="mt-1 text-xs">
-                {items.length === 0 ? "所有标注操作已同步至服务器。" : "调整上方筛选 chip 查看其他项。"}
+                {items.length === 0
+                  ? "所有标注操作已同步至服务器。"
+                  : "调整上方筛选 chip 查看其他项。"}
               </div>
             </div>
           ) : (
@@ -241,70 +258,77 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                       {opsInTask.length} 条
                     </span>
                   </button>
-                  {!isCollapsed && opsInTask.map((op) => {
-                    const isBusy = busyId === op.id;
-                    const rc = op.retry_count ?? 0;
-                    return (
-                      <div
-                        key={op.id}
-                        className={cn(
-                          "flex flex-col gap-1.5 px-4 py-2.5 pl-8",
-                          rc >= 3 ? "bg-rose-950/20 dark:bg-rose-950/20" : "bg-transparent",
-                          isBusy && "opacity-50",
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={cn("px-1.5 py-px rounded-[3px] bg-muted text-xs font-semibold", kindClassName(op.kind))}
-                          >
-                            {KIND_LABEL[op.kind]}
-                          </span>
-                          <span className="text-muted-foreground text-xs mono">
-                            {formatTs(op.ts)}
-                          </span>
-                          {rc > 0 && (
-                            <span
-                              className={cn("px-1.5 py-px rounded-[3px] text-2xs font-semibold", retryBadgeClassName(rc))}
-                              title={`累计同步失败 ${rc} 次`}
-                            >
-                              失败 ×{rc}
-                            </span>
+                  {!isCollapsed &&
+                    opsInTask.map((op) => {
+                      const isBusy = busyId === op.id;
+                      const rc = op.retry_count ?? 0;
+                      return (
+                        <div
+                          key={op.id}
+                          className={cn(
+                            "flex flex-col gap-1.5 px-4 py-2.5 pl-8",
+                            rc >= 3 ? "bg-rose-950/20 dark:bg-rose-950/20" : "bg-transparent",
+                            isBusy && "opacity-50",
                           )}
-                          {op.kind === "create" && op.tmpId && (
+                        >
+                          <div className="flex items-center gap-2">
                             <span
-                              className="text-muted-foreground text-2xs mono"
-                              title={op.tmpId}
+                              className={cn(
+                                "px-1.5 py-px rounded-[3px] bg-muted text-xs font-semibold",
+                                kindClassName(op.kind),
+                              )}
                             >
-                              {op.tmpId.slice(0, 12)}…
+                              {KIND_LABEL[op.kind]}
                             </span>
-                          )}
-                        </div>
-                        {op.kind !== "create" && (
-                          <div className="text-muted-foreground text-xs mono">
-                            标注 {op.annotationId.slice(0, 8)}…
+                            <span className="text-muted-foreground text-xs mono">
+                              {formatTs(op.ts)}
+                            </span>
+                            {rc > 0 && (
+                              <span
+                                className={cn(
+                                  "px-1.5 py-px rounded-[3px] text-2xs font-semibold",
+                                  retryBadgeClassName(rc),
+                                )}
+                                title={`累计同步失败 ${rc} 次`}
+                              >
+                                失败 ×{rc}
+                              </span>
+                            )}
+                            {op.kind === "create" && op.tmpId && (
+                              <span
+                                className="text-muted-foreground text-2xs mono"
+                                title={op.tmpId}
+                              >
+                                {op.tmpId.slice(0, 12)}…
+                              </span>
+                            )}
                           </div>
-                        )}
-                        <div className="flex gap-1.5 mt-0.5">
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleRetry(op)}
-                            className="px-2.5 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-foreground cursor-pointer text-xs disabled:cursor-wait"
-                          >
-                            重试
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleDelete(op)}
-                            className="px-2.5 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-status-danger cursor-pointer text-xs disabled:cursor-wait"
-                          >
-                            丢弃
-                          </button>
+                          {op.kind !== "create" && (
+                            <div className="text-muted-foreground text-xs mono">
+                              标注 {op.annotationId.slice(0, 8)}…
+                            </div>
+                          )}
+                          <div className="flex gap-1.5 mt-0.5">
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleRetry(op)}
+                              className="px-2.5 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-foreground cursor-pointer text-xs disabled:cursor-wait"
+                            >
+                              重试
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleDelete(op)}
+                              className="px-2.5 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-transparent text-status-danger cursor-pointer text-xs disabled:cursor-wait"
+                            >
+                              丢弃
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               );
             })
@@ -336,7 +360,10 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
 }
 
 function FilterChip({
-  label, active, disabled, onClick,
+  label,
+  active,
+  disabled,
+  onClick,
 }: {
   label: string;
   active: boolean;
@@ -350,7 +377,9 @@ function FilterChip({
       onClick={onClick}
       className={cn(
         "px-2 py-0.5 appearance-none rounded-[12px] cursor-pointer text-xs disabled:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-        active ? "border border-brand bg-brand text-white" : "border border-border bg-transparent text-foreground",
+        active
+          ? "border border-brand bg-brand text-white"
+          : "border border-border bg-transparent text-foreground",
       )}
     >
       {label}

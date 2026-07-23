@@ -15,7 +15,13 @@ export const PolylineTool: CanvasTool = {
   label: "折线",
   icon: "spline",
   cursor: "crosshair",
-  onPointerDown: ({ pt, evt, readOnly, pendingDrawing, polygonDraft }: ToolPointerContext): DragInit | null => {
+  onPointerDown: ({
+    pt,
+    evt,
+    readOnly,
+    pendingDrawing,
+    polygonDraft,
+  }: ToolPointerContext): DragInit | null => {
     if (readOnly || pendingDrawing || !polygonDraft) return null;
     if (evt.button !== 0) return null; // 仅左键落点
     polygonDraft.addPoint([pt.x, pt.y]);

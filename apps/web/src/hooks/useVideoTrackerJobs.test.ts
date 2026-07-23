@@ -488,10 +488,13 @@ describe("TrackerJobStore.decide · 局部审阅", () => {
     });
 
     expect(outcome).toEqual({ ok: true });
-    expect(videoTrackerApi.decide).toHaveBeenCalledWith("job-1", expect.objectContaining({
-      job_revision: 1,
-      expected_source_versions: { "annotation-1": 1 },
-    }));
+    expect(videoTrackerApi.decide).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({
+        job_revision: 1,
+        expected_source_versions: { "annotation-1": 1 },
+      }),
+    );
     expect(getSnapshot().jobs["job-1"]?.status).toBe("partially_reviewed");
     expect(getSnapshot().candidates["job-1"]?.job_revision).toBe(2);
   });

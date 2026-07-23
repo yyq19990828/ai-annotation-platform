@@ -52,9 +52,7 @@ export function WorkbenchSettingsDrawer({
   onToggleSecondaryBar,
 }: WorkbenchSettingsDrawerProps) {
   // 独立 hook 实例:setFields 改动经模块级广播同步到画布侧实例 → 实时预览。
-  const { config, loaded, lockedFields, setFields } = useWorkbenchConfig(
-    projectRenderingConfig,
-  );
+  const { config, loaded, lockedFields, setFields } = useWorkbenchConfig(projectRenderingConfig);
   const [, refreshLocalFields] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
@@ -75,9 +73,7 @@ export function WorkbenchSettingsDrawer({
   const groups = categories
     .map((category) => ({
       category,
-      fields: WORKBENCH_SETTING_FIELDS.filter(
-        (f) => f.category === category && !f.hidden,
-      ),
+      fields: WORKBENCH_SETTING_FIELDS.filter((f) => f.category === category && !f.hidden),
     }))
     .filter((g) => g.fields.length > 0);
 
@@ -111,7 +107,9 @@ export function WorkbenchSettingsDrawer({
         </header>
 
         <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 px-3.5 py-2.5">
-          {!loaded && <div className="text-muted-foreground text-xs py-3.5 text-center">加载中…</div>}
+          {!loaded && (
+            <div className="text-muted-foreground text-xs py-3.5 text-center">加载中…</div>
+          )}
           {loaded &&
             groups.map(({ category, fields }) => (
               <section key={category} className="flex flex-col">
@@ -119,57 +117,60 @@ export function WorkbenchSettingsDrawer({
                   {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
                 </h3>
                 <div className="flex flex-col gap-0.5">
-                {fields.filter((field) => !field.parentKey).map((field) => {
-                  const lockName = lockableFieldName(field);
-                  const fieldValue = getFieldValue(config, field);
-                  const childFields = fields.filter((child) => child.parentKey === field.key);
-                  return (
-                    <div key={field.key} className="flex flex-col gap-px">
-                      <SettingsFieldControl
-                        field={field}
-                        value={fieldValue}
-                        locked={lockName !== null && lockedFields.includes(lockName)}
-                        onCommit={(value) => {
-                          if (isLocalSettingField(field)) {
-                            field.write(value);
-                            refreshLocalFields();
-                            return;
-                          }
-                          setFields(buildFieldPatch(field, value));
-                        }}
-                      />
-                      {childFields.map((child) => {
-                        const childLockName = lockableFieldName(child);
-                        return (
+                  {fields
+                    .filter((field) => !field.parentKey)
+                    .map((field) => {
+                      const lockName = lockableFieldName(field);
+                      const fieldValue = getFieldValue(config, field);
+                      const childFields = fields.filter((child) => child.parentKey === field.key);
+                      return (
+                        <div key={field.key} className="flex flex-col gap-px">
                           <SettingsFieldControl
-                            key={child.key}
-                            field={child}
-                            value={getFieldValue(config, child)}
-                            nested
-                            disabled={!fieldValue}
-                            locked={
-                              childLockName !== null &&
-                              lockedFields.includes(childLockName)
-                            }
+                            field={field}
+                            value={fieldValue}
+                            locked={lockName !== null && lockedFields.includes(lockName)}
                             onCommit={(value) => {
-                              if (isLocalSettingField(child)) {
-                                child.write(value);
+                              if (isLocalSettingField(field)) {
+                                field.write(value);
                                 refreshLocalFields();
                                 return;
                               }
-                              setFields(buildFieldPatch(child, value));
+                              setFields(buildFieldPatch(field, value));
                             }}
                           />
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                          {childFields.map((child) => {
+                            const childLockName = lockableFieldName(child);
+                            return (
+                              <SettingsFieldControl
+                                key={child.key}
+                                field={child}
+                                value={getFieldValue(config, child)}
+                                nested
+                                disabled={!fieldValue}
+                                locked={
+                                  childLockName !== null && lockedFields.includes(childLockName)
+                                }
+                                onCommit={(value) => {
+                                  if (isLocalSettingField(child)) {
+                                    child.write(value);
+                                    refreshLocalFields();
+                                    return;
+                                  }
+                                  setFields(buildFieldPatch(child, value));
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
                 </div>
                 {category === "common" && onToggleHideOrphans && (
                   <div className="flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted">
                     <span className="flex flex-1 min-w-0 flex-col gap-px">
-                      <span className="text-muted-foreground text-xs font-medium">隐藏孤儿标注</span>
+                      <span className="text-muted-foreground text-xs font-medium">
+                        隐藏孤儿标注
+                      </span>
                       <span className="text-muted-foreground text-2xs">筛掉无匹配预测的人工框</span>
                     </span>
                     <Switch
@@ -182,8 +183,12 @@ export function WorkbenchSettingsDrawer({
                 {category === "common" && onToggleSecondaryBar && (
                   <div className="flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted">
                     <span className="flex flex-1 min-w-0 flex-col gap-px">
-                      <span className="text-muted-foreground text-xs font-medium">二次推理面板</span>
-                      <span className="text-muted-foreground text-2xs">选中框时画布顶部的二次推理工具条</span>
+                      <span className="text-muted-foreground text-xs font-medium">
+                        二次推理面板
+                      </span>
+                      <span className="text-muted-foreground text-2xs">
+                        选中框时画布顶部的二次推理工具条
+                      </span>
                     </span>
                     <Switch
                       checked={!(secondaryBarHidden ?? false)}
@@ -197,7 +202,11 @@ export function WorkbenchSettingsDrawer({
         </div>
 
         <footer className="px-4 py-2.5 border-t border-border bg-card">
-          <Link to="/settings" className="inline-flex items-center gap-1 text-muted-foreground text-xs no-underline transition-[color] duration-150 hover:text-brand hover:underline" onClick={onClose}>
+          <Link
+            to="/settings"
+            className="inline-flex items-center gap-1 text-muted-foreground text-xs no-underline transition-[color] duration-150 hover:text-brand hover:underline"
+            onClick={onClose}
+          >
             全部设置（含其他模态）→ 个人设置页
           </Link>
         </footer>

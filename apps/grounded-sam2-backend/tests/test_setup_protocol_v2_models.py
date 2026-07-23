@@ -79,8 +79,14 @@ def test_setup_models_cover_protocol_tasks():
 def test_setup_models_declare_supported_inputs():
     """v0.18.16 · 各 model 显式声明 supported_inputs (一等输入契约)。"""
     by_id = {m["id"]: m for m in setup()["models"]}
-    assert by_id["grounded-sam2-detection"]["supported_inputs"] == ["full_image", "crop"]
-    assert by_id["grounded-sam2-segmentation"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["grounded-sam2-detection"]["supported_inputs"] == [
+        "full_image",
+        "crop",
+    ]
+    assert by_id["grounded-sam2-segmentation"]["supported_inputs"] == [
+        "full_image",
+        "crop",
+    ]
     assert by_id["grounded-sam2-interactive-seg"]["supported_inputs"] == [
         "bbox_prompt",
         "point_prompt",
@@ -94,7 +100,10 @@ def test_setup_models_declare_supported_inputs():
         "bbox_prompt",
         "mask_prompt",
     ]
-    assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+    assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == [
+        "bbox_prompt",
+        "full_image",
+    ]
 
 
 def test_setup_models_declare_output_attribute_types():
@@ -111,11 +120,26 @@ def test_setup_models_declare_output_attribute_types():
 def test_setup_models_declare_resource_profile():
     """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互/视频追踪逐次 batchable=False (不填 vram)。"""
     by_id = {m["id"]: m for m in setup()["models"]}
-    assert by_id["grounded-sam2-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["grounded-sam2-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["grounded-sam2-box-seg"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["grounded-sam2-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
-    assert by_id["grounded-sam2-tracker"]["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert by_id["grounded-sam2-detection"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["grounded-sam2-segmentation"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["grounded-sam2-box-seg"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["grounded-sam2-interactive-seg"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": False,
+    }
+    assert by_id["grounded-sam2-tracker"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": False,
+    }
 
 
 def test_setup_each_model_carries_infra_pytorch():
@@ -158,9 +182,7 @@ def test_image_mask_and_scribble_prompts_are_advertised_only_on_consumer():
     by_id = {m["id"]: m for m in setup()["models"]}
     interactive = by_id["grounded-sam2-interactive-seg"]
     assert {"mask", "scribble"}.issubset(interactive["supported_prompts"])
-    assert {"mask_prompt", "scribble_prompt"}.issubset(
-        interactive["supported_inputs"]
-    )
+    assert {"mask_prompt", "scribble_prompt"}.issubset(interactive["supported_inputs"])
     assert "correction_frame" not in interactive["supported_prompts"]
     assert interactive["supported_geometric_outputs"] == ["polygon", "mask"]
 
@@ -185,9 +207,9 @@ def test_tracker_model_sam2_video():
 def test_tracker_preserves_validated_correction_frame_seed():
     prompt = _correction_prompt()
 
-    assert _seeds_from_ctx(
-        {"seeds": [{"obj_id": 7, "prompts": [prompt]}]}
-    ) == [{"obj_id": 7, "prompts": [prompt]}]
+    assert _seeds_from_ctx({"seeds": [{"obj_id": 7, "prompts": [prompt]}]}) == [
+        {"obj_id": 7, "prompts": [prompt]}
+    ]
 
 
 def test_top_level_back_compat_fields_unchanged():

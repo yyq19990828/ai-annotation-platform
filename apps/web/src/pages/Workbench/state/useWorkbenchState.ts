@@ -139,7 +139,9 @@ export function useWorkbenchState() {
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedVideoTrackIds, setLockedVideoTrackIds] = useState<Set<string>>(() => new Set());
   // v0.10.30 · session 级 track 颜色覆盖：trackId -> oklch 颜色字符串（取色器写入）。
-  const [trackColorOverrides, setTrackColorOverrides] = useState<Record<string, string>>(() => ({}));
+  const [trackColorOverrides, setTrackColorOverrides] = useState<Record<string, string>>(
+    () => ({}),
+  );
   // v0.10.2 · samSubTool 改为派生 (见 toolToSamSubTool); polarity + aiToolParams 仍是 state.
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
   // exemplar 子工具输出形态 (box/mask/both); 会话级.
@@ -331,16 +333,19 @@ export function useWorkbenchState() {
     pendingResult: null,
   });
 
-  const beginCanvasDraft = useCallback((annotationId: string | null, initial?: CommentCanvasDrawing | null) => {
-    setCanvasDraft({
-      active: true,
-      annotationId,
-      shapes: initial?.shapes ?? [],
-      stroke: DEFAULT_CANVAS_STROKE,
-      pendingResult: null,
-    });
-    setTool("canvas");
-  }, []);
+  const beginCanvasDraft = useCallback(
+    (annotationId: string | null, initial?: CommentCanvasDrawing | null) => {
+      setCanvasDraft({
+        active: true,
+        annotationId,
+        shapes: initial?.shapes ?? [],
+        stroke: DEFAULT_CANVAS_STROKE,
+        pendingResult: null,
+      });
+      setTool("canvas");
+    },
+    [],
+  );
 
   const appendCanvasShape = useCallback((shape: CanvasDraft["shapes"][number]) => {
     setCanvasDraft((d) => ({ ...d, shapes: [...d.shapes, shape] }));
@@ -413,40 +418,77 @@ export function useWorkbenchState() {
   }, []);
 
   return {
-    currentTaskId, setCurrentTaskId,
-    tool, setTool,
-    videoTool, setVideoTool,
-    threeDTool, setThreeDTool,
-    videoFrameIndex, setVideoFrameIndex,
-    hiddenVideoTrackIds, lockedVideoTrackIds,
-    toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,
-    trackColorOverrides, setVideoTrackColor,
+    currentTaskId,
+    setCurrentTaskId,
+    tool,
+    setTool,
+    videoTool,
+    setVideoTool,
+    threeDTool,
+    setThreeDTool,
+    videoFrameIndex,
+    setVideoFrameIndex,
+    hiddenVideoTrackIds,
+    lockedVideoTrackIds,
+    toggleHiddenVideoTrack,
+    toggleLockedVideoTrack,
+    resetVideoStageUi,
+    trackColorOverrides,
+    setVideoTrackColor,
     // v0.10.2 · 派生 samSubTool (read-only) + polarity + AI 工具参数.
     samSubTool,
-    samPolarity, setSamPolarity,
-    exemplarOutputMode, setExemplarOutputMode,
-    aiToolParams, setAiToolParams,
-    aiVariant, setAiVariant,
-    activeClass, setActiveClass,
-    pendingDrawing, setPendingDrawing,
-    editingClass, setEditingClass,
-    selectedId, setSelectedId,
-    selectedIds, toggleSelected, replaceSelected,
-    confThreshold, setConfThreshold,
-    leftOpen, setLeftOpen,
-    rightOpen, setRightOpen,
-    attrPanelCollapsed, setAttrPanelCollapsed,
-    aiSectionCollapsed, setAiSectionCollapsed,
-    manualSectionCollapsed, setManualSectionCollapsed,
-    trackSectionCollapsed, setTrackSectionCollapsed,
-    discussionCollapsed, setDiscussionCollapsed,
-    workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
-    workbenchLayout, setWorkbenchLayout,
-    clipboard, setClipboard,
+    samPolarity,
+    setSamPolarity,
+    exemplarOutputMode,
+    setExemplarOutputMode,
+    aiToolParams,
+    setAiToolParams,
+    aiVariant,
+    setAiVariant,
+    activeClass,
+    setActiveClass,
+    pendingDrawing,
+    setPendingDrawing,
+    editingClass,
+    setEditingClass,
+    selectedId,
+    setSelectedId,
+    selectedIds,
+    toggleSelected,
+    replaceSelected,
+    confThreshold,
+    setConfThreshold,
+    leftOpen,
+    setLeftOpen,
+    rightOpen,
+    setRightOpen,
+    attrPanelCollapsed,
+    setAttrPanelCollapsed,
+    aiSectionCollapsed,
+    setAiSectionCollapsed,
+    manualSectionCollapsed,
+    setManualSectionCollapsed,
+    trackSectionCollapsed,
+    setTrackSectionCollapsed,
+    discussionCollapsed,
+    setDiscussionCollapsed,
+    workbenchConfig,
+    workbenchConfigLoaded,
+    updateWorkbenchConfig,
+    setWorkbenchFields,
+    workbenchLayout,
+    setWorkbenchLayout,
+    clipboard,
+    setClipboard,
     canvasDraft,
-    beginCanvasDraft, endCanvasDraft, cancelCanvasDraft,
-    appendCanvasShape, undoCanvasShape, clearCanvasShapes,
-    setCanvasStroke, consumeCanvasResult,
+    beginCanvasDraft,
+    endCanvasDraft,
+    cancelCanvasDraft,
+    appendCanvasShape,
+    undoCanvasShape,
+    clearCanvasShapes,
+    setCanvasStroke,
+    consumeCanvasResult,
   };
 }
 

@@ -41,7 +41,13 @@ _YOLO_VARIANTS = [
         "title": "尺寸 / 精度档",
         "variants": [
             {"value": "n", "label": "nano", "vram_gb": 1, "tier": "fast"},
-            {"value": "s", "label": "small", "vram_gb": 2, "tier": "balanced", "recommended": True},
+            {
+                "value": "s",
+                "label": "small",
+                "vram_gb": 2,
+                "tier": "balanced",
+                "recommended": True,
+            },
             {"value": "m", "label": "medium", "vram_gb": 4},
             {"value": "l", "label": "large", "vram_gb": 6},
             {"value": "x", "label": "xlarge", "vram_gb": 8, "tier": "accurate"},
@@ -65,55 +71,116 @@ def _yolo_params() -> dict:
     return {
         "type": "object",
         "properties": {
-            "conf": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值", "x-platform-role": "confidence"},
-            "iou": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.7, "title": "NMS IoU", "x-platform-role": "iou"},
-            "series": {"type": "string", "enum": ["yolov8", "yolo11", "yolo12"], "default": "yolo11", "title": "版本系列"},
-            "size": {"type": "string", "enum": ["n", "s", "m", "l", "x"], "default": "s", "title": "尺寸"},
+            "conf": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.25,
+                "title": "置信度阈值",
+                "x-platform-role": "confidence",
+            },
+            "iou": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.7,
+                "title": "NMS IoU",
+                "x-platform-role": "iou",
+            },
+            "series": {
+                "type": "string",
+                "enum": ["yolov8", "yolo11", "yolo12"],
+                "default": "yolo11",
+                "title": "版本系列",
+            },
+            "size": {
+                "type": "string",
+                "enum": ["n", "s", "m", "l", "x"],
+                "default": "s",
+                "title": "尺寸",
+            },
         },
     }
 
 
 def _yolo_model(id_: str, display_name: str, task: str, geometry: str, **extra) -> dict:
     return {
-        "id": id_, "display_name": display_name, "task": task,
-        "model_family": "yolo", "infra": "pytorch", "supported_prompts": ["none"],
-        "supported_geometric_outputs": [geometry], "supported_variants": _YOLO_VARIANTS,
+        "id": id_,
+        "display_name": display_name,
+        "task": task,
+        "model_family": "yolo",
+        "infra": "pytorch",
+        "supported_prompts": ["none"],
+        "supported_geometric_outputs": [geometry],
+        "supported_variants": _YOLO_VARIANTS,
         "variant_combinations": _YOLO_COMBINATIONS,
         "default_variants": _YOLO_DEFAULT_VARIANTS,
-        "resource_profile": {"device": "gpu", "batchable": True}, "params": _yolo_params(),
+        "resource_profile": {"device": "gpu", "batchable": True},
+        "params": _yolo_params(),
         **extra,
     }
 
 
 MODELS = [
-    _yolo_model("yolo-detect", "YOLO 目标检测", "detection", "bbox",
-                default_thresholds={"conf": 0.25, "iou": 0.7}),
+    _yolo_model(
+        "yolo-detect",
+        "YOLO 目标检测",
+        "detection",
+        "bbox",
+        default_thresholds={"conf": 0.25, "iou": 0.7},
+    ),
     _yolo_model("yolo-segment", "YOLO 实例分割", "segmentation", "polygon"),
     _yolo_model("yolo-pose", "YOLO 姿态 / 关键点", "keypoint", "keypoint"),
     _yolo_model("yolo-obb", "YOLO 旋转框", "obb", "rotated_bbox"),
-    _yolo_model("yolo-classify", "YOLO 图像分类", "classification", "none",
-                output_attribute_types=["class"]),
+    _yolo_model(
+        "yolo-classify",
+        "YOLO 图像分类",
+        "classification",
+        "none",
+        output_attribute_types=["class"],
+    ),
     {
-        "id": "ppocr", "display_name": "PaddleOCR (mock)", "task": "ocr",
-        "model_family": "paddleocr", "infra": "paddle", "supported_prompts": ["none"],
-        "supported_geometric_outputs": ["polygon"], "output_attribute_types": ["text", "language"],
+        "id": "ppocr",
+        "display_name": "PaddleOCR (mock)",
+        "task": "ocr",
+        "model_family": "paddleocr",
+        "infra": "paddle",
+        "supported_prompts": ["none"],
+        "supported_geometric_outputs": ["polygon"],
+        "output_attribute_types": ["text", "language"],
         "resource_profile": {"device": "cpu", "batchable": True},
         "params": {
             "type": "object",
             "properties": {
-                "det_db_thresh": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.3, "title": "文本检测阈值"},
+                "det_db_thresh": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.3,
+                    "title": "文本检测阈值",
+                },
             },
         },
     },
     {
-        "id": "doclayout", "display_name": "DocLayout-YOLO (mock)", "task": "doc_layout",
-        "model_family": "doclayout-yolo", "infra": "onnx", "supported_prompts": ["none"],
+        "id": "doclayout",
+        "display_name": "DocLayout-YOLO (mock)",
+        "task": "doc_layout",
+        "model_family": "doclayout-yolo",
+        "infra": "onnx",
+        "supported_prompts": ["none"],
         "supported_geometric_outputs": ["bbox"],
         "resource_profile": {"device": "cpu", "batchable": True},
         "params": {
             "type": "object",
             "properties": {
-                "conf": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.25, "title": "置信度阈值"},
+                "conf": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.25,
+                    "title": "置信度阈值",
+                },
             },
         },
     },
@@ -197,21 +264,35 @@ def _resolve_variants(variants: dict) -> dict:
             # 422: 值不在该轴枚举内。
             raise HTTPException(
                 status_code=422,
-                detail={"error_code": "variant_not_supported", "axis": axis, "value": value, "allowed": allowed},
+                detail={
+                    "error_code": "variant_not_supported",
+                    "axis": axis,
+                    "value": value,
+                    "allowed": allowed,
+                },
             )
     if [resolved["series"], resolved["size"]] not in _YOLO_COMBINATIONS:
         # 422: 两轴各自合法但组合不在 variant_combinations 内 (如 yolo12 + l)。
         allowed_sizes = [c[1] for c in _YOLO_COMBINATIONS if c[0] == resolved["series"]]
         raise HTTPException(
             status_code=422,
-            detail={"error_code": "variant_not_supported", "axis": "size", "value": resolved["size"], "allowed": allowed_sizes},
+            detail={
+                "error_code": "variant_not_supported",
+                "axis": "size",
+                "value": resolved["size"],
+                "allowed": allowed_sizes,
+            },
         )
     if resolved["size"] == "x":
         # 503 演示: mock 约定 size=x 视为「权重未下载」→ model_unavailable + Retry-After。
         key = f"{resolved['series']}/{resolved['size']}"
         raise HTTPException(
             status_code=503,
-            detail={"error_code": "model_unavailable", "key": key, "reason": "checkpoint missing (mock: size=x 演示 503)"},
+            detail={
+                "error_code": "model_unavailable",
+                "key": key,
+                "reason": "checkpoint missing (mock: size=x 演示 503)",
+            },
             headers={"Retry-After": "30"},
         )
     return resolved
@@ -255,25 +336,67 @@ def _demo_shapes(context: dict) -> list[dict]:
         return [
             {
                 "type": "rectanglelabels",
-                "value": {"x": 10, "y": 8, "width": 34, "height": 6, "rectanglelabels": ["text"]},
+                "value": {
+                    "x": 10,
+                    "y": 8,
+                    "width": 34,
+                    "height": 6,
+                    "rectanglelabels": ["text"],
+                },
                 "score": 0.96,
                 "attributes": {"text": "发票号码 0012345", "language": "zh"},
             },
             {
                 "type": "rectanglelabels",
-                "value": {"x": 10, "y": 20, "width": 42, "height": 6, "rectanglelabels": ["text"]},
+                "value": {
+                    "x": 10,
+                    "y": 20,
+                    "width": 42,
+                    "height": 6,
+                    "rectanglelabels": ["text"],
+                },
                 "score": 0.93,
                 "attributes": {"text": "金额 ¥ 1,280.00", "language": "zh"},
             },
         ]
     if task_type == "doc_layout":
         return [
-            {"type": "rectanglelabels", "value": {"x": 8, "y": 6, "width": 60, "height": 10, "rectanglelabels": ["title"]}, "score": 0.90},
-            {"type": "rectanglelabels", "value": {"x": 8, "y": 20, "width": 80, "height": 40, "rectanglelabels": ["paragraph"]}, "score": 0.88},
+            {
+                "type": "rectanglelabels",
+                "value": {
+                    "x": 8,
+                    "y": 6,
+                    "width": 60,
+                    "height": 10,
+                    "rectanglelabels": ["title"],
+                },
+                "score": 0.90,
+            },
+            {
+                "type": "rectanglelabels",
+                "value": {
+                    "x": 8,
+                    "y": 20,
+                    "width": 80,
+                    "height": 40,
+                    "rectanglelabels": ["paragraph"],
+                },
+                "score": 0.88,
+            },
         ]
     # detection 等几何任务默认: 单个 demo bbox。
     return [
-        {"type": "rectanglelabels", "value": {"x": 12, "y": 15, "width": 25, "height": 30, "rectanglelabels": ["object"]}, "score": 0.91},
+        {
+            "type": "rectanglelabels",
+            "value": {
+                "x": 12,
+                "y": 15,
+                "width": 25,
+                "height": 30,
+                "rectanglelabels": ["object"],
+            },
+            "score": 0.91,
+        },
     ]
 
 

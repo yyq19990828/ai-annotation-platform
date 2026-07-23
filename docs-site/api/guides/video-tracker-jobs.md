@@ -21,11 +21,11 @@ Content-Type: application/json
 
 通过源字段选择模式：
 
-| 模式 | 请求字段 | 类别与落库语义 |
-|---|---|---|
-| 单源延展 | 只传 `source_annotation_id` | 继承源轨迹的类别与工具单位；主实例接受后回填该源轨迹 |
-| 多源批量延展 | 只传非空 `source_annotation_ids` | 每个源自动成为独立种子，并在接受后各自回填对应源轨迹 |
-| 无源发现 | 两个源字段都不传 | 必须传 `target_class_name` 与 `target_tool_unit_id`；接受后全部新建轨迹 |
+| 模式         | 请求字段                         | 类别与落库语义                                                          |
+| ------------ | -------------------------------- | ----------------------------------------------------------------------- |
+| 单源延展     | 只传 `source_annotation_id`      | 继承源轨迹的类别与工具单位；主实例接受后回填该源轨迹                    |
+| 多源批量延展 | 只传非空 `source_annotation_ids` | 每个源自动成为独立种子，并在接受后各自回填对应源轨迹                    |
+| 无源发现     | 两个源字段都不传                 | 必须传 `target_class_name` 与 `target_tool_unit_id`；接受后全部新建轨迹 |
 
 客户端不要同时传单数和复数源字段；当前服务会在复数列表非空时进入多源分支。单源最小请求：
 
@@ -76,14 +76,18 @@ POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
         "obj_id": 1,
         "prompts": [
           { "frame_index": 0, "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 } },
-          { "frame_index": 24, "points": [[0.5, 0.5, 1], [0.7, 0.5, 0]] }
+          {
+            "frame_index": 24,
+            "points": [
+              [0.5, 0.5, 1],
+              [0.7, 0.5, 0]
+            ]
+          }
         ]
       },
       {
         "obj_id": 2,
-        "prompts": [
-          { "frame_index": 0, "points": [[0.8, 0.4, 1]] }
-        ]
+        "prompts": [{ "frame_index": 0, "points": [[0.8, 0.4, 1]] }]
       }
     ]
   }
@@ -104,7 +108,7 @@ POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
   "target_class_name": "car",
   "target_tool_unit_id": "bbox",
   "exemplars": [
-    { "bbox": [0.10, 0.20, 0.32, 0.58], "label": true },
+    { "bbox": [0.1, 0.2, 0.32, 0.58], "label": true },
     { "bbox": [0.62, 0.18, 0.81, 0.55], "label": false }
   ]
 }
@@ -294,17 +298,17 @@ GET /api/v1/tasks/{task_id}/video/tracker-jobs/active
 
 ## 状态语义
 
-| status | 含义 |
-|---|---|
-| `queued` | 已入队，worker 尚未开始 |
-| `running` | 正在分窗推理 |
-| `pending_review` | 推理完成，候选已暂存，annotation 未改 |
-| `partially_reviewed` | 已决定部分候选，仍有 staged result 待审 |
-| `cancelled` | 已取消；可能仍有部分 staged result |
-| `accepted` | 候选已写入 annotation |
-| `discarded` | 候选已丢弃 |
-| `failed` | 推理失败，无可接受结果 |
-| `completed` | 历史兼容状态；当前 runner 正常完成使用 `pending_review` |
+| status               | 含义                                                    |
+| -------------------- | ------------------------------------------------------- |
+| `queued`             | 已入队，worker 尚未开始                                 |
+| `running`            | 正在分窗推理                                            |
+| `pending_review`     | 推理完成，候选已暂存，annotation 未改                   |
+| `partially_reviewed` | 已决定部分候选，仍有 staged result 待审                 |
+| `cancelled`          | 已取消；可能仍有部分 staged result                      |
+| `accepted`           | 候选已写入 annotation                                   |
+| `discarded`          | 候选已丢弃                                              |
+| `failed`             | 推理失败，无可接受结果                                  |
+| `completed`          | 历史兼容状态；当前 runner 正常完成使用 `pending_review` |
 
 ## 管理员列表
 

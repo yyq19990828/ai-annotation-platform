@@ -19,12 +19,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_reason VARCHAR(50)"
-    )
-    op.execute(
-        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skipped_at TIMESTAMPTZ"
-    )
+    op.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_reason VARCHAR(50)")
+    op.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skipped_at TIMESTAMPTZ")
 
 
 def downgrade() -> None:

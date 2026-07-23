@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AnnotationResponse } from "@/types";
-import {
-  buildSnapIndex,
-  snapPointToCandidates,
-  snapPointToSegments,
-} from "./snap";
+import { buildSnapIndex, snapPointToCandidates, snapPointToSegments } from "./snap";
 
 const transform = { imgW: 100, imgH: 100, scale: 1 };
 
@@ -52,9 +48,7 @@ describe("snap geometry helpers", () => {
   });
 
   it("does not snap to candidates outside the threshold", () => {
-    expect(
-      snapPointToCandidates([0.14, 0.1], [{ point: [0.1, 0.1] }], 3, transform),
-    ).toBeNull();
+    expect(snapPointToCandidates([0.14, 0.1], [{ point: [0.1, 0.1] }], 3, transform)).toBeNull();
   });
 
   it("snaps to the nearest segment projection", () => {
@@ -76,13 +70,26 @@ describe("snap geometry helpers", () => {
 
   it("builds point and segment candidates from polygon and multi_polygon annotations only", () => {
     const index = buildSnapIndex([
-      annotation("poly", [[0, 0], [0.2, 0], [0.2, 0.2]]),
+      annotation("poly", [
+        [0, 0],
+        [0.2, 0],
+        [0.2, 0.2],
+      ]),
       {
         ...annotation("multi", []),
         annotation_type: "multi_polygon",
         geometry: {
           type: "multi_polygon",
-          polygons: [{ type: "polygon", points: [[0.4, 0.4], [0.5, 0.4], [0.5, 0.5]] }],
+          polygons: [
+            {
+              type: "polygon",
+              points: [
+                [0.4, 0.4],
+                [0.5, 0.4],
+                [0.5, 0.5],
+              ],
+            },
+          ],
         },
       },
       {

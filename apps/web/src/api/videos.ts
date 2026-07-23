@@ -6,7 +6,5 @@ export const videoApi = {
   getChunks: (datasetItemId: string) =>
     apiClient.get<VideoChunksResponse>(`/videos/${datasetItemId}/chunks`),
   getChunkSamples: (datasetItemId: string, chunkId: number) =>
-    apiClient.get<VideoChunkSamplesResponse>(
-      `/videos/${datasetItemId}/chunks/${chunkId}/samples`,
-    ),
+    apiClient.get<VideoChunkSamplesResponse>(`/videos/${datasetItemId}/chunks/${chunkId}/samples`),
 };

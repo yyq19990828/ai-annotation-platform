@@ -54,7 +54,9 @@ def test_list_ml_backends(client, respx_mock):
 
 def test_get_ml_backend(client, respx_mock):
     respx_mock.get(f"{API}/projects/{PID}/ml-backends/{BID}").mock(
-        return_value=httpx.Response(200, json=_backend(state="error", error_message="down"))
+        return_value=httpx.Response(
+            200, json=_backend(state="error", error_message="down")
+        )
     )
     b = client.ml_backends.get(PID, BID)
     assert b.state == "error"

@@ -137,11 +137,7 @@ function renderUI(extras: Partial<{ summary: any }> = {}) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <ProjectDetailPanel
-          projectId="p1"
-          onBack={() => {}}
-          summary={extras.summary}
-        />
+        <ProjectDetailPanel projectId="p1" onBack={() => {}} summary={extras.summary} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -303,8 +299,14 @@ describe("ProjectDetailPanel v0.9.12", () => {
     await waitFor(() => {
       expect(mockTriggerMutate).toHaveBeenCalledTimes(2);
     });
-    expect(mockTriggerMutate).toHaveBeenNthCalledWith(1, expect.objectContaining({ batch_id: "b1" }));
-    expect(mockTriggerMutate).toHaveBeenNthCalledWith(2, expect.objectContaining({ batch_id: "b2" }));
+    expect(mockTriggerMutate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ batch_id: "b1" }),
+    );
+    expect(mockTriggerMutate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ batch_id: "b2" }),
+    );
   });
 
   it("并行模式: 同时触发 N 次 mutateAsync", async () => {
@@ -411,13 +413,15 @@ describe("ProjectDetailPanel v0.9.12", () => {
 
     // v0.18.12 统一 wire: 变体走 model_variants (独立字段), params 只留非变体阈值。
     await waitFor(() => {
-      expect(mockTriggerMutate).toHaveBeenCalledWith(expect.objectContaining({
-        model_variants: expect.objectContaining({
-          sam_variant: "large",
-          dino_variant: "B",
+      expect(mockTriggerMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model_variants: expect.objectContaining({
+            sam_variant: "large",
+            dino_variant: "B",
+          }),
+          params: expect.objectContaining({ box_threshold: 0.35 }),
         }),
-        params: expect.objectContaining({ box_threshold: 0.35 }),
-      }));
+      );
     });
   });
 
@@ -499,9 +503,7 @@ describe("ProjectDetailPanel v0.9.12", () => {
     it("单 backend 项目: 提示需绑第二个 backend", () => {
       // 默认 mockUseMLBackends 只有 bk1 (单 backend)。
       renderUI();
-      expect(
-        screen.getByText(/需在项目设置绑定第二个 ML backend/),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/需在项目设置绑定第二个 ML backend/)).toBeInTheDocument();
     });
 
     it("双 backend 项目: 无单 backend 提示, 显示编排空态引导", () => {
@@ -513,9 +515,7 @@ describe("ProjectDetailPanel v0.9.12", () => {
         isLoading: false,
       });
       renderUI();
-      expect(
-        screen.queryByText(/需在项目设置绑定第二个 ML backend/),
-      ).toBeNull();
+      expect(screen.queryByText(/需在项目设置绑定第二个 ML backend/)).toBeNull();
       expect(screen.getByText(/加下游阶段/)).toBeInTheDocument();
     });
   });

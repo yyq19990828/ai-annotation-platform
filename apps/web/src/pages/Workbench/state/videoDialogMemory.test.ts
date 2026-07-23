@@ -15,9 +15,7 @@ describe("videoDialogMemory", () => {
     writeDialogMemory("u2", "kfPropagate", { count: 5 });
 
     const validate = (value: unknown) =>
-      value && typeof value === "object"
-        ? (value as { count: number })
-        : null;
+      value && typeof value === "object" ? (value as { count: number }) : null;
 
     expect(readDialogMemory("u1", "kfPropagate", validate)).toEqual({ count: 30 });
     expect(readDialogMemory("u2", "kfPropagate", validate)).toEqual({ count: 5 });
@@ -31,10 +29,7 @@ describe("videoDialogMemory", () => {
   });
 
   it("脏 JSON 或 validate 不通过时返回 null", () => {
-    window.localStorage.setItem(
-      videoDialogMemoryStorageKey("u1", "trackerPropagate"),
-      "{bad-json",
-    );
+    window.localStorage.setItem(videoDialogMemoryStorageKey("u1", "trackerPropagate"), "{bad-json");
 
     expect(readDialogMemory("u1", "trackerPropagate", () => ({ ok: true }))).toBeNull();
 

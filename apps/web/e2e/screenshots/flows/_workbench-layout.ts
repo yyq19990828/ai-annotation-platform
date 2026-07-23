@@ -154,28 +154,26 @@ export async function waitForRecordingWorkbenchLayout(
   const expectedRightTitle = mode === "both" ? "收起标注详情" : "展开标注详情";
   await page.getByTitle(expectedLeftTitle).waitFor({ state: "visible", timeout: 10_000 });
   await page.getByTitle(expectedRightTitle).waitFor({ state: "visible", timeout: 10_000 });
-  await page.waitForFunction((sidebarMode) => {
-    const root = document.querySelector<HTMLElement>('[style*="--workbench-grid-template"]');
-    const value = root?.style.getPropertyValue("--workbench-grid-template") ?? "";
-    return sidebarMode === "both"
-      ? value.includes("clamp(180px, 15%, 600px) 48px 1fr clamp(180px, 15%, 600px)")
-      : value === "0px 48px 1fr 0px";
-  }, mode, { timeout: 10_000 });
+  await page.waitForFunction(
+    (sidebarMode) => {
+      const root = document.querySelector<HTMLElement>('[style*="--workbench-grid-template"]');
+      const value = root?.style.getPropertyValue("--workbench-grid-template") ?? "";
+      return sidebarMode === "both"
+        ? value.includes("clamp(180px, 15%, 600px) 48px 1fr clamp(180px, 15%, 600px)")
+        : value === "0px 48px 1fr 0px";
+    },
+    mode,
+    { timeout: 10_000 },
+  );
 }
 
 /**
  * 把可拖动的当前题 AI 面板停到视口最右侧，避免录制时遮住中央主图。
  * 走真实 pointer drag，只影响隔离的 Playwright context，不改产品默认定位。
  */
-export async function dockAiPanelAtViewportRight(
-  page: Page,
-  panel: Locator,
-): Promise<void> {
+export async function dockAiPanelAtViewportRight(page: Page, panel: Locator): Promise<void> {
   const header = panel.getByTitle("拖动 AI 面板");
-  const [panelBox, headerBox] = await Promise.all([
-    panel.boundingBox(),
-    header.boundingBox(),
-  ]);
+  const [panelBox, headerBox] = await Promise.all([panel.boundingBox(), header.boundingBox()]);
   const viewport = page.viewportSize();
   if (!panelBox || !headerBox || !viewport) {
     throw new Error("[recording-layout] 无法定位当前题 AI 面板");
@@ -189,11 +187,13 @@ export async function dockAiPanelAtViewportRight(
   await page.mouse.move(startX + deltaX, startY, { steps: 8 });
   await page.mouse.up();
 
-  await page.waitForFunction(() => {
-    const node = document.querySelector<HTMLElement>(
-      '[data-testid="ai-prediction-popover"]',
-    );
-    if (!node) return false;
-    return Math.abs(window.innerWidth - node.getBoundingClientRect().right - 8) <= 2;
-  }, undefined, { timeout: 5_000 });
+  await page.waitForFunction(
+    () => {
+      const node = document.querySelector<HTMLElement>('[data-testid="ai-prediction-popover"]');
+      if (!node) return false;
+      return Math.abs(window.innerWidth - node.getBoundingClientRect().right - 8) <= 2;
+    },
+    undefined,
+    { timeout: 5_000 },
+  );
 }

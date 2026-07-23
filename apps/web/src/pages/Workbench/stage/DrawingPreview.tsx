@@ -3,19 +3,26 @@ import { classColor } from "./colors";
 import styles from "./DrawingPreview.module.css";
 
 interface Drawing {
-  x: number; y: number; w: number; h: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
-export function DrawingPreview({ drawing, activeClass }: { drawing: Drawing | null; activeClass: string }) {
+export function DrawingPreview({
+  drawing,
+  activeClass,
+}: {
+  drawing: Drawing | null;
+  activeClass: string;
+}) {
   if (!drawing || drawing.w <= 0) return null;
   const color = classColor(activeClass);
   const left = drawing.x * 100 + "%";
   const top = drawing.y * 100 + "%";
   const width = drawing.w * 100 + "%";
   const height = drawing.h * 100 + "%";
-  return (
-    <DrawingPreviewBox left={left} top={top} width={width} height={height} color={color} />
-  );
+  return <DrawingPreviewBox left={left} top={top} width={width} height={height} color={color} />;
 }
 
 function DrawingPreviewBox({

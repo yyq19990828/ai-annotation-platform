@@ -391,7 +391,9 @@ async def get_issue_region_content(
         db, annotation_id=issue.annotation_id, user=current_user
     )
     if task.id != issue.task_id or annotation.project_id != issue.project_id:
-        raise HTTPException(status_code=409, detail={"reason": "mask_qc_issue_scope_conflict"})
+        raise HTTPException(
+            status_code=409, detail={"reason": "mask_qc_issue_scope_conflict"}
+        )
     reference = issue.region_mask_ref
     if not isinstance(reference, dict):
         raise HTTPException(
@@ -632,9 +634,7 @@ async def get_mask_repair_batch(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_REVIEWERS)),
 ) -> MaskRepairBatchOut:
-    batch = await _load_visible_repair_batch(
-        db, repair_id=repair_id, user=current_user
-    )
+    batch = await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
     return batch_out(batch)
 
 
@@ -652,9 +652,7 @@ async def resume_mask_repairs(
 ) -> MaskRepairBatchOut:
     await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
     try:
-        batch = await resume_repair_batch(
-            db, batch_id=repair_id, actor=current_user
-        )
+        batch = await resume_repair_batch(db, batch_id=repair_id, actor=current_user)
     except MaskRepairError as exc:
         await db.rollback()
         _raise_mask_repair_error(exc)

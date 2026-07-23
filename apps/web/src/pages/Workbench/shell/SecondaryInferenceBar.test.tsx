@@ -14,15 +14,13 @@ import type { SecondaryCapability } from "../state/useSecondaryInference";
 
 const pushToast = vi.fn();
 vi.mock("@/components/ui/Toast", () => ({
-  useToastStore: (sel: (s: { push: typeof pushToast }) => unknown) =>
-    sel({ push: pushToast }),
+  useToastStore: (sel: (s: { push: typeof pushToast }) => unknown) => sel({ push: pushToast }),
 }));
 
 const mutateAsync = vi.fn();
 const capabilitiesRef: { current: SecondaryCapability[] } = { current: [] };
 vi.mock("../state/useSecondaryInference", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../state/useSecondaryInference")>();
+  const actual = await importOriginal<typeof import("../state/useSecondaryInference")>();
   return {
     ...actual, // 保留 missingAttributeFields / hasConfigurableParams / buildSecondaryInferencePayload 真实实现
     useSecondaryCapabilities: () => ({
@@ -88,12 +86,7 @@ describe("SecondaryInferenceBar", () => {
   it("readOnly → 不渲染 (即便有能力)", () => {
     capabilitiesRef.current = [attrCap()];
     const { container } = render(
-      <SecondaryInferenceBar
-        projectId="p"
-        taskId="task-1"
-        annotation={annotation}
-        readOnly
-      />,
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} readOnly />,
     );
     expect(container.firstChild).toBeNull();
   });

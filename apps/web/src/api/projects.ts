@@ -200,8 +200,7 @@ export const projectsApi = {
 
   get: (id: string) => apiClient.get<ProjectResponse>(`/projects/${id}`),
 
-  create: (payload: ProjectCreatePayload) =>
-    apiClient.post<ProjectResponse>("/projects", payload),
+  create: (payload: ProjectCreatePayload) => apiClient.post<ProjectResponse>("/projects", payload),
 
   update: (id: string, payload: ProjectUpdatePayload) =>
     apiClient.patch<ProjectResponse>(`/projects/${id}`, payload),
@@ -215,27 +214,18 @@ export const projectsApi = {
     apiClient.get<ProjectClassUsageResponse>(`/projects/${id}/class-usage`),
 
   cleanupOrphans: (id: string, dry_run = true) =>
-    apiClient.post<ProjectCleanupOrphansResponse>(
-      `/projects/${id}/cleanup-orphans`,
-      { dry_run },
-    ),
+    apiClient.post<ProjectCleanupOrphansResponse>(`/projects/${id}/cleanup-orphans`, { dry_run }),
 
   // B-13 · 重命名类别 (后端原子更新 classes / classes_config / annotations.class_name)
   // v0.10.17 · 加可选 tool_unit_id 限定工具单位; 不传时跨所有 unit 同名一起改 (兼容旧客户端).
-  renameClass: (
-    id: string,
-    old_name: string,
-    new_name: string,
-    tool_unit_id?: string,
-  ) =>
+  renameClass: (id: string, old_name: string, new_name: string, tool_unit_id?: string) =>
     apiClient.post<ProjectResponse>(`/projects/${id}/classes/rename`, {
       old_name,
       new_name,
       ...(tool_unit_id ? { tool_unit_id } : {}),
     }),
 
-  listMembers: (id: string) =>
-    apiClient.get<ProjectMemberResponse[]>(`/projects/${id}/members`),
+  listMembers: (id: string) => apiClient.get<ProjectMemberResponse[]>(`/projects/${id}/members`),
 
   addMember: (id: string, payload: { user_id: string; role: "annotator" | "reviewer" }) =>
     apiClient.post<ProjectMemberResponse>(`/projects/${id}/members`, payload),
@@ -245,7 +235,10 @@ export const projectsApi = {
 
   // v0.10.13 · E1 · 标注指引图片资源
   guideAssets: {
-    uploadInit: (projectId: string, payload: { filename: string; content_type: string; size: number }) =>
+    uploadInit: (
+      projectId: string,
+      payload: { filename: string; content_type: string; size: number },
+    ) =>
       apiClient.post<GuideAssetUploadInitResponse>(
         `/projects/${projectId}/guide-assets/upload-init`,
         payload,
@@ -285,8 +278,6 @@ export const projectsApi = {
     if (opts?.motsFrameBase !== undefined) {
       params.set("mots_frame_base", String(opts.motsFrameBase));
     }
-    return apiClient.post<{ job_id: string }>(
-      `/projects/${id}/export?${params.toString()}`,
-    );
+    return apiClient.post<{ job_id: string }>(`/projects/${id}/export?${params.toString()}`);
   },
 };

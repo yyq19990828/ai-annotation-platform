@@ -22,15 +22,18 @@ function cleanRange(range: OutsideInput): VideoTrackOutsideRange | null {
   };
 }
 
-export function normalizeOutsideRanges(ranges: readonly OutsideInput[] | undefined): VideoTrackOutsideRange[] {
+export function normalizeOutsideRanges(
+  ranges: readonly OutsideInput[] | undefined,
+): VideoTrackOutsideRange[] {
   const cleaned = (ranges ?? [])
     .map(cleanRange)
     .filter((range): range is VideoTrackOutsideRange => Boolean(range))
-    .sort((a, b) => (
-      a.from - b.from
-      || a.to - b.to
-      || (a.source ?? "manual").localeCompare(b.source ?? "manual")
-    ));
+    .sort(
+      (a, b) =>
+        a.from - b.from ||
+        a.to - b.to ||
+        (a.source ?? "manual").localeCompare(b.source ?? "manual"),
+    );
 
   const merged: VideoTrackOutsideRange[] = [];
   for (const range of cleaned) {
@@ -54,7 +57,10 @@ export function effectiveOutsideRanges(track: OutsideRangeCarrier): VideoTrackOu
   return normalizeOutsideRanges(track.outside ?? []);
 }
 
-export function isFrameInOutsideRanges(ranges: readonly VideoTrackOutsideRange[], frameIndex: number) {
+export function isFrameInOutsideRanges(
+  ranges: readonly VideoTrackOutsideRange[],
+  frameIndex: number,
+) {
   return ranges.some((range) => frameIndex >= range.from && frameIndex <= range.to);
 }
 
@@ -72,10 +78,9 @@ export function outsideRangesIntersect(
   return ranges.some((range) => range.from <= to && range.to >= from);
 }
 
-export function addOutsideRange<T extends VideoTrackGeometry | { outside?: VideoTrackOutsideRange[] }>(
-  track: T,
-  range: VideoTrackOutsideRange,
-): T {
+export function addOutsideRange<
+  T extends VideoTrackGeometry | { outside?: VideoTrackOutsideRange[] },
+>(track: T, range: VideoTrackOutsideRange): T {
   return {
     ...track,
     outside: normalizeOutsideRanges([...(track.outside ?? []), range]),

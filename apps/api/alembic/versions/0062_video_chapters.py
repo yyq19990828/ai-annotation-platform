@@ -88,9 +88,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_video_chapters_item_range", table_name="video_chapters")
-    op.drop_index(
-        op.f("ix_video_chapters_created_by"), table_name="video_chapters"
-    )
+    op.drop_index(op.f("ix_video_chapters_created_by"), table_name="video_chapters")
     op.drop_index(
         op.f("ix_video_chapters_dataset_item_id"), table_name="video_chapters"
     )

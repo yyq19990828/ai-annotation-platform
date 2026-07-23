@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  resolveWorkbenchPerformanceTier,
-  WORKBENCH_PERFORMANCE_TIERS,
-} from "./performanceTier";
+import { resolveWorkbenchPerformanceTier, WORKBENCH_PERFORMANCE_TIERS } from "./performanceTier";
 
 describe("workbench performance tiers", () => {
   it("keeps standard equal to the previous hardcoded cache and decimation defaults", () => {

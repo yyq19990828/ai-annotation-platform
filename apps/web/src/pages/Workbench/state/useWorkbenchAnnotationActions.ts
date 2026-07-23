@@ -36,9 +36,28 @@ interface ToastInput {
 }
 
 export interface AnnotationMutations {
-  create: { mutate: (p: AnnotationPayload, opts?: { onSuccess?: (a: AnnotationResponse) => void; onError?: (e: unknown) => void; onSettled?: () => void }) => void };
-  update: { mutate: (vars: { annotationId: string; payload: Partial<AnnotationPayload> }, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void }) => void };
-  delete: { mutate: (id: string, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void }) => void };
+  create: {
+    mutate: (
+      p: AnnotationPayload,
+      opts?: {
+        onSuccess?: (a: AnnotationResponse) => void;
+        onError?: (e: unknown) => void;
+        onSettled?: () => void;
+      },
+    ) => void;
+  };
+  update: {
+    mutate: (
+      vars: { annotationId: string; payload: Partial<AnnotationPayload> },
+      opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void },
+    ) => void;
+  };
+  delete: {
+    mutate: (
+      id: string,
+      opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void },
+    ) => void;
+  };
 }
 
 export interface UseWorkbenchAnnotationActionsArgs {
@@ -72,7 +91,11 @@ export interface UseWorkbenchAnnotationActionsReturn {
   /** v0.10.28 · 旋转框: 由轴对齐矩形 (归一化 x/y/w/h) 提交 angle=0 的 rotated_bbox; 类别用 activeClass。 */
   createRotatedBbox: (geom: Geom) => boolean;
   /** v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 OBB geometry (走 update mutation + history)。 */
-  handleCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
+  handleCommitRotateBbox: (
+    id: string,
+    before: RotatedBboxGeometry,
+    after: RotatedBboxGeometry,
+  ) => void;
   handlePickPendingClass: (cls: string) => void;
   submitPolygon: (points: [number, number][]) => void;
   /** v0.10.28 · 提交折线（不闭合，≥2 顶点）。*/
@@ -137,7 +160,9 @@ export function useWorkbenchAnnotationActions({
     (id: string, afterG: Record<string, unknown>) => {
       if (!taskId) return;
       setQ<AnnotationResponse[]>(["annotations", taskId], (prev) =>
-        (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG as AnnotationResponse["geometry"] } : a)),
+        (prev ?? []).map((a) =>
+          a.id === id ? { ...a, geometry: afterG as AnnotationResponse["geometry"] } : a,
+        ),
       );
     },
     [taskId, setQ],
@@ -190,8 +215,12 @@ export function useWorkbenchAnnotationActions({
   // ── polygon / polyline 草稿（共用顶点累积 state）──────────────────────
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   // 切到非 polygon/polyline 工具或切题清空草稿
-  useEffect(() => { if (s.tool !== "polygon" && s.tool !== "polyline") setPolygonDraftPoints([]); }, [s.tool]);
-  useEffect(() => { setPolygonDraftPoints([]); }, [taskId]);
+  useEffect(() => {
+    if (s.tool !== "polygon" && s.tool !== "polyline") setPolygonDraftPoints([]);
+  }, [s.tool]);
+  useEffect(() => {
+    setPolygonDraftPoints([]);
+  }, [taskId]);
 
   const submitPolygon = useCallback(
     (points: [number, number][]) => {
@@ -219,12 +248,25 @@ export function useWorkbenchAnnotationActions({
           history.push({ kind: "create", annotationId: created.id, payload });
           s.setSelectedId(created.id);
           recordRecentClass(cls);
-          pushToast({ msg: "已创建多边形", sub: `${points.length} 顶点 · ${cls}`, kind: "success" });
+          pushToast({
+            msg: "已创建多边形",
+            sub: `${points.length} 顶点 · ${cls}`,
+            kind: "success",
+          });
         },
         onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
       });
     },
-    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+    [
+      blockIfLocked,
+      s,
+      mutations,
+      history,
+      recordRecentClass,
+      pushToast,
+      enqueueOnError,
+      optimisticEnqueueCreate,
+    ],
   );
 
   const polygonHandle = useMemo<PolygonDraftHandle>(
@@ -269,7 +311,16 @@ export function useWorkbenchAnnotationActions({
         onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
       });
     },
-    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+    [
+      blockIfLocked,
+      s,
+      mutations,
+      history,
+      recordRecentClass,
+      pushToast,
+      enqueueOnError,
+      optimisticEnqueueCreate,
+    ],
   );
 
   const polylineHandle = useMemo<PolygonDraftHandle>(
@@ -285,10 +336,16 @@ export function useWorkbenchAnnotationActions({
 
   // ── v0.10.28 · keypoint 草稿 ──────────────────────────────────────────
   const [keypointDraftPoints, setKeypointDraftPoints] = useState<Keypoint[]>([]);
-  useEffect(() => { if (s.tool !== "keypoint") setKeypointDraftPoints([]); }, [s.tool]);
-  useEffect(() => { setKeypointDraftPoints([]); }, [taskId]);
+  useEffect(() => {
+    if (s.tool !== "keypoint") setKeypointDraftPoints([]);
+  }, [s.tool]);
+  useEffect(() => {
+    setKeypointDraftPoints([]);
+  }, [taskId]);
   // schema 节点数变化 (切类别 → 不同 schema) 时清空半成品草稿。
-  useEffect(() => { setKeypointDraftPoints([]); }, [keypointNodeCount]);
+  useEffect(() => {
+    setKeypointDraftPoints([]);
+  }, [keypointNodeCount]);
 
   const submitKeypoint = useCallback(
     (points: Keypoint[]) => {
@@ -313,12 +370,25 @@ export function useWorkbenchAnnotationActions({
           s.setSelectedId(created.id);
           recordRecentClass(cls);
           const visible = points.filter((p) => p.v > 0).length;
-          pushToast({ msg: "已创建关键点", sub: `${visible}/${points.length} 可见 · ${cls}`, kind: "success" });
+          pushToast({
+            msg: "已创建关键点",
+            sub: `${visible}/${points.length} 可见 · ${cls}`,
+            kind: "success",
+          });
         },
         onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
       });
     },
-    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+    [
+      blockIfLocked,
+      s,
+      mutations,
+      history,
+      recordRecentClass,
+      pushToast,
+      enqueueOnError,
+      optimisticEnqueueCreate,
+    ],
   );
 
   // 放满 nodeCount 个点 → 自动提交一个实例。
@@ -352,25 +422,43 @@ export function useWorkbenchAnnotationActions({
         {
           onSuccess: () => {
             history.push({
-              kind: "update", annotationId: id,
-              before: { geometry: beforeG }, after: { geometry: afterG },
+              kind: "update",
+              annotationId: id,
+              before: { geometry: beforeG },
+              after: { geometry: afterG },
             });
           },
           onError: (err) =>
             enqueueOnError(err, () => {
               optimisticUpdateGeom(id, afterG);
               history.push({
-                kind: "update", annotationId: id,
-                before: { geometry: beforeG }, after: { geometry: afterG },
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({
+                kind: "update",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                payload,
+                ts: Date.now(),
+              });
             }),
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, markPendingGeom],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      taskId,
+      enqueueOnError,
+      optimisticUpdateGeom,
+      markPendingGeom,
+    ],
   );
-
 
   // ── handlers ───────────────────────────────────────────────────────
 
@@ -401,7 +489,15 @@ export function useWorkbenchAnnotationActions({
       });
       return true;
     },
-    [blockIfLocked, s, mutations, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate],
+    [
+      blockIfLocked,
+      s,
+      mutations,
+      history,
+      recordRecentClass,
+      enqueueOnError,
+      optimisticEnqueueCreate,
+    ],
   );
 
   // v0.10.28 · 旋转框: 轴对齐矩形 → angle=0 的 rotated_bbox。中心 = 矩形中点; 类别用 activeClass。
@@ -439,7 +535,16 @@ export function useWorkbenchAnnotationActions({
       });
       return true;
     },
-    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+    [
+      blockIfLocked,
+      s,
+      mutations,
+      history,
+      recordRecentClass,
+      pushToast,
+      enqueueOnError,
+      optimisticEnqueueCreate,
+    ],
   );
 
   // v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 rotated_bbox geometry。
@@ -447,8 +552,14 @@ export function useWorkbenchAnnotationActions({
     (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => {
       if (blockIfLocked()) return;
       if (!taskId) return;
-      if (before.cx === after.cx && before.cy === after.cy && before.w === after.w &&
-          before.h === after.h && before.angle === after.angle) return;
+      if (
+        before.cx === after.cx &&
+        before.cy === after.cy &&
+        before.w === after.w &&
+        before.h === after.h &&
+        before.angle === after.angle
+      )
+        return;
       const payload = { geometry: after };
       // v0.20.22 · 见 usePendingGeom。
       markPendingGeom?.(id, after);
@@ -457,23 +568,42 @@ export function useWorkbenchAnnotationActions({
         {
           onSuccess: () => {
             history.push({
-              kind: "update", annotationId: id,
-              before: { geometry: before }, after: { geometry: after },
+              kind: "update",
+              annotationId: id,
+              before: { geometry: before },
+              after: { geometry: after },
             });
           },
           onError: (err) =>
             enqueueOnError(err, () => {
               optimisticUpdateGeom(id, after as unknown as Record<string, unknown>);
               history.push({
-                kind: "update", annotationId: id,
-                before: { geometry: before }, after: { geometry: after },
+                kind: "update",
+                annotationId: id,
+                before: { geometry: before },
+                after: { geometry: after },
               });
-              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({
+                kind: "update",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                payload,
+                ts: Date.now(),
+              });
             }),
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, markPendingGeom],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      taskId,
+      enqueueOnError,
+      optimisticUpdateGeom,
+      markPendingGeom,
+    ],
   );
 
   const handlePickPendingClass = useCallback(
@@ -510,7 +640,17 @@ export function useWorkbenchAnnotationActions({
       }
       s.setSelectedId(null);
     },
-    [blockIfLocked, mutations, history, pushToast, s, taskId, enqueueOnError, optimisticDelete, annotationsRef],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      pushToast,
+      s,
+      taskId,
+      enqueueOnError,
+      optimisticDelete,
+      annotationsRef,
+    ],
   );
 
   const handleCommitMove = useCallback(
@@ -528,7 +668,12 @@ export function useWorkbenchAnnotationActions({
       // 各更新独立 mutate; 失败走同款离线兜底 (乐观写 + enqueue), 但 history 只 pushBatch 一次 (不逐条 push)。
       if (childMoves && childMoves.length > 0) {
         history.pushBatch([
-          { kind: "update", annotationId: id, before: { geometry: beforeG }, after: { geometry: afterG } },
+          {
+            kind: "update",
+            annotationId: id,
+            before: { geometry: beforeG },
+            after: { geometry: afterG },
+          },
           ...childMoves.map((c) => ({
             kind: "update" as const,
             annotationId: c.id,
@@ -546,7 +691,14 @@ export function useWorkbenchAnnotationActions({
               onError: (err) =>
                 enqueueOnError(err, () => {
                   optimisticUpdateGeom(annotationId, geometry);
-                  enqueue({ kind: "update", id: randomId(), taskId, annotationId, payload: p, ts: Date.now() });
+                  enqueue({
+                    kind: "update",
+                    id: randomId(),
+                    taskId,
+                    annotationId,
+                    payload: p,
+                    ts: Date.now(),
+                  });
                 }),
             },
           );
@@ -564,23 +716,43 @@ export function useWorkbenchAnnotationActions({
         {
           onSuccess: () => {
             history.push({
-              kind: "update", annotationId: id,
-              before: { geometry: beforeG }, after: { geometry: afterG },
+              kind: "update",
+              annotationId: id,
+              before: { geometry: beforeG },
+              after: { geometry: afterG },
             });
           },
           onError: (err) =>
             enqueueOnError(err, () => {
               optimisticUpdateGeom(id, afterG);
               history.push({
-                kind: "update", annotationId: id,
-                before: { geometry: beforeG }, after: { geometry: afterG },
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({
+                kind: "update",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                payload,
+                ts: Date.now(),
+              });
             }),
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom, pushToast, markPendingGeom],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      taskId,
+      enqueueOnError,
+      optimisticUpdateGeom,
+      pushToast,
+      markPendingGeom,
+    ],
   );
 
   const handleCommitResize = useCallback(
@@ -601,23 +773,43 @@ export function useWorkbenchAnnotationActions({
         {
           onSuccess: () => {
             history.push({
-              kind: "update", annotationId: id,
-              before: { geometry: beforeG }, after: { geometry: afterG },
+              kind: "update",
+              annotationId: id,
+              before: { geometry: beforeG },
+              after: { geometry: afterG },
             });
           },
           onError: (err) =>
             enqueueOnError(err, () => {
               optimisticUpdateGeom(id, afterG);
               history.push({
-                kind: "update", annotationId: id,
-                before: { geometry: beforeG }, after: { geometry: afterG },
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({
+                kind: "update",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                payload,
+                ts: Date.now(),
+              });
             }),
         },
       );
     },
-    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom, markPendingGeom],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      pushToast,
+      taskId,
+      enqueueOnError,
+      optimisticUpdateGeom,
+      markPendingGeom,
+    ],
   );
 
   const handleCommitPolygonGeometry = useCallback(
@@ -660,34 +852,51 @@ export function useWorkbenchAnnotationActions({
         {
           onSuccess: () => {
             history.push({
-              kind: "update", annotationId: id,
-              before: { geometry: beforeG }, after: { geometry: afterG },
+              kind: "update",
+              annotationId: id,
+              before: { geometry: beforeG },
+              after: { geometry: afterG },
             });
           },
           onError: (err) =>
             enqueueOnError(err, () => {
               optimisticUpdateGeom(id, afterG);
               history.push({
-                kind: "update", annotationId: id,
-                before: { geometry: beforeG }, after: { geometry: afterG },
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
-              enqueue({ kind: "update", id: randomId(), taskId, annotationId: id, payload, ts: Date.now() });
+              enqueue({
+                kind: "update",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                payload,
+                ts: Date.now(),
+              });
             }),
         },
       );
     },
-    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom, annotationsRef, markPendingGeom],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      pushToast,
+      taskId,
+      enqueueOnError,
+      optimisticUpdateGeom,
+      annotationsRef,
+      markPendingGeom,
+    ],
   );
 
   // v0.10.5 M4-β · I15 shape 状态位字段级 PATCH。
   // `flag` ∈ { z_order, is_locked, is_hidden }；value 直传。
   // 失败时仍 enqueue 离线 op（与 handleCommitMove 一致）。
   const handlePatchShapeFlag = useCallback(
-    (
-      id: string,
-      flag: "z_order" | "is_locked" | "is_hidden",
-      value: number | boolean,
-    ) => {
+    (id: string, flag: "z_order" | "is_locked" | "is_hidden", value: number | boolean) => {
       if (blockIfLocked()) return;
       if (!taskId) return;
       const target = annotationsRef.current.find((a) => a.id === id);
@@ -713,8 +922,12 @@ export function useWorkbenchAnnotationActions({
                 after: payload,
               });
               enqueue({
-                kind: "update", id: randomId(), taskId,
-                annotationId: id, payload, ts: Date.now(),
+                kind: "update",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                payload,
+                ts: Date.now(),
               });
             }),
         },

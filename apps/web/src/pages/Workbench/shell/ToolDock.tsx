@@ -5,7 +5,8 @@ import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
 import type { ThreeDTool, VideoTool } from "../state/useWorkbenchState";
 
-const ROOT_CLASS = "relative flex flex-col items-center gap-1.5 border-r border-border bg-card px-1 py-2.5";
+const ROOT_CLASS =
+  "relative flex flex-col items-center gap-1.5 border-r border-border bg-card px-1 py-2.5";
 // 仅布局 / 边框宽度，不含颜色 utility —— 颜色按 active / idle 互斥下发，
 // 否则朴素 cn() (非 tailwind-merge) 下基础色类会因 CSS 源顺序覆盖激活色类，导致高亮失效。
 const TOOL_BTN_CLASS =
@@ -107,25 +108,119 @@ const VIDEO_TOOLS: Array<{
   /** 非空 = AI 工具: 受项目总开关(隐藏) + 后端能力(置灰) 双层管控, 对齐图片侧。 */
   requiredPrompt?: string;
 }> = [
-  { id: "select", hotkey: "V", label: "选择", icon: "cursor", desc: "点选 / 移动已有视频标注", altDigit: 3, group: "select" },
-  { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1, group: "frame" },
+  {
+    id: "select",
+    hotkey: "V",
+    label: "选择",
+    icon: "cursor",
+    desc: "点选 / 移动已有视频标注",
+    altDigit: 3,
+    group: "select",
+  },
+  {
+    id: "box",
+    hotkey: "B",
+    label: "矩形框",
+    icon: "rect",
+    desc: "当前帧独立矩形框",
+    altDigit: 1,
+    group: "frame",
+  },
   // v0.21.21 · 单帧 polygon/polyline (点击落点, Enter/双击闭合, Esc 取消)。
-  { id: "polygon", hotkey: "P", label: "多边形", icon: "polygon", desc: "点击落点画当前帧多边形 · Enter/双击闭合", group: "frame" },
-  { id: "polyline", label: "折线", icon: "spline", desc: "点击落点画当前帧折线 · Enter/双击结束", group: "frame" },
+  {
+    id: "polygon",
+    hotkey: "P",
+    label: "多边形",
+    icon: "polygon",
+    desc: "点击落点画当前帧多边形 · Enter/双击闭合",
+    group: "frame",
+  },
+  {
+    id: "polyline",
+    label: "折线",
+    icon: "spline",
+    desc: "点击落点画当前帧折线 · Enter/双击结束",
+    group: "frame",
+  },
   // v0.21.23 · 交互式 SAM 单帧工具; requiredPrompt 决定后端能力门控 (不支持则置灰)。
-  { id: "smart-point", hotkey: "S", label: "智能点", icon: "target", desc: "点选目标 · SAM 分割当前帧 · Alt 负点", group: "sam", requiredPrompt: "point" },
-  { id: "smart-box", hotkey: "D", label: "智能框", icon: "rect", desc: "框选目标 · SAM 分割当前帧", group: "sam", requiredPrompt: "interactive_box" },
-  { id: "exemplar", hotkey: "E", label: "示例框", icon: "sparkles", desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检", group: "sam", requiredPrompt: "exemplar" },
-  { id: "magic-box", hotkey: "G", label: "Magic Box", icon: "wandSparkles", desc: "粗框 → SAM 收紧 → 落矩形框", group: "sam", requiredPrompt: "interactive_box" },
-  { id: "track", hotkey: "T", label: "矩形框轨迹", icon: "galleryHorizontalEnd", desc: "跨帧矩形框轨迹", altDigit: 2, group: "track" },
+  {
+    id: "smart-point",
+    hotkey: "S",
+    label: "智能点",
+    icon: "target",
+    desc: "点选目标 · SAM 分割当前帧 · Alt 负点",
+    group: "sam",
+    requiredPrompt: "point",
+  },
+  {
+    id: "smart-box",
+    hotkey: "D",
+    label: "智能框",
+    icon: "rect",
+    desc: "框选目标 · SAM 分割当前帧",
+    group: "sam",
+    requiredPrompt: "interactive_box",
+  },
+  {
+    id: "exemplar",
+    hotkey: "E",
+    label: "示例框",
+    icon: "sparkles",
+    desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检",
+    group: "sam",
+    requiredPrompt: "exemplar",
+  },
+  {
+    id: "magic-box",
+    hotkey: "G",
+    label: "Magic Box",
+    icon: "wandSparkles",
+    desc: "粗框 → SAM 收紧 → 落矩形框",
+    group: "sam",
+    requiredPrompt: "interactive_box",
+  },
+  {
+    id: "track",
+    hotkey: "T",
+    label: "矩形框轨迹",
+    icon: "galleryHorizontalEnd",
+    desc: "跨帧矩形框轨迹",
+    altDigit: 2,
+    group: "track",
+  },
   // v0.21.20 · polygon/polyline 轨迹关键帧 (原 polygon/polyline, 拆分后 -track 后缀)。
-  { id: "polygon-track", label: "多边形轨迹", icon: "polygon", desc: "点击落点画多边形轨迹 · Enter/双击闭合", group: "track" },
-  { id: "polyline-track", label: "折线轨迹", icon: "spline", desc: "点击落点画折线轨迹 · Enter/双击结束", group: "track" },
-  { id: "mask", hotkey: "M", label: "Mask 轨迹", icon: "scissors", desc: "当前帧绘制或编辑逐像素 Mask 关键帧", group: "track" },
+  {
+    id: "polygon-track",
+    label: "多边形轨迹",
+    icon: "polygon",
+    desc: "点击落点画多边形轨迹 · Enter/双击闭合",
+    group: "track",
+  },
+  {
+    id: "polyline-track",
+    label: "折线轨迹",
+    icon: "spline",
+    desc: "点击落点画折线轨迹 · Enter/双击结束",
+    group: "track",
+  },
+  {
+    id: "mask",
+    hotkey: "M",
+    label: "Mask 轨迹",
+    icon: "scissors",
+    desc: "当前帧绘制或编辑逐像素 Mask 关键帧",
+    group: "track",
+  },
 ];
 
 // v0.13.3-5 · 点云 3D 工具:select 拾取选中 / box 点地面放置 / point-mask 框选分割。
-const THREE_D_TOOLS: Array<{ id: ThreeDTool; hotkey: string; label: string; icon: IconName; desc: string }> = [
+const THREE_D_TOOLS: Array<{
+  id: ThreeDTool;
+  hotkey: string;
+  label: string;
+  icon: IconName;
+  desc: string;
+}> = [
   { id: "select", hotkey: "V", label: "选择", icon: "move", desc: "拾取 / 选中 3D 框" },
   { id: "box", hotkey: "B", label: "放置框", icon: "rect", desc: "点地面放置新 3D 框" },
   { id: "point-mask", hotkey: "P", label: "分割", icon: "scissors", desc: "框选点云生成 3D 分割" },
@@ -180,14 +275,24 @@ export function ToolDock({
         {visibleThreeDTools.map((t) => {
           const active = threeDTool === t.id;
           return (
-            <Tooltip key={t.id} name={t.label} desc={t.desc} hotkey={t.hotkey} side="right" delay={250}>
+            <Tooltip
+              key={t.id}
+              name={t.label}
+              desc={t.desc}
+              hotkey={t.hotkey}
+              side="right"
+              delay={250}
+            >
               <button
                 type="button"
                 onClick={() => onSetThreeDTool?.(t.id)}
                 aria-label={t.label}
                 aria-pressed={active}
                 data-testid={`three-d-tool-btn-${t.id}`}
-                className={cn(TOOL_BTN_CLASS, active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER))}
+                className={cn(
+                  TOOL_BTN_CLASS,
+                  active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, TOOL_BTN_HOVER),
+                )}
               >
                 <Icon name={t.icon} size={17} />
                 <span aria-hidden className={cn(HOTKEY_BADGE_CLASS, active && HOTKEY_BADGE_ACTIVE)}>
@@ -222,14 +327,17 @@ export function ToolDock({
       const active = videoTool === t.id;
       // 层 2: 后端不支持该交互模式 → 置灰 + tooltip (不隐藏, 让用户知道工具存在)。
       const supported = t.requiredPrompt
-        ? (isPromptSupported ? isPromptSupported(t.requiredPrompt) : true)
+        ? isPromptSupported
+          ? isPromptSupported(t.requiredPrompt)
+          : true
         : true;
       const disabled = t.requiredPrompt ? capabilitiesLoading || !supported : false;
-      const disabledHint = t.requiredPrompt && !capabilitiesLoading && !supported
-        ? "当前后端不支持此交互模式"
-        : capabilitiesLoading && t.requiredPrompt
-        ? "正在协商后端能力…"
-        : null;
+      const disabledHint =
+        t.requiredPrompt && !capabilitiesLoading && !supported
+          ? "当前后端不支持此交互模式"
+          : capabilitiesLoading && t.requiredPrompt
+            ? "正在协商后端能力…"
+            : null;
       return (
         <Tooltip
           key={t.id}
@@ -272,11 +380,15 @@ export function ToolDock({
           <>
             <div aria-hidden className={DIVIDER_CLASS} />
             <div role="group" aria-label="单帧工具" className={VIDEO_SECTION_CLASS}>
-              <span aria-hidden className={VIDEO_SECTION_LABEL_CLASS}>单帧</span>
+              <span aria-hidden className={VIDEO_SECTION_LABEL_CLASS}>
+                单帧
+              </span>
               {frameTools.map(renderVideoTool)}
               {samTools.length > 0 && (
                 <div role="group" aria-label="SAM 工具" className={VIDEO_SECTION_CLASS}>
-                  <span aria-hidden className={VIDEO_SUBSECTION_LABEL_CLASS}>SAM</span>
+                  <span aria-hidden className={VIDEO_SUBSECTION_LABEL_CLASS}>
+                    SAM
+                  </span>
                   {samTools.map(renderVideoTool)}
                 </div>
               )}
@@ -287,7 +399,9 @@ export function ToolDock({
           <>
             <div aria-hidden className={DIVIDER_CLASS} />
             <div role="group" aria-label="轨迹工具" className={VIDEO_SECTION_CLASS}>
-              <span aria-hidden className={VIDEO_SECTION_LABEL_CLASS}>轨迹</span>
+              <span aria-hidden className={VIDEO_SECTION_LABEL_CLASS}>
+                轨迹
+              </span>
               {trackTools.map(renderVideoTool)}
             </div>
           </>
@@ -332,22 +446,24 @@ export function ToolDock({
         const tooltipDesc = altDigit ? `${desc} · 备用 Alt+${altDigit}` : desc;
         const requiredPrompt = t.requiredPrompt;
         const supported = requiredPrompt
-          ? (isPromptSupported ? isPromptSupported(requiredPrompt) : true)
+          ? isPromptSupported
+            ? isPromptSupported(requiredPrompt)
+            : true
           : true;
         const contextualDisabledReason = toolDisabledReasons?.[t.id];
-        const disabled = contextualDisabledReason != null || (requiredPrompt
-          ? capabilitiesLoading || !supported
-          : false);
-        const disabledHint = contextualDisabledReason ?? (requiredPrompt && !capabilitiesLoading && !supported
-          ? "当前后端不支持此交互模式"
-          : capabilitiesLoading && requiredPrompt
-          ? "正在协商后端能力…"
-          : null);
+        const disabled =
+          contextualDisabledReason != null ||
+          (requiredPrompt ? capabilitiesLoading || !supported : false);
+        const disabledHint =
+          contextualDisabledReason ??
+          (requiredPrompt && !capabilitiesLoading && !supported
+            ? "当前后端不支持此交互模式"
+            : capabilitiesLoading && requiredPrompt
+              ? "正在协商后端能力…"
+              : null);
         return (
           <Fragment key={t.id}>
-            {showDivider && (
-              <div aria-hidden className={DIVIDER_CLASS} />
-            )}
+            {showDivider && <div aria-hidden className={DIVIDER_CLASS} />}
             <div className="relative flex">
               <Tooltip
                 name={t.label}

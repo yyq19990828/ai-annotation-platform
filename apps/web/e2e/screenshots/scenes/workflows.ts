@@ -24,8 +24,20 @@ interface MockJob {
 }
 
 function makeFailedJob(i: number): MockJob {
-  const prompts = ["person, car, truck", "traffic light, stop sign", "person", "helmet, vest", "vehicle plates"];
-  const errors = ["model timeout", "backend connection refused", "CUDA out of memory", "invalid prompt schema", "rate limited by upstream"];
+  const prompts = [
+    "person, car, truck",
+    "traffic light, stop sign",
+    "person",
+    "helmet, vest",
+    "vehicle plates",
+  ];
+  const errors = [
+    "model timeout",
+    "backend connection refused",
+    "CUDA out of memory",
+    "invalid prompt schema",
+    "rate limited by upstream",
+  ];
   return {
     id: `mock-fail-${i}-${"0".repeat(28)}`.slice(0, 36),
     project_id: `mock-proj-${i}-${"0".repeat(26)}`.slice(0, 36),

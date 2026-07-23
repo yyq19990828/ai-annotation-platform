@@ -10,13 +10,38 @@ describe("useVideoPolygonDraft helpers", () => {
 
   it("draftCanCommit: polygon 需 ≥3 点", () => {
     expect(draftCanCommit(null)).toBe(false);
-    expect(draftCanCommit({ closed: true, points: [[0, 0], [1, 0]] })).toBe(false);
-    expect(draftCanCommit({ closed: true, points: [[0, 0], [1, 0], [1, 1]] })).toBe(true);
+    expect(
+      draftCanCommit({
+        closed: true,
+        points: [
+          [0, 0],
+          [1, 0],
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      draftCanCommit({
+        closed: true,
+        points: [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+        ],
+      }),
+    ).toBe(true);
   });
 
   it("draftCanCommit: polyline 需 ≥2 点", () => {
     expect(draftCanCommit({ closed: false, points: [[0, 0]] })).toBe(false);
-    expect(draftCanCommit({ closed: false, points: [[0, 0], [1, 0]] })).toBe(true);
+    expect(
+      draftCanCommit({
+        closed: false,
+        points: [
+          [0, 0],
+          [1, 0],
+        ],
+      }),
+    ).toBe(true);
   });
 });
 

@@ -10,10 +10,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 
-import {
-  applyConventionToPositions,
-  type LidarAxisConvention,
-} from "./geometry/axisConvention";
+import { applyConventionToPositions, type LidarAxisConvention } from "./geometry/axisConvention";
 
 import { estimateGroundZ } from "./geometry/ground";
 import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
@@ -330,7 +327,12 @@ export class PointCloudScene {
   private updateTransformSize() {
     const obj = this.transform.object;
     if (!obj) return;
-    const maxDim = Math.max(Math.abs(obj.scale.x), Math.abs(obj.scale.y), Math.abs(obj.scale.z), 0.5);
+    const maxDim = Math.max(
+      Math.abs(obj.scale.x),
+      Math.abs(obj.scale.y),
+      Math.abs(obj.scale.z),
+      0.5,
+    );
     const dist = this.camera.position.distanceTo(obj.position);
     const size = THREE.MathUtils.clamp(
       (maxDim / Math.max(dist, 0.001)) * 4.8,
@@ -400,11 +402,7 @@ export class PointCloudScene {
   }
 
   /** 按 z(高度)做一条蓝→青→黄的色带,纯只读可视化。 */
-  private applyHeightColors(
-    geom: THREE.BufferGeometry,
-    positions: Float32Array,
-    count: number,
-  ) {
+  private applyHeightColors(geom: THREE.BufferGeometry, positions: Float32Array, count: number) {
     let zMin = Infinity;
     let zMax = -Infinity;
     for (let i = 0; i < count; i++) {
@@ -432,13 +430,26 @@ export class PointCloudScene {
    */
   private setRobustFrame(positions: Float32Array, count: number) {
     if (count === 0) return;
-    let sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, szz = 0;
+    let sx = 0,
+      sy = 0,
+      sz = 0,
+      sxx = 0,
+      syy = 0,
+      szz = 0;
     for (let i = 0; i < count; i++) {
-      const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
-      sx += x; sy += y; sz += z;
-      sxx += x * x; syy += y * y; szz += z * z;
+      const x = positions[i * 3],
+        y = positions[i * 3 + 1],
+        z = positions[i * 3 + 2];
+      sx += x;
+      sy += y;
+      sz += z;
+      sxx += x * x;
+      syy += y * y;
+      szz += z * z;
     }
-    const mx = sx / count, my = sy / count, mz = sz / count;
+    const mx = sx / count,
+      my = sy / count,
+      mz = sz / count;
     const sd = (sum2: number, m: number) => Math.sqrt(Math.max(sum2 / count - m * m, 0));
     this.viewCenter.set(mx, my, mz);
     this.viewRadius = Math.max(2.5 * Math.max(sd(sxx, mx), sd(syy, my), sd(szz, mz)), 5);
@@ -535,8 +546,8 @@ export class PointCloudScene {
     const nx1 = Math.max(toNdcX(x0), toNdcX(x1));
     const ny0 = Math.min(toNdcY(y0), toNdcY(y1));
     const ny1 = Math.max(toNdcY(y0), toNdcY(y1));
-    return this.collectProjectedPoints((ndcX, ndcY) =>
-      ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1,
+    return this.collectProjectedPoints(
+      (ndcX, ndcY) => ndcX >= nx0 && ndcX <= nx1 && ndcY >= ny0 && ndcY <= ny1,
     );
   }
 
@@ -585,12 +596,7 @@ export class PointCloudScene {
     return out.length > 0 ? { positions: new Float32Array(out), indices } : null;
   }
 
-  selectPointsInScreenRect(
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-  ): Float32Array | null {
+  selectPointsInScreenRect(x0: number, y0: number, x1: number, y1: number): Float32Array | null {
     return this.collectPointsInScreenRect(x0, y0, x1, y1)?.positions ?? null;
   }
 
@@ -1138,9 +1144,11 @@ export class PointCloudScene {
     this.axisScene.traverse((obj) => {
       const withGeometry = obj as THREE.Object3D & { geometry?: THREE.BufferGeometry };
       withGeometry.geometry?.dispose();
-      const material = (obj as THREE.Object3D & {
-        material?: THREE.Material | THREE.Material[];
-      }).material;
+      const material = (
+        obj as THREE.Object3D & {
+          material?: THREE.Material | THREE.Material[];
+        }
+      ).material;
       const disposeMaterial = (mat: THREE.Material) => {
         const withMap = mat as THREE.Material & { map?: THREE.Texture | null };
         withMap.map?.dispose();

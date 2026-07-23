@@ -89,12 +89,12 @@ PYTHONPATH=. uv run python scripts/seed.py --profile screenshots
 
 ### 6.2 项目 catalog
 
-| 逻辑键 | 稳定标识 | 用途 | 必需状态 |
-|---|---|---|---|
-| `image_demo` | `P-COCO8` | 图片工作台、bbox、polygon、mask、AI 交互、AI 预标、数据管理、导出 | 8 个固定媒体；预测样例；多状态批次；绑定 image AI backend |
-| `video_demo` | `P-VIDEO-DEV` | 视频工作台、轨迹、AI 追踪入口 | 固定视频和任务；绑定 tracker backend |
-| `pointcloud_demo` | `P-PC-DEV` | 3D 工作台、点云视角与标注控件 | 4 帧真实 RGB-D 扫描；剔除无效深度；固定帧顺序 |
-| `ocr_demo` | `P-OCR` | OCR 项目和模型入口 | 单张固定图片；OCR 工具绑定 |
+| 逻辑键            | 稳定标识      | 用途                                                              | 必需状态                                                  |
+| ----------------- | ------------- | ----------------------------------------------------------------- | --------------------------------------------------------- |
+| `image_demo`      | `P-COCO8`     | 图片工作台、bbox、polygon、mask、AI 交互、AI 预标、数据管理、导出 | 8 个固定媒体；预测样例；多状态批次；绑定 image AI backend |
+| `video_demo`      | `P-VIDEO-DEV` | 视频工作台、轨迹、AI 追踪入口                                     | 固定视频和任务；绑定 tracker backend                      |
+| `pointcloud_demo` | `P-PC-DEV`    | 3D 工作台、点云视角与标注控件                                     | 4 帧真实 RGB-D 扫描；剔除无效深度；固定帧顺序             |
+| `ocr_demo`        | `P-OCR`       | OCR 项目和模型入口                                                | 单张固定图片；OCR 工具绑定                                |
 
 `image_demo` 至少提供以下任务逻辑键：
 
@@ -219,21 +219,21 @@ GET /api/v1/__test/seed/catalog?profile=screenshots
   "schema_version": 1,
   "seed_revision": "screenshots-2026-07-d",
   "users": {
-    "admin": {"email": "admin"},
-    "project_admin": {"email": "pm"},
-    "annotator": {"email": "anno"},
-    "reviewer": {"email": "qa"}
+    "admin": { "email": "admin" },
+    "project_admin": { "email": "pm" },
+    "annotator": { "email": "anno" },
+    "reviewer": { "email": "qa" }
   },
   "projects": {
     "image_demo": {
       "display_id": "P-COCO8",
       "id": "<runtime uuid>",
       "tasks": {
-        "predicted": {"id": "<uuid>", "status": "pending"},
-        "review": {"id": "<uuid>", "status": "review"}
+        "predicted": { "id": "<uuid>", "status": "pending" },
+        "review": { "id": "<uuid>", "status": "review" }
       },
-      "batches": {"review": {"id": "<uuid>", "status": "reviewing"}},
-      "ml_backend": {"id": "<uuid>", "state": "connected"}
+      "batches": { "review": { "id": "<uuid>", "status": "reviewing" } },
+      "ml_backend": { "id": "<uuid>", "state": "connected" }
     }
   }
 }
@@ -504,32 +504,32 @@ manifest 已迁移为带 SHA-256、尺寸、scene 源码、capture/fixture、see
 
 ## 17. 预期改动位置
 
-| 范围 | 主要文件 |
-|---|---|
-| Seed 入口与项目配置 | `apps/api/scripts/seed.py`、`seed_coco8.py`、`seed_video.py`、`seed_pointcloud.py`、新增 seed profile/catalog 模块 |
-| 网络素材 | 新增 `apps/api/scripts/seed-assets.toml` 与下载/缓存模块 |
-| ML Backend | `apps/api/app/db/models/ml_backend_registry.py`、`apps/api/app/services/ml_backend.py` 的既有接口消费；新增或复用 protocol stub |
-| Test-only catalog | `apps/api/app/api/v1/_test_seed.py`、`apps/api/tests/test_seed_router.py` 及新 profile 测试 |
-| Playwright fixtures | `apps/web/e2e/fixtures/seed.ts`、`seed-fixed.ts` |
-| 截图 driver/scenes | `apps/web/e2e/screenshots/screenshots.spec.ts`、`scenes/**`、`flows/**` |
-| 配置与命令 | `apps/web/playwright.screenshots.config.ts`、`apps/web/package.json` |
-| Manifest/检查 | `apps/web/scripts/screenshots-lint.mjs`、`docs-site/scripts/check-image-manifest.mjs`、`check-orphan-images.mjs` |
-| 正式文档 | `docs-site/dev/how-to/update-screenshots.md`、`docs-site/maintainers/image-checklist.md`、`DEV.md`、`CHANGELOG.md` |
+| 范围                | 主要文件                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Seed 入口与项目配置 | `apps/api/scripts/seed.py`、`seed_coco8.py`、`seed_video.py`、`seed_pointcloud.py`、新增 seed profile/catalog 模块              |
+| 网络素材            | 新增 `apps/api/scripts/seed-assets.toml` 与下载/缓存模块                                                                        |
+| ML Backend          | `apps/api/app/db/models/ml_backend_registry.py`、`apps/api/app/services/ml_backend.py` 的既有接口消费；新增或复用 protocol stub |
+| Test-only catalog   | `apps/api/app/api/v1/_test_seed.py`、`apps/api/tests/test_seed_router.py` 及新 profile 测试                                     |
+| Playwright fixtures | `apps/web/e2e/fixtures/seed.ts`、`seed-fixed.ts`                                                                                |
+| 截图 driver/scenes  | `apps/web/e2e/screenshots/screenshots.spec.ts`、`scenes/**`、`flows/**`                                                         |
+| 配置与命令          | `apps/web/playwright.screenshots.config.ts`、`apps/web/package.json`                                                            |
+| Manifest/检查       | `apps/web/scripts/screenshots-lint.mjs`、`docs-site/scripts/check-image-manifest.mjs`、`check-orphan-images.mjs`                |
+| 正式文档            | `docs-site/dev/how-to/update-screenshots.md`、`docs-site/maintainers/image-checklist.md`、`DEV.md`、`CHANGELOG.md`              |
 
 若新增或修改公开 API、环境变量或架构边界，实施时按仓库规范额外检查 API 文档、`.env.example` 和 ADR；test-only catalog 保持 `include_in_schema=false`。
 
 ## 18. 风险与缓解
 
-| 风险 | 缓解 |
-|---|---|
-| Mock backend 被健康任务改成 error，AI 按钮再次置灰 | Stub 必须真实可达并通过 `/health`、`/setup`，不只在数据库伪造 connected |
-| Seed repair 覆盖开发者数据 | 只操作带稳定 seed 标识的项目/数据集/backend；测试证明用户项目不受影响 |
-| 上游素材变更或失效 | 固定 URL + SHA-256 + 镜像 + 本地 override；失败时明确列出 asset id |
-| 大型点云数据拖慢日常截图 | 采用 PCL 仓库已确认许可的小型真实扫描，派生时剔除无效深度；完整 nuScenes 置于可选 profile |
-| Backend 名称或 URL 漂移 | 按能力和 registry id 绑定，不按显示名称猜测；catalog 返回实际 id |
-| Matrix 数量膨胀 | 默认只跑 desktop-light，其它维度显式 opt-in |
-| 全量覆盖误伤手动图 | `auto:false` 在写文件前强制检查；人工图不进入自动 target |
-| GIF 重录扩大仓库体积 | 只生成文档目标、限制尺寸/帧率/体积、删除 outputs 重复副本 |
+| 风险                                               | 缓解                                                                                      |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Mock backend 被健康任务改成 error，AI 按钮再次置灰 | Stub 必须真实可达并通过 `/health`、`/setup`，不只在数据库伪造 connected                   |
+| Seed repair 覆盖开发者数据                         | 只操作带稳定 seed 标识的项目/数据集/backend；测试证明用户项目不受影响                     |
+| 上游素材变更或失效                                 | 固定 URL + SHA-256 + 镜像 + 本地 override；失败时明确列出 asset id                        |
+| 大型点云数据拖慢日常截图                           | 采用 PCL 仓库已确认许可的小型真实扫描，派生时剔除无效深度；完整 nuScenes 置于可选 profile |
+| Backend 名称或 URL 漂移                            | 按能力和 registry id 绑定，不按显示名称猜测；catalog 返回实际 id                          |
+| Matrix 数量膨胀                                    | 默认只跑 desktop-light，其它维度显式 opt-in                                               |
+| 全量覆盖误伤手动图                                 | `auto:false` 在写文件前强制检查；人工图不进入自动 target                                  |
+| GIF 重录扩大仓库体积                               | 只生成文档目标、限制尺寸/帧率/体积、删除 outputs 重复副本                                 |
 
 ## 19. 文档同步
 

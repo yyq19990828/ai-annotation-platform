@@ -14,13 +14,13 @@ last_reviewed: 2026-06-10
 
 平台五种内置角色（`apps/web/src/constants/roles.ts`，显示名取自 `ROLE_LABELS`）：
 
-| 角色值 | 显示名 | 主要能力 |
-|---|---|---|
-| `super_admin` | 超级管理员 | 全平台所有功能；唯一可查看 `/admin/health`、做系统设置、查看全平台审计日志 |
-| `project_admin` | 项目管理员 | 创建/管理项目；可见自己项目内成员，可编辑标注员 / 质检员 |
-| `reviewer` | 质检员 | 在项目内做质检审核；不能改 schema、不能踢人 |
-| `annotator` | 标注员 | 仅完成被分派的任务 |
-| `viewer` | 观察者 | 只看不动；常用于客户演示账号 |
+| 角色值          | 显示名     | 主要能力                                                                   |
+| --------------- | ---------- | -------------------------------------------------------------------------- |
+| `super_admin`   | 超级管理员 | 全平台所有功能；唯一可查看 `/admin/health`、做系统设置、查看全平台审计日志 |
+| `project_admin` | 项目管理员 | 创建/管理项目；可见自己项目内成员，可编辑标注员 / 质检员                   |
+| `reviewer`      | 质检员     | 在项目内做质检审核；不能改 schema、不能踢人                                |
+| `annotator`     | 标注员     | 仅完成被分派的任务                                                         |
+| `viewer`        | 观察者     | 只看不动；常用于客户演示账号                                               |
 
 权限映射在 `ROLE_PERMISSIONS`（`apps/web/src/constants/permissions.ts`）。
 
@@ -28,11 +28,11 @@ last_reviewed: 2026-06-10
 
 `EditUserModal` 中 actor.role × target.role 矩阵如下（前端 `ASSIGNABLE_ROLES_BY_ACTOR`）：
 
-|        | super_admin | project_admin | reviewer | annotator | viewer |
-|---|---|---|---|---|---|
-| **super_admin 操作** | ✅ 全部 | ✅ | ✅ | ✅ | ✅ |
-| **project_admin 操作** | ❌ | ❌ | ✅ | ✅ | ❌ |
-| **reviewer / annotator** | ❌ | ❌ | ❌ | ❌ | ❌ |
+|                          | super_admin | project_admin | reviewer | annotator | viewer |
+| ------------------------ | ----------- | ------------- | -------- | --------- | ------ |
+| **super_admin 操作**     | ✅ 全部     | ✅            | ✅       | ✅        | ✅     |
+| **project_admin 操作**   | ❌          | ❌            | ✅       | ✅        | ❌     |
+| **reviewer / annotator** | ❌          | ❌            | ❌       | ❌        | ❌     |
 
 > super_admin 与 project_admin 之间不能互降；项目管理员只能管理质检员和标注员。
 

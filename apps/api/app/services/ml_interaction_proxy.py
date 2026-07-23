@@ -44,7 +44,13 @@ def prepare_interactive_context(
     prepared = dict(context)
     uses_mask_contract = any(
         key in prepared
-        for key in ("mask_prompt", "mask_input", "scribbles", "output_geometry", "model_id")
+        for key in (
+            "mask_prompt",
+            "mask_input",
+            "scribbles",
+            "output_geometry",
+            "model_id",
+        )
     ) or prepared.get("type") in {"point", "interactive_box", "mask", "scribble"}
     if not uses_mask_contract:
         return prepared, None
@@ -108,16 +114,12 @@ def prepare_interactive_context(
         output_models = [
             model
             for model in prompt_models
-            if output_geometry
-            in (model.get("supported_geometric_outputs") or [])
+            if output_geometry in (model.get("supported_geometric_outputs") or [])
         ]
         input_models = [
             model
             for model in output_models
-            if all(
-                item in (model.get("supported_inputs") or [])
-                for item in required
-            )
+            if all(item in (model.get("supported_inputs") or []) for item in required)
         ]
         if len(input_models) == 1:
             target = input_models[0]
@@ -220,9 +222,7 @@ def prepare_interactive_context(
     effective_variants = {
         str(key): str(value)
         for key, value in (
-            default_variants.items()
-            if isinstance(default_variants, dict)
-            else []
+            default_variants.items() if isinstance(default_variants, dict) else []
         )
         if value is not None
     }
@@ -323,7 +323,9 @@ def prepare_interactive_context(
             "model_variants": prepared.get("model_variants") or {},
         }
         if any(claims.get(key) != value for key, value in expected_session.items()):
-            _error(409, "mask_session_mismatch", "Mask session does not match this prompt")
+            _error(
+                409, "mask_session_mismatch", "Mask session does not match this prompt"
+            )
         prepared["mask_input"] = claims["raw"]
         session_origin = {
             "origin_prompt_revision": claims.get("origin_prompt_revision"),
@@ -366,8 +368,10 @@ def _precheck_rle_budget(raw_candidate: Any, candidate_index: int) -> None:
         return
     size = rle.get("size")
     counts = rle.get("counts")
-    if isinstance(size, list) and len(size) == 2 and all(
-        type(value) is int for value in size
+    if (
+        isinstance(size, list)
+        and len(size) == 2
+        and all(type(value) is int for value in size)
     ):
         height, width = size
         if (

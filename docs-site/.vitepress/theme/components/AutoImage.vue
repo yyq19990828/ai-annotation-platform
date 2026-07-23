@@ -21,14 +21,17 @@ import { computed } from "vue";
 
 // manifest 在构建时通过 vite 虚拟模块或 JSON import 注入
 // 降级：如果没有 manifest，直接渲染普通图片
-let manifest: Record<string, {
-  auto: boolean;
-  scene?: string;
-  source?: string;
-  lastRun?: string;
-  generated_at?: string;
-  note?: string;
-}> = {};
+let manifest: Record<
+  string,
+  {
+    auto: boolean;
+    scene?: string;
+    source?: string;
+    lastRun?: string;
+    generated_at?: string;
+    note?: string;
+  }
+> = {};
 
 try {
   // @ts-ignore — 由 vitepress config alias 指向 outputs/manifest.json
@@ -96,13 +99,7 @@ const imgSrc = computed(() => {
         </span>
         <span v-else class="badge badge-manual">✏ 手动维护</span>
         <span v-if="entry.auto && sceneSourceUrl" class="scene-link">
-          <a
-            :href="sceneSourceUrl"
-            target="_blank"
-            rel="noopener"
-          >
-            场景源码 ↗
-          </a>
+          <a :href="sceneSourceUrl" target="_blank" rel="noopener"> 场景源码 ↗ </a>
         </span>
         <span v-if="!entry.auto && entry.note" class="manual-note">
           {{ entry.note }}
@@ -149,9 +146,23 @@ figcaption {
   font-weight: 600;
   white-space: nowrap;
 }
-.badge-auto   { background: var(--vp-c-green-soft); color: var(--vp-c-green-1); }
-.badge-manual { background: var(--vp-c-yellow-soft); color: var(--vp-c-yellow-1); }
-.scene-link a { color: var(--vp-c-brand-1); text-decoration: none; }
-.scene-link a:hover { text-decoration: underline; }
-.manual-note { color: var(--vp-c-text-3); font-style: italic; }
+.badge-auto {
+  background: var(--vp-c-green-soft);
+  color: var(--vp-c-green-1);
+}
+.badge-manual {
+  background: var(--vp-c-yellow-soft);
+  color: var(--vp-c-yellow-1);
+}
+.scene-link a {
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+}
+.scene-link a:hover {
+  text-decoration: underline;
+}
+.manual-note {
+  color: var(--vp-c-text-3);
+  font-style: italic;
+}
 </style>

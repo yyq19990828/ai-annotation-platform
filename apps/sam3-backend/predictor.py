@@ -113,6 +113,7 @@ def _maybe_encode_low_res(
         logger.warning("failed to encode mask_input_next: %s", exc)
         return None
 
+
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
 # 图像模型变体名: 当前加载 sam3.pt (facebook/sam3, 3.0) —— 官方 image+inst 路径所用权重。
 # (sam3.1_multiplex 是视频模型, 与 image-inst 代码不兼容, 仅留作后续视频追踪, 见 _load_model。)
@@ -215,7 +216,9 @@ class SAM3Predictor:
             if entry is not None:
                 # 复用缓存的 backbone_out (内含 GPU 张量, 同 device, 不需拷贝).
                 state = {
-                    "backbone_out": dict(entry.features),  # shallow copy: 外层 dict 隔离, 内层张量共享
+                    "backbone_out": dict(
+                        entry.features
+                    ),  # shallow copy: 外层 dict 隔离, 内层张量共享
                     "original_height": entry.orig_hw[0],
                     "original_width": entry.orig_hw[1],
                 }
@@ -241,7 +244,9 @@ class SAM3Predictor:
 
     def _apply_score_threshold(self, score_threshold: float | None) -> None:
         """per-request 阈值覆盖. 单 worker 串行执行下安全; 多 worker 需重新设计."""
-        eff = self.score_threshold if score_threshold is None else float(score_threshold)
+        eff = (
+            self.score_threshold if score_threshold is None else float(score_threshold)
+        )
         self._processor.confidence_threshold = eff
 
     # ---------- 公开 prompt 接口 ----------
@@ -264,7 +269,9 @@ class SAM3Predictor:
         self._apply_score_threshold(score_threshold)
         # SAM3.1 multiplex ckpt 部分权重 (vision_backbone.convs.3.*) 缺失, 默认 init 为 fp32,
         # 其余权重以 bf16 加载 → 不包 autocast 会 dtype 冲突. vendor 也是这样用 (见 examples/).
-        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+        with torch.autocast(
+            self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")
+        ):
             state, w, h, hit = self._prime_state(image, cache_key)
             self._processor.reset_all_prompts(state)
             state = self._processor.set_text_prompt(text.strip(), state)
@@ -277,8 +284,15 @@ class SAM3Predictor:
             return [], hit
 
         return self._build_results(
-            boxes, masks, scores, w, h, label=text.strip(), output=output,
-            simplify_tolerance=simplify_tolerance, prompt_name="text",
+            boxes,
+            masks,
+            scores,
+            w,
+            h,
+            label=text.strip(),
+            output=output,
+            simplify_tolerance=simplify_tolerance,
+            prompt_name="text",
         ), hit
 
     def predict_bbox(
@@ -351,7 +365,9 @@ class SAM3Predictor:
         """
         self._apply_score_threshold(score_threshold)
         trimmed_text = (text or "").strip()
-        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+        with torch.autocast(
+            self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")
+        ):
             state, w, h, hit = self._prime_state(image, cache_key)
             self._processor.reset_all_prompts(state)
 
@@ -366,7 +382,9 @@ class SAM3Predictor:
                 bh = y2 - y1
                 label = bool(ex.get("label", True))
                 # 协议归一化 xyxy → 归一化 cxcywh; True 正框 / False 负框 (vendor add_geometric_prompt).
-                state = self._processor.add_geometric_prompt([cx, cy, bw, bh], label, state)
+                state = self._processor.add_geometric_prompt(
+                    [cx, cy, bw, bh], label, state
+                )
 
             boxes, masks, scores = self._extract_outputs(state)
         self._processor.reset_all_prompts(state)
@@ -380,9 +398,17 @@ class SAM3Predictor:
 
         label = trimmed_text or "object"
         return self._build_results(
-            boxes, masks, scores, w, h, label=label, output=output,
-            simplify_tolerance=simplify_tolerance, prompt_name="exemplar",
-            output_geometry=output_geometry, prompt_revision=prompt_revision,
+            boxes,
+            masks,
+            scores,
+            w,
+            h,
+            label=label,
+            output=output,
+            simplify_tolerance=simplify_tolerance,
+            prompt_name="exemplar",
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
         ), hit
 
     def predict_interactive(
@@ -417,7 +443,9 @@ class SAM3Predictor:
         返回 (polygonlabels, cache_hit, mask_input_next); geometric 无自然 label, 用
         "object" 占位, workbench 按 active label 重写.
         """
-        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+        with torch.autocast(
+            self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")
+        ):
             state, w, h, hit = self._prime_state(image, cache_key)
 
             kwargs: dict[str, Any] = {"multimask_output": multimask_output}
@@ -435,10 +463,14 @@ class SAM3Predictor:
                 kwargs["point_coords"] = np.array(
                     [[p[0] * w, p[1] * h] for p in points], dtype=np.float32
                 )
-                kwargs["point_labels"] = np.array(labels or [1] * len(points), dtype=np.int32)
+                kwargs["point_labels"] = np.array(
+                    labels or [1] * len(points), dtype=np.int32
+                )
             if box is not None:
                 x1, y1, x2, y2 = box
-                kwargs["box"] = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
+                kwargs["box"] = np.array(
+                    [x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32
+                )
             dense_prompt = _resolve_mask_input(
                 mask_input,
                 mask_prompt,
@@ -461,14 +493,18 @@ class SAM3Predictor:
             output_geometry=output_geometry,
             prompt_revision=prompt_revision,
         )
-        return results, hit, (
-            _maybe_encode_low_res(
-                low_res,
-                enable=bool(points or dense_prompt is not None)
-                and not multimask_output,
-            )
-            if results
-            else None
+        return (
+            results,
+            hit,
+            (
+                _maybe_encode_low_res(
+                    low_res,
+                    enable=bool(points or dense_prompt is not None)
+                    and not multimask_output,
+                )
+                if results
+                else None
+            ),
         )
 
     def _build_interactive_results(
@@ -486,7 +522,9 @@ class SAM3Predictor:
         if masks is None or len(masks) == 0:
             return []
         eff_tol = (
-            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+            DEFAULT_SIMPLIFY_TOLERANCE
+            if simplify_tolerance is None
+            else float(simplify_tolerance)
         )
         order = np.argsort(-np.asarray(ious), kind="stable")  # iou 降序; 同分保留原顺序
         results: list[dict[str, Any]] = []
@@ -501,7 +539,9 @@ class SAM3Predictor:
                 continue
             if output_geometry == "mask":
                 if not prompt_revision:
-                    raise ValueError("prompt_revision is required for native mask output")
+                    raise ValueError(
+                        "prompt_revision is required for native mask output"
+                    )
                 preview_points = mask_to_preview_polygon(
                     binary,
                     tolerance=eff_tol,
@@ -531,8 +571,12 @@ class SAM3Predictor:
             )
             if not rings:
                 continue
-            self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="interactive")
-            results.append(self._rings_to_polygon_label(rings, "object", float(ious[i])))
+            self._maybe_warn_vertex_count(
+                rings, eff_tol, int(mask.sum()), prompt="interactive"
+            )
+            results.append(
+                self._rings_to_polygon_label(rings, "object", float(ious[i]))
+            )
         return results
 
     # ---------- 输出处理 ----------
@@ -579,13 +623,17 @@ class SAM3Predictor:
         prompt_revision: str | None = None,
     ) -> list[dict[str, Any]]:
         eff_tol = (
-            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+            DEFAULT_SIMPLIFY_TOLERANCE
+            if simplify_tolerance is None
+            else float(simplify_tolerance)
         )
         results: list[dict[str, Any]] = []
 
         if output == "box":
             for i in range(len(boxes)):
-                results.append(self._box_to_rect_label(boxes[i], w, h, label, float(scores[i])))
+                results.append(
+                    self._box_to_rect_label(boxes[i], w, h, label, float(scores[i]))
+                )
             return results
 
         for i, mask in enumerate(masks):
@@ -599,7 +647,9 @@ class SAM3Predictor:
                 continue
             if output_geometry == "mask":
                 if not prompt_revision:
-                    raise ValueError("prompt_revision is required for native mask output")
+                    raise ValueError(
+                        "prompt_revision is required for native mask output"
+                    )
                 preview_points = mask_to_preview_polygon(
                     binary,
                     tolerance=eff_tol,
@@ -648,7 +698,12 @@ class SAM3Predictor:
         score: float,
     ) -> dict[str, Any]:
         """像素 xyxy → 归一化 [0,1] 的 rectanglelabels 字典 (与 grounded-sam2 同源)."""
-        x1, y1, x2, y2 = float(box_px[0]), float(box_px[1]), float(box_px[2]), float(box_px[3])
+        x1, y1, x2, y2 = (
+            float(box_px[0]),
+            float(box_px[1]),
+            float(box_px[2]),
+            float(box_px[3]),
+        )
         return {
             "type": "rectanglelabels",
             "value": {
@@ -703,9 +758,7 @@ class SAM3Predictor:
     def _maybe_warn_vertex_count(
         rings: list[MultiPolygonRing], eff_tol: float, mask_area: int, *, prompt: str
     ) -> None:
-        total = sum(
-            len(r["exterior"]) + sum(len(h) for h in r["holes"]) for r in rings
-        )
+        total = sum(len(r["exterior"]) + sum(len(h) for h in r["holes"]) for r in rings)
         if total > VERTEX_COUNT_WARN_THRESHOLD:
             logger.warning(
                 "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=%s, rings=%d)",

@@ -258,18 +258,14 @@ describe("SettingsPage", () => {
   it("点击「通知偏好」tab → 异步加载后显示通知类型", async () => {
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /通知偏好/ }));
-    await waitFor(() =>
-      expect(screen.getByText("batch.rejected")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("batch.rejected")).toBeInTheDocument());
     expect(screen.getByText("后台任务完成")).toBeInTheDocument();
   });
 
   it("点击「我的反馈」tab → 显示空态提示", async () => {
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /我的反馈/ }));
-    await waitFor(() =>
-      expect(screen.getByText(/暂无反馈记录/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/暂无反馈记录/)).toBeInTheDocument());
   });
 
   it("危险区：点击「申请注销账号」展开确认面板", () => {

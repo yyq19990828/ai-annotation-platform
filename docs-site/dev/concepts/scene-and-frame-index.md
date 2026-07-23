@@ -21,12 +21,12 @@ last_reviewed: 2026-07-11
 
 ## 四种"时序录像"形态共用同一抽象
 
-| 存法 | 一个 task = | "下一帧"在哪 | v0.14.0 覆盖 |
-|---|---|---|---|
-| A. 整段 mp4 一个文件 | 一段视频 | task 内 `VideoFrameIndex.frame_index` | 保留现状,不动 |
-| B. 抽帧图像序列 | 一张 jpg | 跨 task | ✅ |
-| C. 多段 mp4 拼成长录像 | 一段 mp4 片段 | 跨 task(段级)+ task 内(段内) | ✅ 段级跨 task |
-| D. 3D 点云逐帧 | 一帧 .pcd | 跨 task | ✅ |
+| 存法                   | 一个 task =   | "下一帧"在哪                          | v0.14.0 覆盖   |
+| ---------------------- | ------------- | ------------------------------------- | -------------- |
+| A. 整段 mp4 一个文件   | 一段视频      | task 内 `VideoFrameIndex.frame_index` | 保留现状,不动  |
+| B. 抽帧图像序列        | 一张 jpg      | 跨 task                               | ✅             |
+| C. 多段 mp4 拼成长录像 | 一段 mp4 片段 | 跨 task(段级)+ task 内(段内)          | ✅ 段级跨 task |
+| D. 3D 点云逐帧         | 一帧 .pcd     | 跨 task                               | ✅             |
 
 `scene_id + frame_index` 是面向"时序录像"的抽象,**与文件类型正交**——一立起来 B/C/D 共用,前端跨帧 UX 写一份就够。
 
@@ -46,23 +46,23 @@ last_reviewed: 2026-07-11
 
 ### `scenes` 表
 
-| 列 | 类型 | 说明 |
-|---|---|---|
-| `id` | UUID PK | gen_random_uuid() |
-| `display_id` | str unique | "SCN-N",走 `display_seq_scenes` |
-| `dataset_id` | UUID FK datasets CASCADE | 一 scene 隶属一 dataset(本期不跨 dataset) |
-| `name` | str | 业务名(如 "scene-0061") |
-| `source_format` | str? | "sustechpoints" / "nuscenes" / "inferred" / "manual" 等 |
-| `source_metadata` | JSONB | 自由格式;importer 自填 |
-| `created_by` | UUID? FK users | 创建者 |
-| 唯一性 | `(dataset_id, name)` | 允许跨 dataset 同名 |
+| 列                | 类型                     | 说明                                                    |
+| ----------------- | ------------------------ | ------------------------------------------------------- |
+| `id`              | UUID PK                  | gen_random_uuid()                                       |
+| `display_id`      | str unique               | "SCN-N",走 `display_seq_scenes`                         |
+| `dataset_id`      | UUID FK datasets CASCADE | 一 scene 隶属一 dataset(本期不跨 dataset)               |
+| `name`            | str                      | 业务名(如 "scene-0061")                                 |
+| `source_format`   | str?                     | "sustechpoints" / "nuscenes" / "inferred" / "manual" 等 |
+| `source_metadata` | JSONB                    | 自由格式;importer 自填                                  |
+| `created_by`      | UUID? FK users           | 创建者                                                  |
+| 唯一性            | `(dataset_id, name)`     | 允许跨 dataset 同名                                     |
 
 ### `dataset_items` 新增两列
 
-| 列 | 类型 | 说明 |
-|---|---|---|
-| `scene_id` | UUID? FK scenes SET NULL | 历史数据兼容 NULL |
-| `frame_index` | int? | scene 内的有序位置;同 scene 同 frame_index **允许重复**(lidar + 多 cam 共享) |
+| 列            | 类型                     | 说明                                                                         |
+| ------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `scene_id`    | UUID? FK scenes SET NULL | 历史数据兼容 NULL                                                            |
+| `frame_index` | int?                     | scene 内的有序位置;同 scene 同 frame_index **允许重复**(lidar + 多 cam 共享) |
 
 **索引**:`idx_dataset_items_scene_frame` on `(scene_id, frame_index)`,给 neighbors 查询。**不**加 UNIQUE——多模态同帧 3 行 + calib NULL 多行需共存。
 
@@ -158,12 +158,12 @@ scene 元数据 CRUD;create 由 importer / backfill 自动发起,API 不暴露�
 
 ### 几种 ZIP 布局命中
 
-| ZIP 顶层 | mode=auto 推断 | scene.name |
-|---|---|---|
-| `lidar/ camera/ calib/`(SUSTech 单 scene) | single | dataset.name |
-| `scene_a/lidar/ scene_b/lidar/ ...` | per_subdirectory(2 scene) | `scene_a`, `scene_b` |
-| `nu-scene-0061/lidar/ nu-scene-0103/...` | per_subdirectory(N scene) | `nu-scene-0061`, ... |
-| `lidar/ camera/ scene_extra/`(混搭) | per_subdirectory(`_single` + `scene_extra`) | 见 notes 警告 |
+| ZIP 顶层                                  | mode=auto 推断                              | scene.name           |
+| ----------------------------------------- | ------------------------------------------- | -------------------- |
+| `lidar/ camera/ calib/`(SUSTech 单 scene) | single                                      | dataset.name         |
+| `scene_a/lidar/ scene_b/lidar/ ...`       | per_subdirectory(2 scene)                   | `scene_a`, `scene_b` |
+| `nu-scene-0061/lidar/ nu-scene-0103/...`  | per_subdirectory(N scene)                   | `nu-scene-0061`, ... |
+| `lidar/ camera/ scene_extra/`(混搭)       | per_subdirectory(`_single` + `scene_extra`) | 见 notes 警告        |
 
 ## 导入端口
 
@@ -197,16 +197,16 @@ scene 只给了"帧的相对顺序";`scene_frame_poses` 表补上"帧的时空"�
 
 ### `scene_frame_poses` 表(迁移 0102)
 
-| 列 | 类型 | 说明 |
-|---|---|---|
-| `id` | UUID PK | 非用户实体,无 display_id |
-| `scene_id` | UUID FK scenes CASCADE | 随 scene 级联删除 |
-| `frame_index` | int | 与 `dataset_items.frame_index` 同语义 |
-| `timestamp_us` | bigint? | 主帧时钟(nuScenes 取 LIDAR_TOP 的 `sample_data.timestamp`,微秒) |
-| `ego_translation` | JSONB `[x,y,z]` | ego→global(世界系)平移 |
-| `ego_rotation` | JSONB `[w,x,y,z]` | ego→global 四元数(nuScenes 原样) |
-| `source_metadata` | JSONB | 自由格式(如 `ego_pose_token`) |
-| 唯一性 | `(scene_id, frame_index)` | 一帧一行,兼做轨迹查询索引 |
+| 列                | 类型                      | 说明                                                            |
+| ----------------- | ------------------------- | --------------------------------------------------------------- |
+| `id`              | UUID PK                   | 非用户实体,无 display_id                                        |
+| `scene_id`        | UUID FK scenes CASCADE    | 随 scene 级联删除                                               |
+| `frame_index`     | int                       | 与 `dataset_items.frame_index` 同语义                           |
+| `timestamp_us`    | bigint?                   | 主帧时钟(nuScenes 取 LIDAR_TOP 的 `sample_data.timestamp`,微秒) |
+| `ego_translation` | JSONB `[x,y,z]`           | ego→global(世界系)平移                                          |
+| `ego_rotation`    | JSONB `[w,x,y,z]`         | ego→global 四元数(nuScenes 原样)                                |
+| `source_metadata` | JSONB                     | 自由格式(如 `ego_pose_token`)                                   |
+| 唯一性            | `(scene_id, frame_index)` | 一帧一行,兼做轨迹查询索引                                       |
 
 设计要点(沿用 v0.14.0「表优于 JSONB」论证):
 

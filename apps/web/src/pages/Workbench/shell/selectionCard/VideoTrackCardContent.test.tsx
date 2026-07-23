@@ -6,7 +6,10 @@ import { VideoTrackCardContent } from "./VideoTrackCardContent";
 
 const box = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
 
-function kf(frame_index: number, source: VideoTrackKeyframe["source"] = "manual"): VideoTrackKeyframe {
+function kf(
+  frame_index: number,
+  source: VideoTrackKeyframe["source"] = "manual",
+): VideoTrackKeyframe {
   return { frame_index, bbox: box, source };
 }
 
@@ -116,7 +119,10 @@ describe("VideoTrackCardContent", () => {
     renderCard({ onAcceptPredictionKeyframe });
     const predRow = screen.getByTestId("video-prediction-keyframe-row");
     fireEvent.click(within(predRow).getByLabelText("接受预测"));
-    expect(onAcceptPredictionKeyframe).toHaveBeenCalledWith(expect.objectContaining({ id: "ann-1" }), 10);
+    expect(onAcceptPredictionKeyframe).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ann-1" }),
+      10,
+    );
   });
 
   it("底部操作栏含显隐 / 锁定 / 改类 / 删除, 点击隐藏与删除回调", () => {
@@ -160,6 +166,9 @@ describe("VideoTrackCardContent", () => {
     const input = screen.getByTestId("video-track-semantic-label-input");
     fireEvent.change(input, { target: { value: "car_3" } });
     fireEvent.blur(input);
-    expect(onUpdateSemanticLabel).toHaveBeenCalledWith(expect.objectContaining({ id: "ann-1" }), "car_3");
+    expect(onUpdateSemanticLabel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ann-1" }),
+      "car_3",
+    );
   });
 });

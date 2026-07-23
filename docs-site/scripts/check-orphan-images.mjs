@@ -20,18 +20,15 @@ import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-import {
-  collectMarkdownImageReferences,
-  walkFiles,
-} from "../../scripts/image-reference-utils.mjs";
+import { collectMarkdownImageReferences, walkFiles } from "../../scripts/image-reference-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT   = path.resolve(__dirname, "../..");
-const DOCS_ROOT   = path.join(REPO_ROOT, "docs-site");
+const REPO_ROOT = path.resolve(__dirname, "../..");
+const DOCS_ROOT = path.join(REPO_ROOT, "docs-site");
 const IMAGES_ROOT = path.join(REPO_ROOT, "docs-site/user-guide/images");
 
 const strict = process.argv.includes("--strict");
-const json   = process.argv.includes("--json");
+const json = process.argv.includes("--json");
 
 const IMG_EXT = /\.(png|gif|jpe?g|webp|svg)$/i;
 
@@ -76,10 +73,7 @@ const referenceRecords = collectMarkdownImageReferences({
   docsRoot: DOCS_ROOT,
 });
 const referenced = new Map(
-  [...referenceRecords.values()].map((record) => [
-    record.absolute,
-    [...record.sources].sort()[0],
-  ]),
+  [...referenceRecords.values()].map((record) => [record.absolute, [...record.sources].sort()[0]]),
 );
 
 // ── 孤儿：磁盘有图但无任何文档引用 ────────────────────────────────
@@ -99,13 +93,19 @@ const brokenGifRefs = [...referenced.entries()]
 const failed = orphans.length + brokenGifRefs.length + duplicateGroups.length;
 
 if (json) {
-  console.log(JSON.stringify({
-    total: imageFiles.length,
-    orphans,
-    brokenGifRefs,
-    duplicateGroups,
-    allowedDuplicateGroups,
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        total: imageFiles.length,
+        orphans,
+        brokenGifRefs,
+        duplicateGroups,
+        allowedDuplicateGroups,
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(strict && failed > 0 ? 1 : 0);
 }
 
@@ -116,7 +116,9 @@ if (orphans.length === 0) {
 } else {
   for (const rel of orphans) console.log(`✗  孤儿(产出未引用): images/${rel}`);
   console.log(`   发现 ${orphans.length} 张孤儿图（产出但无任何 .md 引用）。`);
-  console.log("   → 在对应 user-guide 页面加 ![](../images/…) 引用；或删文件；或加进 IGNORE 白名单。");
+  console.log(
+    "   → 在对应 user-guide 页面加 ![](../images/…) 引用；或删文件；或加进 IGNORE 白名单。",
+  );
 }
 if (brokenGifRefs.length > 0) {
   for (const { rel, md } of brokenGifRefs) {

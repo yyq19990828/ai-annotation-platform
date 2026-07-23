@@ -29,7 +29,14 @@ interface TooltipProps {
   children: ReactElement;
 }
 
-export function Tooltip({ name, desc, hotkey, side = "right", delay = 200, children }: TooltipProps) {
+export function Tooltip({
+  name,
+  desc,
+  hotkey,
+  side = "right",
+  delay = 200,
+  children,
+}: TooltipProps) {
   return (
     <TooltipProvider delayDuration={delay}>
       <ShadcnTooltip>

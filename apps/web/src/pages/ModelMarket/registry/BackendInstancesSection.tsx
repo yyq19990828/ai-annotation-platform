@@ -51,22 +51,14 @@ import {
 import { ScrollArea } from "@/components/shadcn/ui/scroll-area";
 
 import type { GlobalBackendItem } from "@/api/adminMlIntegrations";
-import {
-  formatDateTime,
-  gpuClaimOf,
-  NO_LIMIT,
-  registryStateToHealthAxis,
-} from "./registryShared";
+import { formatDateTime, gpuClaimOf, NO_LIMIT, registryStateToHealthAxis } from "./registryShared";
 import { CopyableId, EmptyState, NullCell } from "./registryUi";
 import { CapabilityDriftReviewDialog } from "./CapabilityDriftReviewDialog";
 import type { RegistryFilters, RegistryScope } from "./registryTypes";
 import type { MemberViewModel } from "../runtimeTopology";
 import { evaluateUnloadGate } from "../runtimeTopology";
 import { RuntimeStatusBadge } from "../runtime/RuntimeStatusBadge";
-import {
-  GlobalBackendFormModal,
-  type GlobalRegistryEditTarget,
-} from "../GlobalBackendFormModal";
+import { GlobalBackendFormModal, type GlobalRegistryEditTarget } from "../GlobalBackendFormModal";
 import {
   useDeleteRegistry,
   useDrainPoolMember,
@@ -101,10 +93,7 @@ export function BackendInstancesSection({
   const [editTarget, setEditTarget] = useState<GlobalRegistryEditTarget | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
-  const registryToPool = useMemo(
-    () => buildRegistryPoolLookup(scope),
-    [scope],
-  );
+  const registryToPool = useMemo(() => buildRegistryPoolLookup(scope), [scope]);
 
   const rows = useMemo(() => {
     return backends.filter((b) => {
@@ -139,7 +128,9 @@ export function BackendInstancesSection({
       {focusedPoolId && (
         <div className="mb-3 flex items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
           <span>仅显示服务池 {focusedPoolId} 的实例</span>
-          <Button size="sm" variant="ghost" onClick={onClearPoolFocus}>清除筛选</Button>
+          <Button size="sm" variant="ghost" onClick={onClearPoolFocus}>
+            清除筛选
+          </Button>
         </div>
       )}
       <Table>
@@ -175,9 +166,7 @@ export function BackendInstancesSection({
           {rows.length === 0 && (
             <TableRow>
               <TableCell colSpan={isSuperAdmin ? 10 : 7}>
-                <div className="p-6 text-center text-sm text-muted-foreground">
-                  没有匹配的实例
-                </div>
+                <div className="p-6 text-center text-sm text-muted-foreground">没有匹配的实例</div>
               </TableCell>
             </TableRow>
           )}
@@ -186,11 +175,7 @@ export function BackendInstancesSection({
 
       <InstanceDetailSheet detail={detail} onClose={() => setDetail(null)} />
 
-      <InstanceConfirmDialog
-        confirm={confirm}
-        scope={scope}
-        onClose={() => setConfirm(null)}
-      />
+      <InstanceConfirmDialog confirm={confirm} scope={scope} onClose={() => setConfirm(null)} />
 
       <GlobalBackendFormModal
         open={editOpen}
@@ -211,7 +196,12 @@ function InstanceRow({
 }: {
   backend: GlobalBackendItem;
   scope: RegistryScope;
-  poolInfo: { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null } | null;
+  poolInfo: {
+    poolId: string;
+    poolName: string;
+    poolEnabled: boolean;
+    member: MemberViewModel | null;
+  } | null;
   onOpenDetail: (b: GlobalBackendItem) => void;
   onConfirm: (s: ConfirmState) => void;
   onEdit: (target: GlobalRegistryEditTarget) => void;
@@ -241,7 +231,10 @@ function InstanceRow({
         )}
       </TableCell>
       <TableCell>
-        <span className="mono max-w-[240px] truncate text-xs text-muted-foreground" title={backend.url}>
+        <span
+          className="mono max-w-[240px] truncate text-xs text-muted-foreground"
+          title={backend.url}
+        >
           {backend.url}
         </span>
       </TableCell>
@@ -283,12 +276,7 @@ function InstanceRow({
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onOpenDetail(backend)}
-            title="详情"
-          >
+          <Button size="sm" variant="ghost" onClick={() => onOpenDetail(backend)} title="详情">
             <Icon name="info" size={11} />
             详情
           </Button>
@@ -298,8 +286,7 @@ function InstanceRow({
               poolInfo={poolInfo}
               routerMode={scope.vm.router_mode}
               ledgerFresh={
-                scope.vm.sources.find((source) => source.name === "router_ledger")
-                  ?.stale === false
+                scope.vm.sources.find((source) => source.name === "router_ledger")?.stale === false
               }
               onConfirm={onConfirm}
               onEdit={onEdit}
@@ -361,7 +348,12 @@ function InstanceActionsMenu({
   onEdit,
 }: {
   backend: GlobalBackendItem;
-  poolInfo: { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null } | null;
+  poolInfo: {
+    poolId: string;
+    poolName: string;
+    poolEnabled: boolean;
+    member: MemberViewModel | null;
+  } | null;
   routerMode: RegistryScope["vm"]["router_mode"];
   ledgerFresh: boolean;
   onConfirm: (s: ConfirmState) => void;
@@ -375,9 +367,7 @@ function InstanceActionsMenu({
 
   const poolId = poolInfo?.poolId ?? null;
   const member = poolInfo?.member ?? null;
-  const unloadGate = member
-    ? evaluateUnloadGate(member, routerMode, ledgerFresh)
-    : null;
+  const unloadGate = member ? evaluateUnloadGate(member, routerMode, ledgerFresh) : null;
 
   const onHealth = () => {
     health.mutate(backend.id, {
@@ -414,10 +404,8 @@ function InstanceActionsMenu({
     drain.mutate(
       { poolId, registryId: backend.id },
       {
-        onSuccess: () =>
-          pushToast({ msg: `已对「${backend.name}」发起停流`, kind: "success" }),
-        onError: (e) =>
-          pushToast({ msg: "停流失败", sub: (e as Error).message, kind: "warning" }),
+        onSuccess: () => pushToast({ msg: `已对「${backend.name}」发起停流`, kind: "success" }),
+        onError: (e) => pushToast({ msg: "停流失败", sub: (e as Error).message, kind: "warning" }),
       },
     );
   };
@@ -430,8 +418,7 @@ function InstanceActionsMenu({
     resume.mutate(
       { poolId, registryId: backend.id },
       {
-        onSuccess: () =>
-          pushToast({ msg: `已恢复「${backend.name}」接流`, kind: "success" }),
+        onSuccess: () => pushToast({ msg: `已恢复「${backend.name}」接流`, kind: "success" }),
         onError: (e) =>
           pushToast({ msg: "恢复接流失败", sub: (e as Error).message, kind: "warning" }),
       },
@@ -548,8 +535,7 @@ function InstanceConfirmDialog({
   const { kind, backend } = confirm;
   const member = findMemberByRegistry(scope, backend.id);
   const ledgerFresh =
-    scope.vm.sources.find((source) => source.name === "router_ledger")?.stale ===
-    false;
+    scope.vm.sources.find((source) => source.name === "router_ledger")?.stale === false;
   const unloadGate =
     kind === "unload" && member
       ? evaluateUnloadGate(member, scope.vm.router_mode, ledgerFresh)
@@ -579,8 +565,7 @@ function InstanceConfirmDialog({
           pushToast({ msg: `已对「${backend.name}」发起卸载`, kind: "success" });
           onClose();
         },
-        onError: (e) =>
-          pushToast({ msg: "卸载失败", sub: (e as Error).message, kind: "warning" }),
+        onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message, kind: "warning" }),
       });
     }
   };
@@ -597,8 +582,7 @@ function InstanceConfirmDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {kind === "delete" ? "删除实例" : "卸载实例"}
-            「{backend.name}」
+            {kind === "delete" ? "删除实例" : "卸载实例"}「{backend.name}」
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="flex flex-col gap-2 text-sm text-foreground">
@@ -656,7 +640,9 @@ function InstanceDetailSheet({
       <SheetContent side="right" className="w-[min(560px,100vw)] sm:max-w-[560px]">
         <SheetHeader>
           <SheetTitle>{detail?.backend.name ?? ""}</SheetTitle>
-          <SheetDescription>实例原始调试字段（错误文本 / 能力快照 / 模型池 / 诊断）</SheetDescription>
+          <SheetDescription>
+            实例原始调试字段（错误文本 / 能力快照 / 模型池 / 诊断）
+          </SheetDescription>
         </SheetHeader>
         {detail && <DetailBody backend={detail.backend} />}
       </SheetContent>
@@ -797,8 +783,14 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }):
 
 function buildRegistryPoolLookup(
   scope: RegistryScope,
-): Map<string, { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null }> {
-  const out = new Map<string, { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null }>();
+): Map<
+  string,
+  { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null }
+> {
+  const out = new Map<
+    string,
+    { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null }
+  >();
   for (const pool of scope.vm.pools) {
     for (const member of pool.members) {
       out.set(member.registry_id, {
@@ -812,10 +804,7 @@ function buildRegistryPoolLookup(
   return out;
 }
 
-function findMemberByRegistry(
-  scope: RegistryScope,
-  registryId: string,
-): MemberViewModel | null {
+function findMemberByRegistry(scope: RegistryScope, registryId: string): MemberViewModel | null {
   for (const pool of scope.vm.pools) {
     for (const member of pool.members) {
       if (member.registry_id === registryId) return member;

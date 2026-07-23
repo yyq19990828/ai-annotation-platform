@@ -36,8 +36,7 @@ import { ActionBar } from "./ActionBar";
 import { geometryMetrics, type Metric } from "./geometryMetrics";
 import { VideoKeyframeControls } from "./VideoKeyframeControls";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 
 /* ─── 帧定位 chip ─── */
 const FRAME_CHIP_BASE =
@@ -49,16 +48,13 @@ const FRAME_CHIP_DANGER_CLASS = `${FRAME_CHIP_BASE} bg-status-danger-soft text-s
 const SECTION_CLASS = "grid gap-2";
 const SECTION_DIVIDED_CLASS = "border-t border-border pt-2.5";
 const SECTION_HEADER_CLASS = "flex items-center justify-between gap-2";
-const SECTION_TITLE_CLASS =
-  "text-xs font-semibold tracking-[0.02em] text-muted-foreground";
+const SECTION_TITLE_CLASS = "text-xs font-semibold tracking-[0.02em] text-muted-foreground";
 const SECTION_COUNT_CLASS = "text-xs text-muted-foreground";
 
 /* ─── 操作网格 ─── */
 const ACTION_GRID_CLASS = "grid grid-cols-2 gap-1";
-const ACTION_BUTTON_CLASS =
-  "min-h-[30px]! justify-start! rounded-lg! px-2! py-1! text-xs!";
-const ACTION_BUTTON_PRESSED_CLASS =
-  "border-brand/55! bg-brand/10! text-brand!";
+const ACTION_BUTTON_CLASS = "min-h-[30px]! justify-start! rounded-lg! px-2! py-1! text-xs!";
+const ACTION_BUTTON_PRESSED_CLASS = "border-brand/55! bg-brand/10! text-brand!";
 
 /* ─── 语义标签 ─── */
 const SEMANTIC_ROW_CLASS = "flex items-center gap-1.5";
@@ -83,8 +79,7 @@ const KF_ROW_CLASS =
   "grid grid-cols-[44px_max-content_1fr] gap-2 items-center px-2 py-1.5 border-t border-border bg-card text-xs [&:nth-child(2)]:border-t-0";
 const KF_PREDICTION_ROW_CLASS = "bg-violet-500/5";
 const KF_FRAME_CLASS = "text-xs";
-const KF_STATUS_CLASS =
-  "flex min-w-0 items-center gap-1.5 text-foreground whitespace-nowrap";
+const KF_STATUS_CLASS = "flex min-w-0 items-center gap-1.5 text-foreground whitespace-nowrap";
 const KF_STATUS_ABSENT_CLASS = "text-status-danger";
 const KF_STATUS_DOT_CLASS = "size-[7px]";
 const KF_ACTION_ROW_CLASS = "flex min-w-0 flex-wrap justify-end gap-1";
@@ -127,12 +122,22 @@ export interface VideoTrackCardContentProps {
   onCopyCurrentKeyframe: () => void;
   onPasteKeyframeToCurrentFrame: () => void;
   onDeleteTrackKeyframe: (annotation: VideoTrackAnnotation, targetFrame: number) => void;
-  onConvertToBboxes?: (annotation: VideoTrackAnnotation, options: VideoTrackConversionOptions) => void;
+  onConvertToBboxes?: (
+    annotation: VideoTrackAnnotation,
+    options: VideoTrackConversionOptions,
+  ) => void;
   onCancelTrackerJob?: (jobId: string) => void;
   onAcceptPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
   onRejectPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
-  onUpdateTrackAttributes?: (annotation: VideoTrackAnnotation, attributes: Record<string, unknown>) => void;
-  onUpdateKeyframeAttributes?: (annotation: VideoTrackAnnotation, frameIndex: number, attributes: Record<string, unknown>) => void;
+  onUpdateTrackAttributes?: (
+    annotation: VideoTrackAnnotation,
+    attributes: Record<string, unknown>,
+  ) => void;
+  onUpdateKeyframeAttributes?: (
+    annotation: VideoTrackAnnotation,
+    frameIndex: number,
+    attributes: Record<string, unknown>,
+  ) => void;
   onPropagateKeyframe?: (
     annotation: VideoTrackAnnotation,
     fromFrame: number,
@@ -243,7 +248,13 @@ export function VideoTrackCardContent({
     { label: "来源", value: sourceChipText(resolved?.source ?? null) },
     ...(resolved
       ? geometryMetrics(
-          { type: "bbox", x: resolved.geom.x, y: resolved.geom.y, w: resolved.geom.w, h: resolved.geom.h } as Geometry,
+          {
+            type: "bbox",
+            x: resolved.geom.x,
+            y: resolved.geom.y,
+            w: resolved.geom.w,
+            h: resolved.geom.h,
+          } as Geometry,
           imageWidth,
           imageHeight,
         )
@@ -288,14 +299,24 @@ export function VideoTrackCardContent({
         label: "复制关键帧",
         icon: "box",
         disabled,
-        onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "copy", scope: "track", frameMode: "keyframes" }),
+        onSelect: () =>
+          onConvertToBboxes?.(selectedTrack, {
+            operation: "copy",
+            scope: "track",
+            frameMode: "keyframes",
+          }),
       },
       {
         id: "copy-all-frames",
         label: "复制全帧",
         icon: "film",
         disabled,
-        onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "copy", scope: "track", frameMode: "all_frames" }),
+        onSelect: () =>
+          onConvertToBboxes?.(selectedTrack, {
+            operation: "copy",
+            scope: "track",
+            frameMode: "all_frames",
+          }),
       },
       { id: "convert-divider", divider: true, label: "" },
       {
@@ -303,19 +324,31 @@ export function VideoTrackCardContent({
         label: "关键帧转独立框",
         icon: "box",
         disabled,
-        onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "track", frameMode: "keyframes" }),
+        onSelect: () =>
+          onConvertToBboxes?.(selectedTrack, {
+            operation: "split",
+            scope: "track",
+            frameMode: "keyframes",
+          }),
       },
       {
         id: "split-all-frames",
         label: "全帧转独立框",
         icon: "film",
         disabled,
-        onSelect: () => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "track", frameMode: "all_frames" }),
+        onSelect: () =>
+          onConvertToBboxes?.(selectedTrack, {
+            operation: "split",
+            scope: "track",
+            frameMode: "all_frames",
+          }),
       },
     ];
   }, [onConvertToBboxes, readOnly, selectedTrackLocked, selectedTrack]);
 
-  const hasAttributes = Boolean(attributeSchema && (onUpdateTrackAttributes || onUpdateKeyframeAttributes));
+  const hasAttributes = Boolean(
+    attributeSchema && (onUpdateTrackAttributes || onUpdateKeyframeAttributes),
+  );
 
   return (
     <div className={BODY_CLASS}>
@@ -399,7 +432,8 @@ export function VideoTrackCardContent({
             title="在当前帧把这条轨迹拆分为前后两条（不生成独立框）"
             onClick={onSplitSelectedTrack}
           >
-            <Icon name="scissors" size={13} />拆分轨迹
+            <Icon name="scissors" size={13} />
+            拆分轨迹
           </Button>
           <Button
             size="sm"
@@ -410,7 +444,8 @@ export function VideoTrackCardContent({
               if (nextPrediction !== null) onSeekFrame?.(nextPrediction);
             }}
           >
-            <Icon name="arrowRight" size={13} />下一预测
+            <Icon name="arrowRight" size={13} />
+            下一预测
           </Button>
           <Button
             size="sm"
@@ -419,7 +454,8 @@ export function VideoTrackCardContent({
             title="AI 延展此轨迹 · 只回填当前选中轨迹 (Ctrl+B)"
             onClick={() => onPropagateTrack?.(selectedTrack)}
           >
-            <Icon name="bot" size={13} />延展此轨迹
+            <Icon name="bot" size={13} />
+            延展此轨迹
           </Button>
           <Button
             size="sm"
@@ -428,7 +464,8 @@ export function VideoTrackCardContent({
             title="复制到后续帧 · 纯几何铺帧, 不调用模型"
             onClick={() => setPropagateOpen(true)}
           >
-            <Icon name="copy" size={13} />复制后续
+            <Icon name="copy" size={13} />
+            复制后续
           </Button>
         </div>
       </div>
@@ -450,7 +487,8 @@ export function VideoTrackCardContent({
             title="使用最近关键帧的框在当前帧创建关键帧"
             onClick={onCopySelectedTrackToCurrentFrame}
           >
-            <Icon name="plus" size={14} />复制到当前帧
+            <Icon name="plus" size={14} />
+            复制到当前帧
           </Button>
           <Button
             size="sm"
@@ -459,16 +497,22 @@ export function VideoTrackCardContent({
             title="复制当前轨迹在当前帧的关键帧"
             onClick={onCopyCurrentKeyframe}
           >
-            <Icon name="copy" size={14} />复制关键帧
+            <Icon name="copy" size={14} />
+            复制关键帧
           </Button>
           <Button
             size="sm"
             className={ACTION_BUTTON_CLASS}
             disabled={!canPasteKeyframe}
-            title={copiedKeyframeLabel ? `把已复制的 ${copiedKeyframeLabel} 粘贴到当前帧` : "把已复制的关键帧粘贴到当前帧"}
+            title={
+              copiedKeyframeLabel
+                ? `把已复制的 ${copiedKeyframeLabel} 粘贴到当前帧`
+                : "把已复制的关键帧粘贴到当前帧"
+            }
             onClick={onPasteKeyframeToCurrentFrame}
           >
-            <Icon name="clipboardPaste" size={14} />粘贴关键帧
+            <Icon name="clipboardPaste" size={14} />
+            粘贴关键帧
           </Button>
           <Button
             size="sm"
@@ -476,9 +520,16 @@ export function VideoTrackCardContent({
             disabled={readOnly || selectedTrackLocked}
             aria-pressed={currentFrameOutside}
             title={currentFrameOutside ? "恢复当前帧为正常状态" : "标记当前帧消失"}
-            onClick={() => onMarkSelectedTrack(currentFrameOutside ? { outside: false, occluded: false } : { outside: true, occluded: false })}
+            onClick={() =>
+              onMarkSelectedTrack(
+                currentFrameOutside
+                  ? { outside: false, occluded: false }
+                  : { outside: true, occluded: false },
+              )
+            }
           >
-            <Icon name="eyeOff" size={14} />标记消失
+            <Icon name="eyeOff" size={14} />
+            标记消失
           </Button>
           <Button
             size="sm"
@@ -486,9 +537,14 @@ export function VideoTrackCardContent({
             disabled={readOnly || selectedTrackLocked}
             aria-pressed={occluded}
             title={occluded ? "恢复当前帧为正常状态" : "标记当前帧遮挡"}
-            onClick={() => onMarkSelectedTrack(occluded ? { outside: false, occluded: false } : { outside: false, occluded: true })}
+            onClick={() =>
+              onMarkSelectedTrack(
+                occluded ? { outside: false, occluded: false } : { outside: false, occluded: true },
+              )
+            }
           >
-            <Icon name="rect" size={14} />标记遮挡
+            <Icon name="rect" size={14} />
+            标记遮挡
           </Button>
         </div>
       </div>
@@ -515,7 +571,11 @@ export function VideoTrackCardContent({
             return (
               <div
                 key={kf.frame_index}
-                data-testid={kf.source === "prediction" ? "video-prediction-keyframe-row" : "video-track-keyframe-row"}
+                data-testid={
+                  kf.source === "prediction"
+                    ? "video-prediction-keyframe-row"
+                    : "video-track-keyframe-row"
+                }
                 className={cn(KF_ROW_CLASS, kf.source === "prediction" && KF_PREDICTION_ROW_CLASS)}
               >
                 <span className={cn("mono", KF_FRAME_CLASS)}>F{kf.frame_index}</span>
@@ -525,7 +585,13 @@ export function VideoTrackCardContent({
                       cx="3.5"
                       cy="3.5"
                       r="3.5"
-                      fill={kfOutside ? "var(--sc-destructive)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)"}
+                      fill={
+                        kfOutside
+                          ? "var(--sc-destructive)"
+                          : kf.source === "prediction"
+                            ? "oklch(0.78 0.14 78)"
+                            : "oklch(0.68 0.16 145)"
+                      }
                     />
                   </svg>
                   {keyframeStatus(kf, kfOutside)}
@@ -576,7 +642,13 @@ export function VideoTrackCardContent({
                     disabled={readOnly || selectedTrackLocked || kfOutside}
                     title="复制此关键帧为独立框"
                     aria-label="复制此关键帧为独立框"
-                    onClick={() => onConvertToBboxes?.(selectedTrack, { operation: "copy", scope: "frame", frameIndex: kf.frame_index })}
+                    onClick={() =>
+                      onConvertToBboxes?.(selectedTrack, {
+                        operation: "copy",
+                        scope: "frame",
+                        frameIndex: kf.frame_index,
+                      })
+                    }
                   >
                     <Icon name="box" size={13} />
                   </Button>
@@ -586,7 +658,13 @@ export function VideoTrackCardContent({
                     disabled={readOnly || selectedTrackLocked || kfOutside}
                     title="此关键帧转独立框"
                     aria-label="此关键帧转独立框"
-                    onClick={() => onConvertToBboxes?.(selectedTrack, { operation: "split", scope: "frame", frameIndex: kf.frame_index })}
+                    onClick={() =>
+                      onConvertToBboxes?.(selectedTrack, {
+                        operation: "split",
+                        scope: "frame",
+                        frameIndex: kf.frame_index,
+                      })
+                    }
                   >
                     <Icon name="box" size={13} />
                   </Button>
@@ -615,15 +693,19 @@ export function VideoTrackCardContent({
             className={selectedTrack.class_name}
             trackAttributes={selectedTrack.attributes}
             keyframeAttributes={
-              (geom.keyframes.find((kf) => kf.frame_index === frameIndex) as
-                | { attributes?: Record<string, unknown> | null }
-                | undefined)?.attributes ?? undefined
+              (
+                geom.keyframes.find((kf) => kf.frame_index === frameIndex) as
+                  | { attributes?: Record<string, unknown> | null }
+                  | undefined
+              )?.attributes ?? undefined
             }
             frameIndex={frameIndex}
             canEditKeyframe={currentFrameHasKeyframe}
             readOnly={readOnly || selectedTrackLocked}
             onChangeTrackAttributes={(attrs) => onUpdateTrackAttributes?.(selectedTrack, attrs)}
-            onChangeKeyframeAttributes={(attrs) => onUpdateKeyframeAttributes?.(selectedTrack, frameIndex, attrs)}
+            onChangeKeyframeAttributes={(attrs) =>
+              onUpdateKeyframeAttributes?.(selectedTrack, frameIndex, attrs)
+            }
           />
         </div>
       )}

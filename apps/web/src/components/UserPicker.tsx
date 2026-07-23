@@ -28,19 +28,19 @@ interface UserPickerProps {
 export function UserPicker({ anchor, options, query, onPick, onClose }: UserPickerProps) {
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const popoverRef = useElementStyle<HTMLDivElement>({
-    "--user-picker-left": anchor.left,
-    "--user-picker-top": anchor.top,
-  } as React.CSSProperties, listRef);
+  const popoverRef = useElementStyle<HTMLDivElement>(
+    {
+      "--user-picker-left": anchor.left,
+      "--user-picker-top": anchor.top,
+    } as React.CSSProperties,
+    listRef,
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options.slice(0, 8);
     return options
-      .filter((o) =>
-        o.name.toLowerCase().includes(q) ||
-        (o.email ?? "").toLowerCase().includes(q),
-      )
+      .filter((o) => o.name.toLowerCase().includes(q) || (o.email ?? "").toLowerCase().includes(q))
       .slice(0, 8);
   }, [options, query]);
 
@@ -78,16 +78,9 @@ export function UserPicker({ anchor, options, query, onPick, onClose }: UserPick
   }, [filtered, active, onPick, onClose]);
 
   return createPortal(
-    <div
-      ref={popoverRef}
-      role="listbox"
-      aria-label="选择用户"
-      className={styles.popover}
-    >
+    <div ref={popoverRef} role="listbox" aria-label="选择用户" className={styles.popover}>
       {filtered.length === 0 ? (
-        <div className={styles.empty}>
-          {query ? `无匹配 "${query}"` : "无项目成员"}
-        </div>
+        <div className={styles.empty}>{query ? `无匹配 "${query}"` : "无项目成员"}</div>
       ) : (
         filtered.map((o, i) => (
           <div
@@ -102,11 +95,7 @@ export function UserPicker({ anchor, options, query, onPick, onClose }: UserPick
             className={clsx(styles.option, i === active && styles.optionActive)}
           >
             <span className={styles.name}>{o.name}</span>
-            {(o.email || o.hint) && (
-              <span className={styles.hint}>
-                {o.email ?? o.hint}
-              </span>
-            )}
+            {(o.email || o.hint) && <span className={styles.hint}>{o.email ?? o.hint}</span>}
           </div>
         ))
       )}

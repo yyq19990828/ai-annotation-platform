@@ -4,7 +4,7 @@
 export type HotkeyGroup = "view" | "draw" | "ai" | "nav" | "video" | "threed" | "system";
 
 export interface HotkeyDef {
-  keys: string[];        // display labels e.g. ["Ctrl", "Z"]
+  keys: string[]; // display labels e.g. ["Ctrl", "Z"]
   desc: string;
   group: HotkeyGroup;
   /** v0.6.5：与 dispatch 出的 action.type 关联，用于「按使用频率排」。
@@ -15,16 +15,46 @@ export interface HotkeyDef {
 
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
-  { keys: ["Alt", "1"], desc: "矩形框工具（备用，避免与切类别冲突）", group: "draw", actionType: "setTool" },
-  { keys: ["W"], desc: "旋转框 (OBB) 工具：拖框后用顶部手柄旋转", group: "draw", actionType: "setTool" },
-  { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → Magic Box → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
+  {
+    keys: ["Alt", "1"],
+    desc: "矩形框工具（备用，避免与切类别冲突）",
+    group: "draw",
+    actionType: "setTool",
+  },
+  {
+    keys: ["W"],
+    desc: "旋转框 (OBB) 工具：拖框后用顶部手柄旋转",
+    group: "draw",
+    actionType: "setTool",
+  },
+  {
+    keys: ["S"],
+    desc: "AI 工具循环：智能点 → 智能框 → Magic Box → 文本提示 → Exemplar → 退出（跳过置灰）",
+    group: "ai",
+    actionType: "setTool",
+  },
   { keys: ["Alt", "3"], desc: "AI 工具（备用）", group: "ai", actionType: "setTool" },
-  { keys: ["G"], desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox", group: "ai", actionType: "setTool" },
+  {
+    keys: ["G"],
+    desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox",
+    group: "ai",
+    actionType: "setTool",
+  },
   { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
-  { keys: ["L"], desc: "折线工具（开放、不闭合；无选中时生效）", group: "draw", actionType: "setTool" },
-  { keys: ["F"], desc: "关键点工具：按骨骼模板依次落点（Alt = 遮挡，右键 = 跳过）", group: "draw", actionType: "setTool" },
+  {
+    keys: ["L"],
+    desc: "折线工具（开放、不闭合；无选中时生效）",
+    group: "draw",
+    actionType: "setTool",
+  },
+  {
+    keys: ["F"],
+    desc: "关键点工具：按骨骼模板依次落点（Alt = 遮挡，右键 = 跳过）",
+    group: "draw",
+    actionType: "setTool",
+  },
   // v0.10.8 · I11 Mask 编辑器: 全局 M 切工具; 工具内 B/E 切笔刷/橡皮 (capture, dispatchKey 之前).
   { keys: ["M"], desc: "Mask 笔刷工具", group: "draw", actionType: "setTool" },
   { keys: ["Shift", "+ wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
@@ -32,20 +62,45 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
   { keys: ["Enter"], desc: "Mask 工具激活时: 提交当前 Mask", group: "draw" },
   { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
-  { keys: ["V"], desc: "选择工具：点选 / 移动已有标注与预标注", group: "draw", actionType: "setTool" },
+  {
+    keys: ["V"],
+    desc: "选择工具：点选 / 移动已有标注与预标注",
+    group: "draw",
+    actionType: "setTool",
+  },
   { keys: ["Alt", "4"], desc: "选择工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
-  { keys: ["Backspace"], desc: "删除多边形最后一点 / 删除选中框", group: "draw", actionType: "deleteSelected" },
+  {
+    keys: ["Backspace"],
+    desc: "删除多边形最后一点 / 删除选中框",
+    group: "draw",
+    actionType: "deleteSelected",
+  },
   { keys: ["拖动顶点"], desc: "多边形顶点拖动（选中时）", group: "draw" },
   { keys: ["Alt", "click 边"], desc: "多边形边上插入新顶点", group: "draw" },
   { keys: ["Shift", "click 顶点"], desc: "多边形删除该顶点（≤3 拒绝）", group: "draw" },
   { keys: ["1 — 9"], desc: "切换类别", group: "draw", actionType: "setClassByDigit" },
-  { keys: ["Delete"], desc: "删除选中框（多选时批量）", group: "draw", actionType: "deleteSelected" },
+  {
+    keys: ["Delete"],
+    desc: "删除选中框（多选时批量）",
+    group: "draw",
+    actionType: "deleteSelected",
+  },
   { keys: ["Tab"], desc: "下一个 user 框（循环）", group: "draw", actionType: "cycleUser" },
-  { keys: ["Shift", "Tab"], desc: "上一个 user 框（循环）", group: "draw", actionType: "cycleUser" },
+  {
+    keys: ["Shift", "Tab"],
+    desc: "上一个 user 框（循环）",
+    group: "draw",
+    actionType: "cycleUser",
+  },
   { keys: ["J"], desc: "下一个 user 框（不循环）", group: "draw", actionType: "cycleUser" },
   { keys: ["K"], desc: "上一个 user 框（不循环）", group: "draw", actionType: "cycleUser" },
-  { keys: ["↑ ↓ ← →"], desc: "选中框 1px 平移（Shift = 10px）", group: "draw", actionType: "arrowNudge" },
+  {
+    keys: ["↑ ↓ ← →"],
+    desc: "选中框 1px 平移（Shift = 10px）",
+    group: "draw",
+    actionType: "arrowNudge",
+  },
   { keys: ["Shift", "click"], desc: "叠加多选 user 框", group: "draw" },
   { keys: ["Ctrl", "A"], desc: "全选当前帧 user 框", group: "draw", actionType: "selectAllUser" },
   { keys: ["Ctrl", "C"], desc: "复制选中框", group: "draw", actionType: "copy" },
@@ -62,50 +117,195 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Space", "+ drag"], desc: "平移画布", group: "view", actionType: "spacePanOn" },
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
-  { keys: ["Space"], desc: "视频播放 / 暂停；按住拖拽平移画布", group: "video", actionType: "videoSpaceDown" },
-  { keys: ["J / K / L"], desc: "视频反向 / 暂停 / 正向多速率播放", group: "video", actionType: "videoJogPlayback" },
+  {
+    keys: ["Space"],
+    desc: "视频播放 / 暂停；按住拖拽平移画布",
+    group: "video",
+    actionType: "videoSpaceDown",
+  },
+  {
+    keys: ["J / K / L"],
+    desc: "视频反向 / 暂停 / 正向多速率播放",
+    group: "video",
+    actionType: "videoJogPlayback",
+  },
   { keys: ["V"], desc: "视频选择工具", group: "video", actionType: "setVideoTool" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["M"], desc: "视频 Mask 轨迹工具", group: "video", actionType: "setVideoTool" },
-  { keys: ["S"], desc: "视频智能点工具（交互式 SAM 分割当前帧；Alt+点击落负点）", group: "video", actionType: "setVideoTool" },
-  { keys: ["D"], desc: "视频智能框工具（框选目标，交互式 SAM 分割当前帧）", group: "video", actionType: "setVideoTool" },
-  { keys: ["E"], desc: "视频示例框工具（框一个例子，找出当前帧所有同类；Alt+框排除误检）", group: "video", actionType: "setVideoTool" },
-  { keys: ["G"], desc: "视频 Magic Box 工具（粗框 → SAM 收紧 → 落矩形框；与图片工作台同键）", group: "video", actionType: "setVideoTool" },
-  { keys: ["P"], desc: "视频多边形工具（点击落点画当前帧多边形；与图片工作台同键）", group: "video", actionType: "setVideoTool" },
-  { keys: ["← / →"], desc: "上一帧 / 下一帧（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
-  { keys: ["Shift", "← / →"], desc: "采样开启时源帧 ±1 微调", group: "video", actionType: "videoMicroStep" },
-  { keys: [", / ."], desc: "选中轨迹时跳上 / 下关键帧", group: "video", actionType: "videoSeekKeyframe" },
-  { keys: ["Home / End"], desc: "选中轨迹时跳首 / 末关键帧", group: "video", actionType: "videoSeekKeyframe" },
-  { keys: ["Ctrl", "M"], desc: "视频当前帧添加 / 移除书签", group: "video", actionType: "videoToggleBookmark" },
-  { keys: ["O"], desc: "选中轨迹时标记 / 恢复当前帧消失", group: "video", actionType: "videoToggleOutside" },
-  { keys: ["Q / Slash"], desc: "选中轨迹时标记 / 恢复当前帧遮挡", group: "video", actionType: "videoToggleOccluded" },
-  { keys: ["L"], desc: "选中轨迹时锁定 / 解锁轨迹", group: "video", actionType: "videoToggleLockedTrack" },
-  { keys: ["H"], desc: "选中轨迹时隐藏 / 显示轨迹", group: "video", actionType: "videoToggleHiddenTrack" },
-  { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 追踪", group: "video", actionType: "videoPropagateTrack" },
-  { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
-  { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
-  { keys: ["Delete / Backspace"], desc: "选中轨迹时删除当前关键帧；选中单帧框时删除该框", group: "video", actionType: "videoDeleteSelected" },
-  { keys: ["Ctrl", "Delete / Backspace"], desc: "删除整条选中轨迹", group: "video", actionType: "videoDeleteSelected" },
+  {
+    keys: ["S"],
+    desc: "视频智能点工具（交互式 SAM 分割当前帧；Alt+点击落负点）",
+    group: "video",
+    actionType: "setVideoTool",
+  },
+  {
+    keys: ["D"],
+    desc: "视频智能框工具（框选目标，交互式 SAM 分割当前帧）",
+    group: "video",
+    actionType: "setVideoTool",
+  },
+  {
+    keys: ["E"],
+    desc: "视频示例框工具（框一个例子，找出当前帧所有同类；Alt+框排除误检）",
+    group: "video",
+    actionType: "setVideoTool",
+  },
+  {
+    keys: ["G"],
+    desc: "视频 Magic Box 工具（粗框 → SAM 收紧 → 落矩形框；与图片工作台同键）",
+    group: "video",
+    actionType: "setVideoTool",
+  },
+  {
+    keys: ["P"],
+    desc: "视频多边形工具（点击落点画当前帧多边形；与图片工作台同键）",
+    group: "video",
+    actionType: "setVideoTool",
+  },
+  {
+    keys: ["← / →"],
+    desc: "上一帧 / 下一帧（采样开启时按网格跳）",
+    group: "video",
+    actionType: "videoSeek",
+  },
+  {
+    keys: ["Shift", "← / →"],
+    desc: "采样开启时源帧 ±1 微调",
+    group: "video",
+    actionType: "videoMicroStep",
+  },
+  {
+    keys: [", / ."],
+    desc: "选中轨迹时跳上 / 下关键帧",
+    group: "video",
+    actionType: "videoSeekKeyframe",
+  },
+  {
+    keys: ["Home / End"],
+    desc: "选中轨迹时跳首 / 末关键帧",
+    group: "video",
+    actionType: "videoSeekKeyframe",
+  },
+  {
+    keys: ["Ctrl", "M"],
+    desc: "视频当前帧添加 / 移除书签",
+    group: "video",
+    actionType: "videoToggleBookmark",
+  },
+  {
+    keys: ["O"],
+    desc: "选中轨迹时标记 / 恢复当前帧消失",
+    group: "video",
+    actionType: "videoToggleOutside",
+  },
+  {
+    keys: ["Q / Slash"],
+    desc: "选中轨迹时标记 / 恢复当前帧遮挡",
+    group: "video",
+    actionType: "videoToggleOccluded",
+  },
+  {
+    keys: ["L"],
+    desc: "选中轨迹时锁定 / 解锁轨迹",
+    group: "video",
+    actionType: "videoToggleLockedTrack",
+  },
+  {
+    keys: ["H"],
+    desc: "选中轨迹时隐藏 / 显示轨迹",
+    group: "video",
+    actionType: "videoToggleHiddenTrack",
+  },
+  {
+    keys: ["Ctrl", "B"],
+    desc: "选中轨迹时打开 AI 追踪",
+    group: "video",
+    actionType: "videoPropagateTrack",
+  },
+  {
+    keys: ["Ctrl", "[ / ]"],
+    desc: "视频跳转历史后退 / 前进",
+    group: "video",
+    actionType: "videoJumpHistory",
+  },
+  {
+    keys: ["Alt", "L"],
+    desc: "清除视频播放范围",
+    group: "video",
+    actionType: "videoClearLoopRegion",
+  },
+  {
+    keys: ["Delete / Backspace"],
+    desc: "选中轨迹时删除当前关键帧；选中单帧框时删除该框",
+    group: "video",
+    actionType: "videoDeleteSelected",
+  },
+  {
+    keys: ["Ctrl", "Delete / Backspace"],
+    desc: "删除整条选中轨迹",
+    group: "video",
+    actionType: "videoDeleteSelected",
+  },
   { keys: ["PageUp"], desc: "跳到上一章节", group: "video" },
   { keys: ["PageDown"], desc: "跳到下一章节", group: "video" },
-  { keys: ["Tab"], desc: "同类下一个（AI 待审 / 人工 / 轨迹，按选中类循环）", group: "video", actionType: "videoCycleInCategory" },
-  { keys: ["Shift", "Tab"], desc: "同类上一个（按选中类循环）", group: "video", actionType: "videoCycleInCategory" },
-  { keys: ["`"], desc: "跳到下一类首对象（AI 待审 → 人工 → 轨迹）", group: "video", actionType: "videoStepCategory" },
-  { keys: ["Shift", "`"], desc: "跳到上一类首对象", group: "video", actionType: "videoStepCategory" },
+  {
+    keys: ["Tab"],
+    desc: "同类下一个（AI 待审 / 人工 / 轨迹，按选中类循环）",
+    group: "video",
+    actionType: "videoCycleInCategory",
+  },
+  {
+    keys: ["Shift", "Tab"],
+    desc: "同类上一个（按选中类循环）",
+    group: "video",
+    actionType: "videoCycleInCategory",
+  },
+  {
+    keys: ["`"],
+    desc: "跳到下一类首对象（AI 待审 → 人工 → 轨迹）",
+    group: "video",
+    actionType: "videoStepCategory",
+  },
+  {
+    keys: ["Shift", "`"],
+    desc: "跳到上一类首对象",
+    group: "video",
+    actionType: "videoStepCategory",
+  },
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
-  { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
+  {
+    keys: ["1 — 9"],
+    desc: "切换视频类别（有选中则改选中对象）",
+    group: "video",
+    actionType: "setClassByDigit",
+  },
 
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
   { keys: ["D"], desc: "忽略选中 AI 框", group: "ai", actionType: "rejectAi" },
-  { keys: ["["], desc: "选中态：z_order -1；否则降置信度阈值", group: "ai", actionType: "thresholdAdjust" },
-  { keys: ["]"], desc: "选中态：z_order +1；否则升置信度阈值", group: "ai", actionType: "thresholdAdjust" },
+  {
+    keys: ["["],
+    desc: "选中态：z_order -1；否则降置信度阈值",
+    group: "ai",
+    actionType: "thresholdAdjust",
+  },
+  {
+    keys: ["]"],
+    desc: "选中态：z_order +1；否则升置信度阈值",
+    group: "ai",
+    actionType: "thresholdAdjust",
+  },
   { keys: ["L"], desc: "切换选中 shape 锁定状态", group: "draw", actionType: "toggleShapeFlag" },
   { keys: ["H"], desc: "切换选中 shape 隐藏状态", group: "draw", actionType: "toggleShapeFlag" },
 
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
-  { keys: ["Alt", "→ / ←"], desc: "跨帧延续选中框到同 scene 邻帧", group: "nav", actionType: "crossFramePropagate" },
+  {
+    keys: ["Alt", "→ / ←"],
+    desc: "跨帧延续选中框到同 scene 邻帧",
+    group: "nav",
+    actionType: "crossFramePropagate",
+  },
   { keys: ["N"], desc: "智能切题：下一未标注", group: "nav", actionType: "smartNext" },
   { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav", actionType: "smartNext" },
   { keys: ["E"], desc: "提交质检", group: "nav", actionType: "submit" },
@@ -127,7 +327,12 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["← / →"], desc: "3D：相机放大浮层内切换相机（Esc 关闭）", group: "threed" },
 
   { keys: ["?"], desc: "打开本面板", group: "system", actionType: "showHotkeys" },
-  { keys: ["Esc"], desc: "取消草稿 / 选择 / 关闭弹窗；都没有时回到选择工具", group: "system", actionType: "cancel" },
+  {
+    keys: ["Esc"],
+    desc: "取消草稿 / 选择 / 关闭弹窗；都没有时回到选择工具",
+    group: "system",
+    actionType: "cancel",
+  },
 ];
 
 export const GROUP_LABEL: Record<HotkeyGroup, string> = {
@@ -162,8 +367,37 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "select" | "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
-  | { type: "setVideoTool"; tool: "select" | "box" | "track" | "mask" | "smart-point" | "smart-box" | "exemplar" | "magic-box" | "polygon" }
+  | {
+      type: "setTool";
+      tool:
+        | "select"
+        | "box"
+        | "rotated-box"
+        | "hand"
+        | "polygon"
+        | "polyline"
+        | "keypoint"
+        | "mask"
+        | "smart-point"
+        | "smart-box"
+        | "text-prompt"
+        | "exemplar"
+        | "magic-box"
+        | "ai-cycle";
+    }
+  | {
+      type: "setVideoTool";
+      tool:
+        | "select"
+        | "box"
+        | "track"
+        | "mask"
+        | "smart-point"
+        | "smart-box"
+        | "exemplar"
+        | "magic-box"
+        | "polygon";
+    }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -233,7 +467,44 @@ export interface DispatchCtx {
 }
 
 // v0.10.5 M4-β · L/H/O 用于 shape 状态位切换（仅选中态消费；保留以防 setClassByLetter 抢键）。
-const RESERVED_LETTERS = new Set(["v","V","b","B","w","W","p","P","s","S","a","A","d","D","e","E","f","F","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O","m","M"]);
+const RESERVED_LETTERS = new Set([
+  "v",
+  "V",
+  "b",
+  "B",
+  "w",
+  "W",
+  "p",
+  "P",
+  "s",
+  "S",
+  "a",
+  "A",
+  "d",
+  "D",
+  "e",
+  "E",
+  "f",
+  "F",
+  "n",
+  "N",
+  "u",
+  "U",
+  "j",
+  "J",
+  "k",
+  "K",
+  "c",
+  "C",
+  "l",
+  "L",
+  "h",
+  "H",
+  "o",
+  "O",
+  "m",
+  "M",
+]);
 
 /** 纯函数：解析 keydown 事件为 HotkeyAction。返回 null 表示不消费。 */
 export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | null {
@@ -246,9 +517,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (k === "y") return { type: "redo" };
     if (e.key === "0") return { type: "fitReset" };
     if (e.key === "ArrowRight") return { type: "navigateTask", dir: "next" };
-    if (e.key === "ArrowLeft")  return { type: "navigateTask", dir: "prev" };
+    if (e.key === "ArrowLeft") return { type: "navigateTask", dir: "prev" };
     if (ctx.videoMode && k === "m") return { type: "videoToggleBookmark" };
-    if (ctx.videoMode && ctx.hasSelectedVideoTrack && k === "b") return { type: "videoPropagateTrack" };
+    if (ctx.videoMode && ctx.hasSelectedVideoTrack && k === "b")
+      return { type: "videoPropagateTrack" };
     if (ctx.videoMode && e.key === "[") return { type: "videoJumpHistory", dir: -1 };
     if (ctx.videoMode && e.key === "]") return { type: "videoJumpHistory", dir: 1 };
     if (ctx.videoMode && ctx.hasSelection && (e.key === "Delete" || e.key === "Backspace")) {
@@ -306,14 +578,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
         return { type: "videoSeekGrid", dir: -1 };
       }
       if (e.key === ".") {
-        return ctx.hasSelectedVideoTrack
-          ? { type: "videoSeekKeyframe", dir: 1 }
-          : null;
+        return ctx.hasSelectedVideoTrack ? { type: "videoSeekKeyframe", dir: 1 } : null;
       }
       if (e.key === ",") {
-        return ctx.hasSelectedVideoTrack
-          ? { type: "videoSeekKeyframe", dir: -1 }
-          : null;
+        return ctx.hasSelectedVideoTrack ? { type: "videoSeekKeyframe", dir: -1 } : null;
       }
     } else {
       if (e.key === "ArrowRight") {
@@ -323,14 +591,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
         return { type: "videoSeek", delta: -1 };
       }
       if (e.key === ".") {
-        return ctx.hasSelectedVideoTrack
-          ? { type: "videoSeekKeyframe", dir: 1 }
-          : null;
+        return ctx.hasSelectedVideoTrack ? { type: "videoSeekKeyframe", dir: 1 } : null;
       }
       if (e.key === ",") {
-        return ctx.hasSelectedVideoTrack
-          ? { type: "videoSeekKeyframe", dir: -1 }
-          : null;
+        return ctx.hasSelectedVideoTrack ? { type: "videoSeekKeyframe", dir: -1 } : null;
       }
     }
     if (e.key === "Tab") return { type: "videoCycleInCategory", dir: e.shiftKey ? -1 : 1 };
@@ -338,7 +602,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     // e.code 而非 e.key: Shift+` 的 key 在美式布局是 "~" 而非 "`", 用 key 判定会让反向(Shift)永不触发。
     if (e.code === "Backquote") return { type: "videoStepCategory", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
-    if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected", scope: "keyframe" };
+    if (e.key === "Delete" || e.key === "Backspace")
+      return { type: "videoDeleteSelected", scope: "keyframe" };
     if (e.key >= "1" && e.key <= "9") {
       return { type: "setClassByDigit", idx: parseInt(e.key, 10) - 1 };
     }
@@ -359,7 +624,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // v0.14.1 · Alt+→ / Alt+← 跨帧目标延续(2D / 3D 统一键; 2D 的 Shift+← / → 已被
   // 10px nudge 占用, 故跨帧用 Alt+方向)。仅在有选中时消费。
   if (
-    e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+    e.altKey &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.shiftKey &&
     ctx.hasSelection &&
     (e.key === "ArrowRight" || e.key === "ArrowLeft")
   ) {
@@ -369,7 +637,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // 方向键 nudge（仅在有选中时；上层进一步过滤是否含 user 框）
   if (ctx.hasSelection) {
     const ARR: Record<string, [number, number]> = {
-      ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
     };
     if (e.key in ARR) {
       const step = e.shiftKey ? 10 : 1;
@@ -378,8 +649,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     }
   }
 
-  if (e.key === " ")    return { type: "spacePanOn" };
-  if (e.key === "?")    return { type: "showHotkeys" };
+  if (e.key === " ") return { type: "spacePanOn" };
+  if (e.key === "?") return { type: "showHotkeys" };
   if (e.key === "Escape") return { type: "cancel" };
 
   // popover 活跃时，类别字母 / 数字键归它消费
@@ -392,7 +663,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   }
   if (e.key === "]") {
     if (ctx.hasSelection) return { type: "bumpZOrder", delta: 1 };
-    return { type: "thresholdAdjust", delta:  0.05 };
+    return { type: "thresholdAdjust", delta: 0.05 };
   }
 
   // v0.10.5 M4-β I15 · L/H 切换选中 shape 的 lock/hidden。仅在有选中时消费。
@@ -401,7 +672,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "h" || e.key === "H") return { type: "toggleShapeFlag", flag: "is_hidden" };
   }
   // v0.10.28 · 无选中时 L → 折线工具（与上方 L=lock 互补：lock 仅选中态消费）。
-  if ((e.key === "l" || e.key === "L") && !ctx.hasSelection) return { type: "setTool", tool: "polyline" };
+  if ((e.key === "l" || e.key === "L") && !ctx.hasSelection)
+    return { type: "setTool", tool: "polyline" };
 
   // v0.9.4 phase 2 · SAM 子工具栏 polarity (sam-point 下生效, 由消费端 gate by tool/samSubTool).
   // "+" 需要 Shift+=, "=" 单按 = SAM positive; "-" 单按 = SAM negative.
@@ -415,7 +687,6 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   if (e.code === "Backquote") return { type: "imageStepCategory", dir: e.shiftKey ? -1 : 1 };
   if (e.key === "j" || e.key === "J") return { type: "cycleUser", dir: 1, loop: false };
   if (e.key === "k" || e.key === "K") return { type: "cycleUser", dir: -1, loop: false };
-
 
   if (e.key === "n" || e.key === "N") return { type: "smartNext", mode: "open" };
   if (e.key === "u" || e.key === "U") return { type: "smartNext", mode: "uncertain" };

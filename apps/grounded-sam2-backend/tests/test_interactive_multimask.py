@@ -76,7 +76,12 @@ def test_point_multimask_passthrough_and_sorted(predictor):
     predictor._sam_predictor.predict = MagicMock(return_value=(masks, scores, None))
 
     results, _, mask_next = predictor.predict_point(
-        _img(), [[0.5, 0.5]], [1], multimask_output=True, cache_key=None, simplify_tolerance=1.0
+        _img(),
+        [[0.5, 0.5]],
+        [1],
+        multimask_output=True,
+        cache_key=None,
+        simplify_tolerance=1.0,
     )
 
     kw = predictor._sam_predictor.predict.call_args.kwargs
@@ -98,7 +103,9 @@ def test_point_single_mask_default(predictor):
     results, _, mask_next = predictor.predict_point(
         _img(), [[0.5, 0.5]], [1], cache_key=None, simplify_tolerance=1.0
     )
-    assert predictor._sam_predictor.predict.call_args.kwargs["multimask_output"] is False
+    assert (
+        predictor._sam_predictor.predict.call_args.kwargs["multimask_output"] is False
+    )
     assert len(results) == 1
     # v0.18.18 · multimask=False 单 mask → 编码 low-res 回 mask_input_next.
     assert isinstance(mask_next, str) and mask_next
@@ -114,8 +121,12 @@ def test_point_mask_input_decoded_and_passed(predictor):
     )
     encoded = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
     predictor.predict_point(
-        _img(), [[0.5, 0.5], [0.6, 0.6]], [1, 1],
-        mask_input=encoded, cache_key=None, simplify_tolerance=1.0,
+        _img(),
+        [[0.5, 0.5], [0.6, 0.6]],
+        [1, 1],
+        mask_input=encoded,
+        cache_key=None,
+        simplify_tolerance=1.0,
     )
     kw = predictor._sam_predictor.predict.call_args.kwargs
     assert kw["mask_input"].shape == (1, 256, 256)
@@ -171,7 +182,11 @@ def test_interactive_box_multimask_sorted(predictor):
     predictor._sam_predictor.predict = MagicMock(return_value=(masks, scores, None))
 
     results, _, mask_next = predictor.predict_bbox(
-        _img(), [0.1, 0.1, 0.4, 0.4], multimask_output=True, cache_key=None, simplify_tolerance=1.0
+        _img(),
+        [0.1, 0.1, 0.4, 0.4],
+        multimask_output=True,
+        cache_key=None,
+        simplify_tolerance=1.0,
     )
     assert predictor._sam_predictor.predict.call_args.kwargs["multimask_output"] is True
     out_scores = [r["score"] for r in results]
@@ -239,9 +254,7 @@ def test_point_native_multimask_filters_empty_and_reindexes(predictor):
     masks[0, 0, 0] = 1
     masks[2, 1, 2] = 1
     scores = np.array([0.6, 0.9, 0.8], dtype=np.float32)
-    predictor._sam_predictor.predict = MagicMock(
-        return_value=(masks, scores, None)
-    )
+    predictor._sam_predictor.predict = MagicMock(return_value=(masks, scores, None))
     image = Image.fromarray(np.zeros((2, 3, 3), dtype=np.uint8))
 
     results, _, _ = predictor.predict_point(

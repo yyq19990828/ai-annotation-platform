@@ -25,10 +25,7 @@ export interface Psr {
 export type TriView = "top" | "side" | "front";
 
 /** 每视图: 屏幕 u/v 映射的 box-local 轴 index, 法线(旋转)轴 index。 */
-export const VIEW_AXES: Record<
-  TriView,
-  { u: 0 | 1 | 2; v: 0 | 1 | 2; normal: 0 | 1 | 2 }
-> = {
+export const VIEW_AXES: Record<TriView, { u: 0 | 1 | 2; v: 0 | 1 | 2; normal: 0 | 1 | 2 }> = {
   top: { u: 0, v: 1, normal: 2 },
   side: { u: 0, v: 2, normal: 1 },
   front: { u: 1, v: 2, normal: 0 },
@@ -76,25 +73,15 @@ export function frameOrtho(
  *
  * 全边长 size[axis] += dir*dMeter (clamp 到 MIN_SIZE); 中心沿世界 +axis 方向移 dir*applied/2。
  */
-export function dragEdge(
-  psr: Psr,
-  axis: 0 | 1 | 2,
-  dir: 1 | -1,
-  dMeter: number,
-): Psr {
+export function dragEdge(psr: Psr, axis: 0 | 1 | 2, dir: 1 | -1, dMeter: number): Psr {
   const newSize = Math.max(MIN_SIZE, psr.size[axis] + dir * dMeter);
   const applied = newSize - psr.size[axis];
   const w = boxAxisWorldDir(psr.rotation, axis);
-  const c = new THREE.Vector3(
-    psr.center[0],
-    psr.center[1],
-    psr.center[2],
-  ).addScaledVector(w, (dir * applied) / 2);
-  const size: [number, number, number] = [
-    psr.size[0],
-    psr.size[1],
-    psr.size[2],
-  ];
+  const c = new THREE.Vector3(psr.center[0], psr.center[1], psr.center[2]).addScaledVector(
+    w,
+    (dir * applied) / 2,
+  );
+  const size: [number, number, number] = [psr.size[0], psr.size[1], psr.size[2]];
   size[axis] = newSize;
   return { center: toVec3(c), size, rotation: psr.rotation };
 }
@@ -125,13 +112,7 @@ export type Handle = "e" | "w" | "n" | "s" | "ne" | "nw" | "se" | "sw";
  *
  * 应以**拖拽起始 PSR** 为输入、传入"相对起点的累计位移", 因 dragEdge 含 clamp 非增量幂等。
  */
-export function dragHandle(
-  psr: Psr,
-  view: TriView,
-  handle: Handle,
-  dU: number,
-  dV: number,
-): Psr {
+export function dragHandle(psr: Psr, view: TriView, handle: Handle, dU: number, dV: number): Psr {
   const { u, v } = VIEW_AXES[view];
   switch (handle) {
     case "e":
@@ -162,11 +143,7 @@ export function dragRotation(psr: Psr, view: TriView, deltaTheta: number): Psr {
   const qOld = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(psr.rotation[0], psr.rotation[1], psr.rotation[2], "XYZ"),
   );
-  const e = new THREE.Vector3(
-    axis === 0 ? 1 : 0,
-    axis === 1 ? 1 : 0,
-    axis === 2 ? 1 : 0,
-  );
+  const e = new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
   const qDelta = new THREE.Quaternion().setFromAxisAngle(e, deltaTheta);
   const qNew = qOld.multiply(qDelta); // local-space 复合 (右乘): 绕框自身轴转
   const euler = new THREE.Euler().setFromQuaternion(qNew, "XYZ");

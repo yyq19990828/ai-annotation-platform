@@ -14,14 +14,14 @@ last_reviewed: 2026-07-13
 
 后端 WS 端点全部注册在 `apps/api/app/api/v1/ws.py` 的 `router = APIRouter()`，由 `apps/api/app/main.py:108` `app.include_router(ws_router)` **无 prefix** 挂载。所以浏览器侧 URL 必须是 `/ws/<name>`，**不要写 `/api/v1/ws/<name>`**：
 
-| 端点 | 用途 | 鉴权 | 前端 hook |
-|---|---|---|---|
-| `/ws/notifications` | 单用户通知推送 | JWT token | `useNotificationSocket.ts` |
-| `/ws/prediction-jobs` | 全局预标 job 进度 (admin only) | JWT + role | `useGlobalPreannotationJobs.ts` |
-| `/ws/projects/{id}/preannotate` | 单项目预标进度条 | 无（路径绑项目） | `usePreannotation.ts` |
-| `/ws/batches/project/{project_id}` | 项目 batch 状态同步 | 当前实现无 JWT | `useBatchEventsSocket.ts` |
-| `/ws/video-tracker-jobs/{job_id}` | 视频 tracker 运行与候选审阅事件 | JWT + task 可见性 | `useVideoTrackerJobs.ts` |
-| `/ws/ml-backend-stats` | PerfHud GPU/容器实时指标 (admin only) | JWT + role | `useMLBackendStats.ts` |
+| 端点                               | 用途                                  | 鉴权              | 前端 hook                       |
+| ---------------------------------- | ------------------------------------- | ----------------- | ------------------------------- |
+| `/ws/notifications`                | 单用户通知推送                        | JWT token         | `useNotificationSocket.ts`      |
+| `/ws/prediction-jobs`              | 全局预标 job 进度 (admin only)        | JWT + role        | `useGlobalPreannotationJobs.ts` |
+| `/ws/projects/{id}/preannotate`    | 单项目预标进度条                      | 无（路径绑项目）  | `usePreannotation.ts`           |
+| `/ws/batches/project/{project_id}` | 项目 batch 状态同步                   | 当前实现无 JWT    | `useBatchEventsSocket.ts`       |
+| `/ws/video-tracker-jobs/{job_id}`  | 视频 tracker 运行与候选审阅事件       | JWT + task 可见性 | `useVideoTrackerJobs.ts`        |
+| `/ws/ml-backend-stats`             | PerfHud GPU/容器实时指标 (admin only) | JWT + role        | `useMLBackendStats.ts`          |
 
 production：6 个端点都走 nginx `/ws/` location 反代到 `api:8000`（[infra/docker/nginx.conf](https://github.com/anthropics/ai-annotation-platform/blob/main/infra/docker/nginx.conf)）。
 
@@ -35,14 +35,20 @@ production：6 个端点都走 nginx `/ws/` location 反代到 `api:8000`（[inf
 
 ```js
 // 在浏览器 DevTools Console 跑（替换 token 取自 localStorage）
-const token = localStorage.getItem('token');
-console.log('exp:', JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp,
-            'now:', Math.floor(Date.now()/1000));
+const token = localStorage.getItem("token");
+console.log(
+  "exp:",
+  JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).exp,
+  "now:",
+  Math.floor(Date.now() / 1000),
+);
 // 直连 :8000 绕 vite proxy
-const ws = new WebSocket(`ws://localhost:8000/ws/ml-backend-stats?token=${encodeURIComponent(token)}`);
-ws.onopen = () => console.log('OPEN');
-ws.onmessage = e => console.log('msg:', e.data.slice(0,200));
-ws.onclose = e => console.log('CLOSED code=', e.code, 'reason=', e.reason);
+const ws = new WebSocket(
+  `ws://localhost:8000/ws/ml-backend-stats?token=${encodeURIComponent(token)}`,
+);
+ws.onopen = () => console.log("OPEN");
+ws.onmessage = (e) => console.log("msg:", e.data.slice(0, 200));
+ws.onclose = (e) => console.log("CLOSED code=", e.code, "reason=", e.reason);
 ```
 
 观察 `exp` vs `now`：差为正且 token 已过期是最常见原因。
@@ -70,8 +76,9 @@ curl -s http://127.0.0.1:8000/health  # API 在线
 **修复**：前端统一通过 `buildWsUrl()` 选择连接地址：本机 `localhost` 开发态直连 API，从 LAN、Tailscale 或其它主机访问 DEV 页面时走页面同源 `/ws` 代理。`VITE_WS_HOST` 可显式覆盖，便于并行 worktree 使用不同 API 端口：
 
 ```ts
-const host = import.meta.env.VITE_WS_HOST
-  || (isLoopback(window.location.hostname) ? "localhost:8000" : window.location.host);
+const host =
+  import.meta.env.VITE_WS_HOST ||
+  (isLoopback(window.location.hostname) ? "localhost:8000" : window.location.host);
 const url = `${proto}://${host}/ws/<name>?token=...`;
 ```
 
@@ -154,17 +161,20 @@ async def _my_async_task():
 ## 检查清单：新增 WS 端点时
 
 后端：
+
 - [ ] `apps/api/app/api/v1/ws.py` 注册路径用 `/ws/<name>` 形式
 - [ ] accept 之前 close 走 1008，避免无 close frame 的 abnormal close
 - [ ] 长连接里不持有全局 DB engine（per-task engine 或 NullPool）
 
 前端：
+
 - [ ] hook 使用 `buildWsUrl()`；本地端口覆盖使用 `VITE_WS_HOST`
 - [ ] URL 是 `/ws/<name>` 不带 `/api/v1`
 - [ ] onclose code 1008 / 1006 区分鉴权失败 vs 网络断；不要静默兜底（v0.6.9 通知 bug 教训）
 - [ ] 加 e2e 或 hook 单测覆盖 URL 派发，避免 14 个月无人发现的二次重演
 
 运维：
+
 - [ ] nginx.conf 的 `location /ws/` 已含 Upgrade / Connection header（见 v0.9.11 nginx.conf）
 - [ ] 开发态 worker 代码重启实际消费队列的 worker；生产镜像代码变更用 production compose 重建
 

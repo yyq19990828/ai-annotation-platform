@@ -103,9 +103,7 @@ function modelTaskLabel(task: string | undefined): string {
 }
 
 // 按 task 把 models 分桶, 保持各 task 内的原始顺序; 返回 [task, models[]] 列表。
-function groupModelsByTask(
-  models: MLModelCapability[],
-): Array<[string, MLModelCapability[]]> {
+function groupModelsByTask(models: MLModelCapability[]): Array<[string, MLModelCapability[]]> {
   const order: string[] = [];
   const buckets = new Map<string, MLModelCapability[]>();
   for (const m of models) {
@@ -272,9 +270,7 @@ export function InteractiveToolBar({
                 </option>
               ))
             ) : (
-              <option value={backendName ?? ""}>
-                {backendName ?? "未绑定 ML 后端"}
-              </option>
+              <option value={backendName ?? ""}>{backendName ?? "未绑定 ML 后端"}</option>
             )}
           </select>
           {showModelSelector && (
@@ -311,7 +307,9 @@ export function InteractiveToolBar({
 
         {/* 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。
             exemplar 仅在后端支持负框时显示 (YOLOE negative_box=false → 隐藏, 恒正框)。 */}
-        {(tool === "smart-point" || tool === "smart-scribble" || (tool === "exemplar" && exemplarNegative)) && (
+        {(tool === "smart-point" ||
+          tool === "smart-scribble" ||
+          (tool === "exemplar" && exemplarNegative)) && (
           <>
             {DIVIDER}
             <div className="flex items-center gap-1.5">
@@ -319,7 +317,9 @@ export function InteractiveToolBar({
               <button
                 type="button"
                 data-testid="ai-tool-polarity"
-                onClick={() => onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")}
+                onClick={() =>
+                  onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")
+                }
                 className={cn(
                   "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-white",
                   samPolarity === "positive" ? "bg-emerald-500" : "bg-rose-500",
@@ -341,44 +341,47 @@ export function InteractiveToolBar({
         )}
 
         {/* 单帧最终几何与 exemplar 的 box/mask/both 召回形态不是同一维度。 */}
-        {(tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble" || tool === "exemplar")
-          && singleFrameOutputGeometry
-          && onSetSingleFrameOutputGeometry && (
-          <>
-            {DIVIDER}
-            <div className="flex items-center gap-1.5" data-testid="single-frame-output-geometry">
-              <span className={FIELD_LABEL_CLASS}>提交</span>
-              <select
-                data-testid="single-frame-output-geometry-select"
-                value={singleFrameOutputGeometry}
-                onChange={(event) =>
-                  onSetSingleFrameOutputGeometry(event.target.value as "polygon" | "mask")
-                }
-                className={`${SELECT_CLASS} cursor-pointer`}
-                title={nativeMaskOutputDisabledReason ?? "单帧候选持久化几何"}
-              >
-                <option value="polygon">多边形</option>
-                <option value="mask" disabled={nativeMaskOutputDisabledReason != null}>
-                  原生 Mask
-                </option>
-              </select>
-            </div>
-          </>
-        )}
+        {(tool === "smart-point" ||
+          tool === "smart-box" ||
+          tool === "smart-scribble" ||
+          tool === "exemplar") &&
+          singleFrameOutputGeometry &&
+          onSetSingleFrameOutputGeometry && (
+            <>
+              {DIVIDER}
+              <div className="flex items-center gap-1.5" data-testid="single-frame-output-geometry">
+                <span className={FIELD_LABEL_CLASS}>提交</span>
+                <select
+                  data-testid="single-frame-output-geometry-select"
+                  value={singleFrameOutputGeometry}
+                  onChange={(event) =>
+                    onSetSingleFrameOutputGeometry(event.target.value as "polygon" | "mask")
+                  }
+                  className={`${SELECT_CLASS} cursor-pointer`}
+                  title={nativeMaskOutputDisabledReason ?? "单帧候选持久化几何"}
+                >
+                  <option value="polygon">多边形</option>
+                  <option value="mask" disabled={nativeMaskOutputDisabledReason != null}>
+                    原生 Mask
+                  </option>
+                </select>
+              </div>
+            </>
+          )}
 
-        {maskPromptSourceLabel
-          && (tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble") && (
-          <>
-            {DIVIDER}
-            <span
-              data-testid="mask-prompt-source"
-              className="whitespace-nowrap rounded-full bg-status-positive-soft px-2 py-1 text-2xs font-medium text-emerald-700 dark:text-emerald-400"
-              title="本轮以已存原生 Mask 为种子，接纳后原位更新"
-            >
-              {maskPromptSourceLabel}
-            </span>
-          </>
-        )}
+        {maskPromptSourceLabel &&
+          (tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble") && (
+            <>
+              {DIVIDER}
+              <span
+                data-testid="mask-prompt-source"
+                className="whitespace-nowrap rounded-full bg-status-positive-soft px-2 py-1 text-2xs font-medium text-emerald-700 dark:text-emerald-400"
+                title="本轮以已存原生 Mask 为种子，接纳后原位更新"
+              >
+                {maskPromptSourceLabel}
+              </span>
+            </>
+          )}
 
         {/* exemplar 输出形态三选一 (box/mask/both) — 下拉, 与引擎排下拉风格统一 */}
         {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
@@ -462,7 +465,10 @@ export function InteractiveToolBar({
         {DIVIDER}
 
         {/* 状态指示 */}
-        <div className="flex items-center gap-1 text-2xs text-muted-foreground" title={capability ? `${capability.name} v${capability.version ?? ""}` : undefined}>
+        <div
+          className="flex items-center gap-1 text-2xs text-muted-foreground"
+          title={capability ? `${capability.name} v${capability.version ?? ""}` : undefined}
+        >
           <span
             aria-hidden
             className={cn(
@@ -476,13 +482,18 @@ export function InteractiveToolBar({
                     : "bg-muted-foreground",
             )}
           />
-          <span>{isError ? "协商失败" : isLoading ? "加载中" : capability ? capability.name : "无能力"}</span>
+          <span>
+            {isError ? "协商失败" : isLoading ? "加载中" : capability ? capability.name : "无能力"}
+          </span>
         </div>
       </div>
 
       {/* 兼容性警告 (非阻断): active model 输出与项目配置不匹配时提示 (折到主行下方一行)。 */}
       {warnings.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2" data-testid="ai-tool-capability-warnings">
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="ai-tool-capability-warnings"
+        >
           {warnings.map((w) => (
             <div
               key={w.key}

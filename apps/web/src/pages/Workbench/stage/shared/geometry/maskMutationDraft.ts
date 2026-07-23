@@ -20,11 +20,15 @@ export function maskMutationScopeMembers(
     .filter((annotation) => annotation.is_active && !annotation.id.startsWith("tmp_"))
     .filter((annotation) => {
       if (scope.media === "image") return annotation.geometry.type === "raster_mask";
-      return annotation.geometry.type === "video_track_mask"
-        && scope.frame_index !== null
-        && resolveVideoMaskTrackAtFrame(annotation.geometry, scope.frame_index) !== null;
+      return (
+        annotation.geometry.type === "video_track_mask" &&
+        scope.frame_index !== null &&
+        resolveVideoMaskTrackAtFrame(annotation.geometry, scope.frame_index) !== null
+      );
     })
-    .filter((annotation) => scope.instance_filter === "all" || annotation.class_name === scope.class_name)
+    .filter(
+      (annotation) => scope.instance_filter === "all" || annotation.class_name === scope.class_name,
+    )
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 

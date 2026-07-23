@@ -12,10 +12,7 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useCreateFeedback } from "@/hooks/useFeedbacks";
-import type {
-  FeedbackSeverity,
-  ListFeedbacksParams,
-} from "@/api/feedbacks";
+import type { FeedbackSeverity, ListFeedbacksParams } from "@/api/feedbacks";
 
 // UA-safe 文本输入基线(无全局 preflight 期间)。
 const FIELD_BASE =
@@ -43,7 +40,14 @@ interface Props {
   onClose: () => void;
 }
 
-export function IssueCreateModal({ open, projectId, taskId, listParams, prefilledAnchor, onClose }: Props) {
+export function IssueCreateModal({
+  open,
+  projectId,
+  taskId,
+  listParams,
+  prefilledAnchor,
+  onClose,
+}: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [severity, setSeverity] = useState<FeedbackSeverity>("warn");
@@ -64,8 +68,12 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
   const parsedX = parseFloat(x);
   const parsedY = parseFloat(y);
   const hasValidPixel =
-    Number.isFinite(parsedX) && Number.isFinite(parsedY) &&
-    parsedX >= 0 && parsedX <= 1 && parsedY >= 0 && parsedY <= 1;
+    Number.isFinite(parsedX) &&
+    Number.isFinite(parsedY) &&
+    parsedX >= 0 &&
+    parsedX <= 1 &&
+    parsedY >= 0 &&
+    parsedY <= 1;
   const pixelMode = x !== "" || y !== "";
   const pixelInvalid = pixelMode && !hasValidPixel;
 
@@ -108,8 +116,12 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border pb-2">
-          <b className="inline-flex items-center gap-1.5 text-sm text-foreground"><Icon name="flag" size={14} /> 标记问题 (Issue)</b>
-          <Button variant="ghost" size="sm" onClick={onClose} title="关闭"><Icon name="x" size={12} /></Button>
+          <b className="inline-flex items-center gap-1.5 text-sm text-foreground">
+            <Icon name="flag" size={14} /> 标记问题 (Issue)
+          </b>
+          <Button variant="ghost" size="sm" onClick={onClose} title="关闭">
+            <Icon name="x" size={12} />
+          </Button>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -146,7 +158,9 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-muted-foreground">详情 <span className="text-status-danger">*</span></label>
+          <label className="text-xs text-muted-foreground">
+            详情 <span className="text-status-danger">*</span>
+          </label>
           <textarea
             className={cn(FIELD_BASE, "min-h-[60px] resize-y")}
             value={body}
@@ -181,12 +195,16 @@ export function IssueCreateModal({ open, projectId, taskId, listParams, prefille
             />
           </div>
           {pixelInvalid && (
-            <span className="text-xs text-status-danger">x/y 必须在 0-1 范围;留空则按任务级 issue 创建</span>
+            <span className="text-xs text-status-danger">
+              x/y 必须在 0-1 范围;留空则按任务级 issue 创建
+            </span>
           )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-border pt-2.5">
-          <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            取消
+          </Button>
           <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
             {createMut.isPending ? "提交中…" : "提交"}
           </Button>

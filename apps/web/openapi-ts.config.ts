@@ -12,9 +12,7 @@ import { resolve } from "path";
  * 输出：src/api/generated/{types.gen.ts, sdk.gen.ts}
  */
 export default defineConfig({
-  input:
-    process.env.OPENAPI_URL ??
-    resolve(__dirname, "../api/openapi.snapshot.json"),
+  input: process.env.OPENAPI_URL ?? resolve(__dirname, "../api/openapi.snapshot.json"),
   output: {
     path: "src/api/generated",
     format: "prettier",

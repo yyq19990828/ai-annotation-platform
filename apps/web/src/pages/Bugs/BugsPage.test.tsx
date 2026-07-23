@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/components/ui/Toast", () => ({
-  useToastStore: <T,>(selector: (s: { push: typeof mocks.pushToast }) => T) => selector({ push: mocks.pushToast }),
+  useToastStore: <T,>(selector: (s: { push: typeof mocks.pushToast }) => T) =>
+    selector({ push: mocks.pushToast }),
 }));
 
 vi.mock("@/api/bug-reports", () => ({

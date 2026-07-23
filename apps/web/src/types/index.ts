@@ -2,8 +2,21 @@
 
 export type UserRole = "super_admin" | "project_admin" | "reviewer" | "annotator" | "viewer";
 export type ProjectStatus = "in_progress" | "completed" | "pending_review" | "archived";
-export type TaskStatus = "uploading" | "pending" | "in_progress" | "rejected" | "completed" | "review";
-export type BatchStatus = "draft" | "active" | "annotating" | "reviewing" | "approved" | "rejected" | "archived";
+export type TaskStatus =
+  | "uploading"
+  | "pending"
+  | "in_progress"
+  | "rejected"
+  | "completed"
+  | "review";
+export type BatchStatus =
+  | "draft"
+  | "active"
+  | "annotating"
+  | "reviewing"
+  | "approved"
+  | "rejected"
+  | "archived";
 
 // ── Project ─────────────────────────────────────────────────────────────────
 
@@ -554,10 +567,7 @@ export type {
 } from "@/api/generated/types.gen";
 
 // v0.14.0 · scene 邻帧导航 (跨 task 帧序列). 由后端 schema 派生.
-export type {
-  NeighborInfo,
-  NeighborsResponse,
-} from "@/api/generated/types.gen";
+export type { NeighborInfo, NeighborsResponse } from "@/api/generated/types.gen";
 
 // v0.15.17 · 批量邻帧标注 (一次返回 ±k 帧的邻帧框). 由后端 schema 派生.
 export type {

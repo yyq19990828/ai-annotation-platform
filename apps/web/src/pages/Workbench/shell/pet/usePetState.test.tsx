@@ -44,23 +44,32 @@ afterEach(() => {
 describe("usePetState", () => {
   it("普通标注 +1 不再覆盖 offline / warning 等上下文状态", () => {
     vi.useFakeTimers();
-    const { result, rerender } = renderHook(
-      ({ context }) => usePetState({ context, poke: 0 }),
-      {
-        initialProps: {
-          context: ctx({
-            workflow: { saving: true, offline: false, offlineQueueCount: 0, readOnly: false, reviewMode: false },
-            counts: { annotationCount: 1 },
-          }),
-        },
+    const { result, rerender } = renderHook(({ context }) => usePetState({ context, poke: 0 }), {
+      initialProps: {
+        context: ctx({
+          workflow: {
+            saving: true,
+            offline: false,
+            offlineQueueCount: 0,
+            readOnly: false,
+            reviewMode: false,
+          },
+          counts: { annotationCount: 1 },
+        }),
       },
-    );
+    });
 
     expect(result.current.mood).toBe("offline");
 
     rerender({
       context: ctx({
-        workflow: { saving: true, offline: false, offlineQueueCount: 0, readOnly: false, reviewMode: false },
+        workflow: {
+          saving: true,
+          offline: false,
+          offlineQueueCount: 0,
+          readOnly: false,
+          reviewMode: false,
+        },
         counts: { annotationCount: 2 },
       }),
     });
@@ -76,10 +85,9 @@ describe("usePetState", () => {
 
   it("标注数到达里程碑时才短暂庆祝", () => {
     vi.useFakeTimers();
-    const { result, rerender } = renderHook(
-      ({ context }) => usePetState({ context, poke: 0 }),
-      { initialProps: { context: ctx({ counts: { annotationCount: 9 } }) } },
-    );
+    const { result, rerender } = renderHook(({ context }) => usePetState({ context, poke: 0 }), {
+      initialProps: { context: ctx({ counts: { annotationCount: 9 } }) },
+    });
 
     expect(result.current.mood).toBe("idle");
 
@@ -96,10 +104,9 @@ describe("usePetState", () => {
 
   it("切换任务造成的计数跳变不会触发里程碑庆祝", () => {
     vi.useFakeTimers();
-    const { result, rerender } = renderHook(
-      ({ context }) => usePetState({ context, poke: 0 }),
-      { initialProps: { context: ctx({ counts: { annotationCount: 2 } }) } },
-    );
+    const { result, rerender } = renderHook(({ context }) => usePetState({ context, poke: 0 }), {
+      initialProps: { context: ctx({ counts: { annotationCount: 2 } }) },
+    });
 
     rerender({ context: ctx({ counts: { annotationCount: 10 } }) });
 
@@ -112,12 +119,17 @@ describe("usePetState", () => {
       selection: { count: 1, title: "car", collapsed: true, sourceKind: "manual" },
       ai: { running: true, candidateCount: 2, backendOnline: true },
       quality: { warningCount: 1, primaryWarning: "必填属性未填" },
-      workflow: { saving: false, offline: false, offlineQueueCount: 1, readOnly: false, reviewMode: false },
+      workflow: {
+        saving: false,
+        offline: false,
+        offlineQueueCount: 1,
+        readOnly: false,
+        reviewMode: false,
+      },
     });
-    const { result, rerender } = renderHook(
-      ({ context }) => usePetState({ context, poke: 0 }),
-      { initialProps: { context: base } },
-    );
+    const { result, rerender } = renderHook(({ context }) => usePetState({ context, poke: 0 }), {
+      initialProps: { context: base },
+    });
 
     expect(result.current.mood).toBe("offline");
     expect(result.current.message).toBe("离线队列 1");
@@ -125,7 +137,13 @@ describe("usePetState", () => {
     rerender({ context: ctx({ ...base, workflow: { ...base.workflow, offlineQueueCount: 0 } }) });
     expect(result.current.mood).toBe("warning");
 
-    rerender({ context: ctx({ ...base, workflow: { ...base.workflow, offlineQueueCount: 0 }, quality: { warningCount: 0, primaryWarning: null } }) });
+    rerender({
+      context: ctx({
+        ...base,
+        workflow: { ...base.workflow, offlineQueueCount: 0 },
+        quality: { warningCount: 0, primaryWarning: null },
+      }),
+    });
     expect(result.current.mood).toBe("aiRunning");
 
     rerender({
@@ -156,10 +174,9 @@ describe("usePetState", () => {
   it("AI running 至少保持 800ms 后才回落到候选状态", () => {
     vi.useFakeTimers();
     const running = ctx({ ai: { running: true, candidateCount: 1, backendOnline: true } });
-    const { result, rerender } = renderHook(
-      ({ context }) => usePetState({ context, poke: 0 }),
-      { initialProps: { context: running } },
-    );
+    const { result, rerender } = renderHook(({ context }) => usePetState({ context, poke: 0 }), {
+      initialProps: { context: running },
+    });
 
     expect(result.current.mood).toBe("aiRunning");
 
@@ -179,16 +196,13 @@ describe("usePetState", () => {
 
   it("久坐闲聊不会覆盖工作上下文", () => {
     vi.useFakeTimers();
-    const { result, rerender } = renderHook(
-      ({ context }) => usePetState({ context, poke: 0 }),
-      {
-        initialProps: {
-          context: ctx({
-            selection: { count: 1, title: "car", collapsed: false, sourceKind: "manual" },
-          }),
-        },
+    const { result, rerender } = renderHook(({ context }) => usePetState({ context, poke: 0 }), {
+      initialProps: {
+        context: ctx({
+          selection: { count: 1, title: "car", collapsed: false, sourceKind: "manual" },
+        }),
       },
-    );
+    });
 
     act(() => {
       vi.advanceTimersByTime(46_000);

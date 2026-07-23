@@ -50,12 +50,8 @@ export const failedPredictionsApi = {
     apiClient.post<RetryResponse>(`/admin/failed-predictions/${failedId}/retry`),
 
   dismiss: (failedId: string) =>
-    apiClient.post<DismissResponse>(
-      `/admin/failed-predictions/${failedId}/dismiss`,
-    ),
+    apiClient.post<DismissResponse>(`/admin/failed-predictions/${failedId}/dismiss`),
 
   restore: (failedId: string) =>
-    apiClient.post<DismissResponse>(
-      `/admin/failed-predictions/${failedId}/restore`,
-    ),
+    apiClient.post<DismissResponse>(`/admin/failed-predictions/${failedId}/restore`),
 };

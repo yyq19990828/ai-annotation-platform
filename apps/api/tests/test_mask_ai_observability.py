@@ -97,8 +97,7 @@ async def test_inventory_refresh_sets_fixed_zero_series() -> None:
         == 12.5
     )
     assert (
-        MASK_AI_STAGED_MASK_REFERENCES.labels(job_kind="correction")._value.get()
-        == 4
+        MASK_AI_STAGED_MASK_REFERENCES.labels(job_kind="correction")._value.get() == 4
     )
     assert MASK_AI_STAGED_MASK_REFERENCES.labels(job_kind="tracking")._value.get() == 0
     assert MASK_AI_ACCEPT_DECISIONS.labels(state="active")._value.get() == 5

@@ -16,29 +16,29 @@ last_reviewed: 2026-06-10
 
 下表列出平台当前全部 21 种通知类型，以及点击行为与所属筛选 tab：
 
-| type | 业务含义 | 点击行为 | 筛选 tab |
-|---|---|---|---|
-| `task.approved` | 任务审核通过 | 仅标已读（无跳转） | 任务 |
-| `task.rejected` | 任务被退回 | 仅标已读（无跳转） | 任务 |
-| `task.reopened` | 任务重新打开 | 仅标已读（无跳转） | 任务 |
-| `batch.rejected` | 批次被驳回 | 跳转工作台（批次视图） | 批次 |
-| `batch.review_reopened` | 批次审核重新打开 | 跳转工作台（批次视图） | 批次 |
-| `batch.admin_locked` | 管理员锁定批次 | 跳转工作台（批次视图） | 批次 |
-| `batch.admin_unlocked` | 管理员解锁批次 | 跳转工作台（批次视图） | 批次 |
-| `batch.unarchived` | 批次取消归档 | 跳转工作台（批次视图） | 批次 |
-| `failed_prediction.retry.started` | 失败预测重试已开始 | 仅标已读（无跳转） | 全部 |
-| `failed_prediction.retry.succeeded` | 失败预测重试成功 | 仅标已读（无跳转） | 全部 |
-| `failed_prediction.retry.failed` | 失败预测重试失败 | 仅标已读（无跳转） | 全部 |
-| `export.ready` | 导出完成，可下载 | 直接触发文件下载（payload 带 `download_url`） | 导出 |
-| `export.failed` | 导出失败 | 仅标已读（失败无下载链接） | 导出 |
-| `job.completed` | 后台任务完成 | 跳转 `/ai-pre/jobs`（数据集导入则跳数据集列表） | 后台任务 |
-| `job.failed` | 后台任务失败 | 跳转 `/ai-pre/jobs` | 后台任务 |
-| `job.cancelled` | 后台任务已取消 | 跳转 `/ai-pre/jobs` | 后台任务 |
-| `bug_report.commented` | BUG 反馈收到评论 | super_admin/project_admin 跳 `/bugs`，其他角色打开反馈抽屉 | 反馈 |
-| `bug_report.status_changed` | BUG 反馈状态变更 | 同上 | 反馈 |
-| `bug_report.reopened` | BUG 反馈重新打开 | 同上 | 反馈 |
-| `user.deactivation_requested` | 申请注销账号 | 仅标已读 | 全部 |
-| `user.deactivation_completed` | 账号注销完成 | 仅标已读 | 全部 |
+| type                                | 业务含义           | 点击行为                                                   | 筛选 tab |
+| ----------------------------------- | ------------------ | ---------------------------------------------------------- | -------- |
+| `task.approved`                     | 任务审核通过       | 仅标已读（无跳转）                                         | 任务     |
+| `task.rejected`                     | 任务被退回         | 仅标已读（无跳转）                                         | 任务     |
+| `task.reopened`                     | 任务重新打开       | 仅标已读（无跳转）                                         | 任务     |
+| `batch.rejected`                    | 批次被驳回         | 跳转工作台（批次视图）                                     | 批次     |
+| `batch.review_reopened`             | 批次审核重新打开   | 跳转工作台（批次视图）                                     | 批次     |
+| `batch.admin_locked`                | 管理员锁定批次     | 跳转工作台（批次视图）                                     | 批次     |
+| `batch.admin_unlocked`              | 管理员解锁批次     | 跳转工作台（批次视图）                                     | 批次     |
+| `batch.unarchived`                  | 批次取消归档       | 跳转工作台（批次视图）                                     | 批次     |
+| `failed_prediction.retry.started`   | 失败预测重试已开始 | 仅标已读（无跳转）                                         | 全部     |
+| `failed_prediction.retry.succeeded` | 失败预测重试成功   | 仅标已读（无跳转）                                         | 全部     |
+| `failed_prediction.retry.failed`    | 失败预测重试失败   | 仅标已读（无跳转）                                         | 全部     |
+| `export.ready`                      | 导出完成，可下载   | 直接触发文件下载（payload 带 `download_url`）              | 导出     |
+| `export.failed`                     | 导出失败           | 仅标已读（失败无下载链接）                                 | 导出     |
+| `job.completed`                     | 后台任务完成       | 跳转 `/ai-pre/jobs`（数据集导入则跳数据集列表）            | 后台任务 |
+| `job.failed`                        | 后台任务失败       | 跳转 `/ai-pre/jobs`                                        | 后台任务 |
+| `job.cancelled`                     | 后台任务已取消     | 跳转 `/ai-pre/jobs`                                        | 后台任务 |
+| `bug_report.commented`              | BUG 反馈收到评论   | super_admin/project_admin 跳 `/bugs`，其他角色打开反馈抽屉 | 反馈     |
+| `bug_report.status_changed`         | BUG 反馈状态变更   | 同上                                                       | 反馈     |
+| `bug_report.reopened`               | BUG 反馈重新打开   | 同上                                                       | 反馈     |
+| `user.deactivation_requested`       | 申请注销账号       | 仅标已读                                                   | 全部     |
+| `user.deactivation_completed`       | 账号注销完成       | 仅标已读                                                   | 全部     |
 
 > **任务类通知点击行为说明**：`task.*` 通知点击后只会标记为已读，不会自动跳转到对应任务。如需进入工作台处理退回任务，请从 Dashboard 的「退回提示」区块直接进入，或在项目卡片点击「打开」后在任务队列筛选。
 >

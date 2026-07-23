@@ -61,15 +61,9 @@ def upgrade() -> None:
             nullable=False,
             server_default="running",
         ),
-        sa.Column(
-            "total_tasks", sa.Integer(), nullable=False, server_default="0"
-        ),
-        sa.Column(
-            "success_count", sa.Integer(), nullable=False, server_default="0"
-        ),
-        sa.Column(
-            "failed_count", sa.Integer(), nullable=False, server_default="0"
-        ),
+        sa.Column("total_tasks", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("success_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("failed_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
             "started_at",
             sa.DateTime(timezone=True),
@@ -110,12 +104,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_prediction_jobs_celery_task_id", table_name="prediction_jobs"
-    )
-    op.drop_index(
-        "ix_prediction_jobs_status_started", table_name="prediction_jobs"
-    )
+    op.drop_index("ix_prediction_jobs_celery_task_id", table_name="prediction_jobs")
+    op.drop_index("ix_prediction_jobs_status_started", table_name="prediction_jobs")
     op.drop_index(
         "ix_prediction_jobs_project_status_started",
         table_name="prediction_jobs",

@@ -31,9 +31,7 @@ import type {
 
 // ── fixture builders ───────────────────────────────────────────────────────
 
-function makePool(
-  overrides: Partial<TopologyPoolEntry> = {},
-): TopologyPoolEntry {
+function makePool(overrides: Partial<TopologyPoolEntry> = {}): TopologyPoolEntry {
   return {
     id: "pool-1",
     name: "pool-1",
@@ -61,9 +59,7 @@ function makePool(
   };
 }
 
-function makeSnapshotPool(
-  overrides: Partial<RuntimePoolSnapshot> = {},
-): RuntimePoolSnapshot {
+function makeSnapshotPool(overrides: Partial<RuntimePoolSnapshot> = {}): RuntimePoolSnapshot {
   return {
     id: "pool-1",
     name: "pool-1",
@@ -92,9 +88,7 @@ function makeSnapshotPool(
   };
 }
 
-function makeSnapshot(
-  overrides: Partial<RuntimeSnapshotResponse> = {},
-): RuntimeSnapshotResponse {
+function makeSnapshot(overrides: Partial<RuntimeSnapshotResponse> = {}): RuntimeSnapshotResponse {
   return {
     schema_version: "runtime_snapshot.v1",
     observed_at: "2026-07-20T10:00:00Z",
@@ -113,9 +107,7 @@ function makeSnapshot(
   };
 }
 
-function makeTopology(
-  overrides: Partial<TopologyResponse> = {},
-): TopologyResponse {
+function makeTopology(overrides: Partial<TopologyResponse> = {}): TopologyResponse {
   return {
     schema_version: "topology.v1",
     generated_at: "2026-07-20T10:00:00Z",
@@ -129,10 +121,7 @@ function makeTopology(
 
 describe("F_empty · 0 pool", () => {
   it("空态渲染时不出现 0 / healthy", () => {
-    const vm = mergeTopologyAndSnapshot(
-      makeTopology({ pools: [] }),
-      makeSnapshot({ pools: [] }),
-    );
+    const vm = mergeTopologyAndSnapshot(makeTopology({ pools: [] }), makeSnapshot({ pools: [] }));
     expect(vm.pools).toHaveLength(0);
     // No pool → no aggregate "0 routable" rendered at pool level.
     // (Header counter logic lives in component; here we verify the data contract.)
@@ -359,14 +348,10 @@ describe("runtime 不可用", () => {
 
 describe("deriveMemberRouting", () => {
   it("disabled → blocked", () => {
-    expect(deriveMemberRouting("disabled", null, "smooth_weighted_round_robin")).toBe(
-      "blocked",
-    );
+    expect(deriveMemberRouting("disabled", null, "smooth_weighted_round_robin")).toBe("blocked");
   });
   it("draining → draining", () => {
-    expect(deriveMemberRouting("draining", null, "smooth_weighted_round_robin")).toBe(
-      "draining",
-    );
+    expect(deriveMemberRouting("draining", null, "smooth_weighted_round_robin")).toBe("draining");
   });
   it("active + circuit_open → blocked", () => {
     expect(
@@ -592,20 +577,13 @@ describe("sortDiagnostics + filterDiagnostics", () => {
 
   it("blocker → critical → warning → info 排序", () => {
     const sorted = sortDiagnostics(sample);
-    expect(sorted.map((d) => d.severity)).toEqual([
-      "blocker",
-      "critical",
-      "info",
-    ]);
+    expect(sorted.map((d) => d.severity)).toEqual(["blocker", "critical", "info"]);
   });
 
   it("按 instance_id 过滤", () => {
     const filtered = filterDiagnostics(sample, { instance_id: "i1" });
     // blocker (affects i1) + info (subject i1) match; gpu one doesn't.
-    expect(filtered.map((d) => d.id).sort()).toEqual([
-      "a:instance:i1",
-      "b:service_pool:p1",
-    ]);
+    expect(filtered.map((d) => d.id).sort()).toEqual(["a:instance:i1", "b:service_pool:p1"]);
   });
 });
 

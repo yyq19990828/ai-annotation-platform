@@ -14,16 +14,16 @@
 
 调研了 4 个**仍在活跃迭代**的开源平台 + 5 个商业产品的最新动向:
 
-| 维度 | 你 (v0.2.0) | Label Studio | CVAT | X-AnyLabeling | Adala |
-|---|---|---|---|---|---|
-| 形态 | Web 全栈 | Web 全栈(Django) | Web 全栈(Django) | 桌面端 + 远程服务 | LLM Agent 框架 |
-| AI 模型集成 | 字段占位 | HTTP MLBackend 抽象 | Nuclio Serverless | 本地 ONNX + 远程 server | Skill / Runtime / LiteLLM |
-| 数据模型层级 | User/Project/Task/Annotation(4 张表) | + Org / Pred / TaskLock / Draft / PredMeta(20+ 张) | + Job / Segment / Track / GT(20+ 张) | 文件级,无后端 | Skill 注册表 |
-| Active Learning | 未实现 | uncertainty + cluster 采样 | 通过 Job stage 流转 | 阈值过滤 | LLM judge + 反馈 |
-| 视频/Tracking | 未实现 | 弱(主要图像) | **强**(LabeledTrack/TrackedShape) | SAM2 视频 | 不适用 |
-| 质检 / 一致性 | 未实现 | LSE 才有 IAA + 低一致性队列 | quality_control + consensus 模块 | 无 | LLM judge |
-| LLM/Agent | 无 | 通过 Adala 衔接 | AI Agents (2024-2025) | Florence2/Gemini API | 原生 |
-| Cost tracking | 无 | **PredictionMeta 含 token cost** | 无 | 无 | runtime cost estimate |
+| 维度            | 你 (v0.2.0)                          | Label Studio                                       | CVAT                                 | X-AnyLabeling           | Adala                     |
+| --------------- | ------------------------------------ | -------------------------------------------------- | ------------------------------------ | ----------------------- | ------------------------- |
+| 形态            | Web 全栈                             | Web 全栈(Django)                                   | Web 全栈(Django)                     | 桌面端 + 远程服务       | LLM Agent 框架            |
+| AI 模型集成     | 字段占位                             | HTTP MLBackend 抽象                                | Nuclio Serverless                    | 本地 ONNX + 远程 server | Skill / Runtime / LiteLLM |
+| 数据模型层级    | User/Project/Task/Annotation(4 张表) | + Org / Pred / TaskLock / Draft / PredMeta(20+ 张) | + Job / Segment / Track / GT(20+ 张) | 文件级,无后端           | Skill 注册表              |
+| Active Learning | 未实现                               | uncertainty + cluster 采样                         | 通过 Job stage 流转                  | 阈值过滤                | LLM judge + 反馈          |
+| 视频/Tracking   | 未实现                               | 弱(主要图像)                                       | **强**(LabeledTrack/TrackedShape)    | SAM2 视频               | 不适用                    |
+| 质检 / 一致性   | 未实现                               | LSE 才有 IAA + 低一致性队列                        | quality_control + consensus 模块     | 无                      | LLM judge                 |
+| LLM/Agent       | 无                                   | 通过 Adala 衔接                                    | AI Agents (2024-2025)                | Florence2/Gemini API    | 原生                      |
+| Cost tracking   | 无                                   | **PredictionMeta 含 token cost**                   | 无                                   | 无                      | runtime cost estimate     |
 
 **最值得抄给你 repo 的 5 件事**（后面有详细说明）:
 
@@ -46,17 +46,17 @@
 
 ### 1.2 入选名单与定位
 
-| 平台 | 类型 | 定位 | 调研深度 |
-|---|---|---|---|
-| **Label Studio** (HumanSignal) | 开源 + 企业版 | 通用全栈 + 配置驱动 | **源码深读** |
-| **CVAT** (CVAT.ai) | 开源 + 企业版 | CV 专用,视频追踪强 | **源码深读** |
-| **X-AnyLabeling** (CVHub520) | 纯开源 | 桌面端 SAM/foundation 模型 | **源码深读** |
-| **Adala** (HumanSignal) | 纯开源 | LLM Agent 标注框架 | **源码深读** |
-| Roboflow | 商业 | 一站式 + Universe 模型市场 | 文档分析 |
-| Encord | 商业 | 数据策展 + SAM2 + GPT-4o | 文档分析 |
-| V7 Darwin | 商业 | 医疗影像 + 视频 + SAM3 | 文档分析 |
-| Refuel Autolabel | 开源库 | LLM 批量标注(NLP 主) | 文档分析 |
-| Argilla | 开源(HF) | LLM/NLP 数据策展 | 文档分析 |
+| 平台                           | 类型          | 定位                       | 调研深度     |
+| ------------------------------ | ------------- | -------------------------- | ------------ |
+| **Label Studio** (HumanSignal) | 开源 + 企业版 | 通用全栈 + 配置驱动        | **源码深读** |
+| **CVAT** (CVAT.ai)             | 开源 + 企业版 | CV 专用,视频追踪强         | **源码深读** |
+| **X-AnyLabeling** (CVHub520)   | 纯开源        | 桌面端 SAM/foundation 模型 | **源码深读** |
+| **Adala** (HumanSignal)        | 纯开源        | LLM Agent 标注框架         | **源码深读** |
+| Roboflow                       | 商业          | 一站式 + Universe 模型市场 | 文档分析     |
+| Encord                         | 商业          | 数据策展 + SAM2 + GPT-4o   | 文档分析     |
+| V7 Darwin                      | 商业          | 医疗影像 + 视频 + SAM3     | 文档分析     |
+| Refuel Autolabel               | 开源库        | LLM 批量标注(NLP 主)       | 文档分析     |
+| Argilla                        | 开源(HF)      | LLM/NLP 数据策展           | 文档分析     |
 
 > 商业平台:无法拉到源码,基于公开文档与博客分析其暴露出来的工作流和能力点。
 
@@ -64,25 +64,25 @@
 
 ## 子文档索引
 
-| 编号 | 文档 | 内容 |
-|---|---|---|
-| 01 | [Label Studio](./01-label-studio.md) | §2.1 Label Studio 深度拆解 |
-| 02 | [Adala](./02-adala.md) | §2.2 Adala LLM Agent 标注框架 |
-| 03 | [CVAT](./03-cvat.md) | §2.3 CVAT CV 专用平台 |
-| 04 | [X-AnyLabeling](./04-x-anylabeling.md) | §2.4 X-AnyLabeling 桌面端 |
-| 05 | [商业平台速览](./05-commercial.md) | §2.5 Roboflow、Encord、V7、Refuel、Argilla |
-| 06 | [AI 赋能模式拆解](./06-ai-patterns.md) | §3 五种 AI 赋能模式 A-E |
-| 07 | [生产级能力](./07-production-capabilities.md) | §4 用户管理/数据存储/协同 |
-| 08 | [对比矩阵](./08-comparison-matrix.md) | §5 关键能力对比矩阵（4 张表格） |
-| 09 | [借鉴建议](./09-recommendations.md) | §6 具体借鉴建议 |
-| 10 | [路线图](./10-roadmap.md) | §7 路线图建议（v0.3-v0.6+） |
-| 11 | [参考资料](./11-references.md) | §8-§9 参考资料 + 总结 |
-| 12 | [大数据集分批策略](./12-large-dataset-batching.md) | 智能切批 / 不可变快照 / 主动学习闭环 |
-| 13 | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md) | v0.9.4 phase 3 默认 tolerance 选定依据 |
-| 14 | [点云 + 图像联合标注](./14-point-cloud-image-fusion.md) | 融合原理 + SUSTechPOINTS/xtreme1/CVAT 源码级拆解 + 本平台 gap 分析与改动评估 |
-| 15 | [标注员绩效能力对标](./15-annotator-performance.md) | CVAT/LS 源码 + 6 商业产品的绩效指标 taxonomy + gap 分析(IAA/honeypot/项目级范围/导出) |
-| 16 | [质量体系前置调研](./16-quality-system-1t1a1r.md) | 1 task : 1 annotator : 1 reviewer 模式下 GT / Honeypot / Consensus 的可行边界 |
-| 17 | [图片 Raster Mask 工作台基准](./17-image-raster-mask-workbench-benchmark.md) | 1080p Worker decode / analyze / bitmap p50/p95、临时内存与 20 Mask 缓存字节基线 |
-| 18 | [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md) | 1080p component / hole / morphology / split 的主线程与 Worker p50/p95、Long Task 和重复 20 次 heap 基线 |
-| 19 | [Mask 大画布性能基线](./19-mask-large-canvas-performance-baseline.md) | 720p / 1080p / 4K 渲染、缓存、编辑历史、快速切帧、5K / 8K 内存边界与实施后退出门 |
-| 20 | [Mask 质检与格式生态合同](./20-mask-qc-format-contracts.md) | QC golden、格式事实标准、consumer fixture、稳定 loss / skip code 与并发 / 安全风险 |
+| 编号 | 文档                                                                         | 内容                                                                                                    |
+| ---- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 01   | [Label Studio](./01-label-studio.md)                                         | §2.1 Label Studio 深度拆解                                                                              |
+| 02   | [Adala](./02-adala.md)                                                       | §2.2 Adala LLM Agent 标注框架                                                                           |
+| 03   | [CVAT](./03-cvat.md)                                                         | §2.3 CVAT CV 专用平台                                                                                   |
+| 04   | [X-AnyLabeling](./04-x-anylabeling.md)                                       | §2.4 X-AnyLabeling 桌面端                                                                               |
+| 05   | [商业平台速览](./05-commercial.md)                                           | §2.5 Roboflow、Encord、V7、Refuel、Argilla                                                              |
+| 06   | [AI 赋能模式拆解](./06-ai-patterns.md)                                       | §3 五种 AI 赋能模式 A-E                                                                                 |
+| 07   | [生产级能力](./07-production-capabilities.md)                                | §4 用户管理/数据存储/协同                                                                               |
+| 08   | [对比矩阵](./08-comparison-matrix.md)                                        | §5 关键能力对比矩阵（4 张表格）                                                                         |
+| 09   | [借鉴建议](./09-recommendations.md)                                          | §6 具体借鉴建议                                                                                         |
+| 10   | [路线图](./10-roadmap.md)                                                    | §7 路线图建议（v0.3-v0.6+）                                                                             |
+| 11   | [参考资料](./11-references.md)                                               | §8-§9 参考资料 + 总结                                                                                   |
+| 12   | [大数据集分批策略](./12-large-dataset-batching.md)                           | 智能切批 / 不可变快照 / 主动学习闭环                                                                    |
+| 13   | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md)      | v0.9.4 phase 3 默认 tolerance 选定依据                                                                  |
+| 14   | [点云 + 图像联合标注](./14-point-cloud-image-fusion.md)                      | 融合原理 + SUSTechPOINTS/xtreme1/CVAT 源码级拆解 + 本平台 gap 分析与改动评估                            |
+| 15   | [标注员绩效能力对标](./15-annotator-performance.md)                          | CVAT/LS 源码 + 6 商业产品的绩效指标 taxonomy + gap 分析(IAA/honeypot/项目级范围/导出)                   |
+| 16   | [质量体系前置调研](./16-quality-system-1t1a1r.md)                            | 1 task : 1 annotator : 1 reviewer 模式下 GT / Honeypot / Consensus 的可行边界                           |
+| 17   | [图片 Raster Mask 工作台基准](./17-image-raster-mask-workbench-benchmark.md) | 1080p Worker decode / analyze / bitmap p50/p95、临时内存与 20 Mask 缓存字节基线                         |
+| 18   | [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md)              | 1080p component / hole / morphology / split 的主线程与 Worker p50/p95、Long Task 和重复 20 次 heap 基线 |
+| 19   | [Mask 大画布性能基线](./19-mask-large-canvas-performance-baseline.md)        | 720p / 1080p / 4K 渲染、缓存、编辑历史、快速切帧、5K / 8K 内存边界与实施后退出门                        |
+| 20   | [Mask 质检与格式生态合同](./20-mask-qc-format-contracts.md)                  | QC golden、格式事实标准、consumer fixture、稳定 loss / skip code 与并发 / 安全风险                      |

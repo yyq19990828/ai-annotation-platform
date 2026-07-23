@@ -7,11 +7,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import {
-  useAnnotationHistory,
-  type Command,
-  type HistoryHandlers,
-} from "./useAnnotationHistory";
+import { useAnnotationHistory, type Command, type HistoryHandlers } from "./useAnnotationHistory";
 
 function makeHandlers(): HistoryHandlers {
   return {

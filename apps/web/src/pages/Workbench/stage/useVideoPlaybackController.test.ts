@@ -5,10 +5,18 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./useFrameClock", () => ({
-  useFrameClock: () => ({ seekToAsync: vi.fn().mockResolvedValue({ ok: true, frame: 0 }), isSeeking: false }),
+  useFrameClock: () => ({
+    seekToAsync: vi.fn().mockResolvedValue({ ok: true, frame: 0 }),
+    isSeeking: false,
+  }),
 }));
 vi.mock("./useVideoBitmapCache", () => ({
-  useVideoBitmapCache: () => ({ activeBitmap: null, cachedRanges: [], capture: vi.fn(), showFrame: vi.fn() }),
+  useVideoBitmapCache: () => ({
+    activeBitmap: null,
+    cachedRanges: [],
+    capture: vi.fn(),
+    showFrame: vi.fn(),
+  }),
 }));
 vi.mock("./useVideoFramePreview", () => ({
   useVideoFramePreview: () => ({ preview: null, previewFor: vi.fn(), prefetch: vi.fn() }),

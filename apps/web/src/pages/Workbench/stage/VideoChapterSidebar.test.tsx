@@ -34,12 +34,7 @@ function chapter(overrides: Partial<VideoChapter>): VideoChapter {
 
 function renderSidebar() {
   return render(
-    <VideoChapterSidebar
-      datasetItemId="item-1"
-      frameIndex={0}
-      maxFrame={100}
-      canEdit={false}
-    />,
+    <VideoChapterSidebar datasetItemId="item-1" frameIndex={0} maxFrame={100} canEdit={false} />,
   );
 }
 
@@ -47,7 +42,13 @@ describe("VideoChapterSidebar frame_step / source display", () => {
   it("shows a sampled badge only for sampled chapters", () => {
     chaptersRef.current = [
       chapter({ id: "manual", title: "手动章", source: "manual" }),
-      chapter({ id: "sampled", title: "采样章", source: "sampled", start_frame: 20, end_frame: 30 }),
+      chapter({
+        id: "sampled",
+        title: "采样章",
+        source: "sampled",
+        start_frame: 20,
+        end_frame: 30,
+      }),
     ];
     const { getAllByTestId, queryAllByText } = renderSidebar();
     expect(getAllByTestId("video-chapter-row")).toHaveLength(2);
@@ -56,9 +57,7 @@ describe("VideoChapterSidebar frame_step / source display", () => {
   });
 
   it("renders frame_step when present", () => {
-    chaptersRef.current = [
-      chapter({ id: "stepped", title: "步长章", frame_step: 5 }),
-    ];
+    chaptersRef.current = [chapter({ id: "stepped", title: "步长章", frame_step: 5 })];
     const { getByText } = renderSidebar();
     expect(getByText(/步长 5/)).toBeInTheDocument();
   });

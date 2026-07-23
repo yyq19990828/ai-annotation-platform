@@ -34,23 +34,24 @@ export function buildFrameTimebase(
   metadata: VideoMetadata | undefined,
   timetable?: TaskVideoFrameTimetableResponse,
 ): FrameTimebase {
-  const fps = metadata?.fps && metadata.fps > 0
-    ? metadata.fps
-    : (timetable?.fps && timetable.fps > 0 ? timetable.fps : DEFAULT_FPS);
+  const fps =
+    metadata?.fps && metadata.fps > 0
+      ? metadata.fps
+      : timetable?.fps && timetable.fps > 0
+        ? timetable.fps
+        : DEFAULT_FPS;
   const lastTimetableFrame = timetable?.frames[timetable.frames.length - 1];
   const timetableFrameCount = lastTimetableFrame ? lastTimetableFrame.frame_index + 1 : undefined;
   const frameCount = Math.max(
     1,
-    metadata?.frame_count ??
-      timetable?.frame_count ??
-      timetableFrameCount ??
-      1,
+    metadata?.frame_count ?? timetable?.frame_count ?? timetableFrameCount ?? 1,
   );
-  const durationMs = typeof metadata?.duration_ms === "number" &&
+  const durationMs =
+    typeof metadata?.duration_ms === "number" &&
     Number.isFinite(metadata.duration_ms) &&
     metadata.duration_ms > 0
-    ? metadata.duration_ms
-    : null;
+      ? metadata.duration_ms
+      : null;
   if (timetable?.source === "ffprobe" && timetable.frames.length > 0) {
     const ptsMs: number[] = [];
     for (const frame of timetable.frames) {

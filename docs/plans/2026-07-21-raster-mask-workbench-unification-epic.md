@@ -37,16 +37,16 @@ ADR-0022 的过渡决策，会丢失 hole、多连通区域和原始像素边界
 
 ## 2. 版本路线
 
-| 版本 | 主题 | 必须交付的结果 | 依赖 |
-|---|---|---|---|
-| [v0.23.5](2026-07-21-v0.23.5-mask-reliability-security-foundation.md) | 可靠性与安全地基 | 防丢稿、异步隔离、锁与 Delete 语义、安全解压、accept 并发、polygon hole / multi 止血 | v0.23.4 |
-| [v0.23.6](2026-07-21-v0.23.6-shared-rle-image-mask-schema.md) | 共享 RLE 与图片 geometry | ADR-0052、`raster_mask`、静态内容 API、AAP / COCO 后端闭环 | v0.23.5 |
-| [v0.23.7](2026-07-21-v0.23.7-image-mask-workbench-native-editing.md) | 图片原生 Mask 工作台 | 对象级安全渲染、alpha picking、项目 opt-in、创建 / 重载 / 再编辑、单对象双向显式转换 | v0.23.6 |
-| [v0.23.8](2026-07-21-v0.23.8-mask-ai-interaction-video-correction.md) | AI 原生 Mask 与视频修正 | 单帧 SAM 原生 RLE、mask-as-prompt、scribble、局部视频纠错再传播 | v0.23.7 |
-| [v0.23.9](2026-07-21-v0.23.9-mask-advanced-editing-instance-operations.md) | 高级编辑与实例操作 | 套索增减、连通域、填洞、形态学、非重叠绘制、批量 / 视频 / 派生几何转换 | v0.23.8 |
-| [v0.23.10](2026-07-21-v0.23.10-mask-performance-large-canvas.md) | 性能与大画布 | 字节预算缓存、AABB 裁剪、Worker、tile editor、5K / 8K 可用性 | v0.23.9 |
-| [v0.23.11](2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md) | 质检、审阅与格式生态 | Mask QC、跨帧稳定性、局部接受、Label Studio / PNG / MOTS 等格式 | v0.23.10 |
-| [v0.24.0](2026-07-21-v0.24.0-semantic-panoptic-mask-workflows.md) | 语义 / 全景分割 | class-map、instance + semantic 合成、冲突策略、16-bit 输出与专用工作流 | v0.23.11 |
+| 版本                                                                       | 主题                     | 必须交付的结果                                                                       | 依赖     |
+| -------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------ | -------- |
+| [v0.23.5](2026-07-21-v0.23.5-mask-reliability-security-foundation.md)      | 可靠性与安全地基         | 防丢稿、异步隔离、锁与 Delete 语义、安全解压、accept 并发、polygon hole / multi 止血 | v0.23.4  |
+| [v0.23.6](2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)              | 共享 RLE 与图片 geometry | ADR-0052、`raster_mask`、静态内容 API、AAP / COCO 后端闭环                           | v0.23.5  |
+| [v0.23.7](2026-07-21-v0.23.7-image-mask-workbench-native-editing.md)       | 图片原生 Mask 工作台     | 对象级安全渲染、alpha picking、项目 opt-in、创建 / 重载 / 再编辑、单对象双向显式转换 | v0.23.6  |
+| [v0.23.8](2026-07-21-v0.23.8-mask-ai-interaction-video-correction.md)      | AI 原生 Mask 与视频修正  | 单帧 SAM 原生 RLE、mask-as-prompt、scribble、局部视频纠错再传播                      | v0.23.7  |
+| [v0.23.9](2026-07-21-v0.23.9-mask-advanced-editing-instance-operations.md) | 高级编辑与实例操作       | 套索增减、连通域、填洞、形态学、非重叠绘制、批量 / 视频 / 派生几何转换               | v0.23.8  |
+| [v0.23.10](2026-07-21-v0.23.10-mask-performance-large-canvas.md)           | 性能与大画布             | 字节预算缓存、AABB 裁剪、Worker、tile editor、5K / 8K 可用性                         | v0.23.9  |
+| [v0.23.11](2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md)    | 质检、审阅与格式生态     | Mask QC、跨帧稳定性、局部接受、Label Studio / PNG / MOTS 等格式                      | v0.23.10 |
+| [v0.24.0](2026-07-21-v0.24.0-semantic-panoptic-mask-workflows.md)          | 语义 / 全景分割          | class-map、instance + semantic 合成、冲突策略、16-bit 输出与专用工作流               | v0.23.11 |
 
 顺延规则：任何版本未满足退出门，后续版本保持 blocked。不能在后续 UI 中临时补写前置数据合同，也不能为了赶版本绕过
 鉴权、乐观锁、对象校验或无损 round-trip。
@@ -94,17 +94,17 @@ ADR-0022 的过渡决策，会丢失 hole、多连通区域和原始像素边界
 
 ## 4. Epic 终局能力矩阵
 
-| 能力 | 图片 | 视频 | 终局要求 |
-|---|---|---|---|
-| 原生 instance Mask | `raster_mask` | `video_track_mask` | 无损、可重编辑 |
-| 手工编辑 | brush / erase / lasso / region / morphology | 同左 + keyframe | 操作可撤销 |
-| AI 交互 | 点、框、scribble、mask prompt | 同左 + propagate / correct | 原生 RLE |
-| 帧间语义 | 不适用 | nearest hold、outside、occluded、AI propagate | 不伪造线性插值 |
-| 转换 | polygon / multi ↔ Mask | polygon track / frame ↔ Mask keyframe | 显式损失报告 |
-| 质检 | hole、小岛、重叠、边界 | 同左 + flicker、drift、temporal IoU | 可定位、可批量处理 |
-| instance 导入导出 | AAP、COCO、PNG、Label Studio | AAP、COCO、DAVIS、MOTS | round-trip 合同 |
-| semantic / panoptic | class-map / id-map | frame sequence | 独立于 instance annotation |
-| 大图 | tile / sparse editor | tile decode / frame budget | 5K / 8K 不崩溃 |
+| 能力                | 图片                                        | 视频                                          | 终局要求                   |
+| ------------------- | ------------------------------------------- | --------------------------------------------- | -------------------------- |
+| 原生 instance Mask  | `raster_mask`                               | `video_track_mask`                            | 无损、可重编辑             |
+| 手工编辑            | brush / erase / lasso / region / morphology | 同左 + keyframe                               | 操作可撤销                 |
+| AI 交互             | 点、框、scribble、mask prompt               | 同左 + propagate / correct                    | 原生 RLE                   |
+| 帧间语义            | 不适用                                      | nearest hold、outside、occluded、AI propagate | 不伪造线性插值             |
+| 转换                | polygon / multi ↔ Mask                      | polygon track / frame ↔ Mask keyframe         | 显式损失报告               |
+| 质检                | hole、小岛、重叠、边界                      | 同左 + flicker、drift、temporal IoU           | 可定位、可批量处理         |
+| instance 导入导出   | AAP、COCO、PNG、Label Studio                | AAP、COCO、DAVIS、MOTS                        | round-trip 合同            |
+| semantic / panoptic | class-map / id-map                          | frame sequence                                | 独立于 instance annotation |
+| 大图                | tile / sparse editor                        | tile decode / frame budget                    | 5K / 8K 不崩溃             |
 
 ## 5. 跨版本验收场景
 

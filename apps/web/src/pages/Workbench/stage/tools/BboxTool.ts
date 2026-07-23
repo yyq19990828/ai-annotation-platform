@@ -6,7 +6,14 @@ export const BboxTool: CanvasTool = {
   label: "矩形框",
   icon: "rect",
   cursor: "crosshair",
-  onPointerDown: ({ pt, evt, spacePan, readOnly, pendingDrawing, onClearSelection }: ToolPointerContext): DragInit | null => {
+  onPointerDown: ({
+    pt,
+    evt,
+    spacePan,
+    readOnly,
+    pendingDrawing,
+    onClearSelection,
+  }: ToolPointerContext): DragInit | null => {
     if (pendingDrawing) return null;
     if (spacePan || readOnly) {
       if (readOnly) onClearSelection();

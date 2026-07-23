@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
 import { emitGenerated } from "./_emit.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fieldsSrc = resolve(here, "../../apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts");
+const fieldsSrc = resolve(
+  here,
+  "../../apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts",
+);
 const authSrc = resolve(here, "../../apps/web/src/api/auth.ts");
 const dst = resolve(here, "../user-guide/workbench/settings.generated.md");
 
@@ -91,10 +94,7 @@ const fieldsText = readFileSync(fieldsSrc, "utf8");
 const authText = readFileSync(authSrc, "utf8");
 
 // 1. 分类标签
-const catInner = extractBraceBlock(
-  fieldsText,
-  /export const WORKBENCH_SETTING_CATEGORY_LABELS\b/,
-);
+const catInner = extractBraceBlock(fieldsText, /export const WORKBENCH_SETTING_CATEGORY_LABELS\b/);
 if (!catInner) {
   console.error("[generate-settings] 未找到 WORKBENCH_SETTING_CATEGORY_LABELS,源结构是否变了？");
   process.exit(1);
@@ -160,7 +160,10 @@ for (const o of objs) {
   const options = [];
   const optBlock = o.match(/options:\s*\[([\s\S]*?)\]/);
   if (optBlock) {
-    const optRe = new RegExp(`value:\\s*(${STR}|true|false|-?[\\d.]+)\\s*,\\s*label:\\s*(${STR})`, "g");
+    const optRe = new RegExp(
+      `value:\\s*(${STR}|true|false|-?[\\d.]+)\\s*,\\s*label:\\s*(${STR})`,
+      "g",
+    );
     for (const om of optBlock[1].matchAll(optRe)) {
       options.push({ value: om[1], label: unquote(om[2]) });
     }

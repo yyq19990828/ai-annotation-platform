@@ -24,9 +24,7 @@ vi.mock("@/components/ui/Toast", async () => {
 import { VideoSamplingSection } from "./VideoSamplingSection";
 import type { ProjectResponse, VideoSamplingConfig } from "@/api/projects";
 
-function makeProject(
-  video_sampling?: VideoSamplingConfig | null,
-): ProjectResponse {
+function makeProject(video_sampling?: VideoSamplingConfig | null): ProjectResponse {
   return {
     id: "p1",
     display_id: "P-1",
@@ -48,22 +46,14 @@ describe("VideoSamplingSection", () => {
 
   it("默认无配置 → mode=none, 预览显示不采样, 无交互不自动提交", () => {
     render(<VideoSamplingSection project={makeProject()} />);
-    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
-      /不采样/,
-    );
+    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(/不采样/);
     expect(mockUpdateMutate).not.toHaveBeenCalled();
   });
 
   it("加载已有 fps 配置作为初值", () => {
-    render(
-      <VideoSamplingSection
-        project={makeProject({ mode: "fps", target_fps: 10 })}
-      />,
-    );
+    render(<VideoSamplingSection project={makeProject({ mode: "fps", target_fps: 10 })} />);
     expect(screen.getByDisplayValue("10")).toBeInTheDocument();
-    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
-      /标注 10 fps/,
-    );
+    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(/标注 10 fps/);
   });
 
   it("切到 fps 模式 target 为空 → 自动填默认 10 并提交（避免 UI/DB 不一致）", () => {
@@ -80,9 +70,7 @@ describe("VideoSamplingSection", () => {
     fireEvent.click(screen.getByLabelText("按目标 fps"));
     const input = screen.getByRole("spinbutton");
     fireEvent.change(input, { target: { value: "12" } });
-    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
-      /标注 12 fps/,
-    );
+    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(/标注 12 fps/);
     fireEvent.blur(input);
     expect(mockUpdateMutate).toHaveBeenLastCalledWith(
       { video_sampling: { mode: "fps", target_fps: 12 } },
@@ -95,9 +83,7 @@ describe("VideoSamplingSection", () => {
     fireEvent.click(screen.getByLabelText("按帧间隔"));
     const input = screen.getByRole("spinbutton");
     fireEvent.change(input, { target: { value: "5" } });
-    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(
-      /每 5 帧打点/,
-    );
+    expect(screen.getByTestId("video-sampling-preview").textContent).toMatch(/每 5 帧打点/);
     fireEvent.blur(input);
     expect(mockUpdateMutate).toHaveBeenLastCalledWith(
       { video_sampling: { mode: "step", frame_step: 5 } },

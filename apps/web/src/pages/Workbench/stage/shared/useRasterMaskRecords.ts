@@ -30,7 +30,12 @@ export interface RasterMaskDeviceBudget {
 }
 
 export function rasterMaskDeviceBudget(deviceMemory?: number | null): RasterMaskDeviceBudget {
-  if (deviceMemory != null && Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 2) {
+  if (
+    deviceMemory != null &&
+    Number.isFinite(deviceMemory) &&
+    deviceMemory > 0 &&
+    deviceMemory <= 2
+  ) {
     return {
       tier: "low",
       maxCacheBytes: 64 * MIB,
@@ -194,10 +199,7 @@ class InvalidRasterMaskContentError extends Error {}
 class RasterMaskRenderError extends Error {}
 
 export function rasterMaskRecordCacheKey(
-  descriptor: Pick<
-    RasterMaskRecordDescriptor,
-    "id" | "revision" | "ref" | "colorRevision"
-  >,
+  descriptor: Pick<RasterMaskRecordDescriptor, "id" | "revision" | "ref" | "colorRevision">,
 ): string {
   return JSON.stringify([
     descriptor.id,
@@ -269,12 +271,12 @@ function httpStatusOf(error: unknown): number | undefined {
 function detailOf(error: unknown): Record<string, unknown> | undefined {
   if (!error || typeof error !== "object" || !("detailRaw" in error)) return undefined;
   const detail = (error as { detailRaw?: unknown }).detailRaw;
-  return detail && typeof detail === "object"
-    ? detail as Record<string, unknown>
-    : undefined;
+  return detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
 }
 
-export function rasterMaskLoadError(error: unknown): Extract<RasterMaskRecordStatus, { state: "error" }> {
+export function rasterMaskLoadError(
+  error: unknown,
+): Extract<RasterMaskRecordStatus, { state: "error" }> {
   if (error instanceof InvalidRasterMaskContentError) {
     return {
       state: "error",
@@ -317,9 +319,8 @@ export function rasterMaskLoadError(error: unknown): Extract<RasterMaskRecordSta
       state: "error",
       reason: "corrupt",
       ...(backendReason == null ? {} : { backendReason }),
-      message: typeof detail?.message === "string"
-        ? detail.message
-        : "Mask 内容已损坏或与引用不一致",
+      message:
+        typeof detail?.message === "string" ? detail.message : "Mask 内容已损坏或与引用不一致",
       retryable: detail?.retryable === true,
       httpStatus,
     };
@@ -375,9 +376,10 @@ export function useRasterMaskRecords<TSource extends string = string>(
   );
   const maxConcurrent = normalizePositiveLimit(options.maxConcurrent, deviceBudget.maxConcurrent);
   const maxCacheBytes = normalizePositiveLimit(options.maxCacheBytes, deviceBudget.maxCacheBytes);
-  const maxCachedRecords = options.maxCachedRecords == null
-    ? Number.MAX_SAFE_INTEGER
-    : normalizePositiveLimit(options.maxCachedRecords, Number.MAX_SAFE_INTEGER);
+  const maxCachedRecords =
+    options.maxCachedRecords == null
+      ? Number.MAX_SAFE_INTEGER
+      : normalizePositiveLimit(options.maxCachedRecords, Number.MAX_SAFE_INTEGER);
   const [, forceRender] = useState(0);
   const mountedRef = useRef(false);
   const scopeRef = useRef(scopeKey);
@@ -435,9 +437,12 @@ export function useRasterMaskRecords<TSource extends string = string>(
     if (isImageBitmap(image)) bitmapsCreatedRef.current += 1;
   }, []);
 
-  const disposeCached = useCallback((cached: CachedRasterMask) => {
-    disposeImage(cached.rendered.image);
-  }, [disposeImage]);
+  const disposeCached = useCallback(
+    (cached: CachedRasterMask) => {
+      disposeImage(cached.rendered.image);
+    },
+    [disposeImage],
+  );
 
   const cacheBytesNow = useCallback(() => {
     let total = 0;
@@ -451,18 +456,16 @@ export function useRasterMaskRecords<TSource extends string = string>(
     return total;
   }, []);
 
-  const markDeferred = useCallback((
-    cacheKey: string,
-    requiredBytes: number,
-  ) => {
+  const markDeferred = useCallback((cacheKey: string, requiredBytes: number) => {
     const descriptor = activeDescriptorsRef.current.get(cacheKey);
     if (!descriptor) return;
     deferredRef.current.set(cacheKey, {
       state: "deferred",
       reason: "budget_exceeded",
-      message: requiredBytes > maxCacheBytesRef.current
-        ? "Mask 即使使用受限预览仍超过当前设备缓存预算"
-        : "Mask 已因当前缓存预算延后；选中对象或释放缓存后可重试",
+      message:
+        requiredBytes > maxCacheBytesRef.current
+          ? "Mask 即使使用受限预览仍超过当前设备缓存预算"
+          : "Mask 已因当前缓存预算延后；选中对象或释放缓存后可重试",
       retryable: true,
       requiredBytes,
       budgetBytes: maxCacheBytesRef.current,
@@ -471,13 +474,16 @@ export function useRasterMaskRecords<TSource extends string = string>(
     });
   }, []);
 
-  const removeCached = useCallback((cacheKey: string, deferActive: boolean) => {
-    const cached = cacheRef.current.get(cacheKey);
-    if (!cached) return;
-    cacheRef.current.delete(cacheKey);
-    disposeCached(cached);
-    if (deferActive) markDeferred(cacheKey, cached.byteSize);
-  }, [disposeCached, markDeferred]);
+  const removeCached = useCallback(
+    (cacheKey: string, deferActive: boolean) => {
+      const cached = cacheRef.current.get(cacheKey);
+      if (!cached) return;
+      cacheRef.current.delete(cacheKey);
+      disposeCached(cached);
+      if (deferActive) markDeferred(cacheKey, cached.byteSize);
+    },
+    [disposeCached, markDeferred],
+  );
 
   const pinnedCacheKeys = useCallback(() => {
     const pinned = new Set<string>();
@@ -487,204 +493,226 @@ export function useRasterMaskRecords<TSource extends string = string>(
     return pinned;
   }, []);
 
-  const reserveAdmission = useCallback((cacheKey: string, byteSize: number): boolean => {
-    if (byteSize > maxCacheBytesRef.current) return false;
-    const cache = cacheRef.current;
-    const pinned = pinnedCacheKeys();
-    const evictKeys: string[] = [];
-    let projectedRecords = cache.size + reservedBytesRef.current.size + 1;
-    let projectedBytes = cacheBytesNow() + reservedBytesNow() + byteSize;
-    for (const [candidate, cached] of cache) {
+  const reserveAdmission = useCallback(
+    (cacheKey: string, byteSize: number): boolean => {
+      if (byteSize > maxCacheBytesRef.current) return false;
+      const cache = cacheRef.current;
+      const pinned = pinnedCacheKeys();
+      const evictKeys: string[] = [];
+      let projectedRecords = cache.size + reservedBytesRef.current.size + 1;
+      let projectedBytes = cacheBytesNow() + reservedBytesNow() + byteSize;
+      for (const [candidate, cached] of cache) {
+        if (
+          projectedRecords <= maxCachedRecordsRef.current &&
+          projectedBytes <= maxCacheBytesRef.current
+        )
+          break;
+        if (pinned.has(candidate)) continue;
+        evictKeys.push(candidate);
+        projectedRecords -= 1;
+        projectedBytes -= cached.byteSize;
+      }
       if (
-        projectedRecords <= maxCachedRecordsRef.current
-        && projectedBytes <= maxCacheBytesRef.current
-      ) break;
-      if (pinned.has(candidate)) continue;
-      evictKeys.push(candidate);
-      projectedRecords -= 1;
-      projectedBytes -= cached.byteSize;
-    }
-    if (
-      projectedRecords > maxCachedRecordsRef.current
-      || projectedBytes > maxCacheBytesRef.current
-    ) return false;
-    for (const candidate of evictKeys) removeCached(candidate, true);
-    reservedBytesRef.current.set(cacheKey, byteSize);
-    return true;
-  }, [cacheBytesNow, pinnedCacheKeys, removeCached, reservedBytesNow]);
+        projectedRecords > maxCachedRecordsRef.current ||
+        projectedBytes > maxCacheBytesRef.current
+      )
+        return false;
+      for (const candidate of evictKeys) removeCached(candidate, true);
+      reservedBytesRef.current.set(cacheKey, byteSize);
+      return true;
+    },
+    [cacheBytesNow, pinnedCacheKeys, removeCached, reservedBytesNow],
+  );
 
   const enforceBudget = useCallback(() => {
     const cache = cacheRef.current;
     const pinned = pinnedCacheKeys();
     while (
-      cache.size + reservedBytesRef.current.size > maxCachedRecordsRef.current
-      || cacheBytesNow() + reservedBytesNow() > maxCacheBytesRef.current
+      cache.size + reservedBytesRef.current.size > maxCachedRecordsRef.current ||
+      cacheBytesNow() + reservedBytesNow() > maxCacheBytesRef.current
     ) {
-      const evictKey = [...cache.keys()].find((candidate) => !pinned.has(candidate))
-        ?? cache.keys().next().value as string | undefined;
+      const evictKey =
+        [...cache.keys()].find((candidate) => !pinned.has(candidate)) ??
+        (cache.keys().next().value as string | undefined);
       if (!evictKey) break;
       removeCached(evictKey, true);
     }
   }, [cacheBytesNow, pinnedCacheKeys, removeCached, reservedBytesNow]);
 
-  const isCurrentJob = useCallback((job: RasterMaskLoadJob<TSource>) => (
-    mountedRef.current
-    && job.scopeGeneration === scopeGenerationRef.current
-    && requestTokensRef.current.get(job.cacheKey) === job.token
-    && activeDescriptorsRef.current.has(job.cacheKey)
-  ), []);
+  const isCurrentJob = useCallback(
+    (job: RasterMaskLoadJob<TSource>) =>
+      mountedRef.current &&
+      job.scopeGeneration === scopeGenerationRef.current &&
+      requestTokensRef.current.get(job.cacheKey) === job.token &&
+      activeDescriptorsRef.current.has(job.cacheKey),
+    [],
+  );
 
-  const startJob = useCallback((job: RasterMaskLoadJob<TSource>) => {
-    inFlightRef.current += 1;
-    void (async () => {
-      let rendered: RasterMaskCroppedImage | null = null;
-      let reservationHeld = false;
-      try {
-        const rle = await loadRleSingleFlight(job.descriptor);
-        if (
-          rle.size[0] !== job.descriptor.ref.size[0]
-          || rle.size[1] !== job.descriptor.ref.size[1]
-        ) {
-          throw new InvalidRasterMaskContentError("mask content size does not match its reference");
-        }
-        let analysis: RasterMaskAnalysis;
+  const startJob = useCallback(
+    (job: RasterMaskLoadJob<TSource>) => {
+      inFlightRef.current += 1;
+      void (async () => {
+        let rendered: RasterMaskCroppedImage | null = null;
+        let reservationHeld = false;
         try {
-          analysis = await analyzeRasterMaskRleAsync(rle, {
-            ...(workerPool ? { pool: workerPool } : {}),
-            priority: descriptorWorkerPriority(job.descriptor),
-          });
-          if (analysis.area === 0) {
-            throw new InvalidRasterMaskContentError("mask content has no foreground pixels");
-          }
-        } catch (error) {
-          if (error instanceof InvalidRasterMaskContentError) throw error;
-          if (error instanceof RasterMaskWorkerError) throw new RasterMaskRenderError(error.message);
-          throw new InvalidRasterMaskContentError(String(error));
-        }
-        const rleBytes = estimateCocoRleRetainedBytes(rle);
-        const fullAlphaBytes = analysis.crop.alpha.byteLength;
-        const fullBitmapBytes = analysis.crop.width * analysis.crop.height * 4;
-        const fullBytes = rleBytes + fullAlphaBytes + fullBitmapBytes;
-        let preview = false;
-        let retainedBytes = fullBytes;
-        if (reserveAdmission(job.cacheKey, fullBytes)) {
-          reservationHeld = true;
-        } else {
-          preview = true;
-          const pinned = pinnedCacheKeys();
-          let protectedBytes = reservedBytesNow();
-          for (const [cacheKey, cached] of cacheRef.current) {
-            if (pinned.has(cacheKey)) protectedBytes += cached.byteSize;
-          }
-          const previewPixelBudget = Math.min(
-            MAX_PREVIEW_PIXELS,
-            Math.floor((maxCacheBytesRef.current - protectedBytes - rleBytes) / 4),
-          );
-          const previewDimensions = rasterMaskPreviewDimensions(
-            analysis.crop.width,
-            analysis.crop.height,
-            previewPixelBudget,
-          );
-          retainedBytes = rleBytes + previewDimensions.width * previewDimensions.height * 4;
+          const rle = await loadRleSingleFlight(job.descriptor);
           if (
-            previewDimensions.width === 0
-            || previewDimensions.height === 0
-            || !reserveAdmission(job.cacheKey, retainedBytes)
+            rle.size[0] !== job.descriptor.ref.size[0] ||
+            rle.size[1] !== job.descriptor.ref.size[1]
           ) {
+            throw new InvalidRasterMaskContentError(
+              "mask content size does not match its reference",
+            );
+          }
+          let analysis: RasterMaskAnalysis;
+          try {
+            analysis = await analyzeRasterMaskRleAsync(rle, {
+              ...(workerPool ? { pool: workerPool } : {}),
+              priority: descriptorWorkerPriority(job.descriptor),
+            });
+            if (analysis.area === 0) {
+              throw new InvalidRasterMaskContentError("mask content has no foreground pixels");
+            }
+          } catch (error) {
+            if (error instanceof InvalidRasterMaskContentError) throw error;
+            if (error instanceof RasterMaskWorkerError)
+              throw new RasterMaskRenderError(error.message);
+            throw new InvalidRasterMaskContentError(String(error));
+          }
+          const rleBytes = estimateCocoRleRetainedBytes(rle);
+          const fullAlphaBytes = analysis.crop.alpha.byteLength;
+          const fullBitmapBytes = analysis.crop.width * analysis.crop.height * 4;
+          const fullBytes = rleBytes + fullAlphaBytes + fullBitmapBytes;
+          let preview = false;
+          let retainedBytes = fullBytes;
+          if (reserveAdmission(job.cacheKey, fullBytes)) {
+            reservationHeld = true;
+          } else {
+            preview = true;
+            const pinned = pinnedCacheKeys();
+            let protectedBytes = reservedBytesNow();
+            for (const [cacheKey, cached] of cacheRef.current) {
+              if (pinned.has(cacheKey)) protectedBytes += cached.byteSize;
+            }
+            const previewPixelBudget = Math.min(
+              MAX_PREVIEW_PIXELS,
+              Math.floor((maxCacheBytesRef.current - protectedBytes - rleBytes) / 4),
+            );
+            const previewDimensions = rasterMaskPreviewDimensions(
+              analysis.crop.width,
+              analysis.crop.height,
+              previewPixelBudget,
+            );
+            retainedBytes = rleBytes + previewDimensions.width * previewDimensions.height * 4;
+            if (
+              previewDimensions.width === 0 ||
+              previewDimensions.height === 0 ||
+              !reserveAdmission(job.cacheKey, retainedBytes)
+            ) {
+              errorsRef.current.delete(job.cacheKey);
+              markDeferred(job.cacheKey, Math.max(retainedBytes, rleBytes + 4));
+              publish();
+              return;
+            }
+            reservationHeld = true;
+          }
+          try {
+            rendered = preview
+              ? await createTintedRasterMaskPreviewImage(
+                  analysis,
+                  job.descriptor.color,
+                  Math.min(MAX_PREVIEW_PIXELS, Math.floor((retainedBytes - rleBytes) / 4)),
+                )
+              : await createTintedRasterMaskImage(analysis, job.descriptor.color);
+          } catch (error) {
+            throw new RasterMaskRenderError(String(error));
+          }
+          if (!rendered) {
+            throw new InvalidRasterMaskContentError("mask content has no renderable foreground");
+          }
+          trackImage(rendered.image);
+          if (!isCurrentJob(job)) {
+            disposeImage(rendered.image);
+            rendered = null;
+            return;
+          }
+          reservedBytesRef.current.delete(job.cacheKey);
+          reservationHeld = false;
+          if (!reserveAdmission(job.cacheKey, retainedBytes)) {
+            disposeImage(rendered.image);
+            rendered = null;
             errorsRef.current.delete(job.cacheKey);
-            markDeferred(job.cacheKey, Math.max(retainedBytes, rleBytes + 4));
+            markDeferred(job.cacheKey, retainedBytes);
             publish();
             return;
           }
           reservationHeld = true;
-        }
-        try {
-          rendered = preview
-            ? await createTintedRasterMaskPreviewImage(
-                analysis,
-                job.descriptor.color,
-                Math.min(
-                  MAX_PREVIEW_PIXELS,
-                  Math.floor((retainedBytes - rleBytes) / 4),
-                ),
-              )
-            : await createTintedRasterMaskImage(analysis, job.descriptor.color);
-        } catch (error) {
-          throw new RasterMaskRenderError(String(error));
-        }
-        if (!rendered) {
-          throw new InvalidRasterMaskContentError("mask content has no renderable foreground");
-        }
-        trackImage(rendered.image);
-        if (!isCurrentJob(job)) {
-          disposeImage(rendered.image);
+          const previous = cacheRef.current.get(job.cacheKey);
+          if (previous) disposeCached(previous);
+          const retainedAnalysis = preview
+            ? {
+                ...analysis,
+                crop: { ...analysis.crop, alpha: new Uint8Array() },
+              }
+            : analysis;
+          const alphaBytes = retainedAnalysis.crop.alpha.byteLength;
+          const bitmapBytes = rendered.width * rendered.height * 4;
+          const cached: CachedRasterMask = {
+            scopeKey: scopeRef.current,
+            cacheKey: job.cacheKey,
+            analysis: retainedAnalysis,
+            rendered,
+            rle,
+            preview,
+            alphaBytes,
+            bitmapBytes,
+            rleBytes,
+            byteSize: alphaBytes + bitmapBytes + rleBytes,
+          };
           rendered = null;
-          return;
-        }
-        reservedBytesRef.current.delete(job.cacheKey);
-        reservationHeld = false;
-        if (!reserveAdmission(job.cacheKey, retainedBytes)) {
-          disposeImage(rendered.image);
-          rendered = null;
+          reservedBytesRef.current.delete(job.cacheKey);
+          reservationHeld = false;
+          cacheRef.current.delete(job.cacheKey);
+          cacheRef.current.set(job.cacheKey, cached);
           errorsRef.current.delete(job.cacheKey);
-          markDeferred(job.cacheKey, retainedBytes);
+          deferredRef.current.delete(job.cacheKey);
           publish();
-          return;
-        }
-        reservationHeld = true;
-        const previous = cacheRef.current.get(job.cacheKey);
-        if (previous) disposeCached(previous);
-        const retainedAnalysis = preview
-          ? {
-              ...analysis,
-              crop: { ...analysis.crop, alpha: new Uint8Array() },
-            }
-          : analysis;
-        const alphaBytes = retainedAnalysis.crop.alpha.byteLength;
-        const bitmapBytes = rendered.width * rendered.height * 4;
-        const cached: CachedRasterMask = {
-          scopeKey: scopeRef.current,
-          cacheKey: job.cacheKey,
-          analysis: retainedAnalysis,
-          rendered,
-          rle,
-          preview,
-          alphaBytes,
-          bitmapBytes,
-          rleBytes,
-          byteSize: alphaBytes + bitmapBytes + rleBytes,
-        };
-        rendered = null;
-        reservedBytesRef.current.delete(job.cacheKey);
-        reservationHeld = false;
-        cacheRef.current.delete(job.cacheKey);
-        cacheRef.current.set(job.cacheKey, cached);
-        errorsRef.current.delete(job.cacheKey);
-        deferredRef.current.delete(job.cacheKey);
-        publish();
-      } catch (error) {
-        if (rendered) disposeImage(rendered.image);
-        if (isCurrentJob(job)) {
-          errorsRef.current.set(job.cacheKey, rasterMaskLoadError(error));
+        } catch (error) {
+          if (rendered) disposeImage(rendered.image);
+          if (isCurrentJob(job)) {
+            errorsRef.current.set(job.cacheKey, rasterMaskLoadError(error));
+            publish();
+          }
+        } finally {
+          if (reservationHeld) reservedBytesRef.current.delete(job.cacheKey);
+          if (requestTokensRef.current.get(job.cacheKey) === job.token) {
+            requestTokensRef.current.delete(job.cacheKey);
+          }
+          inFlightRef.current -= 1;
           publish();
+          pumpRef.current();
         }
-      } finally {
-        if (reservationHeld) reservedBytesRef.current.delete(job.cacheKey);
-        if (requestTokensRef.current.get(job.cacheKey) === job.token) {
-          requestTokensRef.current.delete(job.cacheKey);
-        }
-        inFlightRef.current -= 1;
-        publish();
-        pumpRef.current();
-      }
-    })();
-  }, [disposeCached, disposeImage, isCurrentJob, markDeferred, pinnedCacheKeys, publish, reserveAdmission, reservedBytesNow, trackImage, workerPool]);
+      })();
+    },
+    [
+      disposeCached,
+      disposeImage,
+      isCurrentJob,
+      markDeferred,
+      pinnedCacheKeys,
+      publish,
+      reserveAdmission,
+      reservedBytesNow,
+      trackImage,
+      workerPool,
+    ],
+  );
 
   pumpRef.current = () => {
     while (
-      mountedRef.current
-      && inFlightRef.current < maxConcurrentRef.current
-      && queueRef.current.length > 0
+      mountedRef.current &&
+      inFlightRef.current < maxConcurrentRef.current &&
+      queueRef.current.length > 0
     ) {
       const job = queueRef.current.shift();
       if (!job || !isCurrentJob(job)) continue;
@@ -695,8 +723,8 @@ export function useRasterMaskRecords<TSource extends string = string>(
   const enqueue = useCallback((descriptor: RasterMaskRecordDescriptor<TSource>) => {
     const cacheKey = rasterMaskRecordCacheKey(descriptor);
     if (
-      cacheRef.current.get(cacheKey)?.scopeKey === scopeRef.current
-      || requestTokensRef.current.has(cacheKey)
+      cacheRef.current.get(cacheKey)?.scopeKey === scopeRef.current ||
+      requestTokensRef.current.has(cacheKey)
     ) {
       return;
     }
@@ -710,7 +738,9 @@ export function useRasterMaskRecords<TSource extends string = string>(
       sequence: ++queueSequenceRef.current,
       descriptor,
     });
-    queueRef.current.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
+    queueRef.current.sort(
+      (left, right) => left.priority - right.priority || left.sequence - right.sequence,
+    );
   }, []);
 
   useLayoutEffect(() => {
@@ -776,17 +806,18 @@ export function useRasterMaskRecords<TSource extends string = string>(
       }
     }
     enforceBudget();
-    const prioritizedEntries = [...descriptorEntries].sort((left, right) => (
-      descriptorPriority(left[1]) - descriptorPriority(right[1])
-    ));
+    const prioritizedEntries = [...descriptorEntries].sort(
+      (left, right) => descriptorPriority(left[1]) - descriptorPriority(right[1]),
+    );
     for (const [cacheKey, descriptor] of prioritizedEntries) {
       if (cacheRef.current.get(cacheKey)?.scopeKey === scopeKey) continue;
       const deferred = deferredRef.current.get(cacheKey);
       if (deferred) {
         const priority = descriptorPriority(descriptor);
-        const shouldRetry = deferred.budgetBytes !== maxCacheBytesRef.current
-          || (descriptor.selected && !deferred.selected)
-          || priority < deferred.priority;
+        const shouldRetry =
+          deferred.budgetBytes !== maxCacheBytesRef.current ||
+          (descriptor.selected && !deferred.selected) ||
+          priority < deferred.priority;
         if (!shouldRetry) continue;
         deferredRef.current.delete(cacheKey);
       }
@@ -794,21 +825,34 @@ export function useRasterMaskRecords<TSource extends string = string>(
     }
     pumpRef.current();
     if (scopeChanged) queueMicrotask(publish);
-  }, [descriptorEntries, disposeCached, enforceBudget, enqueue, maxCacheBytes, maxCachedRecords, maxConcurrent, publish, scopeKey]);
+  }, [
+    descriptorEntries,
+    disposeCached,
+    enforceBudget,
+    enqueue,
+    maxCacheBytes,
+    maxCachedRecords,
+    maxConcurrent,
+    publish,
+    scopeKey,
+  ]);
 
-  const retry = useCallback((id: string) => {
-    const descriptor = descriptorsByIdRef.current.get(id);
-    if (!descriptor) return;
-    const cacheKey = rasterMaskRecordCacheKey(descriptor);
-    const error = errorsRef.current.get(cacheKey);
-    const deferred = deferredRef.current.get(cacheKey);
-    if ((!error || !error.retryable) && !deferred) return;
-    errorsRef.current.delete(cacheKey);
-    deferredRef.current.delete(cacheKey);
-    enqueue(descriptor);
-    publish();
-    pumpRef.current();
-  }, [enqueue, publish]);
+  const retry = useCallback(
+    (id: string) => {
+      const descriptor = descriptorsByIdRef.current.get(id);
+      if (!descriptor) return;
+      const cacheKey = rasterMaskRecordCacheKey(descriptor);
+      const error = errorsRef.current.get(cacheKey);
+      const deferred = deferredRef.current.get(cacheKey);
+      if ((!error || !error.retryable) && !deferred) return;
+      errorsRef.current.delete(cacheKey);
+      deferredRef.current.delete(cacheKey);
+      enqueue(descriptor);
+      publish();
+      pumpRef.current();
+    },
+    [enqueue, publish],
+  );
 
   const records: RasterMaskRenderRecord<TSource>[] = [];
   const statusById = new Map<string, RasterMaskRecordStatus>();
@@ -828,18 +872,10 @@ export function useRasterMaskRecords<TSource extends string = string>(
       });
       continue;
     }
-    const error = scopeRef.current === scopeKey
-      ? errorsRef.current.get(cacheKey)
-      : undefined;
-    const deferred = scopeRef.current === scopeKey
-      ? deferredRef.current.get(cacheKey)
-      : undefined;
+    const error = scopeRef.current === scopeKey ? errorsRef.current.get(cacheKey) : undefined;
+    const deferred = scopeRef.current === scopeKey ? deferredRef.current.get(cacheKey) : undefined;
     if (deferred) {
-      const {
-        selected: _selected,
-        priority: _priority,
-        ...status
-      } = deferred;
+      const { selected: _selected, priority: _priority, ...status } = deferred;
       statusById.set(descriptor.id, status);
     } else {
       statusById.set(descriptor.id, error ?? { state: "loading" });

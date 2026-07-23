@@ -19,21 +19,22 @@ export async function runSamToolRecording(
   await openImageAnnotate(page, catalog);
   // fresh repair 会异步回填媒体；stage 外壳先出现，Konva 背景层稍后才真正绘出图像。
   // 等画布中心像素有内容再派发 prompt，避免在 checkerboard 占位期拖框被静默忽略。
-  await page.waitForFunction(() => {
-    const canvas = document.querySelector('[data-testid="workbench-stage"] canvas');
-    if (!(canvas instanceof HTMLCanvasElement)) return false;
-    try {
-      const data = canvas.getContext("2d")?.getImageData(
-        Math.floor(canvas.width / 2),
-        Math.floor(canvas.height / 2),
-        1,
-        1,
-      ).data;
-      return !!data && data[3] > 0;
-    } catch {
-      return false;
-    }
-  }, undefined, { timeout: 30_000 });
+  await page.waitForFunction(
+    () => {
+      const canvas = document.querySelector('[data-testid="workbench-stage"] canvas');
+      if (!(canvas instanceof HTMLCanvasElement)) return false;
+      try {
+        const data = canvas
+          .getContext("2d")
+          ?.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+        return !!data && data[3] > 0;
+      } catch {
+        return false;
+      }
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
   await page.waitForTimeout(500);
 
   const tool = page.getByTestId(`tool-btn-${toolId}`);

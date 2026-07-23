@@ -139,12 +139,12 @@ lock 不等于状态：
 
 ## 常见修改落点
 
-| 你想改什么 | 先看哪里 |
-|---|---|
-| 调整 TTL | `services/task_lock.py` + `db/models/project.py` |
-| 调整 takeover 逻辑 | `services/task_lock.py` |
-| 改前端续期节奏 | `apps/web/src/hooks/useTaskLock.ts` |
-| 改提交/切题时释放锁 | `api/v1/tasks/lifecycle.py` |
+| 你想改什么          | 先看哪里                                         |
+| ------------------- | ------------------------------------------------ |
+| 调整 TTL            | `services/task_lock.py` + `db/models/project.py` |
+| 调整 takeover 逻辑  | `services/task_lock.py`                          |
+| 改前端续期节奏      | `apps/web/src/hooks/useTaskLock.ts`              |
+| 改提交/切题时释放锁 | `api/v1/tasks/lifecycle.py`                      |
 
 ## 相关文档
 

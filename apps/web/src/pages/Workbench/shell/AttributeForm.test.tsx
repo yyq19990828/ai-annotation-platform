@@ -92,7 +92,9 @@ describe("AttributeForm · dirtyTracker 首次消费", () => {
     const input = getByDisplayValue("red") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "blue" } });
     expect(onChange).not.toHaveBeenCalled();
-    act(() => { vi.advanceTimersByTime(450); });
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0]).toEqual({ color: "blue" });
     vi.useRealTimers();
@@ -114,11 +116,15 @@ describe("AttributeForm · dirtyTracker 首次消费", () => {
     fireEvent.change(input, { target: { value: "blue" } });
     expect(onChange).not.toHaveBeenCalled();
     // 不等 400ms 直接卸载（模拟 <400ms 内关闭弹层）
-    act(() => { unmount(); });
+    act(() => {
+      unmount();
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0]).toEqual({ color: "blue" });
     // 卸载已 clearTimeout，定时器不应再触发第二次
-    act(() => { vi.advanceTimersByTime(450); });
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -134,7 +140,9 @@ describe("AttributeForm · dirtyTracker 首次消费", () => {
         onChange={onChange}
       />,
     );
-    act(() => { unmount(); });
+    act(() => {
+      unmount();
+    });
     expect(onChange).not.toHaveBeenCalled();
   });
 });

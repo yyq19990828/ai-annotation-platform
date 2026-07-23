@@ -14,29 +14,29 @@ last_reviewed: 2026-05-27
 
 ## 代码入口
 
-| 关注点 | 位置 |
-|---|---|
-| 路由 | `apps/api/app/api/v1/storage_connections.py`（前缀 `/storage-connections`） |
-| 模型 | `apps/api/app/db/models/storage_connection.py`（表 `storage_connections`） |
-| Schema | `apps/api/app/schemas/storage_connection.py` |
-| 业务服务 | `apps/api/app/services/storage_connection.py` |
-| 密钥加解密 | `apps/api/app/core/crypto.py` |
-| SSRF 白名单门禁 | `apps/api/app/services/connector_guard.py` |
-| 源适配器 | `apps/api/app/services/sources/`（`s3.py` / `sftp.py`） |
-| 导入任务 | `apps/api/app/workers/dataset_import.py` |
-| 迁移 | `alembic/versions/0086_storage_connections.py`、`0087_storage_connections_owner_scope.py` |
+| 关注点          | 位置                                                                                      |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| 路由            | `apps/api/app/api/v1/storage_connections.py`（前缀 `/storage-connections`）               |
+| 模型            | `apps/api/app/db/models/storage_connection.py`（表 `storage_connections`）                |
+| Schema          | `apps/api/app/schemas/storage_connection.py`                                              |
+| 业务服务        | `apps/api/app/services/storage_connection.py`                                             |
+| 密钥加解密      | `apps/api/app/core/crypto.py`                                                             |
+| SSRF 白名单门禁 | `apps/api/app/services/connector_guard.py`                                                |
+| 源适配器        | `apps/api/app/services/sources/`（`s3.py` / `sftp.py`）                                   |
+| 导入任务        | `apps/api/app/workers/dataset_import.py`                                                  |
+| 迁移            | `alembic/versions/0086_storage_connections.py`、`0087_storage_connections_owner_scope.py` |
 
 ## 数据模型
 
 `storage_connections` 表的核心字段：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `kind` | `String(20)` | `s3` 或 `sftp`（CHECK 约束） |
-| `config` | `JSONB` | **非密钥**配置（endpoint/bucket/host…），写入前经 `_validate_and_sanitize_config` 过滤 |
-| `secret_enc` | `LargeBinary` | Fernet 加密后的密钥密文，可空 |
-| `scope` | `String(20)` | `global` 或 `owner`（CHECK 约束，默认 `owner`） |
-| `created_by` | `UUID` | 创建者 |
+| 字段         | 类型          | 说明                                                                                   |
+| ------------ | ------------- | -------------------------------------------------------------------------------------- |
+| `kind`       | `String(20)`  | `s3` 或 `sftp`（CHECK 约束）                                                           |
+| `config`     | `JSONB`       | **非密钥**配置（endpoint/bucket/host…），写入前经 `_validate_and_sanitize_config` 过滤 |
+| `secret_enc` | `LargeBinary` | Fernet 加密后的密钥密文，可空                                                          |
+| `scope`      | `String(20)`  | `global` 或 `owner`（CHECK 约束，默认 `owner`）                                        |
+| `created_by` | `UUID`        | 创建者                                                                                 |
 
 关键不变量：**明文密钥永不落库、永不出 API**。`config` 与 `secret` 在 schema 层就分离——`config` 是可读的连接参数，`secret`（access/secret key、密码、私钥）只进 `secret_enc`，对外仅以 `secret_set: bool` 表达"是否已配密钥"。
 
@@ -56,10 +56,10 @@ SFTP config: { host, username, port?, base_path?, auth_type }
 
 ## 作用域模型
 
-| scope | 谁能建 | 谁能看 | 谁能改/删 |
-|---|---|---|---|
-| `owner` | 项目管理员 / 超管 | 创建者本人 + 超管 | 创建者 + 超管 |
-| `global` | 仅超管 | 所有登录用户 | 仅超管 |
+| scope    | 谁能建            | 谁能看            | 谁能改/删     |
+| -------- | ----------------- | ----------------- | ------------- |
+| `owner`  | 项目管理员 / 超管 | 创建者本人 + 超管 | 创建者 + 超管 |
+| `global` | 仅超管            | 所有登录用户      | 仅超管        |
 
 列表端点据此过滤：超管看全部，普通用户看「全局 + 自己创建的」。创建权限限 `SUPER_ADMIN` / `PROJECT_ADMIN`（`_MANAGERS`），其中 `global` 作用域仅超管可建。
 

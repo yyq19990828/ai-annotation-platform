@@ -36,10 +36,7 @@ describe("useMLCapabilities", () => {
       supported_variants: [{ key: "sam_variant", variants: [{ value: "tiny" }] }],
       params: { type: "object", properties: { box_threshold: { type: "number" } } },
     });
-    const { result } = renderHook(
-      () => useMLCapabilities("p1", "b1"),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useMLCapabilities("p1", "b1"), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.prompts).toEqual(["bbox", "text", "exemplar"]);
     expect(result.current.isPromptSupported("bbox")).toBe(true);
@@ -51,10 +48,7 @@ describe("useMLCapabilities", () => {
   it("falls back to point/interactive_box/text when supported_prompts missing", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockSetup.mockResolvedValue({ name: "legacy-backend" });
-    const { result } = renderHook(
-      () => useMLCapabilities("p1", "b1"),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useMLCapabilities("p1", "b1"), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.prompts).toEqual(["point", "interactive_box", "text"]);
     expect(warnSpy).toHaveBeenCalled();
@@ -63,20 +57,14 @@ describe("useMLCapabilities", () => {
 
   it("returns empty prompts on error", async () => {
     mockSetup.mockRejectedValue(new Error("502 backend unreachable"));
-    const { result } = renderHook(
-      () => useMLCapabilities("p1", "b1"),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useMLCapabilities("p1", "b1"), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.prompts).toEqual([]);
     expect(result.current.isPromptSupported("bbox")).toBe(false);
   });
 
   it("is disabled when backendId is null", () => {
-    const { result } = renderHook(
-      () => useMLCapabilities("p1", null),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useMLCapabilities("p1", null), { wrapper });
     expect(mockSetup).not.toHaveBeenCalled();
     expect(result.current.prompts).toEqual([]);
   });
@@ -163,16 +151,12 @@ describe("useMLCapabilities", () => {
       ],
     });
     const { result } = renderHook(
-      () => useMLCapabilities(
-        "p1",
-        "b1",
-        "saved-but-split",
-        {
+      () =>
+        useMLCapabilities("p1", "b1", "saved-but-split", {
           prompt: "point",
           requiredInputs: ["point_prompt", "mask_prompt"],
           output: "mask",
-        },
-      ),
+        }),
       { wrapper },
     );
 

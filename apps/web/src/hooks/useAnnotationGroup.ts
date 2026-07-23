@@ -12,23 +12,15 @@ import {
   type BulkUpdateResponse,
 } from "@/api/annotationGroup";
 
-function invalidateTaskAnnotations(
-  qc: ReturnType<typeof useQueryClient>,
-  taskId: string,
-) {
+function invalidateTaskAnnotations(qc: ReturnType<typeof useQueryClient>, taskId: string) {
   qc.invalidateQueries({ queryKey: ["annotations", taskId] });
   // useAnnotationCommentsInfinite / useAnnotationAuditHistory 不受影响, 不动.
 }
 
 export function useAnnotationBulkUpdate(taskId: string) {
   const qc = useQueryClient();
-  return useMutation<
-    BulkUpdateResponse,
-    Error,
-    { ids: string[]; patch: AnnotationBulkPatch }
-  >({
-    mutationFn: ({ ids, patch }) =>
-      annotationGroupApi.bulkUpdate({ ids, patch }),
+  return useMutation<BulkUpdateResponse, Error, { ids: string[]; patch: AnnotationBulkPatch }>({
+    mutationFn: ({ ids, patch }) => annotationGroupApi.bulkUpdate({ ids, patch }),
     onSuccess: () => invalidateTaskAnnotations(qc, taskId),
   });
 }

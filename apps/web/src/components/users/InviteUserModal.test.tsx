@@ -168,9 +168,7 @@ describe("InviteUserModal", () => {
     await waitFor(() => screen.getByText("邀请已生成"));
     fireEvent.click(screen.getByText("复制"));
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        "https://x.com/invite?t=abc",
-      );
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith("https://x.com/invite?t=abc");
     });
     expect(mockPushToast).toHaveBeenCalledWith({
       msg: "邀请链接已复制",

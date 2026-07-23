@@ -36,9 +36,7 @@ export function TrafficDistributionBar({
 }: TrafficDistributionBarProps): ReactNode {
   // Plan Appendix A.2: metrics absent → sentinel, never 0.
   const hasMetrics =
-    total !== null &&
-    segments.length > 0 &&
-    segments.some((s) => s.count !== null);
+    total !== null && segments.length > 0 && segments.some((s) => s.count !== null);
   if (!hasMetrics) {
     return (
       <span className="text-xs text-muted-foreground" title="v0.23.4 未接入路由计数器">

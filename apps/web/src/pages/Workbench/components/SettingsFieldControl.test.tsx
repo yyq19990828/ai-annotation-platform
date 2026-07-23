@@ -101,13 +101,7 @@ describe("SettingsFieldControl", () => {
 
   it("select:数字 option 保持 number 类型提交", () => {
     const onCommit = vi.fn();
-    render(
-      <SettingsFieldControl
-        field={numericSelectField}
-        value={1.05}
-        onCommit={onCommit}
-      />,
-    );
+    render(<SettingsFieldControl field={numericSelectField} value={1.05} onCommit={onCommit} />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "1.1" } });
     expect(onCommit).toHaveBeenCalledWith(1.1);
   });
@@ -125,9 +119,7 @@ describe("SettingsFieldControl", () => {
 
   it("multiselect:勾选未选项追加、按 options 顺序提交 string[]", () => {
     const onCommit = vi.fn();
-    render(
-      <SettingsFieldControl field={multiselectField} value={["class"]} onCommit={onCommit} />,
-    );
+    render(<SettingsFieldControl field={multiselectField} value={["class"]} onCommit={onCommit} />);
     fireEvent.click(screen.getByRole("button", { name: "置信度" }));
     // 按 options 顺序重建:class 在 score 之前。
     expect(onCommit).toHaveBeenCalledWith(["class", "score"]);
@@ -136,7 +128,11 @@ describe("SettingsFieldControl", () => {
   it("multiselect:取消已选项移除;min 兜底下最后一项禁用不可取消", () => {
     const onCommit = vi.fn();
     const { rerender } = render(
-      <SettingsFieldControl field={multiselectField} value={["class", "score"]} onCommit={onCommit} />,
+      <SettingsFieldControl
+        field={multiselectField}
+        value={["class", "score"]}
+        onCommit={onCommit}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "置信度" }));
     expect(onCommit).toHaveBeenCalledWith(["class"]);
@@ -152,9 +148,7 @@ describe("SettingsFieldControl", () => {
   });
 
   it("locked:控件禁用 + 「项目锁定」badge", () => {
-    render(
-      <SettingsFieldControl field={toggleField} value={true} locked onCommit={vi.fn()} />,
-    );
+    render(<SettingsFieldControl field={toggleField} value={true} locked onCommit={vi.fn()} />);
     expect((screen.getByRole("switch") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText("项目锁定")).toBeTruthy();
   });

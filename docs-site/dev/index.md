@@ -33,33 +33,33 @@ docker compose up -d
 
 ## 我该改哪里？
 
-| 任务 | 入口 |
-|---|---|
-| 加一个后端 API | [How-to: 新增 API 端点](./how-to/add-api-endpoint) |
-| 加一个前端页面 | [How-to: 新增前端页面](./how-to/add-page) |
-| 改数据库结构 | [How-to: Alembic 迁移](./how-to/add-migration) |
-| 写 / 调试后台任务 | [How-to: 调试 Celery](./how-to/debug-celery) |
-| 理解项目模块 | [概念：项目模块](./concepts/project-module) |
-| 理解任务模块 | [概念：任务模块](./concepts/task-module) |
-| 理解批次模块 | [概念：批次模块](./concepts/batch-module) |
-| 理解派题与锁 | [Scheduler 与派题](./concepts/scheduler-and-task-dispatch) · [Task Lock](./concepts/task-locking) |
-| 理解状态流 | [状态机总览](./concepts/state-machines) |
-| 理解横切机制 | [计数与派生字段](./concepts/counters-and-derived-fields) · [审计与通知](./concepts/audit-and-notifications) |
-| 修改批量或多阶段 AI 预标 | [预标注流水线](./concepts/prediction-pipeline) · [异步任务 API](/api/guides/async-jobs) |
-| 修改视频 AI 追踪 | [视频 AI 追踪](./concepts/video-ai-tracking) · [Video Tracker Jobs API](/api/guides/video-tracker-jobs) |
-| 修改 backend 能力声明或项目启用 | [AI 模型集成](./concepts/ai-models) · [ML Backend API](/api/guides/ml-backend) · [ML Backend 协议](./reference/ml-backend-protocol) |
-| 理解整体架构 | [概念：架构地图](./concepts/) |
-| 排查运行时问题 | [故障排查总览](./troubleshooting/) |
-| 查协议规范 | [ML Backend 协议](./reference/ml-backend-protocol) · [WebSocket 协议](./reference/ws-protocol) · [视频帧服务](./reference/video-frame-service) |
+| 任务                            | 入口                                                                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 加一个后端 API                  | [How-to: 新增 API 端点](./how-to/add-api-endpoint)                                                                                             |
+| 加一个前端页面                  | [How-to: 新增前端页面](./how-to/add-page)                                                                                                      |
+| 改数据库结构                    | [How-to: Alembic 迁移](./how-to/add-migration)                                                                                                 |
+| 写 / 调试后台任务               | [How-to: 调试 Celery](./how-to/debug-celery)                                                                                                   |
+| 理解项目模块                    | [概念：项目模块](./concepts/project-module)                                                                                                    |
+| 理解任务模块                    | [概念：任务模块](./concepts/task-module)                                                                                                       |
+| 理解批次模块                    | [概念：批次模块](./concepts/batch-module)                                                                                                      |
+| 理解派题与锁                    | [Scheduler 与派题](./concepts/scheduler-and-task-dispatch) · [Task Lock](./concepts/task-locking)                                              |
+| 理解状态流                      | [状态机总览](./concepts/state-machines)                                                                                                        |
+| 理解横切机制                    | [计数与派生字段](./concepts/counters-and-derived-fields) · [审计与通知](./concepts/audit-and-notifications)                                    |
+| 修改批量或多阶段 AI 预标        | [预标注流水线](./concepts/prediction-pipeline) · [异步任务 API](/api/guides/async-jobs)                                                        |
+| 修改视频 AI 追踪                | [视频 AI 追踪](./concepts/video-ai-tracking) · [Video Tracker Jobs API](/api/guides/video-tracker-jobs)                                        |
+| 修改 backend 能力声明或项目启用 | [AI 模型集成](./concepts/ai-models) · [ML Backend API](/api/guides/ml-backend) · [ML Backend 协议](./reference/ml-backend-protocol)            |
+| 理解整体架构                    | [概念：架构地图](./concepts/)                                                                                                                  |
+| 排查运行时问题                  | [故障排查总览](./troubleshooting/)                                                                                                             |
+| 查协议规范                      | [ML Backend 协议](./reference/ml-backend-protocol) · [WebSocket 协议](./reference/ws-protocol) · [视频帧服务](./reference/video-frame-service) |
 
 ## 项目仓库结构
 
 `apps/` 下两个子项目：
 
-| 子项目 | 语言 | 框架 | 入口 |
-|---|---|---|---|
-| `apps/api` | Python 3.11+ | FastAPI + SQLAlchemy + Alembic + Celery | `app/main.py` |
-| `apps/web` | TypeScript | React + Vite + Zustand + TanStack Query | `src/main.tsx` |
+| 子项目     | 语言         | 框架                                    | 入口           |
+| ---------- | ------------ | --------------------------------------- | -------------- |
+| `apps/api` | Python 3.11+ | FastAPI + SQLAlchemy + Alembic + Celery | `app/main.py`  |
+| `apps/web` | TypeScript   | React + Vite + Zustand + TanStack Query | `src/main.tsx` |
 
 `docs-site/` 是你正在看的这个 VitePress 文档站。
 

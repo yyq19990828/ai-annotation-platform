@@ -69,7 +69,9 @@
      只有 useHomeMotion 确认位于 Hero 顶部时才叠加 .home-nav-transparent 透明态。 */
   background-color: rgba(17, 18, 23, 0.9) !important;
   border-bottom: 1px solid rgba(244, 241, 232, 0.14) !important;
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
 }
 .docs-home-page.home-nav-transparent .VPNavBar {
   background-color: rgba(13, 24, 185, 0.24) !important;
@@ -181,7 +183,8 @@
   position: absolute;
   inset: 0;
   z-index: -2;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
   background-size: clamp(38px, 5vw, 72px) clamp(38px, 5vw, 72px);
   mask-image: linear-gradient(to bottom, #000, transparent 92%);
@@ -243,7 +246,9 @@
   gap: 18px;
   font: 600 11px var(--home-font-mono);
   letter-spacing: 0.08em;
-  transition: transform 0.25s, background 0.25s;
+  transition:
+    transform 0.25s,
+    background 0.25s;
 }
 .docs-home .hero-btn:hover {
   transform: translateY(-3px);
@@ -260,7 +265,9 @@
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  transition: color 0.25s, border-color 0.25s;
+  transition:
+    color 0.25s,
+    border-color 0.25s;
 }
 .docs-home .search-line:hover {
   color: var(--home-paper);
@@ -593,7 +600,10 @@
   color: rgba(255, 255, 255, 0.52);
   text-align: left;
   position: relative;
-  transition: color 0.25s, padding-left 0.25s, background-color 0.25s;
+  transition:
+    color 0.25s,
+    padding-left 0.25s,
+    background-color 0.25s;
 }
 .docs-home .proof-scene::before {
   content: "";
@@ -703,7 +713,9 @@
 .docs-home .proof-tool-next-leave-active,
 .docs-home .proof-tool-prev-enter-active,
 .docs-home .proof-tool-prev-leave-active {
-  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .docs-home .proof-tool-next-enter-from,
 .docs-home .proof-tool-prev-leave-to {
@@ -756,7 +768,10 @@
   background: transparent;
   color: rgba(255, 255, 255, 0.58);
   font: 8px/1 var(--home-font-mono);
-  transition: background-color 0.22s, color 0.22s, transform 0.18s;
+  transition:
+    background-color 0.22s,
+    color 0.22s,
+    transform 0.18s;
 }
 .docs-home .proof-tool-controls > button:first-child {
   border-right: 1px solid rgba(255, 255, 255, 0.18);
@@ -854,7 +869,10 @@
   font: 9px var(--home-font-mono);
   letter-spacing: 0.1em;
   color: rgba(255, 255, 255, 0.72);
-  transition: color 0.25s, border-color 0.25s, gap 0.25s;
+  transition:
+    color 0.25s,
+    border-color 0.25s,
+    gap 0.25s;
 }
 .docs-home .proof-deep-link:hover {
   gap: 30px;
@@ -960,7 +978,9 @@
   height: 190px;
   border: 1px solid rgba(23, 44, 255, 0.28);
   border-radius: 50%;
-  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.4s;
+  transition:
+    transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 0.4s;
 }
 .docs-home .path:first-child .path-visual {
   right: -24px;
@@ -1079,7 +1099,9 @@
   justify-content: space-between;
   gap: 24px;
   font: 11px var(--home-font-mono);
-  transition: padding 0.25s, color 0.25s;
+  transition:
+    padding 0.25s,
+    color 0.25s;
 }
 .docs-home .final-link:hover {
   padding: 0 12px;
@@ -1106,7 +1128,8 @@
 .docs-home.home-motion-ready .reveal {
   opacity: 0;
   transform: translateY(36px);
-  transition: opacity 0.85s cubic-bezier(0.2, 0.8, 0.2, 1),
+  transition:
+    opacity 0.85s cubic-bezier(0.2, 0.8, 0.2, 1),
     transform 0.85s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .docs-home.home-motion-ready .reveal.in {

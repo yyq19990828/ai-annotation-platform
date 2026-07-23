@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
-import {
-  extractImageReferences,
-  resolveImageReference,
-} from "./image-reference-utils.mjs";
+import { extractImageReferences, resolveImageReference } from "./image-reference-utils.mjs";
 import { normalizeScreenshotManifest } from "./screenshot-manifest-utils.mjs";
 
 const repoRoot = "/repo";
@@ -34,7 +31,10 @@ test("resolves AutoImage paths from the shared user-guide image root", () => {
     repoRoot,
     docsRoot,
   });
-  assert.equal(resolved?.absolute, path.normalize("/repo/docs-site/user-guide/images/projects/c.png"));
+  assert.equal(
+    resolved?.absolute,
+    path.normalize("/repo/docs-site/user-guide/images/projects/c.png"),
+  );
   assert.equal(resolved?.key, "docs-site/user-guide/images/projects/c.png");
 });
 

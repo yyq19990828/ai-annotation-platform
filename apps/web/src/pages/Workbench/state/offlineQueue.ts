@@ -8,9 +8,32 @@ const KEY = "anno.offline-queue.v1";
 const CHANNEL = "anno.offline-queue.v1";
 
 export type OfflineOp =
-  | { kind: "create"; id: string; taskId: string; tmpId?: string; payload: unknown; ts: number; retry_count?: number }
-  | { kind: "update"; id: string; taskId: string; annotationId: string; payload: unknown; ts: number; retry_count?: number }
-  | { kind: "delete"; id: string; taskId: string; annotationId: string; ts: number; retry_count?: number };
+  | {
+      kind: "create";
+      id: string;
+      taskId: string;
+      tmpId?: string;
+      payload: unknown;
+      ts: number;
+      retry_count?: number;
+    }
+  | {
+      kind: "update";
+      id: string;
+      taskId: string;
+      annotationId: string;
+      payload: unknown;
+      ts: number;
+      retry_count?: number;
+    }
+  | {
+      kind: "delete";
+      id: string;
+      taskId: string;
+      annotationId: string;
+      ts: number;
+      retry_count?: number;
+    };
 
 let memCache: OfflineOp[] | null = null;
 const subs = new Set<(count: number) => void>();
@@ -33,7 +56,11 @@ if (bc) {
 }
 
 function broadcast() {
-  try { bc?.postMessage({ type: "changed", ts: Date.now() }); } catch { /* ignore */ }
+  try {
+    bc?.postMessage({ type: "changed", ts: Date.now() });
+  } catch {
+    /* ignore */
+  }
 }
 
 async function load(): Promise<OfflineOp[]> {
@@ -48,14 +75,24 @@ async function load(): Promise<OfflineOp[]> {
 }
 
 async function persist(): Promise<void> {
-  try { await set(KEY, memCache ?? []); } catch { /* incognito / quota → swallow */ }
+  try {
+    await set(KEY, memCache ?? []);
+  } catch {
+    /* incognito / quota → swallow */
+  }
   notify();
   broadcast();
 }
 
 function notify() {
   const c = (memCache ?? []).length;
-  subs.forEach((cb) => { try { cb(c); } catch { /* ignore */ } });
+  subs.forEach((cb) => {
+    try {
+      cb(c);
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 export async function enqueue(op: OfflineOp): Promise<void> {
@@ -102,7 +139,9 @@ export async function replaceAnnotationId(oldId: string, newId: string): Promise
 /**
  * 顺序消费队列。handler 抛错时停止 drain（保留剩余项），返回成功条数。
  */
-export async function drain(handler: (op: OfflineOp) => Promise<void>): Promise<{ ok: number; failed: number }> {
+export async function drain(
+  handler: (op: OfflineOp) => Promise<void>,
+): Promise<{ ok: number; failed: number }> {
   const q = await load();
   let ok = 0;
   let failed = 0;
@@ -134,7 +173,9 @@ export function subscribe(cb: (count: number) => void): () => void {
   subs.add(cb);
   // 初始通知
   load().then(() => cb((memCache ?? []).length));
-  return () => { subs.delete(cb); };
+  return () => {
+    subs.delete(cb);
+  };
 }
 
 /**

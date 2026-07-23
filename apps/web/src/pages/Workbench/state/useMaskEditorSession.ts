@@ -17,7 +17,11 @@
 // 接入 session 的 generation 隔离与单飞保存; 图片侧逐步跟进。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMaskEditor, type UseMaskEditorOptions, type UseMaskEditorReturn } from "./useMaskEditor";
+import {
+  useMaskEditor,
+  type UseMaskEditorOptions,
+  type UseMaskEditorReturn,
+} from "./useMaskEditor";
 import type { CocoRle } from "../stage/shared/geometry/maskRle";
 import type { MaskOperationSpec } from "../stage/shared/geometry/maskOperations";
 import type { MaskInstanceOperationSpec } from "../stage/shared/geometry/maskInstanceOperations";
@@ -55,10 +59,7 @@ export interface UseMaskEditorSessionOptions extends UseMaskEditorOptions {
    * 离开 dirty session 时的 guard。返回 Promise<choice>; 调用方据此 save/discard/continue。
    * 未提供时默认 "discard" (保持旧行为, 但暴露 dirty 让调用方在迁移期自行接管)。
    */
-  onLeaveDirty?: (
-    key: MaskSessionKey,
-    nextKey: MaskSessionKey,
-  ) => Promise<MaskSessionGuardChoice>;
+  onLeaveDirty?: (key: MaskSessionKey, nextKey: MaskSessionKey) => Promise<MaskSessionGuardChoice>;
 }
 
 export interface MaskSaveResult {
@@ -142,7 +143,9 @@ export function useMaskEditorSession({
     setPhase(next);
   }, []);
   const onLeaveDirtyRef = useRef(onLeaveDirty);
-  useEffect(() => { onLeaveDirtyRef.current = onLeaveDirty; }, [onLeaveDirty]);
+  useEffect(() => {
+    onLeaveDirtyRef.current = onLeaveDirty;
+  }, [onLeaveDirty]);
   const editorActiveRef = useRef(editor.active);
   editorActiveRef.current = editor.active;
   const hasPendingDraft = editor.dirty || editor.instanceOperationPreview !== null;
@@ -154,17 +157,20 @@ export function useMaskEditorSession({
   requestedSessionIdRef.current = sessionId;
   const acceptedKeyRef = useRef<MaskSessionKey | null>(null);
 
-  const acceptTransition = useCallback((serialized: string, key: MaskSessionKey) => {
-    lastKeyRef.current = serialized;
-    setAcceptedSessionId(serialized);
-    acceptedKeyRef.current = key;
-    generationRef.current += 1;
-    setGeneration(generationRef.current);
-    setLastSaveError(undefined);
-    setSaveInFlight(false);
-    savePromiseRef.current = null;
-    updatePhase("loading");
-  }, [updatePhase]);
+  const acceptTransition = useCallback(
+    (serialized: string, key: MaskSessionKey) => {
+      lastKeyRef.current = serialized;
+      setAcceptedSessionId(serialized);
+      acceptedKeyRef.current = key;
+      generationRef.current += 1;
+      setGeneration(generationRef.current);
+      setLastSaveError(undefined);
+      setSaveInFlight(false);
+      savePromiseRef.current = null;
+      updatePhase("loading");
+    },
+    [updatePhase],
+  );
 
   // sessionKey 变化 → 自增 generation, 进入 loading (调用方随后 loadRle/loadBlank)。
   // 若旧 session 处于 dirty/saving/error, 触发 onLeaveDirty guard。
@@ -177,8 +183,9 @@ export function useMaskEditorSession({
       return;
     }
     const previousPhase = phaseRef.current;
-    const needsGuard = editorActiveRef.current
-      && (editorDirtyRef.current || previousPhase === "saving" || previousPhase === "error");
+    const needsGuard =
+      editorActiveRef.current &&
+      (editorDirtyRef.current || previousPhase === "saving" || previousPhase === "error");
     if (!needsGuard) {
       acceptTransition(serialized, nextKey);
       return;
@@ -199,28 +206,40 @@ export function useMaskEditorSession({
       });
   }, [acceptTransition, editorCancel, sessionId]);
 
-  const loadRle = useCallback((gen: number, rle: CocoRle) => {
-    if (gen !== generationRef.current) return; // 迟到回包, 丢弃
-    editorInitFromRle(rle);
-    updatePhase("ready");
-  }, [editorInitFromRle, updatePhase]);
+  const loadRle = useCallback(
+    (gen: number, rle: CocoRle) => {
+      if (gen !== generationRef.current) return; // 迟到回包, 丢弃
+      editorInitFromRle(rle);
+      updatePhase("ready");
+    },
+    [editorInitFromRle, updatePhase],
+  );
 
-  const loadBlank = useCallback((gen: number) => {
-    if (gen !== generationRef.current) return;
-    editorBeginBlank();
-    updatePhase("ready");
-  }, [editorBeginBlank, updatePhase]);
+  const loadBlank = useCallback(
+    (gen: number) => {
+      if (gen !== generationRef.current) return;
+      editorBeginBlank();
+      updatePhase("ready");
+    },
+    [editorBeginBlank, updatePhase],
+  );
 
-  const failLoad = useCallback((gen: number, error: unknown) => {
-    if (gen !== generationRef.current) return;
-    setLastSaveError(error);
-    updatePhase("error");
-  }, [updatePhase]);
+  const failLoad = useCallback(
+    (gen: number, error: unknown) => {
+      if (gen !== generationRef.current) return;
+      setLastSaveError(error);
+      updatePhase("error");
+    },
+    [updatePhase],
+  );
 
-  const markReady = useCallback((gen: number) => {
-    if (gen !== generationRef.current || !editorActiveRef.current) return;
-    updatePhase(editorDirtyRef.current ? "dirty" : "ready");
-  }, [updatePhase]);
+  const markReady = useCallback(
+    (gen: number) => {
+      if (gen !== generationRef.current || !editorActiveRef.current) return;
+      updatePhase(editorDirtyRef.current ? "dirty" : "ready");
+    },
+    [updatePhase],
+  );
 
   // editor 内部 dirty 变化 → 同步 phase (ready ↔ dirty)。
   useEffect(() => {
@@ -234,34 +253,47 @@ export function useMaskEditorSession({
     updatePhase("ready");
   }, [editorBeginBlank, updatePhase]);
 
-  const initFromPolygon = useCallback((points: ReadonlyArray<readonly [number, number]>) => {
-    editorInitFromPolygon(points);
-    updatePhase("ready");
-  }, [editorInitFromPolygon, updatePhase]);
+  const initFromPolygon = useCallback(
+    (points: ReadonlyArray<readonly [number, number]>) => {
+      editorInitFromPolygon(points);
+      updatePhase("ready");
+    },
+    [editorInitFromPolygon, updatePhase],
+  );
 
-  const initFromRle = useCallback((rle: CocoRle) => {
-    editorInitFromRle(rle);
-    updatePhase("ready");
-  }, [editorInitFromRle, updatePhase]);
+  const initFromRle = useCallback(
+    (rle: CocoRle) => {
+      editorInitFromRle(rle);
+      updatePhase("ready");
+    },
+    [editorInitFromRle, updatePhase],
+  );
 
-  const materializeFromRle = useCallback((rle: CocoRle) => {
-    editorMaterializeFromRle(rle);
-    updatePhase("dirty");
-  }, [editorMaterializeFromRle, updatePhase]);
+  const materializeFromRle = useCallback(
+    (rle: CocoRle) => {
+      editorMaterializeFromRle(rle);
+      updatePhase("dirty");
+    },
+    [editorMaterializeFromRle, updatePhase],
+  );
 
-  const runOperation = useCallback((name: string, operation: MaskOperationSpec) => (
-    editorRunOperation(name, operation, {
-      sessionId: requestedSessionIdRef.current,
-      generation: generationRef.current,
-    })
-  ), [editorRunOperation]);
+  const runOperation = useCallback(
+    (name: string, operation: MaskOperationSpec) =>
+      editorRunOperation(name, operation, {
+        sessionId: requestedSessionIdRef.current,
+        generation: generationRef.current,
+      }),
+    [editorRunOperation],
+  );
 
-  const runInstanceOperation = useCallback((name: string, operation: MaskInstanceOperationSpec) => (
-    editorRunInstanceOperation(name, operation, {
-      sessionId: requestedSessionIdRef.current,
-      generation: generationRef.current,
-    })
-  ), [editorRunInstanceOperation]);
+  const runInstanceOperation = useCallback(
+    (name: string, operation: MaskInstanceOperationSpec) =>
+      editorRunInstanceOperation(name, operation, {
+        sessionId: requestedSessionIdRef.current,
+        generation: generationRef.current,
+      }),
+    [editorRunInstanceOperation],
+  );
 
   const cancel = useCallback(() => {
     transitionTokenRef.current += 1;
@@ -272,51 +304,56 @@ export function useMaskEditorSession({
     updatePhase("idle");
   }, [editorCancel, updatePhase]);
 
-  const save = useCallback((commit: () => Promise<MaskSaveResult>): Promise<MaskSaveResult> => {
-    // 单飞: 同 session 内重复 Enter / 双击合并为同一 Promise。
-    if (savePromiseRef.current) return savePromiseRef.current;
-    updatePhase("saving");
-    setSaveInFlight(true);
-    const gen = generationRef.current;
-    let commitPromise: Promise<MaskSaveResult>;
-    try {
-      commitPromise = commit();
-    } catch (error: unknown) {
-      commitPromise = Promise.reject(error);
-    }
-    const promise = commitPromise.then((result) => {
-      // 迟到回包 (session 已切换): 不改当前 phase, 只清自己的引用。
-      if (gen !== generationRef.current) {
-        if (savePromiseRef.current === promise) savePromiseRef.current = null;
-        return result;
+  const save = useCallback(
+    (commit: () => Promise<MaskSaveResult>): Promise<MaskSaveResult> => {
+      // 单飞: 同 session 内重复 Enter / 双击合并为同一 Promise。
+      if (savePromiseRef.current) return savePromiseRef.current;
+      updatePhase("saving");
+      setSaveInFlight(true);
+      const gen = generationRef.current;
+      let commitPromise: Promise<MaskSaveResult>;
+      try {
+        commitPromise = commit();
+      } catch (error: unknown) {
+        commitPromise = Promise.reject(error);
       }
-      if (savePromiseRef.current === promise) savePromiseRef.current = null;
-      setSaveInFlight(false);
-      if (result.ok) {
-        setLastSaveError(undefined);
-        // 成功: 调用方在 commit 内已决定是否 cancel; 这里回到 ready (buffer 仍可能在,
-        // 但 dirty 已被 editor 在 commit 成功路径清掉)。若 editor 已 cancel → active=false,
-        // 调用方应再切 idle; 简化: 只要还 active 就回 ready。
-        updatePhase(editorActiveRef.current ? "ready" : "idle");
-      } else {
-        setLastSaveError(result.error);
-        updatePhase("error");
-      }
-      return result;
-    }).catch((error: unknown) => {
-      if (gen !== generationRef.current) {
-        if (savePromiseRef.current === promise) savePromiseRef.current = null;
-        throw error;
-      }
-      if (savePromiseRef.current === promise) savePromiseRef.current = null;
-      setSaveInFlight(false);
-      setLastSaveError(error);
-      updatePhase("error");
-      throw error;
-    });
-    savePromiseRef.current = promise;
-    return promise;
-  }, [updatePhase]);
+      const promise = commitPromise
+        .then((result) => {
+          // 迟到回包 (session 已切换): 不改当前 phase, 只清自己的引用。
+          if (gen !== generationRef.current) {
+            if (savePromiseRef.current === promise) savePromiseRef.current = null;
+            return result;
+          }
+          if (savePromiseRef.current === promise) savePromiseRef.current = null;
+          setSaveInFlight(false);
+          if (result.ok) {
+            setLastSaveError(undefined);
+            // 成功: 调用方在 commit 内已决定是否 cancel; 这里回到 ready (buffer 仍可能在,
+            // 但 dirty 已被 editor 在 commit 成功路径清掉)。若 editor 已 cancel → active=false,
+            // 调用方应再切 idle; 简化: 只要还 active 就回 ready。
+            updatePhase(editorActiveRef.current ? "ready" : "idle");
+          } else {
+            setLastSaveError(result.error);
+            updatePhase("error");
+          }
+          return result;
+        })
+        .catch((error: unknown) => {
+          if (gen !== generationRef.current) {
+            if (savePromiseRef.current === promise) savePromiseRef.current = null;
+            throw error;
+          }
+          if (savePromiseRef.current === promise) savePromiseRef.current = null;
+          setSaveInFlight(false);
+          setLastSaveError(error);
+          updatePhase("error");
+          throw error;
+        });
+      savePromiseRef.current = promise;
+      return promise;
+    },
+    [updatePhase],
+  );
 
   const recoverFromError = useCallback(() => {
     setLastSaveError(undefined);
@@ -324,14 +361,17 @@ export function useMaskEditorSession({
     updatePhase(hasPendingDraft ? "dirty" : "ready");
   }, [hasPendingDraft, updatePhase]);
 
-  const rebaseSession = useCallback((nextKey: MaskSessionKey) => {
-    const serialized = serializeKey(nextKey);
-    transitionTokenRef.current += 1;
-    if (lastKeyRef.current !== serialized) {
-      acceptTransition(serialized, nextKey);
-    }
-    return generationRef.current;
-  }, [acceptTransition]);
+  const rebaseSession = useCallback(
+    (nextKey: MaskSessionKey) => {
+      const serialized = serializeKey(nextKey);
+      transitionTokenRef.current += 1;
+      if (lastKeyRef.current !== serialized) {
+        acceptTransition(serialized, nextKey);
+      }
+      return generationRef.current;
+    },
+    [acceptTransition],
+  );
 
   const publicPhase: MaskEditorPhase = editor.commitInFlight ? "saving" : phase;
 

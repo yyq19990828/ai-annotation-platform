@@ -212,8 +212,10 @@ async def _video_segment(
     if requested_id is not None:
         query = query.where(VideoSegment.id == requested_id)
     return (
-        await db.execute(query.order_by(VideoSegment.segment_index.asc()))
-    ).scalars().first()
+        (await db.execute(query.order_by(VideoSegment.segment_index.asc())))
+        .scalars()
+        .first()
+    )
 
 
 async def _has_current_reviewed_scope(
@@ -235,10 +237,10 @@ async def _has_current_reviewed_scope(
     ).scalar_one_or_none() is not None
 
 
-async def _issue_versions_current(
-    db: AsyncSession, issue: MaskQCIssue
-) -> bool:
-    source_versions = {str(key): int(value) for key, value in issue.source_versions.items()}
+async def _issue_versions_current(db: AsyncSession, issue: MaskQCIssue) -> bool:
+    source_versions = {
+        str(key): int(value) for key, value in issue.source_versions.items()
+    }
     if not source_versions:
         return False
     ids = [uuid.UUID(value) for value in source_versions]
@@ -311,9 +313,10 @@ async def _plan_action(
             code="issue_not_found",
             detail="Mask QC issue does not exist in this project",
         ), None
-    if action.kind not in _ISSUE_CODES_BY_KIND or issue.code not in _ISSUE_CODES_BY_KIND[
-        action.kind
-    ]:
+    if (
+        action.kind not in _ISSUE_CODES_BY_KIND
+        or issue.code not in _ISSUE_CODES_BY_KIND[action.kind]
+    ):
         return _skip_item(
             action,
             issue=issue,
@@ -484,7 +487,9 @@ async def _plan_action(
     if action.kind not in _DETERMINISTIC_KINDS:
         if action.kind == "rerun_local_sam" and geometry_type != "raster_mask":
             public_item.skip_code = "sam_image_only"
-            public_item.skip_detail = "local SAM batch repair currently requires an image task"
+            public_item.skip_detail = (
+                "local SAM batch repair currently requires an image task"
+            )
             public_item.candidate_count = 0
             return public_item.model_dump(mode="json"), None
         private = {
@@ -656,9 +661,15 @@ async def create_repair_plan(
         action_count=len(request.actions),
         executable_count=len(executable_items),
         skipped_count=sum(item.get("skip_code") is not None for item in public_items),
-        mutation_count=sum(int(item.get("mutation_count") or 0) for item in public_items),
-        candidate_count=sum(int(item.get("candidate_count") or 0) for item in public_items),
-        changed_pixels=sum(int(item.get("changed_pixels") or 0) for item in public_items),
+        mutation_count=sum(
+            int(item.get("mutation_count") or 0) for item in public_items
+        ),
+        candidate_count=sum(
+            int(item.get("candidate_count") or 0) for item in public_items
+        ),
+        changed_pixels=sum(
+            int(item.get("changed_pixels") or 0) for item in public_items
+        ),
         shard_count=len(shards),
     )
     plan = {
@@ -726,7 +737,10 @@ async def execute_repair_plan(
             reason="repair_receipt_expired",
             message="repair receipt has expired",
         )
-    if batch.plan_digest != plan_digest or canonical_digest(batch.plan_json) != plan_digest:
+    if (
+        batch.plan_digest != plan_digest
+        or canonical_digest(batch.plan_json) != plan_digest
+    ):
         raise MaskRepairError(
             status_code=409,
             reason="repair_plan_digest_conflict",

@@ -5,7 +5,11 @@ import type { PendingCandidate } from "./useInteractiveAI";
 const sampleCandidate = (label: string): PendingCandidate => ({
   id: `c-${label}`,
   type: "polygonlabels",
-  points: [[0.1, 0.1], [0.2, 0.1], [0.15, 0.2]],
+  points: [
+    [0.1, 0.1],
+    [0.2, 0.1],
+    [0.15, 0.2],
+  ],
   label,
   score: 0.9,
   source: "point",
@@ -14,11 +18,15 @@ const sampleCandidate = (label: string): PendingCandidate => ({
 describe("makeSamCacheKey", () => {
   it("不同坐标顺位下 key 不同", () => {
     const a = makeSamCacheKey({
-      taskId: "t", mlBackendId: "b", ctxKind: "point",
+      taskId: "t",
+      mlBackendId: "b",
+      ctxKind: "point",
       ctx: { type: "point", points: [[0.5, 0.5]], labels: [1] },
     });
     const b = makeSamCacheKey({
-      taskId: "t", mlBackendId: "b", ctxKind: "point",
+      taskId: "t",
+      mlBackendId: "b",
+      ctxKind: "point",
       ctx: { type: "point", points: [[0.5, 0.6]], labels: [1] },
     });
     expect(a).not.toBe(b);
@@ -26,11 +34,15 @@ describe("makeSamCacheKey", () => {
 
   it("浮点抖动 (5 位小数) 不影响 key", () => {
     const a = makeSamCacheKey({
-      taskId: "t", mlBackendId: "b", ctxKind: "point",
+      taskId: "t",
+      mlBackendId: "b",
+      ctxKind: "point",
       ctx: { type: "point", points: [[0.50001, 0.50002]], labels: [1] },
     });
     const b = makeSamCacheKey({
-      taskId: "t", mlBackendId: "b", ctxKind: "point",
+      taskId: "t",
+      mlBackendId: "b",
+      ctxKind: "point",
       ctx: { type: "point", points: [[0.5, 0.5]], labels: [1] },
     });
     expect(a).toBe(b);
@@ -38,11 +50,15 @@ describe("makeSamCacheKey", () => {
 
   it("不同 ctx key 顺序 → key 一致", () => {
     const a = makeSamCacheKey({
-      taskId: "t", mlBackendId: "b", ctxKind: "bbox",
+      taskId: "t",
+      mlBackendId: "b",
+      ctxKind: "bbox",
       ctx: { type: "bbox", bbox: [0.1, 0.1, 0.5, 0.5] },
     });
     const b = makeSamCacheKey({
-      taskId: "t", mlBackendId: "b", ctxKind: "bbox",
+      taskId: "t",
+      mlBackendId: "b",
+      ctxKind: "bbox",
       ctx: { bbox: [0.1, 0.1, 0.5, 0.5], type: "bbox" },
     });
     expect(a).toBe(b);
@@ -50,11 +66,15 @@ describe("makeSamCacheKey", () => {
 
   it("不同 mlBackend 不共用 key", () => {
     const a = makeSamCacheKey({
-      taskId: "t", mlBackendId: "sam3", ctxKind: "exemplar",
+      taskId: "t",
+      mlBackendId: "sam3",
+      ctxKind: "exemplar",
       ctx: { type: "exemplar", bbox: [0, 0, 1, 1] },
     });
     const b = makeSamCacheKey({
-      taskId: "t", mlBackendId: "grounded-sam2", ctxKind: "exemplar",
+      taskId: "t",
+      mlBackendId: "grounded-sam2",
+      ctxKind: "exemplar",
       ctx: { type: "exemplar", bbox: [0, 0, 1, 1] },
     });
     expect(a).not.toBe(b);

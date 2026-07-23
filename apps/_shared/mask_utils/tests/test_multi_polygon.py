@@ -40,9 +40,7 @@ def test_donut_has_one_outer_and_one_hole():
     rings = mask_to_multi_polygon(mask, tolerance=1.0)
 
     assert len(rings) == 1, f"expected 1 outer ring, got {len(rings)}"
-    assert len(rings[0]["holes"]) == 1, (
-        f"expected 1 hole, got {len(rings[0]['holes'])}"
-    )
+    assert len(rings[0]["holes"]) == 1, f"expected 1 hole, got {len(rings[0]['holes'])}"
     # outer 顶点应明显多于 hole 顶点（外环周长更长）
     assert len(rings[0]["exterior"]) > len(rings[0]["holes"][0])
 
@@ -74,9 +72,7 @@ def test_zero_size_mask_returns_empty():
 
 def test_normalize_to_unit_square_for_donut():
     mask = donut_mask(size=512, outer=160, inner=60)
-    rings = mask_to_multi_polygon(
-        mask, tolerance=1.0, normalize_to=(512, 512)
-    )
+    rings = mask_to_multi_polygon(mask, tolerance=1.0, normalize_to=(512, 512))
 
     assert len(rings) == 1
     for x, y in rings[0]["exterior"]:

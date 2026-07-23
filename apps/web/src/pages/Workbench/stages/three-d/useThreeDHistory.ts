@@ -43,29 +43,35 @@ export function useThreeDHistory(
     updateAnnotation: UpdateMutation;
   },
 ) {
-  const handlers = useMemo<HistoryHandlers>(() => ({
-    createAnnotation: (payload) =>
-      new Promise((resolve, reject) => {
-        mutations.createAnnotation.mutate(payload, {
-          onSuccess: resolve,
-          onError: reject,
-        });
-      }),
-    deleteAnnotation: (annotationId) =>
-      new Promise((resolve, reject) => {
-        mutations.deleteAnnotation.mutate(annotationId, {
-          onSuccess: () => resolve(undefined),
-          onError: reject,
-        });
-      }),
-    updateAnnotation: (annotationId, payload) =>
-      new Promise((resolve, reject) => {
-        mutations.updateAnnotation.mutate({ annotationId, payload }, {
-          onSuccess: () => resolve(undefined),
-          onError: reject,
-        });
-      }),
-  }), [mutations.createAnnotation, mutations.deleteAnnotation, mutations.updateAnnotation]);
+  const handlers = useMemo<HistoryHandlers>(
+    () => ({
+      createAnnotation: (payload) =>
+        new Promise((resolve, reject) => {
+          mutations.createAnnotation.mutate(payload, {
+            onSuccess: resolve,
+            onError: reject,
+          });
+        }),
+      deleteAnnotation: (annotationId) =>
+        new Promise((resolve, reject) => {
+          mutations.deleteAnnotation.mutate(annotationId, {
+            onSuccess: () => resolve(undefined),
+            onError: reject,
+          });
+        }),
+      updateAnnotation: (annotationId, payload) =>
+        new Promise((resolve, reject) => {
+          mutations.updateAnnotation.mutate(
+            { annotationId, payload },
+            {
+              onSuccess: () => resolve(undefined),
+              onError: reject,
+            },
+          );
+        }),
+    }),
+    [mutations.createAnnotation, mutations.deleteAnnotation, mutations.updateAnnotation],
+  );
 
   return useAnnotationHistory(taskId ?? undefined, handlers);
 }

@@ -21,7 +21,9 @@ app = typer.Typer(
 def project(
     project_id: str = typer.Argument(..., help="项目 ID"),
     target: list[str] = typer.Option(
-        ..., "--target", help="导出格式, 可重复: coco / yolo-det / aap_json / video_json / kitti …"
+        ...,
+        "--target",
+        help="导出格式, 可重复: coco / yolo-det / aap_json / video_json / kitti …",
     ),
     out: Path | None = typer.Option(
         None, "--out", help="导出包输出路径 (--wait 时必填; --no-wait 时忽略)"
@@ -38,7 +40,9 @@ def project(
         None, "--axis-frame", help="lidar 3D box 坐标系: iso | source"
     ),
     wait: bool = typer.Option(
-        True, "--wait/--no-wait", help="等待 job 完成并下载; --no-wait 仅创建返回 job_id"
+        True,
+        "--wait/--no-wait",
+        help="等待 job 完成并下载; --no-wait 仅创建返回 job_id",
     ),
     json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
 ) -> None:

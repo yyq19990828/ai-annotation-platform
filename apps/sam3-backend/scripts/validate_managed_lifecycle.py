@@ -73,7 +73,9 @@ def _gpu_memory_mb(target_uuid: str | None) -> int:
                 return int(used.strip())
         raise RuntimeError(f"GPU UUID {target_uuid!r} is not visible")
     if len(rows) != 1:
-        raise RuntimeError("VALIDATION_GPU_UUID is required when multiple GPUs are visible")
+        raise RuntimeError(
+            "VALIDATION_GPU_UUID is required when multiple GPUs are visible"
+        )
     return int(rows[0][1].strip())
 
 
@@ -93,7 +95,9 @@ def _gpu_total_memory_mb(target_uuid: str | None) -> int:
                 return int(total.strip())
         raise RuntimeError(f"GPU UUID {target_uuid!r} is not visible")
     if len(rows) != 1:
-        raise RuntimeError("VALIDATION_GPU_UUID is required when multiple GPUs are visible")
+        raise RuntimeError(
+            "VALIDATION_GPU_UUID is required when multiple GPUs are visible"
+        )
     return int(rows[0][1].strip())
 
 
@@ -189,9 +193,7 @@ def _assert_unloaded_cycle(
     assert residency["active_requests"] == 0
     assert residency["builders"] == 0
     assert residency["borrowers"] == 0
-    assert all(
-        pool["resident"] is False for pool in residency["pools"].values()
-    )
+    assert all(pool["resident"] is False for pool in residency["pools"].values())
     _assert_pool_domain_empty(pool_snapshot)
     if max(samples) - min(samples) > 64:
         raise AssertionError(f"unloaded GPU memory did not stabilize: {samples}")
@@ -201,8 +203,7 @@ def _assert_unloaded_cycle(
         or torch_memory["reserved_bytes"] > tolerance_bytes
     ):
         raise AssertionError(
-            "managed unload left PyTorch-owned GPU memory: "
-            f"{torch_memory}"
+            f"managed unload left PyTorch-owned GPU memory: {torch_memory}"
         )
 
 

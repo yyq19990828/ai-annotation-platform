@@ -25,7 +25,13 @@ describe("isSelfIntersecting", () => {
   });
 
   it("< 4 顶点 → 直接 ok", () => {
-    expect(isSelfIntersecting([[0, 0], [1, 1], [2, 0]]).ok).toBe(true);
+    expect(
+      isSelfIntersecting([
+        [0, 0],
+        [1, 1],
+        [2, 0],
+      ]).ok,
+    ).toBe(true);
   });
 
   it("蝴蝶结 → 自交", () => {
@@ -77,18 +83,37 @@ describe("isSelfIntersectingIncremental", () => {
   });
 
   it("< 4 顶点 → ok", () => {
-    expect(isSelfIntersectingIncremental([[0, 0], [1, 0], [0.5, 1]], 0).ok).toBe(true);
+    expect(
+      isSelfIntersectingIncremental(
+        [
+          [0, 0],
+          [1, 0],
+          [0.5, 1],
+        ],
+        0,
+      ).ok,
+    ).toBe(true);
   });
 
   it("changedIdx 越界 → ok（不抛错）", () => {
-    const sq: Pt[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const sq: Pt[] = [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ];
     expect(isSelfIntersectingIncremental(sq, -1).ok).toBe(true);
     expect(isSelfIntersectingIncremental(sq, 99).ok).toBe(true);
   });
 
   it("增量与全量对相邻边触发一致", () => {
     // 蝴蝶结：相邻于顶点 1 的边 (0,1) 和 (1,2) 都参与冲突
-    const bowtie: Pt[] = [[0, 0], [1, 1], [1, 0], [0, 1]];
+    const bowtie: Pt[] = [
+      [0, 0],
+      [1, 1],
+      [1, 0],
+      [0, 1],
+    ];
     const full = isSelfIntersecting(bowtie);
     const inc = isSelfIntersectingIncremental(bowtie, 1);
     expect(full.ok).toBe(false);
@@ -130,7 +155,15 @@ describe("nearestEdge", () => {
   });
 
   it("< 3 顶点 → null", () => {
-    expect(nearestEdge([[0, 0], [1, 0]], [0, 0])).toBeNull();
+    expect(
+      nearestEdge(
+        [
+          [0, 0],
+          [1, 0],
+        ],
+        [0, 0],
+      ),
+    ).toBeNull();
   });
 });
 

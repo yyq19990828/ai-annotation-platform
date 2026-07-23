@@ -11,18 +11,18 @@ Data Manager 是项目范围内的只读探索 read model，提供 task、object
 
 ## 端点
 
-| 端点 | 用途 |
-|---|---|
-| `GET /projects/{id}/data-manager/schema?entity_scope=...` | 返回当前 grain 可用的项目能力、字段、操作符、列、排序和指标定义 |
-| `POST /projects/{id}/tasks/query` | 按 task grain 过滤、排序和分页 |
-| `POST /projects/{id}/data-manager/summary` | 对同一过滤范围做项目聚合，不受分页 offset 影响 |
-| `POST /projects/{id}/tasks/{task_id}/data-manager/matches` | 返回命中的 annotation、prediction shape 或 tracker job 摘要，不返回 raw geometry |
-| `POST /projects/{id}/data-manager/objects/query` | 按 active annotation grain 过滤、facet、排序和 keyset 分页 |
-| `GET /projects/{id}/data-manager/objects/{annotation_id}/detail` | 返回对象来源、属性、溯源、反馈与稳定定位，不返回 raw geometry |
-| `GET /projects/{id}/data-manager/objects/{annotation_id}/location` | 只返回工作台定位信息 |
-| `POST /projects/{id}/data-manager/tracks/query` | 按 compact annotation 或 Scene logical track grain 聚合和 keyset 分页 |
-| `GET /projects/{id}/data-manager/tracks/{track_ref}/detail` | 返回轨迹摘要、可见成员与逐帧定位 |
-| `/projects/{id}/task-views` | 保存和共享 filter/sort/columns 配置 |
+| 端点                                                               | 用途                                                                             |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `GET /projects/{id}/data-manager/schema?entity_scope=...`          | 返回当前 grain 可用的项目能力、字段、操作符、列、排序和指标定义                  |
+| `POST /projects/{id}/tasks/query`                                  | 按 task grain 过滤、排序和分页                                                   |
+| `POST /projects/{id}/data-manager/summary`                         | 对同一过滤范围做项目聚合，不受分页 offset 影响                                   |
+| `POST /projects/{id}/tasks/{task_id}/data-manager/matches`         | 返回命中的 annotation、prediction shape 或 tracker job 摘要，不返回 raw geometry |
+| `POST /projects/{id}/data-manager/objects/query`                   | 按 active annotation grain 过滤、facet、排序和 keyset 分页                       |
+| `GET /projects/{id}/data-manager/objects/{annotation_id}/detail`   | 返回对象来源、属性、溯源、反馈与稳定定位，不返回 raw geometry                    |
+| `GET /projects/{id}/data-manager/objects/{annotation_id}/location` | 只返回工作台定位信息                                                             |
+| `POST /projects/{id}/data-manager/tracks/query`                    | 按 compact annotation 或 Scene logical track grain 聚合和 keyset 分页            |
+| `GET /projects/{id}/data-manager/tracks/{track_ref}/detail`        | 返回轨迹摘要、可见成员与逐帧定位                                                 |
+| `/projects/{id}/task-views`                                        | 保存和共享 filter/sort/columns 配置                                              |
 
 `schema` 是前端字段和操作符的唯一真值，并返回 `available_entity_scopes`。项目 profile 由 `data_type × scene_mode × enabled tool_bindings × attribute_schema` 组成；`type_key` 只提供 preset，不应作为唯一分流依据。对象对所有项目可用；轨迹只在视频轨迹能力或 Scene 模式成立时可用。
 

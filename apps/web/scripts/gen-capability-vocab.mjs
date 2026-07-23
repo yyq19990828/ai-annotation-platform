@@ -15,9 +15,7 @@ const outPath = resolve(outDir, "capabilityVocab.gen.ts");
 
 if (!existsSync(snapshotPath)) {
   console.error(`[gen-capability-vocab] snapshot 不存在: ${snapshotPath}`);
-  console.error(
-    "先运行: cd apps/api && uv run python ../../scripts/export_capability_registry.py",
-  );
+  console.error("先运行: cd apps/api && uv run python ../../scripts/export_capability_registry.py");
   process.exit(1);
 }
 
@@ -25,9 +23,7 @@ const data = JSON.parse(readFileSync(snapshotPath, "utf-8"));
 const s = (v) => JSON.stringify(v);
 
 function idsBlock(typeName, constName, items) {
-  return `export const ${constName} = [${items
-    .map((i) => s(i.id))
-    .join(", ")}] as const;
+  return `export const ${constName} = [${items.map((i) => s(i.id)).join(", ")}] as const;
 export type ${typeName} = (typeof ${constName})[number];`;
 }
 
@@ -101,9 +97,7 @@ export const PROMPTS: Record<PromptId, PromptMeta> = {
 ${promptEntries}
 };
 // 派生集合: interactiveRoute = 进画布交互工具线 (不含 text); requiresInput = 需用户/上游输入 (含 text)。
-export const INTERACTIVE_ROUTE_PROMPT_IDS = [${interactiveRoute
-  .map(s)
-  .join(", ")}] as const;
+export const INTERACTIVE_ROUTE_PROMPT_IDS = [${interactiveRoute.map(s).join(", ")}] as const;
 export const REQUIRES_INPUT_PROMPT_IDS = [${requiresInput.map(s).join(", ")}] as const;
 
 ${idsBlock("InputId", "INPUT_IDS", inputs)}

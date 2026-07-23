@@ -65,7 +65,8 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
   return (
     <Modal open onClose={onClose} title="按项目分派批次" width={560}>
       <div className={styles.description}>
-        把项目下的批次圆周均分给所选标注员 / 审核员。每个批次落到 <strong>1 个标注员 + 1 个审核员</strong>。
+        把项目下的批次圆周均分给所选标注员 / 审核员。每个批次落到{" "}
+        <strong>1 个标注员 + 1 个审核员</strong>。
       </div>
 
       <div className={styles.scopeTabs}>
@@ -87,9 +88,7 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
         </button>
       </div>
 
-      {isLoading && (
-        <div className={styles.loading}>加载中…</div>
-      )}
+      {isLoading && <div className={styles.loading}>加载中…</div>}
 
       {!isLoading && (
         <div className={styles.columns}>
@@ -147,13 +146,11 @@ function Column({
   return (
     <div className={styles.column}>
       <div className={styles.columnHeader}>
-        <Badge variant={roleColor} dot>{title}</Badge>
+        <Badge variant={roleColor} dot>
+          {title}
+        </Badge>
       </div>
-      {members.length === 0 && (
-        <div className={styles.emptyMembers}>
-          暂无成员
-        </div>
-      )}
+      {members.length === 0 && <div className={styles.emptyMembers}>暂无成员</div>}
       {members.map((m) => {
         const checked = selected.has(m.user_id);
         return (

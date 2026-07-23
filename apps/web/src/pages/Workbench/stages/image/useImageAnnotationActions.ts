@@ -144,12 +144,14 @@ export function getBatchChangeTarget(
 }
 
 export function hasUsableImageBounds(geom: Geom): boolean {
-  return Number.isFinite(geom.x)
-    && Number.isFinite(geom.y)
-    && Number.isFinite(geom.w)
-    && Number.isFinite(geom.h)
-    && geom.w > 0
-    && geom.h > 0;
+  return (
+    Number.isFinite(geom.x) &&
+    Number.isFinite(geom.y) &&
+    Number.isFinite(geom.w) &&
+    Number.isFinite(geom.h) &&
+    geom.w > 0 &&
+    geom.h > 0
+  );
 }
 
 function defaultFixedClassPickerAnchor(): { left: number; top: number } | undefined {
@@ -179,9 +181,11 @@ export function maskRefineBlockReason(
 ): string | null {
   if (taskLocked || annotation.is_locked) return "对象已锁定，无法精修";
   const geometry = annotation.geometry;
-  if (geometry.type === "multi_polygon"
-    || (Array.isArray((geometry as { holes?: unknown[] }).holes)
-      && (geometry as { holes?: unknown[] }).holes!.length > 0)) {
+  if (
+    geometry.type === "multi_polygon" ||
+    (Array.isArray((geometry as { holes?: unknown[] }).holes) &&
+      (geometry as { holes?: unknown[] }).holes!.length > 0)
+  ) {
     return "复杂几何暂不支持 Mask 精修";
   }
   if (geometry.type !== "polygon" || geometry.points.length < 3) {
@@ -247,18 +251,19 @@ export function useImageAnnotationActions({
     keypointNodeCount,
     markPendingGeom,
   });
-  const {
-    createBboxWithClass,
-    submitPolygon,
-  } = annotationActions;
+  const { createBboxWithClass, submitPolygon } = annotationActions;
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const rejectPredictionMut = useRejectPrediction(taskId ?? "");
   const [batchChanging, setBatchChanging] = useState(false);
   // 视频几何无 image 定位,批量改类弹窗用固定屏幕锚点(锚到首个选中框,与单改类同源)。
-  const [batchChangeAnchor, setBatchChangeAnchor] = useState<{ left: number; top: number } | undefined>(undefined);
+  const [batchChangeAnchor, setBatchChangeAnchor] = useState<
+    { left: number; top: number } | undefined
+  >(undefined);
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
-  const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(defaultPredictionSourceVisibility);
+  const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(
+    defaultPredictionSourceVisibility,
+  );
 
   useEffect(() => {
     setDismissedShapeKeys(new Set());
@@ -287,13 +292,14 @@ export function useImageAnnotationActions({
     [predictionsData, toolBindings],
   );
   const reviewableAiBoxes = useMemo(
-    () => allAiBoxes.filter((b) => {
-      if (b.conf < s.confThreshold) return false;
-      if (acceptedShapeKeys.has(b.id)) return false;
-      if (acceptedShapeKeys.has(`pred-${b.predictionId}-*`)) return false;
-      if (dismissedShapeKeys.has(b.id)) return false;
-      return true;
-    }),
+    () =>
+      allAiBoxes.filter((b) => {
+        if (b.conf < s.confThreshold) return false;
+        if (acceptedShapeKeys.has(b.id)) return false;
+        if (acceptedShapeKeys.has(`pred-${b.predictionId}-*`)) return false;
+        if (dismissedShapeKeys.has(b.id)) return false;
+        return true;
+      }),
     [allAiBoxes, s.confThreshold, acceptedShapeKeys, dismissedShapeKeys],
   );
   const predictionSourceCounts = useMemo(() => {
@@ -305,10 +311,11 @@ export function useImageAnnotationActions({
     return counts;
   }, [reviewableAiBoxes]);
   const aiBoxes = useMemo(
-    () => reviewableAiBoxes.filter((b) => {
-      const source = normalizePredictionSource(b.predictionSource);
-      return source ? predictionSourceVisibility[source] : true;
-    }),
+    () =>
+      reviewableAiBoxes.filter((b) => {
+        const source = normalizePredictionSource(b.predictionSource);
+        return source ? predictionSourceVisibility[source] : true;
+      }),
     [reviewableAiBoxes, predictionSourceVisibility],
   );
   const handleTogglePredictionSource = useCallback(
@@ -324,7 +331,12 @@ export function useImageAnnotationActions({
       totalCount: reviewableAiBoxes.length,
       onToggle: handleTogglePredictionSource,
     }),
-    [handleTogglePredictionSource, predictionSourceCounts, predictionSourceVisibility, reviewableAiBoxes.length],
+    [
+      handleTogglePredictionSource,
+      predictionSourceCounts,
+      predictionSourceVisibility,
+      reviewableAiBoxes.length,
+    ],
   );
   const aiTakeoverRate = useMemo(() => {
     if (!annotationsData || annotationsData.length === 0) return 0;
@@ -352,9 +364,11 @@ export function useImageAnnotationActions({
     () => {
       if (!samPendingAccept) return null;
       const candidate = sam.candidates[samPendingAccept.idx];
-      return samCandidateGeom(candidate)
-        ?? samMaskRecords.find((record) => record.id === candidate?.id)?.bounds
-        ?? null;
+      return (
+        samCandidateGeom(candidate) ??
+        samMaskRecords.find((record) => record.id === candidate?.id)?.bounds ??
+        null
+      );
     },
     [samPendingAccept, sam.candidates, samMaskRecords],
   );
@@ -365,50 +379,53 @@ export function useImageAnnotationActions({
     s.activeClass,
   );
 
-  const acceptNativeMaskCandidate = useCallback(async (idx: number, cls: string) => {
-    const candidate = sam.candidates[idx];
-    if (!taskId || candidate?.type !== "mask" || !sam.canAcceptCandidates) return;
-    if (maskPersistenceMode !== "native") {
-      pushToast({
-        msg: "原生 Mask 写入未开启",
-        sub: "请在项目设置中开启原生 Raster Mask 编辑",
-        kind: "warning",
-      });
-      return;
-    }
-    try {
-      const accepted = await acceptNativeMask({
-        candidate,
-        className: cls,
-        target: candidate.refineSource
-          ? {
-              mode: "refine",
-              source_annotation_id: candidate.refineSource.annotationId,
-              source_version: candidate.refineSource.sourceVersion,
-            }
-          : { mode: "create" },
-      });
-      if (!accepted) return;
-      recordRecentClass(cls);
-      s.setSelectedId(accepted.annotation.id);
-      sam.consume(idx);
-      pushToast({
-        msg: candidate.refineSource ? "已更新原生 Mask" : "已采纳原生 Mask",
-        sub: accepted.replayed
-          ? "幂等重试已恢复原结果"
-          : candidate.refineSource
-            ? "精修像素已原位原子替换"
-            : "候选像素已原子写入",
-        kind: "success",
-      });
-    } catch (error) {
-      pushToast({
-        msg: "原生 Mask 采纳失败",
-        sub: error instanceof Error ? error.message : String(error),
-        kind: "error",
-      });
-    }
-  }, [acceptNativeMask, maskPersistenceMode, pushToast, recordRecentClass, s, sam, taskId]);
+  const acceptNativeMaskCandidate = useCallback(
+    async (idx: number, cls: string) => {
+      const candidate = sam.candidates[idx];
+      if (!taskId || candidate?.type !== "mask" || !sam.canAcceptCandidates) return;
+      if (maskPersistenceMode !== "native") {
+        pushToast({
+          msg: "原生 Mask 写入未开启",
+          sub: "请在项目设置中开启原生 Raster Mask 编辑",
+          kind: "warning",
+        });
+        return;
+      }
+      try {
+        const accepted = await acceptNativeMask({
+          candidate,
+          className: cls,
+          target: candidate.refineSource
+            ? {
+                mode: "refine",
+                source_annotation_id: candidate.refineSource.annotationId,
+                source_version: candidate.refineSource.sourceVersion,
+              }
+            : { mode: "create" },
+        });
+        if (!accepted) return;
+        recordRecentClass(cls);
+        s.setSelectedId(accepted.annotation.id);
+        sam.consume(idx);
+        pushToast({
+          msg: candidate.refineSource ? "已更新原生 Mask" : "已采纳原生 Mask",
+          sub: accepted.replayed
+            ? "幂等重试已恢复原结果"
+            : candidate.refineSource
+              ? "精修像素已原位原子替换"
+              : "候选像素已原子写入",
+          kind: "success",
+        });
+      } catch (error) {
+        pushToast({
+          msg: "原生 Mask 采纳失败",
+          sub: error instanceof Error ? error.message : String(error),
+          kind: "error",
+        });
+      }
+    },
+    [acceptNativeMask, maskPersistenceMode, pushToast, recordRecentClass, s, sam, taskId],
+  );
 
   const handleSamCommitClass = useCallback(
     (cls: string) => {
@@ -441,7 +458,10 @@ export function useImageAnnotationActions({
       }
       // v0.9.4 phase 2 · 按 type 分发: rectanglelabels 走 bbox 创建路径，polygonlabels 走 polygon 创建路径。
       if (cand.type === "rectanglelabels" && cand.bbox) {
-        createBboxWithClass({ x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height }, cls);
+        createBboxWithClass(
+          { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height },
+          cls,
+        );
       } else if (cand.type === "polygonlabels" && cand.points.length >= 3) {
         submitPolygon(cand.points);
       }
@@ -477,11 +497,21 @@ export function useImageAnnotationActions({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
-      const isAIActive = s.tool === "smart-point" || s.tool === "smart-box" || s.tool === "smart-scribble" || s.tool === "text-prompt" || s.tool === "exemplar";
+      const isAIActive =
+        s.tool === "smart-point" ||
+        s.tool === "smart-box" ||
+        s.tool === "smart-scribble" ||
+        s.tool === "text-prompt" ||
+        s.tool === "exemplar";
       if (!isAIActive) return;
       if (sam.candidates.length === 0) return;
       const target = e.target as HTMLElement | null;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable
+      )
+        return;
       if (samPendingAccept) return;
 
       if (e.key === "Enter") {
@@ -515,87 +545,120 @@ export function useImageAnnotationActions({
     return () => window.removeEventListener("keydown", handler, true);
   }, [s.tool, sam, samPendingAccept]);
 
-  const handleBatchDelete = useCallback((targetIds?: string[]) => {
-    if (isLocked) {
-      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
-      return;
-    }
-    const ids = (targetIds ?? s.selectedIds).filter((id) =>
-      annotationsRef.current.some((a) => a.id === id),
-    );
-    if (ids.length === 0) return;
-    const targets = ids
-      .map((id) => annotationsRef.current.find((a) => a.id === id))
-      .filter((ann): ann is AnnotationResponse => !!ann && !ann.is_locked);
-    const skipped = ids.length - targets.length;
-    if (targets.length === 0) {
-      pushToast({ msg: "所选对象已锁定", sub: "请先解锁再删除", kind: "warning" });
-      return;
-    }
-    let pending = targets.length;
-    let succeeded = 0, failed = 0;
-    const cmds: { kind: "delete"; annotation: AnnotationResponse }[] = [];
-    targets.forEach((ann) => {
-      mutations.delete.mutate(ann.id, {
-        onSuccess: () => { succeeded++; cmds.push({ kind: "delete", annotation: ann }); },
-        onError: () => { failed++; },
-        onSettled: () => {
-          pending--;
-          if (pending === 0) {
-            if (cmds.length > 0) history.pushBatch(cmds);
-            pushToast({
-              msg: `已删除 ${succeeded}/${targets.length} 个标注`,
-              sub: [failed ? `${failed} 项失败` : null, skipped ? `${skipped} 项已锁定、已跳过` : null]
-                .filter(Boolean).join("；") || undefined,
-              kind: failed || skipped ? "warning" : "success",
-            });
-            s.setSelectedId(null);
-          }
-        },
-      });
-    });
-  }, [s, annotationsRef, isLocked, mutations.delete, history, pushToast]);
-
-  // 批量切换 is_locked / is_hidden:聚合语义 = 选中全部已开 → 全部关,否则 → 全部开;
-  // 只对需要变更的标注发 PATCH,与 handleBatchDelete 一致走 mutation 循环 + history.pushBatch。
-  const handleBatchPatchFlag = useCallback((flag: "is_locked" | "is_hidden") => {
-    const targets = s.selectedIds
-      .map((id) => annotationsRef.current.find((a) => a.id === id))
-      .filter(Boolean) as AnnotationResponse[];
-    if (targets.length === 0) return;
-    const read = (a: AnnotationResponse) => !!(a as unknown as Record<string, unknown>)[flag];
-    const nextValue = !targets.every(read);
-    const pendingTargets = targets.filter((a) => read(a) !== nextValue);
-    if (pendingTargets.length === 0) return;
-    let pending = pendingTargets.length;
-    let succeeded = 0, failed = 0;
-    const cmds: { kind: "update"; annotationId: string; before: Record<string, boolean>; after: Record<string, boolean> }[] = [];
-    pendingTargets.forEach((ann) => {
-      const before = { [flag]: read(ann) };
-      const after = { [flag]: nextValue };
-      mutations.update.mutate(
-        { annotationId: ann.id, payload: after },
-        {
-          onSuccess: () => { succeeded++; cmds.push({ kind: "update", annotationId: ann.id, before, after }); },
-          onError: () => { failed++; },
+  const handleBatchDelete = useCallback(
+    (targetIds?: string[]) => {
+      if (isLocked) {
+        pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+        return;
+      }
+      const ids = (targetIds ?? s.selectedIds).filter((id) =>
+        annotationsRef.current.some((a) => a.id === id),
+      );
+      if (ids.length === 0) return;
+      const targets = ids
+        .map((id) => annotationsRef.current.find((a) => a.id === id))
+        .filter((ann): ann is AnnotationResponse => !!ann && !ann.is_locked);
+      const skipped = ids.length - targets.length;
+      if (targets.length === 0) {
+        pushToast({ msg: "所选对象已锁定", sub: "请先解锁再删除", kind: "warning" });
+        return;
+      }
+      let pending = targets.length;
+      let succeeded = 0,
+        failed = 0;
+      const cmds: { kind: "delete"; annotation: AnnotationResponse }[] = [];
+      targets.forEach((ann) => {
+        mutations.delete.mutate(ann.id, {
+          onSuccess: () => {
+            succeeded++;
+            cmds.push({ kind: "delete", annotation: ann });
+          },
+          onError: () => {
+            failed++;
+          },
           onSettled: () => {
             pending--;
             if (pending === 0) {
               if (cmds.length > 0) history.pushBatch(cmds);
-              const verb = flag === "is_locked"
-                ? (nextValue ? "锁定" : "解锁")
-                : (nextValue ? "隐藏" : "显示");
               pushToast({
-                msg: `已${verb} ${succeeded}/${pendingTargets.length} 个标注`,
-                sub: failed ? `${failed} 项失败` : undefined,
-                kind: failed ? "error" : "success",
+                msg: `已删除 ${succeeded}/${targets.length} 个标注`,
+                sub:
+                  [
+                    failed ? `${failed} 项失败` : null,
+                    skipped ? `${skipped} 项已锁定、已跳过` : null,
+                  ]
+                    .filter(Boolean)
+                    .join("；") || undefined,
+                kind: failed || skipped ? "warning" : "success",
               });
+              s.setSelectedId(null);
             }
           },
-        },
-      );
-    });
-  }, [s, annotationsRef, mutations.update, history, pushToast]);
+        });
+      });
+    },
+    [s, annotationsRef, isLocked, mutations.delete, history, pushToast],
+  );
+
+  // 批量切换 is_locked / is_hidden:聚合语义 = 选中全部已开 → 全部关,否则 → 全部开;
+  // 只对需要变更的标注发 PATCH,与 handleBatchDelete 一致走 mutation 循环 + history.pushBatch。
+  const handleBatchPatchFlag = useCallback(
+    (flag: "is_locked" | "is_hidden") => {
+      const targets = s.selectedIds
+        .map((id) => annotationsRef.current.find((a) => a.id === id))
+        .filter(Boolean) as AnnotationResponse[];
+      if (targets.length === 0) return;
+      const read = (a: AnnotationResponse) => !!(a as unknown as Record<string, unknown>)[flag];
+      const nextValue = !targets.every(read);
+      const pendingTargets = targets.filter((a) => read(a) !== nextValue);
+      if (pendingTargets.length === 0) return;
+      let pending = pendingTargets.length;
+      let succeeded = 0,
+        failed = 0;
+      const cmds: {
+        kind: "update";
+        annotationId: string;
+        before: Record<string, boolean>;
+        after: Record<string, boolean>;
+      }[] = [];
+      pendingTargets.forEach((ann) => {
+        const before = { [flag]: read(ann) };
+        const after = { [flag]: nextValue };
+        mutations.update.mutate(
+          { annotationId: ann.id, payload: after },
+          {
+            onSuccess: () => {
+              succeeded++;
+              cmds.push({ kind: "update", annotationId: ann.id, before, after });
+            },
+            onError: () => {
+              failed++;
+            },
+            onSettled: () => {
+              pending--;
+              if (pending === 0) {
+                if (cmds.length > 0) history.pushBatch(cmds);
+                const verb =
+                  flag === "is_locked"
+                    ? nextValue
+                      ? "锁定"
+                      : "解锁"
+                    : nextValue
+                      ? "隐藏"
+                      : "显示";
+                pushToast({
+                  msg: `已${verb} ${succeeded}/${pendingTargets.length} 个标注`,
+                  sub: failed ? `${failed} 项失败` : undefined,
+                  kind: failed ? "error" : "success",
+                });
+              }
+            },
+          },
+        );
+      });
+    },
+    [s, annotationsRef, mutations.update, history, pushToast],
+  );
 
   const handleJoinSelectedPolygons = useCallback(() => {
     if (isLocked) {
@@ -621,15 +684,20 @@ export function useImageAnnotationActions({
     }
     const result = buildPolygonJoinPayload(joinable);
     if (!result) {
-      pushToast({ msg: "多边形合并失败", sub: "请检查几何是否自相交或手动调整后重试", kind: "error" });
+      pushToast({
+        msg: "多边形合并失败",
+        sub: "请检查几何是否自相交或手动调整后重试",
+        kind: "error",
+      });
       return;
     }
 
     void createAnnotationAsync(result.payload)
       .then((created) => {
-        const commands: Exclude<Parameters<typeof history.pushBatch>[0][number], { kind: "batch" }>[] = [
-          { kind: "create", annotationId: created.id, payload: result.payload },
-        ];
+        const commands: Exclude<
+          Parameters<typeof history.pushBatch>[0][number],
+          { kind: "batch" }
+        >[] = [{ kind: "create", annotationId: created.id, payload: result.payload }];
         let pending = result.sourceAnnotations.length;
         let deleted = 0;
         let failed = 0;
@@ -651,7 +719,9 @@ export function useImageAnnotationActions({
               deleted++;
               if (snapshot) commands.push({ kind: "delete", annotation: snapshot });
             },
-            onError: () => { failed++; },
+            onError: () => {
+              failed++;
+            },
             onSettled: finish,
           });
         }
@@ -661,45 +731,55 @@ export function useImageAnnotationActions({
       });
   }, [annotationsRef, createAnnotationAsync, history, isLocked, mutations.delete, pushToast, s]);
 
-  const handleCropSelectedPolygons = useCallback((baseId: string) => {
-    if (isLocked) {
-      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
-      return;
-    }
-    const base = annotationsRef.current.find((ann) => ann.id === baseId);
-    if (!base || !canJoinPolygonAnnotation(base)) {
-      pushToast({ msg: "基准需为未锁定多边形", kind: "warning" });
-      return;
-    }
-    // 基准框作被减数,其余选中多边形作裁刀(原样保留,不删除)。
-    const cutters = s.selectedIds
-      .filter((id) => id !== baseId)
-      .map((id) => annotationsRef.current.find((ann) => ann.id === id))
-      .filter((ann): ann is AnnotationResponse => !!ann && canJoinPolygonAnnotation(ann));
-    if (cutters.length === 0) {
-      pushToast({ msg: "请再选至少 1 个多边形作裁刀", kind: "warning" });
-      return;
-    }
-    const geometry = cropPolygonGeometry(base.geometry, cutters.map((ann) => ann.geometry));
-    if (!geometry) {
-      pushToast({ msg: "裁切失败", sub: "重叠区可能覆盖整个基准,或几何自相交", kind: "error" });
-      return;
-    }
-    const before = { geometry: base.geometry };
-    const after = { geometry };
-    mutations.update.mutate(
-      { annotationId: base.id, payload: after },
-      {
-        onSuccess: () => {
-          history.push({ kind: "update", annotationId: base.id, before, after });
-          pushToast({ msg: `已裁切重叠区`, sub: `扣除 ${cutters.length} 个多边形`, kind: "success" });
+  const handleCropSelectedPolygons = useCallback(
+    (baseId: string) => {
+      if (isLocked) {
+        pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+        return;
+      }
+      const base = annotationsRef.current.find((ann) => ann.id === baseId);
+      if (!base || !canJoinPolygonAnnotation(base)) {
+        pushToast({ msg: "基准需为未锁定多边形", kind: "warning" });
+        return;
+      }
+      // 基准框作被减数,其余选中多边形作裁刀(原样保留,不删除)。
+      const cutters = s.selectedIds
+        .filter((id) => id !== baseId)
+        .map((id) => annotationsRef.current.find((ann) => ann.id === id))
+        .filter((ann): ann is AnnotationResponse => !!ann && canJoinPolygonAnnotation(ann));
+      if (cutters.length === 0) {
+        pushToast({ msg: "请再选至少 1 个多边形作裁刀", kind: "warning" });
+        return;
+      }
+      const geometry = cropPolygonGeometry(
+        base.geometry,
+        cutters.map((ann) => ann.geometry),
+      );
+      if (!geometry) {
+        pushToast({ msg: "裁切失败", sub: "重叠区可能覆盖整个基准,或几何自相交", kind: "error" });
+        return;
+      }
+      const before = { geometry: base.geometry };
+      const after = { geometry };
+      mutations.update.mutate(
+        { annotationId: base.id, payload: after },
+        {
+          onSuccess: () => {
+            history.push({ kind: "update", annotationId: base.id, before, after });
+            pushToast({
+              msg: `已裁切重叠区`,
+              sub: `扣除 ${cutters.length} 个多边形`,
+              kind: "success",
+            });
+          },
+          onError: (err) => {
+            pushToast({ msg: "裁切失败", sub: String(err), kind: "error" });
+          },
         },
-        onError: (err) => {
-          pushToast({ msg: "裁切失败", sub: String(err), kind: "error" });
-        },
-      },
-    );
-  }, [annotationsRef, history, isLocked, mutations.update, pushToast, s]);
+      );
+    },
+    [annotationsRef, history, isLocked, mutations.update, pushToast, s],
+  );
 
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
@@ -709,123 +789,162 @@ export function useImageAnnotationActions({
     const firstAnn = annotationsRef.current.find((a) => a.id === ids[0]);
     const isVideoGeometry = !!firstAnn?.geometry.type.startsWith("video_");
     const firstBounds = firstAnn ? geometryToShape(firstAnn.geometry) : null;
-    const needsFixedAnchor = isVideoGeometry || (firstBounds != null && !hasUsableImageBounds(firstBounds));
-    setBatchChangeAnchor(needsFixedAnchor
-      ? ((firstAnn && isVideoGeometry ? videoBoxScreenAnchor(firstAnn, s.videoFrameIndex) : null)
-        ?? defaultFixedClassPickerAnchor())
-      : undefined);
+    const needsFixedAnchor =
+      isVideoGeometry || (firstBounds != null && !hasUsableImageBounds(firstBounds));
+    setBatchChangeAnchor(
+      needsFixedAnchor
+        ? ((firstAnn && isVideoGeometry
+            ? videoBoxScreenAnchor(firstAnn, s.videoFrameIndex)
+            : null) ?? defaultFixedClassPickerAnchor())
+        : undefined,
+    );
     setBatchChanging(true);
   }, [s.selectedIds, s.videoFrameIndex, annotationsRef]);
 
-  const handleCommitBatchChangeClass = useCallback((cls: string) => {
-    setBatchChanging(false);
-    setBatchChangeAnchor(undefined);
-    if (!cls) return;
-    const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
-    if (ids.length === 0) return;
-    let pending = ids.length;
-    let succeeded = 0, failed = 0;
-    const cmds: { kind: "update"; annotationId: string; before: { class_name: string }; after: { class_name: string } }[] = [];
-    ids.forEach((id) => {
-      const ann = annotationsRef.current.find((a) => a.id === id);
-      if (!ann || ann.class_name === cls) { pending--; return; }
-      const before = { class_name: ann.class_name };
-      const after = { class_name: cls };
-      mutations.update.mutate(
-        { annotationId: id, payload: after },
-        {
-          onSuccess: () => { succeeded++; cmds.push({ kind: "update", annotationId: id, before, after }); },
-          onError: () => { failed++; },
-          onSettled: () => {
-            pending--;
-            if (pending === 0) {
-              if (cmds.length > 0) history.pushBatch(cmds);
-              s.setActiveClass(cls);
-              recordRecentClass(cls);
-              pushToast({
-                msg: `${succeeded} 个标注已改为 ${cls}`,
-                sub: failed ? `${failed} 项失败` : undefined,
-                kind: failed ? "error" : "success",
-              });
-            }
+  const handleCommitBatchChangeClass = useCallback(
+    (cls: string) => {
+      setBatchChanging(false);
+      setBatchChangeAnchor(undefined);
+      if (!cls) return;
+      const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
+      if (ids.length === 0) return;
+      let pending = ids.length;
+      let succeeded = 0,
+        failed = 0;
+      const cmds: {
+        kind: "update";
+        annotationId: string;
+        before: { class_name: string };
+        after: { class_name: string };
+      }[] = [];
+      ids.forEach((id) => {
+        const ann = annotationsRef.current.find((a) => a.id === id);
+        if (!ann || ann.class_name === cls) {
+          pending--;
+          return;
+        }
+        const before = { class_name: ann.class_name };
+        const after = { class_name: cls };
+        mutations.update.mutate(
+          { annotationId: id, payload: after },
+          {
+            onSuccess: () => {
+              succeeded++;
+              cmds.push({ kind: "update", annotationId: id, before, after });
+            },
+            onError: () => {
+              failed++;
+            },
+            onSettled: () => {
+              pending--;
+              if (pending === 0) {
+                if (cmds.length > 0) history.pushBatch(cmds);
+                s.setActiveClass(cls);
+                recordRecentClass(cls);
+                pushToast({
+                  msg: `${succeeded} 个标注已改为 ${cls}`,
+                  sub: failed ? `${failed} 项失败` : undefined,
+                  kind: failed ? "error" : "success",
+                });
+              }
+            },
           },
-        },
-      );
-    });
-    if (pending === 0) setBatchChanging(false);
-  }, [s, annotationsRef, mutations.update, history, pushToast, recordRecentClass]);
+        );
+      });
+      if (pending === 0) setBatchChanging(false);
+    },
+    [s, annotationsRef, mutations.update, history, pushToast, recordRecentClass],
+  );
 
   const handleCancelBatchChange = useCallback(() => {
     setBatchChanging(false);
     setBatchChangeAnchor(undefined);
   }, []);
 
-  const handleRejectPrediction = useCallback((box: AiBox) => {
-    // 先本地隐藏，避免等待网络回包
-    setDismissedShapeKeys((prev) => {
-      if (prev.has(box.id)) return prev;
-      const next = new Set(prev);
-      next.add(box.id);
-      return next;
-    });
-    // B-37 · 同步持久化到后端, 让刷新 / 切回该 task 时不再出现
-    if (!box.predictionId) return;
-    rejectPredictionMut.mutate(
-      { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-      {
-        onError: () => {
-          // 失败回滚本地隐藏，提示用户
-          setDismissedShapeKeys((prev) => {
-            if (!prev.has(box.id)) return prev;
-            const next = new Set(prev);
-            next.delete(box.id);
-            return next;
-          });
-          pushToast({ msg: "忽略失败", sub: "请稍后重试", kind: "error" });
+  const handleRejectPrediction = useCallback(
+    (box: AiBox) => {
+      // 先本地隐藏，避免等待网络回包
+      setDismissedShapeKeys((prev) => {
+        if (prev.has(box.id)) return prev;
+        const next = new Set(prev);
+        next.add(box.id);
+        return next;
+      });
+      // B-37 · 同步持久化到后端, 让刷新 / 切回该 task 时不再出现
+      if (!box.predictionId) return;
+      rejectPredictionMut.mutate(
+        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+        {
+          onError: () => {
+            // 失败回滚本地隐藏，提示用户
+            setDismissedShapeKeys((prev) => {
+              if (!prev.has(box.id)) return prev;
+              const next = new Set(prev);
+              next.delete(box.id);
+              return next;
+            });
+            pushToast({ msg: "忽略失败", sub: "请稍后重试", kind: "error" });
+          },
         },
-      },
-    );
-  }, [rejectPredictionMut, pushToast]);
+      );
+    },
+    [rejectPredictionMut, pushToast],
+  );
 
-  const handleAcceptPrediction = useCallback((box: AiBox, attributeOverrides?: Record<string, unknown>) => {
-    if (!box.predictionId) return;
-    acceptPredictionMut.mutate(
-      { predictionId: box.predictionId, shapeIndex: box.shapeIndex, attributeOverrides },
-      {
-        onSuccess: (created) => {
-          const ids = created.map((a) => a.id);
-          // v0.20.22 · 后端 accept_prediction 已在同一事务原子落库 shape 富属性
-          // + attribute_overrides (annotation.py:305-322), 前端不再逐条 PATCH 合并。
-          // 旧的 carry 循环在后端返回整题全量时会误改所有既有人工标注属性 → 已删除。
-          history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
-          pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
-        },
-        onError: (err) => {
-          // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (如 YOLO 输出 "person" 而项目标签是 "行人"
-          // 且无 alias) → 后端 422. 复用 ClassPickerPopover 让用户选项目标签, commit 时带
-          // override_class_name 重试采纳 (见 handleCommitChangeClass 的 accept 分支)。
-          const status = (err as { status?: number } | null)?.status;
-          if (status === 422 && box.predictionId) {
-            s.setEditingClass({
-              annotationId: "",
-              geom: box.geometry as Geom,
-              currentClass: box.cls,
-              // B-57 · 带上预测自身的 tool_unit_id, 让 popover 列出该单位 (如 region) 的类别,
-              // 否则采纳多边形预测时只显示当前激活工具 (bbox) 的类, 选不到正确类别 → 反复 422。
-              accept: { predictionId: box.predictionId, shapeIndex: box.shapeIndex, toolUnitId: box.tool_unit_id ?? undefined },
+  const handleAcceptPrediction = useCallback(
+    (box: AiBox, attributeOverrides?: Record<string, unknown>) => {
+      if (!box.predictionId) return;
+      acceptPredictionMut.mutate(
+        { predictionId: box.predictionId, shapeIndex: box.shapeIndex, attributeOverrides },
+        {
+          onSuccess: (created) => {
+            const ids = created.map((a) => a.id);
+            // v0.20.22 · 后端 accept_prediction 已在同一事务原子落库 shape 富属性
+            // + attribute_overrides (annotation.py:305-322), 前端不再逐条 PATCH 合并。
+            // 旧的 carry 循环在后端返回整题全量时会误改所有既有人工标注属性 → 已删除。
+            history.push({
+              kind: "acceptPrediction",
+              predictionId: box.predictionId,
+              createdAnnotationIds: ids,
             });
             pushToast({
-              msg: "该类别不在项目标签集",
-              sub: `请为模型类别「${box.cls}」选择对应的项目标签`,
-              kind: "warning",
+              msg: "已采纳 AI 标注",
+              sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`,
+              kind: "success",
             });
-          } else {
-            pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
-          }
+          },
+          onError: (err) => {
+            // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (如 YOLO 输出 "person" 而项目标签是 "行人"
+            // 且无 alias) → 后端 422. 复用 ClassPickerPopover 让用户选项目标签, commit 时带
+            // override_class_name 重试采纳 (见 handleCommitChangeClass 的 accept 分支)。
+            const status = (err as { status?: number } | null)?.status;
+            if (status === 422 && box.predictionId) {
+              s.setEditingClass({
+                annotationId: "",
+                geom: box.geometry as Geom,
+                currentClass: box.cls,
+                // B-57 · 带上预测自身的 tool_unit_id, 让 popover 列出该单位 (如 region) 的类别,
+                // 否则采纳多边形预测时只显示当前激活工具 (bbox) 的类, 选不到正确类别 → 反复 422。
+                accept: {
+                  predictionId: box.predictionId,
+                  shapeIndex: box.shapeIndex,
+                  toolUnitId: box.tool_unit_id ?? undefined,
+                },
+              });
+              pushToast({
+                msg: "该类别不在项目标签集",
+                sub: `请为模型类别「${box.cls}」选择对应的项目标签`,
+                kind: "warning",
+              });
+            } else {
+              pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
+            }
+          },
         },
-      },
-    );
-  }, [acceptPredictionMut, history, pushToast, s]);
+      );
+    },
+    [acceptPredictionMut, history, pushToast, s],
+  );
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
@@ -848,121 +967,138 @@ export function useImageAnnotationActions({
       };
   const pendingRefineRef = useRef<PendingRefine | null>(null);
 
-  const initMaskFromNormalizedPoints = useCallback((normPoints: [number, number][]): boolean => {
-    if (!maskEditor) {
-      pushToast({ msg: "Mask 编辑器未就绪", kind: "warning" });
-      return false;
-    }
-    const { imgW, imgH } = stageGeom;
-    if (!imgW || !imgH) {
-      pushToast({ msg: "图像尺寸未就绪", kind: "warning" });
-      return false;
-    }
-    if (normPoints.length < 3) {
-      pushToast({ msg: "几何顶点 < 3，无法精修", kind: "warning" });
-      return false;
-    }
-    const pxPoints: [number, number][] = normPoints.map(([x, y]) => [x * imgW, y * imgH]);
-    try {
-      maskEditor.initFromPolygon(pxPoints);
-    } catch (error: unknown) {
-      const reason = error && typeof error === "object" && "reason" in error
-        ? (error as { reason?: unknown }).reason
-        : undefined;
-      pushToast({
-        msg: "Mask 初始化失败",
-        sub: reason === "large_mask_full_scan_required"
-          ? "大画布暂不支持从 Polygon 整图栅格化，请新建空白 Mask 或编辑已有 Raster Mask"
-          : error instanceof Error
-            ? error.message
-            : "当前图片无法从 Polygon 进入精修",
-        kind: "warning",
-      });
-      return false;
-    }
-    return true;
-  }, [maskEditor, pushToast, stageGeom]);
+  const initMaskFromNormalizedPoints = useCallback(
+    (normPoints: [number, number][]): boolean => {
+      if (!maskEditor) {
+        pushToast({ msg: "Mask 编辑器未就绪", kind: "warning" });
+        return false;
+      }
+      const { imgW, imgH } = stageGeom;
+      if (!imgW || !imgH) {
+        pushToast({ msg: "图像尺寸未就绪", kind: "warning" });
+        return false;
+      }
+      if (normPoints.length < 3) {
+        pushToast({ msg: "几何顶点 < 3，无法精修", kind: "warning" });
+        return false;
+      }
+      const pxPoints: [number, number][] = normPoints.map(([x, y]) => [x * imgW, y * imgH]);
+      try {
+        maskEditor.initFromPolygon(pxPoints);
+      } catch (error: unknown) {
+        const reason =
+          error && typeof error === "object" && "reason" in error
+            ? (error as { reason?: unknown }).reason
+            : undefined;
+        pushToast({
+          msg: "Mask 初始化失败",
+          sub:
+            reason === "large_mask_full_scan_required"
+              ? "大画布暂不支持从 Polygon 整图栅格化，请新建空白 Mask 或编辑已有 Raster Mask"
+              : error instanceof Error
+                ? error.message
+                : "当前图片无法从 Polygon 进入精修",
+          kind: "warning",
+        });
+        return false;
+      }
+      return true;
+    },
+    [maskEditor, pushToast, stageGeom],
+  );
 
-  const handleRefinePrediction = useCallback((box: AiBox) => {
-    if (!box.polygon || box.polygon.length < 3) {
-      pushToast({ msg: "仅支持 polygon 候选的精修", kind: "warning" });
-      return;
-    }
-    if (!initMaskFromNormalizedPoints(box.polygon)) return;
-    pendingRefineRef.current = {
-      kind: "prediction",
-      predictionId: box.predictionId,
-      shapeIndex: box.shapeIndex,
-      labelId: box.cls,
-      sourceGeometry: { type: "polygon", points: box.polygon },
-    };
-    s.setTool("mask");
-    s.setSelectedId(null);
-  }, [initMaskFromNormalizedPoints, pushToast, s]);
+  const handleRefinePrediction = useCallback(
+    (box: AiBox) => {
+      if (!box.polygon || box.polygon.length < 3) {
+        pushToast({ msg: "仅支持 polygon 候选的精修", kind: "warning" });
+        return;
+      }
+      if (!initMaskFromNormalizedPoints(box.polygon)) return;
+      pendingRefineRef.current = {
+        kind: "prediction",
+        predictionId: box.predictionId,
+        shapeIndex: box.shapeIndex,
+        labelId: box.cls,
+        sourceGeometry: { type: "polygon", points: box.polygon },
+      };
+      s.setTool("mask");
+      s.setSelectedId(null);
+    },
+    [initMaskFromNormalizedPoints, pushToast, s],
+  );
 
   // v0.10.9 (A) · SAM 交互候选精修：候选未 Enter 时，直接从 sam.candidates[idx] 启动 mask 编辑。
   // commit 时 sam.consume(samIdx) 清候选 + submitPolygon 落库（候选 label 优先；无 label 用工具栏当前 label）。
-  const handleRefineSamCandidate = useCallback((idx: number = sam.activeIdx) => {
-    const cand = sam.candidates[idx];
-    if (!cand) {
-      pushToast({ msg: "无可精修的 SAM 候选", kind: "warning" });
-      return;
-    }
-    if (cand.type !== "polygonlabels" || !cand.points || cand.points.length < 3) {
-      pushToast({ msg: "仅支持 polygon 类型的 SAM 候选精修", kind: "warning" });
-      return;
-    }
-    if (!initMaskFromNormalizedPoints(cand.points)) return;
-    const labelId = (cand.label && classes.includes(cand.label)) ? cand.label : s.activeClass;
-    pendingRefineRef.current = {
-      kind: "sam",
-      samIdx: idx,
-      labelId,
-      sourceGeometry: { type: "polygon", points: cand.points },
-    };
-    s.setTool("mask");
-    s.setSelectedId(null);
-  }, [sam, initMaskFromNormalizedPoints, pushToast, classes, s]);
+  const handleRefineSamCandidate = useCallback(
+    (idx: number = sam.activeIdx) => {
+      const cand = sam.candidates[idx];
+      if (!cand) {
+        pushToast({ msg: "无可精修的 SAM 候选", kind: "warning" });
+        return;
+      }
+      if (cand.type !== "polygonlabels" || !cand.points || cand.points.length < 3) {
+        pushToast({ msg: "仅支持 polygon 类型的 SAM 候选精修", kind: "warning" });
+        return;
+      }
+      if (!initMaskFromNormalizedPoints(cand.points)) return;
+      const labelId = cand.label && classes.includes(cand.label) ? cand.label : s.activeClass;
+      pendingRefineRef.current = {
+        kind: "sam",
+        samIdx: idx,
+        labelId,
+        sourceGeometry: { type: "polygon", points: cand.points },
+      };
+      s.setTool("mask");
+      s.setSelectedId(null);
+    },
+    [sam, initMaskFromNormalizedPoints, pushToast, classes, s],
+  );
 
-  useEffect(() => { refineSamRef.current = handleRefineSamCandidate; }, [handleRefineSamCandidate]);
+  useEffect(() => {
+    refineSamRef.current = handleRefineSamCandidate;
+  }, [handleRefineSamCandidate]);
 
   // v0.10.9 (B) · 已落库 user polygon 精修：commit 时走 update mutation 替换原 geometry（in-place）。
-  const handleRefineUserPolygon = useCallback((annotationId: string) => {
-    const ann = annotationsRef.current.find((a) => a.id === annotationId);
-    if (!ann) {
-      pushToast({ msg: "未找到该标注", kind: "warning" });
-      return;
-    }
-    const blocked = maskRefineBlockReason(ann, isLocked);
-    if (blocked) {
-      pushToast({ msg: blocked, kind: "warning" });
-      return;
-    }
-    if (ann.geometry.type !== "polygon") return;
-    if (!initMaskFromNormalizedPoints(ann.geometry.points)) return;
-    pendingRefineRef.current = {
-      kind: "user",
-      annotationId: ann.id,
-      beforeGeometry: ann.geometry,
-      annotationVersion: ann.version,
-      labelId: ann.class_name,
-      sourceGeometry: ann.geometry,
-    };
-    s.setTool("mask");
-    s.setSelectedId(null);
-  }, [annotationsRef, initMaskFromNormalizedPoints, isLocked, pushToast, s]);
+  const handleRefineUserPolygon = useCallback(
+    (annotationId: string) => {
+      const ann = annotationsRef.current.find((a) => a.id === annotationId);
+      if (!ann) {
+        pushToast({ msg: "未找到该标注", kind: "warning" });
+        return;
+      }
+      const blocked = maskRefineBlockReason(ann, isLocked);
+      if (blocked) {
+        pushToast({ msg: blocked, kind: "warning" });
+        return;
+      }
+      if (ann.geometry.type !== "polygon") return;
+      if (!initMaskFromNormalizedPoints(ann.geometry.points)) return;
+      pendingRefineRef.current = {
+        kind: "user",
+        annotationId: ann.id,
+        beforeGeometry: ann.geometry,
+        annotationVersion: ann.version,
+        labelId: ann.class_name,
+        sourceGeometry: ann.geometry,
+      };
+      s.setTool("mask");
+      s.setSelectedId(null);
+    },
+    [annotationsRef, initMaskFromNormalizedPoints, isLocked, pushToast, s],
+  );
 
   const commitMaskAsPolygon = useCallback(async () => {
     if (!maskEditor) return Promise.resolve({ ok: false, retryable: false });
     // v0.23.5 · WS-C · 提交边界 defense-in-depth: 即便 Enter hotkey 漏判, commit 本身也
     // 经 canEditMask 拦截锁定对象 (task 只读 / 选中 annotation is_locked)。
     const refine = pendingRefineRef.current;
-    const refinedAnnotation = refine?.kind === "user"
-      ? annotationsRef.current.find((a) => a.id === refine.annotationId)
-      : null;
-    const sel = refinedAnnotation ?? (s.selectedId
-      ? annotationsRef.current.find((a) => a.id === s.selectedId)
-      : null);
+    const refinedAnnotation =
+      refine?.kind === "user"
+        ? annotationsRef.current.find((a) => a.id === refine.annotationId)
+        : null;
+    const sel =
+      refinedAnnotation ??
+      (s.selectedId ? annotationsRef.current.find((a) => a.id === s.selectedId) : null);
     if (
       !canEditMask({
         taskReadOnly: !!isLocked,
@@ -981,7 +1117,11 @@ export function useImageAnnotationActions({
       return Promise.resolve({ ok: false, retryable: false });
     }
     if (maskPersistenceMode === "blocked") {
-      pushToast({ msg: "当前不能保存 Mask", sub: "任务能力未就绪或项目未开启对应写入路径", kind: "warning" });
+      pushToast({
+        msg: "当前不能保存 Mask",
+        sub: "任务能力未就绪或项目未开启对应写入路径",
+        kind: "warning",
+      });
       return Promise.resolve({ ok: false, retryable: false });
     }
     if (maskPersistenceMode === "native") {
@@ -1010,32 +1150,41 @@ export function useImageAnnotationActions({
         }
         const emptyChoice = promptEmptyRasterMaskChoice(window.confirm);
         if (emptyChoice === "delete") {
-          return maskEditor.save(() => new Promise((resolve) => {
-            mutations.delete.mutate(selectedRaster.id, {
-              onSuccess: () => resolve({ ok: true, retryable: false }),
-              onError: (error) => resolve({
-                ok: false,
-                retryable: !(error instanceof ApiError) || error.status === 409 || error.status >= 500,
-                error,
-              }),
-            });
-          })).then((result) => {
-            if (!result.ok) {
-              pushToast({
-                msg: "删除 Mask 失败",
-                sub: result.retryable ? "空白稿件和撤销历史已保留，可重试" : String(result.error),
-                kind: "error",
-              });
+          return maskEditor
+            .save(
+              () =>
+                new Promise((resolve) => {
+                  mutations.delete.mutate(selectedRaster.id, {
+                    onSuccess: () => resolve({ ok: true, retryable: false }),
+                    onError: (error) =>
+                      resolve({
+                        ok: false,
+                        retryable:
+                          !(error instanceof ApiError) ||
+                          error.status === 409 ||
+                          error.status >= 500,
+                        error,
+                      }),
+                  });
+                }),
+            )
+            .then((result) => {
+              if (!result.ok) {
+                pushToast({
+                  msg: "删除 Mask 失败",
+                  sub: result.retryable ? "空白稿件和撤销历史已保留，可重试" : String(result.error),
+                  kind: "error",
+                });
+                return result;
+              }
+              history.push({ kind: "delete", annotation: selectedRaster });
+              pendingRefineRef.current = null;
+              maskEditor.cancel();
+              s.setTool("box");
+              s.setSelectedId(null);
+              pushToast({ msg: "已删除空 Mask 对象", kind: "success" });
               return result;
-            }
-            history.push({ kind: "delete", annotation: selectedRaster });
-            pendingRefineRef.current = null;
-            maskEditor.cancel();
-            s.setTool("box");
-            s.setSelectedId(null);
-            pushToast({ msg: "已删除空 Mask 对象", kind: "success" });
-            return result;
-          });
+            });
         }
         if (emptyChoice === "undo") {
           if (maskEditor.canUndo) {
@@ -1049,26 +1198,32 @@ export function useImageAnnotationActions({
         }
         return Promise.resolve({ ok: false, retryable: false });
       }
-      const labelForCommit = refine ? refine.labelId : updateTarget?.class_name ?? s.activeClass;
+      const labelForCommit = refine ? refine.labelId : (updateTarget?.class_name ?? s.activeClass);
       if (!labelForCommit) {
         pushToast({ msg: "请先选择类别", kind: "warning" });
         return Promise.resolve({ ok: false, retryable: false });
       }
-      const targetVersion = refine?.kind === "user"
-        ? refine.annotationVersion
-        : updateTarget?.version;
+      const targetVersion =
+        refine?.kind === "user" ? refine.annotationVersion : updateTarget?.version;
       if (updateTarget && targetVersion == null) {
         pushToast({ msg: "Mask 保存失败", sub: "缺少对象版本，请刷新后重试", kind: "error" });
         return Promise.resolve({ ok: false, retryable: false });
       }
       if (refine) {
         const report = compareRegionToRasterResult(refine.sourceGeometry, rle);
-        if (!window.confirm(`${formatMaskConversionReport(report)}\n\n是否将精修结果保存为原生 Mask？`)) {
+        if (
+          !window.confirm(
+            `${formatMaskConversionReport(report)}\n\n是否将精修结果保存为原生 Mask？`,
+          )
+        ) {
           return Promise.resolve({ ok: false, retryable: false });
         }
-        if (report.lossy && !window.confirm(
-          `精修后有 ${report.changedPixels} 个像素发生变化，其中 ${report.droppedPixels} 个源前景像素被移除。确认继续？`,
-        )) {
+        if (
+          report.lossy &&
+          !window.confirm(
+            `精修后有 ${report.changedPixels} 个像素发生变化，其中 ${report.droppedPixels} 个源前景像素被移除。确认继续？`,
+          )
+        ) {
           return Promise.resolve({ ok: false, retryable: false });
         }
       }
@@ -1076,80 +1231,83 @@ export function useImageAnnotationActions({
       let committedAnnotation: AnnotationResponse | null = null;
       let createdPayload: AnnotationPayload | null = null;
       const beforeGeometry = updateTarget?.geometry;
-      return maskEditor.save(async () => {
-        try {
-          const mask = await rasterMasksApi.uploadTaskContent(taskId, rle);
-          const geometry = { type: "raster_mask", mask } as const;
-          if (updateTarget) {
-            committedAnnotation = await updateAnnotationAsync(
-              updateTarget.id,
-              { geometry },
-              `W/"${targetVersion}"`,
-            );
-          } else {
-            createdPayload = {
-              annotation_type: "raster_mask",
-              tool_unit_id: "region",
-              class_name: labelForCommit,
-              geometry,
-              confidence: 1,
-              ...(refine?.kind === "prediction"
-                ? {
-                    parent_prediction_id: refine.predictionId,
-                    attributes: { _shape_index: refine.shapeIndex },
-                  }
-                : {}),
-            };
-            committedAnnotation = await createAnnotationAsync(createdPayload);
+      return maskEditor
+        .save(async () => {
+          try {
+            const mask = await rasterMasksApi.uploadTaskContent(taskId, rle);
+            const geometry = { type: "raster_mask", mask } as const;
+            if (updateTarget) {
+              committedAnnotation = await updateAnnotationAsync(
+                updateTarget.id,
+                { geometry },
+                `W/"${targetVersion}"`,
+              );
+            } else {
+              createdPayload = {
+                annotation_type: "raster_mask",
+                tool_unit_id: "region",
+                class_name: labelForCommit,
+                geometry,
+                confidence: 1,
+                ...(refine?.kind === "prediction"
+                  ? {
+                      parent_prediction_id: refine.predictionId,
+                      attributes: { _shape_index: refine.shapeIndex },
+                    }
+                  : {}),
+              };
+              committedAnnotation = await createAnnotationAsync(createdPayload);
+            }
+            return { ok: true, retryable: false };
+          } catch (error: unknown) {
+            const retryable =
+              !(error instanceof ApiError) || error.status === 409 || error.status >= 500;
+            return { ok: false, retryable, error };
           }
-          return { ok: true, retryable: false };
-        } catch (error: unknown) {
-          const retryable = !(error instanceof ApiError)
-            || error.status === 409
-            || error.status >= 500;
-          return { ok: false, retryable, error };
-        }
-      }).then((result) => {
-        if (!result.ok) {
+        })
+        .then((result) => {
+          if (!result.ok) {
+            pushToast({
+              msg: "Mask 保存失败",
+              sub: result.retryable ? "稿件与撤销历史已保留，可重试" : String(result.error),
+              kind: "error",
+            });
+            return result;
+          }
+          if (!committedAnnotation) return result;
+          if (updateTarget && beforeGeometry) {
+            history.push({
+              kind: "update",
+              annotationId: updateTarget.id,
+              before: { geometry: beforeGeometry },
+              after: { geometry: committedAnnotation.geometry },
+            });
+          } else if (createdPayload) {
+            history.push({
+              kind: "create",
+              annotationId: committedAnnotation.id,
+              payload: createdPayload,
+            });
+            recordRecentClass(labelForCommit);
+          }
+          if (refine?.kind === "prediction") {
+            setDismissedShapeKeys((prev) =>
+              new Set(prev).add(`pred-${refine.predictionId}-${refine.shapeIndex}`),
+            );
+          } else if (refine?.kind === "sam") {
+            sam.consume(refine.samIdx);
+          }
+          pendingRefineRef.current = null;
+          maskEditor.cancel();
+          s.setTool("box");
+          s.setSelectedId(committedAnnotation.id);
           pushToast({
-            msg: "Mask 保存失败",
-            sub: result.retryable ? "稿件与撤销历史已保留，可重试" : String(result.error),
-            kind: "error",
+            msg: updateTarget ? "已更新原生 Mask" : "已创建原生 Mask",
+            sub: `${foregroundPixels} 像素 · ${labelForCommit}`,
+            kind: "success",
           });
           return result;
-        }
-        if (!committedAnnotation) return result;
-        if (updateTarget && beforeGeometry) {
-          history.push({
-            kind: "update",
-            annotationId: updateTarget.id,
-            before: { geometry: beforeGeometry },
-            after: { geometry: committedAnnotation.geometry },
-          });
-        } else if (createdPayload) {
-          history.push({
-            kind: "create",
-            annotationId: committedAnnotation.id,
-            payload: createdPayload,
-          });
-          recordRecentClass(labelForCommit);
-        }
-        if (refine?.kind === "prediction") {
-          setDismissedShapeKeys((prev) => new Set(prev).add(`pred-${refine.predictionId}-${refine.shapeIndex}`));
-        } else if (refine?.kind === "sam") {
-          sam.consume(refine.samIdx);
-        }
-        pendingRefineRef.current = null;
-        maskEditor.cancel();
-        s.setTool("box");
-        s.setSelectedId(committedAnnotation.id);
-        pushToast({
-          msg: updateTarget ? "已更新原生 Mask" : "已创建原生 Mask",
-          sub: `${foregroundPixels} 像素 · ${labelForCommit}`,
-          kind: "success",
         });
-        return result;
-      });
     }
     const out = maskEditor.commitToPolygon();
     if (!out) {
@@ -1180,66 +1338,88 @@ export function useImageAnnotationActions({
 
     const geometry = { type: "polygon", points: normPoints } as const;
     let createdAnnotation: AnnotationResponse | null = null;
-    return maskEditor.save(async () => {
-      try {
+    return maskEditor
+      .save(async () => {
+        try {
+          if (refine?.kind === "user") {
+            await updateAnnotationAsync(refine.annotationId, { geometry });
+          } else {
+            const payload: AnnotationPayload = {
+              annotation_type: "polygon",
+              tool_unit_id: "region",
+              class_name: labelForCommit,
+              geometry,
+              confidence: 1,
+              ...(refine?.kind === "prediction"
+                ? {
+                    parent_prediction_id: refine.predictionId,
+                    attributes: { _shape_index: refine.shapeIndex },
+                  }
+                : {}),
+            };
+            createdAnnotation = await createAnnotationAsync(payload);
+            history.push({ kind: "create", annotationId: createdAnnotation.id, payload });
+            recordRecentClass(labelForCommit);
+          }
+          return { ok: true, retryable: false };
+        } catch (error: unknown) {
+          const retryable =
+            !(error instanceof ApiError) || error.status === 409 || error.status >= 500;
+          return { ok: false, retryable, error };
+        }
+      })
+      .then((result) => {
+        if (!result.ok) {
+          pushToast({
+            msg: "Mask 保存失败",
+            sub: result.retryable ? "稿件与撤销历史已保留，可重试" : String(result.error),
+            kind: "error",
+          });
+          return result;
+        }
         if (refine?.kind === "user") {
-          await updateAnnotationAsync(refine.annotationId, { geometry });
+          const before = { geometry: refine.beforeGeometry };
+          const after = { geometry };
+          history.push({ kind: "update", annotationId: refine.annotationId, before, after });
+          pushToast({ msg: "已更新 polygon", sub: `${out.points.length} 顶点`, kind: "success" });
         } else {
-          const payload: AnnotationPayload = {
-            annotation_type: "polygon",
-            tool_unit_id: "region",
-            class_name: labelForCommit,
-            geometry,
-            confidence: 1,
-            ...(refine?.kind === "prediction"
-              ? {
-                  parent_prediction_id: refine.predictionId,
-                  attributes: { _shape_index: refine.shapeIndex },
-                }
-              : {}),
-          };
-          createdAnnotation = await createAnnotationAsync(payload);
-          history.push({ kind: "create", annotationId: createdAnnotation.id, payload });
-          recordRecentClass(labelForCommit);
+          if (refine?.kind === "prediction") {
+            setDismissedShapeKeys((prev) =>
+              new Set(prev).add(`pred-${refine.predictionId}-${refine.shapeIndex}`),
+            );
+          } else if (refine?.kind === "sam") {
+            sam.consume(refine.samIdx);
+          }
+          pushToast({
+            msg: "已创建多边形",
+            sub: `${out.points.length} 顶点 · ${labelForCommit}`,
+            kind: "success",
+          });
         }
-        return { ok: true, retryable: false };
-      } catch (error: unknown) {
-        const retryable = !(error instanceof ApiError)
-          || error.status === 409
-          || error.status >= 500;
-        return { ok: false, retryable, error };
-      }
-    }).then((result) => {
-      if (!result.ok) {
-        pushToast({
-          msg: "Mask 保存失败",
-          sub: result.retryable ? "稿件与撤销历史已保留，可重试" : String(result.error),
-          kind: "error",
-        });
+        pendingRefineRef.current = null;
+        maskEditor.cancel();
+        s.setTool("box");
+        if (createdAnnotation) s.setSelectedId(createdAnnotation.id);
         return result;
-      }
-      if (refine?.kind === "user") {
-        const before = { geometry: refine.beforeGeometry };
-        const after = { geometry };
-        history.push({ kind: "update", annotationId: refine.annotationId, before, after });
-        pushToast({ msg: "已更新 polygon", sub: `${out.points.length} 顶点`, kind: "success" });
-      } else {
-        if (refine?.kind === "prediction") {
-          setDismissedShapeKeys((prev) => new Set(prev).add(`pred-${refine.predictionId}-${refine.shapeIndex}`));
-        } else if (refine?.kind === "sam") {
-          sam.consume(refine.samIdx);
-        }
-        pushToast({ msg: "已创建多边形", sub: `${out.points.length} 顶点 · ${labelForCommit}`, kind: "success" });
-      }
-      pendingRefineRef.current = null;
-      maskEditor.cancel();
-      s.setTool("box");
-      if (createdAnnotation) s.setSelectedId(createdAnnotation.id);
-      return result;
-    });
+      });
     // v0.23.5 WS-E · multipleComponents 的「仅落最大外环」toast 已移除: lossy 转换在
     // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
-  }, [maskEditor, s, annotationsRef, isLocked, pushToast, maskPersistenceMode, taskId, stageGeom, updateAnnotationAsync, createAnnotationAsync, mutations.delete, history, recordRecentClass, sam]);
+  }, [
+    maskEditor,
+    s,
+    annotationsRef,
+    isLocked,
+    pushToast,
+    maskPersistenceMode,
+    taskId,
+    stageGeom,
+    updateAnnotationAsync,
+    createAnnotationAsync,
+    mutations.delete,
+    history,
+    recordRecentClass,
+    sam,
+  ]);
 
   const cancelMaskEdit = useCallback(() => {
     if (!maskEditor) return;
@@ -1273,11 +1453,16 @@ export function useImageAnnotationActions({
               createdAnnotationIds: created.map((a) => a.id),
             });
           },
-          onError: () => { failed++; },
+          onError: () => {
+            failed++;
+          },
           onSettled: () => {
             pending--;
             if (pending === 0) {
-              const parts = [failed ? `${failed} 项失败` : null, skipped ? `${skipped} 个重复已跳过` : null].filter(Boolean);
+              const parts = [
+                failed ? `${failed} 项失败` : null,
+                skipped ? `${skipped} 个重复已跳过` : null,
+              ].filter(Boolean);
               pushToast({
                 msg: `采纳 ${succeeded}/${totalBoxes} 个 AI 框`,
                 sub: parts.length ? parts.join("，") : undefined,
@@ -1290,111 +1475,125 @@ export function useImageAnnotationActions({
     });
   }, [aiBoxes, dimmedAiIds, acceptPredictionMut, history, pushToast]);
 
-  const handleCommitDrawing = useCallback((geo: Geom) => {
-    // 会话级落框守卫：越界 clamp / 过小 / 疑似重复（拦截时已 toast）。
-    const g = guardDrawnBox(geo, userBoxes, pushToast);
-    if (!g) return;
-    // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
-    // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
-    if (!activeToolHasOwnClasses) {
-      annotationActions.createBboxWithClass(g, UNKNOWN_CLASS);
-      return;
-    }
-    const reuseClass = classNameForCommittedDrawing(
-      s.workbenchConfig.image.afterBoxCreate,
-      s.activeClass,
-    );
-    if (reuseClass) {
-      if (annotationActions.createBboxWithClass(g, reuseClass)) {
-        pushToast({ msg: "已沿用当前类别", sub: reuseClass, kind: "success" });
+  const handleCommitDrawing = useCallback(
+    (geo: Geom) => {
+      // 会话级落框守卫：越界 clamp / 过小 / 疑似重复（拦截时已 toast）。
+      const g = guardDrawnBox(geo, userBoxes, pushToast);
+      if (!g) return;
+      // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
+      // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
+      if (!activeToolHasOwnClasses) {
+        annotationActions.createBboxWithClass(g, UNKNOWN_CLASS);
+        return;
       }
-      return;
-    }
-    s.setPendingDrawing({ geom: g });
-  }, [s, activeToolHasOwnClasses, annotationActions, userBoxes, pushToast]);
+      const reuseClass = classNameForCommittedDrawing(
+        s.workbenchConfig.image.afterBoxCreate,
+        s.activeClass,
+      );
+      if (reuseClass) {
+        if (annotationActions.createBboxWithClass(g, reuseClass)) {
+          pushToast({ msg: "已沿用当前类别", sub: reuseClass, kind: "success" });
+        }
+        return;
+      }
+      s.setPendingDrawing({ geom: g });
+    },
+    [s, activeToolHasOwnClasses, annotationActions, userBoxes, pushToast],
+  );
 
   // 旋转框工具拖出的轴对齐矩形（angle=0）走同一组守卫后再交给 createRotatedBbox。
-  const handleCommitRotatedBbox = useCallback((geo: Geom) => {
-    const g = guardDrawnBox(geo, userBoxes, pushToast);
-    if (!g) return;
-    annotationActions.createRotatedBbox(g);
-  }, [annotationActions, userBoxes, pushToast]);
+  const handleCommitRotatedBbox = useCallback(
+    (geo: Geom) => {
+      const g = guardDrawnBox(geo, userBoxes, pushToast);
+      if (!g) return;
+      annotationActions.createRotatedBbox(g);
+    },
+    [annotationActions, userBoxes, pushToast],
+  );
 
-  const handleStartChangeClass = useCallback((annotationId: string, anchor?: { left: number; top: number }) => {
-    const ann = annotationsRef.current.find((a) => a.id === annotationId);
-    if (!ann) return;
-    const geom = geometryToShape(ann.geometry);
-    const isVideoGeometry = ann.geometry.type.startsWith("video_");
-    const needsFixedAnchor = isVideoGeometry || !hasUsableImageBounds(geom);
-    const fallbackAnchor = defaultFixedClassPickerAnchor();
-    // 视频几何无法走 image 定位（侧栏/快捷键无 stage transform），需 fixed anchor：
-    // 优先锚到画布上的框（overlay 屏幕矩形 + 当前帧 bbox），覆盖所有触发入口；
-    // 框在当前帧不可见时退回调用方传入的锚点（如侧栏按钮），再不行才贴右上角兜底。
-    // raster_mask 也无同步外接框；本版不启用 canvas renderer，因此同样走 fixed
-    // 锚点，避免把 type/mask 强转 Geom 后计算出 NaNpx。
-    const resolvedAnchor = needsFixedAnchor
-      ? ((isVideoGeometry ? videoBoxScreenAnchor(ann, s.videoFrameIndex) : null)
-        ?? anchor
-        ?? fallbackAnchor)
-      : anchor;
-    s.setEditingClass({
-      annotationId,
-      geom,
-      currentClass: ann.class_name,
-      anchor: resolvedAnchor,
-    });
-  }, [s, annotationsRef]);
+  const handleStartChangeClass = useCallback(
+    (annotationId: string, anchor?: { left: number; top: number }) => {
+      const ann = annotationsRef.current.find((a) => a.id === annotationId);
+      if (!ann) return;
+      const geom = geometryToShape(ann.geometry);
+      const isVideoGeometry = ann.geometry.type.startsWith("video_");
+      const needsFixedAnchor = isVideoGeometry || !hasUsableImageBounds(geom);
+      const fallbackAnchor = defaultFixedClassPickerAnchor();
+      // 视频几何无法走 image 定位（侧栏/快捷键无 stage transform），需 fixed anchor：
+      // 优先锚到画布上的框（overlay 屏幕矩形 + 当前帧 bbox），覆盖所有触发入口；
+      // 框在当前帧不可见时退回调用方传入的锚点（如侧栏按钮），再不行才贴右上角兜底。
+      // raster_mask 也无同步外接框；本版不启用 canvas renderer，因此同样走 fixed
+      // 锚点，避免把 type/mask 强转 Geom 后计算出 NaNpx。
+      const resolvedAnchor = needsFixedAnchor
+        ? ((isVideoGeometry ? videoBoxScreenAnchor(ann, s.videoFrameIndex) : null) ??
+          anchor ??
+          fallbackAnchor)
+        : anchor;
+      s.setEditingClass({
+        annotationId,
+        geom,
+        currentClass: ann.class_name,
+        anchor: resolvedAnchor,
+      });
+    },
+    [s, annotationsRef],
+  );
 
-  const handleCommitChangeClass = useCallback((cls: string) => {
-    const editing = s.editingClass;
-    if (!editing || !cls) {
-      s.setEditingClass(null);
-      return;
-    }
-    // v0.14.17 · 采纳模式: 带 override_class_name 采纳预测 (而非改已存标注的类). 不因
-    // cls===currentClass 早返 — 这里 currentClass 是模型原生类名, cls 是人选的项目标签.
-    if (editing.accept) {
-      const { predictionId, shapeIndex } = editing.accept;
+  const handleCommitChangeClass = useCallback(
+    (cls: string) => {
+      const editing = s.editingClass;
+      if (!editing || !cls) {
+        s.setEditingClass(null);
+        return;
+      }
+      // v0.14.17 · 采纳模式: 带 override_class_name 采纳预测 (而非改已存标注的类). 不因
+      // cls===currentClass 早返 — 这里 currentClass 是模型原生类名, cls 是人选的项目标签.
+      if (editing.accept) {
+        const { predictionId, shapeIndex } = editing.accept;
+        s.setEditingClass(null);
+        s.setActiveClass(cls);
+        recordRecentClass(cls);
+        acceptPredictionMut.mutate(
+          { predictionId, shapeIndex, overrideClassName: cls },
+          {
+            onSuccess: (created) => {
+              const ids = created.map((a) => a.id);
+              history.push({ kind: "acceptPrediction", predictionId, createdAnnotationIds: ids });
+              pushToast({ msg: `已采纳为 ${cls}`, kind: "success" });
+            },
+            onError: (err) => {
+              pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
+            },
+          },
+        );
+        return;
+      }
+      if (cls === editing.currentClass) {
+        s.setEditingClass(null);
+        return;
+      }
+      const before = { class_name: editing.currentClass };
+      const after = { class_name: cls };
       s.setEditingClass(null);
       s.setActiveClass(cls);
       recordRecentClass(cls);
-      acceptPredictionMut.mutate(
-        { predictionId, shapeIndex, overrideClassName: cls },
+      mutations.update.mutate(
+        { annotationId: editing.annotationId, payload: after },
         {
-          onSuccess: (created) => {
-            const ids = created.map((a) => a.id);
-            history.push({ kind: "acceptPrediction", predictionId, createdAnnotationIds: ids });
-            pushToast({ msg: `已采纳为 ${cls}`, kind: "success" });
-          },
-          onError: (err) => {
-            pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
+          onSuccess: () => {
+            history.push({
+              kind: "update",
+              annotationId: editing.annotationId,
+              before,
+              after,
+            });
+            pushToast({ msg: `已改为 ${cls}`, kind: "success" });
           },
         },
       );
-      return;
-    }
-    if (cls === editing.currentClass) {
-      s.setEditingClass(null);
-      return;
-    }
-    const before = { class_name: editing.currentClass };
-    const after = { class_name: cls };
-    s.setEditingClass(null);
-    s.setActiveClass(cls);
-    recordRecentClass(cls);
-    mutations.update.mutate(
-      { annotationId: editing.annotationId, payload: after },
-      {
-        onSuccess: () => {
-          history.push({
-            kind: "update", annotationId: editing.annotationId,
-            before, after,
-          });
-          pushToast({ msg: `已改为 ${cls}`, kind: "success" });
-        },
-      },
-    );
-  }, [s, mutations.update, history, pushToast, recordRecentClass, acceptPredictionMut]);
+    },
+    [s, mutations.update, history, pushToast, recordRecentClass, acceptPredictionMut],
+  );
 
   const handleCancelChangeClass = useCallback(() => {
     s.setEditingClass(null);
@@ -1404,33 +1603,36 @@ export function useImageAnnotationActions({
   // （更新 currentClass 让悬浮框内属性按新类别联动刷新可见字段）。
   // 失败时必须回滚 editingClass / activeClass，否则连点 A→B→C 中 B 失败会让
   // popover 显示 C 而服务端仍是 A，且历史栈缺中间步使 undo 跳步。
-  const handleChangeClassKeepOpen = useCallback((cls: string) => {
-    const editing = s.editingClass;
-    if (!editing || !cls || cls === editing.currentClass) return;
-    const before = { class_name: editing.currentClass };
-    const after = { class_name: cls };
-    const prevActiveClass = s.activeClass;
-    s.setEditingClass({ ...editing, currentClass: cls });
-    s.setActiveClass(cls);
-    recordRecentClass(cls);
-    mutations.update.mutate(
-      { annotationId: editing.annotationId, payload: after },
-      {
-        onSuccess: () => {
-          history.push({ kind: "update", annotationId: editing.annotationId, before, after });
-          pushToast({ msg: `已改为 ${cls}`, kind: "success" });
+  const handleChangeClassKeepOpen = useCallback(
+    (cls: string) => {
+      const editing = s.editingClass;
+      if (!editing || !cls || cls === editing.currentClass) return;
+      const before = { class_name: editing.currentClass };
+      const after = { class_name: cls };
+      const prevActiveClass = s.activeClass;
+      s.setEditingClass({ ...editing, currentClass: cls });
+      s.setActiveClass(cls);
+      recordRecentClass(cls);
+      mutations.update.mutate(
+        { annotationId: editing.annotationId, payload: after },
+        {
+          onSuccess: () => {
+            history.push({ kind: "update", annotationId: editing.annotationId, before, after });
+            pushToast({ msg: `已改为 ${cls}`, kind: "success" });
+          },
+          onError: () => {
+            const cur = s.editingClass;
+            if (cur && cur.annotationId === editing.annotationId && cur.currentClass === cls) {
+              s.setEditingClass({ ...cur, currentClass: before.class_name });
+            }
+            s.setActiveClass(prevActiveClass);
+            pushToast({ msg: "改类失败", kind: "error" });
+          },
         },
-        onError: () => {
-          const cur = s.editingClass;
-          if (cur && cur.annotationId === editing.annotationId && cur.currentClass === cls) {
-            s.setEditingClass({ ...cur, currentClass: before.class_name });
-          }
-          s.setActiveClass(prevActiveClass);
-          pushToast({ msg: "改类失败", kind: "error" });
-        },
-      },
-    );
-  }, [s, mutations.update, history, pushToast, recordRecentClass]);
+      );
+    },
+    [s, mutations.update, history, pushToast, recordRecentClass],
+  );
 
   return {
     ...annotationActions,

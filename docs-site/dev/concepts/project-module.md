@@ -43,42 +43,42 @@ graph TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/db/models/project.py` | Project 主模型 |
-| `apps/api/app/db/models/project_member.py` | 项目成员关系 |
-| `apps/api/app/schemas/project.py` | Project 请求 / 响应 schema |
-| `apps/api/app/api/v1/projects.py` | 项目 HTTP 路由 |
-| `apps/api/app/api/v1/dashboard/`(admin/reviewer/annotator 受众子 router) | 项目级统计与聚合 |
-| `apps/web/src/api/projects.ts` | 前端 project API wrapper |
-| `apps/web/src/pages/Projects/` | 项目设置与管理 UI |
+| 位置                                                                     | 作用                       |
+| ------------------------------------------------------------------------ | -------------------------- |
+| `apps/api/app/db/models/project.py`                                      | Project 主模型             |
+| `apps/api/app/db/models/project_member.py`                               | 项目成员关系               |
+| `apps/api/app/schemas/project.py`                                        | Project 请求 / 响应 schema |
+| `apps/api/app/api/v1/projects.py`                                        | 项目 HTTP 路由             |
+| `apps/api/app/api/v1/dashboard/`(admin/reviewer/annotator 受众子 router) | 项目级统计与聚合           |
+| `apps/web/src/api/projects.ts`                                           | 前端 project API wrapper   |
+| `apps/web/src/pages/Projects/`                                           | 项目设置与管理 UI          |
 
 ## 数据模型
 
 `Project` 当前承载的核心字段：
 
-| 字段 | 含义 |
-|---|---|
-| `display_id` | 人类可读项目 ID |
-| `name` | 项目名 |
-| `type_key` / `type_label` | 任务类型，例如 `image-det` |
-| `owner_id` | 项目 owner，决定写权限上限 |
-| `status` | 项目生命周期状态 |
-| `tool_bindings` | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构，**唯一存储真值**；旧扁平 `classes` / `classes_config` / `attribute_schema` 仅作为响应兼容投影 |
-| `sampling` | 工作台派题策略 |
-| `maximum_annotations` | 多人重叠标注上限 |
-| `show_overlap_first` | 是否优先展示重叠任务 |
-| `task_lock_ttl_seconds` | task 锁 TTL |
-| `ml_backend_id` | 项目主后端指针，用于初始选择 / fallback；交互 prompt 与视频 tracker 可在其它已启用 backend 中按能力路由 |
-| `ai_interactive_enabled` | 工作台交互式 AI 工具的项目级总开关；不属于 `tool_bindings` 几何单位 |
-| `ai_model` | display hint，不再是行为真值 |
-| `box_threshold` / `text_threshold` | 项目级 AI 推理默认参数 |
-| `preannotate_pipeline` | nullable JSONB · 项目级「已保存的预标编排」（方案 A，一项目一条）；`null` / 缺省 = 未配编排，工作台 AI 预标 popover 按此跑当前题。单阶段配置也存成单元素数组，保留「一项目一编排」语义。详见 [预标注流水线 · 多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) |
-| `scene_mode` | 是否为 scene 模式项目（默认 `false`）；仅 image / lidar 项目可开启，且需绑定 `has_scenes=true` 的数据集（已建 task 后不可切换） |
-| `prefer_same_scene_continuation` | scene 模式连续派题开关（默认 `false`）：打开后 `get_next_task` 优先返回用户上次提交 task 的同 scene 下一帧 |
-| `scene_continuation_window_min` | 连续 session 估计窗口（分钟，默认 `30`，约束 1~480） |
-| `total_tasks` / `completed_tasks` / `review_tasks` / `in_progress_tasks` | 项目级聚合统计 |
-| `due_date` | 截止日期 |
+| 字段                                                                     | 含义                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `display_id`                                                             | 人类可读项目 ID                                                                                                                                                                                                                                                                     |
+| `name`                                                                   | 项目名                                                                                                                                                                                                                                                                              |
+| `type_key` / `type_label`                                                | 任务类型，例如 `image-det`                                                                                                                                                                                                                                                          |
+| `owner_id`                                                               | 项目 owner，决定写权限上限                                                                                                                                                                                                                                                          |
+| `status`                                                                 | 项目生命周期状态                                                                                                                                                                                                                                                                    |
+| `tool_bindings`                                                          | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构，**唯一存储真值**；旧扁平 `classes` / `classes_config` / `attribute_schema` 仅作为响应兼容投影                                                                     |
+| `sampling`                                                               | 工作台派题策略                                                                                                                                                                                                                                                                      |
+| `maximum_annotations`                                                    | 多人重叠标注上限                                                                                                                                                                                                                                                                    |
+| `show_overlap_first`                                                     | 是否优先展示重叠任务                                                                                                                                                                                                                                                                |
+| `task_lock_ttl_seconds`                                                  | task 锁 TTL                                                                                                                                                                                                                                                                         |
+| `ml_backend_id`                                                          | 项目主后端指针，用于初始选择 / fallback；交互 prompt 与视频 tracker 可在其它已启用 backend 中按能力路由                                                                                                                                                                             |
+| `ai_interactive_enabled`                                                 | 工作台交互式 AI 工具的项目级总开关；不属于 `tool_bindings` 几何单位                                                                                                                                                                                                                 |
+| `ai_model`                                                               | display hint，不再是行为真值                                                                                                                                                                                                                                                        |
+| `box_threshold` / `text_threshold`                                       | 项目级 AI 推理默认参数                                                                                                                                                                                                                                                              |
+| `preannotate_pipeline`                                                   | nullable JSONB · 项目级「已保存的预标编排」（方案 A，一项目一条）；`null` / 缺省 = 未配编排，工作台 AI 预标 popover 按此跑当前题。单阶段配置也存成单元素数组，保留「一项目一编排」语义。详见 [预标注流水线 · 多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) |
+| `scene_mode`                                                             | 是否为 scene 模式项目（默认 `false`）；仅 image / lidar 项目可开启，且需绑定 `has_scenes=true` 的数据集（已建 task 后不可切换）                                                                                                                                                     |
+| `prefer_same_scene_continuation`                                         | scene 模式连续派题开关（默认 `false`）：打开后 `get_next_task` 优先返回用户上次提交 task 的同 scene 下一帧                                                                                                                                                                          |
+| `scene_continuation_window_min`                                          | 连续 session 估计窗口（分钟，默认 `30`，约束 1~480）                                                                                                                                                                                                                                |
+| `total_tasks` / `completed_tasks` / `review_tasks` / `in_progress_tasks` | 项目级聚合统计                                                                                                                                                                                                                                                                      |
+| `due_date`                                                               | 截止日期                                                                                                                                                                                                                                                                            |
 
 设计要点：
 
@@ -252,14 +252,14 @@ Project 模型本身保留了多种聚合字段：
 
 ## 常见修改落点
 
-| 你想改什么 | 先看哪里 |
-|---|---|
-| 新增项目配置字段 | `db/models/project.py` + `schemas/project.py` + `api/v1/projects.py` |
-| 改项目权限 | `deps.py` + `api/v1/projects.py` |
-| 改派题策略 | `db/models/project.py` + `services/scheduler.py` |
+| 你想改什么                                                                                                    | 先看哪里                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 新增项目配置字段                                                                                              | `db/models/project.py` + `schemas/project.py` + `api/v1/projects.py`                                                             |
+| 改项目权限                                                                                                    | `deps.py` + `api/v1/projects.py`                                                                                                 |
+| 改派题策略                                                                                                    | `db/models/project.py` + `services/scheduler.py`                                                                                 |
 | 改 scene 模式 / 连续派题（`scene_mode` / `prefer_same_scene_continuation` / `scene_continuation_window_min`） | `db/models/project.py` + `schemas/project.py` + `services/project_kind.py`（`scene_mode_allowed` 门禁）+ `services/scheduler.py` |
-| 改 AI 默认参数 | `schemas/project.py` + `projects.py` + 相关前端表单 |
-| 改项目统计 | `dashboard/`(admin/reviewer/annotator)+ 相关 service / counter 回写 |
+| 改 AI 默认参数                                                                                                | `schemas/project.py` + `projects.py` + 相关前端表单                                                                              |
+| 改项目统计                                                                                                    | `dashboard/`(admin/reviewer/annotator)+ 相关 service / counter 回写                                                              |
 
 ## 测试与联动点
 

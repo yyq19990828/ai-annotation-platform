@@ -345,8 +345,11 @@ export const taskViewsApi = {
   remove: (projectId: string, viewId: string) =>
     apiClient.delete<void>(`/projects/${projectId}/task-views/${viewId}`),
 
-  copy: (projectId: string, viewId: string, payload: { name?: string; visibility?: TaskViewVisibility }) =>
-    apiClient.post<ProjectTaskView>(`/projects/${projectId}/task-views/${viewId}/copy`, payload),
+  copy: (
+    projectId: string,
+    viewId: string,
+    payload: { name?: string; visibility?: TaskViewVisibility },
+  ) => apiClient.post<ProjectTaskView>(`/projects/${projectId}/task-views/${viewId}/copy`, payload),
 
   query: (projectId: string, payload: ProjectTaskQueryPayload) =>
     apiClient.post<ProjectTaskQueryResponse>(`/projects/${projectId}/tasks/query`, payload),

@@ -17,10 +17,7 @@ describe("siblingHighlightChildren", () => {
   ];
 
   it("单选父框 → 返回其直接子框", () => {
-    expect(siblingHighlightChildren(boxes, "p", 1).map((b) => b.id)).toEqual([
-      "c1",
-      "c2",
-    ]);
+    expect(siblingHighlightChildren(boxes, "p", 1).map((b) => b.id)).toEqual(["c1", "c2"]);
   });
 
   it("单选无子框的框 → 空", () => {
@@ -38,22 +35,26 @@ describe("siblingHighlightChildren", () => {
 
 describe("shouldRenderImageAnnotationShape", () => {
   it("raster_mask 不落入 ImageStage 矢量 shape 分支", () => {
-    expect(shouldRenderImageAnnotationShape({
-      geometry: {
-        type: "raster_mask",
-        mask: {
-          encoding: "coco_rle_ref",
-          size: [10, 20],
-          object_key: "raster-masks/sha256/aa/bb/digest.json",
-          sha256: "a".repeat(64),
-          runs: 4,
-          bytes: 32,
+    expect(
+      shouldRenderImageAnnotationShape({
+        geometry: {
+          type: "raster_mask",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [10, 20],
+            object_key: "raster-masks/sha256/aa/bb/digest.json",
+            sha256: "a".repeat(64),
+            runs: 4,
+            bytes: 32,
+          },
         },
-      },
-    })).toBe(false);
-    expect(shouldRenderImageAnnotationShape({
-      geometry: { type: "bbox", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
-    })).toBe(true);
+      }),
+    ).toBe(false);
+    expect(
+      shouldRenderImageAnnotationShape({
+        geometry: { type: "bbox", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      }),
+    ).toBe(true);
   });
 });
 

@@ -40,15 +40,17 @@ last_reviewed: ${today}
 `;
 
 function stripReleaseMarkers(text) {
-  return text
-    .replace(/\bv\d+\.\d+(?:\.\d+)?\+?\s*[·:：]\s*/g, "")
-    .replace(/§[A-Z]\s*[·:：]\s*/g, "")
-    .replace(/\s*[（(]v\d+\.\d+(?:\.\d+)?\+?(?:[^）)]*)[）)]/g, "")
-    .replace(/\bv\d+\.\d+(?:\.\d+)?\+?\s*/g, "")
-    .replace(/,\s*[）)]/g, ")")
-    // 仅清掉「带空白」的空括号（例如版本标记被剥光后留下的 `(  )`），
-    // 保留无空白的空括号 `()`，避免误伤代码片段里的 `decode()` / `generate_key()` 等。
-    .replace(/[（(]\s+[）)]/g, "");
+  return (
+    text
+      .replace(/\bv\d+\.\d+(?:\.\d+)?\+?\s*[·:：]\s*/g, "")
+      .replace(/§[A-Z]\s*[·:：]\s*/g, "")
+      .replace(/\s*[（(]v\d+\.\d+(?:\.\d+)?\+?(?:[^）)]*)[）)]/g, "")
+      .replace(/\bv\d+\.\d+(?:\.\d+)?\+?\s*/g, "")
+      .replace(/,\s*[）)]/g, ")")
+      // 仅清掉「带空白」的空括号（例如版本标记被剥光后留下的 `(  )`），
+      // 保留无空白的空括号 `()`，避免误伤代码片段里的 `decode()` / `generate_key()` 等。
+      .replace(/[（(]\s+[）)]/g, "")
+  );
 }
 
 function parseEnvExample(content) {
@@ -94,7 +96,12 @@ function parseEnvExample(content) {
         const [, key, defaultVal] = commentedVar;
         const desc = stripReleaseMarkers(pendingComments.join(" ").trim());
         pendingComments = [];
-        currentSection.rows.push({ key, defaultVal: defaultVal.trim() || "—", desc, optional: true });
+        currentSection.rows.push({
+          key,
+          defaultVal: defaultVal.trim() || "—",
+          desc,
+          optional: true,
+        });
       } else {
         pendingComments.push(stripReleaseMarkers(trimmed.replace(/^#\s*/, "")));
       }
@@ -113,7 +120,12 @@ function parseEnvExample(content) {
       const [, key, defaultVal] = varMatch;
       const desc = stripReleaseMarkers(pendingComments.join(" ").trim());
       pendingComments = [];
-      currentSection.rows.push({ key, defaultVal: defaultVal.trim() || "—", desc, optional: false });
+      currentSection.rows.push({
+        key,
+        defaultVal: defaultVal.trim() || "—",
+        desc,
+        optional: false,
+      });
       continue;
     }
 
@@ -130,12 +142,14 @@ function parseEnvExample(content) {
 }
 
 function renderSections(sections) {
-  return sections.map((section) => {
-    const rows = section.rows
-      .map((r) => `| \`${r.key}\` | \`${r.defaultVal || "—"}\` | ${r.desc || "—"} |`)
-      .join("\n");
-    return `## ${section.title}\n\n| 变量 | 默认值 | 说明 |\n|---|---|---|\n${rows}\n`;
-  }).join("\n");
+  return sections
+    .map((section) => {
+      const rows = section.rows
+        .map((r) => `| \`${r.key}\` | \`${r.defaultVal || "—"}\` | ${r.desc || "—"} |`)
+        .join("\n");
+      return `## ${section.title}\n\n| 变量 | 默认值 | 说明 |\n|---|---|---|\n${rows}\n`;
+    })
+    .join("\n");
 }
 
 const envContent = readFileSync(ENV_EXAMPLE, "utf8");
@@ -143,4 +157,6 @@ const sections = parseEnvExample(envContent);
 const output = HEADER + renderSections(sections);
 
 writeFileSync(OUTPUT, output);
-console.log(`Generated: ${OUTPUT} (${sections.length} sections, ${sections.reduce((a, s) => a + s.rows.length, 0)} vars)`);
+console.log(
+  `Generated: ${OUTPUT} (${sections.length} sections, ${sections.reduce((a, s) => a + s.rows.length, 0)} vars)`,
+);

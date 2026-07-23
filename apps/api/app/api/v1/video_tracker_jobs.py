@@ -557,9 +557,9 @@ async def decide_video_tracker_candidates(
                 outcome=outcome,
             )
         raise
-    last_decision = (
-        ((result.prompt or {}).get("review_state") or {}).get("last_decision") or {}
-    )
+    last_decision = ((result.prompt or {}).get("review_state") or {}).get(
+        "last_decision"
+    ) or {}
     correction = (result.prompt or {}).get("correction") or {}
     if not result.review_replayed:
         await AuditService.log(

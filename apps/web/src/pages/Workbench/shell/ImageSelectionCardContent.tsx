@@ -11,8 +11,7 @@ import { geometryMetrics } from "./selectionCard/geometryMetrics";
 import { isComplexPolygonGeometry } from "../stage/shared/geometry/geometryEditPolicy";
 import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
 
 export interface ImageSelectionCardContentProps {
@@ -67,11 +66,7 @@ export function ImageSelectionCardContent({
 
   return (
     <div className={BODY_CLASS}>
-      <IdentityHeader
-        className={annotation.class_name}
-        source={source}
-        confidence={confidence}
-      />
+      <IdentityHeader className={annotation.class_name} source={source} confidence={confidence} />
 
       <MetricGrid metrics={metrics} />
 
@@ -93,15 +88,16 @@ export function ImageSelectionCardContent({
             <span>Mask 内容加载中…</span>
           ) : rasterMaskStatus.state === "ready" ? (
             <span>
-              {rasterMaskStatus.preview ? "受限预览、按原始 RLE 精确命中" : "已按真实像素渲染"}
-              {" "}· {rasterMaskStatus.area} px · {rasterMaskStatus.componentCount} 个组件
-              {" "}· {rasterMaskStatus.holeCount} 个孔洞 · {rasterMaskStatus.boundaryPixelCount} 边界像素
+              {rasterMaskStatus.preview ? "受限预览、按原始 RLE 精确命中" : "已按真实像素渲染"} ·{" "}
+              {rasterMaskStatus.area} px · {rasterMaskStatus.componentCount} 个组件 ·{" "}
+              {rasterMaskStatus.holeCount} 个孔洞 · {rasterMaskStatus.boundaryPixelCount} 边界像素
               {` · AABB (${rasterMaskStatus.bounds.x.toFixed(3)}, ${rasterMaskStatus.bounds.y.toFixed(3)}, ${rasterMaskStatus.bounds.w.toFixed(3)}, ${rasterMaskStatus.bounds.h.toFixed(3)})`}
             </span>
           ) : (
             <span className="flex items-center gap-2">
               <span className="min-w-0 flex-1">
-                {rasterMaskStatus.backendReason ?? rasterMaskStatus.reason}：{rasterMaskStatus.message}
+                {rasterMaskStatus.backendReason ?? rasterMaskStatus.reason}：
+                {rasterMaskStatus.message}
               </span>
               {rasterMaskStatus.retryable && onRetryRasterMask && (
                 <Button
@@ -109,19 +105,27 @@ export function ImageSelectionCardContent({
                   size="sm"
                   onClick={() => onRetryRasterMask(annotation.id)}
                   aria-label="重试 Mask 内容"
-                >重试</Button>
+                >
+                  重试
+                </Button>
               )}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => void navigator.clipboard?.writeText(JSON.stringify({
-                  annotationId: annotation.id,
-                  reason: rasterMaskStatus.backendReason ?? rasterMaskStatus.reason,
-                  message: rasterMaskStatus.message,
-                  httpStatus: rasterMaskStatus.httpStatus,
-                }))}
+                onClick={() =>
+                  void navigator.clipboard?.writeText(
+                    JSON.stringify({
+                      annotationId: annotation.id,
+                      reason: rasterMaskStatus.backendReason ?? rasterMaskStatus.reason,
+                      message: rasterMaskStatus.message,
+                      httpStatus: rasterMaskStatus.httpStatus,
+                    }),
+                  )
+                }
                 aria-label="复制 Mask 诊断"
-              >复制诊断</Button>
+              >
+                复制诊断
+              </Button>
             </span>
           )}
         </div>
@@ -150,18 +154,20 @@ export function ImageSelectionCardContent({
       />
 
       <ActionBar label="标注操作">
-        {(annotation.geometry.type === "polygon" || annotation.geometry.type === "multi_polygon")
-          && onConvertRegionToRaster && (
-          <Button
-            variant="ghost"
-            size="sm"
-            title="转为 Mask"
-            aria-label="转为 Mask"
-            disabled={readOnly || locked}
-            onClick={() => onConvertRegionToRaster(annotation.id)}
-            className="!h-[24px] !rounded-md !px-2 !text-xs"
-          >转 Mask</Button>
-        )}
+        {(annotation.geometry.type === "polygon" || annotation.geometry.type === "multi_polygon") &&
+          onConvertRegionToRaster && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="转为 Mask"
+              aria-label="转为 Mask"
+              disabled={readOnly || locked}
+              onClick={() => onConvertRegionToRaster(annotation.id)}
+              className="!h-[24px] !rounded-md !px-2 !text-xs"
+            >
+              转 Mask
+            </Button>
+          )}
         {rasterMask && onConvertRasterToRegion && (
           <Button
             variant="ghost"
@@ -171,7 +177,9 @@ export function ImageSelectionCardContent({
             disabled={readOnly || locked || rasterMaskStatus?.state !== "ready"}
             onClick={() => onConvertRasterToRegion(annotation.id)}
             className="!h-[24px] !rounded-md !px-2 !text-xs"
-          >转矢量</Button>
+          >
+            转矢量
+          </Button>
         )}
         {rasterMask && onEditRasterMask && (
           <Button

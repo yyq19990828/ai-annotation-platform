@@ -1,11 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { ApiError } from "@/api/client";
-import {
-  useAcceptRejection,
-  useReopenTask,
-  useSkipTask,
-  useWithdrawTask,
-} from "@/hooks/useTasks";
+import { useAcceptRejection, useReopenTask, useSkipTask, useWithdrawTask } from "@/hooks/useTasks";
 import type { TaskResponse } from "@/types";
 import type { SkipReason } from "../shell/SkipTaskModal";
 import type {
@@ -53,10 +48,13 @@ export function useAnnotateMode({
       onSuccess: () => pushToast({ msg: "已撤回提交，可继续编辑", kind: "success" }),
       onError: (err) => {
         const isApi = err instanceof ApiError;
-        const reason = isApi ? (err.detailRaw as { reason?: string } | undefined)?.reason : undefined;
+        const reason = isApi
+          ? (err.detailRaw as { reason?: string } | undefined)?.reason
+          : undefined;
         let msg = "撤回失败，请刷新后重试";
         if (reason === "task_already_claimed") msg = "审核员已介入，无法撤回";
-        else if (isApi && err.status === 403) msg = "只有任务的指派人可撤回（请联系管理员重新指派）";
+        else if (isApi && err.status === 403)
+          msg = "只有任务的指派人可撤回（请联系管理员重新指派）";
         pushToast({ msg, kind: "error" });
       },
     });
@@ -65,7 +63,8 @@ export function useAnnotateMode({
   const handleReopenTask = useCallback(() => {
     if (!taskId || !canReopen) return;
     reopenTaskMut.mutate(taskId, {
-      onSuccess: () => pushToast({ msg: "已重开任务，可继续编辑", sub: "改完记得重新提交质检", kind: "success" }),
+      onSuccess: () =>
+        pushToast({ msg: "已重开任务，可继续编辑", sub: "改完记得重新提交质检", kind: "success" }),
       onError: () => pushToast({ msg: "重开失败，请刷新后重试", kind: "error" }),
     });
   }, [taskId, canReopen, reopenTaskMut, pushToast]);
@@ -162,14 +161,17 @@ export function useAnnotateMode({
     banners: null,
     claimInfo: null,
     topbarActions,
-    bannerActions: mode === "annotate" ? bannerActions : {
-      canWithdraw: false,
-      isWithdrawing: false,
-      isReopening: false,
-      isAcceptingRejection: false,
-      onWithdraw: noop,
-      onReopen: noop,
-      onAcceptRejection: noop,
-    },
+    bannerActions:
+      mode === "annotate"
+        ? bannerActions
+        : {
+            canWithdraw: false,
+            isWithdrawing: false,
+            isReopening: false,
+            isAcceptingRejection: false,
+            onWithdraw: noop,
+            onReopen: noop,
+            onAcceptRejection: noop,
+          },
   };
 }

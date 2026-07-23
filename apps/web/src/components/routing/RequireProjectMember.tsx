@@ -20,7 +20,8 @@ export function RequireProjectMember({ children }: Props) {
   const { data, isLoading, isError, error } = useProject(projectId);
   const pushToast = useToastStore((s) => s.push);
 
-  const denied = isError && error instanceof ApiError && (error.status === 403 || error.status === 404);
+  const denied =
+    isError && error instanceof ApiError && (error.status === 403 || error.status === 404);
 
   useEffect(() => {
     if (denied) {
@@ -33,11 +34,7 @@ export function RequireProjectMember({ children }: Props) {
 
   if (!projectId) return <Navigate to="/dashboard" replace />;
   if (isLoading) {
-    return (
-      <div className={styles.loading}>
-        正在校验项目权限…
-      </div>
-    );
+    return <div className={styles.loading}>正在校验项目权限…</div>;
   }
   if (denied || !data) {
     return <Navigate to="/dashboard" replace />;

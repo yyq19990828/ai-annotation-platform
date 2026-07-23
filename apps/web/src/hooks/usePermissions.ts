@@ -6,8 +6,7 @@ export function usePermissions() {
   const user = useAuthStore((s) => s.user);
   const role = (user?.role ?? "viewer") as UserRole;
 
-  const canAccessPage = (page: PageKey): boolean =>
-    ROLE_PAGE_ACCESS[role]?.includes(page) ?? false;
+  const canAccessPage = (page: PageKey): boolean => ROLE_PAGE_ACCESS[role]?.includes(page) ?? false;
 
   const hasPermission = (perm: Permission): boolean => {
     if (role === "super_admin") return true;

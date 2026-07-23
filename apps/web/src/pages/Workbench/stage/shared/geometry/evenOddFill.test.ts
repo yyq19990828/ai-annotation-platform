@@ -17,10 +17,12 @@ function makeCtx(): PathCanvasContext & {
   calls: { fn: string; args: number[] }[];
 } {
   const calls: { fn: string; args: number[] }[] = [];
-  const rec = (fn: string) => (...args: number[]) => {
-    calls.push({ fn, args });
-    return undefined;
-  };
+  const rec =
+    (fn: string) =>
+    (...args: number[]) => {
+      calls.push({ fn, args });
+      return undefined;
+    };
   return {
     beginPath: rec("beginPath") as unknown as PathCanvasContext["beginPath"],
     moveTo: rec("moveTo") as unknown as PathCanvasContext["moveTo"],
@@ -38,7 +40,14 @@ function countSubpaths(ctx: { calls: { fn: string; args: number[] }[] }): number
 describe("buildEvenOddPaths", () => {
   it("单外环无 holes → 1 个子路径, 坐标按 imgW/imgH 换算", () => {
     const ctx = makeCtx();
-    const ring: PolygonRing = { points: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]] };
+    const ring: PolygonRing = {
+      points: [
+        [0, 0],
+        [0.5, 0],
+        [0.5, 0.5],
+        [0, 0.5],
+      ],
+    };
     const n = buildEvenOddPaths(ctx, [ring], 1000, 800);
     expect(n).toBe(1);
     expect(countSubpaths(ctx)).toBe(1);
@@ -49,14 +58,26 @@ describe("buildEvenOddPaths", () => {
     const lineTos = ctx.calls.filter((c) => c.fn === "lineTo");
     expect(lineTos[0]?.args).toEqual([500, 0]);
     expect(lineTos[1]?.args).toEqual([500, 400]); // (0.5, 0.5) → (500, 400)
-    expect(lineTos[2]?.args).toEqual([0, 400]);   // (0, 0.5) → (0, 400)
+    expect(lineTos[2]?.args).toEqual([0, 400]); // (0, 0.5) → (0, 400)
   });
 
   it("单外环 + 1 个 hole → 2 个子路径 (外环 + 内环)", () => {
     const ctx = makeCtx();
     const ring: PolygonRing = {
-      points: [[0, 0], [1, 0], [1, 1], [0, 1]],
-      holes: [[[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]]],
+      points: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
+      holes: [
+        [
+          [0.25, 0.25],
+          [0.75, 0.25],
+          [0.75, 0.75],
+          [0.25, 0.75],
+        ],
+      ],
     };
     const n = buildEvenOddPaths(ctx, [ring], 100, 100);
     expect(n).toBe(2);
@@ -67,12 +88,36 @@ describe("buildEvenOddPaths", () => {
     const ctx = makeCtx();
     const rings: PolygonRing[] = [
       {
-        points: [[0, 0], [0.4, 0], [0.4, 0.4], [0, 0.4]],
-        holes: [[[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]]],
+        points: [
+          [0, 0],
+          [0.4, 0],
+          [0.4, 0.4],
+          [0, 0.4],
+        ],
+        holes: [
+          [
+            [0.1, 0.1],
+            [0.3, 0.1],
+            [0.3, 0.3],
+            [0.1, 0.3],
+          ],
+        ],
       },
       {
-        points: [[0.6, 0.6], [1, 0.6], [1, 1], [0.6, 1]],
-        holes: [[[0.7, 0.7], [0.9, 0.7], [0.9, 0.9], [0.7, 0.9]]],
+        points: [
+          [0.6, 0.6],
+          [1, 0.6],
+          [1, 1],
+          [0.6, 1],
+        ],
+        holes: [
+          [
+            [0.7, 0.7],
+            [0.9, 0.7],
+            [0.9, 0.9],
+            [0.7, 0.9],
+          ],
+        ],
       },
     ];
     const n = buildEvenOddPaths(ctx, rings, 100, 100);
@@ -84,7 +129,17 @@ describe("buildEvenOddPaths", () => {
     const ctx = makeCtx();
     const n = buildEvenOddPaths(
       ctx,
-      [{ points: [[0, 0]] }, { points: [] }, { points: [[0, 0], [0.5, 0], [0.5, 0.5]] }],
+      [
+        { points: [[0, 0]] },
+        { points: [] },
+        {
+          points: [
+            [0, 0],
+            [0.5, 0],
+            [0.5, 0.5],
+          ],
+        },
+      ],
       100,
       100,
     );
@@ -96,7 +151,12 @@ describe("buildEvenOddPaths", () => {
   it("holes 中 < 2 点的环被跳过, 外环仍画", () => {
     const ctx = makeCtx();
     const ring: PolygonRing = {
-      points: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      points: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
       holes: [[[0.1, 0.1]], []], // 两个退化 hole
     };
     const n = buildEvenOddPaths(ctx, [ring], 100, 100);
@@ -118,10 +178,24 @@ describe("drawEvenOddShape", () => {
     const strokeShape = vi.fn();
     const ctx = { ...base, fillShape, strokeShape };
     const shape = { id: "polygon-with-hole" };
-    const rings: PolygonRing[] = [{
-      points: [[0, 0], [1, 0], [1, 1], [0, 1]],
-      holes: [[[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]]],
-    }];
+    const rings: PolygonRing[] = [
+      {
+        points: [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+        ],
+        holes: [
+          [
+            [0.2, 0.2],
+            [0.8, 0.2],
+            [0.8, 0.8],
+            [0.2, 0.8],
+          ],
+        ],
+      },
+    ];
 
     const result = drawEvenOddShape(ctx, shape, rings, 100, 100);
 
@@ -136,17 +210,44 @@ describe("drawEvenOddShape", () => {
 describe("collectOuterRings", () => {
   it("multiPolygon 优先: 不重复加入 primaryPoints", () => {
     const rings = collectOuterRings({
-      primaryPoints: [[0, 0], [1, 0], [1, 1]],
-      multiPolygon: [{ points: [[0, 0], [0.5, 0], [0.5, 0.5]] }],
+      primaryPoints: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+      ],
+      multiPolygon: [
+        {
+          points: [
+            [0, 0],
+            [0.5, 0],
+            [0.5, 0.5],
+          ],
+        },
+      ],
     });
     expect(rings).toHaveLength(1);
-    expect(rings[0].points).toEqual([[0, 0], [0.5, 0], [0.5, 0.5]]);
+    expect(rings[0].points).toEqual([
+      [0, 0],
+      [0.5, 0],
+      [0.5, 0.5],
+    ]);
   });
 
   it("无 multiPolygon 时 primaryPoints + holes 作为唯一外环", () => {
     const rings = collectOuterRings({
-      primaryPoints: [[0, 0], [1, 0], [1, 1], [0, 1]],
-      holes: [[[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]]],
+      primaryPoints: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
+      holes: [
+        [
+          [0.1, 0.1],
+          [0.2, 0.1],
+          [0.2, 0.2],
+        ],
+      ],
     });
     expect(rings).toHaveLength(1);
     expect(rings[0].holes).toHaveLength(1);

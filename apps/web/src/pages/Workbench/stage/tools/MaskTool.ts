@@ -42,16 +42,13 @@ export const MaskTool: CanvasToolMeta = {
       maskEditor.beginBlank();
     }
     if (maskEditor.tool === "fill_add" || maskEditor.tool === "fill_subtract") {
-      void maskEditor.runOperation(
-        maskEditor.tool,
-        {
-          type: "flood_fill",
-          x: px,
-          y: py,
-          value: maskEditor.tool === "fill_add" ? 255 : 0,
-          connectivity: maskEditor.connectivity,
-        },
-      );
+      void maskEditor.runOperation(maskEditor.tool, {
+        type: "flood_fill",
+        x: px,
+        y: py,
+        value: maskEditor.tool === "fill_add" ? 255 : 0,
+        connectivity: maskEditor.connectivity,
+      });
       return null;
     }
     if (maskEditor.tool === "lasso_add" || maskEditor.tool === "lasso_subtract") {

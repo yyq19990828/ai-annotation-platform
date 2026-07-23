@@ -14,7 +14,9 @@ def test_image_pair_rebuilds_together_before_latch(monkeypatch) -> None:
     events: list[str] = []
 
     monkeypatch.setattr(predictor_mod, "effective_device", lambda _configured: "cuda")
-    monkeypatch.setattr(predictor_mod, "free_gpu_memory", lambda: events.append("cleanup"))
+    monkeypatch.setattr(
+        predictor_mod, "free_gpu_memory", lambda: events.append("cleanup")
+    )
     monkeypatch.setattr(
         predictor_mod,
         "latch_cpu",
@@ -40,7 +42,14 @@ def test_image_pair_rebuilds_together_before_latch(monkeypatch) -> None:
     assert predictor._sam_predictor == "sam-cpu"
     assert predictor._dino_model == "dino-cpu"
     assert predictor.cleanup_uncertain is True
-    assert events == ["sam:cuda", "dino:cuda", "cleanup", "sam:cpu", "dino:cpu", "latch"]
+    assert events == [
+        "sam:cuda",
+        "dino:cuda",
+        "cleanup",
+        "sam:cpu",
+        "dino:cpu",
+        "latch",
+    ]
 
 
 def test_cpu_replacement_failure_does_not_commit_latch(monkeypatch) -> None:

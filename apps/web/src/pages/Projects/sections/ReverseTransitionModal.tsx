@@ -14,7 +14,12 @@ export type ReverseKind = "unarchive" | "reopen_from_approved" | "reopen_from_re
 
 const COPY: Record<
   ReverseKind,
-  { title: (b: BatchResponse) => string; description: string; targetStatus: string; success: string }
+  {
+    title: (b: BatchResponse) => string;
+    description: string;
+    targetStatus: string;
+    success: string;
+  }
 > = {
   unarchive: {
     title: (b) => `撤销归档 · ${b.display_id}`,
@@ -67,8 +72,7 @@ export function ReverseTransitionModal({
           pushToast({ msg: copy.success, kind: "success" });
           onClose();
         },
-        onError: (e) =>
-          pushToast({ msg: "操作失败", sub: (e as Error).message, kind: "warning" }),
+        onError: (e) => pushToast({ msg: "操作失败", sub: (e as Error).message, kind: "warning" }),
       },
     );
   };
@@ -89,19 +93,11 @@ export function ReverseTransitionModal({
             className={`${TEXTAREA_BASE} ${tooLong ? "border-rose-500" : ""}`}
             autoFocus
           />
-          {tooLong && (
-            <span className="text-xs text-status-danger">
-              超出 {REASON_MAX} 字上限
-            </span>
-          )}
+          {tooLong && <span className="text-xs text-status-danger">超出 {REASON_MAX} 字上限</span>}
         </label>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
+          <Button variant="primary" onClick={handleSubmit} disabled={!canSubmit}>
             {transition.isPending ? "提交中…" : "确认"}
           </Button>
         </div>

@@ -27,13 +27,25 @@ from model_registry import (
 def test_matrix_covers_four_tasks_plus_tracker_alias() -> None:
     # v0.21.1 · tracker 别名到 detection 权重矩阵 (追踪不换权重, 只换关联算法), 与四个真实
     # 权重 task 并列; 别名共享同一 series→sizes 对象。
-    assert set(MODEL_MATRIX.keys()) == {"detection", "segmentation", "keypoint", "obb", "tracker"}
+    assert set(MODEL_MATRIX.keys()) == {
+        "detection",
+        "segmentation",
+        "keypoint",
+        "obb",
+        "tracker",
+    }
     assert MODEL_MATRIX["tracker"] is MODEL_MATRIX["detection"]
 
 
 def test_detection_has_all_seven_series() -> None:
     assert set(MODEL_MATRIX["detection"].keys()) == {
-        "yolov8", "yolov9", "yolov10", "yolo11", "yolo12", "yolo26", "rtdetr",
+        "yolov8",
+        "yolov9",
+        "yolov10",
+        "yolo11",
+        "yolo12",
+        "yolo26",
+        "rtdetr",
     }
 
 
@@ -196,7 +208,11 @@ def test_sizes_for_yolov9_det_vs_seg() -> None:
 
 def test_openvocab_series_namespace() -> None:
     assert OPENVOCAB_SERIES == {
-        "yolo-worldv2", "yolo-world", "yoloe-v8", "yoloe-11", "yoloe-26",
+        "yolo-worldv2",
+        "yolo-world",
+        "yoloe-v8",
+        "yoloe-11",
+        "yoloe-26",
     }
 
 
@@ -218,7 +234,9 @@ def test_openvocab_series_disjoint_from_closed() -> None:
 
 def test_openvocab_weight_filenames() -> None:
     """与 ultralytics assets release v8.4.0 实际文件名严格对应."""
-    assert resolve_openvocab_weight_filename("yolo-worldv2", "s") == "yolov8s-worldv2.pt"
+    assert (
+        resolve_openvocab_weight_filename("yolo-worldv2", "s") == "yolov8s-worldv2.pt"
+    )
     assert resolve_openvocab_weight_filename("yolo-world", "x") == "yolov8x-world.pt"
     assert resolve_openvocab_weight_filename("yoloe-v8", "l") == "yoloe-v8l-seg.pt"
     assert resolve_openvocab_weight_filename("yoloe-11", "s") == "yoloe-11s-seg.pt"

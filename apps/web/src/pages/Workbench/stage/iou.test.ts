@@ -3,7 +3,10 @@ import { iou, iouShape } from "./iou";
 
 describe("iou (bbox)", () => {
   it("identical boxes → 1", () => {
-    expect(iou({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, { x: 0.1, y: 0.1, w: 0.2, h: 0.2 })).toBeCloseTo(1, 6);
+    expect(iou({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, { x: 0.1, y: 0.1, w: 0.2, h: 0.2 })).toBeCloseTo(
+      1,
+      6,
+    );
   });
 
   it("disjoint → 0", () => {
@@ -35,7 +38,10 @@ describe("iou (bbox)", () => {
 
 describe("iouShape (polygon)", () => {
   const square = (x: number, y: number, w: number, h: number): [number, number][] => [
-    [x, y], [x + w, y], [x + w, y + h], [x, y + h],
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
   ];
 
   it("identical polygons → 1", () => {
@@ -59,7 +65,11 @@ describe("iouShape (polygon)", () => {
 
   it("polygon vs bbox: a triangle covering half a unit square → 0.5", () => {
     // 三角形 (0,0)(1,0)(0,1)，覆盖单位正方形左下半，面积 0.5
-    const tri: [number, number][] = [[0, 0], [1, 0], [0, 1]];
+    const tri: [number, number][] = [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+    ];
     const triShape = { x: 0, y: 0, w: 1, h: 1, polygon: tri };
     const bbox = { x: 0, y: 0, w: 1, h: 1 };
     // intersection = 0.5；union = bbox(1) + tri(0.5) - 0.5 = 1

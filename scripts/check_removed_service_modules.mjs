@@ -24,15 +24,10 @@ const REPO = resolve(here, "..");
 // ---------------------------------------------------------------------------
 // Manifest: the 23 removed service modules and their exact dotted paths.
 // ---------------------------------------------------------------------------
-const manifestPath = resolve(
-  REPO,
-  "apps/api/tests/_fixtures/removed_service_modules.json",
-);
+const manifestPath = resolve(REPO, "apps/api/tests/_fixtures/removed_service_modules.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
 const REMOVED_DOTTED = manifest.modules.map((m) => m.facade_module);
-const REMOVED_BASENAMES = new Set(
-  REMOVED_DOTTED.map((d) => d.split(".").pop()),
-);
+const REMOVED_BASENAMES = new Set(REMOVED_DOTTED.map((d) => d.split(".").pop()));
 const REMOVED_FILE_PATHS = new Set(
   REMOVED_DOTTED.map((d) => {
     const name = d.split(".").pop();
@@ -163,18 +158,14 @@ function main() {
         // as a link target.
         const linkRe = new RegExp(`\\]\\(.*${baseName}\\.py[\\s)]`, "g");
         if (linkRe.test(text)) {
-          offenders.push(
-            `${relPath}: links to deleted file '${filePath}'`,
-          );
+          offenders.push(`${relPath}: links to deleted file '${filePath}'`);
         }
       }
     }
   }
 
   if (offenders.length > 0) {
-    console.error(
-      `✗ Found ${offenders.length} reference(s) to removed service modules:\n`,
-    );
+    console.error(`✗ Found ${offenders.length} reference(s) to removed service modules:\n`);
     for (const o of offenders) {
       console.error(`  ${o}`);
     }

@@ -113,7 +113,11 @@ export function useNotificationSocket() {
         scheduleRetry();
       };
       ws.onerror = () => {
-        try { ws?.close(); } catch { /* noop */ }
+        try {
+          ws?.close();
+        } catch {
+          /* noop */
+        }
       };
     }
 
@@ -129,7 +133,11 @@ export function useNotificationSocket() {
     return () => {
       closedManually = true;
       if (retryTimer) window.clearTimeout(retryTimer);
-      try { ws?.close(); } catch { /* noop */ }
+      try {
+        ws?.close();
+      } catch {
+        /* noop */
+      }
     };
   }, [token, qc, setToken, pushToast]);
 }

@@ -12,10 +12,10 @@
 
 单一模态各有硬伤,联合标注的本质是「用图像的语义判别力 + 点云的几何精度,产出同一物体在 2D 与 3D 之间一一对应的标签」。这是训练多模态融合模型(BEVFusion / TransFusion / DeepInteraction 等)的刚需。
 
-| 模态 | 优势 | 短板 |
-|---|---|---|
-| 图像 (2D) | 纹理 / 颜色 / 语义丰富,远处目标可见,标注成本低 | 无深度,受光照与遮挡影响,无法直接定位三维位置 |
-| 点云 (3D LiDAR) | 精确的几何 / 距离 / 尺寸,不受光照影响 | 稀疏(远处尤甚)、无颜色纹理、小目标难辨 |
+| 模态            | 优势                                           | 短板                                         |
+| --------------- | ---------------------------------------------- | -------------------------------------------- |
+| 图像 (2D)       | 纹理 / 颜色 / 语义丰富,远处目标可见,标注成本低 | 无深度,受光照与遮挡影响,无法直接定位三维位置 |
+| 点云 (3D LiDAR) | 精确的几何 / 距离 / 尺寸,不受光照影响          | 稀疏(远处尤甚)、无颜色纹理、小目标难辨       |
 
 联合标注区别于「分别标两次」的核心价值:**跨模态 ID 一致** —— 同一物体在 3D 框和各相机 2D 框上是同一个对象,共享 track_id 与属性。
 
@@ -44,12 +44,12 @@ p_pixel = K · P_cam (归一化 + 畸变校正)  # 内参:投影到像面
 
 ## 14.3 标注对象类型
 
-| 类型 | 几何表达 | 典型场景 |
-|---|---|---|
-| 3D 检测框 | 7-DoF 立方体:`x,y,z + 长宽高 + yaw` | 车辆 / 行人 / 骑行者检测(最常见) |
-| 3D 语义 / 实例分割 | 逐点类别标签 (point-wise) | 可行驶区域 / 地面 / 植被 |
-| 3D 跟踪 | 跨帧同一 `track_id` 的框序列 | 多目标跟踪、轨迹预测 |
-| 2D-3D 联合关键点 | 3D 关键点 + 拓扑 | 人体姿态、车辆朝向标定 |
+| 类型               | 几何表达                            | 典型场景                         |
+| ------------------ | ----------------------------------- | -------------------------------- |
+| 3D 检测框          | 7-DoF 立方体:`x,y,z + 长宽高 + yaw` | 车辆 / 行人 / 骑行者检测(最常见) |
+| 3D 语义 / 实例分割 | 逐点类别标签 (point-wise)           | 可行驶区域 / 地面 / 植被         |
+| 3D 跟踪            | 跨帧同一 `track_id` 的框序列        | 多目标跟踪、轨迹预测             |
+| 2D-3D 联合关键点   | 3D 关键点 + 拓扑                    | 人体姿态、车辆朝向标定           |
 
 > 3D 框最常用,通常假设物体只绕竖直轴旋转(仅 yaw),即 7-DoF;少数场景用全 9-DoF(含 pitch/roll)。三个被调研工具都保留了完整的 3 个旋转分量(见 §14.7),退化成 7-DoF 只是把 pitch/roll 置零。
 
@@ -58,13 +58,16 @@ p_pixel = K · P_cam (归一化 + 畸变校正)  # 内参:投影到像面
 ## 14.4 三种工作流范式(由弱到强)
 
 **(a) 投影辅助标注(主流)**
+
 - 主标注在点云里画 3D 框,系统用外参把 8 个角点投影到各相机,自动生成 2D 框 / 朝向。
 - 标注员只在图像上微调,2D-3D ID 天然一致。SUSTechPOINTS、xtreme1 都是这条路。
 
 **(b) 点云着色 / 深度反投影**
+
 - 把图像 RGB「喷」到点云上,帮标注员在 3D 里靠颜色辨认物体;反之可把点云深度叠到图像做提示。
 
 **(c) 多视角联动校验**
+
 - 一个物体同时在 LiDAR + 多相机(nuScenes 6 相机、Waymo 5 相机)可见,任一视图调整,其它实时同步。
 
 辅助技巧:**多帧聚合(densification)** —— 用 ego-pose 把连续多帧点云拼到统一时刻,让静态物体点更密,便于精确画框;运动物体则需 **motion compensation** 去畸变。SUSTechPOINTS 通过 batch 模式 + Kalman/线性插值实现跨帧标注(§14.7.1)。
@@ -83,11 +86,11 @@ p_pixel = K · P_cam (归一化 + 畸变校正)  # 内参:投影到像面
 
 ## 14.6 数据集格式(可直接参考其 schema)
 
-| 数据集 | 格式特点 | 标定与关联 |
-|---|---|---|
-| **KITTI** | 经典入门。`label_2` 把 2D + 3D 标签合一(含 `alpha` 观测角),点云 `.bin` | `calib` 文件存 P0-P3 / Tr_velo_to_cam |
-| **nuScenes** | 关系型 schema,联合标注的黄金参考 | `calibrated_sensor` + `ego_pose` 显式建模每个传感器 |
-| **Waymo Open** | protobuf,2D-3D 关联做得最细 | 每相机独立标定 + 逐帧位姿 |
+| 数据集         | 格式特点                                                               | 标定与关联                                          |
+| -------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
+| **KITTI**      | 经典入门。`label_2` 把 2D + 3D 标签合一(含 `alpha` 观测角),点云 `.bin` | `calib` 文件存 P0-P3 / Tr_velo_to_cam               |
+| **nuScenes**   | 关系型 schema,联合标注的黄金参考                                       | `calibrated_sensor` + `ego_pose` 显式建模每个传感器 |
+| **Waymo Open** | protobuf,2D-3D 关联做得最细                                            | 每相机独立标定 + 逐帧位姿                           |
 
 nuScenes 的 schema 拆分思路:
 
@@ -129,6 +132,7 @@ scene_name/
   "intrinsic": [9 个浮点]     // 3x3 相机内参 [fx 0 cx; 0 fy cy; 0 0 1]
 }
 ```
+
 外参由 `calibpy/pnp.py` 用 OpenCV `solvePnPRansac` 从点对求解后 `flatten().tolist()` 落盘。
 
 **3D 框结构**(`label/<frame>.json`,数组,每元素一个框):
@@ -136,12 +140,12 @@ scene_name/
 ```json
 {
   "psr": {
-    "position": {"x":4.14, "y":-49.72, "z":1.83},   // 世界坐标中心(米)
-    "scale":    {"x":4.5,  "y":1.68,   "z":1.66},    // 长宽高(米)
-    "rotation": {"x":-0.05,"y":0.003,  "z":1.45}     // 欧拉角(弧度),z 即 yaw
+    "position": { "x": 4.14, "y": -49.72, "z": 1.83 }, // 世界坐标中心(米)
+    "scale": { "x": 4.5, "y": 1.68, "z": 1.66 }, // 长宽高(米)
+    "rotation": { "x": -0.05, "y": 0.003, "z": 1.45 } // 欧拉角(弧度),z 即 yaw
   },
   "obj_type": "Car",
-  "obj_id": "8"                                       // 场景内唯一,跨帧一致
+  "obj_id": "8" // 场景内唯一,跨帧一致
 }
 ```
 
@@ -153,6 +157,7 @@ psr_to_xyz(psr)          # 框 → 8 个角点(局部 → 世界,经欧拉角旋
 → vector4to3 + matmul(intrinsic) # 投影到像面
 → vector3_normalize      # 透视除法 x/z, y/z → 像素
 ```
+
 选中框时 `updateFocusedImageContext()` 自动投影到最佳相机,出界则不绘制。
 
 **跨帧 / 跨模态 ID**:`obj_id` 场景内唯一,所有帧共享 → 天然的 track。batch 模式(默认 20 帧)支持线性插值(`trajectory.py interpolate`)与 Kalman 预测(`annotator="K"`),并可一键同步同 id 物体的类型/属性。
@@ -223,6 +228,7 @@ class RelatedFile(models.Model):  # 关联的上下文图像
     data = FK(Data); path
     images = ManyToManyField(Image)   # 点云帧 ↔ N 张参考图
 ```
+
 导入时按目录结构 / 文件名推断关联(`utils/dataset_manifest/utils.py:156-260` `_find_related_images_3D`),支持 KITTI Raw、Supervisely(`pointcloud/` + `related_images/`)、自定义布局;`.bin` 自动转 `.pcd`。关联关系落在 manifest 的 `meta.related_images`。
 
 **3D cuboid 结构**(`dataset_manager/bindings.py:2469`):
@@ -230,9 +236,11 @@ class RelatedFile(models.Model):  # 关联的上下文图像
 ```python
 points = (*position, *rotation, *scale, 0,0,0,0,0,0,0)  # 3+3+3 + 7 填充
 ```
+
 注意区分:`ShapeType.CUBOID` 是 2D 投影的 8 点(16 坐标);`cuboid_3d` 才是上面的 10 参数 3D 表示。
 
 **关键结论 — 无标定、无投影**(三重证据):
+
 1. **数据库无任何标定字段** —— 没有内参/外参/CameraCalibration 模型,导入不接受 calib 文件。
 2. **related_images 是纯路径关联** —— ManyToMany + manifest 路径列表,无 3D→2D 映射计算。
 3. **前端 `cvat-canvas3d`(Three.js)无投影代码** —— 点云与参考图在各自画布并排显示,标注员在两边**手动分别标**,无自动对齐;代码中无内外参矩阵乘。
@@ -241,17 +249,17 @@ points = (*position, *rotation, *scale, 0,0,0,0,0,0,0)  # 3+3+3 + 7 填充
 
 ### 14.7.4 三者横向对比
 
-| 维度 | SUSTechPOINTS | xtreme1 | CVAT |
-|---|---|---|---|
-| 技术栈 | CherryPy + 原生 JS | Spring Boot + MySQL + Vue3/Three.js | Django + React/Three.js |
-| 多文件关联 | 目录约定(隐式) | ✅ SCENE/SINGLE_DATA + content 文件树 | ✅ RelatedFile + ManyToMany |
-| 标定存储 | ✅ calib JSON `{extrinsic[16],intrinsic[9]}` | ✅ `cameraInternal{fx,fy,cx,cy}+External[16]` | ❌ 无 |
-| 3D↔2D 投影 | ✅ 纯矩阵乘,自动联动 | ✅ Three.js Matrix4,实时 | ❌ 不做(并排参考) |
-| 3D 框表示 | PSR(pos/scale/rot 欧拉角) | center3D/size3D/rotation3D | (pos[3],rot[3],scale[3]) |
-| 跨帧/跨模态 ID | obj_id(场景唯一) | trackId + trackName | track(2D 体系为主) |
-| 多帧聚合/插值 | ✅ 线性 + Kalman | ✅ TrackManager | ✅ 2D track 插值 |
-| 工程完成度 | 原型级 | 生产级 | 生产级 |
-| 对我们的价值 | 投影算法可移植 | 数据模型可借鉴 | 关联建模对照 + 反面教训 |
+| 维度           | SUSTechPOINTS                                | xtreme1                                       | CVAT                        |
+| -------------- | -------------------------------------------- | --------------------------------------------- | --------------------------- |
+| 技术栈         | CherryPy + 原生 JS                           | Spring Boot + MySQL + Vue3/Three.js           | Django + React/Three.js     |
+| 多文件关联     | 目录约定(隐式)                               | ✅ SCENE/SINGLE_DATA + content 文件树         | ✅ RelatedFile + ManyToMany |
+| 标定存储       | ✅ calib JSON `{extrinsic[16],intrinsic[9]}` | ✅ `cameraInternal{fx,fy,cx,cy}+External[16]` | ❌ 无                       |
+| 3D↔2D 投影     | ✅ 纯矩阵乘,自动联动                         | ✅ Three.js Matrix4,实时                      | ❌ 不做(并排参考)           |
+| 3D 框表示      | PSR(pos/scale/rot 欧拉角)                    | center3D/size3D/rotation3D                    | (pos[3],rot[3],scale[3])    |
+| 跨帧/跨模态 ID | obj_id(场景唯一)                             | trackId + trackName                           | track(2D 体系为主)          |
+| 多帧聚合/插值  | ✅ 线性 + Kalman                             | ✅ TrackManager                               | ✅ 2D track 插值            |
+| 工程完成度     | 原型级                                       | 生产级                                        | 生产级                      |
+| 对我们的价值   | 投影算法可移植                               | 数据模型可借鉴                                | 关联建模对照 + 反面教训     |
 
 ---
 
@@ -261,26 +269,26 @@ points = (*position, *rotation, *scale, 0,0,0,0,0,0,0)  # 3+3+3 + 7 填充
 
 ### 14.8.1 已就位的地基(架构早有预留)
 
-| 能力 | 现状 | 位置 |
-|---|---|---|
-| 媒体类型枚举含点云 | ✅ `DatasetDataType.POINT_CLOUD` 已定义 | `apps/api/app/db/enums.py` |
-| 3D 框工具单位留位 | ✅ `ToolUnitId` 含 `lidar_box_3d`(前端未实现) | `apps/api/app/schemas/_jsonb_types.py:169` |
-| 项目类型含点云 | ✅ `ProjectTypeKey` 含 `"lidar"` | `apps/web/src/types/index.ts:31` |
-| 几何类型可扩展 | ✅ Geometry 用 discriminated union,加类型零迁移 | `_jsonb_types.py:328+` |
-| 工具维度类别 / 属性绑定 | ✅ `tool_bindings` 按工具单位嵌套类别 + 属性 schema | `_jsonb_types.py:269` |
+| 能力                    | 现状                                                | 位置                                       |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------ |
+| 媒体类型枚举含点云      | ✅ `DatasetDataType.POINT_CLOUD` 已定义             | `apps/api/app/db/enums.py`                 |
+| 3D 框工具单位留位       | ✅ `ToolUnitId` 含 `lidar_box_3d`(前端未实现)       | `apps/api/app/schemas/_jsonb_types.py:169` |
+| 项目类型含点云          | ✅ `ProjectTypeKey` 含 `"lidar"`                    | `apps/web/src/types/index.ts:31`           |
+| 几何类型可扩展          | ✅ Geometry 用 discriminated union,加类型零迁移     | `_jsonb_types.py:328+`                     |
+| 工具维度类别 / 属性绑定 | ✅ `tool_bindings` 按工具单位嵌套类别 + 属性 schema | `_jsonb_types.py:269`                      |
 
 **结论:媒体维度 + 工具维度 + 几何 union 三层骨架都已为点云预留,联合标注不需要推倒重来。**
 
 ### 14.8.2 关键缺口(❌ = 当前不支持)
 
-| # | 缺口 | 现状 | 参考解法 |
-|---|---|---|---|
-| G1 | **单任务单数据项** | `Task ↔ DatasetItem` 是 1:1 (`task.dataset_item_id`) | xtreme1 的 SCENE/SINGLE_DATA + content 文件树;或 CVAT 的 RelatedFile M2M |
-| G2 | **无标定 / 位姿存储** | `DatasetItem.metadata_` 自由 JSONB,无内外参 | SUSTechPOINTS `{extrinsic[16],intrinsic[9]}` 或 xtreme1 `cameraInternal/External` |
-| G3 | **无 3D 几何类型** | Geometry union 仅 2D | 三者一致:中心 + 尺寸 + 旋转,统一成 `box_3d` |
-| G4 | **file_type 不含点云** | `Task.file_type` 取值 `image`/`video` | 放开 `.pcd/.bin/.las/.ply`;`.bin` 可仿 CVAT 转 `.pcd` |
-| G5 | **前端无 3D 渲染 / 联动** | 工作台只有 2D canvas | SUSTechPOINTS 投影算法(纯矩阵)可移植;或 xtreme1 Three.js 路线 |
-| G6 | **跨模态 ID 一致性无约束** | annotation 挂单个 task | trackId/obj_id + 复用已有 `group_id` 字段 |
+| #   | 缺口                       | 现状                                                 | 参考解法                                                                          |
+| --- | -------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| G1  | **单任务单数据项**         | `Task ↔ DatasetItem` 是 1:1 (`task.dataset_item_id`) | xtreme1 的 SCENE/SINGLE_DATA + content 文件树;或 CVAT 的 RelatedFile M2M          |
+| G2  | **无标定 / 位姿存储**      | `DatasetItem.metadata_` 自由 JSONB,无内外参          | SUSTechPOINTS `{extrinsic[16],intrinsic[9]}` 或 xtreme1 `cameraInternal/External` |
+| G3  | **无 3D 几何类型**         | Geometry union 仅 2D                                 | 三者一致:中心 + 尺寸 + 旋转,统一成 `box_3d`                                       |
+| G4  | **file_type 不含点云**     | `Task.file_type` 取值 `image`/`video`                | 放开 `.pcd/.bin/.las/.ply`;`.bin` 可仿 CVAT 转 `.pcd`                             |
+| G5  | **前端无 3D 渲染 / 联动**  | 工作台只有 2D canvas                                 | SUSTechPOINTS 投影算法(纯矩阵)可移植;或 xtreme1 Three.js 路线                     |
+| G6  | **跨模态 ID 一致性无约束** | annotation 挂单个 task                               | trackId/obj_id + 复用已有 `group_id` 字段                                         |
 
 ### 14.8.3 改动建议(分层,按依赖排序)
 
@@ -330,26 +338,29 @@ class PointMaskGeometry(BaseModel):
     type: Literal["point_mask_3d"] = "point_mask_3d"
     point_indices: list[int]
 ```
+
 三个工具的 3D 框本质同构(中心+尺寸+旋转),此结构可与它们的导入导出互转。前端 `Geometry` union 同步加 TS 类型(codegen 自动产出)。
 
 **第 4 层 · 工具单位(解 G4 / 启用 G3)**
+
 - `Task.file_type` 放开点云扩展名;`lidar_box_3d` 从「留位」转可用,新增 `point_mask_3d`。
 - 视情况新增 `ProjectTypeKey`:`"lidar-det"` / `"mm-lidar-rgb"`。
 
 **第 5 层 · 前端(解 G5)** —— 工作量最大,独立专题
+
 - 起步可直接移植 SUSTechPOINTS 的投影链(`psr_to_xyz → matmul(extrinsic) → matmul(intrinsic) → 透视除法`,纯计算无框架绑定),用第 2 层的标定实时投影。
 - 进阶走 xtreme1 的 Three.js 路线:3D 主视图 + N 相机 2D 视图 + `K·[R|t]` 矩阵联动。
 - 不要走 CVAT 的「并排手标」老路 —— 那等于没做联合。
 
 ### 14.8.4 工作量与风险评估
 
-| 层 | 工作量 | 风险 | 说明 |
-|---|---|---|---|
-| 1 数据关联 | 中 | 中 | 结构决策,影响导入/查询/导出,需先定方案 A/B |
-| 2 标定位姿 | 中 | 低 | 加 Pydantic 子 schema,不动表结构 |
-| 3 几何类型 | 低 | 低 | union 加成员,向后兼容 |
-| 4 工具单位 | 低 | 低 | 放开枚举 + 启用留位 |
-| 5 前端 3D | **高** | 中 | 全新查看器 + 投影联动,占整体绝大部分 |
+| 层         | 工作量 | 风险 | 说明                                       |
+| ---------- | ------ | ---- | ------------------------------------------ |
+| 1 数据关联 | 中     | 中   | 结构决策,影响导入/查询/导出,需先定方案 A/B |
+| 2 标定位姿 | 中     | 低   | 加 Pydantic 子 schema,不动表结构           |
+| 3 几何类型 | 低     | 低   | union 加成员,向后兼容                      |
+| 4 工具单位 | 低     | 低   | 放开枚举 + 启用留位                        |
+| 5 前端 3D  | **高** | 中   | 全新查看器 + 投影联动,占整体绝大部分       |
 
 > 后端(层 1-4)整体中低风险,因架构已预留;**真正的重头在前端 3D 工作台**。建议先做后端骨架 + 移植 SUSTechPOINTS 式最小投影打通联动,再迭代分割 / 跟踪。
 
@@ -373,20 +384,20 @@ class PointMaskGeometry(BaseModel):
 
 ### 14.10.1 本平台技术栈现状(已确认)
 
-| 层 | 栈 |
-|---|---|
+| 层   | 栈                                                                                 |
+| ---- | ---------------------------------------------------------------------------------- |
 | 后端 | FastAPI + SQLAlchemy 2.0(async)+ Pydantic 2 + Alembic + Celery + PostgreSQL(JSONB) |
-| 前端 | React 18 + TypeScript + Vite + Zustand + **Konva / react-konva** |
+| 前端 | React 18 + TypeScript + Vite + Zustand + **Konva / react-konva**                   |
 
 **硬约束**:Konva 是**纯 2D canvas 库,无 WebGL,渲染不了点云**。这一条决定一切 —— 3D 点云必须**新增 Three.js** 这一栈,Konva 撑不住。所以问题不是「整体抄谁」,而是分三层各取所长。
 
 ### 14.10.2 三层借鉴决策
 
-| 层 | 最该借鉴 | 为什么 | 注意 |
-|---|---|---|---|
-| **后端数据模型** | **xtreme1**(设计)+ CVAT(可直译) | xtreme1 的 `SCENE/SINGLE_DATA/content 文件树 + trackId` 是三者里最生产级、最完整的多模态模型(直接答 G1);它是 Java,抄设计不抄代码。CVAT 是 **Django(同为 Python)**,`RelatedFile`/`DimensionType`/`cuboid_3d` 编码能较直接翻译成 SQLAlchemy | xtreme1 模型成熟;CVAT 同语言但**缺标定** |
-| **前端工程外壳** | **CVAT** | 三者中**唯一 React + Three.js**(`cvat-canvas3d`),与本平台 React 栈契合度最高,任务/job/质检体系是生产级 React 标注平台范本 | **CVAT 的 3D 不做投影**(只并排参考),这块不抄 |
-| **标定 + 投影内核** | **SUSTechPOINTS** | 投影是纯矩阵运算(`extrinsic[16] → intrinsic[9] → 透视除法`),**语言/框架无关,可直接移植**,是 CVAT 缺失、决定差异化的核心 | 原型级工程,只取算法不取架构 |
+| 层                  | 最该借鉴                        | 为什么                                                                                                                                                                                                                                    | 注意                                         |
+| ------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **后端数据模型**    | **xtreme1**(设计)+ CVAT(可直译) | xtreme1 的 `SCENE/SINGLE_DATA/content 文件树 + trackId` 是三者里最生产级、最完整的多模态模型(直接答 G1);它是 Java,抄设计不抄代码。CVAT 是 **Django(同为 Python)**,`RelatedFile`/`DimensionType`/`cuboid_3d` 编码能较直接翻译成 SQLAlchemy | xtreme1 模型成熟;CVAT 同语言但**缺标定**     |
+| **前端工程外壳**    | **CVAT**                        | 三者中**唯一 React + Three.js**(`cvat-canvas3d`),与本平台 React 栈契合度最高,任务/job/质检体系是生产级 React 标注平台范本                                                                                                                 | **CVAT 的 3D 不做投影**(只并排参考),这块不抄 |
+| **标定 + 投影内核** | **SUSTechPOINTS**               | 投影是纯矩阵运算(`extrinsic[16] → intrinsic[9] → 透视除法`),**语言/框架无关,可直接移植**,是 CVAT 缺失、决定差异化的核心                                                                                                                   | 原型级工程,只取算法不取架构                  |
 
 ### 14.10.3 综合结论
 

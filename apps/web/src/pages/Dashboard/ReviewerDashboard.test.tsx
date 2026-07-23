@@ -22,9 +22,8 @@ vi.mock("@/hooks/useTasks", () => ({
   useRejectTask: () => ({ mutate: mockRejectMutate }),
 }));
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
   return {
     ...actual,
     useQueryClient: () => ({ invalidateQueries: mockInvalidate }),

@@ -13,6 +13,7 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
 Before implementing:
+
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
@@ -35,12 +36,14 @@ Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, sim
 **Touch only what you must. Clean up only your own mess.**
 
 When editing existing code:
+
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style, even if you'd do it differently.
 - If you notice unrelated dead code, mention it - don't delete it.
 
 When your changes create orphans:
+
 - Remove imports/variables/functions that YOUR changes made unused.
 - Don't remove pre-existing dead code unless asked.
 
@@ -51,11 +54,13 @@ The test: Every changed line should trace directly to the user's request.
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
+
 - "Add validation" → "Write tests for invalid inputs, then make them pass"
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"
 
 For multi-step tasks, state a brief plan:
+
 ```
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
@@ -69,6 +74,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **Before every versioned commit, check whether related docs need to be updated in sync.**
 
 When the following changes occur, you must check the corresponding docs:
+
 - Added/changed API → check `docs-site/api/`, `README.md`
 - Added/changed feature → check `docs-site/user-guide/`, `CHANGELOG.md`
 - Architecture change → check `docs-site/dev/concepts/`, add an ADR if needed (`docs/adr/`)
@@ -102,23 +108,23 @@ Examples: `2026-05-06-auth-refactor.md`, `2026-05-06-perf-optimization.md`
 
 ### No rebuild needed (restart only, or hot-reload)
 
-| Change | Action |
-|---|---|
+| Change                                                                   | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Python business code under `apps/api/**` incl. `app/**` and `alembic/**` | dev API runs on host (`uvicorn --reload`) and auto-reloads. Since v0.10.25 the Celery `worker`/`beat` mounts `./apps/api:/app` source into the container (deps installed with `--system`, not under `/app`; an anonymous volume `/app/.venv` shadows the host venv), so **editing worker business code / adding an alembic migration only needs `docker restart`, no rebuild**. Celery has no `--reload`, so you still must restart after editing code. |
-| Frontend `apps/web/src/**` with vite dev server | HMR handles it |
-| Runtime env vars in `.env` | `docker compose up -d` (recreates container, does not rebuild image) |
-| DB schema changes via alembic | `docker exec ... alembic upgrade head` |
+| Frontend `apps/web/src/**` with vite dev server                          | HMR handles it                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Runtime env vars in `.env`                                               | `docker compose up -d` (recreates container, does not rebuild image)                                                                                                                                                                                                                                                                                                                                                                                    |
+| DB schema changes via alembic                                            | `docker exec ... alembic upgrade head`                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### Rebuild required (`docker compose build` or `up --build`)
 
-| Change | Reason |
-|---|---|
-| `pyproject.toml` / `uv.lock` / `requirements.txt` | Dependencies are baked into image layers |
-| `package.json` / `pnpm-lock.yaml` | Same |
-| `Dockerfile`, `.dockerignore` | Build steps changed |
-| Base image version (`FROM python:3.x`) | Base layer changed |
-| `docker-compose.yml` `build:` block, build args, `COPY` paths | Build context changed |
-| Code is NOT volume-mounted (production-style image with `COPY` of source) | Image holds a frozen snapshot |
+| Change                                                                    | Reason                                   |
+| ------------------------------------------------------------------------- | ---------------------------------------- |
+| `pyproject.toml` / `uv.lock` / `requirements.txt`                         | Dependencies are baked into image layers |
+| `package.json` / `pnpm-lock.yaml`                                         | Same                                     |
+| `Dockerfile`, `.dockerignore`                                             | Build steps changed                      |
+| Base image version (`FROM python:3.x`)                                    | Base layer changed                       |
+| `docker-compose.yml` `build:` block, build args, `COPY` paths             | Build context changed                    |
+| Code is NOT volume-mounted (production-style image with `COPY` of source) | Image holds a frozen snapshot            |
 
 ### Quick reference
 
@@ -138,7 +144,7 @@ docker exec ai-annotation-platform-celery-worker-1 \
 
 ## 9. Documentation Writing Style (no user-visible version numbers)
 
-**Docs must read as the CURRENT state of the system — not as a changelog.** A reader should never see a `vX.Y.Z`-style version number in the rendered page. When you update a doc after a code change, weave the change into the prose so the page describes how things work *now*; do not leave version annotations behind — neither changelog-style prefixes nor inline provenance:
+**Docs must read as the CURRENT state of the system — not as a changelog.** A reader should never see a `vX.Y.Z`-style version number in the rendered page. When you update a doc after a code change, weave the change into the prose so the page describes how things work _now_; do not leave version annotations behind — neither changelog-style prefixes nor inline provenance:
 
 - ❌ `v1.2.3: added the foo flag`
 - ❌ `## v1.2.3` as a section heading in a guide/concept doc
@@ -158,12 +164,14 @@ If version provenance genuinely matters, record it where readers don't see it �
 **`CHANGELOG.md` is the source of truth for the version number.** Several other files carry a copy of it and have historically drifted (they sat stale at `0.12.x` while CHANGELOG was already at `0.17.x`). When you cut a release, bump every copy to match CHANGELOG in the same commit.
 
 Edit by hand:
+
 - `CHANGELOG.md` — promote `## [Unreleased]` to the new `## [x.y.z] - date` section, then leave a fresh empty `## [Unreleased]` on top (see section 11 for the workflow). This section is the version-number truth.
 - `apps/api/app/config.py` — `app_version` (single runtime source: FastAPI title version **and** `/health` both read it).
 - `apps/api/pyproject.toml` — `[project].version`.
 - `apps/web/package.json` — `version`.
 
 Regenerated, do **not** hand-edit:
+
 - `apps/api/uv.lock` — `anno-api` version: refresh via `uv lock` (or `uv sync`) after editing pyproject.
 - `apps/api/openapi.snapshot.json` — `info.version`: regenerated by the pre-commit hook; the docs build copies this snapshot to `public/openapi.json` (do not run `dump-openapi.py` manually).
 
@@ -177,9 +185,9 @@ Verify the running stack actually serves the new number: `curl -s localhost:8000
 
 `### Added` · `### Changed` · `### Deprecated` · `### Removed` · `### Fixed` · `### Security`
 
-Write for humans, not machines: each entry says *what* changed and *why* it matters; a `Fixed` entry names the user-visible symptom. Keep the same `## [x.y.z] - YYYY-MM-DD` per-version section convention; latest version first; no version numbers in section bodies beyond the heading.
+Write for humans, not machines: each entry says _what_ changed and _why_ it matters; a `Fixed` entry names the user-visible symptom. Keep the same `## [x.y.z] - YYYY-MM-DD` per-version section convention; latest version first; no version numbers in section bodies beyond the heading.
 
-**Daily changes land in `## [Unreleased]`, not in a dated section.** The top of the file always carries an `## [Unreleased]` block. Routine work — including ordinary bug fixes — adds its entry there under the right type heading *in the same commit as the code change* (this supersedes the older "skip CHANGELOG for ordinary bug fixes" guidance). Trivial/no-user-impact churn (pure refactors, test-only, formatting) may still be skipped.
+**Daily changes land in `## [Unreleased]`, not in a dated section.** The top of the file always carries an `## [Unreleased]` block. Routine work — including ordinary bug fixes — adds its entry there under the right type heading _in the same commit as the code change_ (this supersedes the older "skip CHANGELOG for ordinary bug fixes" guidance). Trivial/no-user-impact churn (pure refactors, test-only, formatting) may still be skipped.
 
 **On release, fold and clear.** When cutting `x.y.z`, rename the `## [Unreleased]` heading to `## [x.y.z] - YYYY-MM-DD`, then add a new empty `## [Unreleased]` above it. Do the version-source bumps from section 10 in the same release commit.
 
@@ -194,6 +202,7 @@ Write for humans, not machines: each entry says *what* changed and *why* it matt
 ```
 
 ## Parallel Subagent Worktree Rule
+
 - When dispatching any subagent (the `Agent` tool) that will **modify code**, always pass `isolation: "worktree"` so the agent works in its own git worktree (auto-cleaned if it makes no changes).
 - Read-only / search-only subagents (e.g. `Explore`, pure lookups) do **not** need a worktree.
 - **When the main process spots independent, parallelizable tasks, proactively split them out and dispatch subagents to run in parallel** — don't serialize work that could run concurrently. Put the independent (dependency-free) subagent calls in a single message so they actually run concurrently.
@@ -205,8 +214,10 @@ Write for humans, not machines: each entry says *what* changed and *why* it matt
 - **After a subagent's branch is merged back into the main branch, remember to delete its local worktree** (`git worktree remove <path>`, plus `git worktree prune` and deleting the `worktree-agent-*` branch if needed) to avoid piling up locked leftovers under `.claude/worktrees/`.
 
 ## Keep Docs in Sync
+
 - When code changes affect documented behavior, update the relevant docs **in the same change** — not in a follow-up.
 - Removed/renamed symbols → grep all `*.md` for the old name and fix every reference. Stale doc links are bugs.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
@@ -229,8 +240,8 @@ To view full details (including description, API call log, console errors, etc.)
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT display_id, title, description, severity, status, route, browser_ua, recent_api_calls, recent_console_errors FROM bug_reports WHERE display_id = 'B-1';"
 ```
-For frontend bugs, make good use of the chrome devtools MCP to inspect recent API calls and console errors to help locate the problem.
----
+
+## For frontend bugs, make good use of the chrome devtools MCP to inspect recent API calls and console errors to help locate the problem.
 
 ## Project Documentation Index
 
@@ -252,6 +263,7 @@ Organized by the [Diátaxis](https://diataxis.fr/) framework, layered by role ×
 - [docs-site/api/](docs-site/api/) — backend API docs (auto-rendered from OpenAPI)
 
 Key paths:
+
 - Architecture docs: `docs-site/dev/concepts/` (formerly `dev/architecture/`)
 - Protocol specs: `docs-site/dev/reference/` (includes env-vars.md / ml-backend-protocol.md)
 - Environment variable changes → update `.env.example` in sync, then run `pnpm docs:gen-env-vars` to regenerate `dev/reference/env-vars.md`

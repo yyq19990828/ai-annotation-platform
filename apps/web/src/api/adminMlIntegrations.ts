@@ -324,15 +324,12 @@ export interface SmokeTestResponse {
 }
 
 export const adminMlIntegrationsApi = {
-  overview: () =>
-    apiClient.get<MLIntegrationsOverview>("/admin/ml-integrations/overview"),
+  overview: () => apiClient.get<MLIntegrationsOverview>("/admin/ml-integrations/overview"),
   probe: (payload: ProbeRequest) =>
     apiClient.post<ProbeResponse>("/admin/ml-integrations/probe", payload),
-  runtimeHints: () =>
-    apiClient.get<RuntimeHints>("/admin/ml-integrations/runtime-hints"),
+  runtimeHints: () => apiClient.get<RuntimeHints>("/admin/ml-integrations/runtime-hints"),
   /** v0.9.7 · 全局 backend 去重列表, 用于 Wizard step 4 dropdown. */
-  listAll: () =>
-    apiClient.get<GlobalBackendListResponse>("/admin/ml-integrations/all"),
+  listAll: () => apiClient.get<GlobalBackendListResponse>("/admin/ml-integrations/all"),
   /** ADR-0049 · 逐物理卡静态容量、模式和配置诊断。 */
   gpuResources: () =>
     apiClient.get<GPUArbiterResourcesResponse>("/admin/ml-integrations/gpu-resources"),
@@ -348,8 +345,7 @@ export const adminMlIntegrationsApi = {
   updateRegistry: (id: string, payload: MLBackendRegistryUpdatePayload) =>
     apiClient.put<MLBackendOut>(`/admin/ml-integrations/registry/${id}`, payload),
   /** v0.19.0 · 删除全局 backend; 有运行中预标任务返 409; 不存在返 404. */
-  deleteRegistry: (id: string) =>
-    apiClient.delete<void>(`/admin/ml-integrations/registry/${id}`),
+  deleteRegistry: (id: string) => apiClient.delete<void>(`/admin/ml-integrations/registry/${id}`),
   /** v0.19.0 · 对全局 backend 触发一次健康检查. */
   registryHealth: (id: string) =>
     apiClient.post<RegistryHealthResponse>(`/admin/ml-integrations/registry/${id}/health`),

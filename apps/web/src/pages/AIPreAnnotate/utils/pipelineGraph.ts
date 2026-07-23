@@ -7,11 +7,7 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
-import {
-  inputLabel,
-  INPUT_BBOX_PROMPT_ID,
-  INPUT_CROP_ID,
-} from "@/api/capabilityInputs";
+import { inputLabel, INPUT_BBOX_PROMPT_ID, INPUT_CROP_ID } from "@/api/capabilityInputs";
 import {
   TASKS,
   MODALITIES,
@@ -86,9 +82,7 @@ export function classFilterText(payload: PipelineStagePayload | null | undefined
 export function roiText(payload: PipelineStagePayload | null | undefined): string {
   const roi = payload?.roi;
   if (!roi) return "";
-  return roi.mode === "crop"
-    ? `裁剪${roi.pad != null ? ` · pad ${roi.pad}` : ""}`
-    : "整图框提示";
+  return roi.mode === "crop" ? `裁剪${roi.pad != null ? ` · pad ${roi.pad}` : ""}` : "整图框提示";
 }
 
 /** 变体摘要: "sam_variant=large, ..." / ""。 */
@@ -124,19 +118,14 @@ export interface DownstreamKind {
   isOcrRecognize: boolean;
 }
 
-export function classifyDownstream(
-  model: DownstreamModelLike | null | undefined,
-): DownstreamKind {
+export function classifyDownstream(model: DownstreamModelLike | null | undefined): DownstreamKind {
   const isBoxSegGeometry =
     model?.task === "segmentation" &&
     (model?.supported_prompts ?? []).includes("bbox") &&
     !model?.is_interactive;
-  const isCropDetectGeometry =
-    model?.task === "detection" && !model?.is_interactive;
+  const isCropDetectGeometry = model?.task === "detection" && !model?.is_interactive;
   const isOcrRecognize =
-    model?.task === "ocr" &&
-    model?.composition !== "composite" &&
-    !model?.is_interactive;
+    model?.task === "ocr" && model?.composition !== "composite" && !model?.is_interactive;
   return {
     isBoxSegGeometry: !!isBoxSegGeometry,
     isCropDetectGeometry: !!isCropDetectGeometry,
@@ -159,7 +148,13 @@ export interface DownstreamShape {
 export function deriveDownstreamShape(model: DownstreamModelLike): DownstreamShape {
   const k = classifyDownstream(model);
   if (k.isCropDetectGeometry) {
-    return { role: "检测", roiMode: "crop", inputMode: "crop", writeTarget: "geometry", isAttributes: false };
+    return {
+      role: "检测",
+      roiMode: "crop",
+      inputMode: "crop",
+      writeTarget: "geometry",
+      isAttributes: false,
+    };
   }
   if (k.isBoxSegGeometry) {
     return { role: "分割", roiMode: "geometry", writeTarget: "geometry", isAttributes: false };
@@ -274,8 +269,7 @@ export function stageWarning(
   // task=ocr 是识别阶段 (产 text/orientation/language 非 class), 不套「分类下游须产 class」判据。
   if (caps.producesClass === false && payload?.task_type !== "ocr")
     return "该模型不产类别属性（output_attribute_types 不含 class），作分类下游属性恒空";
-  if (!caps.producesAttributes)
-    return "该后端不自报输出属性，作下游分类只会重新检测、属性恒空";
+  if (!caps.producesAttributes) return "该后端不自报输出属性，作下游分类只会重新检测、属性恒空";
   return null;
 }
 
@@ -388,7 +382,11 @@ export function canReparent(
 }
 
 /** 应用改父: 返回新 stagesGraph (childSid.parentSid = newParentSid), 校验交给调用方。 */
-export function reparent(graph: StageEntry[], childSid: string, newParentSid: string): StageEntry[] {
+export function reparent(
+  graph: StageEntry[],
+  childSid: string,
+  newParentSid: string,
+): StageEntry[] {
   return graph.map((e) => (e.sid === childSid ? { ...e, parentSid: newParentSid } : e));
 }
 

@@ -35,9 +35,7 @@ def _receipt_key() -> bytes:
     ).digest()
 
 
-def issue_ai_mask_receipt(
-    claims: dict[str, Any], *, now: int | None = None
-) -> str:
+def issue_ai_mask_receipt(claims: dict[str, Any], *, now: int | None = None) -> str:
     if _RESERVED_CLAIMS.intersection(claims):
         raise ValueError("receipt claims cannot override reserved fields")
     issued_at = int(time.time() if now is None else now)
@@ -56,11 +54,11 @@ def issue_ai_mask_receipt(
     return f"{encoded}.{_b64_encode(signature)}"
 
 
-def verify_ai_mask_receipt(
-    token: str, *, now: int | None = None
-) -> dict[str, Any]:
+def verify_ai_mask_receipt(token: str, *, now: int | None = None) -> dict[str, Any]:
     if len(token) > 4096:
-        raise AiMaskReceiptError("invalid_candidate_receipt", "candidate receipt is invalid")
+        raise AiMaskReceiptError(
+            "invalid_candidate_receipt", "candidate receipt is invalid"
+        )
     try:
         encoded, signature_text = token.split(".", 1)
         signature = _b64_decode(signature_text)

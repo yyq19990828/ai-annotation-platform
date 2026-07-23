@@ -75,30 +75,33 @@ export function VideoKonvaInteractionLayer({
           listening={false}
         />
       )}
-      {handleBox && HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
-        <Rect
-          key={dir}
-          name="video-resize-handle"
-          x={(handleBox.geom.x + handleBox.geom.w * cx) * size.w - handleSize / 2}
-          y={(handleBox.geom.y + handleBox.geom.h * cy) * size.h - handleSize / 2}
-          width={handleSize}
-          height={handleSize}
-          fill="white"
-          stroke={colorToHex(handleBox.color)}
-          strokeWidth={screenToWorld(1.5, scale)}
-          cornerRadius={screenToWorld(2, scale)}
-          hitStrokeWidth={screenToWorld(6, scale)}
-          onPointerDown={(e: Konva.KonvaEventObject<PointerEvent>) => onResizeHandlePointerDown(dir, handleBox.id, handleBox.geom, e)}
-          onMouseEnter={(e: Konva.KonvaEventObject<MouseEvent>) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = cursor;
-          }}
-          onMouseLeave={(e: Konva.KonvaEventObject<MouseEvent>) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = "";
-          }}
-        />
-      ))}
+      {handleBox &&
+        HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
+          <Rect
+            key={dir}
+            name="video-resize-handle"
+            x={(handleBox.geom.x + handleBox.geom.w * cx) * size.w - handleSize / 2}
+            y={(handleBox.geom.y + handleBox.geom.h * cy) * size.h - handleSize / 2}
+            width={handleSize}
+            height={handleSize}
+            fill="white"
+            stroke={colorToHex(handleBox.color)}
+            strokeWidth={screenToWorld(1.5, scale)}
+            cornerRadius={screenToWorld(2, scale)}
+            hitStrokeWidth={screenToWorld(6, scale)}
+            onPointerDown={(e: Konva.KonvaEventObject<PointerEvent>) =>
+              onResizeHandlePointerDown(dir, handleBox.id, handleBox.geom, e)
+            }
+            onMouseEnter={(e: Konva.KonvaEventObject<MouseEvent>) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = cursor;
+            }}
+            onMouseLeave={(e: Konva.KonvaEventObject<MouseEvent>) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        ))}
     </Layer>
   );
 }

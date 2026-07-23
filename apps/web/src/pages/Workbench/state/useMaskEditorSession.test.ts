@@ -132,7 +132,9 @@ describe("useMaskEditorSession · A1 迟到 GET 不得覆盖当前 Buffer", () =
     const refreshedGeneration = result.current.generation;
 
     rerender({ sessionKey: refreshedKey, onLeaveDirty });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(result.current.generation).toBe(refreshedGeneration);
     expect(result.current.phase).toBe("ready");
@@ -150,7 +152,9 @@ describe("useMaskEditorSession · dirty leave guard", () => {
     const generation = result.current.generation;
 
     rerender({ sessionKey: KEY_B, onLeaveDirty });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(onLeaveDirty).toHaveBeenCalledWith(KEY_A, KEY_B);
     expect(result.current.generation).toBe(generation);
     expect(result.current.acceptedSessionId).not.toBe(result.current.sessionId);
@@ -158,18 +162,22 @@ describe("useMaskEditorSession · dirty leave guard", () => {
 
     const discard = vi.fn(async () => "discard" as const);
     rerender({ sessionKey: KEY_A, onLeaveDirty: discard });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     rerender({ sessionKey: KEY_B, onLeaveDirty: discard });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(result.current.generation).toBeGreaterThan(generation);
     expect(result.current.phase).toBe("loading");
   });
 
   it("三段选择结果明确", () => {
     expect(promptMaskLeaveChoice(vi.fn(() => true))).toBe("save");
-    expect(promptMaskLeaveChoice(vi.fn()
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true))).toBe("discard");
+    expect(
+      promptMaskLeaveChoice(vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)),
+    ).toBe("discard");
     expect(promptMaskLeaveChoice(vi.fn(() => false))).toBe("continue");
   });
 
@@ -182,11 +190,13 @@ describe("useMaskEditorSession · dirty leave guard", () => {
         size: [20, 20],
         counts: [0, 1, 10, 1, 388],
       });
-      expect(await result.current.runInstanceOperation("split_components", {
-        type: "split_components",
-        keep: "largest",
-        connectivity: 4,
-      })).toBe(true);
+      expect(
+        await result.current.runInstanceOperation("split_components", {
+          type: "split_components",
+          keep: "largest",
+          connectivity: 4,
+        }),
+      ).toBe(true);
     });
     expect(result.current.dirty).toBe(false);
     expect(result.current.instanceOperationPreview).not.toBeNull();
@@ -194,7 +204,9 @@ describe("useMaskEditorSession · dirty leave guard", () => {
     const generation = result.current.generation;
 
     rerender({ sessionKey: KEY_B, onLeaveDirty });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(onLeaveDirty).toHaveBeenCalledWith(KEY_A, KEY_B);
     expect(result.current.generation).toBe(generation);
@@ -217,7 +229,11 @@ describe("useMaskEditorSession · A2 保存失败后 Buffer 保留 + 可 retry",
     const bufferBeforeSave = result.current.buffer;
 
     // 第一次 save 失败 (模拟 409 / 网络错误)
-    const failingCommit = vi.fn(async () => ({ ok: false, retryable: true, error: new Error("409") }));
+    const failingCommit = vi.fn(async () => ({
+      ok: false,
+      retryable: true,
+      error: new Error("409"),
+    }));
     let firstResult: { ok: boolean } | undefined;
     await act(async () => {
       firstResult = await result.current.save(failingCommit);
@@ -336,15 +352,29 @@ describe("useMaskEditorSession · A7 重复 Enter / 双击单飞去重", () => {
     let resolveNew!: (value: { ok: boolean; retryable: boolean }) => void;
     let oldPromise!: Promise<{ ok: boolean }>;
     act(() => {
-      oldPromise = result.current.save(() => new Promise((resolve) => { resolveOld = resolve; }));
+      oldPromise = result.current.save(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      );
     });
     rerender({ sessionKey: KEY_B, onLeaveDirty: vi.fn(async () => "discard" as const) });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     await act(async () => result.current.loadBlank(result.current.generation));
     act(() => result.current.paintAt(4, 4));
     let newPromise!: Promise<{ ok: boolean }>;
-    const newCommit = vi.fn(() => new Promise<{ ok: boolean; retryable: boolean }>((resolve) => { resolveNew = resolve; }));
-    act(() => { newPromise = result.current.save(newCommit); });
+    const newCommit = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; retryable: boolean }>((resolve) => {
+          resolveNew = resolve;
+        }),
+    );
+    act(() => {
+      newPromise = result.current.save(newCommit);
+    });
 
     await act(async () => {
       resolveOld({ ok: true, retryable: false });

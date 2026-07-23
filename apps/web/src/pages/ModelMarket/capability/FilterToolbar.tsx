@@ -30,10 +30,34 @@ export function FilterToolbar(p: FilterToolbarProps) {
     toggle: (v: string) => void;
     render: (v: string) => string;
   }[] = [
-    { label: "任务", values: p.facets.tasks, active: p.taskFilter, toggle: p.onToggleTask, render: taskLabel },
-    { label: "模型族", values: p.facets.families, active: p.familyFilter, toggle: p.onToggleFamily, render: (v) => v },
-    { label: "推理框架", values: p.facets.infras, active: p.infraFilter, toggle: p.onToggleInfra, render: infraLabel },
-    { label: "模态", values: p.facets.modalities, active: p.modalityFilter, toggle: p.onToggleModality, render: modalityLabel },
+    {
+      label: "任务",
+      values: p.facets.tasks,
+      active: p.taskFilter,
+      toggle: p.onToggleTask,
+      render: taskLabel,
+    },
+    {
+      label: "模型族",
+      values: p.facets.families,
+      active: p.familyFilter,
+      toggle: p.onToggleFamily,
+      render: (v) => v,
+    },
+    {
+      label: "推理框架",
+      values: p.facets.infras,
+      active: p.infraFilter,
+      toggle: p.onToggleInfra,
+      render: infraLabel,
+    },
+    {
+      label: "模态",
+      values: p.facets.modalities,
+      active: p.modalityFilter,
+      toggle: p.onToggleModality,
+      render: modalityLabel,
+    },
   ];
 
   const anyFacet = groups.some((g) => g.values.length > 0);
@@ -45,7 +69,9 @@ export function FilterToolbar(p: FilterToolbarProps) {
         (g) =>
           g.values.length > 0 && (
             <div key={g.label} className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-2xs font-semibold text-muted-foreground">{g.label}</span>
+              <span className="shrink-0 text-2xs font-semibold text-muted-foreground">
+                {g.label}
+              </span>
               <div className="flex flex-wrap gap-1.5">
                 {g.values.map((v) => {
                   const on = g.active.has(v);

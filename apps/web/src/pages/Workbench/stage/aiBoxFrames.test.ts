@@ -11,7 +11,10 @@ import {
 const bbox = { x: 0, y: 0, w: 0.2, h: 0.2 };
 
 function bboxBox(id: string, frameIndex: number): AiBox {
-  return { id, geometry: { type: "video_bbox", frame_index: frameIndex, bbox } } as unknown as AiBox;
+  return {
+    id,
+    geometry: { type: "video_bbox", frame_index: frameIndex, bbox },
+  } as unknown as AiBox;
 }
 
 function trackBox(id: string, frames: number[]): AiBox {

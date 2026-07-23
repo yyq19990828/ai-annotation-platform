@@ -14,9 +14,7 @@ function validateKeyframesMemory(value: unknown): VideoKeyframesPropagateSubmit 
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<VideoKeyframesPropagateSubmit>;
   const direction =
-    raw.direction === "forward" || raw.direction === "backward"
-      ? raw.direction
-      : null;
+    raw.direction === "forward" || raw.direction === "backward" ? raw.direction : null;
   const count =
     typeof raw.count === "number" && Number.isFinite(raw.count) && raw.count > 0
       ? Math.floor(raw.count)
@@ -64,11 +62,7 @@ export function VideoKeyframesPropagateDialog({
 
   useEffect(() => {
     if (open) {
-      const remembered = readDialogMemory(
-        userId,
-        "kfPropagate",
-        validateKeyframesMemory,
-      );
+      const remembered = readDialogMemory(userId, "kfPropagate", validateKeyframesMemory);
       setDirection(remembered?.direction ?? "forward");
       setCount(remembered?.count ?? 10);
       setOverwrite(overwriteOverride ?? remembered?.overwrite ?? false);
@@ -106,7 +100,11 @@ export function VideoKeyframesPropagateDialog({
       <div className="grid gap-3 w-[340px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
         <div className="flex items-center justify-between">
           <b className="text-sm">复制框到后续帧</b>
-          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm"
+          >
             ✕
           </button>
         </div>
@@ -127,9 +125,7 @@ export function VideoKeyframesPropagateDialog({
                 onClick={() => setDirection(d)}
                 className={cn(
                   "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs whitespace-nowrap",
-                  direction === d
-                    ? "border-brand bg-brand/10"
-                    : "border-border",
+                  direction === d ? "border-brand bg-brand/10" : "border-border",
                 )}
               >
                 {/* v0.21.27 · U-pvs-3 · U1 消歧, 与 AI 追踪对话框方向标签统一 */}
@@ -149,9 +145,7 @@ export function VideoKeyframesPropagateDialog({
                 onClick={() => setCount(preset)}
                 className={cn(
                   "py-1.5 border rounded-md bg-background text-foreground cursor-pointer text-xs",
-                  count === preset
-                    ? "border-brand bg-brand/10"
-                    : "border-border",
+                  count === preset ? "border-brand bg-brand/10" : "border-border",
                 )}
               >
                 {preset}

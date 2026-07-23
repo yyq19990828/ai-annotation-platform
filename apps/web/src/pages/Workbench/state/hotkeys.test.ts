@@ -32,7 +32,10 @@ describe("dispatchKey · 修饰键", () => {
     expect(dispatch({ key: "0", ctrlKey: true })).toEqual({ type: "fitReset" });
   });
   it("Ctrl+ArrowRight → next task", () => {
-    expect(dispatch({ key: "ArrowRight", ctrlKey: true })).toEqual({ type: "navigateTask", dir: "next" });
+    expect(dispatch({ key: "ArrowRight", ctrlKey: true })).toEqual({
+      type: "navigateTask",
+      dir: "next",
+    });
   });
   it("Ctrl+A → selectAllUser", () => {
     expect(dispatch({ key: "a", ctrlKey: true })).toEqual({ type: "selectAllUser" });
@@ -89,10 +92,16 @@ describe("dispatchKey · 单键", () => {
   });
   it("Tab / Shift+Tab → imageCycleInCategory (同类流转); ` → imageStepCategory (跨类)", () => {
     expect(dispatch({ key: "Tab" })).toEqual({ type: "imageCycleInCategory", dir: 1 });
-    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({ type: "imageCycleInCategory", dir: -1 });
+    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({
+      type: "imageCycleInCategory",
+      dir: -1,
+    });
     // Shift+` 在美式布局 key 是 "~" 而非 "`"，故按物理键位 code 判定；测试用 code 模拟真实事件。
     expect(dispatch({ code: "Backquote" })).toEqual({ type: "imageStepCategory", dir: 1 });
-    expect(dispatch({ code: "Backquote", shiftKey: true })).toEqual({ type: "imageStepCategory", dir: -1 });
+    expect(dispatch({ code: "Backquote", shiftKey: true })).toEqual({
+      type: "imageStepCategory",
+      dir: -1,
+    });
   });
   it("J / K → cycleUser 不循环", () => {
     expect(dispatch({ key: "j" })).toEqual({ type: "cycleUser", dir: 1, loop: false });
@@ -132,7 +141,9 @@ describe("dispatchKey · 上下文相关", () => {
   it("popover 活跃时类别字母不消费", () => {
     expect(dispatch({ key: "f" }, { pendingActive: true })).toBeNull();
     // 但 Ctrl+Z 等系统级仍消费
-    expect(dispatch({ key: "z", ctrlKey: true }, { pendingActive: true })).toEqual({ type: "undo" });
+    expect(dispatch({ key: "z", ctrlKey: true }, { pendingActive: true })).toEqual({
+      type: "undo",
+    });
     // Esc 也仍消费
     expect(dispatch({ key: "Escape" }, { pendingActive: true })).toEqual({ type: "cancel" });
   });
@@ -155,18 +166,33 @@ describe("dispatchKey · 上下文相关", () => {
 
   it("方向键 nudge 仅在有选中时映射", () => {
     expect(dispatch({ key: "ArrowUp" })).toBeNull();
-    expect(dispatch({ key: "ArrowUp" }, { hasSelection: true })).toEqual({ type: "arrowNudge", dx: 0, dy: -1 });
-    expect(dispatch({ key: "ArrowRight" }, { hasSelection: true })).toEqual({ type: "arrowNudge", dx: 1, dy: 0 });
+    expect(dispatch({ key: "ArrowUp" }, { hasSelection: true })).toEqual({
+      type: "arrowNudge",
+      dx: 0,
+      dy: -1,
+    });
+    expect(dispatch({ key: "ArrowRight" }, { hasSelection: true })).toEqual({
+      type: "arrowNudge",
+      dx: 1,
+      dy: 0,
+    });
   });
   it("Shift + 方向键 → 10x 步长", () => {
-    expect(dispatch({ key: "ArrowDown", shiftKey: true }, { hasSelection: true }))
-      .toEqual({ type: "arrowNudge", dx: 0, dy: 10 });
+    expect(dispatch({ key: "ArrowDown", shiftKey: true }, { hasSelection: true })).toEqual({
+      type: "arrowNudge",
+      dx: 0,
+      dy: 10,
+    });
   });
   it("Alt + → / ← (有选中) → crossFramePropagate", () => {
-    expect(dispatch({ key: "ArrowRight", altKey: true }, { hasSelection: true }))
-      .toEqual({ type: "crossFramePropagate", dir: "next" });
-    expect(dispatch({ key: "ArrowLeft", altKey: true }, { hasSelection: true }))
-      .toEqual({ type: "crossFramePropagate", dir: "prev" });
+    expect(dispatch({ key: "ArrowRight", altKey: true }, { hasSelection: true })).toEqual({
+      type: "crossFramePropagate",
+      dir: "next",
+    });
+    expect(dispatch({ key: "ArrowLeft", altKey: true }, { hasSelection: true })).toEqual({
+      type: "crossFramePropagate",
+      dir: "prev",
+    });
   });
   it("Alt + → 无选中 → 不触发跨帧", () => {
     expect(dispatch({ key: "ArrowRight", altKey: true })).toBeNull();
@@ -200,12 +226,16 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "V" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
     expect(dispatch({ key: "b" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "box" });
     expect(dispatch({ key: "T" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
-    expect(dispatch({ key: "3", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
+    expect(dispatch({ key: "3", altKey: true }, videoCtx)).toEqual({
+      type: "setVideoTool",
+      tool: "select",
+    });
   });
 
   it("Ctrl+B opens selected video track propagation only in video mode", () => {
-    expect(dispatch({ key: "b", ctrlKey: true }, { videoMode: true, hasSelectedVideoTrack: true }))
-      .toEqual({ type: "videoPropagateTrack" });
+    expect(
+      dispatch({ key: "b", ctrlKey: true }, { videoMode: true, hasSelectedVideoTrack: true }),
+    ).toEqual({ type: "videoPropagateTrack" });
     expect(dispatch({ key: "b", ctrlKey: true }, videoCtx)).toBeNull();
     expect(dispatch({ key: "b", ctrlKey: true }, { hasSelectedVideoTrack: true })).toBeNull();
   });
@@ -223,52 +253,100 @@ describe("dispatchKey · video mode", () => {
   it(", / . → videoSeekKeyframe when a video track is selected", () => {
     const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, hasSelectedVideoTrack: true };
     expect(dispatch({ key: "." }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: 1 });
-    expect(dispatch({ key: "," }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
+    expect(dispatch({ key: "," }, selectedTrackCtx)).toEqual({
+      type: "videoSeekKeyframe",
+      dir: -1,
+    });
   });
 
   it("Shift + ArrowLeft / ArrowRight keep one-frame seek when sampling is off", () => {
-    expect(dispatch({ key: "ArrowRight", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
-    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, videoCtx)).toEqual({
+      type: "videoSeek",
+      delta: 1,
+    });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, videoCtx)).toEqual({
+      type: "videoSeek",
+      delta: -1,
+    });
   });
 
   it("Shift + ArrowLeft / ArrowRight do not jump keyframes when a video track is selected", () => {
     const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, hasSelectedVideoTrack: true };
-    expect(dispatch({ key: "ArrowRight", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeek", delta: 1 });
-    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeek", delta: -1 });
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, selectedTrackCtx)).toEqual({
+      type: "videoSeek",
+      delta: 1,
+    });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, selectedTrackCtx)).toEqual({
+      type: "videoSeek",
+      delta: -1,
+    });
   });
 
   it("Ctrl+M and Ctrl+[ / ] map to video bookmark navigation in video mode", () => {
-    expect(dispatch({ key: "m", ctrlKey: true }, videoCtx)).toEqual({ type: "videoToggleBookmark" });
-    expect(dispatch({ key: "[", ctrlKey: true }, videoCtx)).toEqual({ type: "videoJumpHistory", dir: -1 });
-    expect(dispatch({ key: "]", ctrlKey: true }, videoCtx)).toEqual({ type: "videoJumpHistory", dir: 1 });
+    expect(dispatch({ key: "m", ctrlKey: true }, videoCtx)).toEqual({
+      type: "videoToggleBookmark",
+    });
+    expect(dispatch({ key: "[", ctrlKey: true }, videoCtx)).toEqual({
+      type: "videoJumpHistory",
+      dir: -1,
+    });
+    expect(dispatch({ key: "]", ctrlKey: true }, videoCtx)).toEqual({
+      type: "videoJumpHistory",
+      dir: 1,
+    });
   });
 
   it("Alt+L clears the video loop region in video mode", () => {
-    expect(dispatch({ key: "l", altKey: true }, videoCtx)).toEqual({ type: "videoClearLoopRegion" });
+    expect(dispatch({ key: "l", altKey: true }, videoCtx)).toEqual({
+      type: "videoClearLoopRegion",
+    });
   });
 
   it("Delete / Backspace → video keyframe delete by default", () => {
-    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected", scope: "keyframe" });
-    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected", scope: "keyframe" });
+    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({
+      type: "videoDeleteSelected",
+      scope: "keyframe",
+    });
+    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({
+      type: "videoDeleteSelected",
+      scope: "keyframe",
+    });
   });
 
   it("Ctrl+Delete / Ctrl+Backspace → video track delete", () => {
-    const selectedVideoCtx: Partial<DispatchCtx> = { videoMode: true, hasSelection: true, hasSelectedVideoTrack: true };
-    expect(dispatch({ key: "Delete", ctrlKey: true }, selectedVideoCtx))
-      .toEqual({ type: "videoDeleteSelected", scope: "track" });
-    expect(dispatch({ key: "Backspace", ctrlKey: true }, selectedVideoCtx))
-      .toEqual({ type: "videoDeleteSelected", scope: "track" });
+    const selectedVideoCtx: Partial<DispatchCtx> = {
+      videoMode: true,
+      hasSelection: true,
+      hasSelectedVideoTrack: true,
+    };
+    expect(dispatch({ key: "Delete", ctrlKey: true }, selectedVideoCtx)).toEqual({
+      type: "videoDeleteSelected",
+      scope: "track",
+    });
+    expect(dispatch({ key: "Backspace", ctrlKey: true }, selectedVideoCtx)).toEqual({
+      type: "videoDeleteSelected",
+      scope: "track",
+    });
   });
 
   it("Tab / Shift+Tab → videoCycleInCategory (同类流转)", () => {
     expect(dispatch({ key: "Tab" }, videoCtx)).toEqual({ type: "videoCycleInCategory", dir: 1 });
-    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({ type: "videoCycleInCategory", dir: -1 });
+    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({
+      type: "videoCycleInCategory",
+      dir: -1,
+    });
   });
 
   it("` / Shift+` → videoStepCategory (跨类跳转)", () => {
     // Shift+` 在美式布局 key 是 "~" 而非 "`"，故按物理键位 code 判定；测试用 code 模拟真实事件。
-    expect(dispatch({ code: "Backquote" }, videoCtx)).toEqual({ type: "videoStepCategory", dir: 1 });
-    expect(dispatch({ code: "Backquote", shiftKey: true }, videoCtx)).toEqual({ type: "videoStepCategory", dir: -1 });
+    expect(dispatch({ code: "Backquote" }, videoCtx)).toEqual({
+      type: "videoStepCategory",
+      dir: 1,
+    });
+    expect(dispatch({ code: "Backquote", shiftKey: true }, videoCtx)).toEqual({
+      type: "videoStepCategory",
+      dir: -1,
+    });
   });
 
   it("Esc → cancel", () => {
@@ -280,7 +358,10 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "v" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "select" });
     expect(dispatch({ key: "b" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "box" });
     expect(dispatch({ key: "T" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
-    expect(dispatch({ key: "2", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
+    expect(dispatch({ key: "2", altKey: true }, videoCtx)).toEqual({
+      type: "setVideoTool",
+      tool: "track",
+    });
     // v0.21.23 · 视频交互式 SAM: S/D 直达 (图片侧 S 是「AI 工具循环」, 视频只有两个 AI 工具)。
     expect(dispatch({ key: "s" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-point" });
     expect(dispatch({ key: "D" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "smart-box" });
@@ -312,8 +393,14 @@ describe("dispatchKey · video sampling grid (v0.10.29)", () => {
   });
 
   it("Shift + ArrowLeft / ArrowRight → videoMicroStep ±1 (escape hatch)", () => {
-    expect(dispatch({ key: "ArrowRight", shiftKey: true }, gridCtx)).toEqual({ type: "videoMicroStep", dir: 1 });
-    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, gridCtx)).toEqual({ type: "videoMicroStep", dir: -1 });
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, gridCtx)).toEqual({
+      type: "videoMicroStep",
+      dir: 1,
+    });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, gridCtx)).toEqual({
+      type: "videoMicroStep",
+      dir: -1,
+    });
   });
 
   it(", / . do not act as micro-step aliases when no track is selected", () => {
@@ -322,13 +409,24 @@ describe("dispatchKey · video sampling grid (v0.10.29)", () => {
   });
 
   it(", / . → videoSeekKeyframe when a track is selected", () => {
-    const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: true, hasSelectedVideoTrack: true };
+    const selectedTrackCtx: Partial<DispatchCtx> = {
+      videoMode: true,
+      samplingActive: true,
+      hasSelectedVideoTrack: true,
+    };
     expect(dispatch({ key: "." }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: 1 });
-    expect(dispatch({ key: "," }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
+    expect(dispatch({ key: "," }, selectedTrackCtx)).toEqual({
+      type: "videoSeekKeyframe",
+      dir: -1,
+    });
   });
 
   it("Alt + ArrowLeft / ArrowRight are not video navigation aliases", () => {
-    const altCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: true, hasSelectedVideoTrack: true };
+    const altCtx: Partial<DispatchCtx> = {
+      videoMode: true,
+      samplingActive: true,
+      hasSelectedVideoTrack: true,
+    };
     expect(dispatch({ key: "ArrowRight", altKey: true }, altCtx)).toBeNull();
     expect(dispatch({ key: "ArrowLeft", altKey: true }, altCtx)).toBeNull();
     expect(dispatch({ key: "ArrowRight", altKey: true }, gridCtx)).toBeNull();
@@ -340,51 +438,80 @@ describe("dispatchKey · video sampling grid (v0.10.29)", () => {
     const offCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: false };
     expect(dispatch({ key: "ArrowRight" }, offCtx)).toEqual({ type: "videoSeek", delta: 1 });
     expect(dispatch({ key: "ArrowLeft" }, offCtx)).toEqual({ type: "videoSeek", delta: -1 });
-    expect(dispatch({ key: "ArrowRight", shiftKey: true }, offCtx)).toEqual({ type: "videoSeek", delta: 1 });
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, offCtx)).toEqual({
+      type: "videoSeek",
+      delta: 1,
+    });
     expect(dispatch({ key: "." }, offCtx)).toBeNull();
   });
 });
 
 describe("dispatchKey · 属性 hotkey 绑定 (D.1)", () => {
   it("无选中按 1 → setClassByDigit (保留原行为)", () => {
-    expect(dispatch({ key: "1" }, { hasSelection: false }))
-      .toEqual({ type: "setClassByDigit", idx: 0 });
+    expect(dispatch({ key: "1" }, { hasSelection: false })).toEqual({
+      type: "setClassByDigit",
+      idx: 0,
+    });
   });
 
   it("选中态 + boolean hotkey 命中 → setAttribute toggle", () => {
     const lookup = (digit: string) =>
       digit === "2" ? { key: "occluded", type: "boolean" as const, currentValue: false } : null;
-    expect(dispatch({ key: "2" }, { hasSelection: true, attributeHotkey: lookup }))
-      .toEqual({ type: "setAttribute", key: "occluded", value: true });
+    expect(dispatch({ key: "2" }, { hasSelection: true, attributeHotkey: lookup })).toEqual({
+      type: "setAttribute",
+      key: "occluded",
+      value: true,
+    });
     // current=true 时 toggle 为 false
     const lookupTrue = (digit: string) =>
       digit === "2" ? { key: "occluded", type: "boolean" as const, currentValue: true } : null;
-    expect(dispatch({ key: "2" }, { hasSelection: true, attributeHotkey: lookupTrue }))
-      .toEqual({ type: "setAttribute", key: "occluded", value: false });
+    expect(dispatch({ key: "2" }, { hasSelection: true, attributeHotkey: lookupTrue })).toEqual({
+      type: "setAttribute",
+      key: "occluded",
+      value: false,
+    });
   });
 
   it("选中态 + select hotkey 命中 → setAttribute cycle", () => {
     const lookup = (digit: string) =>
       digit === "3"
-        ? { key: "orientation", type: "select" as const, options: ["north", "south", "east", "west"], currentValue: "north" }
+        ? {
+            key: "orientation",
+            type: "select" as const,
+            options: ["north", "south", "east", "west"],
+            currentValue: "north",
+          }
         : null;
-    expect(dispatch({ key: "3" }, { hasSelection: true, attributeHotkey: lookup }))
-      .toEqual({ type: "setAttribute", key: "orientation", value: "south" });
+    expect(dispatch({ key: "3" }, { hasSelection: true, attributeHotkey: lookup })).toEqual({
+      type: "setAttribute",
+      key: "orientation",
+      value: "south",
+    });
   });
 
   it("select cycle 至末尾绕回首项", () => {
     const lookup = (digit: string) =>
       digit === "3"
-        ? { key: "orientation", type: "select" as const, options: ["a", "b", "c"], currentValue: "c" }
+        ? {
+            key: "orientation",
+            type: "select" as const,
+            options: ["a", "b", "c"],
+            currentValue: "c",
+          }
         : null;
-    expect(dispatch({ key: "3" }, { hasSelection: true, attributeHotkey: lookup }))
-      .toEqual({ type: "setAttribute", key: "orientation", value: "a" });
+    expect(dispatch({ key: "3" }, { hasSelection: true, attributeHotkey: lookup })).toEqual({
+      type: "setAttribute",
+      key: "orientation",
+      value: "a",
+    });
   });
 
   it("选中态但 hotkey 未命中 → fallback 到 setClassByDigit", () => {
     const lookup = () => null;
-    expect(dispatch({ key: "1" }, { hasSelection: true, attributeHotkey: lookup }))
-      .toEqual({ type: "setClassByDigit", idx: 0 });
+    expect(dispatch({ key: "1" }, { hasSelection: true, attributeHotkey: lookup })).toEqual({
+      type: "setClassByDigit",
+      idx: 0,
+    });
   });
 });
 
@@ -396,22 +523,32 @@ describe("v0.10.5 M4-β · shape 状态位快捷键", () => {
     expect(dispatch({ key: "]" })).toEqual({ type: "thresholdAdjust", delta: 0.05 });
   });
   it("选中态 [ → bumpZOrder -1", () => {
-    expect(dispatch({ key: "[" }, { hasSelection: true }))
-      .toEqual({ type: "bumpZOrder", delta: -1 });
+    expect(dispatch({ key: "[" }, { hasSelection: true })).toEqual({
+      type: "bumpZOrder",
+      delta: -1,
+    });
   });
   it("选中态 ] → bumpZOrder +1", () => {
-    expect(dispatch({ key: "]" }, { hasSelection: true }))
-      .toEqual({ type: "bumpZOrder", delta: 1 });
+    expect(dispatch({ key: "]" }, { hasSelection: true })).toEqual({
+      type: "bumpZOrder",
+      delta: 1,
+    });
   });
   it("选中态 L → toggleShapeFlag is_locked", () => {
-    expect(dispatch({ key: "l" }, { hasSelection: true }))
-      .toEqual({ type: "toggleShapeFlag", flag: "is_locked" });
-    expect(dispatch({ key: "L" }, { hasSelection: true }))
-      .toEqual({ type: "toggleShapeFlag", flag: "is_locked" });
+    expect(dispatch({ key: "l" }, { hasSelection: true })).toEqual({
+      type: "toggleShapeFlag",
+      flag: "is_locked",
+    });
+    expect(dispatch({ key: "L" }, { hasSelection: true })).toEqual({
+      type: "toggleShapeFlag",
+      flag: "is_locked",
+    });
   });
   it("选中态 H → toggleShapeFlag is_hidden", () => {
-    expect(dispatch({ key: "h" }, { hasSelection: true }))
-      .toEqual({ type: "toggleShapeFlag", flag: "is_hidden" });
+    expect(dispatch({ key: "h" }, { hasSelection: true })).toEqual({
+      type: "toggleShapeFlag",
+      flag: "is_hidden",
+    });
   });
   it("无选中 H/O → null（不消费）", () => {
     expect(dispatch({ key: "h" })).toBeNull();

@@ -10,10 +10,7 @@ interface ExecuteVideoMaskCorrectionFlowOptions<T> {
   savedKeyframe: T | null;
   saveKeyframe: () => Promise<T | null>;
   onKeyframeSaved: (savedKeyframe: T) => void;
-  createPropagation: (
-    savedKeyframe: T,
-    intent: VideoMaskCorrectionIntent,
-  ) => Promise<void>;
+  createPropagation: (savedKeyframe: T, intent: VideoMaskCorrectionIntent) => Promise<void>;
 }
 
 export async function executeVideoMaskCorrectionFlow<T>({

@@ -57,7 +57,11 @@ function aiChipTitle(entry: AttributeMetaEntry | undefined): string {
 }
 
 /** 判断 field 在当前 class + 当前值组合下是否应展示。 */
-function isVisible(field: AttributeField, className: string, values: Record<string, unknown>): boolean {
+function isVisible(
+  field: AttributeField,
+  className: string,
+  values: Record<string, unknown>,
+): boolean {
   const applies = field.applies_to ?? "*";
   if (applies !== "*") {
     if (!Array.isArray(applies) || !applies.includes(className)) return false;
@@ -93,18 +97,30 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 }
 
 export function AttributeForm({
-  schema, className, attributes, onChange, readOnly,
-  context = "image", dirtyTracker, annotationId,
-  batchCount, hideHeading, attributesMeta,
+  schema,
+  className,
+  attributes,
+  onChange,
+  readOnly,
+  context = "image",
+  dirtyTracker,
+  annotationId,
+  batchCount,
+  hideHeading,
+  attributesMeta,
 }: AttributeFormProps) {
   const [draft, setDraft] = useState<Record<string, unknown>>(attributes ?? {});
   const lastFromUpstream = useRef<Record<string, unknown>>(attributes ?? {});
   // v0.10.6：保留最新 draft 引用，blur flush 时取最新值上抛
   const draftRef = useRef(draft);
-  useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   // v0.16.8：保留最新 onChange，卸载补 flush（见底部 cleanup）时用最新回调，避免闭包捕获首渲染的旧 onChange
   const onChangeRef = useRef(onChange);
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   // 上游 attributes 变化（切选中标注 / 切类别）时同步本地 draft，避免输入残留。
   useEffect(() => {
@@ -146,13 +162,16 @@ export function AttributeForm({
   // v0.16.8 修复「改属性看似改了实则没保存」：debounce 路径下，组件卸载前若仍有未到点的提交
   // （如 ClassPickerPopover 内联属性编辑 <400ms 内关闭弹层），用最新 draft 补 flush 一次，
   // 避免待提交的 onChange 被 clearTimeout 丢弃。debounceRef 为 null（已 flush / dirty 模式）时不触发，杜绝重复提交。
-  useEffect(() => () => {
-    if (debounceRef.current) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-      onChangeRef.current(draftRef.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+        onChangeRef.current(draftRef.current);
+      }
+    },
+    [],
+  );
 
   const visible = useMemo(
     () => (schema?.fields ?? []).filter((f) => isVisible(f, className, draft)),
@@ -179,7 +198,10 @@ export function AttributeForm({
       )}
       {!hideHeading && (
         <div className="text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground">
-          属性 {missing.length > 0 && <span className="text-status-danger">· {missing.length} 项必填未填</span>}
+          属性{" "}
+          {missing.length > 0 && (
+            <span className="text-status-danger">· {missing.length} 项必填未填</span>
+          )}
         </div>
       )}
       {visible.map((f) => {
@@ -252,11 +274,7 @@ export function AttributeForm({
               />
             )}
             {f.type === "boolean" && (
-              <Switch
-                checked={!!v}
-                disabled={readOnly}
-                onChange={(next) => setValue(next)}
-              />
+              <Switch checked={!!v} disabled={readOnly} onChange={(next) => setValue(next)} />
             )}
             {f.type === "select" && (
               <select
@@ -267,7 +285,9 @@ export function AttributeForm({
               >
                 <option value="">—</option>
                 {f.options?.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             )}
@@ -283,7 +303,9 @@ export function AttributeForm({
                 className={`${INPUT_CLASS} h-20`}
               >
                 {f.options?.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             )}
@@ -293,13 +315,13 @@ export function AttributeForm({
                   type="range"
                   min={f.min ?? 0}
                   max={f.max ?? 100}
-                  value={typeof v === "number" ? v : f.min ?? 0}
+                  value={typeof v === "number" ? v : (f.min ?? 0)}
                   disabled={readOnly}
                   onChange={(e) => setValue(Number(e.target.value))}
                   className="flex-1 accent-brand"
                 />
                 <span className="mono min-w-[2.5ch] text-right text-xs text-muted-foreground">
-                  {typeof v === "number" ? v : f.min ?? 0}
+                  {typeof v === "number" ? v : (f.min ?? 0)}
                 </span>
               </div>
             )}
@@ -331,7 +353,10 @@ function DescriptionPopover({ description }: { description: string }) {
     >
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); pop.toggle(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          pop.toggle();
+        }}
         aria-label={`查看说明：${description.slice(0, 50)}`}
         className="inline-flex size-3.5 cursor-help appearance-none items-center justify-center rounded-full border border-border bg-muted p-0 text-micro font-semibold text-muted-foreground"
       >
@@ -362,9 +387,7 @@ function DescriptionPopover({ description }: { description: string }) {
               strong: ({ children }) => (
                 <strong className="font-semibold text-foreground">{children}</strong>
               ),
-              em: ({ children }) => (
-                <em className="text-muted-foreground">{children}</em>
-              ),
+              em: ({ children }) => <em className="text-muted-foreground">{children}</em>,
               li: ({ children }) => <li className="mb-0.5">{children}</li>,
             }}
           >

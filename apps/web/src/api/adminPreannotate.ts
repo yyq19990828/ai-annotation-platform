@@ -62,20 +62,12 @@ export interface PreannotateProjectSummaryResponse {
 export const adminPreannotateApi = {
   /** v0.9.6 · 列出 pre_annotated 状态批次 + prediction/failed 计数. */
   queue: (limit = 50) =>
-    apiClient.get<PreannotateQueueResponse>(
-      `/admin/preannotate-queue?limit=${limit}`,
-    ),
+    apiClient.get<PreannotateQueueResponse>(`/admin/preannotate-queue?limit=${limit}`),
 
   /** v0.9.12 B-16 · 多选批量清理 prediction (predictions_only=回 active / reset_to_draft=全重置). */
   bulkClear: (payload: BulkClearRequest) =>
-    apiClient.post<BulkClearResponse>(
-      `/admin/preannotate-queue/bulk-clear`,
-      payload,
-    ),
+    apiClient.post<BulkClearResponse>(`/admin/preannotate-queue/bulk-clear`, payload),
 
   /** v0.9.12 B-17 · 项目卡片聚合 (仅返回有 ml_backend 的项目). */
-  summary: () =>
-    apiClient.get<PreannotateProjectSummaryResponse>(
-      `/admin/preannotate-summary`,
-    ),
+  summary: () => apiClient.get<PreannotateProjectSummaryResponse>(`/admin/preannotate-summary`),
 };

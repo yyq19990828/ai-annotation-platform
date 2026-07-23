@@ -10,7 +10,9 @@ from embedding_cache import CacheEntry, EmbeddingCache, compute_cache_key
 
 
 def _entry(tag: int = 0) -> CacheEntry:
-    return CacheEntry(features={"tag": tag}, orig_hw=(100, 200), is_batch=False, wh=(200, 100))
+    return CacheEntry(
+        features={"tag": tag}, orig_hw=(100, 200), is_batch=False, wh=(200, 100)
+    )
 
 
 # ---------- compute_cache_key ----------
@@ -18,10 +20,12 @@ def _entry(tag: int = 0) -> CacheEntry:
 
 def test_cache_key_strips_query_string():
     a = compute_cache_key(
-        "https://minio.local/bucket/img.jpg?X-Amz-Signature=aaa&X-Amz-Date=20260101", "sam3"
+        "https://minio.local/bucket/img.jpg?X-Amz-Signature=aaa&X-Amz-Date=20260101",
+        "sam3",
     )
     b = compute_cache_key(
-        "https://minio.local/bucket/img.jpg?X-Amz-Signature=bbb&X-Amz-Date=20260102", "sam3"
+        "https://minio.local/bucket/img.jpg?X-Amz-Signature=bbb&X-Amz-Date=20260102",
+        "sam3",
     )
     assert a == b, "presigned URL signature 滚动不应让 key 变化"
 

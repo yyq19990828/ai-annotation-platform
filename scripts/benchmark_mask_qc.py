@@ -52,7 +52,9 @@ RESOLUTIONS = {
 
 
 def canonical_bytes(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    return json.dumps(
+        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode()
 
 
 def sha256(value: Any) -> str:
@@ -119,9 +121,10 @@ def hole_count(mask: np.ndarray) -> int:
             touches_border = False
             while queue:
                 current_x, current_y = queue.popleft()
-                touches_border |= (
-                    current_x in {0, width - 1} or current_y in {0, height - 1}
-                )
+                touches_border |= current_x in {0, width - 1} or current_y in {
+                    0,
+                    height - 1,
+                }
                 for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     next_x, next_y = current_x + dx, current_y + dy
                     if (
@@ -242,13 +245,21 @@ def temporal_records(spec: dict[str, Any]) -> list[list[Any]]:
                         state, source = "held", "manual"
                     else:
                         state = "exact"
-                        source = "prediction" if profile["id"] in {
-                            "two_frame_flicker",
-                            "prediction_drift",
-                        } else "manual"
+                        source = (
+                            "prediction"
+                            if profile["id"]
+                            in {
+                                "two_frame_flicker",
+                                "prediction_drift",
+                            }
+                            else "manual"
+                        )
                         last_exact = frame
                     shift = [0.0, 0.0]
-                    if profile["id"] == "prediction_drift" and frame >= profile["drift_from_frame"]:
+                    if (
+                        profile["id"] == "prediction_drift"
+                        and frame >= profile["drift_from_frame"]
+                    ):
                         delta = frame - profile["drift_from_frame"] + 1
                         shift = [
                             profile["centroid_shift_per_frame"][0] * delta,
@@ -273,7 +284,10 @@ def verify_temporal(fixture: dict[str, Any]) -> dict[str, Any]:
         state_counts[record[2]] = state_counts.get(record[2], 0) + 1
     digest = sha256(records)
     expected = spec["expected"]
-    if len(records) != expected["record_count"] or state_counts != expected["state_counts"]:
+    if (
+        len(records) != expected["record_count"]
+        or state_counts != expected["state_counts"]
+    ):
         raise AssertionError("temporal foundation count mismatch")
     expected_digest = expected["records_sha256"]
     if expected_digest != "TO_BE_GENERATED" and digest != expected_digest:
@@ -347,22 +361,24 @@ def benchmark_dense(rounds: int) -> list[dict[str, Any]]:
             timings.append((time.perf_counter() - started) * 1000)
         if stats is None or stats.area != expected_area:
             raise AssertionError(f"dense analyzer area mismatch for {label}")
-        results.append({
-            "resolution": label,
-            "width": width,
-            "height": height,
-            "pixels": width * height,
-            "dense_alpha_bytes": width * height,
-            "rle_runs": len(rle["counts"]),
-            "rle_json_bytes": len(canonical_bytes(rle)),
-            "area_pixels": stats.area,
-            "component_count_current": stats.components,
-            "hole_count_current": stats.holes,
-            "round_ms": [round(value, 3) for value in timings],
-            "p50_ms": round(float(np.percentile(timings, 50)), 3),
-            "p95_ms": round(float(np.percentile(timings, 95)), 3),
-            "process_peak_rss_bytes_after": max_rss_bytes(),
-        })
+        results.append(
+            {
+                "resolution": label,
+                "width": width,
+                "height": height,
+                "pixels": width * height,
+                "dense_alpha_bytes": width * height,
+                "rle_runs": len(rle["counts"]),
+                "rle_json_bytes": len(canonical_bytes(rle)),
+                "area_pixels": stats.area,
+                "component_count_current": stats.components,
+                "hole_count_current": stats.holes,
+                "round_ms": [round(value, 3) for value in timings],
+                "p50_ms": round(float(np.percentile(timings, 50)), 3),
+                "p95_ms": round(float(np.percentile(timings, 95)), 3),
+                "process_peak_rss_bytes_after": max_rss_bytes(),
+            }
+        )
     return results
 
 
@@ -373,7 +389,9 @@ def verify_format_consumers(fixture: dict[str, Any]) -> dict[str, Any]:
     if int(mask.sum()) != spec["expected_area_pixels"]:
         raise AssertionError("format fixture area mismatch")
     encoded = encode_coco_rle(mask.ravel().tolist(), width, height)
-    if not np.array_equal(np.asarray(decode_coco_rle(encoded)).reshape(height, width), mask):
+    if not np.array_equal(
+        np.asarray(decode_coco_rle(encoded)).reshape(height, width), mask
+    ):
         raise AssertionError("AAP RLE consumer mismatch")
     compressed = coco_mask.encode(np.asfortranarray(mask.astype(np.uint8)))
     compressed_counts = compressed["counts"].decode("ascii")
@@ -382,17 +400,24 @@ def verify_format_consumers(fixture: dict[str, Any]) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="mask-qc-consumer-") as directory:
         root = Path(directory)
         coco_document = {
-            "images": [{"id": 1, "file_name": "image.png", "width": width, "height": height}],
+            "images": [
+                {"id": 1, "file_name": "image.png", "width": width, "height": height}
+            ],
             "categories": [{"id": spec["class_id"], "name": "golden"}],
-            "annotations": [{
-                "id": 1,
-                "image_id": 1,
-                "category_id": spec["class_id"],
-                "segmentation": {"size": [height, width], "counts": compressed_counts},
-                "area": int(mask.sum()),
-                "bbox": [1, 1, 6, 4],
-                "iscrowd": 1,
-            }],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "category_id": spec["class_id"],
+                    "segmentation": {
+                        "size": [height, width],
+                        "counts": compressed_counts,
+                    },
+                    "area": int(mask.sum()),
+                    "bbox": [1, 1, 6, 4],
+                    "iscrowd": 1,
+                }
+            ],
         }
         coco_path = root / "coco.json"
         coco_path.write_text(json.dumps(coco_document, separators=(",", ":")))
@@ -413,11 +438,15 @@ def verify_format_consumers(fixture: dict[str, Any]) -> dict[str, Any]:
         indexed_pixels = mask * spec["instance_id"]
         indexed_path = root / "indexed.png"
         indexed = Image.fromarray(indexed_pixels.astype(np.uint8), mode="P")
-        indexed.putpalette([value for index in range(256) for value in (index, index, index)])
+        indexed.putpalette(
+            [value for index in range(256) for value in (index, index, index)]
+        )
         indexed.save(indexed_path)
         loaded_indexed = Image.open(indexed_path)
         indexed_array = np.asarray(loaded_indexed)
-        if loaded_indexed.mode != "P" or not np.array_equal(indexed_array, indexed_pixels):
+        if loaded_indexed.mode != "P" or not np.array_equal(
+            indexed_array, indexed_pixels
+        ):
             raise AssertionError("Pillow indexed PNG consumer mismatch")
         checks["indexed_png_davis"] = {
             "mode": loaded_indexed.mode,
@@ -430,10 +459,12 @@ def verify_format_consumers(fixture: dict[str, Any]) -> dict[str, Any]:
             f"{height} {width} {compressed_counts}"
         )
         parts = mots_line.split(" ", 5)
-        decoded_mots = coco_mask.decode({
-            "size": [int(parts[3]), int(parts[4])],
-            "counts": parts[5].encode("ascii"),
-        }).astype(np.uint8)
+        decoded_mots = coco_mask.decode(
+            {
+                "size": [int(parts[3]), int(parts[4])],
+                "counts": parts[5].encode("ascii"),
+            }
+        ).astype(np.uint8)
         if not np.array_equal(decoded_mots, mask):
             raise AssertionError("pycocotools MOTS consumer mismatch")
         checks["mots"] = {
@@ -443,12 +474,18 @@ def verify_format_consumers(fixture: dict[str, Any]) -> dict[str, Any]:
             "pixels": int(decoded_mots.sum()),
             "pass": True,
         }
-    return {"fixture_sha256": sha256(spec), "checks": checks, "temporary_artifacts_retained": 0}
+    return {
+        "fixture_sha256": sha256(spec),
+        "checks": checks,
+        "temporary_artifacts_retained": 0,
+    }
 
 
 def environment() -> dict[str, Any]:
     return {
-        "git_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "git_sha": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip(),
         "python": platform.python_version(),
         "numpy": np.__version__,
         "pillow": Image.__version__,
@@ -493,14 +530,20 @@ def main() -> None:
     result = run(args.rounds, args.skip_dense)
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
-    print(json.dumps({
-        "json": str(args.json),
-        "fixture_sha256": result["fixture"]["sha256"],
-        "temporal_sha256": result["temporal_foundation"]["records_sha256"],
-        "consumers_pass": all(
-            item["pass"] for item in result["format_consumers"]["checks"].values()
-        ),
-    }, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "json": str(args.json),
+                "fixture_sha256": result["fixture"]["sha256"],
+                "temporal_sha256": result["temporal_foundation"]["records_sha256"],
+                "consumers_pass": all(
+                    item["pass"]
+                    for item in result["format_consumers"]["checks"].values()
+                ),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":

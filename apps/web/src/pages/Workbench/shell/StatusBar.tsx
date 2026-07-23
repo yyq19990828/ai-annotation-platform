@@ -56,21 +56,37 @@ function lockStatusText(lockError: string, lockConflict?: TaskLockConflictDetail
 }
 
 export function StatusBar({
-  userBoxesCount, aiBoxesCount, activeClass,
-  imageWidth, imageHeight, cursor,
-  preannotationProgress, preannotationConn, preannotationRetries,
-  avgLeadMs, remainingTaskCount,
-  offlineQueueCount, online, onShowQueueDrawer,
-  lockRemainingMs, lockError, lockConflict,
-  diffMode, onSetDiffMode,
+  userBoxesCount,
+  aiBoxesCount,
+  activeClass,
+  imageWidth,
+  imageHeight,
+  cursor,
+  preannotationProgress,
+  preannotationConn,
+  preannotationRetries,
+  avgLeadMs,
+  remainingTaskCount,
+  offlineQueueCount,
+  online,
+  onShowQueueDrawer,
+  lockRemainingMs,
+  lockError,
+  lockConflict,
+  diffMode,
+  onSetDiffMode,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
-  const cursorText = cursor && imageWidth && imageHeight
-    ? `(${Math.round(cursor.x * imageWidth)}, ${Math.round(cursor.y * imageHeight)})`
-    : null;
-  const etaText = avgLeadMs && remainingTaskCount && remainingTaskCount > 0
-    ? `${formatDuration(avgLeadMs)}/题 · 剩 ${remainingTaskCount} · 约 ${formatDuration(avgLeadMs * remainingTaskCount)}`
-    : avgLeadMs ? `${formatDuration(avgLeadMs)}/题` : "—";
+  const cursorText =
+    cursor && imageWidth && imageHeight
+      ? `(${Math.round(cursor.x * imageWidth)}, ${Math.round(cursor.y * imageHeight)})`
+      : null;
+  const etaText =
+    avgLeadMs && remainingTaskCount && remainingTaskCount > 0
+      ? `${formatDuration(avgLeadMs)}/题 · 剩 ${remainingTaskCount} · 约 ${formatDuration(avgLeadMs * remainingTaskCount)}`
+      : avgLeadMs
+        ? `${formatDuration(avgLeadMs)}/题`
+        : "—";
 
   const Sep = () => <span aria-hidden className="h-3 w-px flex-shrink-0 self-center bg-border" />;
   const inlineItem = "inline-flex items-center gap-1";
@@ -81,7 +97,8 @@ export function StatusBar({
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
           <>
             <span className={cn(inlineItem, lockRemainingMs < 60_000 && "text-status-caution")}>
-              <Icon name="lock" size={11} /> 锁剩余 <span className="mono font-medium">{formatLockTime(lockRemainingMs)}</span>
+              <Icon name="lock" size={11} /> 锁剩余{" "}
+              <span className="mono font-medium">{formatLockTime(lockRemainingMs)}</span>
             </span>
             <Sep />
           </>
@@ -101,13 +118,17 @@ export function StatusBar({
         <Sep />
         <span className={inlineItem}>
           <Icon name="circleDot" size={11} className="text-status-info" />
-          <span className={cn(countValue, aiBoxesCount > 0 && "!text-status-info")}>{aiBoxesCount}</span>
+          <span className={cn(countValue, aiBoxesCount > 0 && "!text-status-info")}>
+            {aiBoxesCount}
+          </span>
           <span>AI 待审</span>
         </span>
         <Sep />
         <span className={inlineItem}>
           当前类别
-          <span className="rounded bg-muted px-1.5 font-semibold text-foreground">{activeClass}</span>
+          <span className="rounded bg-muted px-1.5 font-semibold text-foreground">
+            {activeClass}
+          </span>
         </span>
       </div>
       <div className="flex items-center gap-3">
@@ -154,18 +175,25 @@ export function StatusBar({
           ETA <span className="mono font-medium text-foreground">{etaText}</span>
         </span>
         <Sep />
-        <span>分辨率 <span className="mono text-foreground">{dimText}</span></span>
+        <span>
+          分辨率 <span className="mono text-foreground">{dimText}</span>
+        </span>
         {cursorText && (
           <>
             <Sep />
-            <span>光标 <span className="mono text-foreground">{cursorText}</span></span>
+            <span>
+              光标 <span className="mono text-foreground">{cursorText}</span>
+            </span>
           </>
         )}
         {preannotationProgress && (
           <>
             <Sep />
             <span className="font-medium text-status-info">
-              预标注 <span className="mono">{preannotationProgress.current}/{preannotationProgress.total}</span>
+              预标注{" "}
+              <span className="mono">
+                {preannotationProgress.current}/{preannotationProgress.total}
+              </span>
             </span>
           </>
         )}

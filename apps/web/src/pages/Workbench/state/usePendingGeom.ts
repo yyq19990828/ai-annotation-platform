@@ -48,9 +48,7 @@ export interface PendingGeomApi {
  * 需要拿到当前 annotations 数据以判断「已落地」的收敛条件。
  * 传 undefined 也可(此时仅靠 MAX_AGE_MS 超时兜底)。
  */
-export function usePendingGeom(
-  annotations: AnnotationResponse[] | undefined,
-): PendingGeomApi {
+export function usePendingGeom(annotations: AnnotationResponse[] | undefined): PendingGeomApi {
   const [entries, setEntries] = useState<Map<string, PendingEntry>>(() => new Map());
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
