@@ -47,6 +47,15 @@ export function resolveMaskEditorSize(
   };
 }
 
+export function shouldShowInManualAnnotationSection(
+  annotation: { geometry: { type: string } },
+  isVideoTask: boolean,
+): boolean {
+  if (!isVideoTask) return true;
+  const geometryType = annotation.geometry.type;
+  return geometryType !== "video_track_bbox" && geometryType !== "video_track_mask";
+}
+
 export function omitVariantFields(
   value: Record<string, unknown> | undefined,
 ): Record<string, unknown> {

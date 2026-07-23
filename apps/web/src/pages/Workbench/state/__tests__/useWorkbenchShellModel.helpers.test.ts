@@ -7,6 +7,7 @@ import {
   resolveSamCandidateClass,
   samCandidateDisplayShapes,
   samCandidateGeom,
+  shouldShowInManualAnnotationSection,
 } from "../useWorkbenchShellModel.helpers";
 
 describe("commitAfterNavigationGuard", () => {
@@ -45,6 +46,26 @@ describe("resolveMaskEditorSize", () => {
     expect(
       resolveMaskEditorSize(false, { imgW: 640, imgH: 480 }, { width: 1920, height: 1080 }),
     ).toEqual({ width: 640, height: 480 });
+  });
+});
+
+describe("shouldShowInManualAnnotationSection", () => {
+  it("视频轨迹型矩形框与 Mask 只进入各自轨迹分组", () => {
+    expect(
+      shouldShowInManualAnnotationSection({ geometry: { type: "video_track_bbox" } }, true),
+    ).toBe(false);
+    expect(
+      shouldShowInManualAnnotationSection({ geometry: { type: "video_track_mask" } }, true),
+    ).toBe(false);
+  });
+
+  it("保留视频单帧几何和图片 Mask 的人工分组归属", () => {
+    expect(shouldShowInManualAnnotationSection({ geometry: { type: "video_bbox" } }, true)).toBe(
+      true,
+    );
+    expect(shouldShowInManualAnnotationSection({ geometry: { type: "raster_mask" } }, false)).toBe(
+      true,
+    );
   });
 });
 

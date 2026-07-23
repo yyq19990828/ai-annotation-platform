@@ -245,6 +245,7 @@ describe("handleVideoMaskCommit", () => {
       }),
       expect.anything(),
     );
+    expect(create).toHaveBeenCalledTimes(1);
     expect(saved).toMatchObject({ annotation: { id: "mask-new", class_name: "Road" } });
   });
 

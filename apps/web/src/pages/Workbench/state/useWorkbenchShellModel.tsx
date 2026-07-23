@@ -124,6 +124,7 @@ import {
   resolveSamCandidateClass,
   samCandidateDisplayShapes,
   samCandidateGeom,
+  shouldShowInManualAnnotationSection,
 } from "./useWorkbenchShellModel.helpers";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
@@ -1278,7 +1279,7 @@ export function useWorkbenchShellModel({
   const userBoxes = useMemo(
     () =>
       visibleAnnotationsData
-        .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track_bbox"))
+        .filter((ann) => shouldShowInManualAnnotationSection(ann, isVideoTask))
         .map((a) => annotationToBox(a, occludedKeys)),
     [visibleAnnotationsData, isVideoTask, occludedKeys],
   );
