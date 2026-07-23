@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Brush, Check, ChevronDown, Eraser, Lasso, Redo2, Undo2 } from "lucide-react";
+import { Icon } from "@/components/ui/Icon";
 import { Button, buttonVariants } from "@/components/shadcn/ui/button";
 import {
   AlertDialog,
@@ -41,6 +42,11 @@ import type {
 } from "../stage/shared/geometry/maskOperations";
 import type { MaskInstanceOperationSpec } from "../stage/shared/geometry/maskInstanceOperations";
 import type { MaskEditBlockReason, MaskEditorPhase } from "../state/canEditMask";
+import {
+  TOOLBAR_DIVIDER,
+  TOOLBAR_FIELD_LABEL_CLASS,
+  TOOLBAR_SURFACE_CLASS,
+} from "./workbenchToolbarChrome";
 
 interface MaskToolbarProps {
   active: boolean;
@@ -204,10 +210,17 @@ export function MaskToolbar({
   return (
     <div
       data-testid="mask-toolbar"
-      className="absolute left-1/2 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2 shadow-md"
+      className={cn(
+        "absolute left-1/2 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-1.5",
+        TOOLBAR_SURFACE_CLASS,
+      )}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <span className="px-1 text-xs font-semibold text-foreground">Mask 编辑</span>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Icon name="scissors" size={13} />
+        <b className="whitespace-nowrap text-xs">Mask 编辑</b>
+      </div>
+      {TOOLBAR_DIVIDER}
       <ToggleGroup
         type="single"
         value={tool}
@@ -215,6 +228,7 @@ export function MaskToolbar({
         size="sm"
         disabled={!canEdit}
         aria-label="Mask pointer 工具"
+        className="[&_button]:h-6 [&_button]:gap-1 [&_button]:px-2 [&_button]:text-xs [&_svg]:size-3"
         onValueChange={(value) => value && onSetTool(value as MaskEditorTool)}
       >
         <ToggleGroupItem value="brush" title="笔刷 (B)" aria-label="笔刷">
@@ -237,7 +251,7 @@ export function MaskToolbar({
 
       <DropdownMenu>
         <DropdownMenuTrigger
-          className={buttonVariants({ variant: "outline", size: "sm" })}
+          className={buttonVariants({ variant: "outline", size: "xs" })}
           disabled={!canEdit}
           title="Mask 高级工具"
         >
@@ -440,7 +454,7 @@ export function MaskToolbar({
 
       {(tool === "brush" || tool === "erase") && (
         <Field orientation="horizontal" className="w-auto gap-1.5">
-          <FieldLabel htmlFor="mask-radius" className="text-xs text-muted-foreground">
+          <FieldLabel htmlFor="mask-radius" className={TOOLBAR_FIELD_LABEL_CLASS}>
             半径
           </FieldLabel>
           <Input
@@ -452,36 +466,43 @@ export function MaskToolbar({
             value={radius}
             disabled={!canEdit}
             onChange={(event) => onSetRadius(Number.parseInt(event.target.value, 10))}
-            className="h-6 w-24 border-0 px-0 py-0 shadow-none"
+            className="h-5 w-20 border-0 px-0 py-0 shadow-none"
             data-testid="mask-radius-slider"
           />
-          <span className="mono min-w-8 text-right text-xs text-foreground">{radius}px</span>
+          <span className="mono min-w-8 text-right text-2xs tabular-nums text-foreground">
+            {radius}px
+          </span>
         </Field>
       )}
 
-      <span className={cn("text-xs", dirty ? "text-status-caution" : "text-muted-foreground")}>
+      <span
+        className={cn(
+          "rounded-sm bg-muted px-1.5 py-1 text-2xs font-medium",
+          dirty ? "text-status-caution" : "text-muted-foreground",
+        )}
+      >
         {phaseLabel[phase]}
       </span>
       {!canEdit && editBlockReason && (
-        <span className="text-xs text-status-caution" role="status">
+        <span className="basis-full text-2xs text-status-caution" role="status">
           不可编辑：{editBlockReasonLabel[editBlockReason]}
         </span>
       )}
       {largeCanvas && (
-        <span className="text-xs text-muted-foreground" role="status">
+        <span className="basis-full text-2xs text-muted-foreground" role="status">
           大画布分块模式：形态学仅作用当前视口，全图扫描工具已禁用
         </span>
       )}
 
       {operationPreview && (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
-          <span className="text-xs text-foreground">
+        <div className="flex basis-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
+          <span className="text-2xs font-medium text-foreground">
             {operationLabel[operationPreview.name] ?? operationPreview.name}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             变化 {operationPreview.report.changedPixels} px
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             面积 {operationPreview.report.beforeArea}→{operationPreview.report.afterArea}· 组件{" "}
             {operationPreview.report.beforeComponents}→{operationPreview.report.afterComponents}·
             孔洞 {operationPreview.report.beforeHoles}→{operationPreview.report.afterHoles}
@@ -503,8 +524,8 @@ export function MaskToolbar({
         </div>
       )}
       {instanceOperationPreview && (
-        <div className="flex max-w-3xl flex-wrap items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
-          <span className="text-xs text-foreground">
+        <div className="flex max-w-3xl basis-full flex-wrap items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
+          <span className="text-2xs font-medium text-foreground">
             {instanceOperationPreview.plan.kind === "copy_component"
               ? "复制组件"
               : instanceOperationPreview.plan.kind === "copy_keyframe"
@@ -515,12 +536,12 @@ export function MaskToolbar({
                     ? "严格非重叠"
                     : "拆分组件"}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             {instanceOperationPreview.plan.sourceCount} 个来源 →{" "}
             {instanceOperationPreview.plan.resultCount} 个结果
           </span>
           {instancePreviewDetail && (
-            <span className="text-xs text-muted-foreground">{instancePreviewDetail}</span>
+            <span className="text-2xs text-muted-foreground">{instancePreviewDetail}</span>
           )}
           {instancePreviewRows.length > 0 && (
             <div
@@ -528,7 +549,7 @@ export function MaskToolbar({
               aria-label="受影响 Mask 对象"
             >
               {instancePreviewRows.map((row) => (
-                <span key={row.annotationId} className="text-xs text-muted-foreground">
+                <span key={row.annotationId} className="text-2xs text-muted-foreground">
                   {row.annotationId.slice(0, 8)}·v{row.version ?? "?"}
                   {row.changedPixels === null ? "" : `·${row.changedPixels}px`}·
                   {row.status === "delete"
@@ -542,7 +563,7 @@ export function MaskToolbar({
               ))}
             </div>
           )}
-          <span className="text-xs text-status-caution">待原子提交</span>
+          <span className="text-2xs text-status-caution">待原子提交</span>
           <Button
             type="button"
             size="xs"
@@ -566,10 +587,10 @@ export function MaskToolbar({
       )}
       {instanceCommitError && (
         <div
-          className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1"
+          className="flex basis-full items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1"
           role="alert"
         >
-          <span className="text-xs text-destructive">{instanceCommitError}</span>
+          <span className="text-2xs text-destructive">{instanceCommitError}</span>
           {onCommitInstanceOperation && instanceCanRetry && (
             <Button
               type="button"
@@ -595,16 +616,16 @@ export function MaskToolbar({
         </div>
       )}
       {operationStatus === "computing" && (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
-          <span className="text-xs text-foreground">正在计算预览…</span>
+        <div className="flex basis-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
+          <span className="text-2xs text-foreground">正在计算预览…</span>
           <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>
             取消
           </Button>
         </div>
       )}
       {operationStatus === "error" && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1">
-          <span className="text-xs text-destructive">
+        <div className="flex basis-full items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1">
+          <span className="text-2xs text-destructive">
             高级操作失败：
             {operationError instanceof Error
               ? operationError.message
@@ -616,6 +637,7 @@ export function MaskToolbar({
         </div>
       )}
 
+      {TOOLBAR_DIVIDER}
       <Button
         type="button"
         size="icon-xs"
@@ -639,13 +661,13 @@ export function MaskToolbar({
         <span className="sr-only">重做</span>
       </Button>
       {phase === "error" && onRetry && !instanceOperationPreview && (
-        <Button type="button" size="sm" variant="ghost" onClick={onRetry} title="恢复或重试 Mask">
+        <Button type="button" size="xs" variant="ghost" onClick={onRetry} title="恢复或重试 Mask">
           重试
         </Button>
       )}
       <Button
         type="button"
-        size="sm"
+        size="xs"
         variant="outline"
         onClick={onCancel}
         disabled={instanceBusy || interactionFrozen}
@@ -655,7 +677,7 @@ export function MaskToolbar({
       </Button>
       <Button
         type="button"
-        size="sm"
+        size="xs"
         onClick={onCommit}
         disabled={
           !commitAllowed || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"
@@ -667,7 +689,7 @@ export function MaskToolbar({
       {onCommitAndPropagate && (
         <Button
           type="button"
-          size="sm"
+          size="xs"
           variant="ghost"
           onClick={onCommitAndPropagate}
           disabled={

@@ -29,6 +29,7 @@ export interface VideoMaskRenderRecord {
   width: number;
   height: number;
   geom: { x: number; y: number; w: number; h: number };
+  color: string;
   zOrder: number;
   selected: boolean;
   isTrack: boolean;
@@ -64,13 +65,30 @@ export function maskAlphaBounds(alpha: Uint8Array, width: number, height: number
   return rasterMaskAlphaBounds(alpha, width, height);
 }
 
-async function createMaskImage(alpha: Uint8Array, width: number, height: number, color: string) {
-  const rgba = buildTintedMaskRgba(alpha, color);
-  const imageData = new ImageData(rgba, width, height);
+async function createMaskImage(
+  alpha: Uint8Array,
+  width: number,
+  height: number,
+  color: string,
+  geom: VideoMaskRenderRecord["geom"],
+) {
+  const cropX = Math.max(0, Math.min(width - 1, Math.round(geom.x * width)));
+  const cropY = Math.max(0, Math.min(height - 1, Math.round(geom.y * height)));
+  const cropWidth = Math.max(1, Math.min(width - cropX, Math.round(geom.w * width)));
+  const cropHeight = Math.max(1, Math.min(height - cropY, Math.round(geom.h * height)));
+  const cropped = new Uint8Array(cropWidth * cropHeight);
+  if (geom.w > 0 && geom.h > 0) {
+    for (let row = 0; row < cropHeight; row += 1) {
+      const sourceStart = (cropY + row) * width + cropX;
+      cropped.set(alpha.subarray(sourceStart, sourceStart + cropWidth), row * cropWidth);
+    }
+  }
+  const rgba = buildTintedMaskRgba(cropped, color);
+  const imageData = new ImageData(rgba, cropWidth, cropHeight);
   if (typeof createImageBitmap === "function") return createImageBitmap(imageData);
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = cropWidth;
+  canvas.height = cropHeight;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("2D canvas context is unavailable");
   context.putImageData(imageData, 0, 0);
@@ -209,12 +227,13 @@ export function useVideoMaskFrames(params: {
             }
             const alpha = decodeCocoRle(rle);
             const [height, width] = rle.size;
-            const image = await createMaskImage(alpha, width, height, descriptor.color);
+            const geom = maskAlphaBounds(alpha, width, height);
+            const image = await createMaskImage(alpha, width, height, descriptor.color, geom);
             if (cancelled || generation !== generationRef.current) {
               closeImage(image);
               return null;
             }
-            cached = { image, alpha, width, height, geom: maskAlphaBounds(alpha, width, height) };
+            cached = { image, alpha, width, height, geom };
             cacheRef.current.set(key, cached);
           } else {
             cacheRef.current.delete(key);
@@ -228,6 +247,7 @@ export function useVideoMaskFrames(params: {
             width: cached.width,
             height: cached.height,
             geom: cached.geom,
+            color: descriptor.color,
             zOrder: descriptor.zOrder,
             selected: descriptor.selected,
             isTrack: descriptor.isTrack,

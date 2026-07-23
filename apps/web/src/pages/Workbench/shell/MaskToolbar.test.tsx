@@ -4,6 +4,49 @@ import { describe, expect, it, vi } from "vitest";
 import { MaskToolbar } from "./MaskToolbar";
 
 describe("MaskToolbar", () => {
+  it("复用工作台紧凑工具条字号、图标和按钮尺寸", () => {
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={12}
+        dirty={false}
+        phase="ready"
+        canUndo={false}
+        canRedo={false}
+        canEdit
+        operationPreview={null}
+        instanceOperationPreview={null}
+        operationStatus="idle"
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+      />,
+    );
+
+    const toolbar = view.getByTestId("mask-toolbar");
+    expect(toolbar.className).toContain("px-3");
+    expect(toolbar.className).toContain("py-1.5");
+    for (const title of ["Mask 高级工具", "取消 (Esc)", "确认 (Enter)"]) {
+      const button = view.getByTitle(title);
+      expect(button.className).toContain("h-6");
+      expect(button.className).toContain("text-xs");
+      expect(button.className).toContain(":size-3");
+    }
+    expect(view.getByTitle("笔刷 (B)").parentElement?.className).toContain("[&_svg]:size-3");
+  });
+
   it("显示保存相位并连接笔画撤销重做", () => {
     const onUndo = vi.fn();
     const onRedo = vi.fn();

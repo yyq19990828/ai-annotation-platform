@@ -27,7 +27,7 @@ import type { PendingDrawing, Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
-import { classColorForCanvas, hexToRgba } from "./colors";
+import { classColorForCanvas, displayClassName, hexToRgb, hexToRgba } from "./colors";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
@@ -70,7 +70,7 @@ import {
 } from "./ImageStage.helpers";
 import { canTranslateAnnotationGeometry, translateGeometry } from "../state/geometryTranslate";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
-import { resolveAnnotationVisual } from "./annotationVisual";
+import { buildLabelText, resolveAnnotationVisual, shouldShowLabel } from "./annotationVisual";
 import {
   buildImageContextMenuItems,
   findContextMenuAnnotationId,
@@ -87,6 +87,7 @@ import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "./shared/useRasterMaskRecords";
+import { RasterMaskVisual } from "./RasterMaskVisual";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -600,6 +601,10 @@ export function ImageStage({
     () => resolveAnnotationVisual(workbenchConfig.common),
     [workbenchConfig.common],
   );
+  const maskEditorColor = useMemo(
+    () => hexToRgb(classColorForCanvas(primarySelectedBox?.cls || activeClass || "mask")),
+    [activeClass, primarySelectedBox?.cls],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
@@ -644,6 +649,10 @@ export function ImageStage({
       .sort((a, c) => (a.b.z_order ?? 0) - (c.b.z_order ?? 0) || a.i - c.i)
       .map((entry) => entry.b);
   }, [userBoxes]);
+  const visibleUserBoxById = useMemo(
+    () => new Map(visibleSortedUserBoxes.map((annotation) => [annotation.id, annotation])),
+    [visibleSortedUserBoxes],
+  );
   const displayedRasterMaskRecords = useMemo(
     () =>
       maskCompareStore?.display
@@ -1636,32 +1645,35 @@ export function ImageStage({
           {/* committed Mask 独立于背景与 AI/vector 之间，不参与 Konva hit-test。 */}
           <Layer name="image-mask" listening={false}>
             {displayedRasterMaskRecords.map((record) => {
-              const { bounds } = record;
+              const annotation = visibleUserBoxById.get(record.id);
+              const color = classColorForCanvas(annotation?.cls ?? "mask");
               return (
-                <Group key={record.cacheKey} id={record.id} listening={false}>
-                  <KonvaImage
-                    image={record.image}
-                    x={bounds.x * imgW}
-                    y={bounds.y * imgH}
-                    width={bounds.w * imgW}
-                    height={bounds.h * imgH}
-                    opacity={workbenchConfig.image.maskOverlayOpacity}
-                    listening={false}
-                    imageSmoothingEnabled={false}
-                  />
-                  {record.selected && (
-                    <Rect
-                      x={bounds.x * imgW}
-                      y={bounds.y * imgH}
-                      width={bounds.w * imgW}
-                      height={bounds.h * imgH}
-                      stroke="#ffffff"
-                      strokeWidth={2 / vp.scale}
-                      dash={[6 / vp.scale, 4 / vp.scale]}
-                      listening={false}
-                    />
-                  )}
-                </Group>
+                <RasterMaskVisual
+                  key={record.cacheKey}
+                  id={record.id}
+                  image={record.image}
+                  bounds={record.bounds}
+                  sourceWidth={imgW}
+                  sourceHeight={imgH}
+                  scale={vp.scale}
+                  color={color}
+                  selected={record.selected}
+                  opacity={workbenchConfig.image.maskOverlayOpacity}
+                  visual={annotationVisual}
+                  labelText={
+                    annotation
+                      ? buildLabelText(
+                          {
+                            className: displayClassName(annotation.cls),
+                            confidence: annotation.conf,
+                            attributes: annotation.attributes,
+                          },
+                          annotationVisual.labelContent.single,
+                        )
+                      : null
+                  }
+                  showLabel={shouldShowLabel(record.selected, annotationVisual.labelVisibility)}
+                />
               );
             })}
           </Layer>
@@ -2084,6 +2096,7 @@ export function ImageStage({
                 imgW={imgW}
                 imgH={imgH}
                 opacity={workbenchConfig.image.maskOverlayOpacity}
+                color={maskEditorColor}
                 visible={true}
               />
             )}
@@ -2105,6 +2118,7 @@ export function ImageStage({
                     : null
                 }
                 opacity={workbenchConfig.image.maskOverlayOpacity}
+                color={maskEditorColor}
                 visible
               />
             )}

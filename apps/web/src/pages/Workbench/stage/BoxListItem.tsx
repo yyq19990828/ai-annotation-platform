@@ -104,7 +104,10 @@ function annotationToolMeta(
     return { label: "轨迹(栅格掩码)", detail: `${geometry.keyframes.length} 关键帧` };
   }
   if (geometry.type === "video_mask") {
-    return { label: "栅格掩码", detail: `F${geometry.frame_index} · ${geometry.mask.runs} runs` };
+    return {
+      label: "栅格掩码",
+      detail: `F${geometry.frame_index} · ${geometry.mask.size[1]}×${geometry.mask.size[0]} px · ${geometry.mask.runs} 编码段`,
+    };
   }
   if (geometry.type === "video_polygon") {
     return { label: "多边形", detail: `F${geometry.frame_index} · ${geometry.points.length} 点` };
@@ -116,7 +119,10 @@ function annotationToolMeta(
     return { label: "旋转框", detail: `F${geometry.frame_index} · ${Math.round(geometry.angle)}°` };
   }
   if (geometry.type === "raster_mask") {
-    return { label: "栅格掩码", detail: `${geometry.mask.runs} runs` };
+    return {
+      label: "栅格掩码",
+      detail: `${geometry.mask.size[1]}×${geometry.mask.size[0]} px · ${geometry.mask.runs} 编码段`,
+    };
   }
   if (geometry.type === "multi_polygon") {
     return {

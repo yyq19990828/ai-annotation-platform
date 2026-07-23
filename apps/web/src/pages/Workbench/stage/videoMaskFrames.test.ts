@@ -111,7 +111,10 @@ describe("useVideoMaskFrames", () => {
       id: annotation.id,
       selected: true,
       isTrack: false,
+      color: "#ff0000",
     });
+    const rendered = vi.mocked(createImageBitmap).mock.calls[0][0] as ImageData;
+    expect(rendered.width * rendered.height).toBeLessThan(3 * 2);
     expect(apiMocks.annotationRasterMaskContent).toHaveBeenCalledWith(annotation.id);
     expect(apiMocks.annotationVideoMaskContent).not.toHaveBeenCalled();
 

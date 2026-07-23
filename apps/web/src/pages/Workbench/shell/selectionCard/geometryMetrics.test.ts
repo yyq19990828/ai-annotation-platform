@@ -213,6 +213,30 @@ describe("geometryMetrics · 其它几何", () => {
     expect(byLabel(m, "尺寸").value).toBe("480×216 px");
   });
 
+  it("Raster / Video Mask 显示画布、RLE 编码段与存储大小", () => {
+    const mask = {
+      encoding: "coco_rle_ref" as const,
+      size: [1080, 1920] as [number, number],
+      object_key: "mask/test",
+      sha256: "a".repeat(64),
+      runs: 12_345,
+      bytes: 2_560,
+    };
+    for (const geometry of [
+      { type: "raster_mask" as const, mask },
+      { type: "video_mask" as const, frame_index: 12, mask },
+    ]) {
+      const metrics = geometryMetrics(geometry, 1920, 1080);
+      expect(byLabel(metrics, "画布").value).toBe("1,920×1,080 px");
+      expect(byLabel(metrics, "编码段").value).toBe("12,345");
+      expect(byLabel(metrics, "存储")).toEqual({
+        label: "存储",
+        value: "2.5 KB",
+        hint: "COCO RLE",
+      });
+    }
+  });
+
   it("video_track_bbox / 3D 几何返回空数组", () => {
     const track: Geometry = { type: "video_track_bbox", track_id: "t1", keyframes: [] };
     expect(geometryMetrics(track, 1000, 1000)).toEqual([]);

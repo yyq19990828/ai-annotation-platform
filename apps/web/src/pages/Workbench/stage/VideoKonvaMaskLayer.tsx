@@ -1,24 +1,33 @@
-import { Image as KonvaImage, Layer } from "react-konva";
+import { Layer } from "react-konva";
+import type { AnnotationVisualConfig } from "./annotationVisual";
+import { RasterMaskVisual } from "./RasterMaskVisual";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { VideoMaskRenderRecord } from "./videoMaskFrames";
 
 export function VideoKonvaMaskLayer(props: {
   records: readonly VideoMaskRenderRecord[];
   size: VideoPixelSize;
+  scale: number;
+  visual: AnnotationVisualConfig;
 }) {
-  const { records, size } = props;
+  const { records, size, scale, visual } = props;
   return (
     <Layer name="video-mask-layer" listening={false}>
       {[...records]
         .sort((a, b) => a.zOrder - b.zOrder)
         .map((record) => (
-          <KonvaImage
+          <RasterMaskVisual
             key={record.cacheKey}
+            id={record.id}
             image={record.image}
-            width={size.w}
-            height={size.h}
-            opacity={record.source === "tracker" ? 0.5 : record.selected ? 0.58 : 0.38}
-            listening={false}
+            bounds={record.geom}
+            sourceWidth={size.w}
+            sourceHeight={size.h}
+            scale={scale}
+            color={record.color}
+            selected={record.selected}
+            opacity={record.source === "tracker" ? 0.5 : 0.38}
+            visual={visual}
           />
         ))}
     </Layer>

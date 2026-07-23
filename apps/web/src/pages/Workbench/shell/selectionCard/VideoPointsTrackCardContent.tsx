@@ -93,10 +93,18 @@ export function VideoPointsTrackCardContent({
       ? { type: "video_polyline", frame_index: frameIndex, points: resolved.points }
       : { type: "video_polygon", frame_index: frameIndex, points: resolved.points }
     : null;
-  const metrics = metricsGeom ? geometryMetrics(metricsGeom, imageWidth, imageHeight) : [];
   const resolvedMask = isVideoMaskTrack(annotation)
     ? resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex)
     : null;
+  const metrics = metricsGeom
+    ? geometryMetrics(metricsGeom, imageWidth, imageHeight)
+    : resolvedMask
+      ? geometryMetrics(
+          { type: "video_mask", frame_index: frameIndex, mask: resolvedMask.mask },
+          imageWidth,
+          imageHeight,
+        )
+      : [];
   const exactMaskKeyframe =
     isVideoMaskTrack(annotation) &&
     annotation.geometry.keyframes.some((keyframe) => keyframe.frame_index === frameIndex);

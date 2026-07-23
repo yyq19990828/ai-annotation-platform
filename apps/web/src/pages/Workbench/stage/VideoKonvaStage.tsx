@@ -65,9 +65,9 @@ import {
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction, isSamProbeTool } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm, videoNormToClient } from "./videoKonvaCoordinates";
-import { deriveVideoFrameViews } from "./videoFrameViews";
+import { deriveVideoFrameViews, type VideoLabelView } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
-import { classColor, colorToHex, getTrackColor, hexToRgba } from "./colors";
+import { classColor, colorToHex, getTrackColor, hexToRgb, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import {
@@ -82,6 +82,7 @@ import {
   isVideoPolylineTrack,
   isVideoTrack,
   normalizeGeom,
+  resolveVideoMaskTrackAtFrame,
   shapeIou,
   shortTrackId,
   sortedKeyframes,
@@ -99,7 +100,12 @@ import type {
   VideoTrackConversionOptions,
   VideoSamPrompt,
 } from "./videoStageTypes";
-import { DEFAULT_ANNOTATION_VISUAL, type AnnotationVisualConfig } from "./annotationVisual";
+import {
+  buildTrackLabelText,
+  DEFAULT_ANNOTATION_VISUAL,
+  shouldShowLabel,
+  type AnnotationVisualConfig,
+} from "./annotationVisual";
 import { clampScale } from "./shared/viewport/zoom";
 import { fitNormalizedRegion } from "./shared/viewport/region";
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
@@ -592,6 +598,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       },
       [trackColorOverrides],
     );
+    const maskEditorColor = useMemo(
+      () =>
+        hexToRgb(
+          selectedMaskAnnotation
+            ? maskColorForAnnotation(selectedMaskAnnotation)
+            : colorToHex(classColor(activeClass || "mask")),
+        ),
+      [activeClass, maskColorForAnnotation, selectedMaskAnnotation],
+    );
     const maskRecords = useVideoMaskFrames({
       taskId: manifest?.task_id ?? null,
       annotations: visibleMaskAnnotations,
@@ -604,6 +619,72 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       () => maskRecords.filter((record) => record.source === "annotation"),
       [maskRecords],
     );
+    const maskTrackNumbers = useMemo(
+      () =>
+        deriveTrackNumber(
+          annotations.filter(isAnyVideoTrack) as Array<
+            AnnotationResponse & {
+              geometry:
+                | VideoTrackGeometry
+                | VideoTrackPolygonGeometry
+                | VideoTrackPolylineGeometry
+                | VideoTrackMaskGeometry;
+            }
+          >,
+        ),
+      [annotations],
+    );
+    const maskLabels = useMemo<VideoLabelView[]>(() => {
+      const byId = new Map(annotations.map((annotation) => [annotation.id, annotation]));
+      return committedMaskRecords.flatMap((record) => {
+        const annotation = byId.get(record.id);
+        if (
+          !annotation ||
+          !shouldShowLabel(record.selected, visual.labelVisibility) ||
+          (annotation.geometry.type !== "video_mask" &&
+            annotation.geometry.type !== "video_track_mask")
+        )
+          return [];
+        const resolved =
+          annotation.geometry.type === "video_track_mask"
+            ? resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex)
+            : null;
+        const stateSuffix = resolved?.occluded
+          ? "遮挡"
+          : resolved && resolved.keyframeFrame !== frameIndex
+            ? `保持 F${resolved.keyframeFrame}`
+            : undefined;
+        return [
+          {
+            key: `mask-label-${record.cacheKey}`,
+            geom: record.geom,
+            color: record.color,
+            text: buildTrackLabelText(
+              {
+                className: annotation.class_name,
+                trackNumber:
+                  annotation.geometry.type === "video_track_mask"
+                    ? maskTrackNumbers.get(annotation.id)
+                    : undefined,
+                stateSuffix,
+                attributes:
+                  resolved?.attributes ??
+                  (annotation as { attributes?: Record<string, unknown> | null }).attributes ??
+                  null,
+              },
+              visual.labelContent.track,
+            ),
+          },
+        ];
+      });
+    }, [
+      annotations,
+      committedMaskRecords,
+      frameIndex,
+      maskTrackNumbers,
+      visual.labelContent.track,
+      visual.labelVisibility,
+    ]);
     const displayedMaskRecords = useMemo(
       () =>
         maskRecords.filter((record) => {
@@ -1797,7 +1878,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               scale={vp.scale}
               visual={visual}
             />
-            <VideoKonvaMaskLayer records={displayedMaskRecords} size={size} />
+            <VideoKonvaMaskLayer
+              records={displayedMaskRecords}
+              size={size}
+              scale={vp.scale}
+              visual={visual}
+            />
             <MaskCompareTileLayer store={maskCompareStore} viewport={maskCompareViewport} />
             {!maskCompareActive &&
               maskToolActive &&
@@ -1809,6 +1895,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                   revision={maskEditor.revision}
                   imgW={size.w}
                   imgH={size.h}
+                  color={maskEditorColor}
                   visible
                 />
               )}
@@ -1847,7 +1934,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             )}
             <VideoKonvaOverlayLayer
               pendingDraft={pendingDraft}
-              labels={frameViews.labels}
+              labels={[...frameViews.labels, ...maskLabels]}
               size={size}
               scale={vp.scale}
               visual={visual}

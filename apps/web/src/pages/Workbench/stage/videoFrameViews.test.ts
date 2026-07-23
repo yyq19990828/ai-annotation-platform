@@ -81,6 +81,31 @@ function polylineTrackAnn(
   } as unknown as AnnotationResponse;
 }
 
+function maskTrackAnn(id: string, trackId: string, frame = 0): AnnotationResponse {
+  return {
+    id,
+    class_name: "car",
+    geometry: {
+      type: "video_track_mask",
+      track_id: trackId,
+      keyframes: [
+        {
+          frame_index: frame,
+          source: "manual",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [100, 100],
+            object_key: "mask/test",
+            sha256: "a".repeat(64),
+            runs: 2,
+            bytes: 4,
+          },
+        },
+      ],
+    },
+  } as unknown as AnnotationResponse;
+}
+
 const base = { visual: DEFAULT_ANNOTATION_VISUAL, selectedId: null };
 
 describe("deriveVideoFrameViews", () => {
@@ -245,6 +270,16 @@ describe("deriveVideoFrameViews", () => {
     const atInterp = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 5 });
     expect(atInterp.entries[0].dashed).toBe(true); // 插值 → 虚线
     expect(atInterp.entries[0].labelText).toContain("插值");
+  });
+
+  it("Mask 轨迹与其它视频轨迹共享同一编号序列", () => {
+    const mask = maskTrackAnn("mask-track", "a-mask");
+    const bbox = trackAnn("bbox-track", "b-box", [
+      { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
+    ]);
+    const view = deriveVideoFrameViews({ ...base, annotations: [bbox, mask], frameIndex: 0 });
+
+    expect(view.entries[0].labelText).toContain("#2");
   });
 
   it("entry / preview key 使用 render_key,避免 tmp id 确认后重挂", () => {

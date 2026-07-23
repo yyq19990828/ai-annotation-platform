@@ -16,9 +16,12 @@ export const TOOLBAR_FIELD_LABEL_CLASS =
 export const TOOLBAR_SELECT_CLASS =
   "appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground";
 
+// 悬浮工具条的共享表面；横排 / 纵排结构由具体工具条决定。
+export const TOOLBAR_SURFACE_CLASS =
+  "rounded-md border border-border bg-card px-3 py-1.5 shadow-md";
+
 // 悬浮工具条的内部 chrome（不含定位/层级，由各组件在外层补 absolute/fixed + top + z + translate）。
-export const TOOLBAR_CHROME_CLASS =
-  "flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-1.5 shadow-md";
+export const TOOLBAR_CHROME_CLASS = `flex flex-col gap-1 ${TOOLBAR_SURFACE_CLASS}`;
 
 // 竖向细分隔符（同一静态元素可在多处复用）。
 export const TOOLBAR_DIVIDER = <span aria-hidden className="h-5 w-px bg-border" />;

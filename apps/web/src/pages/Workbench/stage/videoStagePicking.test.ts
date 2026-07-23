@@ -40,6 +40,7 @@ describe("pickTopVideoMaskAt", () => {
     width: 2,
     height: 2,
     geom: { x: 0, y: 0, w: 0.5, h: 0.5 },
+    color: "#22c55e",
     zOrder,
     selected: false,
     isTrack: true,

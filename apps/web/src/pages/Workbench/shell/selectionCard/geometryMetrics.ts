@@ -211,6 +211,23 @@ function keypointMetrics(points: Keypoint[]): Metric[] {
   ];
 }
 
+function rasterMaskMetrics(mask: {
+  size: [number, number];
+  runs: number;
+  bytes: number;
+}): Metric[] {
+  const [height, width] = mask.size;
+  const stored =
+    mask.bytes < 1024
+      ? `${mask.bytes} B`
+      : `${(mask.bytes / 1024).toFixed(mask.bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return [
+    { label: "画布", value: `${group(width)}×${group(height)} px` },
+    { label: "编码段", value: group(mask.runs) },
+    { label: "存储", value: stored, hint: "COCO RLE" },
+  ];
+}
+
 /**
  * v0.16.14 · 把选中几何展开为结构化指标数组,取代旧单行 geometrySummary 字符串。
  * 纯函数,带单测(面积 / 周长 / 占图比)。无 imgW/imgH 时降级为相对值并省略需要像素的指标
@@ -248,6 +265,9 @@ export function geometryMetrics(
       return polylineMetrics(geometry.points, imgW, imgH);
     case "keypoint":
       return keypointMetrics(geometry.points);
+    case "raster_mask":
+    case "video_mask":
+      return rasterMaskMetrics(geometry.mask);
     default:
       return [];
   }
