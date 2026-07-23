@@ -351,6 +351,8 @@ test.describe("native Mask interactive candidate acceptance", () => {
         response.status() === 201,
     );
     await picker.getByText("car", { exact: true }).click();
+    await expect(picker).toBeVisible();
+    await page.keyboard.press("Enter");
     const createdBody = (await created.then((response) => response.json())) as {
       annotation_type: string;
     };
@@ -630,9 +632,11 @@ test.describe("native Mask interactive candidate acceptance", () => {
       },
     );
 
-    const row = page.getByTestId(`box-list-item-${annotationId}`);
+    const row = page.getByTestId(`video-mask-track-${annotationId}`);
     await expect(row).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: "收起浮窗" }).click();
     await row.click();
+    await page.getByLabel(/展开选中信息卡.*可拖动/).click();
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(page.getByText(/F 2 \//)).toBeVisible({ timeout: 10_000 });
