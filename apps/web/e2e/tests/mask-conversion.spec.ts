@@ -1,7 +1,7 @@
 import type { APIResponse } from "@playwright/test";
 import { expect, test } from "../fixtures/seed";
 
-const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8000";
+const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 
 interface AnnotationDto {
   id: string;

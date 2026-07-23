@@ -17,9 +17,7 @@
  */
 import { test, expect } from "../fixtures/seed";
 
-const API_BASE = process.env.PLAYWRIGHT_BASE_URL?.endsWith(":3000")
-  ? process.env.PLAYWRIGHT_BASE_URL.replace(":3000", ":8000")
-  : (process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8000");
+const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 
 test.describe("mask lock bypass (v0.23.5 A4)", () => {
   test("锁定 annotation 经 mask 工具不可修改", async ({ page, seed }) => {

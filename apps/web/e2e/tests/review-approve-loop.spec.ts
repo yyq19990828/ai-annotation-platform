@@ -15,7 +15,7 @@ const API_BASE =
   (typeof globalThis !== "undefined" &&
     (globalThis as { process?: { env?: Record<string, string> } }).process?.env
       ?.PLAYWRIGHT_API_BASE) ||
-  "http://localhost:8000";
+  "http://127.0.0.1:8010";
 
 test.describe("review approve loop", () => {
   test("reviewer 通过 UI approve 任务 → annotator 通知列表出现 task.approved", async ({

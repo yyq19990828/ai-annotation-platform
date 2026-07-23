@@ -5,17 +5,35 @@ import { fileURLToPath } from "node:url";
 const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
 const rasterMaskCreateEnabled = rasterMaskMatrix === "native";
 const configDir = dirname(fileURLToPath(import.meta.url));
+const isCI = Boolean(process.env.CI);
+const useIsolatedServers = !isCI || Boolean(rasterMaskMatrix);
+
+if (useIsolatedServers) {
+  // 固定隔离端口，避免继承 shell/CI job 中指向开发服务的旧变量。
+  process.env.PLAYWRIGHT_BASE_URL = "http://127.0.0.1:3001";
+  process.env.PLAYWRIGHT_API_BASE = "http://127.0.0.1:8010";
+}
+
+const defaultBaseURL = useIsolatedServers
+  ? "http://127.0.0.1:3001"
+  : "http://127.0.0.1:3000";
+const e2eDatabaseURL = isCI
+  ? (process.env.DATABASE_URL ??
+    "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
+  : (process.env.PLAYWRIGHT_E2E_DATABASE_URL ??
+    "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_e2e");
+
+const isolatedApiCommand = [
+  ...(isCI ? [] : ["uv run python scripts/prepare_e2e_db.py"]),
+  "uv run alembic upgrade head",
+  "uv run uvicorn app.main:app --host 127.0.0.1 --port 8010",
+].join(" && ");
 
 /**
  * Playwright E2E 配置。
  *
- * 本地运行前置条件：
- *   1. docker compose up -d   （postgres / redis / minio）
- *   2. cd apps/api && uv run alembic upgrade head
- *   3. cd apps/api && uv run uvicorn app.main:app --port 8000   （另开窗口）
- *   4. cd apps/web && pnpm dev                                  （另开窗口）
- *
- * 然后：pnpm test:e2e
+ * 本地只需先启动 postgres / redis / minio；Playwright 会创建并迁移
+ * annotation_e2e，再自启 8010 API 和 3001 Web，避免复用开发服务。
  *
  * CI 中通过 webServer 启动 vite preview，使用真实后端 API。
  */
@@ -29,12 +47,14 @@ export default defineConfig({
   // annotation / batch-flow 三 spec 共用同一个 fixture），本地与 CI 都用单 worker。
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: isCI ? 2 : 0,
   workers: 1,
-  reporter: process.env.CI ? [["github"], ["html"]] : "html",
+  reporter: isCI ? [["github"], ["html"]] : "html",
+
+  globalTeardown: "./e2e/global-teardown.ts",
 
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? defaultBaseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -66,29 +86,45 @@ export default defineConfig({
     // 起步只跑 chromium；稳定后再加 firefox/webkit
   ],
 
-  webServer: rasterMaskMatrix
+  webServer: useIsolatedServers
     ? [
         {
-          command: `RASTER_MASK_READ_ENABLED=true RASTER_MASK_CREATE_ENABLED=${rasterMaskCreateEnabled ? "true" : "false"} uv run uvicorn app.main:app --host 127.0.0.1 --port 8010`,
+          command: isolatedApiCommand,
           cwd: resolve(configDir, "../api"),
-          url: "http://127.0.0.1:8010/health",
+          env: {
+            DATABASE_URL: e2eDatabaseURL,
+            ENVIRONMENT: "development",
+            E2E_SEED_ENABLED: "true",
+            ...(rasterMaskMatrix
+              ? {
+                RASTER_MASK_READ_ENABLED: "true",
+                RASTER_MASK_CREATE_ENABLED: rasterMaskCreateEnabled ? "true" : "false",
+              }
+              : {}),
+          },
+          url: "http://127.0.0.1:8010/health/db",
           reuseExistingServer: false,
           timeout: 120_000,
         },
         {
-          command: "API_PROXY_TARGET=http://127.0.0.1:8010 PORT=3001 pnpm dev --host 127.0.0.1",
+          command: "pnpm dev --host 127.0.0.1",
           cwd: configDir,
+          env: {
+            API_PROXY_TARGET: "http://127.0.0.1:8010",
+            VITE_WS_HOST: "127.0.0.1:8010",
+            PORT: "3001",
+          },
           url: "http://127.0.0.1:3001",
           reuseExistingServer: false,
           timeout: 120_000,
         },
       ]
-    : process.env.CI
+    : isCI
       ? {
-        command: "pnpm preview --port 3000",
-        url: "http://localhost:3000",
-        reuseExistingServer: false,
-        timeout: 120_000,
+          command: "pnpm preview --port 3000",
+          url: "http://127.0.0.1:3000",
+          reuseExistingServer: false,
+          timeout: 120_000,
         }
       : undefined,
 });

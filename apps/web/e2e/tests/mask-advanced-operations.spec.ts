@@ -2,7 +2,7 @@ import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 import { expect, test, type SeedAPI, type SeedData } from "../fixtures/seed";
 
-const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8000";
+const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 const IMAGE_WIDTH = 64;
 const IMAGE_HEIGHT = 48;
 

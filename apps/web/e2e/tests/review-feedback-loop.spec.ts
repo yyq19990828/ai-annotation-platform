@@ -14,7 +14,7 @@ const API_BASE =
   (typeof globalThis !== "undefined" &&
     (globalThis as { process?: { env?: Record<string, string> } }).process?.env
       ?.PLAYWRIGHT_API_BASE) ||
-  "http://localhost:8000";
+  "http://127.0.0.1:8010";
 
 test.describe("review feedback loop", () => {
   test("reviewer 通过 UI reject 任务 → annotator 看到 review_feedback", async ({

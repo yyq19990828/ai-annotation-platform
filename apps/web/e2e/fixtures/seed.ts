@@ -2,7 +2,7 @@
  * v0.8.3 · E2E 共享 fixtures：调用后端 _test_seed router 造数与跳登录。
  *
  * 后端要求（`_test_seed.py`）：
- *   - settings.environment !== 'production' 时挂载
+ *   - development + E2E_SEED_ENABLED=true，且数据库名以 _e2e / _test 结尾
  *   - POST /api/v1/__test/seed/reset → truncate + 重建固定 fixture
  *   - POST /api/v1/__test/seed/login {email} → 返回 access_token
  *
@@ -147,7 +147,7 @@ export interface SeedPeekData {
   task_id: string | null;
 }
 
-const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
+const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 
 export class SeedAPI {
   constructor(private request: APIRequestContext) {}
@@ -340,7 +340,7 @@ export class SeedAPI {
     if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
     const target =
-      baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+      baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
     await page.goto(target);
     await page.evaluate(
       ({ token, user }) => {
