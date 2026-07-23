@@ -16785,6 +16785,36 @@
         "title": "NativeMaskCandidate",
         "type": "object"
       },
+      "NativeMaskCandidatePreview": {
+        "additionalProperties": false,
+        "description": "Simplified display-only outline for a native Mask candidate.",
+        "properties": {
+          "points": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "maxItems": 8192,
+            "minItems": 3,
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "title": "NativeMaskCandidatePreview",
+        "type": "object"
+      },
       "NativeMaskCandidateValue": {
         "additionalProperties": false,
         "properties": {
@@ -16796,6 +16826,16 @@
             "minItems": 1,
             "title": "Masklabels",
             "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NativeMaskCandidatePreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "rle": {
             "$ref": "#/components/schemas/CocoRlePayload"
