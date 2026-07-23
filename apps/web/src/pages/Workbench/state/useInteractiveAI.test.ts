@@ -3,11 +3,15 @@
  * 覆盖 point / bbox / text 三种 prompt 路由 + backend 失败 toast + mlBackendId 缺失守卫
  * + 80ms 防抖合并连续点击。
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { ApiError } from "@/api/client";
-import { useInteractiveAI, simplifyCandidateRing } from "./useInteractiveAI";
+import {
+  newMaskIdempotencyKey,
+  useInteractiveAI,
+  simplifyCandidateRing,
+} from "./useInteractiveAI";
 import { simplifyPolygon } from "../stage/shared/geometry/simplify";
 
 const interactiveAnnotateMock = vi.fn();
@@ -83,6 +87,19 @@ describe("useInteractiveAI", () => {
     interactiveAnnotateMock.mockReset();
     pushToastMock.mockReset();
     recordPredictCacheHitMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("非安全 HTTP 上的幂等键 fallback 满足后端最小长度", () => {
+    vi.stubGlobal("crypto", {});
+
+    const key = newMaskIdempotencyKey();
+
+    expect(key).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    expect(key.length).toBeGreaterThanOrEqual(16);
   });
 
   it("runBbox 路由到 ctx.type='interactive_box' (v0.18.17 · 旧 bbox 改名)", async () => {

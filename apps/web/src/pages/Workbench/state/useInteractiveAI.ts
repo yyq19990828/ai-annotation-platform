@@ -995,12 +995,12 @@ interface BackendResult {
 
 let idempotencySequence = 0;
 
-function newIdempotencyKey(): string {
+export function newMaskIdempotencyKey(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return `mask:${globalThis.crypto.randomUUID()}`;
   }
   idempotencySequence += 1;
-  return `mask:${Date.now().toString(36)}:${idempotencySequence.toString(36)}`;
+  return `mask:fallback:${Date.now().toString(36)}:${idempotencySequence.toString(36)}`;
 }
 
 function normalizeResult(
@@ -1055,7 +1055,7 @@ function normalizeResult(
         ? response.frame_index as number
         : null,
       receipt,
-      idempotencyKey: newIdempotencyKey(),
+      idempotencyKey: newMaskIdempotencyKey(),
       promptSummary,
       routing: {
         requested_backend_id: routing.requested_backend_id,

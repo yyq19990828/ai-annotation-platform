@@ -247,6 +247,14 @@ test.describe("native Mask interactive candidate acceptance", () => {
   test.skip(MATRIX !== "native", "requires the native raster Mask matrix");
 
   test("image candidate and committed raster Mask keep identical pixels", async ({ page, request, seed }) => {
+    // Remote HTTP hosts are not secure contexts, so randomUUID is unavailable.
+    // Force that browser path even though Playwright's loopback origin is trusted.
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis.crypto, "randomUUID", {
+        configurable: true,
+        value: undefined,
+      });
+    });
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     await seed.configureRasterMask(data.project_id, true);

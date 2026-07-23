@@ -37,6 +37,9 @@
 ## [Unreleased]
 
 ### Fixed
+- **远程 HTTP 工作台可以采纳原生 Mask 候选**. 非安全上下文缺少 `crypto.randomUUID`
+  时，备用幂等键现在始终满足服务端长度约束；请求校验失败也会直接显示具体字段与原因，
+  不再只提示 `Unprocessable Entity`。
 - **原生 Mask 大批候选不再拖慢画布交互**. 原生候选使用轻量 polygon 轮廓完成全量动态
   预览、缩放与 `Tab` 高亮，只为当前候选解码像素层；后端 RLE 编码改为向量化实现，避免
   Exemplar 多实例结果逐像素占用 CPU，同时落库仍保持未经转换的原始 Mask。

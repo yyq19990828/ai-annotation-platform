@@ -24,6 +24,33 @@ class ApiError extends Error {
 /** v0.9.3 · 仅透传少数白名单响应头（避免序列化无关大头），按需扩展。 */
 const EXPOSED_HEADERS = ["x-login-failed-count", "retry-after"] as const;
 
+function validationIssueMessage(issue: unknown): string | undefined {
+  if (!issue || typeof issue !== "object") return undefined;
+  const value = issue as { loc?: unknown; msg?: unknown };
+  if (typeof value.msg !== "string" || value.msg.length === 0) return undefined;
+  const location = Array.isArray(value.loc)
+    ? value.loc
+        .filter((part) => part !== "body")
+        .map(String)
+        .join(".")
+    : "";
+  return location ? `${location}：${value.msg}` : value.msg;
+}
+
+export function apiErrorDetailMessage(rawDetail: unknown): string | undefined {
+  if (typeof rawDetail === "string") return rawDetail;
+  if (Array.isArray(rawDetail)) {
+    return rawDetail.map(validationIssueMessage).find(Boolean);
+  }
+  if (rawDetail && typeof rawDetail === "object" && "message" in rawDetail) {
+    const message = String(
+      (rawDetail as { message?: unknown }).message ?? "",
+    );
+    return message || undefined;
+  }
+  return undefined;
+}
+
 async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean; silent?: boolean }): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");
   // v0.10.18 · PerfHud 浏览器侧 API p95 指标; recordApiDuration 内部包 try/catch 不会抛.
@@ -45,12 +72,7 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const rawDetail: unknown = (body as { detail?: unknown })?.detail;
-    const detail: string | undefined =
-      typeof rawDetail === "string"
-        ? rawDetail
-        : rawDetail && typeof rawDetail === "object" && "message" in rawDetail
-        ? String((rawDetail as { message?: unknown }).message ?? "")
-        : undefined;
+    const detail = apiErrorDetailMessage(rawDetail);
 
     if (res.status === 401 && !opts?.anonymous) {
       const { useAuthStore } = await import("../stores/authStore");
