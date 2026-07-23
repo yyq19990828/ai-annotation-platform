@@ -55,6 +55,21 @@ jobs:
       - name: Sync deps
         working-directory: apps/api
         run: uv sync --extra test
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs minio
+          exit 1
       - name: alembic upgrade head
         working-directory: apps/api
         run: uv run alembic upgrade head

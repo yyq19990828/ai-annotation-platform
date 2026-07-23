@@ -118,7 +118,7 @@ export default defineConfig({
       ]
     : isCI
       ? {
-          command: "pnpm preview --port 3000",
+          command: "pnpm preview --host 127.0.0.1 --port 3000",
           url: "http://127.0.0.1:3000",
           reuseExistingServer: false,
           timeout: 120_000,
