@@ -19,7 +19,7 @@ export const VIDEO_TOOL_TARGET: Partial<
 > = {
   box: { unit: "bbox", variant: "box" },
   track: { unit: "bbox", variant: "track" },
-  mask: { unit: "region", variant: "track" },
+  mask: { unit: "region", variant: "box" },
   polygon: { unit: "region", variant: "box" },
   "polygon-track": { unit: "region", variant: "track" },
   polyline: { unit: "polyline", variant: "box" },

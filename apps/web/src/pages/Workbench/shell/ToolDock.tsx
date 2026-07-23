@@ -69,6 +69,10 @@ interface ToolDescriptor {
   altDigit?: number;
 }
 
+function imageToolIcon(id: ToolId): IconName {
+  return ALL_TOOLS.find((tool) => tool.id === id)?.icon ?? "cursor";
+}
+
 /** v0.10.2 · Tooltip + Alt+digit 副 hotkey. */
 const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   select: { desc: "点选 / 移动已有标注与预标注 · ESC 回退到它", altDigit: 4 },
@@ -147,7 +151,7 @@ const VIDEO_TOOLS: Array<{
     id: "smart-point",
     hotkey: "S",
     label: "智能点",
-    icon: "target",
+    icon: imageToolIcon("smart-point"),
     desc: "点选目标 · SAM 分割当前帧 · Alt 负点",
     group: "sam",
     requiredPrompt: "point",
@@ -156,7 +160,7 @@ const VIDEO_TOOLS: Array<{
     id: "smart-box",
     hotkey: "D",
     label: "智能框",
-    icon: "rect",
+    icon: imageToolIcon("smart-box"),
     desc: "框选目标 · SAM 分割当前帧",
     group: "sam",
     requiredPrompt: "interactive_box",
@@ -165,7 +169,7 @@ const VIDEO_TOOLS: Array<{
     id: "exemplar",
     hotkey: "E",
     label: "示例框",
-    icon: "sparkles",
+    icon: imageToolIcon("exemplar"),
     desc: "框一个例子 · 找出画面里所有同类 · Alt 框排误检",
     group: "sam",
     requiredPrompt: "exemplar",
@@ -174,7 +178,7 @@ const VIDEO_TOOLS: Array<{
     id: "magic-box",
     hotkey: "G",
     label: "Magic Box",
-    icon: "wandSparkles",
+    icon: imageToolIcon("magic-box"),
     desc: "粗框 → SAM 收紧 → 落矩形框",
     group: "sam",
     requiredPrompt: "interactive_box",
@@ -206,10 +210,10 @@ const VIDEO_TOOLS: Array<{
   {
     id: "mask",
     hotkey: "M",
-    label: "Mask 轨迹",
-    icon: "scissors",
-    desc: "当前帧绘制或编辑逐像素 Mask 关键帧",
-    group: "track",
+    label: "单帧 Mask",
+    icon: imageToolIcon("mask"),
+    desc: "在当前帧绘制或编辑逐像素 Mask",
+    group: "frame",
   },
 ];
 

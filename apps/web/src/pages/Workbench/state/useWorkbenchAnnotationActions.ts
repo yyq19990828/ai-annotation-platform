@@ -77,6 +77,8 @@ export interface UseWorkbenchAnnotationActionsArgs {
   isLocked?: boolean;
   /** v0.10.28 · 当前 keypoint 单元 schema 节点数；放满即自动提交一个实例。0 = 未配置 schema。 */
   keypointNodeCount?: number;
+  /** 当前工具自身无类别时直接以 unknown 落库，不打开空类别弹层。 */
+  activeToolHasOwnClasses?: boolean;
   /**
    * v0.20.22 · 同步登记提交在途几何 override, 桥接「setDrag(null)」与「onMutate 微任务
    * 回填 cache」之间的一帧空窗, 防松手闪回原尺寸。见 usePendingGeom。
@@ -88,7 +90,7 @@ export interface UseWorkbenchAnnotationActionsReturn {
   /** 共用 create fallback：分配 tmpId → cache → history → enqueue。*/
   optimisticEnqueueCreate: (payload: AnnotationPayload) => void;
   createBboxWithClass: (geom: Geom, cls: string) => boolean;
-  /** v0.10.28 · 旋转框: 由轴对齐矩形 (归一化 x/y/w/h) 提交 angle=0 的 rotated_bbox; 类别用 activeClass。 */
+  /** 旋转框：由轴对齐矩形生成 angle=0 草稿，再统一选择类别。 */
   createRotatedBbox: (geom: Geom) => boolean;
   /** v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 OBB geometry (走 update mutation + history)。 */
   handleCommitRotateBbox: (
@@ -142,6 +144,7 @@ export function useWorkbenchAnnotationActions({
   annotationsRef,
   isLocked = false,
   keypointNodeCount = 0,
+  activeToolHasOwnClasses = true,
   markPendingGeom,
 }: UseWorkbenchAnnotationActionsArgs): UseWorkbenchAnnotationActionsReturn {
   const setQ = queryClient.setQueryData.bind(queryClient);
@@ -212,6 +215,91 @@ export function useWorkbenchAnnotationActions({
     [taskId, projectId, meUserId, setQ, s, history],
   );
 
+  const createGeometryWithClass = useCallback(
+    (
+      annotationType: AnnotationPayload["annotation_type"],
+      toolUnitId: AnnotationPayload["tool_unit_id"],
+      geometry: Geometry,
+      cls: string,
+      success: { msg: string; sub?: string },
+    ): boolean => {
+      if (blockIfLocked() || !cls) return false;
+      const payload: AnnotationPayload = {
+        annotation_type: annotationType,
+        tool_unit_id: toolUnitId,
+        class_name: cls,
+        geometry,
+        confidence: 1,
+      };
+      if (cls !== UNKNOWN_CLASS) {
+        s.setActiveClass(cls);
+        recordRecentClass(cls);
+      }
+      mutations.create.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          s.setSelectedId(created.id);
+          pushToast({
+            msg: success.msg,
+            sub: success.sub ? `${success.sub} · ${cls}` : cls,
+            kind: "success",
+          });
+        },
+        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      });
+      return true;
+    },
+    [
+      blockIfLocked,
+      enqueueOnError,
+      history,
+      mutations.create,
+      optimisticEnqueueCreate,
+      pushToast,
+      recordRecentClass,
+      s,
+    ],
+  );
+
+  const pointsBounds = useCallback((points: readonly [number, number][]): Geom => {
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }, []);
+
+  const createPolygonWithClass = useCallback(
+    (points: [number, number][], cls: string) =>
+      createGeometryWithClass("polygon", "region", polygonGeom(points), cls, {
+        msg: "已创建多边形",
+        sub: `${points.length} 顶点`,
+      }),
+    [createGeometryWithClass],
+  );
+
+  const createPolylineWithClass = useCallback(
+    (points: [number, number][], cls: string) =>
+      createGeometryWithClass("polyline", "polyline", polylineGeom(points), cls, {
+        msg: "已创建折线",
+        sub: `${points.length} 顶点`,
+      }),
+    [createGeometryWithClass],
+  );
+
+  const createKeypointWithClass = useCallback(
+    (points: Keypoint[], cls: string) => {
+      const visible = points.filter((point) => point.v > 0).length;
+      return createGeometryWithClass("keypoint", "keypoint", keypointGeom(points), cls, {
+        msg: "已创建关键点",
+        sub: `${visible}/${points.length} 可见`,
+      });
+    },
+    [createGeometryWithClass],
+  );
+
   // ── polygon / polyline 草稿（共用顶点累积 state）──────────────────────
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   // 切到非 polygon/polyline 工具或切题清空草稿
@@ -225,48 +313,18 @@ export function useWorkbenchAnnotationActions({
   const submitPolygon = useCallback(
     (points: [number, number][]) => {
       if (blockIfLocked()) return;
-      const cls = s.activeClass;
       if (points.length < 3) {
         pushToast({ msg: "多边形需至少 3 个顶点", kind: "warning" });
         return;
       }
-      if (!cls) {
-        pushToast({ msg: "请先选择类别", kind: "warning" });
+      setPolygonDraftPoints([]);
+      if (!activeToolHasOwnClasses) {
+        createPolygonWithClass(points, UNKNOWN_CLASS);
         return;
       }
-      const payload: AnnotationPayload = {
-        annotation_type: "polygon",
-        // v0.10.17 · 工具维度: polygon 工具归 region unit; 后端据此校验 class_name.
-        tool_unit_id: toolUnitForTool(s.tool),
-        class_name: cls,
-        geometry: { type: "polygon", points },
-        confidence: 1,
-      };
-      setPolygonDraftPoints([]);
-      mutations.create.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          s.setSelectedId(created.id);
-          recordRecentClass(cls);
-          pushToast({
-            msg: "已创建多边形",
-            sub: `${points.length} 顶点 · ${cls}`,
-            kind: "success",
-          });
-        },
-        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
-      });
+      s.setPendingDrawing({ kind: "polygon", geom: pointsBounds(points), points });
     },
-    [
-      blockIfLocked,
-      s,
-      mutations,
-      history,
-      recordRecentClass,
-      pushToast,
-      enqueueOnError,
-      optimisticEnqueueCreate,
-    ],
+    [activeToolHasOwnClasses, blockIfLocked, createPolygonWithClass, pointsBounds, pushToast, s],
   );
 
   const polygonHandle = useMemo<PolygonDraftHandle>(
@@ -284,43 +342,18 @@ export function useWorkbenchAnnotationActions({
   const submitPolyline = useCallback(
     (points: [number, number][]) => {
       if (blockIfLocked()) return;
-      const cls = s.activeClass;
       if (points.length < 2) {
         pushToast({ msg: "折线需至少 2 个顶点", kind: "warning" });
         return;
       }
-      if (!cls) {
-        pushToast({ msg: "请先选择类别", kind: "warning" });
+      setPolygonDraftPoints([]);
+      if (!activeToolHasOwnClasses) {
+        createPolylineWithClass(points, UNKNOWN_CLASS);
         return;
       }
-      const payload: AnnotationPayload = {
-        annotation_type: "polyline",
-        tool_unit_id: toolUnitForTool(s.tool),
-        class_name: cls,
-        geometry: { type: "polyline", points },
-        confidence: 1,
-      };
-      setPolygonDraftPoints([]);
-      mutations.create.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          s.setSelectedId(created.id);
-          recordRecentClass(cls);
-          pushToast({ msg: "已创建折线", sub: `${points.length} 顶点 · ${cls}`, kind: "success" });
-        },
-        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
-      });
+      s.setPendingDrawing({ kind: "polyline", geom: pointsBounds(points), points });
     },
-    [
-      blockIfLocked,
-      s,
-      mutations,
-      history,
-      recordRecentClass,
-      pushToast,
-      enqueueOnError,
-      optimisticEnqueueCreate,
-    ],
+    [activeToolHasOwnClasses, blockIfLocked, createPolylineWithClass, pointsBounds, pushToast, s],
   );
 
   const polylineHandle = useMemo<PolygonDraftHandle>(
@@ -350,45 +383,19 @@ export function useWorkbenchAnnotationActions({
   const submitKeypoint = useCallback(
     (points: Keypoint[]) => {
       if (blockIfLocked()) return;
-      const cls = s.activeClass;
-      if (!cls) {
-        pushToast({ msg: "请先选择类别", kind: "warning" });
+      if (points.length === 0) return;
+      setKeypointDraftPoints([]);
+      if (!activeToolHasOwnClasses) {
+        createKeypointWithClass(points, UNKNOWN_CLASS);
         return;
       }
-      if (points.length === 0) return;
-      const payload: AnnotationPayload = {
-        annotation_type: "keypoint",
-        tool_unit_id: toolUnitForTool(s.tool),
-        class_name: cls,
-        geometry: keypointGeom(points),
-        confidence: 1,
-      };
-      setKeypointDraftPoints([]);
-      mutations.create.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          s.setSelectedId(created.id);
-          recordRecentClass(cls);
-          const visible = points.filter((p) => p.v > 0).length;
-          pushToast({
-            msg: "已创建关键点",
-            sub: `${visible}/${points.length} 可见 · ${cls}`,
-            kind: "success",
-          });
-        },
-        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      s.setPendingDrawing({
+        kind: "keypoint",
+        geom: pointsBounds(points.map((point) => [point.x, point.y] as [number, number])),
+        points,
       });
     },
-    [
-      blockIfLocked,
-      s,
-      mutations,
-      history,
-      recordRecentClass,
-      pushToast,
-      enqueueOnError,
-      optimisticEnqueueCreate,
-    ],
+    [activeToolHasOwnClasses, blockIfLocked, createKeypointWithClass, pointsBounds, s],
   );
 
   // 放满 nodeCount 个点 → 自动提交一个实例。
@@ -500,15 +507,8 @@ export function useWorkbenchAnnotationActions({
     ],
   );
 
-  // v0.10.28 · 旋转框: 轴对齐矩形 → angle=0 的 rotated_bbox。中心 = 矩形中点; 类别用 activeClass。
-  const createRotatedBbox = useCallback(
-    (geom: Geom): boolean => {
-      if (blockIfLocked()) return false;
-      const cls = s.activeClass;
-      if (!cls) {
-        pushToast({ msg: "请先选择类别", kind: "warning" });
-        return false;
-      }
+  const createRotatedBboxWithClass = useCallback(
+    (geom: Geom, cls: string): boolean => {
       const geometry: RotatedBboxGeometry = {
         type: "rotated_bbox",
         cx: geom.x + geom.w / 2,
@@ -517,34 +517,27 @@ export function useWorkbenchAnnotationActions({
         h: geom.h,
         angle: 0,
       };
-      const payload: AnnotationPayload = {
-        annotation_type: "rotated_bbox",
-        tool_unit_id: toolUnitForTool(s.tool),
-        class_name: cls,
-        geometry,
-        confidence: 1,
-      };
-      s.setActiveClass(cls);
-      recordRecentClass(cls);
-      mutations.create.mutate(payload, {
-        onSuccess: (newAnnotation) => {
-          s.setSelectedId(newAnnotation.id);
-          history.push({ kind: "create", annotationId: newAnnotation.id, payload });
-        },
-        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      return createGeometryWithClass("rotated_bbox", "rotated_bbox", geometry, cls, {
+        msg: "已创建旋转框",
+      });
+    },
+    [createGeometryWithClass],
+  );
+
+  // v0.10.28 · 旋转框: 轴对齐矩形 → angle=0 的 rotated_bbox，完成后统一弹类别选择。
+  const createRotatedBbox = useCallback(
+    (geom: Geom): boolean => {
+      if (blockIfLocked()) return false;
+      if (!activeToolHasOwnClasses) {
+        return createRotatedBboxWithClass(geom, UNKNOWN_CLASS);
+      }
+      s.setPendingDrawing({
+        kind: "rotated_bbox",
+        geom,
       });
       return true;
     },
-    [
-      blockIfLocked,
-      s,
-      mutations,
-      history,
-      recordRecentClass,
-      pushToast,
-      enqueueOnError,
-      optimisticEnqueueCreate,
-    ],
+    [activeToolHasOwnClasses, blockIfLocked, createRotatedBboxWithClass, s],
   );
 
   // v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 rotated_bbox geometry。
@@ -610,10 +603,33 @@ export function useWorkbenchAnnotationActions({
     (cls: string) => {
       const pending = s.pendingDrawing;
       if (!pending || !cls) return;
+      if (pending.kind?.startsWith("video_")) return;
       s.setPendingDrawing(null);
-      createBboxWithClass(pending.geom, cls);
+      switch (pending.kind) {
+        case "rotated_bbox":
+          createRotatedBboxWithClass(pending.geom, cls);
+          break;
+        case "polygon":
+          createPolygonWithClass(pending.points, cls);
+          break;
+        case "polyline":
+          createPolylineWithClass(pending.points, cls);
+          break;
+        case "keypoint":
+          createKeypointWithClass(pending.points, cls);
+          break;
+        default:
+          createBboxWithClass(pending.geom, cls);
+      }
     },
-    [s, createBboxWithClass],
+    [
+      createBboxWithClass,
+      createKeypointWithClass,
+      createPolygonWithClass,
+      createPolylineWithClass,
+      createRotatedBboxWithClass,
+      s,
+    ],
   );
 
   const handleDeleteBox = useCallback(

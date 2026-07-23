@@ -1,7 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse } from "@/types";
+import type { AnnotationPayload } from "@/api/tasks";
 import { useVideoAnnotationActions } from "./useVideoAnnotationActions";
 
 const apiMocks = vi.hoisted(() => ({
@@ -176,5 +177,175 @@ describe("handleVideoMaskCommit", () => {
     ).rejects.toThrow("version is missing");
     expect(apiMocks.uploadTaskContent).not.toHaveBeenCalled();
     expect(apiMocks.saveMaskKeyframe).not.toHaveBeenCalled();
+  });
+
+  it("新建单帧 Mask 先选 region 类别，再创建单关键帧容器", async () => {
+    const state = {
+      activeClass: "Recommended",
+      pendingDrawing: null as import("../../state/useWorkbenchState").PendingDrawing,
+      setPendingDrawing: vi.fn(
+        (pending: import("../../state/useWorkbenchState").PendingDrawing) => {
+          state.pendingDrawing = pending;
+        },
+      ),
+      setSelectedId: vi.fn(),
+    };
+    const create = vi.fn(
+      (
+        payload: AnnotationPayload,
+        options?: { onSuccess?: (created: AnnotationResponse) => void },
+      ) => {
+        options?.onSuccess?.({
+          ...maskTrack,
+          id: "mask-new",
+          class_name: payload.class_name,
+          geometry: payload.geometry,
+        });
+      },
+    );
+    const { result } = renderHook(() =>
+      useVideoAnnotationActions({
+        taskId: "task-1",
+        queryClient: new QueryClient(),
+        history: { push: vi.fn(), pushBatch: vi.fn() } as never,
+        s: state as never,
+        annotationsRef: { current: [] },
+        pushToast: vi.fn(),
+        recordRecentClass: vi.fn(),
+        optimisticEnqueueCreate: vi.fn(),
+        enqueueOnError: vi.fn(),
+        activeToolHasOwnClasses: true,
+        mutations: {
+          create: { mutate: create },
+          update: { mutate: vi.fn() },
+          delete: { mutate: vi.fn() },
+        },
+      }),
+    );
+
+    const savePromise = result.current.handleVideoMaskCommit(rle, 5, null);
+    expect(state.pendingDrawing).toMatchObject({ kind: "video_mask", frameIndex: 5 });
+    expect(apiMocks.uploadTaskContent).not.toHaveBeenCalled();
+
+    let saved;
+    await act(async () => {
+      expect(result.current.handlePickVideoPendingClass("Road")).toBe(true);
+      saved = await savePromise;
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        annotation_type: "video_track_mask",
+        tool_unit_id: "region",
+        class_name: "Road",
+        geometry: expect.objectContaining({
+          type: "video_track_mask",
+          keyframes: [expect.objectContaining({ frame_index: 5 })],
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(saved).toMatchObject({ annotation: { id: "mask-new", class_name: "Road" } });
+  });
+
+  it("取消新建 Mask 的类别选择会结束等待且不上传内容", async () => {
+    const state = {
+      pendingDrawing: null as import("../../state/useWorkbenchState").PendingDrawing,
+      setPendingDrawing: vi.fn(
+        (pending: import("../../state/useWorkbenchState").PendingDrawing) => {
+          state.pendingDrawing = pending;
+        },
+      ),
+    };
+    const { result } = renderHook(() =>
+      useVideoAnnotationActions({
+        taskId: "task-1",
+        queryClient: new QueryClient(),
+        history: { push: vi.fn(), pushBatch: vi.fn() } as never,
+        s: state as never,
+        annotationsRef: { current: [] },
+        pushToast: vi.fn(),
+        recordRecentClass: vi.fn(),
+        optimisticEnqueueCreate: vi.fn(),
+        enqueueOnError: vi.fn(),
+        activeToolHasOwnClasses: true,
+        mutations: {
+          create: { mutate: vi.fn() },
+          update: { mutate: vi.fn() },
+          delete: { mutate: vi.fn() },
+        },
+      }),
+    );
+
+    const savePromise = result.current.handleVideoMaskCommit(rle, 5, null);
+    expect(state.pendingDrawing).toMatchObject({ kind: "video_mask" });
+
+    let saved;
+    await act(async () => {
+      expect(result.current.handleCancelVideoMaskPendingClass()).toBe(true);
+      saved = await savePromise;
+    });
+
+    expect(saved).toBeNull();
+    expect(apiMocks.uploadTaskContent).not.toHaveBeenCalled();
+  });
+});
+
+describe("视频非矩形工具选类", () => {
+  it("单帧多边形完成后先打开类别候选，再按所选类别创建", () => {
+    const create = vi.fn();
+    const state = {
+      activeClass: "Recommended",
+      pendingDrawing: null as import("../../state/useWorkbenchState").PendingDrawing,
+      setPendingDrawing: vi.fn(
+        (pending: import("../../state/useWorkbenchState").PendingDrawing) => {
+          state.pendingDrawing = pending;
+        },
+      ),
+      setActiveClass: vi.fn(),
+      setSelectedId: vi.fn(),
+    };
+    const { result } = renderHook(() =>
+      useVideoAnnotationActions({
+        taskId: "task-1",
+        queryClient: new QueryClient(),
+        history: { push: vi.fn(), pushBatch: vi.fn() } as never,
+        s: state as never,
+        annotationsRef: { current: [] },
+        pushToast: vi.fn(),
+        recordRecentClass: vi.fn(),
+        optimisticEnqueueCreate: vi.fn(),
+        enqueueOnError: vi.fn(),
+        activeToolHasOwnClasses: true,
+        mutations: {
+          create: { mutate: create },
+          update: { mutate: vi.fn() },
+          delete: { mutate: vi.fn() },
+        },
+      }),
+    );
+    const points: [number, number][] = [
+      [0.1, 0.1],
+      [0.5, 0.1],
+      [0.3, 0.6],
+    ];
+
+    act(() => result.current.handleVideoPointsCreate("video_polygon", 7, points));
+    expect(create).not.toHaveBeenCalled();
+    expect(state.pendingDrawing).toMatchObject({
+      kind: "video_polygon",
+      frameIndex: 7,
+      points,
+    });
+
+    act(() => result.current.handlePickVideoPendingClass("Road"));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        annotation_type: "video_polygon",
+        tool_unit_id: "region",
+        class_name: "Road",
+      }),
+      expect.anything(),
+    );
   });
 });

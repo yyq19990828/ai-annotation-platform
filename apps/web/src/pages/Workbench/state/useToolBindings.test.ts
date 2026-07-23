@@ -12,7 +12,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ProjectResponse } from "@/api/projects";
 import type { ToolId } from "../stage/tools";
-import { useToolBindings } from "./useToolBindings";
+import { attributeSchemaForUnit, classesForUnit, useToolBindings } from "./useToolBindings";
 
 function _proj(extra: Partial<ProjectResponse>): ProjectResponse {
   return {
@@ -167,5 +167,23 @@ describe("useToolBindings · v0.10.17", () => {
     });
     const { result } = renderHook(() => useToolBindings(proj, "box" as ToolId));
     expect(result.current.classes).toEqual([]);
+  });
+
+  it("已落库标注改类与属性按自身单位读取，不回退到 bbox", () => {
+    const toolBindings = {
+      bbox: {
+        enabled: true,
+        classes: [{ name: "Car", order: 0 }],
+        attribute_schema: { fields: [{ key: "bbox_only", label: "BBox only", type: "text" }] },
+      },
+      region: {
+        enabled: true,
+        classes: [{ name: "Road", order: 0 }],
+        attribute_schema: { fields: [{ key: "region_only", label: "Region only", type: "text" }] },
+      },
+    } as NonNullable<ProjectResponse["tool_bindings"]>;
+
+    expect(classesForUnit(toolBindings, "region")).toEqual(["Road"]);
+    expect(attributeSchemaForUnit(toolBindings, "region").fields?.[0]?.key).toBe("region_only");
   });
 });

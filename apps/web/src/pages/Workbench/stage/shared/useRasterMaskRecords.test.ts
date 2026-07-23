@@ -1,7 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CocoRleMaskRef } from "@/types";
-import { encodeCocoRle, type CocoRle } from "./geometry/maskRle";
+import { decodeCocoRle, encodeCocoRle, type CocoRle } from "./geometry/maskRle";
+import { analyzeRasterMaskAlpha } from "./rasterMaskRender";
+import { RasterMaskWorkerError } from "./rasterMaskWorkerPool";
 import {
   estimateCocoRleRetainedBytes,
   rasterMaskDeviceBudget,
@@ -97,6 +99,7 @@ describe("useRasterMaskRecords", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -228,6 +231,51 @@ describe("useRasterMaskRecords", () => {
     expect(ready.load).toHaveBeenCalledTimes(1);
     expect(retryingLoad).toHaveBeenCalledTimes(2);
     expect(view.result.current.records.map((record) => record.id)).toEqual(["ready", "retrying"]);
+  });
+
+  it("自动重试一次瞬时 Worker 构建失败，无需刷新页面", async () => {
+    const item = makeDescriptor("transient-render");
+    const [height, width] = item.rle.size;
+    const analysis = analyzeRasterMaskAlpha(decodeCocoRle(item.rle), width, height);
+    const analyze = vi
+      .fn()
+      .mockRejectedValueOnce(new RasterMaskWorkerError("worker restarted"))
+      .mockResolvedValueOnce(analysis);
+    const view = renderHook(() =>
+      useRasterMaskRecords({
+        scopeKey: "task-1",
+        descriptors: [item.descriptor],
+        workerPool: { analyze } as never,
+      }),
+    );
+
+    await flushAsync(16);
+
+    expect(analyze).toHaveBeenCalledTimes(2);
+    expect(view.result.current.statusById.get("transient-render")?.state).toBe("ready");
+    expect(view.result.current.records).toHaveLength(1);
+  });
+
+  it("createImageBitmap 瞬时失败时降级到 Canvas2D，无需刷新页面", async () => {
+    const putImageData = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      putImageData,
+    } as never);
+    createBitmap.mockRejectedValueOnce(new Error("bitmap allocation failed"));
+    const item = makeDescriptor("canvas-fallback");
+    const view = renderHook(() =>
+      useRasterMaskRecords({
+        scopeKey: "task-1",
+        descriptors: [item.descriptor],
+      }),
+    );
+
+    await flushAsync(12);
+
+    expect(createBitmap).toHaveBeenCalledTimes(1);
+    expect(putImageData).toHaveBeenCalledTimes(1);
+    expect(view.result.current.statusById.get("canvas-fallback")?.state).toBe("ready");
+    expect(view.result.current.records[0]?.image).toBeInstanceOf(HTMLCanvasElement);
   });
 
   it("does not reload when only selected and z-order change", async () => {

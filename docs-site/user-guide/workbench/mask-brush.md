@@ -31,7 +31,7 @@ Mask 像素工具使用 `M` 键进入。它既可逐笔涂擦，也可用套索�
 
 1. **空白 mask（从零开始）**
    - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画
-   - 完成后按 `Enter` 提交；原生项目创建 `raster_mask`，兼容项目创建 polygon
+   - 完成后按 `Enter`，在几何旁的类别浮层确认 `region` 类别；原生项目创建 `raster_mask`，兼容项目创建 polygon
 
 2. **AI prediction polygon 精修**
    - 右侧 AIInspector 中找到 polygon 候选行 → 点该行的「精修」按钮

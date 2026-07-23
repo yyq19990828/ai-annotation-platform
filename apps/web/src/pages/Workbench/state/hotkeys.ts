@@ -132,7 +132,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["V"], desc: "视频选择工具", group: "video", actionType: "setVideoTool" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
-  { keys: ["M"], desc: "视频 Mask 轨迹工具", group: "video", actionType: "setVideoTool" },
+  { keys: ["M"], desc: "视频单帧 Mask 工具", group: "video", actionType: "setVideoTool" },
   {
     keys: ["S"],
     desc: "视频智能点工具（交互式 SAM 分割当前帧；Alt+点击落负点）",

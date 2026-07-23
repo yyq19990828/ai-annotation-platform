@@ -507,6 +507,25 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return { geom: pendingDrawing.geom, className: activeClass || "未分类" };
     }, [activeClass, frameIndex, pendingDrawing]);
 
+    const pendingPointsDraft = useMemo(() => {
+      if (
+        !pendingDrawing ||
+        (pendingDrawing.kind !== "video_polygon" &&
+          pendingDrawing.kind !== "video_polyline" &&
+          pendingDrawing.kind !== "video_track_polygon" &&
+          pendingDrawing.kind !== "video_track_polyline") ||
+        pendingDrawing.frameIndex !== frameIndex ||
+        !pendingDrawing.points?.length
+      ) {
+        return null;
+      }
+      return {
+        points: pendingDrawing.points,
+        closed:
+          pendingDrawing.kind === "video_polygon" || pendingDrawing.kind === "video_track_polygon",
+      };
+    }, [frameIndex, pendingDrawing]);
+
     // 标注渲染派生(纯函数,与 VideoStage 现状对齐)。
     const referenceConfig = useVideoReferenceConfig();
     const frameViews = useMemo(
@@ -1898,6 +1917,40 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                         y={py * size.h}
                         radius={(i === 0 ? 4.5 : 3) / vp.scale}
                         fill={i === 0 && canClose ? hex : "white"}
+                        stroke={hex}
+                        strokeWidth={1.5 / vp.scale}
+                        listening={false}
+                      />
+                    ))}
+                  </Layer>
+                );
+              })()}
+            {pendingPointsDraft &&
+              (() => {
+                const hex = colorToHex(classColor(activeClass));
+                return (
+                  <Layer name="pending-points-draft" listening={false}>
+                    <Line
+                      points={pendingPointsDraft.points.flatMap(([px, py]) => [
+                        px * size.w,
+                        py * size.h,
+                      ])}
+                      closed={pendingPointsDraft.closed}
+                      stroke={hex}
+                      strokeWidth={2 / vp.scale}
+                      dash={[6 / vp.scale, 4 / vp.scale]}
+                      lineCap="round"
+                      lineJoin="round"
+                      fill={pendingPointsDraft.closed ? hexToRgba(hex, 0.1) : undefined}
+                      listening={false}
+                    />
+                    {pendingPointsDraft.points.map(([px, py], index) => (
+                      <Circle
+                        key={`pending-video-point-${index}`}
+                        x={px * size.w}
+                        y={py * size.h}
+                        radius={3 / vp.scale}
+                        fill="white"
                         stroke={hex}
                         strokeWidth={1.5 / vp.scale}
                         listening={false}

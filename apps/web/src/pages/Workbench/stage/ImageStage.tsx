@@ -23,7 +23,7 @@ import type Konva from "konva";
 import useImage from "use-image";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import type { Tool } from "../state/useWorkbenchState";
+import type { PendingDrawing, Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
@@ -217,8 +217,8 @@ interface ImageStageProps {
   fitTick: number;
   readOnly?: boolean;
   fadedAiIds?: Set<string>;
-  /** 待确认绘制框：画完框后等待用户在 popover 里选类别。 */
-  pendingDrawing?: { geom: Geom } | null;
+  /** 待确认绘制几何：画完后等待用户在 popover 里选类别。 */
+  pendingDrawing?: PendingDrawing;
   /** 临时几何 override（方向键 nudge 期间用于显示）。优先级：drag > nudgeMap > b。 */
   nudgeMap?: Map<string, Geom>;
   /**
@@ -2478,20 +2478,53 @@ export function ImageStage({
 
             {pendingDrawing && (
               <>
-                <Rect
-                  x={pendingDrawing.geom.x * imgW}
-                  y={pendingDrawing.geom.y * imgH}
-                  width={pendingDrawing.geom.w * imgW}
-                  height={pendingDrawing.geom.h * imgH}
-                  stroke="oklch(0.65 0.18 75)"
-                  strokeWidth={2 / vp.scale}
-                  dash={[5 / vp.scale, 3 / vp.scale]}
-                  fill={hexToRgba("#f59e0b", 0.1)}
-                  shadowColor="oklch(0.65 0.18 75)"
-                  shadowBlur={6 / vp.scale}
-                  shadowOpacity={0.5}
-                  listening={false}
-                />
+                {(pendingDrawing.kind === "polygon" || pendingDrawing.kind === "polyline") && (
+                  <Line
+                    points={pendingDrawing.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+                    closed={pendingDrawing.kind === "polygon"}
+                    stroke="oklch(0.65 0.18 75)"
+                    strokeWidth={2 / vp.scale}
+                    dash={[5 / vp.scale, 3 / vp.scale]}
+                    fill={pendingDrawing.kind === "polygon" ? hexToRgba("#f59e0b", 0.1) : undefined}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                )}
+                {pendingDrawing.kind === "keypoint" &&
+                  pendingDrawing.points
+                    .filter((point) => point.v > 0)
+                    .map((point, index) => (
+                      <Circle
+                        key={`pending-keypoint-${index}`}
+                        x={point.x * imgW}
+                        y={point.y * imgH}
+                        radius={4 / vp.scale}
+                        fill={hexToRgba("#f59e0b", 0.25)}
+                        stroke="oklch(0.65 0.18 75)"
+                        strokeWidth={2 / vp.scale}
+                        listening={false}
+                      />
+                    ))}
+                {pendingDrawing.kind !== "polygon" &&
+                  pendingDrawing.kind !== "polyline" &&
+                  pendingDrawing.kind !== "keypoint" &&
+                  pendingDrawing.kind !== "raster_mask" && (
+                    <Rect
+                      x={pendingDrawing.geom.x * imgW}
+                      y={pendingDrawing.geom.y * imgH}
+                      width={pendingDrawing.geom.w * imgW}
+                      height={pendingDrawing.geom.h * imgH}
+                      stroke="oklch(0.65 0.18 75)"
+                      strokeWidth={2 / vp.scale}
+                      dash={[5 / vp.scale, 3 / vp.scale]}
+                      fill={hexToRgba("#f59e0b", 0.1)}
+                      shadowColor="oklch(0.65 0.18 75)"
+                      shadowBlur={6 / vp.scale}
+                      shadowOpacity={0.5}
+                      listening={false}
+                    />
+                  )}
                 <Label
                   x={pendingDrawing.geom.x * imgW}
                   y={pendingDrawing.geom.y * imgH - 22 / vp.scale}

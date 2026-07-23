@@ -65,18 +65,19 @@ describe("ToolDock · video tools", () => {
       "box",
       "polygon",
       "polyline",
+      "mask",
       "smart-point",
       "smart-box",
       "exemplar",
       "magic-box",
     ]);
     expect(toolIds(samGroup)).toEqual(["smart-point", "smart-box", "exemplar", "magic-box"]);
-    expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track", "mask"]);
+    expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track"]);
     expect(screen.queryByTestId("video-tool-btn-ai-track")).toBeNull();
     expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
   });
 
-  it("矩形框轨迹使用独立的叠帧图标", () => {
+  it("矩形框轨迹使用独立图标，视频 AI 与 Mask 图标和图片工作台一致", () => {
     render(
       <ToolDock
         tool="select"
@@ -89,9 +90,15 @@ describe("ToolDock · video tools", () => {
 
     const track = screen.getByTestId("video-tool-btn-track");
     const smartPoint = screen.getByTestId("video-tool-btn-smart-point");
+    const smartBox = screen.getByTestId("video-tool-btn-smart-box");
+    const exemplar = screen.getByTestId("video-tool-btn-exemplar");
+    const mask = screen.getByTestId("video-tool-btn-mask");
     expect(track).toHaveAccessibleName("矩形框轨迹");
     expect(track.querySelector(".lucide-gallery-horizontal-end")).toBeInTheDocument();
     expect(smartPoint.querySelector(".lucide-target")).toBeInTheDocument();
+    expect(smartBox.querySelector(".lucide-scan")).toBeInTheDocument();
+    expect(exemplar.querySelector(".lucide-copy")).toBeInTheDocument();
+    expect(mask.querySelector(".lucide-pencil")).toBeInTheDocument();
   });
 
   it("项目开关隐藏全部创建工具时不渲染空分组", () => {

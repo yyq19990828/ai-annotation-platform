@@ -65,6 +65,7 @@ export interface UseWorkbenchHotkeysArgs {
   annotationsRef: { current: AnnotationResponse[] };
   batchChanging: boolean;
   setBatchChanging: React.Dispatch<React.SetStateAction<boolean>>;
+  cancelPendingDrawing?: () => void;
   showHotkeys: boolean;
 
   // navigation / task helpers
@@ -176,6 +177,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     annotationsRef,
     batchChanging,
     setBatchChanging,
+    cancelPendingDrawing,
     showHotkeys,
     navigateTask,
     smartNext,
@@ -687,7 +689,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           }
           // 分层取消：每按一次 ESC 只做一件事（草稿 → 编辑类别 → 选中）。
           if (s.pendingDrawing) {
-            s.setPendingDrawing(null);
+            if (cancelPendingDrawing) cancelPendingDrawing();
+            else s.setPendingDrawing(null);
             return;
           }
           if (s.editingClass) {
@@ -964,6 +967,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     annotationsRef,
     batchChanging,
     setBatchChanging,
+    cancelPendingDrawing,
     showHotkeys,
     navigateTask,
     smartNext,

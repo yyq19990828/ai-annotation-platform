@@ -38,6 +38,8 @@ interface WorkbenchOverlaysProps {
   classes: string[];
   /** B-57 · 采纳预测选类时按预测自身工具单位 (如 region) 列出的类别; 非采纳态等于 classes。 */
   editingClassClasses: string[];
+  /** 批量改类按选中对象的工具单位取类别；混合工具单位会在打开弹层前阻止。 */
+  batchChangeClasses?: string[];
   recentClasses: string[];
   activeClass: string;
   onPickPendingClass: (cls: string) => void;
@@ -79,6 +81,7 @@ export function WorkbenchOverlays({
   vp,
   classes,
   editingClassClasses,
+  batchChangeClasses = classes,
   recentClasses,
   activeClass,
   onPickPendingClass,
@@ -202,7 +205,7 @@ export function WorkbenchOverlays({
           <ClassPickerPopover
             position="fixed"
             anchor={batchChangeTarget.anchor}
-            classes={classes}
+            classes={batchChangeClasses}
             recent={recentClasses}
             defaultClass={batchChangeTarget.className}
             title={`批量改类别 (${batchChangeTarget.count} 个)`}
@@ -221,7 +224,7 @@ export function WorkbenchOverlays({
             imgW={stageGeom.imgW}
             imgH={stageGeom.imgH}
             vp={vp}
-            classes={classes}
+            classes={batchChangeClasses}
             recent={recentClasses}
             defaultClass={batchChangeTarget.className}
             title={`批量改类别 (${batchChangeTarget.count} 个)`}

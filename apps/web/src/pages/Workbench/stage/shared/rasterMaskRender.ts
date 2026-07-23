@@ -381,21 +381,27 @@ export async function createTintedRasterMaskImage(
   if (crop.width === 0 || crop.height === 0) return null;
   const rgba = buildTintedMaskRgba(crop.alpha, color);
   const imageData = new ImageData(rgba, crop.width, crop.height);
-  const image =
-    typeof createImageBitmap === "function"
-      ? await createImageBitmap(imageData)
-      : (() => {
-          if (typeof document === "undefined") {
-            throw new Error("canvas is unavailable");
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = crop.width;
-          canvas.height = crop.height;
-          const context = canvas.getContext("2d");
-          if (!context) throw new Error("2D canvas context is unavailable");
-          context.putImageData(imageData, 0, 0);
-          return canvas;
-        })();
+  let image: CanvasImageSource | null = null;
+  if (typeof createImageBitmap === "function") {
+    try {
+      image = await createImageBitmap(imageData);
+    } catch {
+      // Chromium 在大批位图并发构建或显存压力下可能暂时拒绝 createImageBitmap。
+      // 保留 Canvas2D 降级，避免整条已存 Mask 只能靠刷新恢复。
+    }
+  }
+  if (!image) {
+    if (typeof document === "undefined") {
+      throw new Error("canvas is unavailable");
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = crop.width;
+    canvas.height = crop.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("2D canvas context is unavailable");
+    context.putImageData(imageData, 0, 0);
+    image = canvas;
+  }
   return { image, x: crop.x, y: crop.y, width: crop.width, height: crop.height };
 }
 

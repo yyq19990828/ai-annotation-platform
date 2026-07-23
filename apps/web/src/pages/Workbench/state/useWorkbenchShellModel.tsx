@@ -10,6 +10,7 @@ import {
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
+import { randomId } from "@/utils/id";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,7 +72,7 @@ import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
 import { usePendingGeom } from "./usePendingGeom";
-import { useToolBindings, classesForUnit } from "./useToolBindings";
+import { useToolBindings, classesForUnit, attributeSchemaForUnit } from "./useToolBindings";
 import { videoToolUnit, videoToolEnabled } from "../stage/videoToolUnits";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
@@ -574,11 +575,11 @@ export function useWorkbenchShellModel({
   // B-57 · 采纳预测选类时, popover 须按预测自身的 tool_unit (如 region) 列出类别, 而非当前
   // 激活工具 (bbox) 的 classes — 后者会让多边形预测只显示矩形框的类, 选不到正确类别 → 反复 422。
   // 非采纳态 / 缺 unit 时退回当前工具 classes, 保持原有改类行为不变。
-  const editingAcceptUnit = s.editingClass?.accept?.toolUnitId;
-  const editingAcceptClasses = useMemo(() => {
-    if (!editingAcceptUnit) return classes;
-    return classesForUnit(currentProject?.tool_bindings, editingAcceptUnit as ToolUnitId);
-  }, [editingAcceptUnit, currentProject?.tool_bindings, classes]);
+  const editingClassUnit = s.editingClass?.accept?.toolUnitId ?? s.editingClass?.toolUnitId;
+  const editingClassClasses = useMemo(() => {
+    if (!editingClassUnit) return classes;
+    return classesForUnit(currentProject?.tool_bindings, editingClassUnit as ToolUnitId);
+  }, [editingClassUnit, currentProject?.tool_bindings, classes]);
   const activeClass = s.activeClass;
   const setActiveClass = s.setActiveClass;
   const tool = s.tool;
@@ -2328,10 +2329,13 @@ export function useWorkbenchShellModel({
     dimmedAiIds,
     clipboard,
     batchChanging,
+    batchChangeToolUnitId,
     setBatchChanging,
     batchChangeTarget,
     samPendingGeom,
     samDefaultClass,
+    handlePickMaskPendingClass,
+    handleCancelMaskPendingClass,
     optimisticEnqueueCreate,
     handlePickPendingClass,
     submitPolygon,
@@ -2537,6 +2541,7 @@ export function useWorkbenchShellModel({
     handlePickVideoPendingClass,
     handleVideoUpdate,
     handleVideoMaskCommit,
+    handleCancelVideoMaskPendingClass,
     handleVideoRename,
     handleVideoBatchRename,
     handleVideoBatchDelete,
@@ -2556,6 +2561,7 @@ export function useWorkbenchShellModel({
     recordRecentClass,
     optimisticEnqueueCreate,
     enqueueOnError,
+    activeToolHasOwnClasses: toolView.hasOwnClasses,
     mutations: {
       create: createAnnotation,
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
@@ -2806,16 +2812,18 @@ export function useWorkbenchShellModel({
       pushToast({ msg: "Mask 正在处理", sub: "完成后再取消", kind: "warning" });
       return;
     }
+    if (handleCancelVideoMaskPendingClass()) return;
     maskEditor.cancel();
     s.setVideoTool("select");
-  }, [maskEditor, pushToast, s]);
+  }, [handleCancelVideoMaskPendingClass, maskEditor, pushToast, s]);
   const cancelImageMaskEdit = useCallback(() => {
     if (maskInstanceTransitionInFlightRef.current) {
       pushToast({ msg: "Mask 正在处理", sub: "完成后再取消", kind: "warning" });
       return;
     }
+    if (handleCancelMaskPendingClass()) return;
     cancelMaskEdit();
-  }, [cancelMaskEdit, pushToast]);
+  }, [cancelMaskEdit, handleCancelMaskPendingClass, pushToast]);
   const [videoMaskCorrectionOpen, setVideoMaskCorrectionOpen] = useState(false);
   const [videoMaskCorrectionSubmitting, setVideoMaskCorrectionSubmitting] = useState(false);
   const [videoMaskCorrectionContext, setVideoMaskCorrectionContext] = useState<{
@@ -3317,7 +3325,7 @@ export function useWorkbenchShellModel({
       )
         return;
       setPendingVideoMaskIntent({
-        id: crypto.randomUUID(),
+        id: randomId(),
         taskId,
         kind: "paste_same",
         annotationId: annotation.id,
@@ -3351,7 +3359,7 @@ export function useWorkbenchShellModel({
         return;
       }
       setPendingVideoMaskIntent({
-        id: crypto.randomUUID(),
+        id: randomId(),
         taskId,
         kind: "paste_new",
         annotationId: annotation.id,
@@ -3563,7 +3571,7 @@ export function useWorkbenchShellModel({
     (annotation: AnnotationResponse) => {
       if (!taskId || annotation.geometry.type !== "video_track_mask") return;
       setPendingVideoMaskIntent({
-        id: crypto.randomUUID(),
+        id: randomId(),
         taskId,
         kind: "split_components",
         annotationId: annotation.id,
@@ -3759,7 +3767,7 @@ export function useWorkbenchShellModel({
         }
         return {
           type: "video_track_mask",
-          track_id: `trk_${crypto.randomUUID().replace(/-/g, "")}`,
+          track_id: `trk_${randomId().replace(/-/g, "")}`,
           semantic_label: annotation.geometry.semantic_label,
           keyframes: [
             {
@@ -3869,7 +3877,7 @@ export function useWorkbenchShellModel({
           }
           const idempotency = cached ?? {
             previewId: preview.id,
-            key: `mask-${crypto.randomUUID()}`,
+            key: `mask-${randomId()}`,
             payload: null,
           };
           payload = {
@@ -4303,10 +4311,15 @@ export function useWorkbenchShellModel({
     // v0.23.5 · WS-B/A7 · 经 session 单飞 save: 重复 Enter / 双击只产生一次 mutation;
     // 失败保留 buffer/history 进入 error 相位, 可 retry (A2)。
     let savedKeyframe: Awaited<ReturnType<typeof handleVideoMaskCommit>> | null = null;
+    let classSelectionCancelled = false;
     return maskEditor
       .save(async () => {
         try {
           savedKeyframe = await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
+          if (!savedKeyframe) {
+            classSelectionCancelled = true;
+            return { ok: false, retryable: false };
+          }
           if (savedKeyframe.annotation.version != null) {
             // 保存回包会先把 annotation version 写入 query cache。若仍让 session
             // change guard 处理这次“已确认的新版本”，它会把随后切回 select 的动作
@@ -4324,6 +4337,10 @@ export function useWorkbenchShellModel({
         }
       })
       .then((result) => {
+        if (classSelectionCancelled) {
+          maskEditor.recoverFromError();
+          return { ...result, savedKeyframe };
+        }
         if (result.ok) {
           maskEditor.cancel();
           s.setVideoTool("select");
@@ -4670,22 +4687,25 @@ export function useWorkbenchShellModel({
 
   const handlePickPendingClassAny = useCallback(
     (cls: string) => {
+      if (handlePickMaskPendingClass(cls)) return;
       if (handlePickVideoPendingClass(cls)) return;
       handlePickPendingClass(cls);
     },
-    [handlePickPendingClass, handlePickVideoPendingClass],
+    [handlePickMaskPendingClass, handlePickPendingClass, handlePickVideoPendingClass],
   );
 
   const handleCancelPending = useCallback(
     (reason: "escape" | "outside") => {
       if (reason === "escape") {
+        if (handleCancelMaskPendingClass()) return;
+        if (handleCancelVideoMaskPendingClass()) return;
         s.setPendingDrawing(null);
         return;
       }
       if (s.pendingDrawing) handlePickPendingClassAny(UNKNOWN_CLASS);
       else s.setPendingDrawing(null);
     },
-    [s, handlePickPendingClassAny],
+    [s, handleCancelMaskPendingClass, handleCancelVideoMaskPendingClass, handlePickPendingClassAny],
   );
 
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
@@ -4888,9 +4908,16 @@ export function useWorkbenchShellModel({
         : null,
     [s.editingClass, visibleAnnotationsData],
   );
+  const editingAttributeSchema = useMemo(
+    () =>
+      editingClassUnit
+        ? attributeSchemaForUnit(currentProject?.tool_bindings, editingClassUnit as ToolUnitId)
+        : toolView.attributeSchema,
+    [currentProject?.tool_bindings, editingClassUnit, toolView.attributeSchema],
+  );
   const changeClassAttrEditing = useMemo<ClassPickerAttrEditing | undefined>(() => {
     const ann = editingClassAnnotation;
-    const schema = toolView.attributeSchema;
+    const schema = editingAttributeSchema;
     if (!ann || !schema || (schema.fields ?? []).length === 0) return undefined;
     if (isVideoTrack(ann)) {
       // 视频：悬浮框只编辑 mutable 字段的「轨迹默认值」层；逐帧覆盖留给侧栏完整编辑器。
@@ -4913,7 +4940,7 @@ export function useWorkbenchShellModel({
     };
   }, [
     editingClassAnnotation,
-    toolView.attributeSchema,
+    editingAttributeSchema,
     isLocked,
     lockConflict,
     lockError,
@@ -4946,6 +4973,7 @@ export function useWorkbenchShellModel({
     annotationsRef,
     batchChanging,
     setBatchChanging,
+    cancelPendingDrawing: () => handleCancelPending("escape"),
     showHotkeys,
     navigateTask,
     smartNext,
@@ -6254,7 +6282,15 @@ export function useWorkbenchShellModel({
               stageGeom={stageGeom}
               vp={vp}
               classes={classes}
-              editingClassClasses={editingAcceptClasses}
+              editingClassClasses={editingClassClasses}
+              batchChangeClasses={
+                batchChangeToolUnitId
+                  ? classesForUnit(
+                      currentProject?.tool_bindings,
+                      batchChangeToolUnitId as ToolUnitId,
+                    )
+                  : classes
+              }
               recentClasses={recentClasses}
               activeClass={s.activeClass}
               onPickPendingClass={handlePickPendingClassAny}

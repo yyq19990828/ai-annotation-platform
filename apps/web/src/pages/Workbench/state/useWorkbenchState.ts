@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Annotation } from "@/types";
+import type { Annotation, Keypoint } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
@@ -100,9 +100,24 @@ const DEFAULT_CANVAS_STROKE = "#ef4444";
 export type Geom = { x: number; y: number; w: number; h: number };
 
 export type PendingDrawing =
-  | { kind?: "bbox"; geom: Geom }
+  | { kind?: "bbox" | "rotated_bbox" | "raster_mask"; geom: Geom }
+  | { kind: "polygon" | "polyline"; geom: Geom; points: [number, number][] }
+  | { kind: "keypoint"; geom: Geom; points: Keypoint[] }
   | {
-      kind: "video_bbox" | "video_track_bbox";
+      kind:
+        | "video_bbox"
+        | "video_track_bbox"
+        | "video_polygon"
+        | "video_polyline"
+        | "video_track_polygon"
+        | "video_track_polyline";
+      frameIndex: number;
+      geom: Geom;
+      anchor: { left: number; top: number };
+      points?: [number, number][];
+    }
+  | {
+      kind: "video_mask";
       frameIndex: number;
       geom: Geom;
       anchor: { left: number; top: number };
@@ -114,6 +129,8 @@ export type EditingClass = {
   annotationId: string;
   geom: Geom;
   currentClass: string;
+  /** 已落库标注自身的工具单位；改类/属性不得复用当前激活工具的类别域。 */
+  toolUnitId?: string;
   anchor?: { left: number; top: number };
   // v0.14.17 · 采纳时选类: 非空时该弹窗不是"改已存标注的类", 而是"为采纳某预测选项目标签",
   // commit 时走 accept(override_class_name) 而非 update(class_name). 复用同一 ClassPickerPopover.

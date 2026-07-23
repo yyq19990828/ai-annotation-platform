@@ -23,6 +23,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/shadcn/ui/alert";
 import { Button } from "@/components/shadcn/ui/button";
 import { Checkbox } from "@/components/shadcn/ui/checkbox";
+import { randomId } from "@/utils/id";
 import {
   Dialog,
   DialogContent,
@@ -171,7 +172,7 @@ export function MaskConversionDialog({
         materialize_held: heldOptionVisible && materializeHeld,
       });
       setPreview(result);
-      setIdempotencyKey(`conversion:${crypto.randomUUID()}`);
+      setIdempotencyKey(`conversion:${randomId()}`);
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {

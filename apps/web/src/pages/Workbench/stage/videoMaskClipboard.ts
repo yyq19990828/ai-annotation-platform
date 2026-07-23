@@ -1,6 +1,7 @@
 import type { AnnotationResponse, CocoRleMaskRef, VideoTrackMaskGeometry } from "@/types";
 import type { MaskMutationCommitRequest, MaskMutationScope } from "@/api/maskMutations";
 import type { CocoRle } from "./shared/geometry/maskRle";
+import { randomId } from "@/utils/id";
 import {
   maskMutationExpectedVersions,
   maskMutationScopeFingerprint,
@@ -74,7 +75,7 @@ export async function buildVideoMaskCopyKeyframeRequest(input: {
   const members = copyScopeMembers(input.annotations, scope, input.source);
   const geometry: VideoTrackMaskGeometry = {
     type: "video_track_mask",
-    track_id: `trk_${crypto.randomUUID().replace(/-/g, "")}`,
+    track_id: `trk_${randomId().replace(/-/g, "")}`,
     semantic_label:
       input.source.geometry.type === "video_track_mask"
         ? input.source.geometry.semantic_label

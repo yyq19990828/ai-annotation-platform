@@ -32,6 +32,7 @@ import { canEditMask } from "../../state/canEditMask";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
 import { classNameForCommittedDrawing } from "../../stage/imageStageSettings";
+import { toolUnitForGeometryType } from "../../stage/tools/toolUnits";
 import { resolveTrackAtFrame } from "../../stage/videoStageGeometry";
 import { useClipboard } from "../../state/useClipboard";
 import {
@@ -49,7 +50,7 @@ import {
   formatMaskConversionReport,
   type RegionGeometry,
 } from "../../stage/shared/geometry/maskConversion";
-import { cocoRleArea } from "../../stage/shared/geometry/maskRle";
+import { cocoRleArea, cocoRleBounds } from "../../stage/shared/geometry/maskRle";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -249,6 +250,7 @@ export function useImageAnnotationActions({
     isLocked,
     mutations,
     keypointNodeCount,
+    activeToolHasOwnClasses,
     markPendingGeom,
   });
   const { createBboxWithClass, submitPolygon } = annotationActions;
@@ -259,7 +261,9 @@ export function useImageAnnotationActions({
   const [batchChangeAnchor, setBatchChangeAnchor] = useState<
     { left: number; top: number } | undefined
   >(undefined);
+  const [batchChangeToolUnitId, setBatchChangeToolUnitId] = useState<string | undefined>();
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
+  const pendingMaskClassResolverRef = useRef<((className: string | null) => void) | null>(null);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
   const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(
     defaultPredictionSourceVisibility,
@@ -268,6 +272,47 @@ export function useImageAnnotationActions({
   useEffect(() => {
     setDismissedShapeKeys(new Set());
   }, [taskId]);
+
+  useEffect(
+    () => () => {
+      pendingMaskClassResolverRef.current?.(null);
+      pendingMaskClassResolverRef.current = null;
+    },
+    [taskId],
+  );
+
+  const requestMaskClass = useCallback(
+    (geom: Geom): Promise<string | null> => {
+      if (!activeToolHasOwnClasses) return Promise.resolve(UNKNOWN_CLASS);
+      pendingMaskClassResolverRef.current?.(null);
+      s.setPendingDrawing({ kind: "raster_mask", geom });
+      return new Promise((resolve) => {
+        pendingMaskClassResolverRef.current = resolve;
+      });
+    },
+    [activeToolHasOwnClasses, s],
+  );
+
+  const handlePickMaskPendingClass = useCallback(
+    (className: string): boolean => {
+      if (s.pendingDrawing?.kind !== "raster_mask") return false;
+      const resolve = pendingMaskClassResolverRef.current;
+      pendingMaskClassResolverRef.current = null;
+      s.setPendingDrawing(null);
+      resolve?.(className);
+      return true;
+    },
+    [s],
+  );
+
+  const handleCancelMaskPendingClass = useCallback((): boolean => {
+    if (s.pendingDrawing?.kind !== "raster_mask") return false;
+    const resolve = pendingMaskClassResolverRef.current;
+    pendingMaskClassResolverRef.current = null;
+    s.setPendingDrawing(null);
+    resolve?.(null);
+    return true;
+  }, [s]);
 
   const clipboard = useClipboard({
     userBoxes,
@@ -784,9 +829,28 @@ export function useImageAnnotationActions({
   const handleStartBatchChangeClass = useCallback(() => {
     const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
     if (ids.length === 0) return;
+    const selectedUnits = new Set(
+      ids.flatMap((id) => {
+        const annotation = annotationsRef.current.find((item) => item.id === id);
+        if (!annotation) return [];
+        return [annotation.tool_unit_id ?? toolUnitForGeometryType(annotation.geometry.type)];
+      }),
+    );
+    if (selectedUnits.size > 1) {
+      pushToast({
+        msg: "不能跨工具批量改类",
+        sub: "请分别选择同一标注工具产生的对象",
+        kind: "warning",
+      });
+      return;
+    }
     // 视频几何和无可用外接框的图片几何走固定屏幕锚点；其余图片用
     // geom + vp 定位。
     const firstAnn = annotationsRef.current.find((a) => a.id === ids[0]);
+    setBatchChangeToolUnitId(
+      firstAnn?.tool_unit_id ??
+        (firstAnn ? toolUnitForGeometryType(firstAnn.geometry.type) : undefined),
+    );
     const isVideoGeometry = !!firstAnn?.geometry.type.startsWith("video_");
     const firstBounds = firstAnn ? geometryToShape(firstAnn.geometry) : null;
     const needsFixedAnchor =
@@ -799,12 +863,13 @@ export function useImageAnnotationActions({
         : undefined,
     );
     setBatchChanging(true);
-  }, [s.selectedIds, s.videoFrameIndex, annotationsRef]);
+  }, [s.selectedIds, s.videoFrameIndex, annotationsRef, pushToast]);
 
   const handleCommitBatchChangeClass = useCallback(
     (cls: string) => {
       setBatchChanging(false);
       setBatchChangeAnchor(undefined);
+      setBatchChangeToolUnitId(undefined);
       if (!cls) return;
       const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
       if (ids.length === 0) return;
@@ -859,6 +924,7 @@ export function useImageAnnotationActions({
   const handleCancelBatchChange = useCallback(() => {
     setBatchChanging(false);
     setBatchChangeAnchor(undefined);
+    setBatchChangeToolUnitId(undefined);
   }, []);
 
   const handleRejectPrediction = useCallback(
@@ -1198,9 +1264,13 @@ export function useImageAnnotationActions({
         }
         return Promise.resolve({ ok: false, retryable: false });
       }
-      const labelForCommit = refine ? refine.labelId : (updateTarget?.class_name ?? s.activeClass);
+      let labelForCommit: string | null = refine
+        ? refine.labelId
+        : (updateTarget?.class_name ?? s.activeClass);
+      if (!refine && !updateTarget) {
+        labelForCommit = await requestMaskClass(cocoRleBounds(rle) ?? { x: 0, y: 0, w: 1, h: 1 });
+      }
       if (!labelForCommit) {
-        pushToast({ msg: "请先选择类别", kind: "warning" });
         return Promise.resolve({ ok: false, retryable: false });
       }
       const targetVersion =
@@ -1327,16 +1397,18 @@ export function useImageAnnotationActions({
       });
       return Promise.resolve({ ok: false, retryable: false });
     }
-    const labelForCommit = refine ? refine.labelId : s.activeClass;
-    if (!labelForCommit) {
-      pushToast({ msg: "请先选择类别", kind: "warning" });
-      return Promise.resolve({ ok: false, retryable: false });
-    }
     const { imgW, imgH } = stageGeom;
     // maskToPolygon 输出像素坐标 → 归一化 [0,1]。
     const normPoints: [number, number][] = out.points.map(([x, y]) => [x / imgW, y / imgH]);
 
     const geometry = { type: "polygon", points: normPoints } as const;
+    let labelForCommit: string | null = refine ? refine.labelId : s.activeClass;
+    if (!refine) {
+      labelForCommit = await requestMaskClass(geometryToShape(geometry));
+    }
+    if (!labelForCommit) {
+      return Promise.resolve({ ok: false, retryable: false });
+    }
     let createdAnnotation: AnnotationResponse | null = null;
     return maskEditor
       .save(async () => {
@@ -1418,6 +1490,7 @@ export function useImageAnnotationActions({
     mutations.delete,
     history,
     recordRecentClass,
+    requestMaskClass,
     sam,
   ]);
 
@@ -1496,7 +1569,7 @@ export function useImageAnnotationActions({
         }
         return;
       }
-      s.setPendingDrawing({ geom: g });
+      s.setPendingDrawing({ kind: "bbox", geom: g });
     },
     [s, activeToolHasOwnClasses, annotationActions, userBoxes, pushToast],
   );
@@ -1533,6 +1606,7 @@ export function useImageAnnotationActions({
         annotationId,
         geom,
         currentClass: ann.class_name,
+        toolUnitId: ann.tool_unit_id ?? toolUnitForGeometryType(ann.geometry.type),
         anchor: resolvedAnchor,
       });
     },
@@ -1642,10 +1716,13 @@ export function useImageAnnotationActions({
     dimmedAiIds,
     clipboard,
     batchChanging,
+    batchChangeToolUnitId,
     setBatchChanging,
     batchChangeTarget,
     samPendingGeom,
     samDefaultClass,
+    handlePickMaskPendingClass,
+    handleCancelMaskPendingClass,
     handleBatchDelete,
     handleBatchPatchFlag,
     handleJoinSelectedPolygons,

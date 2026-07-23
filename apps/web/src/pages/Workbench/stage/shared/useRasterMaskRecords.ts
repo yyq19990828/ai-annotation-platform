@@ -185,6 +185,7 @@ interface RasterMaskLoadJob<TSource extends string> {
   token: number;
   priority: number;
   sequence: number;
+  attempt: number;
   descriptor: RasterMaskRecordDescriptor<TSource>;
 }
 
@@ -680,7 +681,24 @@ export function useRasterMaskRecords<TSource extends string = string>(
         } catch (error) {
           if (rendered) disposeImage(rendered.image);
           if (isCurrentJob(job)) {
-            errorsRef.current.set(job.cacheKey, rasterMaskLoadError(error));
+            const status = rasterMaskLoadError(error);
+            if (status.reason === "render_failed" && job.attempt < 1) {
+              const descriptor = activeDescriptorsRef.current.get(job.cacheKey) ?? job.descriptor;
+              const token = ++tokenRef.current;
+              requestTokensRef.current.set(job.cacheKey, token);
+              queueRef.current.push({
+                ...job,
+                token,
+                attempt: job.attempt + 1,
+                sequence: ++queueSequenceRef.current,
+                descriptor,
+              });
+              queueRef.current.sort(
+                (left, right) => left.priority - right.priority || left.sequence - right.sequence,
+              );
+            } else {
+              errorsRef.current.set(job.cacheKey, status);
+            }
             publish();
           }
         } finally {
@@ -736,6 +754,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
       token,
       priority: descriptorPriority(descriptor),
       sequence: ++queueSequenceRef.current,
+      attempt: 0,
       descriptor,
     });
     queueRef.current.sort(

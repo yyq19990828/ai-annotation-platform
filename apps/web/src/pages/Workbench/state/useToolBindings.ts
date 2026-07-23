@@ -71,6 +71,14 @@ export function classesForUnit(tb: ToolBindings | null | undefined, unit: ToolUn
   return _materialize((tb ?? {}) as ToolBindings, unit).classes;
 }
 
+/** 已落库标注改类/改属性时读取其自身工具单位 schema，不借当前激活工具兜底。 */
+export function attributeSchemaForUnit(
+  tb: ToolBindings | null | undefined,
+  unit: ToolUnitId,
+): AttributeSchema {
+  return _materialize((tb ?? {}) as ToolBindings, unit).attributeSchema;
+}
+
 function _materialize(tb: ToolBindings, unit: ToolUnitId): ToolBindingsView {
   const binding = tb[unit];
   if (!binding || !binding.enabled) {

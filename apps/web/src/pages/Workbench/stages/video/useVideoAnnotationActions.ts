@@ -1,10 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import { tasksApi, type AnnotationPayload } from "@/api/tasks";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import { videoTrackerApi } from "@/api/videoTracker";
-import type { CocoRle } from "../../stage/shared/geometry/maskRle";
+import { cocoRleBounds, type CocoRle } from "../../stage/shared/geometry/maskRle";
 import type {
   AnnotationResponse,
   CocoRleMaskRef,
@@ -84,6 +84,7 @@ interface UseVideoAnnotationActionsArgs {
   optimisticEnqueueCreate: (payload: AnnotationPayload) => void;
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   mutations: VideoAnnotationMutations;
+  activeToolHasOwnClasses?: boolean;
 }
 
 export interface VideoConvertOptions {
@@ -288,9 +289,37 @@ function isConflictError(err: unknown): boolean {
 }
 
 function isVideoPending(pending: PendingDrawing): pending is NonNullable<PendingDrawing> & {
-  kind: "video_bbox" | "video_track_bbox";
+  kind:
+    | "video_bbox"
+    | "video_track_bbox"
+    | "video_polygon"
+    | "video_polyline"
+    | "video_track_polygon"
+    | "video_track_polyline";
 } {
-  return pending?.kind === "video_bbox" || pending?.kind === "video_track_bbox";
+  return !!pending?.kind && pending.kind !== "video_mask" && pending.kind.startsWith("video_");
+}
+
+function pointsBounds(points: readonly [number, number][]): Geom {
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function videoClassPickerAnchor(geom: Geom): { left: number; top: number } {
+  const rect =
+    typeof document === "undefined"
+      ? null
+      : document.querySelector("[data-video-overlay]")?.getBoundingClientRect();
+  if (!rect || rect.width === 0 || rect.height === 0) return { left: 16, top: 16 };
+  return {
+    left: rect.left + (geom.x + geom.w) * rect.width,
+    top: rect.top + (geom.y + geom.h) * rect.height + 6,
+  };
 }
 
 export function useVideoAnnotationActions({
@@ -304,7 +333,44 @@ export function useVideoAnnotationActions({
   optimisticEnqueueCreate,
   enqueueOnError,
   mutations,
+  activeToolHasOwnClasses = true,
 }: UseVideoAnnotationActionsArgs) {
+  const pendingMaskClassResolverRef = useRef<((className: string | null) => void) | null>(null);
+  useEffect(
+    () => () => {
+      pendingMaskClassResolverRef.current?.(null);
+      pendingMaskClassResolverRef.current = null;
+    },
+    [taskId],
+  );
+
+  const requestVideoMaskClass = useCallback(
+    (rle: CocoRle, frameIndex: number): Promise<string | null> => {
+      if (!activeToolHasOwnClasses) return Promise.resolve(UNKNOWN_CLASS);
+      pendingMaskClassResolverRef.current?.(null);
+      const geom = cocoRleBounds(rle) ?? { x: 0, y: 0, w: 1, h: 1 };
+      s.setPendingDrawing({
+        kind: "video_mask",
+        frameIndex,
+        geom,
+        anchor: videoClassPickerAnchor(geom),
+      });
+      return new Promise((resolve) => {
+        pendingMaskClassResolverRef.current = resolve;
+      });
+    },
+    [activeToolHasOwnClasses, s],
+  );
+
+  const handleCancelVideoMaskPendingClass = useCallback((): boolean => {
+    if (s.pendingDrawing?.kind !== "video_mask") return false;
+    const resolve = pendingMaskClassResolverRef.current;
+    pendingMaskClassResolverRef.current = null;
+    s.setPendingDrawing(null);
+    resolve?.(null);
+    return true;
+  }, [s]);
+
   const optimisticUpdateAnnotation = useCallback(
     (annotationId: string, patch: { geometry?: Geometry; class_name?: string }) => {
       if (!taskId) return;
@@ -347,18 +413,14 @@ export function useVideoAnnotationActions({
   );
 
   // v0.21.20 · 由绘制顶点新建 polygon/polyline track (单关键帧于当前帧)。
-  const handleVideoPointsTrackCreate = useCallback(
+  const handleVideoPointsTrackCreateWithClass = useCallback(
     (
       type: "video_track_polygon" | "video_track_polyline",
       frameIndex: number,
       points: [number, number][],
+      cls: string,
     ) => {
-      const payload = buildVideoPointsTrackCreatePayload(
-        type,
-        frameIndex,
-        points,
-        s.activeClass || UNKNOWN_CLASS,
-      );
+      const payload = buildVideoPointsTrackCreatePayload(type, frameIndex, points, cls);
       const className = payload.class_name;
       mutations.create.mutate(payload, {
         onSuccess: (created) => {
@@ -373,6 +435,28 @@ export function useVideoAnnotationActions({
       });
     },
     [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s],
+  );
+
+  const handleVideoPointsTrackCreate = useCallback(
+    (
+      type: "video_track_polygon" | "video_track_polyline",
+      frameIndex: number,
+      points: [number, number][],
+    ) => {
+      if (!activeToolHasOwnClasses) {
+        handleVideoPointsTrackCreateWithClass(type, frameIndex, points, UNKNOWN_CLASS);
+        return;
+      }
+      const geom = pointsBounds(points);
+      s.setPendingDrawing({
+        kind: type,
+        frameIndex,
+        geom,
+        anchor: videoClassPickerAnchor(geom),
+        points,
+      });
+    },
+    [activeToolHasOwnClasses, handleVideoPointsTrackCreateWithClass, s],
   );
 
   // v0.21.21 · 单帧 polygon/polyline 创建 (非 track), 与 handleVideoPointsTrackCreate 平行。
@@ -402,9 +486,20 @@ export function useVideoAnnotationActions({
 
   const handleVideoPointsCreate = useCallback(
     (type: "video_polygon" | "video_polyline", frameIndex: number, points: [number, number][]) => {
-      handleVideoPointsCreateWithClass(type, frameIndex, points, s.activeClass || UNKNOWN_CLASS);
+      if (!activeToolHasOwnClasses) {
+        handleVideoPointsCreateWithClass(type, frameIndex, points, UNKNOWN_CLASS);
+        return;
+      }
+      const geom = pointsBounds(points);
+      s.setPendingDrawing({
+        kind: type,
+        frameIndex,
+        geom,
+        anchor: videoClassPickerAnchor(geom),
+        points,
+      });
     },
-    [handleVideoPointsCreateWithClass, s.activeClass],
+    [activeToolHasOwnClasses, handleVideoPointsCreateWithClass, s],
   );
 
   const handleVideoPendingDraw = useCallback(
@@ -422,12 +517,34 @@ export function useVideoAnnotationActions({
   const handlePickVideoPendingClass = useCallback(
     (cls: string): boolean => {
       const pending = s.pendingDrawing;
+      if (pending?.kind === "video_mask") {
+        const resolve = pendingMaskClassResolverRef.current;
+        pendingMaskClassResolverRef.current = null;
+        s.setPendingDrawing(null);
+        resolve?.(cls);
+        return true;
+      }
       if (!isVideoPending(pending)) return false;
       s.setPendingDrawing(null);
-      handleVideoCreateWithClass(pending.kind, pending.frameIndex, pending.geom, cls);
+      if (pending.kind === "video_bbox" || pending.kind === "video_track_bbox") {
+        handleVideoCreateWithClass(pending.kind, pending.frameIndex, pending.geom, cls);
+      } else {
+        const points = pending.points;
+        if (!points) return false;
+        if (pending.kind === "video_polygon" || pending.kind === "video_polyline") {
+          handleVideoPointsCreateWithClass(pending.kind, pending.frameIndex, points, cls);
+        } else {
+          handleVideoPointsTrackCreateWithClass(pending.kind, pending.frameIndex, points, cls);
+        }
+      }
       return true;
     },
-    [handleVideoCreateWithClass, s],
+    [
+      handleVideoCreateWithClass,
+      handleVideoPointsCreateWithClass,
+      handleVideoPointsTrackCreateWithClass,
+      s,
+    ],
   );
 
   const handleVideoUpdate = useCallback(
@@ -488,12 +605,10 @@ export function useVideoAnnotationActions({
           frameIndex,
         } satisfies SavedVideoMaskKeyframe;
       }
+      const className = await requestVideoMaskClass(rle, frameIndex);
+      if (!className) return null;
       const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
-      const payload = buildVideoMaskTrackCreatePayload(
-        frameIndex,
-        reference,
-        s.activeClass || UNKNOWN_CLASS,
-      );
+      const payload = buildVideoMaskTrackCreatePayload(frameIndex, reference, className);
       return new Promise<SavedVideoMaskKeyframe>((resolve, reject) => {
         mutations.create.mutate(payload, {
           onSuccess: (created) => {
@@ -504,7 +619,7 @@ export function useVideoAnnotationActions({
         });
       });
     },
-    [history, mutations.create, queryClient, s.activeClass, taskId],
+    [history, mutations.create, queryClient, requestVideoMaskClass, taskId],
   );
 
   const handleVideoRename = useCallback(
@@ -833,6 +948,7 @@ export function useVideoAnnotationActions({
     handlePickVideoPendingClass,
     handleVideoUpdate,
     handleVideoMaskCommit,
+    handleCancelVideoMaskPendingClass,
     handleVideoRename,
     handleVideoBatchRename,
     handleVideoBatchDelete,

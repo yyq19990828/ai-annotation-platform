@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MaskConversionDialog } from "./MaskConversionDialog";
 
@@ -41,6 +41,64 @@ describe("MaskConversionDialog", () => {
   beforeEach(() => {
     apiMocks.dryRun.mockReset();
     apiMocks.execute.mockReset();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("远程 HTTP 缺少 randomUUID 时仍能生成转换幂等键", async () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(11);
+        return bytes;
+      },
+    });
+    apiMocks.dryRun.mockResolvedValue({
+      plan_token: "cvp_http",
+      expires_at: "2099-01-01T00:00:00Z",
+      target: "polygon",
+      operation: "copy",
+      scope: "image",
+      items: [{ ...report, lossy: false, reasons: [], changed_pixels: 0 }],
+      summary: {
+        source_count: 1,
+        result_count: 1,
+        materialized_held_frames: 0,
+        lossy_count: 0,
+      },
+    });
+    apiMocks.execute.mockResolvedValue({
+      operation_id: "op-http",
+      updated_annotations: [],
+      created_annotations: [],
+      deleted_annotation_ids: [],
+      lineage_edges: [],
+      report: {
+        source_count: 1,
+        result_count: 1,
+        materialized_held_frames: 0,
+        lossy_count: 0,
+      },
+      idempotent_replay: false,
+    });
+    render(
+      <MaskConversionDialog
+        open
+        request={{
+          taskId: "task-1",
+          annotationIds: ["ann-1"],
+          sourceType: "raster_mask",
+        }}
+        onOpenChange={vi.fn()}
+        onCompleted={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "生成预览" }));
+    await screen.findByLabelText("转换预览报告");
+    fireEvent.click(screen.getByRole("button", { name: "执行转换" }));
+
+    await waitFor(() => expect(apiMocks.execute).toHaveBeenCalledTimes(1));
+    expect(apiMocks.execute.mock.calls[0][1].idempotency_key).toMatch(/^conversion:[0-9a-f-]{36}$/);
   });
 
   it("先生成逐项报告，再确认有损转换并执行冻结计划", async () => {
