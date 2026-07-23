@@ -60,7 +60,7 @@ repos:
         name: Regenerate OpenAPI snapshot (apps/api)
         entry: bash -c 'cd apps/api && uv run python ../../scripts/export_openapi.py && cd ../.. && git add apps/api/openapi.snapshot.json 2>/dev/null || true'
         language: system
-        files: ^apps/api/app/(config\.py|(api|schemas)/.*\.py)$
+        files: ^(apps/api/app/(config\.py|(api|schemas)/.*\.py)|apps/_shared/protocol_v2/src/.*\.py)$
         pass_filenames: false
         stages: [pre-commit]
 
@@ -76,14 +76,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      # 改快捷键 / 工作台设置定义源时,自动重新生成对应的 .generated.md 并 git add,
+      # 改快捷键 / 工作台设置定义源或 API 路由时,自动重新生成对应的 .generated.md 并 git add,
       # 把"忘了重新生成导致文档漂移"变成提交即修复(与 regen-openapi-snapshot 同思路)。
       # CI 侧另有 docs-site `check:codegen`(--check)作为兜底闸门。
       - id: regen-doc-codegen
-        name: Regenerate generated docs (hotkeys + workbench settings)
-        entry: bash -c 'node docs-site/scripts/generate-hotkeys.mjs && node docs-site/scripts/generate-settings.mjs && git add docs-site/user-guide/workbench/hotkeys.generated.md docs-site/user-guide/workbench/settings.generated.md 2>/dev/null || true'
+        name: Regenerate tracked docs (hotkeys + settings + API routes)
+        entry: bash -c 'node docs-site/scripts/generate-hotkeys.mjs && node docs-site/scripts/generate-settings.mjs && node docs-site/scripts/generate-api-index.mjs && git add docs-site/user-guide/workbench/hotkeys.generated.md docs-site/user-guide/workbench/settings.generated.md docs-site/api/guides/_routes.generated.md 2>/dev/null || true'
         language: system
-        files: ^apps/web/src/(pages/Workbench/state/(hotkeys|workbenchSettingsFields)|api/auth)\.ts$
+        files: ^(apps/web/src/(pages/Workbench/state/(hotkeys|workbenchSettingsFields)|api/auth)\.ts|apps/api/app/api/v1/.*\.py)$
         pass_filenames: false
         stages: [pre-commit]
 

@@ -181,10 +181,12 @@ ROADMAP 列出的 ≥ 25% 目标继续推：补 InviteUserModal / RegisterPage /
 - Prettier（本次提交涉及的受支持文本文件）
 - eslint（apps/web）
 - tsc --noEmit（apps/web）
+- API/schema/config 或共享协议变更时刷新 OpenAPI 快照；快捷键、工作台设置或 API
+  路由变更时刷新对应的受跟踪文档生成页
 
 如果 hook 失败，**不要** `--no-verify`，先把问题修了。
 
 CI 在全仓 `format:check`、Ruff、ESLint 和类型检查之外，还会以 `manual` 阶段执行一次
 `pre-commit --all-files`。该阶段跳过会写入并暂存 OpenAPI、能力词表和文档生成物的三个
-本地提交 hook；这些生成物继续由 OpenAPI 契约测试、能力词表契约测试和文档 codegen
-只读检查兜底。
+本地提交 hook；这些生成物继续由 OpenAPI 契约测试、能力词表契约测试，以及覆盖快捷键、
+工作台设置和 API 路由索引的文档 codegen 只读检查兜底。

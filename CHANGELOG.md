@@ -38,6 +38,7 @@
 ### Changed
 
 - **全仓格式化改为可复现双层门禁**. 第一方 Python 统一由固定版 Ruff 检查和格式化，前端、文档与配置文件统一由 Prettier 管理；CI 先执行全仓只读格式与静态检查，再以 manual 阶段复核 pre-commit 全文件行为，不再修改分支并自动提交局部 API 修复。pre-commit 与根命令使用相同边界并明确排除 vendor、生成物和锁文件。
+- **生成物更新补齐本地自动刷新与 CI 只读阻断**. 共享协议 schema 变更现在会触发 OpenAPI 快照重导；API 路由索引与快捷键、工作台设置生成页共用 pre-commit 自动暂存和 `check:codegen` 一致性检查，路由源码也会直接触发文档校验工作流。
 
 ### Fixed
 
