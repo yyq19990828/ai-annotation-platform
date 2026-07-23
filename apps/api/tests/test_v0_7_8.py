@@ -124,8 +124,9 @@ async def test_project_export_creates_audit_log(
         id=uuid.uuid4(),
         display_id="P-EXP1",
         name="Export Test",
-        type_key="image-det",
+        type_key="video-track",
         type_label="测试",
+        data_type="video",
         owner_id=user.id,
         status="in_progress",
         classes=["a"],
@@ -136,7 +137,9 @@ async def test_project_export_creates_audit_log(
     # v0.10.27 导出异步化: POST 创建 async_job 并返回 202; 审计日志仍同步落库。
     # v0.10.43 · format → targets 多目标。
     r = await httpx_client.post(
-        f"/api/v1/projects/{project.id}/export?targets=coco", headers=headers
+        f"/api/v1/projects/{project.id}/export"
+        "?targets=mots&video_overlap_policy=z_order&mots_frame_base=1",
+        headers=headers,
     )
     assert r.status_code == 202
 
@@ -148,7 +151,9 @@ async def test_project_export_creates_audit_log(
     )
     audit = result.scalar_one_or_none()
     assert audit is not None
-    assert audit.detail_json["targets"] == ["coco"]
+    assert audit.detail_json["targets"] == ["mots"]
+    assert audit.detail_json["filter_criteria"]["video_overlap_policy"] == "z_order"
+    assert audit.detail_json["filter_criteria"]["mots_frame_base"] == 1
 
 
 # ── 审计日志不可变 ───────────────────────────────────────────────────────

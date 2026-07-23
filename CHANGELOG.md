@@ -61,6 +61,9 @@
 - **图片 Mask 格式双向闭环**. COCO 现接受 polygon、uncompressed 与 compressed RLE，并以标准
   compressed RLE 导出；新增 Label Studio BrushLabels、逐实例 Binary PNG、Indexed PNG 和 YOLO Segmentation
   标注导入 / 导出，使用真实下游 consumer 验证像素、类别、实例 ID 与有损报告。
+- **视频 Mask 格式双向闭环**. COCO Frames 与 DAVIS 现支持导入，YouTube-VOS 和 MOTS 支持导入 / 导出；
+  track、类别、源帧、outside 与 occluded 语义通过显式 manifest 和映射保留。COCO Frames / MOTS 使用
+  标准 compressed RLE，稀疏帧、帧号基准和 palette 重叠都必须选择明确策略并进入预检报告。
 
 ### Changed
 - **审阅接入 Mask 质检证据**. 提交任务后自动排队当前 Mask 扫描，阻断配置下必须拥有
@@ -72,6 +75,8 @@
   含不支持项的计划不可执行。缓存键同步绑定 adapter / manifest 版本与 options digest，相同未命中请求合并为一次构建。
 - **Mask 标注导入按项目 adapter 能力开放**. Dashboard 不再依赖编译期隐藏开关，只展示后端
   registry 中已验证且适配当前媒体类型的格式；未知类别需映射并重新预检，有损项需显式确认。
+- **Video JSON 明确标识不可移植媒体引用**. 该格式继续适合平台内轨迹检查，但导出预检会报告
+  非可移植媒体引用；需要跨实例无损迁移时应选择 AAP JSON。
 
 ### Fixed
 - **Mask prompt 源内容冲突返回精确原因**. refine 收据绑定的源 Mask 像素已变化时，现在优先返回

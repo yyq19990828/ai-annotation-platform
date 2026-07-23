@@ -215,7 +215,7 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 | 数据类型 | 可选导出格式 |
 |---|---|
 | 图片 | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载） |
-| 视频 | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`、`coco-frames-seg`、`davis`（palette PNG） |
+| 视频 | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`、`coco-frames-seg`、`davis`（palette PNG）、`youtube-vos`、`mots` |
 | 3D 点云 | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask` |
 
 点云 `aap_json` / `kitti` 导出支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。

@@ -27,7 +27,7 @@ import zipfile
 from copy import deepcopy
 from datetime import datetime, timezone
 from posixpath import splitext
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,15 @@ from app.services.exporting.video import (
     build_yolo_frame_seg_labels,
     yolo_seg_line,
 )
-from app.services.exporting.davis import build_davis_palette_png
+from app.services.exporting.davis import (
+    build_davis_palette_png,
+    derive_davis_object_ids,
+)
+from app.services.exporting.video_mask_formats import (
+    build_mots_sequence,
+    exact_mask_frames,
+    object_manifest,
+)
 from app.services.project import (
     derive_attribute_schema,
     derive_classes_list,
@@ -94,6 +102,8 @@ VIDEO_EXPORT_FORMATS = {
     # 逐帧 COCO 分割：同源多边形，编码为标准 COCO instance segmentation 单文档。
     "coco-frames-seg",
     "davis",
+    "youtube-vos",
+    "mots",
 }
 
 
@@ -516,6 +526,8 @@ async def build_export_zip(
                     "yolo-frames-seg",
                     "coco-frames-seg",
                     "davis",
+                    "youtube-vos",
+                    "mots",
                 }
                 & set(targets)
             )
@@ -531,6 +543,7 @@ async def build_export_zip(
                 targets=targets,
                 include_attributes=include_attributes,
                 video_frame_mode=video_frame_mode,
+                format_options=format_options or {},
             )
 
         if project.data_type == "lidar":
@@ -1163,13 +1176,16 @@ def main() -> int:
             output_specs.append(spec)
         if not output_specs:
             continue
-        select_expr = "+".join("eq(n\\\\,%d)" % fr for fr in frames)
         try:
             for spec in output_specs:
                 rel_out = spec["dir"]
                 output_start = int(spec.get("start_number", start))
                 padding = max(1, int(spec.get("padding", 6)))
                 extension = str(spec.get("extension", "jpg")).lstrip(".") or "jpg"
+                selected_frames = spec.get("source_frames") or frames
+                select_expr = "+".join(
+                    "eq(n\\\\,%d)" % fr for fr in selected_frames
+                )
                 out_dir = os.path.join(HERE, *rel_out.split("/"))
                 os.makedirs(out_dir, exist_ok=True)
                 cmd = [
@@ -1214,6 +1230,7 @@ async def _build_video_export_zip(
     targets: list[str],
     include_attributes: bool,
     video_frame_mode: str,
+    format_options: dict[str, Any] | None = None,
 ) -> tuple[str, int, int]:
     """视频项目 zip（v0.10.43 多目标）：单目标落根、>1 目标各落 `{target}/`；
     manifest.json + fetch_videos.py 共享落根（MOT/KITTI 另带 fetch_frames.py）。
@@ -1226,6 +1243,7 @@ async def _build_video_export_zip(
         if tg not in VIDEO_EXPORT_FORMATS:
             raise UnsupportedExportError(f"unsupported video export format: {tg}")
 
+    format_options = format_options or {}
     sampling = project.video_sampling or {}
     multi = len(targets) > 1
     has_mot = "mot" in targets
@@ -1234,6 +1252,14 @@ async def _build_video_export_zip(
     has_yolo_frames_seg = "yolo-frames-seg" in targets
     has_coco_frames_seg = "coco-frames-seg" in targets
     has_davis = "davis" in targets
+    has_youtube_vos = "youtube-vos" in targets
+    has_mots = "mots" in targets
+    video_overlap_policy = str(format_options.get("video_overlap_policy") or "error")
+    if video_overlap_policy not in {"error", "z_order", "larger_area", "smaller_area"}:
+        raise ValueError("invalid video mask overlap policy")
+    mots_frame_base = int(format_options.get("mots_frame_base", 0))
+    if mots_frame_base not in {0, 1}:
+        raise ValueError("MOTS frame base must be 0 or 1")
     has_frame_sequences = (
         has_mot
         or has_kitti
@@ -1241,6 +1267,8 @@ async def _build_video_export_zip(
         or has_yolo_frames_seg
         or has_coco_frames_seg
         or has_davis
+        or has_youtube_vos
+        or has_mots
     )
     frame_start_number = (
         1
@@ -1255,6 +1283,10 @@ async def _build_video_export_zip(
     coco_seq_records: list[dict] = []
     davis_sequences: list[str] = []
     davis_sequence_owners: dict[str, uuid.UUID] = {}
+    davis_manifest_sequences: dict[str, Any] = {}
+    youtube_videos: dict[str, Any] = {}
+    youtube_source_frames: dict[str, dict[str, int]] = {}
+    mots_sequences: dict[str, Any] = {}
 
     manifest_videos: list[dict] = []
     now = datetime.now(timezone.utc)
@@ -1327,6 +1359,20 @@ async def _build_video_export_zip(
                     ann.id: await _hydrate_mask_geometry_for_export(ann.geometry or {})
                     for ann in track_anns
                 }
+                mask_track_annotations = [
+                    ann
+                    for ann in track_anns
+                    if (ann.geometry or {}).get("type") == "video_track_mask"
+                ]
+                mask_tracks = [
+                    (
+                        ann.id,
+                        int(getattr(ann, "z_order", 0) or 0),
+                        track_geometry_by_id[ann.id],
+                    )
+                    for ann in mask_track_annotations
+                ]
+                youtube_sparse_frames: list[int] = []
                 # frame_count：元数据优先，缺失回退最大标注帧 + 1。
                 max_kf = 0
                 for ann in track_anns:
@@ -1454,7 +1500,8 @@ async def _build_video_export_zip(
                                     ann.class_name,
                                     track_geometry_by_id[ann.id],
                                     ann.attributes or {},
-                                    getattr(ann, "track_id", None),
+                                    getattr(ann, "track_id", None)
+                                    or track_geometry_by_id[ann.id].get("track_id"),
                                 )
                                 for ann in track_anns
                             ],
@@ -1463,7 +1510,8 @@ async def _build_video_export_zip(
                                     ann.class_name,
                                     ann.geometry or {},
                                     ann.attributes or {},
-                                    getattr(ann, "track_id", None),
+                                    getattr(ann, "track_id", None)
+                                    or (ann.geometry or {}).get("track_id"),
                                 )
                                 for ann in bbox_anns
                             ],
@@ -1482,15 +1530,7 @@ async def _build_video_export_zip(
                         )
                     davis_sequence_owners[seq] = t.id
                     davis_prefix = "davis/" if multi else ""
-                    mask_tracks = [
-                        (
-                            ann.id,
-                            int(getattr(ann, "z_order", 0) or 0),
-                            track_geometry_by_id[ann.id],
-                        )
-                        for ann in track_anns
-                        if (ann.geometry or {}).get("type") == "video_track_mask"
-                    ]
+                    object_ids = derive_davis_object_ids(mask_tracks)
                     for output_index, source_frame in enumerate(
                         derive_sampled_frames(frame_count, step)
                     ):
@@ -1501,10 +1541,103 @@ async def _build_video_export_zip(
                                 frame_index=source_frame,
                                 width=img_w,
                                 height=img_h,
+                                overlap_policy=video_overlap_policy,
                             ),
                         )
                         file_count += 1
                     davis_sequences.append(seq)
+                    davis_manifest_sequences[seq] = {
+                        "task_display_id": t.display_id,
+                        "objects": object_manifest(
+                            [
+                                (
+                                    ann.id,
+                                    ann.class_name,
+                                    track_geometry_by_id[ann.id],
+                                )
+                                for ann in mask_track_annotations
+                            ],
+                            object_ids,
+                        ),
+                    }
+
+                if has_youtube_vos:
+                    youtube_prefix = "youtube-vos/" if multi else ""
+                    object_ids = derive_davis_object_ids(mask_tracks)
+                    youtube_sparse_frames = sorted(
+                        {
+                            frame
+                            for _annotation_id, _z_order, geometry in mask_tracks
+                            for frame in exact_mask_frames(geometry)
+                        }
+                    )
+                    frame_name_by_source = {
+                        source_frame: f"{output_index:05d}"
+                        for output_index, source_frame in enumerate(
+                            youtube_sparse_frames
+                        )
+                    }
+                    for source_frame in youtube_sparse_frames:
+                        zf.writestr(
+                            f"{youtube_prefix}Annotations/{seq}/"
+                            f"{frame_name_by_source[source_frame]}.png",
+                            build_davis_palette_png(
+                                mask_tracks,
+                                frame_index=source_frame,
+                                width=img_w,
+                                height=img_h,
+                                overlap_policy=video_overlap_policy,
+                                exact_keyframes_only=True,
+                            ),
+                        )
+                        file_count += 1
+                    youtube_objects = object_manifest(
+                        [
+                            (
+                                ann.id,
+                                ann.class_name,
+                                track_geometry_by_id[ann.id],
+                            )
+                            for ann in mask_track_annotations
+                        ],
+                        object_ids,
+                    )
+                    for object_row in youtube_objects.values():
+                        object_row["frames"] = [
+                            frame_name_by_source[int(frame)]
+                            for frame in object_row["frames"]
+                        ]
+                    youtube_videos[seq] = {"objects": youtube_objects}
+                    youtube_source_frames[seq] = {
+                        frame_name_by_source[frame]: frame
+                        for frame in youtube_sparse_frames
+                    }
+
+                if has_mots:
+                    mots_prefix = "mots/" if multi else ""
+                    mots_path = f"{mots_prefix}instances/{seq}.txt"
+                    mots_text, mots_meta = build_mots_sequence(
+                        [
+                            (
+                                ann.id,
+                                ann.class_name,
+                                track_geometry_by_id[ann.id],
+                            )
+                            for ann in mask_track_annotations
+                        ],
+                        class_ids={
+                            name: index + 1 for index, name in enumerate(classes_list)
+                        },
+                        source_frames=derive_sampled_frames(frame_count, step),
+                        frame_base=mots_frame_base,
+                    )
+                    zf.writestr(mots_path, mots_text)
+                    file_count += 1
+                    mots_sequences[seq] = {
+                        "task_display_id": t.display_id,
+                        "annotations_path": mots_path,
+                        **mots_meta,
+                    }
 
                 # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
                 dataset_name = _dataset_name_for_task(t, item)
@@ -1544,6 +1677,31 @@ async def _build_video_export_zip(
                             "dir": davis_images,
                             "start_number": 0,
                             "padding": 5,
+                            "extension": "jpg",
+                        }
+                    )
+                if has_youtube_vos:
+                    youtube_prefix = "youtube-vos/" if multi else ""
+                    youtube_images = f"{youtube_prefix}JPEGImages/{seq}"
+                    frame_output_dirs.append(youtube_images)
+                    frame_outputs.append(
+                        {
+                            "dir": youtube_images,
+                            "start_number": 0,
+                            "padding": 5,
+                            "extension": "jpg",
+                            "source_frames": youtube_sparse_frames,
+                        }
+                    )
+                if has_mots:
+                    mots_prefix = "mots/" if multi else ""
+                    mots_images = f"{mots_prefix}images/{seq}"
+                    frame_output_dirs.append(mots_images)
+                    frame_outputs.append(
+                        {
+                            "dir": mots_images,
+                            "start_number": mots_frame_base,
+                            "padding": 6,
                             "extension": "jpg",
                         }
                     )
@@ -1589,6 +1747,50 @@ async def _build_video_export_zip(
             zf.writestr(
                 f"{davis_prefix}ImageSets/2017/val.txt",
                 "\n".join(sequence_lines) + ("\n" if sequence_lines else ""),
+            )
+            zf.writestr(
+                f"{davis_prefix}davis_manifest.json",
+                json.dumps(
+                    {
+                        "format_id": "davis",
+                        "manifest_version": "1",
+                        "sequences": davis_manifest_sequences,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+
+        if has_youtube_vos:
+            youtube_prefix = "youtube-vos/" if multi else ""
+            zf.writestr(
+                f"{youtube_prefix}meta.json",
+                json.dumps(
+                    {
+                        "videos": youtube_videos,
+                        "_aap": {
+                            "manifest_version": "1",
+                            "source_frames": youtube_source_frames,
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+
+        if has_mots:
+            mots_prefix = "mots/" if multi else ""
+            zf.writestr(
+                f"{mots_prefix}mots_manifest.json",
+                json.dumps(
+                    {
+                        "format_id": "mots",
+                        "manifest_version": "1",
+                        "sequences": mots_sequences,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
             )
 
         zf.writestr(

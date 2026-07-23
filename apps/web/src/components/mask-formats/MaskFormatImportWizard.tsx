@@ -44,6 +44,8 @@ export function MaskFormatImportWizard({
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
   const [staged, setStaged] = useState<{ objectKey: string; digest: string } | null>(null);
+  const [sparseGapPolicy, setSparseGapPolicy] = useState<"outside_gaps" | "nearest_hold">("outside_gaps");
+  const [frameBase, setFrameBase] = useState<0 | 1>(0);
 
   const availableFormats = useMemo(
     () => formats.filter((format) => (
@@ -53,6 +55,18 @@ export function MaskFormatImportWizard({
     )),
     [formats],
   );
+
+  useEffect(() => {
+    const defaultFrameBase = formats.find((format) => format.format_id === formatId)
+      ?.option_schema.frame_base;
+    if (
+      defaultFrameBase
+      && typeof defaultFrameBase === "object"
+      && "default" in defaultFrameBase
+    ) {
+      setFrameBase(defaultFrameBase.default === 1 ? 1 : 0);
+    }
+  }, [formatId, formats]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,7 +122,11 @@ export function MaskFormatImportWizard({
             Object.entries(mapping).filter(([, target]) => target.trim()),
           ),
         },
-        options: { overwrite: false },
+        options: {
+          overwrite: false,
+          ...(formatId === "youtube-vos" ? { sparse_gap_policy: sparseGapPolicy } : {}),
+          ...(["coco-frames-seg", "mots"].includes(formatId) ? { frame_base: frameBase } : {}),
+        },
       });
       setPreflight(result);
       setLossyConfirmed(false);
@@ -183,6 +201,44 @@ export function MaskFormatImportWizard({
             }}
             className="text-xs text-foreground file:mr-3 file:rounded-sm file:border file:border-border file:bg-card file:px-3 file:py-2 file:text-xs file:text-foreground"
           />
+          {formatId === "youtube-vos" && (
+            <>
+              <label htmlFor="mask-import-gap-policy" className="text-xs font-semibold text-foreground">
+                稀疏帧策略
+              </label>
+              <select
+                id="mask-import-gap-policy"
+                value={sparseGapPolicy}
+                onChange={(event) => {
+                  setSparseGapPolicy(event.target.value as typeof sparseGapPolicy);
+                  resetPlan();
+                }}
+                className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+              >
+                <option value="outside_gaps">未标注帧记为 outside</option>
+                <option value="nearest_hold">最近关键帧保持</option>
+              </select>
+            </>
+          )}
+          {["coco-frames-seg", "mots"].includes(formatId) && (
+            <>
+              <label htmlFor="mask-import-frame-base" className="text-xs font-semibold text-foreground">
+                帧号基准
+              </label>
+              <select
+                id="mask-import-frame-base"
+                value={frameBase}
+                onChange={(event) => {
+                  setFrameBase(Number(event.target.value) as 0 | 1);
+                  resetPlan();
+                }}
+                className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+              >
+                <option value={0}>0-based</option>
+                <option value={1}>1-based</option>
+              </select>
+            </>
+          )}
         </div>
 
         {preflight && (

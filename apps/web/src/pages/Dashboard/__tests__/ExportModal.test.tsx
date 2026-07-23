@@ -176,6 +176,8 @@ describe("ExportModal", () => {
     expect(screen.getByText("YOLO 逐帧")).toBeInTheDocument();
     expect(screen.getByText("MOT")).toBeInTheDocument();
     expect(screen.getByText("KITTI")).toBeInTheDocument();
+    expect(screen.getByText("YouTube-VOS")).toBeInTheDocument();
+    expect(screen.getByText("MOTS")).toBeInTheDocument();
     expect(screen.queryByText("YOLO")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("所有帧"));
@@ -185,6 +187,38 @@ describe("ExportModal", () => {
       includeAttributes: true,
       videoFrameMode: "all_frames",
     });
+  });
+
+  it("DAVIS / YouTube-VOS overlap 与 MOTS frame base 同时进入预检和导出", async () => {
+    render(<ExportModalHarness projectId="p-video-mask" projectTypeKey="video-track" />);
+    fireEvent.click(screen.getByText("Video JSON"));
+    fireEvent.click(screen.getByText("DAVIS Mask"));
+    fireEvent.click(screen.getByText("YouTube-VOS"));
+    fireEvent.click(screen.getByText("MOTS"));
+    fireEvent.change(screen.getByLabelText("视频 Mask 重叠策略"), {
+      target: { value: "z_order" },
+    });
+    fireEvent.change(screen.getByLabelText("MOTS 帧号基准"), {
+      target: { value: "1" },
+    });
+    submitExport();
+
+    const options = {
+      includeAttributes: true,
+      videoOverlapPolicy: "z_order" as const,
+      motsFrameBase: 1 as const,
+    };
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith(
+      "p-video-mask",
+      ["davis", "youtube-vos", "mots"],
+      options,
+    );
+    expect(projectsApi.exportProject).toHaveBeenCalledWith(
+      "p-video-mask",
+      ["davis", "youtube-vos", "mots"],
+      options,
+    );
   });
 
   it("视频项目可单独导出 YOLO 逐帧检测集", async () => {

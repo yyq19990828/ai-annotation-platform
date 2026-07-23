@@ -65,6 +65,16 @@ const VIDEO_OPTIONS: TargetOption[] = [
     label: "DAVIS Mask",
     description: "按采样网格导出 Full-Resolution palette PNG；对象 ID 在序列内稳定。",
   },
+  {
+    value: "youtube-vos",
+    label: "YouTube-VOS",
+    description: "稀疏关键帧 palette PNG + meta.json；导入时显式选择 gap 策略。",
+  },
+  {
+    value: "mots",
+    label: "MOTS",
+    description: "逐帧 compressed COCO RLE，显式保存 class / track / frame 映射。",
+  },
   { value: "aap_json", label: "AAP JSON", description: "无损保留 video_track geometry 与项目配置。" },
   { value: "mot", label: "MOT", description: "MOT 16/17/20 跟踪评测格式，按采样网格重排帧号。" },
   { value: "kitti", label: "KITTI", description: "KITTI Tracking 2D labels，适配 KITTI 工具链。" },
@@ -162,6 +172,10 @@ function ExportForm({
   const [indexedOverlapPolicy, setIndexedOverlapPolicy] = useState<
     "error" | "z_order" | "larger_area" | "smaller_area"
   >("error");
+  const [videoOverlapPolicy, setVideoOverlapPolicy] = useState<
+    "error" | "z_order" | "larger_area" | "smaller_area"
+  >("error");
+  const [motsFrameBase, setMotsFrameBase] = useState<0 | 1>(0);
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<MaskFormatExportPreflight | null>(null);
   const [lossyConfirmed, setLossyConfirmed] = useState(false);
@@ -173,7 +187,7 @@ function ExportForm({
   useEffect(() => {
     setPreflight(null);
     setLossyConfirmed(false);
-  }, [includeAttributes, indexedOverlapPolicy, targets, videoFrameMode]);
+  }, [includeAttributes, indexedOverlapPolicy, motsFrameBase, targets, videoFrameMode, videoOverlapPolicy]);
 
   const toggleTarget = (value: ExportTarget) => {
     setTargets((prev) =>
@@ -189,6 +203,10 @@ function ExportForm({
         includeAttributes,
         ...(showFrameMode ? { videoFrameMode } : {}),
         ...(targets.includes("indexed-png") ? { indexedOverlapPolicy } : {}),
+        ...(targets.some((target) => target === "davis" || target === "youtube-vos")
+          ? { videoOverlapPolicy }
+          : {}),
+        ...(targets.includes("mots") ? { motsFrameBase } : {}),
       };
       const checked = preflight
         ?? await maskFormatsApi.preflightExport(projectId, targets, options);
@@ -337,6 +355,40 @@ function ExportForm({
             <option value="z_order">z-order 较高者覆盖</option>
             <option value="larger_area">较大实例覆盖</option>
             <option value="smaller_area">较小实例覆盖</option>
+          </select>
+        </div>
+      )}
+      {targets.some((target) => target === "davis" || target === "youtube-vos") && (
+        <div className="flex flex-col gap-2">
+          <label htmlFor="video-overlap-policy" className="text-xs font-semibold text-foreground">
+            视频 Mask 重叠策略
+          </label>
+          <select
+            id="video-overlap-policy"
+            value={videoOverlapPolicy}
+            onChange={(event) => setVideoOverlapPolicy(event.target.value as typeof videoOverlapPolicy)}
+            className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+          >
+            <option value="error">检测到重叠时阻止（默认）</option>
+            <option value="z_order">z-order 较高者覆盖</option>
+            <option value="larger_area">较大实例覆盖</option>
+            <option value="smaller_area">较小实例覆盖</option>
+          </select>
+        </div>
+      )}
+      {targets.includes("mots") && (
+        <div className="flex flex-col gap-2">
+          <label htmlFor="mots-frame-base" className="text-xs font-semibold text-foreground">
+            MOTS 帧号基准
+          </label>
+          <select
+            id="mots-frame-base"
+            value={motsFrameBase}
+            onChange={(event) => setMotsFrameBase(Number(event.target.value) as 0 | 1)}
+            className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+          >
+            <option value={0}>0-based</option>
+            <option value={1}>1-based</option>
           </select>
         </div>
       )}

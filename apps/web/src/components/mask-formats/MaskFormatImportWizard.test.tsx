@@ -192,4 +192,86 @@ describe("MaskFormatImportWizard", () => {
       ),
     );
   });
+
+  it("视频格式把 sparse gap 与 MOTS frame base 绑定到预检", async () => {
+    vi.mocked(maskFormatsApi.list).mockResolvedValue([
+      {
+        format_id: "coco-frames-seg",
+        label: "COCO Frames Segmentation",
+        adapter_version: "2.0.0",
+        manifest_version: "1",
+        media_types: ["video"],
+        import_capability: { supported: true, verified: true, enabled_for_ui: true },
+        export_capability: { supported: true, verified: true, enabled_for_ui: true },
+        option_schema: { frame_base: { type: "integer", enum: [0, 1], default: 1 } },
+      },
+      {
+        format_id: "youtube-vos",
+        label: "YouTube-VOS",
+        adapter_version: "1.0.0",
+        manifest_version: "1",
+        media_types: ["video"],
+        import_capability: { supported: true, verified: true, enabled_for_ui: true },
+        export_capability: { supported: true, verified: true, enabled_for_ui: true },
+        option_schema: {},
+      },
+      {
+        format_id: "mots",
+        label: "MOTS",
+        adapter_version: "1.0.0",
+        manifest_version: "1",
+        media_types: ["video"],
+        import_capability: { supported: true, verified: true, enabled_for_ui: true },
+        export_capability: { supported: true, verified: true, enabled_for_ui: true },
+        option_schema: {},
+      },
+    ]);
+    vi.mocked(maskFormatsApi.preflightImport).mockResolvedValue(plan("lossy"));
+    render(<MaskFormatImportWizard open projectId="video-project" onClose={() => {}} />);
+
+    await screen.findByRole("option", { name: "YouTube-VOS" });
+    fireEvent.change(screen.getByLabelText("格式"), { target: { value: "youtube-vos" } });
+    fireEvent.change(screen.getByLabelText("稀疏帧策略"), {
+      target: { value: "nearest_hold" },
+    });
+    fireEvent.change(screen.getByLabelText("文件"), {
+      target: { files: [new File(["zip"], "ytvos.zip", { type: "application/zip" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传并预检" }));
+    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+      "video-project",
+      expect.objectContaining({
+        format_id: "youtube-vos",
+        options: { overwrite: false, sparse_gap_policy: "nearest_hold" },
+      }),
+    ));
+
+    fireEvent.change(screen.getByLabelText("格式"), { target: { value: "coco-frames-seg" } });
+    expect(screen.getByLabelText("帧号基准")).toHaveValue("1");
+    fireEvent.change(screen.getByLabelText("文件"), {
+      target: { files: [new File(["{}"], "coco-frames.json", { type: "application/json" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传并预检" }));
+    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+      "video-project",
+      expect.objectContaining({
+        format_id: "coco-frames-seg",
+        options: { overwrite: false, frame_base: 1 },
+      }),
+    ));
+
+    fireEvent.change(screen.getByLabelText("格式"), { target: { value: "mots" } });
+    fireEvent.change(screen.getByLabelText("帧号基准"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("文件"), {
+      target: { files: [new File(["zip"], "mots.zip", { type: "application/zip" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传并预检" }));
+    await waitFor(() => expect(maskFormatsApi.preflightImport).toHaveBeenLastCalledWith(
+      "video-project",
+      expect.objectContaining({
+        format_id: "mots",
+        options: { overwrite: false, frame_base: 1 },
+      }),
+    ));
+  });
 });

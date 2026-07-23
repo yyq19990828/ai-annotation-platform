@@ -21,10 +21,12 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 
 | 参数 | 取值 | 说明 |
 |---|---|---|
-| `targets` | 可重复，多选 | 图片目标、`aap_json`，以及视频专属 `video_json` / `yolo-frames-det` / `yolo-frames-seg` / `coco-frames-seg` / `davis` / `mot` / `kitti`；`voc` 仅可单选 |
+| `targets` | 可重复，多选 | 图片目标、`aap_json`，以及视频专属 `video_json` / `yolo-frames-det` / `yolo-frames-seg` / `coco-frames-seg` / `davis` / `youtube-vos` / `mots` / `mot` / `kitti`；`voc` 仅可单选 |
 | `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
 | `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
 | `axis_frame` | `iso` / `source` | 仅影响导出中的 `box_3d` 几何；默认 `iso`（平台归一化 ISO 8855 PSR），`source` 反向映射回数据集 `axis_convention` 源系 |
+| `video_overlap_policy` | `error` / `z_order` / `larger_area` / `smaller_area` | DAVIS / YouTube-VOS palette PNG 的实例重叠策略；默认阻止 |
+| `mots_frame_base` | `0` / `1` | MOTS 输出帧号基准；默认 0-based |
 
 非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标，选图片目标会返回 400。
 
@@ -43,6 +45,8 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 | **yolo-frames-seg** | 视频逐帧 polygon 分割标签；bbox / polyline / mask 跳过 |
 | **coco-frames-seg** | 视频标准 COCO instance segmentation；polygon 与 RLE mask |
 | **davis** | 视频 Full-Resolution palette PNG；对象 ID 1–254、255 保留 void |
+| **youtube-vos** | 稀疏 Mask 关键帧 palette PNG + `meta.json` |
+| **mots** | 六列 MOTS 文本，Mask 使用 compressed COCO RLE |
 | **mot** | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号 |
 | **kitti** | KITTI Tracking 2D label 文本 |
 | **voc** | Pascal VOC XML（仅同步单选） |

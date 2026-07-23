@@ -153,10 +153,11 @@ async def test_export_worker_cache_hit_skips_packaging(
         AsyncMock(return_value=("image", "dataset", "P-1")),
     )
     monkeypatch.setattr(export_worker, "_emit_export_notification", AsyncMock())
+    compute_cache_key = Mock(return_value="cache-key")
     monkeypatch.setattr(
         export_worker.export_cache,
         "compute_cache_key",
-        lambda *a, **kw: "cache-key",
+        compute_cache_key,
     )
     artifact = SimpleNamespace(
         object_key="image/project/cached.zip",
@@ -178,16 +179,20 @@ async def test_export_worker_cache_hit_skips_packaging(
 
     project_id = "11111111-1111-1111-1111-111111111111"
     job_id = "22222222-2222-2222-2222-222222222222"
+    opts = {"video_overlap_policy": "z_order", "mots_frame_base": 1}
     await export_worker._run_export(
         project_id=project_id,
         batch_id=None,
-        targets=["coco"],
-        opts={},
+        targets=["davis", "mots"],
+        opts=opts,
         async_job_id=job_id,
         celery_task_id="celery-1",
     )
 
     mark_running.assert_awaited_once()
+    assert compute_cache_key.call_args.kwargs["options_digest"] == (
+        export_worker.canonical_digest(opts)
+    )
     lookup.assert_awaited_once_with(
         db,
         "cache-key",

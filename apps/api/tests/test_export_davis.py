@@ -38,6 +38,7 @@ def test_davis_png_is_palette_mode_with_stable_ids_and_overlap_order():
         frame_index=0,
         width=3,
         height=2,
+        overlap_policy="z_order",
     )
 
     image = Image.open(io.BytesIO(payload))

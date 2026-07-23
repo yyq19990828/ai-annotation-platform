@@ -261,13 +261,7 @@ async def _run_export(
                     active_count,
                     axis_frame=axis_frame,
                     adapter_contracts=mask_format_registry.versions(targets),
-                    options_digest=canonical_digest(
-                        {
-                            "include_attributes": include_attributes,
-                            "video_frame_mode": video_frame_mode,
-                            "axis_frame": axis_frame,
-                        }
-                    ),
+                    options_digest=canonical_digest(opts),
                 )
                 # v0.10.43 · media 前缀 + 友好下载名（{display_id}_{dataset?}_{job[:8]}.zip）。
                 media, dataset_name, project_display_id = await _scope_naming(

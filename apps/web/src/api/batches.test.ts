@@ -140,5 +140,14 @@ describe("batchesApi · endpoint 契约", () => {
     expect(post).toHaveBeenCalledWith(
       "/projects/p1/batches/b1/export?include_attributes=false&targets=coco",
     );
+    batchesApi.exportBatch("p1", "b1", ["davis", "mots"] as ExportTarget[], {
+      includeAttributes: true,
+      videoOverlapPolicy: "z_order",
+      motsFrameBase: 1,
+    });
+    expect(post).toHaveBeenCalledWith(
+      "/projects/p1/batches/b1/export?include_attributes=true&targets=davis&targets=mots"
+        + "&video_overlap_policy=z_order&mots_frame_base=1",
+    );
   });
 });

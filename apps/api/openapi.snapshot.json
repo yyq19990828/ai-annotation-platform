@@ -40196,7 +40196,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -40204,7 +40204,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -40246,6 +40246,29 @@
               "pattern": "^(iso|source)$",
               "title": "Axis Frame",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "video_overlap_policy",
+            "required": false,
+            "schema": {
+              "default": "error",
+              "pattern": "^(error|z_order|larger_area|smaller_area)$",
+              "title": "Video Overlap Policy",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mots_frame_base",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Mots Frame Base",
+              "type": "integer"
             }
           }
         ],
@@ -41125,7 +41148,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -41133,7 +41156,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -41190,6 +41213,33 @@
               "pattern": "^(error|z_order|larger_area|smaller_area)$",
               "title": "Indexed Overlap Policy",
               "type": "string"
+            }
+          },
+          {
+            "description": "DAVIS / YouTube-VOS 的实例重叠策略；默认拒绝重叠",
+            "in": "query",
+            "name": "video_overlap_policy",
+            "required": false,
+            "schema": {
+              "default": "error",
+              "description": "DAVIS / YouTube-VOS 的实例重叠策略；默认拒绝重叠",
+              "pattern": "^(error|z_order|larger_area|smaller_area)$",
+              "title": "Video Overlap Policy",
+              "type": "string"
+            }
+          },
+          {
+            "description": "MOTS 输出帧号基准：0 或 1",
+            "in": "query",
+            "name": "mots_frame_base",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "MOTS 输出帧号基准：0 或 1",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Mots Frame Base",
+              "type": "integer"
             }
           }
         ],

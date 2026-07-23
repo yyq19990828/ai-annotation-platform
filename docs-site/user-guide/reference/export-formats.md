@@ -13,7 +13,7 @@ last_reviewed: 2026-07-23
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -36,6 +36,8 @@ last_reviewed: 2026-07-23
 | 视频轨迹 | YOLO 逐帧分割 | `yolo-frames-seg` | 视频逐帧分割训练（保留多边形顶点；bbox / polyline 跳过） |
 | 视频轨迹 | COCO 逐帧分割 | `coco-frames-seg` | 视频逐帧分割训练（标准 COCO；保留多边形顶点；bbox / polyline 跳过） |
 | 视频轨迹 | DAVIS Mask | `davis` | 视频对象分割训练 / 评测（序列级 palette PNG） |
+| 视频轨迹 | YouTube-VOS | `youtube-vos` | 稀疏关键帧对象分割数据交换 |
+| 视频轨迹 | MOTS | `mots` | compressed RLE 多对象跟踪与分割数据交换 |
 | 视频轨迹 | AAP JSON | `aap_json` | 视频跨实例无损迁移 |
 | 视频轨迹 | MOT 16/17/20 | `mot` | 多目标跟踪评测（trackeval） |
 | 视频轨迹 | KITTI Tracking | `kitti` | KITTI 跟踪工具链 |
@@ -46,19 +48,21 @@ last_reviewed: 2026-07-23
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
 
-> **视频几何的导出边界**：Video JSON / AAP JSON 保真保存 bbox、polygon、polyline 与 Mask 轨迹；MOT / KITTI / YOLO 逐帧检测把 polygon / polyline 按顶点外接框、Mask 按非空像素外接框降级；YOLO 逐帧分割只收 polygon；COCO 逐帧分割同时收 polygon 与标准 COCO RLE Mask；DAVIS 只收 Mask 轨迹。
+> **视频几何的导出边界**：AAP JSON 保真保存 bbox、polygon、polyline 与 Mask 轨迹；Video JSON 保留轨迹几何，但媒体引用不具备跨实例可移植性。MOT / KITTI / YOLO 逐帧检测把 polygon / polyline 按顶点外接框、Mask 按非空像素外接框降级；YOLO 逐帧分割只收 polygon；COCO 逐帧分割、DAVIS、YouTube-VOS 与 MOTS 只处理 Mask 轨迹。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 
 ## 导入 Mask 标注
 
-项目卡片 `⋮` 菜单的「导入 Mask 标注」由后端格式 registry 驱动，只列出当前项目媒体类型下已验证且开放 UI 的 adapter。图片项目可导入 AAP JSON、COCO Instance、Label Studio BrushLabels、逐实例 Binary PNG、Indexed PNG 和 YOLO Segmentation。
+项目卡片 `⋮` 菜单的「导入 Mask 标注」由后端格式 registry 驱动，只列出当前项目媒体类型下已验证且开放 UI 的 adapter。图片项目可导入 AAP JSON、COCO Instance、Label Studio BrushLabels、逐实例 Binary PNG、Indexed PNG 和 YOLO Segmentation；视频项目可导入 COCO Frames、DAVIS、YouTube-VOS 与 MOTS。
 
 1. 选择格式并上传 JSON 或 ZIP；浏览器会计算 SHA-256，上传后先生成短时预检收据。
 2. 预检展示无损、有损或不支持，并列出尺寸冲突、任务未匹配和未知类别。未知类别必须映射到项目类别并重新预检。
 3. 有损计划需显式确认，不支持计划不可执行。提交后按 task 原子导入，可在任务铃查看进度。
 
 COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio 必须提供与 labeling config 一致的 `from_name` / `to_name`、原图尺寸与 `value.format="rle"`。PNG 包必须带 `manifest.json`：Binary PNG 为 8-bit `L`、0/255 像素，每个实例独立文件；Indexed PNG 为 8-bit `P`，0 是背景，1–255 是实例 ID。manifest 中的媒体路径、尺寸、类别、实例身份和内容 SHA-256 都会校验。
+
+视频格式导入会按序列匹配任务。COCO Frames 从 `source_frame_index` 与 `attributes.__track_id` 恢复源帧和轨迹；DAVIS 使用 palette ID 与 `davis_manifest.json`；MOTS 必须带 `mots_manifest.json`，明确类别、轨迹、帧号基准和源帧映射。YouTube-VOS 的稀疏帧必须选择「未标注帧记为 outside」或「最近关键帧保持」，预检会把前者的语义折叠报告为有损。
 
 ## 导出流程
 
@@ -386,7 +390,7 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 
 ## 视频轨迹
 
-`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`；需要图像序列的目标另带 `fetch_frames.py`，按每个输出目录自己的起始编号、位数与扩展名抽帧。
+`video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`；需要图像序列的目标另带 `fetch_frames.py`，按每个输出目录自己的起始编号、位数与扩展名抽帧。
 
 **Video JSON**（帧模式二选一）：
 
@@ -403,9 +407,13 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 
 **YOLO 逐帧（分割）**：目标名 `yolo-frames-seg`。抽帧与目录布局同上（`labels/{sequence}/{frame:06d}.txt` + `fetch_frames.py`），但行格式与图片 `yolo-seg` 同构——每行 `<cls>` 后跟归一化多边形顶点。来源：单帧 `video_polygon` 的 `frame_index` 落网格才输出，`video_track_polygon` 按弧长插值展开到采样网格；bbox / polyline 几何跳过（矩形请用 `yolo-frames-det`）。
 
-**COCO 逐帧（分割）**：目标名 `coco-frames-seg`。产出单个标准 COCO `annotations.json`。polygon 使用顶点数组与 `iscrowd=0`；Mask 轨迹使用标准 RLE、像素面积、紧致 bbox 与 `iscrowd=1`。bbox / polyline 跳过。帧由 `fetch_frames.py` 抽到 `images/{sequence}/`，ZIP 不含帧图。
+**COCO 逐帧（分割）**：目标名 `coco-frames-seg`。产出单个标准 COCO `annotations.json`。polygon 使用顶点数组与 `iscrowd=0`；Mask 轨迹使用标准 compressed RLE、像素面积、紧致 bbox 与 `iscrowd=1`，并在 attributes 中携带轨迹与遮挡信息。bbox / polyline 跳过。帧由 `fetch_frames.py` 抽到 `images/{sequence}/`，ZIP 不含帧图。
 
-**DAVIS Mask**：目标名 `davis`。每个采样帧写 `Annotations/Full-Resolution/{sequence}/{frame:05d}.png`，PNG 模式为 `P`，背景为 0，对象 ID 在整个 sequence 内稳定分配为 1–254，255 保留为 void。重叠时较高 `z_order` 后写并获胜；`outside` 帧不写该对象，`occluded` 对象仍按当前 mask 写出。`fetch_frames.py` 把对应图像抽到 `JPEGImages/Full-Resolution/{sequence}/{frame:05d}.jpg`。多目标导出时 DAVIS 与 YOLO / COCO 可在同一 ZIP 中保持各自编号规则。
+**DAVIS Mask**：目标名 `davis`。每个采样帧写 `Annotations/Full-Resolution/{sequence}/{frame:05d}.png`，PNG 模式为 `P`，背景为 0，对象 ID 在整个 sequence 内稳定分配为 1–254，255 保留为 void。存在实例重叠时默认阻止导出，也可显式选择 `z_order`、`larger_area` 或 `smaller_area` winner；取舍会进入有损报告。`outside` 帧不写该对象，`occluded` 通过 `davis_manifest.json` 保留。`fetch_frames.py` 把对应图像抽到 `JPEGImages/Full-Resolution/{sequence}/{frame:05d}.jpg`。
+
+**YouTube-VOS**：目标名 `youtube-vos`。只把 Mask 关键帧写为 `Annotations/{sequence}/{frame:05d}.png`，`meta.json` 保存对象类别、轨迹身份、输出帧与源帧映射。palette 约束和实例重叠策略与 DAVIS 一致。导入时必须显式选择稀疏 gap 语义，避免把数据集未采样帧静默解释为对象离场。
+
+**MOTS**：目标名 `mots`。每行使用 `frame track class height width compressed_rle` 六列格式；可选择 0-based 或 1-based 输出帧号。`mots_manifest.json` 明确序列路径、类别、轨迹、源 annotation 与输出帧到源帧的映射，因此导入不依赖整数 ID 猜测业务身份。MOTS 没有遮挡字段，预检会报告对应损失。
 
 **MOT 16/17/20**：每个视频 = 一个 sequence，落 `{sequence}/gt/gt.txt`（`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）+ `{sequence}/seqinfo.ini`，可直接喂 trackeval。轨迹整数 `id` 自动派生；帧号按采样网格重排 1..N（如 60fps 采 10fps 则 `frameRate=10`）。
 
@@ -461,6 +469,9 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 | 视频轨迹备份 / 质检 | Video JSON（关键帧） |
 | 视频逐帧训练（目标检测） | YOLO 逐帧 |
 | 视频逐帧质检 / 自定义脚本处理 | Video JSON（所有帧） |
+| 视频对象分割训练 / DAVIS 评测 | DAVIS Mask |
+| 稀疏视频对象分割数据交换 | YouTube-VOS |
+| 多对象跟踪与分割数据交换 | MOTS |
 | 视频多目标跟踪评测（trackeval） | MOT 16/17/20 |
 | 视频跟踪（KITTI 工具链） | KITTI Tracking |
 | 视频跨实例无损迁移 | AAP JSON |

@@ -252,6 +252,12 @@ export const batchesApi = {
     const params = new URLSearchParams({ include_attributes: String(includeAttr) });
     targets.forEach((t) => params.append("targets", t));
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
+    if (opts?.videoOverlapPolicy) {
+      params.set("video_overlap_policy", opts.videoOverlapPolicy);
+    }
+    if (opts?.motsFrameBase !== undefined) {
+      params.set("mots_frame_base", String(opts.motsFrameBase));
+    }
     return apiClient.post<{ job_id: string }>(
       `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
     );

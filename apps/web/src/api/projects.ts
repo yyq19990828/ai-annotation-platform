@@ -125,7 +125,9 @@ export type ExportFormat =
   | "yolo-frames-det"
   | "yolo-frames-seg"
   | "coco-frames-seg"
-  | "davis";
+  | "davis"
+  | "youtube-vos"
+  | "mots";
 // v0.10.43 · 多目标导出：YOLO 拆 det/obb/seg；一次导出可多选目标（voc 仅可单选）。
 export type ExportTarget =
   | "coco"
@@ -145,12 +147,16 @@ export type ExportTarget =
   | "yolo-frames-seg"
   | "coco-frames-seg"
   | "davis"
+  | "youtube-vos"
+  | "mots"
   | "voc";
 export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {
   includeAttributes?: boolean;
   videoFrameMode?: VideoFrameMode;
   indexedOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
+  videoOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
+  motsFrameBase?: 0 | 1;
 }
 
 export interface ProjectClassUsageResponse {
@@ -272,6 +278,12 @@ export const projectsApi = {
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
     if (opts?.indexedOverlapPolicy) {
       params.set("indexed_overlap_policy", opts.indexedOverlapPolicy);
+    }
+    if (opts?.videoOverlapPolicy) {
+      params.set("video_overlap_policy", opts.videoOverlapPolicy);
+    }
+    if (opts?.motsFrameBase !== undefined) {
+      params.set("mots_frame_base", String(opts.motsFrameBase));
     }
     return apiClient.post<{ job_id: string }>(
       `/projects/${id}/export?${params.toString()}`,

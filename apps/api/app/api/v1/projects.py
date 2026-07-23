@@ -1199,7 +1199,8 @@ async def export_project(
         default=["coco"],
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg"
         " / label-studio-brush / binary-png / indexed-png / aap_json"
-        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti"
+        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis"
+        " / youtube-vos / mots / mot / kitti"
         " / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
@@ -1221,6 +1222,17 @@ async def export_project(
         "error",
         pattern="^(error|z_order|larger_area|smaller_area)$",
         description="Indexed PNG 的实例重叠策略；默认拒绝重叠",
+    ),
+    video_overlap_policy: str = Query(
+        "error",
+        pattern="^(error|z_order|larger_area|smaller_area)$",
+        description="DAVIS / YouTube-VOS 的实例重叠策略；默认拒绝重叠",
+    ),
+    mots_frame_base: int = Query(
+        0,
+        ge=0,
+        le=1,
+        description="MOTS 输出帧号基准：0 或 1",
     ),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
@@ -1282,6 +1294,8 @@ async def export_project(
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
             "indexed_overlap_policy": indexed_overlap_policy,
+            "video_overlap_policy": video_overlap_policy,
+            "mots_frame_base": mots_frame_base,
             "project_display_id": project.display_id,
         },
     )
@@ -1302,6 +1316,8 @@ async def export_project(
                 "video_frame_mode": video_frame_mode,
                 "axis_frame": axis_frame,
                 "indexed_overlap_policy": indexed_overlap_policy,
+                "video_overlap_policy": video_overlap_policy,
+                "mots_frame_base": mots_frame_base,
             },
         ),
     )
@@ -1316,6 +1332,8 @@ async def export_project(
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
             "indexed_overlap_policy": indexed_overlap_policy,
+            "video_overlap_policy": video_overlap_policy,
+            "mots_frame_base": mots_frame_base,
         },
         async_job_id=str(job.id),
     )

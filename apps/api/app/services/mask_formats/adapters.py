@@ -25,50 +25,9 @@ from app.services.mask_formats.contracts import (
     StagedObject,
     canonical_digest,
 )
+from app.services.mask_formats.planning import _code, _plan, _worst_loss
 from app.services.mask_formats.registry import registry
 from app.services.task_matcher import resolve_task
-
-
-_LOSS_MESSAGES = {
-    "overlap_resolved": "重叠实例将按目标格式的显式 winner 规则合成。",
-    "holes_polygonized": "目标格式不能保留孔洞，Mask 将转换为多边形。",
-    "components_split": "一个实例的多个连通区域将在目标格式中拆分。",
-    "instance_id_overflow": "目标格式的实例 ID 容量不足。",
-    "overlap_policy_required": "实例存在重叠；请选择显式 winner 策略或改用逐实例格式。",
-    "track_identity_lost": "目标格式不能完整保留跨帧轨迹身份。",
-    "occlusion_lost": "目标格式不能表达遮挡状态。",
-    "frame_base_changed": "输出帧编号基准与平台源帧不同。",
-    "nonportable_media_reference": "产物包含平台对象引用，不能作为独立备份。",
-    "unsupported_geometry": "目标格式不能表达该任务中的部分 geometry。",
-    "unknown_label": "外部标签尚未映射到项目类别。",
-    "task_not_found": "导入项无法匹配项目任务。",
-    "image_size_mismatch": "外部标注尺寸与项目媒体尺寸不一致。",
-    "not_selected": "该项没有可导入的 annotation。",
-}
-
-
-def _code(code: str, **detail: Any) -> MaskFormatCode:
-    return MaskFormatCode(
-        code=code,
-        message=_LOSS_MESSAGES.get(code, code),
-        detail=detail,
-    )
-
-
-def _worst_loss(classes: list[str]) -> str:
-    if "unsupported" in classes:
-        return "unsupported"
-    if "lossy" in classes:
-        return "lossy"
-    return "lossless"
-
-
-def _plan(payload: dict[str, Any]) -> MaskFormatPlan:
-    payload = {**payload, "plan_digest": ""}
-    payload["plan_digest"] = canonical_digest(
-        {key: value for key, value in payload.items() if key != "plan_digest"}
-    )
-    return MaskFormatPlan.model_validate(payload)
 
 
 _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
@@ -88,6 +47,8 @@ _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
     "yolo-frames-seg": frozenset({"video_track", "video_track_mask", "polygon"}),
     "coco-frames-seg": frozenset({"video_track", "video_track_mask", "polygon"}),
     "davis": frozenset({"video_track_mask"}),
+    "youtube-vos": frozenset({"video_track_mask"}),
+    "mots": frozenset({"video_track_mask"}),
     "mot": frozenset({"video_track", "bbox"}),
     "kitti": None,
     "nuscenes": None,
@@ -107,7 +68,9 @@ _TARGET_LOSSES: dict[str, tuple[str, ...]] = {
     ),
     "yolo-frames-det": ("track_identity_lost", "frame_base_changed"),
     "coco-frames-seg": ("frame_base_changed",),
-    "davis": ("overlap_resolved", "occlusion_lost", "frame_base_changed"),
+    "davis": ("occlusion_lost", "frame_base_changed"),
+    "youtube-vos": ("sparse_frames_collapsed", "occlusion_lost"),
+    "mots": ("occlusion_lost", "frame_base_changed"),
     "mot": ("frame_base_changed",),
     "kitti": ("frame_base_changed",),
 }
@@ -461,6 +424,63 @@ _DESCRIPTORS = [
             }
         },
     ),
+    MaskFormatDescriptor(
+        format_id="coco-frames-seg",
+        label="COCO Frames Segmentation",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={"frame_base": {"type": "integer", "enum": [0, 1], "default": 1}},
+    ),
+    MaskFormatDescriptor(
+        format_id="davis",
+        label="DAVIS",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "overlap_policy": {
+                "type": "string",
+                "enum": ["error", "z_order", "larger_area", "smaller_area"],
+                "default": "error",
+            }
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="youtube-vos",
+        label="YouTube-VOS",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "sparse_gap_policy": {
+                "type": "string",
+                "enum": ["outside_gaps", "nearest_hold"],
+                "default": "outside_gaps",
+            },
+            "overlap_policy": {
+                "type": "string",
+                "enum": ["error", "z_order", "larger_area", "smaller_area"],
+                "default": "error",
+            },
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="mots",
+        label="MOTS",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={"frame_base": {"type": "integer", "enum": [0, 1], "default": 0}},
+    ),
     *[
         MaskFormatDescriptor(
             format_id=format_id,
@@ -479,8 +499,6 @@ _DESCRIPTORS = [
             ("video_json", "Video JSON", {"video"}),
             ("yolo-frames-det", "YOLO Frames Detection", {"video"}),
             ("yolo-frames-seg", "YOLO Frames Segmentation", {"video"}),
-            ("coco-frames-seg", "COCO Frames Segmentation", {"video"}),
-            ("davis", "DAVIS", {"video"}),
             ("mot", "MOT", {"video"}),
             ("kitti", "KITTI", {"video", "lidar"}),
             ("nuscenes", "nuScenes", {"lidar"}),
@@ -509,6 +527,23 @@ for descriptor in _DESCRIPTORS:
             ImageMaskImportAdapter(
                 descriptor,
                 IMAGE_IMPORT_PARSERS[descriptor.format_id],
+            )
+        )
+    elif descriptor.format_id in {
+        "coco-frames-seg",
+        "davis",
+        "youtube-vos",
+        "mots",
+    }:
+        from app.services.mask_formats.video_adapters import (
+            VIDEO_IMPORT_PARSERS,
+            VideoMaskFormatAdapter,
+        )
+
+        registry.register(
+            VideoMaskFormatAdapter(
+                descriptor,
+                VIDEO_IMPORT_PARSERS[descriptor.format_id],
             )
         )
     else:

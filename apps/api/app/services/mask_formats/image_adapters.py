@@ -40,7 +40,7 @@ from app.services.raster_mask_storage import build_rle_reference
 from app.services.task_matcher import resolve_task, resolve_task_by_file_stem
 from app.utils.raster_mask_rle import coco_rle_area, validate_coco_rle
 
-from .adapters import _code, _plan, _worst_loss
+from .planning import _code, _plan, _worst_loss
 
 
 @dataclass

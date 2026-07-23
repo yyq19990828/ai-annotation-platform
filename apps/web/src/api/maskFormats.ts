@@ -154,6 +154,12 @@ export const maskFormatsApi = {
           ...(opts?.indexedOverlapPolicy
             ? { indexed_overlap_policy: opts.indexedOverlapPolicy }
             : {}),
+          ...(opts?.videoOverlapPolicy
+            ? { video_overlap_policy: opts.videoOverlapPolicy }
+            : {}),
+          ...(opts?.motsFrameBase !== undefined
+            ? { mots_frame_base: opts.motsFrameBase }
+            : {}),
         },
       },
     ),
