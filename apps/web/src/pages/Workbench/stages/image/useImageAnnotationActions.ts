@@ -487,19 +487,19 @@ export function useImageAnnotationActions({
       if (e.key === "Enter") {
         if (!sam.canAcceptCandidates) return;
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         setSamPendingAccept({ idx: sam.activeIdx });
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         sam.cancel();
         return;
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         sam.cycle(e.shiftKey ? -1 : 1);
         return;
       }

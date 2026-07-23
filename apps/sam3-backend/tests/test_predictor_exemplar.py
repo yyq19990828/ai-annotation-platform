@@ -626,6 +626,7 @@ def test_interactive_native_mask_preserves_pixels(predictor_with_mocks, fake_ima
     candidate = results[0]
     assert candidate["type"] == "mask"
     assert candidate["value"]["rle"]["size"] == [480, 640]
+    assert len(candidate["value"]["preview"]["points"]) >= 4
     assert list(decode_coco_rle(candidate["value"]["rle"])) == (
         (masks[0] > 0).reshape(-1).astype(int).tolist()
     )
@@ -647,6 +648,7 @@ def test_interactive_box_native_mask_output(predictor_with_mocks, fake_image):
     assert len(results) == 1
     assert results[0]["type"] == "mask"
     assert results[0]["value"]["rle"]["size"] == [480, 640]
+    assert len(results[0]["value"]["preview"]["points"]) >= 4
 
 
 def test_exemplars_native_mask_output(predictor_with_mocks, fake_image):
@@ -672,3 +674,4 @@ def test_exemplars_native_mask_output(predictor_with_mocks, fake_image):
     assert len(results) == 1
     assert results[0]["type"] == "mask"
     assert results[0]["value"]["rle"]["size"] == [480, 640]
+    assert len(results[0]["value"]["preview"]["points"]) >= 4

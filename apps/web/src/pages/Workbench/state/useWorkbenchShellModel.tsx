@@ -1690,7 +1690,7 @@ export function useWorkbenchShellModel({
     : null;
   const samMaskCandidateDescriptors = useMemo(
     () => sam.candidates.flatMap((candidate, index) => {
-      if (candidate.type !== "mask") return [];
+      if (candidate.type !== "mask" || index !== sam.activeIdx) return [];
       return [{
         id: candidate.id,
         source: "interactive" as const,
@@ -1719,7 +1719,8 @@ export function useWorkbenchShellModel({
     scopeKey: samMaskScopeKey,
     descriptors: samMaskCandidateDescriptors,
     maxCacheBytes: 32 * 1024 * 1024,
-    maxCachedRecords: 4,
+    maxCachedRecords: 1,
+    maxConcurrent: 1,
     workerPool: rasterMaskWorkerPool,
   });
   const samCandidateDisplayGeom = useCallback(

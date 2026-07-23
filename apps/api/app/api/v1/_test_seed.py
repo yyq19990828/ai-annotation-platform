@@ -1180,7 +1180,7 @@ async def seed_native_mask_candidate(
     from app.db.models.project import Project
     from app.db.models.task import Task
     from app.services.ai_mask_receipt import issue_ai_mask_receipt
-    from app.utils.raster_mask_rle import encode_coco_rle
+    from app.utils.raster_mask_rle import coco_rle_bbox_norm, encode_coco_rle
 
     task = await db.get(Task, UUID(payload.task_id))
     if task is None or task.dataset_item_id is None:
@@ -1300,12 +1300,25 @@ async def seed_native_mask_candidate(
             candidate_index=candidate_index,
         )
         content_digest = hashlib.sha256(canonical_rle_bytes(rle_model)).hexdigest()
+        bounds = coco_rle_bbox_norm(rles[candidate_index])
+        left = bounds["x"]
+        top = bounds["y"]
+        right = left + bounds["w"]
+        bottom = top + bounds["h"]
         results.append(
             {
                 "type": "mask",
                 "value": {
                     "rle": rles[candidate_index],
                     "masklabels": ["object"],
+                    "preview": {
+                        "points": [
+                            [left, top],
+                            [right, top],
+                            [right, bottom],
+                            [left, bottom],
+                        ]
+                    },
                 },
                 "score": 0.95 - candidate_index * 0.05,
                 "candidate_id": candidate_id,

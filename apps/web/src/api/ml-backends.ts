@@ -31,6 +31,9 @@ export interface InteractiveNativeMaskCandidate {
   value: {
     rle: CocoRle;
     masklabels: [string];
+    preview?: {
+      points: [number, number][];
+    };
   };
   score: number | null;
   candidate_id: string;

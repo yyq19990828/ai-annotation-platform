@@ -59,7 +59,18 @@ def _candidate(revision: str) -> dict:
         counts=[1, 2, 2, 1],
     )
     return NativeMaskCandidate(
-        value=NativeMaskCandidateValue(rle=rle, masklabels=["object"]),
+        value=NativeMaskCandidateValue(
+            rle=rle,
+            masklabels=["object"],
+            preview={
+                "points": [
+                    [0.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 1.0],
+                    [0.0, 1.0],
+                ]
+            },
+        ),
         score=0.9,
         candidate_id=native_mask_candidate_id(
             rle,

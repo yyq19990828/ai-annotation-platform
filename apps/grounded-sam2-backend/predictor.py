@@ -53,6 +53,7 @@ from mask_utils import (
     encode_coco_rle,
     mask_prompt_to_low_res_logits,
     mask_to_multi_polygon,
+    mask_to_preview_polygon,
     scribbles_to_point_prompts,
 )
 
@@ -687,6 +688,11 @@ class GroundedSAM2Predictor:
             if output_geometry == "mask":
                 if not prompt_revision:
                     raise ValueError("prompt_revision is required for native mask output")
+                preview_points = mask_to_preview_polygon(
+                    binary,
+                    tolerance=eff_tol,
+                    normalize_to=(w, h),
+                )
                 rle = CocoRlePayload.model_validate(
                     encode_coco_rle(binary.reshape(-1), w, h)
                 )
@@ -695,6 +701,7 @@ class GroundedSAM2Predictor:
                     value=NativeMaskCandidateValue(
                         rle=rle,
                         masklabels=["object"],
+                        preview={"points": preview_points},
                     ),
                     score=score,
                     candidate_id=native_mask_candidate_id(

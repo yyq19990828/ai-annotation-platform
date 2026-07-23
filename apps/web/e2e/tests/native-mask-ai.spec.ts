@@ -182,7 +182,7 @@ async function generateAndAccept(
   projectId: string,
   taskId: string,
   media: "image" | "video",
-  options?: { candidateCycles?: number },
+  options?: { candidateCycles?: number; zoomBeforeAccept?: boolean },
 ): Promise<AcceptedMaskResponse> {
   await page.goto(`/projects/${projectId}/annotate?task=${taskId}`);
   const stage = page.getByTestId(media === "image" ? "workbench-stage" : "video-konva-stage");
@@ -207,8 +207,17 @@ async function generateAndAccept(
     ? `${options.candidateCycles + 1} 个候选待处理`
     : "候选待处理";
   await expect(page.getByText(pendingLabel, { exact: true })).toBeVisible({ timeout: 10_000 });
-  // Candidate bounds are synchronous; allow the shared renderer time to fill the pixel preview.
+  // Polygon outlines are immediate; only the active candidate's pixel preview is decoded lazily.
   await page.waitForTimeout(media === "image" ? 250 : 750);
+  if (options?.zoomBeforeAccept) {
+    const zoomLabel = page.getByText(/^\d+%$/).first();
+    const initialZoom = await zoomLabel.textContent();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, 300);
+    await page.keyboard.up("Control");
+    await expect(zoomLabel).not.toHaveText(initialZoom ?? "", { timeout: 5_000 });
+  }
   for (let index = 0; index < (options?.candidateCycles ?? 0); index += 1) {
     await page.keyboard.press("Tab");
   }
@@ -248,6 +257,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     const accepted = await generateAndAccept(page, data.project_id, taskId, "image", {
       candidateCycles: 2,
+      zoomBeforeAccept: true,
     });
     expect(accepted.annotation.annotation_type).toBe("raster_mask");
     expect(accepted.prediction.id).toBeTruthy();

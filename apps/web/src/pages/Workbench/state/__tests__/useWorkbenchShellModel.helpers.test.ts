@@ -83,43 +83,58 @@ describe("native Mask candidate presentation", () => {
     expect(resolveSamCandidateClass(undefined, ["road", "sky"], "road")).toBe("road");
   });
 
-  it("represents every RLE candidate immediately with exact normalized bounds", () => {
+  it("represents every RLE candidate immediately with its polygon preview", () => {
     const candidates = [
       {
         id: "mask-a",
         type: "mask" as const,
         rle: { encoding: "coco_rle" as const, size: [2, 3] as [number, number], counts: [1, 2, 3] },
+        previewPoints: [[0, 0], [2 / 3, 0], [2 / 3, 1], [0, 1]] as [number, number][],
       },
       {
         id: "mask-b",
         type: "mask" as const,
         rle: { encoding: "coco_rle" as const, size: [2, 3] as [number, number], counts: [5, 1] },
+        previewPoints: [
+          [2 / 3, 0.5],
+          [1, 0.5],
+          [1, 1],
+          [2 / 3, 1],
+        ] as [number, number][],
       },
     ];
 
     expect(samCandidateDisplayShapes(candidates)).toEqual([
       {
         id: "mask-a",
-        type: "rectanglelabels",
-        bbox: { x: 0, y: 0, width: 2 / 3, height: 1 },
+        type: "polygonlabels",
+        points: candidates[0].previewPoints,
       },
       {
         id: "mask-b",
-        type: "rectanglelabels",
-        bbox: { x: 2 / 3, y: 0.5, width: 1 / 3, height: 0.5 },
+        type: "polygonlabels",
+        points: candidates[1].previewPoints,
       },
     ]);
-    expect(samCandidateGeom(candidates[1])).toEqual({
-      x: 2 / 3,
-      y: 0.5,
-      w: 1 / 3,
-      h: 0.5,
-    });
+    const bounds = samCandidateGeom(candidates[1]);
+    expect(bounds).not.toBeNull();
+    expect(bounds?.x).toBeCloseTo(2 / 3);
+    expect(bounds?.y).toBeCloseTo(0.5);
+    expect(bounds?.w).toBeCloseTo(1 / 3);
+    expect(bounds?.h).toBeCloseTo(0.5);
     expect(samCandidateDisplayShapes(Array.from(
-      { length: 6 },
+      { length: 45 },
       (_, index) => ({ ...candidates[1], id: `mask-${index}` }),
     )).map((shape) => shape.id)).toEqual([
-      "mask-0", "mask-1", "mask-2", "mask-3", "mask-4", "mask-5",
+      ...Array.from({ length: 45 }, (_, index) => `mask-${index}`),
     ]);
+  });
+
+  it("does not synchronously scan legacy RLEs while building the full display list", () => {
+    expect(samCandidateDisplayShapes([{
+      id: "legacy-mask",
+      type: "mask",
+      rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+    }])).toEqual([]);
   });
 });

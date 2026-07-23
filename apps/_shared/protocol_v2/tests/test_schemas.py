@@ -110,6 +110,8 @@ def test_native_mask_interaction_fixture_contract() -> None:
     )
     fallback = MaskInteractionFallback.model_validate(FIXTURE["mask_prompt_fallback"])
     assert candidate.value.rle.size == [3, 4]
+    assert candidate.value.preview is not None
+    assert len(candidate.value.preview.points) == 4
     assert canonical_rle_bytes(candidate.value.rle) == (
         b'{"encoding":"coco_rle","size":[3,4],"counts":[0,1,11]}'
     )
@@ -123,6 +125,14 @@ def test_native_mask_interaction_fixture_contract() -> None:
     assert correction.frame_index == 12
     assert diagnostic.reason == "empty_mask"
     assert fallback.fallback_reason == "mask_prompt_unsupported"
+
+
+def test_native_mask_preview_rejects_non_normalized_points() -> None:
+    raw = json.loads(json.dumps(FIXTURE["candidate"]))
+    raw["value"]["preview"]["points"][0] = [-0.1, 0.0]
+
+    with pytest.raises(Exception):
+        NativeMaskCandidate.model_validate(raw)
 
 
 def test_native_mask_candidate_id_binds_prompt_revision_and_index() -> None:

@@ -7,7 +7,10 @@
         "size": [3, 4],
         "counts": [0, 1, 11]
       },
-      "masklabels": ["object"]
+      "masklabels": ["object"],
+      "preview": {
+        "points": [[0.0, 0.0], [0.25, 0.0], [0.25, 0.3333333333], [0.0, 0.3333333333]]
+      }
     },
     "score": 0.97,
     "candidate_id": "sha256:04c00d643489db5a261ba9d4caab5638ae052180e9853e0106873a3437c6f564"

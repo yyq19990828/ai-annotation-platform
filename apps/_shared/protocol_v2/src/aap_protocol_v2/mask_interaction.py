@@ -20,6 +20,7 @@ MAX_MASK_PIXELS = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION
 MAX_MASK_RUNS = 1_000_000
 MAX_RLE_OBJECT_BYTES = 4 * 1024 * 1024
 MAX_MASK_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_NATIVE_MASK_PREVIEW_POINTS = 8_192
 MAX_SCRIBBLE_STROKES = 64
 MAX_SCRIBBLE_POINTS = 8_192
 MAX_SCRIBBLE_JSON_BYTES = 512 * 1024
@@ -111,11 +112,32 @@ def native_mask_candidate_id(
     return f"sha256:{digest.hexdigest()}"
 
 
+class NativeMaskCandidatePreview(BaseModel):
+    """Simplified display-only outline for a native Mask candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[tuple[float, float]] = Field(
+        min_length=3,
+        max_length=MAX_NATIVE_MASK_PREVIEW_POINTS,
+    )
+
+    @model_validator(mode="after")
+    def _validate_points(self) -> "NativeMaskCandidatePreview":
+        for point_index, (x, y) in enumerate(self.points):
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError(f"points[{point_index}] must be finite")
+            if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+                raise ValueError(f"points[{point_index}] must be normalized to [0,1]")
+        return self
+
+
 class NativeMaskCandidateValue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     rle: CocoRlePayload
     masklabels: list[str] = Field(min_length=1, max_length=1)
+    preview: NativeMaskCandidatePreview | None = None
 
     @model_validator(mode="after")
     def _validate_non_empty_candidate(self) -> "NativeMaskCandidateValue":

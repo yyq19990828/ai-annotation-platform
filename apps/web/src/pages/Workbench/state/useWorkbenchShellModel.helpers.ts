@@ -247,10 +247,16 @@ export function samCandidateGeom(
     bbox?: { x: number; y: number; width: number; height: number };
     points?: [number, number][];
     rle?: CocoRle;
+    previewPoints?: [number, number][];
   } | undefined,
 ): { x: number; y: number; w: number; h: number } | null {
   if (!candidate) return null;
-  if (candidate.type === "mask" && candidate.rle) return cocoRleBounds(candidate.rle);
+  if (candidate.type === "mask") {
+    if (candidate.previewPoints && candidate.previewPoints.length >= 3) {
+      return polygonBounds(candidate.previewPoints);
+    }
+    if (candidate.rle) return cocoRleBounds(candidate.rle);
+  }
   if (candidate.type === "rectanglelabels" && candidate.bbox) {
     return { x: candidate.bbox.x, y: candidate.bbox.y, w: candidate.bbox.width, h: candidate.bbox.height };
   }
@@ -276,15 +282,16 @@ export interface SamCandidateDisplayShape {
 }
 
 /**
- * Native Mask bitmaps are decoded asynchronously under a strict four-record cache.
- * Keep every candidate represented immediately with its exact RLE bounds so Tab
- * only changes emphasis instead of making candidates appear and disappear.
+ * Native Mask bitmaps are decoded lazily. Their backend-supplied polygon preview
+ * keeps every candidate visible in the same lightweight overlay used by vector
+ * output, while the authoritative RLE remains untouched for acceptance.
  */
 export function samCandidateDisplayShapes(
   candidates: readonly {
     id: string;
     type: "mask" | "polygonlabels" | "rectanglelabels";
     rle?: CocoRle;
+    previewPoints?: [number, number][];
     points?: [number, number][];
     bbox?: { x: number; y: number; width: number; height: number };
   }[],
@@ -299,18 +306,13 @@ export function samCandidateDisplayShapes(
       shapes.push({ id: candidate.id, type: candidate.type, bbox: candidate.bbox });
       continue;
     }
-    const bounds = samCandidateGeom(candidate);
-    if (!bounds) continue;
-    shapes.push({
-      id: candidate.id,
-      type: "rectanglelabels",
-      bbox: {
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.w,
-        height: bounds.h,
-      },
-    });
+    if (candidate.previewPoints && candidate.previewPoints.length >= 3) {
+      shapes.push({
+        id: candidate.id,
+        type: "polygonlabels",
+        points: candidate.previewPoints,
+      });
+    }
   }
   return shapes;
 }

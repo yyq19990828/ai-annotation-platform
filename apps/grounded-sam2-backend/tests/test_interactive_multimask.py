@@ -199,6 +199,7 @@ def test_interactive_box_native_mask_output(predictor):
     assert len(results) == 1
     assert results[0]["type"] == "mask"
     assert results[0]["value"]["rle"]["size"] == [2, 3]
+    assert len(results[0]["value"]["preview"]["points"]) == 4
 
 
 def test_point_native_mask_preserves_non_square_pixels(predictor):
@@ -223,6 +224,7 @@ def test_point_native_mask_preserves_non_square_pixels(predictor):
     candidate = results[0]
     assert candidate["type"] == "mask"
     assert candidate["value"]["rle"]["size"] == [2, 3]
+    assert len(candidate["value"]["preview"]["points"]) >= 3
     assert list(decode_coco_rle(candidate["value"]["rle"])) == mask.reshape(-1).tolist()
     rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
     assert candidate["candidate_id"] == native_mask_candidate_id(

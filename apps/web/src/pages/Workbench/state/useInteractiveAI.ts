@@ -65,6 +65,8 @@ export interface PendingMaskPromptSummary {
 export interface PendingMaskCandidate extends PendingCandidateBase {
   type: "mask";
   rle: CocoRle;
+  /** Simplified display-only outline; the RLE remains authoritative on accept. */
+  previewPoints?: [number, number][];
   candidateId: string;
   candidateIndex: number;
   promptRevision: string;
@@ -983,6 +985,9 @@ interface BackendResult {
     // 原生 Mask 字段
     rle?: CocoRle;
     masklabels?: string[];
+    preview?: {
+      points?: [number, number][];
+    };
   };
   score?: number;
   candidate_id?: string;
@@ -1035,10 +1040,14 @@ function normalizeResult(
     } catch {
       return null;
     }
+    const previewPoints = pickPrimaryRing(r.value.preview);
     return {
       id: candidateId,
       type: "mask",
       rle,
+      ...(previewPoints
+        ? { previewPoints: previewPoints.map(([x, y]) => [x, y] as [number, number]) }
+        : {}),
       candidateId,
       candidateIndex: idx,
       promptRevision,

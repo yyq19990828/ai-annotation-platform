@@ -1,4 +1,4 @@
-"""Small dependency-free COCO uncompressed RLE codec.
+"""Small COCO uncompressed RLE codec.
 
 Public buffers are row-major. COCO RLE scans column-major and always starts
 with the background run, so a leading zero is required when pixel (0, 0) is
@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+import numpy as np
 
 MAX_MASK_DIMENSION = 4096
 MAX_MASK_PIXELS = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION
@@ -73,19 +75,18 @@ def encode_coco_rle(
     if len(pixels_row_major) != pixel_count:
         raise ValueError("pixel buffer length must equal width * height")
 
-    counts: list[int] = []
-    foreground = False
-    run_length = 0
-    for x in range(width):
-        for y in range(height):
-            value = bool(pixels_row_major[y * width + x])
-            if value == foreground:
-                run_length += 1
-            else:
-                counts.append(run_length)
-                run_length = 1
-                foreground = value
-    counts.append(run_length)
+    # Predictor outputs are NumPy arrays. Converting to column-major once and
+    # finding transitions in native code avoids a Python loop over every pixel
+    # for every candidate (tens of millions of iterations for exemplar output).
+    column_major = np.asarray(pixels_row_major, dtype=np.bool_).reshape(
+        height,
+        width,
+    ).ravel(order="F")
+    transitions = np.flatnonzero(column_major[1:] != column_major[:-1]) + 1
+    boundaries = np.concatenate(([0], transitions, [pixel_count]))
+    counts = np.diff(boundaries).astype(int).tolist()
+    if bool(column_major[0]):
+        counts.insert(0, 0)
     if len(counts) > MAX_MASK_RUNS:
         raise ValueError(f"mask runs must be <= {MAX_MASK_RUNS}")
     return {"encoding": "coco_rle", "size": [height, width], "counts": counts}

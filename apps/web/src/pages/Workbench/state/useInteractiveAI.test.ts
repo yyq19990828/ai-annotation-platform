@@ -48,6 +48,7 @@ function nativeResponse(maskInputNext: string | null = null) {
       type: "mask",
       value: {
         rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+        preview: { points: [[0, 0], [2 / 3, 0], [2 / 3, 1], [0, 1]] },
         masklabels: ["person"],
       },
       score: 0.93,
@@ -263,13 +264,14 @@ describe("useInteractiveAI", () => {
     expect(candidate.points).toEqual([[0, 0], [1, 0], [0, 1]]);
   });
 
-  it("原生 Mask 保留 RLE 与签名血缘，不进入 polygon 简化", async () => {
+  it("原生 Mask 保留 RLE 与签名血缘，并独立接收显示预览", async () => {
     const candidateId = `sha256:${"a".repeat(64)}`;
     interactiveAnnotateMock.mockResolvedValue({
       result: [{
         type: "mask",
         value: {
           rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+          preview: { points: [[0, 0], [2 / 3, 0], [2 / 3, 1], [0, 1]] },
           masklabels: ["person"],
         },
         score: 0.93,
@@ -317,6 +319,12 @@ describe("useInteractiveAI", () => {
       counts: [1, 2, 3],
     });
     expect(candidate).not.toHaveProperty("points");
+    expect(candidate.previewPoints).toEqual([
+      [0, 0],
+      [2 / 3, 0],
+      [2 / 3, 1],
+      [0, 1],
+    ]);
     expect(candidate.receipt).toBe("signed-receipt-value");
     expect(candidate.idempotencyKey.length).toBeGreaterThanOrEqual(16);
     expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
