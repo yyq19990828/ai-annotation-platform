@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: explanation
 since: v0.11.13
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-23
 ---
 
 # 运行环境形态：开发态 / staging / 生产态
@@ -18,7 +18,7 @@ last_reviewed: 2026-07-11
 
 1. **谁进容器** —— 开发态 API/Web 跑宿主机进程；生产态用叠加文件 `docker-compose.prod.yml` 把 api/web 以容器拉起
 2. **哪些 profile 启用** —— `gpu`、`gpu-sam3`、`gpu-yolo`、`gpu-onnxtools`、`gpu-rapidocr` 与 `monitoring` 默认不启动
-3. **`ENVIRONMENT` 变量取值** —— 驱动 `config.py` / `main.py` 的启动断言和测试后门开关
+3. **`ENVIRONMENT` 变量取值** —— 驱动 `config.py` / `main.py` 的启动断言和环境安全策略
 
 ```bash
 # 开发：只起基础设施，api/web 在宿主机跑
@@ -52,19 +52,24 @@ docker compose --env-file .env.production \
 environment: Literal["development", "staging", "production"] = "development"
 ```
 
-**关键认知：代码里几乎所有判断都写成 `== "production"` 或 `!= "production"`，所以 staging 行为等同于 development，而非生产。** 它只是个「非生产」标签，享受和 dev 一样的宽松校验与测试后门：
+**关键认知：staging 仍在多数启动校验上按非 production 处理，不等同于真生产。**
+但测试 seed 路由不再随非 production 环境自动开放：它有独立的显式开关和
+数据库名守卫。
 
 | 行为 | development | staging | production | 出处 |
 |---|---|---|---|---|
 | `SECRET_KEY` 仍为默认值 → 启动 RuntimeError | 跳过 | 跳过 | 强制 | `main.py:57` |
 | `CORS_ALLOW_ORIGINS` 为空 → 启动断言失败 | 跳过 | 跳过 | 强制 | `main.py:93` |
 | `CORS_ALLOW_ORIGIN_REGEX`（放行 localhost）生效 | ✅ | ✅ | 自动忽略 | `main.py:101` |
-| 测试 seed 路由 `/_test_seed` 挂载 | ✅ | ✅ | 不挂载 | `router.py:124` |
-| `seed.py` 允许灌数据 | ✅ | ✅ | 拒绝 | `_test_seed.py:31` |
+| 测试路由 `/api/v1/__test/seed/*` | 仅 `E2E_SEED_ENABLED=true` 且库名以 `_e2e` / `_test` 结尾 | 同 development | 永不挂载 | `router.py` / `_test_seed.py` |
+| `scripts/seed.py` 允许灌数据 | ✅ | ✅ | 拒绝 | `scripts/seed.py` |
 | `SENTRY_DSN` 为空 → 启动 WARN | 否 | 否 | 是 | `main.py:66` |
 
 ::: warning staging ≠ 真生产
-如果你想用 staging 做「贴近生产」的上线前验收，注意 `/_test_seed` 路由和宽松 CORS 在 staging 上仍是开着的，与真生产并不一致。需要逐项验真生产行为时，临时设 `ENVIRONMENT=production` 跑一遍。
+如果你想用 staging 做「贴近生产」的上线前验收，注意宽松 CORS 和部分启动校验仍与
+真生产不一致。`E2E_SEED_ENABLED` 应保持默认关闭；它只应在指向专用
+`*_e2e` / `*_test` 数据库的测试进程中临时开启。需要逐项验真生产行为时，
+使用 `ENVIRONMENT=production` 的独立验收环境。
 :::
 
 ## 镜像构建差异（为什么 dev 能热挂载）

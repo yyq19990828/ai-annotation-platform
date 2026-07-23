@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.8.1
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-23
 ---
 
 # 审计日志
@@ -26,7 +26,7 @@ last_reviewed: 2026-07-22
 | `detail_json` | JSONB，存上下文（旧值、IP、UA、filter_criteria 等） |
 | `created_at` | timestamptz |
 
-`audit_logs` 受 trigger 守护——**任何 UPDATE/DELETE 默认被拒**（"audit_logs rows are immutable"）。例外：seed/reset 流程通过 `SET LOCAL "app.allow_audit_update" = 'true'` 临时豁免（详见 [Dev 数据保护](../../dev/troubleshooting/dev-data-preservation)）。
+`audit_logs` 受 trigger 守护——**任何 UPDATE/DELETE 默认被拒**（"audit_logs rows are immutable"）。例外：受三重门禁保护的 E2E fixture reset/cleanup 流程通过 `SET LOCAL "app.allow_audit_update" = 'true'` 临时豁免（详见 [E2E 数据隔离](../../dev/troubleshooting/dev-data-preservation)）。
 
 ## 已覆盖动作
 

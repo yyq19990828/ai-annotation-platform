@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-23
 ---
 
 # 测试指南
@@ -119,17 +119,20 @@ it("空态文案", async () => {
 启动：
 
 ```bash
-docker compose up -d
-cd apps/api && uv run uvicorn app.main:app --port 8000 &
-cd apps/web && pnpm dev &
-cd apps/web && pnpm test:e2e
+docker compose up -d postgres redis minio
+pnpm test:e2e
 ```
+
+Playwright 会自动准备专用逻辑库 `annotation_e2e`、执行迁移，并启动 Web
+`127.0.0.1:3001` 与 API `127.0.0.1:8010`。它不会复用开发环境的
+`3000/8000`；专用端口被占用时会直接失败。如需替换隔离测试库，设置
+`PLAYWRIGHT_E2E_DATABASE_URL`，并保持库名以 `_e2e` 或 `_test` 结尾。
 
 **何时写 E2E**：跨页面流程、长链路、涉及 WebSocket / 文件上传。
 
 **何时不写 E2E**：单组件交互、纯逻辑校验。
 
-### `_test_seed` router + e2e fixture（v0.8.3）
+### `_test_seed` router + E2E fixture
 
 E2E spec 通过 `apps/web/e2e/fixtures/seed.ts` 调后端 `/api/v1/__test/seed/*` 端点造数：
 
@@ -138,7 +141,7 @@ E2E spec 通过 `apps/web/e2e/fixtures/seed.ts` 调后端 `/api/v1/__test/seed/*
 import { test, expect } from "../fixtures/seed";
 
 test("正确凭证 → 跳 dashboard", async ({ page, seed }) => {
-  const data = await seed.reset();                  // truncate + 重建固定 fixture
+  const data = await seed.reset();                  // 清理并重建固定 fixture
   await seed.loginViaUI(page, data.admin_email, "Test1234");
   await expect(page).toHaveURL(/\/dashboard/);
 });
@@ -150,9 +153,16 @@ test("注入 token 跳 UI 登录", async ({ page, seed }) => {
 });
 ```
 
-**安全约束**：`_test_seed` router **仅**当 `settings.environment != "production"` 时挂载（`apps/api/app/api/v1/router.py` 末尾条件 import），即使误挂端点入口也再做一次环境守卫。
+**安全约束**：路由默认关闭，只有非 production 进程显式设置
+`E2E_SEED_ENABLED=true` 时才会挂载。路由的统一守卫还会在当前会话查询
+`current_database()`，数据库名不以 `_e2e` 或 `_test` 结尾时拒绝所有
+seed/login/cleanup 请求。production 即使设置开关也不挂载路由。
 
 **fixture 用法**：`reset()` 返回固定结构（admin/annotator/reviewer 三个邮箱 + 项目 id + 5 个任务 id）；密码统一 `Test1234`。新增数据用 `apps/api/tests/factory.py` 的 `create_user / create_project / create_task / create_batch`。
+
+Playwright 正常结束时由 `globalTeardown` 调用 `/seed/cleanup`。它只是兜底：
+强制中断可能跳过 teardown，因此必须始终依赖 `annotation_e2e` 的数据库隔离，
+不能把 cleanup 当成可在开发库运行 E2E 的理由。
 
 ## 覆盖率
 

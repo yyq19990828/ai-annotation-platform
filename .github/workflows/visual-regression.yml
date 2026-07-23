@@ -53,6 +53,8 @@ jobs:
         run: uv sync
 
       - name: Start screenshot infrastructure
+        env:
+          POSTGRES_DB: annotation_screenshots_test
         run: >-
           docker compose -f docker-compose.yml -f docker-compose.ml.yml
           --profile screenshots up -d --build --wait
@@ -61,14 +63,14 @@ jobs:
       - name: Run DB migrations
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test
         run: uv run alembic upgrade head
 
       - name: Seed screenshot catalog
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation
-          ENVIRONMENT: test
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test
+          ENVIRONMENT: development
           MINIO_PUBLIC_URL: /minio
         run: >-
           PYTHONPATH=. uv run python scripts/seed.py
@@ -77,9 +79,10 @@ jobs:
       - name: Start API server
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test
           REDIS_URL: redis://localhost:6379
-          ENVIRONMENT: test
+          ENVIRONMENT: development
+          E2E_SEED_ENABLED: "true"
           SECRET_KEY: ci-secret-key-not-for-prod
           MINIO_PUBLIC_URL: /minio
         run: |

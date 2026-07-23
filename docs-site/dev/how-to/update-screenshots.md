@@ -4,7 +4,7 @@ description: 如何新增场景、更新现有截图、维护视觉回归基线
 audience: [developer]
 type: how-to
 status: stable
-last_reviewed: 2026-07-21
+last_reviewed: 2026-07-23
 ---
 
 # 更新文档截图
@@ -14,13 +14,51 @@ last_reviewed: 2026-07-21
 
 ## 快速运行
 
-```bash
-# 前置：基础服务、API 和 Web 都已启动
-cd apps/api
-PYTHONPATH=. uv run python scripts/seed.py \
-  --profile screenshots --repair --ml-backend-mode live
+截图自动化使用专用 `annotation_screenshots_test` 数据库和 `3001/8010`
+端口，不复用日常开发的 `annotation` 数据库或 `3000/8000` 进程。
 
-cd ../web
+### 1. 准备、迁移并填充专用库
+
+```bash
+docker compose up -d postgres redis minio
+
+cd apps/api
+export SCREENSHOT_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" uv run python scripts/prepare_e2e_db.py
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" uv run alembic upgrade head
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" PYTHONPATH=. uv run python scripts/seed.py \
+  --profile screenshots --repair --ml-backend-mode live
+```
+
+`prepare_e2e_db.py` 可重复执行，且会拒绝库名不以 `_e2e` 或 `_test` 结尾的
+目标。无 GPU 时先启动 `screenshot-ml-stub`，再把 seed 命令的模式改为
+`stub`。
+
+### 2. 启动专用 API 和 Web
+
+在两个窗口分别运行：
+
+```bash
+# 窗口 A：数据库必须与建库、迁移、seed 完全一致
+cd apps/api
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test \
+  E2E_SEED_ENABLED=true ENVIRONMENT=development \
+  uv run uvicorn app.main:app --host 127.0.0.1 --port 8010
+
+# 窗口 B：Web 只代理到上面的专用 API
+cd apps/web
+API_PROXY_TARGET=http://127.0.0.1:8010 PORT=3001 pnpm dev --host 127.0.0.1
+```
+
+`E2E_SEED_ENABLED` 仅对这个专用 API 进程临时开启。路由还会在数据库会话中
+验证 `_test` 后缀，不要将 API 命令的 `DATABASE_URL` 改为开发库。
+
+### 3. 运行截图矩阵
+
+```bash
+cd apps/web
+export PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001
+export PLAYWRIGHT_API_BASE=http://127.0.0.1:8010
 
 pnpm screenshots                  # desktop-light 全量（最常用）
 pnpm screenshots:dark             # desktop-dark 变体

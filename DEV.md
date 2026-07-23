@@ -292,7 +292,7 @@ docker compose --env-file .env.production \
 # 前端测试
 pnpm test                        # vitest 单测
 pnpm --filter @anno/web test:coverage  # 前端带覆盖率
-pnpm test:e2e                    # Playwright E2E（需后端运行）
+pnpm test:e2e                    # Playwright E2E（自启 :3001/:8010，使用 annotation_e2e）
 
 # 后端 / 共享包测试
 cd apps/api && uv run pytest                                            # FastAPI 平台后端
@@ -316,19 +316,31 @@ pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物�
 用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，
 不进默认 CI，由 maintainer 手动触发。截图脚本只使用 `screenshots`
 seed profile 和只读 catalog，不会随机选取开发库里的项目。`--repair` 只收敛带截图
-seed 标记的对象，用户自建项目不受影响。
+seed 标记的对象。整套自动化固定使用 `annotation_screenshots_test`，不连接
+开发库 `annotation`。
 
 ### 前置条件
 
 ```bash
-docker compose up -d                                       # postgres / redis / minio
-cd apps/api && uv run alembic upgrade head                 # 必含 0046（skip_reason）
-cd apps/api && uv run uvicorn app.main:app --port 8000     # 另开窗口
-pnpm dev:web                                               # 另开窗口，:3000
-pnpm exec playwright install chromium                      # 首次需下载浏览器
+docker compose up -d postgres redis minio
+cd apps/api
+export SCREENSHOT_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" uv run python scripts/prepare_e2e_db.py
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" uv run alembic upgrade head
+cd ../..
+
+# 另开窗口启 API；截图 catalog/login 需要显式测试路由门禁
+cd apps/api && DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test \
+  E2E_SEED_ENABLED=true ENVIRONMENT=development \
+  uv run uvicorn app.main:app --host 127.0.0.1 --port 8010
+
+# 另开窗口，让截图 Web 只代理到上面的专用 API
+cd apps/web && API_PROXY_TARGET=http://127.0.0.1:8010 PORT=3001 pnpm dev --host 127.0.0.1
+pnpm exec playwright install chromium   # 首次需下载浏览器
 
 # 有 GPU/真实 backend：按能力发现并绑定图片、视频、OCR backend
-cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
+cd apps/api && DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test \
+  PYTHONPATH=. uv run python scripts/seed.py \
   --profile screenshots --repair --ml-backend-mode live
 ```
 
@@ -339,7 +351,8 @@ cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
 docker compose -f docker-compose.yml -f docker-compose.ml.yml \
   --profile screenshots up -d --build screenshot-ml-stub
 
-cd apps/api && PYTHONPATH=. uv run python scripts/seed.py \
+cd apps/api && DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test \
+  PYTHONPATH=. uv run python scripts/seed.py \
   --profile screenshots --repair --ml-backend-mode stub
 ```
 
@@ -352,6 +365,9 @@ point、interactive box 与 exemplar，视频要求交互 tracker，OCR 要求�
 ### 触发
 
 ```bash
+export PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001
+export PLAYWRIGHT_API_BASE=http://127.0.0.1:8010
+
 SCREENSHOT_VALIDATE_ONLY=1 pnpm --filter web screenshots  # 只验证场景，不写 PNG/manifest
 pnpm --filter web screenshots                              # 生成 desktop-light 正式图
 pnpm --filter web screenshots:dark                         # 显式声明的深色场景
@@ -372,9 +388,9 @@ node docs-site/scripts/check-image-manifest.mjs --release
 node docs-site/scripts/check-orphan-images.mjs --strict
 ```
 
-**E2E 跑过后想恢复 dev 账号**：`pnpm test:e2e` 内部仍会 TRUNCATE 重建 fixture（含
-`@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑上面的 screenshots seed
-命令即可恢复 catalog 中的固定账号、项目、任务、批次与 backend 绑定。
+`pnpm test:e2e` 使用 `annotation_e2e`，截图使用
+`annotation_screenshots_test`，两者都与开发库 `annotation` 隔离。不要为省略建库步骤
+而把两套自动化的 `DATABASE_URL` 指回开发库。
 
 ### 改场景
 

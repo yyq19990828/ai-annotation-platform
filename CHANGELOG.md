@@ -36,6 +36,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- **E2E 固定数据不再残留到开发库**. 本地 Playwright 现在幂等准备
+  `annotation_e2e`，并自启专用 `3001/8010` 服务，不再静默复用开发环境；
+  正常结束时的全局 cleanup 会收敛 fixture，截图与视觉回归也改用
+  `annotation_screenshots_test`。
+
+### Security
+- **测试 seed 路由改为显式授权**. Seed、login 与 cleanup 端点只在
+  `E2E_SEED_ENABLED=true` 且当前数据库名以 `_e2e` 或 `_test` 结尾时可用；
+  production 始终不挂载这组路由，避免开发或 staging 配置被误用为测试数据入口。
+
 ## [0.23.11] - 2026-07-23
 
 ### Added

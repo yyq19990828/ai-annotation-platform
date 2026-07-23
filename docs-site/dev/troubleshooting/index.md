@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-23
 ---
 
 # 故障排查 / 踩坑手册
@@ -19,7 +19,7 @@ last_reviewed: 2026-05-09
 | 改了 Celery task 代码不生效 / `TypeError` 出现新参数找不到 | [Docker rebuild vs restart](./docker-rebuild-vs-restart) |
 | ML Backend 注册时报 URL 不可达 / `localhost` 被拒 | [容器网络与 loopback 限制](./container-networking) |
 | AI 预标注完成但前端工作台看不到候选框 | [Prediction Schema 适配器陷阱](./schema-adapter-pitfalls) |
-| 跑完 `pnpm test:e2e` 后开发数据被清空 | [Dev 数据保护：DELETE vs TRUNCATE](./dev-data-preservation) |
+| 开发库出现 `@e2e.test` 用户或 E2E 项目 | [E2E 测试数据污染与隔离](./dev-data-preservation) |
 | `useState(...)` 报 `Cannot access 'X' before initialization` | [React useState TDZ 陷阱](./react-tdz-trap) |
 | 容器内 `parents[3]` 越界 / `.env` 路径报错 | [环境变量与 config 路径](./env-and-config-paths) |
 | GitHub Actions `services:` 启动 MinIO 失败 / FastAPI lifespan 卡死 | [CI 服务依赖踩坑](./ci-flaky-services) |

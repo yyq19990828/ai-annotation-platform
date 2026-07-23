@@ -189,7 +189,7 @@ docker compose --profile monitoring up -d prometheus grafana
 pnpm lint
 pnpm typecheck
 pnpm test
-pnpm test:e2e          # 需要后端与 docker compose 服务
+pnpm test:e2e          # 需要 Postgres/Redis/MinIO；自启 3001/8010 与 annotation_e2e
 
 # 后端
 cd apps/api && uv run pytest
@@ -202,6 +202,10 @@ pnpm openapi:check     # CI 同款契约校验
 pnpm docs:dev
 pnpm docs:build
 ```
+
+E2E 不复用开发环境的 `3000/8000` 或 `annotation` 数据库。测试路由
+默认关闭，仅对显式开启且名称以 `_e2e` / `_test` 结尾的数据库开放。
+详见 [E2E 运行说明](./apps/web/e2e/README.md)。
 
 API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量变更后同步更新 `.env.example` 并跑 `pnpm docs:gen-env-vars`。
 

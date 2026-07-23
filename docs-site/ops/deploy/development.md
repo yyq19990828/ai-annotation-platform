@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: how-to
 since: v0.15.17
 status: stable
-last_reviewed: 2026-06-12
+last_reviewed: 2026-07-23
 ---
 
 # 开发部署（本地）
@@ -61,7 +61,9 @@ pnpm dev:api
 # 等价于 cd apps/api && uv run uvicorn app.main:app --reload --port 8000
 ```
 
-`--reload` 监听 `apps/api/**` 改动自动重启。`ENVIRONMENT` 默认 `development`，享受宽松 CORS、`/_test_seed` 路由等开发后门（见[运行环境形态](/dev/concepts/runtime-environments)）。
+`--reload` 监听 `apps/api/**` 改动自动重启。`ENVIRONMENT` 默认 `development`，使用本地
+CORS 策略（见[运行环境形态](/dev/concepts/runtime-environments)）。测试 seed 路由默认不挂载；
+仅 Playwright 专用进程会对隔离测试库显式设置 `E2E_SEED_ENABLED=true`。
 
 ### 2.4 起 Web（宿主机，HMR）
 
