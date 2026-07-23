@@ -312,6 +312,12 @@ last_reviewed: 2026-07-23
 |---|---|---|
 | `ENVIRONMENT` | `development` | 当前运行环境，影响 CORS 策略、日志级别、调试开关等 可选值：development | staging | production |
 
+## Playwright 专用 seed/login/cleanup 路由总闸，默认关闭。开启后仍只允许连接
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `E2E_SEED_ENABLED` | `false` | 名称以 _e2e 或 _test 结尾的数据库；这些端点会创建和删除固定测试数据， 绝不要在开发库、staging 或 production 数据库上开启。 |
+
 ## Docker 卷存储位置 (可选)
 
 | 变量 | 默认值 | 说明 |
