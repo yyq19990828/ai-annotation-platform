@@ -1,6 +1,6 @@
 import { Group, Image as KonvaImage, Label, Tag, Text } from "react-konva";
 import { BOX_LABEL_FONT_FAMILY, BOX_LABEL_PAD_PX, labelOffsetWorld } from "./boxVisual";
-import type { AnnotationVisualConfig } from "./annotationVisual";
+import { fillAlpha, type AnnotationVisualConfig } from "./annotationVisual";
 
 interface RasterMaskVisualProps {
   id: string;
@@ -11,18 +11,12 @@ interface RasterMaskVisualProps {
   scale: number;
   color: string;
   selected: boolean;
-  opacity: number;
   visual: AnnotationVisualConfig;
   labelText?: string | null;
   showLabel?: boolean;
 }
 
 /** Mask 选中态沿真实像素轮廓增亮，不再用容易被误解为矩形标注的 AABB 虚线框。 */
-export function maskVisualOpacity(opacity: number, selected: boolean): number {
-  const normalized = Math.max(0, Math.min(1, opacity));
-  return selected ? Math.min(0.72, normalized + 0.18) : normalized;
-}
-
 export function RasterMaskVisual({
   id,
   image,
@@ -32,7 +26,6 @@ export function RasterMaskVisual({
   scale,
   color,
   selected,
-  opacity,
   visual,
   labelText,
   showLabel = false,
@@ -41,7 +34,7 @@ export function RasterMaskVisual({
   const y = bounds.y * sourceHeight;
   const width = bounds.w * sourceWidth;
   const height = bounds.h * sourceHeight;
-  const resolvedOpacity = maskVisualOpacity(opacity, selected);
+  const resolvedOpacity = fillAlpha(selected, visual);
 
   return (
     <Group id={id} name="raster-mask-annotation" listening={false}>

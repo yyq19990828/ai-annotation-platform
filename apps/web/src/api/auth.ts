@@ -125,7 +125,7 @@ export interface WorkbenchImagePreferences {
   snapThresholdPx: number;
   zoomStepFactor: 1.05 | 1.1 | 1.15 | 1.2;
   fadedOpacity: number;
-  /** v0.15.27 · showBoxLabels 迁移到 common.labelVisibility(三态枚举)。 */
+  /** 仅用于读取旧偏好；Mask 渲染已统一使用 common.fillOpacity / fillOpacitySelected。 */
   maskOverlayOpacity: number;
 }
 

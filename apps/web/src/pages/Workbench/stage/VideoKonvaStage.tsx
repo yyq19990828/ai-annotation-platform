@@ -1895,6 +1895,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                   revision={maskEditor.revision}
                   imgW={size.w}
                   imgH={size.h}
+                  opacity={visual.fillOpacitySelected}
                   color={maskEditorColor}
                   visible
                 />
@@ -1905,6 +1906,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                 revision={maskEditor?.operationPreview?.id ?? 0}
                 imgW={size.w}
                 imgH={size.h}
+                opacity={visual.fillOpacitySelected}
                 color={MASK_OPERATION_PREVIEW_COLOR}
                 visible
               />
@@ -1915,6 +1917,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                 revision={maskEditor?.instanceOperationPreview?.id ?? 0}
                 imgW={size.w}
                 imgH={size.h}
+                opacity={visual.fillOpacitySelected}
                 color={MASK_INSTANCE_PREVIEW_COLOR}
                 visible
               />

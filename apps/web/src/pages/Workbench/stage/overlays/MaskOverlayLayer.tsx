@@ -4,11 +4,12 @@
 // 首次激活时强制走一次全图（rect = 全图），保证 canvas 与 buffer 初态一致。
 //
 // 仍以 useMaskEditor.revision 作为「需要重画」的通知信号；脏区数据不进 React state。
-// 颜色固定为红色，alpha 由工作台图片设置控制，与已有紫色 SAM 候选区分。
+// 颜色跟随当前类别，alpha 复用工作台通用「选中填充透明度」。
 
 import { useEffect, useMemo, useRef } from "react";
 import { Layer, Image as KonvaImage } from "react-konva";
 import type Konva from "konva";
+import { VISUAL_DEFAULTS } from "../annotationVisual";
 import type { MaskBuffer } from "../shared/geometry/maskBuffer";
 
 const DEFAULT_FILL: readonly [number, number, number] = [220, 38, 38];
@@ -29,7 +30,7 @@ export function MaskOverlayLayer({
   revision,
   imgW,
   imgH,
-  opacity = 0.45,
+  opacity = VISUAL_DEFAULTS.fillOpacitySelected,
   color = DEFAULT_FILL,
   visible,
 }: MaskOverlayLayerProps) {

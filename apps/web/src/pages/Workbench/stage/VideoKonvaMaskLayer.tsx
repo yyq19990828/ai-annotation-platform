@@ -26,7 +26,6 @@ export function VideoKonvaMaskLayer(props: {
             scale={scale}
             color={record.color}
             selected={record.selected}
-            opacity={record.source === "tracker" ? 0.5 : 0.38}
             visual={visual}
           />
         ))}

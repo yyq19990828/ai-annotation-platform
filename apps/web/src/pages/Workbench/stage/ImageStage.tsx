@@ -70,7 +70,12 @@ import {
 } from "./ImageStage.helpers";
 import { canTranslateAnnotationGeometry, translateGeometry } from "../state/geometryTranslate";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
-import { buildLabelText, resolveAnnotationVisual, shouldShowLabel } from "./annotationVisual";
+import {
+  buildLabelText,
+  fillAlpha,
+  resolveAnnotationVisual,
+  shouldShowLabel,
+} from "./annotationVisual";
 import {
   buildImageContextMenuItems,
   findContextMenuAnnotationId,
@@ -1658,7 +1663,6 @@ export function ImageStage({
                   scale={vp.scale}
                   color={color}
                   selected={record.selected}
-                  opacity={workbenchConfig.image.maskOverlayOpacity}
                   visual={annotationVisual}
                   labelText={
                     annotation
@@ -2095,7 +2099,7 @@ export function ImageStage({
                 revision={maskEditor.revision}
                 imgW={imgW}
                 imgH={imgH}
-                opacity={workbenchConfig.image.maskOverlayOpacity}
+                opacity={annotationVisual.fillOpacitySelected}
                 color={maskEditorColor}
                 visible={true}
               />
@@ -2117,7 +2121,7 @@ export function ImageStage({
                       }
                     : null
                 }
-                opacity={workbenchConfig.image.maskOverlayOpacity}
+                opacity={annotationVisual.fillOpacitySelected}
                 color={maskEditorColor}
                 visible
               />
@@ -2128,7 +2132,7 @@ export function ImageStage({
               revision={maskEditor?.operationPreview?.id ?? 0}
               imgW={imgW}
               imgH={imgH}
-              opacity={workbenchConfig.image.maskOverlayOpacity}
+              opacity={annotationVisual.fillOpacitySelected}
               color={MASK_OPERATION_PREVIEW_COLOR}
               visible
             />
@@ -2139,7 +2143,7 @@ export function ImageStage({
               revision={maskEditor?.instanceOperationPreview?.id ?? 0}
               imgW={imgW}
               imgH={imgH}
-              opacity={workbenchConfig.image.maskOverlayOpacity}
+              opacity={annotationVisual.fillOpacitySelected}
               color={MASK_INSTANCE_PREVIEW_COLOR}
               visible
             />
@@ -2387,7 +2391,7 @@ export function ImageStage({
                     y={bounds.y * imgH}
                     width={bounds.w * imgW}
                     height={bounds.h * imgH}
-                    opacity={record.selected ? 0.58 : 0.28}
+                    opacity={fillAlpha(record.selected, annotationVisual)}
                     imageSmoothingEnabled={false}
                     listening={false}
                   />

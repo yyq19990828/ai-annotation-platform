@@ -24,8 +24,17 @@ describe("workbenchSettingsFields 注册表", () => {
     }
   });
 
+  it("透明度设置明确区分通用填充与重复 AI 候选，不再暴露独立 Mask 控件", () => {
+    expect(
+      WORKBENCH_SETTING_FIELDS.find((field) => field.key === "image.fadedOpacity")?.label,
+    ).toBe("重复 AI 候选透明度");
+    expect(
+      WORKBENCH_SETTING_FIELDS.find((field) => field.key === "image.maskOverlayOpacity"),
+    ).toBeUndefined();
+  });
+
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(48);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(47);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [f.key, getFieldValue(DEFAULT_WORKBENCH_PREFERENCES, f)]),
     );
@@ -57,7 +66,6 @@ describe("workbenchSettingsFields 注册表", () => {
       "image.snapThresholdPx": 8,
       "image.zoomStepFactor": 1.1,
       "image.fadedOpacity": 0.35,
-      "image.maskOverlayOpacity": 0.45,
       "video.defaultPlaybackRate": 1,
       "video.largeFrameStep": 10,
       "video.autoFitOnResize": true,

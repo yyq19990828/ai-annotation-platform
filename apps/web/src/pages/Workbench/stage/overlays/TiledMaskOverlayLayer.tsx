@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef } from "react";
 import type Konva from "konva";
 import { Image as KonvaImage, Layer, Rect } from "react-konva";
+import { VISUAL_DEFAULTS } from "../annotationVisual";
 import type { SparseMaskRenderableTile } from "../shared/sparseMaskTileStore";
 
 const DEFAULT_FILL: readonly [number, number, number] = [220, 38, 38];
@@ -89,7 +90,7 @@ function TiledMaskImage({
 export function TiledMaskOverlayLayer({
   tiles,
   overview,
-  opacity = 0.45,
+  opacity = VISUAL_DEFAULTS.fillOpacitySelected,
   color = DEFAULT_FILL,
   visible,
 }: TiledMaskOverlayLayerProps) {

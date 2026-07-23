@@ -378,16 +378,9 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   {
     key: "image.fadedOpacity",
     category: "image",
-    label: "淡化透明度",
-    description: "未选中/被淡化对象的透明度，越低越淡",
+    label: "重复 AI 候选透明度",
+    description: "与人工标注高度重叠、已视为重复的 AI 候选透明度，越低越淡",
     control: { type: "slider", min: 0.1, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
-  },
-  {
-    key: "image.maskOverlayOpacity",
-    category: "image",
-    label: "Mask 覆盖透明度",
-    description: "分割掩膜叠加在图像上的不透明度",
-    control: { type: "slider", min: 0.2, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
     key: "video.defaultPlaybackRate",
