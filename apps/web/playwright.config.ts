@@ -15,6 +15,7 @@ if (useIsolatedServers) {
 }
 
 const defaultBaseURL = useIsolatedServers ? "http://127.0.0.1:3001" : "http://127.0.0.1:3000";
+process.env.PLAYWRIGHT_BASE_URL ??= defaultBaseURL;
 const e2eDatabaseURL = isCI
   ? (process.env.DATABASE_URL ?? "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
   : (process.env.PLAYWRIGHT_E2E_DATABASE_URL ??

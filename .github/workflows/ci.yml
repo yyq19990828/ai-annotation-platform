@@ -70,6 +70,9 @@ jobs:
           done
           docker logs minio
           exit 1
+      - name: Initialize MinIO buckets
+        working-directory: apps/api
+        run: uv run python -c "from app.services.storage import storage_service; storage_service.ensure_all_buckets()"
       - name: alembic upgrade head
         working-directory: apps/api
         run: uv run alembic upgrade head
