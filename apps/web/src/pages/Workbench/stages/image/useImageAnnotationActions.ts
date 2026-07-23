@@ -1498,7 +1498,7 @@ export function useImageAnnotationActions({
     if (!maskEditor) return;
     maskEditor.cancel();
     pendingRefineRef.current = null;
-    s.setTool("box");
+    s.setTool("select");
   }, [maskEditor, s]);
 
   const handleAcceptAll = useCallback(() => {

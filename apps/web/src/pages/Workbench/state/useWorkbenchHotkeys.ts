@@ -398,7 +398,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       }
       if (e.key === "Escape") {
         // 退出 mask 工具（与 MaskToolbar「取消 (Esc)」一致）：无论是否已有 active buffer，
-        // Esc 都应丢弃缓冲（若有）并切回默认 box 工具。早先 `&& maskEditor.active` 守卫
+        // Esc 都应丢弃缓冲（若有）并切回选择工具。早先 `&& maskEditor.active` 守卫
         // 导致「按 M 进入但未落笔时 Esc 失效」，与工具栏文案矛盾。
         e.preventDefault();
         e.stopPropagation();
