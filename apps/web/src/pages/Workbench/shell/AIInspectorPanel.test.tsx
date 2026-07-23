@@ -184,6 +184,18 @@ describe("AIInspectorPanel", () => {
     expect(screen.getByText("标注详情")).toBeInTheDocument();
   });
 
+  it("AI 待审与人工标题在空列表时仍常驻并显示 0", () => {
+    renderUI({
+      onToggleAiSection: vi.fn(),
+      onToggleManualSection: vi.fn(),
+    });
+
+    expect(screen.getByTestId("section-header-ai")).toHaveTextContent("AI 待审");
+    expect(screen.getByTestId("section-header-ai")).toHaveTextContent("0");
+    expect(screen.getByTestId("section-header-manual")).toHaveTextContent("人工");
+    expect(screen.getByTestId("section-header-manual")).toHaveTextContent("0");
+  });
+
   it("点击分离按钮 → 调用 onDetach", () => {
     const onDetach = vi.fn();
     renderUI({ onDetach });

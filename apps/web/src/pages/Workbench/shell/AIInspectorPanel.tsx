@@ -1052,44 +1052,40 @@ function BoxesList({
         onFilterChange: setFrameFilter,
       });
     }
-    if (aiTotalCount > 0) {
-      const hasKnownPredictionSources = predictionSourceFilter
-        ? PREDICTION_SOURCE_FILTERS.some((source) => predictionSourceFilter.counts[source] > 0)
-        : false;
-      out.push({
-        kind: "header",
-        label: "AI 待审",
-        count: filteredAiBoxes.length,
-        totalCount: aiTotalCount,
-        key: "ai-header",
-        sectionKey: "ai",
-        collapsed: aiSectionCollapsed,
-        onToggle: onToggleAiSection,
-      });
-      // v0.20.22 · 分组收起时跳过成员行 + 附属的 sourceFilter 卡片, 但计数仍在 header 上显示。
-      if (!aiSectionCollapsed) {
-        if (predictionSourceFilter && hasKnownPredictionSources) {
-          out.push({
-            kind: "sourceFilter",
-            key: "prediction-source-filter",
-            filter: predictionSourceFilter,
-          });
-        }
-        filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
+    const hasKnownPredictionSources = predictionSourceFilter
+      ? PREDICTION_SOURCE_FILTERS.some((source) => predictionSourceFilter.counts[source] > 0)
+      : false;
+    out.push({
+      kind: "header",
+      label: "AI 待审",
+      count: filteredAiBoxes.length,
+      totalCount: aiTotalCount,
+      key: "ai-header",
+      sectionKey: "ai",
+      collapsed: aiSectionCollapsed,
+      onToggle: onToggleAiSection,
+    });
+    // 分组标题常驻；空分组仍显示 0，成员行与来源筛选只在有数据且展开时渲染。
+    if (!aiSectionCollapsed && aiTotalCount > 0) {
+      if (predictionSourceFilter && hasKnownPredictionSources) {
+        out.push({
+          kind: "sourceFilter",
+          key: "prediction-source-filter",
+          filter: predictionSourceFilter,
+        });
       }
+      filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
     }
-    if (userBoxes.length > 0) {
-      out.push({
-        kind: "header",
-        label: "人工",
-        count: filteredUserBoxes.length,
-        totalCount: userBoxes.length,
-        key: "user-header",
-        sectionKey: "manual",
-        collapsed: manualSectionCollapsed,
-        onToggle: onToggleManualSection,
-      });
-    }
+    out.push({
+      kind: "header",
+      label: "人工",
+      count: filteredUserBoxes.length,
+      totalCount: userBoxes.length,
+      key: "user-header",
+      sectionKey: "manual",
+      collapsed: manualSectionCollapsed,
+      onToggle: onToggleManualSection,
+    });
     // v0.20.22 · 人工分组整体收起时跳过所有成员行 (含 GroupCard/子组), 头 + 计数仍显示。
     if (!manualSectionCollapsed) {
       // v0.20.9 · 父子标注: 建 parent → children 映射。子框从顶层迭代中剔除, 改在父框行下方
