@@ -165,7 +165,7 @@ last_reviewed: 2026-07-23
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `RASTER_MASK_READ_ENABLED` | `true` | 图片原生 raster_mask reader 默认开启，保证新后端可读取已有 geometry。 |
-| `RASTER_MASK_CREATE_ENABLED` | `true` | 持久化创建默认开启；项目级 opt-in 仍默认关闭，本项保留为部署紧急总闸。 |
+| `RASTER_MASK_CREATE_ENABLED` | `true` | 持久化创建与项目原生编辑均默认开启；本项保留为部署紧急总闸，项目仍可单独关闭。 |
 
 ## 认证 / 安全
 

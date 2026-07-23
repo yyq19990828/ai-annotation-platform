@@ -101,10 +101,27 @@ describe("GeneralSection", () => {
     expect(mockUpdateMutate.mock.calls[0][0]).toEqual({ status: "completed" });
   });
 
-  it("图片项目可单独开启原生 Mask 灰度", () => {
+  it("图片项目可单独关闭原生 Mask 编辑", () => {
+    renderUI(makeProject({ raster_mask_native_editing_enabled: true }));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /原生 Mask 编辑/ }));
+
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMutate.mock.calls[0][0]).toEqual({
+      raster_mask_native_editing_enabled: false,
+    });
+  });
+
+  it("旧响应缺少项目开关时按正式开启显示", () => {
+    renderUI(makeProject());
+
+    expect(screen.getByRole("checkbox", { name: /原生 Mask 编辑/ })).toBeChecked();
+  });
+
+  it("关闭的图片项目可重新开启原生 Mask 编辑", () => {
     renderUI(makeProject({ raster_mask_native_editing_enabled: false }));
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /原生 Mask 编辑灰度/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /原生 Mask 编辑/ }));
 
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
     expect(mockUpdateMutate.mock.calls[0][0]).toEqual({

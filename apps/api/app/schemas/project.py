@@ -77,6 +77,8 @@ class ProjectCreate(BaseModel):
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     # 交互式 AI 工具总开关 (归 ML 模型设置项); 缺省开启。
     ai_interactive_enabled: bool = True
+    # 图片原生 Raster Mask 写入默认开启；部署总闸仍可统一禁用。
+    raster_mask_native_editing_enabled: bool = True
     # v0.10.29 · 视频帧逻辑采样配置; None / 缺省 = 不采样 (空 dict).
     video_sampling: VideoSamplingConfig | None = None
     # v0.14.4 · 项目级 scene 模式声明;仅 image/lidar 项目可开启。
@@ -189,7 +191,7 @@ class ProjectOut(BaseModel):
     text_threshold: float = 0.25
     # 交互式 AI 工具总开关 (归 ML 模型设置项)。
     ai_interactive_enabled: bool = True
-    raster_mask_native_editing_enabled: bool = False
+    raster_mask_native_editing_enabled: bool = True
     mask_qc_config: MaskQCConfig = Field(default_factory=MaskQCConfig)
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()

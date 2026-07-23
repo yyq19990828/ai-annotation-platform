@@ -60,7 +60,7 @@ async def _seed_project_and_task(
 
 
 @pytest.mark.asyncio
-async def test_project_mask_opt_in_defaults_false_and_patch_is_returned(
+async def test_project_mask_editing_defaults_true_and_allows_opt_out(
     httpx_client, super_admin, db_session
 ):
     user, token = super_admin
@@ -75,19 +75,32 @@ async def test_project_mask_opt_in_defaults_false_and_patch_is_returned(
     )
     assert response.status_code == 200, response.text
     created = response.json()
-    assert created["raster_mask_native_editing_enabled"] is False
+    assert created["raster_mask_native_editing_enabled"] is True
 
     response = await httpx_client.patch(
         f"/api/v1/projects/{created['id']}",
-        json={"raster_mask_native_editing_enabled": True},
+        json={"raster_mask_native_editing_enabled": False},
         headers=_bearer(token),
     )
     assert response.status_code == 200, response.text
-    assert response.json()["raster_mask_native_editing_enabled"] is True
+    assert response.json()["raster_mask_native_editing_enabled"] is False
 
     source = await db_session.get(Project, uuid.UUID(created["id"]))
     assert source is not None
-    assert source.raster_mask_native_editing_enabled is True
+    assert source.raster_mask_native_editing_enabled is False
+
+    response = await httpx_client.post(
+        "/api/v1/projects",
+        json={
+            "name": "mask rollout explicit opt out",
+            "type_label": "图像-分割",
+            "type_key": "image-seg",
+            "raster_mask_native_editing_enabled": False,
+        },
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["raster_mask_native_editing_enabled"] is False
 
     response = await httpx_client.post(
         "/api/v1/projects",
@@ -100,7 +113,50 @@ async def test_project_mask_opt_in_defaults_false_and_patch_is_returned(
         headers=_bearer(token),
     )
     assert response.status_code == 200, response.text
-    assert response.json()["raster_mask_native_editing_enabled"] is False
+    assert response.json()["raster_mask_native_editing_enabled"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("deployment_enabled", "project_enabled", "expected_reason", "expected_write"),
+    [
+        (True, True, "enabled", True),
+        (True, False, "project_disabled", False),
+        (False, True, "deployment_disabled", False),
+        (False, False, "deployment_disabled", False),
+    ],
+)
+async def test_mask_capability_deployment_project_matrix(
+    httpx_client,
+    super_admin,
+    db_session,
+    monkeypatch,
+    deployment_enabled,
+    project_enabled,
+    expected_reason,
+    expected_write,
+):
+    user, token = super_admin
+    _, task = await _seed_project_and_task(
+        db_session,
+        owner_id=user.id,
+        project_enabled=project_enabled,
+        region_enabled=True,
+    )
+    await db_session.commit()
+    monkeypatch.setattr(settings, "raster_mask_read_enabled", True)
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", deployment_enabled)
+
+    response = await httpx_client.get(
+        f"/api/v1/tasks/{task.id}/mask-capabilities",
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["project_enabled"] is project_enabled
+    assert body["write_enabled"] is expected_write
+    assert body["reason"] == expected_reason
 
 
 @pytest.mark.asyncio

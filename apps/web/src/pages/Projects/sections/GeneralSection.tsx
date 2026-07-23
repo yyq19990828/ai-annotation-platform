@@ -173,16 +173,16 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               <input
                 type="checkbox"
                 className="mt-0.5 size-4 accent-primary"
-                checked={project.raster_mask_native_editing_enabled ?? false}
+                checked={project.raster_mask_native_editing_enabled ?? true}
                 disabled={update.isPending}
                 onChange={(event) => savePatch({
                   raster_mask_native_editing_enabled: event.target.checked,
                 })}
               />
               <span className="flex min-w-0 flex-col gap-1">
-                <span className="text-sm font-medium text-foreground">原生 Mask 编辑灰度</span>
+                <span className="text-sm font-medium text-foreground">原生 Mask 编辑</span>
                 <span className="text-xs text-muted-foreground">
-                  允许该项目在 region 工具中写入逐像素 Mask。部署级创建开关关闭时，项目仍保持只读。
+                  默认允许该项目在 region 工具中写入逐像素 Mask；可按项目关闭。部署级创建总闸关闭时，项目仍保持只读。
                 </span>
               </span>
             </label>

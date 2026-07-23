@@ -18805,6 +18805,11 @@
             "title": "Name",
             "type": "string"
           },
+          "raster_mask_native_editing_enabled": {
+            "default": true,
+            "title": "Raster Mask Native Editing Enabled",
+            "type": "boolean"
+          },
           "scene_mode": {
             "default": false,
             "title": "Scene Mode",
@@ -19387,7 +19392,7 @@
             "type": "boolean"
           },
           "raster_mask_native_editing_enabled": {
-            "default": false,
+            "default": true,
             "title": "Raster Mask Native Editing Enabled",
             "type": "boolean"
           },
@@ -30129,7 +30134,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.10"
+    "version": "0.23.11"
   },
   "openapi": "3.1.0",
   "paths": {

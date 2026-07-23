@@ -64,7 +64,7 @@ admission 在插入前完成；只有当前编辑和 selected 对象可 pin。�
 - 大画布保留 brush、erase、lasso add / subtract、save、undo / redo。
 - morphology 只允许用户显式选择 viewport ROI，读取 `ROI + halo` 后只写回 core。
 - component、hole、flood fill、split / join / overlap 与全图 morphology 若需扫描超过 16,777,216 像素，返回 `large_mask_full_scan_required`，不静默回主线程或伪装局部等价。
-- `RASTER_MASK_CREATE_ENABLED` 是部署级写入 kill switch，默认开启；项目级 `raster_mask_native_editing_enabled` 继续作为显式 rollout 开关，既有项目不会因本 ADR 自动启用写路径。大画布能力只有在两层闸门都允许时可写。
+- `RASTER_MASK_CREATE_ENABLED` 是部署级写入 kill switch，默认开启；项目级 `raster_mask_native_editing_enabled` 默认开启并允许项目 opt-out。大画布能力只有在两层闸门都允许时可写。
 
 ## Consequences
 

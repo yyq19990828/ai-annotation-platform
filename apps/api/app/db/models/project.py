@@ -87,7 +87,7 @@ class Project(Base):
         Boolean, nullable=False, server_default="true", default=True
     )
     raster_mask_native_editing_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false", default=False
+        Boolean, nullable=False, server_default="true", default=True
     )
     mask_qc_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict

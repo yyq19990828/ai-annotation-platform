@@ -67,8 +67,9 @@ curl -f http://localhost:5173
 - `0137` 为接受账本增加过期时间，使过期快照不再永久保留内容引用。downgrade 会移除 expiry，需确认清理任务与旧代码的引用口径一致。
 - `0138` 增加 Tracker 局部审核 revision、稳定候选与部分状态。downgrade 会把部分审核状态退回待审，但已从 staged result 移除的候选不会恢复。
 - `0139` 增加 correction job 种类、纠错帧 / track 快照和同轨活跃租约。downgrade 会取消活跃 correction 并清除其 staged result，已经保存到 annotation 的人工纠错关键帧不会回滚。
+- `0148` 将图片原生 Mask 编辑的列默认值和所有既有项目改为开启。项目管理员升级后仍可单独关闭；downgrade 只把新项目默认值恢复为关闭，不批量改写现有项目选择。
 
-升级后先核对 migration head，再验证：旧项目的 region / bbox 类别仍完整、项目级原生 Mask opt-in 符合预期、交互式 AI 总开关正确、视频追踪完成后进入待审且局部决定可用、同一轨迹的纠错活跃租约能在接受 / 拒绝 / 取消后释放。
+升级后先核对 migration head，再验证：旧项目的 region / bbox 类别仍完整、项目级原生 Mask 编辑已开启且仍可单独关闭、部署创建总闸关闭时所有项目保持只读、交互式 AI 总开关正确、视频追踪完成后进入待审且局部决定可用、同一轨迹的纠错活跃租约能在接受 / 拒绝 / 取消后释放。
 
 ### 视频媒体处理
 
