@@ -57,6 +57,7 @@ export function toolUnitForGeometryType(type: string): ToolUnitId {
     case "polygon":
     case "multi_polygon":
     case "raster_mask":
+    case "video_mask":
     case "video_polygon":
     case "video_track_polygon":
     case "video_track_mask":

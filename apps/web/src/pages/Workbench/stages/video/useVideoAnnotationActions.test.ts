@@ -5,6 +5,7 @@ import {
   buildVideoCreatePayload,
   buildVideoPointsCreatePayload,
   buildVideoPointsTrackCreatePayload,
+  buildVideoMaskCreatePayload,
   buildVideoMaskTrackCreatePayload,
   upsertVideoMaskKeyframe,
   buildVideoUpdateCommand,
@@ -125,7 +126,7 @@ describe("video annotation actions helpers", () => {
     ]);
   });
 
-  it("builds and materializes video mask track keyframes", () => {
+  it("builds separate single-frame Mask and Mask track payloads", () => {
     const sha = "a".repeat(64);
     const mask = {
       encoding: "coco_rle_ref" as const,
@@ -135,6 +136,12 @@ describe("video annotation actions helpers", () => {
       runs: 3,
       bytes: 42,
     };
+    expect(buildVideoMaskCreatePayload(4, mask, "Car")).toEqual({
+      annotation_type: "video_mask",
+      tool_unit_id: "region",
+      class_name: "Car",
+      geometry: { type: "video_mask", frame_index: 4, mask },
+    });
     const payload = buildVideoMaskTrackCreatePayload(4, mask, "Car");
     expect(payload).toMatchObject({
       annotation_type: "video_track_mask",

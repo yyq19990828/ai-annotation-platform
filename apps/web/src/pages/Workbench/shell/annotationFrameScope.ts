@@ -1,13 +1,14 @@
 /**
  * 标注详情面板「显示范围: 全部 / 当前帧」的帧归属判定。
  *
- * 六种视频几何都要认。此前只认矩形框(`video_bbox` / `video_track_bbox`),多边形与折线
+ * 所有视频单帧与轨迹几何都要认。此前只认矩形框(`video_bbox` / `video_track_bbox`),多边形与折线
  * 走 `return true` 兜底 —— 「当前帧」筛选对它们静默失效(跨帧的单帧多边形被全量列出),
  * 且 `firstTrackFrame` 返回 null 让点击列表行无法跳转到所属帧。
  */
 import type { Annotation } from "@/types";
 import {
   resolveTrackAtFrame,
+  resolveVideoMaskTrackAtFrame,
   resolveVideoPolygonTrackAtFrame,
   resolveVideoPolylineTrackAtFrame,
 } from "../stage/videoStageGeometry";
@@ -24,7 +25,8 @@ export function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number): boole
   if (
     geometry.type === "video_bbox" ||
     geometry.type === "video_polygon" ||
-    geometry.type === "video_polyline"
+    geometry.type === "video_polyline" ||
+    geometry.type === "video_mask"
   ) {
     return geometry.frame_index === frameIndex;
   }
@@ -35,6 +37,8 @@ export function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number): boole
     return resolveVideoPolygonTrackAtFrame(geometry, frameIndex) !== null;
   if (geometry.type === "video_track_polyline")
     return resolveVideoPolylineTrackAtFrame(geometry, frameIndex) !== null;
+  if (geometry.type === "video_track_mask")
+    return resolveVideoMaskTrackAtFrame(geometry, frameIndex) !== null;
   return true;
 }
 
@@ -45,14 +49,16 @@ export function firstTrackFrame(box: Annotation | AiBox): number | null {
   if (
     geometry.type === "video_bbox" ||
     geometry.type === "video_polygon" ||
-    geometry.type === "video_polyline"
+    geometry.type === "video_polyline" ||
+    geometry.type === "video_mask"
   ) {
     return geometry.frame_index;
   }
   if (
     geometry.type !== "video_track_bbox" &&
     geometry.type !== "video_track_polygon" &&
-    geometry.type !== "video_track_polyline"
+    geometry.type !== "video_track_polyline" &&
+    geometry.type !== "video_track_mask"
   )
     return null;
   if (geometry.keyframes.length === 0) return null;

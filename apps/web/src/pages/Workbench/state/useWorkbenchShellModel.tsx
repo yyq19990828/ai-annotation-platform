@@ -158,6 +158,7 @@ import {
 import {
   isAnyVideoSingleFrame,
   isVideoBbox,
+  isVideoMask,
   isVideoMaskTrack,
   isVideoPointsTrack,
   isVideoPolylineTrack,
@@ -1509,7 +1510,9 @@ export function useWorkbenchShellModel({
     const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
     if (!annotation || annotation.is_locked || !Number.isInteger(annotation.version)) return null;
     const supportedGeometry = isVideoTask
-      ? annotation.geometry.type === "video_track_mask"
+      ? (annotation.geometry.type === "video_mask" &&
+          annotation.geometry.frame_index === s.videoFrameIndex) ||
+        annotation.geometry.type === "video_track_mask"
       : annotation.geometry.type === "raster_mask";
     if (!supportedGeometry) return null;
     return {
@@ -1517,7 +1520,7 @@ export function useWorkbenchShellModel({
       source_version: annotation.version as number,
       class_name: annotation.class_name,
     };
-  }, [isVideoTask, s.selectedId, s.selectedIds.length, visibleAnnotationsData]);
+  }, [isVideoTask, s.selectedId, s.selectedIds.length, s.videoFrameIndex, visibleAnnotationsData]);
   const promptInputByFamily: Record<string, string> = {
     point: "point_prompt",
     interactive_box: "bbox_prompt",
@@ -2045,7 +2048,8 @@ export function useWorkbenchShellModel({
       const previousType = current?.geometry.type;
       const nextType = payload.geometry?.type;
       const requiresPrecondition =
-        !!nextType && (previousType !== nextType || nextType === "raster_mask");
+        !!nextType &&
+        (previousType !== nextType || nextType === "raster_mask" || nextType === "video_mask");
       const etag =
         requiresPrecondition && current?.version != null ? `W/"${current.version}"` : undefined;
       return updateAnnotationMut.mutateAsync({ annotationId: id, payload, etag });
@@ -2574,6 +2578,20 @@ export function useWorkbenchShellModel({
     const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
     return annotation && isVideoMaskTrack(annotation) ? annotation : null;
   }, [s.selectedId, visibleAnnotationsData]);
+  const selectedVideoSingleMask = useMemo(() => {
+    const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
+    return annotation &&
+      isVideoMask(annotation) &&
+      annotation.geometry.frame_index === s.videoFrameIndex
+      ? annotation
+      : null;
+  }, [s.selectedId, s.videoFrameIndex, visibleAnnotationsData]);
+  const selectedVideoMaskForTool =
+    s.videoTool === "mask-track"
+      ? selectedVideoMask
+      : s.videoTool === "mask"
+        ? selectedVideoSingleMask
+        : null;
   const selectedImageRasterMask = useMemo(() => {
     if (isVideoTask) return null;
     const annotation = visibleAnnotationsData.find((item) => item.id === s.selectedId);
@@ -2586,8 +2604,8 @@ export function useWorkbenchShellModel({
           : ""
       }`
     : "";
-  const selectedVideoMaskFingerprint = selectedVideoMask
-    ? `${selectedVideoMask.id}:${selectedVideoMask.version ?? 0}:${selectedVideoMask.updated_at ?? ""}:${s.videoFrameIndex}`
+  const selectedVideoMaskFingerprint = selectedVideoMaskForTool
+    ? `${selectedVideoMaskForTool.id}:${selectedVideoMaskForTool.version ?? 0}:${selectedVideoMaskForTool.updated_at ?? ""}:${s.videoFrameIndex}`
     : "";
   const maskLoadRle = maskEditor.loadRle;
   const maskLoadBlank = maskEditor.loadBlank;
@@ -2630,9 +2648,9 @@ export function useWorkbenchShellModel({
       else maskLoadBlank(maskGeneration);
       return;
     }
-    if (s.videoTool !== "mask") return;
+    if (s.videoTool !== "mask" && s.videoTool !== "mask-track") return;
     if (maskEditor.phase !== "loading") return;
-    if (!selectedVideoMask) {
+    if (!selectedVideoMaskForTool) {
       maskLoadBlank(maskGeneration);
       return;
     }
@@ -2640,8 +2658,11 @@ export function useWorkbenchShellModel({
     // sessionKey 变化时 useMaskEditorSession 已自增 generation, 旧 gen 的回包被静默丢弃,
     // 不会覆盖用户在新帧上落笔后的 Buffer。
     const gen = maskGeneration;
-    void rasterMasksApi
-      .annotationVideoMaskContent(selectedVideoMask.id, s.videoFrameIndex)
+    const loadMask =
+      selectedVideoMaskForTool.geometry.type === "video_mask"
+        ? rasterMasksApi.annotationRasterMaskContent(selectedVideoMaskForTool.id)
+        : rasterMasksApi.annotationVideoMaskContent(selectedVideoMaskForTool.id, s.videoFrameIndex);
+    void loadMask
       .then((rle) => {
         maskLoadRle(gen, rle);
       })
@@ -2674,7 +2695,7 @@ export function useWorkbenchShellModel({
     s.videoTool,
     selectedImageRasterMask,
     selectedImageRasterMaskFingerprint,
-    selectedVideoMask,
+    selectedVideoMaskForTool,
     selectedVideoMaskFingerprint,
   ]);
 
@@ -3321,7 +3342,7 @@ export function useWorkbenchShellModel({
       if (
         maskEditor.dirty &&
         s.selectedId === annotation.id &&
-        s.videoTool === "mask" &&
+        s.videoTool === "mask-track" &&
         !window.confirm("当前 Mask 稿件尚未保存，是否用剪贴板内容覆盖？")
       )
         return;
@@ -3334,7 +3355,7 @@ export function useWorkbenchShellModel({
         rle: videoMaskClipboard.rle,
       });
       s.setSelectedId(annotation.id);
-      s.setVideoTool("mask");
+      s.setVideoTool("mask-track");
     },
     [maskEditor.dirty, pushToast, s, taskId, validateMaskPaste, videoMaskClipboard],
   );
@@ -3369,7 +3390,7 @@ export function useWorkbenchShellModel({
         segmentId: currentVideoSegment.id,
       });
       s.setSelectedId(annotation.id);
-      s.setVideoTool("mask");
+      s.setVideoTool("mask-track");
     },
     [currentVideoSegment, pushToast, s, taskId, validateMaskPaste, videoMaskClipboard],
   );
@@ -3579,7 +3600,7 @@ export function useWorkbenchShellModel({
         frameIndex: s.videoFrameIndex,
       });
       s.setSelectedId(annotation.id);
-      s.setVideoTool("mask");
+      s.setVideoTool("mask-track");
     },
     [s, taskId],
   );
@@ -3599,7 +3620,7 @@ export function useWorkbenchShellModel({
     if (
       s.selectedId !== intent.annotationId ||
       s.videoFrameIndex !== intent.frameIndex ||
-      s.videoTool !== "mask" ||
+      s.videoTool !== "mask-track" ||
       maskEditor.acceptedSessionId !== maskEditor.sessionId ||
       maskEditor.phase === "loading" ||
       maskEditor.phase === "saving" ||
@@ -4286,11 +4307,13 @@ export function useWorkbenchShellModel({
   }, []);
   const commitVideoMask = useCallback(() => {
     const trackLocked =
-      !!selectedVideoMask && s.lockedVideoTrackIds.has(selectedVideoMask.geometry.track_id);
+      !!selectedVideoMaskForTool &&
+      selectedVideoMaskForTool.geometry.type === "video_track_mask" &&
+      s.lockedVideoTrackIds.has(selectedVideoMaskForTool.geometry.track_id);
     if (
       !canEditMask({
         taskReadOnly: isLockedForActions || maskCompareInteractionBlocked,
-        annotationLocked: !!selectedVideoMask?.is_locked,
+        annotationLocked: !!selectedVideoMaskForTool?.is_locked,
         trackLocked,
         segmentLocked: !!lockConflict || !!lockError,
         editorPhase: maskEditor.phase,
@@ -4316,7 +4339,12 @@ export function useWorkbenchShellModel({
     return maskEditor
       .save(async () => {
         try {
-          savedKeyframe = await handleVideoMaskCommit(rle, s.videoFrameIndex, selectedVideoMask);
+          savedKeyframe = await handleVideoMaskCommit(
+            rle,
+            s.videoFrameIndex,
+            selectedVideoMaskForTool,
+            s.videoTool === "mask-track" ? "track" : "frame",
+          );
           if (!savedKeyframe) {
             classSelectionCancelled = true;
             return { ok: false, retryable: false };
@@ -4364,7 +4392,7 @@ export function useWorkbenchShellModel({
     maskEditor,
     pushToast,
     s,
-    selectedVideoMask,
+    selectedVideoMaskForTool,
   ]);
   const submitVideoMaskCorrection = useCallback(
     async (intent: VideoMaskCorrectionIntent) => {
@@ -5443,6 +5471,7 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onUpdateAttributes={handleUpdateAttributes}
             onConvert={ann.geometry.type === "video_polygon" ? openAnnotationConversion : undefined}
+            onEditMask={isVideoMask(ann) ? () => setVideoTool("mask") : undefined}
           />
         );
       } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
@@ -5463,7 +5492,7 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onToggleHidden={toggleHiddenVideoTrack}
             onToggleLock={toggleLockedVideoTrack}
-            onEditMask={isVideoMaskTrack(ann) ? () => setVideoTool("mask") : undefined}
+            onEditMask={isVideoMaskTrack(ann) ? () => setVideoTool("mask-track") : undefined}
             onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
             onConvert={
               ann.geometry.type === "video_track_polygon" || isVideoMaskTrack(ann)
@@ -6104,7 +6133,9 @@ export function useWorkbenchShellModel({
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
-            {(isVideoTask ? s.videoTool === "mask" : s.tool === "mask") && (
+            {(isVideoTask
+              ? s.videoTool === "mask" || s.videoTool === "mask-track"
+              : s.tool === "mask") && (
               <MaskToolbar
                 active={maskEditor.active}
                 tool={maskEditor.tool}

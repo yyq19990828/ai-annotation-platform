@@ -208,6 +208,13 @@ const VIDEO_TOOLS: Array<{
     group: "track",
   },
   {
+    id: "mask-track",
+    label: "Mask 轨迹",
+    icon: "scissors",
+    desc: "绘制或编辑跨帧 Mask 轨迹关键帧",
+    group: "track",
+  },
+  {
     id: "mask",
     hotkey: "M",
     label: "单帧 Mask",

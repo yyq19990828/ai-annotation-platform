@@ -2,6 +2,7 @@ import type { AnnotationResponse } from "@/types";
 import type { DropdownItem } from "@/components/ui/DropdownMenu";
 import {
   isVideoBbox,
+  isVideoMask,
   isVideoMaskTrack,
   isVideoPointsSingleFrame,
   isVideoPointsTrack,
@@ -123,7 +124,10 @@ export function buildVideoContextMenuItems(ctx: VideoContextMenuCtx): DropdownIt
 
   // v0.21.26 · 单帧点集/旋转几何 (polygon / polyline / rotated_bbox): 改类 + 删除
   // (此前落到空菜单)。键于 contextMenuAnnotation (命中即建, 不依赖异步选中态)。
-  if (contextMenuAnnotation && isVideoPointsSingleFrame(contextMenuAnnotation)) {
+  if (
+    contextMenuAnnotation &&
+    (isVideoPointsSingleFrame(contextMenuAnnotation) || isVideoMask(contextMenuAnnotation))
+  ) {
     return [
       {
         id: "points-class",

@@ -15,6 +15,7 @@ import type {
   VideoTrackGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
+  VideoMaskGeometry,
   VideoTrackMaskGeometry,
 } from "@/types";
 import { UNKNOWN_CLASS } from "../../stage/colors";
@@ -44,6 +45,7 @@ type VideoGeometry =
   | VideoPolylineGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry
+  | VideoMaskGeometry
   | VideoTrackMaskGeometry;
 
 interface ToastInput {
@@ -197,6 +199,24 @@ export function buildVideoMaskTrackCreatePayload(
   };
   return {
     annotation_type: "video_track_mask",
+    class_name: cls || UNKNOWN_CLASS,
+    tool_unit_id: "region",
+    geometry,
+  };
+}
+
+export function buildVideoMaskCreatePayload(
+  frameIndex: number,
+  mask: CocoRleMaskRef,
+  cls: string,
+): AnnotationPayload {
+  const geometry: VideoMaskGeometry = {
+    type: "video_mask",
+    frame_index: frameIndex,
+    mask,
+  };
+  return {
+    annotation_type: "video_mask",
     class_name: cls || UNKNOWN_CLASS,
     tool_unit_id: "region",
     geometry,
@@ -578,7 +598,12 @@ export function useVideoAnnotationActions({
   );
 
   const handleVideoMaskCommit = useCallback(
-    async (rle: CocoRle, frameIndex: number, selected: AnnotationResponse | null) => {
+    async (
+      rle: CocoRle,
+      frameIndex: number,
+      selected: AnnotationResponse | null,
+      createMode: "frame" | "track" = "frame",
+    ) => {
       if (!taskId) throw new Error("Task is not available");
       if (selected?.geometry.type === "video_track_mask") {
         const selectedMaskVersion = selected.version;
@@ -605,10 +630,40 @@ export function useVideoAnnotationActions({
           frameIndex,
         } satisfies SavedVideoMaskKeyframe;
       }
+      if (selected?.geometry.type === "video_mask") {
+        if (selected.version == null) {
+          throw new Error("Video Mask annotation version is missing");
+        }
+        const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
+        const geometry: VideoMaskGeometry = {
+          type: "video_mask",
+          frame_index: frameIndex,
+          mask: reference,
+        };
+        const command = buildVideoUpdateCommand(selected, geometry);
+        const updated = await tasksApi.updateAnnotation(
+          taskId,
+          selected.id,
+          { geometry },
+          `W/"${selected.version}"`,
+        );
+        queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (current) =>
+          (current ?? []).map((item) => (item.id === updated.id ? updated : item)),
+        );
+        history.push(command);
+        return {
+          annotation: updated,
+          mask: reference,
+          frameIndex,
+        } satisfies SavedVideoMaskKeyframe;
+      }
       const className = await requestVideoMaskClass(rle, frameIndex);
       if (!className) return null;
       const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
-      const payload = buildVideoMaskTrackCreatePayload(frameIndex, reference, className);
+      const payload =
+        createMode === "track"
+          ? buildVideoMaskTrackCreatePayload(frameIndex, reference, className)
+          : buildVideoMaskCreatePayload(frameIndex, reference, className);
       return new Promise<SavedVideoMaskKeyframe>((resolve, reject) => {
         mutations.create.mutate(payload, {
           onSuccess: (created) => {

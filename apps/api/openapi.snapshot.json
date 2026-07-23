@@ -1729,6 +1729,7 @@
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
+                "video_mask": "#/components/schemas/VideoMaskGeometry",
                 "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
@@ -1766,6 +1767,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoMaskGeometry"
               },
               {
                 "$ref": "#/components/schemas/VideoTrackMaskGeometry"
@@ -2431,6 +2435,7 @@
                 "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
+                "video_mask": "#/components/schemas/VideoMaskGeometry",
                 "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                 "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                 "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
@@ -2468,6 +2473,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoMaskGeometry"
               },
               {
                 "$ref": "#/components/schemas/VideoTrackMaskGeometry"
@@ -2728,6 +2736,7 @@
                     "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                     "video_bbox": "#/components/schemas/VideoBboxGeometry",
                     "video_keypoint": "#/components/schemas/VideoKeypointGeometry",
+                    "video_mask": "#/components/schemas/VideoMaskGeometry",
                     "video_polygon": "#/components/schemas/VideoPolygonGeometry",
                     "video_polyline": "#/components/schemas/VideoPolylineGeometry",
                     "video_rotated_bbox": "#/components/schemas/VideoRotatedBboxGeometry",
@@ -2765,6 +2774,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackPolylineGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoMaskGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/VideoTrackMaskGeometry"
@@ -21862,7 +21874,7 @@
       },
       "RasterMaskGeometry": {
         "additionalProperties": false,
-        "description": "v0.23.6 · 图片栅格掩码几何。\n\n引用不可变 COCO RLE 对象存储掩码内容，不内联像素数据。\n只允许图片 DatasetItem（视频使用 video_track_mask）。",
+        "description": "v0.23.6 · 图片栅格掩码几何。\n\n引用不可变 COCO RLE 对象存储掩码内容，不内联像素数据。\n只允许图片 DatasetItem（视频使用 video_mask / video_track_mask）。",
         "properties": {
           "mask": {
             "$ref": "#/components/schemas/CocoRleMaskRef"
@@ -27481,6 +27493,32 @@
         "title": "VideoMaskCorrectionRequest",
         "type": "object"
       },
+      "VideoMaskGeometry": {
+        "additionalProperties": false,
+        "description": "Single-frame video raster mask backed by immutable COCO RLE content.",
+        "properties": {
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "mask": {
+            "$ref": "#/components/schemas/CocoRleMaskRef"
+          },
+          "type": {
+            "const": "video_mask",
+            "default": "video_mask",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "mask"
+        ],
+        "title": "VideoMaskGeometry",
+        "type": "object"
+      },
       "VideoMaskKeyframeOperationRequest": {
         "properties": {
           "operation": {
@@ -32546,7 +32584,7 @@
     },
     "/api/v1/annotations/{annotation_id}/mask-content": {
       "get": {
-        "description": "v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。\n\n支持图片 RasterMaskGeometry 掩码的静态内容服务。\n返回标准 COCO RLE 格式，带 ETag 支持条件请求。",
+        "description": "v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。\n\n支持图片 RasterMaskGeometry 与视频单帧 VideoMaskGeometry 的静态内容服务。\n返回标准 COCO RLE 格式，带 ETag 支持条件请求。",
         "operationId": "get_annotation_mask_content_api_v1_annotations__annotation_id__mask_content_get",
         "parameters": [
           {

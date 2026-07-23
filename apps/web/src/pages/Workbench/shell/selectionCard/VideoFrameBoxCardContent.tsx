@@ -17,7 +17,8 @@ const FRAME_TIME_CLASS = "text-brand/75";
 
 export interface VideoFrameBoxCardContentProps {
   /**
-   * 视频单帧标注(不属任何轨迹): video_bbox / video_polygon / video_polyline / video_rotated_bbox。
+   * 视频单帧标注(不属任何轨迹): video_bbox / video_polygon / video_polyline /
+   * video_rotated_bbox / video_mask。
    * v0.21.26 起承接全部单帧几何(此前仅 video_bbox);帧定位 + 指标 + 属性 + 改类 / 删除。
    */
   annotation: AnnotationResponse;
@@ -32,6 +33,7 @@ export interface VideoFrameBoxCardContentProps {
   onDelete: (id: string) => void;
   onUpdateAttributes: (id: string, next: Record<string, unknown>) => void;
   onConvert?: (id: string) => void;
+  onEditMask?: () => void;
 }
 
 /** 秒 → 紧凑时间码 m:ss(帧定位 chip 用,不带毫秒)。 */
@@ -61,13 +63,15 @@ export function VideoFrameBoxCardContent({
   onDelete,
   onUpdateAttributes,
   onConvert,
+  onEditMask,
 }: VideoFrameBoxCardContentProps) {
   const geom = annotation.geometry;
   const frameIndex =
     geom.type === "video_bbox" ||
     geom.type === "video_polygon" ||
     geom.type === "video_polyline" ||
-    geom.type === "video_rotated_bbox"
+    geom.type === "video_rotated_bbox" ||
+    geom.type === "video_mask"
       ? geom.frame_index
       : null;
   const metrics = geometryMetrics(geom, imageWidth, imageHeight);
@@ -115,6 +119,19 @@ export function VideoFrameBoxCardContent({
       />
 
       <ActionBar label="单帧标注操作">
+        {geom.type === "video_mask" && onEditMask && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="编辑 Mask"
+            aria-label="编辑 Mask"
+            disabled={readOnly || annotation.is_locked}
+            onClick={onEditMask}
+          >
+            <Icon name="edit" size={14} />
+            编辑
+          </Button>
+        )}
         {geom.type === "video_polygon" && onConvert && (
           <Button
             variant="ghost"

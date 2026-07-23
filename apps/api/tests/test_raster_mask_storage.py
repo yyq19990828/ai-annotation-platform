@@ -131,6 +131,36 @@ async def test_mask_geometry_context_matches_video_size_and_frame_count():
 
 
 @pytest.mark.asyncio
+async def test_single_frame_video_mask_matches_video_size_and_frame_count():
+    db = SimpleNamespace(
+        get=AsyncMock(
+            return_value=SimpleNamespace(
+                file_type="video",
+                width=1920,
+                height=1080,
+                metadata_={"video": {"frame_count": 10}},
+            )
+        )
+    )
+    task = SimpleNamespace(dataset_item_id="item-1")
+    geometry = {
+        "type": "video_mask",
+        "frame_index": 9,
+        "mask": {"size": [1080, 1920]},
+    }
+    await validate_mask_geometry_for_task(db, task, geometry)
+
+    geometry["frame_index"] = 10
+    with pytest.raises(ValueError, match="frame_index"):
+        await validate_mask_geometry_for_task(db, task, geometry)
+
+    geometry["frame_index"] = 9
+    geometry["mask"]["size"] = [720, 1280]
+    with pytest.raises(ValueError, match="mask size"):
+        await validate_mask_geometry_for_task(db, task, geometry)
+
+
+@pytest.mark.asyncio
 async def test_mask_geometry_context_separates_image_8k_from_video_4k_limit():
     image_db = SimpleNamespace(
         get=AsyncMock(

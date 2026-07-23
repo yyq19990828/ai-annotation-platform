@@ -45,6 +45,7 @@ from app.schemas._jsonb_types import (
     VideoTrackPolygonKeyframe,
     VideoTrackPolylineGeometry,
     VideoTrackPolylineKeyframe,
+    VideoMaskGeometry,
     VideoTrackMaskGeometry,
 )
 
@@ -405,6 +406,17 @@ def test_video_track_mask_geometry_valid():
         }
     )
     assert geometry.keyframes[0].mask.encoding == "coco_rle_ref"
+
+
+def test_video_mask_geometry_valid_and_rejects_non_integer_frame():
+    geometry = VideoMaskGeometry.model_validate(
+        {"type": "video_mask", "frame_index": 2, "mask": _mask_ref()}
+    )
+    assert geometry.mask.encoding == "coco_rle_ref"
+    with pytest.raises(ValidationError):
+        VideoMaskGeometry.model_validate(
+            {"type": "video_mask", "frame_index": True, "mask": _mask_ref()}
+        )
 
 
 @pytest.mark.parametrize(

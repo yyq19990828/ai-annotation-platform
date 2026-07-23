@@ -1,12 +1,12 @@
 /**
- * 「显示范围: 当前帧」的帧归属判定 —— 六种视频几何。
+ * 「显示范围: 当前帧」的视频几何归属判定。
  *
  * 回归: 只认矩形框时, 多边形 / 折线走 `return true` 兜底 ——「当前帧」筛选静默失效
  * (面板里跨帧的单帧多边形被全量列出), 且 firstTrackFrame 返回 null 导致点击无法跳转。
  */
 import { describe, expect, it } from "vitest";
-import { boxIsOnFrame, filterBoxesByFrame, firstTrackFrame } from "./annotationFrameScope";
-describe("boxIsOnFrame / firstTrackFrame · 六种视频几何", () => {
+import { boxIsOnFrame, firstTrackFrame } from "./annotationFrameScope";
+describe("boxIsOnFrame / firstTrackFrame · 视频几何", () => {
   const ann = (geometry: unknown) => ({ id: "a", geometry }) as never;
 
   const SINGLE = [
@@ -27,6 +27,18 @@ describe("boxIsOnFrame / firstTrackFrame · 六种视频几何", () => {
         [0, 0],
         [0.1, 0.1],
       ],
+    },
+    {
+      type: "video_mask",
+      frame_index: 7,
+      mask: {
+        encoding: "coco_rle_ref",
+        size: [2, 3],
+        object_key: "mask.json",
+        sha256: "a".repeat(64),
+        runs: 3,
+        bytes: 64,
+      },
     },
   ];
 
@@ -106,6 +118,32 @@ describe("boxIsOnFrame / firstTrackFrame · 六种视频几何", () => {
     expect(boxIsOnFrame(ann(withOutside), 4)).toBe(false);
     expect(boxIsOnFrame(ann(withOutside), 2)).toBe(true); // 关键帧本身
     expect(boxIsOnFrame(ann(withOutside), 6)).toBe(true);
+  });
+
+  it("Mask 轨迹按保持语义显示，outside 帧隐藏", () => {
+    const geometry = {
+      type: "video_track_mask",
+      track_id: "mask-track",
+      keyframes: [
+        {
+          frame_index: 2,
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [2, 3],
+            object_key: "mask.json",
+            sha256: "a".repeat(64),
+            runs: 3,
+            bytes: 64,
+          },
+          source: "manual",
+        },
+      ],
+      outside: [{ from: 4, to: 4 }],
+    };
+    expect(boxIsOnFrame(ann(geometry), 2)).toBe(true);
+    expect(boxIsOnFrame(ann(geometry), 9)).toBe(true);
+    expect(boxIsOnFrame(ann(geometry), 4)).toBe(false);
+    expect(firstTrackFrame(ann(geometry))).toBe(2);
   });
 
   it("非视频几何(图片框)不受帧筛选影响", () => {

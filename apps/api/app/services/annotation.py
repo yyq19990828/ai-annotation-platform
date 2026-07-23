@@ -569,7 +569,7 @@ class AnnotationService:
                 row.task_id
                 for row in rows
                 if (row.geometry or {}).get("type")
-                in {"raster_mask", "video_track_mask"}
+                in {"raster_mask", "video_mask", "video_track_mask"}
             },
             key=str,
         )

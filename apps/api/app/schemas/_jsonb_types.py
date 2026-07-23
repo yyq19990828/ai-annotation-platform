@@ -215,7 +215,7 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
     "point_mask_3d",
 )
 
-# 退役的 ai_interactive 值按几何类型归位, 与迁移 0115/0116 的 CASE 逐字一致:
+# 退役的 ai_interactive 值按几何类型归位:
 # polygon 系几何 -> region, 其余 -> bbox。写入 schema 入口映射与 prediction 派生共用。
 RETIRED_AI_INTERACTIVE = "ai_interactive"
 _REGION_GEOMETRY_TYPES = frozenset(
@@ -224,6 +224,7 @@ _REGION_GEOMETRY_TYPES = frozenset(
         "multi_polygon",
         "mask",
         "raster_mask",
+        "video_mask",
         "video_polygon",
         "video_track_polygon",
         "video_track_mask",
@@ -738,6 +739,16 @@ class CocoRleContent(BaseModel):
         return self
 
 
+class VideoMaskGeometry(BaseModel):
+    """Single-frame video raster mask backed by immutable COCO RLE content."""
+
+    type: Literal["video_mask"] = "video_mask"
+    frame_index: StrictInt = Field(ge=0)
+    mask: CocoRleMaskRef
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class VideoTrackMaskKeyframe(BaseModel):
     frame_index: StrictInt = Field(ge=0)
     mask: CocoRleMaskRef
@@ -775,7 +786,7 @@ class RasterMaskGeometry(BaseModel):
     """v0.23.6 · 图片栅格掩码几何。
 
     引用不可变 COCO RLE 对象存储掩码内容，不内联像素数据。
-    只允许图片 DatasetItem（视频使用 video_track_mask）。
+    只允许图片 DatasetItem（视频使用 video_mask / video_track_mask）。
     """
 
     type: Literal["raster_mask"] = "raster_mask"
@@ -949,6 +960,7 @@ Geometry = Annotated[
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
     | VideoTrackPolylineGeometry
+    | VideoMaskGeometry
     | VideoTrackMaskGeometry
     | PolygonGeometry
     | MultiPolygonGeometry

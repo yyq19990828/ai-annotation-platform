@@ -103,6 +103,9 @@ function annotationToolMeta(
   if (geometry.type === "video_track_mask") {
     return { label: "轨迹(栅格掩码)", detail: `${geometry.keyframes.length} 关键帧` };
   }
+  if (geometry.type === "video_mask") {
+    return { label: "栅格掩码", detail: `F${geometry.frame_index} · ${geometry.mask.runs} runs` };
+  }
   if (geometry.type === "video_polygon") {
     return { label: "多边形", detail: `F${geometry.frame_index} · ${geometry.points.length} 点` };
   }

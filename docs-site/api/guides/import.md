@@ -59,7 +59,7 @@ image_height=<optional COCO fallback height>
 
 ## AAP JSON 格式
 
-详见 [用户文档 · AAP JSON](../../user-guide/reference/export-formats#aap-json-13无损) + [ADR-0024](../../dev/adr/archive/0024-aap-json-format)。预测导入消费 `predictions[]`；标注导入接口消费 `annotations[]`。图片 `raster_mask` 与视频 `video_track_mask` 都通过 `mask_objects` 恢复内容寻址正文；导入会先校验引用、摘要与尺寸，再写对象并挂载 annotation。
+详见 [用户文档 · AAP JSON](../../user-guide/reference/export-formats#aap-json-13无损) + [ADR-0024](../../dev/adr/archive/0024-aap-json-format)。预测导入消费 `predictions[]`；标注导入接口消费 `annotations[]`。图片 `raster_mask`、视频单帧 `video_mask` 与视频轨迹 `video_track_mask` 都通过 `mask_objects` 恢复内容寻址正文；导入会先校验引用、摘要与尺寸，再写对象并挂载 annotation。
 
 COCO 导入同时识别 bbox、polygon segmentation 与 uncompressed RLE segmentation。RLE 会先写入共享内容层，再形成 `raster_mask` 候选；非法、空前景或尺寸不匹配的 segmentation 作为逐 annotation 错误返回，不会静默降级成 bbox。
 

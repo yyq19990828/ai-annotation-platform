@@ -63,6 +63,9 @@ describe("shouldShowInManualAnnotationSection", () => {
     expect(shouldShowInManualAnnotationSection({ geometry: { type: "video_bbox" } }, true)).toBe(
       true,
     );
+    expect(shouldShowInManualAnnotationSection({ geometry: { type: "video_mask" } }, true)).toBe(
+      true,
+    );
     expect(shouldShowInManualAnnotationSection({ geometry: { type: "raster_mask" } }, false)).toBe(
       true,
     );

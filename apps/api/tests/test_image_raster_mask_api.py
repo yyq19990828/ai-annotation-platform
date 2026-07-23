@@ -201,6 +201,51 @@ async def test_static_mask_get_supports_etag_and_frame_alias(
     load.assert_awaited_once()
 
 
+async def test_single_frame_video_mask_get_is_bound_to_its_frame(
+    httpx_client_bound, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, annotation = await _seed_image_mask(
+        db_session, owner_id=user.id, user_id=user.id
+    )
+    item = await db_session.get(DatasetItem, task.dataset_item_id)
+    project = await db_session.get(Project, task.project_id)
+    assert item is not None and project is not None
+    item.file_type = "video"
+    item.metadata_ = {"video": {"frame_count": 10}}
+    task.file_type = "video"
+    project.data_type = "video"
+    annotation.annotation_type = "video_mask"
+    annotation.geometry = {
+        "type": "video_mask",
+        "frame_index": 4,
+        "mask": build_rle_reference(FOREGROUND_RLE),
+    }
+    load = AsyncMock(return_value=FOREGROUND_RLE)
+    monkeypatch.setattr("app.api.v1.annotations.load_coco_rle", load)
+    monkeypatch.setattr(settings, "raster_mask_read_enabled", True)
+    await db_session.commit()
+
+    static = await httpx_client_bound.get(
+        f"/api/v1/annotations/{annotation.id}/mask-content",
+        headers=_headers(token),
+    )
+    exact = await httpx_client_bound.get(
+        f"/api/v1/annotations/{annotation.id}/mask-content/4",
+        headers=_headers(token),
+    )
+    outside = await httpx_client_bound.get(
+        f"/api/v1/annotations/{annotation.id}/mask-content/5",
+        headers=_headers(token),
+    )
+
+    assert static.status_code == 200
+    assert exact.status_code == 200
+    assert outside.status_code == 404
+    assert outside.json()["detail"] == "mask is outside at this frame"
+    assert load.await_count == 2
+
+
 async def test_static_mask_get_returns_retryable_structured_corruption(
     httpx_client_bound, db_session, super_admin, monkeypatch
 ):

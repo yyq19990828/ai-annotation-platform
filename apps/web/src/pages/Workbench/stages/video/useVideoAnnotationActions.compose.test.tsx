@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   composeVideoTracks: vi.fn(),
   uploadTaskContent: vi.fn(),
   saveMaskKeyframe: vi.fn(),
+  updateAnnotation: vi.fn(),
 }));
 
 vi.mock("@/api/tasks", () => ({
@@ -146,6 +147,7 @@ describe("handleVideoMaskCommit", () => {
   beforeEach(() => {
     apiMocks.uploadTaskContent.mockReset();
     apiMocks.saveMaskKeyframe.mockReset();
+    apiMocks.updateAnnotation.mockReset();
     apiMocks.uploadTaskContent.mockResolvedValue(reference);
     apiMocks.saveMaskKeyframe.mockResolvedValue({ ...maskTrack, version: 4 });
   });
@@ -179,7 +181,7 @@ describe("handleVideoMaskCommit", () => {
     expect(apiMocks.saveMaskKeyframe).not.toHaveBeenCalled();
   });
 
-  it("新建单帧 Mask 先选 region 类别，再创建单关键帧容器", async () => {
+  it("新建单帧 Mask 先选 region 类别，再创建 video_mask", async () => {
     const state = {
       activeClass: "Recommended",
       pendingDrawing: null as import("../../state/useWorkbenchState").PendingDrawing,
@@ -235,9 +237,72 @@ describe("handleVideoMaskCommit", () => {
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        annotation_type: "video_track_mask",
+        annotation_type: "video_mask",
         tool_unit_id: "region",
         class_name: "Road",
+        geometry: expect.objectContaining({
+          type: "video_mask",
+          frame_index: 5,
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(saved).toMatchObject({ annotation: { id: "mask-new", class_name: "Road" } });
+  });
+
+  it("Mask 轨迹工具显式创建 video_track_mask", async () => {
+    const state = {
+      pendingDrawing: null as import("../../state/useWorkbenchState").PendingDrawing,
+      setPendingDrawing: vi.fn(
+        (pending: import("../../state/useWorkbenchState").PendingDrawing) => {
+          state.pendingDrawing = pending;
+        },
+      ),
+      setSelectedId: vi.fn(),
+    };
+    const create = vi.fn(
+      (
+        payload: AnnotationPayload,
+        options?: { onSuccess?: (created: AnnotationResponse) => void },
+      ) => {
+        options?.onSuccess?.({
+          ...maskTrack,
+          id: "mask-track-new",
+          class_name: payload.class_name,
+          geometry: payload.geometry,
+        });
+      },
+    );
+    const { result } = renderHook(() =>
+      useVideoAnnotationActions({
+        taskId: "task-1",
+        queryClient: new QueryClient(),
+        history: { push: vi.fn(), pushBatch: vi.fn() } as never,
+        s: state as never,
+        annotationsRef: { current: [] },
+        pushToast: vi.fn(),
+        recordRecentClass: vi.fn(),
+        optimisticEnqueueCreate: vi.fn(),
+        enqueueOnError: vi.fn(),
+        activeToolHasOwnClasses: true,
+        mutations: {
+          create: { mutate: create },
+          update: { mutate: vi.fn() },
+          delete: { mutate: vi.fn() },
+        },
+      }),
+    );
+
+    const savePromise = result.current.handleVideoMaskCommit(rle, 5, null, "track");
+    await act(async () => {
+      result.current.handlePickVideoPendingClass("Road");
+      await savePromise;
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        annotation_type: "video_track_mask",
         geometry: expect.objectContaining({
           type: "video_track_mask",
           keyframes: [expect.objectContaining({ frame_index: 5 })],
@@ -245,8 +310,36 @@ describe("handleVideoMaskCommit", () => {
       }),
       expect.anything(),
     );
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(saved).toMatchObject({ annotation: { id: "mask-new", class_name: "Road" } });
+  });
+
+  it("编辑已有单帧 Mask 使用 If-Match 更新 video_mask", async () => {
+    const singleMask: AnnotationResponse = {
+      ...maskTrack,
+      id: "mask-frame-1",
+      annotation_type: "video_mask",
+      version: 7,
+      geometry: { type: "video_mask", frame_index: 5, mask: reference },
+    };
+    apiMocks.updateAnnotation.mockResolvedValue({ ...singleMask, version: 8 });
+    const { result, queryClient, history } = setup();
+    queryClient.setQueryData(["annotations", "task-1"], [singleMask]);
+
+    const saved = await result.current.handleVideoMaskCommit(rle, 5, singleMask);
+
+    expect(apiMocks.updateAnnotation).toHaveBeenCalledWith(
+      "task-1",
+      "mask-frame-1",
+      {
+        geometry: {
+          type: "video_mask",
+          frame_index: 5,
+          mask: reference,
+        },
+      },
+      'W/"7"',
+    );
+    expect(saved?.annotation.version).toBe(8);
+    expect(history.push).toHaveBeenCalledTimes(1);
   });
 
   it("取消新建 Mask 的类别选择会结束等待且不上传内容", async () => {

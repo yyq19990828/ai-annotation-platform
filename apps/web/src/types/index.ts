@@ -328,6 +328,12 @@ export type CocoRleMaskRef = {
   runs: number;
   bytes: number;
 };
+/** 视频单帧栅格掩码；内容引用与图片 Raster Mask 一致，额外绑定源视频帧。 */
+export type VideoMaskGeometry = {
+  type: "video_mask";
+  frame_index: number;
+  mask: CocoRleMaskRef;
+};
 export type VideoTrackMaskKeyframe = {
   frame_index: number;
   mask: CocoRleMaskRef;
@@ -425,6 +431,7 @@ export type Geometry =
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry
+  | VideoMaskGeometry
   | VideoTrackMaskGeometry
   | PolygonGeometry
   | MultiPolygonGeometry

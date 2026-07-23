@@ -9,7 +9,7 @@ import {
   closeRasterMaskImage,
   rasterMaskAlphaBounds,
 } from "./shared/rasterMaskRender";
-import { isVideoMaskTrack, resolveVideoMaskTrackAtFrame } from "./videoStageGeometry";
+import { isVideoMask, isVideoMaskTrack, resolveVideoMaskTrackAtFrame } from "./videoStageGeometry";
 
 export { buildTintedMaskRgba };
 
@@ -31,6 +31,7 @@ export interface VideoMaskRenderRecord {
   geom: { x: number; y: number; w: number; h: number };
   zOrder: number;
   selected: boolean;
+  isTrack: boolean;
   cacheKey: string;
 }
 
@@ -41,6 +42,7 @@ interface MaskDescriptor {
   color: string;
   zOrder: number;
   selected: boolean;
+  isTrack: boolean;
   cachePrefix: string;
   frameKey: number;
   load: () => Promise<CocoRle>;
@@ -94,6 +96,23 @@ export function useVideoMaskFrames(params: {
 
   const descriptors = useMemo<MaskDescriptor[]>(() => {
     const committed = annotations.flatMap((annotation) => {
+      if (isVideoMask(annotation)) {
+        if (annotation.geometry.frame_index !== frameIndex) return [];
+        return [
+          {
+            id: annotation.id,
+            source: "annotation" as const,
+            ref: annotation.geometry.mask,
+            color: colorForAnnotation(annotation),
+            zOrder: annotation.z_order ?? 0,
+            selected: annotation.id === selectedId,
+            isTrack: false,
+            cachePrefix: `annotation:${annotation.id}:version:${annotation.version ?? 0}`,
+            frameKey: frameIndex,
+            load: () => rasterMasksApi.annotationRasterMaskContent(annotation.id),
+          },
+        ];
+      }
       if (!isVideoMaskTrack(annotation)) return [];
       const resolved = resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex);
       if (!resolved) return [];
@@ -105,6 +124,7 @@ export function useVideoMaskFrames(params: {
           color: colorForAnnotation(annotation),
           zOrder: annotation.z_order ?? 0,
           selected: annotation.id === selectedId,
+          isTrack: true,
           cachePrefix: `annotation:${annotation.id}:version:${annotation.version ?? 0}`,
           frameKey: resolved.keyframeFrame,
           load: () => rasterMasksApi.annotationVideoMaskContent(annotation.id, frameIndex),
@@ -128,6 +148,7 @@ export function useVideoMaskFrames(params: {
           color: "#a855f7",
           zOrder: Number.MAX_SAFE_INTEGER - index,
           selected: false,
+          isTrack: false,
           cachePrefix: `tracker:${candidate.jobId}:instance:${instance}`,
           frameKey: frameIndex,
           load: () => videoTrackerApi.maskContent(candidate.jobId, geometry.mask.sha256),
@@ -209,6 +230,7 @@ export function useVideoMaskFrames(params: {
             geom: cached.geom,
             zOrder: descriptor.zOrder,
             selected: descriptor.selected,
+            isTrack: descriptor.isTrack,
             cacheKey: key,
           } satisfies VideoMaskRenderRecord;
         }),

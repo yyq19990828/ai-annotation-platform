@@ -183,6 +183,11 @@ def collect_mask_geometries(value: Any) -> list[dict[str, Any]]:
         ):
             geometries.append(value)
             return geometries
+        if geometry_type == "video_mask" and (
+            "mask" in value or "geometry" not in value
+        ):
+            geometries.append(value)
+            return geometries
         if geometry_type == "video_track_mask" and (
             "keyframes" in value or "geometry" not in value
         ):
@@ -342,7 +347,7 @@ async def validate_mask_geometry_for_task(
 ) -> None:
     """验证掩码几何是否与任务数据集项匹配。
 
-    支持 video_track_mask（视频）和 raster_mask（图片）两种类型。
+    支持 video_mask / video_track_mask（视频）和 raster_mask（图片）。
     """
     geom_type = geometry.get("type")
 
@@ -396,13 +401,12 @@ async def validate_mask_geometry_for_task(
             )
         return
 
-    if geom_type == "video_track_mask":
-        # 视频掩码验证（原有逻辑）
+    if geom_type in {"video_mask", "video_track_mask"}:
         if task.dataset_item_id is None:
-            raise ValueError("video mask track requires a primary dataset item")
+            raise ValueError("video mask requires a primary dataset item")
         item = await db.get(DatasetItem, task.dataset_item_id)
         if item is None or item.file_type != "video":
-            raise ValueError("video mask track requires a video dataset item")
+            raise ValueError("video mask requires a video dataset item")
         video = (item.metadata_ or {}).get("video")
         video = video if isinstance(video, dict) else {}
         width = item.width or video.get("width")
@@ -410,7 +414,7 @@ async def validate_mask_geometry_for_task(
         frame_count = video.get("frame_count")
         if not width or not height:
             raise ValueError(
-                "source video width / height metadata is required for mask tracks"
+                "source video width / height metadata is required for masks"
             )
         if (
             int(width) > MAX_VIDEO_MASK_DIMENSION
@@ -428,16 +432,21 @@ async def validate_mask_geometry_for_task(
                 max_pixels=MAX_VIDEO_MASK_PIXELS,
             )
         expected_size = [int(height), int(width)]
-        for keyframe in geometry.get("keyframes") or []:
-            mask = keyframe.get("mask") or {}
+        frames = (
+            [geometry]
+            if geom_type == "video_mask"
+            else list(geometry.get("keyframes") or [])
+        )
+        for frame in frames:
+            mask = frame.get("mask") or {}
             if list(mask.get("size") or []) != expected_size:
                 raise ValueError(f"mask size must match source video {expected_size}")
-            frame_index = keyframe.get("frame_index")
+            frame_index = frame.get("frame_index")
             if frame_count is not None and int(frame_index) >= int(frame_count):
                 raise ValueError(
                     f"mask frame_index must be < source frame_count {frame_count}"
                 )
-        if frame_count is not None:
+        if geom_type == "video_track_mask" and frame_count is not None:
             for outside in geometry.get("outside") or []:
                 if int(outside.get("to", 0)) >= int(frame_count):
                     raise ValueError(

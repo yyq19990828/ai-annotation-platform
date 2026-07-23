@@ -7,6 +7,7 @@ describe("toolUnitForGeometryType", () => {
     ["rotated_bbox", "rotated_bbox"],
     ["polygon", "region"],
     ["raster_mask", "region"],
+    ["video_mask", "region"],
     ["video_track_mask", "region"],
     ["video_polyline", "polyline"],
     ["keypoint", "keypoint"],

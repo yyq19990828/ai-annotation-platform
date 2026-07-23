@@ -50,6 +50,7 @@ _GEOMETRY_TO_TOOL_UNIT: dict[str, str] = {
     "polygon": "region",
     "multi_polygon": "region",
     "raster_mask": "region",
+    "video_mask": "region",
     "video_track_mask": "region",
 }
 

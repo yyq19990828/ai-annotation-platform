@@ -26,6 +26,8 @@ def _geometry(kind: str, rle: dict) -> dict:
     reference = build_rle_reference(rle)
     if kind == "raster_mask":
         return {"type": kind, "mask": reference}
+    if kind == "video_mask":
+        return {"type": kind, "frame_index": 0, "mask": reference}
     return {
         "type": kind,
         "track_id": "trk_revision_test",
@@ -53,7 +55,7 @@ async def _seed_mask(db, user_id, *, kind: str = "raster_mask"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["raster_mask", "video_track_mask"])
+@pytest.mark.parametrize("kind", ["raster_mask", "video_mask", "video_track_mask"])
 async def test_database_trigger_captures_orm_core_and_hard_delete(
     db_session, super_admin, kind
 ):

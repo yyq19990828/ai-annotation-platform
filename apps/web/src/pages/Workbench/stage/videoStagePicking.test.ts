@@ -42,6 +42,7 @@ describe("pickTopVideoMaskAt", () => {
     geom: { x: 0, y: 0, w: 0.5, h: 0.5 },
     zOrder,
     selected: false,
+    isTrack: true,
     cacheKey: id,
   });
 

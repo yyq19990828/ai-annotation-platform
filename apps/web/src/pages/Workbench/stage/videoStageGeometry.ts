@@ -10,6 +10,7 @@ import type {
   VideoTrackPolygonKeyframe,
   VideoTrackPolylineGeometry,
   VideoTrackPolylineKeyframe,
+  VideoMaskGeometry,
   VideoTrackMaskGeometry,
   VideoTrackMaskKeyframe,
   CocoRleMaskRef,
@@ -128,15 +129,27 @@ export function isVideoMaskTrack(
   return ann.geometry.type === "video_track_mask";
 }
 
+export function isVideoMask(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoMaskGeometry } {
+  return ann.geometry.type === "video_mask";
+}
+
 /**
  * v0.21.26 · 视频几何「联合」判定 helper —— 消除管理层(选中卡 / 右键菜单 / 删除)各处
  * 散落的 bbox-only 硬编码。渲染层早已全类型覆盖(videoFrameViews),这些 helper 让选中后的
  * 信息 / 操作也覆盖 polygon / polyline / 旋转框及其 track 变体。
  */
 
-/** 任意视频单帧几何 (bbox / polygon / polyline / rotated_bbox), 非 track。 */
+/** 任意视频单帧几何 (bbox / polygon / polyline / rotated_bbox / mask), 非 track。 */
 export function isAnyVideoSingleFrame(ann: AnnotationResponse): boolean {
-  return isVideoBbox(ann) || isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
+  return (
+    isVideoBbox(ann) ||
+    isVideoPolygon(ann) ||
+    isVideoPolyline(ann) ||
+    isVideoRotatedBbox(ann) ||
+    isVideoMask(ann)
+  );
 }
 
 /** 单帧「点集 / 旋转」几何 (polygon / polyline / rotated_bbox), 排除 bbox (bbox 有专属交互)。 */

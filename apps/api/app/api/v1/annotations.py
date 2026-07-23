@@ -223,7 +223,7 @@ async def get_annotation_mask_content(
 ) -> Response:
     """v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。
 
-    支持图片 RasterMaskGeometry 掩码的静态内容服务。
+    支持图片 RasterMaskGeometry 与视频单帧 VideoMaskGeometry 的静态内容服务。
     返回标准 COCO RLE 格式，带 ETag 支持条件请求。
     """
     annotation, _task, geometry = await _load_visible_mask_annotation(
@@ -231,7 +231,7 @@ async def get_annotation_mask_content(
     )
     geom_type = geometry.get("type")
 
-    if geom_type == "raster_mask":
+    if geom_type in {"raster_mask", "video_mask"}:
         mask_ref = geometry.get("mask")
         if not mask_ref:
             raise HTTPException(status_code=409, detail="mask reference missing")
@@ -261,7 +261,12 @@ async def get_annotation_mask_content_frame(
     annotation, _task, geometry = await _load_visible_mask_annotation(
         annotation_id, db, user
     )
-    if geometry.get("type") == "raster_mask":
+    if geometry.get("type") in {"raster_mask", "video_mask"}:
+        if (
+            geometry.get("type") == "video_mask"
+            and geometry.get("frame_index") != frame_index
+        ):
+            raise HTTPException(status_code=404, detail="mask is outside at this frame")
         mask_ref = geometry.get("mask")
         if not mask_ref:
             raise HTTPException(status_code=409, detail="mask reference missing")

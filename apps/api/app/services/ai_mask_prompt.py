@@ -104,6 +104,18 @@ async def resolve_authorized_mask_prompt(
                 404, "raster_mask_read_disabled", "Raster Mask reading is disabled"
             )
         mask_reference = geometry.get("mask")
+    elif geometry_type == "video_mask":
+        if frame_index is None:
+            _prompt_error(
+                422,
+                "mask_prompt_frame_required",
+                "video Mask prompts require a frame",
+            )
+        if geometry.get("frame_index") != frame_index:
+            _prompt_error(
+                404, "mask_prompt_outside", "Mask source is outside at this frame"
+            )
+        mask_reference = geometry.get("mask")
     elif geometry_type == "video_track_mask":
         if frame_index is None:
             _prompt_error(
@@ -117,7 +129,7 @@ async def resolve_authorized_mask_prompt(
         _prompt_error(
             422,
             "mask_prompt_geometry_unsupported",
-            "Mask prompt source must be raster_mask or video_track_mask",
+            "Mask prompt source must be raster_mask, video_mask, or video_track_mask",
         )
     if not isinstance(mask_reference, dict):
         _prompt_error(

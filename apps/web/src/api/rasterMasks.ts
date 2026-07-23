@@ -6,7 +6,7 @@ import {
 import { apiClient } from "./client";
 
 export const rasterMasksApi = {
-  /** v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。 */
+  /** 获取图片 Raster Mask 或视频单帧 Mask 的静态内容。 */
   annotationRasterMaskContent: (annotationId: string) =>
     apiClient.get<CocoRle>(`/annotations/${annotationId}/mask-content`),
   /** 获取视频掩码关键帧内容 (video_track_mask)。 */

@@ -141,6 +141,7 @@ pnpm --filter @anno/web video:bench
 | `video_bbox`                                   | 单帧矩形框                | 选择、移动、缩放、改类、删除，可聚合成轨迹                                                       |
 | `video_polygon` / `video_polyline`             | 单帧点集                  | 绘制、顶点变形、改类、删除                                                                       |
 | `video_rotated_bbox`                           | 单帧旋转框                | 渲染、选择、改类、删除                                                                           |
+| `video_mask`                                   | 单帧内容寻址 RLE          | alpha 渲染 / picking、brush / erase、帧级选择、改类、删除                                        |
 | `video_track_bbox`                             | bbox compact 轨迹         | 完整关键帧编辑、outside / occluded、组合、转换、AI 追踪                                          |
 | `video_track_polygon` / `video_track_polyline` | 点集 compact 轨迹         | 渲染 / 插值、指标、首帧定位、显隐、锁定、改类、整条删除                                          |
 | `video_track_mask`                             | 内容寻址 RLE compact 轨迹 | alpha 渲染 / picking、brush / erase、held 关键帧、outside / occluded、AI 追踪、DAVIS / COCO 导出 |
@@ -202,12 +203,19 @@ pnpm --filter @anno/web video:bench
 
 点集轨迹与 bbox 轨迹使用相同的 `track_id / outside / keyframes[]` 外壳，但关键帧保存 `points` 而非 `bbox`；polygon 闭合，polyline 不闭合。点集插值要求相邻关键帧顶点可对应，当前工作台先开放渲染与管理层，关键帧表和完整逐帧编辑仍只属于 bbox 轨迹。
 
-Mask 轨迹关键帧保存 `{frame_index, mask, source, occluded?, attributes?}`。`mask` 是 `coco_rle_ref`，包含 `[height,width]`、对象键、SHA-256、runs 和 canonical bytes；像素内容不重复嵌进 annotation JSONB。当前帧解析采用最近关键帧保持、距离相同时选更早帧，`outside` 优先。前端只解码可见帧，缓存键包含 annotation version、resolved keyframe 与内容哈希，淘汰、版本变化或切 task 时关闭 `ImageBitmap`。选择与右键使用 row-major alpha 命中，不用外接框冒充像素命中。
+单帧 Mask 保存 `{type:"video_mask", frame_index, mask}`，只在精确帧显示且不持有
+`track_id`。Mask 轨迹关键帧保存 `{frame_index, mask, source, occluded?, attributes?}`。
+两者的 `mask` 都是 `coco_rle_ref`，包含 `[height,width]`、对象键、SHA-256、runs 和
+canonical bytes；像素内容不重复嵌进 annotation JSONB。轨迹当前帧解析采用最近关键帧保持、
+距离相同时选更早帧，`outside` 优先。前端只解码可见帧，缓存键包含 annotation version、
+resolved frame 与内容哈希，淘汰、版本变化或切 task 时关闭 `ImageBitmap`。选择与右键使用
+row-major alpha 命中，不用外接框冒充像素命中。
 
 内容端点：
 
 ```http
 POST /api/v1/tasks/{task_id}/mask-content
+GET /api/v1/annotations/{annotation_id}/mask-content
 GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}
 GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
 ```

@@ -75,6 +75,7 @@ import {
   isAnyVideoSingleFrame,
   isAnyVideoTrack,
   isVideoBbox,
+  isVideoMask,
   isVideoPolygon,
   isVideoPolygonTrack,
   isVideoPolyline,
@@ -351,6 +352,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const maskLassoRef = useRef<[number, number][] | null>(null);
     const [maskLassoPoints, setMaskLassoPoints] = useState<[number, number][]>([]);
     const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
+    const maskToolActive = videoTool === "mask" || videoTool === "mask-track";
 
     // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
     const selectedTrack = useMemo(() => {
@@ -362,6 +364,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       return annotation &&
         (isVideoTrack(annotation) || annotation.geometry.type === "video_track_mask")
         ? (annotation as VideoManagedTrackAnnotation)
+        : null;
+    }, [annotations, selectedId]);
+    const selectedMaskAnnotation = useMemo(() => {
+      const annotation = annotations.find((item) => item.id === selectedId);
+      return annotation &&
+        (isVideoMask(annotation) || annotation.geometry.type === "video_track_mask")
+        ? annotation
         : null;
     }, [annotations, selectedId]);
 
@@ -563,13 +572,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const visibleMaskAnnotations = useMemo(
       () =>
         annotations.filter((annotation) => {
+          if (annotation.geometry.type === "video_mask") {
+            return annotation.geometry.frame_index === frameIndex;
+          }
           if (annotation.geometry.type !== "video_track_mask") return false;
           return !hiddenTrackIds?.has(annotation.geometry.track_id);
         }),
-      [annotations, hiddenTrackIds],
+      [annotations, frameIndex, hiddenTrackIds],
     );
     const maskColorForAnnotation = useCallback(
       (annotation: AnnotationResponse) => {
+        if (annotation.geometry.type === "video_mask") {
+          return colorToHex(classColor(annotation.class_name));
+        }
         if (annotation.geometry.type !== "video_track_mask") return "#a855f7";
         return colorToHex(
           getTrackColor(annotation.geometry.track_id, annotation.class_name, trackColorOverrides),
@@ -646,7 +661,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         };
       });
       for (const mask of committedMaskRecords) {
-        entries.push({ id: mask.id, x: mask.geom.x, y: mask.geom.y, isTrack: true });
+        entries.push({ id: mask.id, x: mask.geom.x, y: mask.geom.y, isTrack: mask.isTrack });
       }
       const carryOverGhosts = frameViews.carryOverGhosts.map((g) => ({
         id: g.id,
@@ -859,14 +874,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           !!maskEditor &&
           canEditMask({
             taskReadOnly: !!readOnly || isPlaybackActive || maskCompareActive,
-            annotationLocked: !!selectedManagedTrack?.is_locked,
+            annotationLocked: !!selectedMaskAnnotation?.is_locked,
             trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
             segmentLocked: false,
             editorPhase:
               maskEditor.phase ??
               (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
           });
-        if (videoTool === "mask" && maskEditor && maskEditable) {
+        if (maskToolActive && maskEditor && maskEditable) {
           const native = e.evt;
           if (native.button !== 0) return;
           const point = pointFromClientEvt(native.clientX, native.clientY);
@@ -957,6 +972,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         lockedTrackIds,
         maskCompareActive,
         maskEditor,
+        maskToolActive,
         onSelectSamMaskCandidate,
         pointFromClientEvt,
         pointsDrawEnabled,
@@ -964,14 +980,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         readOnly,
         samMaskRecords,
         selectedManagedTrack,
+        selectedMaskAnnotation,
         size.h,
         size.w,
-        videoTool,
       ],
     );
 
     useEffect(() => {
-      if (videoTool !== "mask" || !maskEditor) return;
+      if (!maskToolActive || !maskEditor) return;
       const onKey = (event: KeyboardEvent) => {
         if (maskCompareActive) return;
         const target = event.target;
@@ -986,7 +1002,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle");
         const editable = canEditMask({
           taskReadOnly: !!readOnly || isPlaybackActive,
-          annotationLocked: !!selectedManagedTrack?.is_locked,
+          annotationLocked: !!selectedMaskAnnotation?.is_locked,
           trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
           segmentLocked: false,
           editorPhase: phase,
@@ -1051,7 +1067,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       onMaskCommit,
       readOnly,
       selectedManagedTrack,
-      videoTool,
+      selectedMaskAnnotation,
+      maskToolActive,
     ]);
 
     // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
@@ -1383,7 +1400,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       const onWheel = (e: WheelEvent) => {
         if (
           !maskCompareActive &&
-          videoTool === "mask" &&
+          maskToolActive &&
           maskEditor &&
           e.shiftKey &&
           !(e.ctrlKey || e.metaKey)
@@ -1416,7 +1433,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       };
       window.addEventListener("wheel", onWheel, { capture: true, passive: false });
       return () => window.removeEventListener("wheel", onWheel, { capture: true });
-    }, [maskCompareActive, maskEditor, videoTool, vpRef, zoomAt]);
+    }, [maskCompareActive, maskEditor, maskToolActive, vpRef, zoomAt]);
 
     // 本地视口/导航快捷键(对齐旧 SVG 栈 VideoStage 本地 keydown):
     // F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧(,/. 跳关键帧由中央 hotkeys 分发器处理)。
@@ -1579,7 +1596,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         // 指针在画布上移动即唤出播放浮层(对齐旧 SVG 栈);离开后由 onPointerLeave 计时收起。
         showPlaybackOverlay();
         // 光标归一化坐标上报(状态栏读出),无论是否在平移;越界(letterbox 区)上报 null。
-        if (onCursorMove || pointsDrawEnabled || videoTool === "mask") {
+        if (onCursorMove || pointsDrawEnabled || maskToolActive) {
           const rect = containerRef.current?.getBoundingClientRect();
           const pt = rect
             ? clientToVideoNorm(evt.clientX, evt.clientY, rect, vpRef.current, size)
@@ -1588,7 +1605,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           onCursorMove?.(inFrame);
           // 橡皮筋预览: 仅绘制工具激活时跟踪, 用于「上一点 → 光标」预览段与首点吸附高亮。
           if (pointsDrawEnabled) setPointsCursor(inFrame);
-          if (videoTool === "mask" && !maskCompareActive) setMaskCursor(inFrame);
+          if (maskToolActive && !maskCompareActive) setMaskCursor(inFrame);
         }
         const maskStroke = maskStrokeRef.current;
         const maskLasso = maskLassoRef.current;
@@ -1597,7 +1614,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           !!maskEditor &&
           canEditMask({
             taskReadOnly: !!readOnly || isPlaybackActive || maskCompareActive,
-            annotationLocked: !!selectedManagedTrack?.is_locked,
+            annotationLocked: !!selectedMaskAnnotation?.is_locked,
             trackLocked: !!selectedTrackId && lockedTrackIds.has(selectedTrackId),
             segmentLocked: false,
             editorPhase:
@@ -1646,11 +1663,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         pointFromClientEvt,
         pointsDrawEnabled,
         readOnly,
+        selectedMaskAnnotation,
         selectedManagedTrack,
         setVp,
         showPlaybackOverlay,
         size,
-        videoTool,
+        maskToolActive,
         vpRef,
       ],
     );
@@ -1782,7 +1800,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             <VideoKonvaMaskLayer records={displayedMaskRecords} size={size} />
             <MaskCompareTileLayer store={maskCompareStore} viewport={maskCompareViewport} />
             {!maskCompareActive &&
-              videoTool === "mask" &&
+              maskToolActive &&
               maskEditor?.active &&
               maskEditor.buffer &&
               !maskOperationPreviewBuffer && (
@@ -1794,7 +1812,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                   visible
                 />
               )}
-            {!maskCompareActive && videoTool === "mask" && maskOperationPreviewBuffer && (
+            {!maskCompareActive && maskToolActive && maskOperationPreviewBuffer && (
               <MaskOverlayLayer
                 buffer={maskOperationPreviewBuffer}
                 revision={maskEditor?.operationPreview?.id ?? 0}
@@ -1804,7 +1822,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                 visible
               />
             )}
-            {!maskCompareActive && videoTool === "mask" && maskInstancePreviewBuffer && (
+            {!maskCompareActive && maskToolActive && maskInstancePreviewBuffer && (
               <MaskOverlayLayer
                 buffer={maskInstancePreviewBuffer}
                 revision={maskEditor?.instanceOperationPreview?.id ?? 0}
@@ -1814,7 +1832,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                 visible
               />
             )}
-            {!maskCompareActive && videoTool === "mask" && maskLassoPoints.length > 1 && (
+            {!maskCompareActive && maskToolActive && maskLassoPoints.length > 1 && (
               <Layer name="mask-lasso-preview" listening={false}>
                 <Line
                   points={maskLassoPoints.flatMap(([x, y]) => [x, y])}
@@ -1865,7 +1883,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
             />
             {!maskCompareActive &&
-              videoTool === "mask" &&
+              maskToolActive &&
               maskCursor &&
               maskEditor &&
               (maskEditor.tool === "brush" || maskEditor.tool === "erase") && (

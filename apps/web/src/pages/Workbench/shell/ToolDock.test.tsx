@@ -72,7 +72,7 @@ describe("ToolDock · video tools", () => {
       "magic-box",
     ]);
     expect(toolIds(samGroup)).toEqual(["smart-point", "smart-box", "exemplar", "magic-box"]);
-    expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track"]);
+    expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track", "mask-track"]);
     expect(screen.queryByTestId("video-tool-btn-ai-track")).toBeNull();
     expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
   });
@@ -93,12 +93,15 @@ describe("ToolDock · video tools", () => {
     const smartBox = screen.getByTestId("video-tool-btn-smart-box");
     const exemplar = screen.getByTestId("video-tool-btn-exemplar");
     const mask = screen.getByTestId("video-tool-btn-mask");
+    const maskTrack = screen.getByTestId("video-tool-btn-mask-track");
     expect(track).toHaveAccessibleName("矩形框轨迹");
     expect(track.querySelector(".lucide-gallery-horizontal-end")).toBeInTheDocument();
     expect(smartPoint.querySelector(".lucide-target")).toBeInTheDocument();
     expect(smartBox.querySelector(".lucide-scan")).toBeInTheDocument();
     expect(exemplar.querySelector(".lucide-copy")).toBeInTheDocument();
     expect(mask.querySelector(".lucide-pencil")).toBeInTheDocument();
+    expect(maskTrack).toHaveAccessibleName("Mask 轨迹");
+    expect(maskTrack.querySelector(".lucide-scissors")).toBeInTheDocument();
   });
 
   it("项目开关隐藏全部创建工具时不渲染空分组", () => {

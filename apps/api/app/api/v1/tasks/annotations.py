@@ -712,9 +712,10 @@ async def update_annotation(
         previous_type = str((existing.geometry or {}).get("type") or "")
         proposed_geometry = fields["geometry"]
         proposed_type = str((proposed_geometry or {}).get("type") or "")
-        requires_precondition = (
-            previous_type != proposed_type or proposed_type == "raster_mask"
-        )
+        requires_precondition = previous_type != proposed_type or proposed_type in {
+            "raster_mask",
+            "video_mask",
+        }
         if requires_precondition and not if_match:
             raise HTTPException(
                 status_code=428,
@@ -745,6 +746,7 @@ async def update_annotation(
         )
     if isinstance(next_geometry, dict) and next_geometry.get("type") in {
         "raster_mask",
+        "video_mask",
         "video_track_mask",
     }:
         try:
