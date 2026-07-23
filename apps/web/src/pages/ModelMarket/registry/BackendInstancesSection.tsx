@@ -58,6 +58,7 @@ import {
   registryStateToHealthAxis,
 } from "./registryShared";
 import { CopyableId, EmptyState, NullCell } from "./registryUi";
+import { CapabilityDriftReviewDialog } from "./CapabilityDriftReviewDialog";
 import type { RegistryFilters, RegistryScope } from "./registryTypes";
 import type { MemberViewModel } from "../runtimeTopology";
 import { evaluateUnloadGate } from "../runtimeTopology";
@@ -210,7 +211,7 @@ function InstanceRow({
 }: {
   backend: GlobalBackendItem;
   scope: RegistryScope;
-  poolInfo: { poolId: string; poolName: string; member: MemberViewModel | null } | null;
+  poolInfo: { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null } | null;
   onOpenDetail: (b: GlobalBackendItem) => void;
   onConfirm: (s: ConfirmState) => void;
   onEdit: (target: GlobalRegistryEditTarget) => void;
@@ -360,7 +361,7 @@ function InstanceActionsMenu({
   onEdit,
 }: {
   backend: GlobalBackendItem;
-  poolInfo: { poolId: string; poolName: string; member: MemberViewModel | null } | null;
+  poolInfo: { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null } | null;
   routerMode: RegistryScope["vm"]["router_mode"];
   ledgerFresh: boolean;
   onConfirm: (s: ConfirmState) => void;
@@ -370,6 +371,7 @@ function InstanceActionsMenu({
   const health = useRegistryHealth();
   const drain = useDrainPoolMember();
   const resume = useResumePoolMember();
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const poolId = poolInfo?.poolId ?? null;
   const member = poolInfo?.member ?? null;
@@ -466,6 +468,16 @@ function InstanceActionsMenu({
       disabled: !poolId || memberTraffic !== "draining" || resume.isPending,
       onSelect: onResume,
     },
+    ...(memberTraffic === "disabled"
+      ? [
+          {
+            id: "review-capability-drift",
+            label: "审核能力变更",
+            icon: "shield",
+            onSelect: () => setReviewOpen(true),
+          } as DropdownItem,
+        ]
+      : []),
     { id: "div-2", divider: true, label: "" },
     {
       id: "unload",
@@ -483,26 +495,39 @@ function InstanceActionsMenu({
   ];
 
   return (
-    <DropdownMenu
-      minWidth={180}
-      items={items}
-      trigger={({ open, toggle, ref }) => (
-        <Button
-          ref={ref as never}
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          title="实例操作"
-        >
-          <Icon name="more" size={11} />
-        </Button>
+    <>
+      <DropdownMenu
+        minWidth={180}
+        items={items}
+        trigger={({ open, toggle, ref }) => (
+          <Button
+            ref={ref as never}
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggle();
+            }}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title="实例操作"
+          >
+            <Icon name="more" size={11} />
+          </Button>
+        )}
+      />
+      {poolInfo && memberTraffic === "disabled" && (
+        <CapabilityDriftReviewDialog
+          open={reviewOpen}
+          onOpenChange={setReviewOpen}
+          poolId={poolInfo.poolId}
+          poolName={poolInfo.poolName}
+          poolEnabled={poolInfo.poolEnabled}
+          registryId={backend.id}
+          registryName={backend.name}
+        />
       )}
-    />
+    </>
   );
 }
 
@@ -772,11 +797,16 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }):
 
 function buildRegistryPoolLookup(
   scope: RegistryScope,
-): Map<string, { poolId: string; poolName: string; member: MemberViewModel | null }> {
-  const out = new Map<string, { poolId: string; poolName: string; member: MemberViewModel | null }>();
+): Map<string, { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null }> {
+  const out = new Map<string, { poolId: string; poolName: string; poolEnabled: boolean; member: MemberViewModel | null }>();
   for (const pool of scope.vm.pools) {
     for (const member of pool.members) {
-      out.set(member.registry_id, { poolId: pool.id, poolName: pool.name, member });
+      out.set(member.registry_id, {
+        poolId: pool.id,
+        poolName: pool.name,
+        poolEnabled: pool.enabled,
+        member,
+      });
     }
   }
   return out;

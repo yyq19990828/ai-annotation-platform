@@ -42,6 +42,8 @@
 | DELETE | `/service-pools/{pool_id}/members/{registry_id}` |
 | POST | `/service-pools/{pool_id}/members/{registry_id}/drain` |
 | POST | `/service-pools/{pool_id}/members/{registry_id}/resume` |
+| GET | `/service-pools/{pool_id}/members/{registry_id}/capability-drift` |
+| POST | `/service-pools/{pool_id}/members/{registry_id}/capability-drift/accept` |
 | GET | `/topology` |
 | GET | `/runtime-snapshot` |
 
@@ -613,4 +615,4 @@
 
 ---
 
-_共 57 模块 / 341 路由_
+_共 57 模块 / 343 路由_

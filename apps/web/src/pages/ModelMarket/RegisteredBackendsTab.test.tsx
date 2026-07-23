@@ -66,6 +66,8 @@ const mockUnloadMutate = vi.fn();
 const mockDrainMutate = vi.fn();
 const mockResumeMutate = vi.fn();
 const mockPatchPoolMutate = vi.fn();
+const mockCapabilityPreview = vi.fn();
+const mockAcceptCapabilityMutate = vi.fn();
 
 vi.mock("./useGlobalRegistry", () => ({
   useDeleteRegistry: () => ({ mutate: mockDeleteRegistryMutate, mutateAsync: vi.fn(), isPending: false }),
@@ -86,6 +88,11 @@ vi.mock("./useGlobalRegistry", () => ({
   useDeleteServicePool: () => ({ mutate: vi.fn(), isPending: false }),
   usePutPoolMember: () => ({ mutate: vi.fn(), isPending: false }),
   useRemovePoolMember: () => ({ mutate: vi.fn(), isPending: false }),
+  useCapabilityDriftPreview: (...args: unknown[]) => mockCapabilityPreview(...args),
+  useAcceptCapabilityDrift: () => ({
+    mutate: mockAcceptCapabilityMutate,
+    isPending: false,
+  }),
 }));
 
 // ── GlobalBackendFormModal mock ──────────────────────────────────────────────
@@ -304,6 +311,8 @@ describe("RegisteredBackendsTab (v0.23.4 P3)", () => {
     mockDrainMutate.mockReset();
     mockResumeMutate.mockReset();
     mockPatchPoolMutate.mockReset();
+    mockCapabilityPreview.mockReset();
+    mockAcceptCapabilityMutate.mockReset();
     mockTopology.mockReset();
     mockRuntimeSnapshot.mockReset();
     mockListAll.mockReset();
@@ -317,6 +326,23 @@ describe("RegisteredBackendsTab (v0.23.4 P3)", () => {
     mockListAll.mockResolvedValue({ items: [] });
     mockGpuResources.mockResolvedValue(makeGpuResources([]));
     mockOverview.mockResolvedValue(makeOverview());
+    mockCapabilityPreview.mockReturnValue({
+      data: {
+        pool_id: "pool-1",
+        registry_id: "bk-1",
+        member_state: "disabled",
+        pool_enabled: false,
+        pool_fingerprint: "a".repeat(64),
+        candidate_fingerprint: "b".repeat(64),
+        differing_fields: ["models", "supported_prompts"],
+        has_drift: true,
+        can_accept: true,
+        blocking_members: [],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
   });
 
   describe("loading / empty / error / partial-fail", () => {
@@ -575,6 +601,54 @@ describe("RegisteredBackendsTab (v0.23.4 P3)", () => {
           expect.anything(),
         );
       });
+    });
+
+    it("disabled 实例审核能力变更 → 预览差异并提交候选指纹", async () => {
+      mockTopology.mockResolvedValue(
+        makeTopology({
+          pools: [
+            makeTopologyPool({
+              enabled: false,
+              routable_instances: 0,
+              status: "offline",
+              members: [
+                {
+                  registry_id: "bk-1",
+                  name: "grounded-sam2",
+                  traffic_state: "disabled",
+                  weight: 1,
+                  state: "connected",
+                  last_checked_at: "2026-07-23T01:45:00Z",
+                  gpu_resource_id: "node-a/index:0",
+                },
+              ],
+            }),
+          ],
+        }),
+      );
+      mockListAll.mockResolvedValue({ items: [makeBackend()] });
+      renderUI();
+      await switchTab(/实例/);
+      await screen.findByText("grounded-sam2");
+      fireEvent.click(screen.getByTitle("实例操作"));
+      fireEvent.click(await screen.findByRole("menuitem", { name: /审核能力变更/ }));
+
+      expect(await screen.findByText(/审核「grounded-sam2」能力变更/)).toBeInTheDocument();
+      expect(screen.getByText("models")).toBeInTheDocument();
+      expect(screen.getByText("supported_prompts")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /接受新能力并恢复接流/ }));
+
+      expect(mockAcceptCapabilityMutate).toHaveBeenCalledWith(
+        {
+          poolId: "pool-1",
+          registryId: "bk-1",
+          payload: {
+            expected_candidate_fingerprint: "b".repeat(64),
+            enable_pool: true,
+          },
+        },
+        expect.anything(),
+      );
     });
 
     it("实例删除 → AlertDialog 确认 → 调用 deleteRegistry", async () => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import secrets
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from aap_protocol_v2.lifecycle import managed_lifecycle_capability_sha256
@@ -53,6 +54,43 @@ class MLBackendPoolMemberConflict(Exception):
 
 class MLBackendPoolCapabilityUnavailable(Exception):
     """A multi-member pool has no trustworthy capability baseline yet."""
+
+
+class MLBackendCapabilityRevalidationError(Exception):
+    """A capability drift cannot be accepted without violating pool safety."""
+
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        *,
+        blocking_member_ids: tuple[uuid.UUID, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.blocking_member_ids = blocking_member_ids
+
+
+@dataclass(frozen=True)
+class CapabilityDriftPreview:
+    pool_id: uuid.UUID
+    registry_id: uuid.UUID
+    member_state: str
+    pool_enabled: bool
+    pool_fingerprint: str | None
+    candidate_fingerprint: str | None
+    differing_fields: tuple[str, ...]
+    has_drift: bool
+    can_accept: bool
+    blocking_member_ids: tuple[uuid.UUID, ...]
+
+
+@dataclass(frozen=True)
+class CapabilityDriftAcceptance:
+    old_fingerprint: str
+    new_fingerprint: str
+    differing_fields: tuple[str, ...]
+    pool_enabled: bool
 
 
 class GPUBackendManagedMutationBlocked(Exception):
@@ -436,6 +474,225 @@ class MLBackendService:
                 # selected explicitly; never bypass the disabled member state.
                 pool.enabled = False
             pool.routing_generation += 1
+
+    @staticmethod
+    def _registry_capability_snapshot(
+        registry: MLBackendRegistry,
+    ) -> tuple[dict | None, str | None]:
+        from app.services.ml_routing.capability import (
+            canonicalize_capability,
+            capability_fingerprint,
+        )
+
+        raw = (registry.health_meta or {}).get("capabilities")
+        if not isinstance(raw, dict):
+            return None, None
+        snapshot = canonicalize_capability(raw)
+        return snapshot, capability_fingerprint(snapshot)
+
+    @staticmethod
+    def _capability_blocking_members(
+        rows: list[tuple[MLBackendPoolMember, MLBackendRegistry]],
+        *,
+        target_registry_id: uuid.UUID,
+        candidate_fingerprint: str,
+    ) -> tuple[uuid.UUID, ...]:
+        blocking: list[uuid.UUID] = []
+        for member, registry in rows:
+            if registry.id == target_registry_id or member.traffic_state == "disabled":
+                continue
+            _, member_fingerprint = MLBackendService._registry_capability_snapshot(
+                registry
+            )
+            if member_fingerprint != candidate_fingerprint:
+                blocking.append(registry.id)
+        return tuple(sorted(blocking, key=str))
+
+    async def preview_capability_drift(
+        self, pool_id: uuid.UUID, registry_id: uuid.UUID
+    ) -> CapabilityDriftPreview | None:
+        from app.services.ml_routing.capability import diff_capabilities
+
+        pool = await self.db.get(MLBackendServicePool, pool_id)
+        if pool is None:
+            return None
+        result = await self.db.execute(
+            select(MLBackendPoolMember, MLBackendRegistry)
+            .join(
+                MLBackendRegistry,
+                MLBackendRegistry.id == MLBackendPoolMember.registry_id,
+            )
+            .where(MLBackendPoolMember.pool_id == pool_id)
+        )
+        rows = list(result.tuples().all())
+        target = next(
+            (
+                (member, registry)
+                for member, registry in rows
+                if registry.id == registry_id
+            ),
+            None,
+        )
+        if target is None:
+            return None
+        member, registry = target
+        candidate_snapshot, candidate_fingerprint = self._registry_capability_snapshot(
+            registry
+        )
+        mismatch = (
+            diff_capabilities(pool.capability_snapshot, candidate_snapshot)
+            if pool.capability_snapshot is not None and candidate_snapshot is not None
+            else None
+        )
+        differing_fields = mismatch.differing_fields if mismatch is not None else ()
+        has_drift = (
+            pool.capability_fingerprint is not None
+            and candidate_fingerprint is not None
+            and pool.capability_fingerprint != candidate_fingerprint
+        )
+        blocking_member_ids = (
+            self._capability_blocking_members(
+                rows,
+                target_registry_id=registry_id,
+                candidate_fingerprint=candidate_fingerprint,
+            )
+            if candidate_fingerprint is not None
+            else ()
+        )
+        return CapabilityDriftPreview(
+            pool_id=pool.id,
+            registry_id=registry.id,
+            member_state=member.traffic_state,
+            pool_enabled=pool.enabled,
+            pool_fingerprint=pool.capability_fingerprint,
+            candidate_fingerprint=candidate_fingerprint,
+            differing_fields=differing_fields,
+            has_drift=has_drift,
+            can_accept=(
+                registry.state == "connected"
+                and member.traffic_state == "disabled"
+                and pool.capability_fingerprint is not None
+                and candidate_fingerprint is not None
+                and not blocking_member_ids
+            ),
+            blocking_member_ids=blocking_member_ids,
+        )
+
+    async def accept_capability_drift(
+        self,
+        pool_id: uuid.UUID,
+        registry_id: uuid.UUID,
+        *,
+        expected_candidate_fingerprint: str,
+        enable_pool: bool,
+    ) -> tuple[MLBackendServicePool, CapabilityDriftAcceptance] | None:
+        """Accept a reviewed capability contract and restore one disabled member.
+
+        The caller must perform a fresh health probe first. This method locks the
+        complete pool topology and verifies the reviewed fingerprint again before
+        atomically replacing the baseline and restoring routing.
+        """
+        from app.services.ml_routing.capability import diff_capabilities
+
+        pool = await self.db.scalar(
+            select(MLBackendServicePool)
+            .where(MLBackendServicePool.id == pool_id)
+            .with_for_update()
+        )
+        if pool is None:
+            return None
+        result = await self.db.execute(
+            select(MLBackendPoolMember, MLBackendRegistry)
+            .join(
+                MLBackendRegistry,
+                MLBackendRegistry.id == MLBackendPoolMember.registry_id,
+            )
+            .where(MLBackendPoolMember.pool_id == pool_id)
+            .with_for_update()
+        )
+        rows = list(result.tuples().all())
+        target = next(
+            (
+                (member, registry)
+                for member, registry in rows
+                if registry.id == registry_id
+            ),
+            None,
+        )
+        if target is None:
+            return None
+        member, registry = target
+        if registry.state != "connected":
+            raise MLBackendCapabilityRevalidationError(
+                "ml_backend_capability_revalidation_failed",
+                "backend must be connected before accepting capability drift",
+            )
+        candidate_snapshot, candidate_fingerprint = self._registry_capability_snapshot(
+            registry
+        )
+        if candidate_snapshot is None or candidate_fingerprint is None:
+            raise MLBackendCapabilityRevalidationError(
+                "ml_backend_capability_snapshot_unavailable",
+                "backend capability snapshot is unavailable",
+            )
+        if candidate_fingerprint != expected_candidate_fingerprint:
+            raise MLBackendCapabilityRevalidationError(
+                "ml_backend_capability_changed_during_review",
+                "backend capability changed after review; refresh the preview",
+            )
+        if member.traffic_state != "disabled":
+            raise MLBackendCapabilityRevalidationError(
+                "ml_backend_capability_revalidation_not_required",
+                "only a disabled member can accept capability drift",
+            )
+        if pool.capability_snapshot is None or pool.capability_fingerprint is None:
+            raise MLBackendCapabilityRevalidationError(
+                "ml_backend_capability_snapshot_unavailable",
+                "service pool capability baseline is unavailable",
+            )
+        mismatch = diff_capabilities(pool.capability_snapshot, candidate_snapshot)
+        blocking_member_ids = self._capability_blocking_members(
+            rows,
+            target_registry_id=registry_id,
+            candidate_fingerprint=candidate_fingerprint,
+        )
+        if blocking_member_ids:
+            raise MLBackendCapabilityRevalidationError(
+                "ml_backend_pool_capability_blocked_by_members",
+                "active or draining pool members do not match the reviewed capability",
+                blocking_member_ids=blocking_member_ids,
+            )
+
+        old_fingerprint = pool.capability_fingerprint
+        if mismatch is not None:
+            pool.capability_snapshot = candidate_snapshot
+            pool.capability_fingerprint = candidate_fingerprint
+        member.traffic_state = "active"
+        if enable_pool:
+            legacy_member = next(
+                (
+                    pool_member
+                    for pool_member, pool_registry in rows
+                    if pool_registry.id == pool.legacy_instance_id
+                ),
+                None,
+            )
+            if legacy_member is None or (
+                legacy_member is not member and legacy_member.traffic_state != "active"
+            ):
+                raise MLBackendCapabilityRevalidationError(
+                    "ml_backend_capability_revalidation_failed",
+                    "legacy instance must be an active member before enabling the pool",
+                )
+            pool.enabled = True
+        pool.routing_generation += 1
+        await self.db.flush()
+        return pool, CapabilityDriftAcceptance(
+            old_fingerprint=old_fingerprint,
+            new_fingerprint=candidate_fingerprint,
+            differing_fields=mismatch.differing_fields if mismatch is not None else (),
+            pool_enabled=pool.enabled,
+        )
 
     async def remove_pool_member(
         self, pool_id: uuid.UUID, registry_id: uuid.UUID

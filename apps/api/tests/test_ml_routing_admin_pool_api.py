@@ -8,8 +8,13 @@ import pytest
 from sqlalchemy import select
 
 from app.config import settings
+from app.db.models.audit_log import AuditLog
 from app.db.models.ml_backend_pool import MLBackendPoolMember
-from app.services.ml_backend import MLBackendService
+from app.services.ml_backend import (
+    MLBackendCapabilityRevalidationError,
+    MLBackendService,
+)
+from app.services.ml_routing.capability import capability_fingerprint
 from tests.conftest import create_registry_with_pool
 
 
@@ -262,6 +267,11 @@ async def test_non_admin_forbidden(httpx_client, db_session, annotator) -> None:
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+    resp = await httpx_client.get(
+        f"/api/v1/admin/ml-integrations/service-pools/{uuid.uuid4()}/members/{uuid.uuid4()}/capability-drift",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -406,6 +416,278 @@ async def test_singleton_capability_is_seeded_then_drift_disables_legacy(
     member = await db_session.scalar(
         select(MLBackendPoolMember).where(MLBackendPoolMember.registry_id == backend.id)
     )
+    assert member.traffic_state == "disabled"
+    assert pool.enabled is False
+
+
+async def _create_disabled_drift(db_session):
+    backend, pool = await create_registry_with_pool(
+        db_session,
+        name=f"drift-{uuid.uuid4().hex[:6]}",
+        state="connected",
+        enabled_pool=True,
+        health_meta=_caps("sam3"),
+    )
+    svc = MLBackendService(db_session)
+    await svc._reconcile_pool_capability(
+        backend.id, backend.health_meta["capabilities"]
+    )
+    backend.health_meta = _caps("sam3-next")
+    await svc._reconcile_pool_capability(
+        backend.id, backend.health_meta["capabilities"]
+    )
+    await db_session.flush()
+    member = await db_session.scalar(
+        select(MLBackendPoolMember).where(MLBackendPoolMember.registry_id == backend.id)
+    )
+    assert member.traffic_state == "disabled"
+    assert pool.enabled is False
+    return backend, pool, member
+
+
+@pytest.mark.asyncio
+async def test_capability_drift_preview_and_accept_restores_singleton(
+    db_session,
+) -> None:
+    backend, pool, member = await _create_disabled_drift(db_session)
+    svc = MLBackendService(db_session)
+
+    preview = await svc.preview_capability_drift(pool.id, backend.id)
+    assert preview is not None
+    assert preview.has_drift is True
+    assert preview.can_accept is True
+    assert preview.member_state == "disabled"
+    assert preview.differing_fields == ("model_ids",)
+    assert preview.blocking_member_ids == ()
+    generation = pool.routing_generation
+
+    accepted = await svc.accept_capability_drift(
+        pool.id,
+        backend.id,
+        expected_candidate_fingerprint=preview.candidate_fingerprint,
+        enable_pool=True,
+    )
+    assert accepted is not None
+    _, result = accepted
+    assert result.old_fingerprint == preview.pool_fingerprint
+    assert result.new_fingerprint == preview.candidate_fingerprint
+    assert result.differing_fields == ("model_ids",)
+    assert member.traffic_state == "active"
+    assert pool.enabled is True
+    assert pool.routing_generation == generation + 1
+    assert pool.capability_fingerprint == capability_fingerprint(
+        backend.health_meta["capabilities"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_capability_drift_accept_rejects_stale_review(
+    db_session,
+) -> None:
+    backend, pool, member = await _create_disabled_drift(db_session)
+    generation = pool.routing_generation
+
+    with pytest.raises(MLBackendCapabilityRevalidationError) as caught:
+        await MLBackendService(db_session).accept_capability_drift(
+            pool.id,
+            backend.id,
+            expected_candidate_fingerprint="0" * 64,
+            enable_pool=True,
+        )
+
+    assert caught.value.error_code == "ml_backend_capability_changed_during_review"
+    assert member.traffic_state == "disabled"
+    assert pool.enabled is False
+    assert pool.routing_generation == generation
+
+
+@pytest.mark.asyncio
+async def test_capability_drift_accept_can_keep_pool_disabled(db_session) -> None:
+    backend, pool, member = await _create_disabled_drift(db_session)
+    preview = await MLBackendService(db_session).preview_capability_drift(
+        pool.id, backend.id
+    )
+    assert preview is not None
+
+    accepted = await MLBackendService(db_session).accept_capability_drift(
+        pool.id,
+        backend.id,
+        expected_candidate_fingerprint=preview.candidate_fingerprint,
+        enable_pool=False,
+    )
+    assert accepted is not None
+    assert member.traffic_state == "active"
+    assert pool.enabled is False
+
+
+@pytest.mark.asyncio
+async def test_disabled_member_can_revalidate_after_capability_rolls_back(
+    db_session,
+) -> None:
+    backend, pool, member = await _create_disabled_drift(db_session)
+    backend.health_meta = _caps("sam3")
+    generation = pool.routing_generation
+
+    preview = await MLBackendService(db_session).preview_capability_drift(
+        pool.id, backend.id
+    )
+    assert preview is not None
+    assert preview.has_drift is False
+    assert preview.can_accept is True
+    assert preview.differing_fields == ()
+
+    accepted = await MLBackendService(db_session).accept_capability_drift(
+        pool.id,
+        backend.id,
+        expected_candidate_fingerprint=preview.candidate_fingerprint,
+        enable_pool=True,
+    )
+    assert accepted is not None
+    assert accepted[1].old_fingerprint == accepted[1].new_fingerprint
+    assert accepted[1].differing_fields == ()
+    assert member.traffic_state == "active"
+    assert pool.enabled is True
+    assert pool.routing_generation == generation + 1
+
+
+@pytest.mark.asyncio
+async def test_capability_drift_accept_rejects_incompatible_active_member(
+    db_session,
+) -> None:
+    from app.db.models.ml_backend_registry import MLBackendRegistry
+
+    backend, pool, member = await _create_disabled_drift(db_session)
+    peer = MLBackendRegistry(
+        name="old-contract-peer",
+        url=f"http://old-contract-{uuid.uuid4().hex[:6]}:9",
+        state="connected",
+        health_meta=_caps("sam3"),
+        source="manual",
+    )
+    db_session.add(peer)
+    await db_session.flush()
+    peer_member = MLBackendPoolMember(
+        pool_id=pool.id,
+        registry_id=peer.id,
+        traffic_state="active",
+        weight=1,
+    )
+    db_session.add(peer_member)
+    await db_session.flush()
+
+    preview = await MLBackendService(db_session).preview_capability_drift(
+        pool.id, backend.id
+    )
+    assert preview is not None
+    assert preview.can_accept is False
+    assert preview.blocking_member_ids == (peer.id,)
+
+    with pytest.raises(MLBackendCapabilityRevalidationError) as caught:
+        await MLBackendService(db_session).accept_capability_drift(
+            pool.id,
+            backend.id,
+            expected_candidate_fingerprint=preview.candidate_fingerprint,
+            enable_pool=True,
+        )
+    assert caught.value.error_code == "ml_backend_pool_capability_blocked_by_members"
+    assert member.traffic_state == "disabled"
+
+    peer_member.traffic_state = "disabled"
+    preview = await MLBackendService(db_session).preview_capability_drift(
+        pool.id, backend.id
+    )
+    assert preview is not None
+    assert preview.can_accept is True
+    accepted = await MLBackendService(db_session).accept_capability_drift(
+        pool.id,
+        backend.id,
+        expected_candidate_fingerprint=preview.candidate_fingerprint,
+        enable_pool=True,
+    )
+    assert accepted is not None
+    assert member.traffic_state == "active"
+    assert peer_member.traffic_state == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_capability_drift_api_accepts_after_fresh_probe_and_audits(
+    httpx_client, db_session, super_admin, monkeypatch
+) -> None:
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    backend, pool, _ = await _create_disabled_drift(db_session)
+    await db_session.commit()
+
+    async def healthy(_self, registry_id, **_kwargs):
+        assert registry_id == backend.id
+        return True
+
+    monkeypatch.setattr(MLBackendService, "check_health", healthy)
+    preview_response = await httpx_client.get(
+        f"/api/v1/admin/ml-integrations/service-pools/{pool.id}/members/{backend.id}/capability-drift",
+        headers=headers,
+    )
+    assert preview_response.status_code == 200, preview_response.text
+    preview = preview_response.json()
+    assert preview["can_accept"] is True
+    assert preview["differing_fields"] == ["model_ids"]
+
+    response = await httpx_client.post(
+        f"/api/v1/admin/ml-integrations/service-pools/{pool.id}/members/{backend.id}/capability-drift/accept",
+        json={
+            "expected_candidate_fingerprint": preview["candidate_fingerprint"],
+            "enable_pool": True,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["enabled"] is True
+    assert body["members"][0]["traffic_state"] == "active"
+
+    audit = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "ml_service_pool.capability_drift_accepted",
+            AuditLog.target_id == str(pool.id),
+        )
+    )
+    assert audit is not None
+    assert audit.detail_json["registry_id"] == str(backend.id)
+    assert audit.detail_json["new_fingerprint"] == preview["candidate_fingerprint"]
+    assert audit.detail_json["differing_fields"] == ["model_ids"]
+
+
+@pytest.mark.asyncio
+async def test_capability_drift_api_rejects_failed_fresh_probe(
+    httpx_client, db_session, super_admin, monkeypatch
+) -> None:
+    _, token = super_admin
+    backend, pool, member = await _create_disabled_drift(db_session)
+    preview = await MLBackendService(db_session).preview_capability_drift(
+        pool.id, backend.id
+    )
+    await db_session.commit()
+    assert preview is not None
+
+    async def unhealthy(_self, _registry_id, **_kwargs):
+        return False
+
+    monkeypatch.setattr(MLBackendService, "check_health", unhealthy)
+    response = await httpx_client.post(
+        f"/api/v1/admin/ml-integrations/service-pools/{pool.id}/members/{backend.id}/capability-drift/accept",
+        json={
+            "expected_candidate_fingerprint": preview.candidate_fingerprint,
+            "enable_pool": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+    assert (
+        response.json()["detail"]["error_code"]
+        == "ml_backend_capability_revalidation_failed"
+    )
+    await db_session.refresh(member)
+    await db_session.refresh(pool)
     assert member.traffic_state == "disabled"
     assert pool.enabled is False
 

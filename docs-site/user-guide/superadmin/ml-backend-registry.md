@@ -92,16 +92,20 @@ PUT    /admin/ml-integrations/service-pools/:pool_id/members/:registry_id   # �
 DELETE /admin/ml-integrations/service-pools/:pool_id/members/:registry_id   # 移除成员
 POST   /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/drain    # active→draining
 POST   /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/resume   # draining→active
+GET    /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/capability-drift          # 预览能力差异
+POST   /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/capability-drift/accept   # 接受新基线
 ```
 
 **drain / resume 语义**：
 
 - **drain**：成员 `traffic_state` 从 `active` 切到 `draining`，停止接收**新** route lease；已在飞的请求继续完成。幂等。
-- **resume**：`draining` 切回 `active`，恢复接流。幂等。`disabled` 成员不能直接 resume；能力问题修复后，需安全移除并重新加入服务池，由加入流程重新校验指纹。
+- **resume**：`draining` 切回 `active`，恢复接流。幂等。`disabled` 成员不能直接 resume；这类状态需要先审核能力变更。
 - drain / resume **只影响路由接流**，不触发模型权重卸载（那是 GPU 仲裁的 residency drain，独立）。
 - 当 `ML_BACKEND_ROUTER_MODE != enforce` 时，drain 只是预配置，不会真正改变路由行为——运行时观测会标记为「未生效」。
 
 **加入成员**：被加入的实例必须与池内现有成员 capability 指纹 exact match（同 `models[]` 模型目录、请求 schema、variant 组合和 tracker 等稳定能力，排除 URL/GPU/VRAM/residency 等运行态字段）。不匹配返回 `HTTP 409` 并附结构化 diff。对已在池内的成员再次 PUT 会更新权重，不会重置已有的 traffic state。同一实例不能同时属于两个服务池。
+
+**审核能力变更**：健康刷新发现 `/setup` 的路由合同与服务池基线不一致时，平台会自动把成员设为 `disabled`；若它是 legacy 实例，还会关闭服务池。超管可在「服务池」展开成员或「实例」操作菜单中选择「审核能力变更」，查看旧/新指纹与 canonical 字段差异。确认时平台会重新执行健康与 `/setup` 探测，并校验候选指纹没有在审核期间再次变化；池内若仍有能力不一致的 active / draining 成员则拒绝。验证通过后，新基线、成员 `active` 状态、路由代际和可选的服务池启用在同一事务中提交。若实例已经回滚到原基线，则只恢复成员与服务池，不改写基线。该操作只接受明确审核过的合同，不会自动放行 capability superset。
 
 **卸载 / 移除成员 / 删除**：纳管实例必须先进入 `draining`，并且只有在路由模式为 `enforce`、路由账本新鲜、清理过期 lease 后 exact `inflight=0` 时才会放行。账本失联、字段缺失或陈旧都会失败关闭，不会被当作零。删除服务池前必须逐一安全移除所有成员，空池才可删除。
 
@@ -134,6 +138,7 @@ POST   /admin/ml-integrations/service-pools/:pool_id/members/:registry_id/resume
 - `ml_registry.created` / `ml_registry.updated` / `ml_registry.deleted`（全局注册 CRUD）
 - `ml_service_pool.created` / `updated` / `deleted`（服务池 CRUD）
 - `ml_service_pool.member_upserted` / `member_removed` / `member_drained` / `member_resumed`（成员与接流状态）
+- `ml_service_pool.capability_drift_accepted`（审核并接受新的池能力基线）
 - `ml_backend.created` / `updated` / `deleted` / `enablement`（项目兼容端点）
 - `ml_backend.reloaded` / `ml_backend.unloaded` / `ml_backend.warmup`（生命周期动作）
 - `ml_backend.smoke_tested`（模型市场试启动）

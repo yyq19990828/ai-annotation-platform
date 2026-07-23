@@ -6519,6 +6519,104 @@
         "title": "CanvasShape",
         "type": "object"
       },
+      "CapabilityDriftAcceptRequest": {
+        "properties": {
+          "enable_pool": {
+            "default": true,
+            "title": "Enable Pool",
+            "type": "boolean"
+          },
+          "expected_candidate_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Candidate Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_candidate_fingerprint"
+        ],
+        "title": "CapabilityDriftAcceptRequest",
+        "type": "object"
+      },
+      "CapabilityDriftPreviewResponse": {
+        "properties": {
+          "blocking_members": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Blocking Members",
+            "type": "array"
+          },
+          "can_accept": {
+            "title": "Can Accept",
+            "type": "boolean"
+          },
+          "candidate_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Fingerprint"
+          },
+          "differing_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Differing Fields",
+            "type": "array"
+          },
+          "has_drift": {
+            "title": "Has Drift",
+            "type": "boolean"
+          },
+          "member_state": {
+            "title": "Member State",
+            "type": "string"
+          },
+          "pool_enabled": {
+            "title": "Pool Enabled",
+            "type": "boolean"
+          },
+          "pool_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool Fingerprint"
+          },
+          "pool_id": {
+            "format": "uuid",
+            "title": "Pool Id",
+            "type": "string"
+          },
+          "registry_id": {
+            "format": "uuid",
+            "title": "Registry Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pool_id",
+          "registry_id",
+          "member_state",
+          "pool_enabled",
+          "has_drift",
+          "can_accept"
+        ],
+        "title": "CapabilityDriftPreviewResponse",
+        "type": "object"
+      },
       "CapabilityInstanceItem": {
         "description": "平台已知 backend 的实例视图 (env-only 容器 + 项目级注册合并)。\n\n`backend_id` 是 ml_backend_registry.id, 供全局编排选择器落 pipeline_stages.ml_backend_id。\n`state` 保留 connected/error 等注册表状态; disconnected 已在 service 层过滤。\n`source` 直接透传 ml_backend_registry.source: \"env\" = docker-compose/运维 env 配的容器\n          (启动钩子按 env URL 自动 upsert), \"manual\" = superadmin 在模型市场手动注册。\n`name` 是 backend 显示名 (ml_backend_registry.name)。\n不暴露 url / project_id / health 指标, 让普通登录用户安全消费。",
         "properties": {
@@ -31295,6 +31393,132 @@
           }
         ],
         "summary": "Add Or Update Pool Member",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/capability-drift": {
+      "get": {
+        "operationId": "preview_pool_member_capability_drift_api_v1_admin_ml_integrations_service_pools__pool_id__members__registry_id__capability_drift_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityDriftPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Pool Member Capability Drift",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/capability-drift/accept": {
+      "post": {
+        "operationId": "accept_pool_member_capability_drift_api_v1_admin_ml_integrations_service_pools__pool_id__members__registry_id__capability_drift_accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilityDriftAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePoolAdminItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Pool Member Capability Drift",
         "tags": [
           "admin-ml-integrations"
         ]

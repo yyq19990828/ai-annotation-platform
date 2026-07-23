@@ -95,6 +95,7 @@ from app.services.gpu_arbitration.rollout_state import (
 )
 from app.services.ml_backend import (
     GPUBackendManagedMutationBlocked,
+    MLBackendCapabilityRevalidationError,
     MLBackendDeleteBlocked,
     MLBackendPoolCapabilityUnavailable,
     MLBackendPoolMemberConflict,
@@ -1617,6 +1618,28 @@ class ServicePoolMemberPutRequest(BaseModel):
     weight: int = Field(default=1, ge=1, le=100)
 
 
+class CapabilityDriftAcceptRequest(BaseModel):
+    expected_candidate_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    enable_pool: bool = True
+
+
+class CapabilityDriftPreviewResponse(BaseModel):
+    pool_id: UUID
+    registry_id: UUID
+    member_state: str
+    pool_enabled: bool
+    pool_fingerprint: str | None = None
+    candidate_fingerprint: str | None = None
+    differing_fields: list[str] = Field(default_factory=list)
+    has_drift: bool
+    can_accept: bool
+    blocking_members: list[UUID] = Field(default_factory=list)
+
+
 class ServicePoolAdminItem(BaseModel):
     id: UUID
     name: str
@@ -1939,6 +1962,97 @@ async def resume_pool_member(
     )
     await db.commit()
     pool = await svc.get_pool(pool_id)
+    return await _pool_to_admin_item(db, pool)
+
+
+@router.get(
+    "/service-pools/{pool_id}/members/{registry_id}/capability-drift",
+    response_model=CapabilityDriftPreviewResponse,
+)
+async def preview_pool_member_capability_drift(
+    pool_id: uuid.UUID,
+    registry_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> CapabilityDriftPreviewResponse:
+    preview = await MLBackendService(db).preview_capability_drift(pool_id, registry_id)
+    if preview is None:
+        raise HTTPException(status_code=404, detail="service pool member not found")
+    return CapabilityDriftPreviewResponse(
+        pool_id=preview.pool_id,
+        registry_id=preview.registry_id,
+        member_state=preview.member_state,
+        pool_enabled=preview.pool_enabled,
+        pool_fingerprint=preview.pool_fingerprint,
+        candidate_fingerprint=preview.candidate_fingerprint,
+        differing_fields=list(preview.differing_fields),
+        has_drift=preview.has_drift,
+        can_accept=preview.can_accept,
+        blocking_members=list(preview.blocking_member_ids),
+    )
+
+
+@router.post(
+    "/service-pools/{pool_id}/members/{registry_id}/capability-drift/accept",
+    response_model=ServicePoolAdminItem,
+)
+async def accept_pool_member_capability_drift(
+    pool_id: uuid.UUID,
+    registry_id: uuid.UUID,
+    data: CapabilityDriftAcceptRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+) -> ServicePoolAdminItem:
+    svc = MLBackendService(db)
+    if await svc.preview_capability_drift(pool_id, registry_id) is None:
+        raise HTTPException(status_code=404, detail="service pool member not found")
+    healthy = await svc.check_health(registry_id)
+    if not healthy:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "ml_backend_capability_revalidation_failed",
+                "message": "backend health and capability refresh failed",
+            },
+        )
+    try:
+        accepted = await svc.accept_capability_drift(
+            pool_id,
+            registry_id,
+            expected_candidate_fingerprint=data.expected_candidate_fingerprint,
+            enable_pool=data.enable_pool,
+        )
+    except MLBackendCapabilityRevalidationError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": exc.error_code,
+                "message": str(exc),
+                "blocking_members": [str(item) for item in exc.blocking_member_ids],
+            },
+        ) from exc
+    if accepted is None:
+        raise HTTPException(status_code=404, detail="service pool member not found")
+    pool, acceptance = accepted
+    await AuditService.log(
+        db,
+        actor=admin,
+        action="ml_service_pool.capability_drift_accepted",
+        target_type="ml_service_pool",
+        target_id=str(pool_id),
+        request=request,
+        status_code=200,
+        detail={
+            "registry_id": str(registry_id),
+            "old_fingerprint": acceptance.old_fingerprint,
+            "new_fingerprint": acceptance.new_fingerprint,
+            "differing_fields": list(acceptance.differing_fields),
+            "pool_enabled": acceptance.pool_enabled,
+        },
+    )
+    await db.commit()
+    await db.refresh(pool)
     return await _pool_to_admin_item(db, pool)
 
 

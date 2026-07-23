@@ -2,6 +2,8 @@ import { apiClient } from "./client";
 import type { MLBackendSupportedVariantGroup } from "./ml-backends";
 import type {
   GPUArbiterResourcesResponse,
+  CapabilityDriftAcceptRequest,
+  CapabilityDriftPreviewResponse,
   GPUBackendConfigStatus,
   GpuInfo,
   MLBackendUnloadResponse,
@@ -25,6 +27,8 @@ import type { MLBackendCompute } from "@/utils/mlBackendCompute";
 export type {
   GPUArbiterResourceItem,
   GPUArbiterResourcesResponse,
+  CapabilityDriftAcceptRequest,
+  CapabilityDriftPreviewResponse,
   GPUBackendConfigStatus,
   GPUConfigDiagnostic,
   GpuInfo,
@@ -402,5 +406,20 @@ export const adminMlIntegrationsApi = {
   resumePoolMember: (poolId: string, registryId: string) =>
     apiClient.post<ServicePoolAdminItem>(
       `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}/resume`,
+    ),
+  /** 超管: 读取已持久化的池基线与成员当前能力差异，不触发写操作. */
+  previewCapabilityDrift: (poolId: string, registryId: string) =>
+    apiClient.get<CapabilityDriftPreviewResponse>(
+      `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}/capability-drift`,
+    ),
+  /** 超管: 重新探活并接受审核过的能力指纹，原子恢复成员与可选的服务池接流. */
+  acceptCapabilityDrift: (
+    poolId: string,
+    registryId: string,
+    payload: CapabilityDriftAcceptRequest,
+  ) =>
+    apiClient.post<ServicePoolAdminItem>(
+      `/admin/ml-integrations/service-pools/${poolId}/members/${registryId}/capability-drift/accept`,
+      payload,
     ),
 };

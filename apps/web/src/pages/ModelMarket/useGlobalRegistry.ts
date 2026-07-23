@@ -5,9 +5,10 @@
  * useMLBackends（/projects/{id}/ml-backends）解耦。成功后同时失效全局列表 (all) 与
  * 模型市场总览 (overview)，让两处视图一起刷新。
  */
-import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   adminMlIntegrationsApi,
+  type CapabilityDriftAcceptRequest,
   type MLBackendRegistryCreatePayload,
   type MLBackendRegistryUpdatePayload,
   type ServicePoolCreateRequest,
@@ -147,5 +148,51 @@ export function useResumePoolMember() {
     mutationFn: ({ poolId, registryId }: { poolId: string; registryId: string }) =>
       adminMlIntegrationsApi.resumePoolMember(poolId, registryId),
     onSuccess: () => invalidateRegistryQueries(qc),
+  });
+}
+
+export function useCapabilityDriftPreview(
+  poolId: string,
+  registryId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [
+      "admin",
+      "ml-integrations",
+      "capability-drift",
+      poolId,
+      registryId,
+    ],
+    queryFn: () => adminMlIntegrationsApi.previewCapabilityDrift(poolId, registryId),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+export function useAcceptCapabilityDrift() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      poolId,
+      registryId,
+      payload,
+    }: {
+      poolId: string;
+      registryId: string;
+      payload: CapabilityDriftAcceptRequest;
+    }) => adminMlIntegrationsApi.acceptCapabilityDrift(poolId, registryId, payload),
+    onSuccess: (_data, variables) => {
+      invalidateRegistryQueries(qc);
+      qc.removeQueries({
+        queryKey: [
+          "admin",
+          "ml-integrations",
+          "capability-drift",
+          variables.poolId,
+          variables.registryId,
+        ],
+      });
+    },
   });
 }

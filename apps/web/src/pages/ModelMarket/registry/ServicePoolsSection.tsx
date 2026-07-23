@@ -58,6 +58,7 @@ import {
 import { useToastStore } from "@/components/ui/Toast";
 
 import { NO_LIMIT, NO_METRICS } from "./registryShared";
+import { CapabilityDriftReviewDialog } from "./CapabilityDriftReviewDialog";
 import {
   AffectedCountChip,
   CopyableId,
@@ -816,11 +817,26 @@ function PoolMemberActions({ pool, member }: { pool: PoolViewModel; member: Pool
   const remove = useRemovePoolMember();
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [weight, setWeight] = useState(String(member.weight ?? 1));
   return (
     <>
       <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>编辑权重</Button>
+      {member.traffic_state === "disabled" && (
+        <Button size="sm" variant="ghost" onClick={() => setReviewOpen(true)}>
+          审核能力变更
+        </Button>
+      )}
       <Button size="sm" variant="ghost" onClick={() => setRemoveOpen(true)}>移除</Button>
+      <CapabilityDriftReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        poolId={pool.id}
+        poolName={pool.name}
+        poolEnabled={pool.enabled}
+        registryId={member.registry_id}
+        registryName={member.name}
+      />
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>编辑「{member.name}」权重</DialogTitle></DialogHeader>
