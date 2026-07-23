@@ -24,6 +24,21 @@ def test_mask_prompt_becomes_bounded_low_res_logits() -> None:
     assert set(np.unique(logits)) == {-16.0, 16.0}
 
 
+def test_mask_prompt_uses_backend_low_res_size() -> None:
+    rle = encode_coco_rle([0, 1, 0, 1, 1, 0], 3, 2)
+    digest = hashlib.sha256(json.dumps(rle, separators=(",", ":")).encode()).hexdigest()
+    prompt = {"rle": rle, "source_digest": digest}
+
+    logits = mask_prompt_to_low_res_logits(
+        prompt,
+        expected_size=(3, 2),
+        low_res_size=(288, 288),
+    )
+
+    assert logits.shape == (1, 288, 288)
+    assert set(np.unique(logits)) == {-16.0, 16.0}
+
+
 def test_mask_prompt_rejects_media_size_mismatch() -> None:
     rle = encode_coco_rle([0, 1, 0, 1], 2, 2)
     digest = hashlib.sha256(json.dumps(rle, separators=(",", ":")).encode()).hexdigest()

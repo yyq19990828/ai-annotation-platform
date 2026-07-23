@@ -87,13 +87,31 @@ def _resolve_mask_input(
     *,
     width: int,
     height: int,
+    low_res_size: tuple[int, int],
 ) -> np.ndarray | None:
     if mask_input is not None:
-        return decode_low_res_mask(mask_input)
+        decoded = decode_low_res_mask(mask_input)
+        if decoded.shape[-2:] == low_res_size:
+            return decoded
+        low_res_height, low_res_width = low_res_size
+        ys = np.minimum(
+            (
+                (np.arange(low_res_height) + 0.5) * decoded.shape[-2] / low_res_height
+            ).astype(int),
+            decoded.shape[-2] - 1,
+        )
+        xs = np.minimum(
+            (
+                (np.arange(low_res_width) + 0.5) * decoded.shape[-1] / low_res_width
+            ).astype(int),
+            decoded.shape[-1] - 1,
+        )
+        return decoded[:, ys][:, :, xs]
     if mask_prompt is not None:
         return mask_prompt_to_low_res_logits(
             mask_prompt,
             expected_size=(width, height),
+            low_res_size=low_res_size,
         )
     return None
 
@@ -142,6 +160,10 @@ class SAM3Predictor:
         self.score_threshold = score_threshold
 
         self._model = self._load_model()
+        self._mask_input_size = tuple(
+            int(value)
+            for value in self._model.inst_interactive_predictor.model.sam_prompt_encoder.mask_input_size
+        )
         self._processor = self._build_processor()
 
     # ---------- 模型加载 ----------
@@ -476,6 +498,7 @@ class SAM3Predictor:
                 mask_prompt,
                 width=w,
                 height=h,
+                low_res_size=self._mask_input_size,
             )
             if dense_prompt is not None:
                 kwargs["mask_input"] = dense_prompt

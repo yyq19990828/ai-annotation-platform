@@ -304,6 +304,16 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const row = page.getByTestId(`box-list-item-${accepted.annotation.id}`);
     await expect(row).toContainText("3 组件", { timeout: 15_000 });
     await expect(row).toContainText("1 孔洞");
+
+    const stage = page.getByTestId("workbench-stage");
+    const stageBox = await stage.boundingBox();
+    if (!stageBox) throw new Error("workbench stage has no bounding box");
+    const nextPrompt = page.waitForResponse((response) =>
+      /\/interactive-annotating$/.test(new URL(response.url()).pathname),
+    );
+    await page.mouse.click(stageBox.x + stageBox.width * 0.3, stageBox.y + stageBox.height * 0.45);
+    expect((await nextPrompt).status()).toBe(200);
+    expect(routed.contexts.at(-1)?.mask_prompt_source).toBeUndefined();
   });
 
   test("model without Mask capability stays on explicit polygon without creating a raster annotation", async ({

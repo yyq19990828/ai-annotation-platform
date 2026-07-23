@@ -51,6 +51,7 @@ def predictor_with_mocks(monkeypatch):
     inst.checkpoint_dir = "/tmp"
     inst.score_threshold = 0.5
     inst._model = MagicMock()
+    inst._mask_input_size = (288, 288)
     inst._processor = MagicMock()
     inst._processor.confidence_threshold = 0.5
     inst.embedding_cache = MagicMock()
@@ -510,7 +511,7 @@ def test_interactive_box_pixel_scaling(predictor_with_mocks, fake_image):
 
 
 def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_image):
-    """v0.18.18 · context.mask_input (base64) 解码成 (1,256,256) 喂给 predict_inst."""
+    """context.mask_input 解码后适配 SAM3 的 288×288 prompt 输入。"""
     from aap_protocol_v2 import encode_low_res_mask
 
     inst = predictor_with_mocks
@@ -526,7 +527,7 @@ def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_im
         cache_key="imi1",
     )
     kw = inst._model.predict_inst.call_args.kwargs
-    assert kw["mask_input"].shape == (1, 256, 256)
+    assert kw["mask_input"].shape == (1, 288, 288)
 
 
 def test_scribble_consumer_preserves_positive_negative_and_mask_seed(
@@ -549,7 +550,7 @@ def test_scribble_consumer_preserves_positive_negative_and_mask_seed(
 
     kwargs = inst._model.predict_inst.call_args.kwargs
     assert set(kwargs["point_labels"].tolist()) == {0, 1}
-    assert kwargs["mask_input"].shape == (1, 256, 256)
+    assert kwargs["mask_input"].shape == (1, 288, 288)
     assert set(np.unique(kwargs["mask_input"])) == {-16.0, 16.0}
 
 
@@ -570,7 +571,7 @@ def test_mask_prompt_only_is_consumed_as_dense_prompt(
     kwargs = inst._model.predict_inst.call_args.kwargs
     assert "point_coords" not in kwargs
     assert "point_labels" not in kwargs
-    assert kwargs["mask_input"].shape == (1, 256, 256)
+    assert kwargs["mask_input"].shape == (1, 288, 288)
     assert results
     assert mask_next is not None
 

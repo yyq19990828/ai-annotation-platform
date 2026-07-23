@@ -23,8 +23,9 @@ def mask_prompt_to_low_res_logits(
     mask_prompt: Mapping[str, Any],
     *,
     expected_size: tuple[int, int] | None = None,
+    low_res_size: tuple[int, int] = (LOW_RES_MASK_SIDE, LOW_RES_MASK_SIDE),
 ) -> Any:
-    """Decode an authorized COCO RLE seed into SAM's ``(1,256,256)`` logits."""
+    """Decode an authorized COCO RLE seed into bounded SAM low-res logits."""
 
     import numpy as np
 
@@ -54,13 +55,16 @@ def mask_prompt_to_low_res_logits(
         raise PromptAdapterError(
             f"mask_prompt size must match image {expected_size[0]}x{expected_size[1]}"
         )
+    low_res_height, low_res_width = low_res_size
+    if low_res_height <= 0 or low_res_width <= 0:
+        raise PromptAdapterError("low_res_size must contain positive dimensions")
     binary = np.frombuffer(decode_coco_rle(rle), dtype=np.uint8).reshape(height, width)
     ys = np.minimum(
-        ((np.arange(LOW_RES_MASK_SIDE) + 0.5) * height / LOW_RES_MASK_SIDE).astype(int),
+        ((np.arange(low_res_height) + 0.5) * height / low_res_height).astype(int),
         height - 1,
     )
     xs = np.minimum(
-        ((np.arange(LOW_RES_MASK_SIDE) + 0.5) * width / LOW_RES_MASK_SIDE).astype(int),
+        ((np.arange(low_res_width) + 0.5) * width / low_res_width).astype(int),
         width - 1,
     )
     sampled = binary[np.ix_(ys, xs)] > 0

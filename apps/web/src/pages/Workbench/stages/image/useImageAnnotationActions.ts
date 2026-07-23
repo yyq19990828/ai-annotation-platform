@@ -405,7 +405,7 @@ export function useImageAnnotationActions({
         });
         if (!accepted) return;
         recordRecentClass(cls);
-        s.setSelectedId(accepted.annotation.id);
+        s.setSelectedId(candidate.refineSource ? accepted.annotation.id : null);
         sam.consume(idx);
         pushToast({
           msg: candidate.refineSource ? "已更新原生 Mask" : "已采纳原生 Mask",
