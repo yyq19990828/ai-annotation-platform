@@ -142,6 +142,47 @@ export function cocoRleArea(rle: CocoRle): number {
   );
 }
 
+/** Exact normalized foreground bounds without allocating a dense alpha plane. */
+export function cocoRleBounds(rle: CocoRle): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} | null {
+  const [height, width] = rle.size;
+  let offset = 0;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let index = 0; index < rle.counts.length; index += 1) {
+    const runLength = rle.counts[index];
+    if ((index & 1) === 1 && runLength > 0) {
+      const start = offset;
+      const end = offset + runLength - 1;
+      const startX = Math.floor(start / height);
+      const endX = Math.floor(end / height);
+      minX = Math.min(minX, startX);
+      maxX = Math.max(maxX, endX);
+      if (startX === endX) {
+        minY = Math.min(minY, start % height);
+        maxY = Math.max(maxY, end % height);
+      } else {
+        minY = 0;
+        maxY = height - 1;
+      }
+    }
+    offset += runLength;
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return {
+    x: minX / width,
+    y: minY / height,
+    w: (maxX - minX + 1) / width,
+    h: (maxY - minY + 1) / height,
+  };
+}
+
 async function compressWithBrowserStream(input: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream === "undefined") {
     throw new Error("CompressionStream is unavailable");

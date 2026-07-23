@@ -4,6 +4,9 @@ import {
   commitAfterNavigationGuard,
   resolveMaskEditorSize,
   resolvePinViewport,
+  resolveSamCandidateClass,
+  samCandidateDisplayShapes,
+  samCandidateGeom,
 } from "../useWorkbenchShellModel.helpers";
 
 describe("commitAfterNavigationGuard", () => {
@@ -70,5 +73,53 @@ describe("resolvePinViewport", () => {
       { w: 400, h: 400 },
     );
     expect(out).toEqual({ scale: 1, tx: 200, ty: 200 });
+  });
+});
+
+describe("native Mask candidate presentation", () => {
+  it("never reuses an active class from another tool unit", () => {
+    expect(resolveSamCandidateClass("object", ["road", "sky"], "car")).toBe("road");
+    expect(resolveSamCandidateClass("sky", ["road", "sky"], "car")).toBe("sky");
+    expect(resolveSamCandidateClass(undefined, ["road", "sky"], "road")).toBe("road");
+  });
+
+  it("represents every RLE candidate immediately with exact normalized bounds", () => {
+    const candidates = [
+      {
+        id: "mask-a",
+        type: "mask" as const,
+        rle: { encoding: "coco_rle" as const, size: [2, 3] as [number, number], counts: [1, 2, 3] },
+      },
+      {
+        id: "mask-b",
+        type: "mask" as const,
+        rle: { encoding: "coco_rle" as const, size: [2, 3] as [number, number], counts: [5, 1] },
+      },
+    ];
+
+    expect(samCandidateDisplayShapes(candidates)).toEqual([
+      {
+        id: "mask-a",
+        type: "rectanglelabels",
+        bbox: { x: 0, y: 0, width: 2 / 3, height: 1 },
+      },
+      {
+        id: "mask-b",
+        type: "rectanglelabels",
+        bbox: { x: 2 / 3, y: 0.5, width: 1 / 3, height: 0.5 },
+      },
+    ]);
+    expect(samCandidateGeom(candidates[1])).toEqual({
+      x: 2 / 3,
+      y: 0.5,
+      w: 1 / 3,
+      h: 0.5,
+    });
+    expect(samCandidateDisplayShapes(Array.from(
+      { length: 6 },
+      (_, index) => ({ ...candidates[1], id: `mask-${index}` }),
+    )).map((shape) => shape.id)).toEqual([
+      "mask-0", "mask-1", "mask-2", "mask-3", "mask-4", "mask-5",
+    ]);
   });
 });

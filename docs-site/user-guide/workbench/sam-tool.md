@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-23
 ---
 
 # AI 工具组
@@ -76,7 +76,7 @@ last_reviewed: 2026-07-22
 
 **使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
 
-**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
+**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。候选确认时会按目标工具单位重新校验默认类别，不会沿用其他单位中同名或过期的活动类别。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
 ![Magic Box 粗框后由真实 SAM3 收紧并确认类别](../images/sam/magic-box-interaction.gif)
 
@@ -124,7 +124,7 @@ last_reviewed: 2026-07-22
 
 ## 候选确认
 
-智能点、智能框、智能笔迹和 Exemplar 的结果先作为**待确认候选**显示，需要确认才落库。polygon 使用紫色虚线；原生 Mask 使用半透明紫色像素覆盖与选中边界，不会先转为 polygon：
+智能点、智能框、智能笔迹和 Exemplar 的结果先作为**待确认候选**显示，需要确认才落库。polygon 使用紫色虚线；原生 Mask 会先同步显示每个 RLE 的精确外接边界，再按设备资源预算异步填充半透明紫色像素预览，因此大量候选也能立即看全且切换时不会消失。接受后仍保存原始 RLE，不会转为外接框或 polygon：
 
 - **`Enter`** — 接受当前候选 → 弹类别选择器 → 选好类别才进库
 - **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）

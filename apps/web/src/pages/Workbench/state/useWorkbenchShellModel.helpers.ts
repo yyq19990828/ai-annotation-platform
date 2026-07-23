@@ -18,6 +18,7 @@ import type {
   TriggerPreannotationPayload,
 } from "@/hooks/usePreannotation";
 import { videoIntrinsicSize } from "../stage/videoKonvaCoordinates";
+import { cocoRleBounds, type CocoRle } from "../stage/shared/geometry/maskRle";
 
 export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 
@@ -241,12 +242,75 @@ export function resolvePinViewport(
  * 图片与视频两侧共用，避免各写一份而在几何类型上分叉。
  */
 export function samCandidateGeom(
-  candidate: { type?: string; bbox?: { x: number; y: number; width: number; height: number }; points?: [number, number][] } | undefined,
+  candidate: {
+    type?: string;
+    bbox?: { x: number; y: number; width: number; height: number };
+    points?: [number, number][];
+    rle?: CocoRle;
+  } | undefined,
 ): { x: number; y: number; w: number; h: number } | null {
   if (!candidate) return null;
+  if (candidate.type === "mask" && candidate.rle) return cocoRleBounds(candidate.rle);
   if (candidate.type === "rectanglelabels" && candidate.bbox) {
     return { x: candidate.bbox.x, y: candidate.bbox.y, w: candidate.bbox.width, h: candidate.bbox.height };
   }
   if (candidate.points && candidate.points.length >= 3) return polygonBounds(candidate.points);
   return null;
+}
+
+export function resolveSamCandidateClass(
+  candidateLabel: string | undefined,
+  classes: readonly string[],
+  activeClass: string,
+): string {
+  if (candidateLabel && classes.includes(candidateLabel)) return candidateLabel;
+  if (classes.includes(activeClass)) return activeClass;
+  return classes[0] ?? "";
+}
+
+export interface SamCandidateDisplayShape {
+  id: string;
+  type: "polygonlabels" | "rectanglelabels";
+  points?: [number, number][];
+  bbox?: { x: number; y: number; width: number; height: number };
+}
+
+/**
+ * Native Mask bitmaps are decoded asynchronously under a strict four-record cache.
+ * Keep every candidate represented immediately with its exact RLE bounds so Tab
+ * only changes emphasis instead of making candidates appear and disappear.
+ */
+export function samCandidateDisplayShapes(
+  candidates: readonly {
+    id: string;
+    type: "mask" | "polygonlabels" | "rectanglelabels";
+    rle?: CocoRle;
+    points?: [number, number][];
+    bbox?: { x: number; y: number; width: number; height: number };
+  }[],
+): SamCandidateDisplayShape[] {
+  const shapes: SamCandidateDisplayShape[] = [];
+  for (const candidate of candidates) {
+    if (candidate.type === "polygonlabels") {
+      shapes.push({ id: candidate.id, type: candidate.type, points: candidate.points });
+      continue;
+    }
+    if (candidate.type === "rectanglelabels") {
+      shapes.push({ id: candidate.id, type: candidate.type, bbox: candidate.bbox });
+      continue;
+    }
+    const bounds = samCandidateGeom(candidate);
+    if (!bounds) continue;
+    shapes.push({
+      id: candidate.id,
+      type: "rectanglelabels",
+      bbox: {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.w,
+        height: bounds.h,
+      },
+    });
+  }
+  return shapes;
 }

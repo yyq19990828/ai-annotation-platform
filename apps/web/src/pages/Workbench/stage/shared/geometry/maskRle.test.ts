@@ -4,6 +4,7 @@ import fixture from "@/__fixtures__/rasterMaskRle.json";
 import {
   cocoRleContainsPixel,
   cocoRleArea,
+  cocoRleBounds,
   decodeCocoRle,
   encodeCocoRle,
   prepareCocoRleGzipUpload,
@@ -87,6 +88,26 @@ describe("COCO uncompressed RLE", () => {
     expect(cocoRleContainsPixel(rle, -1, 0)).toBe(false);
     expect(cocoRleContainsPixel(rle, 3, 0)).toBe(false);
     expect(cocoRleArea(rle)).toBe(3);
+  });
+
+  it("computes exact foreground bounds without waiting for bitmap decoding", () => {
+    const rle = encodeCocoRle([
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 0,
+    ], 4, 3);
+
+    expect(cocoRleBounds(rle)).toEqual({
+      x: 0.25,
+      y: 0,
+      w: 0.5,
+      h: 2 / 3,
+    });
+    expect(cocoRleBounds({
+      encoding: "coco_rle",
+      size: [3, 4],
+      counts: [12],
+    })).toBeNull();
   });
 
   it("falls back when gzip would exceed the shared expansion ratio", async () => {

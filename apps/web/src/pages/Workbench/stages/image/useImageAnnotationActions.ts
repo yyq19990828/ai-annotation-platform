@@ -23,7 +23,10 @@ import {
   type AiBox,
   type PredictionSourceFilter,
 } from "../../state/transforms";
-import { samCandidateGeom } from "../../state/useWorkbenchShellModel.helpers";
+import {
+  resolveSamCandidateClass,
+  samCandidateGeom,
+} from "../../state/useWorkbenchShellModel.helpers";
 import type { UseMaskEditorSessionReturn } from "../../state/useMaskEditorSession";
 import { canEditMask } from "../../state/canEditMask";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
@@ -349,19 +352,18 @@ export function useImageAnnotationActions({
     () => {
       if (!samPendingAccept) return null;
       const candidate = sam.candidates[samPendingAccept.idx];
-      if (candidate?.type !== "mask") return samCandidateGeom(candidate);
-      return samMaskRecords.find((record) => record.id === candidate.id)?.bounds ?? null;
+      return samCandidateGeom(candidate)
+        ?? samMaskRecords.find((record) => record.id === candidate?.id)?.bounds
+        ?? null;
     },
     [samPendingAccept, sam.candidates, samMaskRecords],
   );
 
-  const samDefaultClass = (
-    samPendingAccept &&
-    sam.candidates[samPendingAccept.idx]?.label &&
-    classes.includes(sam.candidates[samPendingAccept.idx].label)
-  )
-    ? sam.candidates[samPendingAccept.idx].label
-    : s.activeClass;
+  const samDefaultClass = resolveSamCandidateClass(
+    samPendingAccept ? sam.candidates[samPendingAccept.idx]?.label : undefined,
+    classes,
+    s.activeClass,
+  );
 
   const acceptNativeMaskCandidate = useCallback(async (idx: number, cls: string) => {
     const candidate = sam.candidates[idx];

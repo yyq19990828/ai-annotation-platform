@@ -55,6 +55,7 @@ export function ClassPickerPopover({
   classes, recent, defaultClass, title = "选择类别", onPick, onCancel, attrEditing, ...positionProps
 }: ClassPickerPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const resolvedDefaultClass = classes.includes(defaultClass) ? defaultClass : (classes[0] ?? "");
 
   const isFixed = positionProps.position === "fixed";
   // image 模式：框左下角（容器坐标）；fixed 模式：调用方传 viewport/client 坐标。
@@ -104,8 +105,7 @@ export function ClassPickerPopover({
       if (e.key === "Escape") { e.preventDefault(); onCancel("escape"); return; }
       if (e.key === "Enter") {
         e.preventDefault();
-        const fallback = defaultClass || classes[0];
-        if (fallback) onPick(fallback);
+        if (resolvedDefaultClass) onPick(resolvedDefaultClass);
         return;
       }
       // 数字 1-9
@@ -123,7 +123,7 @@ export function ClassPickerPopover({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [classes, defaultClass, onPick, onCancel]);
+  }, [classes, resolvedDefaultClass, onPick, onCancel]);
 
   // click outside to cancel
   useEffect(() => {
@@ -158,7 +158,7 @@ export function ClassPickerPopover({
       <ClassPalette
         classes={classes}
         recent={recent}
-        activeClass={defaultClass}
+        activeClass={resolvedDefaultClass}
         onPick={onPick}
         dense
         enableSearch={classes.length > 9}
@@ -177,7 +177,7 @@ export function ClassPickerPopover({
         <div className="mt-1">
           <AttributeForm
             schema={attrEditing.schema}
-            className={defaultClass}
+            className={resolvedDefaultClass}
             attributes={attrEditing.attributes}
             onChange={attrEditing.onChange}
             readOnly={attrEditing.readOnly}

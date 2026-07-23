@@ -207,7 +207,7 @@ async function generateAndAccept(
     ? `${options.candidateCycles + 1} 个候选待处理`
     : "候选待处理";
   await expect(page.getByText(pendingLabel, { exact: true })).toBeVisible({ timeout: 10_000 });
-  // Native candidate bounds are derived asynchronously by the shared raster renderer.
+  // Candidate bounds are synchronous; allow the shared renderer time to fill the pixel preview.
   await page.waitForTimeout(media === "image" ? 250 : 750);
   for (let index = 0; index < (options?.candidateCycles ?? 0); index += 1) {
     await page.keyboard.press("Tab");

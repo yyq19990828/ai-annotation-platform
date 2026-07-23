@@ -89,7 +89,6 @@ import {
   useInteractiveAI,
   type InteractiveTransport,
   type PendingCandidate,
-  type PendingMaskCandidate,
   type TextOutputMode,
 } from "./useInteractiveAI";
 import type { VideoSamPrompt } from "../stage/videoStageTypes";
@@ -115,7 +114,11 @@ import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
-import { samCandidateGeom } from "./useWorkbenchShellModel.helpers";
+import {
+  resolveSamCandidateClass,
+  samCandidateDisplayShapes,
+  samCandidateGeom,
+} from "./useWorkbenchShellModel.helpers";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
@@ -1671,11 +1674,8 @@ export function useWorkbenchShellModel({
     ].join(":"),
     requestContextDefaults: samRequestContextDefaults,
   });
-  const samVectorCandidates = useMemo(
-    () => sam.candidates.filter(
-      (candidate): candidate is Exclude<PendingCandidate, PendingMaskCandidate> =>
-        candidate.type !== "mask",
-    ),
+  const samDisplayCandidates = useMemo(
+    () => samCandidateDisplayShapes(sam.candidates),
     [sam.candidates],
   );
   const activeMaskQcAiCandidate = sam.candidates[sam.activeIdx];
@@ -1724,9 +1724,10 @@ export function useWorkbenchShellModel({
   });
   const samCandidateDisplayGeom = useCallback(
     (candidate: PendingCandidate | undefined) => {
-      if (candidate?.type !== "mask") return samCandidateGeom(candidate);
-      const record = samMaskCandidates.records.find((item) => item.id === candidate.id);
-      return record?.bounds ?? null;
+      const direct = samCandidateGeom(candidate);
+      if (direct) return direct;
+      if (candidate?.type !== "mask") return null;
+      return samMaskCandidates.records.find((item) => item.id === candidate.id)?.bounds ?? null;
     },
     [samMaskCandidates.records],
   );
@@ -4298,10 +4299,10 @@ export function useWorkbenchShellModel({
     return samCandidateDisplayGeom(sam.candidates[videoSamPendingAccept.idx]);
   }, [videoSamPendingAccept, sam.candidates, samCandidateDisplayGeom]);
 
-  // 候选自带的模型类别若在项目类别里则作默认值, 否则回落当前类 (与图片侧 samDefaultClass 一致)。
+  // 候选类和当前类都可能来自前一个工具单位；原生 Mask 只允许当前 region 类别。
   const videoSamDefaultClass = useMemo(() => {
     const label = videoSamPendingAccept ? sam.candidates[videoSamPendingAccept.idx]?.label : undefined;
-    return label && classes.includes(label) ? label : s.activeClass;
+    return resolveSamCandidateClass(label, classes, s.activeClass);
   }, [videoSamPendingAccept, sam.candidates, classes, s.activeClass]);
 
   const handlePickPendingClassAny = useCallback((cls: string) => {
@@ -5765,7 +5766,7 @@ export function useWorkbenchShellModel({
         onVideoSamPrompt,
         // 工具条上的正/负切换 (= / - 键) 与 Alt 等价, 与图片侧 SmartPointTool 同语义。
         samPolarity: s.samPolarity,
-        samCandidates: isVideoTask ? samVectorCandidates : undefined,
+        samCandidates: isVideoTask ? samDisplayCandidates : undefined,
         samMaskRecords: isVideoTask ? samMaskCandidates.records : undefined,
         onSelectSamMaskCandidate: isVideoTask ? selectSamMaskCandidate : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
@@ -5884,7 +5885,7 @@ export function useWorkbenchShellModel({
         onStageGeometry: setStageGeom,
       },
       ai: {
-        samCandidates: samVectorCandidates,
+        samCandidates: samDisplayCandidates,
         samMaskRecords: samMaskCandidates.records,
         onSelectSamMaskCandidate: selectSamMaskCandidate,
         samActiveIdx: sam.activeIdx,
