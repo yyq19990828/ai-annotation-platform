@@ -83,8 +83,8 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   polyline: { desc: "逐点画折线 (Enter 结束, 不闭合)" },
   // v0.10.28 · 关键点: 按 schema 依次落点 (Alt 遮挡, 右键跳过), 放满自动提交.
   keypoint: { desc: "依次落关键点 · Alt=遮挡, 右键=跳过" },
-  // v0.10.8 · I11 Mask 编辑器：空白笔刷或精修 AI polygon 候选 (B/E 切笔刷/橡皮, Shift+滚轮调半径)。
-  mask: { desc: "Mask 笔刷 · B/E 切模式, Shift+滚轮调半径, Enter 提交" },
+  // v0.10.8 · I11 Mask 编辑器：空白笔刷或精修 AI polygon 候选 (B/E 切笔刷/橡皮, 滚轮调半径)。
+  mask: { desc: "Mask 笔刷 · B/E 切模式, 滚轮调半径, Enter 提交" },
   "smart-point": { desc: "单击 = 正向点；Alt+点 = 负向点", altDigit: 3 },
   "smart-box": { desc: "拖框作为 SAM 提示" },
   "smart-scribble": { desc: "在选中 Mask 上画正向笔迹；Alt = 负向笔迹" },

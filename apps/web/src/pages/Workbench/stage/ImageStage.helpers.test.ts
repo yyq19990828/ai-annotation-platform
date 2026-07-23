@@ -1,6 +1,7 @@
 // v0.16.x 第 2 批 · ImageStage 纯几何函数测试守护(伴随从 toImg 提炼,锁定逆变换公式)。
 import { describe, it, expect } from "vitest";
 import {
+  isNormalizedImagePoint,
   normalizeImageCoordinate,
   resolveSnapMatch,
   shouldRenderImageAnnotationShape,
@@ -82,6 +83,15 @@ describe("normalizeImageCoordinate", () => {
       50,
     );
     expect(out).toEqual({ x: 0.5, y: 0.5 });
+  });
+});
+
+describe("isNormalizedImagePoint", () => {
+  it("仅接受图片边界内的归一化坐标", () => {
+    expect(isNormalizedImagePoint({ x: 0, y: 1 })).toBe(true);
+    expect(isNormalizedImagePoint({ x: 1.001, y: 0.5 })).toBe(false);
+    expect(isNormalizedImagePoint({ x: 0.5, y: -0.001 })).toBe(false);
+    expect(isNormalizedImagePoint(null)).toBe(false);
   });
 });
 

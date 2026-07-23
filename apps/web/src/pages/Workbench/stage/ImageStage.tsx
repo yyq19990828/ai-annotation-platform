@@ -63,6 +63,7 @@ import {
   SIBLING_HIGHLIGHT_COLOR,
 } from "./ImageStageShapes";
 import {
+  isNormalizedImagePoint,
   normalizeImageCoordinate,
   resolveSnapMatch,
   shouldRenderImageAnnotationShape,
@@ -644,6 +645,25 @@ export function ImageStage({
   // 图加载失败 (404/坏链) 也算就绪: 否则 konvaHost 因 !fitted 永久 visibility:hidden, 吞掉所有
   // 画布交互 (mask 笔刷 / 框选等); 失败时没有"正确位置"需保护, 用回退尺寸 (900×600) 立即揭开即可。
   const dimsReady = !!((imageWidth && imageHeight) || imageLoaded || imageStatus === "failed");
+  const maskCursorNodeRef = useRef<Konva.Circle>(null);
+  const maskCursorVisibleRef = useRef(false);
+  const [maskCursorVisible, setMaskCursorVisible] = useState(false);
+  const updateMaskCursor = useCallback(
+    (point: { x: number; y: number } | null) => {
+      const visible = isNormalizedImagePoint(point);
+      const node = maskCursorNodeRef.current;
+      if (node) {
+        if (visible) node.position({ x: point.x * imgW, y: point.y * imgH });
+        node.visible(visible);
+        node.getLayer()?.batchDraw();
+      }
+      if (maskCursorVisibleRef.current !== visible) {
+        maskCursorVisibleRef.current = visible;
+        setMaskCursorVisible(visible);
+      }
+    },
+    [imgH, imgW],
+  );
 
   // v0.10.5 M4-β · 按 is_hidden 过滤；按 z_order ASC 排序（高 z_order 后渲染 = 在上层）。
   // 同 z_order 保持原数组顺序作 tie-breaker，避免选中态下渲染顺序闪烁。
@@ -859,17 +879,18 @@ export function ImageStage({
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      // v0.10.8 · Shift+滚轮在 mask 工具激活时调笔刷半径（步长 ±2，clamp [1,200]）。
+      // Mask 工具下直接滚轮调笔刷半径（步长 ±2，clamp [1,200]）。
       // 仅 deltaY 主导时响应（避免 macOS trackpad 横向滚动误触发）。
       // 用 `tool === "mask"` 判定而非 `maskEditor.active`：active 只在 buffer 已初始化
       // （beginBlank / initFromPolygon）后为 true，但用户选了 mask 工具后画第一笔之前
       // 也需要预调半径。
+      const imagePoint = toImg(e.clientX, e.clientY);
       if (
         !maskCompareActive &&
-        e.shiftKey &&
         !(e.ctrlKey || e.metaKey) &&
         tool === "mask" &&
         maskEditor &&
+        isNormalizedImagePoint(imagePoint) &&
         Math.abs(e.deltaY) > Math.abs(e.deltaX)
       ) {
         e.preventDefault();
@@ -892,7 +913,7 @@ export function ImageStage({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [maskCompareActive, setVp, maskEditor, tool, workbenchConfig.image.zoomStepFactor]);
+  }, [maskCompareActive, setVp, maskEditor, toImg, tool, workbenchConfig.image.zoomStepFactor]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
   // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
@@ -925,6 +946,17 @@ export function ImageStage({
       }
       const pt = toImg(e.clientX, e.clientY);
       if (!pt) return;
+      if (d.kind === "maskBrush" || d.kind === "maskLasso") {
+        const inImage = isNormalizedImagePoint(pt);
+        if (d.kind === "maskBrush") updateMaskCursor(inImage ? pt : null);
+        if (!inImage) {
+          if (d.kind === "maskBrush") {
+            d.lastX = Number.NaN;
+            d.lastY = Number.NaN;
+          }
+          return;
+        }
+      }
       if (d.kind === "draw") {
         schedule(() =>
           setDrag((cur) => (cur && cur.kind === "draw" ? { ...cur, cx: pt.x, cy: pt.y } : cur)),
@@ -1054,6 +1086,12 @@ export function ImageStage({
           return;
         const px = pt.x * imgW;
         const py = pt.y * imgH;
+        if (!Number.isFinite(d.lastX) || !Number.isFinite(d.lastY)) {
+          maskEditor.paintAt(px, py);
+          d.lastX = px;
+          d.lastY = py;
+          return;
+        }
         const dx = px - d.lastX;
         const dy = py - d.lastY;
         const dist = Math.hypot(dx, dy);
@@ -1245,6 +1283,7 @@ export function ImageStage({
     snapImagePoint,
     readOnly,
     primarySelectedBox?.is_locked,
+    updateMaskCursor,
   ]);
 
   useEffect(() => {
@@ -1255,8 +1294,18 @@ export function ImageStage({
       dragRef.current = null;
       setDrag(null);
     }
-    setMaskCursor(null);
-  }, [maskCompareActive, maskEditor]);
+    updateMaskCursor(null);
+  }, [maskCompareActive, maskEditor, updateMaskCursor]);
+
+  const customMaskCursorActive =
+    tool === "mask" &&
+    !maskCompareActive &&
+    !!maskEditor &&
+    (maskEditor.tool === "brush" || maskEditor.tool === "erase");
+
+  useEffect(() => {
+    if (!customMaskCursorActive) updateMaskCursor(null);
+  }, [customMaskCursorActive, updateMaskCursor]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -1265,6 +1314,7 @@ export function ImageStage({
     }
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if (tool === "mask" && !spacePan && !isNormalizedImagePoint(pt)) return;
     if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
       const candidate = pickTopRasterMaskAt(samMaskRecords, pt);
       if (candidate) {
@@ -1325,7 +1375,8 @@ export function ImageStage({
 
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const pt = toImg(e.evt.clientX, e.evt.clientY);
-    onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
+    const inImagePoint = isNormalizedImagePoint(pt) ? pt : null;
+    onCursorMove(inImagePoint);
     if (
       (tool === "polygon" || tool === "polyline") &&
       polygonDraft &&
@@ -1345,10 +1396,10 @@ export function ImageStage({
       setSnapIndicator(null);
     }
     // v0.10.9 · Mask 工具下追踪笔刷光标位置（image-space pixels），驱动 overlay 圆圈渲染。
-    if (tool === "mask" && !maskCompareActive) {
-      setMaskCursor(pt ? { x: pt.x * imgW, y: pt.y * imgH } : null);
-    } else if (maskCursor) {
-      setMaskCursor(null);
+    if (customMaskCursorActive) {
+      updateMaskCursor(inImagePoint);
+    } else if (maskCursorVisibleRef.current) {
+      updateMaskCursor(null);
     }
   };
 
@@ -1365,9 +1416,11 @@ export function ImageStage({
             ? "crosshair"
             : // v0.10.9 · Mask 工具用自绘 overlay 圆圈替代系统光标，让笔刷大小与图像同比例可视。
               tool === "mask"
-              ? maskCompareActive
-                ? "default"
-                : "none"
+              ? customMaskCursorActive
+                ? maskCursorVisible
+                  ? "none"
+                  : "default"
+                : "crosshair"
               : pendingDrawing
                 ? "default"
                 : "crosshair";
@@ -1387,8 +1440,6 @@ export function ImageStage({
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
   // v0.14.10 · polygon/polyline snap 命中时的图像坐标指示点。
   const [snapIndicator, setSnapIndicator] = useState<{ x: number; y: number } | null>(null);
-  // v0.10.9 · Mask 笔刷光标 (image-space pixels)；overlay 层据此画跟随圆圈。
-  const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
   const maskOperationPreviewBuffer = useMemo(() => {
     const preview = maskEditor?.operationPreview;
     if (!preview || preview.alpha.length !== imgW * imgH) return null;
@@ -1594,6 +1645,8 @@ export function ImageStage({
       onMouseLeave={() => {
         onCursorMove(null);
         setSnapIndicator(null);
+        updateMaskCursor(null);
+        containerRef.current?.style.setProperty("--image-stage-cursor", "default");
       }}
       onContextMenu={handleContextMenu}
       onPointerDown={(evt) => {
@@ -2559,23 +2612,22 @@ export function ImageStage({
                 </Label>
               </>
             )}
-            {/* v0.10.9 · Mask 笔刷光标圈：仅 mask 工具激活时渲染；圆心 = maskCursor，半径 = maskEditor.radius
-              (image-space px)，描边宽度按 vp.scale 取倒数保持像素级视觉。brush=红、erase=灰。 */}
-            {!maskCompareActive &&
-              tool === "mask" &&
-              maskCursor &&
-              maskEditor &&
-              (maskEditor.tool === "brush" || maskEditor.tool === "erase") && (
+            {/* Mask 笔刷圈由 Konva 节点直接跟随指针，React 只处理进出图片的显隐切换。 */}
+            {customMaskCursorActive && maskEditor && (
+              <Group clipX={0} clipY={0} clipWidth={imgW} clipHeight={imgH} listening={false}>
                 <Circle
-                  x={maskCursor.x}
-                  y={maskCursor.y}
+                  ref={maskCursorNodeRef}
+                  x={0}
+                  y={0}
+                  visible={maskCursorVisible}
                   radius={maskEditor.radius}
                   stroke={maskEditor.mode === "erase" ? "#64748b" : "#dc2626"}
                   strokeWidth={1.5 / vp.scale}
                   dash={[4 / vp.scale, 3 / vp.scale]}
                   listening={false}
                 />
-              )}
+              </Group>
+            )}
           </Layer>
           {/* v0.10.20 · I18 IssueLayer · pixel-anchored feedback 可视化 + 单击 drop. */}
           {(issuePixelFeedbacks && issuePixelFeedbacks.length > 0) || issuePinDropArmed ? (

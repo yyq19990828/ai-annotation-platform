@@ -57,7 +57,7 @@ export const HOTKEYS: HotkeyDef[] = [
   },
   // v0.10.8 · I11 Mask 编辑器: 全局 M 切工具; 工具内 B/E 切笔刷/橡皮 (capture, dispatchKey 之前).
   { keys: ["M"], desc: "Mask 笔刷工具", group: "draw", actionType: "setTool" },
-  { keys: ["Shift", "+ wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
+  { keys: ["wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
   { keys: ["B"], desc: "Mask 工具激活时: 切笔刷模式", group: "draw" },
   { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
   { keys: ["Enter"], desc: "Mask 工具激活时: 提交当前 Mask", group: "draw" },

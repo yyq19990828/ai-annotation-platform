@@ -1476,25 +1476,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       viewportSize.w,
     ]);
 
-    // ctrl/⌘+滚轮围绕光标缩放(几何边界判断,对齐旧栈 onWheel)。
+    // Mask 直接滚轮调半径；ctrl/⌘+滚轮围绕光标缩放。
     useEffect(() => {
       const onWheel = (e: WheelEvent) => {
-        if (
-          !maskCompareActive &&
-          maskToolActive &&
-          maskEditor &&
-          e.shiftKey &&
-          !(e.ctrlKey || e.metaKey)
-        ) {
-          e.preventDefault();
-          maskEditor.setRadius(maskEditor.radius + (e.deltaY < 0 ? 2 : -2));
-          return;
-        }
-        if (!(e.ctrlKey || e.metaKey)) return;
         const el = containerRef.current;
         if (!el) return;
-        // 播放组件(时间轴/控制条/概览导航条)叠在 stage 容器内, 它自有 Ctrl/⌘+滚轮横向缩放;
-        // 指针落在整个播放组件上时别让画布抢事件一起缩放(两处 wheel 监听同触发条件的冲突根因)。
+        // 播放组件(时间轴/控制条/概览导航条)叠在 stage 容器内, 它有独立滚轮行为。
         if (
           e.target instanceof Element &&
           e.target.closest('[data-testid="video-playback-overlay"]')
@@ -1508,13 +1495,28 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           e.clientY > rect.bottom
         )
           return;
+        const point = clientToVideoNorm(e.clientX, e.clientY, rect, vpRef.current, size);
+        const inFrame = !!point && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+        if (
+          !maskCompareActive &&
+          maskToolActive &&
+          maskEditor &&
+          !(e.ctrlKey || e.metaKey) &&
+          inFrame &&
+          Math.abs(e.deltaY) > Math.abs(e.deltaX)
+        ) {
+          e.preventDefault();
+          maskEditor.setRadius(maskEditor.radius + (e.deltaY < 0 ? 2 : -2));
+          return;
+        }
+        if (!(e.ctrlKey || e.metaKey)) return;
         e.preventDefault();
         const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
         zoomAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current.scale * factor);
       };
       window.addEventListener("wheel", onWheel, { capture: true, passive: false });
       return () => window.removeEventListener("wheel", onWheel, { capture: true });
-    }, [maskCompareActive, maskEditor, maskToolActive, vpRef, zoomAt]);
+    }, [maskCompareActive, maskEditor, maskToolActive, size, vpRef, zoomAt]);
 
     // 本地视口/导航快捷键(对齐旧 SVG 栈 VideoStage 本地 keydown):
     // F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧(,/. 跳关键帧由中央 hotkeys 分发器处理)。

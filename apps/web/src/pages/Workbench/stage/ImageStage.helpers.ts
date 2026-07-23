@@ -26,6 +26,12 @@ export function normalizeImageCoordinate(
   };
 }
 
+export function isNormalizedImagePoint(
+  point: { x: number; y: number } | null,
+): point is { x: number; y: number } {
+  return !!point && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+}
+
 // v0.20.14 · 父子同胞高亮的子框集: 恰好单选一个框时, 返回其直接子框 (parent_annotation_id ===
 // 选中框 id); 多选/无选返回空 (环仅辅助看清单个父框的子框归属)。纯函数, 便于单测。
 export function siblingHighlightChildren<T extends { parent_annotation_id?: string | null }>(

@@ -105,7 +105,7 @@ import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
 import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
 import { classColorForCanvas } from "../stage/colors";
 import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
-import { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
+import { useRasterMaskWorkerPool } from "../stage/shared/useRasterMaskWorkerPool";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -1288,11 +1288,7 @@ export function useWorkbenchShellModel({
     () => new Set(s.selectedIds.length > 0 ? s.selectedIds : s.selectedId ? [s.selectedId] : []),
     [s.selectedId, s.selectedIds],
   );
-  const rasterMaskWorkerPool = useMemo(
-    () => (typeof Worker === "undefined" || !taskId ? undefined : new RasterMaskWorkerPool()),
-    [taskId],
-  );
-  useEffect(() => () => rasterMaskWorkerPool?.dispose(), [rasterMaskWorkerPool]);
+  const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId);
   const imageRasterMaskDescriptors = useMemo(() => {
     if (isVideoTask || maskCapabilities.data?.read_enabled !== true) return [];
     return visibleAnnotationsData.flatMap((annotation) => {
