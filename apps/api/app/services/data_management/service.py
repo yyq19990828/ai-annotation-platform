@@ -50,7 +50,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import DatasetItem
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import (
+    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+    Prediction,
+)
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -619,6 +622,8 @@ class DataManagerService:
             window_start = remaining_offset
             window_end = remaining_offset + max(remaining_limit, 0)
             for prediction in prediction_rows.scalars().all():
+                if prediction.source == INTERACTIVE_ACCEPT_PREDICTION_SOURCE:
+                    continue
                 rejected = set(prediction.rejected_shape_indexes or [])
                 for shape_index, raw_shape in enumerate(prediction.result or []):
                     if (

@@ -17,6 +17,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
 from app.db.models.ml_backend_pool import MLBackendServicePool
 from app.db.models.ml_backend_registry import MLBackendRegistry
+from app.db.models.prediction import INTERACTIVE_ACCEPT_PREDICTION_SOURCE
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -585,6 +586,7 @@ async def accept_ai_mask_candidate(
         score=score,
         model_version=data.inference.model_version,
         inference_time_ms=inference_time_ms,
+        source=INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
         pipeline_extra={
             "mask_ai_accept": {
                 "candidate_id": candidate.candidate_id,

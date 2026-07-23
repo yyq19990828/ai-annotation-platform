@@ -25,7 +25,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased
 
 from app.db.models.annotation import Annotation
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import (
+    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+    Prediction,
+)
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -79,7 +82,10 @@ def pending_prediction_shapes_expr():
                 0,
             )
         )
-        .where(prediction.task_id == Task.id)
+        .where(
+            prediction.task_id == Task.id,
+            prediction.source != INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+        )
         .correlate(Task)
         .scalar_subquery()
     )
@@ -144,6 +150,7 @@ def _pending_prediction_shape_rows(
         .join(shape, true())
         .where(
             task_clause(prediction),
+            prediction.source != INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
             not_(rejected.op("@>")(func.jsonb_build_array(shape_index))),
             not_(accepted),
         )

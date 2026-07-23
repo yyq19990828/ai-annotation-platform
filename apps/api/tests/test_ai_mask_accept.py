@@ -250,7 +250,15 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
         payload["annotation"]["geometry"]["mask"]["sha256"] == payload["content_digest"]
     )
     assert payload["annotation"]["parent_prediction_id"] == payload["prediction"]["id"]
+    assert payload["prediction"]["source"] == "interactive_accept"
     assert first.headers["etag"] == 'W/"1"'
+
+    pending = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/predictions",
+        headers=_headers(token),
+    )
+    assert pending.status_code == 200, pending.text
+    assert pending.json() == []
 
     replay = await httpx_client_bound.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
@@ -262,6 +270,18 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     assert replay_payload["replayed"] is True
     assert replay_payload["annotation"]["id"] == payload["annotation"]["id"]
     assert replay_payload["prediction"]["id"] == payload["prediction"]["id"]
+
+    deleted = await httpx_client_bound.delete(
+        f"/api/v1/tasks/{task.id}/annotations/{payload['annotation']['id']}",
+        headers=_headers(token),
+    )
+    assert deleted.status_code == 204, deleted.text
+    pending_after_delete = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/predictions",
+        headers=_headers(token),
+    )
+    assert pending_after_delete.status_code == 200, pending_after_delete.text
+    assert pending_after_delete.json() == []
 
     for model in (AiMaskAcceptDecision, Prediction, PredictionMeta, Annotation):
         count = (

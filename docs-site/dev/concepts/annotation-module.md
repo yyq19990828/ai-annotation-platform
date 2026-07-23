@@ -176,7 +176,7 @@ polygon、Mask 与紧致 bbox 的图片 / 视频转换使用 `dry-run → execut
 
 execute 先重验计划与来源快照，重算转换并与冻结报告比对，再按共享锁序预留新 Mask 引用、取得 annotation 行锁并复查快照。内容写入、annotation 变更、`convert_annotations` operation、`converted` lineage、统计、heartbeat 和聚合审计作为一个事务提交。短期计划过期后可清理，已成功请求的幂等回放仍由持久 operation 账本提供。
 
-交互式 AI 的原生 Mask 候选不先写 Prediction，也不由浏览器拆成内容上传和标注创建。平台代理响应为每个候选签发绑定 task、像素、prompt revision 与实际路由的短生命周期 receipt；接受时 `POST /tasks/{task_id}/ai-mask-candidates/accept` 重新检查权限、写闸、锁和源版本，并在同一提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。decision 以 task + 客户端幂等键唯一保存完整响应并设有效期；相同请求可安全重放，不同请求复用 key 或过期重放返回冲突。有效 decision 引用的内容受 Raster GC 保活，过期 decision 先清理后才参与对象扫描。
+交互式 AI 的原生 Mask 候选不先写 Prediction，也不由浏览器拆成内容上传和标注创建。平台代理响应为每个候选签发绑定 task、像素、prompt revision 与实际路由的短生命周期 receipt；接受时 `POST /tasks/{task_id}/ai-mask-candidates/accept` 重新检查权限、写闸、锁和源版本，并在同一提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。接受阶段写入的 Prediction 使用 `source=interactive_accept`，只保存模型与路由溯源，不进入工作台或数据管理的 AI 待审集合；关联 Annotation 后续被删除也不会重新暴露为候选。decision 以 task + 客户端幂等键唯一保存完整响应并设有效期；相同请求可安全重放，不同请求复用 key 或过期重放返回冲突。有效 decision 引用的内容受 Raster GC 保活，过期 decision 先清理后才参与对象扫描。
 
 ### Mask 质检修复批次
 

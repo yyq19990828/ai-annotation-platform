@@ -10,7 +10,10 @@ from app.deps import (
     require_roles,
 )
 from app.db.models.user import User
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import (
+    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+    Prediction,
+)
 from app.schemas.annotation import (
     AnnotationOut,
 )
@@ -96,6 +99,10 @@ async def get_predictions(
 
     base: list[tuple[Any, list[dict]]] = []  # (raw prediction, internal shapes)
     for p in predictions:
+        # 交互式候选只在前端待决；采纳时生成的 Prediction 仅保存审计与模型溯源，
+        # 即使对应 Annotation 后续被删除，也不能重新进入 AI 待审。
+        if p.source == INTERACTIVE_ACCEPT_PREDICTION_SOURCE:
+            continue
         # B-37 · 跳过被驳回的 shape 下标; 防止刷新后 AI 待审框重现.
         rejected_set = set(p.rejected_shape_indexes or [])
         shapes = []
