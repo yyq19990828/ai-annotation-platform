@@ -186,6 +186,7 @@ async def test_seed_cleanup_is_idempotent_and_preserves_non_e2e_data(
             is_active=True,
         )
     )
+    await db_session.flush()
     db_session.add(
         Project(
             id=dev_project_id,
