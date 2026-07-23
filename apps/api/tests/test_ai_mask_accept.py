@@ -260,6 +260,20 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     assert pending.status_code == 200, pending.text
     assert pending.json() == []
 
+    legacy_accept = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/predictions/{payload['prediction']['id']}/accept",
+        headers=_headers(token),
+    )
+    assert legacy_accept.status_code == 404, legacy_accept.text
+    annotation_count = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(Annotation.task_id == task.id)
+        )
+    ).scalar_one()
+    assert annotation_count == 1
+
     replay = await httpx_client_bound.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,

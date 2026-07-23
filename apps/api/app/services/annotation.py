@@ -8,7 +8,10 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import (
+    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+    Prediction,
+)
 from app.db.models.task import Task
 from app.db.models.task_lock import AnnotationDraft
 from app.services.video_tracks import (
@@ -243,7 +246,8 @@ class AnnotationService:
           每条 annotation 在 attributes 里写入 _shape_index, 让前端能按 (predictionId, shapeIndex) 双键判定.
 
         返回值 (v0.20.22 契约):
-        - 找不到 prediction / shape_index 越界 → None (路由层转 404)。
+        - 找不到 prediction、交互式采纳溯源快照或 shape_index 越界 → None
+          (路由层转 404)。
         - 成功 → 本次新建的 annotation 列表 (单 shape 场景返回 `[ann]`)。
           原实现只返回循环最后一条, 上游 route 忽略返回值、另跑 `list_by_task` 回整题全量,
           导致前端把整题当作"刚新建"逐条 PATCH 合并 AI 候选属性 → 污染人工标注 (改动 1 根因)。
@@ -255,6 +259,8 @@ class AnnotationService:
             )
         ).scalar_one_or_none()
         if not prediction:
+            return None
+        if prediction.source == INTERACTIVE_ACCEPT_PREDICTION_SOURCE:
             return None
 
         # Convert and validate every selected geometry before constructing or adding
