@@ -115,7 +115,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   await seed.injectToken(page, data.admin_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
   await expect(page.getByTestId("video-konva-stage")).toBeVisible({ timeout: 20_000 });
-  const row = page.getByTestId(`box-list-item-${source.id}`);
+  const row = page.getByTestId(`video-mask-track-${source.id}`);
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.click();
   await expect(page.getByRole("button", { name: "复制当前帧" })).toBeEnabled();
@@ -176,7 +176,9 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   expect((await copyResponse.json()).created_annotations).toHaveLength(1);
   await expect.poll(async () => (await listAnnotations(request, taskId, token)).length).toBe(2);
 
+  await page.getByRole("button", { name: "收起浮窗" }).click();
   await row.click();
+  await page.getByLabel(/展开选中信息卡:car/).click();
   const markedOutside = page.waitForResponse((response) =>
     isKeyframeResponse(response, taskId, source.id, 1, "PATCH"),
   );

@@ -305,6 +305,10 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
   });
 
   test("4. 1080p 实际 Worker 可完成、可取消且失败不修改输入", async ({ page, seed }) => {
+    test.skip(
+      Boolean(process.env.CI) && !process.env.PLAYWRIGHT_RASTER_MASK_MATRIX,
+      "源码 Worker 模块需由 Vite 开发服务提供，在 native Mask 矩阵执行",
+    );
     test.setTimeout(90_000);
     const data = await seed.reset();
     await seed.injectToken(page, data.admin_email);

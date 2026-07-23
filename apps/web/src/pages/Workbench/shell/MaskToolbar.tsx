@@ -607,7 +607,7 @@ export function MaskToolbar({
               type="button"
               size="xs"
               variant="ghost"
-              disabled={instanceBusy || !canEdit}
+              disabled={instanceBusy}
               onClick={onRefreshInstanceOperation}
             >
               刷新范围

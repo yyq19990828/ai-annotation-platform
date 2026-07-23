@@ -77,14 +77,15 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
 
     // 5. 工具栏笔刷 / 橡皮应 disabled (canEdit=false: 选中 annotation is_locked=true)。
     //    这是 canEditMask 在生产 UI 的直接证据 (toolbar canEdit prop 由 canEditMask 计算)。
-    await expect(page.getByTestId("mask-mode-brush")).toBeDisabled({ timeout: 5_000 });
-    await expect(page.getByTestId("mask-mode-erase")).toBeDisabled({ timeout: 5_000 });
+    const toolbar = page.getByTestId("mask-toolbar");
+    await expect(toolbar.getByRole("radio", { name: "笔刷" })).toBeDisabled({ timeout: 5_000 });
+    await expect(toolbar.getByRole("radio", { name: "橡皮" })).toBeDisabled({ timeout: 5_000 });
 
     // 6. B / E 快捷键不切换模式 (锁定时 hotkey 经 canEditMask 拦截)。
     await page.keyboard.press("b");
-    await expect(page.getByTestId("mask-mode-brush")).toBeDisabled();
+    await expect(toolbar.getByRole("radio", { name: "笔刷" })).toBeDisabled();
     await page.keyboard.press("e");
-    await expect(page.getByTestId("mask-mode-erase")).toBeDisabled();
+    await expect(toolbar.getByRole("radio", { name: "橡皮" })).toBeDisabled();
 
     // 7. 真实 pointer → Enter 闭环不得产生任何 annotation mutation。
     let mutationCount = 0;

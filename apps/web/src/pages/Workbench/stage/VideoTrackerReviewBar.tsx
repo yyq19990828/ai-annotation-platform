@@ -77,7 +77,14 @@ export function VideoTrackerReviewBar({
       decision,
       override_manual: false,
     };
-    await onDecide(selection);
+    const outcome = await onDecide(selection);
+    if (
+      decision === "accept" &&
+      outcome.reason === "manual_keyframe_protected" &&
+      window.confirm("选区包含受保护的人工关键帧，确认用追踪候选覆盖这些帧吗？")
+    ) {
+      await onDecide({ ...selection, override_manual: true });
+    }
   };
 
   if (!open || !preview) return null;
@@ -176,7 +183,7 @@ export function VideoTrackerReviewBar({
             data-testid="tracker-review-manual-warning"
           >
             <ShieldAlert className="size-4" />
-            选区包含 {manualCount} 个受保护的人工关键帧，审阅条不会覆盖这些帧。
+            选区包含 {manualCount} 个受保护的人工关键帧，接受时需二次确认后才能覆盖。
           </div>
         ) : null}
 
@@ -205,7 +212,7 @@ export function VideoTrackerReviewBar({
             variant="primary"
             size="sm"
             onClick={() => void submit("accept")}
-            disabled={disabled || manualCount > 0}
+            disabled={disabled}
             data-testid="tracker-review-accept"
           >
             <Check data-icon="inline-start" />

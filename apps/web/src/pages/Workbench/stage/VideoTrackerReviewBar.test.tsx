@@ -69,15 +69,36 @@ describe("VideoTrackerReviewBar", () => {
     );
   });
 
-  it("选区含 manual 时不从审阅条提供覆盖入口", () => {
-    const onDecide = vi.fn();
+  it("选区含 manual 时在 409 后二次确认覆盖", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDecide = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: "manual_keyframe_protected" })
+      .mockResolvedValueOnce({ ok: true });
     render(
       <VideoTrackerReviewBar open preview={preview} onDecide={onDecide} onRefresh={vi.fn()} />,
     );
     expect(screen.getByTestId("tracker-review-manual-warning")).toHaveTextContent("1 个");
-    expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
+    expect(screen.getByTestId("tracker-review-accept")).not.toBeDisabled();
     expect(screen.getByTestId("tracker-review-discard")).not.toBeDisabled();
-    expect(onDecide).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledTimes(2));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(onDecide).toHaveBeenNthCalledWith(1, {
+      instance_ids: ["A", "B"],
+      from_frame: 10,
+      to_frame: 12,
+      decision: "accept",
+      override_manual: false,
+    });
+    expect(onDecide).toHaveBeenNthCalledWith(2, {
+      instance_ids: ["A", "B"],
+      from_frame: 10,
+      to_frame: 12,
+      decision: "accept",
+      override_manual: true,
+    });
+    confirm.mockRestore();
   });
 
   it("无可选 candidate 或提交中时禁用决策", () => {

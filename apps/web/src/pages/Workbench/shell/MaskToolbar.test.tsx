@@ -392,6 +392,47 @@ describe("MaskToolbar", () => {
     expect(view.getByRole("alert").textContent).toContain("scope_stale");
   });
 
+  it("实例冲突进入错误态后仍可刷新范围恢复", () => {
+    const onRefreshInstanceOperation = vi.fn();
+    const view = render(
+      <MaskToolbar
+        active
+        tool="brush"
+        brushShape="circle"
+        connectivity={4}
+        radius={8}
+        dirty
+        phase="error"
+        canUndo={false}
+        canRedo={false}
+        canEdit={false}
+        operationPreview={null}
+        instanceOperationPreview={null}
+        operationStatus="idle"
+        instanceCommitError="来源 Mask 已变更，草稿已保留"
+        instanceCanRefresh
+        onSetTool={vi.fn()}
+        onSetBrushShape={vi.fn()}
+        onSetConnectivity={vi.fn()}
+        onSetRadius={vi.fn()}
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        onConfirmOperation={vi.fn()}
+        onCancelOperation={vi.fn()}
+        onRunOperation={vi.fn()}
+        onRunInstanceOperation={vi.fn()}
+        onRefreshInstanceOperation={onRefreshInstanceOperation}
+      />,
+    );
+
+    const refresh = view.getByRole("button", { name: "刷新范围" });
+    expect((refresh as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(refresh);
+    expect(onRefreshInstanceOperation).toHaveBeenCalledOnce();
+  });
+
   it("按错误恢复策略只显示可用动作，提交中禁用取消", () => {
     const view = render(
       <MaskToolbar

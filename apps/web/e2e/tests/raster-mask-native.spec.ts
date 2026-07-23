@@ -147,6 +147,8 @@ test.describe("raster mask native write matrix", () => {
         response.status() === 201,
     );
     await page.keyboard.press("Enter");
+    await expect(page.getByTestId("class-picker-popover")).toBeVisible();
+    await page.keyboard.press("Enter");
     const created = await json<AnnotationDto>(await createResponse);
     expect(created.annotation_type).toBe("raster_mask");
     expect(created.geometry.type).toBe("raster_mask");
@@ -521,6 +523,8 @@ test.describe("raster mask native write matrix", () => {
         response.request().method() === "POST" &&
         response.status() === 201,
     );
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("class-picker-popover")).toBeVisible();
     await page.keyboard.press("Enter");
     const created = await json<AnnotationDto>(await createdResponse);
     expect(created.annotation_type).toBe("polygon");

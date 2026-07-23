@@ -48,7 +48,7 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.mouse.up();
     await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
 
-    // Enter → 恰好一次 POST。
+    // 第一次 Enter 只打开类别选择，第二次 Enter 才确认提交。
     let commitPostCount = 0;
     page.on("request", (request) => {
       if (
@@ -64,6 +64,9 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
         resp.status() < 400,
       { timeout: 10_000 },
     );
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("class-picker-popover")).toBeVisible();
+    expect(commitPostCount).toBe(0);
     await page.keyboard.press("Enter");
     const resp = await commitPost;
     expect(resp.status()).toBeLessThan(400);

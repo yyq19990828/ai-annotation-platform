@@ -676,6 +676,7 @@ export function VideoTrackSidebar({
                 >
                   <button
                     type="button"
+                    data-testid={`video-mask-track-${annotation.id}`}
                     className="min-w-0 flex-1 text-left"
                     onClick={(event) => onSelect(annotation.id, { shift: event.shiftKey })}
                   >
