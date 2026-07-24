@@ -4,7 +4,7 @@ import { tasksApi } from "@/api/tasks";
 import { videoApi } from "@/api/videos";
 import type { VideoChunkOut, VideoChunkSamplesResponse, VideoManifestV2Response } from "@/types";
 import { useVideoChunkDecoder } from "./useVideoChunkDecoder";
-import { buildEncodedVideoDecodePlan, type PreciseFrameFallbackReason } from "./videoChunkDemux";
+import { buildGopPlan, type PreciseFrameFallbackReason } from "./videoChunkDemux";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
 
 export interface UseVideoPreciseFrameArgs {
@@ -101,6 +101,8 @@ export function useVideoPreciseFrame({
   // latest-request-wins:effect 内异步 decode 完成后只激活仍匹配的 frame。
   const latestRef = useRef({ taskId, frameIndex, enabled });
   latestRef.current = { taskId, frameIndex, enabled };
+  // 单调递增的请求 token;decode 完成后与 latestRef 一起保证旧请求不覆盖当前显示帧。
+  const generationRef = useRef(0);
 
   const [decoding, setDecoding] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<PreciseFrameFallbackReason | null>(null);
@@ -299,22 +301,37 @@ export function useVideoPreciseFrame({
     refreshingUrlKey,
   ]);
 
-  // 8-10. bytes + samples 就绪 → build plan → decode → 仅当最新 ref 匹配才激活。
+  // 8-10. bytes + samples 就绪 → build GOP plan → decode → 仅当最新 ref 匹配才激活。
   useEffect(() => {
     if (!pipelineEnabled || !bytes || !samples || targetChunkId === null || !datasetItemId) {
       return;
     }
-    const result = buildEncodedVideoDecodePlan(bytes, samples, frameIndex);
+    const result = buildGopPlan(bytes, samples, frameIndex);
     if (!result.ok) {
       setFallbackReason(result.reason);
       setDecoding(false);
       return;
     }
+    const plan = result.plan;
+    const gopIdentity = {
+      taskId: taskId as string,
+      datasetItemId,
+      chunkId: plan.chunkId,
+      gopStartDecodeIndex: plan.gopStartDecodeIndex,
+      configFingerprint: plan.configFingerprint,
+    };
+    generationRef.current += 1;
+    const generation = generationRef.current;
     let cancelled = false;
     setDecoding(true);
     setFallbackReason(null);
     void (async () => {
-      const decoded = await decoderRef.current.decodePlan(result.plan);
+      const decoded = await decoderRef.current.decodePlan({
+        plan,
+        identity: gopIdentity,
+        targetFrameIndex: frameIndex,
+        generation,
+      });
       if (cancelled) return;
       setDecoding(false);
       const latest = latestRef.current;

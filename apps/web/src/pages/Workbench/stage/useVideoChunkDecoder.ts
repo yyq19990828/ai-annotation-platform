@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EncodedVideoDecodePlan, PreciseFrameFallbackReason } from "./videoChunkDemux";
+import type {
+  EncodedVideoDecodePlan,
+  PreciseFrameFallbackReason,
+  VideoGopPlan,
+} from "./videoChunkDemux";
 import { ByteLru } from "./videoByteLru";
+import { VideoGopDecoderSession, type VideoGopSessionIdentity } from "./videoGopDecoderSession";
 
 /**
  * WebCodecs 精确帧解码核心(实验性,默认关闭)。
@@ -17,8 +22,9 @@ import { ByteLru } from "./videoByteLru";
  * 连续播放仍由隐藏 `<video>` 提供;精确帧只在暂停 / 逐帧 / 稳定 seek 后使用。
  *
  * 缓存按字节预算淘汰(v0.23.14):单张 bitmap 按 codedWidth*codedHeight*4 估算占用,
- * 预算由性能档位 `videoDecoderBitmapCacheBytes` 决定。decode 仍是无状态的(每次新建
- * decoder 重解整段 GOP);增量 GOP session 复用由后续阶段接入。
+ * 预算由性能档位 `videoDecoderBitmapCacheBytes` 决定。decode 走有状态 GOP session
+ * (`VideoGopDecoderSession`):同一 GOP 内向前逐帧只提交增量 chunks,identity 变化时
+ * 重建 decoder;`decodePlanToBitmap` 保留为无状态回退参考实现。
  */
 
 /** localStorage / URL query 开关键。默认关闭。 */
@@ -78,6 +84,17 @@ export function detectWebCodecsSupport(): boolean {
 /** 缓存键:与 useVideoBitmapCache 同构(`${taskId}:${frameIndex}`)。 */
 export function chunkDecoderCacheKey(taskId: string, frameIndex: number): string {
   return `${taskId}:${frameIndex}`;
+}
+
+/** session identity 逐字段相等性比较(任一字段变化都必须重建 decoder)。 */
+export function gopIdentityEquals(a: VideoGopSessionIdentity, b: VideoGopSessionIdentity): boolean {
+  return (
+    a.taskId === b.taskId &&
+    a.datasetItemId === b.datasetItemId &&
+    a.chunkId === b.chunkId &&
+    a.gopStartDecodeIndex === b.gopStartDecodeIndex &&
+    a.configFingerprint === b.configFingerprint
+  );
 }
 
 /**
@@ -245,6 +262,11 @@ export function useVideoChunkDecoder({
   const active = supported && resolvedEnabled;
 
   const cacheRef = useRef(new ByteLru<string, DecodedVideoFrameBitmap>(bitmapBudgetBytes));
+  // 当前 GOP decoder session:identity 匹配且未 closed 时跨帧复用,变化则销毁重建。
+  const sessionRef = useRef<{
+    session: VideoGopDecoderSession | null;
+    identity: VideoGopSessionIdentity | null;
+  }>({ session: null, identity: null });
   // single-flight:同 `taskId:frameIndex` 的并发请求共享同一 promise(Set 只能拒绝,无法去重 await)。
   const inFlightRef = useRef(new Map<string, Promise<VideoChunkDecodeResult>>());
   const taskIdRef = useRef(taskId);
@@ -308,15 +330,22 @@ export function useVideoChunkDecoder({
   }, [bumpVersion, bitmapBudgetBytes, resolvedEnabled, supported]);
 
   /**
-   * 解码 plan 并把结果入缓存(**不自动激活**)。flag 关闭 / 不支持 / 已缓存 / 在途 → 直接返回。
+   * 用当前 GOP session 解码目标帧并入缓存(**不自动激活**)。identity 匹配则复用同一
+   * decoder(同 GOP 向前只提交增量 chunks),变化则销毁重建。flag 关闭 / 不支持 / 已缓存 /
+   * 在途 → 直接返回。
    * @returns 命中缓存或解码成功的 entry;null 表示跳过 / 失败(调用方降级到 <video>)。
    */
   const decodePlan = useCallback(
-    async (plan: EncodedVideoDecodePlan): Promise<VideoChunkDecodeResult> => {
+    async (args: {
+      plan: VideoGopPlan;
+      identity: VideoGopSessionIdentity;
+      targetFrameIndex: number;
+      generation: number;
+    }): Promise<VideoChunkDecodeResult> => {
       if (!taskId || !active) {
         return { bitmap: null, fallbackReason: "flag_disabled" };
       }
-      const normalizedFrame = Math.max(0, Math.round(plan.targetFrameIndex));
+      const normalizedFrame = Math.max(0, Math.round(args.targetFrameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
       const cached = cacheRef.current.peek(key);
       if (cached) return { bitmap: cached, fallbackReason: null };
@@ -325,39 +354,86 @@ export function useVideoChunkDecoder({
       const lifecycleGeneration = lifecycleGenerationRef.current;
       const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const promise = (async (): Promise<VideoChunkDecodeResult> => {
-        const failureRef: { reason: PreciseFrameFallbackReason | null } = { reason: null };
-        const decoded = await decodePlanToBitmap(plan, (reason) => {
-          failureRef.reason = reason;
+        // session 复用:identity 匹配且未 closed 则复用,否则销毁重建。
+        const slot = sessionRef.current;
+        const reuse =
+          !!slot.session &&
+          !!slot.identity &&
+          gopIdentityEquals(slot.identity, args.identity) &&
+          slot.session.getStats().state !== "closed";
+        if (!reuse) {
+          slot.session?.dispose();
+          slot.session = new VideoGopDecoderSession({ plan: args.plan, identity: args.identity });
+          slot.identity = args.identity;
+        }
+        const session = slot.session as VideoGopDecoderSession;
+        const targetSample = args.plan.samples.find((s) => s.frameIndex === normalizedFrame);
+        if (!targetSample) {
+          return { bitmap: null, fallbackReason: "invalid_sample_range" };
+        }
+        const outcome = await session.decode({
+          frameIndex: normalizedFrame,
+          targetDecodeIndex: targetSample.decodeIndex,
+          targetTimestampUs: targetSample.timestampUs,
+          generation: args.generation,
         });
         const decodeMs =
           typeof performance !== "undefined" ? Math.round(performance.now() - startedAt) : 0;
-        const stillCurrent =
+        // 在每个 await 之后重新评估:createImageBitmap 阻塞期间可能发生 unmount / task 切换。
+        const isStillCurrent = () =>
           mountedRef.current &&
           lifecycleGenerationRef.current === lifecycleGeneration &&
           taskIdRef.current === taskId;
-        if (!decoded) {
-          if (stillCurrent) {
-            const reason = failureRef.reason ?? "decode_failed";
+        if (!outcome.ok) {
+          if (isStillCurrent()) {
+            const reason: PreciseFrameFallbackReason =
+              outcome.reason === "out_of_gop"
+                ? "invalid_sample_range"
+                : outcome.reason === "codec_unsupported"
+                  ? "codec_unsupported"
+                  : "decode_failed";
             setDiagnostics((cur) => ({
               ...cur,
               errors: cur.errors + 1,
               lastFallbackReason: reason,
-              configUnsupported:
-                reason === "codec_unsupported" ? cur.configUnsupported + 1 : cur.configUnsupported,
             }));
             return { bitmap: null, fallbackReason: reason };
           }
           return { bitmap: null, fallbackReason: "stale_request" };
         }
+        const frame = outcome.frame;
+        let bitmap: ImageBitmap;
+        try {
+          bitmap = await globalThis.createImageBitmap(frame);
+        } catch {
+          closeFrame(frame);
+          if (isStillCurrent()) {
+            setDiagnostics((cur) => ({
+              ...cur,
+              errors: cur.errors + 1,
+              lastFallbackReason: "decode_failed",
+            }));
+            return { bitmap: null, fallbackReason: "decode_failed" };
+          }
+          return { bitmap: null, fallbackReason: "stale_request" };
+        }
+        const displayWidth = frame.displayWidth;
+        const displayHeight = frame.displayHeight;
+        closeFrame(frame);
         // task / generation 变化或组件已卸载:关闭旧结果,绝不写回已清空缓存。
-        if (!stillCurrent) {
-          closeBitmap(decoded.bitmap);
+        if (!isStillCurrent()) {
+          closeBitmap(bitmap);
           if (mountedRef.current) {
             setDiagnostics((cur) => ({ ...cur, staleResults: cur.staleResults + 1 }));
           }
           return { bitmap: null, fallbackReason: "stale_request" };
         }
-        const entry: DecodedVideoFrameBitmap = { ...decoded, frameIndex: normalizedFrame };
+        const entry: DecodedVideoFrameBitmap = {
+          frameIndex: normalizedFrame,
+          bitmap,
+          width: bitmap.width || displayWidth,
+          height: bitmap.height || displayHeight,
+        };
         remember(key, entry, decodeMs);
         return { bitmap: entry, fallbackReason: null };
       })();
@@ -400,6 +476,8 @@ export function useVideoChunkDecoder({
     lifecycleGenerationRef.current += 1;
     cacheRef.current.clear();
     inFlightRef.current.clear();
+    sessionRef.current.session?.dispose();
+    sessionRef.current = { session: null, identity: null };
     setActiveFrameIndex(null);
     setDiagnostics((cur) => ({ ...cur, cacheSize: 0, activeFrameIndex: null }));
     bumpVersion();
@@ -410,11 +488,13 @@ export function useVideoChunkDecoder({
     mountedRef.current = true;
     const cache = cacheRef.current;
     const inFlight = inFlightRef.current;
+    const sessionSlot = sessionRef.current;
     return () => {
       mountedRef.current = false;
       lifecycleGenerationRef.current += 1;
       cache.clear();
       inFlight.clear();
+      sessionSlot.session?.dispose();
     };
   }, []);
 

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import type { EncodedVideoDecodePlan } from "./videoChunkDemux";
+import { buildGopPlan, type EncodedVideoDecodePlan, type VideoGopPlan } from "./videoChunkDemux";
+import type { VideoChunkSampleEntry, VideoChunkSamplesResponse } from "@/types";
+import type { VideoGopSessionIdentity } from "./videoGopDecoderSession";
 import {
   WEBCODECS_FLAG_QUERY_KEY,
   chunkDecoderCacheKey,
@@ -96,6 +98,71 @@ function makePlan(targetTimestampUs = 33000, frameIndex = 1): EncodedVideoDecode
     chunkId: 0,
     gopStartDecodeIndex: 0,
     targetDecodeIndex: 0,
+  };
+}
+
+function makeBytes(n: number): ArrayBuffer {
+  const buf = new ArrayBuffer(n);
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < n; i++) view[i] = (i * 7) & 0xff;
+  return buf;
+}
+
+function makeSamples(
+  entries: Array<{ frame: number; pts: number; key?: boolean }>,
+): VideoChunkSamplesResponse {
+  const samples: VideoChunkSampleEntry[] = [];
+  let cursor = 0;
+  for (const e of entries) {
+    const size = 10;
+    const offset = cursor;
+    cursor = offset + size;
+    samples.push({
+      frame_index: e.frame,
+      pts_ms: e.pts,
+      duration_ms: 33,
+      is_keyframe: e.key ?? false,
+      size_bytes: size,
+      offset_in_chunk: offset,
+    });
+  }
+  return {
+    dataset_item_id: "ds-1",
+    chunk_id: 0,
+    codec_string: "avc1.4d001e",
+    description: btoa("config-bytes"),
+    width: 320,
+    height: 240,
+    samples,
+  };
+}
+
+/** 单 sample GOP:frame `frameIndex` 为 key,pts=33ms(→ 33000us,匹配 FakeDecoder 默认 emit)。 */
+function gopPlan(frameIndex: number): VideoGopPlan {
+  const samples = makeSamples([{ frame: frameIndex, pts: 33, key: true }]);
+  const result = buildGopPlan(makeBytes(64), samples, frameIndex);
+  if (!result.ok) throw new Error("gopPlan build failed");
+  return result.plan;
+}
+
+function gopIdentity(plan: VideoGopPlan, taskId = "task-1"): VideoGopSessionIdentity {
+  return {
+    taskId,
+    datasetItemId: "ds-1",
+    chunkId: plan.chunkId,
+    gopStartDecodeIndex: plan.gopStartDecodeIndex,
+    configFingerprint: plan.configFingerprint,
+  };
+}
+
+/** 构造 decodePlan 新签名所需的参数对象。 */
+function decodeArgs(frameIndex: number, taskId = "task-1", generation = 0) {
+  const plan = gopPlan(frameIndex);
+  return {
+    plan,
+    identity: gopIdentity(plan, taskId),
+    targetFrameIndex: frameIndex,
+    generation,
   };
 }
 
@@ -265,13 +332,19 @@ describe("decodePlanToBitmap · 按 timestamp 选目标 + 资源清理", () => {
 // ── useVideoChunkDecoder hook ─────────────────────────────────────────────────
 
 describe("useVideoChunkDecoder · flag 关闭 (默认) 行为", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   it("WebCodecs 不可用 / flag 关闭时 active=false,decodePlan no-op", async () => {
+    // buildGopPlan 构造 chunk 需要 EncodedVideoChunk;不 stub VideoDecoder/createImageBitmap,
+    // 保持 detectWebCodecsSupport=false(active=false)。
+    vi.stubGlobal("EncodedVideoChunk", class {});
     const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "task-1", enabled: false }));
     expect(result.current.active).toBe(false);
     expect(result.current.enabled).toBe(false);
     const decoded: { current: VideoChunkDecodeResult | null } = { current: null };
     await act(async () => {
-      decoded.current = await result.current.decodePlan(makePlan());
+      decoded.current = await result.current.decodePlan(decodeArgs(1));
     });
     expect(decoded.current?.bitmap).toBeNull();
     expect(decoded.current?.fallbackReason).toBe("flag_disabled");
@@ -304,7 +377,7 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
     expect(result.current.active).toBe(true);
 
     await act(async () => {
-      await result.current.decodePlan(makePlan(33000, 7));
+      await result.current.decodePlan(decodeArgs(7));
     });
     expect(result.current.diagnostics.decodes).toBe(1);
     expect(result.current.diagnostics.cacheSize).toBe(1);
@@ -333,8 +406,8 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
     ];
     await act(async () => {
       pair = await Promise.all([
-        result.current.decodePlan(makePlan(33000, 5)),
-        result.current.decodePlan(makePlan(33000, 5)),
+        result.current.decodePlan(decodeArgs(5, "t1")),
+        result.current.decodePlan(decodeArgs(5, "t1")),
       ]);
     });
     expect(decoders).toHaveLength(1); // 并发共享同一 in-flight promise
@@ -345,7 +418,7 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
   it("clear() 释放缓存中全部 ImageBitmap", async () => {
     const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "task-1", enabled: true }));
     await act(async () => {
-      await result.current.decodePlan(makePlan(33000, 1));
+      await result.current.decodePlan(decodeArgs(1));
     });
     bitmapClose.mockClear();
     act(() => {
@@ -360,7 +433,7 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
       useVideoChunkDecoder({ taskId: "task-1", enabled: true }),
     );
     await act(async () => {
-      await result.current.decodePlan(makePlan(33000, 2));
+      await result.current.decodePlan(decodeArgs(2));
     });
     bitmapClose.mockClear();
     unmount();
@@ -386,7 +459,7 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
       fallbackReason: "decode_failed",
     } as VideoChunkDecodeResult);
     await act(async () => {
-      decodePromise = result.current.decodePlan(makePlan(33000, 3));
+      decodePromise = result.current.decodePlan(decodeArgs(3, "t1"));
       // 推进 microtask 到 createImageBitmap 阻塞点。
       await new Promise((r) => setTimeout(r, 0));
     });
@@ -427,7 +500,7 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
       fallbackReason: "decode_failed",
     } as VideoChunkDecodeResult);
     await act(async () => {
-      decodePromise = result.current.decodePlan(makePlan(33000, 9));
+      decodePromise = result.current.decodePlan(decodeArgs(9, "t1"));
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     unmount();

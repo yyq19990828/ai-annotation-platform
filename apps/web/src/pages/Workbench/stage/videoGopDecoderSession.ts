@@ -29,11 +29,19 @@ export interface SessionDecodeRequest {
   generation: number;
 }
 
+/** session 进入 failed 的细分原因(映射到 precise-frame fallback reason)。 */
+export type SessionFailureReason = "codec_unsupported" | "decoder_error";
+
 export type SessionDecodeOutcome =
   | { ok: true; frame: VideoFrame }
   | {
       ok: false;
-      reason: "target_timestamp_missing" | "decoder_error" | "disposed" | "out_of_gop";
+      reason:
+        | "target_timestamp_missing"
+        | "decoder_error"
+        | "codec_unsupported"
+        | "disposed"
+        | "out_of_gop";
     };
 
 export type VideoGopSessionState = "idle" | "ready" | "failed" | "closed";
@@ -120,6 +128,7 @@ export class VideoGopDecoderSession {
   private resets = 0;
   private disposals = 0;
   private errors = 0;
+  private failureReason: SessionFailureReason | null = null;
   private duplicateOutputs = 0;
 
   constructor(options: VideoGopDecoderSessionOptions) {
@@ -194,11 +203,12 @@ export class VideoGopDecoderSession {
   private async doDecode(req: SessionDecodeRequest): Promise<SessionDecodeOutcome> {
     if (this.state === "closed") return { ok: false, reason: "disposed" };
     this.touchIdle();
-    if (this.state === "failed") return { ok: false, reason: "decoder_error" };
+    if (this.state === "failed")
+      return { ok: false, reason: this.failureReason ?? "decoder_error" };
 
     await this.ensureReady();
     if (this.getState() !== "ready" || !this.decoder) {
-      return { ok: false, reason: "decoder_error" };
+      return { ok: false, reason: this.failureReason ?? "decoder_error" };
     }
 
     const { targetDecodeIndex, targetTimestampUs } = req;
@@ -214,7 +224,7 @@ export class VideoGopDecoderSession {
     if (targetDecodeIndex <= this.cursor) {
       await this.hardReset();
       if (this.getState() !== "ready" || !this.decoder) {
-        return { ok: false, reason: "decoder_error" };
+        return { ok: false, reason: this.failureReason ?? "decoder_error" };
       }
     }
 
@@ -233,14 +243,15 @@ export class VideoGopDecoderSession {
       this.cursor = targetDecodeIndex;
       await this.decoder.flush();
     } catch {
-      this.markFailed();
+      this.markFailed("decoder_error");
       this.pendingTarget = null;
       return { ok: false, reason: "decoder_error" };
     }
 
     const target = this.pendingTarget;
     this.pendingTarget = null;
-    if (this.getState() === "failed") return { ok: false, reason: "decoder_error" };
+    if (this.getState() === "failed")
+      return { ok: false, reason: this.failureReason ?? "decoder_error" };
     if (target?.frame) return { ok: true, frame: target.frame };
     return { ok: false, reason: "target_timestamp_missing" };
   }
@@ -264,12 +275,12 @@ export class VideoGopDecoderSession {
       try {
         const support = await VideoDecoder.isConfigSupported(this.plan.config);
         if (!support.supported) {
-          this.markFailed();
+          this.markFailed("codec_unsupported");
           return;
         }
         supportedConfig = support.config ?? this.plan.config;
       } catch {
-        this.markFailed();
+        this.markFailed("codec_unsupported");
         return;
       }
     }
@@ -277,16 +288,22 @@ export class VideoGopDecoderSession {
     try {
       this.decoder = new VideoDecoder({
         output: (frame) => this.onOutput(frame),
-        error: () => this.markFailed(),
+        error: () => this.markFailed("decoder_error"),
       });
-      this.decoder.configure(supportedConfig);
-      this.configuredConfig = supportedConfig;
-      this.state = "ready";
-      this.cursor = this.plan.gopStartDecodeIndex - 1;
-      this.sessionCreates += 1;
     } catch {
-      this.markFailed();
+      this.markFailed("decoder_error");
+      return;
     }
+    try {
+      this.decoder.configure(supportedConfig);
+    } catch {
+      this.markFailed("codec_unsupported");
+      return;
+    }
+    this.configuredConfig = supportedConfig;
+    this.state = "ready";
+    this.cursor = this.plan.gopStartDecodeIndex - 1;
+    this.sessionCreates += 1;
   }
 
   /**
@@ -305,7 +322,7 @@ export class VideoGopDecoderSession {
       try {
         this.decoder.configure(this.configuredConfig);
       } catch {
-        this.markFailed();
+        this.markFailed("decoder_error");
         return;
       }
     }
@@ -338,9 +355,10 @@ export class VideoGopDecoderSession {
     target.frame = frame;
   }
 
-  private markFailed(): void {
+  private markFailed(reason: SessionFailureReason): void {
     if (this.state === "closed") return;
     this.state = "failed";
+    this.failureReason = reason;
     this.generation += 1;
     this.errors += 1;
   }
