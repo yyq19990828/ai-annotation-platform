@@ -41,6 +41,7 @@
 - **视频 WebCodecs 精确帧改为有状态 GOP 会话与字节预算缓存**. 同一 GOP 内逐帧前进只继续解码尚未提交的帧(不再每次从关键帧重解整段 GOP,长 GOP 逐帧不再产生平方级重复解码),后退、跨 GOP、切任务或 codec 配置变化时确定性重建 decoder;已解码位图与 chunk 字节按内存预算而非对象数量淘汰(轻量 96/32 MiB、标准 256/96 MiB、激进 512/192 MiB),暂停态还会沿最近导航方向同 GOP 预取少量帧(标准 2 / 激进 4,播放态保持零额外请求),并暴露可区分 demux / decode / bitmap / cache 阶段的性能诊断。显示合同与失败回退不变,默认关闭。
 - **视频工作台精确帧诊断接入全局快照与 BUG 反馈**. 暂停态精确帧解码的状态、来源、当前帧、所属 GOP / codec、fallback 原因与资源预算、计数现在写入 `window.__videoWorkbenchDiagnostics`(更新上限 5 Hz,状态与 fallback 转换立即写入,task 切换/卸载有界清理),BUG 报告自动附带经裁剪、不含签名 URL / 字节 / 描述的诊断快照,便于排障;诊断只暴露枚举与数值,不触发界面重渲染。
 - **E2E 确定性 WebCodecs 视频素材与 seed 端点**. 新增仅隔离测试库使用的 seed 端点,用 numpy 生成每帧可机器识别(背景分组亮度 + 四角 bit 编码帧号低位 + 中心场景色)的 H.264 素材,经 ffmpeg 编码成 baseline / 主 profile B 帧 / 短 GOP / 变帧率矩阵,复用生产 ffprobe 与 avcC 管线产出与真实 worker 同结构的 chunk samples 与 codec description;pending→ready 由确定性 test-only 端点切换(不依赖媒体 Celery worker),unsupported / malformed 场景在真实编码上确定性篡改 metadata,全局 cleanup 一并清理 chunk 行与 MinIO 对象。
+- **WebCodecs 精确帧 E2E 与可观察属性**. 视频舞台容器暴露 data-video-frame-source / data-video-precise-state / data-video-frame-index 可观察属性;新增 Playwright spec 用确定性 H.264 fixture 覆盖 flag off 零 precise 请求、flag on 精确解码或安全回退、pending→ready 切换;spec capability-aware,headless Chromium 无可用精确解码时自动跳过像素断言并记录能力状态,精确帧像素验证留给有头 Chrome / GPU runner。
 
 ### Changed
 

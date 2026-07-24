@@ -15,7 +15,7 @@ import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from ".
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
-import { useVideoPreciseFrame } from "./useVideoPreciseFrame";
+import { useVideoPreciseFrame, type PreciseFrameSourceState } from "./useVideoPreciseFrame";
 import {
   clearVideoPreciseFrameDiagnostics,
   publishVideoPreciseFrameDiagnostics,
@@ -120,6 +120,8 @@ export interface UseVideoPlaybackControllerResult {
   cachedRanges: { from: number; to: number }[];
   displayBitmap: CachedVideoBitmap | null;
   frameSource: "webcodecs" | "video-bitmap" | "video-element";
+  /** 精确帧 pipeline 的当前状态(供 stage 暴露 data-video-precise-state 给 E2E)。 */
+  preciseSourceState: PreciseFrameSourceState;
   framePreview: VideoFramePreview | null;
   previewFrame: (frameIndex: number | null) => void;
   samplingStep: number;
@@ -1140,6 +1142,7 @@ export function useVideoPlaybackController({
     cachedRanges,
     displayBitmap,
     frameSource,
+    preciseSourceState: precise.sourceState,
     framePreview,
     previewFrame,
     samplingStep,

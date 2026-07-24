@@ -210,6 +210,56 @@ export class SeedAPI {
     return (await res.json()) as { task_id: string };
   }
 
+  /** v0.23.15 · 造确定性 H.264 WebCodecs fixture 任务 + 单 chunk(precise-frame E2E)。 */
+  async videoWebCodecs(
+    projectId: string,
+    options?: {
+      fixture?: string;
+      chunkStatus?: "ready" | "pending";
+    },
+  ): Promise<{
+    task_id: string;
+    dataset_item_id: string;
+    chunk_id: number;
+    chunk_size_frames: number;
+    frame_expectations: Record<string, unknown>;
+  }> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/video-webcodecs`, {
+      data: {
+        project_id: projectId,
+        fixture: options?.fixture ?? "h264-baseline-gop12",
+        chunk_status: options?.chunkStatus ?? "ready",
+      },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/video-webcodecs failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as {
+      task_id: string;
+      dataset_item_id: string;
+      chunk_id: number;
+      chunk_size_frames: number;
+      frame_expectations: Record<string, unknown>;
+    };
+  }
+
+  /** v0.23.15 · 确定性把 seed 的 pending chunk 切到 ready(不依赖媒体 worker)。 */
+  async videoWebCodecsTransitionReady(
+    datasetItemId: string,
+    chunkId = 0,
+  ): Promise<{ status: "ready" | "pending" | "failed" }> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/video-webcodecs/transition-ready`,
+      { data: { dataset_item_id: datasetItemId, chunk_id: chunkId } },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/video-webcodecs/transition-ready failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as { status: "ready" | "pending" | "failed" };
+  }
+
   async trackerReview(taskId: string, userEmail: string): Promise<SeedTrackerReviewData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/tracker-review`, {
       data: { task_id: taskId, user_email: userEmail },

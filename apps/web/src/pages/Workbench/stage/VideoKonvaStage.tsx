@@ -465,6 +465,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       playbackError,
       displayBitmap,
       frameSource,
+      preciseSourceState,
       cachedRanges,
       framePreview,
       previewFrame,
@@ -1833,7 +1834,15 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       <div
         ref={setContainerNode}
         data-testid="video-konva-stage"
-        data-video-frame-source={frameSource}
+        data-video-frame-source={
+          frameSource === "webcodecs"
+            ? "webcodecs"
+            : frameSource === "video-bitmap"
+              ? "native-bitmap"
+              : "video"
+        }
+        data-video-precise-state={preciseSourceState}
+        data-video-frame-index={frameIndex}
         className={`${styles.root} ${cursorClass}`}
         onContextMenu={handleContextMenu}
         onPointerDown={beginPan}
