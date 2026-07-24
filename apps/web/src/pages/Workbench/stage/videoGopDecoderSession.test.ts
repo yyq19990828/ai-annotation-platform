@@ -325,6 +325,74 @@ describe("VideoGopDecoderSession", () => {
     expect(lastDecoder().decode).toHaveBeenCalledTimes(3);
   });
 
+  it("B-frame GOP 为 reorder queue 额外提交一个有界 lookahead", async () => {
+    // 真实 x264 main 常见 decode order：0, 1, 3, 2。目标 frame1 的 access unit 已在
+    // decodeIndex1，但 Chromium AVC decoder 看到后续 frame3 才交付 frame1。
+    const samples = makeSamples([
+      { frame: 0, pts: 0, key: true },
+      { frame: 1, pts: 33 },
+      { frame: 3, pts: 100 },
+      { frame: 2, pts: 67 },
+    ]);
+    const built = buildGopPlan(makeBytes(64), samples, 1);
+    if (!built.ok) throw new Error("build failed");
+    ctrl.decodeImpl = (d, chunk) => {
+      if (chunk.timestamp === 67000) d.emit(fakeFrame(33000));
+    };
+    const session = newSession(built.plan);
+    const outcome = await session.decode(req(built.plan, 1));
+    expect(outcome.ok).toBe(true);
+    expect(lastDecoder().decode).toHaveBeenCalledTimes(4);
+    expect(session.getStats().cursor).toBe(3);
+  });
+
+  it("lookahead 已输出并关闭未来目标时 reset 后重发该帧", async () => {
+    const samples = makeSamples([
+      { frame: 0, pts: 0, key: true },
+      { frame: 1, pts: 33 },
+      { frame: 3, pts: 100 },
+      { frame: 2, pts: 67 },
+    ]);
+    const built = buildGopPlan(makeBytes(64), samples, 0);
+    if (!built.ok) throw new Error("build failed");
+    // 模拟低延迟 decoder：每个输入立即 output。frame0 请求的 B-frame lookahead 会让
+    // frame1 先被关闭；随后请求 frame1 必须 reset，不能指望 decoder 重发旧 output。
+    defaultDecodeEmitChunk();
+    const session = newSession(built.plan);
+    expect((await session.decode(req(built.plan, 0))).ok).toBe(true);
+    expect((await session.decode(req(built.plan, 1, 1))).ok).toBe(true);
+    expect(lastDecoder().reset).toHaveBeenCalledTimes(1);
+    expect(session.getStats().resets).toBe(1);
+  });
+
+  it("lookahead 未来帧移交 bitmap cache 后不 reset 重解", async () => {
+    const samples = makeSamples([
+      { frame: 0, pts: 0, key: true },
+      { frame: 1, pts: 33 },
+      { frame: 3, pts: 100 },
+      { frame: 2, pts: 67 },
+    ]);
+    const built = buildGopPlan(makeBytes(64), samples, 0);
+    if (!built.ok) throw new Error("build failed");
+    defaultDecodeEmitChunk();
+    const cached = new Set<number>();
+    const session = newSession(built.plan, {
+      onSupplementalFrame: async (frame, frameIndex) => {
+        cached.add(frameIndex);
+        frame.close();
+        return true;
+      },
+    });
+
+    expect((await session.decode(req(built.plan, 0))).ok).toBe(true);
+    const next = await session.decode(req(built.plan, 1, 1));
+
+    expect(next).toEqual({ ok: false, reason: "supplemental_cached" });
+    expect(cached).toContain(1);
+    expect(lastDecoder().reset).not.toHaveBeenCalled();
+    expect(session.getStats().resets).toBe(0);
+  });
+
   it("非目标 output 立即 close", async () => {
     const plan = gopPlan(10);
     const nonTarget = fakeFrame(0); // decodeIndex 0 的 pts=0,目标是 decodeIndex 3(pts 99→99000)

@@ -142,6 +142,7 @@ describe("BugReportDrawer", () => {
             targetTimestampUs: 41666,
             codec: "avc1.42E01E",
             fallbackReason: "codec_unsupported",
+            lastDemuxMs: 3,
             lastDecodeMs: 7,
             cache: {
               bitmapBytes: 8,
@@ -150,6 +151,8 @@ describe("BugReportDrawer", () => {
               chunkBudgetBytes: 96,
             },
             counters: {
+              activeDecoders: 1,
+              liveVideoFrames: 0,
               sessionCreates: 2,
               sessionResets: 1,
               encodedChunksSubmitted: 5,

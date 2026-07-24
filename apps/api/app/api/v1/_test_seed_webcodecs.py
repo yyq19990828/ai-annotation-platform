@@ -95,10 +95,15 @@ _BIT_NORM = [
 ]
 
 
+def _background_luma(frame_index: int) -> int:
+    """用高位分组亮度补足四角低 4 bit，保证 0..47 帧签名唯一。"""
+    return int(np.clip(32 + (frame_index >> 4) * 80, 0, 255))
+
+
 def _make_frame(frame_index: int, scene_rgb: tuple[int, int, int]) -> np.ndarray:
     """生成单帧:背景分组灰度 + 四角 bit 编码 + 中心场景色。"""
     img = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
-    bg = int(np.clip(32 + (frame_index % 8) * 28, 0, 255))
+    bg = _background_luma(frame_index)
     img[:, :] = bg
     # 中心场景色块(避开四角与背景采样条)。
     img[44:76, 60:100] = scene_rgb
@@ -137,6 +142,8 @@ def _ffmpeg_encode(spec: dict[str, Any], frames_dir: Path, out: Path) -> None:
         str(spec["gop"]),
         "-keyint_min",
         str(spec["gop"]),
+        "-sc_threshold",
+        "0",
         "-bf",
         str(spec["bframes"]),
         "-pix_fmt",
@@ -149,8 +156,8 @@ def _ffmpeg_encode(spec: dict[str, Any], frames_dir: Path, out: Path) -> None:
         "+faststart",
     ]
     if spec.get("vfr"):
-        # VFR:奇数帧 PTS × 1.5 → 相邻帧 duration 不同,验证前端不以 fps 猜 PTS。
-        cmd += ["-vf", "setpts='PTS*(1+0.5*mod(N,2))'", "-vsync", "vfr"]
+        # VFR:累计增加每两个输入帧之间的时间,得到 1/30、2/30 秒交替且严格单调的 PTS。
+        cmd += ["-vf", "setpts=PTS+floor(N/2)", "-vsync", "vfr"]
     cmd.append(str(out))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
@@ -180,6 +187,14 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
         raise RuntimeError(
             f"webcodecs fixture {fixture} produced empty samples / codec / description"
         )
+    frame_indexes = sorted(int(sample["frame_index"]) for sample in samples)
+    if len(samples) != spec["frames"] or frame_indexes != list(range(spec["frames"])):
+        raise RuntimeError(
+            f"webcodecs fixture {fixture} produced incomplete sample timetable"
+        )
+    duration_ms = max(
+        int(sample["pts_ms"]) + int(sample["duration_ms"]) for sample in samples
+    )
     return {
         "mp4_bytes": out.read_bytes(),
         "samples": samples,
@@ -189,6 +204,7 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
         "height": FRAME_H,
         "fps": FRAME_FPS,
         "frame_count": spec["frames"],
+        "duration_ms": duration_ms,
     }
 
 
@@ -213,14 +229,32 @@ def apply_metadata_mutation(fixture: str, meta: dict[str, Any]) -> dict[str, Any
     return meta
 
 
-def frame_expectations(fixture: str) -> dict[str, Any]:
+def frame_expectations(
+    fixture: str, samples: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """返回每帧的目标像素签名(视频像素空间),供 Playwright 像素采样判定。"""
     spec = FIXTURE_SPECS[_real_fixture_name(fixture)]
+    sample_by_frame = {
+        int(sample["frame_index"]): {
+            "pts_ms": int(sample["pts_ms"]),
+            "duration_ms": int(sample["duration_ms"]),
+            "is_keyframe": bool(sample["is_keyframe"]),
+            "decode_index": decode_index,
+        }
+        for decode_index, sample in enumerate(samples or [])
+    }
     frames: list[dict[str, Any]] = []
     for i in range(spec["frames"]):
-        bg = int(np.clip(32 + (i % 8) * 28, 0, 255))
+        bg = _background_luma(i)
         bits = [(i >> j) & 1 for j in range(4)]
-        frames.append({"frame_index": i, "background_luma": bg, "corner_bits": bits})
+        frames.append(
+            {
+                "frame_index": i,
+                "background_luma": bg,
+                "corner_bits": bits,
+                **sample_by_frame.get(i, {}),
+            }
+        )
     return {
         "scene_id": fixture,
         "scene_color": spec["scene"],

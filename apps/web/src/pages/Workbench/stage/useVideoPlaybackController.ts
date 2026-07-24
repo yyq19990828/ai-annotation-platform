@@ -367,6 +367,7 @@ export function useVideoPlaybackController({
         targetTimestampUs: precise.performance.targetTimestampUs,
         codec: precise.performance.codec,
         fallbackReason: precise.fallbackReason,
+        lastDemuxMs: precise.performance.lastDemuxMs,
         lastDecodeMs: precise.performance.lastDecodeMs,
         cache: {
           bitmapBytes: precise.performance.bitmapBytes,
@@ -375,6 +376,8 @@ export function useVideoPlaybackController({
           chunkBudgetBytes: precise.performance.chunkBudgetBytes,
         },
         counters: {
+          activeDecoders: precise.performance.activeDecoders,
+          liveVideoFrames: precise.performance.liveVideoFrames,
           sessionCreates: precise.performance.sessionCreates,
           sessionResets: precise.performance.sessionResets,
           encodedChunksSubmitted: precise.performance.encodedChunksSubmitted,

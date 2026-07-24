@@ -16,7 +16,7 @@ E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重
 from __future__ import annotations
 
 import secrets
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -47,6 +47,47 @@ async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None
 
 
 router = APIRouter(dependencies=[Depends(_require_e2e_seed_database)])
+
+
+def _delete_webcodecs_seed_objects(storage: Any) -> None:
+    """分页删除 WebCodecs E2E 对象并复查；任何存储错误都必须传播给 teardown。"""
+    prefix = "e2e/video/webcodecs/"
+    continuation_token: str | None = None
+    keys: list[str] = []
+    while True:
+        list_kwargs = {
+            "Bucket": storage.datasets_bucket,
+            "Prefix": prefix,
+        }
+        if continuation_token:
+            list_kwargs["ContinuationToken"] = continuation_token
+        response = storage.client.list_objects_v2(**list_kwargs)
+        keys.extend(obj["Key"] for obj in response.get("Contents", []))
+        if not response.get("IsTruncated"):
+            break
+        continuation_token = response.get("NextContinuationToken")
+        if not continuation_token:
+            raise RuntimeError("webcodecs cleanup missing MinIO continuation token")
+    for offset in range(0, len(keys), 1000):
+        delete_response = storage.client.delete_objects(
+            Bucket=storage.datasets_bucket,
+            Delete={
+                "Objects": [{"Key": key} for key in keys[offset : offset + 1000]],
+                "Quiet": True,
+            },
+        )
+        errors = delete_response.get("Errors", [])
+        if errors:
+            raise RuntimeError(
+                f"webcodecs cleanup MinIO delete failed for {len(errors)} object(s)"
+            )
+    remaining = storage.client.list_objects_v2(
+        Bucket=storage.datasets_bucket,
+        Prefix=prefix,
+        MaxKeys=1,
+    ).get("Contents", [])
+    if remaining:
+        raise RuntimeError("webcodecs cleanup left MinIO objects")
 
 
 async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
@@ -242,21 +283,11 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
 
     await db.flush()
 
-    # WebCodecs seed 的 chunk mp4 对象不随 DB 级联删除,按前缀显式清空。
-    try:
-        from app.services.storage import storage_service
+    # WebCodecs seed 的 chunk mp4 对象不随 DB 级联删除,按前缀显式清空并复查。
+    # cleanup 是测试隔离合同的一部分：对象存储失败必须让 teardown 失败，不能只记 warning。
+    from app.services.storage import storage_service
 
-        _wc_resp = storage_service.client.list_objects_v2(
-            Bucket=storage_service.datasets_bucket, Prefix="e2e/video/webcodecs/"
-        )
-        _wc_keys = [o["Key"] for o in _wc_resp.get("Contents", [])]
-        if _wc_keys:
-            storage_service.client.delete_objects(
-                Bucket=storage_service.datasets_bucket,
-                Delete={"Objects": [{"Key": k} for k in _wc_keys], "Quiet": True},
-            )
-    except Exception as exc:
-        log.warning("seed_cleanup skip · e2e/video/webcodecs minio · %s", exc)
+    _delete_webcodecs_seed_objects(storage_service)
 
     residual_row = (
         (
@@ -1137,7 +1168,7 @@ async def seed_video_webcodecs(
         ContentType="video/mp4",
     )
 
-    duration_ms = int(round(meta["frame_count"] / meta["fps"] * 1000))
+    duration_ms = int(meta["duration_ms"])
     item = DatasetItem(
         dataset_id=ref_item.dataset_id,
         file_name=f"{fixture}.mp4",
@@ -1201,7 +1232,7 @@ async def seed_video_webcodecs(
         dataset_item_id=str(item.id),
         chunk_id=0,
         chunk_size_frames=meta["frame_count"],
-        frame_expectations=frame_expectations(fixture),
+        frame_expectations=frame_expectations(fixture, meta["samples"]),
     )
 
 

@@ -53,6 +53,8 @@ export interface VideoPreciseFramePerformanceDiagnostics {
   bytesFetched: number;
   bitmapBytes: number;
   bitmapBudgetBytes: number;
+  activeDecoders: number;
+  liveVideoFrames: number;
   chunkBytes: number;
   chunkBudgetBytes: number;
   sessionCreates: number;
@@ -158,12 +160,20 @@ export function useVideoPreciseFrame({
   const directionRef = useRef(0);
   // 预取过(已入缓存)的 frameIndex 集合,用于统计 prefetchHits。
   const prefetchedFramesRef = useRef<Set<number>>(new Set());
-  // 最近一次成功 demux 的 plan 元数据(gopStart / target pts / codec),供全局诊断快照读取。
-  const lastPlanMetaRef = useRef<{
+  // 当前 frame 成功 demux 的 plan 元数据；用 state 保证诊断对象在换帧/失败时同步失效。
+  const [planMeta, setPlanMeta] = useState<{
+    taskId: string | null | undefined;
+    frameIndex: number | null;
     gopStartDecodeIndex: number | null;
     targetTimestampUs: number | null;
     codec: string | null;
-  }>({ gopStartDecodeIndex: null, targetTimestampUs: null, codec: null });
+  }>({
+    taskId: null,
+    frameIndex: null,
+    gopStartDecodeIndex: null,
+    targetTimestampUs: null,
+    codec: null,
+  });
   const chunkBytesCacheRef = useRef(new ByteLru<string, ChunkBytesCacheEntry>(chunkBudgetBytes));
   const chunkExpiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expireChunkBytesRef = useRef<() => void>(() => undefined);
@@ -449,9 +459,15 @@ export function useVideoPreciseFrame({
     }
     const demuxStart = typeof performance !== "undefined" ? performance.now() : 0;
     const result = buildGopPlan(bytes, samples, frameIndex);
-    const demuxMs =
-      typeof performance !== "undefined" ? Math.round(performance.now() - demuxStart) : 0;
+    const demuxMs = typeof performance !== "undefined" ? performance.now() - demuxStart : 0;
     if (!result.ok) {
+      setPlanMeta({
+        taskId: null,
+        frameIndex: null,
+        gopStartDecodeIndex: null,
+        targetTimestampUs: null,
+        codec: null,
+      });
       setFallbackReason(result.reason);
       setDecoding(false);
       return;
@@ -459,11 +475,13 @@ export function useVideoPreciseFrame({
     setLastDemuxMs(demuxMs);
     const plan = result.plan;
     const targetSample = plan.samples.find((s) => s.frameIndex === frameIndex);
-    lastPlanMetaRef.current = {
+    setPlanMeta({
+      taskId,
+      frameIndex,
       gopStartDecodeIndex: plan.gopStartDecodeIndex,
       targetTimestampUs: targetSample?.timestampUs ?? null,
       codec: plan.config.codec ?? null,
-    };
+    });
     const gopIdentity = {
       taskId: taskId as string,
       datasetItemId,
@@ -523,6 +541,17 @@ export function useVideoPreciseFrame({
     lastFrameIndexRef.current = frameIndex;
   }, [frameIndex]);
 
+  useEffect(() => {
+    if (pipelineEnabled) return;
+    setPlanMeta({
+      taskId: null,
+      frameIndex: null,
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    });
+  }, [pipelineEnabled]);
+
   // task 切换清空预取统计与方向记忆(mount 时跳过,避免覆盖初始方向追踪)。
   const lastTaskIdRef = useRef<string | null | undefined>(taskId);
   useEffect(() => {
@@ -542,11 +571,13 @@ export function useVideoPreciseFrame({
     setChunkCacheVersion((v) => v + 1);
     directionRef.current = 0;
     lastFrameIndexRef.current = null;
-    lastPlanMetaRef.current = {
+    setPlanMeta({
+      taskId: null,
+      frameIndex: null,
       gopStartDecodeIndex: null,
       targetTimestampUs: null,
       codec: null,
-    };
+    });
   }, [taskId]);
 
   // 受控预取:暂停态 + 同 chunk/GOP + 方向已知 + tab 可见时,沿最近方向预取少量帧。
@@ -649,6 +680,14 @@ export function useVideoPreciseFrame({
 
   const performanceDiagnostics = useMemo<VideoPreciseFramePerformanceDiagnostics>(() => {
     void chunkCacheVersion;
+    const currentPlanMeta =
+      pipelineEnabled && planMeta.taskId === taskId && planMeta.frameIndex === frameIndex
+        ? planMeta
+        : {
+            gopStartDecodeIndex: null,
+            targetTimestampUs: null,
+            codec: null,
+          };
     return {
       // manifest / samples 命中与耗时由 v0.23.15 并入全局诊断。
       manifestCacheHits: 0,
@@ -658,6 +697,8 @@ export function useVideoPreciseFrame({
       bytesFetched,
       bitmapBytes: decoder.diagnostics.bitmapBytes,
       bitmapBudgetBytes: decoder.diagnostics.bitmapBudgetBytes,
+      activeDecoders: decoder.diagnostics.activeDecoders,
+      liveVideoFrames: decoder.diagnostics.liveVideoFrames,
       chunkBytes: chunkBytesCacheRef.current.bytes,
       chunkBudgetBytes,
       sessionCreates: decoder.diagnostics.sessionCreates,
@@ -674,9 +715,9 @@ export function useVideoPreciseFrame({
       lastDemuxMs,
       lastDecodeMs: decoder.diagnostics.lastDecodeMs,
       lastBitmapMs: null,
-      gopStartDecodeIndex: lastPlanMetaRef.current.gopStartDecodeIndex,
-      targetTimestampUs: lastPlanMetaRef.current.targetTimestampUs,
-      codec: lastPlanMetaRef.current.codec,
+      gopStartDecodeIndex: currentPlanMeta.gopStartDecodeIndex,
+      targetTimestampUs: currentPlanMeta.targetTimestampUs,
+      codec: currentPlanMeta.codec,
     };
   }, [
     decoder.diagnostics,
@@ -688,6 +729,10 @@ export function useVideoPreciseFrame({
     prefetchHits,
     lastDemuxMs,
     lastChunkFetchMs,
+    pipelineEnabled,
+    planMeta,
+    taskId,
+    frameIndex,
   ]);
 
   useEffect(

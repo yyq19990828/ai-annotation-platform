@@ -148,6 +148,10 @@ export function buildEncodedVideoDecodePlan(
     codedWidth: samples.width,
     codedHeight: samples.height,
     description,
+    // 精确帧 session 不会在每次目标后 flush（flush 会破坏同 GOP 增量 decode）。
+    // 要求 decoder 尽快交付已解出的帧，避免硬件 AVC decoder 把 GOP key/P 帧留在
+    // reorder queue，直到下一 access unit 或 flush 才输出。
+    optimizeForLatency: true,
   };
 
   return {
@@ -306,6 +310,7 @@ export function buildGopPlan(
     codedWidth: samples.width,
     codedHeight: samples.height,
     description,
+    optimizeForLatency: true,
   };
 
   return {

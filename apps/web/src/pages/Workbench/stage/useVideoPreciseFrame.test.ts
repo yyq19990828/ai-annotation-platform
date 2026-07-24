@@ -467,6 +467,93 @@ describe("useVideoPreciseFrame", () => {
     expect(result.current.bitmap?.frameIndex).toBe(5);
   });
 
+  it("换帧 demux 失败时立即清空上一帧的 GOP / PTS / codec 诊断", async () => {
+    getManifestV2.mockResolvedValue(manifest());
+    getChunk.mockResolvedValue(readyChunk());
+    // samples 只有 frame 5；切到 frame 6 后 buildGopPlan 必须失败。
+    getSamples.mockResolvedValue(samples(5, 166));
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(makeBytes()),
+    } as Response);
+    decoderCtrl.decodeImpl = (decoder) => {
+      decoder.emit(fakeFrame(166000).frame);
+    };
+    const { result, rerender } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
+    });
+    await waitFor(() => expect(result.current.sourceState).toBe("ready"));
+    expect(result.current.performance).toMatchObject({
+      gopStartDecodeIndex: 0,
+      targetTimestampUs: 166000,
+      codec: "avc1.4d001e",
+    });
+
+    rerender({
+      taskId: "t1",
+      frameIndex: 6,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
+    });
+    expect(result.current.performance).toMatchObject({
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    });
+    await waitFor(() => expect(result.current.fallbackReason).toBe("invalid_sample_range"));
+    expect(result.current.performance).toMatchObject({
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    });
+  });
+
+  it("同一帧号切换任务时不会短暂发布上一任务的 plan 诊断", async () => {
+    getManifestV2.mockResolvedValue(manifest());
+    getChunk.mockResolvedValue(readyChunk());
+    getSamples.mockResolvedValue(samples(5, 166));
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(makeBytes()),
+    } as Response);
+    decoderCtrl.decodeImpl = (decoder) => {
+      decoder.emit(fakeFrame(166000).frame);
+    };
+    const { result, rerender } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
+    });
+    await waitFor(() => expect(result.current.sourceState).toBe("ready"));
+    expect(result.current.performance.targetTimestampUs).toBe(166000);
+
+    rerender({
+      taskId: "t2",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
+    });
+    expect(result.current.performance).toMatchObject({
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    });
+  });
+
   it("chunk byte-LRU 按累计字节预算淘汰，跨 chunk 返回时不会由 React Query 无限保留", async () => {
     getManifestV2.mockResolvedValue(manifest(10));
     getChunk.mockImplementation(async (_datasetItemId, chunkId) =>

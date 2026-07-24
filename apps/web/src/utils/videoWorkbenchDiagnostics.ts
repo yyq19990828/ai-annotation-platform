@@ -21,6 +21,7 @@ export interface VideoPreciseFrameDiagnosticsSnapshot {
   targetTimestampUs: number | null;
   codec: string | null;
   fallbackReason: string | null;
+  lastDemuxMs: number | null;
   lastDecodeMs: number | null;
   cache: {
     bitmapBytes: number;
@@ -29,6 +30,8 @@ export interface VideoPreciseFrameDiagnosticsSnapshot {
     chunkBudgetBytes: number;
   };
   counters: {
+    activeDecoders: number;
+    liveVideoFrames: number;
     sessionCreates: number;
     sessionResets: number;
     encodedChunksSubmitted: number;

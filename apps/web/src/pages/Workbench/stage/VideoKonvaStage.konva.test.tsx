@@ -37,6 +37,8 @@ vi.mock("./useVideoPreciseFrame", () => ({
       bytesFetched: 0,
       bitmapBytes: 0,
       bitmapBudgetBytes: 0,
+      activeDecoders: 0,
+      liveVideoFrames: 0,
       chunkBytes: 0,
       chunkBudgetBytes: 0,
       sessionCreates: 0,
@@ -124,7 +126,7 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(image!.getAttribute("data-height")).toBe("500");
     // data-video-frame-source 暴露当前显示来源(webcodecs / native bitmap / video element),供 E2E 与诊断。
     const stage = document.querySelector('[data-testid="video-konva-stage"]') as HTMLElement;
-    expect(["webcodecs", "video-bitmap", "video-element"]).toContain(
+    expect(["webcodecs", "native-bitmap", "video"]).toContain(
       stage.getAttribute("data-video-frame-source"),
     );
   });

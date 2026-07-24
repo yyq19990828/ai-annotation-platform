@@ -96,7 +96,7 @@ describe("VideoPlaybackOverlay", () => {
 
   it("starts with an accessible collapsed summary and hides empty optional lanes when expanded", async () => {
     const user = userEvent.setup();
-    const { getByTestId, getByText, queryByTestId, queryByText } = renderOverlay({
+    const { getByRole, getByTestId, getByText, queryByTestId, queryByText } = renderOverlay({
       currentFrameEntryCount: 4,
     });
     const toggle = getByTestId("video-timeline-toggle");
@@ -108,6 +108,7 @@ describe("VideoPlaybackOverlay", () => {
     expect(getByTestId("video-time-readout")).toHaveTextContent("00:00.000 / 00:01.000");
     expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–9");
     expect(getByTestId("video-timeline-window-overview")).toBeInTheDocument();
+    expect(getByRole("button", { name: "播放 / 暂停" })).toBeInTheDocument();
     expect(queryByText("AI 预测密度")).toBeNull();
 
     await user.click(toggle);

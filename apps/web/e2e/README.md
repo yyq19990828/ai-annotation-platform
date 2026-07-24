@@ -59,9 +59,23 @@ pipeline 的开关边界、精确解码或安全回退、pending→ready 切换�
 合同并通过 annotation 记录原因 —— 绝不把「回退」伪装成「像素已验证」，也不把
 「能力不足」判成失败。
 
-因此 CI / headless 只锁定 flag off 零请求、安全回退与切换 API 契约；corner_bits
-像素命中 key / P / B / GOP / VFR 目标帧的断言留给有头 Chrome 或带 GPU 的 runner
-（见 spec 内 `TODO(headed)`）。
+spec 已实现 Konva media canvas 的区域像素采样：按背景亮度与四角 bit 验证 key / P /
+B / GOP / VFR 目标帧，并同步核对诊断中的目标 PTS。默认冒烟环境若明确缺少 H.264
+解码能力，会把像素和 pending→precise 用例标为 capability skip。浏览器资格测试必须
+显式开启严格能力门，此时缺少 WebCodecs 原语、codec 不支持或 `decode_failed` 都会失败，
+不能用回退或 `ready` 属性代替像素证据：
+
+```bash
+cd apps/web
+DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority \
+PLAYWRIGHT_CHROMIUM_CHANNEL=chrome PLAYWRIGHT_REQUIRE_WEBCODECS=1 \
+pnpm exec playwright test \
+  e2e/tests/video-webcodecs-precise-frame.spec.ts --project=chromium --headed
+```
+
+GPU runner 应显式选择系统 Google Chrome；Playwright bundled Chromium 的 codec
+发行配置可能与用户 Chrome 不同。`DISPLAY` / `XAUTHORITY` 按 runner 的本地 X11
+会话调整，不能把不可用的 SSH 转发显示误记为浏览器能力失败。
 
 ## 文件组织
 

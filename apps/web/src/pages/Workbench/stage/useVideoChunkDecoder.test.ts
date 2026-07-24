@@ -452,9 +452,12 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
     const { result, unmount } = renderHook(() =>
       useVideoChunkDecoder({ taskId: "task-1", enabled: true }),
     );
+    let second: VideoChunkDecodeResult = { bitmap: null, fallbackReason: "decode_failed" };
     await act(async () => {
-      await result.current.decodePlan(decodeArgs(2));
+      second = await result.current.decodePlan(decodeArgs(2));
     });
+    expect(second).toMatchObject({ fallbackReason: null });
+    expect(second.bitmap).not.toBeNull();
     bitmapClose.mockClear();
     unmount();
     expect(bitmapClose).toHaveBeenCalledTimes(1);
@@ -500,6 +503,50 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
     expect(bitmapClose).not.toHaveBeenCalled();
   });
 
+  it("活动 bitmap 与 LRU 共同受总字节预算约束", async () => {
+    const isolatedArgs = (frameIndex: number) => {
+      const args = decodeArgs(frameIndex);
+      return {
+        ...args,
+        identity: {
+          ...args.identity,
+          configFingerprint: `${args.identity.configFingerprint}:${frameIndex}`,
+        },
+      };
+    };
+    const { result } = renderHook(() =>
+      useVideoChunkDecoder({ taskId: "task-1", enabled: true, bitmapBudgetBytes: 128 }),
+    );
+    await act(async () => {
+      await result.current.decodePlan(isolatedArgs(1));
+    });
+    act(() => {
+      result.current.showFrame(1);
+    });
+
+    let second: VideoChunkDecodeResult = { bitmap: null, fallbackReason: "decode_failed" };
+    await act(async () => {
+      second = await result.current.decodePlan(isolatedArgs(2));
+    });
+    expect(second.bitmap).not.toBeNull();
+    expect(second.fallbackReason).toBeNull();
+    expect(result.current.diagnostics).toMatchObject({ bitmapBytes: 128, cacheSize: 2 });
+    await act(async () => {
+      await result.current.decodePlan(isolatedArgs(3));
+    });
+
+    expect(result.current.activeBitmap?.frameIndex).toBe(1);
+    expect(result.current.diagnostics).toMatchObject({
+      bitmapBytes: 128,
+      bitmapBudgetBytes: 128,
+      cacheSize: 2,
+    });
+    expect(result.current.diagnostics.bitmapBytes).toBeLessThanOrEqual(
+      result.current.diagnostics.bitmapBudgetBytes,
+    );
+    expect(bitmapClose).toHaveBeenCalledTimes(1);
+  });
+
   it("failed session 不复用；下一次请求会新建 decoder 并恢复", async () => {
     const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "t1", enabled: true }));
     ctrl.decodeError = new DOMException("decode error");
@@ -543,6 +590,8 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
       // 推进 microtask 到 createImageBitmap 阻塞点。
       await new Promise((r) => setTimeout(r, 0));
     });
+    expect(result.current.diagnostics.activeDecoders).toBe(1);
+    expect(result.current.diagnostics.liveVideoFrames).toBe(1);
     // decode 进行中(wanted 已命中,等待 createImageBitmap),task 切到 t2
     // → 旧 taskId(t1) 闭包不再匹配 taskIdRef.current(t2)。
     act(() => {
@@ -561,6 +610,8 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
     expect((resolved as VideoChunkDecodeResult).fallbackReason).toBe("stale_request");
     expect(bitmapClose).toHaveBeenCalledTimes(1); // 旧 bitmap 被关闭,不入新缓存
     expect(result.current.diagnostics.staleResults).toBe(1);
+    expect(result.current.diagnostics.activeDecoders).toBe(0);
+    expect(result.current.diagnostics.liveVideoFrames).toBe(0);
   });
 
   it("在途 decode 完成前卸载 → 新 bitmap 立即 close,不写回已卸载缓存", async () => {

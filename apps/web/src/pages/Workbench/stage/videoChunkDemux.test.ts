@@ -224,6 +224,7 @@ describe("buildEncodedVideoDecodePlan", () => {
     if (!result.ok) return;
     const desc = new Uint8Array(result.plan.config.description as Uint8Array);
     expect(Array.from(desc)).toEqual(Array.from("hello-config").map((c) => c.charCodeAt(0)));
+    expect(result.plan.config.optimizeForLatency).toBe(true);
     // data 直接引用 chunkBytes 的 view(同一 buffer)。
     expect(recordedInit(result.plan)[0].data.buffer).toBe(chunkBytes);
   });

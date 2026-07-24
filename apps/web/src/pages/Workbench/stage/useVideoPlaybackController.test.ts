@@ -60,6 +60,8 @@ vi.mock("./useVideoPreciseFrame", () => ({
       bytesFetched: 0,
       bitmapBytes: 0,
       bitmapBudgetBytes: 0,
+      activeDecoders: 0,
+      liveVideoFrames: 0,
       chunkBytes: 0,
       chunkBudgetBytes: 0,
       sessionCreates: 0,

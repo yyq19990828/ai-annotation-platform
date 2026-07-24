@@ -7,8 +7,8 @@
 //
 // 边界:本模块只管理「一个 VideoDecoder + decode plan + cursor + timestamp waiter + 串行
 // 命令队列 + generation + 资源释放」。它不读 React store、不发 HTTP 请求、不控制 Konva、
-// 也不持有 bitmap cache —— 那些是 hook 层的职责。目标 output 的 VideoFrame 交给调用方
-// (转 bitmap 后立即关闭),session 未命中的 output 立即 close,不等待下一请求碰运气复用。
+// 也不持有 bitmap cache —— 那些是 hook 层的职责。目标 output 的 VideoFrame 交给调用方；
+// B-frame lookahead 的未来 output 可移交 hook 转 bitmap，其余未命中 output 立即 close。
 
 import type { VideoGopPlan } from "./videoChunkDemux";
 
@@ -40,6 +40,7 @@ export type SessionDecodeOutcome =
         | "target_timestamp_missing"
         | "decoder_error"
         | "codec_unsupported"
+        | "supplemental_cached"
         | "disposed"
         | "stale_request"
         | "out_of_gop";
@@ -49,6 +50,8 @@ export type VideoGopSessionState = "idle" | "ready" | "failed" | "closed";
 
 export interface VideoGopSessionStats {
   state: VideoGopSessionState;
+  activeDecoders: number;
+  liveVideoFrames: number;
   /** 已提交到的绝对 decode index(gopStartDecodeIndex - 1 表示尚未提交)。 */
   cursor: number;
   /** 累计提交的 EncodedVideoChunk 数(诊断增量 decode 是否生效的核心指标)。 */
@@ -84,6 +87,11 @@ export interface VideoGopDecoderSessionOptions {
   onIdleTimeout?: () => void;
   /** hidden 超时回调;缺省 dispose。 */
   onHiddenTimeout?: () => void;
+  /**
+   * B-frame lookahead 提前输出未来展示帧时，把所有权交给 bitmap cache。
+   * 回调必须关闭 VideoFrame；返回 true 表示对应 bitmap 已可从调用方缓存读取。
+   */
+  onSupplementalFrame?: (frame: VideoFrame, frameIndex: number) => boolean | Promise<boolean>;
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15_000;
@@ -118,12 +126,17 @@ export class VideoGopDecoderSession {
   private readonly outputTimeoutMs: number;
   private readonly onIdleTimeout?: () => void;
   private readonly onHiddenTimeout?: () => void;
+  private readonly onSupplementalFrame?: VideoGopDecoderSessionOptions["onSupplementalFrame"];
 
   private decoder: VideoDecoder | null = null;
   private configuredConfig: VideoDecoderConfig | null = null;
   private state: VideoGopSessionState = "idle";
   /** 已提交到的绝对 decode index;gopStartDecodeIndex - 1 表示尚未提交任何 chunk。 */
   private cursor: number;
+  /** decoder 已交付过的最高 PTS；未命中目标的 output 会关闭，但不能假装未来还能重发。 */
+  private maxOutputTimestampUs = Number.NEGATIVE_INFINITY;
+  private lastTargetTimestampUs = Number.NEGATIVE_INFINITY;
+  private readonly supplementalTasks = new Map<number, Promise<boolean>>();
   private generation = 0;
   private latestRequestGeneration = Number.MIN_SAFE_INTEGER;
   private pendingTarget: PendingTarget | null = null;
@@ -150,6 +163,7 @@ export class VideoGopDecoderSession {
     this.outputTimeoutMs = options.outputTimeoutMs ?? DEFAULT_OUTPUT_TIMEOUT_MS;
     this.onIdleTimeout = options.onIdleTimeout;
     this.onHiddenTimeout = options.onHiddenTimeout;
+    this.onSupplementalFrame = options.onSupplementalFrame;
     this.cursor = this.plan.gopStartDecodeIndex - 1;
     this.setupVisibility();
     this.touchIdle();
@@ -158,6 +172,8 @@ export class VideoGopDecoderSession {
   getStats(): VideoGopSessionStats {
     return {
       state: this.state,
+      activeDecoders: this.decoder ? 1 : 0,
+      liveVideoFrames: this.pendingTarget?.frame ? 1 : 0,
       cursor: this.cursor,
       submits: this.submits,
       sessionCreates: this.sessionCreates,
@@ -210,6 +226,7 @@ export class VideoGopDecoderSession {
       this.settlePending(this.pendingTarget, { ok: false, reason: "disposed" });
     }
     this.pendingTarget = null;
+    this.supplementalTasks.clear();
     if (this.decoder) {
       try {
         this.decoder.close();
@@ -251,6 +268,17 @@ export class VideoGopDecoderSession {
     ) {
       return { ok: false, reason: "out_of_gop" };
     }
+    this.lastTargetTimestampUs = targetTimestampUs;
+    const supplemental = this.supplementalTasks.get(targetTimestampUs);
+    if (supplemental) {
+      this.supplementalTasks.delete(targetTimestampUs);
+      if (await supplemental) {
+        return { ok: false, reason: "supplemental_cached" };
+      }
+      if (req.generation !== this.latestRequestGeneration) {
+        return { ok: false, reason: "stale_request" };
+      }
+    }
 
     // VideoDecoder 按 presentation order 输出。B 帧下，目标之前展示的帧可能位于目标 packet
     // 之后的 decode order；必须至少提交所有 timestamp <= target 的 access unit，才能等待
@@ -264,11 +292,33 @@ export class VideoGopDecoderSession {
         submitThroughDecodeIndex = sample.decodeIndex;
       }
     }
+    // AVC B-frame 流即使启用 optimizeForLatency，decoder 仍可能需要看到目标之后的若干
+    // access unit，才会确认 reorder queue 中的目标帧可以交付。以 GOP 内 decode rank 与
+    // presentation rank 的最大位移 + 1 作为有界 drain lookahead；I/P-only 流保持原来的
+    // 严格增量提交，不能为解决 B 帧又退回整 GOP 预解。
+    const hasPresentationReordering = this.plan.samples.some(
+      (sample, index, all) => index > 0 && sample.timestampUs < all[index - 1].timestampUs,
+    );
+    if (hasPresentationReordering) {
+      const presentationRank = new Map(
+        [...this.plan.samples]
+          .sort((a, b) => a.timestampUs - b.timestampUs)
+          .map((sample, rank) => [sample.decodeIndex, rank]),
+      );
+      const maxRankDisplacement = this.plan.samples.reduce((max, sample, decodeRank) => {
+        const presentRank = presentationRank.get(sample.decodeIndex) ?? decodeRank;
+        return Math.max(max, Math.abs(presentRank - decodeRank));
+      }, 0);
+      submitThroughDecodeIndex = Math.min(
+        this.plan.gopEndDecodeIndex - 1,
+        submitThroughDecodeIndex + maxRankDisplacement + 1,
+      );
+    }
 
     // 后退 / 原地，或目标所需的 presentation lookahead 已被提交但 output 未缓存时，
     // decoder 不会重发已解码帧，必须 hard reset 从 key sample 重解。
     // forward(target > cursor)则只提交增量。
-    if (submitThroughDecodeIndex <= this.cursor) {
+    if (submitThroughDecodeIndex <= this.cursor || targetTimestampUs <= this.maxOutputTimestampUs) {
       await this.hardReset();
       if (this.getState() !== "ready" || !this.decoder) {
         return { ok: false, reason: this.failureReason ?? "decoder_error" };
@@ -368,6 +418,7 @@ export class VideoGopDecoderSession {
     this.configuredConfig = supportedConfig;
     this.state = "ready";
     this.cursor = this.plan.gopStartDecodeIndex - 1;
+    this.maxOutputTimestampUs = Number.NEGATIVE_INFINITY;
     this.sessionCreates += 1;
   }
 
@@ -396,36 +447,60 @@ export class VideoGopDecoderSession {
       }
     }
     this.cursor = this.plan.gopStartDecodeIndex - 1;
+    this.maxOutputTimestampUs = Number.NEGATIVE_INFINITY;
   }
 
   /**
-   * output 选择:只接受 timestamp 等于当前目标且 generation 仍有效的第一张 frame;
-   * 重复 timestamp 的后续 output 立即 close 并计诊断;其它 output(预取 / 乱序 / stale)立即 close。
+   * output 选择:只接受 timestamp 等于当前目标且 generation 仍有效的第一张 frame。
+   * B-frame lookahead 提前交付的未来帧交给 hook 异步转 bitmap；其它 output 立即 close。
    */
   private onOutput(frame: VideoFrame): void {
+    this.maxOutputTimestampUs = Math.max(this.maxOutputTimestampUs, frame.timestamp);
     const target = this.pendingTarget;
-    if (!target || this.state !== "ready") {
+    if (this.state !== "ready") {
       closeFrame(frame);
       return;
     }
-    if (frame.timestamp !== target.timestampUs) {
+    if (target && frame.timestamp === target.timestampUs) {
+      if (target.settled || target.frame !== null) {
+        this.duplicateOutputs += 1;
+        closeFrame(frame);
+        return;
+      }
+      if (
+        target.sessionGeneration !== this.generation ||
+        target.requestGeneration !== this.latestRequestGeneration
+      ) {
+        closeFrame(frame);
+        return;
+      }
+      target.frame = frame;
+      this.settlePending(target, { ok: true, frame });
+      return;
+    }
+    const targetTimestampUs = target?.timestampUs ?? this.lastTargetTimestampUs;
+    if (frame.timestamp <= targetTimestampUs || !this.onSupplementalFrame) {
       closeFrame(frame);
       return;
     }
-    if (target.settled || target.frame !== null) {
+    const sample = this.plan.samples.find((candidate) => candidate.timestampUs === frame.timestamp);
+    if (!sample) {
+      closeFrame(frame);
+      return;
+    }
+    if (this.supplementalTasks.has(frame.timestamp)) {
       this.duplicateOutputs += 1;
       closeFrame(frame);
       return;
     }
-    if (
-      target.sessionGeneration !== this.generation ||
-      target.requestGeneration !== this.latestRequestGeneration
-    ) {
+    let task: Promise<boolean>;
+    try {
+      task = Promise.resolve(this.onSupplementalFrame(frame, sample.frameIndex)).catch(() => false);
+    } catch {
       closeFrame(frame);
       return;
     }
-    target.frame = frame;
-    this.settlePending(target, { ok: true, frame });
+    this.supplementalTasks.set(frame.timestamp, task);
   }
 
   private markFailed(reason: SessionFailureReason): void {

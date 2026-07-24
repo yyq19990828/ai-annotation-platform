@@ -422,3 +422,83 @@ async def test_seed_video_webcodecs_rejects_unknown_fixture():
         await _test_seed.seed_video_webcodecs(req, db=None)
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail == "unknown_fixture"
+
+
+async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():
+    from types import SimpleNamespace
+
+    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+
+    keys = [f"e2e/video/webcodecs/{index}.mp4" for index in range(1001)]
+
+    class Client:
+        def __init__(self):
+            self.list_calls = 0
+            self.deleted_batches: list[list[str]] = []
+
+        def list_objects_v2(self, **kwargs):
+            self.list_calls += 1
+            if kwargs.get("MaxKeys") == 1:
+                return {"Contents": []}
+            if kwargs.get("ContinuationToken"):
+                return {"Contents": [{"Key": keys[-1]}], "IsTruncated": False}
+            return {
+                "Contents": [{"Key": key} for key in keys[:1000]],
+                "IsTruncated": True,
+                "NextContinuationToken": "page-2",
+            }
+
+        def delete_objects(self, **kwargs):
+            self.deleted_batches.append(
+                [item["Key"] for item in kwargs["Delete"]["Objects"]]
+            )
+            return {}
+
+    client = Client()
+    _delete_webcodecs_seed_objects(
+        SimpleNamespace(client=client, datasets_bucket="datasets")
+    )
+    assert [len(batch) for batch in client.deleted_batches] == [1000, 1]
+    assert client.list_calls == 3
+
+
+async def test_webcodecs_object_cleanup_fails_on_partial_delete():
+    from types import SimpleNamespace
+
+    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+
+    class Client:
+        def list_objects_v2(self, **kwargs):
+            return {
+                "Contents": [{"Key": "e2e/video/webcodecs/a.mp4"}],
+                "IsTruncated": False,
+            }
+
+        def delete_objects(self, **kwargs):
+            return {"Errors": [{"Key": "redacted", "Code": "AccessDenied"}]}
+
+    with pytest.raises(RuntimeError, match="delete failed for 1 object"):
+        _delete_webcodecs_seed_objects(
+            SimpleNamespace(client=Client(), datasets_bucket="datasets")
+        )
+
+
+async def test_webcodecs_object_cleanup_fails_when_verification_finds_residual():
+    from types import SimpleNamespace
+
+    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+
+    class Client:
+        def list_objects_v2(self, **kwargs):
+            return {
+                "Contents": [{"Key": "e2e/video/webcodecs/a.mp4"}],
+                "IsTruncated": False,
+            }
+
+        def delete_objects(self, **kwargs):
+            return {}
+
+    with pytest.raises(RuntimeError, match="left MinIO objects"):
+        _delete_webcodecs_seed_objects(
+            SimpleNamespace(client=Client(), datasets_bucket="datasets")
+        )

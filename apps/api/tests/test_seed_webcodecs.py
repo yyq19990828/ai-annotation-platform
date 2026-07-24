@@ -2,24 +2,17 @@
 
 验证 numpy→ffmpeg→ffprobe→avcC pipeline 产出与生产同结构的 chunk samples / codec
 description,以及 unsupported / malformed 的确定性篡改。需要主机提供 ffmpeg / ffprobe;
-缺失时整文件 skip(CI 不可静默放过核心 H.264 用例)。
+缺失时测试明确失败，CI 不可静默放过核心 H.264 用例。
 """
 
 from __future__ import annotations
 
 import shutil
 
-import pytest
-
 from app.api.v1._test_seed_webcodecs import (
     apply_metadata_mutation,
     frame_expectations,
     generate_fixture,
-)
-
-pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="ffmpeg/ffprobe required for WebCodecs fixture generation",
 )
 
 _SAMPLE_KEYS = {
@@ -30,6 +23,11 @@ _SAMPLE_KEYS = {
     "size_bytes",
     "offset_in_chunk",
 }
+
+
+def test_ffmpeg_prerequisites_are_available():
+    missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
+    assert not missing, f"WebCodecs fixture prerequisites missing: {', '.join(missing)}"
 
 
 def test_baseline_fixture_produces_production_shaped_samples(tmp_path):
@@ -43,10 +41,9 @@ def test_baseline_fixture_produces_production_shaped_samples(tmp_path):
     assert len(samples) == 12
     # frame_index 是 0..11 的 presentation-rank 排列(前端按 timestamp 选目标)。
     assert sorted(s["frame_index"] for s in samples) == list(range(12))
-    # 首帧(presentation)必为关键帧,且至少还有第二个 GOP 关键帧用于边界测试。
+    # baseline 共 12 帧且 GOP=12，关闭 scenecut 后只有首帧关键帧。
     key_fi = sorted(s["frame_index"] for s in samples if s["is_keyframe"])
-    assert key_fi[0] == 0
-    assert len(key_fi) >= 2
+    assert key_fi == [0]
     for s in samples:
         assert _SAMPLE_KEYS <= set(s)
         assert s["size_bytes"] > 0
@@ -63,13 +60,31 @@ def test_main_bframes_has_decode_presentation_reorder(tmp_path):
     assert decode_order != sorted(decode_order)
     # 但 frame_index 集合仍是完整排列(覆盖全部帧)。
     assert sorted(decode_order) == list(range(meta["frame_count"]))
+    assert sorted(s["frame_index"] for s in meta["samples"] if s["is_keyframe"]) == [
+        0,
+        30,
+    ]
 
 
 def test_boundary_fixture_has_multiple_gops(tmp_path):
     meta = generate_fixture("h264-boundary-gop8", tmp_path)
     key_fi = [s["frame_index"] for s in meta["samples"] if s["is_keyframe"]]
-    assert key_fi[0] == 0
-    assert len(key_fi) >= 3  # 至少 3 个 GOP 用于边界 / reset 测试
+    assert key_fi == [0, 8, 16]
+
+
+def test_vfr_fixture_has_complete_monotonic_alternating_pts(tmp_path):
+    meta = generate_fixture("h264-vfr", tmp_path)
+    presented = sorted(meta["samples"], key=lambda sample: sample["frame_index"])
+    assert len(presented) == meta["frame_count"] == 24
+    assert [sample["frame_index"] for sample in presented] == list(range(24))
+    pts_ms = [sample["pts_ms"] for sample in presented]
+    deltas = [right - left for left, right in zip(pts_ms, pts_ms[1:])]
+    assert all(32 <= delta <= 35 for delta in deltas[::2])
+    assert all(65 <= delta <= 68 for delta in deltas[1::2])
+    assert meta["duration_ms"] == max(
+        sample["pts_ms"] + sample["duration_ms"] for sample in presented
+    )
+    assert meta["duration_ms"] > pts_ms[-1]
 
 
 def test_apply_metadata_mutation_unsupported_keeps_description(tmp_path):
@@ -103,6 +118,18 @@ def test_frame_expectations_structure_and_bit_encoding():
     assert exp["frames"][1]["corner_bits"] == [1, 0, 0, 0]  # 1
     assert exp["frames"][5]["corner_bits"] == [1, 0, 1, 0]  # 5 = 0b0101
     assert exp["frames"][9]["corner_bits"] == [1, 0, 0, 1]  # 9 = 0b1001
+
+
+def test_frame_expectations_include_sample_timestamps_and_unique_signatures(tmp_path):
+    meta = generate_fixture("h264-main-bframes-gop30", tmp_path)
+    exp = frame_expectations("h264-main-bframes-gop30", meta["samples"])
+    assert exp["frames"][30]["pts_ms"] == 1000
+    assert exp["frames"][30]["is_keyframe"] is True
+    signatures = {
+        (frame["background_luma"], tuple(frame["corner_bits"]))
+        for frame in exp["frames"]
+    }
+    assert len(signatures) == exp["frame_count"] == 48
 
 
 def test_frame_expectations_malformed_uses_real_baseline_frames():

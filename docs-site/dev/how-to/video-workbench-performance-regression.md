@@ -8,7 +8,7 @@ last_reviewed: 2026-05-12
 
 # How-to：视频工作台性能回归
 
-v0.9.31 给视频工作台补了第一版本地观测包：固定 bench 矩阵、BugReport 自动诊断，以及 PR 附件路径约定。它不上传 trace，也不要求仓库提交真实视频 fixture。
+视频工作台提供固定 bench 矩阵、BugReport 自动诊断，以及 PR 附件路径约定。它不上传 trace，也不要求仓库提交真实视频 fixture。
 
 ## 快速运行
 
@@ -45,23 +45,55 @@ fixture 描述在 `apps/web/scripts/video-bench/fixtures.json`：
 
 ```bash
 pnpm --filter @anno/web video:bench -- --scenario precise-frame --dry-run
-pnpm --filter @anno/web video:bench -- --scenario precise-frame
+
+VIDEO_BENCH_STORAGE_STATE=/abs/path/auth-state.json \
+VIDEO_BENCH_CHROMIUM_CHANNEL=chrome \
+VIDEO_BENCH_TASK_1080P_30_URL=/projects/.../annotate?task=... \
+VIDEO_BENCH_TASK_1080P_60_URL=/projects/.../annotate?task=... \
+VIDEO_BENCH_TASK_4K_30_URL=/projects/.../annotate?task=... \
+pnpm --filter @anno/web video:bench -- --scenario precise-frame --headed --strict
 ```
+
+`--dry-run` 只校验矩阵，不启动浏览器、不写报告，也不产生 Worker 结论。真实运行必须提供
+三条已登录用户可访问的任务 URL，以及 Playwright `storageState`；任务媒体须分别匹配声明的
+分辨率 / fps，并至少覆盖两个 GOP。runner 会读取真实 manifest 与 sample 响应，核对分辨率、
+fps、H.264 codec、chunk size 和关键帧边界后再派生 same-GOP / cross-GOP 目标；缺少任一任务
+或素材合同不匹配时不能得到完成结论。
+
+固定 GPU runner 应通过 `VIDEO_BENCH_CHROMIUM_CHANNEL=chrome` 使用系统 Google Chrome，
+并把本地 `DISPLAY` / `XAUTHORITY` 绑定到真实桌面会话。bundled Chromium 与 SSH 转发显示
+只适合能力探测，不能代表用户 Chrome 的 codec / GPU 路径。
+
+有 GPU 但没有物理显示输出的 X11 runner 可能把有头页的 BeginFrame 降到约 1 Hz。runner
+在有头模式自动传入 `--disable-gpu-vsync` 恢复 Chrome 的正常帧调度，并把实际参数写入
+`manifest.environment.chromiumArgs`；仍须同时核对 `gpuAdapter` 与
+`hardwareAcceleration=true`，不能只凭命令行参数宣称硬件解码。
+
+`--strict` 用于固定 GPU runner 的资格门：报告仍会先落盘，但 `inconclusive` 或 Worker 门触发
+会令命令以非零状态退出。开发机探索可省略该参数，保留三态报告而不把能力不足误当通过。
 
 产物写到 `test-results/video-bench/<run-id>/`：
 
-- `manifest.json`：分辨率（1080p/30、1080p/60、4K/30）× 场景矩阵、退出门 budget、Dedicated Worker 决策、环境记录字段（runner 填充 `chromiumVersion` / `gpuAdapter` / `hardwareAcceleration` / `fixtureCodec`）。
-- `summary.md`：人类可读的退出门表与 Worker 决策结论。
+- `manifest.json`：分辨率矩阵、逐操作原始 observation、环境、资源账本、退出门与三态 Worker 决策。
+- `summary.md`：实测 p95、归因 long task、flag-on/off 交互 rAF、资源账本与 Worker 决策摘要。
 
 字节预算三档（工作台设置 → 性能档位）：轻量 96/32 MiB、标准 256/96 MiB、激进 512/192 MiB（bitmap / chunk）。判读要点：
 
 - **请求计数**：flag off 与连续播放的 precise 请求必须为 0（`data-video-precise-state=disabled`、播放态 `data-video-frame-source=video`）。
+- **计数边界**：连续播放开始前先等待暂停态 precise 预取请求流静默，再从 play click 计数；
+  否则前一次 seek 的尾请求会被误记为播放态新增请求。
 - **session / 逐帧**：同 GOP 顺序逐帧的 `encodedChunksSubmitted` 只增量增长；后退 / 跨 GOP 触发 `sessionResets`。
-- **long task / 主线程**：用 PerformanceObserver 包围 pipeline JS 阶段，归因 ≥50ms long task 必须为 0、主线程 blocking p95 ≤16ms。
-- **内存**：操作结束后 `liveVideoFrames` 归零、bitmap / chunk 字节账本回预算；优先账本与 close 计数，浏览器媒体进程的短时波动不算泄漏。
-- **Worker 触发门**：未出现归因于 pipeline 的 long task 时**不引入** Dedicated Worker（`VideoDecoder.decode` / `createImageBitmap` 异步、主线程只编排）；出现则按计划 §9.2 实现 worker 并重跑全部 gate。
+- **long task / 主线程**：以 `buildGopPlan`（sample 校验、GOP 规划、description 解码、
+  `EncodedVideoChunk` 构造）的同步耗时作为可迁移 slice，再与操作窗 Long Tasks API
+  观测关联；归因 ≥50ms long task 必须为 0、同步 blocking p95 ≤16ms。
+- **交互帧率**：同一组逐帧目标分别在 flag on / off 下采集 rAF，Worker 门只看相对回退；
+  连续播放 rAF 仍是播放资格门，不冒充 precise pipeline 的 Worker 证据。
+- **内存**：稳定性目标以互质步长跨越 GOP / chunk / 缓存预算，中点与结束各取一次 plateau；
+  操作结束后 `liveVideoFrames` 归零、活动 decoder ≤1、bitmap / chunk 字节账本回预算且不持续增长。
+- **Worker 触发门**：只有三组矩阵样本、Long Tasks API、资源计数与连续播放全部完成，才能得到 `triggered` 或 `not-triggered`；能力不足、fallback、样本不足或指标缺失一律为 `inconclusive`。触发后实现 worker 并重跑全部 gate。
 
-headless Chromium 无可用 `VideoDecoder` 软解，CI 只锁定 flag off 零请求与安全回退合同；warm seek / long task 等真实指标需有头 Chrome 或带 GPU 的 runner。
+headless Chromium 可能没有可用的 H.264 软解。warm seek / long task 等资格结果必须来自有头 Chrome
+或带 GPU 的固定 runner；fallback 只能证明降级合同，不能参与“不需要 Worker”的结论。
 
 ## BUG 反馈诊断
 
