@@ -41,6 +41,7 @@ export type SessionDecodeOutcome =
         | "decoder_error"
         | "codec_unsupported"
         | "disposed"
+        | "stale_request"
         | "out_of_gop";
     };
 
@@ -61,8 +62,13 @@ export interface VideoGopSessionStats {
 
 interface PendingTarget {
   timestampUs: number;
-  generation: number;
+  requestGeneration: number;
+  sessionGeneration: number;
+  settled: boolean;
   frame: VideoFrame | null;
+  promise: Promise<SessionDecodeOutcome>;
+  resolve: (outcome: SessionDecodeOutcome) => void;
+  timeout: ReturnType<typeof setTimeout> | null;
 }
 
 export interface VideoGopDecoderSessionOptions {
@@ -72,6 +78,8 @@ export interface VideoGopDecoderSessionOptions {
   idleTimeoutMs?: number;
   /** document 持续 hidden 超时(ms):超过则调用 onHiddenTimeout。默认 30s。 */
   hiddenTimeoutMs?: number;
+  /** 等待目标 output 的超时(ms)。默认 5s；防损坏码流让串行队列永久悬挂。 */
+  outputTimeoutMs?: number;
   /** 闲置超时回调;缺省 dispose。 */
   onIdleTimeout?: () => void;
   /** hidden 超时回调;缺省 dispose。 */
@@ -80,6 +88,7 @@ export interface VideoGopDecoderSessionOptions {
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15_000;
 const DEFAULT_HIDDEN_TIMEOUT_MS = 30_000;
+const DEFAULT_OUTPUT_TIMEOUT_MS = 5_000;
 
 function closeFrame(frame: VideoFrame) {
   try {
@@ -106,6 +115,7 @@ export class VideoGopDecoderSession {
   private readonly plan: VideoGopPlan;
   private readonly idleTimeoutMs: number;
   private readonly hiddenTimeoutMs: number;
+  private readonly outputTimeoutMs: number;
   private readonly onIdleTimeout?: () => void;
   private readonly onHiddenTimeout?: () => void;
 
@@ -115,6 +125,7 @@ export class VideoGopDecoderSession {
   /** 已提交到的绝对 decode index;gopStartDecodeIndex - 1 表示尚未提交任何 chunk。 */
   private cursor: number;
   private generation = 0;
+  private latestRequestGeneration = Number.MIN_SAFE_INTEGER;
   private pendingTarget: PendingTarget | null = null;
 
   /** 串行命令队列:所有 public command 进入同一 promise chain,避免 decode / reset 交错。 */
@@ -136,6 +147,7 @@ export class VideoGopDecoderSession {
     this.identity = options.identity;
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.hiddenTimeoutMs = options.hiddenTimeoutMs ?? DEFAULT_HIDDEN_TIMEOUT_MS;
+    this.outputTimeoutMs = options.outputTimeoutMs ?? DEFAULT_OUTPUT_TIMEOUT_MS;
     this.onIdleTimeout = options.onIdleTimeout;
     this.onHiddenTimeout = options.onHiddenTimeout;
     this.cursor = this.plan.gopStartDecodeIndex - 1;
@@ -157,7 +169,7 @@ export class VideoGopDecoderSession {
   }
 
   /**
-   * 读取当前状态(方法调用不被 TS 跨 await 收窄)。doDecode 在 await flush / ensureReady /
+   * 读取当前状态(方法调用不被 TS 跨 await 收窄)。doDecode 在 await ensureReady /
    * hardReset 之后必须用本方法读 state —— error callback 可能在 await 期间把 state 置为 failed。
    */
   private getState(): VideoGopSessionState {
@@ -170,6 +182,13 @@ export class VideoGopDecoderSession {
    * 后需自行 close)。
    */
   decode(request: SessionDecodeRequest): Promise<SessionDecodeOutcome> {
+    if (request.generation > this.latestRequestGeneration) {
+      this.latestRequestGeneration = request.generation;
+      const pending = this.pendingTarget;
+      if (pending && pending.requestGeneration < request.generation) {
+        this.settlePending(pending, { ok: false, reason: "stale_request" });
+      }
+    }
     return this.enqueue(() => this.doDecode(request));
   }
 
@@ -187,6 +206,9 @@ export class VideoGopDecoderSession {
     this.clearIdle();
     this.clearHidden();
     this.teardownVisibility();
+    if (this.pendingTarget) {
+      this.settlePending(this.pendingTarget, { ok: false, reason: "disposed" });
+    }
     this.pendingTarget = null;
     if (this.decoder) {
       try {
@@ -202,6 +224,9 @@ export class VideoGopDecoderSession {
 
   private async doDecode(req: SessionDecodeRequest): Promise<SessionDecodeOutcome> {
     if (this.state === "closed") return { ok: false, reason: "disposed" };
+    if (req.generation !== this.latestRequestGeneration) {
+      return { ok: false, reason: "stale_request" };
+    }
     this.touchIdle();
     if (this.state === "failed")
       return { ok: false, reason: this.failureReason ?? "decoder_error" };
@@ -218,42 +243,82 @@ export class VideoGopDecoderSession {
     ) {
       return { ok: false, reason: "out_of_gop" };
     }
+    const targetSample = this.plan.samples[targetDecodeIndex - this.plan.gopStartDecodeIndex];
+    if (
+      !targetSample ||
+      targetSample.frameIndex !== req.frameIndex ||
+      targetSample.timestampUs !== targetTimestampUs
+    ) {
+      return { ok: false, reason: "out_of_gop" };
+    }
 
-    // 后退(target < cursor)或原地(target === cursor):decoder output 不会重发已解码帧,
-    // 必须 hard reset 从 key sample 重解。forward(target > cursor)则只提交增量。
-    if (targetDecodeIndex <= this.cursor) {
+    // VideoDecoder 按 presentation order 输出。B 帧下，目标之前展示的帧可能位于目标 packet
+    // 之后的 decode order；必须至少提交所有 timestamp <= target 的 access unit，才能等待
+    // 目标 output。不能用 flush() 强行出帧：规范要求 flush 后下一次 decode 必须重新从 key 开始。
+    let submitThroughDecodeIndex = targetDecodeIndex;
+    for (const sample of this.plan.samples) {
+      if (
+        sample.timestampUs <= targetTimestampUs &&
+        sample.decodeIndex > submitThroughDecodeIndex
+      ) {
+        submitThroughDecodeIndex = sample.decodeIndex;
+      }
+    }
+
+    // 后退 / 原地，或目标所需的 presentation lookahead 已被提交但 output 未缓存时，
+    // decoder 不会重发已解码帧，必须 hard reset 从 key sample 重解。
+    // forward(target > cursor)则只提交增量。
+    if (submitThroughDecodeIndex <= this.cursor) {
       await this.hardReset();
       if (this.getState() !== "ready" || !this.decoder) {
         return { ok: false, reason: this.failureReason ?? "decoder_error" };
       }
     }
+    if (req.generation !== this.latestRequestGeneration) {
+      return { ok: false, reason: "stale_request" };
+    }
 
     const fromRel = this.cursor + 1 - this.plan.gopStartDecodeIndex;
-    const toRel = targetDecodeIndex - this.plan.gopStartDecodeIndex;
-    this.pendingTarget = {
-      timestampUs: targetTimestampUs,
-      generation: this.generation,
-      frame: null,
-    };
+    const toRel = submitThroughDecodeIndex - this.plan.gopStartDecodeIndex;
+    const pending = this.createPendingTarget(req);
+    this.pendingTarget = pending;
     try {
       for (let rel = fromRel; rel <= toRel; rel++) {
         this.decoder.decode(this.plan.samples[rel].chunk);
         this.submits += 1;
+        if (this.getState() === "failed") throw new Error("decoder failed");
       }
-      this.cursor = targetDecodeIndex;
-      await this.decoder.flush();
+      this.cursor = submitThroughDecodeIndex;
+      // 只有已经提交到 GOP 尾且目标仍未 output 时才 drain。flush 会要求下一次输入重新从
+      // key chunk 开始；此时 session 的任何后续目标都会因 cursor 在 GOP 尾而先 hardReset，
+      // 因而不会重现“逐帧 flush 后继续喂 delta”的 DataError。
+      if (!pending.settled && submitThroughDecodeIndex === this.plan.gopEndDecodeIndex - 1) {
+        await this.decoder.flush();
+        if (this.getState() === "failed") throw new Error("decoder failed");
+        if (!pending.settled) {
+          this.settlePending(pending, {
+            ok: false,
+            reason: "target_timestamp_missing",
+          });
+        }
+      }
     } catch {
+      // dispose / 新 generation / error callback 可能已在 await flush 期间结算了无 frame
+      // waiter；保留该更精确的终态，不能覆盖成 decoder_error。
+      if (pending.settled && pending.frame === null) {
+        if (this.pendingTarget === pending) this.pendingTarget = null;
+        return pending.promise;
+      }
+      if (pending.frame) closeFrame(pending.frame);
       this.markFailed("decoder_error");
+      this.settlePending(pending, { ok: false, reason: "decoder_error" });
       this.pendingTarget = null;
       return { ok: false, reason: "decoder_error" };
     }
 
-    const target = this.pendingTarget;
-    this.pendingTarget = null;
-    if (this.getState() === "failed")
-      return { ok: false, reason: this.failureReason ?? "decoder_error" };
-    if (target?.frame) return { ok: true, frame: target.frame };
-    return { ok: false, reason: "target_timestamp_missing" };
+    const outcome = await pending.promise;
+    if (this.pendingTarget === pending) this.pendingTarget = null;
+    return outcome;
   }
 
   private async doReset(): Promise<void> {
@@ -311,6 +376,10 @@ export class VideoGopDecoderSession {
    * 随后用同一 config 重新 configure,cursor 回到 GOP 起点。
    */
   private async hardReset(): Promise<void> {
+    if (this.pendingTarget) {
+      this.settlePending(this.pendingTarget, { ok: false, reason: "stale_request" });
+      this.pendingTarget = null;
+    }
     this.generation += 1;
     this.resets += 1;
     if (this.decoder && this.configuredConfig) {
@@ -343,16 +412,20 @@ export class VideoGopDecoderSession {
       closeFrame(frame);
       return;
     }
-    if (target.frame !== null) {
+    if (target.settled || target.frame !== null) {
       this.duplicateOutputs += 1;
       closeFrame(frame);
       return;
     }
-    if (target.generation !== this.generation) {
+    if (
+      target.sessionGeneration !== this.generation ||
+      target.requestGeneration !== this.latestRequestGeneration
+    ) {
       closeFrame(frame);
       return;
     }
     target.frame = frame;
+    this.settlePending(target, { ok: true, frame });
   }
 
   private markFailed(reason: SessionFailureReason): void {
@@ -361,6 +434,42 @@ export class VideoGopDecoderSession {
     this.failureReason = reason;
     this.generation += 1;
     this.errors += 1;
+    if (this.pendingTarget && !this.pendingTarget.settled) {
+      this.settlePending(this.pendingTarget, { ok: false, reason });
+    }
+  }
+
+  private createPendingTarget(req: SessionDecodeRequest): PendingTarget {
+    let resolve!: (outcome: SessionDecodeOutcome) => void;
+    const promise = new Promise<SessionDecodeOutcome>((done) => {
+      resolve = done;
+    });
+    const pending: PendingTarget = {
+      timestampUs: req.targetTimestampUs,
+      requestGeneration: req.generation,
+      sessionGeneration: this.generation,
+      settled: false,
+      frame: null,
+      promise,
+      resolve,
+      timeout: null,
+    };
+    if (this.outputTimeoutMs > 0) {
+      pending.timeout = setTimeout(() => {
+        this.settlePending(pending, { ok: false, reason: "target_timestamp_missing" });
+      }, this.outputTimeoutMs);
+    }
+    return pending;
+  }
+
+  private settlePending(pending: PendingTarget, outcome: SessionDecodeOutcome): void {
+    if (pending.settled) return;
+    pending.settled = true;
+    if (pending.timeout !== null) {
+      clearTimeout(pending.timeout);
+      pending.timeout = null;
+    }
+    pending.resolve(outcome);
   }
 
   // ── 串行命令队列 ───────────────────────────────────────────────────────────

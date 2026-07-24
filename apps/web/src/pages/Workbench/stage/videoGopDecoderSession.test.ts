@@ -65,9 +65,10 @@ interface SessionDecoderCtrl {
   supportConfig: VideoDecoderConfig | undefined;
   supportThrow: boolean;
   configureThrow: boolean;
+  decodeImpl: ((d: FakeSessionDecoder, chunk: FakeEncodedVideoChunk) => void) | null;
+  decodeThrow: boolean;
+  decodeError: DOMException | null;
   flushImpl: ((d: FakeSessionDecoder) => void | Promise<void>) | null;
-  flushThrow: boolean;
-  flushError: DOMException | null;
 }
 
 let ctrl: SessionDecoderCtrl;
@@ -79,9 +80,10 @@ function installSessionDecoder(): void {
     supportConfig: undefined,
     supportThrow: false,
     configureThrow: false,
+    decodeImpl: null,
+    decodeThrow: false,
+    decodeError: null,
     flushImpl: null,
-    flushThrow: false,
-    flushError: null,
   };
   decoders = [];
   vi.stubGlobal("EncodedVideoChunk", FakeEncodedVideoChunk);
@@ -93,13 +95,26 @@ function installSessionDecoder(): void {
     constructor(init: { output: (f: VideoFrame) => void; error: (e: DOMException) => void }) {
       super(init);
       decoders.push(this);
+      let keyChunkRequired = true;
       this.configure.mockImplementation(() => {
         if (ctrl.configureThrow) throw new Error("configure failed");
+        keyChunkRequired = true;
+      });
+      this.decode.mockImplementation((chunk: FakeEncodedVideoChunk) => {
+        if (ctrl.decodeThrow) throw new Error("decode failed");
+        if (keyChunkRequired && chunk.type !== "key") {
+          throw new DOMException("key chunk required", "DataError");
+        }
+        keyChunkRequired = false;
+        if (ctrl.decodeError) init.error(ctrl.decodeError);
+        ctrl.decodeImpl?.(this, chunk);
       });
       this.flush.mockImplementation(async () => {
-        if (ctrl.flushThrow) throw new Error("flush failed");
-        if (ctrl.flushError) init.error(ctrl.flushError);
-        if (ctrl.flushImpl) await ctrl.flushImpl(this);
+        keyChunkRequired = true;
+        await ctrl.flushImpl?.(this);
+      });
+      this.reset.mockImplementation(() => {
+        keyChunkRequired = true;
       });
     }
   }
@@ -117,13 +132,10 @@ function fakeFrame(timestamp: number) {
 
 const lastDecoder = () => decoders[decoders.length - 1];
 
-/** 默认 flush:emit 最后一次 decode 的 chunk 对应 timestamp 的目标 frame。 */
-function defaultFlushEmitTarget(): void {
-  ctrl.flushImpl = async (d) => {
-    const calls = vi.mocked(d.decode).mock.calls;
-    if (calls.length === 0) return;
-    const lastChunk = calls[calls.length - 1][0] as { timestamp: number };
-    d.emit(fakeFrame(lastChunk.timestamp));
+/** 默认 decode:每个提交的 chunk 立即产生同 timestamp output。 */
+function defaultDecodeEmitChunk(): void {
+  ctrl.decodeImpl = (d, chunk) => {
+    d.emit(fakeFrame(chunk.timestamp));
   };
 }
 
@@ -212,7 +224,7 @@ function newSession(
 describe("VideoGopDecoderSession", () => {
   beforeEach(() => {
     installSessionDecoder();
-    defaultFlushEmitTarget();
+    defaultDecodeEmitChunk();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -247,6 +259,8 @@ describe("VideoGopDecoderSession", () => {
     expect(lastDecoder().decode).toHaveBeenCalledTimes(6 + 5);
     expect(session.getStats().submits).toBe(11);
     expect(session.getStats().resets).toBe(0);
+    // flush 会把 VideoDecoder 置为下一输入必须是 key chunk；持久 session 主路径禁止调用。
+    expect(lastDecoder().flush).not.toHaveBeenCalled();
   });
 
   it("同一目标 cache miss(原地)触发 reset 重解", async () => {
@@ -285,7 +299,7 @@ describe("VideoGopDecoderSession", () => {
     expect(outcome).toEqual({ ok: false, reason: "disposed" });
   });
 
-  it("output 乱序仍按 timestamp 命中目标(B 帧 decode order ≠ pts order)", async () => {
+  it("B 帧目标会提交 presentation lookahead,且仍按 timestamp 命中", async () => {
     // decode order: frame0(key,pts0) → frame2(pts66) → frame1(pts33)。
     const samples = makeSamples([
       { frame: 0, pts: 0, key: true },
@@ -293,29 +307,30 @@ describe("VideoGopDecoderSession", () => {
       { frame: 1, pts: 33, key: false },
     ]);
     const bytes = makeBytes(64);
-    const built = buildGopPlan(bytes, samples, 1);
+    const built = buildGopPlan(bytes, samples, 2);
     if (!built.ok) throw new Error("build failed");
     const plan = built.plan;
-    ctrl.flushImpl = async (d) => {
-      // 按 decode order 全量 emit(frame0 → frame2 → frame1)。
+    ctrl.decodeImpl = (d, chunk) => {
+      if (chunk.timestamp !== 33000) return;
+      // 第三个 access unit(B,pts33)提交后，decoder 才能按 presentation order 输出到
+      // 目标 P 帧(pts66)。若只提交到目标自身 decodeIndex=1，waiter 会超时。
       d.emit(fakeFrame(0));
+      d.emit(fakeFrame(33000));
       d.emit(fakeFrame(66000));
-      d.emit(fakeFrame(33000)); // target(pts 33 → 33000us)最后到
     };
     const session = newSession(plan);
-    const outcome = await session.decode(req(plan, 2)); // decodeIndex 2 = frame1(pts33)
+    const outcome = await session.decode(req(plan, 1)); // decodeIndex 1 = frame2(pts66)
     expect(outcome.ok).toBe(true);
-    if (outcome.ok) expect(outcome.frame.timestamp).toBe(33000);
+    if (outcome.ok) expect(outcome.frame.timestamp).toBe(66000);
+    expect(lastDecoder().decode).toHaveBeenCalledTimes(3);
   });
 
   it("非目标 output 立即 close", async () => {
     const plan = gopPlan(10);
     const nonTarget = fakeFrame(0); // decodeIndex 0 的 pts=0,目标是 decodeIndex 3(pts 99→99000)
-    ctrl.flushImpl = async (d) => {
-      d.emit(nonTarget); // 非 target
-      const calls = vi.mocked(d.decode).mock.calls;
-      const lastChunk = calls[calls.length - 1][0] as { timestamp: number };
-      d.emit(fakeFrame(lastChunk.timestamp)); // target
+    ctrl.decodeImpl = (d, chunk) => {
+      if (chunk.timestamp === 0) d.emit(nonTarget);
+      if (chunk.timestamp === 99000) d.emit(fakeFrame(chunk.timestamp));
     };
     const session = newSession(plan);
     await session.decode(req(plan, 3));
@@ -326,7 +341,8 @@ describe("VideoGopDecoderSession", () => {
     const plan = gopPlan(10);
     const first = fakeFrame(99000);
     const dup = fakeFrame(99000);
-    ctrl.flushImpl = async (d) => {
+    ctrl.decodeImpl = (d, chunk) => {
+      if (chunk.timestamp !== 99000) return;
       d.emit(first);
       d.emit(dup);
     };
@@ -339,7 +355,7 @@ describe("VideoGopDecoderSession", () => {
 
   it("decoder error 拒绝当前 waiter 并进入 failed;后续请求也失败", async () => {
     const plan = gopPlan(10);
-    ctrl.flushError = new DOMException("decode error");
+    ctrl.decodeError = new DOMException("decode error");
     const session = newSession(plan);
     const outcome = await session.decode(req(plan, 3));
     expect(outcome).toEqual({ ok: false, reason: "decoder_error" });
@@ -348,22 +364,65 @@ describe("VideoGopDecoderSession", () => {
     expect(again).toEqual({ ok: false, reason: "decoder_error" });
   });
 
-  it("flush 后无目标 output → target_timestamp_missing", async () => {
-    const plan = gopPlan(10);
-    ctrl.flushImpl = async () => {
-      // 不 emit 任何 frame。
+  it("目标 output 已到但后续 lookahead decode 抛错时关闭已持有 frame", async () => {
+    const samples = makeSamples([
+      { frame: 0, pts: 0, key: true },
+      { frame: 2, pts: 66 },
+      { frame: 1, pts: 33 },
+    ]);
+    const built = buildGopPlan(makeBytes(64), samples, 2);
+    if (!built.ok) throw new Error("build failed");
+    const target = fakeFrame(66000);
+    ctrl.decodeImpl = (d, chunk) => {
+      if (chunk.timestamp === 66000) d.emit(target);
+      if (chunk.timestamp === 33000) throw new Error("corrupt lookahead");
     };
-    const session = newSession(plan);
-    const outcome = await session.decode(req(plan, 3));
+    const session = newSession(built.plan);
+    await expect(session.decode(req(built.plan, 1))).resolves.toEqual({
+      ok: false,
+      reason: "decoder_error",
+    });
+    expect(vi.mocked(target.close)).toHaveBeenCalledTimes(1);
+  });
+
+  it("等待超时仍无目标 output → target_timestamp_missing", async () => {
+    vi.useFakeTimers();
+    const plan = gopPlan(10);
+    ctrl.decodeImpl = () => undefined;
+    const session = newSession(plan, { outputTimeoutMs: 10 });
+    const pending = session.decode(req(plan, 3));
+    await vi.advanceTimersByTimeAsync(11);
+    const outcome = await pending;
     expect(outcome).toEqual({ ok: false, reason: "target_timestamp_missing" });
   });
 
-  it("dispose 幂等;残留 pending frame 与 decoder 均被释放", async () => {
+  it("仅 GOP 尾目标缺少即时 output 时 flush drain；后续请求先 reset 再从 key 开始", async () => {
     const plan = gopPlan(10);
+    ctrl.decodeImpl = () => undefined;
+    ctrl.flushImpl = (d) => d.emit(fakeFrame(297000));
     const session = newSession(plan);
-    await session.decode(req(plan, 3));
+    const tail = await session.decode(req(plan, 9));
+    expect(tail.ok).toBe(true);
+    expect(lastDecoder().flush).toHaveBeenCalledTimes(1);
+
+    defaultDecodeEmitChunk();
+    const rewind = await session.decode(req(plan, 5));
+    expect(rewind.ok).toBe(true);
+    expect(lastDecoder().reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispose 结算 pending waiter；迟到 output 被释放且 dispose 幂等", async () => {
+    const plan = gopPlan(10);
+    ctrl.decodeImpl = () => undefined;
+    const session = newSession(plan, { outputTimeoutMs: 1000 });
+    const pending = session.decode(req(plan, 3));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     session.dispose();
     session.dispose(); // 幂等
+    await expect(pending).resolves.toEqual({ ok: false, reason: "disposed" });
+    const late = fakeFrame(99000);
+    lastDecoder().emit(late);
+    expect(vi.mocked(late.close)).toHaveBeenCalledTimes(1);
     expect(lastDecoder().close).toHaveBeenCalledTimes(1);
     expect(session.getStats().disposals).toBe(1);
     expect(session.getStats().state).toBe("closed");
@@ -372,27 +431,30 @@ describe("VideoGopDecoderSession", () => {
   it("并发命令严格串行(第二个 decode 在第一个完成后才提交)", async () => {
     const plan = gopPlan(30);
     const session = newSession(plan);
-    let firstFlushed = false;
-    const firstFlush = new Promise<void>((resolve) => {
-      ctrl.flushImpl = async (d) => {
-        firstFlushed = true;
-        const calls = vi.mocked(d.decode).mock.calls;
-        const lastChunk = calls[calls.length - 1][0] as { timestamp: number };
-        d.emit(fakeFrame(lastChunk.timestamp));
-        resolve();
-      };
-    });
     const p1 = session.decode(req(plan, 5));
-    await firstFlush; // 第一个 decode 已 flush,队列仍被占用直到 p1 resolve
-    expect(firstFlushed).toBe(true);
-    // 第二个 decode 必须排队;在第一个完成前不应提交任何 chunk。
-    const before = vi.mocked(lastDecoder().decode).mock.calls.length;
     const p2 = session.decode(req(plan, 8));
     await Promise.all([p1, p2]);
-    // 第二个 decode 在第一个之后提交了增量 samples[6..8] = 3 个。
-    const afterSecond = vi.mocked(lastDecoder().decode).mock.calls.length;
-    expect(afterSecond - before).toBe(3);
+    // 第二个 decode 在第一个之后只提交增量 samples[6..8] = 3 个。
+    expect(lastDecoder().decode).toHaveBeenCalledTimes(6 + 3);
     expect(session.getStats().submits).toBe(6 + 3);
+  });
+
+  it("更高 request generation 立即取消旧 waiter，不让 stale 命令阻塞最新目标", async () => {
+    const plan = gopPlan(30);
+    ctrl.decodeImpl = () => undefined;
+    const session = newSession(plan, { outputTimeoutMs: 1000 });
+    const stale = session.decode(req(plan, 5, 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    ctrl.decodeImpl = (d, chunk) => {
+      if (chunk.timestamp === 264000) d.emit(fakeFrame(chunk.timestamp));
+    };
+    const latest = session.decode(req(plan, 8, 2));
+
+    await expect(stale).resolves.toEqual({ ok: false, reason: "stale_request" });
+    const latestOutcome = await latest;
+    expect(latestOutcome.ok).toBe(true);
+    if (latestOutcome.ok) expect(latestOutcome.frame.timestamp).toBe(264000);
   });
 
   it("hard reset 递增 generation,旧 waiter 失效后重新 decode 得到新 frame", async () => {
@@ -443,7 +505,7 @@ describe("VideoGopDecoderSession", () => {
 describe("VideoGopDecoderSession · 30-frame GOP benchmark", () => {
   beforeEach(() => {
     installSessionDecoder();
-    defaultFlushEmitTarget();
+    defaultDecodeEmitChunk();
   });
   afterEach(() => {
     vi.unstubAllGlobals();

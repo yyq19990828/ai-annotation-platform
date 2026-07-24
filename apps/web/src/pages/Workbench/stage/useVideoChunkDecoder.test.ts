@@ -173,6 +173,7 @@ class FakeDecoder {
   configure = vi.fn();
   decode = vi.fn();
   flush = vi.fn();
+  reset = vi.fn();
   close = vi.fn();
   constructor(init: { output: (f: VideoFrame) => void; error: (e: DOMException) => void }) {
     this.output = init.output;
@@ -187,6 +188,9 @@ interface DecoderCtrl {
   supported: boolean | null;
   supportThrow: boolean;
   configureThrow: boolean;
+  decodeImpl: ((d: FakeDecoder, chunk: EncodedVideoChunk) => void) | null;
+  decodeThrow: boolean;
+  decodeError: DOMException | null;
   flushImpl: ((d: FakeDecoder) => void | Promise<void>) | null;
   flushThrow: boolean;
   flushError: DOMException | null;
@@ -198,6 +202,9 @@ function installDecoderMock(): { ctrl: DecoderCtrl; decoders: FakeDecoder[] } {
     supported: null,
     supportThrow: false,
     configureThrow: false,
+    decodeImpl: null,
+    decodeThrow: false,
+    decodeError: null,
     flushImpl: null,
     flushThrow: false,
     flushError: null,
@@ -214,6 +221,11 @@ function installDecoderMock(): { ctrl: DecoderCtrl; decoders: FakeDecoder[] } {
       this.configure.mockImplementation(() => {
         if (ctrl.configureThrow) throw new Error("configure failed");
       });
+      this.decode.mockImplementation((chunk: EncodedVideoChunk) => {
+        if (ctrl.decodeThrow) throw new Error("decode failed");
+        if (ctrl.decodeError) init.error(ctrl.decodeError);
+        ctrl.decodeImpl?.(this, chunk);
+      });
       this.flush.mockImplementation(async () => {
         if (ctrl.flushThrow) throw new Error("flush failed");
         if (ctrl.flushError) init.error(ctrl.flushError);
@@ -222,7 +234,15 @@ function installDecoderMock(): { ctrl: DecoderCtrl; decoders: FakeDecoder[] } {
     }
   }
   vi.stubGlobal("VideoDecoder", FakeVideoDecoder);
-  vi.stubGlobal("EncodedVideoChunk", class {});
+  vi.stubGlobal(
+    "EncodedVideoChunk",
+    class {
+      readonly timestamp: number;
+      constructor(init: EncodedVideoChunkInit) {
+        this.timestamp = init.timestamp;
+      }
+    },
+  );
   return { ctrl, decoders };
 }
 
@@ -363,9 +383,9 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
       Promise.resolve({ width: 4, height: 4, close: bitmapClose } as unknown as ImageBitmap),
     );
     ({ ctrl, decoders } = installDecoderMock());
-    // 默认 flush emit target(匹配 makePlan 默认 33000us)。
-    ctrl.flushImpl = async (d) => {
-      d.emit(fakeFrame(33000).frame);
+    // 持久 session 的 output 由 decode 产生；它不得依赖 flush。
+    ctrl.decodeImpl = (d, chunk) => {
+      d.emit(fakeFrame(chunk.timestamp).frame);
     };
   });
   afterEach(() => {
@@ -438,6 +458,66 @@ describe("useVideoChunkDecoder · 缓存、single-flight 与诊断 (mock WebCode
     bitmapClose.mockClear();
     unmount();
     expect(bitmapClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("单张 bitmap 超预算时不入 LRU，但前台目标仍可显示并由 active 所有权释放", async () => {
+    const { result } = renderHook(() =>
+      useVideoChunkDecoder({ taskId: "task-1", enabled: true, bitmapBudgetBytes: 1 }),
+    );
+    let decoded: VideoChunkDecodeResult = { bitmap: null, fallbackReason: "decode_failed" };
+    await act(async () => {
+      decoded = await result.current.decodePlan(decodeArgs(1));
+    });
+    expect(decoded.bitmap).not.toBeNull();
+    expect(result.current.diagnostics.bitmapBytes).toBe(64);
+
+    act(() => {
+      expect(result.current.showFrame(1)).toBe(decoded.bitmap);
+    });
+    expect(result.current.activeBitmap).toBe(decoded.bitmap);
+    expect(bitmapClose).not.toHaveBeenCalled();
+
+    act(() => result.current.clear());
+    expect(bitmapClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("活动 bitmap 移出 LRU，后续缓存写入与淘汰不会提前关闭 Konva 正在显示的帧", async () => {
+    const { result } = renderHook(() =>
+      useVideoChunkDecoder({ taskId: "task-1", enabled: true, bitmapBudgetBytes: 64 }),
+    );
+    await act(async () => {
+      await result.current.decodePlan(decodeArgs(1));
+    });
+    act(() => {
+      result.current.showFrame(1);
+    });
+    bitmapClose.mockClear();
+
+    await act(async () => {
+      await result.current.decodePlan(decodeArgs(2));
+    });
+    expect(result.current.activeBitmap?.frameIndex).toBe(1);
+    expect(bitmapClose).not.toHaveBeenCalled();
+  });
+
+  it("failed session 不复用；下一次请求会新建 decoder 并恢复", async () => {
+    const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "t1", enabled: true }));
+    ctrl.decodeError = new DOMException("decode error");
+    let first: VideoChunkDecodeResult = { bitmap: null, fallbackReason: "decode_failed" };
+    await act(async () => {
+      first = await result.current.decodePlan(decodeArgs(1, "t1", 1));
+    });
+    expect(first.bitmap).toBeNull();
+    expect(decoders).toHaveLength(1);
+
+    ctrl.decodeError = null;
+    let second: VideoChunkDecodeResult = { bitmap: null, fallbackReason: "decode_failed" };
+    await act(async () => {
+      second = await result.current.decodePlan(decodeArgs(1, "t1", 2));
+    });
+    expect(second.bitmap).not.toBeNull();
+    expect(decoders).toHaveLength(2);
+    expect(decoders[0].close).toHaveBeenCalledTimes(1);
   });
 
   it("task 切换后旧解码结果关闭 bitmap 且不入新缓存(staleResults)", async () => {

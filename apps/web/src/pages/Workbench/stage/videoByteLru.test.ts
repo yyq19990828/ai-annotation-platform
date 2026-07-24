@@ -85,6 +85,19 @@ describe("ByteLru · 字节预算 LRU", () => {
     expect(lru.delete("missing")).toBe(false);
   });
 
+  it("take 移出完整所有权但不 dispose，供活动资源在 LRU 外存活", () => {
+    const dispose = vi.fn();
+    const lru = new ByteLru<string, number>(100);
+    lru.set("active", { value: 7, bytes: 15, dispose });
+    const owned = lru.take("active");
+    expect(owned).toEqual({ value: 7, bytes: 15, dispose });
+    expect(lru.size).toBe(0);
+    expect(lru.bytes).toBe(0);
+    expect(lru.evictions).toBe(0);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(lru.take("missing")).toBeUndefined();
+  });
+
   it("零预算:任何写入都拒绝", () => {
     const lru = new ByteLru<string, number>(0);
     expect(lru.set("a", { value: 1, bytes: 1, dispose: vi.fn() })).toBe(false);

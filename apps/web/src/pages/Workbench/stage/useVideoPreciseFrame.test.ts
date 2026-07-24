@@ -22,7 +22,7 @@ const getManifestV2 = vi.mocked(tasksApi.getVideoManifestV2);
 const getChunk = vi.mocked(videoApi.getChunk);
 const getSamples = vi.mocked(videoApi.getChunkSamples);
 
-// ── WebCodecs 替身(真实走 useVideoChunkDecoder.decodePlan → decodePlanToBitmap)────
+// ── WebCodecs 替身(真实走 useVideoChunkDecoder.decodePlan → 持久 GOP session)────────
 
 function fakeFrame(timestamp: number) {
   const close = vi.fn();
@@ -37,12 +37,15 @@ function fakeBitmap() {
 
 class FakeDecoder {
   readonly output: (f: VideoFrame) => void;
+  readonly error: (e: DOMException) => void;
   configure = vi.fn();
   decode = vi.fn();
   flush = vi.fn().mockResolvedValue(undefined);
+  reset = vi.fn();
   close = vi.fn();
-  constructor(init: { output: (f: VideoFrame) => void }) {
+  constructor(init: { output: (f: VideoFrame) => void; error: (e: DOMException) => void }) {
     this.output = init.output;
+    this.error = init.error;
   }
   emit(frame: VideoFrame) {
     this.output(frame);
@@ -50,7 +53,8 @@ class FakeDecoder {
 }
 
 interface DecoderCtrl {
-  flushImpl: ((d: FakeDecoder) => void | Promise<void>) | null;
+  decodeImpl: ((d: FakeDecoder, chunk: FakeEncodedVideoChunk) => void) | null;
+  decodeError: DOMException | null;
   supported: boolean;
 }
 let decoderCtrl: DecoderCtrl;
@@ -75,18 +79,15 @@ class FakeEncodedVideoChunk {
   copyTo(): void {}
 }
 
-/** 默认 flush:emit 最后一次 decode 的 chunk 对应 timestamp 的目标 frame。 */
-function defaultFlushEmitTarget() {
-  decoderCtrl.flushImpl = async (d) => {
-    const calls = vi.mocked(d.decode).mock.calls;
-    if (calls.length === 0) return;
-    const lastChunk = calls[calls.length - 1][0] as { timestamp: number };
-    d.emit(fakeFrame(lastChunk.timestamp).frame);
+/** 默认 decode:每个 access unit 产生同 timestamp output。 */
+function defaultDecodeEmitChunk() {
+  decoderCtrl.decodeImpl = (d, chunk) => {
+    d.emit(fakeFrame(chunk.timestamp).frame);
   };
 }
 
 function installWebCodecs() {
-  decoderCtrl = { flushImpl: null, supported: true };
+  decoderCtrl = { decodeImpl: null, decodeError: null, supported: true };
   decoders = [];
   vi.stubGlobal("EncodedVideoChunk", FakeEncodedVideoChunk);
   vi.stubGlobal("createImageBitmap", () => Promise.resolve(fakeBitmap()));
@@ -95,16 +96,17 @@ function installWebCodecs() {
       supported: decoderCtrl.supported,
       config: undefined,
     }));
-    constructor(init: { output: (f: VideoFrame) => void }) {
+    constructor(init: { output: (f: VideoFrame) => void; error: (e: DOMException) => void }) {
       super(init);
       decoders.push(this);
-      this.flush.mockImplementation(async () => {
-        if (decoderCtrl.flushImpl) await decoderCtrl.flushImpl(this);
+      this.decode.mockImplementation((chunk: FakeEncodedVideoChunk) => {
+        if (decoderCtrl.decodeError) init.error(decoderCtrl.decodeError);
+        decoderCtrl.decodeImpl?.(this, chunk);
       });
     }
   }
   vi.stubGlobal("VideoDecoder", FakeVideoDecoder);
-  defaultFlushEmitTarget();
+  defaultDecodeEmitChunk();
 }
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -127,11 +129,11 @@ function manifest(chunkSize = 10): VideoManifestV2Response {
     expires_in: 3600,
   };
 }
-function readyChunk(url = "http://storage/chunk.mp4"): VideoChunkOut {
+function readyChunk(url = "http://storage/chunk.mp4", chunkId = 0): VideoChunkOut {
   return {
-    chunk_id: 0,
-    start_frame: 0,
-    end_frame: 9,
+    chunk_id: chunkId,
+    start_frame: chunkId * 10,
+    end_frame: chunkId * 10 + 9,
     status: "ready",
     url,
     byte_size: 100,
@@ -147,10 +149,10 @@ function pendingChunk(retryAfter = 1): VideoChunkOut {
 function failedChunk(): VideoChunkOut {
   return { ...readyChunk(), status: "failed", url: null, error: "transcode failed" };
 }
-function samples(frame = 5, ptsMs = 166): VideoChunkSamplesResponse {
+function samples(frame = 5, ptsMs = 166, chunkId = 0): VideoChunkSamplesResponse {
   return {
     dataset_item_id: "ds-1",
-    chunk_id: 0,
+    chunk_id: chunkId,
     codec_string: "avc1.4d001e",
     description: btoa("config"),
     width: 320,
@@ -360,7 +362,7 @@ describe("useVideoPreciseFrame", () => {
       status: 200,
       arrayBuffer: () => Promise.resolve(makeBytes()),
     } as Response);
-    decoderCtrl.flushImpl = async (d) => {
+    decoderCtrl.decodeImpl = (d) => {
       d.emit(fakeFrame(166000).frame);
     };
     const { result } = renderPrecise({
@@ -395,7 +397,7 @@ describe("useVideoPreciseFrame", () => {
         arrayBuffer: () => Promise.resolve(makeBytes()),
       } as Response;
     });
-    decoderCtrl.flushImpl = async (d) => {
+    decoderCtrl.decodeImpl = (d) => {
       d.emit(fakeFrame(166000).frame);
     };
 
@@ -449,7 +451,7 @@ describe("useVideoPreciseFrame", () => {
       status: 200,
       arrayBuffer: () => Promise.resolve(makeBytes()),
     } as Response);
-    decoderCtrl.flushImpl = async (d) => {
+    decoderCtrl.decodeImpl = (d) => {
       d.emit(fakeFrame(166000).frame);
     };
     const { result } = renderPrecise({
@@ -465,6 +467,91 @@ describe("useVideoPreciseFrame", () => {
     expect(result.current.bitmap?.frameIndex).toBe(5);
   });
 
+  it("chunk byte-LRU 按累计字节预算淘汰，跨 chunk 返回时不会由 React Query 无限保留", async () => {
+    getManifestV2.mockResolvedValue(manifest(10));
+    getChunk.mockImplementation(async (_datasetItemId, chunkId) =>
+      readyChunk(`http://storage/chunk-${chunkId}.mp4`, chunkId),
+    );
+    getSamples.mockImplementation(async (_datasetItemId, chunkId) => {
+      const frame = chunkId * 10 + 5;
+      return samples(frame, frame * 33, chunkId);
+    });
+    vi.mocked(global.fetch).mockImplementation(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          arrayBuffer: () => Promise.resolve(makeBytes(64)),
+        }) as Response,
+    );
+
+    const { result, rerender } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 80,
+      prefetchFrames: 0,
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(5));
+
+    await act(async () => {
+      rerender({
+        taskId: "t1",
+        frameIndex: 15,
+        enabled: true,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 80,
+        prefetchFrames: 0,
+      });
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(15));
+    expect(result.current.performance.chunkBytes).toBeLessThanOrEqual(80);
+    expect(result.current.performance.evictions).toBeGreaterThanOrEqual(1);
+
+    await act(async () => {
+      rerender({
+        taskId: "t1",
+        frameIndex: 5,
+        enabled: true,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 80,
+        prefetchFrames: 0,
+      });
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(5));
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(result.current.performance.bytesFetched).toBe(64 * 3);
+  });
+
+  it("chunk byte cache 的 60 秒 TTL 不因命中续期，到期后释放缓存引用", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getManifestV2.mockResolvedValue(manifest());
+    getChunk.mockResolvedValue(readyChunk());
+    getSamples.mockResolvedValue(samples(5, 166));
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(makeBytes(64)),
+    } as Response);
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 80,
+      prefetchFrames: 0,
+    });
+    await waitFor(() => expect(result.current.sourceState).toBe("ready"));
+    expect(result.current.performance.chunkBytes).toBe(64);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_001);
+    });
+    expect(result.current.performance.chunkBytes).toBe(0);
+    vi.useRealTimers();
+  });
+
   it("decode 失败(decoder error)→ fallback decode_failed", async () => {
     getManifestV2.mockResolvedValue(manifest());
     getChunk.mockResolvedValue(readyChunk());
@@ -474,8 +561,7 @@ describe("useVideoPreciseFrame", () => {
       status: 200,
       arrayBuffer: () => Promise.resolve(makeBytes()),
     } as Response);
-    // flush 不 emit 任何帧 → wanted null → decode_failed。
-    decoderCtrl.flushImpl = async () => {};
+    decoderCtrl.decodeError = new DOMException("decode error");
     const { result } = renderPrecise({
       taskId: "t1",
       frameIndex: 5,
@@ -545,7 +631,7 @@ describe("useVideoPreciseFrame", () => {
       status: 200,
       arrayBuffer: () => Promise.resolve(makeBytes()),
     } as Response);
-    decoderCtrl.flushImpl = async (d) => {
+    decoderCtrl.decodeImpl = (d) => {
       d.emit(fakeFrame(166000).frame);
     };
     const { result, rerender } = renderPrecise({

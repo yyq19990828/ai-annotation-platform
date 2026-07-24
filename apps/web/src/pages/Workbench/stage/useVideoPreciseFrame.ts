@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
 import { videoApi } from "@/api/videos";
 import type { VideoChunkOut, VideoChunkSamplesResponse, VideoManifestV2Response } from "@/types";
 import { useVideoChunkDecoder } from "./useVideoChunkDecoder";
+import { ByteLru } from "./videoByteLru";
 import { buildGopPlan, type PreciseFrameFallbackReason } from "./videoChunkDemux";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
 
@@ -88,6 +89,11 @@ interface ChunkBytesSource {
   generation: number;
 }
 
+interface ChunkBytesCacheEntry {
+  buffer: ArrayBuffer;
+  expiresAt: number;
+}
+
 /** 由 query 阶段产生的 fallback reason(decode 阶段的 reason 由 decode effect 独立管理)。 */
 const QUERY_FALLBACK_REASONS: readonly PreciseFrameFallbackReason[] = [
   "api_unavailable",
@@ -142,9 +148,15 @@ export function useVideoPreciseFrame({
   const directionRef = useRef(0);
   // 预取过(已入缓存)的 frameIndex 集合,用于统计 prefetchHits。
   const prefetchedFramesRef = useRef<Set<number>>(new Set());
+  const chunkBytesCacheRef = useRef(new ByteLru<string, ChunkBytesCacheEntry>(chunkBudgetBytes));
+  const chunkExpiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expireChunkBytesRef = useRef<() => void>(() => undefined);
   const [prefetchRequests, setPrefetchRequests] = useState(0);
   const [prefetchHits, setPrefetchHits] = useState(0);
   const [bytesFetched, setBytesFetched] = useState(0);
+  const [chunkByteCacheHits, setChunkByteCacheHits] = useState(0);
+  const [chunkCacheVersion, setChunkCacheVersion] = useState(0);
+  const [lastChunkFetchMs, setLastChunkFetchMs] = useState<number | null>(null);
   const [lastDemuxMs, setLastDemuxMs] = useState<number | null>(null);
 
   const [decoding, setDecoding] = useState(false);
@@ -155,6 +167,44 @@ export function useVideoPreciseFrame({
   const [refreshingUrlKey, setRefreshingUrlKey] = useState<string | null>(null);
   const [bytesSource, setBytesSource] = useState<ChunkBytesSource | null>(null);
   const latestTargetKeyRef = useRef<string | null>(null);
+
+  const expireChunkBytes = useCallback(() => {
+    chunkExpiryTimerRef.current = null;
+    const cache = chunkBytesCacheRef.current;
+    const now = Date.now();
+    let nextExpiry = Number.POSITIVE_INFINITY;
+    let removed = false;
+    for (const [key, entry] of cache.entries()) {
+      if (entry.expiresAt <= now) {
+        cache.delete(key);
+        removed = true;
+      } else {
+        nextExpiry = Math.min(nextExpiry, entry.expiresAt);
+      }
+    }
+    if (removed) setChunkCacheVersion((v) => v + 1);
+    if (Number.isFinite(nextExpiry)) {
+      chunkExpiryTimerRef.current = setTimeout(
+        () => expireChunkBytesRef.current(),
+        Math.max(0, nextExpiry - Date.now()),
+      );
+    }
+  }, []);
+  expireChunkBytesRef.current = expireChunkBytes;
+
+  const scheduleChunkExpiry = useCallback(() => {
+    if (chunkExpiryTimerRef.current !== null) return;
+    let nextExpiry = Number.POSITIVE_INFINITY;
+    for (const entry of chunkBytesCacheRef.current.values()) {
+      nextExpiry = Math.min(nextExpiry, entry.expiresAt);
+    }
+    if (Number.isFinite(nextExpiry)) {
+      chunkExpiryTimerRef.current = setTimeout(
+        () => expireChunkBytesRef.current(),
+        Math.max(0, nextExpiry - Date.now()),
+      );
+    }
+  }, []);
 
   // 3. task manifest v2(仅 precise pipeline 激活时增量查询,不切主工作台 manifest)。
   const manifestQuery = useQuery({
@@ -238,18 +288,51 @@ export function useVideoPreciseFrame({
     );
   }, [chunkReady, chunkUrl, targetKey]);
 
+  // 性能档位切换时立即把原始 chunk 缓存收缩到新预算；当前 query 正在使用的 buffer
+  // 由 React Query 持有，不会因缓存淘汰而失效。
+  useEffect(() => {
+    chunkBytesCacheRef.current.setBudget(chunkBudgetBytes);
+    setChunkCacheVersion((v) => v + 1);
+  }, [chunkBudgetBytes]);
+
   // 7. chunk bytes:raw fetch(signed URL,无需 auth header)。generation 仅在显式 403 refresh
   // 后递增,既不把敏感 signed URL 放进 query key,也能保证新 URL 必定发起一次新请求。
+  // React Query 只负责当前请求生命周期(gcTime=0);跨目标复用由显式 byte-LRU + 60s TTL
+  // 控制，确保累计保留的 chunk bytes 真正受 chunkBudgetBytes 约束。
   const bytesQuery = useQuery({
     queryKey: ["video-chunk-bytes", datasetItemId, targetChunkId, bytesSource?.generation ?? 0],
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const source = bytesSource as ChunkBytesSource;
+      const cacheKey = `${source.targetKey}:${source.generation}`;
+      const cached = chunkBytesCacheRef.current.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        setChunkByteCacheHits((n) => n + 1);
+        setChunkCacheVersion((v) => v + 1);
+        return cached.buffer;
+      }
+      if (cached) {
+        chunkBytesCacheRef.current.delete(cacheKey);
+        setChunkCacheVersion((v) => v + 1);
+      }
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const res = await fetch(bytesSource?.url as string, { signal });
       if (!res.ok) {
         const e = new Error(`chunk bytes HTTP ${res.status}`);
         (e as { status?: number }).status = res.status;
         throw e;
       }
-      return res.arrayBuffer();
+      const buffer = await res.arrayBuffer();
+      const fetchMs =
+        typeof performance !== "undefined" ? Math.round(performance.now() - startedAt) : 0;
+      setBytesFetched((n) => n + buffer.byteLength);
+      setLastChunkFetchMs(fetchMs);
+      chunkBytesCacheRef.current.set(cacheKey, {
+        value: { buffer, expiresAt: Date.now() + BYTES_GC_MS },
+        bytes: buffer.byteLength,
+      });
+      scheduleChunkExpiry();
+      setChunkCacheVersion((v) => v + 1);
+      return buffer;
     },
     enabled:
       pipelineEnabled &&
@@ -259,11 +342,10 @@ export function useVideoPreciseFrame({
       !!targetKey &&
       bytesSource?.targetKey === targetKey &&
       !!bytesSource.url,
-    // chunk 内容不可变;停用 / 卸载后仍由 gcTime 在 60s 后回收。
+    // 当前 query 失去 observer 后立即释放引用；60s TTL 只在受预算约束的 byte-LRU 内实现。
     staleTime: Infinity,
-    gcTime: BYTES_GC_MS,
+    gcTime: 0,
     retry: false,
-    // v0.23.14 再升级为显式 byte LRU。
   });
   const bytes = bytesQuery.data;
 
@@ -378,6 +460,7 @@ export function useVideoPreciseFrame({
         identity: gopIdentity,
         targetFrameIndex: frameIndex,
         generation,
+        retainUncached: true,
       });
       if (cancelled) return;
       setDecoding(false);
@@ -418,11 +501,6 @@ export function useVideoPreciseFrame({
     lastFrameIndexRef.current = frameIndex;
   }, [frameIndex]);
 
-  // bytesFetched:每次拿到新 chunk bytes 累加(缓存命中同引用不累加)。
-  useEffect(() => {
-    if (bytes) setBytesFetched((n) => n + bytes.byteLength);
-  }, [bytes]);
-
   // task 切换清空预取统计与方向记忆(mount 时跳过,避免覆盖初始方向追踪)。
   const lastTaskIdRef = useRef<string | null | undefined>(taskId);
   useEffect(() => {
@@ -432,6 +510,14 @@ export function useVideoPreciseFrame({
     setPrefetchRequests(0);
     setPrefetchHits(0);
     setBytesFetched(0);
+    setChunkByteCacheHits(0);
+    setLastChunkFetchMs(null);
+    chunkBytesCacheRef.current.clear();
+    if (chunkExpiryTimerRef.current !== null) {
+      clearTimeout(chunkExpiryTimerRef.current);
+      chunkExpiryTimerRef.current = null;
+    }
+    setChunkCacheVersion((v) => v + 1);
     directionRef.current = 0;
     lastFrameIndexRef.current = null;
   }, [taskId]);
@@ -478,6 +564,7 @@ export function useVideoPreciseFrame({
           },
           targetFrameIndex: fi,
           generation: gen,
+          retainUncached: false,
         });
         if (decoded.bitmap) prefetchedFramesRef.current.add(fi);
       }
@@ -529,17 +616,18 @@ export function useVideoPreciseFrame({
     ],
   );
 
-  const performanceDiagnostics = useMemo<VideoPreciseFramePerformanceDiagnostics>(
-    () => ({
-      // react-query 层 manifest / samples / chunk-bytes 命中与耗时由 v0.23.15 并入全局诊断。
+  const performanceDiagnostics = useMemo<VideoPreciseFramePerformanceDiagnostics>(() => {
+    void chunkCacheVersion;
+    return {
+      // manifest / samples 命中与耗时由 v0.23.15 并入全局诊断。
       manifestCacheHits: 0,
       samplesCacheHits: 0,
-      chunkByteCacheHits: 0,
+      chunkByteCacheHits,
       bitmapCacheHits: decoder.diagnostics.hits,
       bytesFetched,
       bitmapBytes: decoder.diagnostics.bitmapBytes,
       bitmapBudgetBytes: decoder.diagnostics.bitmapBudgetBytes,
-      chunkBytes: bytes?.byteLength ?? 0,
+      chunkBytes: chunkBytesCacheRef.current.bytes,
       chunkBudgetBytes,
       sessionCreates: decoder.diagnostics.sessionCreates,
       sessionResets: decoder.diagnostics.sessionResets,
@@ -548,23 +636,35 @@ export function useVideoPreciseFrame({
       staleResults: decoder.diagnostics.staleResults,
       prefetchRequests,
       prefetchHits,
-      evictions: decoder.diagnostics.evictions,
+      evictions: decoder.diagnostics.evictions + chunkBytesCacheRef.current.evictions,
       lastManifestMs: null,
       lastSamplesMs: null,
-      lastChunkFetchMs: null,
+      lastChunkFetchMs,
       lastDemuxMs,
       lastDecodeMs: decoder.diagnostics.lastDecodeMs,
       lastBitmapMs: null,
-    }),
-    [
-      decoder.diagnostics,
-      bytesFetched,
-      bytes,
-      chunkBudgetBytes,
-      prefetchRequests,
-      prefetchHits,
-      lastDemuxMs,
-    ],
+    };
+  }, [
+    decoder.diagnostics,
+    bytesFetched,
+    chunkByteCacheHits,
+    chunkCacheVersion,
+    chunkBudgetBytes,
+    prefetchRequests,
+    prefetchHits,
+    lastDemuxMs,
+    lastChunkFetchMs,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (chunkExpiryTimerRef.current !== null) {
+        clearTimeout(chunkExpiryTimerRef.current);
+        chunkExpiryTimerRef.current = null;
+      }
+      chunkBytesCacheRef.current.clear();
+    },
+    [],
   );
 
   return {

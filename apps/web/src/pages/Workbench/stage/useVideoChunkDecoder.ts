@@ -38,6 +38,12 @@ export interface DecodedVideoFrameBitmap {
   height: number;
 }
 
+interface OwnedDecodedVideoFrameBitmap {
+  key: string;
+  entry: DecodedVideoFrameBitmap;
+  bytes: number;
+}
+
 export type VideoChunkDecodeResult =
   | { bitmap: DecodedVideoFrameBitmap; fallbackReason: null }
   | { bitmap: null; fallbackReason: PreciseFrameFallbackReason };
@@ -270,6 +276,11 @@ export function useVideoChunkDecoder({
   const active = supported && resolvedEnabled;
 
   const cacheRef = useRef(new ByteLru<string, DecodedVideoFrameBitmap>(bitmapBudgetBytes));
+  // 活动画面拥有独立所有权，不留在 LRU 中；否则预取或预算收缩可能 close Konva 正在使用的
+  // ImageBitmap。单张超预算的前台结果暂存在 uncached，直到 showFrame 接管。
+  const activeBitmapRef = useRef<OwnedDecodedVideoFrameBitmap | null>(null);
+  const uncachedBitmapRef = useRef(new Map<string, OwnedDecodedVideoFrameBitmap>());
+  const retiredBitmapRef = useRef<OwnedDecodedVideoFrameBitmap[]>([]);
   // 当前 GOP decoder session:identity 匹配且未 closed 时跨帧复用,变化则销毁重建。
   const sessionRef = useRef<{
     session: VideoGopDecoderSession | null;
@@ -309,26 +320,61 @@ export function useVideoChunkDecoder({
 
   const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
 
+  const ownedBitmapCount = useCallback(
+    () =>
+      cacheRef.current.size +
+      (activeBitmapRef.current ? 1 : 0) +
+      uncachedBitmapRef.current.size +
+      retiredBitmapRef.current.length,
+    [],
+  );
+
+  const ownedBitmapBytes = useCallback(() => {
+    let bytes = cacheRef.current.bytes + (activeBitmapRef.current?.bytes ?? 0);
+    for (const owned of uncachedBitmapRef.current.values()) bytes += owned.bytes;
+    for (const owned of retiredBitmapRef.current) bytes += owned.bytes;
+    return bytes;
+  }, []);
+
   /** decode 成功只入缓存(不自动激活 active 指针);active 由显式 showFrame 修改。 */
   const remember = useCallback(
-    (key: string, entry: DecodedVideoFrameBitmap, decodeMs: number) => {
+    (
+      key: string,
+      entry: DecodedVideoFrameBitmap,
+      decodeMs: number,
+      retainUncached: boolean,
+    ): boolean => {
       const cache = cacheRef.current;
-      cache.set(key, {
+      const bytes = bitmapBytes(entry.width, entry.height);
+      const cached = cache.set(key, {
         value: entry,
-        bytes: bitmapBytes(entry.width, entry.height),
+        bytes,
         dispose: ({ bitmap }) => closeBitmap(bitmap),
       });
+      if (!cached) {
+        if (!retainUncached) {
+          closeBitmap(entry.bitmap);
+        } else {
+          // LRU 外只保留一个等待展示的超预算帧，避免快速请求绕过总预算无限累积。
+          for (const owned of uncachedBitmapRef.current.values()) {
+            closeBitmap(owned.entry.bitmap);
+          }
+          uncachedBitmapRef.current.clear();
+          uncachedBitmapRef.current.set(key, { key, entry, bytes });
+        }
+      }
       setDiagnostics((cur) => ({
         ...cur,
         supported,
         enabled: resolvedEnabled,
-        cacheSize: cache.size,
+        cacheSize: ownedBitmapCount(),
         decodes: cur.decodes + 1,
         lastDecodeMs: decodeMs,
       }));
       bumpVersion();
+      return cached || retainUncached;
     },
-    [bumpVersion, resolvedEnabled, supported],
+    [bumpVersion, ownedBitmapCount, resolvedEnabled, supported],
   );
 
   // 字节预算变化(性能档位切换)立即收缩已有缓存。
@@ -339,10 +385,10 @@ export function useVideoChunkDecoder({
       ...cur,
       supported,
       enabled: resolvedEnabled,
-      cacheSize: cache.size,
+      cacheSize: ownedBitmapCount(),
     }));
     bumpVersion();
-  }, [bumpVersion, bitmapBudgetBytes, resolvedEnabled, supported]);
+  }, [bumpVersion, bitmapBudgetBytes, ownedBitmapCount, resolvedEnabled, supported]);
 
   // bitmap / session 资源诊断:每次 re-render(version 变化)从 ref 读实时值。
   // decodePlan / remember / showFrame / clear 都 bumpVersion,故 stats 会随之刷新。
@@ -351,8 +397,8 @@ export function useVideoChunkDecoder({
     const stats = sessionRef.current.session?.getStats();
     setDiagnostics((cur) => ({
       ...cur,
-      cacheSize: cache.size,
-      bitmapBytes: cache.bytes,
+      cacheSize: ownedBitmapCount(),
+      bitmapBytes: ownedBitmapBytes(),
       bitmapBudgetBytes: cache.budgetBytes,
       evictions: cache.evictions,
       encodedChunksSubmitted: stats?.submits ?? 0,
@@ -360,7 +406,7 @@ export function useVideoChunkDecoder({
       sessionResets: stats?.resets ?? 0,
       sessionDisposals: stats?.disposals ?? 0,
     }));
-  }, [version]);
+  }, [ownedBitmapBytes, ownedBitmapCount, version]);
 
   /**
    * 用当前 GOP session 解码目标帧并入缓存(**不自动激活**)。identity 匹配则复用同一
@@ -374,26 +420,32 @@ export function useVideoChunkDecoder({
       identity: VideoGopSessionIdentity;
       targetFrameIndex: number;
       generation: number;
+      /** 前台目标允许单张超预算 bitmap 在 LRU 外等待 showFrame 接管；预取必须为 false。 */
+      retainUncached?: boolean;
     }): Promise<VideoChunkDecodeResult> => {
       if (!taskId || !active) {
         return { bitmap: null, fallbackReason: "flag_disabled" };
       }
       const normalizedFrame = Math.max(0, Math.round(args.targetFrameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
-      const cached = cacheRef.current.peek(key);
+      const cached =
+        activeBitmapRef.current?.key === key
+          ? activeBitmapRef.current.entry
+          : (cacheRef.current.peek(key) ?? uncachedBitmapRef.current.get(key)?.entry);
       if (cached) return { bitmap: cached, fallbackReason: null };
       const existing = inFlightRef.current.get(key);
       if (existing) return existing;
       const lifecycleGeneration = lifecycleGenerationRef.current;
       const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const promise = (async (): Promise<VideoChunkDecodeResult> => {
-        // session 复用:identity 匹配且未 closed 则复用,否则销毁重建。
+        // session 复用:identity 匹配且处于可用状态才复用；failed/closed 必须销毁重建。
         const slot = sessionRef.current;
+        const sessionState = slot.session?.getStats().state;
         const reuse =
           !!slot.session &&
           !!slot.identity &&
           gopIdentityEquals(slot.identity, args.identity) &&
-          slot.session.getStats().state !== "closed";
+          (sessionState === "idle" || sessionState === "ready");
         if (!reuse) {
           slot.session?.dispose();
           slot.session = new VideoGopDecoderSession({ plan: args.plan, identity: args.identity });
@@ -420,11 +472,13 @@ export function useVideoChunkDecoder({
         if (!outcome.ok) {
           if (isStillCurrent()) {
             const reason: PreciseFrameFallbackReason =
-              outcome.reason === "out_of_gop"
-                ? "invalid_sample_range"
-                : outcome.reason === "codec_unsupported"
-                  ? "codec_unsupported"
-                  : "decode_failed";
+              outcome.reason === "stale_request" || outcome.reason === "disposed"
+                ? "stale_request"
+                : outcome.reason === "out_of_gop"
+                  ? "invalid_sample_range"
+                  : outcome.reason === "codec_unsupported"
+                    ? "codec_unsupported"
+                    : "decode_failed";
             setDiagnostics((cur) => ({
               ...cur,
               errors: cur.errors + 1,
@@ -467,7 +521,9 @@ export function useVideoChunkDecoder({
           width: bitmap.width || displayWidth,
           height: bitmap.height || displayHeight,
         };
-        remember(key, entry, decodeMs);
+        if (!remember(key, entry, decodeMs, args.retainUncached ?? true)) {
+          return { bitmap: null, fallbackReason: "memory_budget_exceeded" };
+        }
         return { bitmap: entry, fallbackReason: null };
       })();
       inFlightRef.current.set(key, promise);
@@ -480,34 +536,77 @@ export function useVideoChunkDecoder({
     [active, remember, taskId],
   );
 
-  /** 显式激活某帧(命中缓存则提到 LRU 末尾并设为 active);未命中返回 null(调用方走解码 / <video>)。 */
+  /**
+   * 显式激活某帧。命中后把 bitmap 所有权移出 LRU；旧活动帧延迟到新画面 commit 后再
+   * 回缓存或 close，避免 Konva 在同一 render 间隙引用已关闭对象。
+   */
   const showFrame = useCallback(
     (frameIndex: number): DecodedVideoFrameBitmap | null => {
       if (!taskId || !active) return null;
       const normalizedFrame = Math.max(0, Math.round(frameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
       const cache = cacheRef.current;
-      if (cache.has(key)) {
-        const cached = cache.get(key) ?? null;
+      let owned: OwnedDecodedVideoFrameBitmap | null = null;
+      if (activeBitmapRef.current?.key === key) {
+        owned = activeBitmapRef.current;
+      } else {
+        const cached = cache.take(key);
+        if (cached) {
+          owned = { key, entry: cached.value, bytes: cached.bytes };
+        } else {
+          owned = uncachedBitmapRef.current.get(key) ?? null;
+          if (owned) uncachedBitmapRef.current.delete(key);
+        }
+      }
+      if (owned) {
+        const previous = activeBitmapRef.current;
+        if (previous && previous !== owned) retiredBitmapRef.current.push(previous);
+        activeBitmapRef.current = owned;
         setActiveFrameIndex(normalizedFrame);
         setDiagnostics((cur) => ({
           ...cur,
-          cacheSize: cache.size,
+          cacheSize: ownedBitmapCount(),
           activeFrameIndex: normalizedFrame,
           hits: cur.hits + 1,
         }));
         bumpVersion();
-        return cached;
+        return owned.entry;
       }
       setDiagnostics((cur) => ({ ...cur, misses: cur.misses + 1 }));
       return null;
     },
-    [active, bumpVersion, taskId],
+    [active, bumpVersion, ownedBitmapCount, taskId],
   );
+
+  // showFrame 已触发新 render 后，旧活动帧才可重新交给 LRU；若其本身超预算则在此关闭。
+  useEffect(() => {
+    if (retiredBitmapRef.current.length === 0) return;
+    const retired = retiredBitmapRef.current.splice(0);
+    const cache = cacheRef.current;
+    for (const owned of retired) {
+      if (cache.has(owned.key) || uncachedBitmapRef.current.has(owned.key)) {
+        closeBitmap(owned.entry.bitmap);
+        continue;
+      }
+      const cached = cache.set(owned.key, {
+        value: owned.entry,
+        bytes: owned.bytes,
+        dispose: ({ bitmap }) => closeBitmap(bitmap),
+      });
+      if (!cached) closeBitmap(owned.entry.bitmap);
+    }
+    bumpVersion();
+  }, [bumpVersion, version]);
 
   const clear = useCallback(() => {
     lifecycleGenerationRef.current += 1;
     cacheRef.current.clear();
+    if (activeBitmapRef.current) closeBitmap(activeBitmapRef.current.entry.bitmap);
+    activeBitmapRef.current = null;
+    for (const owned of uncachedBitmapRef.current.values()) closeBitmap(owned.entry.bitmap);
+    uncachedBitmapRef.current.clear();
+    for (const owned of retiredBitmapRef.current) closeBitmap(owned.entry.bitmap);
+    retiredBitmapRef.current = [];
     inFlightRef.current.clear();
     sessionRef.current.session?.dispose();
     sessionRef.current = { session: null, identity: null };
@@ -522,10 +621,19 @@ export function useVideoChunkDecoder({
     const cache = cacheRef.current;
     const inFlight = inFlightRef.current;
     const sessionSlot = sessionRef.current;
+    const activeBitmap = activeBitmapRef;
+    const uncachedBitmaps = uncachedBitmapRef;
+    const retiredBitmaps = retiredBitmapRef;
     return () => {
       mountedRef.current = false;
       lifecycleGenerationRef.current += 1;
       cache.clear();
+      if (activeBitmap.current) closeBitmap(activeBitmap.current.entry.bitmap);
+      activeBitmap.current = null;
+      for (const owned of uncachedBitmaps.current.values()) closeBitmap(owned.entry.bitmap);
+      uncachedBitmaps.current.clear();
+      for (const owned of retiredBitmaps.current) closeBitmap(owned.entry.bitmap);
+      retiredBitmaps.current = [];
       inFlight.clear();
       sessionSlot.session?.dispose();
     };
@@ -539,7 +647,10 @@ export function useVideoChunkDecoder({
   const activeBitmap = useMemo(() => {
     void version;
     if (!taskId || activeFrameIndex === null) return null;
-    return cacheRef.current.peek(chunkDecoderCacheKey(taskId, activeFrameIndex)) ?? null;
+    const activeOwned = activeBitmapRef.current;
+    return activeOwned?.key === chunkDecoderCacheKey(taskId, activeFrameIndex)
+      ? activeOwned.entry
+      : null;
   }, [activeFrameIndex, taskId, version]);
 
   return {

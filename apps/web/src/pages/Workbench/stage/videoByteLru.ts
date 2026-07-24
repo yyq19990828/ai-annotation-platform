@@ -5,9 +5,9 @@
 // 表达真实内存上界(同样的 48 张 bitmap 在 720p / 1080p / 4K 下占用差近一个数量级)。
 // LRU 顺序由 Map 插入顺序表达(最旧在迭代器首位);get/set 命中即刷新到最近使用。
 //
-// 当前活动 bitmap 不在此处做引用计数:调用方在展示新帧前先 pin(持有引用 / 提到最近),
-// 再让淘汰发生,避免活动帧被提前 close。dispose 回调在 delete / clear / 覆盖 / 淘汰
-// 时各调用一次,用于释放 ImageBitmap / ArrayBuffer 引用。
+// 当前活动 bitmap 不在此处做引用计数:调用方可用 take 把所有权移出 LRU,避免活动帧被
+// 后续淘汰提前 close。dispose 回调在 delete / clear / 覆盖 / 淘汰时各调用一次,用于
+// 释放 ImageBitmap 等显式资源。
 
 export interface ByteLruEntry<V> {
   value: V;
@@ -77,6 +77,22 @@ export class ByteLru<K, V> {
   /** 读取值但不刷新使用顺序(供活动帧引用等纯查询使用)。 */
   peek(key: K): V | undefined {
     return this.map.get(key)?.value;
+  }
+
+  /**
+   * 取出一项并把完整所有权交给调用方:不调用 dispose,也不计为预算淘汰。
+   * 适用于活动 bitmap 等必须在 LRU 之外保持存活的资源。
+   */
+  take(key: K): ByteLruEntry<V> | undefined {
+    const node = this.map.get(key);
+    if (!node) return undefined;
+    this.map.delete(key);
+    this._bytes -= node.bytes;
+    return {
+      value: node.value,
+      bytes: node.bytes,
+      dispose: node.dispose,
+    };
   }
 
   /**
