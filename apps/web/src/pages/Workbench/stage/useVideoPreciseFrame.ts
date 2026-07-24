@@ -31,6 +31,10 @@ export type PreciseFrameSourceState =
   | "fallback";
 
 export interface VideoPreciseFrameDiagnostics {
+  /** WebCodecs 原语是否可用(与 flag 无关的能力探测)。 */
+  supported: boolean;
+  /** 实验开关是否开启(独立于 supported,供全局诊断区分能力缺失与用户关闭)。 */
+  webcodecsEnabled: boolean;
   decoderActive: boolean;
   chunkId: number | null;
   datasetItemId: string | null;
@@ -65,6 +69,12 @@ export interface VideoPreciseFramePerformanceDiagnostics {
   lastDemuxMs: number | null;
   lastDecodeMs: number | null;
   lastBitmapMs: number | null;
+  /** 最近一次成功 decode 所属 GOP 的起点 decode index(排障 GOP 边界 / reset)。 */
+  gopStartDecodeIndex: number | null;
+  /** 最近一次 decode 目标帧的 pts 微秒(确认 timestamp 匹配而非数组下标)。 */
+  targetTimestampUs: number | null;
+  /** 最近一次 decode 的 codec string(如 "avc1.42E01E");仅诊断,不含 description。 */
+  codec: string | null;
 }
 
 export interface UseVideoPreciseFrameResult {
@@ -148,6 +158,12 @@ export function useVideoPreciseFrame({
   const directionRef = useRef(0);
   // 预取过(已入缓存)的 frameIndex 集合,用于统计 prefetchHits。
   const prefetchedFramesRef = useRef<Set<number>>(new Set());
+  // 最近一次成功 demux 的 plan 元数据(gopStart / target pts / codec),供全局诊断快照读取。
+  const lastPlanMetaRef = useRef<{
+    gopStartDecodeIndex: number | null;
+    targetTimestampUs: number | null;
+    codec: string | null;
+  }>({ gopStartDecodeIndex: null, targetTimestampUs: null, codec: null });
   const chunkBytesCacheRef = useRef(new ByteLru<string, ChunkBytesCacheEntry>(chunkBudgetBytes));
   const chunkExpiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expireChunkBytesRef = useRef<() => void>(() => undefined);
@@ -442,6 +458,12 @@ export function useVideoPreciseFrame({
     }
     setLastDemuxMs(demuxMs);
     const plan = result.plan;
+    const targetSample = plan.samples.find((s) => s.frameIndex === frameIndex);
+    lastPlanMetaRef.current = {
+      gopStartDecodeIndex: plan.gopStartDecodeIndex,
+      targetTimestampUs: targetSample?.timestampUs ?? null,
+      codec: plan.config.codec ?? null,
+    };
     const gopIdentity = {
       taskId: taskId as string,
       datasetItemId,
@@ -520,6 +542,11 @@ export function useVideoPreciseFrame({
     setChunkCacheVersion((v) => v + 1);
     directionRef.current = 0;
     lastFrameIndexRef.current = null;
+    lastPlanMetaRef.current = {
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    };
   }, [taskId]);
 
   // 受控预取:暂停态 + 同 chunk/GOP + 方向已知 + tab 可见时,沿最近方向预取少量帧。
@@ -597,6 +624,8 @@ export function useVideoPreciseFrame({
 
   const diagnostics = useMemo<VideoPreciseFrameDiagnostics>(
     () => ({
+      supported: decoder.diagnostics.supported,
+      webcodecsEnabled: decoder.diagnostics.enabled,
       decoderActive: active,
       chunkId: targetChunkId,
       datasetItemId,
@@ -610,6 +639,8 @@ export function useVideoPreciseFrame({
       targetChunkId,
       datasetItemId,
       chunkSizeFrames,
+      decoder.diagnostics.supported,
+      decoder.diagnostics.enabled,
       decoder.diagnostics.decodes,
       decoder.diagnostics.errors,
       urlRefreshed,
@@ -643,6 +674,9 @@ export function useVideoPreciseFrame({
       lastDemuxMs,
       lastDecodeMs: decoder.diagnostics.lastDecodeMs,
       lastBitmapMs: null,
+      gopStartDecodeIndex: lastPlanMetaRef.current.gopStartDecodeIndex,
+      targetTimestampUs: lastPlanMetaRef.current.targetTimestampUs,
+      codec: lastPlanMetaRef.current.codec,
     };
   }, [
     decoder.diagnostics,

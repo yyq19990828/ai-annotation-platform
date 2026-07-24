@@ -16,6 +16,11 @@ import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
 import { useVideoPreciseFrame } from "./useVideoPreciseFrame";
+import {
+  clearVideoPreciseFrameDiagnostics,
+  publishVideoPreciseFrameDiagnostics,
+  setActiveVideoWorkbenchTask,
+} from "@/utils/videoWorkbenchDiagnostics";
 import { imageBitmapToJpeg, videoElementToJpeg } from "@/utils/imageBitmapToJpeg";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import type { VideoFramePreview } from "./useVideoFramePreview";
@@ -326,6 +331,68 @@ export function useVideoPlaybackController({
       : nativeBitmap
         ? "video-bitmap"
         : "video-element";
+
+  // 全局诊断 producer(v0.23.15):把精确帧状态写入 window.__videoWorkbenchDiagnostics,
+  // 供 BugReportDrawer 附带与排障。写入 window 不触发 React 重渲染;发布频率上限 5 Hz,
+  // state / fallback 转换立即写入,trailing 保证最后一次值落盘。
+  const diagnosticsRoute =
+    typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "";
+  const diagnosticsTaskId = manifest?.task_id ?? null;
+  useEffect(() => {
+    if (!diagnosticsTaskId) return;
+    setActiveVideoWorkbenchTask(diagnosticsTaskId);
+    return () => {
+      clearVideoPreciseFrameDiagnostics(diagnosticsTaskId);
+    };
+  }, [diagnosticsTaskId]);
+  useEffect(() => {
+    if (!diagnosticsTaskId) return;
+    publishVideoPreciseFrameDiagnostics(
+      diagnosticsTaskId,
+      {
+        enabled: precise.diagnostics.webcodecsEnabled,
+        supported: precise.diagnostics.supported,
+        state: precise.sourceState,
+        source:
+          frameSource === "webcodecs"
+            ? "webcodecs"
+            : frameSource === "video-bitmap"
+              ? "native-bitmap"
+              : "video",
+        frameIndex,
+        chunkId: precise.diagnostics.chunkId,
+        gopStartDecodeIndex: precise.performance.gopStartDecodeIndex,
+        targetTimestampUs: precise.performance.targetTimestampUs,
+        codec: precise.performance.codec,
+        fallbackReason: precise.fallbackReason,
+        lastDecodeMs: precise.performance.lastDecodeMs,
+        cache: {
+          bitmapBytes: precise.performance.bitmapBytes,
+          bitmapBudgetBytes: precise.performance.bitmapBudgetBytes,
+          chunkBytes: precise.performance.chunkBytes,
+          chunkBudgetBytes: precise.performance.chunkBudgetBytes,
+        },
+        counters: {
+          sessionCreates: precise.performance.sessionCreates,
+          sessionResets: precise.performance.sessionResets,
+          encodedChunksSubmitted: precise.performance.encodedChunksSubmitted,
+          staleResults: precise.performance.staleResults,
+          prefetchRequests: precise.performance.prefetchRequests,
+          prefetchHits: precise.performance.prefetchHits,
+        },
+      },
+      diagnosticsRoute,
+    );
+  }, [
+    diagnosticsTaskId,
+    diagnosticsRoute,
+    precise.diagnostics,
+    precise.sourceState,
+    precise.fallbackReason,
+    precise.performance,
+    frameSource,
+    frameIndex,
+  ]);
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
 
