@@ -123,7 +123,7 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples
 }
 ```
 
-`samples` 数组按解码顺序排列（满足 `VideoDecoder` 喂入要求），`frame_index` 按 pts 展示顺序（presentation rank）+ chunk `start_frame` 推算。前端实验 flag `?webcodecs=1`（或 localStorage `video.experimental.webcodecs`，默认关闭；视频任务的工作台设置抽屉也提供同一本机开关入口）开启时，`VideoStage` 按当前帧定位 chunk → 拉 samples → 从 chunk 字节切出「最近关键帧 → 目标帧」的 GOP → 构造 `EncodedVideoChunk[]` 交给 `useVideoChunkDecoder` 精确解码；找不到帧或解码失败时降级回 `<video>` 位图缓存。
+`samples` 数组按解码顺序排列（满足 `VideoDecoder` 喂入要求），`frame_index` 按 pts 展示顺序（presentation rank）+ chunk `start_frame` 推算。前端实验 flag `?webcodecs=1`（或 localStorage `video.experimental.webcodecs`，默认关闭；视频任务的工作台设置抽屉也提供同一本机开关入口）开启时，`VideoKonvaStage` 经 `useVideoPreciseFrame` 按当前帧定位 chunk → 拉 samples → 从 chunk 字节切出「GOP 起点关键帧 → 目标帧」的 GOP plan → 由有状态 GOP decoder session 构造 `EncodedVideoChunk[]` 交 `useVideoChunkDecoder` 精确解码（同 GOP 逐帧只提交增量，后退 / 跨 GOP 确定性重建）；codec 不支持、chunk pending / failed、缺 samples / description、signed URL 过期或字节越界都安全回退到原生 `<video>` / 位图，不阻断标注。
 
 manifest 还带 `description`（base64）：后端直读 chunk mp4 的 `avcC`/`hvcC` box，取出 `AVC/HEVCDecoderConfigurationRecord`（含 SPS/PPS），前端解码后填入 `VideoDecoderConfig.description`；`codec_string` 也由该 record 的字节派生（`avc1.PPCCLL` / `hvc1.…`），不再硬编码。这两项是 AVCC 长度前缀样本能被 `VideoDecoder` 正确解码的前提——缺 `description` 时浏览器按 Annex-B 解析必失败。旧 chunk（`diagnostics` 无 `description`）则降级。
 

@@ -101,7 +101,7 @@ GET /api/v1/tasks/{task_id}/video/frames/{frame_index}?format=webp&w=320
 POST /api/v1/tasks/{task_id}/video/frames:prefetch
 ```
 
-`VideoStage` 只把它用于时间轴 hover preview 和轻量预取，不替代 `<video>` 的主播放源。响应状态处理：
+`VideoKonvaStage` 只把它用于时间轴 hover preview 和轻量预取，不替代 `<video>` 的主播放源。响应状态处理：
 
 - `ready` 且有 `url`：时间轴 preview popover 显示 signed URL 图片。
 - `pending`：显示轻量 loading，并在短延迟后重试一次；不弹 toast。
@@ -357,11 +357,11 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 ## 前端 Stage 边界
 
-`WorkbenchShell` 只计算 `stageKind`。`WorkbenchStageHost` 根据 `stageKind` 分派到 `ImageWorkbench` / `VideoWorkbench` / `ThreeDWorkbench.placeholder`；视频任务由 `VideoWorkbench` 包装 `VideoStage`。
+`WorkbenchShell` 只计算 `stageKind`。`WorkbenchStageHost` 根据 `stageKind` 分派到 `ImageWorkbench` / `VideoWorkbench` / `ThreeDWorkbench.placeholder`；视频任务由 `VideoWorkbench` 包装 `VideoKonvaStage`。
 
 `stageKind` 的视频入口仍由 `task.file_type === "video"` 或项目类型 `video-track` 决定。3D 入口只显示占位，不复用视频内部 geometry。
 
-`VideoStage` 暴露 `VideoStageControls` ref，由 `useWorkbenchHotkeys` 在 `videoMode` 下统一分发快捷键。视频模式快捷键：
+`VideoKonvaStage` 暴露 `VideoStageControls` ref，由 `useWorkbenchHotkeys` 在 `videoMode` 下统一分发快捷键。视频模式快捷键：
 
 - `Space` 播放 / 暂停；按住并拖拽画布时平移视图
 - `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
@@ -403,11 +403,13 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽或 `Space`+拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 
-R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`useVideoBitmapCache` 在浏览器支持 `createImageBitmap(video)` 时按 `taskId + frameIndex` 保存 LRU；seek / scrub 命中时 `VideoBitmapLayer` 先绘制缓存帧，`<video>` 异步追赶。浏览器不支持或抓帧失败时，bitmap 层保持隐藏并在诊断里标记 unsupported / errors。
+R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`useVideoBitmapCache` 在浏览器支持 `createImageBitmap(video)` 时按 `taskId + frameIndex` 保存 LRU；Konva 媒体层（`VideoKonvaMediaLayer`）按唯一显示真值 `displayBitmap` 绘制 —— 播放态用 `<video>` 实时帧，暂停态优先 WebCodecs 精确帧位图（`useVideoPreciseFrame`），其次原生 `<video>` 抓取位图。同一份 `displayBitmap` 也供当前帧 JPEG（`captureCurrentFrameJpeg`）使用，避免画面 / 标注 / AI 串帧。
+
+精确帧 pipeline（实验开关，默认关闭）：`useVideoPreciseFrame` 经 manifest v2 → chunk 轮询 → packet samples → chunk 字节 → GOP plan → 有状态 GOP decoder session 解码目标帧；同 GOP 逐帧只提交增量，后退 / 跨 GOP / 切任务确定性重建 decoder。已解码位图与 chunk 字节按内存预算（轻量 / 标准 / 激进三档）而非对象数量淘汰。codec 不支持、chunk pending / failed、缺 samples / description、signed URL 过期或字节越界都安全回退到 `<video>` / 位图，不阻断标注。`window.__videoWorkbenchDiagnostics` 暴露当前 state / source / fallback reason / 资源预算与计数（更新上限 5 Hz，状态与 fallback 转换立即写入），BUG 报告自动附带经裁剪、不含签名 URL / 字节 / 描述的快照。浏览器资格矩阵（精确帧像素、1080p/4K 性能、长稳内存）在有头 Chrome / GPU runner 收尾；`VideoDecoder.decode` 与 `createImageBitmap` 均异步、demux 为纯字节切片、主线程只编排，现有测量未达到引入 Dedicated Worker 的触发门。
 
 `videoStageMode.ts` 提供轻量 busy guard：`idle` 允许 seek / draw / drag / resize；`draw` / `drag` / `resize` 期间 frame setup 会被拦截并暂停播放，避免播放 tick 覆盖编辑中的几何。
 
-`VideoStage` 底部固定控制条使用 `VideoPlaybackOverlay`：
+`VideoKonvaStage` 底部固定控制条使用 `VideoPlaybackOverlay`：
 
 - 悬浮在视频画布底部，不再占用 stage 布局高度。
 - hover 时显示，离开后延迟淡出；绘制或拖动 bbox 时隐藏，避免误触 scrubber。
@@ -420,7 +422,7 @@ R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`u
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
 - hover 时间轴会请求单帧预览图；ready 时显示缩略图，pending/error 时降级显示 frame/time。选中轨迹关键帧、书签帧和 loop region 边界会被预取。
-- `useFrameClock.seekToAsync` 是 `VideoStage.seekFrameAsync` 的底层原语；时间轴 scrub、逐帧、关键帧、书签和跳转历史都通过它跳帧。J/K/L jog 播放支持 `0.25x / 0.5x / 1x / 2x / 4x`，overlay 会显示当前速度，反向播放通过帧步进实现。
+- `useFrameClock.seekToAsync` 是 `VideoKonvaStage.seekFrameAsync` 的底层原语；时间轴 scrub、逐帧、关键帧、书签和跳转历史都通过它跳帧。J/K/L jog 播放支持 `0.25x / 0.5x / 1x / 2x / 4x`，overlay 会显示当前速度，反向播放通过帧步进实现。
 - review 模式的 `raw / final / diff` 同步作用于视频工作台：`raw` 显示 prediction / interpolated 来源，`final` 显示 manual / legacy，`diff` 叠加。评论协议增加可选 `anchor`，视频评论可记录当前 `frameIndex`、`trackId` 和来源，评论 chip 可点击跳回对应帧。
 - 工作台右下角复用 Minimap，放大后显示当前视口、当前帧位置和 ImageBitmap 已缓存帧范围；`window.__videoWorkbenchDiagnostics` 也包含 bitmap cache 与 viewport/minimap 状态。
 
@@ -439,7 +441,7 @@ R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`u
 - 恢复连接后由 `useWorkbenchOfflineQueue` 顺序重放。
 - 409 版本冲突不进入离线队列，继续打开通用 `ConflictModal`；keyframe diff UI 留后续增强。
 
-`VideoStage` 内部维护轨迹列表 UI 状态：
+`VideoKonvaStage` 内部维护轨迹列表 UI 状态：
 
 - 显隐和锁定只影响当前工作台会话，不持久化。
 - 重命名轨迹会更新 annotation 顶层 `class_name`。

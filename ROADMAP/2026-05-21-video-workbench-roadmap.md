@@ -26,7 +26,7 @@
 
 > 已于 v0.10.29 落地，详见 [CHANGELOG v0.10.29](../CHANGELOG.md)。软网格语义（绝对网格锚定 0、`←/→` 跳网格、暂停吸附、`Shift+←/→` 逃生口微调 ±1 源帧、`Alt+←/→` 关键帧跳）是后续 Phase 的设计前提，保留于此供参考。
 >
-> **遗留待续**：WebCodecs 精确帧解码当前是**预留骨架**——`useVideoChunkDecoder` 解码核心 + feature flag（默认关闭）已就位，但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入，前端 manifest 也未暴露 chunk 字节获取链路。端到端跑通需补 demux（轻量自写 mp4 box 解析或后端预 demux sample 列表），按真实卡顿数据决定是否推进。
+> **进展**：WebCodecs 精确帧解码链路（mp4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话、字节预算缓存、Konva 显示与当前帧 JPEG 同源）已于 v0.23.13–v0.23.15 接通（实验开关，默认关闭）。剩余收尾：在有头 Chrome / GPU runner 完成浏览器资格矩阵（key / P / B / GOP / VFR 像素、1080p/4K 性能、长稳内存）并独立决策是否默认开启；headless Chromium 无可用 `VideoDecoder` 软解，CI 只锁定 flag off 零请求与安全回退合同。
 >
 > **明确不做（D1）**：物理重采样 / 生成低 fps 新 mp4 / 从视频抽成独立图片数据集。
 
@@ -133,7 +133,7 @@
 | 视频导出        | `apps/api/app/services/exporting/service.py`                   | `export_video_tracks`（裸 JSON，待并入 zip）               |
 | AAP schema      | `apps/api/app/schemas/aap_json.py:33`                          | `schema_version 1.1`，待加 `media_type`                    |
 | 导入适配        | `apps/api/app/services/predictions_import.py`                  | `internal_geometry_to_ls_shape`（video_track 进 errors[]） |
-| 前端 stage      | `apps/web/src/pages/Workbench/stage/VideoStage.tsx`            | 按帧请求图片                                               |
+| 前端 stage      | `apps/web/src/pages/Workbench/stage/VideoKonvaStage.tsx`       | Konva 画布 + 精确帧 / `<video>` 双源                       |
 | track 类型      | `apps/web/src/pages/Workbench/stage/videoStageTypes.ts`        | `VideoTrackAnnotation`/`VideoTrackPreview`                 |
 | 插值            | `apps/web/src/pages/Workbench/stage/videoStageGeometry.ts:131` | 线性插值 + LRU                                             |
 | 时间轴          | `apps/web/src/pages/Workbench/stage/videoTrackTimeline.ts`     | keyframes/outside/interpolated/density                     |

@@ -41,6 +41,28 @@ fixture 描述在 `apps/web/scripts/video-bench/fixtures.json`：
 
 每组视频覆盖 10 / 100 / 500 tracks 三档密度，场景包含打开工作台、时间轴 scrub、拖拽选中轨迹、J/K/L 播放和 hover preview。
 
+## WebCodecs 精确帧基准
+
+```bash
+pnpm --filter @anno/web video:bench -- --scenario precise-frame --dry-run
+pnpm --filter @anno/web video:bench -- --scenario precise-frame
+```
+
+产物写到 `test-results/video-bench/<run-id>/`：
+
+- `manifest.json`：分辨率（1080p/30、1080p/60、4K/30）× 场景矩阵、退出门 budget、Dedicated Worker 决策、环境记录字段（runner 填充 `chromiumVersion` / `gpuAdapter` / `hardwareAcceleration` / `fixtureCodec`）。
+- `summary.md`：人类可读的退出门表与 Worker 决策结论。
+
+字节预算三档（工作台设置 → 性能档位）：轻量 96/32 MiB、标准 256/96 MiB、激进 512/192 MiB（bitmap / chunk）。判读要点：
+
+- **请求计数**：flag off 与连续播放的 precise 请求必须为 0（`data-video-precise-state=disabled`、播放态 `data-video-frame-source=video`）。
+- **session / 逐帧**：同 GOP 顺序逐帧的 `encodedChunksSubmitted` 只增量增长；后退 / 跨 GOP 触发 `sessionResets`。
+- **long task / 主线程**：用 PerformanceObserver 包围 pipeline JS 阶段，归因 ≥50ms long task 必须为 0、主线程 blocking p95 ≤16ms。
+- **内存**：操作结束后 `liveVideoFrames` 归零、bitmap / chunk 字节账本回预算；优先账本与 close 计数，浏览器媒体进程的短时波动不算泄漏。
+- **Worker 触发门**：未出现归因于 pipeline 的 long task 时**不引入** Dedicated Worker（`VideoDecoder.decode` / `createImageBitmap` 异步、主线程只编排）；出现则按计划 §9.2 实现 worker 并重跑全部 gate。
+
+headless Chromium 无可用 `VideoDecoder` 软解，CI 只锁定 flag off 零请求与安全回退合同；warm seek / long task 等真实指标需有头 Chrome 或带 GPU 的 runner。
+
 ## BUG 反馈诊断
 
 视频工作台会维护当前 task 的诊断快照：

@@ -516,7 +516,7 @@ annotation 路径几乎都带两个伴随动作：
 | 文件                                                                     | 为什么要看                                              |
 | ------------------------------------------------------------------------ | ------------------------------------------------------- |
 | `apps/web/src/pages/Workbench/stages/video/VideoWorkbench.tsx`           | 视频 Stage concrete implementation                      |
-| `apps/web/src/pages/Workbench/stage/VideoStage.tsx`                      | 视频播放、关键帧编辑、轨迹列表和插值显示                |
+| `apps/web/src/pages/Workbench/stage/VideoKonvaStage.tsx`                 | 视频播放、关键帧编辑、轨迹列表和插值显示                |
 | `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 annotation payload 与离线兜底                      |
 | `apps/web/src/pages/Workbench/state/transforms.ts`                       | `video_bbox` / `video_track_bbox` 与工作台 shape 的转换 |
 | `apps/api/app/schemas/task.py`                                           | `TaskOut.video_metadata` 和 video manifest response     |

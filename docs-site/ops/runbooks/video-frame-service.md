@@ -35,6 +35,19 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_tracker_jobs GROUP BY status;"
 ```
 
+## WebCodecs 精确帧排查
+
+精确帧 pipeline（实验开关，默认关闭）只在暂停态 + 浏览器支持时工作。BUG 报告附带的 `window.__videoWorkbenchDiagnostics` 快照里 `preciseFrame` 字段会给出 `state` / `source` / `fallbackReason` / 资源预算与计数，按以下顺序定位：
+
+1. **flag / secure context / 浏览器能力**：`data-video-precise-state=disabled` 且诊断 `supported=false` → 浏览器无 `VideoDecoder`（headless Chromium 常见）或非 secure context；`enabled=false` → 实验开关未开。WebCodecs 需 secure context（localhost / https）。
+2. **manifest v2 与 dataset id**：`GET /api/v1/tasks/{id}/video/manifest-v2` 是否 200，`dataset_item_id` / `chunk_size_frames` 是否非空。
+3. **chunk pending / failed**：`video_chunks` 表对应 chunk 的 `status`；`pending` 按 `retry_after` 轮询，`failed` 看 `error`。
+4. **samples / key sample / description**：`GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples` 是否 200；`samples` 非空、至少一个 `is_keyframe`、`codec_string` 与 base64 `description` 存在。缺 `description` 时浏览器按 Annex-B 解析必失败。
+5. **signed URL / CORS / 403 refresh**：chunk bytes 首次 403 会刷新一次 chunk metadata 再重试；第二次 403 进 `chunk_fetch_failed`。CORS / 网络拒绝等价为 fetch rejection。
+6. **config support / decoder error**：`fallbackReason=codec_unsupported` → `VideoDecoder.isConfigSupported` 返回 false（换 codec 或转码）；`decode_failed` → 解码异常。
+7. **字节预算 / session reset / fallback reason**：诊断 `cache` 与 `counters` 看是否预算淘汰 / session 频繁 reset；`fallbackReason` 稳定即回退合同成立。
+8. **关闭实验开关回退**：`localStorage.removeItem('video.experimental.webcodecs')` 刷新，原生 `<video>` / 位图接管，确认标注不受影响。
+
 ## Chunk 一直 pending
 
 1. 查看 worker 日志里是否有 `ffmpeg chunk extraction failed`。
