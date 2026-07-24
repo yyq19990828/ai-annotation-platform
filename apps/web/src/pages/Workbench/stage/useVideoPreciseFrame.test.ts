@@ -56,10 +56,39 @@ interface DecoderCtrl {
 let decoderCtrl: DecoderCtrl;
 let decoders: FakeDecoder[];
 
+class FakeEncodedVideoChunk {
+  readonly type: "key" | "delta";
+  readonly timestamp: number;
+  readonly duration: number | undefined;
+  readonly byteLength: number;
+  constructor(init: {
+    type: "key" | "delta";
+    timestamp: number;
+    duration?: number;
+    data: Uint8Array;
+  }) {
+    this.type = init.type;
+    this.timestamp = init.timestamp;
+    this.duration = init.duration;
+    this.byteLength = init.data.byteLength;
+  }
+  copyTo(): void {}
+}
+
+/** 默认 flush:emit 最后一次 decode 的 chunk 对应 timestamp 的目标 frame。 */
+function defaultFlushEmitTarget() {
+  decoderCtrl.flushImpl = async (d) => {
+    const calls = vi.mocked(d.decode).mock.calls;
+    if (calls.length === 0) return;
+    const lastChunk = calls[calls.length - 1][0] as { timestamp: number };
+    d.emit(fakeFrame(lastChunk.timestamp).frame);
+  };
+}
+
 function installWebCodecs() {
   decoderCtrl = { flushImpl: null, supported: true };
   decoders = [];
-  vi.stubGlobal("EncodedVideoChunk", class {});
+  vi.stubGlobal("EncodedVideoChunk", FakeEncodedVideoChunk);
   vi.stubGlobal("createImageBitmap", () => Promise.resolve(fakeBitmap()));
   class FakeVideoDecoder extends FakeDecoder {
     static isConfigSupported = vi.fn(async () => ({
@@ -75,6 +104,7 @@ function installWebCodecs() {
     }
   }
   vi.stubGlobal("VideoDecoder", FakeVideoDecoder);
+  defaultFlushEmitTarget();
 }
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -138,6 +168,27 @@ function samples(frame = 5, ptsMs = 166): VideoChunkSamplesResponse {
   };
 }
 
+/** 多帧单 GOP samples:frame 0 为 key,其余 delta;decode order == frame order。 */
+function multiSamples(frameCount = 10): VideoChunkSamplesResponse {
+  const arr = Array.from({ length: frameCount }, (_, f) => ({
+    frame_index: f,
+    pts_ms: f * 33,
+    duration_ms: 33,
+    is_keyframe: f === 0,
+    size_bytes: 10,
+    offset_in_chunk: f * 10,
+  }));
+  return {
+    dataset_item_id: "ds-1",
+    chunk_id: 0,
+    codec_string: "avc1.4d001e",
+    description: btoa("config"),
+    width: 320,
+    height: 240,
+    samples: arr,
+  };
+}
+
 function makeBytes(n = 64): ArrayBuffer {
   const buf = new ArrayBuffer(n);
   const v = new Uint8Array(buf);
@@ -198,6 +249,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     expect(result.current.sourceState).toBe("disabled");
     expect(result.current.active).toBe(false);
@@ -214,6 +267,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: false,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     expect(result.current.sourceState).toBe("disabled");
     await waitFor(() => expect(getManifestV2).not.toHaveBeenCalled());
@@ -226,6 +281,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("api_unavailable"));
     expect(getChunk).not.toHaveBeenCalled();
@@ -239,6 +296,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("chunk_failed"));
   });
@@ -251,6 +310,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("api_unavailable"));
     expect(result.current.sourceState).toBe("fallback");
@@ -265,6 +326,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("samples_unavailable"));
     // retry:false → 只请求一次。
@@ -281,6 +344,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("chunk_fetch_failed"));
   });
@@ -303,6 +368,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.sourceState).toBe("chunk-pending"));
     await act(async () => {
@@ -337,6 +404,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
 
     await waitFor(() => expect(result.current.sourceState).toBe("ready"));
@@ -362,6 +431,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
 
     await waitFor(() => expect(result.current.fallbackReason).toBe("chunk_fetch_failed"));
@@ -386,6 +457,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.sourceState).toBe("ready"));
     expect(result.current.bitmap).not.toBeNull();
@@ -408,6 +481,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("decode_failed"));
     expect(result.current.bitmap).toBeNull();
@@ -429,6 +504,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("codec_unsupported"));
     expect(result.current.sourceState).toBe("fallback");
@@ -451,6 +528,8 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(getManifestV2).toHaveBeenCalledTimes(1));
     unmount();
@@ -474,14 +553,112 @@ describe("useVideoPreciseFrame", () => {
       frameIndex: 5,
       enabled: true,
       bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
     });
     await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(5));
     // 快速 seek 到 frame 6:即便旧 frame 5 的 bitmap 仍在 decoder 缓存,frameIndex 守卫确保它
     // 不被当作当前帧显示(bitmap.frameIndex 必须严格匹配当前 frameIndex)。
     act(() => {
-      rerender({ taskId: "t1", frameIndex: 6, enabled: true, bitmapBudgetBytes: 4_000_000 });
+      rerender({
+        taskId: "t1",
+        frameIndex: 6,
+        enabled: true,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 8_000_000,
+        prefetchFrames: 0,
+      });
     });
     expect(result.current.bitmap).toBeNull();
+  });
+
+  it("standard 档前进方向预取同 GOP 后续 2 帧,后续命中计入 prefetchHits", async () => {
+    getManifestV2.mockResolvedValue(manifest(10));
+    getChunk.mockResolvedValue(readyChunk());
+    getSamples.mockResolvedValue(multiSamples(10));
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(makeBytes(116)),
+    } as unknown as Response);
+    const { result, rerender } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 3,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 2,
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(3));
+    expect(result.current.performance.prefetchRequests).toBe(0);
+    // 前进 3 → 4:方向 +1,预取同 GOP(frame0 key)的 5、6。
+    await act(async () => {
+      rerender({
+        taskId: "t1",
+        frameIndex: 4,
+        enabled: true,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 8_000_000,
+        prefetchFrames: 2,
+      });
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(4));
+    await waitFor(() => expect(result.current.performance.prefetchRequests).toBe(2));
+    // 导航到预取过的 6 → 命中预取缓存。
+    await act(async () => {
+      rerender({
+        taskId: "t1",
+        frameIndex: 6,
+        enabled: true,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 8_000_000,
+        prefetchFrames: 2,
+      });
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(6));
+    expect(result.current.performance.prefetchHits).toBeGreaterThanOrEqual(1);
+  });
+
+  it("light 档(prefetchFrames=0)与播放态(enabled=false)均不预取", async () => {
+    getManifestV2.mockResolvedValue(manifest(10));
+    getChunk.mockResolvedValue(readyChunk());
+    getSamples.mockResolvedValue(multiSamples(10));
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(makeBytes(116)),
+    } as unknown as Response);
+    const { result, rerender } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 3,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(3));
+    await act(async () => {
+      rerender({
+        taskId: "t1",
+        frameIndex: 4,
+        enabled: true,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 8_000_000,
+        prefetchFrames: 0,
+      });
+    });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(4));
+    expect(result.current.performance.prefetchRequests).toBe(0); // light 不预取
+    // 切到播放态:即便 prefetchFrames=2 也不预取(enabled=false → pipelineEnabled=false)。
+    await act(async () => {
+      rerender({
+        taskId: "t1",
+        frameIndex: 5,
+        enabled: false,
+        bitmapBudgetBytes: 4_000_000,
+        chunkBudgetBytes: 8_000_000,
+        prefetchFrames: 2,
+      });
+    });
+    expect(result.current.performance.prefetchRequests).toBe(0);
   });
 
   // latest-request-wins decode 竞态(decode 进行中切帧/task):由 decode effect 的 `cancelled`

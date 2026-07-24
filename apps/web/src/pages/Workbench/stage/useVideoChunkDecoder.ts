@@ -59,6 +59,14 @@ export interface VideoChunkDecoderDiagnostics {
   staleResults: number;
   lastFallbackReason: PreciseFrameFallbackReason | null;
   lastDecodeMs: number | null;
+  /** bitmap 缓存与 GOP session 的实时资源诊断(从 ByteLru / session 读取)。 */
+  bitmapBytes: number;
+  bitmapBudgetBytes: number;
+  evictions: number;
+  encodedChunksSubmitted: number;
+  sessionCreates: number;
+  sessionResets: number;
+  sessionDisposals: number;
 }
 
 interface UseVideoChunkDecoderArgs {
@@ -290,6 +298,13 @@ export function useVideoChunkDecoder({
     staleResults: 0,
     lastFallbackReason: null,
     lastDecodeMs: null,
+    bitmapBytes: 0,
+    bitmapBudgetBytes,
+    evictions: 0,
+    encodedChunksSubmitted: 0,
+    sessionCreates: 0,
+    sessionResets: 0,
+    sessionDisposals: 0,
   });
 
   const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
@@ -328,6 +343,24 @@ export function useVideoChunkDecoder({
     }));
     bumpVersion();
   }, [bumpVersion, bitmapBudgetBytes, resolvedEnabled, supported]);
+
+  // bitmap / session 资源诊断:每次 re-render(version 变化)从 ref 读实时值。
+  // decodePlan / remember / showFrame / clear 都 bumpVersion,故 stats 会随之刷新。
+  useEffect(() => {
+    const cache = cacheRef.current;
+    const stats = sessionRef.current.session?.getStats();
+    setDiagnostics((cur) => ({
+      ...cur,
+      cacheSize: cache.size,
+      bitmapBytes: cache.bytes,
+      bitmapBudgetBytes: cache.budgetBytes,
+      evictions: cache.evictions,
+      encodedChunksSubmitted: stats?.submits ?? 0,
+      sessionCreates: stats?.sessionCreates ?? 0,
+      sessionResets: stats?.resets ?? 0,
+      sessionDisposals: stats?.disposals ?? 0,
+    }));
+  }, [version]);
 
   /**
    * 用当前 GOP session 解码目标帧并入缓存(**不自动激活**)。identity 匹配则复用同一

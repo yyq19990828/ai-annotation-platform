@@ -307,6 +307,8 @@ export function useVideoPlaybackController({
     frameIndex,
     enabled: !isPlaybackActive && !frameClock.isSeeking,
     bitmapBudgetBytes: performanceConfig.videoDecoderBitmapCacheBytes,
+    chunkBudgetBytes: performanceConfig.videoChunkByteCacheBytes,
+    prefetchFrames: performanceConfig.videoDecodePrefetchFrames,
   });
   const preciseBitmap =
     precise.bitmap && precise.bitmap.frameIndex === frameIndex ? precise.bitmap : null;

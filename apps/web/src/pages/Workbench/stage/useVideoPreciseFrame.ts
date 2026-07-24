@@ -14,6 +14,10 @@ export interface UseVideoPreciseFrameArgs {
   enabled: boolean;
   /** 已解码 bitmap 的字节预算上限(性能档位 videoDecoderBitmapCacheBytes)。 */
   bitmapBudgetBytes: number;
+  /** chunk 原始字节缓存的预算上限(性能档位 videoChunkByteCacheBytes)。 */
+  chunkBudgetBytes: number;
+  /** 暂停态同 GOP 方向感知预取帧数(性能档位 videoDecodePrefetchFrames;0 不预取)。 */
+  prefetchFrames: number;
 }
 
 export type PreciseFrameSourceState =
@@ -35,6 +39,33 @@ export interface VideoPreciseFrameDiagnostics {
   urlRefreshed: boolean;
 }
 
+/** 精确帧 pipeline 的分阶段性能与资源诊断(v0.23.14)。 */
+export interface VideoPreciseFramePerformanceDiagnostics {
+  manifestCacheHits: number;
+  samplesCacheHits: number;
+  chunkByteCacheHits: number;
+  bitmapCacheHits: number;
+  bytesFetched: number;
+  bitmapBytes: number;
+  bitmapBudgetBytes: number;
+  chunkBytes: number;
+  chunkBudgetBytes: number;
+  sessionCreates: number;
+  sessionResets: number;
+  sessionDisposals: number;
+  encodedChunksSubmitted: number;
+  staleResults: number;
+  prefetchRequests: number;
+  prefetchHits: number;
+  evictions: number;
+  lastManifestMs: number | null;
+  lastSamplesMs: number | null;
+  lastChunkFetchMs: number | null;
+  lastDemuxMs: number | null;
+  lastDecodeMs: number | null;
+  lastBitmapMs: number | null;
+}
+
 export interface UseVideoPreciseFrameResult {
   /** precise pipeline 是否激活(flag on + 浏览器支持)。 */
   active: boolean;
@@ -43,6 +74,7 @@ export interface UseVideoPreciseFrameResult {
   sourceState: PreciseFrameSourceState;
   fallbackReason: PreciseFrameFallbackReason | null;
   diagnostics: VideoPreciseFrameDiagnostics;
+  performance: VideoPreciseFramePerformanceDiagnostics;
 }
 
 const BYTES_GC_MS = 60_000;
@@ -90,6 +122,8 @@ export function useVideoPreciseFrame({
   frameIndex,
   enabled,
   bitmapBudgetBytes,
+  chunkBudgetBytes,
+  prefetchFrames,
 }: UseVideoPreciseFrameArgs): UseVideoPreciseFrameResult {
   const decoder = useVideoChunkDecoder({ taskId, bitmapBudgetBytes });
   const active = decoder.active;
@@ -103,6 +137,15 @@ export function useVideoPreciseFrame({
   latestRef.current = { taskId, frameIndex, enabled };
   // 单调递增的请求 token;decode 完成后与 latestRef 一起保证旧请求不覆盖当前显示帧。
   const generationRef = useRef(0);
+  // 方向感知预取:记录上次 frameIndex,差值符号决定预取方向;0 表示方向未知不预取。
+  const lastFrameIndexRef = useRef<number | null>(null);
+  const directionRef = useRef(0);
+  // 预取过(已入缓存)的 frameIndex 集合,用于统计 prefetchHits。
+  const prefetchedFramesRef = useRef<Set<number>>(new Set());
+  const [prefetchRequests, setPrefetchRequests] = useState(0);
+  const [prefetchHits, setPrefetchHits] = useState(0);
+  const [bytesFetched, setBytesFetched] = useState(0);
+  const [lastDemuxMs, setLastDemuxMs] = useState<number | null>(null);
 
   const [decoding, setDecoding] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<PreciseFrameFallbackReason | null>(null);
@@ -306,12 +349,16 @@ export function useVideoPreciseFrame({
     if (!pipelineEnabled || !bytes || !samples || targetChunkId === null || !datasetItemId) {
       return;
     }
+    const demuxStart = typeof performance !== "undefined" ? performance.now() : 0;
     const result = buildGopPlan(bytes, samples, frameIndex);
+    const demuxMs =
+      typeof performance !== "undefined" ? Math.round(performance.now() - demuxStart) : 0;
     if (!result.ok) {
       setFallbackReason(result.reason);
       setDecoding(false);
       return;
     }
+    setLastDemuxMs(demuxMs);
     const plan = result.plan;
     const gopIdentity = {
       taskId: taskId as string,
@@ -347,6 +394,9 @@ export function useVideoPreciseFrame({
         setFallbackReason("decode_failed");
         return;
       }
+      if (prefetchedFramesRef.current.has(frameIndex)) {
+        setPrefetchHits((n) => n + 1);
+      }
       setFallbackReason(null);
     })();
     return () => {
@@ -359,6 +409,94 @@ export function useVideoPreciseFrame({
     if (ab && ab.frameIndex === frameIndex) return ab;
     return null;
   }, [decoder.activeBitmap, frameIndex]);
+
+  // 方向感知:frameIndex 变化时用差值符号更新预取方向。
+  useEffect(() => {
+    if (lastFrameIndexRef.current !== null && lastFrameIndexRef.current !== frameIndex) {
+      directionRef.current = Math.sign(frameIndex - lastFrameIndexRef.current) || 0;
+    }
+    lastFrameIndexRef.current = frameIndex;
+  }, [frameIndex]);
+
+  // bytesFetched:每次拿到新 chunk bytes 累加(缓存命中同引用不累加)。
+  useEffect(() => {
+    if (bytes) setBytesFetched((n) => n + bytes.byteLength);
+  }, [bytes]);
+
+  // task 切换清空预取统计与方向记忆(mount 时跳过,避免覆盖初始方向追踪)。
+  const lastTaskIdRef = useRef<string | null | undefined>(taskId);
+  useEffect(() => {
+    if (lastTaskIdRef.current === taskId) return;
+    lastTaskIdRef.current = taskId;
+    prefetchedFramesRef.current = new Set();
+    setPrefetchRequests(0);
+    setPrefetchHits(0);
+    setBytesFetched(0);
+    directionRef.current = 0;
+    lastFrameIndexRef.current = null;
+  }, [taskId]);
+
+  // 受控预取:暂停态 + 同 chunk/GOP + 方向已知 + tab 可见时,沿最近方向预取少量帧。
+  // 播放态 / seeking(enabled=false → pipelineEnabled=false)完全不预取,保持零额外请求。
+  useEffect(() => {
+    if (!pipelineEnabled || !bitmap || prefetchFrames <= 0) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const dir = directionRef.current;
+    if (dir === 0 || !bytes || !samples || targetChunkId === null || !datasetItemId || !manifest) {
+      return;
+    }
+    const chunkSize = manifest.chunk_size_frames;
+    const currentPlan = buildGopPlan(bytes, samples, frameIndex);
+    if (!currentPlan.ok) return;
+    const currentGopStart = currentPlan.plan.gopStartDecodeIndex;
+    const targets: number[] = [];
+    for (let i = 1; i <= prefetchFrames; i++) {
+      const fi = frameIndex + dir * i;
+      if (fi < 0) break;
+      if (Math.floor(fi / chunkSize) !== targetChunkId) break; // 跨 chunk 不预取
+      const fiPlan = buildGopPlan(bytes, samples, fi);
+      if (!fiPlan.ok || fiPlan.plan.gopStartDecodeIndex !== currentGopStart) break; // 跨 GOP 不预取
+      targets.push(fi);
+    }
+    if (targets.length === 0) return;
+    let cancelled = false;
+    const gen = generationRef.current;
+    void (async () => {
+      for (const fi of targets) {
+        if (cancelled) return;
+        const result = buildGopPlan(bytes, samples, fi);
+        if (!result.ok) continue;
+        setPrefetchRequests((n) => n + 1);
+        const decoded = await decoderRef.current.decodePlan({
+          plan: result.plan,
+          identity: {
+            taskId: taskId as string,
+            datasetItemId,
+            chunkId: result.plan.chunkId,
+            gopStartDecodeIndex: result.plan.gopStartDecodeIndex,
+            configFingerprint: result.plan.configFingerprint,
+          },
+          targetFrameIndex: fi,
+          generation: gen,
+        });
+        if (decoded.bitmap) prefetchedFramesRef.current.add(fi);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bitmap,
+    frameIndex,
+    prefetchFrames,
+    pipelineEnabled,
+    bytes,
+    samples,
+    targetChunkId,
+    datasetItemId,
+    taskId,
+    manifest,
+  ]);
 
   const sourceState = useMemo<PreciseFrameSourceState>(() => {
     if (!pipelineEnabled) return "disabled";
@@ -391,11 +529,50 @@ export function useVideoPreciseFrame({
     ],
   );
 
+  const performanceDiagnostics = useMemo<VideoPreciseFramePerformanceDiagnostics>(
+    () => ({
+      // react-query 层 manifest / samples / chunk-bytes 命中与耗时由 v0.23.15 并入全局诊断。
+      manifestCacheHits: 0,
+      samplesCacheHits: 0,
+      chunkByteCacheHits: 0,
+      bitmapCacheHits: decoder.diagnostics.hits,
+      bytesFetched,
+      bitmapBytes: decoder.diagnostics.bitmapBytes,
+      bitmapBudgetBytes: decoder.diagnostics.bitmapBudgetBytes,
+      chunkBytes: bytes?.byteLength ?? 0,
+      chunkBudgetBytes,
+      sessionCreates: decoder.diagnostics.sessionCreates,
+      sessionResets: decoder.diagnostics.sessionResets,
+      sessionDisposals: decoder.diagnostics.sessionDisposals,
+      encodedChunksSubmitted: decoder.diagnostics.encodedChunksSubmitted,
+      staleResults: decoder.diagnostics.staleResults,
+      prefetchRequests,
+      prefetchHits,
+      evictions: decoder.diagnostics.evictions,
+      lastManifestMs: null,
+      lastSamplesMs: null,
+      lastChunkFetchMs: null,
+      lastDemuxMs,
+      lastDecodeMs: decoder.diagnostics.lastDecodeMs,
+      lastBitmapMs: null,
+    }),
+    [
+      decoder.diagnostics,
+      bytesFetched,
+      bytes,
+      chunkBudgetBytes,
+      prefetchRequests,
+      prefetchHits,
+      lastDemuxMs,
+    ],
+  );
+
   return {
     active,
     bitmap,
     sourceState,
     fallbackReason,
     diagnostics,
+    performance: performanceDiagnostics,
   };
 }
