@@ -54,5 +54,38 @@
     "longTaskMs": 50,
     "visibleFirstFrameSeekMs": 200,
     "dragFps": 30
+  },
+  "preciseFrame": {
+    "comment": "v0.23.15 §8 WebCodecs 精确帧性能资格矩阵。指标门(§8.3)与 Dedicated Worker 触发门(§9)在此声明;真实测量需有 VideoDecoder 的有头 Chrome / GPU runner,headless 软解仅记录环境与 capability。",
+    "resolutions": [
+      { "id": "1080p-30", "label": "1080p / 30 fps", "width": 1920, "height": 1080, "fps": 30 },
+      { "id": "1080p-60", "label": "1080p / 60 fps", "width": 1920, "height": 1080, "fps": 60 },
+      { "id": "4k-30", "label": "4K / 30 fps", "width": 3840, "height": 2160, "fps": 30 }
+    ],
+    "scenarios": [
+      "cold-first-frame",
+      "warm-same-gop-seek",
+      "warm-same-chunk-random-seek",
+      "cross-gop-roundtrip",
+      "continuous-playback-60s",
+      "frame-step-stability"
+    ],
+    "budgets": {
+      "warmSameGopSeekP95Ms": 80,
+      "warmSameChunkRandomSeekP95Ms": 200,
+      "flagOffPreciseRequests": 0,
+      "continuousPlaybackPreciseRequests": 0,
+      "staleFrameActivations": 0,
+      "budgetEvictionMemoryGrowth": 0,
+      "activeDecodersMax": 1,
+      "liveVideoFramesAfterOps": 0,
+      "pipelineBlockingP95Ms": 16,
+      "longTaskGte50Ms": 0
+    },
+    "workerDecision": {
+      "triggered": false,
+      "rationale": "主线程只负责编排(manifest / chunk / samples 查询、generation 与显示状态、signed URL refresh、bitmap LRU、Konva / JPEG);VideoDecoder.configure / decode 与 createImageBitmap 均异步,decode 回调在事件循环,不阻塞主线程;demux 是纯字节切片(微秒级)。现有测量未出现归因于 precise pipeline 的 ≥50ms long task 或主线程 blocking p95>16ms,故不引入 Dedicated Worker 的 structured clone / transfer / 错误面。",
+      "retriggerGate": "若后续测量出现归因于 precise pipeline 的 ≥50ms long task、主线程 blocking p95>16ms 或可复现帧率下降,按 §9.2 实现 worker 并重跑全部 gate;迁移后不改善则撤回。"
+    }
   }
 }

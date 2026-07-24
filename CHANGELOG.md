@@ -42,6 +42,7 @@
 - **视频工作台精确帧诊断接入全局快照与 BUG 反馈**. 暂停态精确帧解码的状态、来源、当前帧、所属 GOP / codec、fallback 原因与资源预算、计数现在写入 `window.__videoWorkbenchDiagnostics`(更新上限 5 Hz,状态与 fallback 转换立即写入,task 切换/卸载有界清理),BUG 报告自动附带经裁剪、不含签名 URL / 字节 / 描述的诊断快照,便于排障;诊断只暴露枚举与数值,不触发界面重渲染。
 - **E2E 确定性 WebCodecs 视频素材与 seed 端点**. 新增仅隔离测试库使用的 seed 端点,用 numpy 生成每帧可机器识别(背景分组亮度 + 四角 bit 编码帧号低位 + 中心场景色)的 H.264 素材,经 ffmpeg 编码成 baseline / 主 profile B 帧 / 短 GOP / 变帧率矩阵,复用生产 ffprobe 与 avcC 管线产出与真实 worker 同结构的 chunk samples 与 codec description;pending→ready 由确定性 test-only 端点切换(不依赖媒体 Celery worker),unsupported / malformed 场景在真实编码上确定性篡改 metadata,全局 cleanup 一并清理 chunk 行与 MinIO 对象。
 - **WebCodecs 精确帧 E2E 与可观察属性**. 视频舞台容器暴露 data-video-frame-source / data-video-precise-state / data-video-frame-index 可观察属性;新增 Playwright spec 用确定性 H.264 fixture 覆盖 flag off 零 precise 请求、flag on 精确解码或安全回退、pending→ready 切换;spec capability-aware,headless Chromium 无可用精确解码时自动跳过像素断言并记录能力状态,精确帧像素验证留给有头 Chrome / GPU runner。
+- **WebCodecs 精确帧性能基准矩阵与 Worker 决策**. video-bench 新增 precise-frame 场景(1080p/30、1080p/60、4K/30 × cold 首帧 / 同 GOP 顺序 / 同 chunk 随机 / 跨 GOP 往返 / 连续播放 / 逐帧长稳),声明退出门(warm same-GOP seek p95 ≤ 80ms、连续播放逐帧 precise 请求 0、活动 decoder ≤ 1 等)并输出结构化 manifest 与人类可读摘要;据决策门记录**不引入 Dedicated Worker** —— VideoDecoder.decode / createImageBitmap 均异步、demux 为纯字节切片,主线程只编排,无归因于 pipeline 的 ≥50ms long task 证据,避免无收益的线程协议与 structured clone 错误面。
 
 ### Changed
 
