@@ -43,7 +43,11 @@ export function isFullWindow(win: TimelineWindow, maxFrame: number): boolean {
 }
 
 /** 把窗口约束进 [0, maxFrame], 跨度夹到 [min(minSpan,maxFrame), maxFrame], 越界时整体平移保跨度。 */
-export function clampWindow(win: TimelineWindow, maxFrame: number, minSpan: number): TimelineWindow {
+export function clampWindow(
+  win: TimelineWindow,
+  maxFrame: number,
+  minSpan: number,
+): TimelineWindow {
   if (maxFrame <= 0) return { from: 0, to: 0 };
   const span = Math.min(Math.max(win.to - win.from, Math.min(minSpan, maxFrame)), maxFrame);
   let from = win.from;

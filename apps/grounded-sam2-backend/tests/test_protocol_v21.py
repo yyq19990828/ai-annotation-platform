@@ -18,7 +18,11 @@ def _stub_modules() -> None:
     sys.modules.setdefault("cv2", MagicMock())
     mask_utils = ModuleType("mask_utils")
     mask_utils.MultiPolygonRing = dict
+    mask_utils.PromptAdapterError = ValueError
+    mask_utils.encode_coco_rle = MagicMock(return_value={})
+    mask_utils.mask_prompt_to_low_res_logits = MagicMock()
     mask_utils.mask_to_multi_polygon = MagicMock(return_value=[])
+    mask_utils.scribbles_to_point_prompts = MagicMock(return_value=([], []))
     polygon = ModuleType("mask_utils.polygon")
     polygon.mask_to_polygon = MagicMock(return_value=[])
     rle = ModuleType("mask_utils.rle")
@@ -40,7 +44,10 @@ def test_resolve_variant_accepts_model_variants() -> None:
     from main import _resolve_variant
 
     assert _resolve_variant(
-        {"type": "text", "model_variants": {"sam_variant": "small", "dino_variant": "B"}}
+        {
+            "type": "text",
+            "model_variants": {"sam_variant": "small", "dino_variant": "B"},
+        }
     ) == ("small", "B")
 
 
@@ -48,11 +55,16 @@ def test_resolve_variant_accepts_legacy_fields_with_warning(caplog) -> None:
     from main import _resolve_variant
 
     caplog.set_level("WARNING")
-    assert _resolve_variant({"type": "text", "sam_variant": "tiny", "dino_variant": "T"}) == (
+    assert _resolve_variant(
+        {"type": "text", "sam_variant": "tiny", "dino_variant": "T"}
+    ) == (
         "tiny",
         "T",
     )
-    assert "context.dino_variant, context.sam_variant -> context.model_variants" in caplog.text
+    assert (
+        "context.dino_variant, context.sam_variant -> context.model_variants"
+        in caplog.text
+    )
 
 
 def test_resolve_variant_invalid_value_returns_standard_422() -> None:

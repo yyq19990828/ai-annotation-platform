@@ -1,7 +1,7 @@
 /**
  * I18 · AnnotationFeedback React Query hooks.
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   feedbacksApi,
   type AnnotationFeedback,
@@ -26,7 +26,19 @@ function feedbacksKey(params: ListFeedbacksParams) {
 export function useFeedbacks(params: ListFeedbacksParams, enabled = true) {
   return useQuery({
     queryKey: feedbacksKey(params),
-    queryFn: () => feedbacksApi.list(params),
+    queryFn: ({ signal }) => feedbacksApi.list(params, signal),
+    enabled: enabled && !!params.project_id,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useInfiniteFeedbacks(params: ListFeedbacksParams, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: [...feedbacksKey(params), "infinite", params.limit ?? 100],
+    queryFn: ({ pageParam, signal }) =>
+      feedbacksApi.list({ ...params, cursor: pageParam ?? undefined }, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: enabled && !!params.project_id,
     staleTime: 30 * 1000,
   });
@@ -37,7 +49,7 @@ export function useCreateFeedback(invalidateParams: ListFeedbacksParams) {
   return useMutation({
     mutationFn: (payload: CreateFeedbackPayload) => feedbacksApi.create(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: feedbacksKey(invalidateParams) });
+      qc.invalidateQueries({ queryKey: ["feedbacks", invalidateParams.project_id] });
     },
   });
 }
@@ -48,7 +60,7 @@ export function usePatchFeedback(invalidateParams: ListFeedbacksParams) {
     mutationFn: ({ id, payload }: { id: string; payload: PatchFeedbackPayload }) =>
       feedbacksApi.patch(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: feedbacksKey(invalidateParams) });
+      qc.invalidateQueries({ queryKey: ["feedbacks", invalidateParams.project_id] });
     },
   });
 }
@@ -58,7 +70,7 @@ export function useDeleteFeedback(invalidateParams: ListFeedbacksParams) {
   return useMutation({
     mutationFn: (id: string) => feedbacksApi.remove(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: feedbacksKey(invalidateParams) });
+      qc.invalidateQueries({ queryKey: ["feedbacks", invalidateParams.project_id] });
     },
   });
 }
@@ -66,10 +78,17 @@ export function useDeleteFeedback(invalidateParams: ListFeedbacksParams) {
 export function useReplyFeedback(invalidateParams: ListFeedbacksParams) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body, attachments }: { id: string; body: string; attachments?: Array<Record<string, unknown>> }) =>
-      feedbacksApi.reply(id, { body, attachments }),
+    mutationFn: ({
+      id,
+      body,
+      attachments,
+    }: {
+      id: string;
+      body: string;
+      attachments?: Array<Record<string, unknown>>;
+    }) => feedbacksApi.reply(id, { body, attachments }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: feedbacksKey(invalidateParams) });
+      qc.invalidateQueries({ queryKey: ["feedbacks", invalidateParams.project_id] });
     },
   });
 }

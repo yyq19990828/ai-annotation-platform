@@ -71,9 +71,6 @@ export const projectPipelinesApi = {
 
   apply: async (projectId: string, payload: ProjectPipelineApplyRequest) =>
     normalizePipeline(
-      await apiClient.post<ProjectPipelineOut>(
-        `/projects/${projectId}/pipelines/apply`,
-        payload,
-      ),
+      await apiClient.post<ProjectPipelineOut>(`/projects/${projectId}/pipelines/apply`, payload),
     ),
 };

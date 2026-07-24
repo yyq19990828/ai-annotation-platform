@@ -7,13 +7,7 @@ describe("<ClassEditor />", () => {
     const rows: ClassRow[] = [{ name: "car", color: "#ff0000" }];
     const onChange = vi.fn();
     const onConfirmDelete = vi.fn().mockResolvedValue(false);
-    render(
-      <ClassEditor
-        value={rows}
-        onChange={onChange}
-        onConfirmDelete={onConfirmDelete}
-      />,
-    );
+    render(<ClassEditor value={rows} onChange={onChange} onConfirmDelete={onConfirmDelete} />);
 
     fireEvent.click(screen.getByTitle("删除"));
 

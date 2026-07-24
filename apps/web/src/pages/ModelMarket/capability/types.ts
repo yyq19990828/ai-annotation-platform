@@ -6,10 +6,10 @@ import type { CapabilityWarning, MLModelCapability } from "@/api/ml-backends";
 // 一个展开后的 model 条目 (附带其来源 backend, 供分组/过滤/标题用).
 export interface FlatModel {
   model: MLModelCapability;
-  backendId: string;        // env-only 合成 id 或某条 registered backend id
+  backendId: string; // env-only 合成 id 或某条 registered backend id
   backendName: string;
-  projectId: string;        // env_only="", registered=主 project_id (仅供 capabilities API)
-  projectName: string;      // 单 project 名 (向后兼容); 多 project 时取首个
+  projectId: string; // env_only="", registered=主 project_id (仅供 capabilities API)
+  projectName: string; // 单 project 名 (向后兼容); 多 project 时取首个
   // v0.14.12 · 来源: env_only = docker-compose 自带 / observe-only;
   //            registered = 已注册到具体项目 (projectName 即注册项目).
   source: "env_only" | "registered";
@@ -41,9 +41,9 @@ export interface ListRow {
   rowKey: string;
   primaryLabel: string;
   primaryId: string;
-  tasks: string[];               // 行所覆盖的 task id 列表 (shared=true 时可能 >1).
-  geometries: string[];          // 行的输出几何 (跨 task 取 union, 去重保序).
-  secondaryLabel: string;        // variants 列 (axis1 或 vram 元信息)
+  tasks: string[]; // 行所覆盖的 task id 列表 (shared=true 时可能 >1).
+  geometries: string[]; // 行的输出几何 (跨 task 取 union, 去重保序).
+  secondaryLabel: string; // variants 列 (axis1 或 vram 元信息)
   secondaryTitle?: string;
   warmVariants: Record<string, string>;
   runtimeKey?: string;

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig } from "@/types";
+import type {
+  AnnotationResponse,
+  TaskVideoFrameTimetableResponse,
+  TaskVideoManifestResponse,
+  VideoSamplingConfig,
+} from "@/types";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import type { WorkbenchPerformanceTier } from "../state/performanceTier";
 import { resolveWorkbenchPerformanceTier } from "../state/performanceTier";
@@ -32,11 +37,21 @@ import {
   buildSelectedTrackTimeline,
   nextVisibleKeyframeFrame,
 } from "./videoTrackTimeline";
-import type { PredictionDensityBin, VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import type {
+  PredictionDensityBin,
+  VideoTimelineDensityBin,
+  VideoTrackTimeline,
+} from "./videoTrackTimeline";
 import { adjacentPredictedFrame } from "./aiBoxFrames";
 import { getTrackColor } from "./colors";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
-import { isVideoBbox, isVideoTrack, shapeIou, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import {
+  isVideoBbox,
+  isVideoTrack,
+  shapeIou,
+  shortTrackId,
+  sortedKeyframes,
+} from "./videoStageGeometry";
 import type { VideoStageGeom, VideoDragState, VideoTrackAnnotation } from "./videoStageTypes";
 import type { VideoStageControls } from "./videoStageControls";
 
@@ -45,7 +60,7 @@ import type { VideoStageControls } from "./videoStageControls";
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
 const DEFAULT_VIDEO_PLAYBACK_RATE: VideoPlaybackRate = 1;
 
-type VideoPlaybackRate = typeof VIDEO_PLAYBACK_RATES[number];
+type VideoPlaybackRate = (typeof VIDEO_PLAYBACK_RATES)[number];
 type VideoJogPlayback = { direction: -1 | 0 | 1; rate: VideoPlaybackRate };
 
 const DEFAULT_PAUSED_JOG_PLAYBACK: VideoJogPlayback = {
@@ -132,7 +147,10 @@ export interface UseVideoPlaybackControllerResult {
   seekOverlayByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
   pausePlayback: (options?: { snapToGrid?: boolean }) => void;
   /** cycleInCategory / stepCategory 由 VideoKonvaStage 补齐, 故此处 Omit(见 controls memo)。 */
-  controls: Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject" | "normToClient">;
+  controls: Omit<
+    VideoStageControls,
+    "cycleInCategory" | "stepCategory" | "focusObject" | "focusRegion" | "normToClient"
+  >;
 }
 
 export function useVideoPlaybackController({
@@ -169,9 +187,7 @@ export function useVideoPlaybackController({
 
   const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(
-    () => pausedJogPlayback,
-  );
+  const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(() => pausedJogPlayback);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
   const [highlightAction, setHighlightAction] = useState<"prev" | "next" | "play" | null>(null);
@@ -206,11 +222,14 @@ export function useVideoPlaybackController({
     }
   }, [defaultPlaybackRate, isPlaybackActive, pausedJogPlayback, videoRef]);
 
-  const setFrameIndex = useCallback((nextFrame: number) => {
-    frameIndexRef.current = nextFrame;
-    if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
-    onFrameIndexChange?.(nextFrame);
-  }, [controlledFrameIndex, onFrameIndexChange]);
+  const setFrameIndex = useCallback(
+    (nextFrame: number) => {
+      frameIndexRef.current = nextFrame;
+      if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
+      onFrameIndexChange?.(nextFrame);
+    },
+    [controlledFrameIndex, onFrameIndexChange],
+  );
 
   const performanceConfig = useMemo(
     () => resolveWorkbenchPerformanceTier(performanceTier),
@@ -232,20 +251,23 @@ export function useVideoPlaybackController({
   const stageMode = modeFromDrag(drag);
   const stageModeGuard = getVideoStageModeGuard(stageMode);
 
-  const handleFrameClockChange = useCallback((nextFrame: number) => {
-    if (!stageModeGuard.canSetupFrame) {
-      videoRef.current?.pause();
-      setJogPlayback(pausedJogPlaybackRef.current);
-      return;
-    }
-    if (isPlaybackActive && loopRegion && nextFrame > loopRegion.endFrame) {
-      setFrameIndex(loopRegion.startFrame);
-      const video = videoRef.current;
-      if (video) video.currentTime = frameToTime(loopRegion.startFrame, timebase);
-      return;
-    }
-    setFrameIndex(nextFrame);
-  }, [isPlaybackActive, loopRegion, setFrameIndex, stageModeGuard.canSetupFrame, timebase, videoRef]);
+  const handleFrameClockChange = useCallback(
+    (nextFrame: number) => {
+      if (!stageModeGuard.canSetupFrame) {
+        videoRef.current?.pause();
+        setJogPlayback(pausedJogPlaybackRef.current);
+        return;
+      }
+      if (isPlaybackActive && loopRegion && nextFrame > loopRegion.endFrame) {
+        setFrameIndex(loopRegion.startFrame);
+        const video = videoRef.current;
+        if (video) video.currentTime = frameToTime(loopRegion.startFrame, timebase);
+        return;
+      }
+      setFrameIndex(nextFrame);
+    },
+    [isPlaybackActive, loopRegion, setFrameIndex, stageModeGuard.canSetupFrame, timebase, videoRef],
+  );
 
   const frameClock = useFrameClock({
     videoRef,
@@ -290,25 +312,32 @@ export function useVideoPlaybackController({
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
 
   const selectedTrackTimeline = useMemo(
-    () => selectedTrack ? buildSelectedTrackTimeline(selectedTrack.geometry) : null,
+    () => (selectedTrack ? buildSelectedTrackTimeline(selectedTrack.geometry) : null),
     [selectedTrack],
   );
 
   const selectedTrackColor = useMemo(
-    () => selectedTrack
-      ? getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides)
-      : null,
+    () =>
+      selectedTrack
+        ? getTrackColor(
+            selectedTrack.geometry.track_id,
+            selectedTrack.class_name,
+            trackColorOverrides,
+          )
+        : null,
     [selectedTrack, trackColorOverrides],
   );
 
   const selectedTrackKeyframes = useMemo(
-    () => selectedTrack ? sortedKeyframes(selectedTrack.geometry) : [],
+    () => (selectedTrack ? sortedKeyframes(selectedTrack.geometry) : []),
     [selectedTrack],
   );
 
   const manualBboxFrames = useMemo(
-    () => annotations
-      .flatMap((ann) => (isVideoBbox(ann) && ann.source !== "prediction_based" ? [ann.geometry.frame_index] : [])),
+    () =>
+      annotations.flatMap((ann) =>
+        isVideoBbox(ann) && ann.source !== "prediction_based" ? [ann.geometry.frame_index] : [],
+      ),
     [annotations],
   );
 
@@ -316,7 +345,13 @@ export function useVideoPlaybackController({
 
   // 全局标注密度是独立上下文层; 选中轨迹时仍常驻显示, 轨迹行只额外渲染选中轨迹详情。
   const globalTimelineDensity = useMemo(
-    () => buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame, timelineDensityBins, manualBboxFrames),
+    () =>
+      buildGlobalTimelineDensity(
+        videoTracks.map((ann) => ann.geometry),
+        maxFrame,
+        timelineDensityBins,
+        manualBboxFrames,
+      ),
     [manualBboxFrames, maxFrame, timelineDensityBins, videoTracks],
   );
 
@@ -335,13 +370,16 @@ export function useVideoPlaybackController({
       for (let i = 1; i < kfs.length; i++) {
         const gap = kfs[i].frame_index - kfs[i - 1].frame_index;
         if (gap > maxGap) {
-          warnings.push(`${ann.class_name} ${shortTrackId(ann.geometry.track_id)} 关键帧间隔 ${gap} 帧`);
+          warnings.push(
+            `${ann.class_name} ${shortTrackId(ann.geometry.track_id)} 关键帧间隔 ${gap} 帧`,
+          );
           break;
         }
       }
     }
     for (const entry of currentFrameEntries) {
-      if (entry.geom.w < 0.003 || entry.geom.h < 0.003) warnings.push(`${entry.className} 当前帧存在极小框`);
+      if (entry.geom.w < 0.003 || entry.geom.h < 0.003)
+        warnings.push(`${entry.className} 当前帧存在极小框`);
     }
     for (let i = 0; i < currentFrameEntries.length; i++) {
       for (let j = i + 1; j < currentFrameEntries.length; j++) {
@@ -378,7 +416,8 @@ export function useVideoPlaybackController({
     onToggleLockedTrack,
     onPropagateTrack: onPropagateTrack
       ? (annotation) => {
-          if (annotation.geometry.type === "video_track_bbox") onPropagateTrack(annotation as VideoTrackAnnotation);
+          if (annotation.geometry.type === "video_track_bbox")
+            onPropagateTrack(annotation as VideoTrackAnnotation);
         }
       : undefined,
   });
@@ -389,22 +428,30 @@ export function useVideoPlaybackController({
   );
 
   const canDeleteSelectedTrackKeyframe = Boolean(
-    selectedTrack
-    && selectedTrackCurrentKeyframe
-    && !readOnly
-    && !trackActions.selectedTrackLocked
-    && selectedTrack.geometry.keyframes.length > 1,
+    selectedTrack &&
+    selectedTrackCurrentKeyframe &&
+    !readOnly &&
+    !trackActions.selectedTrackLocked &&
+    selectedTrack.geometry.keyframes.length > 1,
   );
 
   const deleteSelectedTrackKeyframe = useCallback(() => {
-    if (!selectedTrack || !selectedTrackCurrentKeyframe || !canDeleteSelectedTrackKeyframe) return false;
+    if (!selectedTrack || !selectedTrackCurrentKeyframe || !canDeleteSelectedTrackKeyframe)
+      return false;
     onUpdate(selectedTrack, {
       ...selectedTrack.geometry,
-      keyframes: sortedKeyframes(selectedTrack.geometry)
-        .filter((kf) => kf.frame_index !== frameIndex),
+      keyframes: sortedKeyframes(selectedTrack.geometry).filter(
+        (kf) => kf.frame_index !== frameIndex,
+      ),
     });
     return true;
-  }, [canDeleteSelectedTrackKeyframe, frameIndex, onUpdate, selectedTrack, selectedTrackCurrentKeyframe]);
+  }, [
+    canDeleteSelectedTrackKeyframe,
+    frameIndex,
+    onUpdate,
+    selectedTrack,
+    selectedTrackCurrentKeyframe,
+  ]);
 
   // ---- 播放 overlay 计时器 ----
   const showPlaybackOverlay = useCallback(() => {
@@ -437,7 +484,14 @@ export function useVideoPlaybackController({
       void captureBitmapFrame(videoRef.current, targetFrame);
       return result;
     },
-    [captureBitmapFrame, frameClock, maxFrame, showCachedBitmapFrame, stageModeGuard.canSetupFrame, videoRef],
+    [
+      captureBitmapFrame,
+      frameClock,
+      maxFrame,
+      showCachedBitmapFrame,
+      stageModeGuard.canSetupFrame,
+      videoRef,
+    ],
   );
   const seekFrameAsyncRef = useRef(seekFrameAsync);
   useEffect(() => {
@@ -445,22 +499,25 @@ export function useVideoPlaybackController({
   }, [seekFrameAsync]);
 
   // ---- 播放控制 ----
-  const pausePlayback = useCallback((options?: { snapToGrid?: boolean }) => {
-    const video = videoRef.current;
-    if (video) {
-      video.pause();
-      video.playbackRate = defaultPlaybackRate;
-    }
-    setIsPlaying(false);
-    setJogPlayback(pausedJogPlaybackRef.current);
-    const step = samplingStepRef.current;
-    if ((options?.snapToGrid ?? true) && step > 1) {
-      const snapped = snapToGrid(frameIndexRef.current, step, maxFrame);
-      if (snapped !== frameIndexRef.current) {
-        void seekFrameAsyncRef.current(snapped, { recordHistory: false });
+  const pausePlayback = useCallback(
+    (options?: { snapToGrid?: boolean }) => {
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        video.playbackRate = defaultPlaybackRate;
       }
-    }
-  }, [defaultPlaybackRate, maxFrame, videoRef]);
+      setIsPlaying(false);
+      setJogPlayback(pausedJogPlaybackRef.current);
+      const step = samplingStepRef.current;
+      if ((options?.snapToGrid ?? true) && step > 1) {
+        const snapped = snapToGrid(frameIndexRef.current, step, maxFrame);
+        if (snapped !== frameIndexRef.current) {
+          void seekFrameAsyncRef.current(snapped, { recordHistory: false });
+        }
+      }
+    },
+    [defaultPlaybackRate, maxFrame, videoRef],
+  );
 
   const togglePlayback = useCallback(() => {
     showPlaybackOverlay();
@@ -485,34 +542,50 @@ export function useVideoPlaybackController({
         setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
       });
     }
-  }, [defaultPlaybackRate, flashPlaybackAction, frameIndex, isPlaybackActive, loopRegion, pausePlayback, seekFrameAsync, showPlaybackOverlay, videoRef]);
+  }, [
+    defaultPlaybackRate,
+    flashPlaybackAction,
+    frameIndex,
+    isPlaybackActive,
+    loopRegion,
+    pausePlayback,
+    seekFrameAsync,
+    showPlaybackOverlay,
+    videoRef,
+  ]);
 
-  const jogPlaybackBy = useCallback((dir: -1 | 1) => {
-    showPlaybackOverlay();
-    flashPlaybackAction(dir < 0 ? "prev" : "next");
-    setPlaybackError(null);
-    const current = jogPlaybackRef.current;
-    const next = current.direction === 0
-      ? { direction: dir, rate: pausedJogPlaybackRef.current.rate }
-      : current.direction === dir
-        ? { direction: dir, rate: nextHigherPlaybackRate(current.rate) }
-        : (() => {
-          const lower = nextLowerPlaybackRate(current.rate);
-          return lower ? { ...current, rate: lower } : pausedJogPlaybackRef.current;
-        })();
-    if (next.direction === 0) {
-      pausePlayback();
-      return;
-    }
-    setJogPlayback(next);
-  }, [flashPlaybackAction, pausePlayback, showPlaybackOverlay]);
+  const jogPlaybackBy = useCallback(
+    (dir: -1 | 1) => {
+      showPlaybackOverlay();
+      flashPlaybackAction(dir < 0 ? "prev" : "next");
+      setPlaybackError(null);
+      const current = jogPlaybackRef.current;
+      const next =
+        current.direction === 0
+          ? { direction: dir, rate: pausedJogPlaybackRef.current.rate }
+          : current.direction === dir
+            ? { direction: dir, rate: nextHigherPlaybackRate(current.rate) }
+            : (() => {
+                const lower = nextLowerPlaybackRate(current.rate);
+                return lower ? { ...current, rate: lower } : pausedJogPlaybackRef.current;
+              })();
+      if (next.direction === 0) {
+        pausePlayback();
+        return;
+      }
+      setJogPlayback(next);
+    },
+    [flashPlaybackAction, pausePlayback, showPlaybackOverlay],
+  );
 
   const seekByFrames = useCallback(
     (delta: number, options?: { recordHistory?: boolean }) => {
       showPlaybackOverlay();
       flashPlaybackAction(delta < 0 ? "prev" : "next");
       pausePlayback({ snapToGrid: false });
-      void seekFrameAsync(frameIndexRef.current + delta, { recordHistory: options?.recordHistory ?? true });
+      void seekFrameAsync(frameIndexRef.current + delta, {
+        recordHistory: options?.recordHistory ?? true,
+      });
     },
     [flashPlaybackAction, pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
@@ -544,7 +617,11 @@ export function useVideoPlaybackController({
   const seekToKeyframe = useCallback(
     (dir: -1 | 1, options?: { recordHistory?: boolean }) => {
       if (!selectedTrack) return;
-      const nextFrame = nextVisibleKeyframeFrame(selectedTrack.geometry, frameIndexRef.current, dir);
+      const nextFrame = nextVisibleKeyframeFrame(
+        selectedTrack.geometry,
+        frameIndexRef.current,
+        dir,
+      );
       if (nextFrame === null) return;
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
@@ -574,42 +651,63 @@ export function useVideoPlaybackController({
     [pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
 
+  const seekToFrameReady = useCallback(
+    async (nextFrame: number, options?: { recordHistory?: boolean }) => {
+      showPlaybackOverlay();
+      pausePlayback({ snapToGrid: false });
+      await seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
+    },
+    [pausePlayback, seekFrameAsync, showPlaybackOverlay],
+  );
+
   // v0.21.9 · 跳到下一个/上一个有预测的帧 (预测帧集合上的 next/prev)。
-  const seekToAdjacentPredictedFrame = useCallback((dir: -1 | 1) => {
-    const target = adjacentPredictedFrame(predictedFrames, frameIndex, dir);
-    if (target !== null) seekToFrame(target, { recordHistory: true });
-  }, [predictedFrames, frameIndex, seekToFrame]);
+  const seekToAdjacentPredictedFrame = useCallback(
+    (dir: -1 | 1) => {
+      const target = adjacentPredictedFrame(predictedFrames, frameIndex, dir);
+      if (target !== null) seekToFrame(target, { recordHistory: true });
+    },
+    [predictedFrames, frameIndex, seekToFrame],
+  );
 
   const toggleBookmark = useCallback(() => {
     showPlaybackOverlay();
     setBookmarks((current) => toggleVideoBookmark(current, frameIndex));
   }, [frameIndex, showPlaybackOverlay]);
 
-  const jumpHistoryBy = useCallback((dir: -1 | 1) => {
-    const result = jumpVideoHistory(jumpHistory, dir);
-    setJumpHistory(result.history);
-    if (result.frameIndex === null) return;
-    showPlaybackOverlay();
-    pausePlayback({ snapToGrid: false });
-    void seekFrameAsync(result.frameIndex, { recordHistory: false });
-  }, [jumpHistory, pausePlayback, seekFrameAsync, showPlaybackOverlay]);
+  const jumpHistoryBy = useCallback(
+    (dir: -1 | 1) => {
+      const result = jumpVideoHistory(jumpHistory, dir);
+      setJumpHistory(result.history);
+      if (result.frameIndex === null) return;
+      showPlaybackOverlay();
+      pausePlayback({ snapToGrid: false });
+      void seekFrameAsync(result.frameIndex, { recordHistory: false });
+    },
+    [jumpHistory, pausePlayback, seekFrameAsync, showPlaybackOverlay],
+  );
 
   const clearLoopRegion = useCallback(() => {
     showPlaybackOverlay();
     setLoopRegion(null);
   }, [showPlaybackOverlay]);
 
-  const setNormalizedLoopRegion = useCallback((region: VideoLoopRegion) => {
-    showPlaybackOverlay();
-    setLoopRegion(normalizeLoopRegion(region.startFrame, region.endFrame, maxFrame));
-  }, [maxFrame, showPlaybackOverlay]);
+  const setNormalizedLoopRegion = useCallback(
+    (region: VideoLoopRegion) => {
+      showPlaybackOverlay();
+      setLoopRegion(normalizeLoopRegion(region.startFrame, region.endFrame, maxFrame));
+    },
+    [maxFrame, showPlaybackOverlay],
+  );
 
   // ---- 正向 jog 播放 effect ----
   useEffect(() => {
     if (jogPlayback.direction !== 1) return;
     const video = videoRef.current;
     if (!video) return;
-    if (loopRegion && (frameIndexRef.current < loopRegion.startFrame || frameIndexRef.current > loopRegion.endFrame)) {
+    if (
+      loopRegion &&
+      (frameIndexRef.current < loopRegion.startFrame || frameIndexRef.current > loopRegion.endFrame)
+    ) {
       void seekFrameAsyncRef.current(loopRegion.startFrame, { recordHistory: true });
     }
     video.playbackRate = jogPlayback.rate;
@@ -638,12 +736,14 @@ export function useVideoPlaybackController({
     let accumulator = 0;
     let seeking = false;
     let cancelled = false;
-    const schedule = typeof window.requestAnimationFrame === "function"
-      ? window.requestAnimationFrame.bind(window)
-      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
-    const cancel = typeof window.cancelAnimationFrame === "function"
-      ? window.cancelAnimationFrame.bind(window)
-      : window.clearTimeout.bind(window);
+    const schedule =
+      typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const cancel =
+      typeof window.cancelAnimationFrame === "function"
+        ? window.cancelAnimationFrame.bind(window)
+        : window.clearTimeout.bind(window);
 
     const tick = (now: number) => {
       if (cancelled) return;
@@ -662,7 +762,9 @@ export function useVideoPlaybackController({
           setJogPlayback(pausedJogPlaybackRef.current);
         }
         seeking = true;
-        void Promise.resolve(seekFrameAsyncRef.current(nextFrame, { recordHistory: false })).finally(() => {
+        void Promise.resolve(
+          seekFrameAsyncRef.current(nextFrame, { recordHistory: false }),
+        ).finally(() => {
           seeking = false;
         });
       }
@@ -767,12 +869,14 @@ export function useVideoPlaybackController({
   // ---- 暂停时持续抓位图 ----
   useEffect(() => {
     if (isPlaybackActive || frameClock.isSeeking) return;
-    const schedule = typeof window.requestAnimationFrame === "function"
-      ? window.requestAnimationFrame.bind(window)
-      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
-    const cancel = typeof window.cancelAnimationFrame === "function"
-      ? window.cancelAnimationFrame.bind(window)
-      : window.clearTimeout.bind(window);
+    const schedule =
+      typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const cancel =
+      typeof window.cancelAnimationFrame === "function"
+        ? window.cancelAnimationFrame.bind(window)
+        : window.clearTimeout.bind(window);
     const raf = schedule(() => {
       void captureBitmapFrame(videoRef.current, frameIndex);
     });
@@ -792,9 +896,24 @@ export function useVideoPlaybackController({
     setPlaybackError(null);
     setPlaybackOverlayVisible(true);
     try {
-      setLoopRegion(parseStoredLoopRegion(sessionStorage.getItem(videoNavigationStorageKey(taskId, "loop")), maxFrame));
-      setBookmarks(parseStoredBookmarks(sessionStorage.getItem(videoNavigationStorageKey(taskId, "bookmarks")), maxFrame));
-      setJumpHistory(parseStoredJumpHistory(sessionStorage.getItem(videoNavigationStorageKey(taskId, "history")), maxFrame));
+      setLoopRegion(
+        parseStoredLoopRegion(
+          sessionStorage.getItem(videoNavigationStorageKey(taskId, "loop")),
+          maxFrame,
+        ),
+      );
+      setBookmarks(
+        parseStoredBookmarks(
+          sessionStorage.getItem(videoNavigationStorageKey(taskId, "bookmarks")),
+          maxFrame,
+        ),
+      );
+      setJumpHistory(
+        parseStoredJumpHistory(
+          sessionStorage.getItem(videoNavigationStorageKey(taskId, "history")),
+          maxFrame,
+        ),
+      );
     } catch {
       setLoopRegion(null);
       setBookmarks([]);
@@ -820,7 +939,10 @@ export function useVideoPlaybackController({
     const taskId = manifest?.task_id;
     if (!taskId) return;
     try {
-      sessionStorage.setItem(videoNavigationStorageKey(taskId, "bookmarks"), JSON.stringify(bookmarks));
+      sessionStorage.setItem(
+        videoNavigationStorageKey(taskId, "bookmarks"),
+        JSON.stringify(bookmarks),
+      );
     } catch {
       // noop
     }
@@ -830,7 +952,10 @@ export function useVideoPlaybackController({
     const taskId = manifest?.task_id;
     if (!taskId) return;
     try {
-      sessionStorage.setItem(videoNavigationStorageKey(taskId, "history"), JSON.stringify(jumpHistory));
+      sessionStorage.setItem(
+        videoNavigationStorageKey(taskId, "history"),
+        JSON.stringify(jumpHistory),
+      );
     } catch {
       // noop
     }
@@ -862,53 +987,63 @@ export function useVideoPlaybackController({
   // ---- controls 句柄(对齐 VideoStage useImperativeHandle) ----
   // cycleInCategory / stepCategory 依赖 stage 侧的当前帧分类 + selectedId + onSelect,
   // 由 VideoKonvaStage 在 useImperativeHandle 补齐, 故此处 Omit。
-  const controls = useMemo<Omit<VideoStageControls, "cycleInCategory" | "stepCategory" | "focusObject" | "normToClient">>(() => ({
-    togglePlayback,
-    jogPlayback: jogPlaybackBy,
-    pausePlayback,
-    seekByFrames,
-    seekGrid,
-    microStep: microStepBy,
-    seekToKeyframe,
-    seekToFrame,
-    toggleBookmark,
-    jumpHistory: jumpHistoryBy,
-    clearLoopRegion,
-    toggleSelectedTrackOutside: trackActions.toggleSelectedTrackOutside,
-    toggleSelectedTrackOccluded: trackActions.toggleSelectedTrackOccluded,
-    toggleSelectedTrackHidden: trackActions.toggleSelectedTrackHidden,
-    toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
-    propagateSelectedTrack: trackActions.propagateSelectedTrack,
-    deleteSelectedTrackKeyframe,
-    // v0.21.4 · 当前帧 → JPEG(视频单题 AI / 交互式 SAM 供图), 经 ref 读最新位图故不入 deps。
-    captureCurrentFrameJpeg: async (quality?: number) => {
-      const bmp = activeBitmapRef.current?.bitmap;
-      if (bmp) return imageBitmapToJpeg(bmp, quality);
-      // v0.21.23 · 位图缓存未命中时画布画的是 <video> 本身(pickMediaImageSource 的回退),
-      // 只认 bitmap 会在画面明明可见时谎报「当前帧尚未就绪」。取帧与渲染取同一源。
-      const el = videoRef.current;
-      return el ? videoElementToJpeg(el, quality) : null;
-    },
-  }), [
-    clearLoopRegion,
-    deleteSelectedTrackKeyframe,
-    jogPlaybackBy,
-    jumpHistoryBy,
-    microStepBy,
-    pausePlayback,
-    seekByFrames,
-    seekGrid,
-    seekToFrame,
-    seekToKeyframe,
-    toggleBookmark,
-    togglePlayback,
-    trackActions.propagateSelectedTrack,
-    trackActions.toggleSelectedTrackHidden,
-    trackActions.toggleSelectedTrackLocked,
-    videoRef,
-    trackActions.toggleSelectedTrackOccluded,
-    trackActions.toggleSelectedTrackOutside,
-  ]);
+  const controls = useMemo<
+    Omit<
+      VideoStageControls,
+      "cycleInCategory" | "stepCategory" | "focusObject" | "focusRegion" | "normToClient"
+    >
+  >(
+    () => ({
+      togglePlayback,
+      jogPlayback: jogPlaybackBy,
+      pausePlayback,
+      seekByFrames,
+      seekGrid,
+      microStep: microStepBy,
+      seekToKeyframe,
+      seekToFrame,
+      seekToFrameReady,
+      toggleBookmark,
+      jumpHistory: jumpHistoryBy,
+      clearLoopRegion,
+      toggleSelectedTrackOutside: trackActions.toggleSelectedTrackOutside,
+      toggleSelectedTrackOccluded: trackActions.toggleSelectedTrackOccluded,
+      toggleSelectedTrackHidden: trackActions.toggleSelectedTrackHidden,
+      toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
+      propagateSelectedTrack: trackActions.propagateSelectedTrack,
+      deleteSelectedTrackKeyframe,
+      // v0.21.4 · 当前帧 → JPEG(视频单题 AI / 交互式 SAM 供图), 经 ref 读最新位图故不入 deps。
+      captureCurrentFrameJpeg: async (quality?: number) => {
+        const bmp = activeBitmapRef.current?.bitmap;
+        if (bmp) return imageBitmapToJpeg(bmp, quality);
+        // v0.21.23 · 位图缓存未命中时画布画的是 <video> 本身(pickMediaImageSource 的回退),
+        // 只认 bitmap 会在画面明明可见时谎报「当前帧尚未就绪」。取帧与渲染取同一源。
+        const el = videoRef.current;
+        return el ? videoElementToJpeg(el, quality) : null;
+      },
+    }),
+    [
+      clearLoopRegion,
+      deleteSelectedTrackKeyframe,
+      jogPlaybackBy,
+      jumpHistoryBy,
+      microStepBy,
+      pausePlayback,
+      seekByFrames,
+      seekGrid,
+      seekToFrame,
+      seekToFrameReady,
+      seekToKeyframe,
+      toggleBookmark,
+      togglePlayback,
+      trackActions.propagateSelectedTrack,
+      trackActions.toggleSelectedTrackHidden,
+      trackActions.toggleSelectedTrackLocked,
+      videoRef,
+      trackActions.toggleSelectedTrackOccluded,
+      trackActions.toggleSelectedTrackOutside,
+    ],
+  );
 
   return {
     frameIndex,

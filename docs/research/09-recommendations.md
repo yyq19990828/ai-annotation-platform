@@ -203,21 +203,22 @@ async def get_next_task(user, project, db):
    - 人工修订后,把 diff 喂回去做 prompt improvement（Adala 自带 `prompt_improvement.py` 技能）
 
 **别一开始就做的**:
+
 - 自己实现 Agent 框架（用 Adala 或 Refuel 即可）
 - 在 Web 端跑 LLM（慢、贵,放服务端）
 
 ## 6.6 工程化补强（P1 — 跟 P0 同步推）
 
-| 项 | 怎么做 | 优先级 |
-|---|---|---|
-| Presigned URL 上传 | minio-py 的 `get_presigned_url("PUT")` + 前端 PUT | P1 |
-| Celery + Redis | 已有 Redis,Celery 4.x 直接接,worker 单独 docker service | P1 |
-| WebSocket | FastAPI 自带 + Redis Pub/Sub 跨 worker | P1 |
-| 数据导出 | COCO/VOC/YOLO 三个 exporter,共同基类,异步 Celery 跑 | P1 |
-| 审计日志 | SQLAlchemy event listener + 异步写入 | P2 |
-| Webhook 出口 | 简单实现:saved 后异步 POST 给注册的 endpoint | P2 |
-| Helm Chart | 跟 Docker Compose 同步维护 | P3 |
-| i18n | react-i18next + 后端枚举抽出 messages | P2 |
+| 项                 | 怎么做                                                  | 优先级 |
+| ------------------ | ------------------------------------------------------- | ------ |
+| Presigned URL 上传 | minio-py 的 `get_presigned_url("PUT")` + 前端 PUT       | P1     |
+| Celery + Redis     | 已有 Redis,Celery 4.x 直接接,worker 单独 docker service | P1     |
+| WebSocket          | FastAPI 自带 + Redis Pub/Sub 跨 worker                  | P1     |
+| 数据导出           | COCO/VOC/YOLO 三个 exporter,共同基类,异步 Celery 跑     | P1     |
+| 审计日志           | SQLAlchemy event listener + 异步写入                    | P2     |
+| Webhook 出口       | 简单实现:saved 后异步 POST 给注册的 endpoint            | P2     |
+| Helm Chart         | 跟 Docker Compose 同步维护                              | P3     |
+| i18n               | react-i18next + 后端枚举抽出 messages                   | P2     |
 
 ## 6.7 你已有的技术资产可以怎么用
 

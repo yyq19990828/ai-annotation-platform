@@ -2,8 +2,11 @@ from fastapi import APIRouter
 
 from app.api.v1.tasks import (
     annotations,
+    ai_masks,
     lifecycle,
     locks,
+    mask_capabilities,
+    mask_mutations,
     predictions,
     review,
     video,
@@ -22,7 +25,10 @@ from app.api.v1.tasks._shared import (
 router = APIRouter()
 router.include_router(task_list.router, prefix="/tasks")
 router.include_router(video.router, prefix="/tasks")
+router.include_router(mask_capabilities.router, prefix="/tasks")
+router.include_router(mask_mutations.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
+router.include_router(ai_masks.router, prefix="/tasks")
 router.include_router(predictions.router, prefix="/tasks")
 router.include_router(lifecycle.router, prefix="/tasks")
 router.include_router(review.router, prefix="/tasks")

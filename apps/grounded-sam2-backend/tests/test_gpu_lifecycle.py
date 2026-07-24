@@ -263,8 +263,9 @@ def test_legacy_workload_rejects_partial_or_invalid_managed_headers(
     _run(scenario())
 
 
-def test_legacy_workload_rejects_valid_managed_headers_without_open_generation(
-) -> None:
+def test_legacy_workload_rejects_valid_managed_headers_without_open_generation() -> (
+    None
+):
     async def scenario() -> None:
         image = _FakePool(_snapshot())
         video = _FakePool(_snapshot())

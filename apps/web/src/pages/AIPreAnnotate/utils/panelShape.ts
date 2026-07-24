@@ -9,10 +9,7 @@
  * 闭/开集判定一律逐 model (以 supported_prompts / supported_geometric_outputs 为准): 未来同一
  * yolo-backend 可能并存闭集 (detect/seg/obb) 与开集 (YOLO-World/YOLOE) model, 不可按 backend 名分.
  */
-import type {
-  MLModelCapability,
-  MLBackendSupportedVariantGroup,
-} from "@/api/ml-backends";
+import type { MLModelCapability, MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { TextOutputMode } from "@/hooks/usePreannotation";
 
 /** prompt 区的三种形态: 文本 prompt / 类别筛选 (闭集白名单) / 隐藏. */
@@ -80,9 +77,7 @@ export function derivePanelShape(
  * 任何单 model 都表达不全 (#3 回归: primaryModel=detection → 输出锁 box / 变体仅 dino)。
  * 故输出形态改由顶层 `supported_text_outputs` (box/mask/both) 派生; prompt 区恒为文本框。
  */
-export function deriveTextPanelShape(
-  supportedTextOutputs: string[] | undefined,
-): PanelShape {
+export function deriveTextPanelShape(supportedTextOutputs: string[] | undefined): PanelShape {
   // 声明不全时安全兜底: 维持三选可见, 不强行锁定。
   if (!supportedTextOutputs || supportedTextOutputs.length === 0) {
     return { showOutputMode: true, forcedOutputMode: null, promptKind: "prompt" };

@@ -68,9 +68,10 @@ export function useSessionStats(
     };
   }, []);
 
-  const avgMs = samples.length >= MIN_SAMPLES
-    ? samples.reduce((a: number, b: number) => a + b, 0) / samples.length
-    : null;
+  const avgMs =
+    samples.length >= MIN_SAMPLES
+      ? samples.reduce((a: number, b: number) => a + b, 0) / samples.length
+      : null;
 
   function etaMs(remainingCount: number): number | null {
     if (avgMs === null || remainingCount <= 0) return null;

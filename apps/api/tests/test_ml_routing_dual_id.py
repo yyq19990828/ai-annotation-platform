@@ -7,9 +7,11 @@ the pool id is derived from the instance's singleton pool via MLBackendService.
 
 from __future__ import annotations
 
+import io
 import uuid
 
 import pytest
+from PIL import Image
 from sqlalchemy import select
 
 from app.db.models.prediction import Prediction
@@ -17,6 +19,13 @@ from app.services.prediction import PredictionService
 from app.services.ml_backend import MLBackendService
 from tests.conftest import create_registry_with_pool
 from tests.factory import create_project
+
+
+def _tiny_jpeg() -> bytes:
+    """v0.23.5 WS-D D2 requires PIL-decodable frames on /predict-frame."""
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (10, 20, 30)).save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 @pytest.mark.asyncio
@@ -166,7 +175,7 @@ async def test_predict_frame_route_records_dual_id(
             files={
                 "frame": (
                     "f.jpg",
-                    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9",
+                    _tiny_jpeg(),
                     "image/jpeg",
                 )
             },

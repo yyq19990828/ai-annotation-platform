@@ -81,17 +81,66 @@ def normalize_outside_ranges(ranges: list[dict] | None) -> list[dict]:
         for range_ in (clean_outside_range(item) for item in ranges or [])
         if range_ is not None
     ]
-    cleaned.sort(key=lambda item: (item["from"], item["to"]))
+    cleaned.sort(key=lambda item: (item["from"], item["to"], item["source"]))
     merged: list[dict] = []
     for range_ in cleaned:
         previous = merged[-1] if merged else None
-        if previous and range_["from"] <= previous["to"] + 1:
+        if (
+            previous
+            and previous["source"] == range_["source"]
+            and range_["from"] <= previous["to"] + 1
+        ):
             previous["to"] = max(previous["to"], range_["to"])
-            if range_["source"] == "prediction":
-                previous["source"] = "prediction"
             continue
         merged.append(dict(range_))
     return merged
+
+
+def remove_frame_from_outside_ranges(
+    ranges: list[dict] | None, frame_index: int
+) -> list[dict]:
+    """Make one frame visible while preserving every surrounding outside range."""
+
+    frame = max(0, int(frame_index))
+    result: list[dict] = []
+    for range_ in normalize_outside_ranges(ranges):
+        if frame < range_["from"] or frame > range_["to"]:
+            result.append(range_)
+            continue
+        if range_["from"] < frame:
+            result.append({**range_, "to": frame - 1})
+        if frame < range_["to"]:
+            result.append({**range_, "from": frame + 1})
+    return normalize_outside_ranges(result)
+
+
+def remove_manual_frame_from_outside_ranges(
+    ranges: list[dict] | None, frame_index: int
+) -> tuple[list[dict], bool]:
+    """Remove one frame only from manual outside ranges.
+
+    Prediction-owned ranges remain authoritative.  The boolean reports whether a
+    manual range actually covered the frame so callers can distinguish a no-op
+    from a successful held restore.
+    """
+
+    frame = max(0, int(frame_index))
+    result: list[dict] = []
+    removed = False
+    for range_ in normalize_outside_ranges(ranges):
+        if (
+            range_["source"] != "manual"
+            or frame < range_["from"]
+            or frame > range_["to"]
+        ):
+            result.append(range_)
+            continue
+        removed = True
+        if range_["from"] < frame:
+            result.append({**range_, "to": frame - 1})
+        if frame < range_["to"]:
+            result.append({**range_, "from": frame + 1})
+    return normalize_outside_ranges(result), removed
 
 
 def effective_outside_ranges(geometry: dict) -> list[dict]:
@@ -276,6 +325,91 @@ def _coerce_geometry(geometry_or_keyframes: dict | list[dict]) -> dict:
     return geometry_or_keyframes
 
 
+def resolve_mask_track_state_at_frame(geometry: dict, frame_index: int) -> dict:
+    """Resolve a mask track without conflating model absence with manual outside.
+
+    Persisted mask tracks still use the existing ``outside`` ranges. Prediction
+    ranges mean that a model explicitly observed no instance (``absent``), while
+    manual ranges retain the user-authored ``outside`` meaning. The compatibility
+    resolver below continues returning ``None`` for either state.
+    """
+
+    if not is_mask_track(geometry):
+        raise ValueError("detailed mask resolution requires video_track_mask")
+    frame = max(0, int(frame_index))
+    covering_ranges = [
+        range_
+        for range_ in effective_outside_ranges(geometry)
+        if int(range_["from"]) <= frame <= int(range_["to"])
+    ]
+    if covering_ranges:
+        state = (
+            "outside"
+            if any(range_["source"] == "manual" for range_ in covering_ranges)
+            else "absent"
+        )
+        return {
+            "frame_index": frame,
+            "state": state,
+            "resolved_from_frame": None,
+            "source": "manual" if state == "outside" else "prediction",
+            "mask": None,
+            "confidence": None,
+            "correction_lineage": None,
+        }
+
+    keyframes = sorted_keyframes(geometry)
+    candidates = [
+        keyframe
+        for keyframe in keyframes
+        if not range_intersects_outside(
+            effective_outside_ranges(geometry),
+            int(keyframe.get("frame_index", 0)),
+            int(keyframe.get("frame_index", 0)),
+        )
+    ]
+    if not candidates:
+        return {
+            "frame_index": frame,
+            "state": "outside",
+            "resolved_from_frame": None,
+            "source": None,
+            "mask": None,
+            "confidence": None,
+            "correction_lineage": None,
+        }
+    selected = min(
+        candidates,
+        key=lambda keyframe: (
+            abs(int(keyframe.get("frame_index", 0)) - frame),
+            int(keyframe.get("frame_index", 0)),
+        ),
+    )
+    selected_frame = int(selected.get("frame_index", 0))
+    state = (
+        "occluded"
+        if bool(selected.get("occluded", False))
+        else ("exact" if selected_frame == frame else "held")
+    )
+    resolved = {
+        "frame_index": frame,
+        "state": state,
+        "resolved_from_frame": selected_frame,
+        "source": selected.get("source", "manual"),
+        "mask": dict(selected.get("mask") or {}),
+        "confidence": selected.get("confidence"),
+        "correction_lineage": selected.get("correction_lineage"),
+        "occluded": bool(selected.get("occluded", False)),
+    }
+    if isinstance(selected.get("bbox"), dict):
+        resolved["bbox"] = dict(selected["bbox"])
+    if isinstance(selected.get("mask_rle"), dict):
+        resolved["mask_rle"] = dict(selected["mask_rle"])
+    if isinstance(selected.get("attributes"), dict):
+        resolved["attributes"] = selected["attributes"]
+    return resolved
+
+
 def resolve_track_at_frame(
     geometry_or_keyframes: dict | list[dict], frame_index: int
 ) -> dict | None:
@@ -287,36 +421,18 @@ def resolve_track_at_frame(
         return None
 
     if is_mask_track(geometry):
-        candidates = [
-            keyframe
-            for keyframe in keyframes
-            if not range_intersects_outside(
-                outside_ranges,
-                int(keyframe.get("frame_index", 0)),
-                int(keyframe.get("frame_index", 0)),
-            )
-        ]
-        if not candidates:
+        detailed = resolve_mask_track_state_at_frame(geometry, frame_index)
+        if detailed["state"] in {"absent", "outside"}:
             return None
-        selected = min(
-            candidates,
-            key=lambda keyframe: (
-                abs(int(keyframe.get("frame_index", 0)) - frame_index),
-                int(keyframe.get("frame_index", 0)),
-            ),
-        )
         resolved = {
             "frame_index": frame_index,
-            "mask": dict(selected.get("mask") or {}),
-            "source": selected.get("source", "manual"),
-            "occluded": bool(selected.get("occluded", False)),
+            "mask": detailed["mask"],
+            "source": detailed["source"],
+            "occluded": detailed["state"] == "occluded",
         }
-        if isinstance(selected.get("bbox"), dict):
-            resolved["bbox"] = dict(selected["bbox"])
-        if isinstance(selected.get("mask_rle"), dict):
-            resolved["mask_rle"] = dict(selected["mask_rle"])
-        if isinstance(selected.get("attributes"), dict):
-            resolved["attributes"] = selected["attributes"]
+        for field in ("bbox", "mask_rle", "attributes"):
+            if field in detailed:
+                resolved[field] = detailed[field]
         return resolved
 
     exact = next(

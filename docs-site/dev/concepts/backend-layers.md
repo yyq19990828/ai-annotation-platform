@@ -80,11 +80,11 @@ services/
 
 ## 测试映射
 
-| 层 | 测试位置 |
-|---|---|
-| 路由 | `tests/test_<feature>.py` 用 `httpx_client` |
-| 服务 | `tests/test_<service>_service.py` 直接调函数 |
-| 模型 | 不单独测，由路由 / 服务测试覆盖 |
-| Workers | `tests/test_<task>.py`，用 eager mode |
+| 层      | 测试位置                                     |
+| ------- | -------------------------------------------- |
+| 路由    | `tests/test_<feature>.py` 用 `httpx_client`  |
+| 服务    | `tests/test_<service>_service.py` 直接调函数 |
+| 模型    | 不单独测，由路由 / 服务测试覆盖              |
+| Workers | `tests/test_<task>.py`，用 eager mode        |
 
 领域结构额外由 `tests/test_domain_package_architecture.py` 检查依赖方向、相对导入、package root 和模块环；`tests/test_compat_facades.py` 对每个兼容 facade 的全部公开符号执行 identity 与冷导入验证。

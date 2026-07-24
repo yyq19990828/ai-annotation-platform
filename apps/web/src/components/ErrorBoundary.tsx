@@ -42,9 +42,7 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
       <div className={styles.card}>
         <div className={styles.icon}>⚠️</div>
         <h2 className={styles.title}>页面出现错误</h2>
-        <p className={styles.message}>
-          {error.message || "未知错误"}
-        </p>
+        <p className={styles.message}>{error.message || "未知错误"}</p>
 
         <div className={styles.actions}>
           <button
@@ -70,11 +68,7 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
           </button>
         </div>
 
-        {showStack && (
-          <pre className={styles.stack}>
-            {error.stack || error.message}
-          </pre>
-        )}
+        {showStack && <pre className={styles.stack}>{error.stack || error.message}</pre>}
       </div>
     </div>
   );

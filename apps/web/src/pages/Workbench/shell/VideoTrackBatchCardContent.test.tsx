@@ -47,7 +47,13 @@ describe("VideoTrackBatchCardContent · 显隐/锁定切换按钮", () => {
   it("点击切换按钮各只发一次 toggle（不再区分 show/hide、lock/unlock 两个入口）", async () => {
     const onToggleHidden = vi.fn();
     const onToggleLock = vi.fn();
-    render(<VideoTrackBatchCardContent {...baseProps} onToggleHidden={onToggleHidden} onToggleLock={onToggleLock} />);
+    render(
+      <VideoTrackBatchCardContent
+        {...baseProps}
+        onToggleHidden={onToggleHidden}
+        onToggleLock={onToggleLock}
+      />,
+    );
     await userEvent.click(screen.getByLabelText("批量隐藏"));
     await userEvent.click(screen.getByLabelText("批量锁定"));
     expect(onToggleHidden).toHaveBeenCalledTimes(1);

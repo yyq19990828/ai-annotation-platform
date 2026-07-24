@@ -2,7 +2,7 @@
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-07-12
+last_reviewed: 2026-07-22
 ---
 
 # Data Manager 查询与聚合
@@ -11,18 +11,18 @@ Data Manager 是项目范围内的只读探索 read model，提供 task、object
 
 ## 端点
 
-| 端点 | 用途 |
-|---|---|
-| `GET /projects/{id}/data-manager/schema?entity_scope=...` | 返回当前 grain 可用的项目能力、字段、操作符、列、排序和指标定义 |
-| `POST /projects/{id}/tasks/query` | 按 task grain 过滤、排序和分页 |
-| `POST /projects/{id}/data-manager/summary` | 对同一过滤范围做项目聚合，不受分页 offset 影响 |
-| `POST /projects/{id}/tasks/{task_id}/data-manager/matches` | 返回命中的 annotation、prediction shape 或 tracker job 摘要，不返回 raw geometry |
-| `POST /projects/{id}/data-manager/objects/query` | 按 active annotation grain 过滤、facet、排序和 keyset 分页 |
-| `GET /projects/{id}/data-manager/objects/{annotation_id}/detail` | 返回对象来源、属性、溯源、反馈与稳定定位，不返回 raw geometry |
-| `GET /projects/{id}/data-manager/objects/{annotation_id}/location` | 只返回工作台定位信息 |
-| `POST /projects/{id}/data-manager/tracks/query` | 按 compact annotation 或 Scene logical track grain 聚合和 keyset 分页 |
-| `GET /projects/{id}/data-manager/tracks/{track_ref}/detail` | 返回轨迹摘要、可见成员与逐帧定位 |
-| `/projects/{id}/task-views` | 保存和共享 filter/sort/columns 配置 |
+| 端点                                                               | 用途                                                                             |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `GET /projects/{id}/data-manager/schema?entity_scope=...`          | 返回当前 grain 可用的项目能力、字段、操作符、列、排序和指标定义                  |
+| `POST /projects/{id}/tasks/query`                                  | 按 task grain 过滤、排序和分页                                                   |
+| `POST /projects/{id}/data-manager/summary`                         | 对同一过滤范围做项目聚合，不受分页 offset 影响                                   |
+| `POST /projects/{id}/tasks/{task_id}/data-manager/matches`         | 返回命中的 annotation、prediction shape 或 tracker job 摘要，不返回 raw geometry |
+| `POST /projects/{id}/data-manager/objects/query`                   | 按 active annotation grain 过滤、facet、排序和 keyset 分页                       |
+| `GET /projects/{id}/data-manager/objects/{annotation_id}/detail`   | 返回对象来源、属性、溯源、反馈与稳定定位，不返回 raw geometry                    |
+| `GET /projects/{id}/data-manager/objects/{annotation_id}/location` | 只返回工作台定位信息                                                             |
+| `POST /projects/{id}/data-manager/tracks/query`                    | 按 compact annotation 或 Scene logical track grain 聚合和 keyset 分页            |
+| `GET /projects/{id}/data-manager/tracks/{track_ref}/detail`        | 返回轨迹摘要、可见成员与逐帧定位                                                 |
+| `/projects/{id}/task-views`                                        | 保存和共享 filter/sort/columns 配置                                              |
 
 `schema` 是前端字段和操作符的唯一真值，并返回 `available_entity_scopes`。项目 profile 由 `data_type × scene_mode × enabled tool_bindings × attribute_schema` 组成；`type_key` 只提供 preset，不应作为唯一分流依据。对象对所有项目可用；轨迹只在视频轨迹能力或 Scene 模式成立时可用。
 
@@ -101,7 +101,7 @@ task-centric summary 聚合的是“匹配任务中的全部对象”。object /
 
 低置信待审使用相同集合，读取每个 shape 自身的 `score`，兼容 `confidence`；缺失或非数字按 `0` 处理。固定阈值为 `< 0.5`，任务列与 `ai.low_confidence_prediction_shape_count` 过滤器都返回候选数量。summary 的 `by_model_version` 和 `confidence_buckets` 也只聚合这个当前待审集合，不混入已接受、已拒绝或仅存在于历史运行中的候选。历史 `prediction.model_version` 仍可用于任务追溯筛选，但 Task 表不展示跨运行拼接的模型版本或 prediction 行级平均分。
 
-追踪候选只统计带非空 `staged_result.results` 且状态为 `pending_review` 或可审阅 `cancelled` 的 job。非特权用户还需满足 tracker job 的 `created_by` 限制，避免列表显示其无法恢复审阅的候选。
+追踪候选只统计带非空 `staged_result.results` 且状态为 `pending_review`、`partially_reviewed` 或可审阅 `cancelled` 的 job。非特权用户还需满足 tracker job 的 `created_by` 限制，避免列表显示其无法恢复审阅的候选。
 
 ## 轨迹标识
 

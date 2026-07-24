@@ -19,12 +19,12 @@ last_reviewed: 2026-05-27
 
 历史上反馈分散在 4 张表 / 字段里，语义重叠但各写各的：
 
-| 来源 | 含义 |
-|---|---|
-| `bug_reports` | 产品 BUG |
-| `annotation_comments` | 标注评论 |
-| `tasks.reject_reason` | 审核驳回理由 |
-| pixel-anchored issue | 像素锚点 issue |
+| 来源                  | 含义           |
+| --------------------- | -------------- |
+| `bug_reports`         | 产品 BUG       |
+| `annotation_comments` | 标注评论       |
+| `tasks.reject_reason` | 审核驳回理由   |
+| pixel-anchored issue  | 像素锚点 issue |
 
 ADR-0027 立新表 `annotation_feedbacks`，用 `anchor_type`（project / task / annotation / pixel）+ `kind`（issue / comment / reject / bug）统一锚点与类型，目标是收口为单一写入入口。迁移按三段式推进，每段独立可回退（详见 [审计与通知 §反馈统一表](./audit-and-notifications#反馈统一表-adr-0027)）。
 
@@ -50,12 +50,12 @@ flowchart TD
 
 ### 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/services/feedback_reconcile.py` | `compute_feedback_drift()` 纯对账逻辑 |
-| `apps/api/app/workers/feedback_reconcile.py` | `reconcile_annotation_feedback()` Celery 任务包装：跑对账 + 落 audit/通知 |
-| `apps/api/app/workers/celery_app.py` | beat schedule 注册（`reconcile-annotation-feedback`）+ worker include |
-| `apps/api/app/services/audit.py` | `AuditAction.FEEDBACK_RECONCILE_DRIFT = "feedback.reconcile_drift"` |
+| 位置                                          | 作用                                                                      |
+| --------------------------------------------- | ------------------------------------------------------------------------- |
+| `apps/api/app/services/feedback_reconcile.py` | `compute_feedback_drift()` 纯对账逻辑                                     |
+| `apps/api/app/workers/feedback_reconcile.py`  | `reconcile_annotation_feedback()` Celery 任务包装：跑对账 + 落 audit/通知 |
+| `apps/api/app/workers/celery_app.py`          | beat schedule 注册（`reconcile-annotation-feedback`）+ worker include     |
+| `apps/api/app/services/audit.py`              | `AuditAction.FEEDBACK_RECONCILE_DRIFT = "feedback.reconcile_drift"`       |
 
 ### 对账逻辑
 
@@ -67,11 +67,11 @@ flowchart TD
 
 匹配是**按业务字段回连而非主键**（用 `NOT EXISTS` + 业务字段等值 / `IS DISTINCT FROM`），因为 mirror 行有独立主键：
 
-| 旧表 | mirror `kind` | 回连字段 |
-|---|---|---|
-| `bug_reports` | `bug` | `(project_id, title, body=description, author_id)` |
-| `annotation_comments` | `comment` | 评论业务字段 |
-| `tasks`（reject） | `reject` | 任务驳回业务字段 |
+| 旧表                  | mirror `kind` | 回连字段                                           |
+| --------------------- | ------------- | -------------------------------------------------- |
+| `bug_reports`         | `bug`         | `(project_id, title, body=description, author_id)` |
+| `annotation_comments` | `comment`     | 评论业务字段                                       |
+| `tasks`（reject）     | `reject`      | 任务驳回业务字段                                   |
 
 ### 调度与配置
 

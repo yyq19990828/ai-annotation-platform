@@ -16,9 +16,7 @@ describe("ClassWhitelistRow 文本输入", () => {
   it("classes 就绪 → 渲染 chip + 文本输入框 (无预热 CTA)", () => {
     render(<ClassWhitelistRow classes={CLASSES} selected={new Set()} onChange={() => {}} />);
     expect(screen.getByRole("button", { name: /person/ })).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText("输入类名快速勾选，如 person"),
-    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("输入类名快速勾选，如 person")).toBeInTheDocument();
   });
 
   it("输入类名 + 回车 → 按 index 勾选 (大小写不敏感)", () => {
@@ -50,7 +48,12 @@ describe("ClassWhitelistRow 文本输入", () => {
 
   it("classes 未就位 → 提示预热, 无文本输入", () => {
     render(
-      <ClassWhitelistRow classes={undefined} selected={new Set()} onChange={() => {}} onWarm={() => {}} />,
+      <ClassWhitelistRow
+        classes={undefined}
+        selected={new Set()}
+        onChange={() => {}}
+        onWarm={() => {}}
+      />,
     );
     expect(screen.getByText(/先预热加载类别表/)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/输入类名/)).toBeNull();

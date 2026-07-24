@@ -76,13 +76,13 @@ export async function convertToGif(
   if (!ffmpeg) {
     console.warn(
       `[recorder] ffmpeg 不可用，跳过 GIF 转换。\n` +
-      `  输入：${inputPath}\n` +
-      `  可设置 FFMPEG_PATH 环境变量指向 ffmpeg 可执行文件。`,
+        `  输入：${inputPath}\n` +
+        `  可设置 FFMPEG_PATH 环境变量指向 ffmpeg 可执行文件。`,
     );
     return;
   }
 
-  const fps      = opts.fps      ?? 10;
+  const fps = opts.fps ?? 10;
   const maxWidth = opts.maxWidth ?? 1280;
   const palettePath = outputPath.replace(/\.gif$/, ".palette.png");
 
@@ -94,22 +94,40 @@ export async function convertToGif(
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
   // 第一遍：生成调色板
-  const pass1 = spawnSync(ffmpeg, [
-    "-y", ...trim, "-i", inputPath,
-    "-vf", `fps=${fps},scale=${maxWidth}:-1:flags=lanczos,palettegen`,
-    palettePath,
-  ], { encoding: "utf8" });
+  const pass1 = spawnSync(
+    ffmpeg,
+    [
+      "-y",
+      ...trim,
+      "-i",
+      inputPath,
+      "-vf",
+      `fps=${fps},scale=${maxWidth}:-1:flags=lanczos,palettegen`,
+      palettePath,
+    ],
+    { encoding: "utf8" },
+  );
 
   if (pass1.status !== 0) {
     throw new Error(`ffmpeg 调色板生成失败:\n${pass1.stderr}`);
   }
 
   // 第二遍：渲染 GIF
-  const pass2 = spawnSync(ffmpeg, [
-    "-y", ...trim, "-i", inputPath, "-i", palettePath,
-    "-lavfi", `fps=${fps},scale=${maxWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse`,
-    outputPath,
-  ], { encoding: "utf8" });
+  const pass2 = spawnSync(
+    ffmpeg,
+    [
+      "-y",
+      ...trim,
+      "-i",
+      inputPath,
+      "-i",
+      palettePath,
+      "-lavfi",
+      `fps=${fps},scale=${maxWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse`,
+      outputPath,
+    ],
+    { encoding: "utf8" },
+  );
 
   if (pass2.status !== 0) {
     throw new Error(`ffmpeg GIF 渲染失败:\n${pass2.stderr}`);
@@ -158,31 +176,56 @@ export async function convertToWebm(
   if (opts.durationSec && opts.durationSec > 0) trim.push("-t", String(opts.durationSec));
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  const video = spawnSync(ffmpeg, [
-    "-y", ...trim, "-i", inputPath,
-    "-an",
-    "-vf", `fps=${fps},scale=${maxWidth}:-2:flags=lanczos`,
-    "-c:v", "libvpx-vp9",
-    "-crf", "34",
-    "-b:v", "0",
-    "-deadline", "good",
-    "-cpu-used", "2",
-    "-row-mt", "1",
-    outputPath,
-  ], { encoding: "utf8" });
+  const video = spawnSync(
+    ffmpeg,
+    [
+      "-y",
+      ...trim,
+      "-i",
+      inputPath,
+      "-an",
+      "-vf",
+      `fps=${fps},scale=${maxWidth}:-2:flags=lanczos`,
+      "-c:v",
+      "libvpx-vp9",
+      "-crf",
+      "34",
+      "-b:v",
+      "0",
+      "-deadline",
+      "good",
+      "-cpu-used",
+      "2",
+      "-row-mt",
+      "1",
+      outputPath,
+    ],
+    { encoding: "utf8" },
+  );
   if (video.status !== 0) {
     throw new Error(`ffmpeg WebM 转码失败:\n${video.stderr}`);
   }
 
   if (opts.posterPath) {
     fs.mkdirSync(path.dirname(opts.posterPath), { recursive: true });
-    const poster = spawnSync(ffmpeg, [
-      "-y", "-ss", String(opts.posterAtSec ?? 2.5), "-i", outputPath,
-      "-frames:v", "1",
-      "-c:v", "libwebp",
-      "-quality", "84",
-      opts.posterPath,
-    ], { encoding: "utf8" });
+    const poster = spawnSync(
+      ffmpeg,
+      [
+        "-y",
+        "-ss",
+        String(opts.posterAtSec ?? 2.5),
+        "-i",
+        outputPath,
+        "-frames:v",
+        "1",
+        "-c:v",
+        "libwebp",
+        "-quality",
+        "84",
+        opts.posterPath,
+      ],
+      { encoding: "utf8" },
+    );
     if (poster.status !== 0) {
       throw new Error(`ffmpeg 首页海报抽帧失败:\n${poster.stderr}`);
     }

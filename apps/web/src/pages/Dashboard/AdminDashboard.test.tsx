@@ -119,9 +119,7 @@ describe("AdminDashboard", () => {
   it("项目列表 0 → 空态文案", () => {
     mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false });
     renderUI();
-    expect(
-      screen.getByText("暂无项目，点击右上角「新建项目」开始"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("暂无项目，点击右上角「新建项目」开始")).toBeInTheDocument();
   });
 
   it("有项目 → 渲染项目行", () => {
@@ -185,14 +183,19 @@ describe("AdminDashboard", () => {
     mockUseAuditLogs.mockReturnValue({
       data: {
         items: [
-          { id: "2", action: "user.create", actor_email: "b@x.com", target_type: "user", target_id: "u1", created_at: new Date().toISOString() },
+          {
+            id: "2",
+            action: "user.create",
+            actor_email: "b@x.com",
+            target_type: "user",
+            target_id: "u1",
+            created_at: new Date().toISOString(),
+          },
         ],
       },
     });
     renderUI();
-    expect(mockUseAuditLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ business_only: true }),
-    );
+    expect(mockUseAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ business_only: true }));
     expect(screen.getByText("b@x.com")).toBeInTheDocument();
   });
 });

@@ -51,7 +51,11 @@ describe("useCanvasDraftPersistence", () => {
   it("非 active 时清掉 sessionStorage 条目", () => {
     sessionStorage.setItem(
       KEY("t1"),
-      JSON.stringify({ annotationId: null, shapes: [{ type: "line", points: [0.1, 0.1, 0.2, 0.2] }], ts: Date.now() }),
+      JSON.stringify({
+        annotationId: null,
+        shapes: [{ type: "line", points: [0.1, 0.1, 0.2, 0.2] }],
+        ts: Date.now(),
+      }),
     );
     renderHook(() =>
       useCanvasDraftPersistence({
@@ -86,7 +90,11 @@ describe("useCanvasDraftPersistence", () => {
     const tenMinAgo = Date.now() - 10 * 60 * 1000;
     sessionStorage.setItem(
       KEY("t3"),
-      JSON.stringify({ annotationId: null, shapes: [{ type: "line", points: [0, 0, 0.1, 0.1] }], ts: tenMinAgo }),
+      JSON.stringify({
+        annotationId: null,
+        shapes: [{ type: "line", points: [0, 0, 0.1, 0.1] }],
+        ts: tenMinAgo,
+      }),
     );
     renderHook(() =>
       useCanvasDraftPersistence({

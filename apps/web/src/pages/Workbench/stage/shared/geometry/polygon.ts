@@ -11,15 +11,21 @@ function segmentsProperlyIntersect(p1: Pt, p2: Pt, q1: Pt, q2: Pt): boolean {
   const d2 = cross(sub(q2, q1), sub(p2, q1));
   const d3 = cross(sub(p2, p1), sub(q1, p1));
   const d4 = cross(sub(p2, p1), sub(q2, p1));
-  if (((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
-      ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))) {
+  if (
+    ((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) &&
+    ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))
+  ) {
     return true;
   }
   return false;
 }
 
-function sub(a: Pt, b: Pt): Pt { return [a[0] - b[0], a[1] - b[1]]; }
-function cross(a: Pt, b: Pt): number { return a[0] * b[1] - a[1] * b[0]; }
+function sub(a: Pt, b: Pt): Pt {
+  return [a[0] - b[0], a[1] - b[1]];
+}
+function cross(a: Pt, b: Pt): number {
+  return a[0] * b[1] - a[1] * b[0];
+}
 
 /**
  * 检测多边形（隐式闭合）的边是否自相交。返回首对违规边的索引（若有）。
@@ -125,9 +131,6 @@ export function removeVertex(points: Pt[], idx: number): Pt[] {
 /** 移动顶点 i 到新位置（clamp 到 [0,1]）。 */
 export function moveVertex(points: Pt[], idx: number, to: Pt): Pt[] {
   const out = points.slice();
-  out[idx] = [
-    Math.max(0, Math.min(1, to[0])),
-    Math.max(0, Math.min(1, to[1])),
-  ];
+  out[idx] = [Math.max(0, Math.min(1, to[0])), Math.max(0, Math.min(1, to[1]))];
   return out;
 }

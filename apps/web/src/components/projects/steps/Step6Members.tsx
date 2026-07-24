@@ -31,15 +31,12 @@ export function Step6Members({
   const [adding, setAdding] = useState(false);
 
   // 仅展示 annotator / reviewer 角色用户（项目成员只能这两个角色）
-  const eligible = users.filter(
-    (u) => u.role === "annotator" || u.role === "reviewer",
-  );
+  const eligible = users.filter((u) => u.role === "annotator" || u.role === "reviewer");
 
   const toggle = (userId: string, role: "annotator" | "reviewer") => {
     setForm((s) => {
       const exists = s.members.find((m) => m.userId === userId);
-      if (exists)
-        return { ...s, members: s.members.filter((m) => m.userId !== userId) };
+      if (exists) return { ...s, members: s.members.filter((m) => m.userId !== userId) };
       return { ...s, members: [...s.members, { userId, role }] };
     });
   };
@@ -94,23 +91,12 @@ export function Step6Members({
                 key={u.id}
                 type="button"
                 onClick={() => toggle(u.id, role)}
-                className={clsx(
-                  styles.choiceButton,
-                  checked && styles.choiceButtonChecked,
-                )}
+                className={clsx(styles.choiceButton, checked && styles.choiceButtonChecked)}
               >
-                <span
-                  className={clsx(
-                    styles.checkMark,
-                    checked && styles.checkMarkChecked,
-                  )}
-                >
+                <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
                   {checked && <Icon name="check" size={10} />}
                 </span>
-                <Avatar
-                  initial={(u.name || u.email).slice(0, 1).toUpperCase()}
-                  size="sm"
-                />
+                <Avatar initial={(u.name || u.email).slice(0, 1).toUpperCase()} size="sm" />
                 <span className={styles.choiceBody}>
                   <div className={styles.choiceTitle}>{u.name || u.email}</div>
                   <div className={styles.choiceMeta}>{u.email}</div>

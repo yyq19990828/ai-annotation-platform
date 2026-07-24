@@ -46,7 +46,8 @@ function selectedScenes(): ResolvedScreenshotScene[] {
 async function captureRegression(page: Page, scene: ResolvedScreenshotScene): Promise<void> {
   const name = `${scene.name.replaceAll("/", "--")}.png`;
   const mask = [...DEFAULT_MASK_SELECTORS, ...(scene.mask ?? [])].map((selector) =>
-    page.locator(selector));
+    page.locator(selector),
+  );
   const common = { animations: "disabled" as const, maxDiffPixelRatio: 0.01, mask };
   const capture = scene.capture;
   if (!capture) {
@@ -97,20 +98,33 @@ test.describe("visual regression", () => {
       };
       const role = Array.isArray(scene.role) ? scene.role[0] : scene.role;
 
-      await installScreenshotEnvironment(page);
-      await seed.injectToken(page, emailByRole[role]);
-      await applyScreenshotTheme(page, "light");
-      const cleanupMock = await setupMockState(page, scene.mockState);
-      await page.goto(scene.route(catalog));
-      if (scene.prepare) await scene.prepare(page, catalog);
-      await applyScreenshotTheme(page, "light");
-      await waitForScreenshotReady(page);
-      const cleanupAnnotations = await injectAnnotations(page, scene.annotate);
+      let cleanupMock: () => Promise<void> = async () => {};
+      let cleanupAnnotations: () => Promise<void> = async () => {};
 
-      await captureRegression(page, scene);
+      try {
+        await installScreenshotEnvironment(page);
+        await seed.injectToken(page, emailByRole[role]);
+        await applyScreenshotTheme(page, "light");
+        cleanupMock = await setupMockState(page, scene.mockState);
+        await page.goto(scene.route(catalog));
+        if (scene.prepare) await scene.prepare(page, catalog);
+        await applyScreenshotTheme(page, "light");
+        await waitForScreenshotReady(page);
+        cleanupAnnotations = await injectAnnotations(page, scene.annotate);
 
-      await cleanupAnnotations();
-      await cleanupMock();
+        await captureRegression(page, scene);
+      } finally {
+        try {
+          await cleanupAnnotations();
+        } finally {
+          try {
+            await cleanupMock();
+          } finally {
+            // scene.prepare 也可能注册局部 route；测试失败时一并清除。
+            await page.unrouteAll({ behavior: "ignoreErrors" });
+          }
+        }
+      }
     });
   }
 });

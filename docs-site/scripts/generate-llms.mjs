@@ -63,7 +63,10 @@ function firstParagraph(body) {
   let inFence = false;
   for (const line of lines) {
     const t = line.trim();
-    if (t.startsWith("```")) { inFence = !inFence; continue; }
+    if (t.startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
     if (inFence || !t) continue;
     if (/^(#|>|<|!\[|\|)/.test(t)) continue; // 标题/引用/HTML组件/图片/表格
     if (/^[-*] /.test(t)) continue; // 列表

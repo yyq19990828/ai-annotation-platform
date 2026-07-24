@@ -67,7 +67,9 @@
   border: 2px solid oklch(0.62 0.18 252);
   background: rgb(99 130 217 / 12%);
   pointer-events: none;
-  transition: left 80ms linear, top 80ms linear;
+  transition:
+    left 80ms linear,
+    top 80ms linear;
 }
 
 .viewportRectDragging {

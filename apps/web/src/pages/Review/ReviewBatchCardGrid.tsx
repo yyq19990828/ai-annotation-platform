@@ -19,7 +19,13 @@ interface Group {
 }
 
 /** 单根进度条；与质检进度卡的两档配色对齐（待审=caution / 通过=positive）。 */
-function ProgressRow({ label, count, total, pct, color }: {
+function ProgressRow({
+  label,
+  count,
+  total,
+  pct,
+  color,
+}: {
   label: string;
   count: number;
   total: number;
@@ -36,7 +42,9 @@ function ProgressRow({ label, count, total, pct, color }: {
       <div className={styles.track}>
         <div ref={ref} className={styles.fill} />
       </div>
-      <span className={`mono ${styles.progressValue}`}>{count}/{total}</span>
+      <span className={`mono ${styles.progressValue}`}>
+        {count}/{total}
+      </span>
     </div>
   );
 }
@@ -58,12 +66,11 @@ export function ReviewBatchCardGrid({ batches, onSelect }: Props) {
       m.set(b.project_id, g);
     }
     const arr = [...m.values()];
-    arr.sort(
-      (a, b) => b.pending - a.pending || a.project_name.localeCompare(b.project_name),
-    );
+    arr.sort((a, b) => b.pending - a.pending || a.project_name.localeCompare(b.project_name));
     for (const g of arr) {
       g.items.sort(
-        (a, b) => b.review_tasks - a.review_tasks || a.batch_display_id.localeCompare(b.batch_display_id),
+        (a, b) =>
+          b.review_tasks - a.review_tasks || a.batch_display_id.localeCompare(b.batch_display_id),
       );
     }
     return arr;
@@ -104,7 +111,9 @@ export function ReviewBatchCardGrid({ batches, onSelect }: Props) {
                     <div className={styles.cardTop}>
                       <span className={`mono ${styles.cardId}`}>{b.batch_display_id}</span>
                       <span className={styles.cardStatus}>
-                        <Badge variant="warning" dot>审核中</Badge>
+                        <Badge variant="warning" dot>
+                          审核中
+                        </Badge>
                       </span>
                     </div>
                     <div className={styles.cardName}>{b.batch_name}</div>
@@ -115,8 +124,20 @@ export function ReviewBatchCardGrid({ batches, onSelect }: Props) {
                       </div>
                     )}
                     <div className={styles.progress}>
-                      <ProgressRow label="待审" count={b.review_tasks} total={total} pct={pctOf(b.review_tasks)} color="var(--sc-caution)" />
-                      <ProgressRow label="通过" count={b.completed_tasks} total={total} pct={pctOf(b.completed_tasks)} color="var(--sc-positive)" />
+                      <ProgressRow
+                        label="待审"
+                        count={b.review_tasks}
+                        total={total}
+                        pct={pctOf(b.review_tasks)}
+                        color="var(--sc-caution)"
+                      />
+                      <ProgressRow
+                        label="通过"
+                        count={b.completed_tasks}
+                        total={total}
+                        pct={pctOf(b.completed_tasks)}
+                        color="var(--sc-positive)"
+                      />
                     </div>
                   </div>
                 </button>

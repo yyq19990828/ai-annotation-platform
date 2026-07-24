@@ -10,12 +10,12 @@ last_reviewed: 2026-06-07
 
 LiDAR projects can export four targets:
 
-| Target | Purpose | Coordinate frame |
-|---|---|---|
-| `aap_json` | Platform-native lossless JSON | API `axis_frame` option |
-| `kitti` | KITTI 3D detection labels | KITTI camera |
-| `nuscenes` | nuScenes-style single-frame tables | AAP ego/ISO |
-| `pointmask` | Per-point semantic labels | Point index order |
+| Target      | Purpose                            | Coordinate frame        |
+| ----------- | ---------------------------------- | ----------------------- |
+| `aap_json`  | Platform-native lossless JSON      | API `axis_frame` option |
+| `kitti`     | KITTI 3D detection labels          | KITTI camera            |
+| `nuscenes`  | nuScenes-style single-frame tables | AAP ego/ISO             |
+| `pointmask` | Per-point semantic labels          | Point index order       |
 
 These targets are pure serializers. They do not add database tables, columns, or
 migrations. Existing AAP JSON export remains unchanged.
@@ -26,15 +26,15 @@ The standard LiDAR targets write annotations and manifests, not embedded media
 bytes. This matches the existing image/video export policy and keeps large scenes
 small.
 
-| File | Description |
-|---|---|
-| `classes.txt` | Project class list |
-| `attribute_schema.json` | Project attribute schema, when attributes are included |
-| `images_manifest.json` | Camera image presigned URLs |
-| `pointclouds_manifest.json` | Primary point-cloud presigned URLs |
-| `fetch_images.py` | Downloads camera images into `images/` |
-| `fetch_pointclouds.py` | Downloads point clouds into `velodyne/` |
-| `calib_raw/<camera>/<frame>.json` | Raw `SensorCalibration` payload |
+| File                              | Description                                            |
+| --------------------------------- | ------------------------------------------------------ |
+| `classes.txt`                     | Project class list                                     |
+| `attribute_schema.json`           | Project attribute schema, when attributes are included |
+| `images_manifest.json`            | Camera image presigned URLs                            |
+| `pointclouds_manifest.json`       | Primary point-cloud presigned URLs                     |
+| `fetch_images.py`                 | Downloads camera images into `images/`                 |
+| `fetch_pointclouds.py`            | Downloads point clouds into `velodyne/`                |
+| `calib_raw/<camera>/<frame>.json` | Raw `SensorCalibration` payload                        |
 
 For multi-target exports, each target is placed under its own `{target}/`
 subdirectory.
@@ -124,7 +124,7 @@ aap_json, kitti, nuscenes, pointmask
 
 The name `kitti` is shared with video projects, but the serializers are separate:
 
-| Project data type | `kitti` meaning |
-|---|---|
-| `video` | KITTI tracking 2D labels |
-| `lidar` | KITTI 3D detection labels |
+| Project data type | `kitti` meaning           |
+| ----------------- | ------------------------- |
+| `video`           | KITTI tracking 2D labels  |
+| `lidar`           | KITTI 3D detection labels |

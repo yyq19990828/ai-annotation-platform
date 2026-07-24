@@ -3,11 +3,11 @@
  * 覆盖 point / bbox / text 三种 prompt 路由 + backend 失败 toast + mlBackendId 缺失守卫
  * + 80ms 防抖合并连续点击。
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { ApiError } from "@/api/client";
-import { useInteractiveAI, simplifyCandidateRing } from "./useInteractiveAI";
+import { newMaskIdempotencyKey, useInteractiveAI, simplifyCandidateRing } from "./useInteractiveAI";
 import { simplifyPolygon } from "../stage/shared/geometry/simplify";
 
 const interactiveAnnotateMock = vi.fn();
@@ -35,17 +35,83 @@ const POLY_RESPONSE = {
   result: [
     {
       type: "polygonlabels",
-      value: { points: [[0.1, 0.1], [0.5, 0.1], [0.5, 0.5]], polygonlabels: ["person"] },
+      value: {
+        points: [
+          [0.1, 0.1],
+          [0.5, 0.1],
+          [0.5, 0.5],
+        ],
+        polygonlabels: ["person"],
+      },
       score: 0.92,
     },
   ],
 };
+
+function nativeResponse(maskInputNext: string | null = null) {
+  const candidateId = `sha256:${"a".repeat(64)}`;
+  return {
+    result: [
+      {
+        type: "mask",
+        value: {
+          rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+          preview: {
+            points: [
+              [0, 0],
+              [2 / 3, 0],
+              [2 / 3, 1],
+              [0, 1],
+            ],
+          },
+          masklabels: ["person"],
+        },
+        score: 0.93,
+        candidate_id: candidateId,
+      },
+    ],
+    prompt_revision: `prompt-${maskInputNext ?? "initial"}`,
+    output_geometry: "mask",
+    frame_index: null,
+    routing: {
+      requested_backend_id: "11111111-1111-1111-1111-111111111111",
+      backend_pool_id: null,
+      backend_instance_id: "11111111-1111-1111-1111-111111111111",
+      model_id: "sam-mask",
+    },
+    accept_receipts: { [candidateId]: "signed-receipt-value" },
+    mask_input_next: maskInputNext,
+    prompt_summary: {
+      family: "scribble",
+      positive_points: 0,
+      negative_points: 0,
+      boxes: 0,
+      positive_scribbles: 0,
+      negative_scribbles: 1,
+      multimask: false,
+      parameters_digest: null,
+    },
+  };
+}
 
 describe("useInteractiveAI", () => {
   beforeEach(() => {
     interactiveAnnotateMock.mockReset();
     pushToastMock.mockReset();
     recordPredictCacheHitMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("非安全 HTTP 上的幂等键 fallback 满足后端最小长度", () => {
+    vi.stubGlobal("crypto", {});
+
+    const key = newMaskIdempotencyKey();
+
+    expect(key).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    expect(key.length).toBeGreaterThanOrEqual(16);
   });
 
   it("runBbox 路由到 ctx.type='interactive_box' (v0.18.17 · 旧 bbox 改名)", async () => {
@@ -80,7 +146,11 @@ describe("useInteractiveAI", () => {
       expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
       const ctx = interactiveAnnotateMock.mock.calls[0][2].context;
       // 累加: 全量点 + 对应极性; ≥2 点 → multimask_output=false (单 mask 精修).
-      expect(ctx.points).toEqual([[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]);
+      expect(ctx.points).toEqual([
+        [0.1, 0.1],
+        [0.2, 0.2],
+        [0.3, 0.3],
+      ]);
       expect(ctx.labels).toEqual([1, 0, 1]);
       expect(ctx.multimask_output).toBe(false);
     } finally {
@@ -108,13 +178,17 @@ describe("useInteractiveAI", () => {
 
     act(() => result.current.runPoint([0.1, 0.1], 1));
     await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     // 首点候选阶段 (multimask=true) 不回灌。
     expect(interactiveAnnotateMock.mock.calls[0][2].context.mask_input).toBeUndefined();
 
     act(() => result.current.runPoint([0.2, 0.2], 1));
     await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     // 第 2 点: 上一轮 (首点) 返回 null → maskInputRef 仍空, 不回灌。
     expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBeUndefined();
 
@@ -149,9 +223,7 @@ describe("useInteractiveAI", () => {
   });
 
   it("mlBackendId 缺失 → 不发请求 + 弹 toast", async () => {
-    const { result } = renderHook(() =>
-      useInteractiveAI({ ...ARGS, mlBackendId: null }),
-    );
+    const { result } = renderHook(() => useInteractiveAI({ ...ARGS, mlBackendId: null }));
     act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
     await new Promise((r) => setTimeout(r, 20));
     expect(interactiveAnnotateMock).not.toHaveBeenCalled();
@@ -187,8 +259,16 @@ describe("useInteractiveAI", () => {
   it("v0.18.26 · 出候选 → 弹候选数提示 (与无候选对齐)", async () => {
     interactiveAnnotateMock.mockResolvedValue({
       result: [
-        { type: "rectanglelabels", value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["a"] }, score: 0.9 },
-        { type: "rectanglelabels", value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["b"] }, score: 0.8 },
+        {
+          type: "rectanglelabels",
+          value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["a"] },
+          score: 0.9,
+        },
+        {
+          type: "rectanglelabels",
+          value: { x: 1, y: 1, width: 5, height: 5, rectanglelabels: ["b"] },
+          score: 0.8,
+        },
       ],
     });
     const { result } = renderHook(() => useInteractiveAI(ARGS));
@@ -208,8 +288,20 @@ describe("useInteractiveAI", () => {
           type: "polygonlabels",
           value: {
             polygons: [
-              { points: [[0, 0], [0.1, 0], [0, 0.1]] }, // 碎屑
-              { points: [[0, 0], [1, 0], [0, 1]] }, // 主体 (最大)
+              {
+                points: [
+                  [0, 0],
+                  [0.1, 0],
+                  [0, 0.1],
+                ],
+              }, // 碎屑
+              {
+                points: [
+                  [0, 0],
+                  [1, 0],
+                  [0, 1],
+                ],
+              }, // 主体 (最大)
             ],
             polygonlabels: ["object"],
           },
@@ -221,15 +313,300 @@ describe("useInteractiveAI", () => {
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(result.current.candidates).toHaveLength(1));
     // 取最大外环 (主体三角), 而非碎屑。
-    expect(result.current.candidates[0].points).toEqual([[0, 0], [1, 0], [0, 1]]);
+    const candidate = result.current.candidates[0];
+    expect(candidate.type).toBe("polygonlabels");
+    if (candidate.type !== "polygonlabels") throw new Error("expected polygon candidate");
+    expect(candidate.points).toEqual([
+      [0, 0],
+      [1, 0],
+      [0, 1],
+    ]);
+  });
+
+  it("原生 Mask 保留 RLE 与签名血缘，并独立接收显示预览", async () => {
+    const candidateId = `sha256:${"a".repeat(64)}`;
+    interactiveAnnotateMock.mockResolvedValue({
+      result: [
+        {
+          type: "mask",
+          value: {
+            rle: { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] },
+            preview: {
+              points: [
+                [0, 0],
+                [2 / 3, 0],
+                [2 / 3, 1],
+                [0, 1],
+              ],
+            },
+            masklabels: ["person"],
+          },
+          score: 0.93,
+          candidate_id: candidateId,
+        },
+      ],
+      score: 0.93,
+      model_version: "sam-test",
+      inference_time_ms: 12,
+      cache_hit: false,
+      model_load_ms: 4,
+      prompt_revision: "prompt-revision",
+      output_geometry: "mask",
+      routing: {
+        requested_backend_id: "11111111-1111-1111-1111-111111111111",
+        backend_pool_id: null,
+        backend_instance_id: "11111111-1111-1111-1111-111111111111",
+        model_id: "sam-mask",
+      },
+      accept_receipts: { [candidateId]: "signed-receipt-value" },
+      prompt_summary: {
+        family: "point",
+        positive_points: 1,
+        negative_points: 0,
+        boxes: 0,
+        positive_scribbles: 0,
+        negative_scribbles: 0,
+        multimask: true,
+        parameters_digest: null,
+      },
+    });
+    const { result } = renderHook(() =>
+      useInteractiveAI({
+        ...ARGS,
+        requestContextDefaults: { model_id: "sam-mask", output_geometry: "mask" },
+      }),
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    const candidate = result.current.candidates[0];
+    expect(candidate.type).toBe("mask");
+    if (candidate.type !== "mask") throw new Error("expected native mask candidate");
+    expect(candidate.id).toBe(candidateId);
+    expect(candidate.rle).toEqual({
+      encoding: "coco_rle",
+      size: [2, 3],
+      counts: [1, 2, 3],
+    });
+    expect(candidate).not.toHaveProperty("points");
+    expect(candidate.previewPoints).toEqual([
+      [0, 0],
+      [2 / 3, 0],
+      [2 / 3, 1],
+      [0, 1],
+    ]);
+    expect(candidate.receipt).toBe("signed-receipt-value");
+    expect(candidate.idempotencyKey.length).toBeGreaterThanOrEqual(16);
+    expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+      model_id: "sam-mask",
+      output_geometry: "mask",
+    });
+  });
+
+  it("已存 Mask 种子让首个点直接进单候选精修，并绑定原位更新版本", async () => {
+    interactiveAnnotateMock.mockResolvedValue(nativeResponse("SIGNED_LOGITS_A"));
+    const { result } = renderHook(() =>
+      useInteractiveAI({
+        ...ARGS,
+        requestContextDefaults: {
+          model_id: "sam-mask",
+          output_geometry: "mask",
+          mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+        },
+      }),
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 0));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    const context = interactiveAnnotateMock.mock.calls[0][2].context;
+    expect(context).toMatchObject({
+      type: "point",
+      labels: [0],
+      multimask_output: false,
+      mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+    });
+    const item = result.current.candidates[0];
+    expect(item.type).toBe("mask");
+    if (item.type !== "mask") throw new Error("expected native mask candidate");
+    expect(item.refineSource).toEqual({ annotationId: "annotation-mask-1", sourceVersion: 7 });
+  });
+
+  it("负 scribble 累加且跨工具回灌 logits；网络失败保留候选与笔迹并可原样重试", async () => {
+    interactiveAnnotateMock
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_A"))
+      .mockRejectedValueOnce(new Error("network lost"))
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_B"));
+    const { result } = renderHook(() =>
+      useInteractiveAI({
+        ...ARGS,
+        requestContextDefaults: {
+          model_id: "sam-mask",
+          output_geometry: "mask",
+          mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+        },
+      }),
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(result.current.canAcceptCandidates).toBe(true);
+    const stroke: [number, number][] = [
+      [0.6, 0.4],
+      [0.7, 0.45],
+      [0.75, 0.5],
+    ];
+    act(() => result.current.runScribble(stroke, 0, 0.008));
+    await waitFor(() => expect(result.current.canRetry).toBe(true));
+
+    expect(result.current.candidates).toHaveLength(1);
+    expect(result.current.canAcceptCandidates).toBe(false);
+    expect(result.current.sessionPoints).toEqual([]);
+    expect(result.current.sessionScribbles).toEqual([
+      { points: stroke, polarity: 0, width: 0.008 },
+    ]);
+    expect(interactiveAnnotateMock.mock.calls[1][2].context).toMatchObject({
+      type: "scribble",
+      scribbles: [{ points: stroke, polarity: 0, width: 0.008 }],
+      mask_input: "SIGNED_LOGITS_A",
+    });
+
+    act(() => result.current.retryLast());
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.canRetry).toBe(false));
+    expect(result.current.canAcceptCandidates).toBe(true);
+    expect(interactiveAnnotateMock.mock.calls[2][2].context).toEqual(
+      interactiveAnnotateMock.mock.calls[1][2].context,
+    );
+    const retried = result.current.candidates[0];
+    expect(retried.type).toBe("mask");
+    if (retried.type !== "mask") throw new Error("expected native mask candidate");
+    expect(retried.promptSummary).toMatchObject({
+      family: "scribble",
+      positive_scribbles: 0,
+      negative_scribbles: 1,
+    });
+  });
+
+  it("过期 mask session 清掉旧 logits，保留已授权种子与笔迹后可重试", async () => {
+    interactiveAnnotateMock
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_A"))
+      .mockRejectedValueOnce(
+        new ApiError(409, "mask session expired", { reason: "mask_session_expired" }),
+      )
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_B"));
+    const { result } = renderHook(() =>
+      useInteractiveAI({
+        ...ARGS,
+        requestContextDefaults: {
+          model_id: "sam-mask",
+          output_geometry: "mask",
+          mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+        },
+      }),
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 1));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    const stroke: [number, number][] = [
+      [0.2, 0.2],
+      [0.3, 0.3],
+    ];
+    act(() => result.current.runScribble(stroke, 1));
+    await waitFor(() => expect(result.current.canRetry).toBe(true));
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBe("SIGNED_LOGITS_A");
+
+    act(() => result.current.retryLast());
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    const retryContext = interactiveAnnotateMock.mock.calls[2][2].context;
+    expect(retryContext.mask_input).toBeUndefined();
+    expect(retryContext).toMatchObject({
+      type: "scribble",
+      scribbles: [{ points: stroke, polarity: 1, width: 0.008 }],
+      mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+    });
+  });
+
+  it("模型变体变化时不跨变体回灌 mask session", async () => {
+    interactiveAnnotateMock
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_A"))
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_B"))
+      .mockResolvedValueOnce(nativeResponse("SIGNED_LOGITS_DEFAULT"));
+    const { result } = renderHook(() =>
+      useInteractiveAI({
+        ...ARGS,
+        requestContextDefaults: {
+          model_id: "sam-mask",
+          output_geometry: "mask",
+          mask_prompt_source: { annotation_id: "annotation-mask-1", source_version: 7 },
+        },
+      }),
+    );
+
+    act(() => result.current.runPoint([0.5, 0.5], 1, { model_variants: { sam_variant: "tiny" } }));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+
+    act(() =>
+      result.current.runScribble(
+        [
+          [0.2, 0.2],
+          [0.3, 0.3],
+        ],
+        1,
+        0.008,
+        { model_variants: { sam_variant: "large" } },
+      ),
+    );
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.mask_input).toBeUndefined();
+    expect(interactiveAnnotateMock.mock.calls[1][2].context.model_variants).toEqual({
+      sam_variant: "large",
+    });
+
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3));
+    expect(interactiveAnnotateMock.mock.calls[2][2].context.mask_input).toBeUndefined();
+    expect(interactiveAnnotateMock.mock.calls[2][2].context.model_variants).toBeUndefined();
   });
 
   it("cycle 在候选间循环切换", async () => {
     interactiveAnnotateMock.mockResolvedValue({
       result: [
-        { type: "polygonlabels", value: { points: [[0, 0], [1, 0], [1, 1]], polygonlabels: ["a"] }, score: 0.9 },
-        { type: "polygonlabels", value: { points: [[0, 0], [1, 0], [0, 1]], polygonlabels: ["b"] }, score: 0.8 },
-        { type: "polygonlabels", value: { points: [[0, 0], [0, 1], [1, 1]], polygonlabels: ["c"] }, score: 0.7 },
+        {
+          type: "polygonlabels",
+          value: {
+            points: [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+            ],
+            polygonlabels: ["a"],
+          },
+          score: 0.9,
+        },
+        {
+          type: "polygonlabels",
+          value: {
+            points: [
+              [0, 0],
+              [1, 0],
+              [0, 1],
+            ],
+            polygonlabels: ["b"],
+          },
+          score: 0.8,
+        },
+        {
+          type: "polygonlabels",
+          value: {
+            points: [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+            ],
+            polygonlabels: ["c"],
+          },
+          score: 0.7,
+        },
       ],
     });
     const { result } = renderHook(() => useInteractiveAI(ARGS));
@@ -370,7 +747,10 @@ describe("useInteractiveAI", () => {
     interactiveAnnotateMock.mockResolvedValueOnce(POLY_RESPONSE);
     let secondResolve: ((v: typeof POLY_RESPONSE) => void) | undefined;
     interactiveAnnotateMock.mockImplementationOnce(
-      () => new Promise((res) => { secondResolve = res as typeof secondResolve; }),
+      () =>
+        new Promise((res) => {
+          secondResolve = res as typeof secondResolve;
+        }),
     );
 
     const { result } = renderHook(() => useInteractiveAI(ARGS));
@@ -544,9 +924,7 @@ describe("useInteractiveAI · transport 注入与 cacheScope", () => {
 
   it("给了 transport → 全部请求改走它，interactiveAnnotate 不被调用", async () => {
     const transport = vi.fn().mockResolvedValue(POLY_RESPONSE);
-    const { result } = renderHook(() =>
-      useInteractiveAI({ ...ARGS, transport, cacheScope: 7 }),
-    );
+    const { result } = renderHook(() => useInteractiveAI({ ...ARGS, transport, cacheScope: 7 }));
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(result.current.candidates.length).toBe(1));
 
@@ -570,16 +948,16 @@ describe("useInteractiveAI · transport 注入与 cacheScope", () => {
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
 
-    // 同 scope 同 prompt → 命中前端缓存，不再打后端。
+    // cancel 明确释放原始候选缓存，同 prompt 也必须重新推理。
     act(() => result.current.cancel());
     act(() => result.current.runPoint([0.5, 0.5], 1));
     await waitFor(() => expect(result.current.candidates.length).toBe(1));
-    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledTimes(2);
 
     // 换帧（scope 变）→ 同样的 prompt 必须重新推理，不能复用上一帧候选。
     rerender({ scope: 2 });
     act(() => result.current.runPoint([0.5, 0.5], 1));
-    await waitFor(() => expect(transport).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(transport).toHaveBeenCalledTimes(3));
   });
 
   it("cacheScope 变化 → 点会话重置（上一帧的点不喂给这一帧）", async () => {
@@ -669,12 +1047,21 @@ describe("simplifyCandidateRing · 候选顶点简化", () => {
   });
 
   it("三角形(顶点 < 4)原样返回, 不会退化", () => {
-    const tri: [number, number][] = [[0, 0], [0.1, 0], [0.05, 0.1]];
+    const tri: [number, number][] = [
+      [0, 0],
+      [0.1, 0],
+      [0.05, 0.1],
+    ];
     expect(simplifyCandidateRing(tri)).toEqual(tri);
   });
 
   it("退化环(对角线为 0)原样返回", () => {
-    const dot: [number, number][] = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.5], [0.5, 0.5]];
+    const dot: [number, number][] = [
+      [0.5, 0.5],
+      [0.5, 0.5],
+      [0.5, 0.5],
+      [0.5, 0.5],
+    ];
     expect(simplifyCandidateRing(dot)).toEqual(dot);
   });
 });

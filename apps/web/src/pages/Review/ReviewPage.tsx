@@ -47,7 +47,10 @@ function AnnotationPreview({ taskId }: { taskId: string }) {
 }
 
 function TaskRow({
-  task, checked, onToggle, onOpen,
+  task,
+  checked,
+  onToggle,
+  onOpen,
 }: {
   task: TaskResponse;
   checked: boolean;
@@ -58,7 +61,9 @@ function TaskRow({
     <div className="mb-2 grid grid-cols-[32px_48px_minmax(0,1fr)_140px_200px_96px] items-center gap-3 rounded-md border border-border bg-card px-3.5 py-2.5">
       <label className="inline-flex cursor-pointer items-center">
         <input
-          type="checkbox" checked={checked} onChange={onToggle}
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
           onClick={(e) => e.stopPropagation()}
           className="cursor-pointer accent-brand"
         />
@@ -76,12 +81,15 @@ function TaskRow({
         </div>
       </div>
       <div className="text-xs text-muted-foreground">
-        <Badge variant="warning" dot>待审核</Badge>
+        <Badge variant="warning" dot>
+          待审核
+        </Badge>
       </div>
       <AnnotationPreview taskId={task.id} />
       <div className="text-right">
         <Button size="sm" variant="primary" onClick={onOpen}>
-          <Icon name="target" size={11} />打开
+          <Icon name="target" size={11} />
+          打开
         </Button>
       </div>
     </div>
@@ -187,7 +195,8 @@ export function ReviewPage() {
   const toggleChecked = (id: string) => {
     setCheckedIds((s) => {
       const n = new Set(s);
-      if (n.has(id)) n.delete(id); else n.add(id);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
       return n;
     });
   };
@@ -198,11 +207,13 @@ export function ReviewPage() {
 
   const openTask = (id: string) => {
     if (projectId) {
-      navigate(buildReviewWorkbenchUrl(projectId, {
-        batchId: selectedBatchId,
-        taskId: id,
-        returnTo: currentWorkbenchReturnTo(location),
-      }));
+      navigate(
+        buildReviewWorkbenchUrl(projectId, {
+          batchId: selectedBatchId,
+          taskId: id,
+          returnTo: currentWorkbenchReturnTo(location),
+        }),
+      );
     } else {
       setSearchParams({ taskId: id });
     }
@@ -218,24 +229,31 @@ export function ReviewPage() {
     let failed = 0;
     let pending = ids.length;
     ids.forEach((id) => {
-      rejectMut.mutate({ taskId: id, ...payload }, {
-        onSuccess: () => { succeeded++; },
-        onError: () => { failed++; },
-        onSettled: () => {
-          pending--;
-          if (pending === 0) {
-            pushToast({
-              msg: `已退回 ${succeeded}/${ids.length} 个任务`,
-              sub: failed
-                ? `${failed} 项失败`
-                : `类型：${payload.reason_type}${payload.reason ? ` · ${payload.reason}` : ""}`,
-              kind: failed ? "error" : "success",
-            });
-            setCheckedIds(new Set());
-            setRejectingIds(null);
-          }
+      rejectMut.mutate(
+        { taskId: id, ...payload },
+        {
+          onSuccess: () => {
+            succeeded++;
+          },
+          onError: () => {
+            failed++;
+          },
+          onSettled: () => {
+            pending--;
+            if (pending === 0) {
+              pushToast({
+                msg: `已退回 ${succeeded}/${ids.length} 个任务`,
+                sub: failed
+                  ? `${failed} 项失败`
+                  : `类型：${payload.reason_type}${payload.reason ? ` · ${payload.reason}` : ""}`,
+                kind: failed ? "error" : "success",
+              });
+              setCheckedIds(new Set());
+              setRejectingIds(null);
+            }
+          },
         },
-      });
+      );
     });
   };
 
@@ -246,8 +264,12 @@ export function ReviewPage() {
     let pending = ids.length;
     ids.forEach((id) => {
       approveMut.mutate(id, {
-        onSuccess: () => { succeeded++; },
-        onError: () => { failed++; },
+        onSuccess: () => {
+          succeeded++;
+        },
+        onError: () => {
+          failed++;
+        },
         onSettled: () => {
           pending--;
           if (pending === 0) {
@@ -267,7 +289,10 @@ export function ReviewPage() {
   const pendingReview = selectedBatch?.review_tasks ?? 0;
   const approvedDone = selectedBatch?.completed_tasks ?? 0;
   const unsubmitted = selectedBatch
-    ? Math.max(0, selectedBatch.total_tasks - selectedBatch.review_tasks - selectedBatch.completed_tasks)
+    ? Math.max(
+        0,
+        selectedBatch.total_tasks - selectedBatch.review_tasks - selectedBatch.completed_tasks,
+      )
     : 0;
   const reviewPct = totalTasks ? Math.round((pendingReview / totalTasks) * 1000) / 10 : 0;
   const approvedPct = totalTasks ? Math.round((approvedDone / totalTasks) * 1000) / 10 : 0;
@@ -281,9 +306,7 @@ export function ReviewPage() {
       <aside className="max-h-[calc(100vh-80px)] self-stretch overflow-auto rounded-md border border-border bg-card max-[900px]:max-h-none">
         <div className="border-b border-border px-3.5 py-3">
           <div className="text-sm font-semibold">项目 · 批次</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            按项目分组的待审核批次
-          </div>
+          <div className="mt-0.5 text-xs text-muted-foreground">按项目分组的待审核批次</div>
         </div>
         <ReviewSidebar
           batches={sidebarBatches}
@@ -301,7 +324,8 @@ export function ReviewPage() {
                 className="mb-1.5 inline-flex cursor-pointer appearance-none items-center gap-1 border-none bg-transparent p-0 text-xs text-muted-foreground hover:text-brand"
                 onClick={backToOverview}
               >
-                <Icon name="chevLeft" size={12} />返回全部批次
+                <Icon name="chevLeft" size={12} />
+                返回全部批次
               </button>
             )}
             <h1 className="m-0 text-xl font-bold">
@@ -312,7 +336,11 @@ export function ReviewPage() {
                 <>
                   <span className="mono text-brand">{selectedBatch.batch_display_id}</span>
                   <span> · {selectedBatch.project_name}</span>
-                  <span> · 共 {selectedBatch.total_tasks} 任务 · {selectedBatch.review_tasks} 待审 · {selectedBatch.completed_tasks} 已通过</span>
+                  <span>
+                    {" "}
+                    · 共 {selectedBatch.total_tasks} 任务 · {selectedBatch.review_tasks} 待审 ·{" "}
+                    {selectedBatch.completed_tasks} 已通过
+                  </span>
                 </>
               ) : (
                 <>选择一个批次开始审核；点击行可在右侧画布预览，多选支持批量通过 / 退回</>
@@ -332,8 +360,13 @@ export function ReviewPage() {
           </div>
           {selectedBatchId && (
             <div className="flex shrink-0 gap-1.5">
-              <Button size="sm" onClick={() => tasks[0] && openTask(tasks[0].id)} disabled={tasks.length === 0}>
-                <Icon name="target" size={11} />打开画布
+              <Button
+                size="sm"
+                onClick={() => tasks[0] && openTask(tasks[0].id)}
+                disabled={tasks.length === 0}
+              >
+                <Icon name="target" size={11} />
+                打开画布
               </Button>
               <Button
                 size="sm"
@@ -351,7 +384,8 @@ export function ReviewPage() {
                   );
                 }}
               >
-                <Icon name="x" size={11} />整批退回
+                <Icon name="x" size={11} />
+                整批退回
               </Button>
             </div>
           )}
@@ -361,13 +395,18 @@ export function ReviewPage() {
           <div className="mb-3 rounded-md border border-border bg-card px-3 py-2.5">
             <div className="mb-1.5 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">批次进度</span>
-              <Badge variant="warning" dot>审核中</Badge>
+              <Badge variant="warning" dot>
+                审核中
+              </Badge>
             </div>
             {[
               { label: "待审", pct: reviewPct, count: pendingReview, bar: "bg-amber-500" },
               { label: "通过", pct: approvedPct, count: approvedDone, bar: "bg-emerald-500" },
             ].map((r) => (
-              <div key={r.label} className="mt-1 flex items-center gap-2.5 text-xs text-muted-foreground">
+              <div
+                key={r.label}
+                className="mt-1 flex items-center gap-2.5 text-xs text-muted-foreground"
+              >
                 <span className="flex-[0_0_48px]">{r.label}</span>
                 <div className="h-[5px] flex-1 overflow-hidden rounded-sm bg-muted">
                   <ProgressFill pct={r.pct} barClass={r.bar} />
@@ -410,15 +449,25 @@ export function ReviewPage() {
                   onChange={toggleAll}
                   className="cursor-pointer accent-brand"
                 />
-                <span>{checkedIds.size > 0 ? `已选 ${checkedIds.size}/${tasks.length}` : `共 ${tasks.length} 个待审核任务`}</span>
+                <span>
+                  {checkedIds.size > 0
+                    ? `已选 ${checkedIds.size}/${tasks.length}`
+                    : `共 ${tasks.length} 个待审核任务`}
+                </span>
               </label>
               {checkedIds.size > 0 && (
                 <div className="flex gap-1.5">
                   <Button variant="primary" size="sm" onClick={runBatchApprove}>
-                    <Icon name="check" size={11} />批量通过 ({checkedIds.size})
+                    <Icon name="check" size={11} />
+                    批量通过 ({checkedIds.size})
                   </Button>
-                  <Button variant="danger" size="sm" onClick={() => setRejectingIds([...checkedIds])}>
-                    <Icon name="x" size={11} />批量退回 ({checkedIds.size})
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setRejectingIds([...checkedIds])}
+                  >
+                    <Icon name="x" size={11} />
+                    批量退回 ({checkedIds.size})
                   </Button>
                 </div>
               )}
@@ -446,7 +495,7 @@ export function ReviewPage() {
         // v0.8.8 · 单任务退回且该任务被跳过时透传 skip_reason 到 modal
         skipReasonHint={
           rejectingIds?.length === 1
-            ? tasks.find((t) => t.id === rejectingIds[0])?.skip_reason ?? null
+            ? (tasks.find((t) => t.id === rejectingIds[0])?.skip_reason ?? null)
             : null
         }
       />

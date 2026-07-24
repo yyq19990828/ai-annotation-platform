@@ -58,7 +58,10 @@ function task(overrides: Partial<TaskResponse> = {}): TaskResponse {
   };
 }
 
-function renderReview(mode: "annotate" | "review" = "review", overrides: Partial<TaskResponse> = {}) {
+function renderReview(
+  mode: "annotate" | "review" = "review",
+  overrides: Partial<TaskResponse> = {},
+) {
   const navigateTask = vi.fn();
   const pushToast = vi.fn();
   const rendered = renderHook(() =>

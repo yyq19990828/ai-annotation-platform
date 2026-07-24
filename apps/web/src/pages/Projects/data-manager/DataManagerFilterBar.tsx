@@ -47,7 +47,10 @@ export function DataManagerFilterBar({
     const query = fieldQuery.trim().toLocaleLowerCase();
     const groups = new Map<string, DataManagerFilterField[]>();
     for (const field of fields) {
-      if (query && !`${field.label} ${field.key} ${field.group}`.toLocaleLowerCase().includes(query)) {
+      if (
+        query &&
+        !`${field.label} ${field.key} ${field.group}`.toLocaleLowerCase().includes(query)
+      ) {
         continue;
       }
       const items = groups.get(field.group) ?? [];
@@ -92,7 +95,8 @@ export function DataManagerFilterBar({
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
         <PopoverTrigger asChild>
           <Button size="sm" className="h-8">
-            <Icon name="plus" size={12} />筛选
+            <Icon name="plus" size={12} />
+            筛选
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-80 p-2">
@@ -110,9 +114,7 @@ export function DataManagerFilterBar({
           <div className="max-h-80 overflow-y-auto">
             {groupedFields.map(([group, items]) => (
               <div key={group} className="mb-2 last:mb-0">
-                <div className="px-2 py-1 text-2xs font-medium text-muted-foreground">
-                  {group}
-                </div>
+                <div className="px-2 py-1 text-2xs font-medium text-muted-foreground">{group}</div>
                 {items.map((field) => (
                   <Button
                     key={field.key}

@@ -19,7 +19,8 @@ export function usePsrFloatingPanel(userId: string | null) {
   }, [userId]);
   const persistPsrPanel = useCallback(
     (next: PsrPanelUiState) => {
-      if (userId && typeof window !== "undefined") writePsrPanelUiState(userId, next, window.localStorage);
+      if (userId && typeof window !== "undefined")
+        writePsrPanelUiState(userId, next, window.localStorage);
     },
     [userId],
   );
@@ -32,16 +33,18 @@ export function usePsrFloatingPanel(userId: string | null) {
   }, [persistPsrPanel]);
   const psrDragRef = useRef<{ sx: number; sy: number; dx0: number; dy0: number } | null>(null);
   const [psrDragging, setPsrDragging] = useState(false);
-  const onPsrHeaderPointerDown = useCallback(
-    (e: ReactPointerEvent) => {
-      if (e.button !== 0) return;
-      // 拖柄落在交互控件(类别下拉 / 锁 / 删 / 展开钮)上时不起拖,保持可点。
-      if ((e.target as HTMLElement).closest("button, select, input, a")) return;
-      psrDragRef.current = { sx: e.clientX, sy: e.clientY, dx0: psrPanelRef.current.dx, dy0: psrPanelRef.current.dy };
-      setPsrDragging(true);
-    },
-    [],
-  );
+  const onPsrHeaderPointerDown = useCallback((e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    // 拖柄落在交互控件(类别下拉 / 锁 / 删 / 展开钮)上时不起拖,保持可点。
+    if ((e.target as HTMLElement).closest("button, select, input, a")) return;
+    psrDragRef.current = {
+      sx: e.clientX,
+      sy: e.clientY,
+      dx0: psrPanelRef.current.dx,
+      dy0: psrPanelRef.current.dy,
+    };
+    setPsrDragging(true);
+  }, []);
   useEffect(() => {
     if (!psrDragging) return;
     const onMove = (e: PointerEvent) => {

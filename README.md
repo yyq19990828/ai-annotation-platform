@@ -109,14 +109,14 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
 
 ### 前置依赖
 
-| 依赖 | 版本 |
-|---|---|
-| Node.js | `>= 20` |
-| pnpm | `>= 10` |
-| Python | `>= 3.11` |
-| uv | Python 包管理 |
+| 依赖           | 版本                       |
+| -------------- | -------------------------- |
+| Node.js        | `>= 20`                    |
+| pnpm           | `>= 10`                    |
+| Python         | `>= 3.11`                  |
+| uv             | Python 包管理              |
 | Docker Compose | 本地数据库、队列、对象存储 |
-| pre-commit | 可选，但推荐 |
+| pre-commit     | 可选，但推荐               |
 
 ### 本地启动
 
@@ -149,14 +149,14 @@ PYTHONPATH=. uv run python scripts/seed.py
 
 ### 常用入口
 
-| 服务 | 地址 | 说明 |
-|---|---|---|
-| Web App | http://localhost:3000 | 标注平台主界面 |
-| Swagger UI | http://localhost:8000/docs | 运行时 API 文档 |
-| Docs Site | http://localhost:5173 | `pnpm docs:dev` 后打开 |
-| MinIO Console | http://localhost:9001 | `minioadmin / minioadmin` |
-| Mailpit | http://localhost:8025 | 开发邮件收件箱 |
-| Grafana | http://localhost:3001 | `monitoring` profile 启动后打开 |
+| 服务          | 地址                       | 说明                            |
+| ------------- | -------------------------- | ------------------------------- |
+| Web App       | http://localhost:3000      | 标注平台主界面                  |
+| Swagger UI    | http://localhost:8000/docs | 运行时 API 文档                 |
+| Docs Site     | http://localhost:5173      | `pnpm docs:dev` 后打开          |
+| MinIO Console | http://localhost:9001      | `minioadmin / minioadmin`       |
+| Mailpit       | http://localhost:8025      | 开发邮件收件箱                  |
+| Grafana       | http://localhost:3001      | `monitoring` profile 启动后打开 |
 
 ## 可选服务
 
@@ -185,11 +185,17 @@ docker compose --profile monitoring up -d prometheus grafana
 ## 开发工作流
 
 ```bash
-# 前端
+# 全仓格式与静态检查
+pnpm format:check
 pnpm lint
 pnpm typecheck
+
+# 自动修复格式（提交前执行）
+pnpm format
+
+# 前端测试
 pnpm test
-pnpm test:e2e          # 需要后端与 docker compose 服务
+pnpm test:e2e          # 需要 Postgres/Redis/MinIO；自启 3001/8010 与 annotation_e2e
 
 # 后端
 cd apps/api && uv run pytest
@@ -203,25 +209,29 @@ pnpm docs:dev
 pnpm docs:build
 ```
 
+E2E 不复用开发环境的 `3000/8000` 或 `annotation` 数据库。测试路由
+默认关闭，仅对显式开启且名称以 `_e2e` / `_test` 结尾的数据库开放。
+详见 [E2E 运行说明](./apps/web/e2e/README.md)。
+
 API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量变更后同步更新 `.env.example` 并跑 `pnpm docs:gen-env-vars`。
 
 ## 文档地图
 
-| 角色 / 任务 | 入口 |
-|---|---|
-| 标注员、审核员、项目管理员 | [docs-site/user-guide/](./docs-site/user-guide/) |
-| 本地开发 | [docs-site/dev/tutorials/local-dev.md](./docs-site/dev/tutorials/local-dev.md) |
-| 测试策略 | [docs-site/dev/testing.md](./docs-site/dev/testing.md) |
-| API 文档 | [docs-site/api/](./docs-site/api/) |
-| Python SDK / CLI | [docs-site/dev/sdk/quickstart.md](./docs-site/dev/sdk/quickstart.md) |
-| ML Backend 协议 | [docs-site/dev/reference/ml-backend-protocol.md](./docs-site/dev/reference/ml-backend-protocol.md) |
-| Data Manager | [docs-site/user-guide/projects/data-manager.md](./docs-site/user-guide/projects/data-manager.md) |
-| 视频帧服务 | [docs-site/dev/reference/video-frame-service.md](./docs-site/dev/reference/video-frame-service.md) |
-| 导出格式 | [docs-site/user-guide/reference/export-formats.md](./docs-site/user-guide/reference/export-formats.md) |
-| 部署与运维 | [docs-site/ops/](./docs-site/ops/) |
-| 架构概念 | [docs-site/dev/concepts/](./docs-site/dev/concepts/) |
-| ADR | [docs/adr/](./docs/adr/) |
-| 变更记录 | [CHANGELOG.md](./CHANGELOG.md) |
+| 角色 / 任务                | 入口                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 标注员、审核员、项目管理员 | [docs-site/user-guide/](./docs-site/user-guide/)                                                       |
+| 本地开发                   | [docs-site/dev/tutorials/local-dev.md](./docs-site/dev/tutorials/local-dev.md)                         |
+| 测试策略                   | [docs-site/dev/testing.md](./docs-site/dev/testing.md)                                                 |
+| API 文档                   | [docs-site/api/](./docs-site/api/)                                                                     |
+| Python SDK / CLI           | [docs-site/dev/sdk/quickstart.md](./docs-site/dev/sdk/quickstart.md)                                   |
+| ML Backend 协议            | [docs-site/dev/reference/ml-backend-protocol.md](./docs-site/dev/reference/ml-backend-protocol.md)     |
+| Data Manager               | [docs-site/user-guide/projects/data-manager.md](./docs-site/user-guide/projects/data-manager.md)       |
+| 视频帧服务                 | [docs-site/dev/reference/video-frame-service.md](./docs-site/dev/reference/video-frame-service.md)     |
+| 导出格式                   | [docs-site/user-guide/reference/export-formats.md](./docs-site/user-guide/reference/export-formats.md) |
+| 部署与运维                 | [docs-site/ops/](./docs-site/ops/)                                                                     |
+| 架构概念                   | [docs-site/dev/concepts/](./docs-site/dev/concepts/)                                                   |
+| ADR                        | [docs/adr/](./docs/adr/)                                                                               |
+| 变更记录                   | [CHANGELOG.md](./CHANGELOG.md)                                                                         |
 
 部署版文档站：[https://yyq19990828.github.io/ai-annotation-platform/](https://yyq19990828.github.io/ai-annotation-platform/)
 
@@ -254,14 +264,14 @@ ai-annotation-platform/
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
+| 层   | 技术                                                                             |
+| ---- | -------------------------------------------------------------------------------- |
 | 前端 | React 18、TypeScript、Vite、TanStack Query、Zustand、Konva、Three.js、Playwright |
-| 后端 | FastAPI、Pydantic、SQLAlchemy 2、Alembic、Celery、pytest |
-| 数据 | PostgreSQL 16、Redis 7、MinIO / OSS、DuckDB 分析视图 |
-| AI | Grounded-SAM-2、SAM 3、YOLO、ONNX Runtime、RapidOCR、开放 ML Backend 协议 |
-| 文档 | VitePress、Mermaid、OpenAPI / Scalar、ADR |
-| CI | GitHub Actions、docs impact、visual regression、OpenAPI snapshot check |
+| 后端 | FastAPI、Pydantic、SQLAlchemy 2、Alembic、Celery、pytest                         |
+| 数据 | PostgreSQL 16、Redis 7、MinIO / OSS、DuckDB 分析视图                             |
+| AI   | Grounded-SAM-2、SAM 3、YOLO、ONNX Runtime、RapidOCR、开放 ML Backend 协议        |
+| 文档 | VitePress、Mermaid、OpenAPI / Scalar、ADR                                        |
+| CI   | GitHub Actions、docs impact、visual regression、OpenAPI snapshot check           |
 
 ## 贡献前检查
 

@@ -43,6 +43,7 @@ uv run --project apps/_shared/mask_utils python scripts/eval_simplify.py \
 ```
 
 > **采集 prompt 选择经验**（v0.9.4 phase 3 踩坑）：
+>
 > - ❌ 「中心 60% bbox」prompt 在大场景图（1920×1080 多对象沙盘）出 IoU mean 0.54 — bbox 覆盖太多杂物
 > - ✅ DINO+SAM **文本 prompt** 出 IoU mean 0.98 — 与工作台 `S` 工具 text 模式真实使用对齐
 > - 单图取多个文本 prompt 提升样本多样性（同图 3 物体 → 3 种边界复杂度）
@@ -50,6 +51,7 @@ uv run --project apps/_shared/mask_utils python scripts/eval_simplify.py \
 ## 文件协议
 
 每张 PNG **单通道二值** mask：
+
 - 0 = 背景，非零 = 前景
 - 任意尺寸（脚本自动按 mask shape 算 IoU）
 - 文件名仅用于报告 traceability，不影响评测逻辑

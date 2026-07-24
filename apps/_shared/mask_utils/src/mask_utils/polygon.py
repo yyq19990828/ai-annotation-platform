@@ -144,6 +144,39 @@ def mask_to_multi_polygon(
     return sorted_outers
 
 
+def mask_to_preview_polygon(
+    mask: np.ndarray,
+    tolerance: float = 1.0,
+    normalize_to: tuple[int, int] | None = None,
+) -> list[list[float]]:
+    """Return one simplified outer ring for transient native-Mask rendering.
+
+    The RLE remains the authoritative geometry. This outline is deliberately
+    display-only so clients can render and navigate many candidates without
+    decoding every full-resolution mask.
+    """
+    rings = mask_to_multi_polygon(
+        mask,
+        tolerance=tolerance,
+        normalize_to=normalize_to,
+    )
+    if rings:
+        return rings[0]["exterior"]
+
+    foreground_y, foreground_x = np.nonzero(mask)
+    if foreground_x.size == 0:
+        return []
+    left = float(foreground_x.min())
+    top = float(foreground_y.min())
+    right = float(foreground_x.max() + 1)
+    bottom = float(foreground_y.max() + 1)
+    points = [[left, top], [right, top], [right, bottom], [left, bottom]]
+    if normalize_to is None:
+        return points
+    width, height = normalize_to
+    return normalize_coords(points, width, height)
+
+
 def _simplify_contour(contour: np.ndarray, tolerance: float) -> list[list[float]]:
     """单条 cv2 contour → 简化后的 [[x,y], ...]（像素坐标）；失败降级到原始顶点。
 

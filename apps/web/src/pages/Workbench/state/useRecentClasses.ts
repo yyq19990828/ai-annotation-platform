@@ -15,9 +15,7 @@ function readFromStorage(projectId: string | undefined, limit: number): string[]
     const raw = localStorage.getItem(key);
     if (!raw) return [];
     const arr = JSON.parse(raw);
-    return Array.isArray(arr)
-      ? arr.filter((s) => typeof s === "string").slice(0, limit)
-      : [];
+    return Array.isArray(arr) ? arr.filter((s) => typeof s === "string").slice(0, limit) : [];
   } catch {
     return [];
   }
@@ -31,17 +29,24 @@ export function useRecentClasses(projectId: string | undefined, limit?: number) 
     setRecent(readFromStorage(projectId, resolvedLimit));
   }, [projectId, resolvedLimit]);
 
-  const record = useCallback((className: string) => {
-    if (!className) return;
-    setRecent((prev) => {
-      const next = [className, ...prev.filter((c) => c !== className)].slice(0, resolvedLimit);
-      const key = storageKey(projectId);
-      if (key) {
-        try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* ignore */ }
-      }
-      return next;
-    });
-  }, [projectId, resolvedLimit]);
+  const record = useCallback(
+    (className: string) => {
+      if (!className) return;
+      setRecent((prev) => {
+        const next = [className, ...prev.filter((c) => c !== className)].slice(0, resolvedLimit);
+        const key = storageKey(projectId);
+        if (key) {
+          try {
+            localStorage.setItem(key, JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+        }
+        return next;
+      });
+    },
+    [projectId, resolvedLimit],
+  );
 
   return { recent, record };
 }

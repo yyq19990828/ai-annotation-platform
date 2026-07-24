@@ -28,16 +28,26 @@ mkdirSync(outputRoot, { recursive: true });
 for (const [inputRelative, outputName] of media) {
   const input = resolve(repoRoot, inputRelative);
   const output = resolve(outputRoot, outputName);
-  const result = spawnSync(ffmpeg, [
-    "-v", "error",
-    "-y",
-    "-i", input,
-    "-frames:v", "1",
-    "-c:v", "libwebp",
-    "-quality", "85",
-    "-compression_level", "4",
-    output,
-  ], { encoding: "utf8" });
+  const result = spawnSync(
+    ffmpeg,
+    [
+      "-v",
+      "error",
+      "-y",
+      "-i",
+      input,
+      "-frames:v",
+      "1",
+      "-c:v",
+      "libwebp",
+      "-quality",
+      "85",
+      "-compression_level",
+      "4",
+      output,
+    ],
+    { encoding: "utf8" },
+  );
   if (result.status !== 0) {
     throw new Error(`首页 Hero WebP 生成失败：${inputRelative}\n${result.stderr}`);
   }

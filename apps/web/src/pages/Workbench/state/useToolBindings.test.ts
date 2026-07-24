@@ -12,7 +12,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ProjectResponse } from "@/api/projects";
 import type { ToolId } from "../stage/tools";
-import { useToolBindings } from "./useToolBindings";
+import { attributeSchemaForUnit, classesForUnit, useToolBindings } from "./useToolBindings";
 
 function _proj(extra: Partial<ProjectResponse>): ProjectResponse {
   return {
@@ -44,9 +44,7 @@ describe("useToolBindings · v0.10.17", () => {
         },
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "box" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "box" as ToolId));
     expect(result.current.toolUnitId).toBe("bbox");
     expect(result.current.classes).toEqual(["person", "car"]);
     expect(result.current.classesConfig.person.color).toBe("#fff");
@@ -66,9 +64,7 @@ describe("useToolBindings · v0.10.17", () => {
         },
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "box" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "box" as ToolId));
     // 0(a) — 0(c, 输入序在 a 之后) — 2(b); JS 稳定排序保留同 key 相对顺序.
     expect(result.current.classes).toEqual(["a", "c", "b"]);
   });
@@ -90,9 +86,7 @@ describe("useToolBindings · v0.10.17", () => {
         },
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "smart-point" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "smart-point" as ToolId));
     expect(result.current.toolUnitId).toBe("region");
     expect(result.current.classes).toEqual(["car"]);
   });
@@ -112,9 +106,7 @@ describe("useToolBindings · v0.10.17", () => {
         },
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "magic-box" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "magic-box" as ToolId));
     expect(result.current.toolUnitId).toBe("bbox");
     expect(result.current.classes).toEqual(["person"]);
   });
@@ -130,9 +122,7 @@ describe("useToolBindings · v0.10.17", () => {
         // region 完全未配
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "smart-box" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "smart-box" as ToolId));
     expect(result.current.toolUnitId).toBe("region");
     expect(result.current.classes).toEqual(["person"]);
   });
@@ -152,9 +142,7 @@ describe("useToolBindings · v0.10.17", () => {
         },
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "exemplar" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "exemplar" as ToolId));
     expect(result.current.classes).toEqual(["person"]);
   });
 
@@ -162,9 +150,7 @@ describe("useToolBindings · v0.10.17", () => {
     const proj = _proj({
       tool_bindings: {},
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "box" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "box" as ToolId));
     expect(result.current.classes).toEqual([]);
     expect(result.current.classesConfig).toEqual({});
   });
@@ -179,9 +165,25 @@ describe("useToolBindings · v0.10.17", () => {
         },
       },
     });
-    const { result } = renderHook(() =>
-      useToolBindings(proj, "box" as ToolId),
-    );
+    const { result } = renderHook(() => useToolBindings(proj, "box" as ToolId));
     expect(result.current.classes).toEqual([]);
+  });
+
+  it("已落库标注改类与属性按自身单位读取，不回退到 bbox", () => {
+    const toolBindings = {
+      bbox: {
+        enabled: true,
+        classes: [{ name: "Car", order: 0 }],
+        attribute_schema: { fields: [{ key: "bbox_only", label: "BBox only", type: "text" }] },
+      },
+      region: {
+        enabled: true,
+        classes: [{ name: "Road", order: 0 }],
+        attribute_schema: { fields: [{ key: "region_only", label: "Region only", type: "text" }] },
+      },
+    } as NonNullable<ProjectResponse["tool_bindings"]>;
+
+    expect(classesForUnit(toolBindings, "region")).toEqual(["Road"]);
+    expect(attributeSchemaForUnit(toolBindings, "region").fields?.[0]?.key).toBe("region_only");
   });
 });

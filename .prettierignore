@@ -1,0 +1,58 @@
+# Dependencies, virtual environments, caches, and build outputs
+**/node_modules/
+**/.venv/
+**/.ruff_cache/
+**/__pycache__/
+**/build/
+**/dist/
+**/.vite/
+**/.vitepress/cache/
+**/coverage/
+**/htmlcov/
+**/playwright-report/
+**/test-results/
+.claude/worktrees/
+.claude/settings.local.json
+.claude/skills/
+.hermes/
+
+# Third-party source mirrors
+.agents/
+**/vendor/
+**/third-party/
+**/third_party/
+
+# Generated sources and documentation
+apps/web/src/api/generated/
+apps/api/openapi.snapshot.json
+apps/api/capability-registry.snapshot.json
+docs-site/dev/adr/
+docs-site/changelog/
+docs-site/roadmap/
+docs-site/public/openapi.json
+docs-site/public/llms.txt
+docs-site/public/llms-full.txt
+docs-site/api/guides/_routes.generated.md
+docs-site/dev/reference/env-vars.md
+docs-site/user-guide/workbench/hotkeys.generated.md
+docs-site/user-guide/workbench/settings.generated.md
+apps/web/e2e/screenshots/outputs/
+**/*.generated.*
+**/*golden*.json
+
+# Package-manager and machine-owned files
+pnpm-lock.yaml
+skills-lock.json
+**/uv.lock
+**/yarn.lock
+**/*.excalidraw
+docs/benchmarks/
+docs/research/data/
+infra/grafana/dashboards/
+
+# Immutable history; keep its original authored formatting
+docs/adr/archive/
+docs/changelogs/
+docs/plans/archive/
+docs/plans/_spike-results/
+ROADMAP/archive/

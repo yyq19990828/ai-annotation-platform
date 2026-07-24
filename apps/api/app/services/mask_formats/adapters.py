@@ -1,0 +1,550 @@
+from __future__ import annotations
+
+import json
+import uuid
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.annotation import Annotation
+from app.db.models.project import Project
+from app.db.models.task import Task
+from app.schemas.aap_json import AAPJsonV1Envelope
+from app.schemas.mask_format import (
+    MaskFormatCapability,
+    MaskFormatCode,
+    MaskFormatPlan,
+    MaskFormatPlanItem,
+)
+from app.services.annotations_import import import_aap_json_annotations
+from app.services.mask_formats.contracts import (
+    MaskFormatDescriptor,
+    StagedObject,
+    canonical_digest,
+)
+from app.services.mask_formats.planning import _code, _plan, _worst_loss
+from app.services.mask_formats.registry import registry
+from app.services.task_matcher import resolve_task
+
+
+_ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
+    "aap_json": None,
+    "coco": frozenset(
+        {"bbox", "rotated_bbox", "polygon", "multi_polygon", "keypoint", "raster_mask"}
+    ),
+    "yolo": frozenset({"bbox"}),
+    "yolo-det": frozenset({"bbox"}),
+    "yolo-obb": frozenset({"rotated_bbox"}),
+    "yolo-seg": frozenset({"polygon", "multi_polygon", "raster_mask"}),
+    "label-studio-brush": frozenset({"raster_mask"}),
+    "binary-png": frozenset({"raster_mask"}),
+    "indexed-png": frozenset({"raster_mask"}),
+    "video_json": None,
+    "yolo-frames-det": frozenset({"video_track", "bbox"}),
+    "yolo-frames-seg": frozenset({"video_track", "video_track_mask", "polygon"}),
+    "coco-frames-seg": frozenset({"video_track", "video_track_mask", "polygon"}),
+    "davis": frozenset({"video_track_mask"}),
+    "youtube-vos": frozenset({"video_track_mask"}),
+    "mots": frozenset({"video_track_mask"}),
+    "mot": frozenset({"video_track", "bbox"}),
+    "kitti": None,
+    "nuscenes": None,
+    "pointmask": None,
+    "voc": frozenset({"bbox"}),
+}
+
+
+_TARGET_LOSSES: dict[str, tuple[str, ...]] = {
+    "video_json": ("nonportable_media_reference",),
+    "yolo-seg": ("holes_polygonized", "components_split"),
+    "yolo-frames-seg": (
+        "holes_polygonized",
+        "components_split",
+        "track_identity_lost",
+        "frame_base_changed",
+    ),
+    "yolo-frames-det": ("track_identity_lost", "frame_base_changed"),
+    "coco-frames-seg": ("frame_base_changed",),
+    "davis": ("occlusion_lost", "frame_base_changed"),
+    "youtube-vos": ("sparse_frames_collapsed", "occlusion_lost"),
+    "mots": ("occlusion_lost", "frame_base_changed"),
+    "mot": ("frame_base_changed",),
+    "kitti": ("frame_base_changed",),
+}
+
+
+class LegacyPackagingAdapter:
+    def __init__(self, descriptor: MaskFormatDescriptor) -> None:
+        self.descriptor = descriptor
+
+    async def preflight_export(
+        self,
+        db: AsyncSession,
+        *,
+        project: Project,
+        scope: dict[str, Any],
+        options: dict[str, Any],
+    ) -> MaskFormatPlan:
+        task_query = select(Task.id, Task.file_path).where(
+            Task.project_id == project.id
+        )
+        batch_id = scope.get("batch_id")
+        if batch_id:
+            task_query = task_query.where(Task.batch_id == uuid.UUID(str(batch_id)))
+        task_rows = list(
+            (await db.execute(task_query.order_by(Task.id).limit(100_001))).all()
+        )
+        if len(task_rows) > 100_000:
+            raise ValueError("format_preflight_task_budget_exceeded")
+
+        task_ids = [row.id for row in task_rows]
+        grouped: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
+        if task_ids:
+            geometry_type = Annotation.geometry["type"].astext
+            annotation_rows = (
+                await db.execute(
+                    select(
+                        Annotation.task_id,
+                        geometry_type,
+                        func.count(Annotation.id),
+                    )
+                    .where(
+                        Annotation.task_id.in_(task_ids),
+                        Annotation.is_active.is_(True),
+                        Annotation.was_cancelled.is_(False),
+                    )
+                    .group_by(Annotation.task_id, geometry_type)
+                )
+            ).all()
+            for task_id, geometry_type, count in annotation_rows:
+                grouped[task_id][str(geometry_type)] = int(count)
+
+        allowed = _ALLOWED_GEOMETRY.get(self.descriptor.format_id)
+        target_losses = tuple(_TARGET_LOSSES.get(self.descriptor.format_id, ()))
+        items: list[MaskFormatPlanItem] = []
+        for task_id, file_path in task_rows:
+            geometry_counts = grouped.get(task_id, {})
+            unsupported = sorted(
+                geometry_type
+                for geometry_type, count in geometry_counts.items()
+                if count and allowed is not None and geometry_type not in allowed
+            )
+            losses = [_code(code) for code in target_losses]
+            warnings: list[MaskFormatCode] = []
+            loss_class = "lossy" if losses else "lossless"
+            if unsupported:
+                loss_class = "unsupported"
+                warnings.append(
+                    _code("unsupported_geometry", geometry_types=unsupported)
+                )
+            object_count = sum(geometry_counts.values())
+            items.append(
+                MaskFormatPlanItem(
+                    item_id=canonical_digest(
+                        {
+                            "format_id": self.descriptor.format_id,
+                            "task_id": str(task_id),
+                            "geometry_counts": geometry_counts,
+                        }
+                    ),
+                    task_id=task_id,
+                    media_path=file_path,
+                    loss_class=loss_class,
+                    estimated_objects=object_count,
+                    estimated_files=1,
+                    estimated_bytes=max(128, object_count * 512),
+                    losses=losses,
+                    warnings=warnings,
+                )
+            )
+
+        loss_class = _worst_loss([item.loss_class for item in items])
+        all_losses = [_code(code) for code in target_losses]
+        return _plan(
+            {
+                "format_id": self.descriptor.format_id,
+                "direction": "export",
+                "adapter_version": self.descriptor.adapter_version,
+                "manifest_version": self.descriptor.manifest_version,
+                "media_type": project.data_type or "image",
+                "mapping_digest": canonical_digest({}),
+                "options_digest": canonical_digest(options),
+                "items": [item.model_dump(mode="json") for item in items],
+                "loss_class": loss_class,
+                "estimated_objects": sum(item.estimated_objects for item in items),
+                "estimated_files": sum(item.estimated_files for item in items),
+                "estimated_bytes": sum(item.estimated_bytes for item in items),
+                "losses": [item.model_dump(mode="json") for item in all_losses],
+            }
+        )
+
+    async def preflight_import(self, *_args, **_kwargs) -> MaskFormatPlan:
+        raise ValueError(f"format_import_unsupported:{self.descriptor.format_id}")
+
+    async def execute_import_item(self, *_args, **_kwargs) -> dict[str, Any]:
+        raise ValueError(f"format_import_unsupported:{self.descriptor.format_id}")
+
+
+def _aap_error_code(reason: str) -> str:
+    lowered = reason.lower()
+    if "task not found" in lowered:
+        return "task_not_found"
+    if "class_name" in lowered or "类别" in reason:
+        return "unknown_label"
+    if "size" in lowered or "尺寸" in reason:
+        return "image_size_mismatch"
+    return "unsupported_geometry"
+
+
+def _aap_subset_bytes(envelope: AAPJsonV1Envelope, source_index: int) -> bytes:
+    subset = envelope.model_copy(update={"tasks": [envelope.tasks[source_index]]})
+    return json.dumps(
+        subset.model_dump(mode="json"),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+class AAPJsonAdapter(LegacyPackagingAdapter):
+    async def _load(self, staged: StagedObject) -> AAPJsonV1Envelope:
+        if staged.size_bytes > 64 * 1024 * 1024:
+            raise ValueError("resource_budget_exceeded:max_aap_json_bytes")
+        try:
+            return AAPJsonV1Envelope.model_validate_json(
+                Path(staged.local_path).read_bytes()
+            )
+        except Exception as exc:
+            raise ValueError(f"aap_json_invalid:{exc}") from exc
+
+    async def preflight_import(
+        self,
+        db: AsyncSession,
+        *,
+        project: Project,
+        staged: StagedObject,
+        mapping: dict[str, Any],
+        options: dict[str, Any],
+    ) -> MaskFormatPlan:
+        envelope = await self._load(staged)
+        items: list[MaskFormatPlanItem] = []
+        unknown_labels: set[str] = set()
+        for source_index, block in enumerate(envelope.tasks):
+            match = block.task_match.model_dump(exclude_none=True)
+            if "file_path" not in match and block.file_path:
+                match["file_path"] = block.file_path
+            task = await resolve_task(db, project.id, match)
+            subset = _aap_subset_bytes(envelope, source_index)
+            preview = await import_aap_json_annotations(
+                db,
+                project.id,
+                subset,
+                operator_user_id=project.owner_id,
+                overwrite=bool(options.get("overwrite")),
+                dry_run=True,
+            )
+            skips = [
+                _code(_aap_error_code(error.reason), reason=error.reason)
+                for error in preview.errors
+            ]
+            unknown_labels.update(
+                entry.class_name
+                for entry in block.annotations
+                if entry.class_name
+                and any(skip.code == "unknown_label" for skip in skips)
+            )
+            if not block.annotations:
+                skips.append(_code("not_selected"))
+            loss_class = "lossless" if not skips else "unsupported"
+            items.append(
+                MaskFormatPlanItem(
+                    item_id=canonical_digest(block.model_dump(mode="json")),
+                    task_id=task.id if task is not None else None,
+                    media_path=block.file_path or match.get("file_path"),
+                    source_index=source_index,
+                    loss_class=loss_class,
+                    estimated_objects=len(block.annotations),
+                    estimated_files=1,
+                    estimated_bytes=len(subset),
+                    skips=skips,
+                )
+            )
+        return _plan(
+            {
+                "format_id": self.descriptor.format_id,
+                "direction": "import",
+                "adapter_version": self.descriptor.adapter_version,
+                "manifest_version": self.descriptor.manifest_version,
+                "media_type": project.data_type or "image",
+                "staged_object_key": staged.object_key,
+                "staged_sha256": staged.sha256,
+                "mapping_digest": canonical_digest(mapping),
+                "options_digest": canonical_digest(options),
+                "items": [item.model_dump(mode="json") for item in items],
+                "loss_class": _worst_loss([item.loss_class for item in items]),
+                "unknown_labels": sorted(unknown_labels),
+                "estimated_objects": sum(item.estimated_objects for item in items),
+                "estimated_files": sum(item.estimated_files for item in items),
+                "estimated_bytes": staged.size_bytes,
+                "skips": [
+                    skip.model_dump(mode="json")
+                    for item in items
+                    for skip in item.skips
+                ],
+            }
+        )
+
+    async def execute_import_item(
+        self,
+        db: AsyncSession,
+        *,
+        project: Project,
+        staged: StagedObject,
+        plan: MaskFormatPlan,
+        item_index: int,
+        operator_user_id,
+        mapping: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        item = plan.items[item_index]
+        if item.loss_class == "unsupported" or item.task_id is None:
+            return {
+                "status": "skipped",
+                "skip_code": item.skips[0].code if item.skips else "not_selected",
+            }
+        envelope = await self._load(staged)
+        if item.source_index is None or item.source_index >= len(envelope.tasks):
+            raise ValueError("format_plan_source_index_conflict")
+        block = envelope.tasks[item.source_index]
+        if canonical_digest(block.model_dump(mode="json")) != item.item_id:
+            raise ValueError("format_plan_item_digest_conflict")
+        match = block.task_match.model_dump(exclude_none=True)
+        if "file_path" not in match and block.file_path:
+            match["file_path"] = block.file_path
+        resolved = await resolve_task(db, project.id, match)
+        if resolved is None or resolved.id != item.task_id:
+            raise ValueError("format_plan_task_conflict")
+        result = await import_aap_json_annotations(
+            db,
+            project.id,
+            _aap_subset_bytes(envelope, item.source_index),
+            operator_user_id=operator_user_id,
+            overwrite=bool((options or {}).get("overwrite")),
+            dry_run=False,
+        )
+        if result.errors or result.skipped:
+            raise ValueError("format_execute_diverged_from_preflight")
+        return {
+            "status": "committed",
+            "task_id": str(item.task_id),
+            "imported": result.imported,
+            "skipped": result.skipped,
+        }
+
+
+def _capability(
+    supported: bool,
+    *,
+    verified: bool = False,
+    enabled_for_ui: bool = False,
+) -> MaskFormatCapability:
+    return MaskFormatCapability(
+        supported=supported,
+        verified=verified,
+        enabled_for_ui=enabled_for_ui,
+    )
+
+
+_DESCRIPTORS = [
+    MaskFormatDescriptor(
+        format_id="aap_json",
+        label="AAP JSON",
+        adapter_version="1.0.0",
+        manifest_version="1.3",
+        media_types=frozenset({"image", "video", "lidar"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="coco",
+        label="COCO Instance",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="yolo-seg",
+        label="YOLO Segmentation",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="label-studio-brush",
+        label="Label Studio BrushLabels",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "data_key": {"type": "string", "default": "image"},
+            "from_name": {"type": "string", "default": "brush"},
+            "to_name": {"type": "string", "default": "image"},
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="binary-png",
+        label="Binary PNG per instance",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="indexed-png",
+        label="Indexed PNG instance map",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"image"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "overlap_policy": {
+                "type": "string",
+                "enum": ["error", "z_order", "larger_area", "smaller_area"],
+                "default": "error",
+            }
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="coco-frames-seg",
+        label="COCO Frames Segmentation",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={"frame_base": {"type": "integer", "enum": [0, 1], "default": 1}},
+    ),
+    MaskFormatDescriptor(
+        format_id="davis",
+        label="DAVIS",
+        adapter_version="2.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "overlap_policy": {
+                "type": "string",
+                "enum": ["error", "z_order", "larger_area", "smaller_area"],
+                "default": "error",
+            }
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="youtube-vos",
+        label="YouTube-VOS",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={
+            "sparse_gap_policy": {
+                "type": "string",
+                "enum": ["outside_gaps", "nearest_hold"],
+                "default": "outside_gaps",
+            },
+            "overlap_policy": {
+                "type": "string",
+                "enum": ["error", "z_order", "larger_area", "smaller_area"],
+                "default": "error",
+            },
+        },
+    ),
+    MaskFormatDescriptor(
+        format_id="mots",
+        label="MOTS",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"video"}),
+        import_capability=_capability(True, verified=True, enabled_for_ui=True),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        option_schema={"frame_base": {"type": "integer", "enum": [0, 1], "default": 0}},
+    ),
+    *[
+        MaskFormatDescriptor(
+            format_id=format_id,
+            label=label,
+            adapter_version="1.0.0",
+            manifest_version="1",
+            media_types=frozenset(media_types),
+            import_capability=_capability(False),
+            export_capability=_capability(True, verified=True, enabled_for_ui=True),
+        )
+        for format_id, label, media_types in (
+            ("yolo", "YOLO Detection", {"image"}),
+            ("yolo-det", "YOLO Detection", {"image"}),
+            ("yolo-obb", "YOLO OBB", {"image"}),
+            ("voc", "Pascal VOC", {"image"}),
+            ("video_json", "Video JSON", {"video"}),
+            ("yolo-frames-det", "YOLO Frames Detection", {"video"}),
+            ("yolo-frames-seg", "YOLO Frames Segmentation", {"video"}),
+            ("mot", "MOT", {"video"}),
+            ("kitti", "KITTI", {"video", "lidar"}),
+            ("nuscenes", "nuScenes", {"lidar"}),
+            ("pointmask", "Point Mask", {"lidar"}),
+        )
+    ],
+]
+
+
+for descriptor in _DESCRIPTORS:
+    if descriptor.format_id == "aap_json":
+        registry.register(AAPJsonAdapter(descriptor))
+    elif descriptor.format_id in {
+        "coco",
+        "yolo-seg",
+        "label-studio-brush",
+        "binary-png",
+        "indexed-png",
+    }:
+        from app.services.mask_formats.image_adapters import (
+            IMAGE_IMPORT_PARSERS,
+            ImageMaskImportAdapter,
+        )
+
+        registry.register(
+            ImageMaskImportAdapter(
+                descriptor,
+                IMAGE_IMPORT_PARSERS[descriptor.format_id],
+            )
+        )
+    elif descriptor.format_id in {
+        "coco-frames-seg",
+        "davis",
+        "youtube-vos",
+        "mots",
+    }:
+        from app.services.mask_formats.video_adapters import (
+            VIDEO_IMPORT_PARSERS,
+            VideoMaskFormatAdapter,
+        )
+
+        registry.register(
+            VideoMaskFormatAdapter(
+                descriptor,
+                VIDEO_IMPORT_PARSERS[descriptor.format_id],
+            )
+        )
+    else:
+        registry.register(LegacyPackagingAdapter(descriptor))

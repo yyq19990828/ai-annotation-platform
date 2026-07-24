@@ -12,7 +12,9 @@ function memoryStorage(initial?: Record<string, string>) {
   const data = new Map(Object.entries(initial ?? {}));
   return {
     getItem: (key: string) => data.get(key) ?? null,
-    setItem: (key: string, value: string) => { data.set(key, value); },
+    setItem: (key: string, value: string) => {
+      data.set(key, value);
+    },
   } as Pick<Storage, "getItem" | "setItem">;
 }
 
@@ -73,10 +75,16 @@ describe("workbenchNavigation", () => {
   });
 
   it("rejects unsafe return targets", () => {
-    expect(resolveWorkbenchReturnTo("https://example.com", "/projects/p/annotate")).toBe("/dashboard");
-    expect(resolveWorkbenchReturnTo("//example.com/path", "/projects/p/annotate")).toBe("/dashboard");
+    expect(resolveWorkbenchReturnTo("https://example.com", "/projects/p/annotate")).toBe(
+      "/dashboard",
+    );
+    expect(resolveWorkbenchReturnTo("//example.com/path", "/projects/p/annotate")).toBe(
+      "/dashboard",
+    );
     expect(resolveWorkbenchReturnTo("/ai-pre", "/projects/p/annotate")).toBe("/ai-pre");
-    expect(resolveWorkbenchReturnTo("/projects/p/annotate", "/projects/p/annotate")).toBe("/dashboard");
+    expect(resolveWorkbenchReturnTo("/projects/p/annotate", "/projects/p/annotate")).toBe(
+      "/dashboard",
+    );
   });
 
   it("updates workbench batch/task query while preserving return target", () => {

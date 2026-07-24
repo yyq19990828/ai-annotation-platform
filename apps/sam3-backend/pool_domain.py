@@ -40,9 +40,7 @@ class Sam3Pools:
             "multiplex_video": await self.multiplex.snapshot(),
             "pvs_video": await self.pvs.snapshot(),
         }
-        resident_values = tuple(
-            snapshot["gpu_resident"] for snapshot in pools.values()
-        )
+        resident_values = tuple(snapshot["gpu_resident"] for snapshot in pools.values())
         if True in resident_values:
             gpu_resident: bool | None = True
         elif all(value is False for value in resident_values):
@@ -70,9 +68,7 @@ class Sam3Pools:
             "reserved_build_slots": sum(
                 snapshot["reserved_build_slots"] for snapshot in pools.values()
             ),
-            "borrowers": sum(
-                snapshot["borrowers"] for snapshot in pools.values()
-            ),
+            "borrowers": sum(snapshot["borrowers"] for snapshot in pools.values()),
             "waiters": sum(snapshot["waiters"] for snapshot in pools.values()),
             "cleanup_in_progress": any(
                 snapshot["cleanup_in_progress"] for snapshot in pools.values()

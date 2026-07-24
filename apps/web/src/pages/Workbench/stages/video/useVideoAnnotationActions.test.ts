@@ -5,6 +5,7 @@ import {
   buildVideoCreatePayload,
   buildVideoPointsCreatePayload,
   buildVideoPointsTrackCreatePayload,
+  buildVideoMaskCreatePayload,
   buildVideoMaskTrackCreatePayload,
   upsertVideoMaskKeyframe,
   buildVideoUpdateCommand,
@@ -46,23 +47,44 @@ describe("video annotation actions helpers", () => {
   });
 
   it("builds video_track_polygon/polyline create payload from drawn points", () => {
-    const pts: [number, number][] = [[0.1, 0.1], [0.3, 0.1], [0.3, 0.3]];
+    const pts: [number, number][] = [
+      [0.1, 0.1],
+      [0.3, 0.1],
+      [0.3, 0.3],
+    ];
     const poly = buildVideoPointsTrackCreatePayload("video_track_polygon", 4, pts, "Car");
     expect(poly.annotation_type).toBe("video_track_polygon");
     expect(poly.geometry.type).toBe("video_track_polygon");
     expect(poly.tool_unit_id).toBe("region");
-    const g = poly.geometry as { track_id: string; keyframes: { frame_index: number; points: number[][]; source: string }[] };
+    const g = poly.geometry as {
+      track_id: string;
+      keyframes: { frame_index: number; points: number[][]; source: string }[];
+    };
     expect(g.track_id).toMatch(/^trk_/);
-    expect(g.keyframes).toEqual([{ frame_index: 4, points: pts, source: "manual", occluded: false }]);
+    expect(g.keyframes).toEqual([
+      { frame_index: 4, points: pts, source: "manual", occluded: false },
+    ]);
 
-    const line = buildVideoPointsTrackCreatePayload("video_track_polyline", 2, [[0, 0], [0.5, 0.5]], "");
+    const line = buildVideoPointsTrackCreatePayload(
+      "video_track_polyline",
+      2,
+      [
+        [0, 0],
+        [0.5, 0.5],
+      ],
+      "",
+    );
     expect(line.annotation_type).toBe("video_track_polyline");
     expect(line.tool_unit_id).toBe("polyline");
     expect(line.class_name).toBe("__unknown");
   });
 
   it("v0.21.21 · builds single-frame video_polygon/polyline create payload from drawn points", () => {
-    const pts: [number, number][] = [[0.1, 0.1], [0.5, 0.1], [0.3, 0.6]];
+    const pts: [number, number][] = [
+      [0.1, 0.1],
+      [0.5, 0.1],
+      [0.3, 0.6],
+    ];
     const poly = buildVideoPointsCreatePayload("video_polygon", 3, pts, "Car");
     expect(poly).toEqual({
       annotation_type: "video_polygon",
@@ -71,7 +93,15 @@ describe("video annotation actions helpers", () => {
       geometry: { type: "video_polygon", frame_index: 3, points: pts },
     });
 
-    const line = buildVideoPointsCreatePayload("video_polyline", 8, [[0.1, 0.1], [0.9, 0.9]], "");
+    const line = buildVideoPointsCreatePayload(
+      "video_polyline",
+      8,
+      [
+        [0.1, 0.1],
+        [0.9, 0.9],
+      ],
+      "",
+    );
     expect(line.annotation_type).toBe("video_polyline");
     expect(line.tool_unit_id).toBe("polyline");
     expect(line.class_name).toBe("__unknown");
@@ -96,7 +126,7 @@ describe("video annotation actions helpers", () => {
     ]);
   });
 
-  it("builds and materializes video mask track keyframes", () => {
+  it("builds separate single-frame Mask and Mask track payloads", () => {
     const sha = "a".repeat(64);
     const mask = {
       encoding: "coco_rle_ref" as const,
@@ -106,6 +136,12 @@ describe("video annotation actions helpers", () => {
       runs: 3,
       bytes: 42,
     };
+    expect(buildVideoMaskCreatePayload(4, mask, "Car")).toEqual({
+      annotation_type: "video_mask",
+      tool_unit_id: "region",
+      class_name: "Car",
+      geometry: { type: "video_mask", frame_index: 4, mask },
+    });
     const payload = buildVideoMaskTrackCreatePayload(4, mask, "Car");
     expect(payload).toMatchObject({
       annotation_type: "video_track_mask",
@@ -136,7 +172,10 @@ describe("video annotation actions helpers", () => {
     };
     const after: VideoTrackGeometry = {
       ...before,
-      keyframes: [...before.keyframes, { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" }],
+      keyframes: [
+        ...before.keyframes,
+        { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" },
+      ],
     };
 
     expect(buildVideoUpdateCommand(annotation(before), after)).toMatchObject({
@@ -165,7 +204,10 @@ describe("video annotation actions helpers", () => {
       track_id: "trk_1",
       keyframes: [{ frame_index: 1, bbox: box, source: "manual" }],
     });
-    const updated = { ...track, geometry: { ...track.geometry, keyframes: [] } as VideoTrackGeometry };
+    const updated = {
+      ...track,
+      geometry: { ...track.geometry, keyframes: [] } as VideoTrackGeometry,
+    };
 
     const commands = buildVideoCompositionCommands([bbox, track], {
       updated_annotations: [updated],

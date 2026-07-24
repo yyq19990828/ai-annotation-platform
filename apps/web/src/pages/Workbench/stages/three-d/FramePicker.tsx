@@ -67,7 +67,8 @@ export function FramePicker({
   const { data: neighbors } = useFrameNeighbors(taskId, 20);
   const taskByFrame = useMemo(() => {
     const m = new Map<number, string>();
-    for (const n of [...(neighbors?.prev ?? []), ...(neighbors?.next ?? [])]) m.set(n.frame_index, n.task_id);
+    for (const n of [...(neighbors?.prev ?? []), ...(neighbors?.next ?? [])])
+      m.set(n.frame_index, n.task_id);
     return m;
   }, [neighbors]);
 
@@ -149,7 +150,9 @@ export function FramePicker({
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className={TITLE}>{mode === "propagate" ? "延续到指定帧" : "插值填充到指定帧"}</div>
-      <div className={HINT}>当前 第 {frameIndex ?? "?"} / {sceneTotalFrames ?? "?"} 帧</div>
+      <div className={HINT}>
+        当前 第 {frameIndex ?? "?"} / {sceneTotalFrames ?? "?"} 帧
+      </div>
       {thumbs.some((t) => t.imageUrl) && (
         <div className={FILMSTRIP}>
           {thumbs.map((t) => (
@@ -160,12 +163,19 @@ export function FramePicker({
                 THUMB,
                 t.frameIndex === target ? THUMB_ACTIVE : "",
                 t.isCurrent ? THUMB_CURRENT : "",
-              ].filter(Boolean).join(" ")}
+              ]
+                .filter(Boolean)
+                .join(" ")}
               title={`第 ${t.frameIndex} 帧${t.isCurrent ? " · 当前" : ""}`}
               onClick={() => setRaw(String(t.frameIndex))}
             >
               {t.imageUrl ? (
-                <img src={t.imageUrl} alt={`第 ${t.frameIndex} 帧`} className={THUMB_IMG} loading="lazy" />
+                <img
+                  src={t.imageUrl}
+                  alt={`第 ${t.frameIndex} 帧`}
+                  className={THUMB_IMG}
+                  loading="lazy"
+                />
               ) : (
                 <span className={THUMB_PLACEHOLDER}>—</span>
               )}
@@ -218,7 +228,9 @@ export function FramePicker({
         {!targetValid ? (
           <span className={HINT}>输入或步进选择目标帧</span>
         ) : reachable ? (
-          <span className={OK}>→ 第 {target} / {sceneTotalFrames} 帧 · 可达</span>
+          <span className={OK}>
+            → 第 {target} / {sceneTotalFrames} 帧 · 可达
+          </span>
         ) : (
           <span className={WARN}>第 {target} 帧不可达(同帧或超 ±20 反查范围)</span>
         )}

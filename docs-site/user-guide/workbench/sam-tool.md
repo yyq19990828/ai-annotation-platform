@@ -3,27 +3,28 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-23
 ---
 
 # AI 工具组
 
-> 智能点 / 智能框 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
+> 智能点 / 智能框 / 智能笔迹 / Magic Box / Exemplar 示例 — 选一种画布交互方式让 AI 生成 polygon、原生 Mask，或直接收紧到 bbox；文本「找全图」则从 AI 面板进入批量线。
 
 <!-- history: prompt-first tools and Magic Box were introduced in separate releases; this page describes the current tool model. -->
 
-工具栏按交互范式拆成 4 个独立 AI 工具(均为**画布手势驱动**)。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
+工具栏按交互范式拆成 5 个独立 AI 工具（均为**画布手势驱动**）。你直接选择「想怎么交互」，AI 自动走对应模型 prompt。
 
-| 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
-|---|---|---|---|---|
-| **智能点** | 🎯 | `S` 循环 | `point` | polygon 候选 |
-| **智能框** | ▭ | `S` 循环 | `interactive_box` | polygon 候选 |
-| **Magic Box** | ✨ | `G` / `S` 循环 | `interactive_box` | **直接** bbox 标注 |
-| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` | polygon / bbox 候选 |
+| 工具              | 图标 | 默认快捷键     | 后端要求            | 输出形态                 |
+| ----------------- | ---- | -------------- | ------------------- | ------------------------ |
+| **智能点**        | 🎯   | `S` 循环       | `point`             | polygon / 原生 Mask 候选 |
+| **智能框**        | ▭    | `S` 循环       | `interactive_box`   | polygon / 原生 Mask 候选 |
+| **智能笔迹**      | ✎    | —              | `scribble` + `mask` | 原位精修已存原生 Mask    |
+| **Magic Box**     | ✨   | `G` / `S` 循环 | `interactive_box`   | **直接** bbox 标注       |
+| **Exemplar 示例** | ⎘    | `S` 循环       | `exemplar`          | polygon / bbox 候选      |
 
 > **文本提示「找全图」已归批量线**:给词→全图找所有实例本质是批量语义(后端自报 detection/segmentation 文本路径 `is_interactive: False`),不再是工具栏交互工具,改在 **AI 面板 / 批量预标页** 使用(见下方「文本预标『找全图』」一节)。工具栏只保留需要在画布上画点/框/示例的交互工具。
 
-按 `S` 在 4 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
+按 `S` 在智能点、智能框、Magic Box 和 Exemplar 之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → exemplar → 回 smart-point。智能笔迹只在选中可精修的已存 Mask 后启用，不进入全局循环。`Alt+3` 与 `S` 等价。
 
 > **能力来自后端 `/setup.supported_prompts`（按交互后端并集）**：项目可注册多个后端,工具栏某交互工具只要**任一已注册的交互后端**支持该 prompt 就亮。挂 `grounded-sam2`（point/interactive_box）时 Exemplar 灰;只挂仅支持 exemplar 的 backend 时 **Smart Point、Smart Box、Magic Box 都灰**。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。同时注册 gsam2 + sam3 / yolo-backend 时,point/interactive_box 自动路由到 gsam2、exemplar 路由到支持视觉示例的 backend,各司其职(见[交互后端选择](#交互后端选择多后端))。
 
@@ -45,9 +46,22 @@ last_reviewed: 2026-07-17
 
 ![智能框交互工具条](../images/sam/interactive-toolbar.png)
 
-拖框，SAM 把框内主要前景的 polygon 找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
+拖框，SAM 把框内主要前景的轮廓找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
 ![智能框对齐真实车辆并生成轮廓候选](../images/sam/smart-box-interaction.gif)
+
+### 智能笔迹（Smart Scribble）— 在已存 Mask 上做加减法
+
+先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹补回目标区域；按住
+`Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，可移除误分区域。没有合格的源 Mask、当前
+模型未同时声明 `mask` 与 `scribble` prompt，或项目不允许写入原生 Mask 时，按钮保持置灰并显示原因。
+
+点、框与正负笔迹可以在同一精修会话中交替追加。工作台只向平台发送源 annotation 的 ID 与版本；
+平台在鉴权、任务 / 帧 / 版本校验后解析已存 RLE，并以短期签名的低分辨率 logits 连接后续轮次，
+浏览器不保存原始 logits。`Enter` 选类后原位更新同一 annotation，不会创建重复对象。
+
+如果 prompt 请求遇到网络错误，当前候选、已追加的点 / 框 / 笔迹和源 Mask 会保留，交互工具栏可用
+「重试」原样发送同一轮输入。主动取消、切题、切帧、切模型或会话过期会清理未接受的候选与短期会话。
 
 ### Magic Box — 拖框 → SAM 收紧到对象紧凑外接矩形
 
@@ -55,14 +69,14 @@ last_reviewed: 2026-07-17
 
 拖框时不要求精准，拖一个**大致包住目标**的框就行;SAM 跑 mask → 自动取 mask 的紧凑外接矩形 → **直接落 bbox 标注**(不经过候选层确认)。
 
-| 与 Smart Box 的区别 |
-|---|
-| Smart Box: 输出 polygon 候选,等 `Enter` 接受 + 选类 |
-| Magic Box: 输出 **bbox** 直接落库,跳过候选层 |
+| 与 Smart Box 的区别                                             |
+| --------------------------------------------------------------- |
+| Smart Box: 输出 polygon 或原生 Mask 候选,等 `Enter` 接受 + 选类 |
+| Magic Box: 输出 **bbox** 直接落库,跳过候选层                    |
 
 **使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
 
-**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的多边形归 `region`。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
+**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。候选确认时会按目标工具单位重新校验默认类别，不会沿用其他单位中同名或过期的活动类别。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
 ![Magic Box 粗框后由真实 SAM3 收紧并确认类别](../images/sam/magic-box-interaction.gif)
 
@@ -110,15 +124,21 @@ last_reviewed: 2026-07-17
 
 ## 候选确认
 
-所有 AI 工具返回的 polygon 都是**待确认紫虚线**，需要确认才落库：
+智能点、智能框、智能笔迹和 Exemplar 的结果先作为**待确认候选**显示，需要确认才落库。原生 Mask 使用与 polygon 相同的紫色动态轮廓完成全量预览、缩放和候选切换，只为当前候选按需填充半透明像素层，因此大量候选不会阻塞画布。接受后仍保存原始 RLE，显示轮廓不会替代或修改 Mask 像素：
 
 - **`Enter`** — 接受当前候选 → 弹类别选择器 → 选好类别才进库
 - **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）
 - **`Esc`** — 全部取消
 
+### 原生 Mask 输出
+
+智能点、智能框和 Exemplar 工具栏中的「提交」选择器独立于 Exemplar 的「框 / 掩膜 / 全部」推理输出，可选择 `Polygon` 或 `原生 Mask`。只有所选模型声明 Mask 输出、图片项目开启原生 Raster Mask 编辑且 `region` 工具可写时，图片侧才允许选择原生 Mask；视频侧按当前模型能力决定。智能笔迹固定输出原生 Mask 并原位更新选中的源对象。条件不足时对应选项保持置灰并说明原因，不会静默降级。
+
+原生候选只保存在当前交互会话中。`Ctrl/⌘ + 点击`候选的非透明像素可以在重叠候选间切换；`Enter` 选类后由服务端一次性保存像素内容、AI 血缘与标注。网络错误不会清掉候选，再次提交沿用同一个幂等键，不会重复创建标注。切题、切帧、切模型、切输出形态、取消或会话过期会释放尚未接受的候选。
+
 ### 精修 SAM 候选（Mask 编辑器）
 
-AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示）。点击后工具切换到 **Mask 笔刷工具（M）**，可在像素级修改轮廓边缘，完成后按 `Enter` 提交落库。精修不需要先 `Enter` 接受候选——直接在候选态启动 Mask 编辑，commit 时同时清除候选并落库。已落库的人工 polygon 行也有「精修」按钮，通过 update mutation 替换原始几何。
+AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示）。点击后工具切换到 **Mask 笔刷工具（M）**，可在像素级修改轮廓边缘，完成后按 `Enter` 提交。精修不需要先 `Enter` 接受候选：保存前工作台会展示面积、组件、孔洞和像素变化报告，确认后在原生项目落为 Raster Mask，在兼容项目落为 polygon，并同时清除候选。已落库的人工 polygon 也可以用同一入口精修，保留标注身份并原位更新几何。
 
 ## 参数面板（悬浮 AI 面板）
 
@@ -126,15 +146,15 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 点工具栏「AI」打开悬浮面板，其中有一份**由所绑定后端 `/setup.params` 自动生成的参数表单**，每个字段下方带简短说明。面板可拖动头部移动、拖右下角缩放，位置和尺寸在刷新后保留。常见字段及项目级默认值：
 
-| 字段 | 后端 | 项目级默认 | 范围 | 说明 |
-|---|---|---|---|---|
-| `box_threshold` | grounded-sam2 | 0.35 | [0.0, 1.0] | DINO bbox 置信度阈值 |
-| `text_threshold` | grounded-sam2 | 0.25 | [0.0, 1.0] | DINO token 置信度阈值 |
-| `score_threshold` | sam3 | 后端自定义 | — | PCS 候选置信度 |
-| `simplify_tolerance` | 两者 | 后端自定义 | 像素 | polygon 轮廓 Douglas-Peucker 容差 |
-| `model_variant` / `embedding_cache_size` | — | — | — | 只读信息（禁用展示，不可改）|
+| 字段                                     | 后端          | 项目级默认 | 范围       | 说明                              |
+| ---------------------------------------- | ------------- | ---------- | ---------- | --------------------------------- |
+| `box_threshold`                          | grounded-sam2 | 0.35       | [0.0, 1.0] | DINO bbox 置信度阈值              |
+| `text_threshold`                         | grounded-sam2 | 0.25       | [0.0, 1.0] | DINO token 置信度阈值             |
+| `score_threshold`                        | sam3          | 后端自定义 | —          | PCS 候选置信度                    |
+| `simplify_tolerance`                     | 两者          | 后端自定义 | 像素       | polygon 轮廓 Douglas-Peucker 容差 |
+| `model_variant` / `embedding_cache_size` | —             | —          | —          | 只读信息（禁用展示，不可改）      |
 
-> 文本提示格式：在 AI 面板 Prompt 输入框填英文短语，多个类别用 ` . `（空格+点+空格）分隔，格式与 GroundingDINO 一致，例如 `ripe apple . green apple . orange`。
+> 文本提示格式：在 AI 面板 Prompt 输入框填英文短语，多个类别用 `.`（空格+点+空格）分隔，格式与 GroundingDINO 一致，例如 `ripe apple . green apple . orange`。
 
 模型变体（SAM2 / DINO 变体）在同一面板的「变体选择器」里切换。backend 若上报 `/setup.supported_variants`，选项会显示显存估算、快速/均衡/精度档位和推荐标识；未上报时回落到 `/setup.params` 的 enum。参数按**所绑定后端**动态显示——绑 sam3 不会出现 DINO 阈值，绑 gsam2 才有。
 
@@ -171,18 +191,19 @@ AI 候选列表行右侧有「精修」按钮（仅 polygon 类型候选显示�
 
 ## 快捷键速查
 
-| 键 | 行为 |
-|---|---|
-| `S` | 在 4 个 AI 工具间循环（跳过置灰；含 Magic Box） |
-| `G` | 直接切到 Magic Box |
-| `Alt + 3` | 同 `S` |
-| 单击 | Smart Point: positive point |
-| `Alt + 单击` | Smart Point: negative point |
-| `=` / `+` / `-` | Smart Point 默认极性切换 |
-| 拖框 | Smart Box / Magic Box / Exemplar 触发 |
-| `Enter` | 接受当前候选，弹出类别选择器 |
-| `Esc` | 取消所有候选 |
-| `Tab` / `Shift+Tab` | 切换候选 |
+| 键                  | 行为                                                                |
+| ------------------- | ------------------------------------------------------------------- |
+| `S`                 | 在 4 个常规 AI 工具间循环（跳过置灰；含 Magic Box）                 |
+| `G`                 | 直接切到 Magic Box                                                  |
+| `Alt + 3`           | 同 `S`                                                              |
+| 单击                | Smart Point: positive point                                         |
+| `Alt + 单击`        | Smart Point: negative point                                         |
+| `=` / `+` / `-`     | Smart Point / Smart Scribble 默认极性切换                           |
+| 拖框                | Smart Box / Magic Box / Exemplar 触发                               |
+| 拖动                | Smart Scribble 在选中 Mask 上追加正向笔迹；`Alt + 拖动`追加负向笔迹 |
+| `Enter`             | 接受当前候选，弹出类别选择器                                        |
+| `Esc`               | 取消所有候选                                                        |
+| `Tab` / `Shift+Tab` | 切换候选                                                            |
 
 Magic Box 只出一个候选，无需 `Enter`：候选一到就直接弹类别选择器。
 
@@ -190,18 +211,18 @@ Magic Box 只出一个候选，无需 `Enter`：候选一到就直接弹类别�
 
 同一组工具在**视频单帧**上也可用，对当前帧做分割。键位与图片侧一致：
 
-| 键 | 视频侧 | 图片侧 |
-|---|---|---|
-| `S` | 直接切到智能点 | 在 AI 工具间循环 |
-| `D` | 智能框 | （靠 `S` 循环进入）|
-| `E` | 示例框 | （靠 `S` 循环进入）|
-| `G` | Magic Box | Magic Box |
+| 键  | 视频侧         | 图片侧              |
+| --- | -------------- | ------------------- |
+| `S` | 直接切到智能点 | 在 AI 工具间循环    |
+| `D` | 智能框         | （靠 `S` 循环进入） |
+| `E` | 示例框         | （靠 `S` 循环进入） |
+| `G` | Magic Box      | Magic Box           |
 
 视频没有「AI 工具循环」，四个工具各有直达键，所以 `S` 的含义与图片侧不同——其余三个键相同。
 
 三点差异值得留意：
 
-- **产出是单帧标注，不是轨迹**。智能点 / 智能框 / 示例框落单帧多边形，Magic Box 落单帧矩形框。
+- **产出是单帧标注，不是传播任务**。智能点 / 智能框 / 示例框选择 polygon 时落单帧多边形；选择原生 Mask 时创建一条仅含当前帧关键帧的 Mask 轨迹；Magic Box 落单帧矩形框。
   想要跨帧对象请改用轨迹工具，或先落单帧再用轨迹传播。
 - **候选与帧绑定**。切帧会清空当前候选与点会话——候选是针对某一帧算出来的，留到别的帧上没有意义。
 - **工具是否可见 / 可用，取决于三层判定**：项目的「交互式 AI 工具」总开关（关则整组隐藏）→ 绑定的

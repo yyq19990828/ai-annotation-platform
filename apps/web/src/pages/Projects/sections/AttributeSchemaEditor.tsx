@@ -86,11 +86,21 @@ export function AttributeSchemaEditor({
           <div className="grid grid-cols-1 gap-2 md:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
             <div>
               <label className={LABEL_CLASS}>key</label>
-              <input value={f.key} onChange={(e) => setField(i, { key: e.target.value })} className={CONTROL_CLASS} placeholder="occluded" />
+              <input
+                value={f.key}
+                onChange={(e) => setField(i, { key: e.target.value })}
+                className={CONTROL_CLASS}
+                placeholder="occluded"
+              />
             </div>
             <div>
               <label className={LABEL_CLASS}>显示名</label>
-              <input value={f.label} onChange={(e) => setField(i, { label: e.target.value })} className={CONTROL_CLASS} placeholder="是否遮挡" />
+              <input
+                value={f.label}
+                onChange={(e) => setField(i, { label: e.target.value })}
+                className={CONTROL_CLASS}
+                placeholder="是否遮挡"
+              />
             </div>
             <div>
               <label className={LABEL_CLASS}>类型</label>
@@ -100,18 +110,37 @@ export function AttributeSchemaEditor({
                   const next = e.target.value as AttributeFieldType;
                   // style_occluded 仅在 boolean 字段上有效；切换到非 boolean 时同步清理，
                   // 否则字段会保留 style_occluded:true 且 UI 入口消失 → 提交时被后端校验拒绝。
-                  setField(i, next !== "boolean" ? { type: next, style_occluded: undefined } : { type: next });
+                  setField(
+                    i,
+                    next !== "boolean" ? { type: next, style_occluded: undefined } : { type: next },
+                  );
                 }}
                 className={`${CONTROL_CLASS} cursor-pointer`}
               >
-                {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {FIELD_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="flex items-center gap-1 md:items-end">
-              <Button size="sm" variant="ghost" onClick={() => moveField(i, -1)} disabled={i === 0} title="上移">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => moveField(i, -1)}
+                disabled={i === 0}
+                title="上移"
+              >
                 <Icon name="chevUp" size={11} />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => moveField(i, 1)} disabled={i === value.length - 1} title="下移">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => moveField(i, 1)}
+                disabled={i === value.length - 1}
+                title="下移"
+              >
                 <Icon name="chevDown" size={11} />
               </Button>
               <Button size="sm" variant="danger" onClick={() => removeField(i)} title="删除">
@@ -121,13 +150,21 @@ export function AttributeSchemaEditor({
           </div>
 
           <label className="flex items-center gap-1.5 text-xs">
-            <input type="checkbox" checked={!!f.required} onChange={(e) => setField(i, { required: e.target.checked })} />
+            <input
+              type="checkbox"
+              checked={!!f.required}
+              onChange={(e) => setField(i, { required: e.target.checked })}
+            />
             必填（提交质检前必须填写）
           </label>
 
           {f.type === "boolean" && (
             <label className="flex items-center gap-1.5 text-xs">
-              <input type="checkbox" checked={!!f.style_occluded} onChange={(e) => setField(i, { style_occluded: e.target.checked })} />
+              <input
+                type="checkbox"
+                checked={!!f.style_occluded}
+                onChange={(e) => setField(i, { style_occluded: e.target.checked })}
+              />
               遮挡样式（该属性为真时，画布框渲染为虚线+半透）
             </label>
           )}
@@ -143,11 +180,25 @@ export function AttributeSchemaEditor({
             <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
               <div>
                 <label className={LABEL_CLASS}>min</label>
-                <input type="number" value={f.min ?? ""} onChange={(e) => setField(i, { min: e.target.value === "" ? undefined : Number(e.target.value) })} className={CONTROL_CLASS} />
+                <input
+                  type="number"
+                  value={f.min ?? ""}
+                  onChange={(e) =>
+                    setField(i, { min: e.target.value === "" ? undefined : Number(e.target.value) })
+                  }
+                  className={CONTROL_CLASS}
+                />
               </div>
               <div>
                 <label className={LABEL_CLASS}>max</label>
-                <input type="number" value={f.max ?? ""} onChange={(e) => setField(i, { max: e.target.value === "" ? undefined : Number(e.target.value) })} className={CONTROL_CLASS} />
+                <input
+                  type="number"
+                  value={f.max ?? ""}
+                  onChange={(e) =>
+                    setField(i, { max: e.target.value === "" ? undefined : Number(e.target.value) })
+                  }
+                  className={CONTROL_CLASS}
+                />
               </div>
             </div>
           )}
@@ -159,7 +210,13 @@ export function AttributeSchemaEditor({
               onChange={(e) => {
                 const v = e.target.value.trim();
                 if (!v) setField(i, { applies_to: undefined });
-                else setField(i, { applies_to: v.split(",").map((s) => s.trim()).filter(Boolean) });
+                else
+                  setField(i, {
+                    applies_to: v
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  });
               }}
               placeholder="留空 = 全局；如 car, truck"
               className={CONTROL_CLASS}
@@ -170,7 +227,8 @@ export function AttributeSchemaEditor({
 
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={addField}>
-          <Icon name="plus" size={12} />新增属性
+          <Icon name="plus" size={12} />
+          新增属性
         </Button>
         {recommendedFields.length > 0 && (
           <>

@@ -67,8 +67,7 @@ vi.mock("@/components/ui/Toast", async () => {
   const actual = await vi.importActual<any>("@/components/ui/Toast");
   return {
     ...actual,
-    useToastStore: <T,>(selector: (state: any) => T) =>
-      selector({ push: mockPushToast }),
+    useToastStore: <T,>(selector: (state: any) => T) => selector({ push: mockPushToast }),
   };
 });
 
@@ -78,15 +77,17 @@ import { RuntimeObservePanel } from "./RuntimeObservePanel";
 
 type MemberState = "active" | "draining" | "disabled";
 
-function makeMember(opts: {
-  registryId?: string;
-  name?: string;
-  traffic_state?: MemberState;
-  weight?: number | null;
-  route_inflight?: number;
-  circuit_open?: boolean;
-  registry_state?: string;
-} = {}) {
+function makeMember(
+  opts: {
+    registryId?: string;
+    name?: string;
+    traffic_state?: MemberState;
+    weight?: number | null;
+    route_inflight?: number;
+    circuit_open?: boolean;
+    registry_state?: string;
+  } = {},
+) {
   return {
     registry_id: opts.registryId ?? "inst-1",
     name: opts.name ?? "grounded-sam2-a",
@@ -109,13 +110,15 @@ function makeMember(opts: {
   };
 }
 
-function makePool(opts: {
-  id?: string;
-  name?: string;
-  status?: "healthy" | "degraded" | "offline" | "unknown";
-  routable_instances?: number;
-  members?: ReturnType<typeof makeMember>[];
-} = {}) {
+function makePool(
+  opts: {
+    id?: string;
+    name?: string;
+    status?: "healthy" | "degraded" | "offline" | "unknown";
+    routable_instances?: number;
+    members?: ReturnType<typeof makeMember>[];
+  } = {},
+) {
   const members = opts.members ?? [makeMember()];
   return {
     id: opts.id ?? "pool-1",
@@ -133,24 +136,26 @@ function makePool(opts: {
   };
 }
 
-function makeSnapshot(opts: {
-  pools?: Array<{
-    id: string;
-    name: string;
-    enabled?: boolean;
-    routing_generation?: number;
-    members?: ReturnType<typeof makeMember>[];
-  }>;
-  router_mode?: "off" | "observe" | "enforce";
-  partial?: boolean;
-  partial_reason?: string | null;
-  sources?: Array<{
-    name: "topology" | "router_ledger" | "health" | "gpu" | "residency";
-    stale?: boolean;
-    error?: string | null;
-    updated_at?: string | null;
-  }>;
-} = {}) {
+function makeSnapshot(
+  opts: {
+    pools?: Array<{
+      id: string;
+      name: string;
+      enabled?: boolean;
+      routing_generation?: number;
+      members?: ReturnType<typeof makeMember>[];
+    }>;
+    router_mode?: "off" | "observe" | "enforce";
+    partial?: boolean;
+    partial_reason?: string | null;
+    sources?: Array<{
+      name: "topology" | "router_ledger" | "health" | "gpu" | "residency";
+      stale?: boolean;
+      error?: string | null;
+      updated_at?: string | null;
+    }>;
+  } = {},
+) {
   return {
     observed_at: "2026-07-20T10:00:00Z",
     partial: opts.partial ?? false,
@@ -195,12 +200,14 @@ function makeBackend(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeObserveTarget(opts: {
-  url?: string;
-  registered?: boolean;
-  ok?: boolean;
-  residency?: unknown;
-} = {}) {
+function makeObserveTarget(
+  opts: {
+    url?: string;
+    registered?: boolean;
+    ok?: boolean;
+    residency?: unknown;
+  } = {},
+) {
   return {
     url: opts.url ?? "http://172.17.0.1:8001",
     ok: opts.ok ?? true,
@@ -289,9 +296,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
 
     // collapse
     fireEvent.click(screen.getByRole("button", { name: /收起服务池成员/ }));
-    await waitFor(() =>
-      expect(screen.queryByText("grounded-sam2-a")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("grounded-sam2-a")).not.toBeInTheDocument());
   });
 
   it("unloaded 驻留数据不计入服务池驻留实例数", async () => {
@@ -405,9 +410,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
     // close via Radix Sheet close (aria-label "Close")
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
     await waitFor(() =>
-      expect(
-        screen.queryByRole("button", { name: /复制 ID/ }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: /复制 ID/ })).not.toBeInTheDocument(),
     );
   });
 
@@ -476,9 +479,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
 
     // drain fires the pool-member drain mutation
     fireEvent.click(screen.getByRole("button", { name: /停流/ }));
-    await waitFor(() =>
-      expect(mockDrainPoolMember).toHaveBeenCalledWith("pool-1", "inst-1"),
-    );
+    await waitFor(() => expect(mockDrainPoolMember).toHaveBeenCalledWith("pool-1", "inst-1"));
   });
 
   it("drained + inflight=0 + 新鲜账本 → 卸载启用并触发 unload", async () => {
@@ -495,9 +496,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
           {
             id: "pool-1",
             name: "图像分割池",
-            members: [
-              makeMember({ traffic_state: "draining", route_inflight: 0 }),
-            ],
+            members: [makeMember({ traffic_state: "draining", route_inflight: 0 })],
           },
         ],
       }),
@@ -511,9 +510,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
     expect(unloadBtn).not.toBeDisabled();
 
     fireEvent.click(unloadBtn);
-    await waitFor(() =>
-      expect(mockUnloadMutate).toHaveBeenCalledWith("inst-1", expect.anything()),
-    );
+    await waitFor(() => expect(mockUnloadMutate).toHaveBeenCalledWith("inst-1", expect.anything()));
   });
 
   it("陈旧账本阻塞卸载（drained 但 router_ledger stale）", async () => {
@@ -530,9 +527,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
           {
             id: "pool-1",
             name: "图像分割池",
-            members: [
-              makeMember({ traffic_state: "draining", route_inflight: 0 }),
-            ],
+            members: [makeMember({ traffic_state: "draining", route_inflight: 0 })],
           },
         ],
         sources: [
@@ -570,9 +565,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
           {
             id: "pool-1",
             name: "图像分割池",
-            members: [
-              makeMember({ traffic_state: "draining", route_inflight: 0 }),
-            ],
+            members: [makeMember({ traffic_state: "draining", route_inflight: 0 })],
           },
         ],
       }),
@@ -600,9 +593,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
           {
             id: "pool-1",
             name: "图像分割池",
-            members: [
-              makeMember({ traffic_state: "draining", route_inflight: 3 }),
-            ],
+            members: [makeMember({ traffic_state: "draining", route_inflight: 3 })],
           },
         ],
       }),
@@ -628,9 +619,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
         partial: true,
         partial_reason: "router_ledger stale",
         pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
-        sources: [
-          { name: "router_ledger", stale: true, error: "redis timeout" },
-        ],
+        sources: [{ name: "router_ledger", stale: true, error: "redis timeout" }],
       }),
     );
     mockObserve.mockResolvedValue({ configured_count: 1, targets: [] });
@@ -722,8 +711,6 @@ describe("parseResidency (extracted module)", () => {
     const now = Date.parse("2026-07-20T10:00:00Z");
     expect(isFreshCachedHealth("connected", "2026-07-20T09:58:00Z", now)).toBe(true);
     expect(isFreshCachedHealth("connected", "2026-07-20T09:50:00Z", now)).toBe(false);
-    expect(isFreshCachedHealth("disconnected", "2026-07-20T09:58:00Z", now)).toBe(
-      false,
-    );
+    expect(isFreshCachedHealth("disconnected", "2026-07-20T09:58:00Z", now)).toBe(false);
   });
 });

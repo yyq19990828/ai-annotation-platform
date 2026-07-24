@@ -22,6 +22,8 @@ from app.schemas._jsonb_types import (
     CanvasDrawing,
     CanvasShape,
     ClassConfigEntry,
+    CocoRleContent,
+    CocoRleMaskRef,
     DatasetItemMetadata,
     Geometry,
     Keypoint,
@@ -43,6 +45,7 @@ from app.schemas._jsonb_types import (
     VideoTrackPolygonKeyframe,
     VideoTrackPolylineGeometry,
     VideoTrackPolylineKeyframe,
+    VideoMaskGeometry,
     VideoTrackMaskGeometry,
 )
 
@@ -405,6 +408,17 @@ def test_video_track_mask_geometry_valid():
     assert geometry.keyframes[0].mask.encoding == "coco_rle_ref"
 
 
+def test_video_mask_geometry_valid_and_rejects_non_integer_frame():
+    geometry = VideoMaskGeometry.model_validate(
+        {"type": "video_mask", "frame_index": 2, "mask": _mask_ref()}
+    )
+    assert geometry.mask.encoding == "coco_rle_ref"
+    with pytest.raises(ValidationError):
+        VideoMaskGeometry.model_validate(
+            {"type": "video_mask", "frame_index": True, "mask": _mask_ref()}
+        )
+
+
 @pytest.mark.parametrize(
     "patch",
     [
@@ -415,7 +429,7 @@ def test_video_track_mask_geometry_valid():
             ]
         },
         {"keyframes": [{"frame_index": True, "mask": _mask_ref()}]},
-        {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "size": [4097, 1]}}]},
+        {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "size": [8193, 1]}}]},
         {"keyframes": [{"frame_index": 2, "mask": {**_mask_ref(), "runs": 1_000_001}}]},
         {
             "keyframes": [
@@ -434,6 +448,18 @@ def test_video_track_mask_geometry_rejects_invalid_contract(patch):
     }
     with pytest.raises(ValidationError):
         VideoTrackMaskGeometry.model_validate(payload)
+
+
+def test_shared_rle_models_accept_structural_8k_envelope():
+    reference = {**_mask_ref(), "size": [8192, 8192]}
+    assert CocoRleMaskRef.model_validate(reference).size == (8192, 8192)
+    assert CocoRleContent.model_validate(
+        {
+            "encoding": "coco_rle",
+            "size": [8192, 8192],
+            "counts": [67_108_864],
+        }
+    ).size == (8192, 8192)
 
 
 # ── ClassConfigEntry alias（v0.9.5）────────────────────────────────

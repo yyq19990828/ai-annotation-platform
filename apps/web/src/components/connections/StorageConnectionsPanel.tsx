@@ -83,9 +83,7 @@ export function StorageConnectionForm({
   const isEditing = !!connection;
   const [name, setName] = useState(connection?.name ?? "");
   const [kind, setKind] = useState<StorageConnectionKind>(connection?.kind ?? "s3");
-  const [scope, setScope] = useState<StorageConnectionScope>(
-    connection?.scope ?? "owner",
-  );
+  const [scope, setScope] = useState<StorageConnectionScope>(connection?.scope ?? "owner");
   const [endpoint, setEndpoint] = useState(asString(cfg.endpoint));
   const [bucket, setBucket] = useState(asString(cfg.bucket));
   const [region, setRegion] = useState(asString(cfg.region));
@@ -111,8 +109,7 @@ export function StorageConnectionForm({
     event.preventDefault();
     const cleanName = name.trim();
     const needsS3Secret = !isEditing || accessKey.trim() || secretKey.trim();
-    const needsSftpSecret =
-      !isEditing || password.trim() || privateKey.trim() || passphrase.trim();
+    const needsSftpSecret = !isEditing || password.trim() || privateKey.trim() || passphrase.trim();
     const nextErrors: string[] = [];
 
     if (!cleanName) nextErrors.push("请输入连接器名称");
@@ -185,13 +182,12 @@ export function StorageConnectionForm({
   };
 
   return (
-    <form
-      className={cx(styles.form, compact && styles.formCompact)}
-      onSubmit={handleSubmit}
-    >
+    <form className={cx(styles.form, compact && styles.formCompact)} onSubmit={handleSubmit}>
       <div className={styles.formGrid}>
         <label className={styles.field}>
-          <span>名称<span className={styles.required}>*</span></span>
+          <span>
+            名称<span className={styles.required}>*</span>
+          </span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -228,7 +224,9 @@ export function StorageConnectionForm({
       {kind === "s3" ? (
         <div className={styles.formGrid}>
           <label className={styles.fieldWide}>
-            <span>Endpoint<span className={styles.required}>*</span></span>
+            <span>
+              Endpoint<span className={styles.required}>*</span>
+            </span>
             <input
               value={endpoint}
               onChange={(event) => setEndpoint(event.target.value)}
@@ -237,7 +235,9 @@ export function StorageConnectionForm({
             />
           </label>
           <label className={styles.field}>
-            <span>Bucket<span className={styles.required}>*</span></span>
+            <span>
+              Bucket<span className={styles.required}>*</span>
+            </span>
             <input
               value={bucket}
               onChange={(event) => setBucket(event.target.value)}
@@ -294,7 +294,9 @@ export function StorageConnectionForm({
       ) : (
         <div className={styles.formGrid}>
           <label className={styles.fieldWide}>
-            <span>Host<span className={styles.required}>*</span></span>
+            <span>
+              Host<span className={styles.required}>*</span>
+            </span>
             <input
               value={host}
               onChange={(event) => setHost(event.target.value)}
@@ -313,7 +315,9 @@ export function StorageConnectionForm({
             />
           </label>
           <label className={styles.field}>
-            <span>Username<span className={styles.required}>*</span></span>
+            <span>
+              Username<span className={styles.required}>*</span>
+            </span>
             <input
               value={username}
               onChange={(event) => setUsername(event.target.value)}
@@ -388,7 +392,7 @@ export function StorageConnectionForm({
         )}
         <Button type="submit" variant="primary" disabled={submitting}>
           <Icon name={isEditing ? "save" : "plus"} size={13} />
-          {submitting ? "保存中..." : submitLabel ?? (isEditing ? "保存" : "新建连接器")}
+          {submitting ? "保存中..." : (submitLabel ?? (isEditing ? "保存" : "新建连接器"))}
         </Button>
       </div>
     </form>
@@ -516,9 +520,7 @@ export function StorageConnectionsPanel({
 
       <div className={styles.list}>
         {isLoading && <div className={styles.empty}>加载中...</div>}
-        {!isLoading && connections.length === 0 && (
-          <div className={styles.empty}>暂无连接器</div>
-        )}
+        {!isLoading && connections.length === 0 && <div className={styles.empty}>暂无连接器</div>}
         {!isLoading &&
           connections.map((conn) => {
             const result = testResults[conn.id];
@@ -541,7 +543,9 @@ export function StorageConnectionsPanel({
                     {connectionSummary(conn) || "未配置目标路径"}
                   </div>
                   {result && (
-                    <div className={cx(styles.testResult, result.ok ? styles.testOk : styles.testFail)}>
+                    <div
+                      className={cx(styles.testResult, result.ok ? styles.testOk : styles.testFail)}
+                    >
                       {result.message}
                       {result.sample_count !== null && ` · 样本 ${result.sample_count}`}
                     </div>

@@ -98,12 +98,13 @@ docker compose down -v
 - **端口**：宿主 `6379`
 - **存什么（**全在内存 + 不开 RDB**）**：
 
-  | 用途 | key 形态 | 写入方 |
-  |---|---|---|
-  | Celery broker（任务队列） | `default / ml / ml.cpu / media / gpu / export / unacked / kombu.binding.*` | api 入队 / worker 消费 |
-  | Celery result backend | `celery-task-meta-<task_id>` | worker 写结果 |
-  | WebSocket pub/sub（多副本广播） | `notify:<user_id>`、`predict:<project_id>` | api / worker → 前端 ws |
-  | 限流 / 失败计数 / 进度缓存 | `ratelimit:*`、`login_fail:<ip>`、`progress:*` | middleware / api |
+  | 用途                            | key 形态                                                                   | 写入方                 |
+  | ------------------------------- | -------------------------------------------------------------------------- | ---------------------- |
+  | Celery broker（任务队列）       | `default / ml / ml.cpu / media / gpu / export / unacked / kombu.binding.*` | api 入队 / worker 消费 |
+  | Celery result backend           | `celery-task-meta-<task_id>`                                               | worker 写结果          |
+  | WebSocket pub/sub（多副本广播） | `notify:<user_id>`、`predict:<project_id>`                                 | api / worker → 前端 ws |
+  | 限流 / 失败计数 / 进度缓存      | `ratelimit:*`、`login_fail:<ip>`、`progress:*`                             | middleware / api       |
+
 - **持久化**：**无 volume**。容器删 / 重启即清空 — 包括未消费的 Celery 任务、ws session、限流计数。dev 上是合意的；生产部署需挂 AOF volume。
 - **常用命令**
 
@@ -145,19 +146,20 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 - **worker 分组订阅**（按设备隔离并发）：主 worker `-Q default,media,cleanup,audit`（`--concurrency=4`）；GPU worker `-Q ml,gpu`（`CELERY_GPU_CONCURRENCY=2`，低并发护显存）；CPU worker `-Q ml.cpu`（`CELERY_CPU_CONCURRENCY=4`）；导出 worker `-Q export`。预标任务按模型 `resource_profile.device` 路由：整条 pipeline 全 CPU → `ml.cpu`，任一 GPU/未自报 → `ml`（保守，零退化）。
 - **任务 → 队列 的映射**：`apps/api/app/workers/celery_app.py` 的 `task_routes` 显式指定；**未显式路由的任务落到 `task_default_queue`**。
 
-  | Queue | 谁路由进来 | 典型任务 | 前端可见？ |
-  |---|---|---|---|
-  | `default` | `task_default_queue` 兜底 + ml_health | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点） |
-  | `ml` | `batch_predict`（device=gpu/未自报）/ `retry_failed_prediction` | 跑 GPU ML backend / 重试失败预测 | ✅ 工作台 AI 候选框 |
-  | `ml.cpu` | `batch_predict`（整条 pipeline 全 device=cpu） | 跑 CPU 模型预标（高并发） | ✅ 工作台 AI 候选框 |
-  | `media` | `generate_thumbnail` / `extract_video_frames` / `run_dataset_import` 等 | 缩略图、视频帧、媒体 backfill、连接器数据集导入 | ✅ 列表 / 工作台的图与帧 / 数据集导入进度 |
-  | `gpu` | `run_video_tracker_job` | 视频目标追踪 | ✅ 视频追踪结果 |
-  | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步 | 间接（效率看板数据） |
-  | `audit` | `persist_audit_entry` / `persist_task_events_batch` | 审计日志 / task event 批量入库 | ✅ admin 审计页 |
+  | Queue     | 谁路由进来                                                                      | 典型任务                                                                                                                                                    | 前端可见？                                |
+  | --------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+  | `default` | `task_default_queue` 兜底 + ml_health                                           | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点）              |
+  | `ml`      | `batch_predict`（device=gpu/未自报）/ `retry_failed_prediction`                 | 跑 GPU ML backend / 重试失败预测                                                                                                                            | ✅ 工作台 AI 候选框                       |
+  | `ml.cpu`  | `batch_predict`（整条 pipeline 全 device=cpu）                                  | 跑 CPU 模型预标（高并发）                                                                                                                                   | ✅ 工作台 AI 候选框                       |
+  | `media`   | `generate_thumbnail` / `extract_video_frames` / `run_dataset_import` 等         | 缩略图、视频帧、媒体 backfill、连接器数据集导入                                                                                                             | ✅ 列表 / 工作台的图与帧 / 数据集导入进度 |
+  | `gpu`     | `run_video_tracker_job`                                                         | 视频目标追踪                                                                                                                                                | ✅ 视频追踪结果                           |
+  | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步                                                                                                                     | 间接（效率看板数据）                      |
+  | `audit`   | `persist_audit_entry` / `persist_task_events_batch`                             | 审计日志 / task event 批量入库                                                                                                                              | ✅ admin 审计页                           |
 
   ::: warning 易踩坑：`task_default_queue`
   Celery 内置默认队列名是 `celery`，**不在 worker 的 `-Q` 列表里**。若某 beat / 异步任务忘了在 `task_routes` 里路由、且 `task_default_queue` 仍是 `celery`，它就投进无人消费的 `celery` 队列里**静默堆积、永不执行**。修复：`celery_app.conf` 设 `task_default_queue="default"`，让兜底任务落到 worker 实际订阅的 `default` 队列。排查时 `redis-cli llen celery` 看死队列是否堆积。
   :::
+
 - **常用命令**
 
   ```bash
@@ -177,10 +179,11 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 - **profile**：`gpu`（默认不拉起）
 - **存什么**：
 
-  | Volume | 路径 | 内容 |
-  |---|---|---|
-  | `gsam2_checkpoints` | `/app/checkpoints` | SAM 2.1 / GroundingDINO 模型权重（首启自动下载约 900 MB） |
-  | `gsam2_hf_cache` | `/app/.cache/huggingface` | HuggingFace 下载缓存 |
+  | Volume              | 路径                      | 内容                                                      |
+  | ------------------- | ------------------------- | --------------------------------------------------------- |
+  | `gsam2_checkpoints` | `/app/checkpoints`        | SAM 2.1 / GroundingDINO 模型权重（首启自动下载约 900 MB） |
+  | `gsam2_hf_cache`    | `/app/.cache/huggingface` | HuggingFace 下载缓存                                      |
+
 - **环境变量**：`SAM_VARIANT`（默认 `tiny`）/ `DINO_VARIANT`（默认 `T`）/ `BOX_THRESHOLD` / `TEXT_THRESHOLD`
 - **协议**：`POST /predict` + `GET /health`，详见 [ML Backend 协议](../reference/ml-backend-protocol)
 - **GPU 要求**：`deploy.resources.reservations.devices` 占用 1 张 NVIDIA GPU；本地无 GPU 笔记本启动会报 `could not select device driver`，跳过即可
@@ -209,16 +212,16 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 
 ## Volume 一览
 
-| Volume | 容器 | 作用 | dev 抹掉影响 |
-|---|---|---|---|
-| `pgdata` | postgres | 业务数据库 | **业务数据全丢**，需重新种用户 / 项目 / 任务 |
-| `miniodata` | minio | 对象存储 | 所有图片 / 导出 / 附件丢失 |
-| `gsam2_checkpoints` | grounded-sam2-backend | 模型权重 | 下次启动重新下载 ~900MB |
-| `gsam2_hf_cache` | grounded-sam2-backend | HF 缓存 | 重新拉缓存 |
-| `sam3_checkpoints` / `sam3_hf_cache` | sam3-backend | SAM 3 图像与视频权重、HF 缓存 | 下次启动重新下载 / 拉取 |
-| `yolo_checkpoints` | yolo-backend | YOLO 权重缓存 | 下次按需下载 |
-| `prometheus_data` | prometheus | 历史指标 | 历史曲线丢失 |
-| `grafana_data` | grafana | 看板配置 | 自定义面板丢失（provisioned 看板会重建） |
+| Volume                               | 容器                  | 作用                          | dev 抹掉影响                                 |
+| ------------------------------------ | --------------------- | ----------------------------- | -------------------------------------------- |
+| `pgdata`                             | postgres              | 业务数据库                    | **业务数据全丢**，需重新种用户 / 项目 / 任务 |
+| `miniodata`                          | minio                 | 对象存储                      | 所有图片 / 导出 / 附件丢失                   |
+| `gsam2_checkpoints`                  | grounded-sam2-backend | 模型权重                      | 下次启动重新下载 ~900MB                      |
+| `gsam2_hf_cache`                     | grounded-sam2-backend | HF 缓存                       | 重新拉缓存                                   |
+| `sam3_checkpoints` / `sam3_hf_cache` | sam3-backend          | SAM 3 图像与视频权重、HF 缓存 | 下次启动重新下载 / 拉取                      |
+| `yolo_checkpoints`                   | yolo-backend          | YOLO 权重缓存                 | 下次按需下载                                 |
+| `prometheus_data`                    | prometheus            | 历史指标                      | 历史曲线丢失                                 |
+| `grafana_data`                       | grafana               | 看板配置                      | 自定义面板丢失（provisioned 看板会重建）     |
 
 > redis **没有** volume，不在表内。
 

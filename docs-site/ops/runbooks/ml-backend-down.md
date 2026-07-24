@@ -41,6 +41,7 @@ docker logs -f ai-annotation-platform-grounded-sam2-backend-1
 ```
 
 如果反复因 OOM 退出：
+
 - 检查 GPU 显存（`nvidia-smi`）
 - 换用更小的 SAM 变体（`SAM_VARIANT=tiny`）
 
@@ -105,11 +106,11 @@ curl http://localhost:8001/health
 
 ## 影响范围评估
 
-| 受影响功能 | 影响级别 |
-|---|---|
-| SAM 工具（工作台） | 功能降级，标注员手动框选仍可用 |
-| AI 预标注（批量） | 新 Job 会失败；已完成的 Prediction 不受影响 |
-| 已有 Annotation | 无影响 |
+| 受影响功能         | 影响级别                                    |
+| ------------------ | ------------------------------------------- |
+| SAM 工具（工作台） | 功能降级，标注员手动框选仍可用              |
+| AI 预标注（批量）  | 新 Job 会失败；已完成的 Prediction 不受影响 |
+| 已有 Annotation    | 无影响                                      |
 
 ## 相关文档
 

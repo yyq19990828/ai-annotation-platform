@@ -45,7 +45,11 @@ def test_import_file_yolo_params(client, respx_mock, tmp_path):
         )
     )
     result = client.predictions.import_file(
-        PROJECT_ID, f, format="yolo", yolo_variant="obb", dry_run=True,
+        PROJECT_ID,
+        f,
+        format="yolo",
+        yolo_variant="obb",
+        dry_run=True,
         overwrite_existing=True,
     )
     req = route.calls.last.request

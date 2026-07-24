@@ -33,13 +33,13 @@ TASK_TRACKER: Final[str] = "tracker"
 # 维护规则: ultralytics 发布新权重时, 改本表 + 协议 /setup 输出会自动跟随.
 MODEL_MATRIX: Final[dict[str, dict[str, tuple[str, ...]]]] = {
     TASK_DETECTION: {
-        "yolov8":  ("n", "s", "m", "l", "x"),
-        "yolov9":  ("t", "s", "m", "c", "e"),
+        "yolov8": ("n", "s", "m", "l", "x"),
+        "yolov9": ("t", "s", "m", "c", "e"),
         "yolov10": ("n", "s", "m", "b", "l", "x"),
-        "yolo11":  ("n", "s", "m", "l", "x"),
-        "yolo12":  ("n", "s", "m", "l", "x"),
-        "yolo26":  ("n", "s", "m", "l", "x"),
-        "rtdetr":  ("l", "x"),
+        "yolo11": ("n", "s", "m", "l", "x"),
+        "yolo12": ("n", "s", "m", "l", "x"),
+        "yolo26": ("n", "s", "m", "l", "x"),
+        "rtdetr": ("l", "x"),
     },
     TASK_SEGMENTATION: {
         "yolov8": ("n", "s", "m", "l", "x"),
@@ -74,26 +74,26 @@ RECOMMENDED_SIZE: Final[str] = "s"
 # yolov8x ~500MB, 推理峰值还取决于 batch / 输入分辨率 / FP16/32, 暴露统一数字会误导。
 # 等真有按 (series, size, task) 维度的官方 params/FLOPs 表再补。
 SIZE_META: Final[dict[str, dict[str, object]]] = {
-    "n": {"label": "nano",     "tier": "fast"},
-    "t": {"label": "tiny",     "tier": "fast"},
-    "s": {"label": "small",    "tier": "balanced"},
-    "m": {"label": "medium",   "tier": "balanced"},
+    "n": {"label": "nano", "tier": "fast"},
+    "t": {"label": "tiny", "tier": "fast"},
+    "s": {"label": "small", "tier": "balanced"},
+    "m": {"label": "medium", "tier": "balanced"},
     "b": {"label": "balanced", "tier": "balanced"},
-    "c": {"label": "compact",  "tier": "balanced"},
-    "l": {"label": "large",    "tier": "accurate"},
-    "e": {"label": "extreme",  "tier": "accurate"},
-    "x": {"label": "xlarge",   "tier": "accurate"},
+    "c": {"label": "compact", "tier": "balanced"},
+    "l": {"label": "large", "tier": "accurate"},
+    "e": {"label": "extreme", "tier": "accurate"},
+    "x": {"label": "xlarge", "tier": "accurate"},
 }
 
 # series 元信息. label 是 UI 展示名.
 SERIES_LABEL: Final[dict[str, str]] = {
-    "yolov8":  "YOLOv8",
-    "yolov9":  "YOLOv9",
+    "yolov8": "YOLOv8",
+    "yolov9": "YOLOv9",
     "yolov10": "YOLOv10",
-    "yolo11":  "YOLO11",
-    "yolo12":  "YOLO12",
-    "yolo26":  "YOLO26",
-    "rtdetr":  "RT-DETR",
+    "yolo11": "YOLO11",
+    "yolo12": "YOLO12",
+    "yolo26": "YOLO26",
+    "rtdetr": "RT-DETR",
 }
 
 # task → ultralytics 权重文件名后缀. detection 无后缀.
@@ -169,7 +169,7 @@ POOL_TASK_OPENVOCAB_VP: Final[str] = "openvocab_vp"
 # /setup model 条目 → 该条目暴露的 series → sizes.
 OPENVOCAB_WORLD_SERIES: Final[dict[str, tuple[str, ...]]] = {
     "yolo-worldv2": ("s", "m", "l", "x"),
-    "yolo-world":   ("s", "m", "l", "x"),
+    "yolo-world": ("s", "m", "l", "x"),
 }
 OPENVOCAB_YOLOE_SERIES: Final[dict[str, tuple[str, ...]]] = {
     "yoloe-v8": ("s", "m", "l"),
@@ -185,10 +185,10 @@ OPENVOCAB_SERIES: Final[frozenset[str]] = frozenset(OPENVOCAB_FAMILY)
 
 OPENVOCAB_SERIES_LABEL: Final[dict[str, str]] = {
     "yolo-worldv2": "YOLO-World v2",
-    "yolo-world":   "YOLO-World",
-    "yoloe-v8":     "YOLOE · v8",
-    "yoloe-11":     "YOLOE · 11",
-    "yoloe-26":     "YOLOE · 26",
+    "yolo-world": "YOLO-World",
+    "yoloe-v8": "YOLOE · v8",
+    "yoloe-11": "YOLOE · 11",
+    "yoloe-26": "YOLOE · 26",
 }
 
 # 各 model 条目的默认 (series, size). world 用 v2/s, yoloe 用 11/s (现代档 + 显存友好).
@@ -206,7 +206,9 @@ def openvocab_family(series: str) -> str:
 
 
 def openvocab_sizes(series: str) -> tuple[str, ...]:
-    return OPENVOCAB_WORLD_SERIES.get(series) or OPENVOCAB_YOLOE_SERIES.get(series) or ()
+    return (
+        OPENVOCAB_WORLD_SERIES.get(series) or OPENVOCAB_YOLOE_SERIES.get(series) or ()
+    )
 
 
 def is_openvocab_supported(series: str, size: str) -> bool:

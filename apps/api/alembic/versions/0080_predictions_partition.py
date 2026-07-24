@@ -74,7 +74,9 @@ def upgrade() -> None:
     )
 
     # 2. prediction_metas 加冗余分区键列 + 回填（必须在 rename 前 join 原 predictions）
-    op.execute("ALTER TABLE prediction_metas ADD COLUMN prediction_created_at TIMESTAMPTZ")
+    op.execute(
+        "ALTER TABLE prediction_metas ADD COLUMN prediction_created_at TIMESTAMPTZ"
+    )
     op.execute(
         "UPDATE prediction_metas pm SET prediction_created_at = p.created_at "
         "FROM predictions p WHERE pm.prediction_id = p.id"

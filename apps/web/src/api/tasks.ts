@@ -13,6 +13,7 @@ import type {
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
+import type { TaskMaskCapabilitiesResponse } from "./generated";
 
 /** v0.20.11 · 选中框单框二次推理请求: 在选中框 ROI 上跑一个能力。 */
 export interface SecondaryInferenceRequest {
@@ -171,13 +172,14 @@ export const tasksApi = {
 
   get: (id: string) => apiClient.get<TaskResponse>(`/tasks/${id}`),
 
+  getMaskCapabilities: (id: string) =>
+    apiClient.get<TaskMaskCapabilitiesResponse>(`/tasks/${id}/mask-capabilities`),
+
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
 
   getPointCloudManifest: (id: string) =>
-    apiClient.get<TaskPointCloudManifestResponse>(
-      `/tasks/${id}/point-cloud/manifest`,
-    ),
+    apiClient.get<TaskPointCloudManifestResponse>(`/tasks/${id}/point-cloud/manifest`),
 
   // v0.14.0 · scene 内前后 k 个邻居 task(跨帧导航 backing)。
   getNeighbors: (id: string, k = 1) =>
@@ -186,22 +188,13 @@ export const tasksApi = {
   // v0.15.17 · 一次性拉 ±k 帧邻帧标注(替代 2k 条并发 getAnnotations + client 过滤)。
   // v0.21.2 · trackId 给定 → 服务端只回该 track(scope=selected);省略 → 回全部(scope=all)。
   getNeighborAnnotations: (id: string, k = 1, trackId?: string | null) => {
-    const q =
-      trackId != null
-        ? `?k=${k}&track_id=${encodeURIComponent(trackId)}`
-        : `?k=${k}`;
-    return apiClient.get<NeighborAnnotationsResponse>(
-      `/tasks/${id}/neighbor-annotations${q}`,
-    );
+    const q = trackId != null ? `?k=${k}&track_id=${encodeURIComponent(trackId)}` : `?k=${k}`;
+    return apiClient.get<NeighborAnnotationsResponse>(`/tasks/${id}/neighbor-annotations${q}`);
   },
 
   // v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库
   // (属性写回原框 / 几何建子框, 带 AI 溯源)。
-  secondaryInference: (
-    taskId: string,
-    annotationId: string,
-    body: SecondaryInferenceRequest,
-  ) =>
+  secondaryInference: (taskId: string, annotationId: string, body: SecondaryInferenceRequest) =>
     apiClient.post<SecondaryInferenceResponse>(
       `/tasks/${taskId}/annotations/${annotationId}/secondary-inference`,
       body,
@@ -221,23 +214,19 @@ export const tasksApi = {
 
   // v0.15.1 · 批量跨帧延续: 源 task 的多个(annotationIds 给定)或全部
   // (undefined → 全部 active box_3d)运动补偿 propagate 到目标 task。
-  propagateBatch: (
-    taskId: string,
-    targetTaskId: string,
-    annotationIds?: string[],
-  ) =>
-    apiClient.post<PropagateBatchResponse>(
-      `/tasks/${taskId}/annotations/propagate-batch`,
-      { target_task_id: targetTaskId, annotation_ids: annotationIds ?? null },
-    ),
+  propagateBatch: (taskId: string, targetTaskId: string, annotationIds?: string[]) =>
+    apiClient.post<PropagateBatchResponse>(`/tasks/${taskId}/annotations/propagate-batch`, {
+      target_task_id: targetTaskId,
+      annotation_ids: annotationIds ?? null,
+    }),
 
   // v0.15.1 · 关键帧区间插值: 路径 task = 起点帧, 同 track 链两端框之间的
   // 中间帧自动生成插值框(source="interpolated")。v0.21.2 · ADR-0045 · 按 track_id。
   interpolateRange: (taskId: string, trackId: string, toTaskId: string) =>
-    apiClient.post<InterpolateRangeResponse>(
-      `/tasks/${taskId}/annotations/interpolate-range`,
-      { track_id: trackId, to_task_id: toTaskId },
-    ),
+    apiClient.post<InterpolateRangeResponse>(`/tasks/${taskId}/annotations/interpolate-range`, {
+      track_id: trackId,
+      to_task_id: toTaskId,
+    }),
 
   getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
     const q = new URLSearchParams();
@@ -254,28 +243,27 @@ export const tasksApi = {
     if (params?.format) q.set("format", params.format);
     if (params?.width !== undefined) q.set("w", String(params.width));
     const suffix = q.toString() ? `?${q}` : "";
-    return apiClient.get<VideoFrameOut>(
-      `/tasks/${id}/video/frames/${frameIndex}${suffix}`,
-    );
+    return apiClient.get<VideoFrameOut>(`/tasks/${id}/video/frames/${frameIndex}${suffix}`);
   },
 
   prefetchVideoFrames: (id: string, frameIndices: number[], params?: VideoFrameParams) =>
-    apiClient.post<VideoFramePrefetchResponse>(
-      `/tasks/${id}/video/frames:prefetch`,
-      {
-        frame_indices: frameIndices,
-        width: params?.width ?? 320,
-        format: params?.format ?? "webp",
-      },
-    ),
+    apiClient.post<VideoFramePrefetchResponse>(`/tasks/${id}/video/frames:prefetch`, {
+      frame_indices: frameIndices,
+      width: params?.width ?? 320,
+      format: params?.format ?? "webp",
+    }),
 
-  getAnnotations: (id: string) =>
-    apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),
+  getAnnotations: (id: string) => apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),
 
   createAnnotation: (id: string, payload: AnnotationPayload) =>
     apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),
 
-  updateAnnotation: (taskId: string, annotationId: string, payload: AnnotationUpdatePayload, etag?: string) =>
+  updateAnnotation: (
+    taskId: string,
+    annotationId: string,
+    payload: AnnotationUpdatePayload,
+    etag?: string,
+  ) =>
     apiClient.patch<AnnotationResponse>(
       `/tasks/${taskId}/annotations/${annotationId}`,
       payload,
@@ -295,17 +283,13 @@ export const tasksApi = {
       payload,
     ),
 
-  composeVideoTracks: (
-    taskId: string,
-    payload: VideoTrackCompositionPayload,
-  ) =>
+  composeVideoTracks: (taskId: string, payload: VideoTrackCompositionPayload) =>
     apiClient.post<VideoTrackCompositionResponse>(
       `/tasks/${taskId}/annotations/video/track-compositions`,
       payload,
     ),
 
-  submit: (id: string) =>
-    apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),
+  submit: (id: string) => apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),
 
   // v0.8.7 F7 · 任务跳过
   skip: (
@@ -321,17 +305,14 @@ export const tasksApi = {
       skip_reason: string;
     }>(`/tasks/${id}/skip`, body),
 
-  withdraw: (id: string) =>
-    apiClient.post<SubmitResponse>(`/tasks/${id}/withdraw`),
+  withdraw: (id: string) => apiClient.post<SubmitResponse>(`/tasks/${id}/withdraw`),
 
   reopen: (id: string) =>
     apiClient.post<SubmitResponse & { reopened_count: number }>(`/tasks/${id}/reopen`),
 
-  acceptRejection: (id: string) =>
-    apiClient.post<SubmitResponse>(`/tasks/${id}/accept-rejection`),
+  acceptRejection: (id: string) => apiClient.post<SubmitResponse>(`/tasks/${id}/accept-rejection`),
 
-  reviewClaim: (id: string) =>
-    apiClient.post<ReviewClaimResponse>(`/tasks/${id}/review/claim`),
+  reviewClaim: (id: string) => apiClient.post<ReviewClaimResponse>(`/tasks/${id}/review/claim`),
 
   approve: (id: string) =>
     apiClient.post<{ status: string; task_id: string }>(`/tasks/${id}/review/approve`),
@@ -350,14 +331,12 @@ export const tasksApi = {
       reason: string | null;
     }>(`/tasks/${id}/review/reject`, payload),
 
-  acquireLock: (taskId: string) =>
-    apiClient.post<TaskLockResponse>(`/tasks/${taskId}/lock`),
+  acquireLock: (taskId: string) => apiClient.post<TaskLockResponse>(`/tasks/${taskId}/lock`),
 
   heartbeatLock: (taskId: string) =>
     apiClient.post<{ status: string }>(`/tasks/${taskId}/lock/heartbeat`),
 
-  releaseLock: (taskId: string) =>
-    apiClient.delete<void>(`/tasks/${taskId}/lock`),
+  releaseLock: (taskId: string) => apiClient.delete<void>(`/tasks/${taskId}/lock`),
 
   /**
    * v0.6.7 B-13：unmount / 页面跳转期间 release 必须在请求被取消前送达。

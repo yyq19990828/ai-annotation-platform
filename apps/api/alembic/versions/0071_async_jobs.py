@@ -48,9 +48,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'pending'"),
         ),
-        sa.Column(
-            "progress_pct", sa.Integer, nullable=False, server_default="0"
-        ),
+        sa.Column("progress_pct", sa.Integer, nullable=False, server_default="0"),
         sa.Column(
             "payload",
             postgresql.JSONB,
@@ -90,9 +88,7 @@ def upgrade() -> None:
         "async_jobs",
         ["project_id", "kind", "status"],
     )
-    op.create_index(
-        "ix_async_jobs_celery_task", "async_jobs", ["celery_task_id"]
-    )
+    op.create_index("ix_async_jobs_celery_task", "async_jobs", ["celery_task_id"])
 
 
 def downgrade() -> None:

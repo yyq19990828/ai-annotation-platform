@@ -9,7 +9,14 @@ export const RotatedBboxTool: CanvasTool = {
   label: "旋转框",
   icon: "diamond",
   cursor: "crosshair",
-  onPointerDown: ({ pt, evt, spacePan, readOnly, pendingDrawing, onClearSelection }: ToolPointerContext): DragInit | null => {
+  onPointerDown: ({
+    pt,
+    evt,
+    spacePan,
+    readOnly,
+    pendingDrawing,
+    onClearSelection,
+  }: ToolPointerContext): DragInit | null => {
     if (pendingDrawing) return null;
     if (spacePan || readOnly) {
       if (readOnly) onClearSelection();

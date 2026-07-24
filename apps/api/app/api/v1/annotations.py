@@ -22,15 +22,19 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.tasks._shared import _assert_task_visible
+from app.config import settings
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
+from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -43,14 +47,35 @@ from app.deps import (
     require_scopes,
 )
 from app.schemas.aap_json import AAPImportResult
+from app.schemas._jsonb_types import CocoRleContent
 from app.schemas.annotation import (
     AnnotationBulkUpdateRequest,
     AnnotationBulkUpdateResponse,
 )
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
-from app.services.raster_mask_storage import load_coco_rle, store_coco_rle
+from app.services.raster_mask_storage import (
+    COCO_RLE_GZIP_ENCODING,
+    RLE_STORAGE_GZIP,
+    RasterMaskContractError,
+    assert_raster_mask_write_enabled,
+    build_rle_gzip_reference,
+    build_rle_reference,
+    classify_raster_mask_content_error,
+    load_coco_rle,
+    lock_raster_mask_references,
+    reserve_raster_mask_upload,
+    store_coco_rle,
+    store_coco_rle_gzip,
+    validate_mask_geometry_for_task,
+)
 from app.services.video_tracks import resolve_track_at_frame
+from app.utils.raster_mask_rle import (
+    MAX_IMAGE_MASK_DIMENSION,
+    MAX_IMAGE_MASK_PIXELS,
+    MAX_VIDEO_MASK_DIMENSION,
+    MAX_VIDEO_MASK_PIXELS,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -63,6 +88,14 @@ _ANNOTATORS = (
 )
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
+
+# v0.23.5 · WS-D · D3 · per-task cap on unclaimed raster-mask uploads.
+# The upload endpoint returns an anonymous reference (not yet linked to an
+# annotation), so the per-annotation ``is_locked`` guard doesn't apply at
+# upload time. Ownership rows bound anonymous objects until an annotation
+# transaction claims them; the cap is serialized by a task-level advisory lock
+# so concurrent requests cannot race.
+MAX_MASK_OBJECTS_PER_TASK = 256
 
 
 def _assert_task_editable(task: Task, user: User | None) -> None:
@@ -78,24 +111,170 @@ def _assert_task_editable(task: Task, user: User | None) -> None:
     )
 
 
-@router.get(
-    "/annotations/{annotation_id}/mask-content/{frame_index}",
-    dependencies=[Depends(require_scopes("annotations:read"))],
-)
-async def get_annotation_mask_content(
+async def _count_task_mask_references(db: AsyncSession, task_id: uuid.UUID) -> int:
+    """Count anonymous uploads not yet claimed by an annotation transaction."""
+    return int(
+        (
+            await db.execute(
+                select(func.count(RasterMaskUpload.id)).where(
+                    RasterMaskUpload.task_id == task_id,
+                    RasterMaskUpload.linked_at.is_(None),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+
+
+_MASK_CONTENT_RESPONSES = {
+    304: {"description": "Not Modified"},
+    409: {"description": "Mask reference or task context is invalid"},
+    503: {"description": "Mask object storage is unavailable"},
+}
+
+
+def _mask_etag_matches(request: Request, etag: str) -> bool:
+    raw = request.headers.get("if-none-match")
+    if not raw:
+        return False
+    normalized = etag.removeprefix("W/")
+    return any(
+        candidate == "*" or candidate.removeprefix("W/") == normalized
+        for candidate in (part.strip() for part in raw.split(","))
+    )
+
+
+async def _load_visible_mask_annotation(
     annotation_id: uuid.UUID,
-    frame_index: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> JSONResponse:
+    db: AsyncSession,
+    user: User,
+) -> tuple[Annotation, Task, dict]:
     annotation = await db.get(Annotation, annotation_id)
     if annotation is None or not annotation.is_active:
         raise HTTPException(status_code=404, detail="annotation not found")
     task = await db.get(Task, annotation.task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    await assert_project_visible(task.project_id, db, user)
+    await _assert_task_visible(db, task, user)
     geometry = annotation.geometry or {}
+    if geometry.get("type") == "raster_mask" and not settings.raster_mask_read_enabled:
+        raise HTTPException(
+            status_code=404, detail={"reason": "raster_mask_read_disabled"}
+        )
+    try:
+        await validate_mask_geometry_for_task(db, task, geometry)
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "mask_task_context_invalid", "message": str(exc)},
+        ) from exc
+    return annotation, task, geometry
+
+
+async def _mask_content_response(
+    *,
+    annotation_id: uuid.UUID,
+    mask_ref: dict,
+    request: Request,
+) -> Response:
+    etag = f'"{mask_ref.get("sha256")}"'
+    headers = {"Cache-Control": "private, max-age=300", "ETag": etag}
+    if _mask_etag_matches(request, etag):
+        return Response(status_code=304, headers=headers)
+    try:
+        payload = await load_coco_rle(mask_ref)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": classify_raster_mask_content_error(exc),
+                "retryable": True,
+                "message": f"mask object is invalid: {exc}",
+            },
+        ) from exc
+    except Exception as exc:
+        logger.warning(
+            "mask object read failed for annotation %s", annotation_id, exc_info=True
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason": "mask_storage_unavailable",
+                "retryable": True,
+                "message": "Mask object storage is unavailable",
+            },
+        ) from exc
+    return JSONResponse(payload, headers=headers)
+
+
+@router.get(
+    "/annotations/{annotation_id}/mask-content",
+    response_model=CocoRleContent,
+    responses=_MASK_CONTENT_RESPONSES,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_annotation_mask_content(
+    annotation_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """v0.23.6 · 获取图片掩码内容 (RasterMaskGeometry)。
+
+    支持图片 RasterMaskGeometry 与视频单帧 VideoMaskGeometry 的静态内容服务。
+    返回标准 COCO RLE 格式，带 ETag 支持条件请求。
+    """
+    annotation, _task, geometry = await _load_visible_mask_annotation(
+        annotation_id, db, user
+    )
+    geom_type = geometry.get("type")
+
+    if geom_type in {"raster_mask", "video_mask"}:
+        mask_ref = geometry.get("mask")
+        if not mask_ref:
+            raise HTTPException(status_code=409, detail="mask reference missing")
+        return await _mask_content_response(
+            annotation_id=annotation.id,
+            mask_ref=mask_ref,
+            request=request,
+        )
+    raise HTTPException(
+        status_code=422, detail=f"unsupported geometry type: {geom_type}"
+    )
+
+
+@router.get(
+    "/annotations/{annotation_id}/mask-content/{frame_index}",
+    response_model=CocoRleContent,
+    responses=_MASK_CONTENT_RESPONSES,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_annotation_mask_content_frame(
+    annotation_id: uuid.UUID,
+    frame_index: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    annotation, _task, geometry = await _load_visible_mask_annotation(
+        annotation_id, db, user
+    )
+    if geometry.get("type") in {"raster_mask", "video_mask"}:
+        if (
+            geometry.get("type") == "video_mask"
+            and geometry.get("frame_index") != frame_index
+        ):
+            raise HTTPException(status_code=404, detail="mask is outside at this frame")
+        mask_ref = geometry.get("mask")
+        if not mask_ref:
+            raise HTTPException(status_code=409, detail="mask reference missing")
+        return await _mask_content_response(
+            annotation_id=annotation.id,
+            mask_ref=mask_ref,
+            request=request,
+        )
     if geometry.get("type") != "video_track_mask":
         raise HTTPException(
             status_code=422, detail="annotation is not a video mask track"
@@ -103,18 +282,10 @@ async def get_annotation_mask_content(
     resolved = resolve_track_at_frame(geometry, frame_index)
     if resolved is None:
         raise HTTPException(status_code=404, detail="mask is outside at this frame")
-    try:
-        payload = load_coco_rle(resolved["mask"])
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(
-            status_code=409, detail=f"mask object is invalid: {exc}"
-        ) from exc
-    return JSONResponse(
-        payload,
-        headers={
-            "Cache-Control": "private, max-age=300",
-            "ETag": f'"{resolved["mask"]["sha256"]}"',
-        },
+    return await _mask_content_response(
+        annotation_id=annotation.id,
+        mask_ref=resolved["mask"],
+        request=request,
     )
 
 
@@ -128,25 +299,147 @@ async def upload_task_mask_content(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles(*_ANNOTATORS)),
 ) -> dict:
-    task = await db.get(Task, task_id)
+    # Match all Mask writers: the Task row is the first database row lock.
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
     await assert_project_visible(task.project_id, db, user)
     _assert_task_editable(task, user)
+    if (
+        user.role == UserRole.ANNOTATOR
+        and task.assignee_id is not None
+        and task.assignee_id != user.id
+    ):
+        raise HTTPException(status_code=403, detail="Task belongs to another annotator")
+    # v0.23.5 · WS-D · D3 · per-task mask-object quota. The upload returns an
+    # anonymous reference (not yet linked to an annotation), so the per-annotation
+    # ``is_locked`` guard doesn't apply at upload time; the quota bounds how many
+    # orphan-able objects a single task can produce before the caller must link
+    # or clean up existing ones. Linking the returned ref marks the reservation
+    # claimed in the same annotation transaction.
     try:
+        body = dict(payload)
+        requested_storage = body.pop("storage_encoding", None)
+        # Backward-compatible request shim. The body is normalized immediately:
+        # COCO RLE encoding and object-storage encoding are separate contracts.
+        if body.get("encoding") == COCO_RLE_GZIP_ENCODING:
+            requested_storage = RLE_STORAGE_GZIP
+            body["encoding"] = "coco_rle"
+        if requested_storage not in (None, "identity", RLE_STORAGE_GZIP):
+            raise ValueError("storage_encoding must be 'identity' or 'gzip'")
         size = payload.get("size")
-        if task.dataset_item_id is not None:
-            item = await db.get(DatasetItem, task.dataset_item_id)
-            if item is not None:
-                video = (item.metadata_ or {}).get("video")
-                video = video if isinstance(video, dict) else {}
-                width = item.width or video.get("width")
-                height = item.height or video.get("height")
-                if width and height and size != [int(height), int(width)]:
-                    raise ValueError(
-                        f"mask size must match source video [{height}, {width}]"
-                    )
-        return store_coco_rle(payload)
+        item = (
+            await db.get(DatasetItem, task.dataset_item_id)
+            if task.dataset_item_id is not None
+            else None
+        )
+        source_file_type = item.file_type if item is not None else task.file_type
+        if source_file_type != "video":
+            project = await db.get(Project, task.project_id)
+            assert_raster_mask_write_enabled(project)
+        if (
+            isinstance(size, list)
+            and len(size) == 2
+            and all(type(value) is int and value > 0 for value in size)
+        ):
+            mask_height, mask_width = size
+            max_dimension = (
+                MAX_VIDEO_MASK_DIMENSION
+                if source_file_type == "video"
+                else MAX_IMAGE_MASK_DIMENSION
+            )
+            max_pixels = (
+                MAX_VIDEO_MASK_PIXELS
+                if source_file_type == "video"
+                else MAX_IMAGE_MASK_PIXELS
+            )
+            if (
+                mask_height > max_dimension
+                or mask_width > max_dimension
+                or mask_height * mask_width > max_pixels
+            ):
+                reason = (
+                    "video_mask_dimensions_exceeded"
+                    if source_file_type == "video"
+                    else "raster_mask_dimensions_exceeded"
+                )
+                raise RasterMaskContractError(
+                    status_code=422,
+                    reason=reason,
+                    message=(
+                        "mask content exceeds the media limit "
+                        f"({max_dimension}px / {max_pixels} pixels)"
+                    ),
+                    max_dimension=max_dimension,
+                    max_pixels=max_pixels,
+                )
+        if item is not None:
+            video = (item.metadata_ or {}).get("video")
+            video = video if isinstance(video, dict) else {}
+            width = item.width or video.get("width")
+            height = item.height or video.get("height")
+            if width and height and size != [int(height), int(width)]:
+                raise ValueError(
+                    f"mask size must match source media [{height}, {width}]"
+                )
+        # HTTP Content-Encoding is handled before JSON parsing. This field is
+        # only the object-storage preference; reference encoding stays stable.
+        if requested_storage == RLE_STORAGE_GZIP:
+            try:
+                expected = build_rle_gzip_reference(body)
+            except ValueError as exc:
+                if "expansion ratio" not in str(exc):
+                    raise
+                expected = build_rle_reference(body)
+        else:
+            expected = build_rle_reference(body)
+        # Hold the same content lock used by GC from reservation through object
+        # storage and commit. This closes the window where GC could miss an
+        # uncommitted reservation and delete a concurrently uploaded object.
+        await lock_raster_mask_references(db, expected, verify=False)
+        try:
+            await reserve_raster_mask_upload(
+                db,
+                task_id=task_id,
+                object_key=expected["object_key"],
+                limit=MAX_MASK_OBJECTS_PER_TASK,
+            )
+        except ValueError:
+            current = await _count_task_mask_references(db, task_id)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "mask_quota_exceeded",
+                    "limit": MAX_MASK_OBJECTS_PER_TASK,
+                    "current": current,
+                },
+            ) from None
+        try:
+            reference = (
+                await store_coco_rle_gzip(body)
+                if requested_storage == RLE_STORAGE_GZIP
+                else await store_coco_rle(body)
+            )
+        except Exception:
+            # Reservation and quota consumption are transactional. A storage
+            # failure must not leave a phantom owner row.
+            await db.rollback()
+            raise
+        if reference["object_key"] != expected["object_key"]:
+            raise RuntimeError("mask storage selection changed after reservation")
+        await db.commit()
+        return reference
+    except HTTPException:
+        raise
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

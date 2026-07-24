@@ -35,8 +35,10 @@ def client(tmp_path_factory):
     # main 已被其他测试 import 过, 用 importlib.reload 让 env 重新生效.
     import importlib
     import main
+
     main = importlib.reload(main)
     from fastapi.testclient import TestClient
+
     with TestClient(main.app) as c:
         yield c
 

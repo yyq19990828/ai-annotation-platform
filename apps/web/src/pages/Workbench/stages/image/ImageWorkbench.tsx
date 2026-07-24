@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
@@ -13,11 +13,20 @@ import type { Viewport } from "../../state/useViewportTransform";
 import type { KeypointDraftHandle, PolygonDraftHandle } from "../../stage/tools";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../../stage/imageStageContextMenu";
+import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
+import type { RasterMaskRecordStatus } from "../../stage/shared/useRasterMaskRecords";
+import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  maskCompareStore?: MaskCompareTileStore | null;
+  rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
+  rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask: (id: string) => void;
+  editingRasterMaskId?: string | null;
+  maskReadOnly?: boolean;
   readOnly: boolean;
   fileUrl: string | null;
   mediaKey?: string | null;
@@ -58,10 +67,12 @@ export interface ImageWorkbenchProps {
   onCommitRotatedBbox: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle。 */
   onCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
-  onSamPrompt: (prompt:
-    | { kind: "point"; pt: [number, number]; alt: boolean }
-    | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
+  onSamPrompt: (
+    prompt:
+      | { kind: "point"; pt: [number, number]; alt: boolean }
+      | { kind: "bbox"; bbox: [number, number, number, number] }
+      | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
+      | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean },
   ) => void;
   samCandidates: {
     id: string;
@@ -69,9 +80,16 @@ export interface ImageWorkbenchProps {
     points?: [number, number][];
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
+  samMaskRecords: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate: (candidateId: string) => void;
   samActiveIdx: number;
   /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传画布 overlay。 */
   samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionScribbles: {
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[];
   /** v0.18.19 · exemplar refine 会话已落的正/负框, 透传画布 overlay。 */
   samSessionExemplars: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
   /** v0.10.2 · 派生自 tool, 非 AI 工具时为 null. */
@@ -84,7 +102,11 @@ export interface ImageWorkbenchProps {
     childMoves?: { id: string; before: Geometry; after: Geometry }[],
   ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
-  onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  onCommitPolygonGeometry: (
+    id: string,
+    before: [number, number][],
+    after: [number, number][],
+  ) => void;
   onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onChangeUserBoxClass: (id: string) => void;
@@ -126,6 +148,12 @@ export interface ImageWorkbenchProps {
 }
 
 export function ImageWorkbench({
+  maskCompareStore,
+  rasterMaskRecords,
+  rasterMaskStatusById,
+  onRetryRasterMask,
+  editingRasterMaskId,
+  maskReadOnly,
   readOnly,
   fileUrl,
   mediaKey,
@@ -161,8 +189,11 @@ export function ImageWorkbench({
   onCommitRotateBbox,
   onSamPrompt,
   samCandidates,
+  samMaskRecords,
+  onSelectSamMaskCandidate,
   samActiveIdx,
   samSessionPoints,
+  samSessionScribbles,
   samSessionExemplars,
   samSubTool,
   samPolarity,
@@ -204,23 +235,64 @@ export function ImageWorkbench({
   issuePinDropArmed,
   onIssuePinDrop,
 }: ImageWorkbenchProps) {
+  const displayedRasterMaskRecords = useMemo(() => {
+    const hiddenIds = new Set(
+      userBoxes.filter((annotation) => annotation.is_hidden).map((annotation) => annotation.id),
+    );
+    return rasterMaskRecords
+      .filter((record) => !hiddenIds.has(record.id) && record.id !== editingRasterMaskId)
+      .sort((left, right) => left.zOrder - right.zOrder);
+  }, [editingRasterMaskId, rasterMaskRecords, userBoxes]);
+  const editingRasterMaskRecord = useMemo(
+    () =>
+      editingRasterMaskId
+        ? (rasterMaskRecords.find((record) => record.id === editingRasterMaskId) ?? null)
+        : null,
+    [editingRasterMaskId, rasterMaskRecords],
+  );
   // v0.21.11 · 图片焦点联动: 选中对象(键盘两级循环 / 点选)若出视口或过小则平移居中 + 适度放大。
   // 与视频同构, 由 common.focusSelectionEnabled gate; 默认关。用 ref 读最新盒集/几何,
   // effect 只在 selectedId 变化时跑(避免盒集逐次变身份触发重排)。
   const { config: focusConfig } = useWorkbenchConfig();
   const focusSelectionEnabled = focusConfig.common.focusSelectionEnabled;
-  const focusStateRef = useRef({ aiBoxes, userBoxes, stageGeom, setVp });
-  focusStateRef.current = { aiBoxes, userBoxes, stageGeom, setVp };
+  const focusStateRef = useRef({
+    aiBoxes,
+    userBoxes,
+    stageGeom,
+    setVp,
+    rasterMaskStatusById,
+  });
+  focusStateRef.current = {
+    aiBoxes,
+    userBoxes,
+    stageGeom,
+    setVp,
+    rasterMaskStatusById,
+  };
+  const selectedRasterMaskStatus = selectedId ? rasterMaskStatusById.get(selectedId) : undefined;
+  const selectedRasterMaskFocusRevision =
+    selectedRasterMaskStatus?.state === "ready"
+      ? selectedRasterMaskStatus.cacheKey
+      : (selectedRasterMaskStatus?.state ?? null);
   useEffect(() => {
     if (!focusSelectionEnabled || !selectedId) return;
-    const { aiBoxes: ai, userBoxes: users, stageGeom: geom, setVp: setViewport } = focusStateRef.current;
+    const {
+      aiBoxes: ai,
+      userBoxes: users,
+      stageGeom: geom,
+      setVp: setViewport,
+      rasterMaskStatusById,
+    } = focusStateRef.current;
     const { imgW, imgH, vpSize } = geom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
     const box = ai.find((b) => b.id === selectedId) ?? users.find((b) => b.id === selectedId);
     if (!box) return;
-    const cx = (box.x + box.w / 2) * imgW;
-    const cy = (box.y + box.h / 2) * imgH;
-    const objMaxDimPx = Math.max(box.w * imgW, box.h * imgH, 1);
+    const maskStatus = rasterMaskStatusById.get(box.id);
+    if (box.geometry?.type === "raster_mask" && maskStatus?.state !== "ready") return;
+    const bounds = maskStatus?.state === "ready" ? maskStatus.bounds : box;
+    const cx = (bounds.x + bounds.w / 2) * imgW;
+    const cy = (bounds.y + bounds.h / 2) * imgH;
+    const objMaxDimPx = Math.max(bounds.w * imgW, bounds.h * imgH, 1);
     setViewport((cur) => {
       let scale = cur.scale;
       if (objMaxDimPx * scale < 48) scale = clampScale(140 / objMaxDimPx);
@@ -228,15 +300,23 @@ export function ImageWorkbench({
       const screenCx = cx * scale + cur.tx;
       const screenCy = cy * scale + cur.ty;
       const outOfView =
-        screenCx < margin || screenCx > vpSize.w - margin ||
-        screenCy < margin || screenCy > vpSize.h - margin;
+        screenCx < margin ||
+        screenCx > vpSize.w - margin ||
+        screenCy < margin ||
+        screenCy > vpSize.h - margin;
       if (!outOfView && scale === cur.scale) return cur;
       return { scale, tx: vpSize.w / 2 - cx * scale, ty: vpSize.h / 2 - cy * scale };
     });
-  }, [focusSelectionEnabled, selectedId]);
+  }, [focusSelectionEnabled, selectedId, selectedRasterMaskFocusRevision]);
 
   return (
     <ImageStage
+      maskCompareStore={maskCompareStore}
+      rasterMaskRecords={displayedRasterMaskRecords}
+      tiledMaskOverviewRecord={editingRasterMaskRecord}
+      rasterMaskStatusById={rasterMaskStatusById}
+      onRetryRasterMask={onRetryRasterMask}
+      maskReadOnly={maskReadOnly || !!maskEditor?.tiledReadOnly}
       readOnly={readOnly}
       fileUrl={fileUrl}
       mediaKey={mediaKey}
@@ -270,8 +350,11 @@ export function ImageWorkbench({
       onCommitRotateBbox={onCommitRotateBbox}
       onSamPrompt={onSamPrompt}
       samCandidates={samCandidates}
+      samMaskRecords={samMaskRecords}
+      onSelectSamMaskCandidate={onSelectSamMaskCandidate}
       samActiveIdx={samActiveIdx}
       samSessionPoints={samSessionPoints}
+      samSessionScribbles={samSessionScribbles}
       samSessionExemplars={samSessionExemplars}
       samSubTool={samSubTool}
       samPolarity={samPolarity}

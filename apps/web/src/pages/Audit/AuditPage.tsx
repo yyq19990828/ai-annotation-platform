@@ -19,11 +19,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { useUsers } from "@/hooks/useUsers";
 import { auditApi } from "@/api/audit";
-import {
-  AUDIT_BUSINESS_ACTIONS,
-  AUDIT_TARGET_TYPES,
-  auditActionLabel,
-} from "@/utils/auditLabels";
+import { AUDIT_BUSINESS_ACTIONS, AUDIT_TARGET_TYPES, auditActionLabel } from "@/utils/auditLabels";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { AuditLogResponse } from "@/api/audit";
 import type { UserRole } from "@/types";
@@ -61,11 +57,8 @@ export function AuditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams.toString()]);
 
-  const focused =
-    !!actorId || !!targetId || !!targetType || !!actionFilter || !!detailKey;
-  const focusedActor = actorId
-    ? usersData.find((u) => u.id === actorId)
-    : null;
+  const focused = !!actorId || !!targetId || !!targetType || !!actionFilter || !!detailKey;
+  const focusedActor = actorId ? usersData.find((u) => u.id === actorId) : null;
 
   const clearFocus = () => {
     setSearchParams({}, { replace: true });
@@ -103,7 +96,11 @@ export function AuditPage() {
       await auditApi.export(params, format);
       pushToast({ msg: `已导出审计日志 ${format.toUpperCase()}`, kind: "success" });
     } catch (err) {
-      pushToast({ msg: "导出失败", sub: err instanceof Error ? err.message : String(err), kind: "error" });
+      pushToast({
+        msg: "导出失败",
+        sub: err instanceof Error ? err.message : String(err),
+        kind: "error",
+      });
     } finally {
       setExporting(false);
     }
@@ -190,7 +187,8 @@ export function AuditPage() {
   const toggleGroup = (id: string) => {
     setExpandedReqIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -215,13 +213,16 @@ export function AuditPage() {
             30s 自动刷新
           </label>
           <Button onClick={() => handleExport("csv")} disabled={exporting}>
-            <Icon name="download" size={12} />CSV
+            <Icon name="download" size={12} />
+            CSV
           </Button>
           <Button onClick={() => handleExport("json")} disabled={exporting}>
-            <Icon name="download" size={12} />JSON
+            <Icon name="download" size={12} />
+            JSON
           </Button>
           <Button onClick={() => refetch()}>
-            <Icon name="refresh" size={12} />刷新
+            <Icon name="refresh" size={12} />
+            刷新
           </Button>
         </div>
       </header>
@@ -239,42 +240,78 @@ export function AuditPage() {
             <option value="business">仅业务事件</option>
             <option value="all">全部（含 HTTP 元数据）</option>
           </select>
-          <select value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} className={styles.control}>
+          <select
+            value={actionFilter}
+            onChange={(e) => {
+              setActionFilter(e.target.value);
+              setPage(1);
+            }}
+            className={styles.control}
+          >
             <option value="">全部动作</option>
             {AUDIT_BUSINESS_ACTIONS.map((a) => (
-              <option key={a} value={a}>{auditActionLabel(a)}</option>
+              <option key={a} value={a}>
+                {auditActionLabel(a)}
+              </option>
             ))}
           </select>
-          <select value={targetType} onChange={(e) => { setTargetType(e.target.value); setPage(1); }} className={styles.control}>
+          <select
+            value={targetType}
+            onChange={(e) => {
+              setTargetType(e.target.value);
+              setPage(1);
+            }}
+            className={styles.control}
+          >
             <option value="">全部对象</option>
             {AUDIT_TARGET_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t} value={t}>
+                {t}
+              </option>
             ))}
           </select>
-          <select value={actorId} onChange={(e) => { setActorId(e.target.value); setPage(1); }} className={`${styles.control} ${styles.actorControl}`}>
+          <select
+            value={actorId}
+            onChange={(e) => {
+              setActorId(e.target.value);
+              setPage(1);
+            }}
+            className={`${styles.control} ${styles.actorControl}`}
+          >
             <option value="">全部用户</option>
             {usersData.map((u) => (
-              <option key={u.id} value={u.id}>{u.name} · {u.email}</option>
+              <option key={u.id} value={u.id}>
+                {u.name} · {u.email}
+              </option>
             ))}
           </select>
           <input
             value={targetId}
             placeholder="对象 ID（精确匹配）"
-            onChange={(e) => { setTargetId(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setTargetId(e.target.value);
+              setPage(1);
+            }}
             className={`${styles.control} ${styles.targetInput}`}
           />
           <input
             value={detailKey}
             placeholder="detail 键名（如 role）"
             title="A.3：detail_json 字段级 GIN 过滤——键名"
-            onChange={(e) => { setDetailKey(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setDetailKey(e.target.value);
+              setPage(1);
+            }}
             className={`${styles.control} ${styles.detailKeyInput}`}
           />
           <input
             value={detailValue}
             placeholder="detail 键值（如 super_admin）"
             title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
-            onChange={(e) => { setDetailValue(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setDetailValue(e.target.value);
+              setPage(1);
+            }}
             disabled={!detailKey}
             className={`${styles.control} ${styles.detailValueInput} ${detailKey ? "" : styles.controlDisabled}`}
           />
@@ -289,20 +326,35 @@ export function AuditPage() {
               <Icon name="target" size={13} className={styles.accentIcon} />
               <span className={styles.mutedText}>追溯模式：</span>
               {focusedActor && (
-                <SmallBadge>操作人 {focusedActor.name} · {focusedActor.email}</SmallBadge>
+                <SmallBadge>
+                  操作人 {focusedActor.name} · {focusedActor.email}
+                </SmallBadge>
               )}
               {!focusedActor && actorId && (
-                <SmallBadge>actor_id = <span className="mono">{actorId.slice(0, 8)}…</span></SmallBadge>
+                <SmallBadge>
+                  actor_id = <span className="mono">{actorId.slice(0, 8)}…</span>
+                </SmallBadge>
               )}
               {targetType && <SmallBadge>对象类型 {targetType}</SmallBadge>}
-              {targetId && <SmallBadge>对象 ID <span className="mono">{targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}</span></SmallBadge>}
+              {targetId && (
+                <SmallBadge>
+                  对象 ID{" "}
+                  <span className="mono">
+                    {targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}
+                  </span>
+                </SmallBadge>
+              )}
               {actionFilter && <SmallBadge>动作 {actionFilter}</SmallBadge>}
               {detailKey && (
-                <SmallBadge>detail.{detailKey}{detailValue ? ` = ${detailValue}` : ""}</SmallBadge>
+                <SmallBadge>
+                  detail.{detailKey}
+                  {detailValue ? ` = ${detailValue}` : ""}
+                </SmallBadge>
               )}
             </div>
             <Button size="sm" variant="ghost" onClick={clearFocus}>
-              <Icon name="x" size={11} />清除追溯
+              <Icon name="x" size={11} />
+              清除追溯
             </Button>
           </div>
         )}
@@ -310,20 +362,17 @@ export function AuditPage() {
         {/* v0.6.6 · 按 request_id 折叠为单行 + ▸ 展开；virtualized 容器 */}
         <div className={styles.tableHeader}>
           {["", "时间", "操作人", "动作", "对象", "IP", "状态", ""].map((h, i) => (
-            <div key={i} className={styles.headerCell}>{h}</div>
+            <div key={i} className={styles.headerCell}>
+              {h}
+            </div>
           ))}
         </div>
 
-        <div
-          ref={tableContainerRef}
-          className={styles.tableViewport}
-        >
+        <div ref={tableContainerRef} className={styles.tableViewport}>
           {(isLoading || isFetching) && flatRows.length === 0 && (
             <div className={styles.emptyState}>加载中...</div>
           )}
-          {!isLoading && flatRows.length === 0 && (
-            <div className={styles.emptyState}>暂无记录</div>
-          )}
+          {!isLoading && flatRows.length === 0 && <div className={styles.emptyState}>暂无记录</div>}
           <VirtualSizer height={virtualizer.getTotalSize()}>
             {virtualizer.getVirtualItems().map((virt) => {
               const row = flatRows[virt.index];
@@ -361,7 +410,10 @@ export function AuditPage() {
                         {it.actor_id ? (
                           <button
                             type="button"
-                            onClick={() => { setActorId(it.actor_id!); setPage(1); }}
+                            onClick={() => {
+                              setActorId(it.actor_id!);
+                              setPage(1);
+                            }}
                             title="按操作人追溯"
                             className={styles.focusButton}
                           >
@@ -372,9 +424,9 @@ export function AuditPage() {
                         )}
                         {it.actor_role && (
                           <span className={styles.tinyBadge}>
-                          <Badge variant="outline">
-                            {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
-                          </Badge>
+                            <Badge variant="outline">
+                              {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
+                            </Badge>
                           </span>
                         )}
                       </div>
@@ -410,12 +462,12 @@ export function AuditPage() {
                       "—"
                     )}
                   </div>
-                  <div className={styles.ipCell}>
-                    {it.ip ?? "—"}
-                  </div>
+                  <div className={styles.ipCell}>{it.ip ?? "—"}</div>
                   <div className={styles.cell}>{statusBadge(it.status_code)}</div>
                   <div className={styles.detailCell}>
-                    <Button size="sm" variant="ghost" onClick={() => setDetail(it)}>详情</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setDetail(it)}>
+                      详情
+                    </Button>
                   </div>
                 </VirtualAuditRow>
               );
@@ -425,10 +477,12 @@ export function AuditPage() {
 
         <div className={styles.pagination}>
           <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            <Icon name="chevLeft" size={11} />上一页
+            <Icon name="chevLeft" size={11} />
+            上一页
           </Button>
           <Button size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
-            下一页<Icon name="chevRight" size={11} />
+            下一页
+            <Icon name="chevRight" size={11} />
           </Button>
         </div>
       </Card>
@@ -473,14 +527,20 @@ export function AuditPage() {
             <KV label="时间" value={new Date(detail.created_at).toLocaleString("zh-CN")} />
             <KV label="操作人" value={detail.actor_email ?? "匿名"} mono />
             <KV label="动作" value={`${auditActionLabel(detail.action)} (${detail.action})`} />
-            <KV label="对象" value={`${detail.target_type ?? "-"} / ${detail.target_id ?? "-"}`} mono />
+            <KV
+              label="对象"
+              value={`${detail.target_type ?? "-"} / ${detail.target_id ?? "-"}`}
+              mono
+            />
             <KV label="HTTP" value={`${detail.method ?? "-"} ${detail.path ?? "-"}`} mono />
             <KV label="状态" value={String(detail.status_code ?? "-")} />
             <KV label="IP" value={detail.ip ?? "-"} mono />
             <div>
               <div className={styles.detailJsonLabel}>detail_json</div>
               <pre className={styles.detailJson}>
-                {detail.detail_json ? JSON.stringify(detail.detail_json, null, 2) : "(空 — 中间件元数据行)"}
+                {detail.detail_json
+                  ? JSON.stringify(detail.detail_json, null, 2)
+                  : "(空 — 中间件元数据行)"}
               </pre>
             </div>
           </div>
@@ -514,11 +574,17 @@ function SmallBadge({
   children: ReactNode;
   variant?: ComponentProps<typeof Badge>["variant"];
 }) {
-  return <Badge variant={variant} className={styles.smallBadge}>{children}</Badge>;
+  return (
+    <Badge variant={variant} className={styles.smallBadge}>
+      {children}
+    </Badge>
+  );
 }
 
 function VirtualSizer({ height, children }: { height: number; children: ReactNode }) {
-  const styleRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({ height }), [height]));
+  const styleRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(() => ({ height }), [height]),
+  );
   return (
     <div ref={styleRef} className={styles.virtualSizer}>
       {children}

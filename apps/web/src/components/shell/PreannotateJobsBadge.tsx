@@ -59,10 +59,7 @@ export function PreannotateJobsBadge() {
 
       {open && (
         <>
-          <div
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-notification-backdrop"
-          />
+          <div onClick={() => setOpen(false)} className="fixed inset-0 z-notification-backdrop" />
           <div
             role="dialog"
             aria-label="预标进行中"

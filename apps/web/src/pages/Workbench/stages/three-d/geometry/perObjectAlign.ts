@@ -74,11 +74,7 @@ export function alignNeighborPointsPerObject(
         boxAxisWorldDir(b.rotation, 1),
         boxAxisWorldDir(b.rotation, 2),
       ] as const,
-      half: [
-        b.size[0] / 2 + margin,
-        b.size[1] / 2 + margin,
-        b.size[2] / 2 + margin,
-      ] as const,
+      half: [b.size[0] / 2 + margin, b.size[1] / 2 + margin, b.size[2] / 2 + margin] as const,
       // T_obj = M_cur · inv(M_nbr):邻帧 ego 系目标点 → 当前 ego 系目标点。
       transform: cur
         ? boxToMatrix4(cur.center, cur.size, cur.rotation).multiply(

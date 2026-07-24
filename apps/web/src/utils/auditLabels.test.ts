@@ -14,6 +14,7 @@ describe("auditActionLabel", () => {
     expect(auditActionLabel("auth.login")).toBe("登录");
     expect(auditActionLabel("user.invite")).toBe("邀请用户");
     expect(auditActionLabel("project.delete")).toBe("删除项目");
+    expect(auditActionLabel("video_mask.keyframe_operate")).toBe("操作视频 Mask 关键帧");
   });
 
   it("未知 action → 原 action 串", () => {
@@ -29,6 +30,7 @@ describe("AUDIT_BUSINESS_ACTIONS / AUDIT_TARGET_TYPES", () => {
     // 仍包含核心业务动作
     expect(AUDIT_BUSINESS_ACTIONS).toContain("auth.login");
     expect(AUDIT_BUSINESS_ACTIONS).toContain("user.invite");
+    expect(AUDIT_BUSINESS_ACTIONS).toContain("video_tracker_job.decision");
   });
 
   it("AUDIT_ACTION_LABELS 包含 http.post / http.patch / http.put / http.delete", () => {
@@ -48,6 +50,7 @@ describe("AUDIT_BUSINESS_ACTIONS / AUDIT_TARGET_TYPES", () => {
       "system",
       "ml_backend",
       "bug_report",
+      "video_tracker_job",
     ]);
   });
 });

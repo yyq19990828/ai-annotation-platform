@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.annotation_feedback import AnnotationFeedback
+from app.db.models.mask_qc import MaskQCIssue
 from app.db.models.user import User
 from app.deps import assert_project_visible, get_db, require_roles
 from app.schemas.annotation_feedback import (
@@ -29,6 +30,7 @@ from app.schemas.annotation_feedback import (
 )
 from app.services.audit import AuditAction, AuditService
 from app.services.feedback import FeedbackService
+from app.services.mask_qc.service import effective_issue_status
 from app.services.user_brief import resolve_briefs
 
 router = APIRouter()
@@ -135,6 +137,40 @@ async def create_feedback(
     user: User = Depends(require_roles(*_ALL)),
 ):
     await assert_project_visible(payload.project_id, db, user)
+    anchor = payload.anchor_position
+    if anchor and anchor.mask_qc_issue_id:
+        issue = await db.get(MaskQCIssue, anchor.mask_qc_issue_id)
+        if issue is None:
+            raise HTTPException(status_code=404, detail="Mask QC issue not found")
+        expected_bbox = issue.region_bbox
+        expected_bbox_values = (
+            [
+                expected_bbox["x0"],
+                expected_bbox["y0"],
+                expected_bbox["x1"],
+                expected_bbox["y1"],
+            ]
+            if expected_bbox is not None
+            else None
+        )
+        actual_bbox = list(anchor.region_bbox) if anchor.region_bbox else None
+        if (
+            issue.project_id != payload.project_id
+            or issue.task_id != payload.task_id
+            or issue.annotation_id != payload.annotation_id
+            or issue.frame_start != anchor.frame
+            or issue.region_digest != anchor.region_digest
+            or actual_bbox != expected_bbox_values
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "mask_qc_feedback_anchor_conflict"},
+            )
+        if await effective_issue_status(db, issue) == "stale":
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "mask_qc_issue_stale"},
+            )
     svc = FeedbackService(db)
     entry = await svc.create(
         author_id=user.id,
@@ -144,7 +180,9 @@ async def create_feedback(
         task_id=payload.task_id,
         annotation_id=payload.annotation_id,
         anchor_position=(
-            payload.anchor_position.model_dump() if payload.anchor_position else None
+            payload.anchor_position.model_dump(mode="json")
+            if payload.anchor_position
+            else None
         ),
         severity=payload.severity,
         title=payload.title,
@@ -261,6 +299,14 @@ async def reply_feedback(
     if parent is None or not parent.is_active:
         raise HTTPException(status_code=404, detail="feedback not found")
     await assert_project_visible(parent.project_id, db, user)
+    mask_qc_issue_id = (parent.anchor_position or {}).get("mask_qc_issue_id")
+    if mask_qc_issue_id:
+        issue = await db.get(MaskQCIssue, uuid.UUID(str(mask_qc_issue_id)))
+        if issue is None or await effective_issue_status(db, issue) == "stale":
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "mask_qc_issue_stale"},
+            )
     svc = FeedbackService(db)
     # 子评论继承 parent 的 anchor; kind 强制为 comment.
     reply = await svc.create(

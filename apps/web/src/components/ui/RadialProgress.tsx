@@ -52,7 +52,9 @@ export function RadialProgress({
         )}
       >
         <span>{Math.round(value)}</span>
-        {label && <span className="mt-px text-micro font-normal text-muted-foreground">{label}</span>}
+        {label && (
+          <span className="mt-px text-micro font-normal text-muted-foreground">{label}</span>
+        )}
       </div>
     </div>
   );

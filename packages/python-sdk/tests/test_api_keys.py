@@ -21,7 +21,9 @@ KEY = {
 
 
 def test_list_keys(client, respx_mock):
-    respx_mock.get(f"{API}/me/api-keys").mock(return_value=httpx.Response(200, json=[KEY]))
+    respx_mock.get(f"{API}/me/api-keys").mock(
+        return_value=httpx.Response(200, json=[KEY])
+    )
     keys = client.api_keys.list()
     assert isinstance(keys[0], ApiKey)
     assert keys[0].key_prefix == "ak_abc1"
@@ -32,7 +34,10 @@ def test_create_key_returns_plaintext_once(client, respx_mock):
         return_value=httpx.Response(201, json={**KEY, "plaintext": "ak_abc1xyz"})
     )
     created = client.api_keys.create("ci", scopes=["read"])
-    assert json.loads(route.calls.last.request.content) == {"name": "ci", "scopes": ["read"]}
+    assert json.loads(route.calls.last.request.content) == {
+        "name": "ci",
+        "scopes": ["read"],
+    }
     assert isinstance(created, ApiKeyCreated)
     assert created.plaintext == "ak_abc1xyz"
 
@@ -61,7 +66,9 @@ def test_rotate_key(client, respx_mock):
 
 def test_update_key(client, respx_mock):
     route = respx_mock.patch(f"{API}/me/api-keys/{KEY_ID}").mock(
-        return_value=httpx.Response(200, json={**KEY, "name": "renamed", "scopes": ["*"]})
+        return_value=httpx.Response(
+            200, json={**KEY, "name": "renamed", "scopes": ["*"]}
+        )
     )
     out = client.api_keys.update(KEY_ID, name="renamed", scopes=["*"])
     assert json.loads(route.calls.last.request.content) == {

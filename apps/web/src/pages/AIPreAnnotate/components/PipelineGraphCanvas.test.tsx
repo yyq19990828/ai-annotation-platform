@@ -21,7 +21,12 @@ beforeAll(() => {
 });
 
 const attr = (): PipelineStagePayload =>
-  ({ stage: 0, ml_backend_id: "bk", write: { target: "attributes", keys: ["color"] }, label: "hat" }) as PipelineStagePayload;
+  ({
+    stage: 0,
+    ml_backend_id: "bk",
+    write: { target: "attributes", keys: ["color"] },
+    label: "hat",
+  }) as PipelineStagePayload;
 
 const models: GraphNodeModel[] = [
   {

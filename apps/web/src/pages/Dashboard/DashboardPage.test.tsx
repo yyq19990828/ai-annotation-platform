@@ -35,16 +35,24 @@ vi.mock("@/stores/authStore", () => ({
 }));
 
 vi.mock("@/components/projects/CreateProjectWizard", () => ({
-  CreateProjectWizard: ({ open }: OpenModalProps) => (open ? <div data-testid="cp-wizard" /> : null),
+  CreateProjectWizard: ({ open }: OpenModalProps) =>
+    open ? <div data-testid="cp-wizard" /> : null,
 }));
 
 vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
-  ImportDatasetWizard: ({ open }: OpenModalProps) => (open ? <div data-testid="id-wizard" /> : null),
+  ImportDatasetWizard: ({ open }: OpenModalProps) =>
+    open ? <div data-testid="id-wizard" /> : null,
 }));
 
 vi.mock("./FilterDrawer", () => ({
   FilterDrawer: () => null,
-  EMPTY_FILTERS: { data_type: [], member_id: undefined, created_from: undefined, created_to: undefined, status: undefined },
+  EMPTY_FILTERS: {
+    data_type: [],
+    member_id: undefined,
+    created_from: undefined,
+    created_to: undefined,
+    status: undefined,
+  },
 }));
 
 vi.mock("./ProjectGrid", () => ({
@@ -65,9 +73,8 @@ vi.mock("@/utils/workbenchNavigation", () => ({
 }));
 
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>(
-    "@/components/ui/Toast",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>
@@ -91,9 +98,7 @@ describe("DashboardPage", () => {
   beforeEach(() => {
     mockPushToast.mockReset();
     mockBuildWorkbenchUrl.mockClear();
-    mockAuthStore.mockImplementation(<T,>(sel: (s: MockAuthState) => T) =>
-      sel({ user: baseUser }),
-    );
+    mockAuthStore.mockImplementation(<T,>(sel: (s: MockAuthState) => T) => sel({ user: baseUser }));
     mockUseProjectStats.mockReturnValue({ data: undefined });
     mockUseAuditLogs.mockReturnValue({ data: { items: [] } });
     mockUseProjects.mockReturnValue({ data: [], isLoading: false });
@@ -229,14 +234,19 @@ describe("DashboardPage", () => {
     mockUseAuditLogs.mockReturnValue({
       data: {
         items: [
-          { id: "2", action: "user.login", actor_email: "b@x.com", target_type: "user", target_id: "u2", created_at: new Date().toISOString() },
+          {
+            id: "2",
+            action: "user.login",
+            actor_email: "b@x.com",
+            target_type: "user",
+            target_id: "u2",
+            created_at: new Date().toISOString(),
+          },
         ],
       },
     });
     renderUI();
-    expect(mockUseAuditLogs).toHaveBeenCalledWith(
-      expect.objectContaining({ business_only: true }),
-    );
+    expect(mockUseAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ business_only: true }));
     expect(screen.getByText("b@x.com")).toBeInTheDocument();
   });
 

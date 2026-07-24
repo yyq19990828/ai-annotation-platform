@@ -75,8 +75,19 @@ def synthetic_masks(height: int, width: int) -> list[tuple[str, np.ndarray]]:
     y, x = np.ogrid[:height, :width]
     rng = np.random.default_rng(220)
     return [
-        ("rectangle", (x > width * 0.2) & (x < width * 0.8) & (y > height * 0.2) & (y < height * 0.8)),
-        ("ellipse", ((x - width / 2) / (width * 0.35)) ** 2 + ((y - height / 2) / (height * 0.3)) ** 2 < 1),
+        (
+            "rectangle",
+            (x > width * 0.2)
+            & (x < width * 0.8)
+            & (y > height * 0.2)
+            & (y < height * 0.8),
+        ),
+        (
+            "ellipse",
+            ((x - width / 2) / (width * 0.35)) ** 2
+            + ((y - height / 2) / (height * 0.3)) ** 2
+            < 1,
+        ),
         ("checkerboard", (x + y) % 2 == 0),
         ("noise_50pct", rng.random((height, width)) >= 0.5),
     ]
@@ -96,7 +107,9 @@ def benchmark() -> dict:
         for name, image in real_sources:
             resized = image.resize((width, height), Image.Resampling.NEAREST)
             masks.append((name, np.asarray(resized) > 0, "real_sam"))
-        masks.extend((name, mask, "synthetic") for name, mask in synthetic_masks(height, width))
+        masks.extend(
+            (name, mask, "synthetic") for name, mask in synthetic_masks(height, width)
+        )
         for name, mask, source in masks:
             counts = encode_numpy(mask)
             rle = {"encoding": "coco_rle", "size": [height, width], "counts": counts}
@@ -121,13 +134,15 @@ def benchmark() -> dict:
             }
             samples.append(row)
             if accepted and source == "real_sam" and resolution in {"1080p", "4k"}:
-                node_samples.append({
-                    "name": name,
-                    "resolution": resolution,
-                    "width": width,
-                    "height": height,
-                    "rle": rle,
-                })
+                node_samples.append(
+                    {
+                        "name": name,
+                        "resolution": resolution,
+                        "width": width,
+                        "height": height,
+                        "rle": rle,
+                    }
+                )
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump({"samples": node_samples}, handle, separators=(",", ":"))
@@ -149,18 +164,43 @@ def benchmark() -> dict:
     finally:
         os.unlink(node_input)
 
-    real_1080 = [row for row in samples if row["source"] == "real_sam" and row["resolution"] == "1080p"]
+    real_1080 = [
+        row
+        for row in samples
+        if row["source"] == "real_sam" and row["resolution"] == "1080p"
+    ]
     p95_rle_bytes = percentile([row["rle_json_bytes"] for row in real_1080], 0.95)
-    sample_rle = next(row for row in node_samples if len(compact_bytes(row["rle"])) == p95_rle_bytes)["rle"]
+    sample_rle = next(
+        row for row in node_samples if len(compact_bytes(row["rle"])) == p95_rle_bytes
+    )["rle"]
     keyframes = [
-        {"frame_index": index, "mask": sample_rle, "source": "prediction", "occluded": False, "attributes": None}
+        {
+            "frame_index": index,
+            "mask": sample_rle,
+            "source": "prediction",
+            "occluded": False,
+            "attributes": None,
+        }
         for index in range(30)
     ]
-    geometry_30 = {"type": "video_track_mask", "track_id": "benchmark", "semantic_label": None, "keyframes": keyframes, "outside": []}
-    staged_30x10 = {"output_geometry": "mask", "instances": [{"instance_id": str(index), "geometry": geometry_30} for index in range(10)]}
+    geometry_30 = {
+        "type": "video_track_mask",
+        "track_id": "benchmark",
+        "semantic_label": None,
+        "keyframes": keyframes,
+        "outside": [],
+    }
+    staged_30x10 = {
+        "output_geometry": "mask",
+        "instances": [
+            {"instance_id": str(index), "geometry": geometry_30} for index in range(10)
+        ],
+    }
     geometry_30_bytes = len(compact_bytes(geometry_30))
     staged_30x10_raw = compact_bytes(staged_30x10)
-    per_keyframe = (geometry_30_bytes - len(compact_bytes({**geometry_30, "keyframes": []}))) / 30
+    per_keyframe = (
+        geometry_30_bytes - len(compact_bytes({**geometry_30, "keyframes": []}))
+    ) / 30
     projections = {
         "real_1080p_p95_rle_json_bytes": p95_rle_bytes,
         "actual_geometry_30x1_json_bytes": geometry_30_bytes,
@@ -170,8 +210,10 @@ def benchmark() -> dict:
         "projected_staged_300x10_json_bytes": round(per_keyframe * 300 * 10),
     }
     gate = {
-        "inline_geometry_pass": projections["projected_geometry_3000x1_json_bytes"] <= GEOMETRY_LIMIT,
-        "inline_staged_pass": projections["projected_staged_300x10_json_bytes"] <= STAGED_LIMIT,
+        "inline_geometry_pass": projections["projected_geometry_3000x1_json_bytes"]
+        <= GEOMETRY_LIMIT,
+        "inline_staged_pass": projections["projected_staged_300x10_json_bytes"]
+        <= STAGED_LIMIT,
     }
     node_1080 = [row["p95_ms"] for row in node["rows"] if row["resolution"] == "1080p"]
     node_4k = [row["p95_ms"] for row in node["rows"] if row["resolution"] == "4k"]
@@ -180,7 +222,9 @@ def benchmark() -> dict:
     gate["decision"] = "inline" if all(gate.values()) else "coco_rle_ref"
     return {
         "metadata": {
-            "git_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+            "git_sha": subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+            ).strip(),
             "python": platform.python_version(),
             "node": node["node"],
             "os": platform.platform(),
@@ -190,7 +234,11 @@ def benchmark() -> dict:
             "node_iterations": 7,
             "byte_definition": "UTF-8 compact JSON with ensure_ascii=false and separators comma/colon",
         },
-        "limits": {"max_runs": MAX_RUNS, "geometry_bytes": GEOMETRY_LIMIT, "staged_bytes": STAGED_LIMIT},
+        "limits": {
+            "max_runs": MAX_RUNS,
+            "geometry_bytes": GEOMETRY_LIMIT,
+            "staged_bytes": STAGED_LIMIT,
+        },
         "samples": samples,
         "node_decode": node["rows"],
         "projections": projections,
@@ -237,27 +285,47 @@ def render_report(result: dict) -> str:
             f"| {row['resolution']} | {row['name']} | {row['runs']:,} | {row['rle_json_bytes']:,} | "
             f"{row['gzip_bytes']:,} | {row['python_decode_p95_ms']:.2f} |"
         )
-    lines.extend(["", "## Node decode", "", "| Resolution | Sample | p50 ms | p95 ms |", "|---|---|---:|---:|"])
+    lines.extend(
+        [
+            "",
+            "## Node decode",
+            "",
+            "| Resolution | Sample | p50 ms | p95 ms |",
+            "|---|---|---:|---:|",
+        ]
+    )
     for row in result["node_decode"]:
-        lines.append(f"| {row['resolution']} | {row['name']} | {row['p50_ms']:.2f} | {row['p95_ms']:.2f} |")
-    lines.extend([
-        "",
-        "## Reproduction metadata",
-        "",
-        "```json",
-        json.dumps(result["metadata"], ensure_ascii=False, indent=2),
-        "```",
-        "",
-        "Synthetic checkerboard and seeded 50% noise are retained in the raw JSON as adversarial cases. "
-        "Combinations above 30 x 10 are projected rather than materialized to avoid benchmark-induced OOM.",
-    ])
+        lines.append(
+            f"| {row['resolution']} | {row['name']} | {row['p50_ms']:.2f} | {row['p95_ms']:.2f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Reproduction metadata",
+            "",
+            "```json",
+            json.dumps(result["metadata"], ensure_ascii=False, indent=2),
+            "```",
+            "",
+            "Synthetic checkerboard and seeded 50% noise are retained in the raw JSON as adversarial cases. "
+            "Combinations above 30 x 10 are projected rather than materialized to avoid benchmark-induced OOM.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json", type=Path, default=ROOT / "docs/research/data/16-raster-mask-rle-benchmark.json")
-    parser.add_argument("--report", type=Path, default=ROOT / "docs/research/16-raster-mask-rle-benchmark.md")
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=ROOT / "docs/research/data/16-raster-mask-rle-benchmark.json",
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=ROOT / "docs/research/16-raster-mask-rle-benchmark.md",
+    )
     args = parser.parse_args()
     result = benchmark()
     args.json.parent.mkdir(parents=True, exist_ok=True)

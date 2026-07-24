@@ -52,7 +52,8 @@ const finalLinks = [
         <h2>BUILD<br />BETTER<br />DATA.</h2>
         <div class="final-actions">
           <a v-for="l in finalLinks" :key="l.cta" class="final-link" :href="l.href">
-            <span>{{ l.label }}</span><b>{{ l.cta }}</b>
+            <span>{{ l.label }}</span
+            ><b>{{ l.cta }}</b>
           </a>
         </div>
       </div>

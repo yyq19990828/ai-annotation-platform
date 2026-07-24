@@ -60,10 +60,7 @@ export function ProjectBindingsSection({ scope }: { scope: RegistryScope }): Rea
       const pools = vm.pools.filter((pool) =>
         pool.members.some((m) => backendIds.has(m.registry_id)),
       );
-      const routableCount = pools.reduce(
-        (sum, pool) => sum + pool.availability.routable,
-        0,
-      );
+      const routableCount = pools.reduce((sum, pool) => sum + pool.availability.routable, 0);
       // Primary pool heuristic: first pool by routable desc. The authoritative
       // primary lives server-side; we surface this as a display hint.
       const primaryPool =
@@ -94,13 +91,7 @@ export function ProjectBindingsSection({ scope }: { scope: RegistryScope }): Rea
   }, [overview, vm.pools]);
 
   if (!overview) {
-    return (
-      <EmptyState
-        icon="folder"
-        message="项目绑定概览不可用"
-        hint="仅超级管理员可见。"
-      />
-    );
+    return <EmptyState icon="folder" message="项目绑定概览不可用" hint="仅超级管理员可见。" />;
   }
 
   if (overview.projects.length === 0 && vm.pools.length === 0) {
@@ -152,9 +143,7 @@ export function ProjectBindingsSection({ scope }: { scope: RegistryScope }): Rea
             {projectBindings.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6}>
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    暂无项目绑定
-                  </div>
+                  <div className="p-6 text-center text-sm text-muted-foreground">暂无项目绑定</div>
                 </TableCell>
               </TableRow>
             )}
@@ -183,9 +172,7 @@ export function ProjectBindingsSection({ scope }: { scope: RegistryScope }): Rea
 
 function ProjectBindingRow({ binding }: { binding: ProjectBinding }): ReactNode {
   const hasRisk =
-    binding.hasEnabledBackend &&
-    binding.routableCount === 0 &&
-    binding.pools.length > 0;
+    binding.hasEnabledBackend && binding.routableCount === 0 && binding.pools.length > 0;
   const noPoolButEnabled = binding.hasEnabledBackend && binding.pools.length === 0;
   return (
     <TableRow>
@@ -258,9 +245,7 @@ function PoolBindingRow({ binding }: { binding: PoolBinding }): ReactNode {
       </TableCell>
       <TableCell>
         <span className="text-sm">
-          <span className="text-status-positive">
-            {binding.pool.availability.routable}
-          </span>
+          <span className="text-status-positive">{binding.pool.availability.routable}</span>
           <span className="text-muted-foreground"> / {binding.pool.availability.total}</span>
         </span>
       </TableCell>

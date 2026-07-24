@@ -68,8 +68,12 @@ class SAM3MultiplexVideoTracker:
     close_session 释放, 模型权重留给下个 job 复用 (由 main.py 持有/idle 卸载)。
     """
 
-    def __init__(self, *, use_fa3: bool = _USE_FA3,
-                 max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES) -> None:
+    def __init__(
+        self,
+        *,
+        use_fa3: bool = _USE_FA3,
+        max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES,
+    ) -> None:
         self.max_window_frames = max_window_frames
         self.device = require_gpu_device("cuda")
         self.active_sessions = 0
@@ -83,8 +87,11 @@ class SAM3MultiplexVideoTracker:
 
         if not os.path.isfile(_VIDEO_CKPT):
             raise FileNotFoundError(_VIDEO_CKPT)
-        logger.info("building sam3 multiplex video predictor ckpt=%s use_fa3=%s",
-                    _VIDEO_CKPT, use_fa3)
+        logger.info(
+            "building sam3 multiplex video predictor ckpt=%s use_fa3=%s",
+            _VIDEO_CKPT,
+            use_fa3,
+        )
         # max_num_objects / multiplex_count 锁定 16 (checkpoint 按此训练, 调小会
         # state_dict 形状不匹配加载失败)——不暴露为可调项。
         # vendor builder 无 device= 形参且内部硬绑 CUDA；SAM3 本期明确为 GPU-only。
@@ -154,7 +161,7 @@ class SAM3MultiplexVideoTracker:
         text: 文本 query (必填; SAM3 每帧按此检测目标)。
         seed_bbox: 首个归一化 {x,y,w,h}; 用于选择主实例。
         seed_bboxes: 上一分窗逐实例续追框；与 text 一起作为种子帧正框提示。
-        output_geometry: "polygon"→mask 矢量化多边形; 否则 mask 外接框 bbox。
+        output_geometry: "mask"→原生 RLE；"polygon"→矢量化多边形；否则取外接框 bbox。
         """
         if not text or not text.strip():
             raise ValueError("sam3_video tracker requires non-empty text query")
@@ -206,13 +213,10 @@ class SAM3MultiplexVideoTracker:
             )
             if seed_bboxes:
                 prompt_request["bounding_boxes"] = [
-                    [bbox["x"], bbox["y"], bbox["w"], bbox["h"]]
-                    for bbox in seed_bboxes
+                    [bbox["x"], bbox["y"], bbox["w"], bbox["h"]] for bbox in seed_bboxes
                 ]
                 prompt_request["bounding_box_labels"] = [1] * len(seed_bboxes)
-            seed_out = self._predictor.handle_request(
-                prompt_request
-            )["outputs"]
+            seed_out = self._predictor.handle_request(prompt_request)["outputs"]
             # v0.21.28 · B-mx · 多目标批量吐: 不再 _pick_target_obj 收敛单目标, 逐帧把**全部**
             # 检测对象各出一条结果 (instance_id = 窗内 obj_id)。仅在种子帧挑出与 seed_bbox /
             # 最高分对应的**主实例** (primary), 供平台回填源轨迹; 其余各成新轨迹。窗内 obj_id
@@ -222,43 +226,74 @@ class SAM3MultiplexVideoTracker:
             # 收集逐帧输出 (含种子帧)。
             per_frame: dict[int, dict] = {local_seed: seed_out}
             for response in self._predictor.handle_stream_request(
-                dict(type="propagate_in_video", session_id=session_id)
+                dict(
+                    type="propagate_in_video",
+                    session_id=session_id,
+                    propagation_direction=("backward" if reverse else "forward"),
+                    start_frame_index=local_seed,
+                    max_frame_num_to_track=local_count,
+                )
             ):
                 per_frame[int(response["frame_index"])] = response["outputs"]
 
             results: list[dict[str, Any]] = []
-            geom_empty = {"type": output_geometry_type(output_geometry)}
+            geom_empty, _ = self._mask_geometry(
+                np.zeros((_fh, _fw), dtype=bool),
+                output_geometry,
+            )
+            seed_obj_ids = _to_numpy(seed_out.get("out_obj_ids"))
+            known_obj_ids = (
+                {int(oid) for oid in seed_obj_ids.tolist()}
+                if seed_obj_ids is not None
+                else set()
+            )
             for local_idx in sorted(per_frame, reverse=reverse):
                 if local_idx < 0 or local_idx >= local_count:
                     continue
                 src_idx = local_idx + lo
                 outputs = per_frame[local_idx]
                 obj_ids = _to_numpy(outputs.get("out_obj_ids"))
-                if obj_ids is None or len(obj_ids) == 0:
-                    continue  # 该帧无检测对象
-                for oid in obj_ids.tolist():
-                    oid = int(oid)
+                current_obj_ids = (
+                    {int(oid) for oid in obj_ids.tolist()}
+                    if obj_ids is not None
+                    else set()
+                )
+                known_obj_ids.update(current_obj_ids)
+                for oid in sorted(known_obj_ids):
                     is_primary = oid == primary_obj_id
-                    mask = self._obj_mask(outputs, oid, frame_index=src_idx)
+                    mask = (
+                        self._obj_mask(
+                            outputs,
+                            oid,
+                            frame_index=src_idx,
+                            preserve_pixels=output_geometry == "mask",
+                        )
+                        if oid in current_obj_ids
+                        else None
+                    )
                     if mask is None or not mask.any():
-                        results.append({
-                            "frame_index": src_idx,
-                            "instance_id": str(oid),
-                            "geometry": dict(geom_empty),
-                            "confidence": 0.0,
-                            "outside": True,
-                            "primary": is_primary,
-                        })
+                        results.append(
+                            {
+                                "frame_index": src_idx,
+                                "instance_id": str(oid),
+                                "geometry": dict(geom_empty),
+                                "confidence": 0.0,
+                                "outside": True,
+                                "primary": is_primary,
+                            }
+                        )
                         continue
                     geometry, outside = self._mask_geometry(mask, output_geometry)
-                    results.append({
-                        "frame_index": src_idx,
-                        "instance_id": str(oid),
-                        "geometry": geometry,
-                        "confidence": 0.0 if outside else 1.0,
-                        "outside": outside,
-                        "primary": is_primary,
-                    })
+                    results.append(
+                        {
+                            "frame_index": src_idx,
+                            "instance_id": str(oid),
+                            "geometry": geometry,
+                            "confidence": 0.0 if outside else 1.0,
+                            "outside": outside,
+                            "primary": is_primary,
+                        }
+                    )
             return results
         finally:
             if session_id is not None:
@@ -298,7 +333,11 @@ class SAM3MultiplexVideoTracker:
                     logger.warning(
                         "sam3_video window [%d,%d] decode truncated: requested %d frames "
                         "but only %d decoded from %s",
-                        lo, hi, hi - lo + 1, written, video_path[:80],
+                        lo,
+                        hi,
+                        hi - lo + 1,
+                        written,
+                        video_path[:80],
                     )
                     break
                 cv2.imwrite(os.path.join(out_dir, f"{src - lo}.jpg"), frame)
@@ -310,7 +349,13 @@ class SAM3MultiplexVideoTracker:
             cap.release()
 
     @staticmethod
-    def _obj_mask(outputs: dict, obj_id: int, *, frame_index: int) -> np.ndarray | None:
+    def _obj_mask(
+        outputs: dict,
+        obj_id: int,
+        *,
+        frame_index: int,
+        preserve_pixels: bool = False,
+    ) -> np.ndarray | None:
         """从某帧 multiplex 输出取指定 obj_id 的二值 mask (HxW bool); 无则 None。"""
         obj_ids = _to_numpy(outputs.get("out_obj_ids"))
         masks = _to_numpy(outputs.get("out_binary_masks"))
@@ -319,12 +364,15 @@ class SAM3MultiplexVideoTracker:
         _assert_masks_align(masks, obj_ids, frame_index=frame_index)
         for idx, oid in enumerate(obj_ids.tolist()):
             if int(oid) == obj_id:
-                # 去掉 multiplex 偶发的细长毛刺 (见 _largest_blob), 避免外接框虚高。
-                return _largest_blob(masks[idx] > 0)
+                raw = masks[idx] > 0
+                # bbox / polygon 保留旧的追踪稳定化；原生 Mask 必须逐像素透传。
+                return raw if preserve_pixels else _largest_blob(raw)
         return None
 
     @staticmethod
-    def _pick_target_obj(outputs: dict, seed_bbox: dict[str, float] | None) -> int | None:
+    def _pick_target_obj(
+        outputs: dict, seed_bbox: dict[str, float] | None
+    ) -> int | None:
         """种子帧从 multiplex 多目标里挑目标 obj_id。
 
         有 seed_bbox: 取归一化外接框与 seed_bbox IoU 最大的目标; 无: 取最高分 (或首个)。
@@ -409,6 +457,8 @@ def _patch_init_state_kwargs(predictor: Any) -> None:
 
 
 def output_geometry_type(output_geometry: str) -> str:
+    if output_geometry == "mask":
+        return "mask"
     return "polygon" if output_geometry == "polygon" else "bbox"
 
 
@@ -455,7 +505,9 @@ def _largest_blob(mask: np.ndarray) -> np.ndarray:
     opened = cv2.morphologyEx(u8, cv2.MORPH_OPEN, _OPEN_KERNEL)
     if not opened.any():
         return mask
-    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        opened, connectivity=8
+    )
     if n_labels <= 1:
         return mask
     largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))

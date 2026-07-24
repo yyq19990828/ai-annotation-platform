@@ -55,7 +55,8 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
             </div>
           </div>
           <div className="rounded-md border border-border bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-            <strong className="text-foreground">转移规则：</strong> 负责人转移操作仅由超级管理员执行。新负责人必须是项目管理员（project_admin）角色。转移后原负责人将失去对此项目的可见性，除非被指派为成员。
+            <strong className="text-foreground">转移规则：</strong>{" "}
+            负责人转移操作仅由超级管理员执行。新负责人必须是项目管理员（project_admin）角色。转移后原负责人将失去对此项目的可见性，除非被指派为成员。
           </div>
           <div>
             <Button variant="primary" onClick={() => setModalOpen(true)}>
@@ -65,9 +66,16 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
         </div>
       </Card>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="转移项目负责人" width={520}>
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="转移项目负责人"
+        width={520}
+      >
         <div className="flex flex-col gap-3">
-          <div className="text-xs text-muted-foreground">选择新的项目负责人（仅 project_admin 可作为目标）</div>
+          <div className="text-xs text-muted-foreground">
+            选择新的项目负责人（仅 project_admin 可作为目标）
+          </div>
           <div className="max-h-80 overflow-y-auto rounded-md border border-border">
             {candidates.length === 0 && (
               <div className="p-6 text-center text-sm text-muted-foreground">
@@ -98,8 +106,14 @@ export function OwnerSection({ project }: { project: ProjectResponse }) {
             })}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button variant="primary" disabled={!selected || transfer.isPending} onClick={onConfirm}>
+            <Button variant="ghost" onClick={() => setModalOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!selected || transfer.isPending}
+              onClick={onConfirm}
+            >
               {transfer.isPending ? "转移中..." : "确认转移"}
             </Button>
           </div>

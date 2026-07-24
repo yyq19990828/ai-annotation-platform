@@ -48,10 +48,7 @@ function saveMap(map: Map<string, boolean>): void {
   }
 }
 
-function makeKey(
-  backendId: string,
-  variants: Record<string, unknown>,
-): string {
+function makeKey(backendId: string, variants: Record<string, unknown>): string {
   const parts: string[] = [];
   const keys = Object.keys(variants).sort();
   for (const k of keys) {

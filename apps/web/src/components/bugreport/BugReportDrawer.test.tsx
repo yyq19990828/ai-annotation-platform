@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/components/ui/Toast", () => ({
-  useToastStore: <T,>(selector: (s: { push: typeof mocks.pushToast }) => T) => selector({ push: mocks.pushToast }),
+  useToastStore: <T,>(selector: (s: { push: typeof mocks.pushToast }) => T) =>
+    selector({ push: mocks.pushToast }),
 }));
 
 vi.mock("@/utils/bugReportCapture", () => ({
@@ -40,8 +41,10 @@ describe("BugReportDrawer", () => {
     mocks.get.mockReset();
     mocks.create.mockReset();
     mocks.create.mockResolvedValue({});
-    delete (window as unknown as { __videoWorkbenchDiagnostics?: unknown }).__videoWorkbenchDiagnostics;
-    delete (window as unknown as { __videoFrameClockDiagnostics?: unknown }).__videoFrameClockDiagnostics;
+    delete (window as unknown as { __videoWorkbenchDiagnostics?: unknown })
+      .__videoWorkbenchDiagnostics;
+    delete (window as unknown as { __videoFrameClockDiagnostics?: unknown })
+      .__videoFrameClockDiagnostics;
   });
 
   it("adds pasted clipboard screenshots and allows removing them", async () => {
@@ -102,8 +105,12 @@ describe("BugReportDrawer", () => {
 
     await screen.findByText("暂无反馈");
     fireEvent.click(screen.getByText("提交新反馈"));
-    fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), { target: { value: "视频 seek 卡顿" } });
-    fireEvent.change(screen.getByPlaceholderText("详细描述问题..."), { target: { value: "拖动时间轴后首帧很慢" } });
+    fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
+      target: { value: "视频 seek 卡顿" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("详细描述问题..."), {
+      target: { value: "拖动时间轴后首帧很慢" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));

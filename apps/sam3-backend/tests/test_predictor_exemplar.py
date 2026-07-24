@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 import types
 from unittest.mock import MagicMock
@@ -49,6 +51,7 @@ def predictor_with_mocks(monkeypatch):
     inst.checkpoint_dir = "/tmp"
     inst.score_threshold = 0.5
     inst._model = MagicMock()
+    inst._mask_input_size = (288, 288)
     inst._processor = MagicMock()
     inst._processor.confidence_threshold = 0.5
     inst.embedding_cache = MagicMock()
@@ -152,7 +155,10 @@ def test_exemplar_score_threshold_override(predictor_with_mocks, fake_image):
     inst._processor.reset_all_prompts = MagicMock()
 
     inst.predict_exemplar(
-        fake_image, exemplar_bbox=[0.1, 0.1, 0.2, 0.2], cache_key="k4", score_threshold=0.85
+        fake_image,
+        exemplar_bbox=[0.1, 0.1, 0.2, 0.2],
+        cache_key="k4",
+        score_threshold=0.85,
     )
 
     assert inst._processor.confidence_threshold == 0.85
@@ -402,9 +408,7 @@ def test_cache_hit_skips_set_image(predictor_with_mocks, fake_image):
     inst._processor.reset_all_prompts = MagicMock()
 
     # image=None: 命中时 _prime_state 不应调 set_image, 不需要 image
-    results, hit = inst.predict_bbox(
-        None, bbox=[0.1, 0.1, 0.2, 0.2], cache_key="ch1"
-    )
+    results, hit = inst.predict_bbox(None, bbox=[0.1, 0.1, 0.2, 0.2], cache_key="ch1")
 
     assert hit is True
     inst._processor.set_image.assert_not_called()
@@ -447,6 +451,21 @@ def _fake_inst_output(num: int):
     return masks, ious, low_res
 
 
+def _interactive_mask_prompt(width: int = 640, height: int = 480) -> dict:
+    from mask_utils import encode_coco_rle
+
+    pixels = [int(x < width // 2) for _y in range(height) for x in range(width)]
+    rle = encode_coco_rle(pixels, width, height)
+    return {
+        "rle": rle,
+        "source_annotation_id": "source-1",
+        "source_version": 1,
+        "source_digest": hashlib.sha256(
+            json.dumps(rle, separators=(",", ":")).encode()
+        ).hexdigest(),
+    }
+
+
 def test_interactive_point_returns_polygon(predictor_with_mocks, fake_image):
     inst = predictor_with_mocks
     inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
@@ -469,7 +488,9 @@ def test_interactive_point_pixel_scaling(predictor_with_mocks, fake_image):
     inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
     inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
 
-    inst.predict_interactive(fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip2")
+    inst.predict_interactive(
+        fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ip2"
+    )
 
     kw = inst._model.predict_inst.call_args.kwargs
     assert kw["point_coords"].tolist() == [[320.0, 240.0]]
@@ -490,7 +511,7 @@ def test_interactive_box_pixel_scaling(predictor_with_mocks, fake_image):
 
 
 def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_image):
-    """v0.18.18 · context.mask_input (base64) 解码成 (1,256,256) 喂给 predict_inst."""
+    """context.mask_input 解码后适配 SAM3 的 288×288 prompt 输入。"""
     from aap_protocol_v2 import encode_low_res_mask
 
     inst = predictor_with_mocks
@@ -499,11 +520,60 @@ def test_interactive_mask_input_decoded_and_passed(predictor_with_mocks, fake_im
 
     encoded = encode_low_res_mask(np.zeros((256, 256), dtype=np.float32))
     inst.predict_interactive(
-        fake_image, points=[[0.5, 0.5], [0.6, 0.6]], labels=[1, 1],
-        mask_input=encoded, cache_key="imi1",
+        fake_image,
+        points=[[0.5, 0.5], [0.6, 0.6]],
+        labels=[1, 1],
+        mask_input=encoded,
+        cache_key="imi1",
     )
     kw = inst._model.predict_inst.call_args.kwargs
-    assert kw["mask_input"].shape == (1, 256, 256)
+    assert kw["mask_input"].shape == (1, 288, 288)
+
+
+def test_scribble_consumer_preserves_positive_negative_and_mask_seed(
+    predictor_with_mocks,
+    fake_image,
+):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    inst.predict_interactive(
+        fake_image,
+        scribbles=[
+            {"polarity": 1, "points": [[0.1, 0.1], [0.4, 0.4]], "width": 0.01},
+            {"polarity": 0, "points": [[0.8, 0.8], [0.6, 0.6]], "width": 0.01},
+        ],
+        mask_prompt=_interactive_mask_prompt(),
+        cache_key="scribble-1",
+    )
+
+    kwargs = inst._model.predict_inst.call_args.kwargs
+    assert set(kwargs["point_labels"].tolist()) == {0, 1}
+    assert kwargs["mask_input"].shape == (1, 288, 288)
+    assert set(np.unique(kwargs["mask_input"])) == {-16.0, 16.0}
+
+
+def test_mask_prompt_only_is_consumed_as_dense_prompt(
+    predictor_with_mocks,
+    fake_image,
+):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    results, _, mask_next = inst.predict_interactive(
+        fake_image,
+        mask_prompt=_interactive_mask_prompt(),
+        cache_key="mask-only-1",
+    )
+
+    kwargs = inst._model.predict_inst.call_args.kwargs
+    assert "point_coords" not in kwargs
+    assert "point_labels" not in kwargs
+    assert kwargs["mask_input"].shape == (1, 288, 288)
+    assert results
+    assert mask_next is not None
 
 
 def test_interactive_multimask_sorted_by_iou(predictor_with_mocks, fake_image):
@@ -513,7 +583,11 @@ def test_interactive_multimask_sorted_by_iou(predictor_with_mocks, fake_image):
     inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(3))
 
     results, _, mask_next = inst.predict_interactive(
-        fake_image, points=[[0.5, 0.5]], labels=[1], multimask_output=True, cache_key="im1"
+        fake_image,
+        points=[[0.5, 0.5]],
+        labels=[1],
+        multimask_output=True,
+        cache_key="im1",
     )
     assert len(results) == 3
     scores = [r["score"] for r in results]
@@ -537,3 +611,78 @@ def test_interactive_empty_when_no_mask(predictor_with_mocks, fake_image):
         fake_image, points=[[0.5, 0.5]], labels=[1], cache_key="ie1"
     )
     assert results == []
+
+
+def test_interactive_native_mask_preserves_pixels(predictor_with_mocks, fake_image):
+    from mask_utils import decode_coco_rle
+
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    masks, ious, low_res = _fake_inst_output(1)
+    masks[0, 101, 101] = 0
+    masks[0, 350, 500] = 1
+    inst._model.predict_inst = MagicMock(return_value=(masks, ious, low_res))
+
+    results, _, mask_next = inst.predict_interactive(
+        fake_image,
+        points=[[0.5, 0.5]],
+        labels=[1],
+        output_geometry="mask",
+        prompt_revision="sam3-revision",
+        cache_key="native-1",
+    )
+
+    assert mask_next is not None
+    assert len(results) == 1
+    candidate = results[0]
+    assert candidate["type"] == "mask"
+    assert candidate["value"]["rle"]["size"] == [480, 640]
+    assert len(candidate["value"]["preview"]["points"]) >= 4
+    assert list(decode_coco_rle(candidate["value"]["rle"])) == (
+        (masks[0] > 0).reshape(-1).astype(int).tolist()
+    )
+
+
+def test_interactive_box_native_mask_output(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    inst._processor.set_image = MagicMock(return_value=_fake_state_after_set_image())
+    inst._model.predict_inst = MagicMock(return_value=_fake_inst_output(1))
+
+    results, _, _ = inst.predict_interactive(
+        fake_image,
+        box=[0.1, 0.2, 0.5, 0.6],
+        output_geometry="mask",
+        prompt_revision="sam3-box-revision",
+        cache_key="native-box",
+    )
+
+    assert len(results) == 1
+    assert results[0]["type"] == "mask"
+    assert results[0]["value"]["rle"]["size"] == [480, 640]
+    assert len(results[0]["value"]["preview"]["points"]) >= 4
+
+
+def test_exemplars_native_mask_output(predictor_with_mocks, fake_image):
+    inst = predictor_with_mocks
+    state = _fake_state_after_set_image()
+    inst._processor.set_image = MagicMock(return_value=state)
+
+    def add_geo(box, label, current_state):
+        _populate_state_with_outputs(current_state, 1)
+        return current_state
+
+    inst._processor.add_geometric_prompt = MagicMock(side_effect=add_geo)
+    inst._processor.reset_all_prompts = MagicMock()
+
+    results, _ = inst.predict_exemplars(
+        fake_image,
+        [{"bbox": [0.2, 0.2, 0.45, 0.55], "label": True}],
+        output_geometry="mask",
+        prompt_revision="sam3-exemplar-revision",
+        cache_key="native-exemplar",
+    )
+
+    assert len(results) == 1
+    assert results[0]["type"] == "mask"
+    assert results[0]["value"]["rle"]["size"] == [480, 640]
+    assert len(results[0]["value"]["preview"]["points"]) >= 4

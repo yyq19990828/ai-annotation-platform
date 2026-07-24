@@ -15,9 +15,7 @@ vi.mock("@/api/tasks", () => ({
 import { tasksApi } from "@/api/tasks";
 import { useNeighborAnnotations } from "./useNeighborAnnotations";
 
-const mockGet = tasksApi.getNeighborAnnotations as unknown as ReturnType<
-  typeof vi.fn
->;
+const mockGet = tasksApi.getNeighborAnnotations as unknown as ReturnType<typeof vi.fn>;
 
 function makeWrapper() {
   const qc = new QueryClient({
@@ -58,10 +56,9 @@ describe("useNeighborAnnotations", () => {
         { task_id: "t2", frame_index: 3, annotations: [ann("b1", "trk_5"), ann("b2", "trk_5")] },
       ],
     });
-    const { result } = renderHook(
-      () => useNeighborAnnotations("t0", 5, "trk_5", true),
-      { wrapper: makeWrapper() },
-    );
+    const { result } = renderHook(() => useNeighborAnnotations("t0", 5, "trk_5", true), {
+      wrapper: makeWrapper(),
+    });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(mockGet).toHaveBeenCalledWith("t0", 5, "trk_5");
     expect(result.current.byTask["t1"].map((a) => a.id)).toEqual(["a1"]);

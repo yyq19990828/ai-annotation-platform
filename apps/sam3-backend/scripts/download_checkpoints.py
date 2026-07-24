@@ -55,7 +55,9 @@ CONFIG_FILE = "config.json"
 
 def _download(target: Path, repo_id: str, filename: str, token: str) -> None:
     if target.exists() and target.stat().st_size > 0:
-        print(f"[skip] {target.name} already exists ({target.stat().st_size // 1024} KB)")
+        print(
+            f"[skip] {target.name} already exists ({target.stat().st_size // 1024} KB)"
+        )
         return
     print(f"[download] {repo_id}/{filename} → {target}")
     from huggingface_hub import hf_hub_download

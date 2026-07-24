@@ -16,11 +16,11 @@ CVAT 的 `Webhook` / `WebhookDelivery` 两表分离（[`cvat/apps/webhooks`](htt
 1. 顶层信封约定（必备字段 + 版本演化规则）。
 2. Pydantic 占位 schema `EventEnvelope[T]`，将来直接复用。
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
-| **A. 单一信封 + `event_version` 字符串** | 客户端只看 envelope，data 由 event name 决定 schema；版本演化空间充足 | 需要约定 envelope 字段，不能再改 |
-| B. 每事件独立 schema，无 envelope | 客户端按 endpoint 路由处理 | 跨事件公共字段（actor、delivery_id、attempt）必须每个 schema 重复 |
-| C. 直接复刻 GitHub webhook 格式 | 生态熟悉 | 平台事件语义与 GitHub 差异大，硬套会导致大量 N/A 字段 |
+| 选项                                     | 主要卖点                                                              | 主要劣势                                                          |
+| ---------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **A. 单一信封 + `event_version` 字符串** | 客户端只看 envelope，data 由 event name 决定 schema；版本演化空间充足 | 需要约定 envelope 字段，不能再改                                  |
+| B. 每事件独立 schema，无 envelope        | 客户端按 endpoint 路由处理                                            | 跨事件公共字段（actor、delivery_id、attempt）必须每个 schema 重复 |
+| C. 直接复刻 GitHub webhook 格式          | 生态熟悉                                                              | 平台事件语义与 GitHub 差异大，硬套会导致大量 N/A 字段             |
 
 ## Decision
 
@@ -34,17 +34,19 @@ CVAT 的 `Webhook` / `WebhookDelivery` 两表分离（[`cvat/apps/webhooks`](htt
   "event": "task.rejected",
   "delivery_id": "01JX8K4M5R6S7T8V9W0X1Y2Z3A",
   "occurred_at": "2026-05-19T10:00:00Z",
-  "data": { /* 事件载荷，schema 由 event 决定 */ }
+  "data": {
+    /* 事件载荷，schema 由 event 决定 */
+  }
 }
 ```
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `event_version` | `string` (SemVer) | **必备**。信封自身的版本，**非** data 的版本。breaking change 升 major；增量字段升 minor。首版 `"1.0"`。 |
-| `event` | `string` (枚举) | **必备**。形如 `domain.action`：`task.created` / `task.reviewed` / `task.approved` / `task.rejected` / `batch.state_changed` / `prediction.completed` / `prediction.failed` / `bug_report.created`。 |
-| `delivery_id` | `UUID` 或 `ULID` | **必备**。消费侧去重幂等键；同一逻辑事件重试时**不变**。 |
-| `occurred_at` | ISO-8601 UTC | **必备**。事件发生时刻（非发送时刻）。 |
-| `data` | object | **必备**。schema 由 `event` 决定，可空对象 `{}`。 |
+| 字段            | 类型              | 说明                                                                                                                                                                                                 |
+| --------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event_version` | `string` (SemVer) | **必备**。信封自身的版本，**非** data 的版本。breaking change 升 major；增量字段升 minor。首版 `"1.0"`。                                                                                             |
+| `event`         | `string` (枚举)   | **必备**。形如 `domain.action`：`task.created` / `task.reviewed` / `task.approved` / `task.rejected` / `batch.state_changed` / `prediction.completed` / `prediction.failed` / `bug_report.created`。 |
+| `delivery_id`   | `UUID` 或 `ULID`  | **必备**。消费侧去重幂等键；同一逻辑事件重试时**不变**。                                                                                                                                             |
+| `occurred_at`   | ISO-8601 UTC      | **必备**。事件发生时刻（非发送时刻）。                                                                                                                                                               |
+| `data`          | object            | **必备**。schema 由 `event` 决定，可空对象 `{}`。                                                                                                                                                    |
 
 ### 版本演化规则（Postel's law）
 

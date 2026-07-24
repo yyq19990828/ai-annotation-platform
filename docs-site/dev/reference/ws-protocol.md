@@ -35,14 +35,14 @@ sequenceDiagram
 
 ## 1. 端点总览
 
-| 频道 | URL | 鉴权 | Redis 频道 | 用途 |
-|---|---|---|---|---|
-| 用户通知 | `/ws/notifications?token=<jwt>` | JWT (query param) | `notify:{user_id}` (`notification.py:27`) | 任务分配、AI 进度、导出完成、@提及 等 |
-| 预标注进度（单项目） | `/ws/projects/{project_id}/preannotate` | 当前实现不校验 JWT | `project:{project_id}:preannotate` (`ws.py`) | 工作台单次自动预标注的逐 batch progress |
-| Batch 状态广播 | `/ws/batches/project/{project_id}` | 无（项目内非机密） | `project:{project_id}:batch` (`ws.py:112`) | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步 |
-| Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>` | JWT (query, `super_admin` / `project_admin`) | `global:prediction-jobs` (`ws.py:168`) | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条 |
-| 视频 tracker job | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验 | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `job_started / job_progress / frame_result / job_completed / job_failed / job_cancelled` 事件 |
-| ML Backend Stats | `/ws/ml-backend-stats?token=<jwt 或 ak_key>` | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；v0.15.12 起 SDK/TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`) | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
+| 频道                    | URL                                           | 鉴权                                                                                                 | Redis 频道                                               | 用途                                                                                                                                       |
+| ----------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 用户通知                | `/ws/notifications?token=<jwt>`               | JWT (query param)                                                                                    | `notify:{user_id}` (`notification.py:27`)                | 任务分配、AI 进度、导出完成、@提及 等                                                                                                      |
+| 预标注进度（单项目）    | `/ws/projects/{project_id}/preannotate`       | 当前实现不校验 JWT                                                                                   | `project:{project_id}:preannotate` (`ws.py`)             | 工作台单次自动预标注的逐 batch progress                                                                                                    |
+| Batch 状态广播          | `/ws/batches/project/{project_id}`            | 无（项目内非机密）                                                                                   | `project:{project_id}:batch` (`ws.py:112`)               | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步                                                                             |
+| Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>`             | JWT (query, `super_admin` / `project_admin`)                                                         | `global:prediction-jobs` (`ws.py:168`)                   | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条                                                          |
+| 视频 tracker job        | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验                                                                    | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `job_started / job_progress / frame_result / job_completed / job_failed / job_cancelled` 事件                          |
+| ML Backend Stats        | `/ws/ml-backend-stats?token=<jwt 或 ak_key>`  | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；v0.15.12 起 SDK/TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`)                  | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
 
 base URL：`ws://<api-host>/ws/...` 或 `wss://...`。前端通过 `apps/web/src/hooks/useReconnectingWebSocket.ts` 处理重连。本机 DEV 默认直连 `localhost:8000`；远程 DEV 访问使用页面同源 `/ws` 代理，避免远程浏览器错误连接自己的 localhost。
 
@@ -96,6 +96,7 @@ ws://api.example.com/ws/notifications?token=eyJhbGciOi...
 ### 2.3 可靠性 — 断线兜底
 
 WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` 表，断线时前端通过 `GET /api/v1/notifications` 轮询补齐：
+
 - 默认前端 30s 一次轮询（即使 WS 在线）
 - WS 重连成功后立即 `invalidateQueries(["notifications"])` 刷一次
 
@@ -235,16 +236,16 @@ job_accepted | job_discarded                  # 人工候选决策
 
 事件类型与触发点：
 
-| 事件 | 来源 | 含义 |
-|---|---|---|
-| `job_started` | `video_tracker_runner.py` | tracker 进程已起，开始处理 |
-| `job_progress` | `video_tracker_runner.py` | 阶段性进度更新（窗口/帧/检查点） |
-| `frame_result` | `video_tracker_runner.py` | 单帧推理结果，包含框/掩码 payload |
-| `job_completed` | `video_tracker_runner.py` | 正常结束，结果已暂存为待审候选，尚未写入 annotation |
-| `job_failed` | `video_tracker_runner.py` | 出错终止，带 `error` 字段 |
+| 事件            | 来源                      | 含义                                                   |
+| --------------- | ------------------------- | ------------------------------------------------------ |
+| `job_started`   | `video_tracker_runner.py` | tracker 进程已起，开始处理                             |
+| `job_progress`  | `video_tracker_runner.py` | 阶段性进度更新（窗口/帧/检查点）                       |
+| `frame_result`  | `video_tracker_runner.py` | 单帧推理结果，包含框/掩码 payload                      |
+| `job_completed` | `video_tracker_runner.py` | 正常结束，结果已暂存为待审候选，尚未写入 annotation    |
+| `job_failed`    | `video_tracker_runner.py` | 出错终止，带 `error` 字段                              |
 | `job_cancelled` | `video_tracker_runner.py` | 用户取消或外部信号中止；若已有结果，可携带部分待审候选 |
-| `job_accepted` | `video_tracker_runner.py` | 用户接受候选，结果已写入源轨迹 / 新实例轨迹 |
-| `job_discarded` | `video_tracker_runner.py` | 用户丢弃候选，committed annotation 未改变 |
+| `job_accepted`  | `video_tracker_runner.py` | 用户接受候选，结果已写入源轨迹 / 新实例轨迹            |
+| `job_discarded` | `video_tracker_runner.py` | 用户丢弃候选，committed annotation 未改变              |
 
 `frame_result` 是运行期 live event，实例 id 可能仍是窗口内局部值；最终审阅必须以 `GET /video-tracker-jobs/{job_id}/preview` 返回的 staged result 为准。当前 Web 前端通过 HTTP accept / discard 主动完成决策，不依赖同一页面持续监听 `job_accepted / job_discarded`。
 
@@ -346,13 +347,13 @@ client.ts 已自动 logout()  // 路由层会跳 /login
 
 ## 11. 关键文件索引
 
-| 主题 | 路径 |
-|---|---|
-| WS 端点 | `apps/api/app/api/v1/ws.py` |
-| Notification 服务 + publish | `apps/api/app/services/notification.py` |
-| Notification 表 | `apps/api/app/db/models/notification.py` |
-| 自动预标注 worker | `apps/api/app/workers/tasks.py` |
-| Notification 兜底 REST | `apps/api/app/api/v1/notifications.py` |
-| 前端通知 hook | `apps/web/src/hooks/useNotificationSocket.ts` |
-| 前端预标注 hook | `apps/web/src/hooks/usePreannotation.ts` |
-| 前端重连基础 | `apps/web/src/hooks/useReconnectingWebSocket.ts` |
+| 主题                        | 路径                                             |
+| --------------------------- | ------------------------------------------------ |
+| WS 端点                     | `apps/api/app/api/v1/ws.py`                      |
+| Notification 服务 + publish | `apps/api/app/services/notification.py`          |
+| Notification 表             | `apps/api/app/db/models/notification.py`         |
+| 自动预标注 worker           | `apps/api/app/workers/tasks.py`                  |
+| Notification 兜底 REST      | `apps/api/app/api/v1/notifications.py`           |
+| 前端通知 hook               | `apps/web/src/hooks/useNotificationSocket.ts`    |
+| 前端预标注 hook             | `apps/web/src/hooks/usePreannotation.ts`         |
+| 前端重连基础                | `apps/web/src/hooks/useReconnectingWebSocket.ts` |

@@ -119,7 +119,9 @@ export function InviteUserModal({ open, onClose }: Props) {
           )}
 
           <div className={styles.actions}>
-            <Button type="button" onClick={onClose}>取消</Button>
+            <Button type="button" onClick={onClose}>
+              取消
+            </Button>
             <Button type="submit" variant="primary" disabled={invite.isPending}>
               {invite.isPending ? "生成中..." : "生成邀请链接"}
             </Button>
@@ -148,7 +150,8 @@ export function InviteUserModal({ open, onClose }: Props) {
                 className={`${styles.input} ${styles.monoInput}`}
               />
               <Button type="button" onClick={copy}>
-                <Icon name="link" size={12} />复制
+                <Icon name="link" size={12} />
+                复制
               </Button>
             </div>
           </Field>
@@ -162,8 +165,12 @@ export function InviteUserModal({ open, onClose }: Props) {
           </div>
 
           <div className={styles.actions}>
-            <Button type="button" onClick={() => setResult(null)}>继续邀请</Button>
-            <Button type="button" variant="primary" onClick={onClose}>完成</Button>
+            <Button type="button" onClick={() => setResult(null)}>
+              继续邀请
+            </Button>
+            <Button type="button" variant="primary" onClick={onClose}>
+              完成
+            </Button>
           </div>
         </div>
       )}

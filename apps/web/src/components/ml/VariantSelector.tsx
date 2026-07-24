@@ -66,7 +66,7 @@ function optionLabel(option: MLBackendSupportedVariantOption) {
   ].filter(Boolean);
   return meta.length > 0
     ? `${option.label ?? option.value} · ${meta.join(" · ")}`
-    : option.label ?? option.value;
+    : (option.label ?? option.value);
 }
 
 function tierLabel(tier: string) {
@@ -142,13 +142,7 @@ function normalizeFields(
     richList.forEach((group, idx) => {
       const baseOptions = normalizeOptions(group.variants);
       if (baseOptions.length === 0) return;
-      const filtered = filterByCombinations(
-        idx,
-        baseOptions,
-        axes,
-        value,
-        variantCombinations,
-      );
+      const filtered = filterByCombinations(idx, baseOptions, axes, value, variantCombinations);
       const options = filtered.length > 0 ? filtered : baseOptions;
       // 优先级: defaults > 该轴 recommended option > schema.default > 第一个选项
       const schemaField = asField(schema?.properties?.[group.key]);
@@ -211,13 +205,7 @@ export function VariantSelector({
   disabled = false,
   compact = false,
 }: VariantSelectorProps) {
-  const fields = normalizeFields(
-    schema,
-    supportedVariants,
-    defaults,
-    variantCombinations,
-    value,
-  );
+  const fields = normalizeFields(schema, supportedVariants, defaults, variantCombinations, value);
   if (fields.length === 0) return null;
 
   // 联动: 切换第 N 轴时, 若当前后续轴的 value 已变非法, 自动清空让 fallback 重算.
@@ -250,9 +238,7 @@ export function VariantSelector({
       <>
         {fields.map((field) => {
           const current =
-            typeof value[field.key] === "string"
-              ? (value[field.key] as string)
-              : field.fallback;
+            typeof value[field.key] === "string" ? (value[field.key] as string) : field.fallback;
           const selected =
             field.options.find((option) => option.value === current) ?? field.options[0]!;
           return (
@@ -284,13 +270,13 @@ export function VariantSelector({
   return (
     <div data-testid="ai-variant-selector" className={styles.root}>
       {fields.map((field) => {
-        const current = typeof value[field.key] === "string"
-          ? (value[field.key] as string)
-          : field.fallback;
+        const current =
+          typeof value[field.key] === "string" ? (value[field.key] as string) : field.fallback;
         const selected =
           field.options.find((option) => option.value === current) ?? field.options[0]!;
         const note = selected.note ?? field.description;
-        const hasMeta = selected.vram_gb != null || Boolean(selected.tier) || Boolean(selected.recommended);
+        const hasMeta =
+          selected.vram_gb != null || Boolean(selected.tier) || Boolean(selected.recommended);
         return (
           <div key={field.key} className={styles.field}>
             <div className={styles.fieldHeader}>

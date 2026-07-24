@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-22
 ---
 
 # 审计与通知
@@ -37,16 +37,16 @@ flowchart TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/services/audit.py` | `AuditAction`、`AuditService.log()`、`log_many()` |
-| `apps/api/app/db/models/audit_log.py` | `AuditLog` 数据模型 |
-| `apps/api/app/api/v1/audit_logs.py` | audit 查询与导出 |
-| `apps/api/app/services/notification.py` | 通知写表与 Redis PubSub |
-| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper |
-| `apps/api/app/db/models/notification.py` | `Notification` 模型 |
-| `apps/api/app/api/v1/notifications.py` | 通知列表、已读、偏好设置 |
-| `apps/api/app/api/v1/ws.py` | `/ws/notifications` 在线推送 |
+| 位置                                        | 作用                                              |
+| ------------------------------------------- | ------------------------------------------------- |
+| `apps/api/app/services/audit.py`            | `AuditAction`、`AuditService.log()`、`log_many()` |
+| `apps/api/app/db/models/audit_log.py`       | `AuditLog` 数据模型                               |
+| `apps/api/app/api/v1/audit_logs.py`         | audit 查询与导出                                  |
+| `apps/api/app/services/notification.py`     | 通知写表与 Redis PubSub                           |
+| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper      |
+| `apps/api/app/db/models/notification.py`    | `Notification` 模型                               |
+| `apps/api/app/api/v1/notifications.py`      | 通知列表、已读、偏好设置                          |
+| `apps/api/app/api/v1/ws.py`                 | `/ws/notifications` 在线推送                      |
 
 ## Audit：记录发生了什么
 
@@ -54,16 +54,16 @@ flowchart TD
 
 `AuditLog` 当前核心字段：
 
-| 字段 | 含义 |
-|---|---|
-| `actor_id` / `actor_email` / `actor_role` | 谁触发了动作 |
-| `action` | 业务动作名，如 `task.submit` |
-| `target_type` / `target_id` | 作用对象 |
-| `method` / `path` / `status_code` | HTTP 元数据 |
-| `ip` | 客户端 IP |
-| `detail_json` | 补充上下文 |
-| `request_id` | 同一 HTTP 请求下的多条 audit 关联键 |
-| `created_at` | 时间戳 |
+| 字段                                      | 含义                                |
+| ----------------------------------------- | ----------------------------------- |
+| `actor_id` / `actor_email` / `actor_role` | 谁触发了动作                        |
+| `action`                                  | 业务动作名，如 `task.submit`        |
+| `target_type` / `target_id`               | 作用对象                            |
+| `method` / `path` / `status_code`         | HTTP 元数据                         |
+| `ip`                                      | 客户端 IP                           |
+| `detail_json`                             | 补充上下文                          |
+| `request_id`                              | 同一 HTTP 请求下的多条 audit 关联键 |
+| `created_at`                              | 时间戳                              |
 
 ### `AuditAction`
 
@@ -74,7 +74,7 @@ flowchart TD
 - 批次：`batch.*`
 - 标注：`annotation.*`
 - 任务审核：`task.submit / withdraw / approve / reject / reopen / skip`
-- AI 预标与视频追踪：`preannotate.bulk_clear`、`video_tracker_job.create / cancel / accept / discard`
+- AI 预标、原生 Mask 与视频追踪：`preannotate.bulk_clear`、`mask_ai.candidate_accept`、`annotation.mask_mutation`、`annotation.convert`、`video_mask.keyframe_correct / keyframe_operate`、`video_tracker_job.create / cancel / accept / discard / decision`、`video_correction_job.create / cancel`
 - 反馈：`feedback.created / status_changed / deleted`、`feedback.reconcile_drift`（双写对账漂移）
 - 存储连接器：`storage_connection.create / update / delete / test`、`connector.allowlist_update`（见 [存储连接器](/dev/concepts/storage-connections)）。`update` 的 `detail` 含 `secret_rotated` 标记是否轮换密钥，且**绝不写入明文密钥**
 
@@ -142,20 +142,32 @@ flowchart TD
 
 不要把大块重复对象整份塞进去。`detail_json` 更适合“补事实”，不是“存快照”。
 
+原生 Mask 候选接受的审计只记录 candidate / content digest、Prediction、源/结果版本、帧号、实际 backend / pool / model 与有界 prompt 计数摘要。它不记录 RLE counts、原图、scribble 点集、receipt 或 logits；这些大载荷和凭证也不得进入普通日志。
+
+`annotation.mask_mutation` 每次 split / copy / join / overlap 只写一条聚合审计，target 指向 operation ledger。detail 可包含 task、operation、updated / created / deleted ID 和类型化的面积 / 拓扑摘要，但不得包含完整 geometry、RLE counts 或未知客户端字段。operation、lineage、annotation 变更与这条 audit 必须同事务成功或失败。
+
+`annotation.convert` 也只写一条指向 `convert_annotations` operation 的聚合审计。detail 仅记录 task、copy / replace、目标类型、范围、来源 / 结果 / 有损数量；逐对象版本和派生关系由 operation / lineage 账本保留，审计中不写完整 geometry 或 RLE 正文。
+
+视频 Mask 单帧保存使用 `video_mask.keyframe_correct`；删除精确关键帧、标记 manual outside 和恢复 held 使用 `video_mask.keyframe_operate`。后者只记录 operation、帧号、segment、源/结果版本、前后 digest，以及删除后解析到的 held 来源帧，不保存 RLE counts 或完整 geometry。
+
+视频追踪局部决定与 annotation 变更在同一事务提交。`video_tracker_job.decision` 只记录目标标识、帧窗口、决定、候选数量、前后 revision，以及显式覆盖人工关键帧时的 before / after geometry digest；不记录 staged geometry、Mask RLE 或原始媒体。
+
+视频 Mask 纠错创建审计可记录源 annotation / track、纠错帧、窗口、方向、源版本、corrected digest、精确 backend / pool / model、segment lease、seed mode 与 fallback reason；取消审计记录人工关键帧保留和 staged candidate 清除。允许记录 digest 用于完整性追溯，但不得记录 RLE counts、scribble 坐标、logits、receipt、原始文本 prompt 或对象正文。
+
 ## Notification：提醒谁该处理什么
 
 ### 核心模型
 
 `Notification` 当前关键字段：
 
-| 字段 | 含义 |
-|---|---|
-| `user_id` | 收件人 |
-| `type` | 通知类型，如 `task.rejected` |
-| `target_type` / `target_id` | 指向哪个对象 |
-| `payload` | UI 展示辅助数据 |
-| `read_at` | 已读时间 |
-| `created_at` | 创建时间 |
+| 字段                        | 含义                         |
+| --------------------------- | ---------------------------- |
+| `user_id`                   | 收件人                       |
+| `type`                      | 通知类型，如 `task.rejected` |
+| `target_type` / `target_id` | 指向哪个对象                 |
+| `payload`                   | UI 展示辅助数据              |
+| `read_at`                   | 已读时间                     |
+| `created_at`                | 创建时间                     |
 
 通知是“按用户持久化”的，不是纯瞬时弹窗。
 
@@ -232,10 +244,10 @@ flowchart TD
 
 用户发起且有 `user_id` 的后台任务在进入终态后会发通用通知：
 
-| 状态 | 通知 type |
-|---|---|
+| 状态        | 通知 type       |
+| ----------- | --------------- |
 | `completed` | `job.completed` |
-| `failed` | `job.failed` |
+| `failed`    | `job.failed`    |
 | `cancelled` | `job.cancelled` |
 
 helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在各自 `mark_*`
@@ -339,11 +351,11 @@ WS 握手时会校验 JWT，然后订阅：
 
 迁移按三段式推进，每段独立可回退：
 
-| 阶段 | 状态 | 行为 |
-|---|---|---|
-| 新表与 API | ✅ 已落 | 新表 + 新 API（`GET/POST/PATCH/DELETE /feedbacks`），旧三表读写不动；前端 IssueLayer 直接读新表 |
+| 阶段            | 状态    | 行为                                                                                                                                                                                                                                                                                             |
+| --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 新表与 API      | ✅ 已落 | 新表 + 新 API（`GET/POST/PATCH/DELETE /feedbacks`），旧三表读写不动；前端 IssueLayer 直接读新表                                                                                                                                                                                                  |
 | 双写与统一 view | ✅ 已落 | `v_annotation_feedback_unified` UNION ALL view（带 `source_table` 列对账）；`FeedbackService.mirror_bug_report` / `mirror_annotation_comment` / `mirror_task_reject` 3 个 helper 接入旧三处写路径，**同事务**双写，失败一起回滚；前端只读暂不切到 view，避免老 bug/reject 出现在 DiscussionPanel |
-| 切单源 | 计划中 | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径，旧表保留只读一个版本作回退 |
+| 切单源          | 计划中  | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径，旧表保留只读一个版本作回退                                                                                                                                                                                  |
 
 **audit 落点对齐**：新表的写操作走 `FEEDBACK_CREATED` / `FEEDBACK_STATUS_CHANGED` / `FEEDBACK_DELETED` 三个 AuditAction，不再为 4 个 source 各维护 detail helper。旧 `bug_report.*` 通知类型保留。
 
@@ -355,14 +367,14 @@ WS 握手时会校验 JWT，然后订阅：
 
 ## 常见修改落点
 
-| 你想改什么 | 先看哪里 |
-|---|---|
-| 新增业务动作审计 | `services/audit.py` + 对应 route |
-| 让某动作可通知 | `services/notification.py` + 对应 route |
-| 通知偏好开关 | `api/v1/notifications.py` + `notification_preferences` |
+| 你想改什么       | 先看哪里                                                |
+| ---------------- | ------------------------------------------------------- |
+| 新增业务动作审计 | `services/audit.py` + 对应 route                        |
+| 让某动作可通知   | `services/notification.py` + 对应 route                 |
+| 通知偏好开关     | `api/v1/notifications.py` + `notification_preferences`  |
 | 后台任务终态通知 | `services/async_job_notify.py` + 对应 worker/API 终态点 |
-| 审计查询 / 导出 | `api/v1/audit_logs.py` |
-| 批次审计聚合视图 | `api/v1/batches.py:list_batch_audit_logs` |
+| 审计查询 / 导出  | `api/v1/audit_logs.py`                                  |
+| 批次审计聚合视图 | `api/v1/batches.py:list_batch_audit_logs`               |
 
 ## 常见误解
 

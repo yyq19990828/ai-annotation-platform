@@ -181,8 +181,21 @@ class RoutedMLBackendClient:
                 return await client.predict(tasks)
             return await client.predict(tasks, context=context)
 
-    async def predict_interactive(self, task_data: dict, context: dict) -> Any:
+    async def predict_interactive(
+        self,
+        task_data: dict,
+        context: dict,
+        *,
+        max_response_bytes: int | None = None,
+    ) -> Any:
         async with self._routed_transport() as client:
+            response_limit = (
+                {"max_response_bytes": max_response_bytes}
+                if max_response_bytes is not None
+                else {}
+            )
             return await client.predict_interactive(
-                task_data=task_data, context=context
+                task_data=task_data,
+                context=context,
+                **response_limit,
             )

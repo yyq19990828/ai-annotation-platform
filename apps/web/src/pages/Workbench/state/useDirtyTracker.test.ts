@@ -29,10 +29,14 @@ describe("useDirtyTracker", () => {
       result.current.markDirty("a", "attributes");
       result.current.markDirty("b", "geometry");
     });
-    act(() => { result.current.clear("a"); });
+    act(() => {
+      result.current.clear("a");
+    });
     expect(result.current.getDirtyFields("a")).toEqual([]);
     expect(result.current.getDirtyFields("b")).toEqual(["geometry"]);
-    act(() => { result.current.clearAll(); });
+    act(() => {
+      result.current.clearAll();
+    });
     expect(result.current.getDirtyFields("b")).toEqual([]);
   });
 
@@ -55,8 +59,12 @@ describe("useDirtyTracker", () => {
 
   it("flush 无 commit：仅清空", () => {
     const { result } = renderHook(() => useDirtyTracker());
-    act(() => { result.current.markDirty("a", "attributes"); });
-    act(() => { result.current.flush("a"); });
+    act(() => {
+      result.current.markDirty("a", "attributes");
+    });
+    act(() => {
+      result.current.flush("a");
+    });
     expect(result.current.getDirtyFields("a")).toEqual([]);
   });
 
@@ -78,14 +86,18 @@ describe("useDirtyTracker", () => {
       result.current.markDirty("a", "geometry");
     });
     act(() => {
-      result.current.flush("a", () => { throw new Error("boom"); });
+      result.current.flush("a", () => {
+        throw new Error("boom");
+      });
     });
     expect(result.current.getDirtyFields("a").sort()).toEqual(["attributes", "geometry"]);
   });
 
   it("flush commit Promise reject → dirty 回滚", async () => {
     const { result } = renderHook(() => useDirtyTracker());
-    act(() => { result.current.markDirty("a", "attributes"); });
+    act(() => {
+      result.current.markDirty("a", "attributes");
+    });
     await act(async () => {
       result.current.flush("a", () => Promise.reject(new Error("net")));
       // 等待 microtask 让 .catch 回滚
@@ -97,10 +109,18 @@ describe("useDirtyTracker", () => {
   it("subscribe 在 markDirty / clear / flush 时触发", () => {
     const { result } = renderHook(() => useDirtyTracker());
     const listener = vi.fn();
-    act(() => { result.current.subscribe(listener); });
-    act(() => { result.current.markDirty("a", "attributes"); });
-    act(() => { result.current.markDirty("a", "geometry"); });
-    act(() => { result.current.flush("a"); });
+    act(() => {
+      result.current.subscribe(listener);
+    });
+    act(() => {
+      result.current.markDirty("a", "attributes");
+    });
+    act(() => {
+      result.current.markDirty("a", "geometry");
+    });
+    act(() => {
+      result.current.flush("a");
+    });
     // markDirty x2 + flush 通知 = 至少 3 次
     expect(listener.mock.calls.length).toBeGreaterThanOrEqual(3);
   });

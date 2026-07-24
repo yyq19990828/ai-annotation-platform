@@ -13,16 +13,18 @@ import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
 export type WorkbenchSettingCategory = WorkbenchPreferenceSettingCategory | "experiment";
 
-export type WorkbenchSettingValue =
-  | boolean
-  | number
-  | string
-  | string[]
-  | LabelContentByType;
+export type WorkbenchSettingValue = boolean | number | string | string[] | LabelContentByType;
 
 export type WorkbenchSettingControl =
   | { type: "toggle"; onText?: string; offText?: string }
-  | { type: "slider"; min: number; max: number; step: number; format?: (v: number) => string; resetTo?: number }
+  | {
+      type: "slider";
+      min: number;
+      max: number;
+      step: number;
+      format?: (v: number) => string;
+      resetTo?: number;
+    }
   | { type: "select"; options: Array<{ value: WorkbenchSettingValue; label: string }> }
   // v0.15.27 · 多选(存 string[]);min 兜底至少保留几项(labelContent 至少留「类别名」)。
   | { type: "multiselect"; options: Array<{ value: string; label: string }>; min?: number }
@@ -66,9 +68,7 @@ export interface WorkbenchLocalSettingField extends WorkbenchSettingFieldBase {
   write: (value: WorkbenchSettingValue) => void;
 }
 
-export type WorkbenchSettingField =
-  | WorkbenchPreferenceSettingField
-  | WorkbenchLocalSettingField;
+export type WorkbenchSettingField = WorkbenchPreferenceSettingField | WorkbenchLocalSettingField;
 
 export const WORKBENCH_SETTING_CATEGORY_LABELS: Record<WorkbenchSettingCategory, string> = {
   common: "通用",
@@ -144,21 +144,24 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "common.petEnabled",
     category: "common",
     label: "工作台桌宠",
-    description: "常驻像素小人:久坐轻提示、标注里程碑庆祝;选中标注时举牌(点击展开信息卡)。关闭后折叠态回退纯文字小条",
+    description:
+      "常驻像素小人:久坐轻提示、标注里程碑庆祝;选中标注时举牌(点击展开信息卡)。关闭后折叠态回退纯文字小条",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
     key: "common.focusSelectionEnabled",
     category: "common",
     label: "选中自动聚焦",
-    description: "键盘循环(Tab / `)或点选对象时,若对象在画布外或过小,自动平移居中并适度放大。视频 + 图片工作台通用",
+    description:
+      "键盘循环(Tab / `)或点选对象时,若对象在画布外或过小,自动平移居中并适度放大。视频 + 图片工作台通用",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
     key: "common.autoAdvanceOnDecide",
     category: "common",
     label: "决策后自动前进",
-    description: "采纳 / 拒绝(A / D)AI 候选后,自动把选中推进到下一个待决对象,连续审阅无需重新点选(仅移动选中,不缩放;视口聚焦由上一项控制)。视频 + 图片工作台通用",
+    description:
+      "采纳 / 拒绝(A / D)AI 候选后,自动把选中推进到下一个待决对象,连续审阅无需重新点选(仅移动选中,不缩放;视口聚焦由上一项控制)。视频 + 图片工作台通用",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
@@ -237,7 +240,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "common.labelContent",
     category: "common",
     label: "标签内容",
-    description: "按标注类型分段控制标签显示哪些信息;类别名三段恒显。单帧=图片手工框,轨迹=视频 track 框,AI=图片预测框",
+    description:
+      "按标注类型分段控制标签显示哪些信息;类别名三段恒显。单帧=图片手工框,轨迹=视频 track 框,AI=图片预测框",
     control: {
       type: "labelContentByType",
       segments: [
@@ -374,16 +378,9 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   {
     key: "image.fadedOpacity",
     category: "image",
-    label: "淡化透明度",
-    description: "未选中/被淡化对象的透明度，越低越淡",
+    label: "重复 AI 候选透明度",
+    description: "与人工标注高度重叠、已视为重复的 AI 候选透明度，越低越淡",
     control: { type: "slider", min: 0.1, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
-  },
-  {
-    key: "image.maskOverlayOpacity",
-    category: "image",
-    label: "Mask 覆盖透明度",
-    description: "分割掩膜叠加在图像上的不透明度",
-    control: { type: "slider", min: 0.2, max: 0.8, step: 0.05, format: (v) => v.toFixed(2) },
   },
   {
     key: "video.defaultPlaybackRate",
@@ -427,7 +424,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "video.trackContinueAutoAdvance",
     category: "video",
     label: "续写后自动前进",
-    description: "用轨迹工具跨网格帧续写完一条轨迹后,自动选中同帧下一条待续轨迹(上一网格帧有框、当前帧未画者),连续续写无需逐条 Tab / 点选。默认关",
+    description:
+      "用轨迹工具跨网格帧续写完一条轨迹后,自动选中同帧下一条待续轨迹(上一网格帧有框、当前帧未画者),连续续写无需逐条 Tab / 点选。默认关",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {
@@ -521,7 +519,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "pointcloud.neighborPointOverlay",
     category: "pointcloud",
     label: "邻帧点云叠加",
-    description: "把前后帧点云按车体位姿对齐叠到当前帧:静止背景加密、动态目标留拖影。需 scene 有 ego 轨迹",
+    description:
+      "把前后帧点云按车体位姿对齐叠到当前帧:静止背景加密、动态目标留拖影。需 scene 有 ego 轨迹",
     control: { type: "toggle" },
   },
   {

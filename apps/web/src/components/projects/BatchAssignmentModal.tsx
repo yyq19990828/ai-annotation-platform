@@ -65,11 +65,7 @@ export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
         若需要批量分派项目下多个批次，请用「批次列表 → 按项目分派批次」。
       </div>
 
-      {isLoading && (
-        <div className={styles.loading}>
-          加载成员…
-        </div>
-      )}
+      {isLoading && <div className={styles.loading}>加载成员…</div>}
 
       {!isLoading && (
         <div className={styles.columns}>
@@ -98,11 +94,7 @@ export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
         </span>
         <div className={styles.actions}>
           <Button onClick={onClose}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={onSave}
-            disabled={update.isPending || !dirty}
-          >
+          <Button variant="primary" onClick={onSave} disabled={update.isPending || !dirty}>
             {update.isPending ? "保存中…" : "保存"}
           </Button>
         </div>
@@ -127,7 +119,9 @@ function Column({
   return (
     <div className={styles.column}>
       <div className={styles.columnHeader}>
-        <Badge variant={roleColor} dot>{title}</Badge>
+        <Badge variant={roleColor} dot>
+          {title}
+        </Badge>
         {selectedId && (
           <button
             type="button"
@@ -140,9 +134,7 @@ function Column({
         )}
       </div>
       {members.length === 0 && (
-        <div className={styles.emptyMembers}>
-          暂无成员，请先在「成员管理」中添加
-        </div>
+        <div className={styles.emptyMembers}>暂无成员，请先在「成员管理」中添加</div>
       )}
       {members.map((m) => {
         const checked = selectedId === m.user_id;
@@ -154,9 +146,7 @@ function Column({
             className={clsx(styles.memberButton, checked && styles.memberButtonChecked)}
           >
             <span className={clsx(styles.radioMark, checked && styles.radioMarkChecked)}>
-              {checked && (
-                <span className={styles.radioMarkInner} />
-              )}
+              {checked && <span className={styles.radioMarkInner} />}
             </span>
             <Avatar initial={(m.user_name || "?").slice(0, 1).toUpperCase()} size="sm" />
             <span className={styles.memberText}>

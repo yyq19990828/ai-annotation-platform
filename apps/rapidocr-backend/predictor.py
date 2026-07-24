@@ -400,11 +400,16 @@ class RapidOCRPredictor:
         scores = getattr(final, "scores", None)
         if boxes is not None:
             for i, box in enumerate(boxes):
-                items.append({
-                    "type": "polygonlabels",
-                    "value": {"points": _box_to_points(box, w, h), "polygonlabels": [POLY_LABEL]},
-                    "score": float(scores[i]) if scores is not None else 0.0,
-                })
+                items.append(
+                    {
+                        "type": "polygonlabels",
+                        "value": {
+                            "points": _box_to_points(box, w, h),
+                            "polygonlabels": [POLY_LABEL],
+                        },
+                        "score": float(scores[i]) if scores is not None else 0.0,
+                    }
+                )
         return items, infer_ms
 
     def _rec_sync(
@@ -470,12 +475,17 @@ class RapidOCRPredictor:
             attrs: dict[str, Any] = {"text": txts[i], "language": resolved.lang}
             if orientations and i < len(orientations):
                 attrs["orientation"] = orientations[i]
-            items.append({
-                "type": "polygonlabels",
-                "value": {"points": _box_to_points(box, w, h), "polygonlabels": [POLY_LABEL]},
-                "score": float(scores[i]) if scores is not None else 0.0,
-                "attributes": attrs,
-            })
+            items.append(
+                {
+                    "type": "polygonlabels",
+                    "value": {
+                        "points": _box_to_points(box, w, h),
+                        "polygonlabels": [POLY_LABEL],
+                    },
+                    "score": float(scores[i]) if scores is not None else 0.0,
+                    "attributes": attrs,
+                }
+            )
         return items, infer_ms
 
 

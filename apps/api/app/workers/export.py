@@ -13,9 +13,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import redis.asyncio as aioredis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -23,11 +26,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-import re
-
 from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJob
+from app.db.models.export_artifact import ExportArtifact
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services import async_job as async_job_svc
@@ -36,11 +38,53 @@ from app.services.exporting.packaging import (
     PRESIGN_EXPIRES_SECONDS,
     build_export_zip,
 )
+from app.services.mask_formats import registry as mask_format_registry
+from app.services.mask_formats.contracts import canonical_digest
 from app.services.notification import NotificationService
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
+
+_RELEASE_LOCK_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+
+class ExportBuildInProgress(RuntimeError):
+    pass
+
+
+async def _complete_from_cache(
+    db: AsyncSession,
+    *,
+    job_uuid: uuid.UUID,
+    hit: ExportArtifact,
+    export_bucket: str,
+    download_name: str,
+    cache_key: str,
+) -> None:
+    download_url = storage_service.generate_download_url(
+        hit.object_key,
+        expires_in=PRESIGN_EXPIRES_SECONDS,
+        bucket=export_bucket,
+        download_name=download_name,
+    )
+    result = {
+        "download_url": download_url,
+        "expires_at": hit.expires_at.isoformat(),
+        "object_key": hit.object_key,
+        "file_count": hit.file_count,
+        "size_bytes": hit.size_bytes,
+        "cache_hit": True,
+    }
+    await async_job_svc.mark_complete(db, job_uuid, result=result)
+    await _emit_export_notification(db, job_uuid, ok=True, result=result)
+    await db.commit()
+    log.info("run_export cache hit job=%s key=%s", job_uuid, cache_key)
 
 
 async def _emit_export_notification(
@@ -91,16 +135,19 @@ def run_export(
     opts: dict | None,
     async_job_id: str,
 ):
-    asyncio.run(
-        _run_export(
-            project_id=project_id,
-            batch_id=batch_id,
-            targets=targets,
-            opts=opts or {},
-            async_job_id=async_job_id,
-            celery_task_id=self.request.id,
+    try:
+        asyncio.run(
+            _run_export(
+                project_id=project_id,
+                batch_id=batch_id,
+                targets=targets,
+                opts=opts or {},
+                async_job_id=async_job_id,
+                celery_task_id=self.request.id,
+            )
         )
-    )
+    except ExportBuildInProgress as exc:
+        raise self.retry(exc=exc, countdown=5, max_retries=120) from exc
 
 
 async def _scope_fingerprint(
@@ -183,6 +230,11 @@ async def _run_export(
     video_frame_mode = str(opts.get("video_frame_mode", "keyframes"))
     axis_frame = str(opts.get("axis_frame", "iso"))
     export_bucket = settings.minio_export_bucket
+    lock_client = None
+    lock_key: str | None = None
+    lock_owner: str | None = None
+    lock_acquired = False
+    uploaded_object_key: str | None = None
 
     engine = create_async_engine(settings.database_url, echo=False)
     SessionLocal = async_sessionmaker(
@@ -208,6 +260,8 @@ async def _run_export(
                     max_updated_at,
                     active_count,
                     axis_frame=axis_frame,
+                    adapter_contracts=mask_format_registry.versions(targets),
+                    options_digest=canonical_digest(opts),
                 )
                 # v0.10.43 · media 前缀 + 友好下载名（{display_id}_{dataset?}_{job[:8]}.zip）。
                 media, dataset_name, project_display_id = await _scope_naming(
@@ -217,40 +271,38 @@ async def _run_export(
                     project_display_id, dataset_name, async_job_id
                 )
 
-                # 缓存命中：探活 + 刷新预签名 URL，跳过重生成。
                 hit = await export_cache.lookup(db, cache_key, bucket=export_bucket)
+                if hit is None:
+                    lock_key = f"export-build:{cache_key}"
+                    lock_owner = secrets.token_hex(32)
+                    lock_client = aioredis.from_url(
+                        settings.redis_url,
+                        decode_responses=True,
+                        socket_connect_timeout=3,
+                        socket_timeout=3,
+                    )
+                    lock_acquired = bool(
+                        await lock_client.set(
+                            lock_key,
+                            lock_owner,
+                            nx=True,
+                            ex=6 * 60 * 60,
+                        )
+                    )
+                    if not lock_acquired:
+                        raise ExportBuildInProgress(
+                            "another worker is building the same export cache key"
+                        )
+                    # 首次 miss 与抢锁之间可能已有前驱任务完成。
+                    hit = await export_cache.lookup(db, cache_key, bucket=export_bucket)
                 if hit is not None:
-                    download_url = storage_service.generate_download_url(
-                        hit.object_key,
-                        expires_in=PRESIGN_EXPIRES_SECONDS,
-                        bucket=export_bucket,
+                    await _complete_from_cache(
+                        db,
+                        job_uuid=job_uuid,
+                        hit=hit,
+                        export_bucket=export_bucket,
                         download_name=download_name,
-                    )
-                    await async_job_svc.mark_complete(
-                        db,
-                        job_uuid,
-                        result={
-                            "download_url": download_url,
-                            "expires_at": hit.expires_at.isoformat(),
-                            "object_key": hit.object_key,
-                            "file_count": hit.file_count,
-                            "size_bytes": hit.size_bytes,
-                            "cache_hit": True,
-                        },
-                    )
-                    await _emit_export_notification(
-                        db,
-                        job_uuid,
-                        ok=True,
-                        result={
-                            "download_url": download_url,
-                            "expires_at": hit.expires_at.isoformat(),
-                            "file_count": hit.file_count,
-                        },
-                    )
-                    await db.commit()
-                    log.info(
-                        "run_export cache hit job=%s key=%s", async_job_id, cache_key
+                        cache_key=cache_key,
                     )
                     return
 
@@ -266,6 +318,7 @@ async def _run_export(
                     include_attributes=include_attributes,
                     video_frame_mode=video_frame_mode,
                     axis_frame=axis_frame,
+                    format_options=opts,
                 )
                 try:
                     await async_job_svc.update_progress(db, job_uuid, 70)
@@ -279,6 +332,7 @@ async def _run_export(
                         bucket=export_bucket,
                         content_type="application/zip",
                     )
+                    uploaded_object_key = object_key
                 finally:
                     # 上传成功或失败都清理临时文件，避免磁盘泄漏。
                     try:
@@ -301,6 +355,7 @@ async def _run_export(
                     expires_at=expires_at,
                 )
                 await db.commit()
+                uploaded_object_key = None
 
                 await async_job_svc.update_progress(db, job_uuid, 90)
                 await db.commit()
@@ -343,6 +398,19 @@ async def _run_export(
                 )
             except Exception as exc:  # noqa: BLE001
                 await db.rollback()
+                if isinstance(exc, ExportBuildInProgress):
+                    raise
+                if uploaded_object_key is not None:
+                    try:
+                        storage_service.delete_object(
+                            uploaded_object_key,
+                            bucket=export_bucket,
+                        )
+                    except Exception:  # noqa: BLE001
+                        log.exception(
+                            "failed to clean orphan export object key=%s",
+                            uploaded_object_key,
+                        )
                 try:
                     err = f"{type(exc).__name__}: {exc}"
                     await async_job_svc.mark_failed(db, job_uuid, error=err)
@@ -352,4 +420,16 @@ async def _run_export(
                     await db.rollback()
                 raise
     finally:
+        if lock_client is not None:
+            if lock_acquired and lock_key and lock_owner:
+                try:
+                    await lock_client.eval(
+                        _RELEASE_LOCK_LUA,
+                        1,
+                        lock_key,
+                        lock_owner,
+                    )
+                except Exception:  # noqa: BLE001
+                    log.exception("export single-flight lock release failed")
+            await lock_client.aclose()
         await engine.dispose()

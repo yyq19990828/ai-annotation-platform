@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.enums import UserRole
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
+from app.db.models.mask_qc import MaskQCRun
+from app.db.models.mask_repair_batch import MaskRepairBatch
+from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
 from app.schemas.async_job import (
@@ -35,10 +39,39 @@ CANCELLABLE_KINDS = {
     "predictions_import",
     "audit_archive",
     "dataset_import",
+    "mask_qc",
+    "mask_repair",
+    "mask_format_import",
 }
 RETRY_FAILED_KINDS = {"batch_predict"}
 
 AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]
+
+
+async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> bool:
+    if user.role == UserRole.SUPER_ADMIN.value or job.user_id == user.id:
+        return True
+    if job.kind != "mask_qc" or job.project_id is None:
+        return False
+    project = await db.get(Project, job.project_id)
+    if project is None:
+        return False
+    from app.services.scheduler import is_privileged_for_project
+
+    if is_privileged_for_project(user, project):
+        return True
+    if user.role != UserRole.REVIEWER.value:
+        return False
+    raw_task_ids = ((job.payload or {}).get("scope") or {}).get("task_ids") or []
+    try:
+        task_ids = [uuid.UUID(str(value)) for value in raw_task_ids]
+    except (TypeError, ValueError):
+        return False
+    if not task_ids:
+        return False
+    from app.api.v1.tasks._shared import _visible_task_ids
+
+    return await _visible_task_ids(db, project, user, task_ids) == set(task_ids)
 
 
 async def _to_async_job_out(
@@ -136,10 +169,7 @@ async def get_async_job(
     job = await db.get(AsyncJob, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="async_job not found")
-    if (
-        current_user.role != UserRole.SUPER_ADMIN.value
-        and job.user_id != current_user.id
-    ):
+    if not await _can_access_job(db, job=job, user=current_user):
         raise HTTPException(status_code=403, detail="not your job")
     return await _to_async_job_out(db, job)
 
@@ -158,10 +188,7 @@ async def cancel_async_job(
     job = await db.get(AsyncJob, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="async_job not found")
-    if (
-        current_user.role != UserRole.SUPER_ADMIN.value
-        and job.user_id != current_user.id
-    ):
+    if not await _can_access_job(db, job=job, user=current_user):
         raise HTTPException(status_code=403, detail="not your job")
     if job.kind not in CANCELLABLE_KINDS:
         raise HTTPException(
@@ -176,6 +203,91 @@ async def cancel_async_job(
 
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
+
+    if job.kind == "mask_qc":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("mask_qc revoke failed job=%s", job.id)
+        await async_job_svc.mark_cancelled(
+            db,
+            job.id,
+            result={"reason": "cancelled_by_user"},
+        )
+        run = (
+            await db.execute(
+                select(MaskQCRun)
+                .where(MaskQCRun.async_job_id == job.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if run is not None and run.status in {"pending", "running"}:
+            run.status = "cancelled"
+            run.completed_at = datetime.now(timezone.utc)
+        await notify_job_terminal(db, job_id=job.id)
+        await db.commit()
+        return {"status": "cancelled", "id": str(job_id)}
+
+    if job.kind == "mask_repair":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("mask_repair revoke failed job=%s", job.id)
+        batch = (
+            await db.execute(
+                select(MaskRepairBatch)
+                .where(MaskRepairBatch.async_job_id == job.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if job.status == AsyncJobStatus.PENDING.value:
+            await async_job_svc.mark_cancelled(
+                db, job.id, result={"reason": "cancelled_by_user"}
+            )
+            if batch is not None and batch.status == "pending":
+                batch.status = "cancelled"
+                batch.completed_at = datetime.now(timezone.utc)
+            await notify_job_terminal(db, job_id=job.id)
+            await db.commit()
+            return {"status": "cancelled", "id": str(job_id)}
+        await async_job_svc.request_cancel(db, job.id)
+        await db.commit()
+        return {"status": "cancel_requested", "id": str(job_id)}
+
+    if job.kind == "mask_format_import":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("mask_format_import revoke failed job=%s", job.id)
+        batch = (
+            await db.execute(
+                select(MaskFormatImport)
+                .where(MaskFormatImport.async_job_id == job.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if job.status == AsyncJobStatus.PENDING.value:
+            await async_job_svc.mark_cancelled(
+                db, job.id, result={"reason": "cancelled_by_user"}
+            )
+            if batch is not None and batch.status == "pending":
+                batch.status = "cancelled"
+                batch.completed_at = datetime.now(timezone.utc)
+            await notify_job_terminal(db, job_id=job.id)
+            await db.commit()
+            return {"status": "cancelled", "id": str(job_id)}
+        await async_job_svc.request_cancel(db, job.id)
+        await db.commit()
+        return {"status": "cancel_requested", "id": str(job_id)}
 
     if job.kind == "batch_predict":
         if job.celery_task_id:

@@ -18,18 +18,11 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import {
-  hasInput,
-  INPUT_BBOX_PROMPT_ID,
-  INPUT_CROP_ID,
-} from "@/api/capabilityInputs";
+import { hasInput, INPUT_BBOX_PROMPT_ID, INPUT_CROP_ID } from "@/api/capabilityInputs";
 import { usePreannotateConfig, type PreannotateArgs } from "./usePreannotateConfig";
 import { PreannotateConfigForm } from "./PreannotateConfigForm";
 import { ChipMultiSelect } from "./ChipMultiSelect";
-import type {
-  PipelineStagePayload,
-  PipelineStageStat,
-} from "@/hooks/usePreannotation";
+import type { PipelineStagePayload, PipelineStageStat } from "@/hooks/usePreannotation";
 import { classifyDownstream, type StageCaps } from "../utils/pipelineGraph";
 import styles from "./ProjectDetailPanel.module.css";
 
@@ -128,18 +121,15 @@ export function StageCard({
       : projectAttributeKeys.map((k) => ({ value: k, label: k }));
 
   // 下游 backend 是否会产属性 (自报 schema / types 任一非空)。capabilities 就绪后才判定。
-  const capabilitiesReady =
-    !cfg.capabilitiesQ.isLoading && cfg.capabilitiesQ.data != null;
+  const capabilitiesReady = !cfg.capabilitiesQ.isLoading && cfg.capabilitiesQ.data != null;
   const producesAttributes = useMemo(() => {
     const models = cfg.capabilitiesQ.data?.models ?? [];
     return models.some(
       (m) =>
-        (m.output_attribute_schema?.length ?? 0) > 0 ||
-        (m.output_attribute_types?.length ?? 0) > 0,
+        (m.output_attribute_schema?.length ?? 0) > 0 || (m.output_attribute_types?.length ?? 0) > 0,
     );
   }, [cfg.capabilitiesQ.data]);
-  const showNoAttrWarning =
-    backendId != null && capabilitiesReady && !producesAttributes;
+  const showNoAttrWarning = backendId != null && capabilitiesReady && !producesAttributes;
 
   const stageArgs: PreannotateArgs | null = cfg.configReady
     ? cfg.buildArgs("skip_predicted")
@@ -234,9 +224,7 @@ export function StageCard({
     if (!stageArgs) return null;
     const keyArr = Array.from(writeKeys);
     const labelTrim = label.trim();
-    const downstreamAxisKeys = new Set(
-      (selectedModel?.supported_variants ?? []).map((g) => g.key),
-    );
+    const downstreamAxisKeys = new Set((selectedModel?.supported_variants ?? []).map((g) => g.key));
     const downstreamVariants: Record<string, string> = {};
     for (const [k, v] of Object.entries(cfg.currentVariantSlice)) {
       if (downstreamAxisKeys.has(k)) downstreamVariants[k] = v;
@@ -287,10 +275,7 @@ export function StageCard({
     selectedModelTypes.length > 0 ? selectedModelTypes.includes("class") : undefined;
   // isOcrRecognize 排除: rec 产 text/orientation/language (本就不含 class), 该警告对识别阶段是误报。
   const showNoClassWarning =
-    !isGeometryDownstream &&
-    !isOcrRecognize &&
-    capabilitiesReady &&
-    producesClass === false;
+    !isGeometryDownstream && !isOcrRecognize && capabilitiesReady && producesClass === false;
   // v0.19.2 WS1 · write.keys 与 model 自报 output_attribute_schema 对账 (config-time 警告, 不硬挡):
   // 选的键不在 model schema 字段集 → 该 model 可能不产出。schema 缺失时跳过 (向后兼容)。
   const schemaKeySet = new Set(
@@ -299,9 +284,7 @@ export function StageCard({
       .filter((k): k is string => !!k),
   );
   const unknownWriteKeys =
-    schemaKeySet.size > 0
-      ? Array.from(writeKeys).filter((k) => !schemaKeySet.has(k))
-      : [];
+    schemaKeySet.size > 0 ? Array.from(writeKeys).filter((k) => !schemaKeySet.has(k)) : [];
 
   // v0.19.3 WS2 · 选中下游 model 自报 batchable (resource_profile.batchable) → false 即交互/有状态,
   // 不能进批量预标 (与端点 _assert_capabilities 对齐)。非 boolean = 未自报 (不判)。
@@ -487,20 +470,20 @@ export function StageCard({
         <div className={styles.stageWarn}>
           <Icon name="warning" size={12} />
           <span>
-            该模型不产类别属性（output_attribute_types 不含 class），作分类下游属性恒空，运行将被端点拒绝。
+            该模型不产类别属性（output_attribute_types 不含
+            class），作分类下游属性恒空，运行将被端点拒绝。
           </span>
         </div>
       )}
 
       <div className={styles.field}>
-        <span className={styles.fieldLabel}>
-          父框类别（留空=对全部父框跑；按检测框类名匹配）
-        </span>
+        <span className={styles.fieldLabel}>父框类别（留空=对全部父框跑；按检测框类名匹配）</span>
         <ChipMultiSelect
           // 选项优先取上游筛完的类别 (下游只会见到这些框); 取不到回落项目类别。另支持自由文本输入。
-          options={(parentClassOptions?.length ? parentClassOptions : projectClasses).map(
-            (c) => ({ value: c, label: c }),
-          )}
+          options={(parentClassOptions?.length ? parentClassOptions : projectClasses).map((c) => ({
+            value: c,
+            label: c,
+          }))}
           selected={classFilter}
           onChange={setClassFilter}
           allowFreeText
@@ -566,7 +549,8 @@ export function StageCard({
             <div className={styles.stageWarn}>
               <Icon name="warning" size={12} />
               <span>
-                属性键 {unknownWriteKeys.join("、")} 不在该模型自报的属性 schema 中，可能不会被产出。
+                属性键 {unknownWriteKeys.join("、")} 不在该模型自报的属性 schema
+                中，可能不会被产出。
               </span>
             </div>
           )}

@@ -15,7 +15,7 @@
  */
 import { defineConfig, devices } from "@playwright/test";
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 
 export default defineConfig({
@@ -24,10 +24,7 @@ export default defineConfig({
   globalSetup: "./e2e/screenshots/global-setup.ts",
   fullyParallel: false,
   workers: 1,
-  reporter: [
-    ["list"],
-    ["./e2e/screenshots/manifest-reporter.ts"],
-  ],
+  reporter: [["list"], ["./e2e/screenshots/manifest-reporter.ts"]],
   snapshotPathTemplate: "{testDir}/regression/__screenshots__/{arg}{ext}",
 
   use: {
@@ -79,9 +76,7 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 810 },
         deviceScaleFactor: 1,
-        video: VALIDATE_ONLY
-          ? "off"
-          : { mode: "on", size: { width: 1440, height: 810 } },
+        video: VALIDATE_ONLY ? "off" : { mode: "on", size: { width: 1440, height: 810 } },
         trace: "on",
       },
     },

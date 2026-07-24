@@ -235,23 +235,22 @@ export const dashboardApi = {
   getAnnotatorStats: () => apiClient.get<AnnotatorDashboardStats>("/dashboard/annotator"),
   // v0.8.6 F4
   getPredictionCostStats: (range: "7d" | "30d" = "30d") =>
-    apiClient.get<PredictionCostStats>(
-      `/dashboard/admin/prediction-cost-stats?range=${range}`,
-    ),
+    apiClient.get<PredictionCostStats>(`/dashboard/admin/prediction-cost-stats?range=${range}`),
   getMyBatches: () => apiClient.get<MyBatchItem[]>("/dashboard/annotator/batches"),
   getMyRecentReviews: (limit = 20) =>
     apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),
   // v0.8.7 F5.3
-  getReviewerTodayMini: () =>
-    apiClient.get<ReviewerMiniStats>("/dashboard/reviewer/today-mini"),
+  getReviewerTodayMini: () => apiClient.get<ReviewerMiniStats>("/dashboard/reviewer/today-mini"),
   // v0.8.4 · 管理员人员看板
-  getAdminPeople: (params: {
-    role?: string;
-    project?: string;
-    period?: string;
-    sort?: string;
-    q?: string;
-  } = {}) => {
+  getAdminPeople: (
+    params: {
+      role?: string;
+      project?: string;
+      period?: string;
+      sort?: string;
+      q?: string;
+    } = {},
+  ) => {
     const sp = new URLSearchParams();
     if (params.role) sp.set("role", params.role);
     if (params.project) sp.set("project", params.project);
@@ -259,15 +258,11 @@ export const dashboardApi = {
     if (params.sort) sp.set("sort", params.sort);
     if (params.q) sp.set("q", params.q);
     const qs = sp.toString();
-    return apiClient.get<AdminPeopleList>(
-      `/dashboard/admin/people${qs ? `?${qs}` : ""}`,
-    );
+    return apiClient.get<AdminPeopleList>(`/dashboard/admin/people${qs ? `?${qs}` : ""}`);
   },
   getAdminPersonDetail: (userId: string, period: string = "4w", project?: string) =>
     apiClient.get<AdminPersonDetail>(
-      `/dashboard/admin/people/${userId}?period=${period}${
-        project ? `&project=${project}` : ""
-      }`,
+      `/dashboard/admin/people/${userId}?period=${period}${project ? `&project=${project}` : ""}`,
     ),
   // v0.12.5 · 成员绩效 CSV 导出（A2）。带 Bearer 拉 blob 触发下载，镜像 usersApi.exportUsers。
   exportPeople: async (

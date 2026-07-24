@@ -52,7 +52,10 @@ export function resolveAnnotationVisual(common: AnnotationVisualConfig): Annotat
 }
 
 /** 线宽基值:选中 = base + 0.5。图片侧再 /scale,视频侧原样(screen px)。 */
-export function strokeWidthFor(selected: boolean, cfg: Pick<AnnotationVisualConfig, "strokeWidth">): number {
+export function strokeWidthFor(
+  selected: boolean,
+  cfg: Pick<AnnotationVisualConfig, "strokeWidth">,
+): number {
   return selected ? cfg.strokeWidth + SELECTED_STROKE_BONUS : cfg.strokeWidth;
 }
 
@@ -114,7 +117,10 @@ export interface TrackLabelInput {
 }
 
 /** 按 track 段字段集组装视频轨迹标签;类别名恒显。· 分隔,格式 `#num · 类别 · attrs · 状态`。 */
-export function buildTrackLabelText(input: TrackLabelInput, content: readonly LabelFieldToken[]): string {
+export function buildTrackLabelText(
+  input: TrackLabelInput,
+  content: readonly LabelFieldToken[],
+): string {
   const parts: string[] = [input.className];
   if (content.includes("attrs")) {
     const attrs = formatAttributes(input.attributes);

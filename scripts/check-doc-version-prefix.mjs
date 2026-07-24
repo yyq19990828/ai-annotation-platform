@@ -62,16 +62,29 @@ function stripComments(line, inComment) {
 }
 
 function parseArgs(argv) {
-  const out = { base: "", head: "", staged: false, files: [], format: "text", writeMarkdown: "", strict: false };
+  const out = {
+    base: "",
+    head: "",
+    staged: false,
+    files: [],
+    format: "text",
+    writeMarkdown: "",
+    strict: false,
+  };
   for (const arg of argv) {
     if (arg.startsWith("--base=")) out.base = arg.slice("--base=".length);
     else if (arg.startsWith("--head=")) out.head = arg.slice("--head=".length);
     else if (arg === "--staged") out.staged = true;
     else if (arg === "--strict") out.strict = true;
     else if (arg.startsWith("--files=")) {
-      out.files = arg.slice("--files=".length).split(",").map((x) => x.trim()).filter(Boolean);
+      out.files = arg
+        .slice("--files=".length)
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
     } else if (arg.startsWith("--format=")) out.format = arg.slice("--format=".length);
-    else if (arg.startsWith("--write-markdown=")) out.writeMarkdown = arg.slice("--write-markdown=".length);
+    else if (arg.startsWith("--write-markdown="))
+      out.writeMarkdown = arg.slice("--write-markdown=".length);
   }
   return out;
 }
@@ -90,7 +103,11 @@ function changedDocFiles(opts) {
   if (opts.base && opts.head) range = ["diff", "--name-only", `${opts.base}...${opts.head}`];
   else if (opts.staged) range = ["diff", "--name-only", "--cached"];
   else range = ["diff", "--name-only", "HEAD"];
-  return runGit(range).split("\n").map((x) => x.trim()).filter(Boolean).filter(isDoc);
+  return runGit(range)
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .filter(isDoc);
 }
 
 // Return added lines with their new-file line numbers for one file.

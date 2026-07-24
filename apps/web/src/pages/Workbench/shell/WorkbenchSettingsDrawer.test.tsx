@@ -34,12 +34,7 @@ import { WorkbenchSettingsDrawer } from "./WorkbenchSettingsDrawer";
 function renderDrawer(props?: Partial<Parameters<typeof WorkbenchSettingsDrawer>[0]>) {
   return render(
     <MemoryRouter>
-      <WorkbenchSettingsDrawer
-        open
-        onClose={vi.fn()}
-        stageKind="image"
-        {...props}
-      />
+      <WorkbenchSettingsDrawer open onClose={vi.fn()} stageKind="image" {...props} />
     </MemoryRouter>,
   );
 }

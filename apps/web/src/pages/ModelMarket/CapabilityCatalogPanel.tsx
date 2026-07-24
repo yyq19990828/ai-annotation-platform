@@ -14,15 +14,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import {
-  adminMlIntegrationsApi,
-  type MLBackendItem,
-} from "@/api/adminMlIntegrations";
-import {
-  mlBackendsApi,
-  type MLBackendCapability,
-  type MLModelCapability,
-} from "@/api/ml-backends";
+import { adminMlIntegrationsApi, type MLBackendItem } from "@/api/adminMlIntegrations";
+import { mlBackendsApi, type MLBackendCapability, type MLModelCapability } from "@/api/ml-backends";
 import {
   useProtocolCapabilities,
   useCapabilityInstances,
@@ -32,16 +25,8 @@ import {
 import { usePermissions } from "@/hooks/usePermissions";
 import { ProtocolCapabilityCard } from "./ProtocolCapabilityCard";
 import { EmptyCatalogBanner } from "./EmptyCatalogBanner";
-import {
-  taskLabel,
-  infraLabel,
-  modalityLabel,
-} from "./capability/labels";
-import type {
-  FlatModel,
-  CatalogViewMode,
-  CatalogGroupBy,
-} from "./capability/types";
+import { taskLabel, infraLabel, modalityLabel } from "./capability/labels";
+import type { FlatModel, CatalogViewMode, CatalogGroupBy } from "./capability/types";
 import {
   effectiveInfra,
   effectiveModalities,
@@ -274,7 +259,8 @@ export function CapabilityCatalogPanel() {
           backendInfra: cap.infra,
           backendModalities: cap.modalities,
           healthMeta: r.backend.health_meta,
-          warmupEndpoint: cap.warmup_endpoint ?? r.backend.health_meta?.capabilities?.warmup_endpoint,
+          warmupEndpoint:
+            cap.warmup_endpoint ?? r.backend.health_meta?.capabilities?.warmup_endpoint,
           stale,
           // v0.18.29 · 该 model 命中的受控词表越界诊断 (按 model_id 关联)。
           warnings: cap.warnings?.filter((w) => w.model_id === m.id),
@@ -326,7 +312,10 @@ export function CapabilityCatalogPanel() {
     const needle = search.trim().toLocaleLowerCase();
     return flatModels.filter((f) => {
       if (taskFilter.size > 0 && !(f.model.task && taskFilter.has(f.model.task))) return false;
-      if (familyFilter.size > 0 && !(f.model.model_family && familyFilter.has(f.model.model_family)))
+      if (
+        familyFilter.size > 0 &&
+        !(f.model.model_family && familyFilter.has(f.model.model_family))
+      )
         return false;
       if (infraFilter.size > 0) {
         const inf = effectiveInfra(f.model, f.backendInfra);
@@ -406,7 +395,16 @@ export function CapabilityCatalogPanel() {
         return true;
       })
       .map((task) => ({ task, mounted: byTask.get(task.id) ?? [] }));
-  }, [protocol, instancesData, flatByKey, registeredBackendIds, taskFilter, infraFilter, modalityFilter, search]);
+  }, [
+    protocol,
+    instancesData,
+    flatByKey,
+    registeredBackendIds,
+    taskFilter,
+    infraFilter,
+    modalityFilter,
+    search,
+  ]);
 
   const hasActiveFilter =
     taskFilter.size > 0 ||
@@ -497,8 +495,8 @@ export function CapabilityCatalogPanel() {
             <Icon name="layers" size={28} className="opacity-30" />
             <div>尚无项目注册 ML Backend</div>
             <div className="text-xs">
-              切到「分组: task」可查看平台协议层支持的全部能力；
-              或在项目设置注册 backend 后, 其能力目录会出现在这里。
+              切到「分组: task」可查看平台协议层支持的全部能力； 或在项目设置注册 backend 后,
+              其能力目录会出现在这里。
             </div>
           </div>
         ) : (
@@ -549,7 +547,11 @@ export function CapabilityCatalogPanel() {
               </div>
               <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 分组
-                <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)} className={SELECT_CLASS}>
+                <select
+                  value={groupBy}
+                  onChange={(e) => setGroupBy(e.target.value as CatalogGroupBy)}
+                  className={SELECT_CLASS}
+                >
                   <option value="task">协议能力 (默认)</option>
                   <option value="backend">backend</option>
                   <option value="infra">infra</option>
@@ -563,7 +565,8 @@ export function CapabilityCatalogPanel() {
               <div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-status-caution-soft px-3 py-2 text-xs text-foreground">
                 <Icon name="warning" size={13} />
                 <span>
-                  {results.filter((r) => r.isError).length} 个 backend 能力探测失败，其条目暂缺；点「刷新」可重探。
+                  {results.filter((r) => r.isError).length} 个 backend
+                  能力探测失败，其条目暂缺；点「刷新」可重探。
                 </span>
               </div>
             )}
@@ -632,7 +635,9 @@ export function CapabilityCatalogPanel() {
                   const defaultCollapsed = flatModels.length > 30 && groupBy !== "none";
                   const collapsed =
                     groupBy !== "none" &&
-                    (defaultCollapsed ? !expandedGroups.has(group.key) : collapsedGroups.has(group.key));
+                    (defaultCollapsed
+                      ? !expandedGroups.has(group.key)
+                      : collapsedGroups.has(group.key));
                   return (
                     <section key={group.key} className="min-w-0">
                       {groupBy !== "none" && (
@@ -644,7 +649,9 @@ export function CapabilityCatalogPanel() {
                         >
                           <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
                           <span>{group.label}</span>
-                          <span className="ml-auto text-xs text-muted-foreground">{group.items.length}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {group.items.length}
+                          </span>
                         </button>
                       )}
                       {!collapsed &&

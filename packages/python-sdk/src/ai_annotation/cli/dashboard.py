@@ -29,9 +29,15 @@ def _fmt_rate(v: float | None) -> str:
 
 @app.command("people")
 def people(
-    project: str | None = typer.Option(None, "--project", help="项目范围 (project_admin 必填)"),
-    role: str | None = typer.Option(None, "--role", help="按角色过滤: annotator / reviewer / both"),
-    period: str | None = typer.Option(None, "--period", help="统计周期: today / 7d / 4w / 1m"),
+    project: str | None = typer.Option(
+        None, "--project", help="项目范围 (project_admin 必填)"
+    ),
+    role: str | None = typer.Option(
+        None, "--role", help="按角色过滤: annotator / reviewer / both"
+    ),
+    period: str | None = typer.Option(
+        None, "--period", help="统计周期: today / 7d / 4w / 1m"
+    ),
     json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
 ) -> None:
     """全员绩效卡片 (super_admin / project_admin)。"""

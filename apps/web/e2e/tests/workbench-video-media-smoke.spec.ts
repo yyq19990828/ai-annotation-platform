@@ -39,7 +39,8 @@ test.describe("workbench video media konva smoke", () => {
     // 等首帧解码上屏 + 关动画,降低截图 flaky。
     await page.waitForTimeout(800);
     await page.addStyleTag({
-      content: "*,*::before,*::after{animation-duration:0!important;transition-duration:0!important;}",
+      content:
+        "*,*::before,*::after{animation-duration:0!important;transition-duration:0!important;}",
     });
 
     await expect(stage).toHaveScreenshot("workbench-video-konva-frame0.png", {

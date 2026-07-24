@@ -24,13 +24,19 @@ describe("workbenchSettingsFields 注册表", () => {
     }
   });
 
+  it("透明度设置明确区分通用填充与重复 AI 候选，不再暴露独立 Mask 控件", () => {
+    expect(
+      WORKBENCH_SETTING_FIELDS.find((field) => field.key === "image.fadedOpacity")?.label,
+    ).toBe("重复 AI 候选透明度");
+    expect(
+      WORKBENCH_SETTING_FIELDS.find((field) => field.key === "image.maskOverlayOpacity"),
+    ).toBeUndefined();
+  });
+
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(48);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(47);
     const byKey = Object.fromEntries(
-      WORKBENCH_SETTING_FIELDS.map((f) => [
-        f.key,
-        getFieldValue(DEFAULT_WORKBENCH_PREFERENCES, f),
-      ]),
+      WORKBENCH_SETTING_FIELDS.map((f) => [f.key, getFieldValue(DEFAULT_WORKBENCH_PREFERENCES, f)]),
     );
     expect(byKey).toEqual({
       "common.leftWidthPct": 15,
@@ -60,7 +66,6 @@ describe("workbenchSettingsFields 注册表", () => {
       "image.snapThresholdPx": 8,
       "image.zoomStepFactor": 1.1,
       "image.fadedOpacity": 0.35,
-      "image.maskOverlayOpacity": 0.45,
       "video.defaultPlaybackRate": 1,
       "video.largeFrameStep": 10,
       "video.autoFitOnResize": true,
@@ -85,28 +90,18 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("buildFieldPatch 产出子树级 patch", () => {
-    const field = WORKBENCH_SETTING_FIELDS.find(
-      (f) => f.key === "image.controlPointsSize",
-    )!;
+    const field = WORKBENCH_SETTING_FIELDS.find((f) => f.key === "image.controlPointsSize")!;
     expect(buildFieldPatch(field, 12)).toEqual({ image: { controlPointsSize: 12 } });
-    const common = WORKBENCH_SETTING_FIELDS.find(
-      (f) => f.key === "common.longTaskSampleRate",
-    )!;
+    const common = WORKBENCH_SETTING_FIELDS.find((f) => f.key === "common.longTaskSampleRate")!;
     expect(buildFieldPatch(common, 0.2)).toEqual({ common: { longTaskSampleRate: 0.2 } });
-    const pointcloud = WORKBENCH_SETTING_FIELDS.find(
-      (f) => f.key === "pointcloud.showGrid",
-    )!;
+    const pointcloud = WORKBENCH_SETTING_FIELDS.find((f) => f.key === "pointcloud.showGrid")!;
     expect(buildFieldPatch(pointcloud, false)).toEqual({ pointcloud: { showGrid: false } });
-    const video = WORKBENCH_SETTING_FIELDS.find(
-      (f) => f.key === "video.largeFrameStep",
-    )!;
+    const video = WORKBENCH_SETTING_FIELDS.find((f) => f.key === "video.largeFrameStep")!;
     expect(buildFieldPatch(video, "grid")).toEqual({ video: { largeFrameStep: "grid" } });
   });
 
   it("local fields do not build preference patches", () => {
-    const field = WORKBENCH_SETTING_FIELDS.find(
-      (f) => f.key === "experiment.webcodecs",
-    )!;
+    const field = WORKBENCH_SETTING_FIELDS.find((f) => f.key === "experiment.webcodecs")!;
     expect(() => buildFieldPatch(field, true)).toThrow(/Local workbench setting/);
   });
 

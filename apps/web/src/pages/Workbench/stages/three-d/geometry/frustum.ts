@@ -37,12 +37,7 @@ export interface RectSelection {
 }
 
 /** 把任意两角点规整为 x0≤x1 / y0≤y1 的矩形。 */
-export function normalizeRect(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-): SeedRect {
+export function normalizeRect(ax: number, ay: number, bx: number, by: number): SeedRect {
   return {
     x0: Math.min(ax, bx),
     y0: Math.min(ay, by),
@@ -87,10 +82,7 @@ export function selectPointsInRect(
  * MVP 用「最近点 + 固定带宽」简化(直方图找密集峰留 Phase 2)。band 默认 8m(覆盖一辆车纵深
  * + 余量);前后严重重叠仍可能混簇,靠收紧矩形重试 + Phase 2 微调兜底。
  */
-export function depthGate(
-  sel: RectSelection,
-  opts?: { bandMeters?: number },
-): number[] {
+export function depthGate(sel: RectSelection, opts?: { bandMeters?: number }): number[] {
   if (sel.indices.length === 0) return [];
   const band = opts?.bandMeters ?? 8;
   let dMin = Infinity;
@@ -141,19 +133,43 @@ export function centralRay(
   const e = calib.extrinsic;
   // M = lidar→camera(行主序)。有 rect 矫正时 M = rect · extrinsic。
   const M = new THREE.Matrix4().set(
-    e[0], e[1], e[2], e[3],
-    e[4], e[5], e[6], e[7],
-    e[8], e[9], e[10], e[11],
-    e[12], e[13], e[14], e[15],
+    e[0],
+    e[1],
+    e[2],
+    e[3],
+    e[4],
+    e[5],
+    e[6],
+    e[7],
+    e[8],
+    e[9],
+    e[10],
+    e[11],
+    e[12],
+    e[13],
+    e[14],
+    e[15],
   );
   if (calib.rect) {
     const r = calib.rect;
     M.premultiply(
       new THREE.Matrix4().set(
-        r[0], r[1], r[2], r[3],
-        r[4], r[5], r[6], r[7],
-        r[8], r[9], r[10], r[11],
-        r[12], r[13], r[14], r[15],
+        r[0],
+        r[1],
+        r[2],
+        r[3],
+        r[4],
+        r[5],
+        r[6],
+        r[7],
+        r[8],
+        r[9],
+        r[10],
+        r[11],
+        r[12],
+        r[13],
+        r[14],
+        r[15],
       ),
     );
   }

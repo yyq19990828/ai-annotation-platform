@@ -85,9 +85,7 @@ export interface UsePipelineComposerReturn {
 /**
  * 编排搭建共用 hook. 单元测: `usePipelineComposer.test.ts` (承接项目侧 pipelineGraph 判据覆盖).
  */
-export function usePipelineComposer(
-  args: UsePipelineComposerArgs,
-): UsePipelineComposerReturn {
+export function usePipelineComposer(args: UsePipelineComposerArgs): UsePipelineComposerReturn {
   const { availableBackendCount, onWarn, onCascadeDelete } = args;
 
   // v0.21.6 · 输入节点(纯数据源) + 首模型 stage 常驻; 默认选中首模型 stage(输入节点是被动数据源)。
@@ -98,13 +96,10 @@ export function usePipelineComposer(
   const [stageTick, setStageTick] = useState(0);
   const seqRef = useRef(0);
 
-  const onStageChange = useCallback(
-    (sid: string, payload: PipelineStagePayload | null) => {
-      stagePayloadsRef.current[sid] = payload;
-      setStageTick((n) => n + 1);
-    },
-    [],
-  );
+  const onStageChange = useCallback((sid: string, payload: PipelineStagePayload | null) => {
+    stagePayloadsRef.current[sid] = payload;
+    setStageTick((n) => n + 1);
+  }, []);
   const onStageCaps = useCallback((sid: string, caps: StageCaps | null) => {
     stageCapsRef.current[sid] = caps;
     setStageTick((n) => n + 1);
@@ -190,8 +185,7 @@ export function usePipelineComposer(
   );
 
   const canAddChildAt = useCallback(
-    (parentSid: string) =>
-      canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, parentSid),
+    (parentSid: string) => canAddBackend && pureCanAddChild(stagesGraph, payloadBySid, parentSid),
     [canAddBackend, stagesGraph, payloadBySid],
   );
 
@@ -203,7 +197,9 @@ export function usePipelineComposer(
       for (const k of p.write.keys ?? []) counts.set(prefix + k, (counts.get(prefix + k) ?? 0) + 1);
     });
     const conflictFinals = new Set(
-      Array.from(counts).filter(([, n]) => n >= 2).map(([k]) => k),
+      Array.from(counts)
+        .filter(([, n]) => n >= 2)
+        .map(([k]) => k),
     );
     const perCard: Record<string, Set<string>> = {};
     const displayFinals = new Set<string>();

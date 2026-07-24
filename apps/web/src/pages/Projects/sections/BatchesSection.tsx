@@ -68,7 +68,6 @@ const STATUS_VARIANTS: Record<string, "default" | "accent" | "success" | "warnin
   archived: "default",
 };
 
-
 type BulkActionKind = "archive" | "delete" | "reassign" | "activate" | "approve" | "reject";
 
 const BULK_LABEL: Record<BulkActionKind, string> = {
@@ -123,11 +122,17 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState<BulkActionKind | null>(null);
   const [reassignOpen, setReassignOpen] = useState(false);
-  const [bulkResult, setBulkResult] = useState<{ kind: BulkActionKind; data: BulkBatchActionResponse } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{
+    kind: BulkActionKind;
+    data: BulkBatchActionResponse;
+  } | null>(null);
   const [resultExpanded, setResultExpanded] = useState(false);
 
   // v0.7.3 · 逆向迁移 + 操作历史
-  const [reverseTarget, setReverseTarget] = useState<{ batch: BatchResponse; kind: ReverseKind } | null>(null);
+  const [reverseTarget, setReverseTarget] = useState<{
+    batch: BatchResponse;
+    kind: ReverseKind;
+  } | null>(null);
   const [auditTarget, setAuditTarget] = useState<BatchResponse | null>(null);
   // v0.7.6 · 终极重置到 draft
   const [resetTarget, setResetTarget] = useState<BatchResponse | null>(null);
@@ -136,7 +141,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
   // v0.7.6 · view toggle [list | kanban] + URL ?batch_view=kanban 持久化
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = (searchParams.get("batch_view") === "kanban" ? "kanban" : "list") as "list" | "kanban";
+  const view = (searchParams.get("batch_view") === "kanban" ? "kanban" : "list") as
+    | "list"
+    | "kanban";
   const setView = (next: "list" | "kanban") => {
     const params = new URLSearchParams(searchParams);
     if (next === "kanban") params.set("batch_view", "kanban");
@@ -149,7 +156,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     [batches],
   );
   const selectedCount = selectedIds.size;
-  const allSelected = selectableBatches.length > 0 && selectableBatches.every((b) => selectedIds.has(b.id));
+  const allSelected =
+    selectableBatches.length > 0 && selectableBatches.every((b) => selectedIds.has(b.id));
 
   const toggleOne = (id: string) => {
     setSelectedIds((prev) => {
@@ -213,7 +221,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     });
   };
 
-  const runBulkReassign = async (payload: { annotator_id?: string | null; reviewer_id?: string | null }) => {
+  const runBulkReassign = async (payload: {
+    annotator_id?: string | null;
+    reviewer_id?: string | null;
+  }) => {
     return new Promise<void>((resolve) => {
       bulkReassign.mutate(
         { batch_ids: [...selectedIds], ...payload },
@@ -243,23 +254,29 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   };
 
   const runBulkReject = (feedback: string) => {
-    bulkReject.mutate({ batchIds: [...selectedIds], feedback }, {
-      onSuccess: (data) => {
-        handleBulkResult("reject", data);
-        setConfirmBulk(null);
+    bulkReject.mutate(
+      { batchIds: [...selectedIds], feedback },
+      {
+        onSuccess: (data) => {
+          handleBulkResult("reject", data);
+          setConfirmBulk(null);
+        },
+        onError: (e) => pushToast({ msg: "批量驳回失败", sub: (e as Error).message }),
       },
-      onError: (e) => pushToast({ msg: "批量驳回失败", sub: (e as Error).message }),
-    });
+    );
   };
 
   const handleAdminLock = (batch: BatchResponse, reason: string) => {
-    adminLock.mutate({ batchId: batch.id, reason }, {
-      onSuccess: () => {
-        pushToast({ msg: `批次 ${batch.display_id} 已锁定`, kind: "success" });
-        setLockTarget(null);
+    adminLock.mutate(
+      { batchId: batch.id, reason },
+      {
+        onSuccess: () => {
+          pushToast({ msg: `批次 ${batch.display_id} 已锁定`, kind: "success" });
+          setLockTarget(null);
+        },
+        onError: (e) => pushToast({ msg: "锁定失败", sub: (e as Error).message }),
       },
-      onError: (e) => pushToast({ msg: "锁定失败", sub: (e as Error).message }),
-    });
+    );
   };
 
   const handleAdminUnlock = (batch: BatchResponse) => {
@@ -328,10 +345,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
       {
         onSuccess: (res) => {
           pushToast({
-            msg:
-              res.length === 1
-                ? "已把未归类任务注入 1 个新批次"
-                : `已创建 ${res.length} 个批次`,
+            msg: res.length === 1 ? "已把未归类任务注入 1 个新批次" : `已创建 ${res.length} 个批次`,
             kind: "success",
           });
           setShowCreate(false);
@@ -345,7 +359,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     transitionBatch.mutate(
       { batchId: batch.id, targetStatus: target },
       {
-        onSuccess: () => pushToast({ msg: `批次状态已更新为 ${STATUS_LABELS[target]}`, kind: "success" }),
+        onSuccess: () =>
+          pushToast({ msg: `批次状态已更新为 ${STATUS_LABELS[target]}`, kind: "success" }),
         onError: (e) => pushToast({ msg: "状态转移失败", sub: (e as Error).message }),
       },
     );
@@ -414,19 +429,23 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               disabled={batches.length === 0}
               title="把项目下所有批次圆周分派给所选成员（一 batch 一标注员 + 一审核员）"
             >
-              <Icon name="users" size={12} />按项目分派批次
+              <Icon name="users" size={12} />
+              按项目分派批次
             </Button>
             {/* scene 模式项目分包只能 by scene：头部入口也走 by_scene，不开 random modal。 */}
             <Button
               onClick={project.scene_mode ? handleCreateByScene : () => setShowCreate(true)}
               disabled={project.scene_mode && splitBatches.isPending}
             >
-              <Icon name="plus" size={12} />创建批次
+              <Icon name="plus" size={12} />
+              创建批次
             </Button>
           </div>
         </div>
 
-        {isLoading && <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>}
+        {isLoading && (
+          <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
+        )}
 
         {!isLoading && batches.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">暂无批次</div>
@@ -437,12 +456,13 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           <div className="flex items-center gap-3 border-b border-border bg-status-caution-soft px-4 py-2 text-sm">
             <Icon name="info" size={14} />
             <span>
-              本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
+              本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>
+              （数据集已关联但尚未划分到批次）。
             </span>
-            {isOwner && (
+            {isOwner &&
               // scene 模式项目只能按 scene 建包：隐藏 random 系入口(一键全量/去分包),
               // 仅留「按 scene 建包」,与向导自动分包同策略,保证批次边界对齐 scene。
-              project.scene_mode ? (
+              (project.scene_mode ? (
                 <Button
                   onClick={handleCreateByScene}
                   disabled={splitBatches.isPending}
@@ -469,8 +489,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     <Icon name="layers" size={12} /> 去分包
                   </Button>
                 </>
-              )
-            )}
+              ))}
             <Button
               onClick={() => setBrowseUnbatched(true)}
               className="ml-auto"
@@ -484,9 +503,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         {/* v0.7.3 · 多选浮层操作条（仅 owner 可见） */}
         {isOwner && selectedCount > 0 && (
           <div className="flex items-center gap-3 border-b border-border bg-brand/10 px-4 py-2 text-sm">
-            <span>已选 <strong>{selectedCount}</strong> 个批次</span>
+            <span>
+              已选 <strong>{selectedCount}</strong> 个批次
+            </span>
             <div className="ml-auto flex gap-1.5">
-              <Button onClick={() => setConfirmBulk("activate")} title="对选中的 draft 批次批量激活">
+              <Button
+                onClick={() => setConfirmBulk("activate")}
+                title="对选中的 draft 批次批量激活"
+              >
                 <Icon name="play" size={12} /> 激活
               </Button>
               <Button
@@ -509,11 +533,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               <Button onClick={() => setConfirmBulk("archive")} title="批量归档">
                 <Icon name="inbox" size={12} /> 归档
               </Button>
-              <Button
-                variant="danger"
-                onClick={() => setConfirmBulk("delete")}
-                title="批量删除"
-              >
+              <Button variant="danger" onClick={() => setConfirmBulk("delete")} title="批量删除">
                 <Icon name="trash" size={12} /> 删除
               </Button>
               <Button onClick={clearSelection} title="取消选择">
@@ -529,7 +549,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             <div className="flex items-center gap-2">
               <span>
                 上次批量{BULK_LABEL[bulkResult.kind]}：
-                <strong className="text-status-positive"> 成功 {bulkResult.data.succeeded.length}</strong>
+                <strong className="text-status-positive">
+                  {" "}
+                  成功 {bulkResult.data.succeeded.length}
+                </strong>
                 {bulkResult.data.skipped.length > 0 && (
                   <strong className="ml-2 text-status-caution">
                     跳过 {bulkResult.data.skipped.length}
@@ -569,11 +592,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         )}
 
         {!isLoading && batches.length > 0 && view === "kanban" && (
-          <BatchesKanbanView
-            batches={batches}
-            isOwner={isOwner}
-            onTransition={handleTransition}
-          />
+          <BatchesKanbanView batches={batches} isOwner={isOwner} onTransition={handleTransition} />
         )}
 
         {!isLoading && batches.length > 0 && view === "list" && (
@@ -593,7 +612,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </th>
                   )}
                   {["批次", "状态", "分派", "优先级", "截止日期", "进度", "操作"].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap text-muted-foreground">
+                    <th
+                      key={h}
+                      className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap text-muted-foreground"
+                    >
                       {h}
                     </th>
                   ))}
@@ -615,7 +637,12 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       </td>
                     )}
                     <td className="px-3 py-2.5 align-middle">
-                      <div className="max-w-[220px] overflow-hidden font-medium text-ellipsis whitespace-nowrap" title={b.name}>{b.name}</div>
+                      <div
+                        className="max-w-[220px] overflow-hidden font-medium text-ellipsis whitespace-nowrap"
+                        title={b.name}
+                      >
+                        {b.name}
+                      </div>
                       <div className="mono text-xs whitespace-nowrap text-muted-foreground">
                         {b.display_id}
                       </div>
@@ -637,7 +664,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     <td className="px-3 py-2.5 align-middle">
                       {(() => {
                         const unassigned = !b.annotator_id && !b.reviewer_id;
-                        const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<typeof b.annotator>[];
+                        const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<
+                          typeof b.annotator
+                        >[];
                         return (
                           <button
                             type="button"
@@ -650,7 +679,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           >
                             {unassigned ? (
                               <>
-                                <Icon name="users" size={11} />未分派
+                                <Icon name="users" size={11} />
+                                未分派
                               </>
                             ) : (
                               <AssigneeAvatarStack users={assignees} max={2} />
@@ -673,119 +703,123 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </td>
                     <td className="px-3 py-2.5 align-middle">
                       <div className="flex flex-nowrap gap-1 whitespace-nowrap">
-                      {b.status === "draft" && (
-                        <Button
-                          onClick={() => handleTransition(b, "active")}
-                          disabled={!b.annotator_id || b.total_tasks === 0}
-                          title={
-                            !b.annotator_id
-                              ? "请先分派标注员"
-                              : b.total_tasks === 0
-                                ? "批次内无任务，无法激活"
-                                : "激活"
-                          }
-                        >
-                          <Icon name="play" size={12} />
-                        </Button>
-                      )}
-                      {b.status === "annotating" && (
-                        <Button
-                          onClick={() => handleTransition(b, "reviewing")}
-                          title="整批提交质检（owner / 被分派标注员）"
-                        >
-                          <Icon name="check" size={12} /> 提交质检
-                        </Button>
-                      )}
-                      {b.status === "reviewing" && (
-                        <>
+                        {b.status === "draft" && (
                           <Button
-                            onClick={() => handleTransition(b, "approved")}
-                            title="批次通过审核（reviewer / owner）"
-                            className={SUCCESS_BTN}
+                            onClick={() => handleTransition(b, "active")}
+                            disabled={!b.annotator_id || b.total_tasks === 0}
+                            title={
+                              !b.annotator_id
+                                ? "请先分派标注员"
+                                : b.total_tasks === 0
+                                  ? "批次内无任务，无法激活"
+                                  : "激活"
+                            }
                           >
-                            <Icon name="check" size={12} /> 通过
+                            <Icon name="play" size={12} />
                           </Button>
+                        )}
+                        {b.status === "annotating" && (
                           <Button
-                            variant="danger"
-                            onClick={() => setRejectTarget(b)}
-                            title="批次驳回（reviewer / owner）"
+                            onClick={() => handleTransition(b, "reviewing")}
+                            title="整批提交质检（owner / 被分派标注员）"
                           >
-                            <Icon name="x" size={12} /> 驳回
+                            <Icon name="check" size={12} /> 提交质检
                           </Button>
-                        </>
-                      )}
-                      {b.status === "rejected" && (
-                        <Button onClick={() => handleTransition(b, "active")} title="重新激活">
-                          <Icon name="refresh" size={12} />
+                        )}
+                        {b.status === "reviewing" && (
+                          <>
+                            <Button
+                              onClick={() => handleTransition(b, "approved")}
+                              title="批次通过审核（reviewer / owner）"
+                              className={SUCCESS_BTN}
+                            >
+                              <Icon name="check" size={12} /> 通过
+                            </Button>
+                            <Button
+                              variant="danger"
+                              onClick={() => setRejectTarget(b)}
+                              title="批次驳回（reviewer / owner）"
+                            >
+                              <Icon name="x" size={12} /> 驳回
+                            </Button>
+                          </>
+                        )}
+                        {b.status === "rejected" && (
+                          <Button onClick={() => handleTransition(b, "active")} title="重新激活">
+                            <Icon name="refresh" size={12} />
+                          </Button>
+                        )}
+                        {/* v0.7.3 · owner 专属逆向迁移按钮 */}
+                        {isOwner && b.status === "rejected" && (
+                          <Button
+                            onClick={() =>
+                              setReverseTarget({ batch: b, kind: "reopen_from_rejected" })
+                            }
+                            title="跳过重标，直接复审"
+                          >
+                            <Icon name="refresh" size={12} /> 直接复审
+                          </Button>
+                        )}
+                        {isOwner && b.status === "approved" && (
+                          <Button
+                            onClick={() =>
+                              setReverseTarget({ batch: b, kind: "reopen_from_approved" })
+                            }
+                            title="重开审核"
+                          >
+                            <Icon name="refresh" size={12} /> 重开审核
+                          </Button>
+                        )}
+                        {isOwner && b.status === "archived" && (
+                          <Button
+                            onClick={() => setReverseTarget({ batch: b, kind: "unarchive" })}
+                            title="撤销归档"
+                          >
+                            <Icon name="refresh" size={12} /> 撤销归档
+                          </Button>
+                        )}
+                        {/* v0.7.6 · owner 终极重置到 draft（任意非 draft 状态） */}
+                        {isOwner && b.status !== "draft" && (
+                          <Button
+                            onClick={() => setResetTarget(b)}
+                            title="重置到草稿（owner 兜底）"
+                          >
+                            <Icon name="refresh" size={12} /> 重置
+                          </Button>
+                        )}
+                        {!["archived", "approved"].includes(b.status) && (
+                          <Button onClick={() => handleTransition(b, "archived")} title="归档">
+                            <Icon name="inbox" size={12} />
+                          </Button>
+                        )}
+                        {b.display_id !== "B-DEFAULT" && (
+                          <Button onClick={() => setConfirmDelete(b)} title="删除">
+                            <Icon name="trash" size={12} />
+                          </Button>
+                        )}
+                        {/* v0.7.3 · 操作历史抽屉 */}
+                        <Button onClick={() => setAuditTarget(b)} title="操作历史">
+                          <Icon name="clock" size={12} />
                         </Button>
-                      )}
-                      {/* v0.7.3 · owner 专属逆向迁移按钮 */}
-                      {isOwner && b.status === "rejected" && (
-                        <Button
-                          onClick={() => setReverseTarget({ batch: b, kind: "reopen_from_rejected" })}
-                          title="跳过重标，直接复审"
-                        >
-                          <Icon name="refresh" size={12} /> 直接复审
-                        </Button>
-                      )}
-                      {isOwner && b.status === "approved" && (
-                        <Button
-                          onClick={() => setReverseTarget({ batch: b, kind: "reopen_from_approved" })}
-                          title="重开审核"
-                        >
-                          <Icon name="refresh" size={12} /> 重开审核
-                        </Button>
-                      )}
-                      {isOwner && b.status === "archived" && (
-                        <Button
-                          onClick={() => setReverseTarget({ batch: b, kind: "unarchive" })}
-                          title="撤销归档"
-                        >
-                          <Icon name="refresh" size={12} /> 撤销归档
-                        </Button>
-                      )}
-                      {/* v0.7.6 · owner 终极重置到 draft（任意非 draft 状态） */}
-                      {isOwner && b.status !== "draft" && (
-                        <Button
-                          onClick={() => setResetTarget(b)}
-                          title="重置到草稿（owner 兜底）"
-                        >
-                          <Icon name="refresh" size={12} /> 重置
-                        </Button>
-                      )}
-                      {!["archived", "approved"].includes(b.status) && (
-                        <Button onClick={() => handleTransition(b, "archived")} title="归档">
-                          <Icon name="inbox" size={12} />
-                        </Button>
-                      )}
-                      {b.display_id !== "B-DEFAULT" && (
-                        <Button onClick={() => setConfirmDelete(b)} title="删除">
-                          <Icon name="trash" size={12} />
-                        </Button>
-                      )}
-                      {/* v0.7.3 · 操作历史抽屉 */}
-                      <Button onClick={() => setAuditTarget(b)} title="操作历史">
-                        <Icon name="clock" size={12} />
-                      </Button>
-                      {/* v0.9.15 · ADR-0008 admin-lock */}
-                      {isOwner && !b.admin_locked && (
-                        <Button
-                          onClick={() => setLockTarget(b)}
-                          title="锁定批次（冻结自动推进，阻止新派单）"
-                          className="text-status-caution"
-                        >
-                          <Icon name="lock" size={12} />
-                        </Button>
-                      )}
-                      {isOwner && b.admin_locked && (
-                        <Button
-                          onClick={() => handleAdminUnlock(b)}
-                          title="解锁批次"
-                          className="text-status-positive"
-                        >
-                          <Icon name="unlock" size={12} />
-                        </Button>
-                      )}
+                        {/* v0.9.15 · ADR-0008 admin-lock */}
+                        {isOwner && !b.admin_locked && (
+                          <Button
+                            onClick={() => setLockTarget(b)}
+                            title="锁定批次（冻结自动推进，阻止新派单）"
+                            className="text-status-caution"
+                          >
+                            <Icon name="lock" size={12} />
+                          </Button>
+                        )}
+                        {isOwner && b.admin_locked && (
+                          <Button
+                            onClick={() => handleAdminUnlock(b)}
+                            title="解锁批次"
+                            className="text-status-positive"
+                          >
+                            <Icon name="unlock" size={12} />
+                          </Button>
+                        )}
                       </div>
                       {b.status === "rejected" && b.review_feedback && (
                         <div
@@ -809,123 +843,111 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* 创建批次 Modal */}
       <Modal open={showCreate} title="创建批次" onClose={() => setShowCreate(false)}>
-          <div className="flex flex-col gap-4 px-1">
-            <label className="flex flex-col gap-1 text-sm">
-              批次数量
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={nBatches}
-                onChange={(e) => setNBatches(Number(e.target.value))}
-                className="w-20 appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
-              />
-            </label>
-            {nBatches === 1 && (
-              <p className="m-0 text-xs text-muted-foreground">把全部未归类任务注入一个新批次。</p>
-            )}
-            <label className="flex flex-col gap-1 text-sm">
-              {nBatches === 1 ? "批次名称" : "名称前缀"}
-              <input
-                value={namePrefix}
-                onChange={(e) => setNamePrefix(e.target.value)}
-                className="appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
-                placeholder={nBatches === 1 ? "例如：第 1 批" : "Batch"}
-              />
-            </label>
-            <div className="flex gap-2">
-              <Button
-                variant={!shuffle ? "primary" : "default"}
-                onClick={() => setShuffle(false)}
-                title="按任务导入顺序切分（不打乱）"
-              >
-                顺序切分
-              </Button>
-              <Button
-                variant={shuffle ? "primary" : "default"}
-                onClick={() => setShuffle(true)}
-                title="随机打乱后切分"
-              >
-                打乱切分
-              </Button>
-            </div>
-
-            <label className="flex flex-col gap-1 text-sm">
-              优先级: {priority}
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={priority}
-                onChange={(e) => setPriority(Number(e.target.value))}
-                className="w-full"
-              />
-            </label>
-
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setShowCreate(false)}>取消</Button>
-              <Button
-                variant="primary"
-                onClick={handleCreate}
-                disabled={!namePrefix.trim()}
-              >
-                {nBatches === 1 ? "注入 1 个批次" : `切分为 ${nBatches} 个批次`}
-              </Button>
-            </div>
+        <div className="flex flex-col gap-4 px-1">
+          <label className="flex flex-col gap-1 text-sm">
+            批次数量
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={nBatches}
+              onChange={(e) => setNBatches(Number(e.target.value))}
+              className="w-20 appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
+            />
+          </label>
+          {nBatches === 1 && (
+            <p className="m-0 text-xs text-muted-foreground">把全部未归类任务注入一个新批次。</p>
+          )}
+          <label className="flex flex-col gap-1 text-sm">
+            {nBatches === 1 ? "批次名称" : "名称前缀"}
+            <input
+              value={namePrefix}
+              onChange={(e) => setNamePrefix(e.target.value)}
+              className="appearance-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
+              placeholder={nBatches === 1 ? "例如：第 1 批" : "Batch"}
+            />
+          </label>
+          <div className="flex gap-2">
+            <Button
+              variant={!shuffle ? "primary" : "default"}
+              onClick={() => setShuffle(false)}
+              title="按任务导入顺序切分（不打乱）"
+            >
+              顺序切分
+            </Button>
+            <Button
+              variant={shuffle ? "primary" : "default"}
+              onClick={() => setShuffle(true)}
+              title="随机打乱后切分"
+            >
+              打乱切分
+            </Button>
           </div>
-        </Modal>
+
+          <label className="flex flex-col gap-1 text-sm">
+            优先级: {priority}
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+              className="w-full"
+            />
+          </label>
+
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setShowCreate(false)}>取消</Button>
+            <Button variant="primary" onClick={handleCreate} disabled={!namePrefix.trim()}>
+              {nBatches === 1 ? "注入 1 个批次" : `切分为 ${nBatches} 个批次`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* 删除确认 */}
       <Modal open={!!confirmDelete} title="确认删除" onClose={() => setConfirmDelete(null)}>
-          <div className="text-sm">
-            <p>
-              确定删除批次 <strong>{confirmDelete?.name}</strong>？
-              其中的 {confirmDelete?.total_tasks ?? 0} 个任务将变为未归类（可重新分包）。
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button onClick={() => setConfirmDelete(null)}>取消</Button>
-              <Button
-                variant="danger"
-                onClick={() => confirmDelete && handleDelete(confirmDelete)}
-              >
-                删除
-              </Button>
-            </div>
+        <div className="text-sm">
+          <p>
+            确定删除批次 <strong>{confirmDelete?.name}</strong>？ 其中的{" "}
+            {confirmDelete?.total_tasks ?? 0} 个任务将变为未归类（可重新分包）。
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setConfirmDelete(null)}>取消</Button>
+            <Button variant="danger" onClick={() => confirmDelete && handleDelete(confirmDelete)}>
+              删除
+            </Button>
           </div>
-        </Modal>
+        </div>
+      </Modal>
 
       {/* v0.11.25 · 删除保护：含进行中成果/已预标 → 强制删除确认 */}
-      <Modal
-        open={!!forceDelete}
-        title="该批次有进行中的成果"
-        onClose={() => setForceDelete(null)}
-      >
-          <div className="text-sm">
-            <p>
-              批次 <strong>{forceDelete?.batch.name}</strong> 将影响{" "}
-              <strong>{forceDelete?.affected ?? 0}</strong> 个任务
-              {forceDelete?.nonPending || forceDelete?.predicted ? (
-                <>
-                  （含进行中/已完成成果 {forceDelete?.nonPending ?? 0}、AI 预标成果{" "}
-                  {forceDelete?.predicted ?? 0}，可能重叠）
-                </>
-              ) : null}
-              。强制删除会把这些任务<strong>重置为待标注</strong>并<strong>清除 AI 预标</strong>（人工标注保留）。
-            </p>
-            <p className="text-xs text-muted-foreground">
-              若只想暂停而不丢进度，建议改用「归档」。
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button onClick={() => setForceDelete(null)}>取消</Button>
-              <Button
-                variant="danger"
-                onClick={() => forceDelete && handleDelete(forceDelete.batch, true)}
-              >
-                强制删除
-              </Button>
-            </div>
+      <Modal open={!!forceDelete} title="该批次有进行中的成果" onClose={() => setForceDelete(null)}>
+        <div className="text-sm">
+          <p>
+            批次 <strong>{forceDelete?.batch.name}</strong> 将影响{" "}
+            <strong>{forceDelete?.affected ?? 0}</strong> 个任务
+            {forceDelete?.nonPending || forceDelete?.predicted ? (
+              <>
+                （含进行中/已完成成果 {forceDelete?.nonPending ?? 0}、AI 预标成果{" "}
+                {forceDelete?.predicted ?? 0}，可能重叠）
+              </>
+            ) : null}
+            。强制删除会把这些任务<strong>重置为待标注</strong>并<strong>清除 AI 预标</strong>
+            （人工标注保留）。
+          </p>
+          <p className="text-xs text-muted-foreground">若只想暂停而不丢进度，建议改用「归档」。</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setForceDelete(null)}>取消</Button>
+            <Button
+              variant="danger"
+              onClick={() => forceDelete && handleDelete(forceDelete.batch, true)}
+            >
+              强制删除
+            </Button>
           </div>
-        </Modal>
+        </div>
+      </Modal>
 
       {/* v0.6.7 B-12-②：分派 Modal */}
       {assignTarget && (
@@ -955,24 +977,39 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* v0.7.3：批量操作二次确认 Modal */}
       <Modal
-        open={confirmBulk === "archive" || confirmBulk === "delete" || confirmBulk === "activate" || confirmBulk === "approve"}
+        open={
+          confirmBulk === "archive" ||
+          confirmBulk === "delete" ||
+          confirmBulk === "activate" ||
+          confirmBulk === "approve"
+        }
         title={`批量${confirmBulk ? BULK_LABEL[confirmBulk] : ""}`}
         onClose={() => setConfirmBulk(null)}
       >
         <div className="text-sm">
           {confirmBulk === "archive" && (
-            <p>将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner 通过「撤销归档」恢复。</p>
+            <p>
+              将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner
+              通过「撤销归档」恢复。
+            </p>
           )}
           {confirmBulk === "delete" && (
             <p className="text-status-danger">
-              将永久删除已选 <strong>{selectedCount}</strong> 个批次。批次内的任务会回归默认批次（无默认批次时变为未归类）。此操作不可撤销。
+              将永久删除已选 <strong>{selectedCount}</strong>{" "}
+              个批次。批次内的任务会回归默认批次（无默认批次时变为未归类）。此操作不可撤销。
             </p>
           )}
           {confirmBulk === "activate" && (
-            <p>将激活已选 <strong>{selectedCount}</strong> 个 draft 批次。前置条件不满足（未指派标注员或任务为空）的批次会失败但不影响其他。</p>
+            <p>
+              将激活已选 <strong>{selectedCount}</strong> 个 draft
+              批次。前置条件不满足（未指派标注员或任务为空）的批次会失败但不影响其他。
+            </p>
           )}
           {confirmBulk === "approve" && (
-            <p>将把已选 <strong>{selectedCount}</strong> 个批次中的「审核中」批次全部通过。非审核中状态的批次会自动跳过。</p>
+            <p>
+              将把已选 <strong>{selectedCount}</strong>{" "}
+              个批次中的「审核中」批次全部通过。非审核中状态的批次会自动跳过。
+            </p>
           )}
           <div className="mt-4 flex justify-end gap-2">
             <Button onClick={() => setConfirmBulk(null)}>取消</Button>
@@ -984,7 +1021,12 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 else if (confirmBulk === "activate") runBulkActivate();
                 else if (confirmBulk === "approve") runBulkApprove();
               }}
-              disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending || bulkApprove.isPending}
+              disabled={
+                bulkArchive.isPending ||
+                bulkDelete.isPending ||
+                bulkActivate.isPending ||
+                bulkApprove.isPending
+              }
               className={cn(confirmBulk === "approve" && SUCCESS_BTN)}
             >
               确认{confirmBulk ? BULK_LABEL[confirmBulk] : ""}

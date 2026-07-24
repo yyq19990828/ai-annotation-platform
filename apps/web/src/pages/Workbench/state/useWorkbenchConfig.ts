@@ -23,11 +23,7 @@ import { useUserPreferences, userPreferencesQueryKey } from "./useUserPreference
 // v0.10.10 · I17.3 · 项目级覆盖的字段名集合（用于 SettingsPage badge 与控件 disabled）。
 // 与 ProjectRenderingConfig 字段同集（平铺命名不变），不含 longTaskSampleRate / layout。
 // v0.15.3 · 偏好四分树后,这些字段落在用户偏好的 image.* 子树。
-export type LockableField =
-  | "smoothImage"
-  | "cssImageFilter"
-  | "controlPointsSize"
-  | "snapToGrid";
+export type LockableField = "smoothImage" | "cssImageFilter" | "controlPointsSize" | "snapToGrid";
 
 export type WorkbenchLayoutPatch = Omit<
   Partial<WorkbenchLayoutPreferences>,
@@ -73,8 +69,7 @@ interface WorkbenchConfigState {
   lockedFields: LockableField[];
 }
 
-const clampNum = (v: number, lo: number, hi: number): number =>
-  Math.min(hi, Math.max(lo, v));
+const clampNum = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 // v0.15.3 · 多实例同步:抽屉与画布(ImageStage)各自挂载本 hook,任一实例改动用户配置后
 // 广播给其余实例 → 抽屉拖滑块画布实时预览。只广播内存态,不引入模块级缓存。
@@ -183,13 +178,12 @@ const LAYOUT_KEY_NAMES = [
 
 type LayoutKeyName = (typeof LAYOUT_KEY_NAMES)[number];
 
-function layoutStorageKeys(
-  userId: string | null | undefined,
-): Record<LayoutKeyName, string> {
+function layoutStorageKeys(userId: string | null | undefined): Record<LayoutKeyName, string> {
   const prefix = userId ? `workbench.${userId}.` : "workbench.";
-  return Object.fromEntries(
-    LAYOUT_KEY_NAMES.map((n) => [n, `${prefix}${n}`]),
-  ) as Record<LayoutKeyName, string>;
+  return Object.fromEntries(LAYOUT_KEY_NAMES.map((n) => [n, `${prefix}${n}`])) as Record<
+    LayoutKeyName,
+    string
+  >;
 }
 
 function readBool(key: string): boolean | undefined {
@@ -216,33 +210,25 @@ function readJsonObject<T extends object>(key: string): Partial<T> | undefined {
   }
 }
 
-function readLocalLayout(
-  userId: string | null | undefined,
-): WorkbenchLayoutPatch {
+function readLocalLayout(userId: string | null | undefined): WorkbenchLayoutPatch {
   const K = layoutStorageKeys(userId);
   return {
     leftOpen: readBool(K.leftOpen),
     rightOpen: readBool(K.rightOpen),
     floatingTaskQueue: readJsonObject<FloatingPanelState>(K.floatingTaskQueue),
-    floatingClassPalette: readJsonObject<FloatingPanelState>(
-      K.floatingClassPalette,
-    ),
+    floatingClassPalette: readJsonObject<FloatingPanelState>(K.floatingClassPalette),
     floatingInspector: readJsonObject<FloatingPanelState>(K.floatingInspector),
-    floatingDiscussion: readJsonObject<FloatingPanelState>(
-      K.floatingDiscussion,
-    ),
-    floatingSelection: readJsonObject<FloatingSelectionState>(
-      K.floatingSelection,
-    ),
+    floatingDiscussion: readJsonObject<FloatingPanelState>(K.floatingDiscussion),
+    floatingSelection: readJsonObject<FloatingSelectionState>(K.floatingSelection),
     triViewFloat: readJsonObject<TriViewFloatState>(K.triViewFloat),
     // 整份 Record(非逐字段 patch):readJsonObject 泛型回 Partial,JSON 解析出的值实为
     // 完整 CameraPanelState,断言回整份类型对齐 setter 语义。
-    cameraPanels: readJsonObject<Record<string, CameraPanelState>>(
-      K.cameraPanels,
-    ) as Record<string, CameraPanelState> | undefined,
-    pointcloudCamera: readJsonObject<PointcloudCameraState>(
-      K.pointcloudCamera,
-    ) as PointcloudCameraState | undefined,
+    cameraPanels: readJsonObject<Record<string, CameraPanelState>>(K.cameraPanels) as
+      | Record<string, CameraPanelState>
+      | undefined,
+    pointcloudCamera: readJsonObject<PointcloudCameraState>(K.pointcloudCamera) as
+      | PointcloudCameraState
+      | undefined,
     // v0.20.22 · 分组折叠 + 讨论区收起本地读回, 消除首屏闪。
     aiSectionCollapsed: readBool(K.aiSectionCollapsed),
     manualSectionCollapsed: readBool(K.manualSectionCollapsed),
@@ -251,14 +237,10 @@ function readLocalLayout(
   };
 }
 
-function definedPatch<T extends object>(
-  patch: Partial<T> | null | undefined,
-): Partial<T> {
+function definedPatch<T extends object>(patch: Partial<T> | null | undefined): Partial<T> {
   if (!patch) return {};
   const out: Partial<T> = {};
-  for (const [key, value] of Object.entries(patch) as Array<
-    [keyof T, T[keyof T] | undefined]
-  >) {
+  for (const [key, value] of Object.entries(patch) as Array<[keyof T, T[keyof T] | undefined]>) {
     if (value !== undefined) out[key] = value as T[keyof T];
   }
   return out;
@@ -285,55 +267,25 @@ function writeLocalLayout(
   try {
     window.localStorage.setItem(K.leftOpen, layout.leftOpen ? "1" : "0");
     window.localStorage.setItem(K.rightOpen, layout.rightOpen ? "1" : "0");
-    window.localStorage.setItem(
-      K.floatingTaskQueue,
-      JSON.stringify(layout.floatingTaskQueue),
-    );
+    window.localStorage.setItem(K.floatingTaskQueue, JSON.stringify(layout.floatingTaskQueue));
     window.localStorage.setItem(
       K.floatingClassPalette,
       JSON.stringify(layout.floatingClassPalette),
     );
-    window.localStorage.setItem(
-      K.floatingInspector,
-      JSON.stringify(layout.floatingInspector),
-    );
-    window.localStorage.setItem(
-      K.floatingDiscussion,
-      JSON.stringify(layout.floatingDiscussion),
-    );
-    window.localStorage.setItem(
-      K.floatingSelection,
-      JSON.stringify(layout.floatingSelection),
-    );
-    window.localStorage.setItem(
-      K.triViewFloat,
-      JSON.stringify(layout.triViewFloat),
-    );
-    window.localStorage.setItem(
-      K.cameraPanels,
-      JSON.stringify(layout.cameraPanels),
-    );
-    window.localStorage.setItem(
-      K.pointcloudCamera,
-      JSON.stringify(layout.pointcloudCamera),
-    );
+    window.localStorage.setItem(K.floatingInspector, JSON.stringify(layout.floatingInspector));
+    window.localStorage.setItem(K.floatingDiscussion, JSON.stringify(layout.floatingDiscussion));
+    window.localStorage.setItem(K.floatingSelection, JSON.stringify(layout.floatingSelection));
+    window.localStorage.setItem(K.triViewFloat, JSON.stringify(layout.triViewFloat));
+    window.localStorage.setItem(K.cameraPanels, JSON.stringify(layout.cameraPanels));
+    window.localStorage.setItem(K.pointcloudCamera, JSON.stringify(layout.pointcloudCamera));
     // v0.20.22 · 分组折叠 + 讨论区收起本地写入, 消除首屏闪。
-    window.localStorage.setItem(
-      K.aiSectionCollapsed,
-      layout.aiSectionCollapsed ? "1" : "0",
-    );
+    window.localStorage.setItem(K.aiSectionCollapsed, layout.aiSectionCollapsed ? "1" : "0");
     window.localStorage.setItem(
       K.manualSectionCollapsed,
       layout.manualSectionCollapsed ? "1" : "0",
     );
-    window.localStorage.setItem(
-      K.trackSectionCollapsed,
-      layout.trackSectionCollapsed ? "1" : "0",
-    );
-    window.localStorage.setItem(
-      K.discussionCollapsed,
-      layout.discussionCollapsed ? "1" : "0",
-    );
+    window.localStorage.setItem(K.trackSectionCollapsed, layout.trackSectionCollapsed ? "1" : "0");
+    window.localStorage.setItem(K.discussionCollapsed, layout.discussionCollapsed ? "1" : "0");
   } catch {
     /* local fallback is best-effort */
   }
@@ -418,11 +370,7 @@ function mergeLayout(
     remote?.floatingSelection,
     preferLocal,
   );
-  const triViewFloat = mergeLayoutPatch(
-    local.triViewFloat,
-    remote?.triViewFloat,
-    preferLocal,
-  );
+  const triViewFloat = mergeLayoutPatch(local.triViewFloat, remote?.triViewFloat, preferLocal);
   // cameraPanels 是整份 Record(非逐字段 patch):优先方整份覆盖,缺省回另一方再回默认空。
   const cameraPanels = preferLocal
     ? (local.cameraPanels ?? remote?.cameraPanels)
@@ -434,23 +382,18 @@ function mergeLayout(
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
     attrPanelCollapsed:
-      merged.attrPanelCollapsed ??
-      DEFAULT_WORKBENCH_PREFERENCES.layout.attrPanelCollapsed,
+      merged.attrPanelCollapsed ?? DEFAULT_WORKBENCH_PREFERENCES.layout.attrPanelCollapsed,
     // v0.20.22 · 分组折叠 + 讨论区完全收起 (跨设备持久); 与 attrPanelCollapsed
     // 不同, 这三个进 LAYOUT_KEY_NAMES localStorage 双写以消首屏闪 (进任务立即渲染,
     // 属性区选中后才渲染, 闪的可见度差异催出这一分化)。
     aiSectionCollapsed:
-      merged.aiSectionCollapsed ??
-      DEFAULT_WORKBENCH_PREFERENCES.layout.aiSectionCollapsed,
+      merged.aiSectionCollapsed ?? DEFAULT_WORKBENCH_PREFERENCES.layout.aiSectionCollapsed,
     manualSectionCollapsed:
-      merged.manualSectionCollapsed ??
-      DEFAULT_WORKBENCH_PREFERENCES.layout.manualSectionCollapsed,
+      merged.manualSectionCollapsed ?? DEFAULT_WORKBENCH_PREFERENCES.layout.manualSectionCollapsed,
     trackSectionCollapsed:
-      merged.trackSectionCollapsed ??
-      DEFAULT_WORKBENCH_PREFERENCES.layout.trackSectionCollapsed,
+      merged.trackSectionCollapsed ?? DEFAULT_WORKBENCH_PREFERENCES.layout.trackSectionCollapsed,
     discussionCollapsed:
-      merged.discussionCollapsed ??
-      DEFAULT_WORKBENCH_PREFERENCES.layout.discussionCollapsed,
+      merged.discussionCollapsed ?? DEFAULT_WORKBENCH_PREFERENCES.layout.discussionCollapsed,
     floatingTaskQueue: mergeFloatingPanel(
       DEFAULT_WORKBENCH_PREFERENCES.layout.floatingTaskQueue,
       floatingTaskQueue,
@@ -469,10 +412,8 @@ function mergeLayout(
     ),
     floatingSelection: mergeFloatingSelection(floatingSelection),
     triViewFloat: mergeTriViewFloat(triViewFloat),
-    cameraPanels:
-      cameraPanels ?? DEFAULT_WORKBENCH_PREFERENCES.layout.cameraPanels,
-    pointcloudCamera:
-      pointcloudCamera ?? DEFAULT_WORKBENCH_PREFERENCES.layout.pointcloudCamera,
+    cameraPanels: cameraPanels ?? DEFAULT_WORKBENCH_PREFERENCES.layout.cameraPanels,
+    pointcloudCamera: pointcloudCamera ?? DEFAULT_WORKBENCH_PREFERENCES.layout.pointcloudCamera,
   };
 }
 
@@ -525,12 +466,9 @@ function applyLayoutPatch(
             ...current.triViewFloat,
             ...(patch.triViewFloat ?? {}),
           }),
-    cameraPanels:
-      patch.cameraPanels === undefined ? current.cameraPanels : patch.cameraPanels,
+    cameraPanels: patch.cameraPanels === undefined ? current.cameraPanels : patch.cameraPanels,
     pointcloudCamera:
-      patch.pointcloudCamera === undefined
-        ? current.pointcloudCamera
-        : patch.pointcloudCamera,
+      patch.pointcloudCamera === undefined ? current.pointcloudCamera : patch.pointcloudCamera,
   };
 }
 

@@ -17,7 +17,5 @@ export interface AliasFrequencyResponse {
 
 export const aliasFrequencyApi = {
   byProject: (projectId: string) =>
-    apiClient.get<AliasFrequencyResponse>(
-      `/admin/projects/${projectId}/alias-frequency`,
-    ),
+    apiClient.get<AliasFrequencyResponse>(`/admin/projects/${projectId}/alias-frequency`),
 };

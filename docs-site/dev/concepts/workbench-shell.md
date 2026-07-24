@@ -96,11 +96,11 @@ type StageKind = "image" | "video" | "3d";
 
 `DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
 
-| Tab | 内容 | 实现 |
-|---|---|---|
-| comments | 标注级 / 任务级评论 | 复用 `CommentsPanel`（`hideTabs` + `forceTab='comments'`） |
-| history | 标注 / 任务级 audit 历史 | 复用 `CommentsPanel`（`forceTab='history'`） |
-| issues | `kind=issue` 反馈列表 + 图钉联动 | `DiscussionIssuesTab` |
+| Tab      | 内容                             | 实现                                                       |
+| -------- | -------------------------------- | ---------------------------------------------------------- |
+| comments | 标注级 / 任务级评论              | 复用 `CommentsPanel`（`hideTabs` + `forceTab='comments'`） |
+| history  | 标注 / 任务级 audit 历史         | 复用 `CommentsPanel`（`forceTab='history'`）               |
+| issues   | `kind=issue` 反馈列表 + 图钉联动 | `DiscussionIssuesTab`                                      |
 
 图钉单击 / hover 会通过 `useActiveIssueStore` 的 `tabRequestTick` 自动把面板切到 issues tab。
 
@@ -114,13 +114,13 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 
 布局状态是 `user.preferences.workbench.layout`（`WorkbenchLayoutPreferences`，定义于 `apps/web/src/api/auth.ts`）：
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `leftOpen` / `rightOpen` | `boolean` | 左 / 右侧栏开合 |
-| `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState` | 四个侧栏区块的浮窗态 |
-| `triViewFloat` | `TriViewFloatState` | 3D 三视图浮层态 |
-| `cameraPanels` | `Record<string, CameraPanelState>` | 3D 悬浮相机面板位置 + 折叠态，按相机 role 分桶 |
-| `pointcloudCamera` | `PointcloudCameraState｜null` | 点云主视图相机快照；仅当 `workbench.pointcloud.persistCameraView` 开启时写入和恢复 |
+| 字段                                                                                      | 类型                               | 含义                                                                               |
+| ----------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `leftOpen` / `rightOpen`                                                                  | `boolean`                          | 左 / 右侧栏开合                                                                    |
+| `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState`               | 四个侧栏区块的浮窗态                                                               |
+| `triViewFloat`                                                                            | `TriViewFloatState`                | 3D 三视图浮层态                                                                    |
+| `cameraPanels`                                                                            | `Record<string, CameraPanelState>` | 3D 悬浮相机面板位置 + 折叠态，按相机 role 分桶                                     |
+| `pointcloudCamera`                                                                        | `PointcloudCameraState｜null`      | 点云主视图相机快照；仅当 `workbench.pointcloud.persistCameraView` 开启时写入和恢复 |
 
 > 边栏宽度不再属于 layout 子树：旧的 `leftWidth` / `rightWidth`（像素，clamp 200–560 / 220–600）已替换为通用偏好 `workbench.common.leftWidthPct` / `rightWidthPct`（占工作台宽度的百分比，clamp 10–35%，默认 15%），拖拽分隔条与设置面板双向同步。详见 [设置参考](../../user-guide/reference/settings)。
 

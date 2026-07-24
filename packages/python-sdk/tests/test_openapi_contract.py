@@ -12,7 +12,12 @@ import pytest
 from ai_annotation._http import USED_ENDPOINTS
 
 SNAPSHOT = (
-    Path(__file__).resolve().parents[1] / ".." / ".." / "apps" / "api" / "openapi.snapshot.json"
+    Path(__file__).resolve().parents[1]
+    / ".."
+    / ".."
+    / "apps"
+    / "api"
+    / "openapi.snapshot.json"
 ).resolve()
 
 

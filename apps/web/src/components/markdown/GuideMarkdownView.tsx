@@ -17,10 +17,7 @@ interface GuideMarkdownViewProps {
  * - <img src="guide-asset:KEY"> 经 resolveAssetUrl 转签名 URL 渲染.
  * - 解析失败 / 加载中显示占位文本, 避免 404.
  */
-export function GuideMarkdownView({
-  content,
-  resolveAssetUrl,
-}: GuideMarkdownViewProps) {
+export function GuideMarkdownView({ content, resolveAssetUrl }: GuideMarkdownViewProps) {
   const [signedMap, setSignedMap] = useState<Record<string, string>>({});
   // 收集所有 guide-asset:KEY, 一次性 prefetch.
   const keys = useMemo(() => {
@@ -55,12 +52,7 @@ export function GuideMarkdownView({
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.link}
-            >
+            <a href={href} target="_blank" rel="noopener noreferrer" className={styles.link}>
               {children}
             </a>
           ),

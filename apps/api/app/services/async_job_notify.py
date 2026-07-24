@@ -20,10 +20,15 @@ log = logging.getLogger(__name__)
 TERMINAL_NOTIFY_KINDS = {
     "batch_predict",
     "video_tracker",
+    "video_correction",
     "predictions_import",
     "audit_archive",
     "prediction_retry",
     "dataset_import",
+    "mask_qc",
+    "mask_repair",
+    "mask_repair_rollback",
+    "mask_format_import",
 }
 
 _STATUS_TO_TYPE = {
@@ -55,6 +60,11 @@ _PAYLOAD_SUMMARY_KEYS = (
     "model_key",
     "direction",
     "retain_months",
+    "source_snapshot_digest",
+    "mask_repair_batch_id",
+    "mask_format_import_id",
+    "staged_sha256",
+    "plan_digest",
 )
 
 _RESULT_SUMMARY_KEYS = (
@@ -77,6 +87,10 @@ _RESULT_SUMMARY_KEYS = (
     "cache_hit",
     "archived",
     "deleted",
+    "run_id",
+    "issue_count",
+    "result_digest",
+    "rolled_back_count",
 )
 
 

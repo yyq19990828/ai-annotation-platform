@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  filterNotificationItems,
-  groupNotificationItems,
-} from "./NotificationsPopover.helpers";
+import { filterNotificationItems, groupNotificationItems } from "./NotificationsPopover.helpers";
 import { jobSnippet } from "./NotificationsPopover";
 import type { NotificationItem } from "@/api/notifications";
 
-function makeNotification(
-  overrides: Partial<NotificationItem>,
-): NotificationItem {
+function makeNotification(overrides: Partial<NotificationItem>): NotificationItem {
   return {
     id: "n-1",
     type: "task.rejected",
@@ -30,12 +25,8 @@ describe("NotificationsPopover helpers", () => {
     ];
 
     expect(filterNotificationItems(items, "all")).toHaveLength(3);
-    expect(filterNotificationItems(items, "batch").map((item) => item.id)).toEqual([
-      "batch",
-    ]);
-    expect(filterNotificationItems(items, "async_job").map((item) => item.id)).toEqual([
-      "job",
-    ]);
+    expect(filterNotificationItems(items, "batch").map((item) => item.id)).toEqual(["batch"]);
+    expect(filterNotificationItems(items, "async_job").map((item) => item.id)).toEqual(["job"]);
   });
 
   it("groups notifications into today, this week and earlier", () => {

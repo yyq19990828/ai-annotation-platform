@@ -12,18 +12,18 @@
 
 ## 端点
 
-| 端点 | 说明 |
-|---|---|
-| `GET /health` | 健康、实际 ORT provider、句柄池与受管 residency |
-| `GET /setup` | 协议模型目录；通过部署验证后同时声明 managed lifecycle |
-| `GET /versions` | backend 与模型版本 |
-| `POST /predict` | 批量预测，按 `context.model_id` 路由三个句柄 |
-| `POST /warmup` | 可空 body；按 `model_id` 预加载指定句柄 |
-| `POST /unload` | 空 body 保留 legacy 响应；generation body 执行受管全池卸载 |
-| `POST /drain` | 进入指定 generation 的 draining 状态 |
-| `POST /drain/cancel` | 用更新 generation 取消 drain |
-| `POST /lifecycle/mode` | 切换 legacy/enforce gate |
-| `POST /lifecycle/reset` | 受签名的全池清理与状态恢复 |
+| 端点                    | 说明                                                       |
+| ----------------------- | ---------------------------------------------------------- |
+| `GET /health`           | 健康、实际 ORT provider、句柄池与受管 residency            |
+| `GET /setup`            | 协议模型目录；通过部署验证后同时声明 managed lifecycle     |
+| `GET /versions`         | backend 与模型版本                                         |
+| `POST /predict`         | 批量预测，按 `context.model_id` 路由三个句柄               |
+| `POST /warmup`          | 可空 body；按 `model_id` 预加载指定句柄                    |
+| `POST /unload`          | 空 body 保留 legacy 响应；generation body 执行受管全池卸载 |
+| `POST /drain`           | 进入指定 generation 的 draining 状态                       |
+| `POST /drain/cancel`    | 用更新 generation 取消 drain                               |
+| `POST /lifecycle/mode`  | 切换 legacy/enforce gate                                   |
+| `POST /lifecycle/reset` | 受签名的全池清理与状态恢复                                 |
 
 `/predict` 与 `/warmup` 在读取业务 body 前完成 admission。协程取消时，底层 builder 或 executor 未真正结束之前，active、builder 和 borrower 不会提前归零。
 
@@ -65,18 +65,18 @@ docker run --rm --gpus '"device=0"' --entrypoint python3 \
 
 ## 环境变量
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `ONNXTOOLS_MODEL_DIR` | `/app/models` | 模型目录 |
-| `ONNXTOOLS_DET_MODEL` | `rtdetr-2024080100.onnx` | 检测模型文件名 |
-| `ONNXTOOLS_VA_MODEL` | `va_260612.onnx` | 属性分类模型文件名 |
-| `ONNXTOOLS_CONF_THRES` | `0.5` | 检测置信度阈值 |
-| `ONNXTOOLS_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 继续受跟踪 |
-| `ONNXTOOLS_IDLE_UNLOAD_SECONDS` | `600` | 全池空闲卸载阈值；非正数关闭 |
-| `ONNXTOOLS_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期 |
-| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 真实 GPU 全池卸载验证门槛 |
-| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | 空 | Ed25519 公钥 keyring；空值保持 legacy gate |
-| `ONNXTOOLS_LOG_LEVEL` | `INFO` | 日志级别 |
+| 变量                                   | 默认                     | 说明                                                  |
+| -------------------------------------- | ------------------------ | ----------------------------------------------------- |
+| `ONNXTOOLS_MODEL_DIR`                  | `/app/models`            | 模型目录                                              |
+| `ONNXTOOLS_DET_MODEL`                  | `rtdetr-2024080100.onnx` | 检测模型文件名                                        |
+| `ONNXTOOLS_VA_MODEL`                   | `va_260612.onnx`         | 属性分类模型文件名                                    |
+| `ONNXTOOLS_CONF_THRES`                 | `0.5`                    | 检测置信度阈值                                        |
+| `ONNXTOOLS_BUILD_TIMEOUT`              | `30`                     | 调用方等待冷启动的秒数；超时后真实 builder 继续受跟踪 |
+| `ONNXTOOLS_IDLE_UNLOAD_SECONDS`        | `600`                    | 全池空闲卸载阈值；非正数关闭                          |
+| `ONNXTOOLS_IDLE_CHECK_INTERVAL`        | `60`                     | 空闲检查周期                                          |
+| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0`                      | 真实 GPU 全池卸载验证门槛                             |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON`       | 空                       | Ed25519 公钥 keyring；空值保持 legacy gate            |
+| `ONNXTOOLS_LOG_LEVEL`                  | `INFO`                   | 日志级别                                              |
 
 ## 模型放置与启动
 

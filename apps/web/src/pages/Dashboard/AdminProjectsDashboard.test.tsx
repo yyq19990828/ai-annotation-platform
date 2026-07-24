@@ -13,16 +13,24 @@ vi.mock("@/hooks/useProjects", () => ({
 }));
 
 vi.mock("@/components/projects/CreateProjectWizard", () => ({
-  CreateProjectWizard: ({ open }: { open?: boolean }) => (open ? <div data-testid="cp-wizard" /> : null),
+  CreateProjectWizard: ({ open }: { open?: boolean }) =>
+    open ? <div data-testid="cp-wizard" /> : null,
 }));
 
 vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
-  ImportDatasetWizard: ({ open }: { open?: boolean }) => (open ? <div data-testid="id-wizard" /> : null),
+  ImportDatasetWizard: ({ open }: { open?: boolean }) =>
+    open ? <div data-testid="id-wizard" /> : null,
 }));
 
 vi.mock("./FilterDrawer", () => ({
   FilterDrawer: () => null,
-  EMPTY_FILTERS: { data_type: [], member_id: undefined, created_from: undefined, created_to: undefined, status: undefined },
+  EMPTY_FILTERS: {
+    data_type: [],
+    member_id: undefined,
+    created_from: undefined,
+    created_to: undefined,
+    status: undefined,
+  },
 }));
 
 vi.mock("./ExportModal", () => ({
@@ -35,9 +43,8 @@ vi.mock("@/utils/workbenchNavigation", () => ({
 }));
 
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>(
-    "@/components/ui/Toast",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>

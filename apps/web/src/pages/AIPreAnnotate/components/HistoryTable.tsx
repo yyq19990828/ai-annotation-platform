@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
-import type { PreannotateQueueItem, BulkClearMode, BulkClearResponse } from "@/api/adminPreannotate";
+import type {
+  PreannotateQueueItem,
+  BulkClearMode,
+  BulkClearResponse,
+} from "@/api/adminPreannotate";
 import { useBulkPreannotateClear } from "@/hooks/useBulkPreannotateActions";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { HISTORY_PAGE_SIZE } from "../styles";
@@ -68,12 +72,20 @@ export function HistoryTable({ items, isLoading }: Props) {
 
   // B-2 · 项目→batch 分组,折叠展开;按当前页 pageItems 聚合
   const grouped = useMemo(() => {
-    const m = new Map<string, { name: string; displayId: string | null; batches: PreannotateQueueItem[] }>();
+    const m = new Map<
+      string,
+      { name: string; displayId: string | null; batches: PreannotateQueueItem[] }
+    >();
     for (const it of pageItems) {
       const k = it.project_id;
       const cur = m.get(k);
       if (cur) cur.batches.push(it);
-      else m.set(k, { name: it.project_name, displayId: it.project_display_id ?? null, batches: [it] });
+      else
+        m.set(k, {
+          name: it.project_name,
+          displayId: it.project_display_id ?? null,
+          batches: [it],
+        });
     }
     return Array.from(m.entries()).map(([id, g]) => ({ id, ...g }));
   }, [pageItems]);
@@ -98,11 +110,7 @@ export function HistoryTable({ items, isLoading }: Props) {
 
   const sortIndicator = (key: SortKey) => {
     if (sortKey !== key) return null;
-    return (
-      <span className={styles.sortIndicator}>
-        {sortDir === "asc" ? "↑" : "↓"}
-      </span>
-    );
+    return <span className={styles.sortIndicator}>{sortDir === "asc" ? "↑" : "↓"}</span>;
   };
 
   const toggleOne = (bid: string) => {
@@ -188,9 +196,7 @@ export function HistoryTable({ items, isLoading }: Props) {
         ) : items.length === 0 ? (
           <EmptyState />
         ) : sorted.length === 0 ? (
-          <div className={styles.message}>
-            无匹配批次（搜索：{search}）
-          </div>
+          <div className={styles.message}>无匹配批次（搜索：{search}）</div>
         ) : (
           <>
             <div className={styles.tableWrap}>
@@ -210,10 +216,16 @@ export function HistoryTable({ items, isLoading }: Props) {
                     <th className={styles.sortableHeaderCell} onClick={() => onSort("total_tasks")}>
                       总数{sortIndicator("total_tasks")}
                     </th>
-                    <th className={styles.sortableHeaderCell} onClick={() => onSort("prediction_count")}>
+                    <th
+                      className={styles.sortableHeaderCell}
+                      onClick={() => onSort("prediction_count")}
+                    >
                       已预标{sortIndicator("prediction_count")}
                     </th>
-                    <th className={styles.sortableHeaderCell} onClick={() => onSort("failed_count")}>
+                    <th
+                      className={styles.sortableHeaderCell}
+                      onClick={() => onSort("failed_count")}
+                    >
                       失败{sortIndicator("failed_count")}
                     </th>
                     <th className={styles.sortableHeaderCell} onClick={() => onSort("last_run_at")}>
@@ -230,10 +242,7 @@ export function HistoryTable({ items, isLoading }: Props) {
                     const totalTasks = g.batches.reduce((s, b) => s + b.total_tasks, 0);
                     return (
                       <Fragment key={g.id}>
-                        <tr
-                          onClick={() => toggleProject(g.id)}
-                          className={styles.groupRow}
-                        >
+                        <tr onClick={() => toggleProject(g.id)} className={styles.groupRow}>
                           <td colSpan={8} className={styles.groupCell}>
                             <span className={styles.groupLabel}>
                               <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
@@ -244,9 +253,7 @@ export function HistoryTable({ items, isLoading }: Props) {
                               <span className={styles.mutedText}>
                                 · {totalBatches} 批 · {totalTasks} 任务
                                 {totalFailed > 0 && (
-                                  <span className={styles.failedCount}>
-                                    · {totalFailed} 失败
-                                  </span>
+                                  <span className={styles.failedCount}>· {totalFailed} 失败</span>
                                 )}
                               </span>
                             </span>
@@ -268,9 +275,13 @@ export function HistoryTable({ items, isLoading }: Props) {
                                     onChange={() => toggleOne(it.batch_id)}
                                   />
                                 </td>
-                                <td className={`${styles.tableCell} ${styles.childMarkerCell}`}>↳</td>
+                                <td className={`${styles.tableCell} ${styles.childMarkerCell}`}>
+                                  ↳
+                                </td>
                                 <td className={styles.tableCell}>{it.batch_name}</td>
-                                <td className={`${styles.tableCell} ${styles.numeric}`}>{it.total_tasks}</td>
+                                <td className={`${styles.tableCell} ${styles.numeric}`}>
+                                  {it.total_tasks}
+                                </td>
                                 <td className={styles.tableCell}>
                                   <Badge variant="ai">{it.prediction_count}</Badge>
                                 </td>
@@ -306,9 +317,7 @@ export function HistoryTable({ items, isLoading }: Props) {
                                         size="sm"
                                         variant="ghost"
                                         onClick={() =>
-                                          navigate(
-                                            `/ai-pre?failed=1&batch_id=${it.batch_id}`,
-                                          )
+                                          navigate(`/ai-pre?failed=1&batch_id=${it.batch_id}`)
                                         }
                                         title="到下方失败 prediction 列表重试"
                                       >
@@ -410,10 +419,20 @@ function BulkActionBar(props: {
         </Button>
       </div>
       <div className={styles.bulkActionButtons}>
-        <Button size="sm" variant="ghost" onClick={props.onReactivate} title="清空 prediction, batch 回 active">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={props.onReactivate}
+          title="清空 prediction, batch 回 active"
+        >
           <Icon name="refresh" size={11} /> 批量重激活
         </Button>
-        <Button size="sm" variant="danger" onClick={props.onReset} title="重置 batch 到 draft + 清空 task / prediction / lock">
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={props.onReset}
+          title="重置 batch 到 draft + 清空 task / prediction / lock"
+        >
           <Icon name="trash" size={11} /> 批量重置 draft
         </Button>
       </div>
@@ -460,9 +479,7 @@ function BulkConfirmForm(props: {
         )}
       </ul>
       <label className={styles.field}>
-        <span className={styles.fieldLabel}>
-          原因（≥10 字，写入 audit log）
-        </span>
+        <span className={styles.fieldLabel}>原因（≥10 字，写入 audit log）</span>
         <textarea
           value={props.reason}
           onChange={(e) => props.onReasonChange(e.target.value)}
@@ -471,9 +488,7 @@ function BulkConfirmForm(props: {
           className={styles.textarea}
         />
       </label>
-      {props.error && (
-        <div className={styles.errorText}>{props.error}</div>
-      )}
+      {props.error && <div className={styles.errorText}>{props.error}</div>}
       <div className={styles.formActions}>
         <Button size="sm" variant="ghost" onClick={props.onCancel} disabled={props.isPending}>
           取消
@@ -502,9 +517,7 @@ function BulkResultView(props: { result: BulkClearResponse; onClose: () => void 
       </div>
       {skipped.length > 0 && (
         <details>
-          <summary className={styles.mutedSummary}>
-            跳过详情 ({skipped.length})
-          </summary>
+          <summary className={styles.mutedSummary}>跳过详情 ({skipped.length})</summary>
           <ul className={styles.resultListMuted}>
             {skipped.map((it) => (
               <li key={it.batch_id}>
@@ -516,9 +529,7 @@ function BulkResultView(props: { result: BulkClearResponse; onClose: () => void 
       )}
       {failed.length > 0 && (
         <details open>
-          <summary className={styles.dangerSummary}>
-            失败详情 ({failed.length})
-          </summary>
+          <summary className={styles.dangerSummary}>失败详情 ({failed.length})</summary>
           <ul className={styles.resultListDanger}>
             {failed.map((it) => (
               <li key={it.batch_id}>
@@ -541,9 +552,7 @@ function EmptyState() {
   return (
     <div className={styles.emptyState}>
       <Icon name="sparkles" size={28} />
-      <div className={styles.emptyTitle}>
-        暂无 AI 预标已就绪的批次
-      </div>
+      <div className={styles.emptyTitle}>暂无 AI 预标已就绪的批次</div>
       <div className={styles.emptyHint}>在上方跑一次预标，结果会出现在这里。</div>
     </div>
   );

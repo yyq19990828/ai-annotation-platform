@@ -50,7 +50,11 @@ def list_(
     for b in backends:
         color = "green" if b.state == "connected" else "red"
         table.add_row(
-            b.name, f"[{color}]{b.state}[/{color}]", _model_version(b), _gpu_util(b), b.url
+            b.name,
+            f"[{color}]{b.state}[/{color}]",
+            _model_version(b),
+            _gpu_util(b),
+            b.url,
         )
     console.print(table)
 

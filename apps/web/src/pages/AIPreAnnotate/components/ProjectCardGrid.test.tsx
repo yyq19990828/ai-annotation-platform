@@ -40,7 +40,14 @@ describe("ProjectCardGrid", () => {
   it("渲染项目名 + ml_backend 名 + 三个数字徽章", () => {
     render(
       <ProjectCardGrid
-        items={[makeItem({ project_name: "Demo Project", active_batches: 7, ready_batches: 3, recent_failures: 1 })]}
+        items={[
+          makeItem({
+            project_name: "Demo Project",
+            active_batches: 7,
+            ready_batches: 3,
+            recent_failures: 1,
+          }),
+        ]}
         isLoading={false}
         onSelect={() => {}}
       />,

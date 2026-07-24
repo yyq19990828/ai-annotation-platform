@@ -167,10 +167,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const applyProjectPipeline = useApplyProjectPipeline(projectId);
   const deleteProjectPipeline = useDeleteProjectPipeline();
   const projectPipelinesQ = useProjectPipelines(undefined, { enabled: !!projectId });
-  const projectPipelines = useMemo(
-    () => projectPipelinesQ.data ?? [],
-    [projectPipelinesQ.data],
-  );
+  const projectPipelines = useMemo(() => projectPipelinesQ.data ?? [], [projectPipelinesQ.data]);
   const defaultProjectPipeline = useMemo(
     () =>
       projectPipelines.find(
@@ -180,7 +177,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   );
   const savedPipeline = defaultProjectPipeline?.stages ?? project?.preannotate_pipeline ?? null;
   const savedStageCount = savedPipeline?.length ?? 0;
-  const savedPipelineName = defaultProjectPipeline?.name ?? (savedStageCount > 0 ? "旧项目编排" : null);
+  const savedPipelineName =
+    defaultProjectPipeline?.name ?? (savedStageCount > 0 ? "旧项目编排" : null);
   const [pipelineName, setPipelineName] = useState("");
   const [pipelineScope, setPipelineScope] = useState<ProjectPipelineScope>("private");
   const [selectedLibraryPipelineId, setSelectedLibraryPipelineId] = useState("");
@@ -197,7 +195,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       if (selectedLibraryPipelineId) setSelectedLibraryPipelineId("");
       return;
     }
-    if (!selectedLibraryPipelineId || !libraryPipelines.some((p) => p.id === selectedLibraryPipelineId)) {
+    if (
+      !selectedLibraryPipelineId ||
+      !libraryPipelines.some((p) => p.id === selectedLibraryPipelineId)
+    ) {
       setSelectedLibraryPipelineId(libraryPipelines[0].id);
     }
   }, [libraryPipelines, selectedLibraryPipelineId]);
@@ -219,8 +220,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     // 项目切换 / 列表加载后, 默认选绑定 backend (否则第一个)
     setSelectedBackendId(project?.ml_backend_id ?? firstBackendId);
   }, [projectId, project?.ml_backend_id, firstBackendId]);
-  const selectedBackend =
-    backends.find((b) => b.id === selectedBackendId) ?? null;
+  const selectedBackend = backends.find((b) => b.id === selectedBackendId) ?? null;
   // claude[bot] P1 #5 · 已保存编排里引用的 backend id 在本项目当前 backends 列表里缺多少 (= 被删/停)。
   // 编排可能跨多个 backend, 集合用 backends.map(b.id); 工作台 popover 入口同步据此禁用。
   const savedPipelineMissingBackendCount = useMemo(() => {
@@ -268,8 +268,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   } = usePipelineComposer({
     availableBackendCount: backends.length,
     onWarn: (msg, sub) => pushToast({ msg, sub, kind: "warning" }),
-    onCascadeDelete: (n) =>
-      pushToast({ msg: "已删除阶段", sub: `连带移除 ${n} 个子阶段` }),
+    onCascadeDelete: (n) => pushToast({ msg: "已删除阶段", sub: `连带移除 ${n} 个子阶段` }),
   });
 
   // v0.18.3 · 运行态可视化: 跑批后轮询最后一个多阶段 job 的 result.pipeline_stages (终态真值)。
@@ -485,9 +484,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   ]);
 
   // v0.21.6 · 有无 StageCard 下游卡 (父=模型 stage, 非输入节点直子 SOURCE_SID)。
-  const hasDownstreamCards = stagesGraph.some(
-    (e) => e.parentSid != null && e.sid !== SOURCE_SID,
-  );
+  const hasDownstreamCards = stagesGraph.some((e) => e.parentSid != null && e.sid !== SOURCE_SID);
 
   // 配置层就绪 (源 cfg.configReady) && 下游卡 (若有) 全就绪 && 选了批次 && 不在跑 &&
   // (无键冲突 || 已选末位覆盖)。
@@ -501,9 +498,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // v0.21.6 · 组装后端 pipeline_stages: 输入节点(纯数据源)不入; 源模型 stage(SOURCE_SID)=后端 stage 0
   // (parent_stage=null, 携 source 元数据); 下游卡=stage 1+ (后端号=数组索引-1)。仅源模型无下游卡时
   // 返回 undefined → onRun 走单阶段 (向后兼容); 保存编排时兜成单元素数组 (见 onSavePipeline)。
-  const buildDownstreamStages = (
-    baseArgs: PreannotateArgs,
-  ): PipelineStagePayload[] | undefined => {
+  const buildDownstreamStages = (baseArgs: PreannotateArgs): PipelineStagePayload[] | undefined => {
     if (!hasDownstreamCards || !allDownstreamReady) return undefined;
     // sid → 后端 stage 号 = 数组索引-1 (SOURCE_SID index1→0, 下游 index k→k-1; 输入节点不计)。
     const numberBySid: Record<string, number> = {};
@@ -574,8 +569,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       pushToast({ msg: "下游阶段未就绪", sub: "请配齐各阶段卡", kind: "warning" });
       return;
     }
-    const stages =
-      buildDownstreamStages(baseArgs) ?? [argsToStage(baseArgs, 0, { source: sourceMeta })];
+    const stages = buildDownstreamStages(baseArgs) ?? [
+      argsToStage(baseArgs, 0, { source: sourceMeta }),
+    ];
     await saveNamedPipeline(stages);
   };
 
@@ -722,9 +718,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         </Button>
         <h2 className={styles.title}>{headerName}</h2>
         {summary?.project_display_id && (
-          <span className={styles.displayId}>
-            ({summary.project_display_id})
-          </span>
+          <span className={styles.displayId}>({summary.project_display_id})</span>
         )}
         {selectedBackend ? (
           <Badge variant="ai">{selectedBackend.name}</Badge>
@@ -765,7 +759,12 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
           <strong className={styles.sectionTitle}>待预标批次（{batches.length}）</strong>
           {batches.length > 0 && (
             <label className={styles.inlineCheckbox}>
-              <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="全选 active" />
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label="全选 active"
+              />
               全选
             </label>
           )}
@@ -782,7 +781,10 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               {batches.map((b) => (
                 <li
                   key={b.id}
-                  className={cx(styles.batchItem, selectedBatchIds.has(b.id) && styles.batchItemSelected)}
+                  className={cx(
+                    styles.batchItem,
+                    selectedBatchIds.has(b.id) && styles.batchItemSelected,
+                  )}
                   onClick={() => toggleBatch(b.id)}
                 >
                   <input
@@ -793,12 +795,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                     onClick={(e) => e.stopPropagation()}
                   />
                   <span className={styles.batchName}>
-                    {b.name}{" "}
-                    <span className={styles.subtleText}>({b.display_id})</span>
+                    {b.name} <span className={styles.subtleText}>({b.display_id})</span>
                   </span>
-                  <span className={styles.taskCount}>
-                    {b.total_tasks ?? "—"} 任务
-                  </span>
+                  <span className={styles.taskCount}>{b.total_tasks ?? "—"} 任务</span>
                 </li>
               ))}
             </ul>
@@ -816,291 +815,290 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               : "批跑预标设置"}
           </strong>
 
-            <div className={styles.pipelineLibraryBar}>
-              <div className={styles.pipelineLibraryGroup}>
-                <label className={styles.pipelineLibraryField}>
-                  <span className={styles.fieldLabel}>保存名称</span>
-                  <input
-                    className={styles.textInput}
-                    value={pipelineName}
-                    onChange={(e) => setPipelineName(e.target.value)}
-                    placeholder="例如 detect → 车辆属性"
-                  />
-                </label>
-                <label className={styles.pipelineLibraryField}>
-                  <span className={styles.fieldLabel}>可见范围</span>
-                  <select
-                    className={styles.selectInput}
-                    value={pipelineScope}
-                    onChange={(e) => setPipelineScope(e.target.value as ProjectPipelineScope)}
-                  >
-                    <option value="private">项目私有</option>
-                  </select>
-                  {/* 组织 / 公共 scope 需 organization_id / 超管权限, 首版未提供对应 UI 与选项,
+          <div className={styles.pipelineLibraryBar}>
+            <div className={styles.pipelineLibraryGroup}>
+              <label className={styles.pipelineLibraryField}>
+                <span className={styles.fieldLabel}>保存名称</span>
+                <input
+                  className={styles.textInput}
+                  value={pipelineName}
+                  onChange={(e) => setPipelineName(e.target.value)}
+                  placeholder="例如 detect → 车辆属性"
+                />
+              </label>
+              <label className={styles.pipelineLibraryField}>
+                <span className={styles.fieldLabel}>可见范围</span>
+                <select
+                  className={styles.selectInput}
+                  value={pipelineScope}
+                  onChange={(e) => setPipelineScope(e.target.value as ProjectPipelineScope)}
+                >
+                  <option value="private">项目私有</option>
+                </select>
+                {/* 组织 / 公共 scope 需 organization_id / 超管权限, 首版未提供对应 UI 与选项,
                       故项目内保存只放行 private, 避免选了必定 400/403。跨项目复用走全局 Pipeline 库。 */}
-                </label>
-              </div>
-
-              <div className={styles.pipelineLibraryGroup}>
-                <label className={styles.pipelineLibraryField}>
-                  <span className={styles.fieldLabel}>命名编排库</span>
-                  <select
-                    className={styles.selectInput}
-                    value={selectedLibraryPipelineId}
-                    onChange={(e) => setSelectedLibraryPipelineId(e.target.value)}
-                    disabled={projectPipelinesQ.isLoading || libraryPipelines.length === 0}
-                  >
-                    {libraryPipelines.length === 0 ? (
-                      <option value="">暂无可套用编排</option>
-                    ) : (
-                      libraryPipelines.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} · {PIPELINE_SCOPE_LABELS[p.scope]} · {p.stages.length} 阶段
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={onApplyLibraryPipeline}
-                  disabled={!selectedLibraryPipeline || applyProjectPipeline.isPending}
-                  title="把所选命名编排 copy-on-write 套用到当前项目，并设为项目默认"
-                >
-                  <Icon name="download" size={12} />
-                  套用为默认
-                </Button>
-              </div>
+              </label>
             </div>
 
-            {/* v0.18.16 · 两列编排: 左 DAG 画布 (点选/增删/拖边改父), 右选中节点参数检查器。
-                页面高度恒定 (右列永远一张卡), 结构所见即所得。 */}
-            <div className={styles.editorTwoCol}>
-              <div className={styles.editorCanvas}>
-                <Suspense
-                  fallback={<div className={styles.canvasFallback}>加载编排画布…</div>}
+            <div className={styles.pipelineLibraryGroup}>
+              <label className={styles.pipelineLibraryField}>
+                <span className={styles.fieldLabel}>命名编排库</span>
+                <select
+                  className={styles.selectInput}
+                  value={selectedLibraryPipelineId}
+                  onChange={(e) => setSelectedLibraryPipelineId(e.target.value)}
+                  disabled={projectPipelinesQ.isLoading || libraryPipelines.length === 0}
                 >
-                  <PipelineGraphCanvas
-                    models={graphNodes}
-                    selectedSid={selectedSid}
-                    onSelect={setSelectedSid}
-                    onAddChild={addStage}
-                    onRemove={removeStage}
-                    onReparent={onReparent}
-                    canReparentConn={canReparentConn}
-                  />
-                </Suspense>
-                {backends.length < 2 ? (
-                  <span className={styles.stageEmptyHint}>
-                    需在项目设置绑定第二个 ML backend，才能加下游分类/检测子阶段（下游须用不同于检测的后端）。
-                  </span>
-                ) : !hasDownstreamCards ? (
-                  <span className={styles.stageEmptyHint}>
-                    从源模型的 <Icon name="plus" size={10} /> 拖出（或点 +）加下游阶段：检出框后，下游对每个框跑分类补属性 / 检测子物体。
-                  </span>
-                ) : null}
-              </div>
-
-              {/* 检查器: 所有配置体常驻挂载, 非选中者 CSS 隐藏 (保住各自 usePreannotateConfig 状态)。 */}
-              <div className={styles.editorInspector}>
-                {/* 输入节点: 纯数据源 (data_type 只读 + 执行单位可选); 选中时显示。 */}
-                <div hidden={selectedSid !== ROOT_SID}>
-                  <strong className={styles.sectionTitle}>输入节点 · 数据源</strong>
-                  <div className={styles.mutedText}>
-                    数据类型：{dataType === "video" ? "视频" : dataType === "image" ? "图像" : dataType}
-                  </div>
-                  {/* v0.21.7 · 视频项目执行单位顶层分叉: 换它会重置源模型下拉 (整段=tracker / 逐帧=图像检测)。 */}
-                  {dataType === "video" && (
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>执行单位</span>
-                      <select
-                        className={styles.selectInput}
-                        value={executionUnit}
-                        onChange={(e) =>
-                          setExecutionUnit(e.target.value as "video" | "frame")
-                        }
-                      >
-                        <option value="video">整段序列（detect-then-track 追踪）</option>
-                        <option value="frame">逐帧（图像检测逐帧跑，落单帧框）</option>
-                      </select>
-                      <span className={styles.mutedText}>
-                        {executionUnit === "video"
-                          ? "对整段视频做多目标追踪，产跨帧轨迹。"
-                          : "对每一帧独立跑图像检测，产逐帧单帧框（无跨帧关联）。"}
-                      </span>
-                    </label>
+                  {libraryPipelines.length === 0 ? (
+                    <option value="">暂无可套用编排</option>
+                  ) : (
+                    libraryPipelines.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} · {PIPELINE_SCOPE_LABELS[p.scope]} · {p.stages.length} 阶段
+                      </option>
+                    ))
                   )}
-                </div>
-                {/* 源模型参数 (整图检测/tracker, 后端 stage 0): 选中 SOURCE_SID 时显示。 */}
-                <div hidden={selectedSid !== SOURCE_SID}>
-                  <strong className={styles.sectionTitle}>
-                    {dataType === "video" && executionUnit === "video"
-                      ? "源模型 · 追踪参数"
-                      : "源模型 · 检测参数"}
-                  </strong>
-                  <PreannotateConfigForm
-                    cfg={cfg}
-                    backends={backends}
-                    selectedBackendId={selectedBackendId}
-                    onSelectBackend={setSelectedBackendId}
-                    projectMlBackendId={project?.ml_backend_id}
-                  />
-                </div>
-                {/* 各下游阶段卡: 全部挂载, 非选中 hidden。输入节点/源模型不出卡 (走上方配置体)。 */}
-                {stagesGraph.map((e, i) =>
-                  e.parentSid == null || e.sid === SOURCE_SID ? null : (
-                    <StageCard
-                      key={e.sid}
-                      id={e.sid}
-                      displayIndex={i}
-                      projectId={projectId}
-                      backends={backends}
-                      projectMlBackendId={project?.ml_backend_id}
-                      sourceBackendId={selectedBackendId}
-                      projectClasses={projectClasses}
-                      parentClassOptions={sourceEffectiveClasses}
-                      projectAttributeKeys={projectAttributeKeys}
-                      conflictKeys={conflictInfo.perCard[e.sid]}
-                      stat={stageStatByIndex.get(i - 1)}
-                      runState={stageRunState(i - 1)}
-                      hidden={selectedSid !== e.sid}
-                      onChange={onStageChange}
-                      onCaps={onStageCaps}
-                      onRemove={removeStage}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* v0.18.5 · 键冲突配置期预警: 多个 attributes 阶段写同一最终键 → 红字提示 + 末位覆盖开关。 */}
-            {hasKeyConflict && (
-              <div className={styles.stageWarn}>
-                <Icon name="warning" size={12} />
-                <div className={styles.field}>
-                  <span>
-                    多个阶段写同一属性键：
-                    {Array.from(conflictInfo.displayFinals).join("、")}。默认拦截，无法运行。
-                  </span>
-                  <label className={styles.inlineCheckbox}>
-                    <input
-                      type="checkbox"
-                      checked={keyConflictLastWins}
-                      onChange={(e) => setKeyConflictLastWins(e.target.checked)}
-                    />
-                    允许末位覆盖（last_wins）
-                  </label>
-                </div>
-              </div>
-            )}
-
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>
-                已预标任务
-                {predictMode === "overwrite" && (
-                  <span className={styles.fieldHint}> · 覆盖会删除已有 AI 标注</span>
-                )}
-              </span>
-              <TabRow
-                tabs={PREDICT_MODE_TABS}
-                active={PREDICT_MODE_LABELS[predictMode]}
-                onChange={(label) => {
-                  const m = PREDICT_MODE_BY_LABEL[label];
-                  if (m) setPredictMode(m);
-                }}
-              />
-            </div>
-
-            {selectedBatchIds.size > 1 && (
-              <div role="radiogroup" aria-label="并发模式" className={styles.concurrencyGroup}>
-                <label className={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    name="concurrency"
-                    checked={concurrency === "serial"}
-                    onChange={() => setConcurrency("serial")}
-                  />
-                  串行（依次入队）
-                </label>
-                <label className={styles.radioLabel}>
-                  <input
-                    type="radio"
-                    name="concurrency"
-                    checked={concurrency === "parallel"}
-                    onChange={() => setConcurrency("parallel")}
-                  />
-                  并行（同时入队）
-                </label>
-                {summary?.ml_backend_max_concurrency != null && (
-                  <span className={styles.mutedInline}>
-                    （后端最多 {summary.ml_backend_max_concurrency} 并发）
-                  </span>
-                )}
-              </div>
-            )}
-
-            <div className={styles.actions}>
+                </select>
+              </label>
               <Button
-                onClick={onRun}
-                disabled={!canRun}
-                title={
-                  selectedBatchIds.size === 0
-                    ? "请先选择至少一个批次"
-                    : hasKeyConflict && !keyConflictLastWins
-                      ? "存在属性键冲突，请勾选「允许末位覆盖」或调整各阶段写回键"
-                      : undefined
-                }
-              >
-                <Icon name="bot" size={12} />
-                {running
-                  ? cfg.isCurrentVariantWarm
-                    ? "分发中..."
-                    : "加载模型中…（首次约 5-15s）"
-                  : selectedBatchIds.size === 0
-                    ? "跑预标（先选批次）"
-                    : `跑预标（${selectedBatchIds.size} 批）`}
-              </Button>
-              {/* v0.18.27 · 把当前配置存为「项目编排」(方案 A); v0.18.28 popover「运行当前题（按项目编排）」据此读取。 */}
-              <Button
+                size="sm"
                 variant="default"
-                onClick={onSavePipeline}
-                disabled={
-                  !cfg.configReady ||
-                  (stagesGraph.length > 0 && !allDownstreamReady) ||
-                  createProjectPipeline.isPending ||
-                  applyProjectPipeline.isPending
-                }
-                title="把当前配置（含多阶段编排）保存为命名编排，并设为当前项目默认"
+                onClick={onApplyLibraryPipeline}
+                disabled={!selectedLibraryPipeline || applyProjectPipeline.isPending}
+                title="把所选命名编排 copy-on-write 套用到当前项目，并设为项目默认"
               >
-                <Icon name="save" size={12} />
-                保存为命名编排
+                <Icon name="download" size={12} />
+                套用为默认
               </Button>
-              {savedStageCount > 0 && (
-                <>
-                  <Badge>{savedPipelineName} · {savedStageCount} 阶段</Badge>
-                  {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 工作台 popover「按编排跑」会禁用; 这里同时提示。 */}
-                  {savedPipelineMissingBackendCount > 0 && (
-                    <span
-                      title="编排引用的 backend 不在本项目注册列表里 (被删或未注册); 工作台 popover「按编排跑」会被禁用, 请重新注册或修改编排"
+            </div>
+          </div>
+
+          {/* v0.18.16 · 两列编排: 左 DAG 画布 (点选/增删/拖边改父), 右选中节点参数检查器。
+                页面高度恒定 (右列永远一张卡), 结构所见即所得。 */}
+          <div className={styles.editorTwoCol}>
+            <div className={styles.editorCanvas}>
+              <Suspense fallback={<div className={styles.canvasFallback}>加载编排画布…</div>}>
+                <PipelineGraphCanvas
+                  models={graphNodes}
+                  selectedSid={selectedSid}
+                  onSelect={setSelectedSid}
+                  onAddChild={addStage}
+                  onRemove={removeStage}
+                  onReparent={onReparent}
+                  canReparentConn={canReparentConn}
+                />
+              </Suspense>
+              {backends.length < 2 ? (
+                <span className={styles.stageEmptyHint}>
+                  需在项目设置绑定第二个 ML
+                  backend，才能加下游分类/检测子阶段（下游须用不同于检测的后端）。
+                </span>
+              ) : !hasDownstreamCards ? (
+                <span className={styles.stageEmptyHint}>
+                  从源模型的 <Icon name="plus" size={10} /> 拖出（或点
+                  +）加下游阶段：检出框后，下游对每个框跑分类补属性 / 检测子物体。
+                </span>
+              ) : null}
+            </div>
+
+            {/* 检查器: 所有配置体常驻挂载, 非选中者 CSS 隐藏 (保住各自 usePreannotateConfig 状态)。 */}
+            <div className={styles.editorInspector}>
+              {/* 输入节点: 纯数据源 (data_type 只读 + 执行单位可选); 选中时显示。 */}
+              <div hidden={selectedSid !== ROOT_SID}>
+                <strong className={styles.sectionTitle}>输入节点 · 数据源</strong>
+                <div className={styles.mutedText}>
+                  数据类型：
+                  {dataType === "video" ? "视频" : dataType === "image" ? "图像" : dataType}
+                </div>
+                {/* v0.21.7 · 视频项目执行单位顶层分叉: 换它会重置源模型下拉 (整段=tracker / 逐帧=图像检测)。 */}
+                {dataType === "video" && (
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>执行单位</span>
+                    <select
+                      className={styles.selectInput}
+                      value={executionUnit}
+                      onChange={(e) => setExecutionUnit(e.target.value as "video" | "frame")}
                     >
-                      <Badge variant="warning">
-                        引用 {savedPipelineMissingBackendCount} 个后端不可用
-                      </Badge>
+                      <option value="video">整段序列（detect-then-track 追踪）</option>
+                      <option value="frame">逐帧（图像检测逐帧跑，落单帧框）</option>
+                    </select>
+                    <span className={styles.mutedText}>
+                      {executionUnit === "video"
+                        ? "对整段视频做多目标追踪，产跨帧轨迹。"
+                        : "对每一帧独立跑图像检测，产逐帧单帧框（无跨帧关联）。"}
                     </span>
-                  )}
-                  <Button
-                    variant="ghost"
-                    onClick={onClearPipeline}
-                    disabled={updateProject.isPending || deleteProjectPipeline.isPending}
-                    title="清除项目默认命名编排；若仅有旧项目编排，则清除旧兼容列"
-                  >
-                    清除
-                  </Button>
-                </>
+                  </label>
+                )}
+              </div>
+              {/* 源模型参数 (整图检测/tracker, 后端 stage 0): 选中 SOURCE_SID 时显示。 */}
+              <div hidden={selectedSid !== SOURCE_SID}>
+                <strong className={styles.sectionTitle}>
+                  {dataType === "video" && executionUnit === "video"
+                    ? "源模型 · 追踪参数"
+                    : "源模型 · 检测参数"}
+                </strong>
+                <PreannotateConfigForm
+                  cfg={cfg}
+                  backends={backends}
+                  selectedBackendId={selectedBackendId}
+                  onSelectBackend={setSelectedBackendId}
+                  projectMlBackendId={project?.ml_backend_id}
+                />
+              </div>
+              {/* 各下游阶段卡: 全部挂载, 非选中 hidden。输入节点/源模型不出卡 (走上方配置体)。 */}
+              {stagesGraph.map((e, i) =>
+                e.parentSid == null || e.sid === SOURCE_SID ? null : (
+                  <StageCard
+                    key={e.sid}
+                    id={e.sid}
+                    displayIndex={i}
+                    projectId={projectId}
+                    backends={backends}
+                    projectMlBackendId={project?.ml_backend_id}
+                    sourceBackendId={selectedBackendId}
+                    projectClasses={projectClasses}
+                    parentClassOptions={sourceEffectiveClasses}
+                    projectAttributeKeys={projectAttributeKeys}
+                    conflictKeys={conflictInfo.perCard[e.sid]}
+                    stat={stageStatByIndex.get(i - 1)}
+                    runState={stageRunState(i - 1)}
+                    hidden={selectedSid !== e.sid}
+                    onChange={onStageChange}
+                    onCaps={onStageCaps}
+                    onRemove={removeStage}
+                  />
+                ),
               )}
             </div>
           </div>
+
+          {/* v0.18.5 · 键冲突配置期预警: 多个 attributes 阶段写同一最终键 → 红字提示 + 末位覆盖开关。 */}
+          {hasKeyConflict && (
+            <div className={styles.stageWarn}>
+              <Icon name="warning" size={12} />
+              <div className={styles.field}>
+                <span>
+                  多个阶段写同一属性键：
+                  {Array.from(conflictInfo.displayFinals).join("、")}。默认拦截，无法运行。
+                </span>
+                <label className={styles.inlineCheckbox}>
+                  <input
+                    type="checkbox"
+                    checked={keyConflictLastWins}
+                    onChange={(e) => setKeyConflictLastWins(e.target.checked)}
+                  />
+                  允许末位覆盖（last_wins）
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              已预标任务
+              {predictMode === "overwrite" && (
+                <span className={styles.fieldHint}> · 覆盖会删除已有 AI 标注</span>
+              )}
+            </span>
+            <TabRow
+              tabs={PREDICT_MODE_TABS}
+              active={PREDICT_MODE_LABELS[predictMode]}
+              onChange={(label) => {
+                const m = PREDICT_MODE_BY_LABEL[label];
+                if (m) setPredictMode(m);
+              }}
+            />
+          </div>
+
+          {selectedBatchIds.size > 1 && (
+            <div role="radiogroup" aria-label="并发模式" className={styles.concurrencyGroup}>
+              <label className={styles.radioLabel}>
+                <input
+                  type="radio"
+                  name="concurrency"
+                  checked={concurrency === "serial"}
+                  onChange={() => setConcurrency("serial")}
+                />
+                串行（依次入队）
+              </label>
+              <label className={styles.radioLabel}>
+                <input
+                  type="radio"
+                  name="concurrency"
+                  checked={concurrency === "parallel"}
+                  onChange={() => setConcurrency("parallel")}
+                />
+                并行（同时入队）
+              </label>
+              {summary?.ml_backend_max_concurrency != null && (
+                <span className={styles.mutedInline}>
+                  （后端最多 {summary.ml_backend_max_concurrency} 并发）
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className={styles.actions}>
+            <Button
+              onClick={onRun}
+              disabled={!canRun}
+              title={
+                selectedBatchIds.size === 0
+                  ? "请先选择至少一个批次"
+                  : hasKeyConflict && !keyConflictLastWins
+                    ? "存在属性键冲突，请勾选「允许末位覆盖」或调整各阶段写回键"
+                    : undefined
+              }
+            >
+              <Icon name="bot" size={12} />
+              {running
+                ? cfg.isCurrentVariantWarm
+                  ? "分发中..."
+                  : "加载模型中…（首次约 5-15s）"
+                : selectedBatchIds.size === 0
+                  ? "跑预标（先选批次）"
+                  : `跑预标（${selectedBatchIds.size} 批）`}
+            </Button>
+            {/* v0.18.27 · 把当前配置存为「项目编排」(方案 A); v0.18.28 popover「运行当前题（按项目编排）」据此读取。 */}
+            <Button
+              variant="default"
+              onClick={onSavePipeline}
+              disabled={
+                !cfg.configReady ||
+                (stagesGraph.length > 0 && !allDownstreamReady) ||
+                createProjectPipeline.isPending ||
+                applyProjectPipeline.isPending
+              }
+              title="把当前配置（含多阶段编排）保存为命名编排，并设为当前项目默认"
+            >
+              <Icon name="save" size={12} />
+              保存为命名编排
+            </Button>
+            {savedStageCount > 0 && (
+              <>
+                <Badge>
+                  {savedPipelineName} · {savedStageCount} 阶段
+                </Badge>
+                {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 工作台 popover「按编排跑」会禁用; 这里同时提示。 */}
+                {savedPipelineMissingBackendCount > 0 && (
+                  <span title="编排引用的 backend 不在本项目注册列表里 (被删或未注册); 工作台 popover「按编排跑」会被禁用, 请重新注册或修改编排">
+                    <Badge variant="warning">
+                      引用 {savedPipelineMissingBackendCount} 个后端不可用
+                    </Badge>
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  onClick={onClearPipeline}
+                  disabled={updateProject.isPending || deleteProjectPipeline.isPending}
+                  title="清除项目默认命名编排；若仅有旧项目编排，则清除旧兼容列"
+                >
+                  清除
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
       </Card>
 
       <HistoryTable items={projectQueue} isLoading={queueQ.isLoading} />

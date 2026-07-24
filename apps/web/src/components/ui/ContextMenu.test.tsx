@@ -7,13 +7,7 @@ import type { DropdownItem } from "./DropdownMenu";
 function renderMenu(items: DropdownItem[], props?: Partial<ComponentProps<typeof ContextMenu>>) {
   const onClose = props?.onClose ?? vi.fn();
   render(
-    <ContextMenu
-      open
-      x={props?.x ?? 20}
-      y={props?.y ?? 30}
-      items={items}
-      onClose={onClose}
-    />,
+    <ContextMenu open x={props?.x ?? 20} y={props?.y ?? 30} items={items} onClose={onClose} />,
   );
   return { onClose };
 }
@@ -25,9 +19,7 @@ describe("<ContextMenu />", () => {
 
   it("renders at fixed coordinates and closes after selecting an enabled item", () => {
     const onSelect = vi.fn();
-    const { onClose } = renderMenu([
-      { id: "mark", label: "Mark", onSelect },
-    ]);
+    const { onClose } = renderMenu([{ id: "mark", label: "Mark", onSelect }]);
 
     const menu = screen.getByRole("menu");
     expect(menu).toHaveStyle({ "--context-menu-x": "20px", "--context-menu-y": "30px" });
@@ -49,9 +41,7 @@ describe("<ContextMenu />", () => {
   });
 
   it("closes on Escape and outside mousedown", () => {
-    const { onClose } = renderMenu([
-      { id: "mark", label: "Mark" },
-    ]);
+    const { onClose } = renderMenu([{ id: "mark", label: "Mark" }]);
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);

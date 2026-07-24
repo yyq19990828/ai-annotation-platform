@@ -193,9 +193,7 @@ describe("UsersPage", () => {
     fireEvent.click(exportBtn);
     await waitFor(() => expect(mockExportUsers).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(mockPushToast).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "success" }),
-      ),
+      expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" })),
     );
   });
 

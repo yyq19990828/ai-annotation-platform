@@ -103,8 +103,7 @@ export function ServicePoolRuntimeTable({
             : backend?.health_meta?.residency;
           const trusted = hasDirectResidency
             ? observe?.ok === true
-            : backend != null &&
-              isFreshCachedHealth(backend.state, backend.last_checked_at);
+            : backend != null && isFreshCachedHealth(backend.state, backend.last_checked_at);
           return isActiveResidency(residency, trusted);
         }).length;
         const cpuFallbackCount = pool.members.filter((member) => {
@@ -141,7 +140,7 @@ export function ServicePoolRuntimeTable({
             trafficTotal={trafficTotal}
             lastSelected={
               lastSelectedTimes.length > 0
-                ? lastSelectedTimes[lastSelectedTimes.length - 1] ?? null
+                ? (lastSelectedTimes[lastSelectedTimes.length - 1] ?? null)
                 : null
             }
             residentCount={residentCount}
@@ -208,11 +207,7 @@ function PoolRuntimeCard({
               aria-label={isOpen ? "收起服务池成员" : "展开服务池成员"}
               title={isOpen ? "收起" : "展开"}
             >
-              {isOpen ? (
-                <ChevronDown aria-hidden="true" />
-              ) : (
-                <ChevronRight aria-hidden="true" />
-              )}
+              {isOpen ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
             </Button>
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <Server className="size-4" strokeWidth={1.6} aria-hidden="true" />
@@ -222,7 +217,10 @@ function PoolRuntimeCard({
                 <h4 className="truncate text-sm font-semibold tracking-tight">{pool.name}</h4>
                 {!pool.enabled && <Badge variant="outline">已停用</Badge>}
               </div>
-              <div className="mt-0.5 truncate font-mono text-2xs text-muted-foreground" title={pool.id}>
+              <div
+                className="mt-0.5 truncate font-mono text-2xs text-muted-foreground"
+                title={pool.id}
+              >
                 {pool.id.slice(0, 8)} · {pool.routing_policy}
               </div>
             </div>
@@ -233,12 +231,7 @@ function PoolRuntimeCard({
           </div>
         </div>
 
-        <div
-          className={cn(
-            "grid gap-2 sm:grid-cols-2",
-            isOpen && "xl:grid-cols-4",
-          )}
-        >
+        <div className={cn("grid gap-2 sm:grid-cols-2", isOpen && "xl:grid-cols-4")}>
           <PoolMetric
             icon={Signal}
             label="可用实例"
@@ -262,7 +255,13 @@ function PoolRuntimeCard({
                 </span>
               </span>
             }
-            detail={pool.capacity.inflight == null ? NO_METRICS_LABEL : pool.capacity.saturated ? "存在熔断成员" : "当前 inflight"}
+            detail={
+              pool.capacity.inflight == null
+                ? NO_METRICS_LABEL
+                : pool.capacity.saturated
+                  ? "存在熔断成员"
+                  : "当前 inflight"
+            }
             tone={pool.capacity.saturated ? "danger" : "default"}
           />
           <PoolMetric
@@ -303,11 +302,7 @@ function PoolRuntimeCard({
                     backend={backend}
                     observe={observe}
                     projectId={projectId}
-                    onWarm={
-                      onWarm
-                        ? (target) => onWarm(member.registry_id, target)
-                        : undefined
-                    }
+                    onWarm={onWarm ? (target) => onWarm(member.registry_id, target) : undefined}
                     isWarming={warming?.has(member.registry_id) ?? false}
                   />
                 );
@@ -339,7 +334,11 @@ function PoolMetric({
 }): ReactNode {
   return (
     <div className="flex min-w-0 gap-2.5 rounded-lg bg-muted/35 px-3 py-2.5">
-      <MetricIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
+      <MetricIcon
+        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        strokeWidth={1.6}
+        aria-hidden="true"
+      />
       <div className="min-w-0 flex-1">
         <div className="text-2xs font-medium text-muted-foreground">{label}</div>
         <div className="mt-1 truncate text-sm font-semibold tracking-tight">{value}</div>
@@ -372,7 +371,9 @@ function FreshnessSummary({ sources }: { sources: FreshnessViewModel[] }): React
   if (staleCount > 0) {
     return (
       <span title={title}>
-        <Badge variant="warning">{sources.length - staleCount}/{sources.length} 新鲜</Badge>
+        <Badge variant="warning">
+          {sources.length - staleCount}/{sources.length} 新鲜
+        </Badge>
       </span>
     );
   }
@@ -399,13 +400,10 @@ function isCpuFallbackInline(
   compute: import("@/utils/mlBackendCompute").MLBackendCompute | null | undefined,
 ): boolean {
   if (!compute || compute.cpu_fallback_supported === false) return false;
-  const normalize = (value: string | undefined | null) =>
-    value?.trim().toLowerCase() ?? "";
+  const normalize = (value: string | undefined | null) => value?.trim().toLowerCase() ?? "";
   const configured = normalize(compute.configured_device);
   const configuredForGpu =
-    configured === "gpu" ||
-    configured === "cuda" ||
-    configured.startsWith("cuda:");
+    configured === "gpu" || configured === "cuda" || configured.startsWith("cuda:");
   if (!configuredForGpu) return false;
   return (
     normalize(compute.effective_device) === "cpu" ||

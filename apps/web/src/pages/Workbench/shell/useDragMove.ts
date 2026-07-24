@@ -34,9 +34,7 @@ function clamp(value: number, min: number, max: number): number {
 function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(
-    target.closest(
-      "button,a,input,select,textarea,[role='button'],[data-floating-panel-no-drag]",
-    ),
+    target.closest("button,a,input,select,textarea,[role='button'],[data-floating-panel-no-drag]"),
   );
 }
 

@@ -39,8 +39,14 @@ def test_setup_models_catalog() -> None:
     models = client.get("/setup").json()["models"]
     ids = {m["id"] for m in models}
     assert ids == {
-        "yolo-detect", "yolo-segment", "yolo-pose", "yolo-obb",
-        "yolo-classify", "ppocr", "doclayout", "screenshot-interactive",
+        "yolo-detect",
+        "yolo-segment",
+        "yolo-pose",
+        "yolo-obb",
+        "yolo-classify",
+        "ppocr",
+        "doclayout",
+        "screenshot-interactive",
         "screenshot-tracker",
     }
     for m in models:
@@ -52,10 +58,13 @@ def test_setup_models_catalog() -> None:
     assert by_id["ppocr"]["infra"] == "paddle"
     assert by_id["ppocr"]["output_attribute_types"] == ["text", "language"]
     assert by_id["screenshot-interactive"]["supported_prompts"] == [
-        "point", "interactive_box", "exemplar",
+        "point",
+        "interactive_box",
+        "exemplar",
     ]
     assert by_id["screenshot-tracker"]["supported_trackers"] == [
-        "sam3_video_interactive", "sam2_video",
+        "sam3_video_interactive",
+        "sam2_video",
     ]
 
 
@@ -69,7 +78,10 @@ def test_setup_yolo_entries_carry_v2_1_variant_fields() -> None:
     assert ["yolo11", "x"] in combos
     assert ["yolo12", "l"] not in combos
     # 每个组合都落在两轴枚举内。
-    axes = {a["key"]: [v["value"] for v in a["variants"]] for a in detect["supported_variants"]}
+    axes = {
+        a["key"]: [v["value"] for v in a["variants"]]
+        for a in detect["supported_variants"]
+    }
     for series, size in combos:
         assert series in axes["series"]
         assert size in axes["size"]
@@ -80,7 +92,10 @@ def test_predict_batch_shape_with_runtime_observability() -> None:
         "/predict",
         json={
             "tasks": [{"id": "t1", "file_path": "a.jpg"}],
-            "context": {"type": "detection", "model_variants": {"series": "yolo11", "size": "s"}},
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolo11", "size": "s"},
+            },
         },
     )
     assert resp.status_code == 200
@@ -96,7 +111,10 @@ def test_predict_batch_shape_with_runtime_observability() -> None:
 def test_predict_interactive_single_has_no_results_array() -> None:
     resp = client.post(
         "/predict",
-        json={"task": {"id": "t1", "file_path": "a.jpg"}, "context": {"type": "detection"}},
+        json={
+            "task": {"id": "t1", "file_path": "a.jpg"},
+            "context": {"type": "detection"},
+        },
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -107,7 +125,10 @@ def test_predict_interactive_single_has_no_results_array() -> None:
 def test_predict_ocr_carries_attributes_text() -> None:
     resp = client.post(
         "/predict",
-        json={"tasks": [{"id": "t1", "file_path": "a.jpg"}], "context": {"type": "ocr"}},
+        json={
+            "tasks": [{"id": "t1", "file_path": "a.jpg"}],
+            "context": {"type": "ocr"},
+        },
     )
     shapes = resp.json()["results"][0]["result"]
     assert all("text" in s["attributes"] for s in shapes)
@@ -123,7 +144,11 @@ def test_predict_video_tracker_returns_frame_geometry() -> None:
                 "from_frame": 2,
                 "to_frame": 4,
                 "source_geometry": {
-                    "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4,
+                    "type": "bbox",
+                    "x": 0.1,
+                    "y": 0.2,
+                    "w": 0.3,
+                    "h": 0.4,
                 },
             },
         },
@@ -140,7 +165,10 @@ def test_predict_legacy_context_variants_normalized() -> None:
         "/predict",
         json={
             "tasks": [{"id": "t1", "file_path": "a.jpg"}],
-            "context": {"type": "detection", "variants": {"series": "yolov8", "size": "m"}},
+            "context": {
+                "type": "detection",
+                "variants": {"series": "yolov8", "size": "m"},
+            },
         },
     )
     assert resp.status_code == 200
@@ -152,7 +180,10 @@ def test_predict_invalid_variant_value_returns_422() -> None:
         "/predict",
         json={
             "tasks": [{"id": "t1", "file_path": "a.jpg"}],
-            "context": {"type": "detection", "model_variants": {"series": "yolov99", "size": "s"}},
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolov99", "size": "s"},
+            },
         },
     )
     assert resp.status_code == 422
@@ -169,7 +200,10 @@ def test_predict_invalid_combination_returns_422() -> None:
         "/predict",
         json={
             "tasks": [{"id": "t1", "file_path": "a.jpg"}],
-            "context": {"type": "detection", "model_variants": {"series": "yolo12", "size": "l"}},
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolo12", "size": "l"},
+            },
         },
     )
     assert resp.status_code == 422
@@ -185,7 +219,10 @@ def test_predict_size_x_returns_503_model_unavailable() -> None:
         "/predict",
         json={
             "tasks": [{"id": "t1", "file_path": "a.jpg"}],
-            "context": {"type": "detection", "model_variants": {"series": "yolo11", "size": "x"}},
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolo11", "size": "x"},
+            },
         },
     )
     assert resp.status_code == 503

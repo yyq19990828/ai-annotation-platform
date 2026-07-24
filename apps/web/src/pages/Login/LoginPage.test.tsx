@@ -117,9 +117,7 @@ describe("LoginPage", () => {
     expect(pwd.type).toBe("password");
     // 找到 toggle 按钮（type=button 且不含文字 "登录"）
     const buttons = document.querySelectorAll("button");
-    const eyeBtn = Array.from(buttons).find(
-      (b) => b.getAttribute("type") === "button",
-    )!;
+    const eyeBtn = Array.from(buttons).find((b) => b.getAttribute("type") === "button")!;
     fireEvent.click(eyeBtn);
     expect(pwd.type).toBe("text");
   });

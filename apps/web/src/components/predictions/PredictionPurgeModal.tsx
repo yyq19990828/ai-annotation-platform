@@ -27,15 +27,9 @@ const SOURCE_OPTIONS: Array<{
   { value: "all", label: "全部预测" },
 ];
 
-export function PredictionPurgeModal({
-  open,
-  projectId,
-  onClose,
-  onComplete,
-}: Props) {
+export function PredictionPurgeModal({ open, projectId, onClose, onComplete }: Props) {
   const pushToast = useToastStore((s) => s.push);
-  const [sourceScope, setSourceScope] =
-    useState<PredictionPurgeSourceScope>("external_import");
+  const [sourceScope, setSourceScope] = useState<PredictionPurgeSourceScope>("external_import");
   const [preview, setPreview] = useState<PredictionPurgeResult | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -78,9 +72,7 @@ export function PredictionPurgeModal({
   }, [open, projectId, pushToast, sourceScope]);
 
   const sourceLabel = useMemo(
-    () =>
-      SOURCE_OPTIONS.find((option) => option.value === sourceScope)?.label ??
-      sourceScope,
+    () => SOURCE_OPTIONS.find((option) => option.value === sourceScope)?.label ?? sourceScope,
     [sourceScope],
   );
 
@@ -132,9 +124,7 @@ export function PredictionPurgeModal({
             id="prediction-purge-source"
             className={styles.input}
             value={sourceScope}
-            onChange={(e) =>
-              setSourceScope(e.target.value as PredictionPurgeSourceScope)
-            }
+            onChange={(e) => setSourceScope(e.target.value as PredictionPurgeSourceScope)}
             disabled={submitting}
           >
             {SOURCE_OPTIONS.map((option) => (
@@ -149,15 +139,11 @@ export function PredictionPurgeModal({
           <div className={styles.previewStats}>
             <div className={styles.previewStat}>
               <span className={styles.previewStatLabel}>将清理</span>
-              <span className={styles.previewStatValue}>
-                {loadingPreview ? "..." : total}
-              </span>
+              <span className={styles.previewStatValue}>{loadingPreview ? "..." : total}</span>
             </div>
             <div className={styles.previewStat}>
               <span className={styles.previewStatLabel}>ML Backend</span>
-              <span className={styles.previewStatValue}>
-                {preview?.counts.ml_backend ?? 0}
-              </span>
+              <span className={styles.previewStatValue}>{preview?.counts.ml_backend ?? 0}</span>
             </div>
             <div className={styles.previewStat}>
               <span className={styles.previewStatLabel}>外部导入</span>
@@ -168,9 +154,7 @@ export function PredictionPurgeModal({
             {(preview?.counts.unknown ?? 0) > 0 && (
               <div className={styles.previewStat}>
                 <span className={styles.previewStatLabel}>其他来源</span>
-                <span className={styles.previewStatValue}>
-                  {preview?.counts.unknown ?? 0}
-                </span>
+                <span className={styles.previewStatValue}>{preview?.counts.unknown ?? 0}</span>
               </div>
             )}
           </div>
@@ -195,11 +179,7 @@ export function PredictionPurgeModal({
           <Button variant="ghost" onClick={close} disabled={submitting}>
             取消
           </Button>
-          <Button
-            variant="danger"
-            onClick={confirm}
-            disabled={!canSubmit || loadingPreview}
-          >
+          <Button variant="danger" onClick={confirm} disabled={!canSubmit || loadingPreview}>
             {submitting ? "清理中..." : "确认清理"}
           </Button>
         </div>

@@ -2,6 +2,7 @@ import { apiClient } from "./client";
 import type { MLBackendResponse } from "@/types";
 import type { OutputAttributeSchemaItem } from "./mlCapabilities";
 import type { MLBackendUnloadResponse } from "./generated/types.gen";
+import type { CocoRle } from "@/pages/Workbench/stage/shared/geometry/maskRle";
 
 // v0.19.0 · ADR-0044 全局 ML 注册表: backend 上提为全局表, 项目层退化为「启用关联 + 变体覆盖」。
 // `available` 端点列出全部全局 backend + 本项目启用态/覆盖; 一行 = 一个全局 backend。
@@ -25,15 +26,68 @@ export interface InteractiveRequest {
 }
 
 /** 交互式推理响应。图片走 interactiveAnnotate、视频当前帧走 interactiveAnnotateFrame，同形状。 */
+export interface InteractiveNativeMaskCandidate {
+  type: "mask";
+  value: {
+    rle: CocoRle;
+    masklabels: [string];
+    preview?: {
+      points: [number, number][];
+    };
+  };
+  score: number | null;
+  candidate_id: string;
+}
+
+export interface InteractiveRoutingLineage {
+  requested_backend_id: string;
+  backend_pool_id: string | null;
+  backend_instance_id: string | null;
+  model_id: string | null;
+}
+
+export interface InteractiveInferenceLineage {
+  model_version: string | null;
+  inference_time_ms: number | null;
+  cache_hit: boolean | null;
+  model_load_ms: number | null;
+}
+
+export interface InteractiveMaskDiagnostic {
+  reason: string;
+  retryable: boolean;
+  message?: string | null;
+  supported_geometric_outputs?: string[] | null;
+}
+
+export interface InteractivePromptSummary {
+  family: "point" | "interactive_box" | "exemplar" | "mask" | "scribble" | "correction_frame";
+  positive_points: number;
+  negative_points: number;
+  boxes: number;
+  positive_scribbles: number;
+  negative_scribbles: number;
+  multimask: boolean;
+  parameters_digest: string | null;
+}
+
 export interface InteractiveAnnotateResponse {
   result: unknown[];
   score: number | null;
+  model_version?: string | null;
   inference_time_ms: number | null;
   cache_hit?: boolean | null;
   model_load_ms?: number | null;
   // v0.18.18 · 交互精修 low-res logits 回灌 (base64, 不透明); 前端原样存储、
   // 下次点击经 context.mask_input 回传。仅 multimask=False 的单 mask 精修阶段非空。
   mask_input_next?: string | null;
+  diagnostic?: InteractiveMaskDiagnostic | null;
+  prompt_revision?: string | null;
+  output_geometry?: "polygon" | "mask";
+  frame_index?: number | null;
+  routing?: InteractiveRoutingLineage;
+  prompt_summary?: InteractivePromptSummary | null;
+  accept_receipts?: Record<string, string>;
 }
 
 export type MLBackendVariant = Record<string, string>;
@@ -83,6 +137,7 @@ export interface MLModelCapability {
   supported_trackers?: string[];
   // v0.21.19 · text-driven tracker (sam3_video) 子集; propagate 需 text/exemplars。
   text_driven_trackers?: string[];
+  max_window_frames?: number | null;
   supported_variants?: MLBackendSupportedVariantGroup[];
   // v0.14.12 · 显式合法组合 (可选): backend 多 axis 非真笛卡尔积时使用. yolo 的
   // (series, size) 受 MODEL_MATRIX 约束 (rtdetr 只有 l/x; v9 detect 仅 t/s/m/c/e),
@@ -137,6 +192,7 @@ export interface MLBackendCapability {
   is_interactive?: boolean;
   labels?: string[];
   supported_prompts: string[];
+  supported_inputs?: string[];
   supported_text_outputs?: string[];
   supported_geometric_outputs?: string[];
   // v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空/缺 = 不支持视频追踪.
@@ -144,6 +200,7 @@ export interface MLBackendCapability {
   // v0.21.19 · text-driven tracker (sam3_video) 子集; 前端选中该 tracker 时显 text 框、
   // 未在 supported_trackers 声明时该 tracker 灰置。空/缺 = 无 text-driven tracker。
   text_driven_trackers?: string[];
+  max_window_frames?: number | null;
   // v0.10.40 · 变体富元数据; 缺失时前端回落 params.*_variant.enum.
   supported_variants?: MLBackendSupportedVariantGroup[];
   params?: {
@@ -251,7 +308,9 @@ export const mlBackendsApi = {
     ),
 
   predictTest: (projectId: string, backendId: string, taskId: string) =>
-    apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),
+    apiClient.post(
+      `/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`,
+    ),
 
   // v0.18.x · 可选 signal: 交互阈值/文本连发时, 新请求 abort 掉被取代的旧请求, 避免后端
   // GPU 洪泛 (见 issue 0002)。被 abort 的请求在前端 fetch 层抛 AbortError, 调用方静默忽略。
@@ -271,11 +330,7 @@ export const mlBackendsApi = {
   //   yolo:  { task: "detection", variants: { series: "yolo11", size: "s" } }
   //   gsam2: { variants: { sam_variant: "small", dino_variant: "B" } }
   //   sam3:  {} 或 { variants: { model_variant: "sam3" } }
-  warmup: (
-    projectId: string,
-    backendId: string,
-    body?: Record<string, unknown>,
-  ) =>
+  warmup: (projectId: string, backendId: string, body?: Record<string, unknown>) =>
     apiClient.post<{
       ok: boolean;
       model_load_ms: number | null;

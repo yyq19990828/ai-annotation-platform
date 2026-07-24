@@ -30,13 +30,11 @@ const VARIANT_MAP: Record<
   ghost: { base: "ghost" },
   ai: {
     base: "outline",
-    extra:
-      "border-violet-500/30 bg-status-info-soft text-status-info hover:bg-violet-500/15",
+    extra: "border-violet-500/30 bg-status-info-soft text-status-info hover:bg-violet-500/15",
   },
   danger: {
     base: "outline",
-    extra:
-      "border-rose-500/30 text-status-danger hover:bg-status-danger-soft",
+    extra: "border-rose-500/30 text-status-danger hover:bg-status-danger-soft",
   },
 };
 
@@ -56,7 +54,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         // 各 variant 用 twMerge 覆盖(outline 的 `border` 覆盖宽度、bg-* 覆盖底色)。v0.17.7 转全局
         // preflight 后此基线变冗余但无害。
         "appearance-none border-0 border-border bg-transparent",
-        buttonVariants({ variant: base, size: size === "xs" ? "xs" : size === "sm" ? "sm" : "default" }),
+        buttonVariants({
+          variant: base,
+          size: size === "xs" ? "xs" : size === "sm" ? "sm" : "default",
+        }),
         "transition-[background-color,border-color,color,box-shadow,transform] duration-200 hover:-translate-y-px active:translate-y-0 active:scale-[0.98]",
         extra,
         className,

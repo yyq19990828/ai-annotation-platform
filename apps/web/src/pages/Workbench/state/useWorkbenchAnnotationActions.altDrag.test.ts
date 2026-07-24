@@ -71,15 +71,10 @@ describe("useWorkbenchAnnotationActions · Alt 拖动父子联动", () => {
     const c2After: Geometry = bboxGeom(0.35, 0.35);
 
     act(() => {
-      result.current.handleCommitMove(
-        "P1",
-        parentBefore,
-        parentAfter,
-        [
-          { id: "C1", before: c1Before, after: c1After },
-          { id: "C2", before: c2Before, after: c2After },
-        ],
-      );
+      result.current.handleCommitMove("P1", parentBefore, parentAfter, [
+        { id: "C1", before: c1Before, after: c1After },
+        { id: "C2", before: c2Before, after: c2After },
+      ]);
     });
 
     // 单次 pushBatch, 不逐条 push。

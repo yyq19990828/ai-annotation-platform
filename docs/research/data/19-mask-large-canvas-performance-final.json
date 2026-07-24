@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "node": "v22.23.1",
+    "browser": "chromium-147.0.7727.15",
+    "os": "linux-5.15.0-185-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "cpu_count": 112,
+    "warmup": 2,
+    "iterations": 20
+  },
+  "rounds": [
+    {
+      "generated_at": "2026-07-22T15:17:14.089Z",
+      "pipeline_ms": {
+        "720p": { "p50": 5.4, "p95": 19.1 },
+        "1080p": { "p50": 11.0, "p95": 12.7 },
+        "4k": { "p50": 49.8, "p95": 59.0 }
+      },
+      "dense_4k_ms": {
+        "pointer": { "p50": 0.4, "p95": 1.2 },
+        "pointer_up": { "p50": 0.6, "p95": 3.1 },
+        "long_tasks": 0,
+        "history_retained_bytes": 723008
+      },
+      "sparse_8k_ms": {
+        "brush": { "p50": 9.5, "p95": 16.8 },
+        "lasso": { "p50": 9.7, "p95": 10.7 },
+        "merge": { "p50": 6.8, "p95": 10.2 },
+        "long_tasks": 0,
+        "full_alpha_allocated": false,
+        "merged_pixel_sum": 67108864,
+        "live_tiles": 16,
+        "dirty_tiles": 1,
+        "retained_tile_bytes": 4720128,
+        "history_retained_bytes": 5808480
+      },
+      "resource_exit": {
+        "jobs_completed": 104,
+        "workers_created": 2,
+        "workers_terminated": 2,
+        "live_workers": 0,
+        "bitmaps_created": 66,
+        "bitmaps_closed": 66,
+        "live_bitmaps": 0,
+        "live_tiles": 0,
+        "queued": 0,
+        "running": 0,
+        "sessions": 0,
+        "gc_heap_delta_bytes": 7003176
+      }
+    },
+    {
+      "generated_at": "2026-07-22T15:20:13.751Z",
+      "pipeline_ms": {
+        "720p": { "p50": 5.1, "p95": 20.6 },
+        "1080p": { "p50": 10.7, "p95": 11.3 },
+        "4k": { "p50": 42.1, "p95": 50.0 }
+      },
+      "dense_4k_ms": {
+        "pointer": { "p50": 0.5, "p95": 1.2 },
+        "pointer_up": { "p50": 0.7, "p95": 2.9 },
+        "long_tasks": 0,
+        "history_retained_bytes": 723008
+      },
+      "sparse_8k_ms": {
+        "brush": { "p50": 9.6, "p95": 16.1 },
+        "lasso": { "p50": 9.5, "p95": 10.3 },
+        "merge": { "p50": 6.4, "p95": 9.4 },
+        "long_tasks": 0,
+        "full_alpha_allocated": false,
+        "merged_pixel_sum": 67108864,
+        "live_tiles": 16,
+        "dirty_tiles": 1,
+        "retained_tile_bytes": 4720128,
+        "history_retained_bytes": 5808480
+      },
+      "resource_exit": {
+        "jobs_completed": 104,
+        "workers_created": 2,
+        "workers_terminated": 2,
+        "live_workers": 0,
+        "bitmaps_created": 66,
+        "bitmaps_closed": 66,
+        "live_bitmaps": 0,
+        "live_tiles": 0,
+        "queued": 0,
+        "running": 0,
+        "sessions": 0,
+        "gc_heap_delta_bytes": 7011960
+      }
+    }
+  ],
+  "gates": {
+    "dense_4k_pointer_p95_lte_16_ms": true,
+    "dense_4k_pointer_up_p95_lte_50_ms": true,
+    "sparse_8k_no_main_thread_long_task_over_50_ms": true,
+    "sparse_8k_merge_p95_lte_5000_ms": true,
+    "sparse_8k_no_full_alpha": true,
+    "post_gc_heap_delta_lte_16_mib": true,
+    "all_explicit_resources_return_to_zero": true
+  }
+}

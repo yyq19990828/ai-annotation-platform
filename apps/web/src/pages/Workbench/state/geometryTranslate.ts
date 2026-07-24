@@ -3,6 +3,14 @@
 // 原在 useClipboard.ts 内 (粘贴偏移用); v0.20.15 抽出供父子 Alt 拖动联动 (ImageStage) 复用同一套平移。
 import type { Annotation, Geometry } from "@/types";
 
+/**
+ * raster_mask 没有可同步平移的矢量几何；原生画布编辑开启前，剪贴板和
+ * 父子联动必须显式跳过，不得落入末尾的 bbox 兼容分支。
+ */
+export function canTranslateAnnotationGeometry(annotation: Annotation): boolean {
+  return annotation.geometry?.type !== "raster_mask";
+}
+
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -50,6 +58,9 @@ export function translateGeometry(
   offX: number,
   offY: number,
 ): { geometry: Geometry; annotationType: string } {
+  if (!canTranslateAnnotationGeometry(annotation)) {
+    throw new Error("raster_mask does not support geometric translation");
+  }
   const geometry = annotation.geometry;
   if (geometry?.type === "polygon") {
     // outer + holes 用同一 shift (holes 内嵌于 outer, 边界由 outer 决定)。

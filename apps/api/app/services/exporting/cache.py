@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -29,6 +30,8 @@ def compute_cache_key(
     max_updated_at: datetime | None,
     active_count: int,
     axis_frame: str = "iso",
+    adapter_contracts: dict[str, dict[str, str]] | None = None,
+    options_digest: str | None = None,
 ) -> str:
     """sha256 hex 指纹。scope_id 为 project_id 或 batch_id。
 
@@ -46,6 +49,16 @@ def compute_cache_key(
         max_updated_at.isoformat() if max_updated_at is not None else "",
         str(active_count),
     ]
+    if adapter_contracts is not None:
+        parts.append(
+            json.dumps(
+                adapter_contracts,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+    if options_digest is not None:
+        parts.append(options_digest)
     raw = "\x1f".join(parts).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 

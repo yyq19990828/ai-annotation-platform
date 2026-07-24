@@ -65,8 +65,14 @@ export function ScreenshotEditor({ imageBlob, onConfirm, onCancel }: Props) {
   useEffect(() => {
     const preview = previewRef.current;
     if (!preview) return;
-    preview.style.setProperty("--bug-screenshot-preview-width", previewSize.w ? `${previewSize.w}px` : "100%");
-    preview.style.setProperty("--bug-screenshot-preview-height", previewSize.h ? `${previewSize.h}px` : "200px");
+    preview.style.setProperty(
+      "--bug-screenshot-preview-width",
+      previewSize.w ? `${previewSize.w}px` : "100%",
+    );
+    preview.style.setProperty(
+      "--bug-screenshot-preview-height",
+      previewSize.h ? `${previewSize.h}px` : "200px",
+    );
   }, [previewSize]);
 
   const toCanvasCoords = (e: React.MouseEvent) => {
@@ -132,8 +138,18 @@ export function ScreenshotEditor({ imageBlob, onConfirm, onCancel }: Props) {
             撤销最后一框
           </button>
         )}
-        <button type="button" onClick={onCancel} className={`${styles.button} ${styles.ghostButton}`}>取消</button>
-        <button type="button" onClick={handleConfirm} className={`${styles.button} ${styles.primaryButton}`}>
+        <button
+          type="button"
+          onClick={onCancel}
+          className={`${styles.button} ${styles.ghostButton}`}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          className={`${styles.button} ${styles.primaryButton}`}
+        >
           <Icon name="check" size={11} /> 确认
         </button>
       </div>

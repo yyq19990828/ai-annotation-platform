@@ -51,7 +51,10 @@ export function VideoAttributesEditor({
   const overrideKeys = Object.keys(keyframeAttributes ?? {});
 
   return (
-    <div className="grid gap-2.5 p-2 px-2.5 border border-border rounded-lg bg-card" data-testid="video-attributes-editor">
+    <div
+      className="grid gap-2.5 p-2 px-2.5 border border-border rounded-lg bg-card"
+      data-testid="video-attributes-editor"
+    >
       <div className="text-sm font-semibold">可变属性</div>
 
       <section className="grid gap-1">

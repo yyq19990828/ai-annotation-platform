@@ -36,10 +36,10 @@ def test_setup_protocol_version_v22(setup_fn):
     assert data["compat_protocol_versions"] == ["2.1", "2.0"]
 
 
-def test_setup_exposes_four_models(setup_fn):
+def test_setup_exposes_five_models(setup_fn):
     data = setup_fn()
     assert isinstance(data["models"], list)
-    assert len(data["models"]) == 4
+    assert len(data["models"]) == 5
 
 
 def test_setup_models_cover_protocol_tasks(setup_fn):
@@ -60,7 +60,23 @@ def test_setup_models_declare_supported_inputs(setup_fn):
     by_id = {m["id"]: m for m in setup_fn()["models"]}
     assert by_id["sam3-detection"]["supported_inputs"] == ["full_image", "crop"]
     assert by_id["sam3-segmentation"]["supported_inputs"] == ["full_image", "crop"]
-    assert by_id["sam3-interactive-seg"]["supported_inputs"] == ["full_image"]
+    assert by_id["sam3-interactive-seg"]["supported_inputs"] == [
+        "point_prompt",
+        "bbox_prompt",
+        "mask_prompt",
+        "scribble_prompt",
+        "full_image",
+    ]
+    assert by_id["sam3-video-tracker"]["supported_inputs"] == [
+        "video",
+        "bbox_prompt",
+    ]
+    assert by_id["sam3-video-interactive-tracker"]["supported_inputs"] == [
+        "video",
+        "point_prompt",
+        "bbox_prompt",
+        "mask_prompt",
+    ]
 
 
 def test_setup_models_declare_output_attribute_types(setup_fn):
@@ -74,9 +90,18 @@ def test_setup_models_declare_output_attribute_types(setup_fn):
 def test_setup_models_declare_resource_profile(setup_fn):
     """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互分割逐次 batchable=False (不填 vram)。"""
     by_id = {m["id"]: m for m in setup_fn()["models"]}
-    assert by_id["sam3-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["sam3-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["sam3-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert by_id["sam3-detection"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["sam3-segmentation"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["sam3-interactive-seg"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": False,
+    }
 
 
 def test_detection_model_text_to_bbox(setup_fn):
@@ -91,25 +116,60 @@ def test_segmentation_model_text_to_polygon(setup_fn):
     data = setup_fn()
     seg = next(m for m in data["models"] if m["task"] == "segmentation")
     assert seg["supported_prompts"] == ["text"]
-    assert seg["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    assert seg["supported_geometric_outputs"] == ["bbox", "polygon"]
 
 
-def test_tracker_model_declares_both_sam3_video_modes(setup_fn):
-    tracker = next(m for m in setup_fn()["models"] if m["task"] == "tracker")
-    assert tracker["supported_trackers"] == [
-        "sam3_video",
-        "sam3_video_interactive",
-    ]
+def test_tracker_models_declare_each_sam3_video_mode(setup_fn):
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    tracker = by_id["sam3-video-tracker"]
+    assert tracker["supported_trackers"] == ["sam3_video"]
     assert tracker["text_driven_trackers"] == ["sam3_video"]
+    assert by_id["sam3-video-interactive-tracker"]["supported_trackers"] == [
+        "sam3_video_interactive"
+    ]
 
 
 def test_interactive_seg_model_prompts(setup_fn):
     """v0.18.17 · 交互分割含 SAM-style point/interactive_box (inst) + exemplar (PCS)."""
     data = setup_fn()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
-    assert inter["supported_prompts"] == ["point", "interactive_box", "exemplar"]
-    assert inter["supported_geometric_outputs"] == ["polygon"]
+    assert inter["supported_prompts"] == [
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "exemplar",
+    ]
+    assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
     assert inter["is_interactive"] is True
+
+
+def test_image_mask_and_scribble_consumers_are_advertised(
+    setup_fn,
+):
+    """SAM3 image advertises Mask/scribble only after consumer coverage."""
+    inter = next(m for m in setup_fn()["models"] if m["task"] == "interactive_seg")
+    assert {"mask", "scribble"}.issubset(inter["supported_prompts"])
+    assert {"mask_prompt", "scribble_prompt"}.issubset(inter["supported_inputs"])
+    assert "correction_frame" not in inter["supported_prompts"]
+    assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
+
+
+def test_only_pvs_advertises_mask_correction_seed(setup_fn):
+    by_id = {m["id"]: m for m in setup_fn()["models"]}
+    tracker = by_id["sam3-video-tracker"]
+    assert {"mask", "scribble", "correction_frame"}.isdisjoint(
+        tracker["supported_prompts"]
+    )
+    assert {"mask_prompt", "scribble_prompt"}.isdisjoint(tracker["supported_inputs"])
+    assert tracker["supported_inputs"] == ["video", "bbox_prompt"]
+    assert tracker["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    assert tracker["max_window_frames"] > 0
+    pvs = by_id["sam3-video-interactive-tracker"]
+    assert "correction_frame" in pvs["supported_prompts"]
+    assert "mask_prompt" in pvs["supported_inputs"]
+    assert pvs["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
+    assert pvs["max_window_frames"] > 0
 
 
 def test_models_carry_composition_dimension(setup_fn):
@@ -124,7 +184,14 @@ def test_models_carry_composition_dimension(setup_fn):
 def test_top_level_back_compat_fields_unchanged(setup_fn):
     """v0.18.17 · 顶层 supported_prompts: point/interactive_box/text/exemplar (bbox 已退役)."""
     data = setup_fn()
-    assert set(data["supported_prompts"]) == {"point", "interactive_box", "text", "exemplar"}
+    assert set(data["supported_prompts"]) == {
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "text",
+        "exemplar",
+    }
 
 
 def test_setup_params_schema_platform_roles(setup_fn):

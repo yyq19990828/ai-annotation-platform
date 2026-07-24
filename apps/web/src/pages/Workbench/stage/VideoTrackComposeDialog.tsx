@@ -58,7 +58,11 @@ export function VideoTrackComposeDialog({
       <div className="grid gap-3 w-[360px] p-4 border border-border rounded-[10px] bg-card shadow-lg">
         <div className="flex items-center justify-between">
           <b className="text-sm">跳连两条轨迹</b>
-          <button type="button" onClick={onCancel} className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="border-0 bg-transparent text-muted-foreground cursor-pointer text-sm"
+          >
             ✕
           </button>
         </div>

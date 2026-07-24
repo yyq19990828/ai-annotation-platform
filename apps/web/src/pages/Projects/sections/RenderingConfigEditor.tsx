@@ -46,11 +46,7 @@ export interface RenderingConfigEditorProps {
   disabled?: boolean;
 }
 
-export function RenderingConfigEditor({
-  value,
-  onChange,
-  disabled,
-}: RenderingConfigEditorProps) {
+export function RenderingConfigEditor({ value, onChange, disabled }: RenderingConfigEditorProps) {
   const [filterInput, setFilterInput] = useState<string>(
     value.cssImageFilter ?? DEFAULTS.cssImageFilter,
   );
@@ -157,9 +153,7 @@ export function RenderingConfigEditor({
             min={2}
             max={20}
             value={value.controlPointsSize ?? 6}
-            onChange={(e) =>
-              commit({ ...value, controlPointsSize: Number(e.target.value) })
-            }
+            onChange={(e) => commit({ ...value, controlPointsSize: Number(e.target.value) })}
             className="w-full cursor-pointer accent-brand"
           />
         ) : (
@@ -209,10 +203,7 @@ export function RenderingConfigEditor({
         {isOverridden("box3dDefaultSize") ? (
           <div className="grid grid-cols-3 gap-2">
             {(["长", "宽", "高"] as const).map((label, idx) => (
-              <label
-                key={label}
-                className="flex flex-col gap-1 text-xs text-muted-foreground"
-              >
+              <label key={label} className="flex flex-col gap-1 text-xs text-muted-foreground">
                 <span>{label}</span>
                 <input
                   type="number"
@@ -220,8 +211,15 @@ export function RenderingConfigEditor({
                   step={0.1}
                   value={(value.box3dDefaultSize ?? DEFAULTS.box3dDefaultSize)[idx]}
                   onChange={(e) => {
-                    const next = [...(value.box3dDefaultSize ?? DEFAULTS.box3dDefaultSize)] as [number, number, number];
-                    next[idx] = Math.max(0.1, Number(e.target.value) || DEFAULTS.box3dDefaultSize[idx]);
+                    const next = [...(value.box3dDefaultSize ?? DEFAULTS.box3dDefaultSize)] as [
+                      number,
+                      number,
+                      number,
+                    ];
+                    next[idx] = Math.max(
+                      0.1,
+                      Number(e.target.value) || DEFAULTS.box3dDefaultSize[idx],
+                    );
                     commit({ ...value, box3dDefaultSize: next });
                   }}
                   className={NUMBER_INPUT_CLASS}

@@ -36,8 +36,7 @@ export const meApi = {
   // v0.8.1 · 自助注销冷静期
   requestDeactivation: (reason: string) =>
     apiClient.post<MeResponse>("/auth/me/deactivation-request", { reason }),
-  cancelDeactivation: () =>
-    apiClient.delete<MeResponse>("/auth/me/deactivation-request"),
+  cancelDeactivation: () => apiClient.delete<MeResponse>("/auth/me/deactivation-request"),
   // v0.8.4
   submitTaskEvents: (events: TaskEventIn[]) =>
     apiClient.post<TaskEventBatchOut>("/auth/me/task-events:batch", { events }),

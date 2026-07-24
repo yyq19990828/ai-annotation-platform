@@ -71,11 +71,16 @@ const TYPE_LABEL: Record<string, string> = {
 const JOB_KIND_LABEL: Record<string, string> = {
   batch_predict: "批量预标",
   video_tracker: "视频追踪",
+  video_correction: "视频 Mask 纠错",
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
   dataset_import: "数据集导入",
   create_tasks: "建任务",
   audit_archive: "审计归档",
+  mask_qc: "Mask 质检",
+  mask_repair: "Mask 批量修复",
+  mask_repair_rollback: "Mask 修复回滚",
+  mask_format_import: "Mask 格式导入",
 };
 
 function stringValue(value: unknown): string {
@@ -110,6 +115,9 @@ function jobTitle(item: NotificationItem): string {
   }
   if (kind === "dataset_import") {
     return stringValue((payload as { dataset_name?: unknown }).dataset_name);
+  }
+  if (kind === "mask_format_import") {
+    return stringValue((payload as { format?: unknown }).format).toUpperCase();
   }
   return "";
 }
@@ -197,34 +205,36 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
   const displayId = isBatchRejected
     ? (payload as { batch_display_id?: string }).batch_display_id || ""
     : isExport
-    ? (payload as { project_display_id?: string }).project_display_id || ""
-    : isJob
-    ? stringValue(
-        (payload as { batch_display_id?: unknown }).batch_display_id ||
-          (payload as { task_display_id?: unknown }).task_display_id ||
-          (payload as { project_display_id?: unknown }).project_display_id,
-      )
-    : (payload as { display_id?: string }).display_id || "";
+      ? (payload as { project_display_id?: string }).project_display_id || ""
+      : isJob
+        ? stringValue(
+            (payload as { batch_display_id?: unknown }).batch_display_id ||
+              (payload as { task_display_id?: unknown }).task_display_id ||
+              (payload as { project_display_id?: unknown }).project_display_id,
+          )
+        : (payload as { display_id?: string }).display_id || "";
   const title = isBatchRejected
     ? (payload as { batch_name?: string }).batch_name || ""
     : isExport
-    ? ((payload as { format?: string }).format || "").toUpperCase()
-    : isJob
-    ? jobTitle(item)
-    : (payload as { title?: string }).title || "";
+      ? ((payload as { format?: string }).format || "").toUpperCase()
+      : isJob
+        ? jobTitle(item)
+        : (payload as { title?: string }).title || "";
   const snippet = isBatchRejected
     ? (payload as { feedback?: string }).feedback || ""
     : isExport
-    ? (payload as { error?: string }).error || ""
-    : isJob
-    ? jobSnippet(item)
-    : (payload as { snippet?: string }).snippet || "";
+      ? (payload as { error?: string }).error || ""
+      : isJob
+        ? jobSnippet(item)
+        : (payload as { snippet?: string }).snippet || "";
 
-  const verb = jobVerb(item) ?? (reopen
-    ? "重新打开了反馈"
-    : item.type === "bug_report.status_changed"
-    ? `状态 ${fromStatus ?? ""} → ${toStatus ?? ""}`
-    : TYPE_LABEL[item.type] || item.type);
+  const verb =
+    jobVerb(item) ??
+    (reopen
+      ? "重新打开了反馈"
+      : item.type === "bug_report.status_changed"
+        ? `状态 ${fromStatus ?? ""} → ${toStatus ?? ""}`
+        : TYPE_LABEL[item.type] || item.type);
 
   return (
     <div
@@ -267,9 +277,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
             "{snippet}"
           </div>
         )}
-        <div className="mt-0.5 text-xs text-muted-foreground">
-          {relativeTime(item.created_at)}
-        </div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{relativeTime(item.created_at)}</div>
       </div>
       <button
         type="button"
@@ -340,10 +348,12 @@ export function NotificationsPopover() {
               const payload = (item.payload || {}) as { project_id?: string };
               const projectId = payload.project_id;
               if (projectId) {
-                navigate(buildWorkbenchUrl(projectId, {
-                  batchId: item.target_id,
-                  returnTo: currentWorkbenchReturnTo(location),
-                }));
+                navigate(
+                  buildWorkbenchUrl(projectId, {
+                    batchId: item.target_id,
+                    returnTo: currentWorkbenchReturnTo(location),
+                  }),
+                );
               }
             } else if (item.target_type === "export") {
               // v0.10.27：点导出完成通知 → 用预签名 URL 触发下载（7 天内有效）。
@@ -361,9 +371,7 @@ export function NotificationsPopover() {
                 navigate(`/datasets?dataset=${payload.dataset_id}`);
               } else {
                 navigate(
-                  payload.kind === "video_tracker"
-                    ? "/ai-pre/jobs?tab=video"
-                    : "/ai-pre/jobs",
+                  payload.kind === "video_tracker" ? "/ai-pre/jobs?tab=video" : "/ai-pre/jobs",
                 );
               }
             }
@@ -396,10 +404,7 @@ function NotificationsPanel({
     () => filterNotificationItems(items, activeFilter),
     [items, activeFilter],
   );
-  const groupedItems = useMemo(
-    () => groupNotificationItems(filteredItems),
-    [filteredItems],
-  );
+  const groupedItems = useMemo(() => groupNotificationItems(filteredItems), [filteredItems]);
   const hasRead = items.some((item) => item.read_at !== null);
   const isEmpty = items.length === 0;
   const isFilteredEmpty = !isEmpty && filteredItems.length === 0;
@@ -412,9 +417,7 @@ function NotificationsPanel({
   return (
     <div className="w-full overflow-hidden rounded-md">
       <div className="flex items-center justify-between border-b border-border px-3.5 pb-2.5 pt-3">
-        <span className="text-sm font-semibold">
-          通知{unread > 0 ? ` · ${unread} 未读` : ""}
-        </span>
+        <span className="text-sm font-semibold">通知{unread > 0 ? ` · ${unread} 未读` : ""}</span>
         <div className="flex items-center gap-2.5">
           {hasRead && (
             <button

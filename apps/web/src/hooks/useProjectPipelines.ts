@@ -7,10 +7,8 @@ import {
   type ProjectPipelineUpdatePayload,
 } from "@/api/projectPipelines";
 
-export const projectPipelinesQueryKey = (params?: ProjectPipelineListParams) => [
-  "project-pipelines",
-  params ?? {},
-] as const;
+export const projectPipelinesQueryKey = (params?: ProjectPipelineListParams) =>
+  ["project-pipelines", params ?? {}] as const;
 
 export function useProjectPipelines(
   params?: ProjectPipelineListParams,
@@ -26,8 +24,7 @@ export function useProjectPipelines(
 export function useCreateProjectPipeline() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: ProjectPipelineCreatePayload) =>
-      projectPipelinesApi.create(payload),
+    mutationFn: (payload: ProjectPipelineCreatePayload) => projectPipelinesApi.create(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-pipelines"] });
     },
@@ -37,13 +34,8 @@ export function useCreateProjectPipeline() {
 export function useUpdateProjectPipeline() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      payload,
-    }: {
-      id: string;
-      payload: ProjectPipelineUpdatePayload;
-    }) => projectPipelinesApi.update(id, payload),
+    mutationFn: ({ id, payload }: { id: string; payload: ProjectPipelineUpdatePayload }) =>
+      projectPipelinesApi.update(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-pipelines"] });
     },

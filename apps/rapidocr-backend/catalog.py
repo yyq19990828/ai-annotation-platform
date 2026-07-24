@@ -51,15 +51,22 @@ _REC_COMBOS = list(_REC.keys())
 
 # size → cls 档：tiny/small/mobile 配 mobile cls；medium/server 配 server cls。
 _CLS_FOR_SIZE = {
-    "mobile": "mobile", "tiny": "mobile", "small": "mobile",
-    "server": "server", "medium": "server",
+    "mobile": "mobile",
+    "tiny": "mobile",
+    "small": "mobile",
+    "server": "server",
+    "medium": "server",
 }
 
 _OCR_VERSION = {"v5": "PP-OCRv5", "v6": "PP-OCRv6"}
 # det lang_type：v5 用 ch 检测器、v6 用 multi 检测器（检测与目标语言无关）。
 _DET_LANG = {"v5": "ch", "v6": "multi"}
 # rec lang_type：universal 在 v5 是 ch（含中英）、v6 是 multi；en 走 en。
-_REC_LANG = {("v5", "universal"): "ch", ("v6", "universal"): "multi", ("v5", "en"): "en"}
+_REC_LANG = {
+    ("v5", "universal"): "ch",
+    ("v6", "universal"): "multi",
+    ("v5", "en"): "en",
+}
 
 
 @dataclass(frozen=True)
@@ -100,21 +107,44 @@ def resolve(model_id: str, variants: dict[str, str] | None) -> ResolvedEngine:
             raise ValueError(f"未知 det variant: version={version} size={size}")
         # det 原子只用 det，但 RapidOCR 构造需三件套 → cls/rec 取同档默认（不参与运行）。
         rec_lang = "universal"
-        return _build(version, size, rec_lang, use_det=True, use_cls=False, use_rec=False, lang="")
+        return _build(
+            version, size, rec_lang, use_det=True, use_cls=False, use_rec=False, lang=""
+        )
 
     if model_id in (REC_MODEL_ID, E2E_MODEL_ID):
         if (version, size, lang) not in _REC:
-            raise ValueError(f"未知 rec/e2e variant: version={version} size={size} lang={lang}")
+            raise ValueError(
+                f"未知 rec/e2e variant: version={version} size={size} lang={lang}"
+            )
         if model_id == REC_MODEL_ID:
             # rec 原子吃 crop：跳过 det（构造仍需 det 路径，不运行），跑 cls+rec。
-            return _build(version, size, lang, use_det=False, use_cls=True, use_rec=True, lang=lang)
+            return _build(
+                version,
+                size,
+                lang,
+                use_det=False,
+                use_cls=True,
+                use_rec=True,
+                lang=lang,
+            )
         # e2e：det→cls→rec 全开。
-        return _build(version, size, lang, use_det=True, use_cls=True, use_rec=True, lang=lang)
+        return _build(
+            version, size, lang, use_det=True, use_cls=True, use_rec=True, lang=lang
+        )
 
     raise ValueError(f"未知 model_id: {model_id}")
 
 
-def _build(version: str, size: str, rec_lang: str, *, use_det: bool, use_cls: bool, use_rec: bool, lang: str) -> ResolvedEngine:
+def _build(
+    version: str,
+    size: str,
+    rec_lang: str,
+    *,
+    use_det: bool,
+    use_cls: bool,
+    use_rec: bool,
+    lang: str,
+) -> ResolvedEngine:
     det_rel = _DET[(version, size)]
     cls_rel = _CLS[_CLS_FOR_SIZE[size]]
     rec_rel = _REC[(version, size, rec_lang)]
@@ -134,21 +164,37 @@ def _build(version: str, size: str, rec_lang: str, *, use_det: bool, use_cls: bo
 
 # ---------------- /setup 能力自报 ----------------
 
+
 # variant option 形态：{value, label}（协议 InstanceVariantOption）；轴形态：{key, title, variants}。
 def _version_axis(combos: list[tuple]) -> dict:
     versions = sorted({c[0] for c in combos})
-    return {"key": "version", "title": "PP-OCR 版本", "variants": [{"value": v, "label": v.upper()} for v in versions]}
+    return {
+        "key": "version",
+        "title": "PP-OCR 版本",
+        "variants": [{"value": v, "label": v.upper()} for v in versions],
+    }
 
 
 def _size_axis(combos: list[tuple]) -> dict:
     # 按出现顺序去重，保留 mobile/server/tiny/small/medium 的语义顺序。
     order = ["mobile", "server", "tiny", "small", "medium"]
     sizes = sorted({c[1] for c in combos}, key=order.index)
-    return {"key": "size", "title": "尺寸 / 精度档", "variants": [{"value": s, "label": s} for s in sizes]}
+    return {
+        "key": "size",
+        "title": "尺寸 / 精度档",
+        "variants": [{"value": s, "label": s} for s in sizes],
+    }
 
 
 def _lang_axis() -> dict:
-    return {"key": "lang", "title": "语言", "variants": [{"value": "universal", "label": "通用(中英)"}, {"value": "en", "label": "英文"}]}
+    return {
+        "key": "lang",
+        "title": "语言",
+        "variants": [
+            {"value": "universal", "label": "通用(中英)"},
+            {"value": "en", "label": "英文"},
+        ],
+    }
 
 
 _ATTR_TEXT = {"key": "text", "label": "识别文本", "type": "text"}
@@ -158,12 +204,19 @@ _ATTR_TEXT = {"key": "text", "label": "识别文本", "type": "text"}
 # 曾误写成纯字符串数组 ["0","180"],项目设置「从 ML Backend 预填」取 o.value 得 undefined,
 # 下拉选项对不上、且新版 validateAttributeFields 对 undefined.trim() 崩溃。
 _ATTR_ORIENT = {
-    "key": "orientation", "label": "方向", "type": "select",
+    "key": "orientation",
+    "label": "方向",
+    "type": "select",
     "options": [{"value": "0", "label": "0°"}, {"value": "180", "label": "180°"}],
 }
 _ATTR_LANG = {
-    "key": "language", "label": "语言", "type": "select",
-    "options": [{"value": "universal", "label": "通用(中英)"}, {"value": "en", "label": "英文"}],
+    "key": "language",
+    "label": "语言",
+    "type": "select",
+    "options": [
+        {"value": "universal", "label": "通用(中英)"},
+        {"value": "en", "label": "英文"},
+    ],
 }
 
 # ---- 运行时可调阈值（透传 RapidOCR __call__/update_params；缺省=引擎默认）。----
@@ -177,33 +230,50 @@ RUNTIME_PARAM_DEFAULTS = {"text_score": 0.5, "box_thresh": 0.5, "unclip_ratio": 
 # 注：text_score 只在「同时有 det+rec」的 e2e 路径生效（build_final_output 的 rec-only
 # 分支提前 return、不过 filter_by_text_score），故 rec 原子不暴露任何可调阈值。
 _PARAM_TEXT_SCORE = {
-    "type": "number", "title": "文本置信度阈值", "minimum": 0.0, "maximum": 1.0,
+    "type": "number",
+    "title": "文本置信度阈值",
+    "minimum": 0.0,
+    "maximum": 1.0,
     "default": RUNTIME_PARAM_DEFAULTS["text_score"],
     "description": "识别置信度低于此值的文本被丢弃（调低=保留更多但更杂）。",
 }
 _PARAM_BOX_THRESH = {
-    "type": "number", "title": "检测框阈值", "minimum": 0.0, "maximum": 1.0,
+    "type": "number",
+    "title": "检测框阈值",
+    "minimum": 0.0,
+    "maximum": 1.0,
     "default": RUNTIME_PARAM_DEFAULTS["box_thresh"],
     "description": "文本检测框得分低于此值被过滤（调低=检出更多更碎的框）。",
 }
 _PARAM_UNCLIP_RATIO = {
-    "type": "number", "title": "检测框扩张比", "minimum": 1.0, "maximum": 3.0,
+    "type": "number",
+    "title": "检测框扩张比",
+    "minimum": 1.0,
+    "maximum": 3.0,
     "default": RUNTIME_PARAM_DEFAULTS["unclip_ratio"],
     "description": "检测框向外扩张比例（调大=框更松、更易包全文字）。",
 }
 
 
 def _det_params() -> dict:
-    return {"type": "object", "properties": {
-        "box_thresh": _PARAM_BOX_THRESH, "unclip_ratio": _PARAM_UNCLIP_RATIO,
-    }}
+    return {
+        "type": "object",
+        "properties": {
+            "box_thresh": _PARAM_BOX_THRESH,
+            "unclip_ratio": _PARAM_UNCLIP_RATIO,
+        },
+    }
 
 
 def _e2e_params() -> dict:
-    return {"type": "object", "properties": {
-        "box_thresh": _PARAM_BOX_THRESH, "unclip_ratio": _PARAM_UNCLIP_RATIO,
-        "text_score": _PARAM_TEXT_SCORE,
-    }}
+    return {
+        "type": "object",
+        "properties": {
+            "box_thresh": _PARAM_BOX_THRESH,
+            "unclip_ratio": _PARAM_UNCLIP_RATIO,
+            "text_score": _PARAM_TEXT_SCORE,
+        },
+    }
 
 
 def _det_entry() -> dict:
@@ -241,7 +311,11 @@ def _rec_entry() -> dict:
         "output_attribute_types": ["text", "orientation", "language"],
         "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
         # rec 原子无可调阈值：text_score 在 rec-only 路径是 no-op（见上方注释）。
-        "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
+        "supported_variants": [
+            _version_axis(_REC_COMBOS),
+            _size_axis(_REC_COMBOS),
+            _lang_axis(),
+        ],
         "variant_combinations": [list(c) for c in _REC_COMBOS],
         "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},
         "resource_profile": {"device": _device(), "batchable": True},
@@ -263,7 +337,11 @@ def _e2e_entry() -> dict:
         "output_attribute_types": ["text", "orientation", "language"],
         "output_attribute_schema": [_ATTR_TEXT, _ATTR_ORIENT, _ATTR_LANG],
         "params": _e2e_params(),
-        "supported_variants": [_version_axis(_REC_COMBOS), _size_axis(_REC_COMBOS), _lang_axis()],
+        "supported_variants": [
+            _version_axis(_REC_COMBOS),
+            _size_axis(_REC_COMBOS),
+            _lang_axis(),
+        ],
         "variant_combinations": [list(c) for c in _REC_COMBOS],
         "default_variants": {"version": "v5", "size": "mobile", "lang": "universal"},
         "resource_profile": {"device": _device(), "batchable": True},

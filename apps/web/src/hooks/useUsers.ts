@@ -55,7 +55,10 @@ export function useDeleteUser() {
   return useMutation({
     mutationFn: (vars: DeleteUserVariables | string) => {
       const v: DeleteUserVariables = typeof vars === "string" ? { userId: vars } : vars;
-      return usersApi.remove(v.userId, v.transferToUserId ? { transfer_to_user_id: v.transferToUserId } : undefined);
+      return usersApi.remove(
+        v.userId,
+        v.transferToUserId ? { transfer_to_user_id: v.transferToUserId } : undefined,
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });

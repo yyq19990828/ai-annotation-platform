@@ -15,10 +15,10 @@ import { projectDisplayType } from "@/utils/projectDisplay";
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
-  "全部": undefined,
-  "进行中": "in_progress",
-  "待审核": "pending_review",
-  "已完成": "completed",
+  全部: undefined,
+  进行中: "in_progress",
+  待审核: "pending_review",
+  已完成: "completed",
 };
 // 按媒体维度 data_type 放行工作台,图像子类型(det/ocr/seg)同走图像栈,见 DashboardPage。
 const WORKBENCH_DATA_TYPES = new Set(["image", "video", "lidar"]);
@@ -39,7 +39,10 @@ export function ViewerDashboard() {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
+      pushToast({
+        msg: `项目 "${p.name}" 已打开`,
+        sub: `${projectDisplayType(p)} 的标注界面尚未实现`,
+      });
     }
   };
 
@@ -57,10 +60,22 @@ export function ViewerDashboard() {
       </div>
 
       <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-        <StatCard icon="layers" label="数据总量" value={(stats?.total_data ?? 0).toLocaleString()} />
-        <StatCard icon="check" label="已完成标注" value={(stats?.completed ?? 0).toLocaleString()} />
+        <StatCard
+          icon="layers"
+          label="数据总量"
+          value={(stats?.total_data ?? 0).toLocaleString()}
+        />
+        <StatCard
+          icon="check"
+          label="已完成标注"
+          value={(stats?.completed ?? 0).toLocaleString()}
+        />
         <StatCard icon="sparkles" label="AI 接管率" value={`${stats?.ai_rate ?? 0}%`} />
-        <StatCard icon="flag" label="待审核" value={(stats?.pending_review ?? 0).toLocaleString()} />
+        <StatCard
+          icon="flag"
+          label="待审核"
+          value={(stats?.pending_review ?? 0).toLocaleString()}
+        />
       </div>
 
       <Card>
@@ -85,43 +100,64 @@ export function ViewerDashboard() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={4} className={EMPTY_CELL_CLASS}>加载中...</td>
+                  <td colSpan={4} className={EMPTY_CELL_CLASS}>
+                    加载中...
+                  </td>
                 </tr>
               )}
-              {!isLoading && projects.map((p) => {
-                const total = p.total_tasks || 1;
-                const pct = Math.round((p.completed_tasks / total) * 100);
-                return (
-                  <tr key={p.id} onClick={() => onOpenProject(p)} className="cursor-pointer">
-                    <td className={TABLE_CELL_CLASS}>
-                      <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
-                      <span className="mono block max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{p.display_id}</span>
-                    </td>
-                    <td className={`${TABLE_CELL_CLASS} min-w-[180px]`}>
-                      <ProgressBar value={pct} />
-                      <span className="mono text-xs text-muted-foreground">{pct}%</span>
-                    </td>
-                    <td className={TABLE_CELL_CLASS}>
-                      {p.ai_enabled ? (
-                        <Badge variant="ai">
-                          <Icon name="sparkles" size={10} />
-                          {p.ml_backend_id ? "已接入模型" : "未接入模型"}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className={TABLE_CELL_CLASS}>
-                      {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-                      {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-                      {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
-                    </td>
-                  </tr>
-                );
-              })}
+              {!isLoading &&
+                projects.map((p) => {
+                  const total = p.total_tasks || 1;
+                  const pct = Math.round((p.completed_tasks / total) * 100);
+                  return (
+                    <tr key={p.id} onClick={() => onOpenProject(p)} className="cursor-pointer">
+                      <td className={TABLE_CELL_CLASS}>
+                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">
+                          {p.name}
+                        </div>
+                        <span className="mono block max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+                          {p.display_id}
+                        </span>
+                      </td>
+                      <td className={`${TABLE_CELL_CLASS} min-w-[180px]`}>
+                        <ProgressBar value={pct} />
+                        <span className="mono text-xs text-muted-foreground">{pct}%</span>
+                      </td>
+                      <td className={TABLE_CELL_CLASS}>
+                        {p.ai_enabled ? (
+                          <Badge variant="ai">
+                            <Icon name="sparkles" size={10} />
+                            {p.ml_backend_id ? "已接入模型" : "未接入模型"}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className={TABLE_CELL_CLASS}>
+                        {p.status === "in_progress" && (
+                          <Badge variant="accent" dot>
+                            进行中
+                          </Badge>
+                        )}
+                        {p.status === "completed" && (
+                          <Badge variant="success" dot>
+                            已完成
+                          </Badge>
+                        )}
+                        {p.status === "pending_review" && (
+                          <Badge variant="warning" dot>
+                            待审核
+                          </Badge>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               {!isLoading && projects.length === 0 && (
                 <tr>
-                  <td colSpan={4} className={EMPTY_CELL_CLASS}>没有匹配的项目</td>
+                  <td colSpan={4} className={EMPTY_CELL_CLASS}>
+                    没有匹配的项目
+                  </td>
                 </tr>
               )}
             </tbody>

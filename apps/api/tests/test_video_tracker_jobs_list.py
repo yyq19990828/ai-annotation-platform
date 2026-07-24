@@ -89,7 +89,9 @@ async def _make_job(
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={},
+        prompt={
+            "expected_source_versions": {str(annotation.id): int(annotation.version)}
+        },
         event_channel="video-tracker-job:test",
     )
     db.add(job)
@@ -111,6 +113,7 @@ async def test_list_empty(httpx_client, super_admin):
         "failed": 0,
         "cancelled": 0,
         "pending_review": 0,
+        "partially_reviewed": 0,
         "accepted": 0,
         "discarded": 0,
     }
@@ -306,7 +309,9 @@ async def _make_staged_job(db, task, item, owner_id):
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={},
+        prompt={
+            "expected_source_versions": {str(annotation.id): int(annotation.version)}
+        },
         event_channel="video-tracker-job:test",
         staged_result={
             "results": [

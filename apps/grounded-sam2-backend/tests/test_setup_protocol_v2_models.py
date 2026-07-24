@@ -7,7 +7,26 @@ tracker / interactive_seg) 各拆成独立 model 条目, 让平台「协议能�
 
 from __future__ import annotations
 
-from main import setup
+from main import _seeds_from_ctx, setup
+
+
+def _correction_prompt() -> dict:
+    return {
+        "type": "correction_frame",
+        "frame_index": 12,
+        "direction": "forward",
+        "output_geometry": "mask",
+        "mask_prompt": {
+            "rle": {
+                "encoding": "coco_rle",
+                "size": [2, 3],
+                "counts": [1, 2, 3],
+            },
+            "source_annotation_id": "annotation-1",
+            "source_version": 3,
+            "source_digest": "a" * 64,
+        },
+    }
 
 
 def test_setup_top_level_infra_is_pytorch():
@@ -60,15 +79,31 @@ def test_setup_models_cover_protocol_tasks():
 def test_setup_models_declare_supported_inputs():
     """v0.18.16 · 各 model 显式声明 supported_inputs (一等输入契约)。"""
     by_id = {m["id"]: m for m in setup()["models"]}
-    assert by_id["grounded-sam2-detection"]["supported_inputs"] == ["full_image", "crop"]
-    assert by_id["grounded-sam2-segmentation"]["supported_inputs"] == ["full_image", "crop"]
+    assert by_id["grounded-sam2-detection"]["supported_inputs"] == [
+        "full_image",
+        "crop",
+    ]
+    assert by_id["grounded-sam2-segmentation"]["supported_inputs"] == [
+        "full_image",
+        "crop",
+    ]
     assert by_id["grounded-sam2-interactive-seg"]["supported_inputs"] == [
         "bbox_prompt",
         "point_prompt",
+        "mask_prompt",
+        "scribble_prompt",
         "full_image",
     ]
-    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == ["bbox_prompt", "full_image"]
-    assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == ["bbox_prompt", "full_image"]
+    assert by_id["grounded-sam2-tracker"]["supported_inputs"] == [
+        "video",
+        "point_prompt",
+        "bbox_prompt",
+        "mask_prompt",
+    ]
+    assert by_id["grounded-sam2-box-seg"]["supported_inputs"] == [
+        "bbox_prompt",
+        "full_image",
+    ]
 
 
 def test_setup_models_declare_output_attribute_types():
@@ -85,11 +120,26 @@ def test_setup_models_declare_output_attribute_types():
 def test_setup_models_declare_resource_profile():
     """v0.18.16 · 资源画像: 批量模型 batchable=True, 交互/视频追踪逐次 batchable=False (不填 vram)。"""
     by_id = {m["id"]: m for m in setup()["models"]}
-    assert by_id["grounded-sam2-detection"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["grounded-sam2-segmentation"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["grounded-sam2-box-seg"]["resource_profile"] == {"device": "gpu", "batchable": True}
-    assert by_id["grounded-sam2-interactive-seg"]["resource_profile"] == {"device": "gpu", "batchable": False}
-    assert by_id["grounded-sam2-tracker"]["resource_profile"] == {"device": "gpu", "batchable": False}
+    assert by_id["grounded-sam2-detection"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["grounded-sam2-segmentation"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["grounded-sam2-box-seg"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": True,
+    }
+    assert by_id["grounded-sam2-interactive-seg"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": False,
+    }
+    assert by_id["grounded-sam2-tracker"]["resource_profile"] == {
+        "device": "gpu",
+        "batchable": False,
+    }
 
 
 def test_setup_each_model_carries_infra_pytorch():
@@ -114,13 +164,37 @@ def test_segmentation_model_text_to_polygon():
     assert seg["supported_geometric_outputs"] == ["polygon"]
 
 
-def test_interactive_seg_model_point_box_to_polygon():
+def test_interactive_seg_model_point_box_to_native_mask():
     data = setup()
     inter = next(m for m in data["models"] if m["task"] == "interactive_seg")
     # v0.18.17 · bbox→interactive_box (图像交互单框单 mask).
-    assert set(inter["supported_prompts"]) == {"point", "interactive_box"}
-    assert inter["supported_geometric_outputs"] == ["polygon"]
+    assert set(inter["supported_prompts"]) == {
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+    }
+    assert inter["supported_geometric_outputs"] == ["polygon", "mask"]
     assert inter["is_interactive"] is True
+
+
+def test_image_mask_and_scribble_prompts_are_advertised_only_on_consumer():
+    by_id = {m["id"]: m for m in setup()["models"]}
+    interactive = by_id["grounded-sam2-interactive-seg"]
+    assert {"mask", "scribble"}.issubset(interactive["supported_prompts"])
+    assert {"mask_prompt", "scribble_prompt"}.issubset(interactive["supported_inputs"])
+    assert "correction_frame" not in interactive["supported_prompts"]
+    assert interactive["supported_geometric_outputs"] == ["polygon", "mask"]
+
+    tracker = by_id["grounded-sam2-tracker"]
+    assert "correction_frame" in tracker["supported_prompts"]
+    assert "point" in tracker["supported_prompts"]
+    assert {"mask", "scribble"}.isdisjoint(tracker["supported_prompts"])
+    assert "mask_prompt" in tracker["supported_inputs"]
+    assert "point_prompt" in tracker["supported_inputs"]
+    assert "scribble_prompt" not in tracker["supported_inputs"]
+    assert "video" in tracker["supported_inputs"]
+    assert tracker["max_window_frames"] > 0
 
 
 def test_tracker_model_sam2_video():
@@ -130,11 +204,25 @@ def test_tracker_model_sam2_video():
     assert tracker["supported_geometric_outputs"] == ["bbox", "polygon", "mask"]
 
 
+def test_tracker_preserves_validated_correction_frame_seed():
+    prompt = _correction_prompt()
+
+    assert _seeds_from_ctx({"seeds": [{"obj_id": 7, "prompts": [prompt]}]}) == [
+        {"obj_id": 7, "prompts": [prompt]}
+    ]
+
+
 def test_top_level_back_compat_fields_unchanged():
     """顶层 supported_prompts / supported_trackers 保留, 供未升级平台合成隐式单 model."""
     data = setup()
     # v0.18.17 · bbox→interactive_box (图像交互); tracker/box-seg 的 bbox 不在顶层 prompts.
-    assert set(data["supported_prompts"]) == {"point", "interactive_box", "text"}
+    assert set(data["supported_prompts"]) == {
+        "point",
+        "interactive_box",
+        "mask",
+        "scribble",
+        "text",
+    }
     assert data["supported_trackers"] == ["sam2_video"]
 
 

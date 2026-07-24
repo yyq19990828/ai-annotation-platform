@@ -34,7 +34,9 @@ def predictor_with_mocks(monkeypatch):
     sys.modules.setdefault("groundingdino.util", types.ModuleType("groundingdino.util"))
     sys.modules["groundingdino.util.inference"] = fake_dino_mod
 
-    from predictor import GroundedSAM2Predictor  # 现在 import 安全 (不会触发 vendor 加载)
+    from predictor import (
+        GroundedSAM2Predictor,
+    )  # 现在 import 安全 (不会触发 vendor 加载)
 
     inst = GroundedSAM2Predictor.__new__(GroundedSAM2Predictor)
     inst.device = "cpu"
@@ -130,7 +132,9 @@ def test_both_mode_returns_paired_rect_and_polygon(predictor_with_mocks, fake_im
     assert results[3]["type"] == "polygonlabels"
 
 
-def test_box_mode_returns_empty_when_dino_finds_nothing(predictor_with_mocks, fake_image):
+def test_box_mode_returns_empty_when_dino_finds_nothing(
+    predictor_with_mocks, fake_image
+):
     """DINO 0 box → 直接返回空 list, 不抛错."""
     inst, fake_dino = predictor_with_mocks
     import torch

@@ -73,7 +73,7 @@
 - [0027](archive/0027-annotation-feedback-unified-table.md) — AnnotationFeedback 统一反馈表(三段式迁移)
 - [0028](archive/0028-annotations-import-semantics.md) — 标注导入语义
 - [0029](archive/0029-task-dataset-item-multi-link.md) — 点云任务-数据项多文件关联中间表（保留 2D 1:1）
-- [0030](archive/0030-sensor-calibration-in-dataset-item-metadata.md) — 相机标定存进 DatasetItem.metadata_（不加列）
+- [0030](archive/0030-sensor-calibration-in-dataset-item-metadata.md) — 相机标定存进 DatasetItem.metadata\_（不加列）
 - [0031](archive/0031-dual-canvas-konva-three.md) — 双画布架构：Konva 2D / Three.js 3D 双栈并存
 - [0032](archive/0032-3d-box-editing-main-view-gizmo.md) — 3D 框编辑交互形态：主视图 gizmo + 数值面板（推迟三正交视图）
 - [0033](archive/0033-3d-to-2d-projection-overlay.md) — 3D→2D 投影联动：实时纯函数投影 + canvas overlay（不预存）
@@ -94,3 +94,7 @@
 - [0049](archive/0049-cross-backend-gpu-memory-arbitration.md) — 按物理 GPU 资源进行跨 Backend 显存预算准入与驱逐
 - [0050](0050-ml-backend-service-pools-and-request-routing.md) — ML Backend 服务池与真实请求路由（池 / 实例双 ID + 平滑加权轮询，独立于 GPU 仲裁）
 - [0051](0051-model-market-observability-information-architecture.md) — 模型市场可观测性 IA（四状态轴 + 诊断去重 + 卸载安全门 + 只读字段补齐）
+- [0052](0052-shared-raster-mask-and-image-geometry.md) — 图片 / 视频共享内容寻址 RLE，引入图片 `raster_mask` 与静态读取合同
+- [0053](0053-native-mask-ai-candidate-lifecycle-and-video-correction.md) — 原生 Mask AI 瞬态候选、原子接受、视频局部纠错与可回收生命周期
+- [0054](0054-raster-mask-large-canvas-memory-and-tiles.md) — 图片大画布采用稀疏 tile、XOR history 与固定 Worker pool，视频 / AI 保持 4096 边界
+- [0055](0055-mask-quality-and-format-contracts.md) — Mask 质量闭环采用版本化账本，格式适配使用 preflight、显式损失与真实 consumer 门

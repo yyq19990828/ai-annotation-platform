@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   videoTrackerApi,
   type VideoTrackerJob,
+  type VideoTrackerDecisionPayload,
   type VideoTrackerJobPreview,
   type VideoTrackerJobStatus,
 } from "@/api/videoTracker";
@@ -14,19 +15,51 @@ import { buildWsUrl } from "@/lib/wsHost";
 import { useAuthStore } from "@/stores/authStore";
 
 const REMOVE_AFTER_DONE_MS = 1500;
+const POLL_AFTER_DISCONNECT_MS = 2000;
+const SOCKET_CONNECT_TIMEOUT_MS = 5000;
+const MAX_POLL_FAILURES = 6;
+const MAX_POLL_DELAY_MS = 30000;
 
 export interface VideoTrackerJobState {
   jobId: string;
   taskId: string;
   // v0.22.1 · B · 无源检测 job 无 annotationId (画布级发起)。
   annotationId: string | null;
+  jobKind: "tracking" | "correction";
+  correctionFrame?: number | null;
   status: VideoTrackerJobStatus;
+  revision?: number;
   fromFrame: number;
   toFrame: number;
   windowProgress?: { current: number; total: number };
   errorMessage?: string | null;
   modelKey: string;
   receivedAt: number;
+}
+
+export type TrackerReviewDecision = (
+  | {
+      instance_ids: string[];
+      from_frame: number;
+      to_frame: number;
+      qc_issue_id?: never;
+      candidate_digest?: never;
+    }
+  | {
+      qc_issue_id: string;
+      candidate_digest: string;
+      instance_ids?: never;
+      from_frame?: never;
+      to_frame?: never;
+    }
+) & {
+  decision: "accept" | "reject";
+  override_manual?: boolean;
+};
+
+export interface TrackerReviewDecisionOutcome {
+  ok: boolean;
+  reason?: string;
 }
 
 // v0.21.28 · 候选/接受流: 追踪完成 (pending_review) 拉出的暂存预览, 供画布叠加 + 接受/丢弃。
@@ -45,6 +78,9 @@ export class TrackerJobStore {
   private listeners = new Set<Listener>();
   private sockets = new Map<string, WebSocket>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private pollFailures = new Map<string, number>();
+  private jobGenerations = new Map<string, number>();
   private hydrationTasks = new Map<string, Promise<void>>();
   // 当前工作台聚焦的 task。切任务时用它把不属于当前 task 的 job/candidate/socket/timer
   // 清掉 (见 scopeToTask), 并作为异步恢复的护栏 (恢复回来发现已切走就丢弃)。
@@ -76,16 +112,19 @@ export class TrackerJobStore {
     for (const fn of this.listeners) fn(s);
   }
 
-  addJob(job: VideoTrackerJob, token: string): void {
+  addJob(job: VideoTrackerJob, token?: string | null): void {
     this.currentTaskId = job.task_id;
+    this.jobGenerations.set(job.id, (this.jobGenerations.get(job.id) ?? 0) + 1);
+    this.pollFailures.delete(job.id);
     this.jobs = { ...this.jobs, [job.id]: toJobState(job) };
     this.emit();
     useToastStore.getState().push({
-      msg: "AI 追踪已开始",
+      msg: job.job_kind === "correction" ? "Mask 纠错传播已开始" : "AI 追踪已开始",
       sub: `${job.model_key} · F${job.from_frame}-F${job.to_frame}`,
       kind: "",
     });
-    this.connect(job.id, token);
+    if (token) this.connect(job.id, token);
+    else this.schedulePoll(job.id);
   }
 
   /**
@@ -152,6 +191,18 @@ export class TrackerJobStore {
         this.removeTimers.delete(jobId);
       }
     }
+    for (const [jobId, timer] of this.pollTimers) {
+      if (!keptJobs[jobId]) {
+        clearTimeout(timer);
+        this.pollTimers.delete(jobId);
+      }
+    }
+    for (const jobId of this.jobGenerations.keys()) {
+      if (!keptJobs[jobId]) {
+        this.jobGenerations.delete(jobId);
+        this.pollFailures.delete(jobId);
+      }
+    }
     const changed =
       Object.keys(keptJobs).length !== Object.keys(this.jobs).length ||
       Object.keys(keptCandidates).length !== Object.keys(this.candidates).length ||
@@ -182,9 +233,9 @@ export class TrackerJobStore {
       reviewable.map(async (job) => {
         try {
           const preview = await videoTrackerApi.preview(job.id);
-          return preview.results?.length ? { job, preview } : null;
+          return { job, preview: preview.results?.length ? preview : null };
         } catch {
-          return null;
+          return { job, preview: null };
         }
       }),
     );
@@ -196,7 +247,7 @@ export class TrackerJobStore {
       if (!entry) continue;
       const { job, preview } = entry;
       jobs = { ...jobs, [job.id]: toJobState(job) };
-      candidates = { ...candidates, [job.id]: preview };
+      if (preview) candidates = { ...candidates, [job.id]: preview };
     }
     // 运行中任务: 恢复到 UI 并重连 WS, 让刷新后仍能收进度 / 完成时冒候选。
     for (const job of active) {
@@ -205,8 +256,97 @@ export class TrackerJobStore {
     this.jobs = jobs;
     this.candidates = candidates;
     this.emit();
+    for (const entry of restored) {
+      if (entry && !entry.preview) this.schedulePoll(entry.job.id);
+    }
     if (token) {
       for (const job of active) this.connect(job.id, token);
+    } else {
+      for (const job of active) this.schedulePoll(job.id);
+    }
+  }
+
+  private clearPoll(jobId: string): void {
+    const timer = this.pollTimers.get(jobId);
+    if (timer) clearTimeout(timer);
+    this.pollTimers.delete(jobId);
+  }
+
+  private resetPoll(jobId: string): void {
+    this.clearPoll(jobId);
+    this.pollFailures.delete(jobId);
+  }
+
+  private bumpGeneration(jobId: string): number {
+    const next = (this.jobGenerations.get(jobId) ?? 0) + 1;
+    this.jobGenerations.set(jobId, next);
+    return next;
+  }
+
+  private schedulePollFailure(jobId: string): void {
+    const failures = (this.pollFailures.get(jobId) ?? 0) + 1;
+    this.pollFailures.set(jobId, failures);
+    if (failures > MAX_POLL_FAILURES) {
+      useToastStore.getState().push({
+        msg: "AI 追踪状态自动恢复已暂停",
+        sub: "作业仍已保留，请手动刷新后重试",
+        kind: "warning",
+      });
+      return;
+    }
+    const delay = Math.min(
+      POLL_AFTER_DISCONNECT_MS * 2 ** Math.max(0, failures - 1),
+      MAX_POLL_DELAY_MS,
+    );
+    this.schedulePoll(jobId, delay);
+  }
+
+  private schedulePoll(jobId: string, delay = POLL_AFTER_DISCONNECT_MS): void {
+    if (this.pollTimers.has(jobId)) return;
+    const current = this.jobs[jobId];
+    if (
+      !current ||
+      !["queued", "running", "pending_review", "partially_reviewed"].includes(current.status)
+    ) {
+      return;
+    }
+    this.pollTimers.set(
+      jobId,
+      setTimeout(() => {
+        this.pollTimers.delete(jobId);
+        void this.pollJob(jobId);
+      }, delay),
+    );
+  }
+
+  private async pollJob(jobId: string): Promise<void> {
+    const current = this.jobs[jobId];
+    if (!current) return;
+    const generation = this.jobGenerations.get(jobId) ?? 0;
+    try {
+      const job = await videoTrackerApi.get(jobId);
+      if (
+        this.currentTaskId !== current.taskId ||
+        (this.jobGenerations.get(jobId) ?? 0) !== generation ||
+        !this.jobs[jobId]
+      )
+        return;
+      this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
+      this.emit();
+      if (job.status === "queued" || job.status === "running") {
+        this.pollFailures.delete(jobId);
+        this.schedulePoll(jobId);
+      } else if (job.status === "pending_review" || job.status === "partially_reviewed") {
+        await this.enterReview(jobId);
+      } else if (job.status === "cancelled" && current.jobKind !== "correction") {
+        await this.enterReview(jobId);
+      } else {
+        this.scheduleTerminalCleanup(jobId);
+      }
+    } catch {
+      if ((this.jobGenerations.get(jobId) ?? 0) === generation) {
+        this.schedulePollFailure(jobId);
+      }
     }
   }
 
@@ -217,12 +357,17 @@ export class TrackerJobStore {
     try {
       socket = new WebSocket(url);
     } catch {
+      this.schedulePoll(jobId);
       return;
     }
     this.sockets.set(jobId, socket);
+    this.schedulePoll(jobId, SOCKET_CONNECT_TIMEOUT_MS);
+    socket.onopen = () => this.resetPoll(jobId);
     socket.onmessage = (evt) => this.handleMessage(jobId, evt);
     socket.onclose = () => {
       this.sockets.delete(jobId);
+      this.clearPoll(jobId);
+      this.schedulePoll(jobId);
     };
     socket.onerror = () => {
       try {
@@ -243,15 +388,13 @@ export class TrackerJobStore {
   }
 
   private handleMessage(jobId: string, evt: MessageEvent): void {
-    let payload:
-      | {
-          type?: string;
-          status?: VideoTrackerJobStatus;
-          error_message?: string;
-          current?: number;
-          total?: number;
-        }
-      | null = null;
+    let payload: {
+      type?: string;
+      status?: VideoTrackerJobStatus;
+      error_message?: string;
+      current?: number;
+      total?: number;
+    } | null = null;
     try {
       const data = JSON.parse(evt.data);
       if (data?.type === "ping") return;
@@ -280,12 +423,29 @@ export class TrackerJobStore {
     // v0.21.28 · 候选流: 完成/取消 = 结果暂存待审, 拉候选预览进候选态 (接受才落库), 不直接
     // invalidate; 失败无候选、直接清理。
     if (payload.type === "job_completed") {
+      this.resetPoll(jobId);
       useToastStore.getState().push({ msg: "AI 追踪完成, 待接受", sub: range, kind: "success" });
       void this.enterReview(jobId);
     } else if (payload.type === "job_cancelled") {
-      useToastStore.getState().push({ msg: "AI 追踪已取消 (部分结果待审)", sub: range, kind: "warning" });
-      void this.enterReview(jobId);
+      this.resetPoll(jobId);
+      if (cur.jobKind === "correction") {
+        const { [jobId]: _dropCandidate, ...restCandidates } = this.candidates;
+        this.candidates = restCandidates;
+        this.emit();
+        useToastStore.getState().push({
+          msg: "Mask 纠错传播已取消",
+          sub: "人工纠错帧已保留，候选已清除",
+          kind: "warning",
+        });
+        this.scheduleTerminalCleanup(jobId);
+      } else {
+        useToastStore
+          .getState()
+          .push({ msg: "AI 追踪已取消 (部分结果待审)", sub: range, kind: "warning" });
+        void this.enterReview(jobId);
+      }
     } else if (payload.type === "job_failed") {
+      this.resetPoll(jobId);
       useToastStore.getState().push({
         msg: "AI 追踪失败",
         sub: payload.error_message ?? cur.errorMessage ?? range,
@@ -308,9 +468,15 @@ export class TrackerJobStore {
       // 丢弃这次写入, 避免孤儿候选挂到新任务上。
       if (this.currentTaskId !== jobTaskId) return;
       this.candidates = { ...this.candidates, [jobId]: preview };
+      this.pollFailures.delete(jobId);
       this.emit();
     } catch {
-      this.scheduleTerminalCleanup(jobId);
+      useToastStore.getState().push({
+        msg: "候选预览暂时不可用",
+        sub: "作业已保留，可稍后刷新重试",
+        kind: "warning",
+      });
+      this.schedulePollFailure(jobId);
     }
   }
 
@@ -338,6 +504,88 @@ export class TrackerJobStore {
       sub: status ? `HTTP ${status}` : undefined,
       kind: "error",
     });
+  }
+
+  async refreshReview(jobId: string): Promise<void> {
+    const current = this.jobs[jobId];
+    if (!current) return;
+    try {
+      const [job, preview] = await Promise.all([
+        videoTrackerApi.get(jobId),
+        videoTrackerApi.preview(jobId),
+      ]);
+      if (this.currentTaskId !== current.taskId) return;
+      this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
+      if (preview.results.length > 0) {
+        this.candidates = { ...this.candidates, [jobId]: preview };
+      } else {
+        const { [jobId]: _drop, ...rest } = this.candidates;
+        this.candidates = rest;
+      }
+      this.emit();
+    } catch {
+      useToastStore.getState().push({
+        msg: "刷新 AI 追踪候选失败",
+        sub: "当前选择已保留，请稍后重试",
+        kind: "error",
+      });
+    }
+  }
+
+  async decide(
+    jobId: string,
+    selection: TrackerReviewDecision,
+  ): Promise<TrackerReviewDecisionOutcome> {
+    const current = this.jobs[jobId];
+    const preview = this.candidates[jobId];
+    if (!current || !preview) return { ok: false, reason: "candidate_missing" };
+    const payload: VideoTrackerDecisionPayload = {
+      ...selection,
+      expected_source_versions: preview.expected_source_versions ?? {},
+      job_revision: preview.job_revision ?? current.revision ?? 1,
+    };
+    this.setSubmitting(jobId, true);
+    let updated: VideoTrackerJob;
+    try {
+      updated = await videoTrackerApi.decide(jobId, payload);
+    } catch (err) {
+      const detail =
+        err instanceof ApiError && err.detailRaw && typeof err.detailRaw === "object"
+          ? (err.detailRaw as { reason?: string })
+          : undefined;
+      const reason = detail?.reason;
+      if (reason === "manual_keyframe_protected") return { ok: false, reason };
+      if (reason === "job_revision_conflict" || reason === "source_version_conflict") {
+        await this.refreshReview(jobId);
+        useToastStore.getState().push({
+          msg: "追踪候选已发生变化",
+          sub: "已刷新最新版本，请重新确认选区",
+          kind: "warning",
+        });
+        return { ok: false, reason };
+      }
+      this.pushActionError(selection.decision === "accept" ? "接受" : "拒绝", err);
+      return { ok: false, reason };
+    } finally {
+      this.setSubmitting(jobId, false);
+    }
+    if (selection.decision === "accept") this.invalidateAnnotations(current.taskId);
+    if (updated.status === "partially_reviewed") {
+      this.jobs = { ...this.jobs, [jobId]: toJobState(updated) };
+      await this.refreshReview(jobId);
+      useToastStore.getState().push({
+        msg: selection.decision === "accept" ? "已接受所选追踪候选" : "已拒绝所选追踪候选",
+        sub: "仍有候选待审阅",
+        kind: "success",
+      });
+    } else {
+      useToastStore.getState().push({
+        msg: updated.status === "accepted" ? "追踪候选审阅完成" : "已丢弃全部追踪候选",
+        kind: "success",
+      });
+      this.finishReview(jobId, updated.status);
+    }
+    return { ok: true };
   }
 
   async accept(jobId: string): Promise<void> {
@@ -383,6 +631,8 @@ export class TrackerJobStore {
   }
 
   private scheduleTerminalCleanup(jobId: string): void {
+    this.bumpGeneration(jobId);
+    this.resetPoll(jobId);
     const timer = this.removeTimers.get(jobId);
     if (timer) clearTimeout(timer);
     this.removeTimers.set(
@@ -393,6 +643,8 @@ export class TrackerJobStore {
         const { [jobId]: _dropCand, ...restCand } = this.candidates;
         this.candidates = restCand;
         this.removeTimers.delete(jobId);
+        this.jobGenerations.delete(jobId);
+        this.pollFailures.delete(jobId);
         const sock = this.sockets.get(jobId);
         if (sock) {
           try {
@@ -408,10 +660,22 @@ export class TrackerJobStore {
   }
 
   async cancel(jobId: string): Promise<void> {
-    const updated = await videoTrackerApi.cancel(jobId).catch(() => undefined);
-    if (!updated) return;
     const cur = this.jobs[jobId];
     if (!cur) return;
+    this.bumpGeneration(jobId);
+    this.resetPoll(jobId);
+    let updated: VideoTrackerJob;
+    try {
+      updated = await videoTrackerApi.cancel(jobId);
+    } catch (error) {
+      useToastStore.getState().push({
+        msg: cur.jobKind === "correction" ? "取消 Mask 纠错传播失败" : "取消 AI 追踪失败",
+        sub: error instanceof Error ? error.message : "请重试",
+        kind: "error",
+      });
+      this.schedulePoll(jobId);
+      return;
+    }
     this.jobs = {
       ...this.jobs,
       [jobId]: {
@@ -423,8 +687,24 @@ export class TrackerJobStore {
     };
     this.emit();
     // v0.21.28 · 取消也暂存部分结果 → 进候选态待审 (而非直接落库)。
-    if (updated.status === "cancelled") {
+    if (updated.status === "cancelled" && cur.jobKind !== "correction") {
       void this.enterReview(jobId);
+    } else if (updated.status === "cancelled") {
+      const { [jobId]: _dropCandidate, ...restCandidates } = this.candidates;
+      this.candidates = restCandidates;
+      const socket = this.sockets.get(jobId);
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
+      this.sockets.delete(jobId);
+      this.emit();
+      useToastStore.getState().push({
+        msg: "Mask 纠错传播已取消",
+        sub: "人工纠错帧已保留，候选已清除",
+        kind: "warning",
+      });
+      this.scheduleTerminalCleanup(jobId);
     } else if (updated.status === "failed") {
       this.scheduleTerminalCleanup(jobId);
     }
@@ -436,7 +716,10 @@ function toJobState(job: VideoTrackerJob): VideoTrackerJobState {
     jobId: job.id,
     taskId: job.task_id,
     annotationId: job.annotation_id,
+    jobKind: job.job_kind ?? "tracking",
+    correctionFrame: job.correction_frame,
     status: job.status,
+    revision: job.revision,
     fromFrame: job.from_frame,
     toFrame: job.to_frame,
     modelKey: job.model_key,
@@ -471,7 +754,11 @@ const trackerStore = new TrackerJobStore();
 export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
-  const [state, setState] = useState<TrackerStoreState>({ jobs: {}, candidates: {}, submitting: {} });
+  const [state, setState] = useState<TrackerStoreState>({
+    jobs: {},
+    candidates: {},
+    submitting: {},
+  });
 
   useEffect(() => {
     trackerStore.setAnnotationInvalidator((taskId: string) => {
@@ -506,12 +793,22 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
 
   // v0.22.1 · B · 无源检测发起 (画布级入口, 不绑选中轨迹)。
   const track = useCallback(
-    async (
-      taskId: string,
-      payload: Parameters<typeof videoTrackerApi.track>[1],
-    ) => {
+    async (taskId: string, payload: Parameters<typeof videoTrackerApi.track>[1]) => {
       const job = await videoTrackerApi.track(taskId, payload);
       if (tokenRef.current) trackerStore.addJob(job, tokenRef.current);
+      return job;
+    },
+    [],
+  );
+
+  const correct = useCallback(
+    async (
+      taskId: string,
+      annotationId: string,
+      payload: Parameters<typeof videoTrackerApi.correct>[2],
+    ) => {
+      const job = await videoTrackerApi.correct(taskId, annotationId, payload);
+      trackerStore.addJob(job, tokenRef.current);
       return job;
     },
     [],
@@ -520,6 +817,11 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   const cancel = useCallback((jobId: string) => trackerStore.cancel(jobId), []);
   const accept = useCallback((jobId: string) => trackerStore.accept(jobId), []);
   const discard = useCallback((jobId: string) => trackerStore.discard(jobId), []);
+  const decide = useCallback(
+    (jobId: string, selection: TrackerReviewDecision) => trackerStore.decide(jobId, selection),
+    [],
+  );
+  const refreshReview = useCallback((jobId: string) => trackerStore.refreshReview(jobId), []);
 
   const jobs = state.jobs;
   const candidates = state.candidates;
@@ -550,5 +852,19 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     return map;
   }, [candidates]);
 
-  return { jobs, byAnnotation, candidates, candidateByAnnotation, submitting, propagate, track, cancel, accept, discard };
+  return {
+    jobs,
+    byAnnotation,
+    candidates,
+    candidateByAnnotation,
+    submitting,
+    propagate,
+    track,
+    correct,
+    cancel,
+    accept,
+    discard,
+    decide,
+    refreshReview,
+  };
 }

@@ -36,7 +36,10 @@ function toCssPropertyName(key: string): string {
   return key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
 }
 
-function serializeStyleValue(key: string, value: React.CSSProperties[keyof React.CSSProperties]): string {
+function serializeStyleValue(
+  key: string,
+  value: React.CSSProperties[keyof React.CSSProperties],
+): string {
   if (value === null || value === undefined || typeof value === "boolean") return "";
   if (typeof value === "number" && value !== 0 && !UNITLESS_STYLE_KEYS.has(key)) {
     return `${value}px`;
@@ -44,7 +47,13 @@ function serializeStyleValue(key: string, value: React.CSSProperties[keyof React
   return String(value);
 }
 
-export function ProgressBar({ value, color = "var(--sc-brand)", aiValue, inProgressValue, style }: ProgressBarProps) {
+export function ProgressBar({
+  value,
+  color = "var(--sc-brand)",
+  aiValue,
+  inProgressValue,
+  style,
+}: ProgressBarProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const callerStyleKeysRef = useRef<Array<keyof React.CSSProperties>>([]);
   const normalizedAiValue = aiValue || 0;

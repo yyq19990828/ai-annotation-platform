@@ -61,9 +61,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
       const has = prev.data_type.includes(key);
       return {
         ...prev,
-        data_type: has
-          ? prev.data_type.filter((k) => k !== key)
-          : [...prev.data_type, key],
+        data_type: has ? prev.data_type.filter((k) => k !== key) : [...prev.data_type, key],
       };
     });
   };
@@ -136,9 +134,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
           </div>
           <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-muted">
             {users.length === 0 && (
-              <div className="p-3 text-center text-xs text-muted-foreground">
-                暂无成员
-              </div>
+              <div className="p-3 text-center text-xs text-muted-foreground">暂无成员</div>
             )}
             {users.map((u) => {
               const active = draft.member_id === u.id;
@@ -182,14 +178,14 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <div className="flex items-center justify-between border-t border-border pt-3">
-          <Button onClick={clear} size="sm">清空</Button>
+          <Button onClick={clear} size="sm">
+            清空
+          </Button>
           <div className="flex gap-2">
-            <Button onClick={onClose} size="sm">取消</Button>
-            <Button
-              onClick={apply}
-              size="sm"
-              variant="primary"
-            >
+            <Button onClick={onClose} size="sm">
+              取消
+            </Button>
+            <Button onClick={apply} size="sm" variant="primary">
               应用
             </Button>
           </div>

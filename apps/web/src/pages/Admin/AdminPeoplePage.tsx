@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
@@ -123,7 +130,8 @@ export function AdminPeoplePage() {
             {exporting ? "导出中…" : "导出 CSV"}
           </Button>
           <Button variant="ghost" onClick={() => navigate("/dashboard")}>
-            <Icon name="chevron-left" size={13} />返回总览
+            <Icon name="chevron-left" size={13} />
+            返回总览
           </Button>
         </div>
       </div>
@@ -193,11 +201,7 @@ export function AdminPeoplePage() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
           {items.map((it) => (
-            <PersonCard
-              key={it.user_id}
-              item={it}
-              onClick={() => setActiveUserId(it.user_id)}
-            />
+            <PersonCard key={it.user_id} item={it} onClick={() => setActiveUserId(it.user_id)} />
           ))}
         </div>
       )}
@@ -283,9 +287,7 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
             {trend != null && (
               <span
                 className={`ml-1.5 text-xs font-medium ${
-                  trend >= 0
-                    ? "text-status-positive"
-                    : "text-status-danger"
+                  trend >= 0 ? "text-status-positive" : "text-status-danger"
                 }`}
               >
                 {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}%
@@ -358,13 +360,9 @@ function PersonDrawer({
 
   // v0.12.6 (A3) · reject/类别维度下钻:仅项目模式可下钻(tasks 查询需 project_id)。
   // 选中一个维度值 → 内联展开该项目内本人匹配任务列表。
-  const [drill, setDrill] = useState<{ type: "reject" | "class"; value: string } | null>(
-    null,
-  );
+  const [drill, setDrill] = useState<{ type: "reject" | "class"; value: string } | null>(null);
   const toggleDrill = (type: "reject" | "class", value: string) => {
-    setDrill((cur) =>
-      cur && cur.type === type && cur.value === value ? null : { type, value },
-    );
+    setDrill((cur) => (cur && cur.type === type && cur.value === value ? null : { type, value }));
   };
 
   // v0.12.5 · 项目维度下钻:跳到该项目 review 队列按本人 assignee 过滤(复用后端 assignee_id 过滤)。
@@ -372,7 +370,10 @@ function PersonDrawer({
     navigate(`/review?project=${projectId}&assignee=${userId}`);
     onClose();
   };
-  const histogramValues = useMemo(() => (data?.duration_histogram ?? []).map((b) => b.count), [data]);
+  const histogramValues = useMemo(
+    () => (data?.duration_histogram ?? []).map((b) => b.count),
+    [data],
+  );
   const xLabels = useMemo(
     () => (data?.duration_histogram ?? []).map((b) => `${Math.round(b.upper_ms / 1000)}s`),
     [data],
@@ -423,9 +424,19 @@ function PersonDrawer({
                 <div className={SECTION_TITLE_CLASS}>4 周趋势</div>
                 <div className="p-3.5">
                   <div className="mb-1.5 text-xs text-muted-foreground">产能</div>
-                  <Sparkline values={data.trend_throughput} width={480} height={48} color="var(--sc-brand)" />
+                  <Sparkline
+                    values={data.trend_throughput}
+                    width={480}
+                    height={48}
+                    color="var(--sc-brand)"
+                  />
                   <div className="mb-1.5 mt-3 text-xs text-muted-foreground">质量分</div>
-                  <Sparkline values={data.trend_quality} width={480} height={48} color="var(--sc-positive)" />
+                  <Sparkline
+                    values={data.trend_quality}
+                    width={480}
+                    height={48}
+                    color="var(--sc-positive)"
+                  />
                 </div>
               </Card>
 
@@ -435,7 +446,8 @@ function PersonDrawer({
                     任务耗时分布
                     {data.p50_duration_ms != null && (
                       <span className={SECTION_TITLE_META_CLASS}>
-                        p50 {Math.round(data.p50_duration_ms / 1000)}s · p95 {Math.round((data.p95_duration_ms ?? 0) / 1000)}s
+                        p50 {Math.round(data.p50_duration_ms / 1000)}s · p95{" "}
+                        {Math.round((data.p95_duration_ms ?? 0) / 1000)}s
                       </span>
                     )}
                   </div>
@@ -472,7 +484,9 @@ function PersonDrawer({
                 <Card>
                   <div className={SECTION_TITLE_CLASS}>
                     Reject 原因分布
-                    {project && <span className={SECTION_TITLE_META_CLASS}>点击下钻该项目任务</span>}
+                    {project && (
+                      <span className={SECTION_TITLE_META_CLASS}>点击下钻该项目任务</span>
+                    )}
                   </div>
                   <div className="py-2">
                     {data.reject_reason_breakdown.map((r) => {
@@ -480,8 +494,7 @@ function PersonDrawer({
                         REJECT_REASON_TYPE_LABELS[
                           r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
                         ] ?? r.reason_type;
-                      const active =
-                        drill?.type === "reject" && drill.value === r.reason_type;
+                      const active = drill?.type === "reject" && drill.value === r.reason_type;
                       const rowBody = (
                         <>
                           <span>{label}</span>
@@ -521,12 +534,13 @@ function PersonDrawer({
                 <Card>
                   <div className={SECTION_TITLE_CLASS}>
                     类别覆盖(top {data.class_distribution.length})
-                    {project && <span className={SECTION_TITLE_META_CLASS}>点击下钻该项目任务</span>}
+                    {project && (
+                      <span className={SECTION_TITLE_META_CLASS}>点击下钻该项目任务</span>
+                    )}
                   </div>
                   <div className="py-2">
                     {data.class_distribution.map((c) => {
-                      const active =
-                        drill?.type === "class" && drill.value === c.class_name;
+                      const active = drill?.type === "class" && drill.value === c.class_name;
                       const rowBody = (
                         <>
                           <span>{c.class_name}</span>

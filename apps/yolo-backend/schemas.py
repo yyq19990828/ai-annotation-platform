@@ -46,9 +46,19 @@ class Variants(BaseModel):
     """
 
     series: Literal[
-        "yolov8", "yolov9", "yolov10", "yolo11", "yolo12", "yolo26", "rtdetr",
+        "yolov8",
+        "yolov9",
+        "yolov10",
+        "yolo11",
+        "yolo12",
+        "yolo26",
+        "rtdetr",
         # v0.18.21 · 开集文本检测 series.
-        "yolo-worldv2", "yolo-world", "yoloe-v8", "yoloe-11", "yoloe-26",
+        "yolo-worldv2",
+        "yolo-world",
+        "yoloe-v8",
+        "yoloe-11",
+        "yoloe-26",
     ]
     size: Literal["n", "t", "s", "m", "b", "c", "l", "e", "x"]
 
@@ -98,7 +108,9 @@ class Context(BaseModel):
       平台文本路径把 conf/iou/max_det 扁平在顶层 (非嵌套 params), 由 before-validator 收拢.
     """
 
-    type: Literal["detection", "segmentation", "keypoint", "obb", "text", "exemplar", "tracker"]
+    type: Literal[
+        "detection", "segmentation", "keypoint", "obb", "text", "exemplar", "tracker"
+    ]
     model_variants: dict[str, str] | None = None
     variants: Variants
     params: PredictParams = Field(default_factory=PredictParams)
@@ -108,10 +120,14 @@ class Context(BaseModel):
     # v0.18.21 · 开集文本路径字段 (type=text 时生效).
     text: str | None = None  # 开放词表, 逗号/换行分隔多类名.
     model_id: str | None = None  # 平台路由记录用 (后端按 series 派生 family, 不强依赖).
-    output: Literal["box", "mask", "both"] = "box"  # text 默认 box; exemplar 默认 mask 由平台下发.
+    output: Literal["box", "mask", "both"] = (
+        "box"  # text 默认 box; exemplar 默认 mask 由平台下发.
+    )
     # v0.18.23 · YOLOE visual prompt exemplar 路径 (type=exemplar 时生效).
     exemplars: list[Exemplar] | None = None  # 多框样例 (归一化 xyxy); 仅正框入 YOLOE。
-    score_threshold: float | None = None  # exemplar per-req 阈值 → 映射 yoloe conf; null=用 params.conf。
+    score_threshold: float | None = (
+        None  # exemplar per-req 阈值 → 映射 yoloe conf; null=用 params.conf。
+    )
 
     @model_validator(mode="before")
     @classmethod

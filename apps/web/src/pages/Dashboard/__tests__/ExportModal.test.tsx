@@ -17,8 +17,57 @@ vi.mock("@/api/projects", () => ({
     exportProject: vi.fn(async () => ({ job_id: "j1" })),
   },
 }));
+vi.mock("@/api/maskFormats", () => ({
+  maskFormatsApi: {
+    preflightExport: vi.fn(),
+  },
+}));
 
 import { projectsApi } from "@/api/projects";
+import { maskFormatsApi } from "@/api/maskFormats";
+
+function preflight(
+  lossClass: "lossless" | "lossy" | "unsupported" = "lossless",
+  lossCode?: string,
+) {
+  const losses = lossCode ? [{ code: lossCode, message: "格式损失说明", detail: {} }] : [];
+  return {
+    plans: [
+      {
+        format_id: "coco",
+        direction: "export" as const,
+        adapter_version: "1.0.0",
+        manifest_version: "1",
+        media_type: "image",
+        loss_class: lossClass,
+        staged_object_key: null,
+        staged_sha256: null,
+        mapping_digest: "a".repeat(64),
+        options_digest: "b".repeat(64),
+        items: [],
+        unknown_labels: [],
+        size_conflicts: [],
+        overlap_conflicts: [],
+        id_mapping: {},
+        frame_mapping: {},
+        estimated_objects: 2,
+        estimated_files: 1,
+        estimated_bytes: 128,
+        losses,
+        skips: [],
+        warnings: [],
+        plan_digest: "c".repeat(64),
+      },
+    ],
+    loss_class: lossClass,
+    estimated_objects: 2,
+    estimated_files: 1,
+    estimated_bytes: 128,
+    losses,
+    warnings: [],
+    preflight_digest: "d".repeat(64),
+  };
+}
 
 // 受控 harness：导出完成回调把 open 置 false，便于断言弹窗关闭。
 function ExportModalHarness({
@@ -46,6 +95,8 @@ function submitExport() {
 describe("ExportModal", () => {
   beforeEach(() => {
     vi.mocked(projectsApi.exportProject).mockClear();
+    vi.mocked(maskFormatsApi.preflightExport).mockReset();
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight());
   });
 
   it("默认 coco + 勾选 → targets=[coco], includeAttributes=true", async () => {
@@ -94,6 +145,26 @@ describe("ExportModal", () => {
     });
   });
 
+  it("Indexed PNG 显式重叠策略同时传入预检和导出", async () => {
+    render(<ExportModalHarness projectId="p-indexed" />);
+    fireEvent.click(screen.getByText("COCO"));
+    fireEvent.click(screen.getByText("Indexed PNG"));
+    fireEvent.change(screen.getByLabelText("Indexed PNG 重叠策略"), {
+      target: { value: "z_order" },
+    });
+    submitExport();
+
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith("p-indexed", ["indexed-png"], {
+      includeAttributes: true,
+      indexedOverlapPolicy: "z_order",
+    });
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p-indexed", ["indexed-png"], {
+      includeAttributes: true,
+      indexedOverlapPolicy: "z_order",
+    });
+  });
+
   it("视频项目展示视频目标并传递 Video JSON frame mode", async () => {
     render(<ExportModalHarness projectId="p3" projectTypeKey="video-track" />);
 
@@ -101,6 +172,8 @@ describe("ExportModal", () => {
     expect(screen.getByText("YOLO 逐帧")).toBeInTheDocument();
     expect(screen.getByText("MOT")).toBeInTheDocument();
     expect(screen.getByText("KITTI")).toBeInTheDocument();
+    expect(screen.getByText("YouTube-VOS")).toBeInTheDocument();
+    expect(screen.getByText("MOTS")).toBeInTheDocument();
     expect(screen.queryByText("YOLO")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("所有帧"));
@@ -110,6 +183,38 @@ describe("ExportModal", () => {
       includeAttributes: true,
       videoFrameMode: "all_frames",
     });
+  });
+
+  it("DAVIS / YouTube-VOS overlap 与 MOTS frame base 同时进入预检和导出", async () => {
+    render(<ExportModalHarness projectId="p-video-mask" projectTypeKey="video-track" />);
+    fireEvent.click(screen.getByText("Video JSON"));
+    fireEvent.click(screen.getByText("DAVIS Mask"));
+    fireEvent.click(screen.getByText("YouTube-VOS"));
+    fireEvent.click(screen.getByText("MOTS"));
+    fireEvent.change(screen.getByLabelText("视频 Mask 重叠策略"), {
+      target: { value: "z_order" },
+    });
+    fireEvent.change(screen.getByLabelText("MOTS 帧号基准"), {
+      target: { value: "1" },
+    });
+    submitExport();
+
+    const options = {
+      includeAttributes: true,
+      videoOverlapPolicy: "z_order" as const,
+      motsFrameBase: 1 as const,
+    };
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith(
+      "p-video-mask",
+      ["davis", "youtube-vos", "mots"],
+      options,
+    );
+    expect(projectsApi.exportProject).toHaveBeenCalledWith(
+      "p-video-mask",
+      ["davis", "youtube-vos", "mots"],
+      options,
+    );
   });
 
   it("视频项目可单独导出 YOLO 逐帧检测集", async () => {
@@ -200,5 +305,31 @@ describe("ExportModal", () => {
       ["aap_json", "kitti", "nuscenes", "pointmask"],
       { includeAttributes: true },
     );
+  });
+
+  it("有损预检显示稳定 code，确认前不入队", async () => {
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(
+      preflight("lossy", "unknown_future_loss"),
+    );
+    render(<ExportModalHarness projectId="p-lossy" />);
+
+    submitExport();
+    await screen.findByTestId("mask-format-preflight");
+    expect(screen.getByText("unknown_future_loss")).toBeInTheDocument();
+    expect(projectsApi.exportProject).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText("我已了解以上格式损失，继续导出"));
+    submitExport();
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalledOnce());
+  });
+
+  it("unsupported 预检阻止导出", async () => {
+    vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight("unsupported"));
+    render(<ExportModalHarness projectId="p-unsupported" />);
+
+    submitExport();
+    await screen.findByText("预检阻止 · 不支持");
+    expect(projectsApi.exportProject).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "开始导出" })).toBeDisabled();
   });
 });

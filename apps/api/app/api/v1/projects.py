@@ -691,6 +691,27 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     payload = data.model_dump(exclude_unset=True)
+    if "mask_qc_config" in payload:
+        from app.services.mask_qc.config import load_mask_qc_config
+
+        project = (
+            await db.execute(
+                select(Project).where(Project.id == project.id).with_for_update()
+            )
+        ).scalar_one()
+        current_config = load_mask_qc_config(project.mask_qc_config)
+        requested_config = load_mask_qc_config(payload["mask_qc_config"])
+        if requested_config.config_revision != current_config.config_revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "mask_qc_config_revision_conflict",
+                    "expected": requested_config.config_revision,
+                    "actual": current_config.config_revision,
+                },
+            )
+        requested_config.config_revision = current_config.config_revision + 1
+        payload["mask_qc_config"] = requested_config.model_dump(mode="json")
     # v0.13.x 收口 PR#30 review #5: type_key 与 data_type 媒体维度必须一致.
     # 单独 PATCH 任一字段也要校验 (用 payload 给值 + 项目现值组合后的有效值).
     if "type_key" in payload or "data_type" in payload:
@@ -940,6 +961,7 @@ async def cleanup_annotation_orphans(
     current_user: User = Depends(get_current_user),
 ):
     from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
     from app.services.project import (
         derive_attribute_keys,
         derive_classes_list,
@@ -966,14 +988,15 @@ async def cleanup_annotation_orphans(
 
     orphan_annotations = 0
     orphan_attribute_keys: Counter[str] = Counter()
-    affected_task_ids: set[uuid.UUID] = set()
+    mutation_annotation_ids: set[uuid.UUID] = set()
+    mutation_task_ids: set[uuid.UUID] = set()
 
     for ann in annotations:
         if ann.class_name not in class_names:
             orphan_annotations += 1
             if not dry_run:
-                ann.is_active = False
-                affected_task_ids.add(ann.task_id)
+                mutation_annotation_ids.add(ann.id)
+                mutation_task_ids.add(ann.task_id)
             continue
 
         orphan_keys = orphan_user_attribute_keys(ann.attributes, attribute_keys)
@@ -981,18 +1004,50 @@ async def cleanup_annotation_orphans(
             continue
         orphan_attribute_keys.update(orphan_keys)
         if not dry_run:
+            mutation_annotation_ids.add(ann.id)
+            mutation_task_ids.add(ann.task_id)
+
+    if not dry_run:
+        # Keep the global writer order used by Mask mutations and PATCH:
+        # stable Task locks first, then stable Annotation locks.
+        if mutation_task_ids:
+            await db.execute(
+                select(Task.id)
+                .where(Task.id.in_(mutation_task_ids))
+                .order_by(Task.id)
+                .with_for_update()
+            )
+        locked_annotations = []
+        if mutation_annotation_ids:
+            locked_annotations = list(
+                (
+                    await db.execute(
+                        select(Annotation)
+                        .where(Annotation.id.in_(mutation_annotation_ids))
+                        .order_by(Annotation.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        deactivated_task_ids: set[uuid.UUID] = set()
+        for ann in locked_annotations:
+            if ann.class_name not in class_names:
+                ann.is_active = False
+                deactivated_task_ids.add(ann.task_id)
+                continue
             ann.attributes = prune_orphan_user_attributes(
                 ann.attributes,
                 attribute_keys,
             )
-
-    if not dry_run:
         await db.flush()
-        if affected_task_ids:
+        if deactivated_task_ids:
             from app.services.annotation import AnnotationService
 
             annotation_svc = AnnotationService(db)
-            for task_id in affected_task_ids:
+            for task_id in sorted(deactivated_task_ids):
                 await annotation_svc._update_task_stats(task_id)
 
         from app.services.audit import AuditService
@@ -1142,8 +1197,10 @@ async def export_project(
     request: Request,
     targets: list[str] = Query(
         default=["coco"],
-        description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
-        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti"
+        description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg"
+        " / label-studio-brush / binary-png / indexed-png / aap_json"
+        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis"
+        " / youtube-vos / mots / mot / kitti"
         " / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
@@ -1160,6 +1217,22 @@ async def export_project(
         "iso",
         pattern="^(iso|source)$",
         description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+    ),
+    indexed_overlap_policy: str = Query(
+        "error",
+        pattern="^(error|z_order|larger_area|smaller_area)$",
+        description="Indexed PNG 的实例重叠策略；默认拒绝重叠",
+    ),
+    video_overlap_policy: str = Query(
+        "error",
+        pattern="^(error|z_order|larger_area|smaller_area)$",
+        description="DAVIS / YouTube-VOS 的实例重叠策略；默认拒绝重叠",
+    ),
+    mots_frame_base: int = Query(
+        0,
+        ge=0,
+        le=1,
+        description="MOTS 输出帧号基准：0 或 1",
     ),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
@@ -1220,6 +1293,9 @@ async def export_project(
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
+            "indexed_overlap_policy": indexed_overlap_policy,
+            "video_overlap_policy": video_overlap_policy,
+            "mots_frame_base": mots_frame_base,
             "project_display_id": project.display_id,
         },
     )
@@ -1239,6 +1315,9 @@ async def export_project(
                 "include_attributes": include_attributes,
                 "video_frame_mode": video_frame_mode,
                 "axis_frame": axis_frame,
+                "indexed_overlap_policy": indexed_overlap_policy,
+                "video_overlap_policy": video_overlap_policy,
+                "mots_frame_base": mots_frame_base,
             },
         ),
     )
@@ -1252,6 +1331,9 @@ async def export_project(
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
+            "indexed_overlap_policy": indexed_overlap_policy,
+            "video_overlap_policy": video_overlap_policy,
+            "mots_frame_base": mots_frame_base,
         },
         async_job_id=str(job.id),
     )

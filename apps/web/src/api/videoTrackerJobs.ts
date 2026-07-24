@@ -2,13 +2,17 @@ import { apiClient } from "./client";
 
 /** v0.10.36 · /video-tracker-jobs — 视频追踪任务聚合监控.
  *
- * 后端返回的 status 是 Literal["queued","running","completed","failed","cancelled"]. */
+ * 后端返回任务执行态与候选审阅态。 */
 export type VideoTrackerJobStatus =
   | "queued"
   | "running"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "pending_review"
+  | "partially_reviewed"
+  | "accepted"
+  | "discarded";
 
 export interface VideoTrackerJobListItem {
   id: string;
@@ -56,8 +60,6 @@ export const videoTrackerJobsApi = {
     if (params.cursor) qs.set("cursor", params.cursor);
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return apiClient.get<VideoTrackerJobsResponse>(
-      `/video-tracker-jobs${suffix}`,
-    );
+    return apiClient.get<VideoTrackerJobsResponse>(`/video-tracker-jobs${suffix}`);
   },
 };

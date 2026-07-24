@@ -52,9 +52,7 @@ export function alignPsrToFrame(
   const center = new THREE.Vector3(...psr.center).applyMatrix4(rel);
   const rot = new THREE.Quaternion()
     .setFromRotationMatrix(rel)
-    .multiply(
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(...psr.rotation, "XYZ")),
-    );
+    .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...psr.rotation, "XYZ")));
   const euler = new THREE.Euler().setFromQuaternion(rot, "XYZ");
 
   return {

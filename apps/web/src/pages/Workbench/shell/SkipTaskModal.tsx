@@ -28,17 +28,11 @@ interface SkipTaskModalProps {
   onConfirm: (reason: SkipReason, note?: string) => void;
 }
 
-export function SkipTaskModal({
-  open,
-  isSubmitting,
-  onClose,
-  onConfirm,
-}: SkipTaskModalProps) {
+export function SkipTaskModal({ open, isSubmitting, onClose, onConfirm }: SkipTaskModalProps) {
   const [reason, setReason] = useState<SkipReason>("image_corrupt");
   const [note, setNote] = useState("");
 
-  const canConfirm =
-    reason !== "other" || note.trim().length > 0;
+  const canConfirm = reason !== "other" || note.trim().length > 0;
 
   return (
     <Modal open={open} onClose={onClose} title="跳过任务" width={420}>
@@ -83,9 +77,7 @@ export function SkipTaskModal({
           <Button
             variant="primary"
             disabled={!canConfirm || isSubmitting}
-            onClick={() =>
-              onConfirm(reason, reason === "other" ? note.trim() : undefined)
-            }
+            onClick={() => onConfirm(reason, reason === "other" ? note.trim() : undefined)}
             data-testid="skip-confirm"
           >
             {isSubmitting ? "提交中..." : "确认跳过"}

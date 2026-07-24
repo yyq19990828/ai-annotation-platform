@@ -52,7 +52,11 @@ export function toggle(set: Set<string>, value: string): Set<string> {
 export function uniq<T>(arr: T[]): T[] {
   const seen = new Set<T>();
   const out: T[] = [];
-  for (const x of arr) if (!seen.has(x)) { seen.add(x); out.push(x); }
+  for (const x of arr)
+    if (!seen.has(x)) {
+      seen.add(x);
+      out.push(x);
+    }
   return out;
 }
 
@@ -60,10 +64,12 @@ export function pickVariantOption<T extends { value: string; recommended?: boole
   options: T[],
   preferred: string | undefined,
 ): T | null {
-  return options.find((option) => option.value === preferred)
-    ?? options.find((option) => option.recommended)
-    ?? options[0]
-    ?? null;
+  return (
+    options.find((option) => option.value === preferred) ??
+    options.find((option) => option.recommended) ??
+    options[0] ??
+    null
+  );
 }
 
 export function legalAxisOptions(
@@ -88,8 +94,12 @@ export function pickDefaultVariants(m: MLModelCapability): Record<string, string
   return out;
 }
 
-export function runtimeKeyFor(task: string | undefined, variants: Record<string, string>): string | undefined {
-  if (task && variants.series && variants.size) return `${variants.series}/${variants.size}/${task}`;
+export function runtimeKeyFor(
+  task: string | undefined,
+  variants: Record<string, string>,
+): string | undefined {
+  if (task && variants.series && variants.size)
+    return `${variants.series}/${variants.size}/${task}`;
   if (variants.sam_variant && variants.dino_variant) {
     return `sam=${variants.sam_variant}/dino=${variants.dino_variant}`;
   }
@@ -137,11 +147,12 @@ export function lastEvict(item: FlatModel): PoolEvictRecord | null {
 
 export function formatEvict(evict: PoolEvictRecord): string {
   const seconds = Math.max(0, (Date.now() - Date.parse(evict.at)) / 1000);
-  const ago = seconds >= 3600
-    ? `${Math.floor(seconds / 3600)} 小时前`
-    : seconds >= 60
-      ? `${Math.floor(seconds / 60)} 分钟前`
-      : `${Math.floor(seconds)} 秒前`;
+  const ago =
+    seconds >= 3600
+      ? `${Math.floor(seconds / 3600)} 小时前`
+      : seconds >= 60
+        ? `${Math.floor(seconds / 60)} 分钟前`
+        : `${Math.floor(seconds)} 秒前`;
   return `${ago} 淘汰 ${evict.key}，原因 ${evict.reason}`;
 }
 
@@ -154,17 +165,19 @@ export function buildModelRowsLegacy(item: FlatModel): ListRow[] {
   const baseName = m.display_name ?? m.id;
   const geom = m.supported_geometric_outputs ?? [];
   if (axes.length === 0) {
-    return [{
-      parent: item,
-      rowKey: `${item.backendId}:${m.id}`,
-      primaryLabel: baseName,
-      primaryId: m.id,
-      tasks: m.task ? [m.task] : [],
-      geometries: geom,
-      secondaryLabel: "—",
-      warmVariants: pickDefaultVariants(m),
-      runtimeKey: runtimeKeyFor(m.task, pickDefaultVariants(m)),
-    }];
+    return [
+      {
+        parent: item,
+        rowKey: `${item.backendId}:${m.id}`,
+        primaryLabel: baseName,
+        primaryId: m.id,
+        tasks: m.task ? [m.task] : [],
+        geometries: geom,
+        secondaryLabel: "—",
+        warmVariants: pickDefaultVariants(m),
+        runtimeKey: runtimeKeyFor(m.task, pickDefaultVariants(m)),
+      },
+    ];
   }
   const axis0 = axes[0]!;
   const axis1 = axes[1];
@@ -177,9 +190,7 @@ export function buildModelRowsLegacy(item: FlatModel): ListRow[] {
     if (axis1) {
       let legal: string[];
       if (combos.length > 0) {
-        legal = combos
-          .filter((c) => c[0] === v0.value && c.length >= 2)
-          .map((c) => c[1]!);
+        legal = combos.filter((c) => c[0] === v0.value && c.length >= 2).map((c) => c[1]!);
       } else {
         legal = (axis1.variants ?? []).map((v) => v.value);
       }
@@ -205,7 +216,10 @@ export function buildModelRowsLegacy(item: FlatModel): ListRow[] {
       secondaryLabel = bits.length > 0 ? bits.join(" · ") : "—";
     }
     const pickedAxis1 = axis1
-      ? pickVariantOption(legalAxisOptions(v0.value, axis1, combos), m.default_variants?.[axis1.key])
+      ? pickVariantOption(
+          legalAxisOptions(v0.value, axis1, combos),
+          m.default_variants?.[axis1.key],
+        )
       : null;
     const warmVariants: Record<string, string> = { [axis0.key]: v0.value };
     if (axis1 && pickedAxis1?.value) warmVariants[axis1.key] = pickedAxis1.value;

@@ -22,12 +22,8 @@ export interface AnnotationHistoryResponse {
 
 export const annotationHistoryApi = {
   get: (annotationId: string) =>
-    apiClient.get<AnnotationHistoryResponse>(
-      `/annotations/${annotationId}/history`,
-    ),
+    apiClient.get<AnnotationHistoryResponse>(`/annotations/${annotationId}/history`),
   // I4 · DiscussionPanel 未选中标注时降级到 task 级时间线.
   getByTask: (taskId: string) =>
-    apiClient.get<AnnotationHistoryResponse>(
-      `/tasks/${taskId}/audit-history`,
-    ),
+    apiClient.get<AnnotationHistoryResponse>(`/tasks/${taskId}/audit-history`),
 };

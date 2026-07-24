@@ -5,15 +5,9 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useToastStore } from "@/components/ui/Toast";
-import {
-  useCreateDataset,
-  useImportFromConnection,
-} from "@/hooks/useDatasets";
+import { useCreateDataset, useImportFromConnection } from "@/hooks/useDatasets";
 import { useAsyncJob } from "@/hooks/useAsyncJob";
-import {
-  useCreateStorageConnection,
-  useStorageConnections,
-} from "@/hooks/useStorageConnections";
+import { useCreateStorageConnection, useStorageConnections } from "@/hooks/useStorageConnections";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
   StorageConnectionForm,
@@ -269,7 +263,12 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
       pushToast({
         msg: `ZIP 解包完成：新增 ${res.added} 个文件`,
         sub: res.errors.length ? `${res.errors.length} 个失败` : undefined,
-        kind: res.errors.length === 0 && res.added > 0 ? "success" : res.added === 0 ? "error" : "warning",
+        kind:
+          res.errors.length === 0 && res.added > 0
+            ? "success"
+            : res.added === 0
+              ? "error"
+              : "warning",
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -390,8 +389,8 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
         />
       )}
 
-      {step === 3 && (
-        mode === "files" ? (
+      {step === 3 &&
+        (mode === "files" ? (
           <Step3
             files={files}
             items={items}
@@ -434,8 +433,7 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
               if (id) navigate(`/datasets`);
             }}
           />
-        )
-      )}
+        ))}
 
       {step !== 3 && (
         <Footer
@@ -472,15 +470,25 @@ function Stepper({ current, steps }: { current: Step; steps: Step[] }) {
         const last = i === steps.length - 1;
         return (
           <div key={n} className={cx(styles.stepItem, last && styles.stepItemLast)}>
-            <div className={cx(styles.stepDot, active && styles.stepDotActive, done && styles.stepDotDone)}>
+            <div
+              className={cx(
+                styles.stepDot,
+                active && styles.stepDotActive,
+                done && styles.stepDotDone,
+              )}
+            >
               {done ? <Icon name="check" size={12} /> : n}
             </div>
-            <span className={cx(styles.stepLabel, active && styles.stepLabelActive, done && styles.stepLabelDone)}>
+            <span
+              className={cx(
+                styles.stepLabel,
+                active && styles.stepLabelActive,
+                done && styles.stepLabelDone,
+              )}
+            >
               {STEP_LABELS[n]}
             </span>
-            {!last && (
-              <div className={cx(styles.stepLine, n < current && styles.stepLineDone)} />
-            )}
+            {!last && <div className={cx(styles.stepLine, n < current && styles.stepLineDone)} />}
           </div>
         );
       })}
@@ -558,10 +566,7 @@ function Step1({
       {dataType === "point_cloud" && (
         <div>
           <label className={styles.label}>LiDAR 坐标系约定</label>
-          <AxisConventionPicker
-            value={axisConvention}
-            onChange={setAxisConvention}
-          />
+          <AxisConventionPicker value={axisConvention} onChange={setAxisConvention} />
         </div>
       )}
       {(dataType === "image" || dataType === "video" || dataType === "point_cloud") && (
@@ -576,8 +581,8 @@ function Step1({
           </label>
           <div className={styles.mutedSmall}>
             勾选后，上传 / 入库完成时若未识别出任何 scene 会失败并提示检查目录结构；用于 scene
-            模式项目。ZIP 上传会自动识别 scene——点云按 <code>lidar/ camera/ calib/</code> 布局，图片 /
-            视频按帧序列或多场景子目录。
+            模式项目。ZIP 上传会自动识别 scene——点云按 <code>lidar/ camera/ calib/</code> 布局，图片
+            / 视频按帧序列或多场景子目录。
           </div>
         </div>
       )}
@@ -644,18 +649,24 @@ function Step2({
     <div className={styles.stackMedium}>
       {/* mode toggle */}
       <div className={styles.modeTabs}>
-        {([
-          { key: "files", label: "多文件" },
-          { key: "zip", label: "ZIP 包 (≤200MB)" },
-          { key: "connection", label: "连接器导入" },
-        ] as const).map((opt) => {
+        {(
+          [
+            { key: "files", label: "多文件" },
+            { key: "zip", label: "ZIP 包 (≤200MB)" },
+            { key: "connection", label: "连接器导入" },
+          ] as const
+        ).map((opt) => {
           const active = mode === opt.key;
           return (
             <button
               key={opt.key}
               type="button"
               onClick={() => setMode(opt.key)}
-              className={cx(styles.segmentButton, styles.modeButton, active && styles.segmentButtonActive)}
+              className={cx(
+                styles.segmentButton,
+                styles.modeButton,
+                active && styles.segmentButtonActive,
+              )}
             >
               {opt.label}
             </button>
@@ -702,10 +713,7 @@ function Step2({
                 <span>{formatBytes(totalSize)}</span>
               </div>
               {files.map((f, i) => (
-                <div
-                  key={`${f.name}-${i}`}
-                  className={styles.fileRow}
-                >
+                <div key={`${f.name}-${i}`} className={styles.fileRow}>
                   <Icon name={iconForFile(f)} size={12} className={styles.mutedIcon} />
                   <span className={styles.fileName}>{f.name}</span>
                   <span className={styles.mutedSmall}>{formatBytes(f.size)}</span>
@@ -850,7 +858,8 @@ function ConnectionImportSource({
             </option>
             {connections.map((conn) => (
               <option key={conn.id} value={conn.id}>
-                {conn.name} · {conn.kind.toUpperCase()} · {conn.scope === "global" ? "全局" : "个人"}
+                {conn.name} · {conn.kind.toUpperCase()} ·{" "}
+                {conn.scope === "global" ? "全局" : "个人"}
               </option>
             ))}
           </select>
@@ -885,10 +894,7 @@ function ConnectionImportSource({
 
       {canManage && (
         <div className={styles.inlineCreateHeader}>
-          <Button
-            size="sm"
-            onClick={() => setShowCreate((value) => !value)}
-          >
+          <Button size="sm" onClick={() => setShowCreate((value) => !value)}>
             <Icon name={showCreate ? "x" : "plus"} size={12} />
             {showCreate ? "收起新建" : "新建连接器"}
           </Button>
@@ -927,7 +933,10 @@ function Step3({
   const arr = files.map((f, i) => ({ file: f, item: items.get(`${i}`) }));
   const done = arr.filter((x) => x.item?.status === "done").length;
   const failed = arr.filter((x) => x.item?.status === "error").length;
-  const overall = arr.length === 0 ? 0 : Math.round(arr.reduce((s, x) => s + (x.item?.progress ?? 0), 0) / arr.length);
+  const overall =
+    arr.length === 0
+      ? 0
+      : Math.round(arr.reduce((s, x) => s + (x.item?.progress ?? 0), 0) / arr.length);
 
   return (
     <div className={styles.stackMedium}>
@@ -945,7 +954,13 @@ function Step3({
           <div key={i} className={styles.progressItem}>
             <div className={styles.progressFileHeader}>
               <Icon
-                name={item?.status === "done" ? "check" : item?.status === "error" ? "warning" : iconForFile(file)}
+                name={
+                  item?.status === "done"
+                    ? "check"
+                    : item?.status === "error"
+                      ? "warning"
+                      : iconForFile(file)
+                }
                 size={12}
                 className={
                   item?.status === "done"
@@ -972,9 +987,7 @@ function Step3({
                 }
               />
             </div>
-            {item?.error && (
-              <div className={styles.errorMessage}>{item.error}</div>
-            )}
+            {item?.error && <div className={styles.errorMessage}>{item.error}</div>}
           </div>
         ))}
       </div>
@@ -1010,8 +1023,7 @@ function Footer({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const submitLabel =
-    mode === "zip" ? "上传 ZIP" : mode === "connection" ? "开始导入" : "开始上传";
+  const submitLabel = mode === "zip" ? "上传 ZIP" : mode === "connection" ? "开始导入" : "开始上传";
   return (
     <div className={styles.footer}>
       <div>
@@ -1055,21 +1067,29 @@ function Step3Zip({
     <div className={styles.stackMedium}>
       <div className={styles.zipFileRow}>
         <Icon name="folder" size={14} className={styles.mutedIcon} />
-        <span className={styles.fileName}>
-          {zipFile.name}
-        </span>
+        <span className={styles.fileName}>{zipFile.name}</span>
         <span className={styles.mutedMedium}>{formatBytes(zipFile.size)}</span>
       </div>
 
       <div>
         <div className={styles.zipProgressLabel}>
-          <span>{running ? "上传中…（服务端解压通常在 0% 跳到 100% 后等待几秒）" : result ? "解包完成" : error ? "失败" : "等待"}</span>
+          <span>
+            {running
+              ? "上传中…（服务端解压通常在 0% 跳到 100% 后等待几秒）"
+              : result
+                ? "解包完成"
+                : error
+                  ? "失败"
+                  : "等待"}
+          </span>
           <span>{Math.round(progress)}%</span>
         </div>
         <div className={styles.zipProgressTrack}>
           <ProgressFill
             progress={progress}
-            color={error ? "var(--sc-destructive)" : result ? "var(--sc-positive)" : "var(--sc-brand)"}
+            color={
+              error ? "var(--sc-destructive)" : result ? "var(--sc-positive)" : "var(--sc-brand)"
+            }
           />
         </div>
       </div>
@@ -1104,11 +1124,7 @@ function Step3Zip({
         </div>
       )}
 
-      {error && (
-        <div className={styles.zipError}>
-          {error}
-        </div>
-      )}
+      {error && <div className={styles.zipError}>{error}</div>}
 
       <div className={styles.actions}>
         <Button onClick={onClose}>关闭</Button>
@@ -1141,9 +1157,7 @@ function Step3Connection({
   const { data: job, isLoading } = useAsyncJob(jobId, !!jobId);
   const settledRef = useRef<string | null>(null);
   const terminal =
-    job?.status === "completed" ||
-    job?.status === "failed" ||
-    job?.status === "cancelled";
+    job?.status === "completed" || job?.status === "failed" || job?.status === "cancelled";
 
   useEffect(() => {
     if (!job || !terminal || settledRef.current === job.id) return;
@@ -1203,7 +1217,9 @@ function Step3Connection({
       {job && (
         <div className={styles.zipSummary}>
           <div>
-            <strong className={job.status === "completed" ? styles.successText : styles.runningText}>
+            <strong
+              className={job.status === "completed" ? styles.successText : styles.runningText}
+            >
               新增 {added}
             </strong>{" "}
             个文件 ·{" "}
@@ -1211,9 +1227,7 @@ function Step3Connection({
               共 {total} · 跳过 {skipped} · 失败 {errors}
             </span>
           </div>
-          {job.error_message && (
-            <div className={styles.errorMessage}>{job.error_message}</div>
-          )}
+          {job.error_message && <div className={styles.errorMessage}>{job.error_message}</div>}
           {Array.isArray(result.errors) && result.errors.length > 0 && (
             <details className={styles.errorDetails}>
               <summary className={styles.errorSummary}>

@@ -7,14 +7,8 @@
  * sentinels consistent with the frozen contracts (plan Appendix A.2).
  */
 import type { GlobalBackendItem } from "@/api/adminMlIntegrations";
-import type {
-  TopologyPoolEntry,
-  TopologyMemberInstance,
-} from "@/api/generated/types.gen";
-import type {
-  MemberViewModel,
-  PoolViewModel,
-} from "../runtimeTopology";
+import type { TopologyPoolEntry, TopologyMemberInstance } from "@/api/generated/types.gen";
+import type { MemberViewModel, PoolViewModel } from "../runtimeTopology";
 
 /** Format an ISO timestamp as a localized, hour-24 string. Returns "—" on null. */
 export function formatDateTime(iso: string | null | undefined): string {
@@ -87,8 +81,8 @@ export function buildRegistryToPoolMap(
 ): Map<string, { poolId: string; poolName: string }> {
   const out = new Map<string, { poolId: string; poolName: string }>();
   for (const p of pools) {
-    const members: MemberViewModel[] | TopologyMemberInstance[] = (p as PoolViewModel)
-      .members ?? (p as TopologyPoolEntry).members ?? [];
+    const members: MemberViewModel[] | TopologyMemberInstance[] =
+      (p as PoolViewModel).members ?? (p as TopologyPoolEntry).members ?? [];
     for (const m of members) {
       out.set(m.registry_id, { poolId: p.id, poolName: p.name });
     }

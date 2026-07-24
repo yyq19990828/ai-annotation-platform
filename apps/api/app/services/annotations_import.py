@@ -29,12 +29,13 @@ from app.schemas.aap_json import (
 from app.schemas._jsonb_types import Geometry
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
-    build_rle_reference,
-    lock_raster_mask_references,
-    store_coco_rle,
+    assert_raster_mask_write_enabled,
+    resolve_mask_reference_objects,
+    store_mask_reference_objects,
     validate_mask_geometry_for_task,
 )
 from app.services.task_matcher import resolve_task
+from app.utils.raster_mask_rle import coco_rle_area
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ _GEOMETRY_TO_TOOL_UNIT: dict[str, str] = {
     "keypoint": "keypoint",
     "polygon": "region",
     "multi_polygon": "region",
+    "raster_mask": "region",
+    "video_mask": "region",
     "video_track_mask": "region",
 }
 
@@ -55,22 +58,10 @@ _GEOMETRY_ADAPTER = TypeAdapter(Geometry)
 
 
 def _validate_aap_mask_objects(
-    geometry: dict[str, Any],
+    geometry: Any,
     mask_objects: dict[str, dict[str, Any]],
-) -> list[dict[str, Any]]:
-    if geometry.get("type") != "video_track_mask":
-        return []
-    objects: list[dict[str, Any]] = []
-    for keyframe in geometry.get("keyframes") or []:
-        reference = keyframe.get("mask") or {}
-        digest = reference.get("sha256")
-        rle = mask_objects.get(str(digest))
-        if rle is None:
-            raise ValueError(f"AAP mask_objects missing sha256 {digest}")
-        if build_rle_reference(rle) != reference:
-            raise ValueError(f"AAP mask object metadata mismatch for sha256 {digest}")
-        objects.append(rle)
-    return objects
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    return resolve_mask_reference_objects(geometry, mask_objects)
 
 
 def _derive_tool_unit(geometry_type: str | None) -> str:
@@ -136,6 +127,7 @@ async def import_aap_json_annotations(
     result = AAPImportResult(dry_run=dry_run)
     purged_tasks: set[uuid.UUID] = set()
     affected_tasks: set[uuid.UUID] = set()
+    stored_mask_keys: set[str] = set()
 
     # 预先查好 project，以便 class_name 软校验（避免逐条 db.get）
     project = await db.get(Project, project_id)
@@ -165,11 +157,6 @@ async def import_aap_json_annotations(
                 )
                 result.skipped += 1
             continue
-
-        # overwrite: 导入该 task 前清理 _imported 标注（每 task 只清一次）
-        if overwrite and not dry_run and task.id not in purged_tasks:
-            await _purge_imported_annotations(db, task.id)
-            purged_tasks.add(task.id)
 
         for entry in block.annotations:
             # 1. class_name 缺失检查
@@ -203,6 +190,12 @@ async def import_aap_json_annotations(
                     entry.geometry, envelope.mask_objects
                 )
                 await validate_mask_geometry_for_task(db, task, entry.geometry)
+                if entry.geometry.get("type") == "raster_mask" and any(
+                    coco_rle_area(rle) == 0 for _, rle in mask_objects
+                ):
+                    raise ValueError("raster mask must contain foreground pixels")
+                if entry.geometry.get("type") == "raster_mask":
+                    assert_raster_mask_write_enabled(project)
             except ValidationError as exc:
                 result.errors.append(
                     AAPImportErrorEntry(
@@ -259,11 +252,27 @@ async def import_aap_json_annotations(
                 result.imported += 1
                 continue
 
+            # 只在首条通过完整校验的 entry 即将写入时执行 overwrite，避免
+            # 缺对象 / 非法 RLE 把现有导入标注先删掉。
+            if overwrite and task.id not in purged_tasks:
+                await _purge_imported_annotations(db, task.id)
+                purged_tasks.add(task.id)
+
             if mask_objects:
-                await lock_raster_mask_references(db, entry.geometry, verify=False)
-                for mask_object in mask_objects:
-                    store_coco_rle(mask_object)
-                await lock_raster_mask_references(db, entry.geometry)
+                unstored = [
+                    item
+                    for item in mask_objects
+                    if str(item[0]["object_key"]) not in stored_mask_keys
+                ]
+                await store_mask_reference_objects(
+                    db,
+                    entry.geometry,
+                    unstored,
+                    task_id=task.id,
+                )
+                stored_mask_keys.update(
+                    str(reference["object_key"]) for reference, _ in unstored
+                )
 
             # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
             #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）

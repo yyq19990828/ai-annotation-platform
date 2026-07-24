@@ -226,12 +226,18 @@ describe("VideoPlaybackOverlay", () => {
 
     fireEvent.click(getByTestId("video-timeline-toggle"));
     expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
-    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute("data-full-window", "true");
+    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute(
+      "data-full-window",
+      "true",
+    );
     expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–100");
 
     fireEvent.click(getByTestId("video-timeline-zoom-in"));
     expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
-    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute("data-full-window", "false");
+    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute(
+      "data-full-window",
+      "false",
+    );
     expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：F20–80");
 
     fireEvent.click(getByTestId("video-timeline-toggle"));
@@ -244,7 +250,10 @@ describe("VideoPlaybackOverlay", () => {
     fireEvent.click(getByTestId("video-timeline-toggle"));
     fireEvent.click(getByTestId("video-timeline-zoom-reset"));
     expect(getByTestId("video-timeline-navigator")).toBeInTheDocument();
-    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute("data-full-window", "true");
+    expect(getByTestId("video-timeline-navigator-window")).toHaveAttribute(
+      "data-full-window",
+      "true",
+    );
     expect(getByTestId("video-timeline-window-readout")).toHaveTextContent("窗口：全部 · F0–100");
   });
 
@@ -273,7 +282,9 @@ describe("VideoPlaybackOverlay", () => {
     fireEvent.click(getByTestId("video-timeline-toggle"));
 
     expect(getByTestId("video-timeline-density").querySelector("span")).toBeInTheDocument();
-    expect(getByTestId("video-timeline-prediction-density").querySelector("span")).toBeInTheDocument();
+    expect(
+      getByTestId("video-timeline-prediction-density").querySelector("span"),
+    ).toBeInTheDocument();
     expect(getByTestId("video-track-timeline")).toBeInTheDocument();
   });
 
@@ -623,7 +634,9 @@ describe("VideoPlaybackOverlay", () => {
     });
 
     const manualBin = getByTestId("video-timeline-density").querySelector("span") as HTMLElement;
-    const predBin = getByTestId("video-timeline-prediction-density").querySelector("span") as HTMLElement;
+    const predBin = getByTestId("video-timeline-prediction-density").querySelector(
+      "span",
+    ) as HTMLElement;
 
     // 8 个候选的柱必须显著高于 1 个关键帧的柱 (共享 max=8 下: 9px vs 2px), 不再倒挂。
     expect(px(predBin)).toBeGreaterThan(px(manualBin));

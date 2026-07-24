@@ -18,7 +18,8 @@ vi.mock("@/hooks/useProjects", () => ({
   useRenameClass: () => ({ mutate: mockRenameMutate, isPending: false }),
 }));
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
+  const actual =
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>
@@ -66,8 +67,16 @@ function makeProject(toolBindings: Record<string, unknown>): ProjectResponse {
 }
 
 const sharedBindings = {
-  bbox: { enabled: true, classes: [{ name: "person", color: "#ff0000", order: 0 }], attribute_schema: { fields: [] } },
-  region: { enabled: true, classes: [{ name: "person", color: "#ff0000", order: 0 }], attribute_schema: { fields: [] } },
+  bbox: {
+    enabled: true,
+    classes: [{ name: "person", color: "#ff0000", order: 0 }],
+    attribute_schema: { fields: [] },
+  },
+  region: {
+    enabled: true,
+    classes: [{ name: "person", color: "#ff0000", order: 0 }],
+    attribute_schema: { fields: [] },
+  },
 };
 
 function renderUI(project: ProjectResponse) {
@@ -130,8 +139,16 @@ describe("ClassesSection 跨工具单位批量重命名", () => {
   it("无跨单位同名类时, 不渲染批量开关", () => {
     renderUI(
       makeProject({
-        bbox: { enabled: true, classes: [{ name: "person", color: "#ff0000", order: 0 }], attribute_schema: { fields: [] } },
-        region: { enabled: true, classes: [{ name: "tree", color: "#00ff00", order: 0 }], attribute_schema: { fields: [] } },
+        bbox: {
+          enabled: true,
+          classes: [{ name: "person", color: "#ff0000", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
+        region: {
+          enabled: true,
+          classes: [{ name: "tree", color: "#00ff00", order: 0 }],
+          attribute_schema: { fields: [] },
+        },
       }),
     );
     expect(screen.queryByTestId("rename-all-units-switch")).not.toBeInTheDocument();

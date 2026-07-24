@@ -1,7 +1,4 @@
-import type {
-  DataManagerEntityScope,
-  TaskSortItem,
-} from "@/api/taskViews";
+import type { DataManagerEntityScope, TaskSortItem } from "@/api/taskViews";
 
 export interface DataManagerUrlState {
   lens: DataManagerEntityScope;
@@ -67,13 +64,14 @@ export function resolveDataManagerSort(
   fallbackField: string,
 ): TaskSortItem[] {
   const allowed = new Set(allowedFields);
-  const isValid = (items: TaskSortItem[] | null) => Boolean(
-    items?.length
-      && items.every((item) => (
-        allowed.has(item.field)
-        && (item.direction === "asc" || item.direction === "desc")
-      )),
-  );
+  const isValid = (items: TaskSortItem[] | null) =>
+    Boolean(
+      items?.length &&
+      items.every(
+        (item) =>
+          allowed.has(item.field) && (item.direction === "asc" || item.direction === "desc"),
+      ),
+    );
   if (isValid(urlSort)) return urlSort!;
   if (isValid(viewSort)) return viewSort;
   return [{ field: fallbackField, direction: "asc" }];
@@ -83,9 +81,7 @@ export function updateDataManagerUrl(
   current: string | URLSearchParams,
   state: DataManagerUrlState,
 ): URLSearchParams {
-  const params = new URLSearchParams(
-    typeof current === "string" ? current : current.toString(),
-  );
+  const params = new URLSearchParams(typeof current === "string" ? current : current.toString());
   params.set("lens", state.lens);
   if (state.view) params.set("view", state.view);
   else params.delete("view");

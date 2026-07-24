@@ -82,10 +82,15 @@ export interface BugReportUpdatePayload {
 }
 
 export const bugReportsApi = {
-  create: (payload: BugReportPayload) =>
-    apiClient.post<BugReportResponse>("/bug_reports", payload),
+  create: (payload: BugReportPayload) => apiClient.post<BugReportResponse>("/bug_reports", payload),
 
-  list: (params?: { status?: string; severity?: string; route?: string; limit?: number; offset?: number }) => {
+  list: (params?: {
+    status?: string;
+    severity?: string;
+    route?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
     if (params?.severity) q.set("severity", params.severity);
@@ -98,14 +103,12 @@ export const bugReportsApi = {
   listMine: (limit = 50, offset = 0) =>
     apiClient.get<BugReportListResponse>(`/bug_reports/mine?limit=${limit}&offset=${offset}`),
 
-  get: (id: string) =>
-    apiClient.get<BugReportDetail>(`/bug_reports/${id}`),
+  get: (id: string) => apiClient.get<BugReportDetail>(`/bug_reports/${id}`),
 
   update: (id: string, payload: BugReportUpdatePayload) =>
     apiClient.patch<BugReportResponse>(`/bug_reports/${id}`, payload),
 
-  delete: (id: string) =>
-    apiClient.delete<void>(`/bug_reports/${id}`),
+  delete: (id: string) => apiClient.delete<void>(`/bug_reports/${id}`),
 
   addComment: (id: string, body: string) =>
     apiClient.post<BugCommentResponse>(`/bug_reports/${id}/comments`, { body }),
@@ -133,7 +136,10 @@ export async function uploadBugScreenshot(blob: Blob): Promise<string> {
   return init.storage_key;
 }
 
-export async function uploadBugAttachment(file: Blob, fileName = "screenshot.png"): Promise<BugAttachment> {
+export async function uploadBugAttachment(
+  file: Blob,
+  fileName = "screenshot.png",
+): Promise<BugAttachment> {
   const mimeType = file.type || "image/png";
   const init = await bugReportsApi.initScreenshotUpload(fileName, mimeType);
   const res = await fetch(init.upload_url, {

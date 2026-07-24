@@ -2,8 +2,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ActionBar } from "./selectionCard/ActionBar";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const SUMMARY_CLASS = "flex flex-col gap-0.5 text-sm text-foreground";
 const COUNT_CLASS = "text-brand tabular-nums";
 const HINT_CLASS = "text-xs text-muted-foreground";
@@ -22,6 +21,7 @@ export interface ImageBatchCardContentProps {
   onToggleHidden: () => void;
   onDelete: () => void;
   onClear: () => void;
+  onConvert?: () => void;
 }
 
 /**
@@ -40,6 +40,7 @@ export function ImageBatchCardContent({
   onToggleHidden,
   onDelete,
   onClear,
+  onConvert,
 }: ImageBatchCardContentProps) {
   return (
     <div className={BODY_CLASS}>
@@ -49,6 +50,18 @@ export function ImageBatchCardContent({
       </div>
 
       <ActionBar label="批量操作">
+        {onConvert && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="批量转换"
+            aria-label="批量转换"
+            disabled={readOnly || allLocked}
+            onClick={onConvert}
+          >
+            批量转换
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -100,13 +113,7 @@ export function ImageBatchCardContent({
         >
           <Icon name="trash" size={14} />
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="取消选中"
-          aria-label="取消选中"
-          onClick={onClear}
-        >
+        <Button variant="ghost" size="sm" title="取消选中" aria-label="取消选中" onClick={onClear}>
           <Icon name="x" size={14} />
         </Button>
       </ActionBar>

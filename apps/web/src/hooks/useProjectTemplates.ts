@@ -29,8 +29,7 @@ export function useProjectTemplate(id: string | undefined) {
 export function useCreateProjectTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: ProjectTemplateCreatePayload) =>
-      projectTemplatesApi.create(payload),
+    mutationFn: (payload: ProjectTemplateCreatePayload) => projectTemplatesApi.create(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
     },
@@ -40,8 +39,7 @@ export function useCreateProjectTemplate() {
 export function useUpdateProjectTemplate(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: ProjectTemplateUpdatePayload) =>
-      projectTemplatesApi.update(id, payload),
+    mutationFn: (payload: ProjectTemplateUpdatePayload) => projectTemplatesApi.update(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] });
     },

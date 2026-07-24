@@ -42,6 +42,8 @@
 | DELETE | `/service-pools/{pool_id}/members/{registry_id}` |
 | POST | `/service-pools/{pool_id}/members/{registry_id}/drain` |
 | POST | `/service-pools/{pool_id}/members/{registry_id}/resume` |
+| GET | `/service-pools/{pool_id}/members/{registry_id}/capability-drift` |
+| POST | `/service-pools/{pool_id}/members/{registry_id}/capability-drift/accept` |
 | GET | `/topology` |
 | GET | `/runtime-snapshot` |
 
@@ -87,6 +89,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/annotations/{annotation_id}/mask-content` |
 | GET | `/annotations/{annotation_id}/mask-content/{frame_index}` |
 | POST | `/tasks/{task_id}/mask-content` |
 | POST | `/annotations/bulk-update` |
@@ -279,6 +282,36 @@
 | GET | `/invitations/{token}` |
 | POST | `/register` |
 
+## `mask_formats.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/mask-formats` |
+| POST | `/projects/{project_id}/mask-formats/exports:preflight` |
+| POST | `/projects/{project_id}/mask-formats/imports:upload-init` |
+| POST | `/projects/{project_id}/mask-formats/imports:preflight` |
+| POST | `/projects/{project_id}/mask-formats/imports` |
+| GET | `/projects/{project_id}/mask-formats/imports/{import_id}` |
+| POST | `/projects/{project_id}/mask-formats/imports/{import_id}/resume` |
+
+## `mask_qc.py`
+
+| Method | Path |
+|---|---|
+| POST | `/projects/{project_id}/mask-qc/runs` |
+| GET | `/projects/{project_id}/mask-qc/issues` |
+| GET | `/tasks/{task_id}/mask-qc/summary` |
+| GET | `/annotations/{annotation_id}/mask-compare` |
+| GET | `/annotations/{annotation_id}/mask-compare/content` |
+| GET | `/mask-qc/issues/{issue_id}/region-content` |
+| GET | `/mask-qc/issues/{issue_id}` |
+| PATCH | `/mask-qc/issues/{issue_id}` |
+| POST | `/projects/{project_id}/mask-qc/repairs:dry-run` |
+| POST | `/projects/{project_id}/mask-qc/repairs` |
+| GET | `/mask-qc/repairs/{repair_id}` |
+| POST | `/mask-qc/repairs/{repair_id}/resume` |
+| POST | `/mask-qc/repairs/{repair_id}/rollback` |
+
 ## `me.py`
 
 | Method | Path |
@@ -433,10 +466,18 @@
 | POST | `/projects/{project_id}/tasks/query` |
 | GET | `/projects/{project_id}/task-views/{view_id}/tasks` |
 
+## `tasks/ai_masks.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/ai-mask-candidates/accept` |
+
 ## `tasks/annotations.py`
 
 | Method | Path |
 |---|---|
+| POST | `/{task_id}/annotation-conversions:dry-run` |
+| POST | `/{task_id}/annotation-conversions:execute` |
 | GET | `/{task_id}/neighbor-annotations` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
@@ -476,6 +517,18 @@
 | POST | `/{task_id}/lock/heartbeat` |
 | DELETE | `/{task_id}/lock` |
 
+## `tasks/mask_capabilities.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/mask-capabilities` |
+
+## `tasks/mask_mutations.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/annotations/mask-mutations:commit` |
+
 ## `tasks/predictions.py`
 
 | Method | Path |
@@ -511,6 +564,9 @@
 | GET | `/{task_id}/video/frames/{frame_index}` |
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
+| PUT | `/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}` |
+| PATCH | `/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}` |
+| POST | `/{task_id}/video/tracks/{annotation_id}/correction-jobs` |
 | POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
 | POST | `/{task_id}/video:track` |
 
@@ -535,6 +591,7 @@
 | DELETE | `/{job_id}` |
 | POST | `/{job_id}/accept` |
 | POST | `/{job_id}/discard` |
+| POST | `/{job_id}/decisions` |
 | GET | `/{job_id}/preview` |
 | GET | `/{job_id}/mask-content/{sha256}` |
 
@@ -558,4 +615,4 @@
 
 ---
 
-_共 52 模块 / 311 路由_
+_共 57 模块 / 343 路由_

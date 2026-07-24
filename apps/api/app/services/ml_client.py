@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -67,7 +68,22 @@ _GPU_HEALTH_CHALLENGE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _SEMAPHORE_CACHE_ATTR = "_aap_ml_backend_semaphores"
 
 
-def _backend_detail(resp: httpx.Response) -> str:
+_SAFE_BACKEND_DETAIL_KEYS = {
+    "reason",
+    "message",
+    "max_bytes",
+    "declared_bytes",
+    "received_bytes",
+    "model_id",
+    "model_ids",
+    "requested",
+    "supported_prompts",
+    "supported_geometric_outputs",
+    "candidate_index",
+}
+
+
+def _backend_detail(resp: httpx.Response) -> str | dict:
     """提取上游 backend 的错误说明: 优先 JSON 的 detail/error/message, 回退裁剪后的 text."""
     try:
         data = resp.json()
@@ -75,6 +91,12 @@ def _backend_detail(resp: httpx.Response) -> str:
             for key in ("detail", "error", "message"):
                 val = data.get(key)
                 if val:
+                    if isinstance(val, dict) and isinstance(val.get("reason"), str):
+                        return {
+                            k: v
+                            for k, v in val.items()
+                            if k in _SAFE_BACKEND_DETAIL_KEYS
+                        }
                     return str(val)
     except Exception:
         pass
@@ -97,13 +119,58 @@ def _raise_for_backend_status(resp: httpx.Response) -> None:
     retry_after = resp.headers.get("Retry-After")
     if retry_after:
         headers = {"Retry-After": retry_after}
+    client_detail = detail if isinstance(detail, dict) else f"ML backend: {detail}"
     if resp.status_code < 500 or resp.status_code == 503:
         raise HTTPException(
             status_code=resp.status_code,
-            detail=f"ML backend: {detail}",
+            detail=client_detail,
             headers=headers,
         )
+    if isinstance(detail, dict):
+        raise HTTPException(status_code=502, detail=detail)
     raise HTTPException(status_code=502, detail=f"ML backend error: {detail}")
+
+
+async def _bounded_stream_response(
+    response: httpx.Response,
+    *,
+    max_bytes: int,
+) -> httpx.Response:
+    declared = response.headers.get("content-length")
+    if declared:
+        try:
+            declared_bytes = int(declared)
+        except ValueError:
+            declared_bytes = None
+        if declared_bytes is not None and declared_bytes > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "reason": "mask_response_too_large",
+                    "message": "ML backend response exceeds the byte budget",
+                    "max_bytes": max_bytes,
+                    "declared_bytes": declared_bytes,
+                },
+            )
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        body.extend(chunk)
+        if len(body) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "reason": "mask_response_too_large",
+                    "message": "ML backend response exceeds the byte budget",
+                    "max_bytes": max_bytes,
+                    "received_bytes": len(body),
+                },
+            )
+    return httpx.Response(
+        response.status_code,
+        headers=response.headers,
+        content=bytes(body),
+        request=response.request,
+    )
 
 
 def _get_semaphore(backend_id: str | None, max_cc: int) -> asyncio.Semaphore | None:
@@ -135,6 +202,7 @@ class PredictionResult:
     meta: dict | None = None
     # v0.18.18 · 交互单实例精修的 low-res logits 回灌 (base64); 平台仅透传, 前端原样回带.
     mask_input_next: str | None = None
+    diagnostic: dict | None = None
 
 
 class MLBackendClient:
@@ -489,7 +557,11 @@ class MLBackendClient:
         return results
 
     async def predict_interactive(
-        self, task_data: dict, context: dict
+        self,
+        task_data: dict,
+        context: dict,
+        *,
+        max_response_bytes: int | None = None,
     ) -> PredictionResult:
         start = time.monotonic()
         outcome = "success"
@@ -502,16 +574,49 @@ class MLBackendClient:
                         async with httpx.AsyncClient(
                             timeout=settings.ml_predict_timeout
                         ) as client:
-                            resp = await client.post(
-                                f"{self.base_url}/predict",
-                                json={"task": task_data, "context": context},
-                                headers=self._headers(grant),
-                            )
-                            if grant is not None:
+                            request_kwargs = {
+                                "json": {"task": task_data, "context": context},
+                                "headers": self._headers(grant),
+                            }
+                            if max_response_bytes is None:
+                                resp = await client.post(
+                                    f"{self.base_url}/predict",
+                                    **request_kwargs,
+                                )
+                            else:
+                                async with client.stream(
+                                    "POST",
+                                    f"{self.base_url}/predict",
+                                    **request_kwargs,
+                                ) as streamed:
+                                    if grant is not None:
+                                        grant.report_response(streamed.status_code)
+                                    resp = await _bounded_stream_response(
+                                        streamed,
+                                        max_bytes=max_response_bytes,
+                                    )
+                            if grant is not None and max_response_bytes is None:
                                 grant.report_response(resp.status_code)
                             # 上游 4xx 原样透传, 5xx → 502 (见 _raise_for_backend_status)
                             _raise_for_backend_status(resp)
-                            data = resp.json()
+                            try:
+                                data = json.loads(resp.content)
+                            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                                raise HTTPException(
+                                    status_code=502,
+                                    detail={
+                                        "reason": "invalid_backend_response",
+                                        "message": "ML backend returned invalid JSON",
+                                    },
+                                ) from exc
+                            if not isinstance(data, dict):
+                                raise HTTPException(
+                                    status_code=502,
+                                    detail={
+                                        "reason": "invalid_backend_response",
+                                        "message": "ML backend response must be an object",
+                                    },
+                                )
                 except (httpx.ConnectError, httpx.TimeoutException) as exc:
                     # 转换发生在 dispatch context 退出后，使 authority 能看到
                     # 原始 timeout/connect 不确定结果。
@@ -538,6 +643,7 @@ class MLBackendClient:
             model_load_ms=data.get("model_load_ms"),
             meta=data.get("meta"),
             mask_input_next=data.get("mask_input_next"),
+            diagnostic=data.get("diagnostic"),
         )
 
     async def unload(self) -> dict:

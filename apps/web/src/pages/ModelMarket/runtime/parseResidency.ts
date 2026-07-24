@@ -156,21 +156,13 @@ export function parseResidency(value: unknown): NormalizedResidency | null {
       }
       const rawResident = rawPool.resident;
       const resident =
-        rawResident == null
-          ? null
-          : typeof rawResident === "boolean"
-            ? rawResident
-            : null;
+        rawResident == null ? null : typeof rawResident === "boolean" ? rawResident : null;
       if (rawResident != null && typeof rawResident !== "boolean") {
         malformed = true;
         poolsValid = false;
       }
       const device =
-        rawPool.device == null
-          ? null
-          : typeof rawPool.device === "string"
-            ? rawPool.device
-            : null;
+        rawPool.device == null ? null : typeof rawPool.device === "string" ? rawPool.device : null;
       const provider =
         rawPool.provider == null
           ? null

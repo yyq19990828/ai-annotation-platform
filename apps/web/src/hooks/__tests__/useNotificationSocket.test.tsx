@@ -72,9 +72,11 @@ afterEach(() => {
 });
 
 function wrap(qc?: QueryClient) {
-  const client = qc ?? new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+  const client =
+    qc ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );

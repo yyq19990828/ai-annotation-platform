@@ -23,7 +23,9 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
     // 收集 console error / pageerror;WebGL 跑不起来时 Three.js 会在此爆。
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
-      if (msg.type() === "error") consoleErrors.push(msg.text());
+      if (msg.type() !== "error") return;
+      const sourceUrl = msg.location().url;
+      consoleErrors.push(sourceUrl ? `${msg.text()} (${sourceUrl})` : msg.text());
     });
     page.on("pageerror", (err) => consoleErrors.push(`pageerror: ${err.message}`));
 

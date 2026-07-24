@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+from app.services.mask_formats.image_codecs import normalize_coco_segmentation_rle
 from app.services.exporting.video import (
     build_coco_frames_seg,
     build_yolo_frame_det_labels,
@@ -377,11 +378,18 @@ def test_coco_frames_seg_exports_mask_track_as_rle_crowd():
         include_attributes=True,
     )
     annotation = doc["annotations"][0]
-    assert annotation["segmentation"] == {"size": [2, 3], "counts": [2, 2, 2]}
+    assert isinstance(annotation["segmentation"]["counts"], str)
+    assert (
+        normalize_coco_segmentation_rle(
+            annotation["segmentation"], expected_width=3, expected_height=2
+        )
+        == rle
+    )
     assert annotation["bbox"] == [1.0, 0.0, 1.0, 2.0]
     assert annotation["area"] == 2
     assert annotation["iscrowd"] == 1
     assert annotation["attributes"]["__track_id"] == "mask-1"
+    assert annotation["attributes"]["__occluded"] is False
 
 
 def test_coco_frames_seg_skips_bbox_and_polyline():

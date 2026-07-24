@@ -22,7 +22,8 @@ vi.mock("@/api/users", () => ({
 }));
 
 vi.mock("@/components/ui/Toast", async () => {
-  const actual = await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
+  const actual =
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: typeof mockPushToast }) => T) =>
@@ -36,9 +37,7 @@ const USERS = {
     { id: "u2", name: "Bob", email: "bob@example.com", role: "annotator" },
     { id: "u3", name: "Existing", email: "existing@example.com", role: "annotator" },
   ],
-  reviewer: [
-    { id: "u4", name: "Rita", email: "rita@example.com", role: "reviewer" },
-  ],
+  reviewer: [{ id: "u4", name: "Rita", email: "rita@example.com", role: "reviewer" }],
 };
 
 const EXISTING = [
@@ -56,12 +55,7 @@ function renderModal() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <AssignMemberModal
-        open
-        projectId="p1"
-        existing={EXISTING}
-        onClose={vi.fn()}
-      />
+      <AssignMemberModal open projectId="p1" existing={EXISTING} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
 }

@@ -8,12 +8,7 @@ interface DeleteConfirmModalProps {
   onConfirm: () => void;
 }
 
-export function DeleteConfirmModal({
-  open,
-  count,
-  onCancel,
-  onConfirm,
-}: DeleteConfirmModalProps) {
+export function DeleteConfirmModal({ open, count, onCancel, onConfirm }: DeleteConfirmModalProps) {
   return (
     <Modal open={open} onClose={onCancel} title="确认删除" width={420}>
       <p>确定删除 {count} 个标注？删除后仍可通过撤销恢复。</p>

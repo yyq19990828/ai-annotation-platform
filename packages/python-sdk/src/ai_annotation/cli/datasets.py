@@ -73,7 +73,9 @@ def upload(
             )
         return
 
-    files = [path] if path.is_file() else sorted(p for p in path.rglob("*") if p.is_file())
+    files = (
+        [path] if path.is_file() else sorted(p for p in path.rglob("*") if p.is_file())
+    )
     if not files:
         print_error(f"目录中没有可上传的文件: {path}", json_output)
         raise typer.Exit(code=1)

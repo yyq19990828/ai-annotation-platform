@@ -1,12 +1,6 @@
 /** Compact member panel shown inside an expanded service pool. */
 import { useState, type ReactNode } from "react";
-import {
-  Clock3,
-  Gauge,
-  Server,
-  Waypoints,
-  type LucideIcon,
-} from "lucide-react";
+import { Clock3, Gauge, Server, Waypoints, type LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -79,9 +73,7 @@ export function BackendInstanceRow({
                 {member.name}
               </h5>
               <RuntimeStatusBadge axis="routing" value={member.routing} />
-              {member.weight != null && (
-                <Badge variant="outline">权重 {member.weight}</Badge>
-              )}
+              {member.weight != null && <Badge variant="outline">权重 {member.weight}</Badge>}
               {!hasWindowMetrics && <Badge variant="outline">{NO_METRICS_LABEL}</Badge>}
             </div>
             <div className="mt-1 truncate font-mono text-2xs text-muted-foreground" title={url}>
@@ -115,9 +107,7 @@ export function BackendInstanceRow({
           icon={Waypoints}
           label="窗口选择"
           value={
-            runtime?.selection_count_window == null
-              ? "—"
-              : String(runtime.selection_count_window)
+            runtime?.selection_count_window == null ? "—" : String(runtime.selection_count_window)
           }
           detail={`拒绝 ${runtime?.rejection_count_window == null ? "—" : runtime.rejection_count_window}`}
         />
@@ -137,9 +127,7 @@ export function BackendInstanceRow({
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
         <span title={backend?.last_checked_at ?? undefined}>
-          <Badge variant={health.variant}>
-            {health.detail}
-          </Badge>
+          <Badge variant={health.variant}>{health.detail}</Badge>
         </span>
         {isCpuFallback(compute) && (
           <TooltipProvider delayDuration={200}>
@@ -147,9 +135,7 @@ export function BackendInstanceRow({
               <TooltipTrigger asChild>
                 <Badge variant="warning">CPU 回退</Badge>
               </TooltipTrigger>
-              <TooltipContent side="top">
-                配置了 GPU 但已静默退回 CPU 推理
-              </TooltipContent>
+              <TooltipContent side="top">配置了 GPU 但已静默退回 CPU 推理</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
@@ -230,7 +216,11 @@ function InstanceMetric({
 }): ReactNode {
   return (
     <div className="flex min-w-0 items-start gap-2 rounded-md bg-muted/35 px-2.5 py-2">
-      <MetricIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
+      <MetricIcon
+        className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+        strokeWidth={1.6}
+        aria-hidden="true"
+      />
       <div className="min-w-0">
         <div className="text-2xs text-muted-foreground">{label}</div>
         <div className="mt-0.5 truncate text-xs font-semibold tabular-nums">{value}</div>

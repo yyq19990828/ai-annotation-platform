@@ -77,8 +77,13 @@ export function VideoKonvaIssueLayer({
             stroke={ringColor}
             strokeWidth={(isHighlight ? 3 : 1.5) / scale}
             listening={clickable}
-            onPointerDown={(e) => { e.cancelBubble = true; }}
-            onClick={(e) => { e.cancelBubble = true; onPinClick?.(issue.id); }}
+            onPointerDown={(e) => {
+              e.cancelBubble = true;
+            }}
+            onClick={(e) => {
+              e.cancelBubble = true;
+              onPinClick?.(issue.id);
+            }}
             onMouseEnter={(e) => setCursor(e, "pointer")}
             onMouseLeave={(e) => setCursor(e, "")}
           />

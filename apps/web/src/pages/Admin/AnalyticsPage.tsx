@@ -94,9 +94,8 @@ export function AnalyticsPage() {
   const rejectData = useMemo(() => {
     return (rejectQ.data?.data ?? []).map((r) => ({
       name:
-        REJECT_REASON_TYPE_LABELS[
-          r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS
-        ] ?? r.reason_type,
+        REJECT_REASON_TYPE_LABELS[r.reason_type as keyof typeof REJECT_REASON_TYPE_LABELS] ??
+        r.reason_type,
       count: r.count,
     }));
   }, [rejectQ.data]);
@@ -150,10 +149,7 @@ export function AnalyticsPage() {
           {aggThroughput.length > 0 && (
             <div className="w-full">
               <ResponsiveContainer width="100%" height={240}>
-                <LineChart
-                  data={aggThroughput}
-                  margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-                >
+                <LineChart data={aggThroughput} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                   <XAxis dataKey="day" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
@@ -190,18 +186,9 @@ export function AnalyticsPage() {
                   data={rejectData}
                   margin={{ top: 4, right: 12, bottom: 4, left: 0 }}
                 >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke={gridColor}
-                    horizontal={false}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    width={84}
-                    tick={{ fontSize: 11 }}
-                  />
+                  <YAxis type="category" dataKey="name" width={84} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Bar dataKey="count" name="次数" fill={accent} radius={[0, 3, 3, 0]} />
                 </BarChart>
@@ -220,11 +207,17 @@ export function AnalyticsPage() {
               <span className="text-muted-foreground">样本数</span>
               <span className="font-semibold tabular-nums">{durationQ.data.data.n}</span>
               <span className="text-muted-foreground">中位 (p50)</span>
-              <span className="font-semibold tabular-nums">{(durationQ.data.data.p50 / 1000).toFixed(1)}s</span>
+              <span className="font-semibold tabular-nums">
+                {(durationQ.data.data.p50 / 1000).toFixed(1)}s
+              </span>
               <span className="text-muted-foreground">p95</span>
-              <span className="font-semibold tabular-nums">{(durationQ.data.data.p95 / 1000).toFixed(1)}s</span>
+              <span className="font-semibold tabular-nums">
+                {(durationQ.data.data.p95 / 1000).toFixed(1)}s
+              </span>
               <span className="text-muted-foreground">均值</span>
-              <span className="font-semibold tabular-nums">{(durationQ.data.data.mean / 1000).toFixed(1)}s</span>
+              <span className="font-semibold tabular-nums">
+                {(durationQ.data.data.mean / 1000).toFixed(1)}s
+              </span>
             </div>
           )}
         </div>
@@ -240,12 +233,14 @@ export function AnalyticsPage() {
           {!heatmapQ.isError && heatmap.max > 0 && (
             <div className="flex flex-col gap-1 overflow-x-auto">
               {WEEKDAY_LABELS.map((label, weekday) => (
-                <div key={weekday} className="grid grid-cols-[36px_repeat(24,1fr)] items-center gap-1">
+                <div
+                  key={weekday}
+                  className="grid grid-cols-[36px_repeat(24,1fr)] items-center gap-1"
+                >
                   <span className="whitespace-nowrap text-xs text-muted-foreground">{label}</span>
                   {HOURS.map((hour) => {
                     const count = heatmap.byKey.get(`${weekday}-${hour}`) ?? 0;
-                    const intensity =
-                      count > 0 ? Math.max(0.06, count / heatmap.max) : 0.06;
+                    const intensity = count > 0 ? Math.max(0.06, count / heatmap.max) : 0.06;
                     return (
                       <HeatCell
                         key={hour}

@@ -23,13 +23,23 @@ import type {
 } from "@/api/auth";
 import type { ProjectRenderingConfig } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
-import type { PendingDrawing, SamPolarity, SamSubTool, ThreeDTool, Tool, VideoTool } from "../state/useWorkbenchState";
+import type {
+  PendingDrawing,
+  SamPolarity,
+  SamSubTool,
+  ThreeDTool,
+  Tool,
+  VideoTool,
+} from "../state/useWorkbenchState";
 import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "../state/useWorkbenchConfig";
 import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/videoStageControls";
-import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../stage/VideoPlaybackOverlay";
+import type {
+  VideoTimelineChapter,
+  VideoTimelineChapterControls,
+} from "../stage/VideoPlaybackOverlay";
 import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../stage/videoStageTypes";
 import type { VideoMaskCandidate } from "../stage/videoMaskFrames";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
@@ -38,13 +48,27 @@ import type { StageKind } from "../stages/types";
 const ThreeDWorkbench = lazy(() => import("../stages/three-d/ThreeDWorkbench"));
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoSamCandidateShape } from "../stage/VideoSamCandidateOverlay";
-import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
+import type {
+  VideoConvertOptions,
+  VideoTrackCompositionOptions,
+} from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
+import type { RasterMaskRenderRecord } from "../stage/shared/rasterMaskRender";
+import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
+import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframeActions";
+import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry =
+  | VideoBboxGeometry
+  | VideoTrackGeometry
+  | VideoTrackMaskGeometry
+  | VideoPolygonGeometry
+  | VideoPolylineGeometry
+  | VideoTrackPolygonGeometry
+  | VideoTrackPolylineGeometry;
 
 /**
  * v0.10.39 · WorkbenchStageHostProps 按语义嵌套:
@@ -55,6 +79,7 @@ type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeom
  *   - editors: maskEditor / polygonDraft / canvas* / projectRenderingConfig / issue*
  */
 interface WorkbenchStageHostCommonProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   stageKind: StageKind;
   /** v0.13.2 · 当前任务 id，点云 3D 舞台据此拉 point-cloud manifest。 */
   taskId: string | null;
@@ -112,12 +137,15 @@ interface WorkbenchStageHostVideoProps {
   /** v0.21.23 · 视频交互式 SAM: 提示派发 + 瞬态候选 / 点会话。 */
   onVideoSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate?: (candidateId: string) => void;
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   videoMaskCandidates?: VideoMaskCandidate[];
   videoMaskEditor?: UseMaskEditorReturn;
+  videoMaskKeyframeActions?: VideoMaskKeyframeActionHandlers;
   onVideoMaskCommit?: () => void;
   onVideoMaskCancel?: () => void;
   /** 工具条上的正/负切换; 与 Alt 等价 (图片侧 SmartPointTool 同语义)。 */
@@ -162,6 +190,11 @@ interface WorkbenchStageHostVideoProps {
 }
 
 interface WorkbenchStageHostImageProps {
+  rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
+  rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
+  onRetryRasterMask: (id: string) => void;
+  editingRasterMaskId?: string | null;
+  maskReadOnly?: boolean;
   fileUrl: string | null;
   mediaKey?: string | null;
   blurhash?: string | null;
@@ -195,10 +228,12 @@ interface WorkbenchStageHostImageProps {
   onCommitRotatedBbox: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle。 */
   onCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
-  onSamPrompt: (prompt:
-    | { kind: "point"; pt: [number, number]; alt: boolean }
-    | { kind: "bbox"; bbox: [number, number, number, number] }
-    | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean }
+  onSamPrompt: (
+    prompt:
+      | { kind: "point"; pt: [number, number]; alt: boolean }
+      | { kind: "bbox"; bbox: [number, number, number, number] }
+      | { kind: "scribble"; points: [number, number][]; alt: boolean; width: number }
+      | { kind: "exemplar"; bbox: [number, number, number, number]; alt: boolean },
   ) => void;
   onCommitMove: (
     id: string,
@@ -207,9 +242,17 @@ interface WorkbenchStageHostImageProps {
     childMoves?: { id: string; before: Geometry; after: Geometry }[],
   ) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
-  onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  onCommitPolygonGeometry: (
+    id: string,
+    before: [number, number][],
+    after: [number, number][],
+  ) => void;
   // v0.10.28 · keypoint 节点几何/可见性变更。
-  onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
+  onCommitKeypointGeometry?: (
+    id: string,
+    before: import("@/types").Keypoint[],
+    after: import("@/types").Keypoint[],
+  ) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
   onStageGeometry: (g: StageGeometry) => void;
@@ -222,9 +265,16 @@ interface WorkbenchStageHostAiProps {
     points?: [number, number][];
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
+  samMaskRecords: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate: (candidateId: string) => void;
   samActiveIdx: number;
   /** v0.18.18 · §5.5 当前点会话已落的正/负点, 透传到画布 overlay 渲染。 */
   samSessionPoints: { pt: [number, number]; polarity: 1 | 0 }[];
+  samSessionScribbles: {
+    points: [number, number][];
+    polarity: 1 | 0;
+    width: number;
+  }[];
   /** v0.18.19 · exemplar refine 会话已落的正/负框, 透传到画布 overlay 渲染。 */
   samSessionExemplars: { bbox: [number, number, number, number]; polarity: 1 | 0 }[];
   samSubTool: SamSubTool | null;
@@ -284,6 +334,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     const { common, video, image, ai, editors } = props;
     const {
       stageKind,
+      maskCompareStore,
       taskId,
       overlays,
       readOnly,
@@ -314,10 +365,13 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onWorkbenchConfigUpdate,
       projectRenderingConfig: stageProjectRenderingConfig,
     } = common;
-    const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
-    const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
+    const videoProps =
+      stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
+    const imageProps =
+      stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
     const aiProps = stageKind === "image" ? requireStageGroup(ai, "ai", stageKind) : undefined;
-    const editorProps = stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
+    const editorProps =
+      stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
     const {
       videoManifest,
       videoFrameTimetable,
@@ -332,11 +386,14 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onVideoSamPrompt,
       // 别名: image 分支已有同名 samCandidates/samActiveIdx/samSessionPoints。
       samCandidates: videoSamCandidates,
+      samMaskRecords: videoSamMaskRecords,
+      onSelectSamMaskCandidate: onSelectVideoSamMaskCandidate,
       samActiveIdx: videoSamActiveIdx,
       samSessionPoints: videoSamSessionPoints,
       samSessionBoxes: videoSamSessionBoxes,
       videoMaskCandidates,
       videoMaskEditor,
+      videoMaskKeyframeActions,
       onVideoMaskCommit,
       onVideoMaskCancel,
       samPolarity: videoSamPolarity,
@@ -365,6 +422,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
+      rasterMaskRecords,
+      rasterMaskStatusById,
+      onRetryRasterMask,
+      editingRasterMaskId,
+      maskReadOnly,
       fileUrl,
       mediaKey,
       blurhash,
@@ -401,8 +463,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
     const {
       samCandidates,
+      samMaskRecords,
+      onSelectSamMaskCandidate,
       samActiveIdx,
       samSessionPoints,
+      samSessionScribbles,
       samSessionExemplars,
       samSubTool,
       samPolarity,
@@ -439,7 +504,13 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     return (
       <div className="relative flex min-h-0 flex-1 flex-col" data-workbench-stage>
         {stageKind === "3d" ? (
-          <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">加载点云查看器…</div>}>
+          <Suspense
+            fallback={
+              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                加载点云查看器…
+              </div>
+            }
+          >
             <ThreeDWorkbench
               taskId={taskId}
               readOnly={readOnly}
@@ -469,6 +540,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
+            maskCompareStore={maskCompareStore}
             ref={ref}
             manifest={videoManifest}
             frameTimetable={videoFrameTimetable}
@@ -489,11 +561,14 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             isVideoToolEnabled={isVideoToolEnabled}
             onSamPrompt={onVideoSamPrompt}
             samCandidates={videoSamCandidates}
+            samMaskRecords={videoSamMaskRecords}
+            onSelectSamMaskCandidate={onSelectVideoSamMaskCandidate}
             samActiveIdx={videoSamActiveIdx}
             samSessionPoints={videoSamSessionPoints}
             samSessionBoxes={videoSamSessionBoxes}
             maskCandidates={videoMaskCandidates}
             maskEditor={videoMaskEditor}
+            maskKeyframeActions={videoMaskKeyframeActions}
             onMaskCommit={onVideoMaskCommit}
             onMaskCancel={onVideoMaskCancel}
             samPolarity={videoSamPolarity}
@@ -529,6 +604,12 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           />
         ) : (
           <ImageWorkbench
+            maskCompareStore={maskCompareStore}
+            rasterMaskRecords={rasterMaskRecords}
+            rasterMaskStatusById={rasterMaskStatusById}
+            onRetryRasterMask={onRetryRasterMask}
+            editingRasterMaskId={editingRasterMaskId}
+            maskReadOnly={maskReadOnly}
             readOnly={readOnly}
             fileUrl={fileUrl}
             mediaKey={mediaKey}
@@ -564,8 +645,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onCommitRotateBbox={onCommitRotateBbox}
             onSamPrompt={onSamPrompt}
             samCandidates={samCandidates}
+            samMaskRecords={samMaskRecords}
+            onSelectSamMaskCandidate={onSelectSamMaskCandidate}
             samActiveIdx={samActiveIdx}
             samSessionPoints={samSessionPoints}
+            samSessionScribbles={samSessionScribbles}
             samSessionExemplars={samSessionExemplars}
             samSubTool={samSubTool}
             samPolarity={samPolarity}

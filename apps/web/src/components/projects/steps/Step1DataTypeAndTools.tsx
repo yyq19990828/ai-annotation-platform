@@ -3,15 +3,8 @@
 
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
-import {
-  TOOL_UNIT_GROUPS,
-  PROJECT_DATA_TYPES,
-  type ToolUnitId,
-} from "@/constants/toolUnits";
-import {
-  defaultUnitBindings,
-  type FormState,
-} from "../CreateProjectWizard";
+import { TOOL_UNIT_GROUPS, PROJECT_DATA_TYPES, type ToolUnitId } from "@/constants/toolUnits";
+import { defaultUnitBindings, type FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
 
 export function Step1DataTypeAndTools({
@@ -36,9 +29,7 @@ export function Step1DataTypeAndTools({
           maxLength={60}
           className={clsx(styles.input, !nameValid && styles.inputInvalid)}
         />
-        {!nameValid && (
-          <div className={styles.fieldError}>名称需 2-60 字符</div>
-        )}
+        {!nameValid && <div className={styles.fieldError}>名称需 2-60 字符</div>}
       </div>
 
       <div>
@@ -77,17 +68,9 @@ export function Step1DataTypeAndTools({
                     };
                   })
                 }
-                className={clsx(
-                  styles.typeButton,
-                  active && styles.typeButtonActive,
-                )}
+                className={clsx(styles.typeButton, active && styles.typeButtonActive)}
               >
-                <span
-                  className={clsx(
-                    styles.typeIcon,
-                    active && styles.typeIconActive,
-                  )}
-                >
+                <span className={clsx(styles.typeIcon, active && styles.typeIconActive)}>
                   <Icon name={t.icon} size={14} />
                 </span>
                 <span className={styles.typeBody}>
@@ -120,9 +103,7 @@ export function Step1DataTypeAndTools({
           <Icon name="layers" size={12} />
           <div className={styles.unitChipBody}>
             <span className={styles.unitChipLabel}>scene 模式</span>
-            <span className={styles.unitChipHint}>
-              时序数据按 scene 关联、分包和连续标注
-            </span>
+            <span className={styles.unitChipHint}>时序数据按 scene 关联、分包和连续标注</span>
           </div>
         </label>
       )}
@@ -165,8 +146,7 @@ export function Step1DataTypeAndTools({
                         [g.id]: {
                           enabled: e.target.checked,
                           classRows: s.unitBindings[g.id]?.classRows ?? [],
-                          attributeFields:
-                            s.unitBindings[g.id]?.attributeFields ?? [],
+                          attributeFields: s.unitBindings[g.id]?.attributeFields ?? [],
                         },
                       },
                     }))
@@ -191,9 +171,7 @@ export function Step1DataTypeAndTools({
           onChange={(e) => setForm((s) => ({ ...s, dueDate: e.target.value }))}
           className={clsx(styles.input, !dueValid && styles.inputInvalid)}
         />
-        {!dueValid && (
-          <div className={styles.fieldError}>截止日期不能早于今天</div>
-        )}
+        {!dueValid && <div className={styles.fieldError}>截止日期不能早于今天</div>}
       </div>
     </div>
   );

@@ -46,12 +46,16 @@ def main() -> int:
     if args.check:
         if not snapshot_path.exists():
             print(f"::error::snapshot 不存在：{snapshot_path}")
-            print("先运行：cd apps/api && uv run python ../../scripts/export_openapi.py")
+            print(
+                "先运行：cd apps/api && uv run python ../../scripts/export_openapi.py"
+            )
             return 1
         current = snapshot_path.read_text(encoding="utf-8")
         if current.strip() != schema_str.strip():
             print("::error::OpenAPI snapshot 与当前路由不一致。")
-            print("请运行：cd apps/api && uv run python ../../scripts/export_openapi.py")
+            print(
+                "请运行：cd apps/api && uv run python ../../scripts/export_openapi.py"
+            )
             print("然后把 apps/api/openapi.snapshot.json 一并提交。")
             return 1
         print("✓ openapi snapshot 与当前路由一致")

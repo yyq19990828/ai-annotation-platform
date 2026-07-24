@@ -22,6 +22,12 @@ import {
   strokeWidthFor,
   type AnnotationVisualConfig,
 } from "./annotationVisual";
+// v0.23.5 WS-E · holes / multi_polygon even-odd 渲染地基 (ADR-0052 D5 / D8)。
+import {
+  collectOuterRings,
+  drawEvenOddShape,
+  type PolygonRing,
+} from "./shared/geometry/evenOddFill";
 
 // v0.10.4 I2.1 · Douglas-Peucker LOD: 仅在 polygon 不可编辑 / 未选中时启用；
 // 简化阈值 ≈ 1 屏幕像素，避免视觉差异。
@@ -30,7 +36,11 @@ const LOD_VERTEX_THRESHOLD = 60; // ≤60 顶点不简化（O(n²) 渲染开销�
 const VERTEX_CULL_THRESHOLD = 60;
 const DEFAULT_FADED_OPACITY = 0.35;
 
-function shapeLabelText(b: Annotation, isAi: boolean, content: AnnotationVisualConfig["labelContent"]): string {
+function shapeLabelText(
+  b: Annotation,
+  isAi: boolean,
+  content: AnnotationVisualConfig["labelContent"],
+): string {
   const predictionSource = (b as Partial<AiBox>).predictionSource ?? null;
   return buildLabelText(
     {
@@ -53,14 +63,14 @@ export interface ViewportBBox {
 }
 
 const HANDLE_DIRECTIONS: { dir: ResizeDirection; cx: number; cy: number; cursor: string }[] = [
-  { dir: "nw", cx: 0,   cy: 0,   cursor: "nwse-resize" },
-  { dir: "n",  cx: 0.5, cy: 0,   cursor: "ns-resize" },
-  { dir: "ne", cx: 1,   cy: 0,   cursor: "nesw-resize" },
-  { dir: "e",  cx: 1,   cy: 0.5, cursor: "ew-resize" },
-  { dir: "se", cx: 1,   cy: 1,   cursor: "nwse-resize" },
-  { dir: "s",  cx: 0.5, cy: 1,   cursor: "ns-resize" },
-  { dir: "sw", cx: 0,   cy: 1,   cursor: "nesw-resize" },
-  { dir: "w",  cx: 0,   cy: 0.5, cursor: "ew-resize" },
+  { dir: "nw", cx: 0, cy: 0, cursor: "nwse-resize" },
+  { dir: "n", cx: 0.5, cy: 0, cursor: "ns-resize" },
+  { dir: "ne", cx: 1, cy: 0, cursor: "nesw-resize" },
+  { dir: "e", cx: 1, cy: 0.5, cursor: "ew-resize" },
+  { dir: "se", cx: 1, cy: 1, cursor: "nwse-resize" },
+  { dir: "s", cx: 0.5, cy: 1, cursor: "ns-resize" },
+  { dir: "sw", cx: 0, cy: 1, cursor: "nesw-resize" },
+  { dir: "w", cx: 0, cy: 0.5, cursor: "ew-resize" },
 ];
 interface KonvaBoxProps {
   b: Annotation;
@@ -87,10 +97,18 @@ interface KonvaBoxProps {
 export const SIBLING_HIGHLIGHT_COLOR = "#38bdf8"; // sky-400
 
 export function KonvaBox({
-  b, annotationId, isAi, selected, editable, faded, occluded = false,
+  b,
+  annotationId,
+  isAi,
+  selected,
+  editable,
+  faded,
+  occluded = false,
   fadedOpacity = DEFAULT_FADED_OPACITY,
   visual,
-  imgW, imgH, scale,
+  imgW,
+  imgH,
+  scale,
   onClick,
   onMoveStart,
   onResizeStart,
@@ -118,7 +136,10 @@ export function KonvaBox({
         shadowColor={color}
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
-        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onClick(e);
+        }}
         onMouseDown={(e) => {
           if (!isUserSelected || e.evt.button !== 0 || !onMoveStart) return;
           e.cancelBubble = true;
@@ -134,8 +155,12 @@ export function KonvaBox({
         }}
       />
 
-      {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
-        <Label x={b.x * imgW} y={b.y * imgH - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) && !(isAi && faded) && (
+        <Label
+          x={b.x * imgW}
+          y={b.y * imgH - labelOffsetWorld(visual.labelFontSize, scale)}
+          listening={false}
+        >
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}
@@ -147,31 +172,33 @@ export function KonvaBox({
         </Label>
       )}
 
-      {isUserSelected && onResizeStart && HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
-        <Rect
-          key={dir}
-          x={(b.x + b.w * cx) * imgW - handleSize / 2}
-          y={(b.y + b.h * cy) * imgH - handleSize / 2}
-          width={handleSize}
-          height={handleSize}
-          fill="white"
-          stroke={color}
-          strokeWidth={1.5 / scale}
-          cornerRadius={2 / scale}
-          onMouseDown={(e) => {
-            e.cancelBubble = true;
-            onResizeStart(dir, e);
-          }}
-          onMouseEnter={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = cursor;
-          }}
-          onMouseLeave={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = "";
-          }}
-        />
-      ))}
+      {isUserSelected &&
+        onResizeStart &&
+        HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
+          <Rect
+            key={dir}
+            x={(b.x + b.w * cx) * imgW - handleSize / 2}
+            y={(b.y + b.h * cy) * imgH - handleSize / 2}
+            width={handleSize}
+            height={handleSize}
+            fill="white"
+            stroke={color}
+            strokeWidth={1.5 / scale}
+            cornerRadius={2 / scale}
+            onMouseDown={(e) => {
+              e.cancelBubble = true;
+              onResizeStart(dir, e);
+            }}
+            onMouseEnter={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = cursor;
+            }}
+            onMouseLeave={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        ))}
     </Group>
   );
 }
@@ -199,10 +226,30 @@ interface KonvaPolygonProps {
   onBodyMouseDown?: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
   /** v0.10.4 I2.3 · 归一化 [0,1] viewport bbox。提供后启用顶点视口粗筛。 */
   viewportBBox?: ViewportBBox;
+  /**
+   * v0.23.5 WS-E · 单 polygon 的内环 (holes), 仅参与 even-odd 填充, 不参与顶点编辑。
+   * 与 b.holes 二选一透传; 显式 prop 优先 (供 ImageStage override 几何时使用)。
+   */
+  holes?: Pt[][];
+  /**
+   * v0.23.5 WS-E · 多连通域: 每个 {points, holes?} 是一个独立外环。提供后外环用
+   * even-odd 合并填充 (分量按定义互不相交, evenodd 不会 XOR 抵消)。与 b.multiPolygon
+   * 二选一; 显式 prop 优先。
+   */
+  multiPolygon?: PolygonRing[];
 }
 
 export function KonvaPolygon({
-  b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  b,
+  annotationId,
+  isAi,
+  selected,
+  faded,
+  occluded = false,
+  imgW,
+  imgH,
+  scale,
+  onClick,
   fadedOpacity = DEFAULT_FADED_OPACITY,
   visual,
   points,
@@ -212,6 +259,8 @@ export function KonvaPolygon({
   onEdgeMouseDown,
   onBodyMouseDown,
   viewportBBox,
+  holes,
+  multiPolygon,
 }: KonvaPolygonProps) {
   const color = classColorForCanvas(b.cls);
   const sw = screenToWorld(strokeWidthFor(selected, visual), scale);
@@ -242,11 +291,49 @@ export function KonvaPolygon({
     return new Set(idx.verticesInBBox(viewportBBox));
   }, [editable, viewportBBox, ps]);
 
+  // v0.23.5 WS-E · holes / multi_polygon even-odd 渲染 (ADR-0052 D5)。
+  // 显式 prop 优先, 缺省回落 b.holes / b.multiPolygon (transforms.geometryToShape 透传)。
+  // 仅当存在非空 holes 或 multi_polygon 时走 sceneFunc 分支; 否则保留单环 <Line> 快路径
+  // (常见 bbox/单 polygon 不回归 LOD simplify / vertex cull 行为)。
+  const holesArr = holes ?? b.holes;
+  const multiArr = multiPolygon ?? b.multiPolygon;
+  const hasHolesOrMulti = !!(
+    (multiArr && multiArr.length > 0) ||
+    (holesArr && holesArr.some((ring) => ring.length >= 2))
+  );
+  // 收集 even-odd 子路径列表 (纯函数, 便于单测); 仅在分支启用时计算。
+  const fillRings = useMemo<PolygonRing[]>(() => {
+    if (!hasHolesOrMulti) return [];
+    return collectOuterRings({
+      primaryPoints: ps,
+      holes: holesArr,
+      multiPolygon: multiArr,
+    });
+  }, [hasHolesOrMulti, ps, holesArr, multiArr]);
+  // sceneFunc 闭包依赖 imgW/imgH + rings; 用 useMemo 稳定引用减少 Konva 重绘。
+  const drawEvenOdd = useMemo(
+    () => (ctx: Konva.Context, shape: Konva.Shape) => {
+      if (fillRings.length === 0) {
+        // 无可画 → 清空 path, 让 Konva 退化为不填充 (与 Line 空 points 行为一致)。
+        ctx.beginPath();
+        return;
+      }
+      // 填充与描边都覆盖外环 + holes；hole 边缘是真实边界，不能在描边阶段剥离。
+      drawEvenOddShape(ctx, shape, fillRings, imgW, imgH);
+    },
+    [fillRings, imgW, imgH],
+  );
+
   return (
     <Group id={annotationId}>
       <Line
         points={flat}
         closed
+        // v0.23.5 WS-E · 有 holes/multi 时走 sceneFunc + fillRule=evenodd;
+        // Konva Context.fill(...args) 直接转发到原生 canvas.fill, fillRule 透传无损。
+        // 无 holes/multi 时 sceneFunc=undefined, Konva 用内置 Line._sceneFunc (快路径)。
+        sceneFunc={hasHolesOrMulti ? drawEvenOdd : undefined}
+        fillRule={hasHolesOrMulti ? "evenodd" : undefined}
         stroke={strokeColor}
         strokeWidth={sw}
         dash={isAi || selfIntersect || occluded ? [4 / scale, 3 / scale] : undefined}
@@ -256,7 +343,10 @@ export function KonvaPolygon({
         shadowColor={selfIntersect ? "oklch(0.55 0.22 25)" : color}
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
-        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onClick(e);
+        }}
         onMouseDown={(e) => {
           if (!editable || !onBodyMouseDown || e.evt.button !== 0) return;
           e.cancelBubble = true;
@@ -271,79 +361,93 @@ export function KonvaPolygon({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {shouldShowLabel(selected, visual.labelVisibility) &&flat.length >= 2 && !(isAi && faded) && (
-        <Label x={flat[0]} y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
-          <Tag fill={strokeColor} cornerRadius={3 / scale} />
-          <Text
-            text={labelText + (selfIntersect ? " ⚠" : "")}
-            fill="white"
-            fontSize={labelFontSize}
-            padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily={BOX_LABEL_FONT_FAMILY}
-          />
-        </Label>
-      )}
+      {shouldShowLabel(selected, visual.labelVisibility) &&
+        flat.length >= 2 &&
+        !(isAi && faded) && (
+          <Label
+            x={flat[0]}
+            y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)}
+            listening={false}
+          >
+            <Tag fill={strokeColor} cornerRadius={3 / scale} />
+            <Text
+              text={labelText + (selfIntersect ? " ⚠" : "")}
+              fill="white"
+              fontSize={labelFontSize}
+              padding={BOX_LABEL_PAD_PX / scale}
+              fontFamily={BOX_LABEL_FONT_FAMILY}
+            />
+          </Label>
+        )}
 
-      {editable && onEdgeMouseDown && ps.map((_, i) => {
-        // I2.3 · 边视口粗筛：边的两个端点都不在视口内 → 跳过（边完全在屏外）。
-        if (visibleVertexIdx && !visibleVertexIdx.has(i) && !visibleVertexIdx.has((i + 1) % ps.length)) {
-          return null;
-        }
-        const a = ps[i];
-        const c = ps[(i + 1) % ps.length];
-        return (
-          <Line
-            key={`edge-${i}`}
-            points={[a[0] * imgW, a[1] * imgH, c[0] * imgW, c[1] * imgH]}
-            stroke="rgba(0,0,0,0)"
-            strokeWidth={10 / scale}
-            hitStrokeWidth={10 / scale}
-            onMouseDown={(e) => {
-              if (!e.evt.altKey) return;
-              e.cancelBubble = true;
-              onEdgeMouseDown(i, e);
-            }}
-            onMouseEnter={(e) => {
-              if (!e.evt.altKey) return;
-              const stage = e.target.getStage();
-              if (stage) stage.container().style.cursor = "copy";
-            }}
-            onMouseLeave={(e) => {
-              const stage = e.target.getStage();
-              if (stage) stage.container().style.cursor = "";
-            }}
-          />
-        );
-      })}
+      {editable &&
+        onEdgeMouseDown &&
+        ps.map((_, i) => {
+          // I2.3 · 边视口粗筛：边的两个端点都不在视口内 → 跳过（边完全在屏外）。
+          if (
+            visibleVertexIdx &&
+            !visibleVertexIdx.has(i) &&
+            !visibleVertexIdx.has((i + 1) % ps.length)
+          ) {
+            return null;
+          }
+          const a = ps[i];
+          const c = ps[(i + 1) % ps.length];
+          return (
+            <Line
+              key={`edge-${i}`}
+              points={[a[0] * imgW, a[1] * imgH, c[0] * imgW, c[1] * imgH]}
+              stroke="rgba(0,0,0,0)"
+              strokeWidth={10 / scale}
+              hitStrokeWidth={10 / scale}
+              onMouseDown={(e) => {
+                if (!e.evt.altKey) return;
+                e.cancelBubble = true;
+                onEdgeMouseDown(i, e);
+              }}
+              onMouseEnter={(e) => {
+                if (!e.evt.altKey) return;
+                const stage = e.target.getStage();
+                if (stage) stage.container().style.cursor = "copy";
+              }}
+              onMouseLeave={(e) => {
+                const stage = e.target.getStage();
+                if (stage) stage.container().style.cursor = "";
+              }}
+            />
+          );
+        })}
 
-      {editable && onVertexMouseDown && ps.map(([px, py], i) => {
-        // I2.3 · 顶点视口粗筛：屏外顶点不渲染 Circle 手柄。
-        if (visibleVertexIdx && !visibleVertexIdx.has(i)) return null;
-        return (
-        <Circle
-          key={`v-${i}`}
-          x={px * imgW}
-          y={py * imgH}
-          radius={6 / scale}
-          hitStrokeWidth={9 / scale}
-          fill="white"
-          stroke={color}
-          strokeWidth={1.5 / scale}
-          onMouseDown={(e) => {
-            e.cancelBubble = true;
-            onVertexMouseDown(i, e);
-          }}
-          onMouseEnter={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = e.evt.shiftKey ? "not-allowed" : "grab";
-          }}
-          onMouseLeave={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = "";
-          }}
-        />
-        );
-      })}
+      {editable &&
+        onVertexMouseDown &&
+        ps.map(([px, py], i) => {
+          // I2.3 · 顶点视口粗筛：屏外顶点不渲染 Circle 手柄。
+          if (visibleVertexIdx && !visibleVertexIdx.has(i)) return null;
+          return (
+            <Circle
+              key={`v-${i}`}
+              x={px * imgW}
+              y={py * imgH}
+              radius={6 / scale}
+              hitStrokeWidth={9 / scale}
+              fill="white"
+              stroke={color}
+              strokeWidth={1.5 / scale}
+              onMouseDown={(e) => {
+                e.cancelBubble = true;
+                onVertexMouseDown(i, e);
+              }}
+              onMouseEnter={(e) => {
+                const stage = e.target.getStage();
+                if (stage) stage.container().style.cursor = e.evt.shiftKey ? "not-allowed" : "grab";
+              }}
+              onMouseLeave={(e) => {
+                const stage = e.target.getStage();
+                if (stage) stage.container().style.cursor = "";
+              }}
+            />
+          );
+        })}
     </Group>
   );
 }
@@ -376,10 +480,20 @@ interface KonvaRotatedBoxProps {
 }
 
 export function KonvaRotatedBox({
-  b, annotationId, geometry, angle, isAi, selected, editable, faded, occluded = false,
+  b,
+  annotationId,
+  geometry,
+  angle,
+  isAi,
+  selected,
+  editable,
+  faded,
+  occluded = false,
   fadedOpacity = DEFAULT_FADED_OPACITY,
   visual,
-  imgW, imgH, scale,
+  imgW,
+  imgH,
+  scale,
   onClick,
   onRotateStart,
   onResizeStart,
@@ -419,10 +533,13 @@ export function KonvaRotatedBox({
         shadowColor={color}
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
-        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onClick(e);
+        }}
       />
 
-      {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
+      {shouldShowLabel(selected, visual.labelVisibility) && !(isAi && faded) && (
         <Label x={-hw} y={-hh - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
@@ -435,32 +552,34 @@ export function KonvaRotatedBox({
         </Label>
       )}
 
-      {isUserSelected && onResizeStart && HANDLE_DIRECTIONS.map(({ dir, cx: hx, cy: hy, cursor }) => (
-        <Rect
-          key={dir}
-          x={-hw + wPx * hx - handleSize / 2}
-          y={-hh + hPx * hy - handleSize / 2}
-          width={handleSize}
-          height={handleSize}
-          fill="white"
-          stroke={color}
-          strokeWidth={1.5 / scale}
-          cornerRadius={2 / scale}
-          onMouseDown={(e) => {
-            if (e.evt.button !== 0) return;
-            e.cancelBubble = true;
-            onResizeStart(dir, e);
-          }}
-          onMouseEnter={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = cursor;
-          }}
-          onMouseLeave={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = "";
-          }}
-        />
-      ))}
+      {isUserSelected &&
+        onResizeStart &&
+        HANDLE_DIRECTIONS.map(({ dir, cx: hx, cy: hy, cursor }) => (
+          <Rect
+            key={dir}
+            x={-hw + wPx * hx - handleSize / 2}
+            y={-hh + hPx * hy - handleSize / 2}
+            width={handleSize}
+            height={handleSize}
+            fill="white"
+            stroke={color}
+            strokeWidth={1.5 / scale}
+            cornerRadius={2 / scale}
+            onMouseDown={(e) => {
+              if (e.evt.button !== 0) return;
+              e.cancelBubble = true;
+              onResizeStart(dir, e);
+            }}
+            onMouseEnter={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = cursor;
+            }}
+            onMouseLeave={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        ))}
 
       {isUserSelected && onRotateStart && (
         <>
@@ -526,7 +645,16 @@ interface KonvaPolylineProps {
  * 顶点拖拽 / Alt 边插点 / Shift 删点的交互与 KonvaPolygon 一致，但边集合不环绕 (0..n-2)。
  */
 export function KonvaPolyline({
-  b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  b,
+  annotationId,
+  isAi,
+  selected,
+  faded,
+  occluded = false,
+  imgW,
+  imgH,
+  scale,
+  onClick,
   fadedOpacity = DEFAULT_FADED_OPACITY,
   visual,
   points,
@@ -559,7 +687,10 @@ export function KonvaPolyline({
         shadowColor={color}
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
-        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onClick(e);
+        }}
         onMouseDown={(e) => {
           if (!editable || !onBodyMouseDown || e.evt.button !== 0) return;
           e.cancelBubble = true;
@@ -574,78 +705,94 @@ export function KonvaPolyline({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {shouldShowLabel(selected, visual.labelVisibility) &&flat.length >= 2 && !(isAi && faded) && (
-        <Label x={flat[0]} y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
-          <Tag fill={color} cornerRadius={3 / scale} />
-          <Text
-            text={labelText}
-            fill="white"
-            fontSize={labelFontSize}
-            padding={BOX_LABEL_PAD_PX / scale}
-            fontFamily={BOX_LABEL_FONT_FAMILY}
-          />
-        </Label>
-      )}
+      {shouldShowLabel(selected, visual.labelVisibility) &&
+        flat.length >= 2 &&
+        !(isAi && faded) && (
+          <Label
+            x={flat[0]}
+            y={flat[1] - labelOffsetWorld(visual.labelFontSize, scale)}
+            listening={false}
+          >
+            <Tag fill={color} cornerRadius={3 / scale} />
+            <Text
+              text={labelText}
+              fill="white"
+              fontSize={labelFontSize}
+              padding={BOX_LABEL_PAD_PX / scale}
+              fontFamily={BOX_LABEL_FONT_FAMILY}
+            />
+          </Label>
+        )}
 
       {/* 折线边：0..n-2（不环绕）。Alt+点击在该段插入顶点。 */}
-      {editable && onEdgeMouseDown && ps.slice(0, -1).map((a, i) => {
-        const c = ps[i + 1];
-        return (
-          <Line
-            key={`edge-${i}`}
-            points={[a[0] * imgW, a[1] * imgH, c[0] * imgW, c[1] * imgH]}
-            stroke="rgba(0,0,0,0)"
-            strokeWidth={10 / scale}
-            hitStrokeWidth={10 / scale}
+      {editable &&
+        onEdgeMouseDown &&
+        ps.slice(0, -1).map((a, i) => {
+          const c = ps[i + 1];
+          return (
+            <Line
+              key={`edge-${i}`}
+              points={[a[0] * imgW, a[1] * imgH, c[0] * imgW, c[1] * imgH]}
+              stroke="rgba(0,0,0,0)"
+              strokeWidth={10 / scale}
+              hitStrokeWidth={10 / scale}
+              onMouseDown={(e) => {
+                if (!e.evt.altKey) return;
+                e.cancelBubble = true;
+                onEdgeMouseDown(i, e);
+              }}
+              onMouseEnter={(e) => {
+                if (!e.evt.altKey) return;
+                const stage = e.target.getStage();
+                if (stage) stage.container().style.cursor = "copy";
+              }}
+              onMouseLeave={(e) => {
+                const stage = e.target.getStage();
+                if (stage) stage.container().style.cursor = "";
+              }}
+            />
+          );
+        })}
+
+      {editable &&
+        onVertexMouseDown &&
+        ps.map(([px, py], i) => (
+          <Circle
+            key={`v-${i}`}
+            x={px * imgW}
+            y={py * imgH}
+            radius={6 / scale}
+            hitStrokeWidth={9 / scale}
+            fill="white"
+            stroke={color}
+            strokeWidth={1.5 / scale}
             onMouseDown={(e) => {
-              if (!e.evt.altKey) return;
               e.cancelBubble = true;
-              onEdgeMouseDown(i, e);
+              onVertexMouseDown(i, e);
             }}
             onMouseEnter={(e) => {
-              if (!e.evt.altKey) return;
               const stage = e.target.getStage();
-              if (stage) stage.container().style.cursor = "copy";
+              if (stage) stage.container().style.cursor = e.evt.shiftKey ? "not-allowed" : "grab";
             }}
             onMouseLeave={(e) => {
               const stage = e.target.getStage();
               if (stage) stage.container().style.cursor = "";
             }}
           />
-        );
-      })}
-
-      {editable && onVertexMouseDown && ps.map(([px, py], i) => (
-        <Circle
-          key={`v-${i}`}
-          x={px * imgW}
-          y={py * imgH}
-          radius={6 / scale}
-          hitStrokeWidth={9 / scale}
-          fill="white"
-          stroke={color}
-          strokeWidth={1.5 / scale}
-          onMouseDown={(e) => {
-            e.cancelBubble = true;
-            onVertexMouseDown(i, e);
-          }}
-          onMouseEnter={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = e.evt.shiftKey ? "not-allowed" : "grab";
-          }}
-          onMouseLeave={(e) => {
-            const stage = e.target.getStage();
-            if (stage) stage.container().style.cursor = "";
-          }}
-        />
-      ))}
+        ))}
     </Group>
   );
 }
 
 const KEYPOINT_PALETTE = [
-  "#f59e0b", "#10b981", "#ec4899", "#8b5cf6",
-  "#06b6d4", "#ef4444", "#84cc16", "#6366f1",
+  "#f59e0b",
+  "#10b981",
+  "#ec4899",
+  "#8b5cf6",
+  "#06b6d4",
+  "#ef4444",
+  "#84cc16",
+  "#6366f1",
 ];
 
 export function keypointColorByIndex(idx: number, schema?: KeypointSchema | null): string {
@@ -682,9 +829,21 @@ interface KonvaKeypointProps {
  *   - 节点标签 = schema.nodes[i].name（有 sublabel 时显示 name·sublabel）；选中态加阴影 + 类别标签。
  */
 export function KonvaKeypoint({
-  b, annotationId, isAi, selected, faded, fadedOpacity = DEFAULT_FADED_OPACITY,
-  visual, imgW, imgH, scale, schema,
-  onClick, editable = false, onNodeMouseDown, onToggleVisibility,
+  b,
+  annotationId,
+  isAi,
+  selected,
+  faded,
+  fadedOpacity = DEFAULT_FADED_OPACITY,
+  visual,
+  imgW,
+  imgH,
+  scale,
+  schema,
+  onClick,
+  editable = false,
+  onNodeMouseDown,
+  onToggleVisibility,
 }: KonvaKeypointProps) {
   const color = classColorForCanvas(b.cls);
   const kps: Keypoint[] = b.keypoints ?? [];
@@ -766,7 +925,8 @@ export function KonvaKeypoint({
             }}
             onMouseEnter={(e) => {
               const stage = e.target.getStage();
-              if (stage && editable) stage.container().style.cursor = e.evt.altKey ? "pointer" : "grab";
+              if (stage && editable)
+                stage.container().style.cursor = e.evt.altKey ? "pointer" : "grab";
             }}
             onMouseLeave={(e) => {
               const stage = e.target.getStage();
@@ -777,29 +937,35 @@ export function KonvaKeypoint({
       })}
 
       {/* 节点名标签 (选中或编辑态时显示, 避免拥挤) */}
-      {(selected || editable) && schema?.nodes && kps.map((p, i) => {
-        if (p.v === 0) return null;
-        const node = schema.nodes[i];
-        const name = node?.name;
-        if (!name) return null;
-        const nodeLabel = node?.sublabel ? `${name}·${node.sublabel}` : name;
-        return (
-          <Text
-            key={`kp-label-${i}`}
-            x={p.x * imgW + r + 2 / scale}
-            y={p.y * imgH - labelFontSize / 2}
-            text={nodeLabel}
-            fill={keypointColorByIndex(i, schema)}
-            fontSize={(visual.labelFontSize - 1) / scale}
-            fontFamily={BOX_LABEL_FONT_FAMILY}
-            listening={false}
-          />
-        );
-      })}
+      {(selected || editable) &&
+        schema?.nodes &&
+        kps.map((p, i) => {
+          if (p.v === 0) return null;
+          const node = schema.nodes[i];
+          const name = node?.name;
+          if (!name) return null;
+          const nodeLabel = node?.sublabel ? `${name}·${node.sublabel}` : name;
+          return (
+            <Text
+              key={`kp-label-${i}`}
+              x={p.x * imgW + r + 2 / scale}
+              y={p.y * imgH - labelFontSize / 2}
+              text={nodeLabel}
+              fill={keypointColorByIndex(i, schema)}
+              fontSize={(visual.labelFontSize - 1) / scale}
+              fontFamily={BOX_LABEL_FONT_FAMILY}
+              listening={false}
+            />
+          );
+        })}
 
       {/* 类别标签 */}
-      {shouldShowLabel(selected, visual.labelVisibility) &&!(isAi && faded) && (
-        <Label x={anchorX} y={anchorY - labelOffsetWorld(visual.labelFontSize, scale)} listening={false}>
+      {shouldShowLabel(selected, visual.labelVisibility) && !(isAi && faded) && (
+        <Label
+          x={anchorX}
+          y={anchorY - labelOffsetWorld(visual.labelFontSize, scale)}
+          listening={false}
+        >
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
             text={labelText}

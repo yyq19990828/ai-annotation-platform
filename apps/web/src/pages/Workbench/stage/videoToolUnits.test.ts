@@ -10,6 +10,8 @@ describe("videoToolUnit", () => {
     expect(videoToolUnit("polygon-track")).toBe("region");
     expect(videoToolUnit("polyline")).toBe("polyline");
     expect(videoToolUnit("polyline-track")).toBe("polyline");
+    expect(videoToolUnit("mask")).toBe("region");
+    expect(videoToolUnit("mask-track")).toBe("region");
     expect(videoToolUnit("select")).toBeNull();
   });
 });
@@ -33,6 +35,8 @@ describe("videoToolEnabled", () => {
     };
     expect(videoToolEnabled("polygon", tb)).toBe(false); // 单帧关
     expect(videoToolEnabled("polygon-track", tb)).toBe(true); // 轨迹开
+    expect(videoToolEnabled("mask", tb)).toBe(false); // Mask 是当前帧工具
+    expect(videoToolEnabled("mask-track", tb)).toBe(true); // Mask 轨迹走轨迹变体
   });
 
   it("video_modes 为 null → 单帧/轨迹均可用", () => {

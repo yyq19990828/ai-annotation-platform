@@ -57,9 +57,8 @@ export function WorkbenchPet({
   onExpand,
 }: WorkbenchPetProps) {
   const [poke, setPoke] = useState(0);
-  const [uncontrolledPosition, setUncontrolledPosition] = useState<FloatingPanelPoint>(
-    readWorkbenchPetPosition,
-  );
+  const [uncontrolledPosition, setUncontrolledPosition] =
+    useState<FloatingPanelPoint>(readWorkbenchPetPosition);
   const movedRef = useRef(false);
   const startRef = useRef<FloatingPanelPoint | null>(null);
   const { mood, message } = usePetState({ context, poke });
@@ -67,18 +66,21 @@ export function WorkbenchPet({
   const position = controlledPosition ?? uncontrolledPosition;
   const canExpand = context.selection.count > 0 && context.selection.collapsed;
 
-  const onChange = useCallback((pos: FloatingPanelPoint) => {
-    const start = startRef.current;
-    if (
-      start &&
-      (Math.abs(pos.x - start.x) > DRAG_THRESHOLD || Math.abs(pos.y - start.y) > DRAG_THRESHOLD)
-    ) {
-      movedRef.current = true;
-    }
-    if (!controlledPosition) setUncontrolledPosition(pos);
-    writeWorkbenchPetPosition(pos);
-    onPositionChange?.(pos);
-  }, [controlledPosition, onPositionChange]);
+  const onChange = useCallback(
+    (pos: FloatingPanelPoint) => {
+      const start = startRef.current;
+      if (
+        start &&
+        (Math.abs(pos.x - start.x) > DRAG_THRESHOLD || Math.abs(pos.y - start.y) > DRAG_THRESHOLD)
+      ) {
+        movedRef.current = true;
+      }
+      if (!controlledPosition) setUncontrolledPosition(pos);
+      writeWorkbenchPetPosition(pos);
+      onPositionChange?.(pos);
+    },
+    [controlledPosition, onPositionChange],
+  );
 
   const drag = useDragMove({
     position,
@@ -103,7 +105,9 @@ export function WorkbenchPet({
       data-floating-panel
       data-pet-mood={mood}
       tabIndex={0}
-      aria-label={canExpand ? `展开选中信息卡:${context.selection.title ?? ""}(可拖动)` : "工作台桌宠(可拖动)"}
+      aria-label={
+        canExpand ? `展开选中信息卡:${context.selection.title ?? ""}(可拖动)` : "工作台桌宠(可拖动)"
+      }
       className={cn(
         "fixed left-[var(--pet-x)] top-[var(--pet-y)] z-popover-elevated flex cursor-grab touch-none select-none flex-col items-center gap-1",
         drag.isDragging && "cursor-grabbing",
@@ -126,7 +130,8 @@ export function WorkbenchPet({
           className={cn(
             "pointer-events-none max-w-[200px] border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md",
             canExpand ? "rounded-md border-brand" : "rounded-lg border-border",
-            mood === "warning" && "border-status-caution bg-status-caution-soft text-status-caution",
+            mood === "warning" &&
+              "border-status-caution bg-status-caution-soft text-status-caution",
             mood === "offline" && "border-status-danger bg-status-danger-soft text-status-danger",
             mood === "aiRunning" && "border-brand bg-status-info-soft text-status-info",
             mood === "candidateReady" && "border-brand bg-status-info-soft text-status-info",
@@ -139,9 +144,7 @@ export function WorkbenchPet({
           {canExpand && <span className="text-muted-foreground">▸ 点我展开</span>}
         </div>
       )}
-      <span className={styles.bob}>
-        {skin.renderSprite({ mood })}
-      </span>
+      <span className={styles.bob}>{skin.renderSprite({ mood })}</span>
     </div>
   );
 }

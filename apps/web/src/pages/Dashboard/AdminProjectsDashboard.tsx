@@ -29,10 +29,10 @@ const DATA_TYPE_ICONS: Record<string, IconName> = {
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
-  "全部": undefined,
-  "进行中": "in_progress",
-  "待审核": "pending_review",
-  "已完成": "completed",
+  全部: undefined,
+  进行中: "in_progress",
+  待审核: "pending_review",
+  已完成: "completed",
 };
 // 按媒体维度 data_type 放行工作台,图像子类型(det/ocr/seg)同走图像栈,见 DashboardPage。
 const WORKBENCH_DATA_TYPES = new Set(["image", "video", "lidar"]);
@@ -55,11 +55,9 @@ function AdminProjectRow({
 }) {
   const total = p.total_tasks || 1;
   const pct = Math.round((p.completed_tasks / total) * 100);
-  const aiPct = p.ai_enabled
-    ? Math.round(((p.ai_completed_tasks ?? 0) / total) * 100)
-    : 0;
+  const aiPct = p.ai_enabled ? Math.round(((p.ai_completed_tasks ?? 0) / total) * 100) : 0;
   const startedPct = Math.round(
-    ((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total * 100,
+    (((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total) * 100,
   );
   const due = p.due_date ?? "—";
   const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "—";
@@ -114,17 +112,21 @@ function AdminProjectRow({
         {(p.batch_summary?.total ?? 0) > 0 && (
           <div className="mt-[3px] text-xs text-muted-foreground">
             {p.batch_summary?.total} 个批次
-            {(p.batch_summary?.assigned ?? 0) > 0 && (
-              <> · {p.batch_summary?.assigned} 已分派</>
-            )}
+            {(p.batch_summary?.assigned ?? 0) > 0 && <> · {p.batch_summary?.assigned} 已分派</>}
             {(p.batch_summary?.in_review ?? 0) > 0 && (
-              <> · <span className="text-status-caution">{p.batch_summary?.in_review} 审核中</span></>
+              <>
+                {" "}
+                · <span className="text-status-caution">{p.batch_summary?.in_review} 审核中</span>
+              </>
             )}
           </div>
         )}
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSettings(p, "batches"); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSettings(p, "batches");
+          }}
           className={BATCH_LINK_CLASS}
           title="跳转到项目设置 → 批次管理"
         >
@@ -142,18 +144,34 @@ function AdminProjectRow({
         )}
       </td>
       <td className={TD_CLASS}>
-        {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-        {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-        {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
+        {p.status === "in_progress" && (
+          <Badge variant="accent" dot>
+            进行中
+          </Badge>
+        )}
+        {p.status === "completed" && (
+          <Badge variant="success" dot>
+            已完成
+          </Badge>
+        )}
+        {p.status === "pending_review" && (
+          <Badge variant="warning" dot>
+            待审核
+          </Badge>
+        )}
       </td>
       <td className={TD_CLASS}>
         <div className="whitespace-nowrap text-xs">{due}</div>
         <div className="text-xs text-muted-foreground">更新 {updated}</div>
       </td>
-      <td className={`${TD_CLASS} whitespace-nowrap pr-4 text-right`} onClick={(e) => e.stopPropagation()}>
+      <td
+        className={`${TD_CLASS} whitespace-nowrap pr-4 text-right`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-end gap-1">
           <Button size="sm" variant="ghost" onClick={() => onSettings(p)}>
-            <Icon name="settings" size={12} />设置
+            <Icon name="settings" size={12} />
+            设置
           </Button>
           <Button size="sm" onClick={() => onOpen(p)}>
             打开 <Icon name="chevRight" size={11} />
@@ -227,7 +245,10 @@ export function AdminProjectsDashboard() {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `${projectDisplayType(p)} 的标注界面尚未实现` });
+      pushToast({
+        msg: `项目 "${p.name}" 已打开`,
+        sub: `${projectDisplayType(p)} 的标注界面尚未实现`,
+      });
     }
   };
 
@@ -236,11 +257,14 @@ export function AdminProjectsDashboard() {
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">管理平台全部项目、负责人、批次分派与导出入口</p>
+          <p className="text-sm text-muted-foreground">
+            管理平台全部项目、负责人、批次分派与导出入口
+          </p>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setImportOpen(true)}>
-            <Icon name="upload" size={13} />导入数据集
+            <Icon name="upload" size={13} />
+            导入数据集
           </Button>
           <ImportDatasetWizard
             open={importOpen}
@@ -248,7 +272,8 @@ export function AdminProjectsDashboard() {
             onUploaded={() => navigate("/datasets")}
           />
           <Button variant="primary" onClick={openWizard} data-testid="new-project-btn">
-            <Icon name="plus" size={13} />新建项目
+            <Icon name="plus" size={13} />
+            新建项目
           </Button>
           <CreateProjectWizard
             open={wizardOpen}
@@ -306,7 +331,8 @@ export function AdminProjectsDashboard() {
           <div className="flex gap-2 max-[900px]:flex-wrap">
             <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
             <Button onClick={() => setFilterOpen(true)}>
-              <Icon name="filter" size={13} />筛选
+              <Icon name="filter" size={13} />
+              筛选
               {advancedActiveCount > 0 && (
                 <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-1.5 text-2xs leading-none text-brand">
                   {advancedActiveCount}
@@ -339,22 +365,34 @@ export function AdminProjectsDashboard() {
               <thead>
                 <tr>
                   {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (
-                    <th key={i} className={TH_CLASS}>{h}</th>
+                    <th key={i} className={TH_CLASS}>
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={7} className="p-10 text-center text-muted-foreground">加载中...</td>
+                    <td colSpan={7} className="p-10 text-center text-muted-foreground">
+                      加载中...
+                    </td>
                   </tr>
                 )}
-                {!isLoading && projects.map((p) => (
-                  <AdminProjectRow key={p.id} p={p} onOpen={onOpenProject} onSettings={onSettings} />
-                ))}
+                {!isLoading &&
+                  projects.map((p) => (
+                    <AdminProjectRow
+                      key={p.id}
+                      p={p}
+                      onOpen={onOpenProject}
+                      onSettings={onSettings}
+                    />
+                  ))}
                 {!isLoading && projects.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-10 text-center text-muted-foreground">没有匹配的项目</td>
+                    <td colSpan={7} className="p-10 text-center text-muted-foreground">
+                      没有匹配的项目
+                    </td>
                   </tr>
                 )}
               </tbody>

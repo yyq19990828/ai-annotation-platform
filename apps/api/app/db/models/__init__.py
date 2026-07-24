@@ -31,7 +31,23 @@ from app.db.models.gpu_backend_fence import GPUBackendFence
 from app.db.models.gpu_backend_membership import GPUBackendMembership
 from app.db.models.gpu_arbiter_rollout import GPUArbiterRollout
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
-from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+from app.db.models.video_tracker_job import (
+    VideoTrackerJob,
+    VideoTrackerJobKind,
+    VideoTrackerJobStatus,
+)
+from app.db.models.raster_mask_upload import RasterMaskUpload
+from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
+from app.db.models.annotation_operation import (
+    AnnotationLineageEdge,
+    AnnotationOperation,
+)
+from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
+from app.db.models.mask_annotation_revision import MaskAnnotationRevision
+from app.db.models.mask_qc import MaskQCIssue, MaskQCRun
+from app.db.models.mask_review_scope import MaskReviewScope
+from app.db.models.mask_repair_batch import MaskRepairBatch
+from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.video_chapter import VideoChapter
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -89,7 +105,19 @@ __all__ = [
     "PredictionMeta",
     "FailedPrediction",
     "VideoTrackerJob",
+    "VideoTrackerJobKind",
     "VideoTrackerJobStatus",
+    "RasterMaskUpload",
+    "AiMaskAcceptDecision",
+    "AnnotationOperation",
+    "AnnotationLineageEdge",
+    "AnnotationConversionPlan",
+    "MaskAnnotationRevision",
+    "MaskQCIssue",
+    "MaskQCRun",
+    "MaskReviewScope",
+    "MaskRepairBatch",
+    "MaskFormatImport",
     "VideoChapter",
     "AuditLog",
     "UserInvitation",

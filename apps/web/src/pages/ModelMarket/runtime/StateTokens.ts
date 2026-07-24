@@ -16,14 +16,7 @@ import type {
 } from "../runtimeTopology";
 
 /** Badge variants from @/components/ui/Badge (kept local to avoid private import). */
-type BadgeVariant =
-  | "default"
-  | "success"
-  | "warning"
-  | "danger"
-  | "accent"
-  | "ai"
-  | "outline";
+type BadgeVariant = "default" | "success" | "warning" | "danger" | "accent" | "ai" | "outline";
 
 /** Icon names that exist in ICON_MAP and fit a status chip. */
 type StatusIcon =

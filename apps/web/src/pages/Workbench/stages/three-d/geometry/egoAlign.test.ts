@@ -49,7 +49,10 @@ describe("alignPsrToFrame", () => {
   });
 
   it("任一帧缺 pose → null(调用方退回不对齐叠加)", () => {
-    const psr = { center: [1, 2, 3] as [number, number, number], rotation: [0, 0, 0] as [number, number, number] };
+    const psr = {
+      center: [1, 2, 3] as [number, number, number],
+      rotation: [0, 0, 0] as [number, number, number],
+    };
     expect(alignPsrToFrame(psr, undefined, pose(1, 0))).toBeNull();
     expect(alignPsrToFrame(psr, pose(0, 0), undefined)).toBeNull();
   });

@@ -52,18 +52,28 @@ type ClassPickerPopoverProps = ImagePositionProps | FixedPositionProps;
  * - 数字 1-9 / 字母 a-z 直选；Enter 默认 default；Esc 取消；点外部取消
  */
 export function ClassPickerPopover({
-  classes, recent, defaultClass, title = "选择类别", onPick, onCancel, attrEditing, ...positionProps
+  classes,
+  recent,
+  defaultClass,
+  title = "选择类别",
+  onPick,
+  onCancel,
+  attrEditing,
+  ...positionProps
 }: ClassPickerPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const resolvedDefaultClass = classes.includes(defaultClass) ? defaultClass : (classes[0] ?? "");
 
   const isFixed = positionProps.position === "fixed";
   // image 模式：框左下角（容器坐标）；fixed 模式：调用方传 viewport/client 坐标。
   const left = isFixed
     ? positionProps.anchor.left
-    : (positionProps.geom.x * positionProps.imgW * positionProps.vp.scale + positionProps.vp.tx);
+    : positionProps.geom.x * positionProps.imgW * positionProps.vp.scale + positionProps.vp.tx;
   const top = isFixed
     ? positionProps.anchor.top
-    : ((positionProps.geom.y + positionProps.geom.h) * positionProps.imgH * positionProps.vp.scale + positionProps.vp.ty + 6);
+    : (positionProps.geom.y + positionProps.geom.h) * positionProps.imgH * positionProps.vp.scale +
+      positionProps.vp.ty +
+      6;
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -94,36 +104,46 @@ export function ClassPickerPopover({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
-        (e.target instanceof HTMLInputElement
-          || e.target instanceof HTMLSelectElement
-          || e.target instanceof HTMLTextAreaElement)
-        && e.key !== "Escape" && e.key !== "Enter"
+        (e.target instanceof HTMLInputElement ||
+          e.target instanceof HTMLSelectElement ||
+          e.target instanceof HTMLTextAreaElement) &&
+        e.key !== "Escape" &&
+        e.key !== "Enter"
       ) {
         return; // 让搜索框 / 属性表单控件正常输入，不抢数字/字母快捷键
       }
-      if (e.key === "Escape") { e.preventDefault(); onCancel("escape"); return; }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel("escape");
+        return;
+      }
       if (e.key === "Enter") {
         e.preventDefault();
-        const fallback = defaultClass || classes[0];
-        if (fallback) onPick(fallback);
+        if (resolvedDefaultClass) onPick(resolvedDefaultClass);
         return;
       }
       // 数字 1-9
       if (e.key >= "1" && e.key <= "9") {
         const idx = parseInt(e.key, 10) - 1;
-        if (classes[idx]) { e.preventDefault(); onPick(classes[idx]); }
+        if (classes[idx]) {
+          e.preventDefault();
+          onPick(classes[idx]);
+        }
         return;
       }
       // 字母 a-z (映射到 classes[9..])
       if (/^[a-z]$/i.test(e.key)) {
         const letterIdx = e.key.toLowerCase().charCodeAt(0) - "a".charCodeAt(0);
         const idx = 9 + letterIdx;
-        if (classes[idx]) { e.preventDefault(); onPick(classes[idx]); }
+        if (classes[idx]) {
+          e.preventDefault();
+          onPick(classes[idx]);
+        }
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [classes, defaultClass, onPick, onCancel]);
+  }, [classes, resolvedDefaultClass, onPick, onCancel]);
 
   // click outside to cancel
   useEffect(() => {
@@ -151,22 +171,18 @@ export function ClassPickerPopover({
     >
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs font-semibold">{title}</div>
-        <div className="text-2xs text-muted-foreground">
-          Enter ↵ 默认 · Esc 取消
-        </div>
+        <div className="text-2xs text-muted-foreground">Enter ↵ 默认 · Esc 取消</div>
       </div>
       <ClassPalette
         classes={classes}
         recent={recent}
-        activeClass={defaultClass}
+        activeClass={resolvedDefaultClass}
         onPick={onPick}
         dense
         enableSearch={classes.length > 9}
       />
       {classes.length === 0 && (
-        <div className="p-2 text-center text-xs text-muted-foreground">
-          该项目尚未配置类别
-        </div>
+        <div className="p-2 text-center text-xs text-muted-foreground">该项目尚未配置类别</div>
       )}
       {classes.length > 0 && (
         <div className="mt-2 text-center text-2xs text-muted-foreground">
@@ -177,7 +193,7 @@ export function ClassPickerPopover({
         <div className="mt-1">
           <AttributeForm
             schema={attrEditing.schema}
-            className={defaultClass}
+            className={resolvedDefaultClass}
             attributes={attrEditing.attributes}
             onChange={attrEditing.onChange}
             readOnly={attrEditing.readOnly}

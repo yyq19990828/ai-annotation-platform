@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "v0.8.8 · 顶层概览：HTTP / ML Backend / Celery 队列 + Worker 健康。基于 apps/api/app/observability/metrics.py 暴露的 4 组 metrics。",
+  "description": "顶层概览：HTTP / ML Backend / Celery / Raster Mask 内容与 Mask AI 健康。",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -131,6 +131,144 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "title": "Raster Mask content errors (per second)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "sum by (operation, reason) (rate(raster_mask_content_errors_total[5m]))",
+          "legendFormat": "{{operation}} / {{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Raster Mask content operations (per second)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "sum by (operation, outcome) (rate(raster_mask_content_operations_total[5m]))",
+          "legendFormat": "{{operation}} / {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active image Raster Mask geometries",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 8,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "raster_mask_active_geometries",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Mask AI operations (per second)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "sum by (operation, outcome) (rate(mask_ai_operations_total[5m]))",
+          "legendFormat": "{{operation}} / {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Mask AI phase duration p95 (s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 10,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "histogram_quantile(0.95, sum by (le, operation, phase) (rate(mask_ai_phase_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{operation}} / {{phase}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Video Mask correction jobs",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
+      "id": 11,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "mask_ai_correction_jobs",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Oldest active correction age (s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "mask_ai_correction_oldest_age_seconds",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Mask AI retained references / decisions",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 40 },
+      "id": 13,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "mask_ai_staged_mask_references",
+          "legendFormat": "staged {{job_kind}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "expr": "mask_ai_accept_decisions",
+          "legendFormat": "decisions {{state}}",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -141,6 +279,6 @@
   "timezone": "browser",
   "title": "Anno Overview",
   "uid": "anno-overview",
-  "version": 1,
+  "version": 3,
   "weekStart": ""
 }

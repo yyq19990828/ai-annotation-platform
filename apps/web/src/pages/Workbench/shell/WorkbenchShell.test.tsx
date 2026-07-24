@@ -5,7 +5,9 @@ const mockUseWorkbenchShellModel = vi.fn();
 
 vi.mock("@/components/ui/Button", () => ({
   Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>{children}</button>
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
   ),
 }));
 vi.mock("@/components/ui/Icon", () => ({

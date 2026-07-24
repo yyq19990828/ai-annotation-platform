@@ -53,11 +53,7 @@ export function AnnotatorDashboard() {
   );
 
   if (isLoading || !stats) {
-    return (
-      <div className="px-7 py-15 text-center text-muted-foreground">
-        加载中...
-      </div>
-    );
+    return <div className="px-7 py-15 text-center text-muted-foreground">加载中...</div>;
   }
 
   const weeklyTarget = stats.weekly_target ?? 200;
@@ -73,7 +69,8 @@ export function AnnotatorDashboard() {
           <p className="m-0 text-sm text-muted-foreground">查看任务进度，高效完成标注工作</p>
         </div>
         <Button variant="primary" onClick={() => navigate("/annotate")}>
-          <Icon name="target" size={13} />进入标注页面
+          <Icon name="target" size={13} />
+          进入标注页面
         </Button>
       </div>
 
@@ -155,19 +152,17 @@ export function AnnotatorDashboard() {
       {/* v0.8.5 · 24-bar 当日专注时段分布 */}
       <div className="mt-4">
         <Card>
-        <div className={CARD_HEADER_PLAIN}>
-          <h3 className={CARD_TITLE}>今日专注时段分布</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            按小时聚合的标注分钟数（0-23 时）
-          </p>
-        </div>
-        <div className="px-4 py-5">
-          <Histogram
-            values={stats.hour_buckets ?? Array(24).fill(0)}
-            height={80}
-            xLabels={["00:00", ...Array(22).fill(""), "23:00"]}
-          />
-        </div>
+          <div className={CARD_HEADER_PLAIN}>
+            <h3 className={CARD_TITLE}>今日专注时段分布</h3>
+            <p className="mt-1 text-xs text-muted-foreground">按小时聚合的标注分钟数（0-23 时）</p>
+          </div>
+          <div className="px-4 py-5">
+            <Histogram
+              values={stats.hour_buckets ?? Array(24).fill(0)}
+              height={80}
+              xLabels={["00:00", ...Array(22).fill(""), "23:00"]}
+            />
+          </div>
         </Card>
       </div>
 
@@ -180,7 +175,12 @@ export function AnnotatorDashboard() {
             <h3 className={CARD_TITLE}>近 7 天标注趋势</h3>
           </div>
           <div className="px-4 py-5">
-            <Sparkline values={stats.daily_counts} color="var(--sc-brand)" width={480} height={80} />
+            <Sparkline
+              values={stats.daily_counts}
+              color="var(--sc-brand)"
+              width={480}
+              height={80}
+            />
             <div className="mt-2 flex justify-between text-xs text-muted-foreground">
               <span>7 天前</span>
               <span>今天</span>
@@ -195,10 +195,21 @@ export function AnnotatorDashboard() {
           <div className="p-5 text-center">
             <div className="relative mx-auto mb-4 size-[120px]">
               <svg viewBox="0 0 120 120" width={120} height={120}>
-                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--sc-border)" strokeWidth="8" />
                 <circle
-                  cx="60" cy="60" r="52" fill="none"
-                  stroke="var(--sc-brand)" strokeWidth="8"
+                  cx="60"
+                  cy="60"
+                  r="52"
+                  fill="none"
+                  stroke="var(--sc-border)"
+                  strokeWidth="8"
+                />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="52"
+                  fill="none"
+                  stroke="var(--sc-brand)"
+                  strokeWidth="8"
                   strokeLinecap="round"
                   strokeDasharray={`${weeklyPct * 3.27} ${327 - weeklyPct * 3.27}`}
                   transform="rotate(-90 60 60)"
@@ -218,72 +229,78 @@ export function AnnotatorDashboard() {
 
       <div className="mt-4">
         <Card>
-        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
-          <h3 className={CARD_TITLE}>我的项目</h3>
-          <span className="text-xs text-muted-foreground">共 {sortedProjects.length} 个</span>
-        </div>
-        {noProjects ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            <Icon name="folder" size={28} className="mb-2 opacity-25" />
-            <div>暂无分配项目</div>
-            <div className="mt-1 text-xs">请联系项目管理员将你加入项目成员</div>
+          <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+            <h3 className={CARD_TITLE}>我的项目</h3>
+            <span className="text-xs text-muted-foreground">共 {sortedProjects.length} 个</span>
           </div>
-        ) : (
-          <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-            <table className={TABLE_CLASS}>
-              <thead>
-                <tr>
-                  {["项目", "类型", "进度", "待标", ""].map((h, i) => (
-                    <th key={i}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedProjects.map((p) => {
-                  const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
-                  const pct = p.total_tasks ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100) : 0;
-                  return (
-                    <tr
-                      key={p.id}
-                      className="cursor-pointer"
-                      onClick={() => openWorkbench(p.id)}
-                    >
-                      <td>
-                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">{p.name}</div>
-                        <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-                          <span className="mono">{p.display_id}</span>
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap text-xs text-muted-foreground">
-                        {projectDisplayType(p)}
-                      </td>
-                      <td className="whitespace-nowrap text-xs text-muted-foreground">
-                        {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
-                      </td>
-                      <td>
-                        <span className="[&_span]:text-xs">
-                          <Badge variant={remaining > 0 ? "accent" : "outline"}>{remaining}</Badge>
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap text-right">
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); openWorkbench(p.id); }}
-                        >
-                          <Icon name="target" size={11} />打开
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+          {noProjects ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              <Icon name="folder" size={28} className="mb-2 opacity-25" />
+              <div>暂无分配项目</div>
+              <div className="mt-1 text-xs">请联系项目管理员将你加入项目成员</div>
+            </div>
+          ) : (
+            <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
+              <table className={TABLE_CLASS}>
+                <thead>
+                  <tr>
+                    {["项目", "类型", "进度", "待标", ""].map((h, i) => (
+                      <th key={i}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedProjects.map((p) => {
+                    const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
+                    const pct = p.total_tasks
+                      ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100)
+                      : 0;
+                    return (
+                      <tr key={p.id} className="cursor-pointer" onClick={() => openWorkbench(p.id)}>
+                        <td>
+                          <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">
+                            {p.name}
+                          </div>
+                          <div className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+                            <span className="mono">{p.display_id}</span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap text-xs text-muted-foreground">
+                          {projectDisplayType(p)}
+                        </td>
+                        <td className="whitespace-nowrap text-xs text-muted-foreground">
+                          {p.completed_tasks ?? 0} / {p.total_tasks ?? 0}{" "}
+                          <span className="mono">({pct}%)</span>
+                        </td>
+                        <td>
+                          <span className="[&_span]:text-xs">
+                            <Badge variant={remaining > 0 ? "accent" : "outline"}>
+                              {remaining}
+                            </Badge>
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap text-right">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                              e.stopPropagation();
+                              openWorkbench(p.id);
+                            }}
+                          >
+                            <Icon name="target" size={11} />
+                            打开
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       </div>
-
     </div>
   );
 }

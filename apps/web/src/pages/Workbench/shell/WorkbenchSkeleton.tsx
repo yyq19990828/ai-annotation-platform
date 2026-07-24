@@ -1,13 +1,26 @@
 function Block({ w, h, mb = 0 }: { w: number | string; h: number; mb?: 0 | 6 | 8 | 10 | 20 }) {
-  const mbClass = mb === 6 ? "mb-1.5" : mb === 8 ? "mb-2" : mb === 10 ? "mb-2.5" : mb === 20 ? "mb-5" : "";
-  const wClass = typeof w === "number" ? `w-[${w}px]` : w === "80%" ? "w-4/5" : w === "60%" ? "w-3/5" : w === "50%" ? "w-1/2" : w === "100%" ? "w-full" : w === "40%" ? "w-2/5" : "";
+  const mbClass =
+    mb === 6 ? "mb-1.5" : mb === 8 ? "mb-2" : mb === 10 ? "mb-2.5" : mb === 20 ? "mb-5" : "";
+  const wClass =
+    typeof w === "number"
+      ? `w-[${w}px]`
+      : w === "80%"
+        ? "w-4/5"
+        : w === "60%"
+          ? "w-3/5"
+          : w === "50%"
+            ? "w-1/2"
+            : w === "100%"
+              ? "w-full"
+              : w === "40%"
+                ? "w-2/5"
+                : "";
   return <div className={`rounded animate-pulse bg-muted ${wClass} h-[${h}px] ${mbClass}`} />;
 }
 
 export function WorkbenchSkeleton() {
   return (
     <div className="grid grid-cols-[260px_1fr_280px] h-full overflow-hidden bg-muted">
-
       {/* 左侧 task list */}
       <div className="p-3.5 border-r border-border bg-card">
         <Block w={120} h={16} mb={10} />

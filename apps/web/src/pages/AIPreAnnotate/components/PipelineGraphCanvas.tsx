@@ -47,7 +47,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { ROOT_SID, buildFlow, type GraphNodeModel, type StageNodeData } from "../utils/pipelineGraph";
+import {
+  ROOT_SID,
+  buildFlow,
+  type GraphNodeModel,
+  type StageNodeData,
+} from "../utils/pipelineGraph";
 import styles from "./PipelineGraphCanvas.module.css";
 
 interface CanvasCallbacks {
@@ -108,7 +113,11 @@ function NodeBody({ data }: { data: StageNodeData }) {
   const okPct = data.targeted && data.targeted > 0 ? ((data.ok ?? 0) / data.targeted) * 100 : 0;
 
   return (
-    <Tooltip name={isSource ? `${data.role.label}（输入）` : data.role.label} desc={tooltipDesc(data, isSource)} side="top">
+    <Tooltip
+      name={isSource ? `${data.role.label}（输入）` : data.role.label}
+      desc={tooltipDesc(data, isSource)}
+      side="top"
+    >
       <div
         className={cx(
           styles.node,
@@ -160,7 +169,11 @@ function NodeBody({ data }: { data: StageNodeData }) {
         <div className={styles.nodeFooter}>
           <span className={styles.nodeCounts}>
             {isSource
-              ? data.ok != null && <span>{data.sourceCountLabel ?? "检出"} {data.ok}</span>
+              ? data.ok != null && (
+                  <span>
+                    {data.sourceCountLabel ?? "检出"} {data.ok}
+                  </span>
+                )
               : data.targeted != null && (
                   <>
                     <span>目标 {data.targeted}</span>

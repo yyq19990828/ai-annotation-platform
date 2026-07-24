@@ -41,9 +41,7 @@ function parseSpec(spec) {
 // 在 Python 源中定位 `def`/`async def`/`class SYMBOL` 块，返回 1-indexed [start,end]。
 // 起点向上吸收紧邻的同缩进单行装饰器；先按括号配对吃完多行签名头，再按缩进切块体。
 function locatePythonSymbol(srcLines, symbol) {
-  const headerRe = new RegExp(
-    `^(\\s*)(?:async\\s+def|def|class)\\s+${symbol}\\b`,
-  );
+  const headerRe = new RegExp(`^(\\s*)(?:async\\s+def|def|class)\\s+${symbol}\\b`);
   let defIdx = -1;
   let baseIndent = 0;
   for (let i = 0; i < srcLines.length; i++) {
@@ -125,9 +123,7 @@ for (const mdPath of walk(DOCS_ROOT)) {
       label = `${spec.path}:${start}-${end}`;
     } else if (spec.mode === "symbol") {
       if (!spec.path.endsWith(".py")) {
-        console.error(
-          `[check-doc-snippets] ${mdRel}: 符号锚点目前只支持 .py（${specRaw}）`,
-        );
+        console.error(`[check-doc-snippets] ${mdRel}: 符号锚点目前只支持 .py（${specRaw}）`);
         failed++;
         continue;
       }

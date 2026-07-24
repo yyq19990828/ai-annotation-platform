@@ -8,13 +8,13 @@ type Direction = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 const DIRECTIONS: { dir: Direction; cx: number; cy: number; cursor: string }[] = [
   { dir: "nw", cx: 0, cy: 0, cursor: "nwse-resize" },
-  { dir: "n",  cx: 0.5, cy: 0, cursor: "ns-resize" },
+  { dir: "n", cx: 0.5, cy: 0, cursor: "ns-resize" },
   { dir: "ne", cx: 1, cy: 0, cursor: "nesw-resize" },
-  { dir: "e",  cx: 1, cy: 0.5, cursor: "ew-resize" },
+  { dir: "e", cx: 1, cy: 0.5, cursor: "ew-resize" },
   { dir: "se", cx: 1, cy: 1, cursor: "nwse-resize" },
-  { dir: "s",  cx: 0.5, cy: 1, cursor: "ns-resize" },
+  { dir: "s", cx: 0.5, cy: 1, cursor: "ns-resize" },
   { dir: "sw", cx: 0, cy: 1, cursor: "nesw-resize" },
-  { dir: "w",  cx: 0, cy: 0.5, cursor: "ew-resize" },
+  { dir: "w", cx: 0, cy: 0.5, cursor: "ew-resize" },
 ];
 
 type ResizeBox = Pick<Annotation, "x" | "y" | "w" | "h">;
@@ -34,7 +34,10 @@ export function ResizeHandles({ b, onResizeStart }: ResizeHandlesProps) {
           left={`calc(${(b.x + b.w * cx) * 100}% - ${HANDLE_SIZE / 2}px)`}
           top={`calc(${(b.y + b.h * cy) * 100}% - ${HANDLE_SIZE / 2}px)`}
           cursor={cursor}
-          onPointerDown={(e) => { e.stopPropagation(); onResizeStart(dir, e); }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onResizeStart(dir, e);
+          }}
         />
       ))}
     </>
@@ -62,13 +65,7 @@ function ResizeHandleDot({
     el.style.setProperty("--resize-handle-cursor", cursor);
   }, [left, top, cursor]);
 
-  return (
-    <div
-      ref={ref}
-      className={styles.handle}
-      onPointerDown={onPointerDown}
-    />
-  );
+  return <div ref={ref} className={styles.handle} onPointerDown={onPointerDown} />;
 }
 
 export type ResizeDirection = Direction;
@@ -108,14 +105,21 @@ function applyResizeCore(
   let { x, y, w, h } = start;
 
   if (dir.includes("e")) w = start.w + dx;
-  if (dir.includes("w")) { x = start.x + dx; w = start.w - dx; }
+  if (dir.includes("w")) {
+    x = start.x + dx;
+    w = start.w - dx;
+  }
   if (dir.includes("s")) h = start.h + dy;
-  if (dir.includes("n")) { y = start.y + dy; h = start.h - dy; }
+  if (dir.includes("n")) {
+    y = start.y + dy;
+    h = start.h - dy;
+  }
 
   // ── v0.8.7 F6 · Shift 锁纵横比 ──────────────────────────────
   if (modifiers?.shiftKey && start.w > 0 && start.h > 0) {
     const aspect = start.w / start.h;
-    const isCornerHandle = (dir.includes("e") || dir.includes("w")) && (dir.includes("n") || dir.includes("s"));
+    const isCornerHandle =
+      (dir.includes("e") || dir.includes("w")) && (dir.includes("n") || dir.includes("s"));
     if (isCornerHandle) {
       ({ x, y, w, h } = applyAspectLockedCornerResize(start, dx, dy, dir));
     } else {
@@ -151,8 +155,14 @@ function applyResizeCore(
   }
 
   // 处理负向拖动（翻转）
-  if (w < 0) { x += w; w = -w; }
-  if (h < 0) { y += h; h = -h; }
+  if (w < 0) {
+    x += w;
+    w = -w;
+  }
+  if (h < 0) {
+    y += h;
+    h = -h;
+  }
 
   return { x, y, w, h };
 }
@@ -175,8 +185,14 @@ export function applyResize(
   let { x, y, w, h } = applyResizeCore(start, startPt, curPt, dir, modifiers);
 
   // clamp 到 [0,1]
-  if (x < 0) { w += x; x = 0; }
-  if (y < 0) { h += y; y = 0; }
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
   if (x + w > 1) w = 1 - x;
   if (y + h > 1) h = 1 - y;
 
@@ -206,7 +222,13 @@ export function applyRotatedResize(
     w: start.w * imgW,
     h: start.h * imgH,
   };
-  const resized = applyResizeCore(startPx, { x: 0, y: 0 }, { x: localDx, y: localDy }, dir, modifiers);
+  const resized = applyResizeCore(
+    startPx,
+    { x: 0, y: 0 },
+    { x: localDx, y: localDy },
+    dir,
+    modifiers,
+  );
   const centerLocalX = resized.x + resized.w / 2;
   const centerLocalY = resized.y + resized.h / 2;
   const centerDx = centerLocalX * cos - centerLocalY * sin;

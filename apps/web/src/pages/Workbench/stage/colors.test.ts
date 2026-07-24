@@ -10,7 +10,9 @@ function parseOklch(color: string): { lightness: string; chroma: string; hue: nu
 describe("getTrackColor", () => {
   it("falls back to stable per-track colors when no override matches", () => {
     expect(getTrackColor("trk-1", "商品")).toBe(getTrackColor("trk-1", "商品", {}));
-    expect(getTrackColor("trk-1", "商品", { "other": "oklch(0.5 0 0)" })).toBe(getTrackColor("trk-1", "商品"));
+    expect(getTrackColor("trk-1", "商品", { other: "oklch(0.5 0 0)" })).toBe(
+      getTrackColor("trk-1", "商品"),
+    );
     expect(getTrackColor("trk-1", "商品")).not.toBe(classColor("商品"));
     expect(getTrackColor("trk-1", "商品")).not.toBe(getTrackColor("trk-2", "商品"));
   });

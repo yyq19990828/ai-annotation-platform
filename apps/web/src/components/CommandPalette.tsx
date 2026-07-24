@@ -133,10 +133,7 @@ export function CommandPalette({ open, onClose }: Props) {
   }
 
   return createPortal(
-    <div
-      onClick={onClose}
-      className={styles.backdrop}
-    >
+    <div onClick={onClose} className={styles.backdrop}>
       <div
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -156,20 +153,12 @@ export function CommandPalette({ open, onClose }: Props) {
         />
 
         <div className={styles.results}>
-          {!debounced && (
-            <div className={styles.empty}>
-              开始输入以搜索
-            </div>
-          )}
+          {!debounced && <div className={styles.empty}>开始输入以搜索</div>}
           {debounced && isLoading && items.length === 0 && (
-            <div className={styles.empty}>
-              搜索中…
-            </div>
+            <div className={styles.empty}>搜索中…</div>
           )}
           {debounced && !isLoading && items.length === 0 && (
-            <div className={styles.empty}>
-              没有找到结果
-            </div>
+            <div className={styles.empty}>没有找到结果</div>
           )}
 
           {grouped.map((g) => (
@@ -194,18 +183,12 @@ export function CommandPalette({ open, onClose }: Props) {
                       <Avatar size="sm" initial={(item.label || "?").slice(0, 1).toUpperCase()} />
                     ) : (
                       <span className={styles.kindBadge}>
-                        <Badge variant="outline">
-                        {KIND_LABEL[item.kind]}
-                        </Badge>
+                        <Badge variant="outline">{KIND_LABEL[item.kind]}</Badge>
                       </span>
                     )}
                     <span className={styles.itemText}>
-                      <span className={styles.itemLabel}>
-                        {item.label}
-                      </span>
-                      <span className={styles.itemSublabel}>
-                        {item.sublabel}
-                      </span>
+                      <span className={styles.itemLabel}>{item.label}</span>
+                      <span className={styles.itemSublabel}>{item.sublabel}</span>
                     </span>
                   </button>
                 );

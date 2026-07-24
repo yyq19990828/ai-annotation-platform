@@ -41,20 +41,20 @@ Prometheus [`http_sd_config`](https://prometheus.io/docs/prometheus/latest/http_
 ]
 ```
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `targets[0]` | string | `host:port`, 由 `ml_backends.url` 剥出 scheme / path 得到 |
-| `labels.service` | string | `ml_backends.name`。**未加 unique 约束**, 同名 backend 会撞 label; 在 Prometheus 内靠 http_sd 自动注入的 `instance` (= `host:port`) 二次定位 (见 `infra/prometheus/alerts.yml` / `infra/grafana/dashboards/ml-backends.json`)。 |
-| `labels.backend_id` | string | `ml_backends.id` (字符串化) |
-| `labels.project_id` | string | `ml_backends.project_id` (字符串化) |
+| 字段                | 类型   | 含义                                                                                                                                                                                                                            |
+| ------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `targets[0]`        | string | `host:port`, 由 `ml_backends.url` 剥出 scheme / path 得到                                                                                                                                                                       |
+| `labels.service`    | string | `ml_backends.name`。**未加 unique 约束**, 同名 backend 会撞 label; 在 Prometheus 内靠 http_sd 自动注入的 `instance` (= `host:port`) 二次定位 (见 `infra/prometheus/alerts.yml` / `infra/grafana/dashboards/ml-backends.json`)。 |
+| `labels.backend_id` | string | `ml_backends.id` (字符串化)                                                                                                                                                                                                     |
+| `labels.project_id` | string | `ml_backends.project_id` (字符串化)                                                                                                                                                                                             |
 
 ### 鉴权
 
-| 场景 | 行为 |
-|---|---|
-| `METRICS_SD_TOKEN=""` (默认) | 免鉴权, 仍受 nginx 隔离保护 |
-| `METRICS_SD_TOKEN=<token>` + 正确 `Authorization: Bearer <token>` | 200 |
-| `METRICS_SD_TOKEN=<token>` + 缺失/错配 `Authorization` | 401 |
+| 场景                                                              | 行为                        |
+| ----------------------------------------------------------------- | --------------------------- |
+| `METRICS_SD_TOKEN=""` (默认)                                      | 免鉴权, 仍受 nginx 隔离保护 |
+| `METRICS_SD_TOKEN=<token>` + 正确 `Authorization: Bearer <token>` | 200                         |
+| `METRICS_SD_TOKEN=<token>` + 缺失/错配 `Authorization`            | 401                         |
 
 生产环境若 internal 端点会被运维网段以外的容器访问, 强烈建议显式设置 `METRICS_SD_TOKEN` 作为第二道闸。
 

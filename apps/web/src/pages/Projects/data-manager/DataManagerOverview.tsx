@@ -45,11 +45,15 @@ function Distribution({
     <div className="min-w-0">
       <div className="mb-2 text-xs font-semibold text-muted-foreground">{title}</div>
       <div className="flex flex-wrap gap-1.5">
-        {items.length ? items.map(([key, value]) => (
-          <Badge key={key} variant="outline">
-            {labels[key] ?? key} · {value.toLocaleString()}
-          </Badge>
-        )) : <span className="text-xs text-muted-foreground">当前范围无数据</span>}
+        {items.length ? (
+          items.map(([key, value]) => (
+            <Badge key={key} variant="outline">
+              {labels[key] ?? key} · {value.toLocaleString()}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-xs text-muted-foreground">当前范围无数据</span>
+        )}
       </div>
     </div>
   );
@@ -146,7 +150,12 @@ export function DataManagerSummaryStrip({
   );
 }
 
-export function DataManagerAnalyticsContent({ summary, isLoading, fields, onSelect }: DataManagerOverviewProps) {
+export function DataManagerAnalyticsContent({
+  summary,
+  isLoading,
+  fields,
+  onSelect,
+}: DataManagerOverviewProps) {
   return (
     <section aria-label="详细统计" className="flex flex-col gap-4">
       <div>
@@ -164,32 +173,47 @@ export function DataManagerAnalyticsContent({ summary, isLoading, fields, onSele
         </summary>
         <div className="grid gap-5 border-t border-border p-3 md:grid-cols-2">
           {isLoading || !summary ? (
-            Array.from({ length: 2 }, (_, index) => <Skeleton key={index} className="h-16 w-full" />)
+            Array.from({ length: 2 }, (_, index) => (
+              <Skeleton key={index} className="h-16 w-full" />
+            ))
           ) : (
             <>
               <div className="min-w-0">
                 <div className="mb-2 text-xs font-semibold text-muted-foreground">属性完整度</div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {summary.attributes.length ? summary.attributes.map((attribute) => (
-                    <div key={`${attribute.tool_unit_id}.${attribute.key}`} className="rounded-md border border-border bg-background p-2">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate font-medium">{attribute.label}</span>
-                        <span className="font-mono text-muted-foreground">
-                          {attribute.present}/{attribute.eligible}
-                        </span>
+                  {summary.attributes.length ? (
+                    summary.attributes.map((attribute) => (
+                      <div
+                        key={`${attribute.tool_unit_id}.${attribute.key}`}
+                        className="rounded-md border border-border bg-background p-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate font-medium">{attribute.label}</span>
+                          <span className="font-mono text-muted-foreground">
+                            {attribute.present}/{attribute.eligible}
+                          </span>
+                        </div>
+                        <progress
+                          className="mt-1.5 h-1.5 w-full accent-primary"
+                          value={attribute.present}
+                          max={Math.max(attribute.eligible, 1)}
+                          aria-label={`${attribute.label}完整度`}
+                        />
+                        <div className="mt-1.5 text-xs text-muted-foreground">
+                          缺失 {attribute.missing}
+                        </div>
                       </div>
-                      <progress
-                        className="mt-1.5 h-1.5 w-full accent-primary"
-                        value={attribute.present}
-                        max={Math.max(attribute.eligible, 1)}
-                        aria-label={`${attribute.label}完整度`}
-                      />
-                      <div className="mt-1.5 text-xs text-muted-foreground">缺失 {attribute.missing}</div>
-                    </div>
-                  )) : <span className="text-xs text-muted-foreground">项目未配置属性字段</span>}
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">项目未配置属性字段</span>
+                  )}
                 </div>
               </div>
-              <Distribution title="当前模态" values={summary.kind_metrics} labels={KIND_METRIC_LABELS} />
+              <Distribution
+                title="当前模态"
+                values={summary.kind_metrics}
+                labels={KIND_METRIC_LABELS}
+              />
             </>
           )}
         </div>

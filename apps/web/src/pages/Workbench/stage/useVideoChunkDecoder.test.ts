@@ -30,9 +30,9 @@ describe("isWebCodecsExperimentEnabled · flag 解析", () => {
   });
 
   it("URL query ?webcodecs=0 显式关闭 (覆盖 storage)", () => {
-    expect(
-      isWebCodecsExperimentEnabled(`?${WEBCODECS_FLAG_QUERY_KEY}=0`, storageWith("1")),
-    ).toBe(false);
+    expect(isWebCodecsExperimentEnabled(`?${WEBCODECS_FLAG_QUERY_KEY}=0`, storageWith("1"))).toBe(
+      false,
+    );
   });
 
   it("localStorage 真值开启 (query 缺省时)", () => {
@@ -42,7 +42,11 @@ describe("isWebCodecsExperimentEnabled · flag 解析", () => {
   });
 
   it("storage.getItem 抛错时安全降级为 false", () => {
-    const throwing = { getItem: () => { throw new Error("blocked"); } };
+    const throwing = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+    };
     expect(isWebCodecsExperimentEnabled("", throwing)).toBe(false);
   });
 });
@@ -76,7 +80,11 @@ describe("decodeChunkToBitmap · 解码核心 + 资源清理", () => {
   it("解出帧后 VideoFrame 与 VideoDecoder 都被 close()", async () => {
     const frameClose = vi.fn();
     const decoderClose = vi.fn();
-    const fakeFrame = { displayWidth: 320, displayHeight: 240, close: frameClose } as unknown as VideoFrame;
+    const fakeFrame = {
+      displayWidth: 320,
+      displayHeight: 240,
+      close: frameClose,
+    } as unknown as VideoFrame;
 
     class FakeDecoder {
       private onOutput: (f: VideoFrame) => void;
@@ -107,9 +115,7 @@ describe("decodeChunkToBitmap · 解码核心 + 资源清理", () => {
 
 describe("useVideoChunkDecoder · flag 关闭 (默认) 行为", () => {
   it("WebCodecs 不可用 / flag 关闭时 active=false，decodeChunks no-op", async () => {
-    const { result } = renderHook(() =>
-      useVideoChunkDecoder({ taskId: "task-1", enabled: false }),
-    );
+    const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "task-1", enabled: false }));
     expect(result.current.active).toBe(false);
     expect(result.current.enabled).toBe(false);
     let decoded: unknown = "sentinel";
@@ -126,7 +132,11 @@ describe("useVideoChunkDecoder · 缓存与诊断 (mock WebCodecs)", () => {
 
   beforeEach(() => {
     bitmapClose.mockClear();
-    const fakeFrame = { displayWidth: 4, displayHeight: 4, close: vi.fn() } as unknown as VideoFrame;
+    const fakeFrame = {
+      displayWidth: 4,
+      displayHeight: 4,
+      close: vi.fn(),
+    } as unknown as VideoFrame;
     class FakeDecoder {
       private onOutput: (f: VideoFrame) => void;
       constructor(init: { output: (f: VideoFrame) => void; error: () => void }) {
@@ -150,9 +160,7 @@ describe("useVideoChunkDecoder · 缓存与诊断 (mock WebCodecs)", () => {
   });
 
   it("decodeChunks 入缓存后 showFrame 命中，记 hit", async () => {
-    const { result } = renderHook(() =>
-      useVideoChunkDecoder({ taskId: "task-1", enabled: true }),
-    );
+    const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "task-1", enabled: true }));
     expect(result.current.active).toBe(true);
 
     await act(async () => {
@@ -175,9 +183,7 @@ describe("useVideoChunkDecoder · 缓存与诊断 (mock WebCodecs)", () => {
   });
 
   it("clear() 释放缓存中全部 ImageBitmap", async () => {
-    const { result } = renderHook(() =>
-      useVideoChunkDecoder({ taskId: "task-1", enabled: true }),
-    );
+    const { result } = renderHook(() => useVideoChunkDecoder({ taskId: "task-1", enabled: true }));
     await act(async () => {
       await result.current.decodeChunks({ codec: "vp8" }, [{} as EncodedVideoChunk], 1);
     });

@@ -27,7 +27,7 @@ import zipfile
 from copy import deepcopy
 from datetime import datetime, timezone
 from posixpath import splitext
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,13 +64,29 @@ from app.services.exporting.video import (
     build_yolo_frame_seg_labels,
     yolo_seg_line,
 )
-from app.services.exporting.davis import build_davis_palette_png
+from app.services.exporting.davis import (
+    build_davis_palette_png,
+    derive_davis_object_ids,
+)
+from app.services.exporting.video_mask_formats import (
+    build_mots_sequence,
+    exact_mask_frames,
+    object_manifest,
+)
 from app.services.project import (
     derive_attribute_schema,
     derive_classes_list,
 )
 from app.services.storage import storage_service
+from app.services.mask_formats import registry as mask_format_registry
+from app.services.mask_formats.image_export import (
+    write_binary_png_export,
+    write_indexed_png_export,
+    write_label_studio_export,
+    yolo_seg_lines_with_masks,
+)
 from app.services.raster_mask_storage import load_coco_rle
+from app.config import settings
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
 from app.services.video_frame_service import derive_sampled_frames, derive_step
 from app.services.video_tracks import derive_track_number
@@ -86,15 +102,17 @@ VIDEO_EXPORT_FORMATS = {
     # 逐帧 COCO 分割：同源多边形，编码为标准 COCO instance segmentation 单文档。
     "coco-frames-seg",
     "davis",
+    "youtube-vos",
+    "mots",
 }
 
 
-def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
+async def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
     if geometry.get("type") != "video_track_mask":
         return geometry
     hydrated = deepcopy(geometry)
     for keyframe in hydrated.get("keyframes") or []:
-        rle = load_coco_rle(keyframe.get("mask") or {})
+        rle = await load_coco_rle(keyframe.get("mask") or {})
         keyframe["mask_rle"] = rle
         keyframe["bbox"] = coco_rle_bbox_norm(rle)
     return hydrated
@@ -103,7 +121,17 @@ def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
 LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
-IMAGE_EXPORT_TARGETS = {"coco", "yolo", "yolo-det", "yolo-obb", "yolo-seg", "aap_json"}
+IMAGE_EXPORT_TARGETS = {
+    "coco",
+    "yolo",
+    "yolo-det",
+    "yolo-obb",
+    "yolo-seg",
+    "aap_json",
+    "label-studio-brush",
+    "binary-png",
+    "indexed-png",
+}
 ALL_EXPORT_TARGETS = (
     IMAGE_EXPORT_TARGETS | VIDEO_EXPORT_FORMATS | LIDAR_EXPORT_TARGETS | {"voc"}
 )
@@ -117,14 +145,13 @@ def clean_export_targets(targets: list[str], data_type: str | None = None) -> li
     ``build_export_zip`` 抛 ``UnsupportedExportError`` 拖垮整批（含合法目标）。
     ``data_type=None`` 时退回旧行为（接受全集），保持向后兼容。
     """
-    if data_type == "video":
-        allowed = VIDEO_EXPORT_FORMATS
-    elif data_type == "image":
-        allowed = IMAGE_EXPORT_TARGETS | {"voc"}
-    elif data_type == "lidar":
-        allowed = LIDAR_EXPORT_TARGETS
-    else:
-        allowed = ALL_EXPORT_TARGETS
+    allowed = {
+        adapter.descriptor.format_id
+        for adapter in mask_format_registry.list(
+            media_type=data_type,
+            direction="export",
+        )
+    }
     seen: list[str] = []
     for t in targets:
         if t not in allowed:
@@ -398,6 +425,58 @@ def _new_zip_tempfile() -> str:
     return path
 
 
+class ExportQuotaError(ValueError):
+    pass
+
+
+class _QuotaZipFile(zipfile.ZipFile):
+    def _check_entry(self, size_bytes: int) -> None:
+        if len(self.filelist) >= settings.mask_format_max_archive_files:
+            raise ExportQuotaError("resource_budget_exceeded:max_archive_files")
+        if size_bytes > settings.mask_format_max_entry_bytes:
+            raise ExportQuotaError("resource_budget_exceeded:max_entry_bytes")
+
+    def _check_archive(self) -> None:
+        if self.fp is not None:
+            self.fp.flush()
+        if os.path.getsize(self.filename) > settings.mask_format_temp_quota_bytes:
+            raise ExportQuotaError("resource_budget_exceeded:temp_quota_bytes")
+
+    def writestr(self, zinfo_or_arcname, data, compress_type=None, compresslevel=None):
+        size_bytes = len(data.encode("utf-8") if isinstance(data, str) else data)
+        self._check_entry(size_bytes)
+        result = super().writestr(
+            zinfo_or_arcname,
+            data,
+            compress_type=compress_type,
+            compresslevel=compresslevel,
+        )
+        self._check_archive()
+        return result
+
+    def write(self, filename, arcname=None, compress_type=None, compresslevel=None):
+        self._check_entry(os.path.getsize(filename))
+        result = super().write(
+            filename,
+            arcname=arcname,
+            compress_type=compress_type,
+            compresslevel=compresslevel,
+        )
+        self._check_archive()
+        return result
+
+
+def _open_export_zip(path: str) -> _QuotaZipFile:
+    return _QuotaZipFile(path, "w", zipfile.ZIP_DEFLATED)
+
+
+def _export_size(path: str) -> int:
+    size_bytes = os.path.getsize(path)
+    if size_bytes > settings.mask_format_temp_quota_bytes:
+        raise ExportQuotaError("resource_budget_exceeded:temp_quota_bytes")
+    return size_bytes
+
+
 def _safe_unlink(path: str) -> None:
     try:
         os.unlink(path)
@@ -414,6 +493,7 @@ async def build_export_zip(
     include_attributes: bool,
     video_frame_mode: str,
     axis_frame: AxisFrame = "iso",
+    format_options: dict | None = None,
 ) -> tuple[str, int, int]:
     """生成镜像目录 ZIP 到磁盘临时文件，返回 (zip 路径, label 文件数, size_bytes)。
 
@@ -432,9 +512,9 @@ async def build_export_zip(
     tmp_path = _new_zip_tempfile()
     try:
         if project is None:
-            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED):
+            with _open_export_zip(tmp_path):
                 pass
-            return tmp_path, 0, os.path.getsize(tmp_path)
+            return tmp_path, 0, _export_size(tmp_path)
 
         # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式）。
         if project.data_type == "video":
@@ -446,6 +526,8 @@ async def build_export_zip(
                     "yolo-frames-seg",
                     "coco-frames-seg",
                     "davis",
+                    "youtube-vos",
+                    "mots",
                 }
                 & set(targets)
             )
@@ -461,6 +543,7 @@ async def build_export_zip(
                 targets=targets,
                 include_attributes=include_attributes,
                 video_frame_mode=video_frame_mode,
+                format_options=format_options or {},
             )
 
         if project.data_type == "lidar":
@@ -488,8 +571,13 @@ async def build_export_zip(
         multi = len(targets) > 1
         yolo_targets = [t for t in targets if t in YOLO_TARGETS]
         other_targets = [t for t in targets if t not in YOLO_TARGETS]
+        custom_mask_targets = {
+            "label-studio-brush",
+            "binary-png",
+            "indexed-png",
+        }
         for target in other_targets:
-            if target not in ("coco", "aap_json"):
+            if target not in {"coco", "aap_json", *custom_mask_targets}:
                 raise UnsupportedExportError(f"unsupported export target: {target}")
         has_yolo = bool(yolo_targets)
         # COCO 需 DatasetItem 真值尺寸算像素坐标；仅在请求 coco 时累积全量 items
@@ -505,7 +593,7 @@ async def build_export_zip(
             now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
         ).isoformat()
 
-        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        with _open_export_zip(tmp_path) as zf:
             # 共享产物（格式无关）：类别清单 + 属性 schema。
             zf.writestr("classes.txt", "\n".join(classes_list))
             if include_attributes:
@@ -534,14 +622,21 @@ async def build_export_zip(
                             img_h = (
                                 int(item.height) if item and item.height else FALLBACK_H
                             )
-                            lines, attrs_per_line = _yolo_target_lines(
-                                target,
-                                ann_by_task.get(t.id, []),
-                                cat_map,
-                                img_w=img_w,
-                                img_h=img_h,
-                                include_attributes=include_attributes,
-                            )
+                            if target == "yolo-seg":
+                                lines, attrs_per_line = await yolo_seg_lines_with_masks(
+                                    ann_by_task.get(t.id, []),
+                                    cat_map,
+                                    include_attributes=include_attributes,
+                                )
+                            else:
+                                lines, attrs_per_line = _yolo_target_lines(
+                                    target,
+                                    ann_by_task.get(t.id, []),
+                                    cat_map,
+                                    img_w=img_w,
+                                    img_h=img_h,
+                                    include_attributes=include_attributes,
+                                )
                             dataset_id = str(item.dataset_id) if item else "unknown"
                             base = f"{prefix}{project_id}/{dataset_id}/labels/{rel}"
                             zf.writestr(f"{base}.txt", "\n".join(lines))
@@ -600,6 +695,8 @@ async def build_export_zip(
 
             # 单文档目标（coco/aap_json）：本质全量物化，svc 自加载落包根/子目录。
             for target in other_targets:
+                if target in custom_mask_targets:
+                    continue
                 prefix = f"{target}/" if multi else ""
                 if target == "coco":
                     content = await svc.export_coco(
@@ -619,12 +716,45 @@ async def build_export_zip(
                 zf.writestr(f"{prefix}annotations.json", content)
                 file_count += total_tasks
 
+            export_options = format_options or {}
+            for target in sorted(custom_mask_targets & set(targets)):
+                prefix = f"{target}/" if multi else ""
+                chunks = svc.iter_export_chunks(
+                    project_id, batch_id, with_annotations=True
+                )
+                if target == "binary-png":
+                    file_count += await write_binary_png_export(
+                        zf,
+                        prefix=prefix,
+                        project=project,
+                        chunks=chunks,
+                    )
+                elif target == "indexed-png":
+                    file_count += await write_indexed_png_export(
+                        zf,
+                        prefix=prefix,
+                        project=project,
+                        chunks=chunks,
+                        overlap_policy=str(
+                            export_options.get("indexed_overlap_policy") or "error"
+                        ),
+                    )
+                else:
+                    file_count += await write_label_studio_export(
+                        zf,
+                        prefix=prefix,
+                        chunks=chunks,
+                        data_key=str(export_options.get("ls_data_key") or "image"),
+                        from_name=str(export_options.get("ls_from_name") or "brush"),
+                        to_name=str(export_options.get("ls_to_name") or "image"),
+                    )
+
             zf.writestr("fetch_images.py", _FETCH_IMAGES_TEMPLATE)
             # 单 YOLO 目标根 data.yaml 已在上面写；纯 COCO/AAP 单目标补一份（兼容旧包结构）。
             if not multi and not has_yolo:
                 zf.writestr("data.yaml", _build_data_yaml(classes_list))
 
-        return tmp_path, file_count, os.path.getsize(tmp_path)
+        return tmp_path, file_count, _export_size(tmp_path)
     except BaseException:
         _safe_unlink(tmp_path)
         raise
@@ -788,7 +918,7 @@ async def _build_lidar_export_zip(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
     ).isoformat()
 
-    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with _open_export_zip(tmp_path) as zf:
         zf.writestr("classes.txt", "\n".join(classes_list))
         if include_attributes:
             zf.writestr(
@@ -942,7 +1072,7 @@ async def _build_lidar_export_zip(
                     f"{prefix}category_map.json", category_map_json(classes_list)
                 )
 
-    return tmp_path, file_count, os.path.getsize(tmp_path)
+    return tmp_path, file_count, _export_size(tmp_path)
 
 
 # ── v0.10.31 · Phase 4 视频导出组装 ──────────────────────────────────
@@ -1046,13 +1176,16 @@ def main() -> int:
             output_specs.append(spec)
         if not output_specs:
             continue
-        select_expr = "+".join("eq(n\\\\,%d)" % fr for fr in frames)
         try:
             for spec in output_specs:
                 rel_out = spec["dir"]
                 output_start = int(spec.get("start_number", start))
                 padding = max(1, int(spec.get("padding", 6)))
                 extension = str(spec.get("extension", "jpg")).lstrip(".") or "jpg"
+                selected_frames = spec.get("source_frames") or frames
+                select_expr = "+".join(
+                    "eq(n\\\\,%d)" % fr for fr in selected_frames
+                )
                 out_dir = os.path.join(HERE, *rel_out.split("/"))
                 os.makedirs(out_dir, exist_ok=True)
                 cmd = [
@@ -1097,6 +1230,7 @@ async def _build_video_export_zip(
     targets: list[str],
     include_attributes: bool,
     video_frame_mode: str,
+    format_options: dict[str, Any] | None = None,
 ) -> tuple[str, int, int]:
     """视频项目 zip（v0.10.43 多目标）：单目标落根、>1 目标各落 `{target}/`；
     manifest.json + fetch_videos.py 共享落根（MOT/KITTI 另带 fetch_frames.py）。
@@ -1109,6 +1243,7 @@ async def _build_video_export_zip(
         if tg not in VIDEO_EXPORT_FORMATS:
             raise UnsupportedExportError(f"unsupported video export format: {tg}")
 
+    format_options = format_options or {}
     sampling = project.video_sampling or {}
     multi = len(targets) > 1
     has_mot = "mot" in targets
@@ -1117,6 +1252,14 @@ async def _build_video_export_zip(
     has_yolo_frames_seg = "yolo-frames-seg" in targets
     has_coco_frames_seg = "coco-frames-seg" in targets
     has_davis = "davis" in targets
+    has_youtube_vos = "youtube-vos" in targets
+    has_mots = "mots" in targets
+    video_overlap_policy = str(format_options.get("video_overlap_policy") or "error")
+    if video_overlap_policy not in {"error", "z_order", "larger_area", "smaller_area"}:
+        raise ValueError("invalid video mask overlap policy")
+    mots_frame_base = int(format_options.get("mots_frame_base", 0))
+    if mots_frame_base not in {0, 1}:
+        raise ValueError("MOTS frame base must be 0 or 1")
     has_frame_sequences = (
         has_mot
         or has_kitti
@@ -1124,6 +1267,8 @@ async def _build_video_export_zip(
         or has_yolo_frames_seg
         or has_coco_frames_seg
         or has_davis
+        or has_youtube_vos
+        or has_mots
     )
     frame_start_number = (
         1
@@ -1138,6 +1283,10 @@ async def _build_video_export_zip(
     coco_seq_records: list[dict] = []
     davis_sequences: list[str] = []
     davis_sequence_owners: dict[str, uuid.UUID] = {}
+    davis_manifest_sequences: dict[str, Any] = {}
+    youtube_videos: dict[str, Any] = {}
+    youtube_source_frames: dict[str, dict[str, int]] = {}
+    mots_sequences: dict[str, Any] = {}
 
     manifest_videos: list[dict] = []
     now = datetime.now(timezone.utc)
@@ -1145,7 +1294,7 @@ async def _build_video_export_zip(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
     ).isoformat()
 
-    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with _open_export_zip(tmp_path) as zf:
         for target in targets:
             prefix = f"{target}/" if multi else ""
             if target == "video_json":
@@ -1207,9 +1356,23 @@ async def _build_video_export_zip(
                 track_anns = tracks_by_task.get(t.id, [])
                 bbox_anns = bboxes_by_task.get(t.id, [])
                 track_geometry_by_id = {
-                    ann.id: _hydrate_mask_geometry_for_export(ann.geometry or {})
+                    ann.id: await _hydrate_mask_geometry_for_export(ann.geometry or {})
                     for ann in track_anns
                 }
+                mask_track_annotations = [
+                    ann
+                    for ann in track_anns
+                    if (ann.geometry or {}).get("type") == "video_track_mask"
+                ]
+                mask_tracks = [
+                    (
+                        ann.id,
+                        int(getattr(ann, "z_order", 0) or 0),
+                        track_geometry_by_id[ann.id],
+                    )
+                    for ann in mask_track_annotations
+                ]
+                youtube_sparse_frames: list[int] = []
                 # frame_count：元数据优先，缺失回退最大标注帧 + 1。
                 max_kf = 0
                 for ann in track_anns:
@@ -1337,7 +1500,8 @@ async def _build_video_export_zip(
                                     ann.class_name,
                                     track_geometry_by_id[ann.id],
                                     ann.attributes or {},
-                                    getattr(ann, "track_id", None),
+                                    getattr(ann, "track_id", None)
+                                    or track_geometry_by_id[ann.id].get("track_id"),
                                 )
                                 for ann in track_anns
                             ],
@@ -1346,7 +1510,8 @@ async def _build_video_export_zip(
                                     ann.class_name,
                                     ann.geometry or {},
                                     ann.attributes or {},
-                                    getattr(ann, "track_id", None),
+                                    getattr(ann, "track_id", None)
+                                    or (ann.geometry or {}).get("track_id"),
                                 )
                                 for ann in bbox_anns
                             ],
@@ -1365,15 +1530,7 @@ async def _build_video_export_zip(
                         )
                     davis_sequence_owners[seq] = t.id
                     davis_prefix = "davis/" if multi else ""
-                    mask_tracks = [
-                        (
-                            ann.id,
-                            int(getattr(ann, "z_order", 0) or 0),
-                            track_geometry_by_id[ann.id],
-                        )
-                        for ann in track_anns
-                        if (ann.geometry or {}).get("type") == "video_track_mask"
-                    ]
+                    object_ids = derive_davis_object_ids(mask_tracks)
                     for output_index, source_frame in enumerate(
                         derive_sampled_frames(frame_count, step)
                     ):
@@ -1384,10 +1541,103 @@ async def _build_video_export_zip(
                                 frame_index=source_frame,
                                 width=img_w,
                                 height=img_h,
+                                overlap_policy=video_overlap_policy,
                             ),
                         )
                         file_count += 1
                     davis_sequences.append(seq)
+                    davis_manifest_sequences[seq] = {
+                        "task_display_id": t.display_id,
+                        "objects": object_manifest(
+                            [
+                                (
+                                    ann.id,
+                                    ann.class_name,
+                                    track_geometry_by_id[ann.id],
+                                )
+                                for ann in mask_track_annotations
+                            ],
+                            object_ids,
+                        ),
+                    }
+
+                if has_youtube_vos:
+                    youtube_prefix = "youtube-vos/" if multi else ""
+                    object_ids = derive_davis_object_ids(mask_tracks)
+                    youtube_sparse_frames = sorted(
+                        {
+                            frame
+                            for _annotation_id, _z_order, geometry in mask_tracks
+                            for frame in exact_mask_frames(geometry)
+                        }
+                    )
+                    frame_name_by_source = {
+                        source_frame: f"{output_index:05d}"
+                        for output_index, source_frame in enumerate(
+                            youtube_sparse_frames
+                        )
+                    }
+                    for source_frame in youtube_sparse_frames:
+                        zf.writestr(
+                            f"{youtube_prefix}Annotations/{seq}/"
+                            f"{frame_name_by_source[source_frame]}.png",
+                            build_davis_palette_png(
+                                mask_tracks,
+                                frame_index=source_frame,
+                                width=img_w,
+                                height=img_h,
+                                overlap_policy=video_overlap_policy,
+                                exact_keyframes_only=True,
+                            ),
+                        )
+                        file_count += 1
+                    youtube_objects = object_manifest(
+                        [
+                            (
+                                ann.id,
+                                ann.class_name,
+                                track_geometry_by_id[ann.id],
+                            )
+                            for ann in mask_track_annotations
+                        ],
+                        object_ids,
+                    )
+                    for object_row in youtube_objects.values():
+                        object_row["frames"] = [
+                            frame_name_by_source[int(frame)]
+                            for frame in object_row["frames"]
+                        ]
+                    youtube_videos[seq] = {"objects": youtube_objects}
+                    youtube_source_frames[seq] = {
+                        frame_name_by_source[frame]: frame
+                        for frame in youtube_sparse_frames
+                    }
+
+                if has_mots:
+                    mots_prefix = "mots/" if multi else ""
+                    mots_path = f"{mots_prefix}instances/{seq}.txt"
+                    mots_text, mots_meta = build_mots_sequence(
+                        [
+                            (
+                                ann.id,
+                                ann.class_name,
+                                track_geometry_by_id[ann.id],
+                            )
+                            for ann in mask_track_annotations
+                        ],
+                        class_ids={
+                            name: index + 1 for index, name in enumerate(classes_list)
+                        },
+                        source_frames=derive_sampled_frames(frame_count, step),
+                        frame_base=mots_frame_base,
+                    )
+                    zf.writestr(mots_path, mots_text)
+                    file_count += 1
+                    mots_sequences[seq] = {
+                        "task_display_id": t.display_id,
+                        "annotations_path": mots_path,
+                        **mots_meta,
+                    }
 
                 # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
                 dataset_name = _dataset_name_for_task(t, item)
@@ -1427,6 +1677,31 @@ async def _build_video_export_zip(
                             "dir": davis_images,
                             "start_number": 0,
                             "padding": 5,
+                            "extension": "jpg",
+                        }
+                    )
+                if has_youtube_vos:
+                    youtube_prefix = "youtube-vos/" if multi else ""
+                    youtube_images = f"{youtube_prefix}JPEGImages/{seq}"
+                    frame_output_dirs.append(youtube_images)
+                    frame_outputs.append(
+                        {
+                            "dir": youtube_images,
+                            "start_number": 0,
+                            "padding": 5,
+                            "extension": "jpg",
+                            "source_frames": youtube_sparse_frames,
+                        }
+                    )
+                if has_mots:
+                    mots_prefix = "mots/" if multi else ""
+                    mots_images = f"{mots_prefix}images/{seq}"
+                    frame_output_dirs.append(mots_images)
+                    frame_outputs.append(
+                        {
+                            "dir": mots_images,
+                            "start_number": mots_frame_base,
+                            "padding": 6,
                             "extension": "jpg",
                         }
                     )
@@ -1473,6 +1748,50 @@ async def _build_video_export_zip(
                 f"{davis_prefix}ImageSets/2017/val.txt",
                 "\n".join(sequence_lines) + ("\n" if sequence_lines else ""),
             )
+            zf.writestr(
+                f"{davis_prefix}davis_manifest.json",
+                json.dumps(
+                    {
+                        "format_id": "davis",
+                        "manifest_version": "1",
+                        "sequences": davis_manifest_sequences,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+
+        if has_youtube_vos:
+            youtube_prefix = "youtube-vos/" if multi else ""
+            zf.writestr(
+                f"{youtube_prefix}meta.json",
+                json.dumps(
+                    {
+                        "videos": youtube_videos,
+                        "_aap": {
+                            "manifest_version": "1",
+                            "source_frames": youtube_source_frames,
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+
+        if has_mots:
+            mots_prefix = "mots/" if multi else ""
+            zf.writestr(
+                f"{mots_prefix}mots_manifest.json",
+                json.dumps(
+                    {
+                        "format_id": "mots",
+                        "manifest_version": "1",
+                        "sequences": mots_sequences,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
 
         zf.writestr(
             "manifest.json",
@@ -1490,4 +1809,4 @@ async def _build_video_export_zip(
         if has_frame_sequences:
             zf.writestr("fetch_frames.py", _FETCH_FRAMES_TEMPLATE)
 
-    return tmp_path, file_count or total_tasks, os.path.getsize(tmp_path)
+    return tmp_path, file_count or total_tasks, _export_size(tmp_path)

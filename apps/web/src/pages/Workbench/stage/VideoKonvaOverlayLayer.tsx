@@ -34,25 +34,26 @@ export function VideoKonvaOverlayLayer({
   const labelFontSize = visual.labelFontSize / scale;
   return (
     <Layer name="overlay" listening={false}>
-      {pendingDraft && (() => {
-        const hex = colorToHex(classColor(pendingDraft.className));
-        const g = pendingDraft.geom;
-        return (
-          <Rect
-            name="video-pending-draft"
-            x={g.x * size.w}
-            y={g.y * size.h}
-            width={g.w * size.w}
-            height={g.h * size.h}
-            stroke={hex}
-            strokeWidth={screenToWorld(strokeWidthFor(false, visual), scale)}
-            dash={[6 / scale, 4 / scale]}
-            fill={hexToRgba(hex, fillAlpha(false, visual))}
-            opacity={0.9}
-            listening={false}
-          />
-        );
-      })()}
+      {pendingDraft &&
+        (() => {
+          const hex = colorToHex(classColor(pendingDraft.className));
+          const g = pendingDraft.geom;
+          return (
+            <Rect
+              name="video-pending-draft"
+              x={g.x * size.w}
+              y={g.y * size.h}
+              width={g.w * size.w}
+              height={g.h * size.h}
+              stroke={hex}
+              strokeWidth={screenToWorld(strokeWidthFor(false, visual), scale)}
+              dash={[6 / scale, 4 / scale]}
+              fill={hexToRgba(hex, fillAlpha(false, visual))}
+              opacity={0.9}
+              listening={false}
+            />
+          );
+        })()}
       {labels.map((label) => {
         const hex = colorToHex(label.color);
         return (

@@ -74,5 +74,4 @@ export interface ScreenshotScene {
    * 矩阵非主轴时 driver 自动追加后缀（.light / .dark / .mobile 等）。
    */
   target: string | ((axis: MatrixAxis) => string);
-
 }

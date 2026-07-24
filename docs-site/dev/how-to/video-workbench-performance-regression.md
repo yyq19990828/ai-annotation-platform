@@ -33,11 +33,11 @@ pnpm --filter @anno/web video:bench -- --out /tmp/video-bench
 
 fixture 描述在 `apps/web/scripts/video-bench/fixtures.json`：
 
-| 视频 | 目标 |
-|---|---|
-| 720p / 3 min | 常规标注回归 |
-| 1080p / 5 min | 主流长视频场景 |
-| 4K / 30 sec | 高分辨率拖拽和 seek 压力 |
+| 视频          | 目标                     |
+| ------------- | ------------------------ |
+| 720p / 3 min  | 常规标注回归             |
+| 1080p / 5 min | 主流长视频场景           |
+| 4K / 30 sec   | 高分辨率拖拽和 seek 压力 |
 
 每组视频覆盖 10 / 100 / 500 tracks 三档密度，场景包含打开工作台、时间轴 scrub、拖拽选中轨迹、J/K/L 播放和 hover preview。
 
@@ -46,8 +46,8 @@ fixture 描述在 `apps/web/scripts/video-bench/fixtures.json`：
 视频工作台会维护当前 task 的诊断快照：
 
 ```js
-window.__videoWorkbenchDiagnostics
-window.__videoFrameClockDiagnostics
+window.__videoWorkbenchDiagnostics;
+window.__videoFrameClockDiagnostics;
 ```
 
 用户在视频工作台提交 BUG 反馈时，`BugReportDrawer` 会自动把快照追加到描述末尾，并在 `recent_console_errors` 中插入 `[video-workbench-diagnostics]` JSON payload。排查时优先看：

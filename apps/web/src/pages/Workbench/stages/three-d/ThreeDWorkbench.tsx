@@ -37,12 +37,12 @@ import {
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas, displayClassName } from "@/pages/Workbench/stage/colors";
-import {
-  buildTrackLabelText,
-  shouldShowLabel,
-} from "@/pages/Workbench/stage/annotationVisual";
+import { buildTrackLabelText, shouldShowLabel } from "@/pages/Workbench/stage/annotationVisual";
 import type { ThreeDTool } from "@/pages/Workbench/state/useWorkbenchState";
-import type { WorkbenchConfigPatch, WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
+import type {
+  WorkbenchConfigPatch,
+  WorkbenchLayoutPatch,
+} from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
 
 import { AttributeForm } from "../../shell/AttributeForm";
@@ -61,7 +61,10 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import { Icon } from "@/components/ui/Icon";
 import { useCanvasContextMenu } from "../../stage/useCanvasContextMenu";
 import { ClassPickerPopover } from "../../shell/ClassPickerPopover";
-import { buildThreeDBoxContextMenuItems, buildThreeDEmptyContextMenuItems } from "./threeDContextMenu";
+import {
+  buildThreeDBoxContextMenuItems,
+  buildThreeDEmptyContextMenuItems,
+} from "./threeDContextMenu";
 import { FramePicker, type FramePickerMode } from "./FramePicker";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
@@ -79,13 +82,7 @@ import {
 import { colorizePointsAsync } from "./geometry/pointcloudCompute";
 import { projectPoints } from "./geometry/projection";
 import type { ScreenPoint } from "./geometry/pointInPolygon";
-import {
-  fitSize,
-  fitBottom,
-  fitYaw,
-  fitSizeAndBottom,
-  psrFromPoints,
-} from "./geometry/autofit";
+import { fitSize, fitBottom, fitYaw, fitSizeAndBottom, psrFromPoints } from "./geometry/autofit";
 import {
   centralRay,
   depthGate,
@@ -99,14 +96,8 @@ import {
   type LidarAxisConvention,
   unapplyConventionToPsr,
 } from "./geometry/axisConvention";
-import {
-  box3dAttributeSchema,
-} from "./geometry/box3dAttributes";
-import {
-  pasteOffsetPayload,
-  serializeBox3D,
-  type ClipboardBox3D,
-} from "./geometry/box3dClipboard";
+import { box3dAttributeSchema } from "./geometry/box3dAttributes";
+import { pasteOffsetPayload, serializeBox3D, type ClipboardBox3D } from "./geometry/box3dClipboard";
 import { useThreeDHistory } from "./useThreeDHistory";
 import {
   buildPointcloudLegacyMigration,
@@ -136,7 +127,8 @@ const BTN_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
 const SIZE_CTL = "flex items-center gap-1.5 text-xs text-muted-foreground";
 const SELECT_CTL =
   "appearance-none min-w-[84px] px-1.5 py-1 rounded-sm border border-border bg-background text-foreground text-xs";
-const FIT_GROUP = "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
+const FIT_GROUP =
+  "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
 const ERR = "text-status-danger";
@@ -161,7 +153,8 @@ const EDIT_GROUP_LABEL = "mt-1 text-muted-foreground";
 const EDIT_GROUP_LABEL_ROW = "flex items-center justify-between gap-1.5";
 const RESET_BTN =
   "appearance-none shrink-0 px-2 py-px rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
-const EDIT_ROW = "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-1 [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
+const EDIT_ROW =
+  "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-1 [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
 const DELETE_BTN =
   "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-status-danger cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
 const TRI_FLOAT_TAB =
@@ -169,8 +162,7 @@ const TRI_FLOAT_TAB =
 const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
 const CAM_GROUP =
   "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
-const CAM_MODAL =
-  "absolute inset-0 z-base flex items-center justify-center bg-black/70";
+const CAM_MODAL = "absolute inset-0 z-base flex items-center justify-center bg-black/70";
 const CAM_MODAL_BODY =
   "relative p-3 rounded-md border border-border bg-card shadow-sm [&_figure_img]:w-auto [&_figure_img]:h-[70vh] [&_figure_img]:max-w-[88vw]";
 const CAM_MODAL_CLOSE =
@@ -240,7 +232,6 @@ interface ThreeDWorkbenchProps {
   onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
   box3dDefaultSize?: [number, number, number] | null;
 }
-
 
 export function ThreeDWorkbench({
   taskId,
@@ -326,15 +317,13 @@ export function ThreeDWorkbench({
     ? workbenchPointcloud.pointMaskSelectMode
     : "rect";
   const overlayEnabled =
-    workbenchCommon.crossFrameOverlayEnabled ??
-    (workbenchCommon.crossFrameOverlayK > 0);
+    workbenchCommon.crossFrameOverlayEnabled ?? workbenchCommon.crossFrameOverlayK > 0;
   const overlayFrameK = isCrossFrameOverlayK(workbenchCommon.crossFrameOverlayK)
     ? Math.max(workbenchCommon.crossFrameOverlayK, 1)
     : 1;
   const overlayK = overlayEnabled ? overlayFrameK : 0;
   // v0.15.17 · 邻帧框叠加范围:selected=仅选中对象 group(现状);all=不选对象也叠全部邻帧框。
-  const overlayScope =
-    workbenchCommon.crossFrameOverlayScope === "all" ? "all" : "selected";
+  const overlayScope = workbenchCommon.crossFrameOverlayScope === "all" ? "all" : "selected";
   // v0.15.19 · 邻帧点云叠加开关 + 独立帧数(点云比框重,前后各 ≤3 帧)。
   const pointOverlayOn = workbenchPointcloud.neighborPointOverlay;
   const pointOverlayFrameK =
@@ -390,22 +379,16 @@ export function ThreeDWorkbench({
   const { data: project } = useProject(task?.project_id ?? "");
   const toolBindings = project?.tool_bindings;
   const hasToolBindings = !!toolBindings && Object.keys(toolBindings).length > 0;
-  const boxClasses = useMemo(
-    () => {
-      const binding = toolBindings?.[LIDAR_TOOL_UNIT];
-      if (hasToolBindings && !binding?.enabled) return [];
-      return (binding?.classes ?? []).map((c) => c.name);
-    },
-    [hasToolBindings, toolBindings],
-  );
-  const pointMaskOwnClasses = useMemo(
-    () => {
-      const binding = toolBindings?.[POINT_MASK_TOOL_UNIT];
-      if (hasToolBindings && !binding?.enabled) return [];
-      return (binding?.classes ?? []).map((c) => c.name);
-    },
-    [hasToolBindings, toolBindings],
-  );
+  const boxClasses = useMemo(() => {
+    const binding = toolBindings?.[LIDAR_TOOL_UNIT];
+    if (hasToolBindings && !binding?.enabled) return [];
+    return (binding?.classes ?? []).map((c) => c.name);
+  }, [hasToolBindings, toolBindings]);
+  const pointMaskOwnClasses = useMemo(() => {
+    const binding = toolBindings?.[POINT_MASK_TOOL_UNIT];
+    if (hasToolBindings && !binding?.enabled) return [];
+    return (binding?.classes ?? []).map((c) => c.name);
+  }, [hasToolBindings, toolBindings]);
   const pointMaskClasses = pointMaskOwnClasses.length > 0 ? pointMaskOwnClasses : boxClasses;
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -427,10 +410,7 @@ export function ThreeDWorkbench({
   const effectiveRightSidebarWidth = rightSidebarOpen ? rightSidebarWidth : 0;
   const triFloatPosition = useMemo(
     () => resolveTriViewFloatRect(triViewFloat, effectiveRightSidebarWidth),
-    [
-      effectiveRightSidebarWidth,
-      triViewFloat,
-    ],
+    [effectiveRightSidebarWidth, triViewFloat],
   );
   const updateTriViewFloat = useCallback(
     (patch: Partial<FloatingPanelRect> & { collapsed?: boolean }) => {
@@ -506,16 +486,16 @@ export function ThreeDWorkbench({
         bottom: rect.bottom,
         margin: 12,
       };
-      setTriFloatBounds((prev) => (
-        prev
-        && prev.left === next.left
-        && prev.top === next.top
-        && prev.right === next.right
-        && prev.bottom === next.bottom
-        && prev.margin === next.margin
+      setTriFloatBounds((prev) =>
+        prev &&
+        prev.left === next.left &&
+        prev.top === next.top &&
+        prev.right === next.right &&
+        prev.bottom === next.bottom &&
+        prev.margin === next.margin
           ? prev
-          : next
-      ));
+          : next,
+      );
     };
     syncBounds();
     window.addEventListener("resize", syncBounds);
@@ -603,8 +583,7 @@ export function ThreeDWorkbench({
             {
               className: displayClassName(a.class_name),
               trackNumber: a.track_id ? trackNumbers.get(a.track_id) : undefined,
-              attributes:
-                (a as { attributes?: Record<string, unknown> | null }).attributes ?? null,
+              attributes: (a as { attributes?: Record<string, unknown> | null }).attributes ?? null,
             },
             trackContent,
           )
@@ -643,10 +622,7 @@ export function ThreeDWorkbench({
     [selectedIds, boxes],
   );
   const multiBoxSelected = selectedBoxIds.length > 1;
-  const boxAttributeSchema = useMemo(
-    () => box3dAttributeSchema(toolBindings),
-    [toolBindings],
-  );
+  const boxAttributeSchema = useMemo(() => box3dAttributeSchema(toolBindings), [toolBindings]);
   // v0.14.1 · 给 Shift+→ keydown 闭包读最新选中 annotation 的几何类型(避免频繁重绑监听)。
   const selectedAnnRef = useRef(selectedAnn);
   selectedAnnRef.current = selectedAnn;
@@ -655,23 +631,23 @@ export function ThreeDWorkbench({
     () => (annotations ?? []).filter((a) => !a.is_hidden && a.geometry?.type === "point_mask_3d"),
     [annotations],
   );
-  const selectedPointMask = selectedAnn?.geometry?.type === "point_mask_3d"
-    ? selectedAnn.geometry
-    : null;
+  const selectedPointMask =
+    selectedAnn?.geometry?.type === "point_mask_3d" ? selectedAnn.geometry : null;
   const conventionMismatches = useMemo(() => {
     const mismatches = [];
     for (const ann of annotations ?? []) {
       const g = ann.geometry;
       if (!g || (g.type !== "box_3d" && g.type !== "point_mask_3d")) continue;
-      const created = (g as { convention_at_create?: LidarAxisConvention | null }).convention_at_create;
+      const created = (g as { convention_at_create?: LidarAxisConvention | null })
+        .convention_at_create;
       if (created && created !== axisConvention) mismatches.push({ ann, convention: created });
     }
     return mismatches;
   }, [annotations, axisConvention]);
   const selectedConventionMismatch =
-    selectedAnn?.geometry?.type === "box_3d"
-    && selectedAnn.geometry.convention_at_create
-    && selectedAnn.geometry.convention_at_create !== axisConvention
+    selectedAnn?.geometry?.type === "box_3d" &&
+    selectedAnn.geometry.convention_at_create &&
+    selectedAnn.geometry.convention_at_create !== axisConvention
       ? selectedAnn.geometry.convention_at_create
       : null;
   // 单框锁定(列表 L 切换)→ 不可编辑(无 gizmo / 面板禁用 / 不可删),但仍可选中查看。
@@ -749,9 +725,7 @@ export function ThreeDWorkbench({
         pushToast({ msg: "请先选中一个 3D 框", kind: "" });
         return;
       }
-      const selType = (
-        selectedAnnRef.current?.geometry as { type?: string } | undefined
-      )?.type;
+      const selType = (selectedAnnRef.current?.geometry as { type?: string } | undefined)?.type;
       if (selType !== "box_3d") {
         pushToast({ msg: "跨帧延续仅支持 3D 框", kind: "" });
         return;
@@ -793,12 +767,7 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [
-    canPlaceBox,
-    canPlacePointMask,
-    onSetThreeDTool,
-    pointMaskPolygonMode,
-  ]);
+  }, [canPlaceBox, canPlacePointMask, onSetThreeDTool, pointMaskPolygonMode]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -851,7 +820,7 @@ export function ThreeDWorkbench({
   );
 
   const editableSelectedBoxAnnotations = useCallback(() => {
-    const ids = selectedBoxIds.length > 0 ? selectedBoxIds : (selectedId ? [selectedId] : []);
+    const ids = selectedBoxIds.length > 0 ? selectedBoxIds : selectedId ? [selectedId] : [];
     return (annotationsRef.current ?? []).filter(
       (a) => ids.includes(a.id) && a.geometry?.type === "box_3d" && !a.is_locked,
     );
@@ -906,7 +875,8 @@ export function ThreeDWorkbench({
 
   const handleChangeAttributes = useCallback(
     (next: Record<string, unknown>) => {
-      if (!selectedId || !selectedAnn || readOnly || selectedAnn.is_locked || multiBoxSelected) return;
+      if (!selectedId || !selectedAnn || readOnly || selectedAnn.is_locked || multiBoxSelected)
+        return;
       updateAnnotationWithHistory(
         selectedId,
         { attributes: selectedAnn.attributes ?? {} },
@@ -960,7 +930,14 @@ export function ThreeDWorkbench({
         { geometry },
       );
     },
-    [selectedId, selectedBox, selectedPsrEditable, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory],
+    [
+      selectedId,
+      selectedBox,
+      selectedPsrEditable,
+      selectedAnn?.geometry,
+      axisConvention,
+      updateAnnotationWithHistory,
+    ],
   );
   const handleFitSize = useCallback(() => applyFit(fitSize), [applyFit]);
   const handleFitBottom = useCallback(() => applyFit(fitBottom), [applyFit]);
@@ -1041,18 +1018,23 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(
-        payload,
-        {
-          onSuccess: (created) => {
-            history.push({ kind: "create", annotationId: created.id, payload });
-            onSelectBox(created.id);
-          },
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
         },
-      );
+      });
       onSetThreeDTool("select"); // 单次放置后回到选择工具
     },
-    [axisConvention, boxPlaceClass, createAnnotation, defaultBoxSize, history, onSelectBox, onSetThreeDTool],
+    [
+      axisConvention,
+      boxPlaceClass,
+      createAnnotation,
+      defaultBoxSize,
+      history,
+      onSelectBox,
+      onSetThreeDTool,
+    ],
   );
 
   // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实
@@ -1073,15 +1055,12 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(
-        payload,
-        {
-          onSuccess: (created) => {
-            history.push({ kind: "create", annotationId: created.id, payload });
-            onSelectBox(created.id);
-          },
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
         },
-      );
+      });
       onSetThreeDTool("select"); // 单次画框后回到选择工具
     },
     [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
@@ -1127,7 +1106,15 @@ export function ThreeDWorkbench({
       });
       setSeedMode(false);
     },
-    [boxPlaceClass, axisConvention, defaultBoxSize, createAnnotation, history, onSelectBox, pushToast],
+    [
+      boxPlaceClass,
+      axisConvention,
+      defaultBoxSize,
+      createAnnotation,
+      history,
+      onSelectBox,
+      pushToast,
+    ],
   );
 
   const applyPointMaskSelection = useCallback(
@@ -1147,11 +1134,7 @@ export function ThreeDWorkbench({
           point_indices: nextIndices,
         };
         scene?.highlightPointMask(nextIndices);
-        updateAnnotationWithHistory(
-          selectedId,
-          { geometry: selectedPointMask },
-          { geometry },
-        );
+        updateAnnotationWithHistory(selectedId, { geometry: selectedPointMask }, { geometry });
         return;
       }
       if (!pointMaskPlaceClass) return;
@@ -1190,10 +1173,7 @@ export function ThreeDWorkbench({
     (a: ScreenPoint, b: ScreenPoint, subtract: boolean) => {
       const scene = sceneRef.current;
       if (!scene) return;
-      applyPointMaskSelection(
-        scene.selectPointMaskInScreenRect(a.x, a.y, b.x, b.y),
-        subtract,
-      );
+      applyPointMaskSelection(scene.selectPointMaskInScreenRect(a.x, a.y, b.x, b.y), subtract);
     },
     [applyPointMaskSelection],
   );
@@ -1302,7 +1282,8 @@ export function ThreeDWorkbench({
       // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
       sceneRef.current?.setBoxSelecting(true);
       boxSelectStartRef.current = { x: e.clientX, y: e.clientY };
-      lassoPointsRef.current = pointMaskSelectMode === "lasso" ? [{ x: e.clientX, y: e.clientY }] : [];
+      lassoPointsRef.current =
+        pointMaskSelectMode === "lasso" ? [{ x: e.clientX, y: e.clientY }] : [];
       setIsBoxSelecting(true);
     }
   };
@@ -1428,11 +1409,17 @@ export function ThreeDWorkbench({
   // ── v0.15.20 · 画布右键菜单(命中框/空白分流;右键拖动=相机 pan 则抑制)────────────
   const contextMenu = useCanvasContextMenu();
   const [ctxTargetId, setCtxTargetId] = useState<string | null>(null);
-  const [classPickerAnchor, setClassPickerAnchor] = useState<{ left: number; top: number } | null>(null);
-  const [framePicker, setFramePicker] = useState<{ mode: FramePickerMode; anchor: { left: number; top: number } } | null>(null);
+  const [classPickerAnchor, setClassPickerAnchor] = useState<{ left: number; top: number } | null>(
+    null,
+  );
+  const [framePicker, setFramePicker] = useState<{
+    mode: FramePickerMode;
+    anchor: { left: number; top: number };
+  } | null>(null);
 
   // v0.15.21 · 选中框 PSR 面板:渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
-  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } = usePsrFloatingPanel(userId);
+  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } =
+    usePsrFloatingPanel(userId);
 
   const closeContextMenu = () => {
     contextMenu.close();
@@ -1473,9 +1460,15 @@ export function ThreeDWorkbench({
         onPropagateNext: () => onCrossFramePropagate("next"),
         onPropagatePrev: () => onCrossFramePropagate("prev"),
         onPropagateToFrame: () =>
-          setFramePicker({ mode: "propagate", anchor: { left: contextMenu.x, top: contextMenu.y } }),
+          setFramePicker({
+            mode: "propagate",
+            anchor: { left: contextMenu.x, top: contextMenu.y },
+          }),
         onInterpolate: () =>
-          setFramePicker({ mode: "interpolate", anchor: { left: contextMenu.x, top: contextMenu.y } }),
+          setFramePicker({
+            mode: "interpolate",
+            anchor: { left: contextMenu.x, top: contextMenu.y },
+          }),
         onChangeClass: () => setClassPickerAnchor({ left: contextMenu.x, top: contextMenu.y }),
         onToggleLock: handleToggleLock,
         onToggleHidden: handleToggleHidden,
@@ -1493,10 +1486,20 @@ export function ThreeDWorkbench({
       onPaste: pasteClipboard,
     });
   }, [
-    contextMenu.open, contextMenu.x, contextMenu.y, ctxTargetId,
-    manifest?.scene_id, annotations, readOnly,
-    onCrossFramePropagate, onCrossFramePropagateBatch,
-    handleToggleLock, handleToggleHidden, copySelected, pasteClipboard, handleDeleteSelected,
+    contextMenu.open,
+    contextMenu.x,
+    contextMenu.y,
+    ctxTargetId,
+    manifest?.scene_id,
+    annotations,
+    readOnly,
+    onCrossFramePropagate,
+    onCrossFramePropagateBatch,
+    handleToggleLock,
+    handleToggleHidden,
+    copySelected,
+    pasteClipboard,
+    handleDeleteSelected,
   ]);
 
   const handleResetView = useCallback(() => {
@@ -1536,10 +1539,13 @@ export function ThreeDWorkbench({
       arr.push(cam);
       groups.set(anchor, arr);
     }
-    return [...groups.entries()].map(([anchor, cams]) => [
-      anchor,
-      [...cams].sort((a, b) => (a.role || a.name).localeCompare(b.role || b.name)),
-    ] as const);
+    return [...groups.entries()].map(
+      ([anchor, cams]) =>
+        [
+          anchor,
+          [...cams].sort((a, b) => (a.role || a.name).localeCompare(b.role || b.name)),
+        ] as const,
+    );
   }, [cameras]);
   const enlargedIndex = useMemo(
     () => cameras.findIndex((c) => c.role === enlargedRole),
@@ -1554,7 +1560,7 @@ export function ThreeDWorkbench({
       if (cameras.length === 0) return;
       setEnlargedRole((prev) => {
         const idx = cameras.findIndex((c) => c.role === prev);
-        const base = idx >= 0 ? idx : (dir > 0 ? -1 : 0);
+        const base = idx >= 0 ? idx : dir > 0 ? -1 : 0;
         const next = (base + dir + cameras.length) % cameras.length;
         return cameras[next].role;
       });
@@ -1627,7 +1633,9 @@ export function ThreeDWorkbench({
         if (!cancelled) {
           colorizedRawRef.current = colors;
           adjustedColorBufferRef.current = null;
-          scene.setPointColors(isNeutralAdjust(colorAdjust) ? colors : adjustColors(colors, colorAdjust));
+          scene.setPointColors(
+            isNeutralAdjust(colorAdjust) ? colors : adjustColors(colors, colorAdjust),
+          );
         }
       }
       if (!cancelled) setColorizing(false);
@@ -1743,9 +1751,7 @@ export function ThreeDWorkbench({
         }
         // scope=all 且有选中对象:非选中 track 的邻帧框弱化(dim),突出当前对象轨迹。
         const dim =
-          overlayScope === "all" &&
-          selectedTrackId != null &&
-          a.track_id !== selectedTrackId;
+          overlayScope === "all" && selectedTrackId != null && a.track_id !== selectedTrackId;
         out.push({
           id: `${tid}:${a.id}`,
           center,
@@ -1772,8 +1778,7 @@ export function ThreeDWorkbench({
   }, [referenceBoxes]);
 
   // v0.15.18 · 邻帧点云叠加。需 scene + ego 轨迹(无轨迹直接叠会乱,故 gate on poseByFrame)。
-  const pointOverlayActive =
-    pointOverlayK > 0 && !!neighborsData?.scene_id && !!poseByFrame;
+  const pointOverlayActive = pointOverlayK > 0 && !!neighborsData?.scene_id && !!poseByFrame;
   const pointNeighbors = useMemo(() => {
     if (!pointOverlayActive || !neighborsData) return [];
     return [
@@ -1839,10 +1844,7 @@ export function ThreeDWorkbench({
     return m;
   }, [alignActive, alignAnnsByTask]);
   // 邻帧点云下采样目标:当前帧抽稀阈值的 1/8,上限 8 万(邻帧仅作参考,远低于当前帧)。
-  const neighborPointTarget = Math.min(
-    80_000,
-    Math.round(performanceConfig.pcdDecimate / 8),
-  );
+  const neighborPointTarget = Math.min(80_000, Math.round(performanceConfig.pcdDecimate / 8));
   const { items: neighborPcds } = useNeighborPointClouds(
     pointNeighbors,
     axisConvention,
@@ -1935,10 +1937,7 @@ export function ThreeDWorkbench({
 
   // v0.13.5 · 三视图复用主场景点 geometry (零拷贝); selected 仅在 PSR/色变化时换引用,
   // 避免每次 render 触发 TriViewRenderer.setBox。
-  const getPointsGeometry = useCallback(
-    () => sceneRef.current?.getPointsGeometry() ?? null,
-    [],
-  );
+  const getPointsGeometry = useCallback(() => sceneRef.current?.getPointsGeometry() ?? null, []);
   const triSelected = useMemo<TriSelected | null>(
     () =>
       selectedBox && !multiBoxSelected
@@ -1959,7 +1958,11 @@ export function ThreeDWorkbench({
       if (!selectedId) return;
       const center: [number, number, number] = [psr.center[0], psr.center[1], psr.center[2]];
       const size: [number, number, number] = [psr.size[0], psr.size[1], psr.size[2]];
-      const rotation: [number, number, number] = [psr.rotation[0], psr.rotation[1], psr.rotation[2]];
+      const rotation: [number, number, number] = [
+        psr.rotation[0],
+        psr.rotation[1],
+        psr.rotation[2],
+      ];
       setForm(psrToForm({ center, size, rotation }));
       if (commit) {
         setDraftPsr(null);
@@ -2042,35 +2045,40 @@ export function ThreeDWorkbench({
         />
 
         {/* v0.13.9 · 框选预览矩形(地面 footprint), 仅拖拽期出现, 不拦事件。 */}
-        {previewRect && (
-          <div ref={boxSelectRectRef} className={BOX_SELECT_RECT} />
-        )}
-        {(previewPath.length > 0 || pointMaskPolygonPoints.length > 0) && (() => {
-          const r = viewportRef.current?.getBoundingClientRect();
-          const draft = r
-            ? pointMaskPolygonPoints.map((p) => ({ x: p.x - r.left, y: p.y - r.top }))
-            : [];
-          const points = previewPath.length > 0
-            ? previewPath
-            : [...draft, ...(pointMaskCursor ? [pointMaskCursor] : [])];
-          const svgPoints = points.map((p) => `${p.x},${p.y}`).join(" ");
-          return (
-            <svg className={POINT_MASK_PATH_PREVIEW} aria-hidden="true">
-              <polyline className="[fill:none] [stroke:var(--sc-brand)] [stroke-width:2] [stroke-linejoin:round] [stroke-linecap:round]" points={svgPoints} />
-              {draft.map((p, i) => (
-                <circle className="[fill:var(--sc-card)] [stroke:var(--sc-brand)] [stroke-width:2]" key={`${p.x}:${p.y}:${i}`} cx={p.x} cy={p.y} r="3" />
-              ))}
-            </svg>
-          );
-        })()}
+        {previewRect && <div ref={boxSelectRectRef} className={BOX_SELECT_RECT} />}
+        {(previewPath.length > 0 || pointMaskPolygonPoints.length > 0) &&
+          (() => {
+            const r = viewportRef.current?.getBoundingClientRect();
+            const draft = r
+              ? pointMaskPolygonPoints.map((p) => ({ x: p.x - r.left, y: p.y - r.top }))
+              : [];
+            const points =
+              previewPath.length > 0
+                ? previewPath
+                : [...draft, ...(pointMaskCursor ? [pointMaskCursor] : [])];
+            const svgPoints = points.map((p) => `${p.x},${p.y}`).join(" ");
+            return (
+              <svg className={POINT_MASK_PATH_PREVIEW} aria-hidden="true">
+                <polyline
+                  className="[fill:none] [stroke:var(--sc-brand)] [stroke-width:2] [stroke-linejoin:round] [stroke-linecap:round]"
+                  points={svgPoints}
+                />
+                {draft.map((p, i) => (
+                  <circle
+                    className="[fill:var(--sc-card)] [stroke:var(--sc-brand)] [stroke-width:2]"
+                    key={`${p.x}:${p.y}:${i}`}
+                    cx={p.x}
+                    cy={p.y}
+                    r="3"
+                  />
+                ))}
+              </svg>
+            );
+          })()}
 
         {/* 控件浮条 */}
         <div ref={controlsRef} className={CONTROLS}>
-          <button
-            type="button"
-            className={BTN}
-            onClick={handleResetView}
-          >
+          <button type="button" className={BTN} onClick={handleResetView}>
             重置视角
           </button>
           <button
@@ -2163,9 +2171,7 @@ export function ThreeDWorkbench({
 
         {conventionMismatches.length > 0 && (
           <div className={MISMATCH_BANNER}>
-            <span>
-              {conventionMismatches.length} 个 3D 标注创建时的坐标系与当前数据集不一致。
-            </span>
+            <span>{conventionMismatches.length} 个 3D 标注创建时的坐标系与当前数据集不一致。</span>
             <button
               type="button"
               className={BTN}
@@ -2196,13 +2202,13 @@ export function ThreeDWorkbench({
             <span>· 邻帧对齐 {neighborMovedCount.toLocaleString()} 动态点</span>
           )}
           {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
-          {placing && (
-            <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>
-          )}
+          {placing && <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>}
           {pointMasking && (
             <span>
               · {pointMaskSelectMode === "polygon" ? "点击多边形闭合" : "拖动选点"}
-              {selectedPointMaskEditable ? "编辑分割(Alt 减点)" : `生成分割 ${pointMaskPlaceClass ?? ""}`}
+              {selectedPointMaskEditable
+                ? "编辑分割(Alt 减点)"
+                : `生成分割 ${pointMaskPlaceClass ?? ""}`}
               · V/Esc 取消
             </span>
           )}
@@ -2272,7 +2278,9 @@ export function ThreeDWorkbench({
                     type="button"
                     className={ICON_BTN}
                     onClick={handleDeleteSelected}
-                    aria-label={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                    aria-label={
+                      multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"
+                    }
                     title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
                   >
                     <Icon name="trash" size={14} />
@@ -2303,8 +2311,8 @@ export function ThreeDWorkbench({
                     : multiBoxSelected
                       ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
                       : selectedLocked
-                      ? "已锁定 · 点「已锁定」解锁后可编辑"
-                      : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+                        ? "已锁定 · 点「已锁定」解锁后可编辑"
+                        : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
                 </div>
                 {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
                     Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
@@ -2425,7 +2433,8 @@ export function ThreeDWorkbench({
               )}
             </div>
             <div className={EDIT_GROUP_LABEL}>
-              {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt 圈选减点
+              {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt
+              圈选减点
             </div>
             {!readOnly && selectedPointMaskEditable && (
               <button
@@ -2473,10 +2482,7 @@ export function ThreeDWorkbench({
             tabIndex={0}
             data-floating-panel
             aria-label="展开三视图精修(可拖动)"
-            className={[
-              TRI_FLOAT_TAB,
-              triTabDrag.isDragging ? TRI_FLOAT_TAB_DRAGGING : "",
-            ]
+            className={[TRI_FLOAT_TAB, triTabDrag.isDragging ? TRI_FLOAT_TAB_DRAGGING : ""]
               .filter(Boolean)
               .join(" ")}
             {...triTabDrag.handleProps}
@@ -2515,8 +2521,7 @@ export function ThreeDWorkbench({
                 autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
                 dragBounds={triFloatBounds}
                 position={
-                  cameraPanels[cam.role]?.x != null &&
-                  cameraPanels[cam.role]?.y != null
+                  cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
                     ? {
                         x: cameraPanels[cam.role]!.x!,
                         y: cameraPanels[cam.role]!.y!,
@@ -2534,11 +2539,7 @@ export function ThreeDWorkbench({
         {/* v0.13.7 · 相机放大浮层(L3):点⛶弹大图,遮罩 / 关闭钮 / ESC 关闭。
             复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}
         {enlargedCam && (
-          <div
-            className={CAM_MODAL}
-            onClick={() => setEnlargedRole(null)}
-            role="presentation"
-          >
+          <div className={CAM_MODAL} onClick={() => setEnlargedRole(null)} role="presentation">
             <div
               className={CAM_MODAL_BODY}
               onClick={(e) => e.stopPropagation()}
@@ -2554,7 +2555,9 @@ export function ThreeDWorkbench({
               {!readOnly && enlargedCam.calibration && boxPlaceClass && (
                 <button
                   type="button"
-                  className={seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED}
+                  className={
+                    seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
+                  }
                   onClick={() => setSeedMode((v) => !v)}
                   aria-pressed={seedMode}
                   title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"

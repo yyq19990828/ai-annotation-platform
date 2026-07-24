@@ -6,8 +6,8 @@
  * 前置条件：
  *   1. docker compose up -d
  *   2. uv run alembic upgrade head (apps/api)
- *   3. uv run uvicorn app.main:app --port 8000
- *   4. pnpm dev  (apps/web)
+ *   3. E2E_SEED_ENABLED=true uv run uvicorn app.main:app --port 8010
+ *   4. PORT=3001 pnpm dev  (apps/web)
  *   5. cd apps/api && PYTHONPATH=. uv run python scripts/seed.py
  *
  * 矩阵规则：
@@ -74,8 +74,9 @@ test.describe("screenshots automation", () => {
       const catalog = cached;
 
       // 获取当前 Playwright project 对应的矩阵轴
-      const axis = PROJECT_AXES[info.project.name as keyof typeof PROJECT_AXES]
-        ?? PROJECT_AXES["desktop-light"];
+      const axis =
+        PROJECT_AXES[info.project.name as keyof typeof PROJECT_AXES] ??
+        PROJECT_AXES["desktop-light"];
 
       // 不在此 project 跑的 scene 直接 skip
       if (!shouldRunInProject(scene, axis)) {
@@ -87,112 +88,139 @@ test.describe("screenshots automation", () => {
       const route = scene.route(catalog);
 
       const emailMap: Record<Role, string> = {
-        admin:     catalog.users.admin.email,
+        admin: catalog.users.admin.email,
         annotator: catalog.users.annotator.email,
-        reviewer:  catalog.users.reviewer.email,
+        reviewer: catalog.users.reviewer.email,
       };
-      const roleEmail = Array.isArray(scene.role)
-        ? emailMap[scene.role[0]]
-        : emailMap[scene.role];
+      const roleEmail = Array.isArray(scene.role) ? emailMap[scene.role[0]] : emailMap[scene.role];
 
-      // 激活网络 mock（如有）
-      const cleanupMock = await setupMockState(page, scene.mockState);
+      let cleanupMock: () => Promise<void> = async () => {};
+      let cleanupAnnotations: () => Promise<void> = async () => {};
 
-      await installScreenshotEnvironment(page);
-      await seed.injectToken(page, roleEmail);
-      await applyScreenshotTheme(page, axis.theme);
-      await page.goto(route);
-      if (scene.prepare) await scene.prepare(page, catalog);
-      await applyScreenshotTheme(page, axis.theme);
-      await waitForScreenshotReady(page);
+      try {
+        // 激活网络 mock（如有）
+        cleanupMock = await setupMockState(page, scene.mockState);
 
-      // 注入 SVG 注释 overlay（如有）
-      const cleanupAnnotations = await injectAnnotations(page, scene.annotate);
+        await installScreenshotEnvironment(page);
+        await seed.injectToken(page, roleEmail);
+        await applyScreenshotTheme(page, axis.theme);
+        await page.goto(route);
+        if (scene.prepare) await scene.prepare(page, catalog);
+        await applyScreenshotTheme(page, axis.theme);
+        await waitForScreenshotReady(page);
 
-      // 合并默认 mask + scene 级 mask
-      const maskSelectors = [...DEFAULT_MASK_SELECTORS, ...(scene.mask ?? [])];
-      const maskLocators  = maskSelectors.map((sel) => page.locator(sel));
+        // 注入 SVG 注释 overlay（如有）
+        cleanupAnnotations = await injectAnnotations(page, scene.annotate);
 
-      // 确保输出目录存在
-      const outRelative = resolveOutputPath(scene, axis);
-      const out = `${REPO_ROOT}/${outRelative}`;
-      if (!VALIDATE_ONLY) {
-        if (existingManifest[outRelative]?.auto === false) {
-          throw new Error(`${scene.name}: ${outRelative} 已标记为 auto:false，拒绝覆盖`);
+        // 合并默认 mask + scene 级 mask
+        const maskSelectors = [...DEFAULT_MASK_SELECTORS, ...(scene.mask ?? [])];
+        const maskLocators = maskSelectors.map((sel) => page.locator(sel));
+
+        // 确保输出目录存在
+        const outRelative = resolveOutputPath(scene, axis);
+        const out = `${REPO_ROOT}/${outRelative}`;
+        if (!VALIDATE_ONLY) {
+          if (existingManifest[outRelative]?.auto === false) {
+            throw new Error(`${scene.name}: ${outRelative} 已标记为 auto:false，拒绝覆盖`);
+          }
+          fs.mkdirSync(path.dirname(out), { recursive: true });
         }
-        fs.mkdirSync(path.dirname(out), { recursive: true });
+
+        // 按 capture 模式截图
+        const capture = scene.capture;
+
+        if (!capture) {
+          if (!VALIDATE_ONLY) {
+            await page.screenshot({
+              path: out,
+              fullPage: false,
+              animations: "disabled",
+              mask: maskLocators,
+            });
+          }
+        } else if (capture.kind === "fullPage") {
+          if (!VALIDATE_ONLY) {
+            await page.screenshot({
+              path: out,
+              fullPage: true,
+              animations: "disabled",
+              mask: maskLocators,
+            });
+          }
+        } else if (capture.kind === "locator") {
+          const locator = page.locator(capture.selector);
+          await locator.waitFor({ state: "visible", timeout: 10_000 });
+          const box = await locator.boundingBox();
+          if (!box) {
+            throw new Error(`${scene.name}: 截图目标 ${capture.selector} 没有可见边界`);
+          }
+          if (VALIDATE_ONLY) {
+            // locator 的可见性与边界已经在上方验证，无需写文件。
+          } else if (capture.padding) {
+            await page.screenshot({
+              path: out,
+              animations: "disabled",
+              mask: maskLocators,
+              clip: {
+                x: Math.max(0, box.x - capture.padding),
+                y: Math.max(0, box.y - capture.padding),
+                width: box.width + capture.padding * 2,
+                height: box.height + capture.padding * 2,
+              },
+            });
+          } else {
+            await page.screenshot({
+              path: out,
+              animations: "disabled",
+              mask: maskLocators,
+              clip: { x: box.x, y: box.y, width: box.width, height: box.height },
+            });
+          }
+        } else if (capture.kind === "clip") {
+          if (!VALIDATE_ONLY) {
+            await page.screenshot({
+              path: out,
+              animations: "disabled",
+              mask: maskLocators,
+              clip: capture.rect,
+            });
+          }
+        }
+
+        info.annotations.push({ type: "screenshot", description: outRelative });
+        await info.attach("screenshot-manifest", {
+          body: Buffer.from(
+            JSON.stringify({
+              target: outRelative,
+              scene: scene.name,
+              source: scene.source,
+              capture: capture ?? { kind: "viewport" },
+              fixture: scene.fixture ?? null,
+              seed_revision: catalog.seed_revision,
+              project: info.project.name,
+              viewport: page.viewportSize(),
+              theme: axis.theme,
+              locale: axis.locale,
+              browser: {
+                name: page.context().browser()?.browserType().name() ?? "chromium",
+                version: page.context().browser()?.version() ?? "unknown",
+              },
+            }),
+          ),
+          contentType: "application/json",
+        });
+      } finally {
+        try {
+          await cleanupAnnotations();
+        } finally {
+          try {
+            await cleanupMock();
+          } finally {
+            // scene.prepare 也可能注册局部 route；测试失败时一并清除。
+            await page.unrouteAll({ behavior: "ignoreErrors" });
+          }
+        }
       }
-
-      // 按 capture 模式截图
-      const capture = scene.capture;
-
-      if (!capture) {
-        if (!VALIDATE_ONLY) {
-          await page.screenshot({ path: out, fullPage: false, animations: "disabled", mask: maskLocators });
-        }
-      } else if (capture.kind === "fullPage") {
-        if (!VALIDATE_ONLY) {
-          await page.screenshot({ path: out, fullPage: true, animations: "disabled", mask: maskLocators });
-        }
-      } else if (capture.kind === "locator") {
-        const locator = page.locator(capture.selector);
-        await locator.waitFor({ state: "visible", timeout: 10_000 });
-        const box = await locator.boundingBox();
-        if (!box) {
-          throw new Error(`${scene.name}: 截图目标 ${capture.selector} 没有可见边界`);
-        }
-        if (VALIDATE_ONLY) {
-          // locator 的可见性与边界已经在上方验证，无需写文件。
-        } else if (capture.padding) {
-          await page.screenshot({
-            path: out,
-            animations: "disabled",
-            mask: maskLocators,
-            clip: {
-              x:      Math.max(0, box.x - capture.padding),
-              y:      Math.max(0, box.y - capture.padding),
-              width:  box.width  + capture.padding * 2,
-              height: box.height + capture.padding * 2,
-            },
-          });
-        } else {
-          await page.screenshot({
-            path: out,
-            animations: "disabled",
-            mask: maskLocators,
-            clip: { x: box.x, y: box.y, width: box.width, height: box.height },
-          });
-        }
-      } else if (capture.kind === "clip") {
-        if (!VALIDATE_ONLY) {
-          await page.screenshot({ path: out, animations: "disabled", mask: maskLocators, clip: capture.rect });
-        }
-      }
-
-      // 清理
-      await cleanupAnnotations();
-      await cleanupMock();
-
-      info.annotations.push({ type: "screenshot", description: outRelative });
-      await info.attach("screenshot-manifest", {
-        body: Buffer.from(JSON.stringify({
-          target: outRelative,
-          scene: scene.name,
-          source: scene.source,
-          capture: capture ?? { kind: "viewport" },
-          fixture: scene.fixture ?? null,
-          seed_revision: catalog.seed_revision,
-          project: info.project.name,
-          viewport: page.viewportSize(),
-          theme: axis.theme,
-          locale: axis.locale,
-          browser: {
-            name: page.context().browser()?.browserType().name() ?? "chromium",
-            version: page.context().browser()?.version() ?? "unknown",
-          },
-        })),
-        contentType: "application/json",
-      });
     });
   }
 });

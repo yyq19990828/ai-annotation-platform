@@ -32,11 +32,7 @@ vi.mock("./ReviewSidebar", () => ({
   ReviewSidebar: ({ batches, selectedBatchId, onSelect }: any) => (
     <div data-testid="review-sidebar">
       {batches.map((b: any) => (
-        <button
-          key={b.batch_id}
-          data-testid={`batch-${b.batch_id}`}
-          onClick={() => onSelect(b)}
-        >
+        <button key={b.batch_id} data-testid={`batch-${b.batch_id}`} onClick={() => onSelect(b)}>
           {b.batch_name}
         </button>
       ))}
@@ -50,8 +46,7 @@ vi.mock("./ReviewSidebar", () => ({
 }));
 
 vi.mock("./RejectReasonModal", () => ({
-  RejectReasonModal: ({ open }: any) =>
-    open ? <div data-testid="reject-modal" /> : null,
+  RejectReasonModal: ({ open }: any) => (open ? <div data-testid="reject-modal" /> : null),
 }));
 
 vi.mock("@/components/Thumbnail", () => ({
@@ -59,8 +54,7 @@ vi.mock("@/components/Thumbnail", () => ({
 }));
 
 vi.mock("@/utils/workbenchNavigation", () => ({
-  buildReviewWorkbenchUrl: (_pid: string, opts: any) =>
-    `/workbench/review/${opts?.batchId ?? ""}`,
+  buildReviewWorkbenchUrl: (_pid: string, opts: any) => `/workbench/review/${opts?.batchId ?? ""}`,
   currentWorkbenchReturnTo: () => "/review",
 }));
 
@@ -171,7 +165,16 @@ describe("ReviewPage", () => {
       },
     });
     mockUseTaskList.mockReturnValue({
-      data: { pages: [{ items: [sampleTask, { ...sampleTask, id: "t2", display_id: "T-2", file_name: "dog.jpg" }] }] },
+      data: {
+        pages: [
+          {
+            items: [
+              sampleTask,
+              { ...sampleTask, id: "t2", display_id: "T-2", file_name: "dog.jpg" },
+            ],
+          },
+        ],
+      },
       isLoading: false,
     });
     renderUI("/review?project=p1&batch=b1");

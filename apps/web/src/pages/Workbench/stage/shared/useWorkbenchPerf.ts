@@ -23,10 +23,14 @@ export function useWorkbenchPerf(sampleRate?: number): WorkbenchPerfStats {
 
   useEffect(() => {
     if (typeof PerformanceObserver === "undefined") return;
-    const supported = (PerformanceObserver as unknown as { supportedEntryTypes?: string[] }).supportedEntryTypes ?? [];
+    const supported =
+      (PerformanceObserver as unknown as { supportedEntryTypes?: string[] }).supportedEntryTypes ??
+      [];
     if (!supported.includes("longtask")) return;
 
-    const isDev = typeof import.meta !== "undefined" && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV;
+    const isDev =
+      typeof import.meta !== "undefined" &&
+      (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV;
     const rate = typeof sampleRate === "number" ? sampleRate : isDev ? 1 : 0.05;
     if (rate <= 0) return;
 
@@ -47,7 +51,7 @@ export function useWorkbenchPerf(sampleRate?: number): WorkbenchPerfStats {
       let last = statsRef.current.lastLongTaskAt;
       for (const e of entries) {
         if (e.duration > maxMs) maxMs = e.duration;
-        last = (e.startTime || Date.now());
+        last = e.startTime || Date.now();
       }
       const next: WorkbenchPerfStats = {
         longTaskCount: statsRef.current.longTaskCount + entries.length,

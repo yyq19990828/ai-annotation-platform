@@ -9,8 +9,7 @@ import type { IconName } from "@/components/ui/Icon";
 
 const NAV_ITEM_CLASS =
   "flex items-center gap-2.5 rounded-md border border-transparent bg-transparent px-2.5 py-1.5 text-sm font-normal text-muted-foreground no-underline cursor-pointer select-none transition-[background-color,border-color,color,box-shadow,transform] duration-200 hover:-translate-y-px hover:bg-accent hover:text-foreground active:translate-y-0 active:scale-[0.99] focus-visible:ring-[3px] focus-visible:ring-ring/20";
-const NAV_ITEM_ACTIVE_CLASS =
-  "border-border bg-card font-medium text-foreground surface-shadow-sm";
+const NAV_ITEM_ACTIVE_CLASS = "border-border bg-card font-medium text-foreground surface-shadow-sm";
 const BADGE_BASE =
   "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 text-2xs font-medium";
 const BADGE_AI = "bg-status-info-soft text-status-info";
@@ -34,10 +33,27 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
     items: [
       ...(isSuperAdmin
         ? [
-            { key: "dashboard" as PageKey, path: "/overview", icon: "dashboard" as IconName, label: "平台概览" },
-            { key: "dashboard" as PageKey, path: "/dashboard", icon: "layers" as IconName, label: "项目管理" },
+            {
+              key: "dashboard" as PageKey,
+              path: "/overview",
+              icon: "dashboard" as IconName,
+              label: "平台概览",
+            },
+            {
+              key: "dashboard" as PageKey,
+              path: "/dashboard",
+              icon: "layers" as IconName,
+              label: "项目管理",
+            },
           ]
-        : [{ key: "dashboard" as PageKey, path: "/dashboard", icon: "dashboard" as IconName, label: "项目总览" }]),
+        : [
+            {
+              key: "dashboard" as PageKey,
+              path: "/dashboard",
+              icon: "dashboard" as IconName,
+              label: "项目总览",
+            },
+          ]),
       { key: "annotate", path: "/annotate", icon: "target", label: "标注工作" },
       { key: "review", path: "/review", icon: "check", label: "质检审核" },
     ],
@@ -61,10 +77,35 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
       { key: "audit", path: "/audit", icon: "shield", label: "审计日志" },
       // v0.12.3 · 标注员绩效 + 离线分析（此前仅 Dashboard 卡片 / 直达 URL 可达，补 Sidebar 入口）
       // v0.12.6 (A3) · 标注员绩效对 project_admin 开放（项目级范围），由 canAccessPage 过滤；离线分析仍超管专属。
-      { key: "admin-people" as PageKey, path: "/admin/people", icon: "users" as IconName, label: "标注员绩效" },
-      ...(isSuperAdmin ? [{ key: "admin-analytics" as PageKey, path: "/admin/analytics", icon: "layers" as IconName, label: "离线分析" }] : []),
-      ...(isSuperAdmin ? [{ key: "admin-health" as PageKey, path: "/admin/health", icon: "activity" as IconName, label: "系统健康" }] : []),
-      ...(isSuperAdmin ? [{ key: "bugs" as PageKey, path: "/bugs", icon: "bug" as IconName, label: "BUG反馈" }] : []),
+      {
+        key: "admin-people" as PageKey,
+        path: "/admin/people",
+        icon: "users" as IconName,
+        label: "标注员绩效",
+      },
+      ...(isSuperAdmin
+        ? [
+            {
+              key: "admin-analytics" as PageKey,
+              path: "/admin/analytics",
+              icon: "layers" as IconName,
+              label: "离线分析",
+            },
+          ]
+        : []),
+      ...(isSuperAdmin
+        ? [
+            {
+              key: "admin-health" as PageKey,
+              path: "/admin/health",
+              icon: "activity" as IconName,
+              label: "系统健康",
+            },
+          ]
+        : []),
+      ...(isSuperAdmin
+        ? [{ key: "bugs" as PageKey, path: "/bugs", icon: "bug" as IconName, label: "BUG反馈" }]
+        : []),
       // v0.12.3 · 我的绩效（所有角色自助自视）
       { key: "my-performance", path: "/me/performance", icon: "activity", label: "我的绩效" },
       { key: "settings", path: "/settings", icon: "settings", label: "设置" },
@@ -111,9 +152,7 @@ export function Sidebar({ reviewCount }: SidebarProps) {
                 </span>
               )}
               {item.badge && (
-                <span className={clsx(BADGE_BASE, BADGE_AI, "ml-auto")}>
-                  {item.badge}
-                </span>
+                <span className={clsx(BADGE_BASE, BADGE_AI, "ml-auto")}>{item.badge}</span>
               )}
               {/* AI 预标注：待接管 + 失败预测两枚徽章同挂此项（失败预测已迁到 /ai-pre/jobs?status=failed，
                   此前误挂在「模型市场」上）。 */}

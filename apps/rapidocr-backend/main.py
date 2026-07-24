@@ -74,12 +74,8 @@ MODEL_VERSION = "rapidocr-v3.9.0"
 
 POOL_CAP = int(os.environ.get("RAPIDOCR_POOL_CAP", "3"))
 BUILD_TIMEOUT = float(os.environ.get("RAPIDOCR_BUILD_TIMEOUT", "30"))
-IDLE_UNLOAD_SECONDS = float(
-    os.environ.get("RAPIDOCR_IDLE_UNLOAD_SECONDS", "600")
-)
-IDLE_CHECK_INTERVAL = float(
-    os.environ.get("RAPIDOCR_IDLE_CHECK_INTERVAL", "60")
-)
+IDLE_UNLOAD_SECONDS = float(os.environ.get("RAPIDOCR_IDLE_UNLOAD_SECONDS", "600"))
+IDLE_CHECK_INTERVAL = float(os.environ.get("RAPIDOCR_IDLE_CHECK_INTERVAL", "60"))
 # 受管代码路径与部署物理验证解耦：在满池实卡 load→unload 回落完成前，
 # 不对外声明 managed_lifecycle，也不允许进入 enforce gate。
 MANAGED_LIFECYCLE_VERIFIED = os.environ.get(
@@ -287,7 +283,9 @@ def _warmup_target(body: dict[str, Any]) -> tuple[str, dict[str, str] | None]:
         elif task == "detection":
             model_id = catalog.DET_MODEL_ID
         else:
-            raise HTTPException(status_code=422, detail=f"unsupported warmup task: {task}")
+            raise HTTPException(
+                status_code=422, detail=f"unsupported warmup task: {task}"
+            )
     if not isinstance(model_id, str):
         raise HTTPException(status_code=422, detail="model_id must be a string")
     if variants is not None:

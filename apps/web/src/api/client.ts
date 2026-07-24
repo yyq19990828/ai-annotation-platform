@@ -24,7 +24,36 @@ class ApiError extends Error {
 /** v0.9.3 · 仅透传少数白名单响应头（避免序列化无关大头），按需扩展。 */
 const EXPOSED_HEADERS = ["x-login-failed-count", "retry-after"] as const;
 
-async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean; silent?: boolean }): Promise<T> {
+function validationIssueMessage(issue: unknown): string | undefined {
+  if (!issue || typeof issue !== "object") return undefined;
+  const value = issue as { loc?: unknown; msg?: unknown };
+  if (typeof value.msg !== "string" || value.msg.length === 0) return undefined;
+  const location = Array.isArray(value.loc)
+    ? value.loc
+        .filter((part) => part !== "body")
+        .map(String)
+        .join(".")
+    : "";
+  return location ? `${location}：${value.msg}` : value.msg;
+}
+
+export function apiErrorDetailMessage(rawDetail: unknown): string | undefined {
+  if (typeof rawDetail === "string") return rawDetail;
+  if (Array.isArray(rawDetail)) {
+    return rawDetail.map(validationIssueMessage).find(Boolean);
+  }
+  if (rawDetail && typeof rawDetail === "object" && "message" in rawDetail) {
+    const message = String((rawDetail as { message?: unknown }).message ?? "");
+    return message || undefined;
+  }
+  return undefined;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  opts?: { anonymous?: boolean; silent?: boolean },
+): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");
   // v0.10.18 · PerfHud 浏览器侧 API p95 指标; recordApiDuration 内部包 try/catch 不会抛.
   const t0 = performance.now();
@@ -45,12 +74,7 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const rawDetail: unknown = (body as { detail?: unknown })?.detail;
-    const detail: string | undefined =
-      typeof rawDetail === "string"
-        ? rawDetail
-        : rawDetail && typeof rawDetail === "object" && "message" in rawDetail
-        ? String((rawDetail as { message?: unknown }).message ?? "")
-        : undefined;
+    const detail = apiErrorDetailMessage(rawDetail);
 
     if (res.status === 401 && !opts?.anonymous) {
       const { useAuthStore } = await import("../stores/authStore");
@@ -89,34 +113,31 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
 }
 
 export const apiClient = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, init?: RequestInit) => request<T>(path, init),
   /**
    * 探测式 GET：不弹全局 toast（调用方自带错误展示，例如能力目录的黄色降级提示）。
    * 5xx/403 仍正常抛 ApiError；只是不重复弹通知。用于按 backend 批量探测的端点
    * （/capabilities / /setup），避免一个不可达容器触发 N 个堆叠 toast。
    */
-  silentGet: <T>(path: string) => request<T>(path, undefined, { silent: true }),
+  silentGet: <T>(path: string, init?: RequestInit) => request<T>(path, init, { silent: true }),
   post: <T>(path: string, body?: unknown, extra?: RequestInit) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}), ...extra }),
   /** 探测式 POST：不弹全局 toast（见 silentGet 说明）。 */
   silentPost: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, { silent: true }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
+  put: <T>(path: string, body?: unknown, extra?: RequestInit) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}), ...extra }),
   patch: <T>(path: string, body?: unknown, extra?: RequestInit) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}), ...extra }),
   delete: <T>(path: string, body?: unknown) =>
-    request<T>(path, body !== undefined
-      ? { method: "DELETE", body: JSON.stringify(body) }
-      : { method: "DELETE" }),
+    request<T>(
+      path,
+      body !== undefined ? { method: "DELETE", body: JSON.stringify(body) } : { method: "DELETE" },
+    ),
   /** 公开请求：不携带 Authorization；401 不触发全局 logout（用于 /auth/register 等公开端点）。 */
   publicGet: <T>(path: string) => request<T>(path, undefined, { anonymous: true }),
   publicPost: <T>(path: string, body?: unknown) =>
-    request<T>(
-      path,
-      { method: "POST", body: JSON.stringify(body ?? {}) },
-      { anonymous: true },
-    ),
+    request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, { anonymous: true }),
 };
 
 export { ApiError };

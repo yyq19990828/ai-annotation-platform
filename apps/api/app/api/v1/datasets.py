@@ -2,7 +2,6 @@ import hashlib
 import io
 import mimetypes
 import uuid
-import zipfile
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -29,6 +28,11 @@ from app.schemas.project import ProjectOut
 from app.services.audit import AuditAction, AuditService
 from app.services.axis_sniffer import AxisSnifferService
 from app.services.dataset import DatasetService
+from app.services.mask_formats.safe_archive import (
+    ArchiveLimits,
+    ArchiveSafetyError,
+    SafeZipArchive,
+)
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -479,19 +483,36 @@ async def upload_zip(
         )
 
     try:
-        zf = zipfile.ZipFile(io.BytesIO(raw))
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="不是有效的 ZIP 文件")
-
-    infos = [i for i in zf.infolist() if not i.is_dir()]
-    if len(infos) > _ZIP_MAX_ENTRIES:
-        raise HTTPException(
-            status_code=413, detail=f"ZIP 包文件数超过 {_ZIP_MAX_ENTRIES} 限制"
+        archive = SafeZipArchive(
+            io.BytesIO(raw),
+            ArchiveLimits(
+                max_files=_ZIP_MAX_ENTRIES,
+                max_entry_bytes=_PER_FILE_MAX_BYTES,
+                max_total_bytes=_ZIP_MAX_BYTES,
+                max_compression_ratio=100,
+            ),
+            skip_unsafe_paths=True,
         )
+    except ArchiveSafetyError as exc:
+        status_code = (
+            413
+            if exc.code
+            in {
+                "resource_budget_exceeded",
+                "archive_compression_ratio_exceeded",
+            }
+            else 400
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail={"reason": exc.code, "message": str(exc), **exc.detail},
+        ) from exc
+
+    infos = archive.entries
 
     added = 0
     deduped = 0
-    skipped: list[str] = []
+    skipped: list[str] = list(archive.skipped_paths)
     errors: list[dict] = []
     written_keys: list[str] = []  # 已写入 MinIO 的对象 key，校验失败时回滚清理
     new_image_item_ids: list[uuid.UUID] = []
@@ -511,27 +532,25 @@ async def upload_zip(
     existing_hashes: set[str] = {r[0] for r in hash_rows.all()}
 
     for info in infos:
-        name = info.filename
-        # v0.14.2 D1：保留子目录，同时防 zip-slip / 隐藏文件
-        safe_relpath = _normalize_zip_relpath(name)
-        if safe_relpath is None:
+        name = info.source_name
+        safe_relpath = info.normalized_path
+        safe_parts = PurePosixPath(safe_relpath).parts
+        if safe_relpath.startswith("__MACOSX/") or any(
+            part.startswith(".") for part in safe_parts
+        ):
             skipped.append(name)
             continue
-        safe_parts = PurePosixPath(safe_relpath).parts
         if len(safe_parts) >= 2:
             zip_top_level_dirs.add(safe_parts[0])
 
-        if info.file_size > _PER_FILE_MAX_BYTES:
-            errors.append(
-                {
-                    "name": name,
-                    "error": f"超过单文件 {_PER_FILE_MAX_BYTES // 1024 // 1024}MB 上限",
-                }
-            )
-            continue
-
         try:
-            data = zf.read(info)
+            with archive.open(safe_relpath) as source:
+                data = source.read(_PER_FILE_MAX_BYTES + 1)
+            if len(data) > _PER_FILE_MAX_BYTES:
+                raise ArchiveSafetyError(
+                    "resource_budget_exceeded",
+                    "ZIP entry exceeded the streaming byte limit",
+                )
         except Exception as e:  # noqa: BLE001
             errors.append({"name": name, "error": f"解压失败: {e}"})
             continue
@@ -583,6 +602,7 @@ async def upload_zip(
         elif file_type == "video":
             new_video_item_ids.append(item.id)
 
+    archive.close()
     linked_tasks = await svc.create_tasks_for_items(dataset_id, new_item_ids)
 
     # v0.14.0 · 上传完跑 scene_inference(mode="auto"):

@@ -40,7 +40,19 @@ type SectionKey =
 const SECTIONS: {
   key: SectionKey;
   label: string;
-  icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" | "layers" | "db" | "bot" | "eye" | "book" | "target";
+  icon:
+    | "settings"
+    | "users"
+    | "user"
+    | "trash"
+    | "tag"
+    | "rect"
+    | "layers"
+    | "db"
+    | "bot"
+    | "eye"
+    | "book"
+    | "target";
 }[] = [
   { key: "general", label: "基本信息", icon: "settings" },
   { key: "classes", label: "类别与属性", icon: "rect" },
@@ -92,9 +104,7 @@ export function ProjectSettingsPage() {
   const [section, setSection] = useState<SectionKey>(initialSection);
 
   if (isLoading) {
-    return (
-      <div className="p-15 text-center text-muted-foreground">加载中...</div>
-    );
+    return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   }
   if (error || !project) {
     return <Navigate to="/unauthorized" replace />;
@@ -108,7 +118,8 @@ export function ProjectSettingsPage() {
     project.data_type === "lidar" ||
     project.data_type === "point_cloud" ||
     project.type_key === "lidar";
-  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject || isPointCloudProject;
+  const canOpenWorkbench =
+    project.type_key === "image-det" || isVideoProject || isPointCloudProject;
   const visibleSections = SECTIONS.filter((s) => {
     if (s.key === "owner") return role === "super_admin";
     if (s.key === "danger") return isOwner;
@@ -127,7 +138,8 @@ export function ProjectSettingsPage() {
           onClick={() => navigate("/dashboard")}
           className="mb-2 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
         >
-          <Icon name="chevLeft" size={12} />返回 Dashboard
+          <Icon name="chevLeft" size={12} />
+          返回 Dashboard
         </button>
         <div className="flex items-center justify-between gap-4 max-md:flex-col max-md:items-start">
           <div>
@@ -137,7 +149,16 @@ export function ProjectSettingsPage() {
               <span>·</span>
               <span>{project.type_label}</span>
               <span>·</span>
-              <Badge variant={project.status === "completed" ? "success" : project.status === "pending_review" ? "warning" : "accent"} dot>
+              <Badge
+                variant={
+                  project.status === "completed"
+                    ? "success"
+                    : project.status === "pending_review"
+                      ? "warning"
+                      : "accent"
+                }
+                dot
+              >
                 {project.status === "in_progress" && "进行中"}
                 {project.status === "completed" && "已完成"}
                 {project.status === "pending_review" && "待审核"}
@@ -151,17 +172,26 @@ export function ProjectSettingsPage() {
                 onClick={() => navigate(`/audit?target_type=project&target_id=${project.id}`)}
                 title="查看该项目的完整审计时间线"
               >
-                <Icon name="activity" size={12} />审计追溯
+                <Icon name="activity" size={12} />
+                审计追溯
               </Button>
             )}
             <Button onClick={() => navigate(`/projects/${project.id}/data-manager`)}>
-              <Icon name="filter" size={12} />Data Manager
+              <Icon name="filter" size={12} />
+              Data Manager
             </Button>
             {canOpenWorkbench && (
-              <Button onClick={() => navigate(buildWorkbenchUrl(project.id, {
-                returnTo: currentWorkbenchReturnTo(location),
-              }))}>
-                <Icon name="target" size={12} />打开工作台
+              <Button
+                onClick={() =>
+                  navigate(
+                    buildWorkbenchUrl(project.id, {
+                      returnTo: currentWorkbenchReturnTo(location),
+                    }),
+                  )
+                }
+              >
+                <Icon name="target" size={12} />
+                打开工作台
               </Button>
             )}
           </div>
@@ -179,9 +209,7 @@ export function ProjectSettingsPage() {
                 data-testid={`settings-tab-${s.key}`}
                 onClick={() => setSection(s.key)}
                 className={`${NAV_BUTTON_BASE} ${
-                  active
-                    ? "bg-muted font-semibold text-foreground"
-                    : "text-muted-foreground"
+                  active ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"
                 }`}
               >
                 <Icon name={s.icon} size={13} />

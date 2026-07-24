@@ -19,12 +19,14 @@ import io
 import json
 import uuid
 import zipfile
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.audit_log import AuditLog
 from app.db.models.prediction import Prediction, PredictionMeta
@@ -32,7 +34,9 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.exporting.packaging import _rotated_corners_norm
 from app.services.prediction import to_internal_shape
-from app.services.predictions_import import internal_geometry_to_ls_shape
+from app.services.predictions_import import import_coco, internal_geometry_to_ls_shape
+from app.services.raster_mask_storage import build_rle_reference
+from app.utils.raster_mask_rle import encode_coco_rle
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,7 +60,18 @@ async def _seed_project_with_tasks(
         type_label="测试",
         owner_id=owner_id,
         status="in_progress",
+        raster_mask_native_editing_enabled=True,
         classes=["car", "truck"],
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [{"name": "car"}, {"name": "truck"}],
+            },
+            "region": {
+                "enabled": True,
+                "classes": [{"name": "car"}, {"name": "truck"}],
+            },
+        },
     )
     db.add(project)
     await db.flush()
@@ -1448,6 +1463,154 @@ async def test_import_coco_uses_image_size_hint_when_missing_dimensions(
     assert bbox["y"] == pytest.approx(10.0)
     assert bbox["width"] == pytest.approx(30.0)
     assert bbox["height"] == pytest.approx(20.0)
+
+
+async def test_import_coco_rle_builds_portable_prediction_and_reports_invalid_items(
+    super_admin,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user, _ = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    single = encode_coco_rle([0, 0, 0, 0, 0, 1], 3, 2)
+    empty = encode_coco_rle([0] * 6, 3, 2)
+    payload = json.dumps(
+        {
+            "images": [
+                {
+                    "id": 1,
+                    "file_name": tasks[0].file_path,
+                    "width": 3,
+                    "height": 2,
+                }
+            ],
+            "categories": [{"id": 0, "name": "car"}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "segmentation": {"size": [2, 3], "counts": single["counts"]},
+                },
+                {
+                    "id": 2,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "segmentation": {"size": [2, 3], "counts": empty["counts"]},
+                },
+                {
+                    "id": 3,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "bbox": [0, 0, 3, 2],
+                    "segmentation": [[0, 0, 3, 0, 3, 2]],
+                },
+                {
+                    "id": 4,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "segmentation": {"size": [2, 3], "counts": [5]},
+                },
+                {
+                    "id": 5,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "segmentation": {"size": [2, 3], "counts": "encoded"},
+                },
+                {
+                    "id": 6,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "segmentation": {"size": [2, 3], "counts": single["counts"]},
+                },
+            ],
+        }
+    ).encode()
+
+    import app.services.predictions_import as predictions_import
+
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+
+    async def _store(rle):
+        return build_rle_reference(rle)
+
+    store = AsyncMock(side_effect=_store)
+    create = AsyncMock()
+    monkeypatch.setattr(predictions_import, "store_coco_rle", store)
+    monkeypatch.setattr(
+        predictions_import.PredictionService,
+        "create_from_ml_result",
+        create,
+    )
+
+    result = await import_coco(db_session, project.id, payload)
+
+    assert result.imported == 3
+    assert result.skipped == 3
+    assert store.await_count == 1
+    assert create.await_count == 3
+    assert "foreground pixels" in result.errors[0].reason
+    assert "sum(counts)" in result.errors[1].reason
+    assert "compressed COCO RLE" in result.errors[2].reason
+
+    raster_shape = create.await_args_list[0].kwargs["result"][0]
+    assert raster_shape["type"] == "raster_mask"
+    assert raster_shape["tool_unit_id"] == "region"
+    assert raster_shape["geometry"]["type"] == "raster_mask"
+    assert "counts" not in raster_shape["geometry"]["mask"]
+    assert to_internal_shape(raster_shape)["geometry"] == raster_shape["geometry"]
+    assert create.await_args_list[1].kwargs["result"][0]["type"] == "polygonlabels"
+    assert create.await_args_list[2].kwargs["result"][0]["type"] == "raster_mask"
+
+
+async def test_import_coco_rle_respects_create_flag(
+    super_admin,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user, _ = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    rle = encode_coco_rle([0, 1, 0, 0, 0, 0], 3, 2)
+    payload = json.dumps(
+        {
+            "images": [
+                {
+                    "id": 1,
+                    "file_name": tasks[0].file_path,
+                    "width": 3,
+                    "height": 2,
+                }
+            ],
+            "categories": [{"id": 0, "name": "car"}],
+            "annotations": [
+                {
+                    "image_id": 1,
+                    "category_id": 0,
+                    "segmentation": {"size": [2, 3], "counts": rle["counts"]},
+                }
+            ],
+        }
+    ).encode()
+
+    import app.services.predictions_import as predictions_import
+
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", False)
+    store = AsyncMock()
+    create = AsyncMock()
+    monkeypatch.setattr(predictions_import, "store_coco_rle", store)
+    monkeypatch.setattr(
+        predictions_import.PredictionService,
+        "create_from_ml_result",
+        create,
+    )
+
+    result = await import_coco(db_session, project.id, payload)
+
+    assert result.imported == 0
+    assert result.skipped == 1
+    assert result.errors[0].reason.endswith("raster mask creation is disabled")
+    store.assert_not_awaited()
+    create.assert_not_awaited()
 
 
 # ── YOLO zip importer ────────────────────────────────────────────────

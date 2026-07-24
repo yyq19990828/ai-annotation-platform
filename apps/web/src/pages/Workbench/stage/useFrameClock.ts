@@ -93,118 +93,152 @@ export function useFrameClock({
     resolver(result);
   }, []);
 
-  const resolveStaleSeeks = useCallback((latestSeekId: number) => {
-    for (const [seekId, resolver] of seekResolversRef.current) {
-      if (seekId >= latestSeekId) continue;
-      seekResolversRef.current.delete(seekId);
-      resolver({ accepted: false, frameIndex: targetFrameRef.current ?? frameIndex, source: "stale" });
-    }
-  }, [frameIndex]);
-
-  const recordFrameReady = useCallback((source: FrameReadySource, frame: number) => {
-    const seekTarget = targetFrameRef.current;
-    const seekStartedAt = seekStartedAtRef.current;
-    if (seekTarget !== null && Math.abs(seekTarget - frame) <= 1) {
-      targetFrameRef.current = null;
-      seekStartedAtRef.current = null;
-      setIsSeeking(false);
-      resolveSeek(latestSeekIdRef.current, { accepted: true, frameIndex: frame, source });
-      const seekMs = seekStartedAt === null ? null : Math.round(performance.now() - seekStartedAt);
-      setDiagnosticsPatch({
-        lastFrameReadySource: source,
-        lastSeekMs: seekMs,
-        recentSeeks: [
-          { frameIndex: frame, ms: seekMs, source, at: new Date().toISOString() },
-          ...diagnosticsRef.current.recentSeeks,
-        ].slice(0, MAX_RECENT_SEEKS),
-      });
-      return;
-    }
-    setDiagnosticsPatch({ lastFrameReadySource: source });
-  }, [resolveSeek, setDiagnosticsPatch]);
-
-  const updateFrameFromTime = useCallback((mediaTime: number, source: FrameReadySource) => {
-    const mediaFrame = timeToFrame(mediaTime, timebase);
-    const seekTarget = targetFrameRef.current;
-    let nextFrame: number;
-    if (seekTarget !== null && Math.abs(seekTarget - mediaFrame) <= 1) {
-      // 活跃 seek：±1 容差内吸附回目标帧。
-      nextFrame = seekTarget;
-    } else if (
-      seekTarget === null &&
-      !isPlayingRef.current &&
-      Math.abs(mediaFrame - frameIndexRef.current) <= 1
-    ) {
-      // 暂停且无活跃 seek 时，seeked/timeupdate 把 currentTime 反算成相邻帧的 ±1 抖动
-      // 不要漂移已提交帧（否则 seek 到网格帧 30 后落成 29，破坏采样网格导航 → “逢9”帧、卡顿）。
-      nextFrame = frameIndexRef.current;
-    } else {
-      nextFrame = mediaFrame;
-    }
-    onFrameChange(nextFrame);
-    recordFrameReady(source, nextFrame);
-  }, [onFrameChange, recordFrameReady, timebase]);
-
-  const seekTo = useCallback((nextFrame: number) => {
-    const video = videoRef.current;
-    const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
-    const seekId = latestSeekIdRef.current + 1;
-    latestSeekIdRef.current = seekId;
-    resolveStaleSeeks(seekId);
-    targetFrameRef.current = frame;
-    seekStartedAtRef.current = performance.now();
-    setIsSeeking(true);
-    setDiagnostics((cur) => {
-      const next = { ...cur, seekCount: cur.seekCount + 1 };
-      diagnosticsRef.current = next;
-      return next;
-    });
-    onFrameChange(frame);
-
-    if (video) {
-      video.currentTime = frameToSeekTime(frame, timebase);
-
-      if (hasRequestVideoFrameCallback(video)) {
-        const frameVideo = video as VideoWithFrameCallback;
-        frameVideo.requestVideoFrameCallback?.((_now, metadata) => {
-          if (seekId !== latestSeekIdRef.current) {
-            const cur = diagnosticsRef.current;
-            const next = { ...cur, staleCallbacks: cur.staleCallbacks + 1 };
-            diagnosticsRef.current = next;
-            setDiagnostics(next);
-            resolveSeek(seekId, { accepted: false, frameIndex: frame, source: "stale" });
-            return;
-          }
-          updateFrameFromTime(metadata.mediaTime, "rvfc");
+  const resolveStaleSeeks = useCallback(
+    (latestSeekId: number) => {
+      for (const [seekId, resolver] of seekResolversRef.current) {
+        if (seekId >= latestSeekId) continue;
+        seekResolversRef.current.delete(seekId);
+        resolver({
+          accepted: false,
+          frameIndex: targetFrameRef.current ?? frameIndex,
+          source: "stale",
         });
       }
-    }
+    },
+    [frameIndex],
+  );
 
-    window.setTimeout(() => {
-      if (seekId !== latestSeekIdRef.current || targetFrameRef.current === null) return;
-      targetFrameRef.current = null;
-      seekStartedAtRef.current = null;
-      setIsSeeking(false);
-      resolveSeek(seekId, { accepted: true, frameIndex: frame, source: "timeout" });
-      setDiagnosticsPatch({
-        lastFrameReadySource: "timeout",
-        lastSeekMs: null,
-        recentSeeks: [
-          { frameIndex: frame, ms: null, source: "timeout" as const, at: new Date().toISOString() },
-          ...diagnosticsRef.current.recentSeeks,
-        ].slice(0, MAX_RECENT_SEEKS),
+  const recordFrameReady = useCallback(
+    (source: FrameReadySource, frame: number) => {
+      const seekTarget = targetFrameRef.current;
+      const seekStartedAt = seekStartedAtRef.current;
+      if (seekTarget !== null && Math.abs(seekTarget - frame) <= 1) {
+        targetFrameRef.current = null;
+        seekStartedAtRef.current = null;
+        setIsSeeking(false);
+        resolveSeek(latestSeekIdRef.current, { accepted: true, frameIndex: frame, source });
+        const seekMs =
+          seekStartedAt === null ? null : Math.round(performance.now() - seekStartedAt);
+        setDiagnosticsPatch({
+          lastFrameReadySource: source,
+          lastSeekMs: seekMs,
+          recentSeeks: [
+            { frameIndex: frame, ms: seekMs, source, at: new Date().toISOString() },
+            ...diagnosticsRef.current.recentSeeks,
+          ].slice(0, MAX_RECENT_SEEKS),
+        });
+        return;
+      }
+      setDiagnosticsPatch({ lastFrameReadySource: source });
+    },
+    [resolveSeek, setDiagnosticsPatch],
+  );
+
+  const updateFrameFromTime = useCallback(
+    (mediaTime: number, source: FrameReadySource) => {
+      const mediaFrame = timeToFrame(mediaTime, timebase);
+      const seekTarget = targetFrameRef.current;
+      let nextFrame: number;
+      if (seekTarget !== null && Math.abs(seekTarget - mediaFrame) <= 1) {
+        // 活跃 seek：±1 容差内吸附回目标帧。
+        nextFrame = seekTarget;
+      } else if (
+        seekTarget === null &&
+        !isPlayingRef.current &&
+        Math.abs(mediaFrame - frameIndexRef.current) <= 1
+      ) {
+        // 暂停且无活跃 seek 时，seeked/timeupdate 把 currentTime 反算成相邻帧的 ±1 抖动
+        // 不要漂移已提交帧（否则 seek 到网格帧 30 后落成 29，破坏采样网格导航 → “逢9”帧、卡顿）。
+        nextFrame = frameIndexRef.current;
+      } else {
+        nextFrame = mediaFrame;
+      }
+      onFrameChange(nextFrame);
+      recordFrameReady(source, nextFrame);
+    },
+    [onFrameChange, recordFrameReady, timebase],
+  );
+
+  const seekTo = useCallback(
+    (nextFrame: number) => {
+      const video = videoRef.current;
+      const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
+      const seekId = latestSeekIdRef.current + 1;
+      latestSeekIdRef.current = seekId;
+      resolveStaleSeeks(seekId);
+      targetFrameRef.current = frame;
+      seekStartedAtRef.current = performance.now();
+      setIsSeeking(true);
+      setDiagnostics((cur) => {
+        const next = { ...cur, seekCount: cur.seekCount + 1 };
+        diagnosticsRef.current = next;
+        return next;
       });
-    }, SEEK_TIMEOUT_MS);
-    return seekId;
-  }, [maxFrame, onFrameChange, resolveSeek, resolveStaleSeeks, setDiagnosticsPatch, timebase, updateFrameFromTime, videoRef]);
+      onFrameChange(frame);
 
-  const seekToAsync = useCallback((nextFrame: number) => {
-    const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
-    const seekId = seekTo(frame);
-    return new Promise<FrameSeekResult>((resolve) => {
-      seekResolversRef.current.set(seekId, resolve);
-    });
-  }, [maxFrame, seekTo]);
+      if (video) {
+        video.currentTime = frameToSeekTime(frame, timebase);
+
+        if (hasRequestVideoFrameCallback(video)) {
+          const frameVideo = video as VideoWithFrameCallback;
+          frameVideo.requestVideoFrameCallback?.((_now, metadata) => {
+            if (seekId !== latestSeekIdRef.current) {
+              const cur = diagnosticsRef.current;
+              const next = { ...cur, staleCallbacks: cur.staleCallbacks + 1 };
+              diagnosticsRef.current = next;
+              setDiagnostics(next);
+              resolveSeek(seekId, { accepted: false, frameIndex: frame, source: "stale" });
+              return;
+            }
+            updateFrameFromTime(metadata.mediaTime, "rvfc");
+          });
+        }
+      }
+
+      window.setTimeout(() => {
+        if (seekId !== latestSeekIdRef.current || targetFrameRef.current === null) return;
+        targetFrameRef.current = null;
+        seekStartedAtRef.current = null;
+        setIsSeeking(false);
+        resolveSeek(seekId, { accepted: true, frameIndex: frame, source: "timeout" });
+        setDiagnosticsPatch({
+          lastFrameReadySource: "timeout",
+          lastSeekMs: null,
+          recentSeeks: [
+            {
+              frameIndex: frame,
+              ms: null,
+              source: "timeout" as const,
+              at: new Date().toISOString(),
+            },
+            ...diagnosticsRef.current.recentSeeks,
+          ].slice(0, MAX_RECENT_SEEKS),
+        });
+      }, SEEK_TIMEOUT_MS);
+      return seekId;
+    },
+    [
+      maxFrame,
+      onFrameChange,
+      resolveSeek,
+      resolveStaleSeeks,
+      setDiagnosticsPatch,
+      timebase,
+      updateFrameFromTime,
+      videoRef,
+    ],
+  );
+
+  const seekToAsync = useCallback(
+    (nextFrame: number) => {
+      const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
+      const seekId = seekTo(frame);
+      return new Promise<FrameSeekResult>((resolve) => {
+        seekResolversRef.current.set(seekId, resolve);
+      });
+    },
+    [maxFrame, seekTo],
+  );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -242,14 +276,17 @@ export function useFrameClock({
       };
       handle = frameVideo.requestVideoFrameCallback?.(tick) ?? 0;
       return () => {
-        if (handle && frameVideo.cancelVideoFrameCallback) frameVideo.cancelVideoFrameCallback(handle);
+        if (handle && frameVideo.cancelVideoFrameCallback)
+          frameVideo.cancelVideoFrameCallback(handle);
       };
     }
 
-    const schedule = typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame
-      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
-    const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
+    const schedule =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const cancel =
+      typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
     let raf = 0;
     const tick = () => {
       updateFrameFromTime(video.currentTime, "raf");
@@ -261,7 +298,9 @@ export function useFrameClock({
 
   useEffect(() => {
     if (!import.meta.env.DEV || typeof PerformanceObserver === "undefined") return;
-    const supportedEntryTypes = (PerformanceObserver as unknown as { supportedEntryTypes?: string[] }).supportedEntryTypes ?? [];
+    const supportedEntryTypes =
+      (PerformanceObserver as unknown as { supportedEntryTypes?: string[] }).supportedEntryTypes ??
+      [];
     if (!supportedEntryTypes.includes("longtask")) return;
     const observer = new PerformanceObserver((list) => {
       const count = list.getEntries().length;

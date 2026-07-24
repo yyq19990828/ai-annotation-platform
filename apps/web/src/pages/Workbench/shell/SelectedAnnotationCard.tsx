@@ -7,10 +7,7 @@ import {
   type FloatingPanelRect,
 } from "./FloatingPanelShell";
 import { useDragMove, type FloatingPanelPoint } from "./useDragMove";
-import {
-  FLOATING_SELECTION_MAX_SIZE,
-  FLOATING_SELECTION_MIN_SIZE,
-} from "./floatingPanelSizing";
+import { FLOATING_SELECTION_MAX_SIZE, FLOATING_SELECTION_MIN_SIZE } from "./floatingPanelSizing";
 import styles from "./SelectedAnnotationCard.module.css";
 import petStyles from "./pet/pet.module.css";
 
@@ -27,7 +24,8 @@ const TAB_CLASS =
 const TAB_DRAGGING_CLASS = "cursor-grabbing border-brand shadow-xl";
 const TAB_ICON_CLASS =
   "inline-flex size-6 flex-none items-center justify-center rounded border border-border bg-muted text-brand transition-[border-color,background-color] duration-200 group-hover:border-brand group-hover:bg-card";
-const TAB_TITLE_CLASS = "min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold leading-4 text-foreground";
+const TAB_TITLE_CLASS =
+  "min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold leading-4 text-foreground";
 const TAB_ACTION_CLASS =
   "inline-flex size-5 flex-none items-center justify-center rounded border border-border bg-card text-muted-foreground transition-[background-color,border-color,color] duration-200 group-hover:border-brand group-hover:text-brand";
 const PANEL_HEADER_CLASS = "inline-flex min-w-0 items-center gap-2";
@@ -35,7 +33,8 @@ const PANEL_HEADER_ICON_CLASS =
   "inline-flex size-6 flex-none items-center justify-center rounded border border-brand/30 bg-brand/10 text-brand";
 const PANEL_HEADER_TEXT_CLASS = "flex min-w-0 flex-col";
 const PANEL_HEADER_META_CLASS = "text-[11px] leading-3 text-muted-foreground";
-const PANEL_HEADER_TITLE_CLASS = "min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground";
+const PANEL_HEADER_TITLE_CLASS =
+  "min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground";
 const BODY_CLASS = "px-3 py-2.5";
 const SUMMARY_CLASS = "m-0 text-xs leading-[1.5] text-muted-foreground";
 
@@ -58,10 +57,7 @@ function measureCollapsedTabWidth(title: string): number {
   const titleUnits = Array.from(title.trim() || title).reduce((sum, char) => {
     return sum + (char.charCodeAt(0) > 255 ? 14 : 7);
   }, 0);
-  return Math.max(
-    COLLAPSED_TAB_MIN_W,
-    Math.min(COLLAPSED_TAB_MAX_W, 76 + titleUnits),
-  );
+  return Math.max(COLLAPSED_TAB_MIN_W, Math.min(COLLAPSED_TAB_MAX_W, 76 + titleUnits));
 }
 
 function collapsedTabPositionFromPanel(
@@ -183,11 +179,7 @@ export function SelectedAnnotationCard({
         tabIndex={0}
         data-floating-panel
         aria-label="展开选中信息卡(可拖动)"
-        className={cn(
-          TAB_CLASS,
-          styles.collapsedTab,
-          tabDrag.isDragging && TAB_DRAGGING_CLASS,
-        )}
+        className={cn(TAB_CLASS, styles.collapsedTab, tabDrag.isDragging && TAB_DRAGGING_CLASS)}
         // eslint-disable-next-line no-restricted-syntax -- 收起标签沿用展开卡的记忆位置，经 CSS 变量注入。
         style={
           {

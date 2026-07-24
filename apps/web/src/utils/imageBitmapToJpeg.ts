@@ -36,10 +36,7 @@ async function drawableToJpeg(
   });
 }
 
-export async function imageBitmapToJpeg(
-  bitmap: ImageBitmap,
-  quality = 0.9,
-): Promise<Blob> {
+export async function imageBitmapToJpeg(bitmap: ImageBitmap, quality = 0.9): Promise<Blob> {
   return drawableToJpeg(bitmap, bitmap.width, bitmap.height, quality);
 }
 

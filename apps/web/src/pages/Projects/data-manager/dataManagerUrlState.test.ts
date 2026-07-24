@@ -40,13 +40,16 @@ describe("Data Manager URL state", () => {
 
   it("uses the view sort when a short URL has no sort or carries another lens sort", () => {
     const viewSort = [{ field: "track.track_id", direction: "asc" }] as const;
-    expect(resolveDataManagerSort(null, [...viewSort], ["track.track_id"], "track.track_id"))
-      .toEqual(viewSort);
-    expect(resolveDataManagerSort(
-      [{ field: "annotation.updated_at", direction: "desc" }],
-      [...viewSort],
-      ["track.track_id"],
-      "track.track_id",
-    )).toEqual(viewSort);
+    expect(
+      resolveDataManagerSort(null, [...viewSort], ["track.track_id"], "track.track_id"),
+    ).toEqual(viewSort);
+    expect(
+      resolveDataManagerSort(
+        [{ field: "annotation.updated_at", direction: "desc" }],
+        [...viewSort],
+        ["track.track_id"],
+        "track.track_id",
+      ),
+    ).toEqual(viewSort);
   });
 });

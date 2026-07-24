@@ -128,7 +128,8 @@ function extractLinks(text) {
     if (masked.charCodeAt(i) === 10) lineStarts.push(i + 1);
   }
   const lineOf = (off) => {
-    let lo = 0, hi = lineStarts.length - 1;
+    let lo = 0,
+      hi = lineStarts.length - 1;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
       if (lineStarts[mid] <= off) lo = mid;
@@ -203,7 +204,8 @@ function resolveTarget(sourceFile, target) {
 function dlDistance(a, b, cap = 64) {
   if (a === b) return 0;
   if (Math.abs(a.length - b.length) > cap) return cap + 1;
-  const m = a.length, n = b.length;
+  const m = a.length,
+    n = b.length;
   const prev2 = new Array(n + 1);
   const prev = new Array(n + 1);
   const cur = new Array(n + 1);
@@ -213,15 +215,8 @@ function dlDistance(a, b, cap = 64) {
     let rowMin = cur[0];
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      cur[j] = Math.min(
-        cur[j - 1] + 1,
-        prev[j] + 1,
-        prev[j - 1] + cost,
-      );
-      if (
-        i > 1 && j > 1 &&
-        a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]
-      ) {
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
         cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
       }
       if (cur[j] < rowMin) rowMin = cur[j];

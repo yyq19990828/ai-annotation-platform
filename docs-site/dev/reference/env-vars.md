@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-23
 ---
 
 # 环境变量参考
@@ -160,6 +160,13 @@ last_reviewed: 2026-07-20
 | `FRAME_PREANNOTATE_MAX_BOXES_PER_FRAME` | `100` | 逐帧预标注单帧落库框数上限（防单帧检出爆量）。 |
 | `FRAME_PREANNOTATE_SEGMENT_SOFT_TIME_LIMIT_SECONDS` | `900` | 逐帧预标注段子任务的 soft 超时（秒，段内逐帧跑图像 predict）。 |
 
+## 图片原生栅格 Mask
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `RASTER_MASK_READ_ENABLED` | `true` | 图片原生 raster_mask reader 默认开启，保证新后端可读取已有 geometry。 |
+| `RASTER_MASK_CREATE_ENABLED` | `true` | 持久化创建与项目原生编辑均默认开启；本项保留为部署紧急总闸，项目仍可单独关闭。 |
+
 ## 认证 / 安全
 
 | 变量 | 默认值 | 说明 |
@@ -174,6 +181,10 @@ last_reviewed: 2026-07-20
 | `CONNECTOR_HOST_ALLOWLIST` | `—` | 存储连接器主机白名单部署默认值（CIDR/IP/域名，CSV 或 JSON 数组）。 超管通过 /storage-connections/allowlist 写入 DB 后会覆盖该默认值。 本地连接宿主机 SFTP 示例: CONNECTOR_HOST_ALLOWLIST=172.17.0.1/32,172.26.1.17/32 |
 | `DATASET_IMPORT_MAX_FILES` | `50000` | 连接器导入单个 job 最多扫描 / 导入的文件数；超限直接失败，避免误扫全桶。 |
 | `DATASET_IMPORT_MAX_TOTAL_BYTES` | `214748364800` | 连接器导入单个 job 允许的总字节数；默认 200GiB。 |
+| `MASK_FORMAT_TEMP_QUOTA_BYTES` | `8589934592` | Mask 格式导入 / 导出单 job 临时空间上限；写入时按实际字节持续复核。 |
+| `MASK_FORMAT_MAX_ENTRY_BYTES` | `536870912` | 安全 archive 单 entry 展开字节、文件数与压缩比上限。 |
+| `MASK_FORMAT_MAX_ARCHIVE_FILES` | `200000` | — |
+| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100` | — |
 | `TASK_CREATE_SYNC_THRESHOLD` | `2000` | dataset link 建 task 同步阈值：dataset item 数 ≤ 阈值走同步快路径， > 阈值改入 Celery 异步建 task（带进度），避免大 dataset link 在 HTTP 单事务里超时 + 长事务锁。 |
 
 ## 是否允许开放注册
@@ -300,6 +311,12 @@ last_reviewed: 2026-07-20
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ENVIRONMENT` | `development` | 当前运行环境，影响 CORS 策略、日志级别、调试开关等 可选值：development | staging | production |
+
+## Playwright 专用 seed/login/cleanup 路由总闸，默认关闭。开启后仍只允许连接
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `E2E_SEED_ENABLED` | `false` | 名称以 _e2e 或 _test 结尾的数据库；这些端点会创建和删除固定测试数据， 绝不要在开发库、staging 或 production 数据库上开启。 |
 
 ## Docker 卷存储位置 (可选)
 

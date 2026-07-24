@@ -102,21 +102,19 @@ export function GroupManageModal({ open, onClose }: Props) {
               }
             }}
           />
-          <Button variant="primary" onClick={handleCreate} disabled={createMut.isPending || !newName.trim()}>
+          <Button
+            variant="primary"
+            onClick={handleCreate}
+            disabled={createMut.isPending || !newName.trim()}
+          >
             <Icon name="plus" size={12} /> 新建
           </Button>
         </div>
 
-        {isLoading && (
-          <div className={styles.loading}>
-            加载中…
-          </div>
-        )}
+        {isLoading && <div className={styles.loading}>加载中…</div>}
 
         {!isLoading && groups.length === 0 && (
-          <div className={styles.empty}>
-            暂无数据组，输入名称后点击「新建」
-          </div>
+          <div className={styles.empty}>暂无数据组，输入名称后点击「新建」</div>
         )}
 
         {!isLoading && groups.length > 0 && (
@@ -125,10 +123,7 @@ export function GroupManageModal({ open, onClose }: Props) {
               const isEditing = editingId === g.id;
               const isPending = pendingDelete === g.id;
               return (
-                <div
-                  key={g.id}
-                  className={styles.row}
-                >
+                <div key={g.id} className={styles.row}>
                   <Icon name="folder" size={14} className={styles.mutedIcon} />
                   {isEditing ? (
                     <input
@@ -147,7 +142,12 @@ export function GroupManageModal({ open, onClose }: Props) {
                   <span className={styles.count}>{g.member_count} 人</span>
                   {isEditing ? (
                     <>
-                      <Button size="sm" variant="primary" onClick={() => handleRename(g)} disabled={updateMut.isPending}>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => handleRename(g)}
+                        disabled={updateMut.isPending}
+                      >
                         保存
                       </Button>
                       <Button size="sm" onClick={() => setEditingId(null)}>
@@ -157,7 +157,12 @@ export function GroupManageModal({ open, onClose }: Props) {
                   ) : isPending ? (
                     <>
                       <span className={styles.deleteConfirm}>确认删除？</span>
-                      <Button size="sm" variant="danger" onClick={() => handleDelete(g)} disabled={deleteMut.isPending}>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => handleDelete(g)}
+                        disabled={deleteMut.isPending}
+                      >
                         删除
                       </Button>
                       <Button size="sm" onClick={() => setPendingDelete(null)}>

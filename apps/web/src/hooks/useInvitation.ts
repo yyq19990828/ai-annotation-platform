@@ -1,9 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  invitationsApi,
-  type RegisterPayload,
-  type OpenRegisterPayload,
-} from "../api/invitations";
+import { invitationsApi, type RegisterPayload, type OpenRegisterPayload } from "../api/invitations";
 import { usersApi, type InvitePayload } from "../api/users";
 
 export function useInviteUser() {

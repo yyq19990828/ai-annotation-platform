@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.23.4",
+  "version": "0.23.11",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,6 +18,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:mask-readonly": "PLAYWRIGHT_RASTER_MASK_MATRIX=readonly playwright test e2e/tests/raster-mask-native.spec.ts --project=chromium",
+    "test:e2e:mask-native": "PLAYWRIGHT_RASTER_MASK_MATRIX=native playwright test e2e/tests/raster-mask-native.spec.ts e2e/tests/mask-advanced-operations.spec.ts --project=chromium",
+    "test:e2e:mask-ai-native": "PLAYWRIGHT_RASTER_MASK_MATRIX=native playwright test e2e/tests/native-mask-ai.spec.ts e2e/tests/video-tracker-local-review.spec.ts --project=chromium",
     "screenshots": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light",
     "screenshots:dark": "playwright test --config=playwright.screenshots.config.ts --project=desktop-dark",
     "screenshots:matrix": "playwright test --config=playwright.screenshots.config.ts --project=desktop-light --project=desktop-dark --project=mobile",
@@ -27,7 +30,10 @@
     "screenshots:lint": "node scripts/screenshots-lint.mjs --strict",
     "size": "node scripts/check-bundle-size.mjs",
     "video:bench": "node scripts/video-bench/run-video-bench.mjs",
-    "image:bench": "node scripts/image-bench/run-image-bench.mjs"
+    "image:bench": "node scripts/image-bench/run-image-bench.mjs",
+    "mask:bench": "node scripts/benchmark-image-raster-mask.mjs",
+    "mask:operations-bench": "node scripts/benchmark-mask-operations.mjs",
+    "mask:large-canvas-bench": "node scripts/benchmark-mask-large-canvas.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

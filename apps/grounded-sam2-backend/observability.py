@@ -68,10 +68,77 @@ VIDEO_TRACKER_LATENCY = Histogram(
     buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
 )
 
+MASK_AI_BACKEND_INFERENCE_TOTAL = Counter(
+    "mask_ai_backend_inference_total",
+    "Mask-capable video inference operations",
+    labelnames=(
+        "model_role",
+        "operation",
+        "fallback_reason",
+        "candidate_count",
+        "outcome",
+    ),
+)
 
-def record_video_tracker(sam_variant: str, frames: int, duration_seconds: float) -> None:
+MASK_AI_BACKEND_INFERENCE_SECONDS = Histogram(
+    "mask_ai_backend_inference_seconds",
+    "Mask-capable video inference duration in seconds",
+    labelnames=("model_role", "operation", "outcome"),
+    buckets=(0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300),
+)
+
+
+def record_video_tracker(
+    sam_variant: str, frames: int, duration_seconds: float
+) -> None:
     VIDEO_TRACKER_FRAMES.labels(sam_variant=sam_variant).inc(frames)
     VIDEO_TRACKER_LATENCY.labels(sam_variant=sam_variant).observe(duration_seconds)
+
+
+def record_mask_ai_backend_inference(
+    *,
+    model_role: str,
+    operation: str,
+    fallback_reason: str | None,
+    candidate_count: int,
+    outcome: str,
+    duration_seconds: float,
+) -> None:
+    count_bucket = (
+        "0"
+        if candidate_count <= 0
+        else "1"
+        if candidate_count == 1
+        else "2_3"
+        if candidate_count <= 3
+        else "4_10"
+        if candidate_count <= 10
+        else "11_plus"
+    )
+    normalized_fallback = (
+        "mask_prompt_unsupported"
+        if fallback_reason == "mask_prompt_unsupported"
+        else "none"
+    )
+    normalized_outcome = outcome if outcome in {"success", "error"} else "error"
+    normalized_operation = (
+        operation if operation in {"tracking", "correction"} else "tracking"
+    )
+    try:
+        MASK_AI_BACKEND_INFERENCE_TOTAL.labels(
+            model_role=model_role,
+            operation=normalized_operation,
+            fallback_reason=normalized_fallback,
+            candidate_count=count_bucket,
+            outcome=normalized_outcome,
+        ).inc()
+        MASK_AI_BACKEND_INFERENCE_SECONDS.labels(
+            model_role=model_role,
+            operation=normalized_operation,
+            outcome=normalized_outcome,
+        ).observe(max(0.0, duration_seconds))
+    except Exception:  # noqa: BLE001 - metrics must never break inference
+        return
 
 
 # v0.9.11 PerfHud · NVML / psutil 实时指标 (lifespan startup 初始化, /health + /metrics 共用)
@@ -84,8 +151,12 @@ CONTAINER_CPU = Gauge("container_cpu_percent", "容器 CPU 利用率 (cgroup 视
 CONTAINER_MEM = Gauge("container_memory_percent", "容器内存利用率 (%)")
 
 
-def record_inference(prompt_type: str, cache_status: str, duration_seconds: float) -> None:
-    INFERENCE_LATENCY.labels(prompt_type=prompt_type, cache=cache_status).observe(duration_seconds)
+def record_inference(
+    prompt_type: str, cache_status: str, duration_seconds: float
+) -> None:
+    INFERENCE_LATENCY.labels(prompt_type=prompt_type, cache=cache_status).observe(
+        duration_seconds
+    )
 
 
 def record_cache(prompt_type: str, hit: bool) -> None:

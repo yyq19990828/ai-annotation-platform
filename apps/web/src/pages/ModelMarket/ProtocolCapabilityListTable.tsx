@@ -37,7 +37,14 @@ export function ProtocolCapabilityListTable({
       <table className={TABLE_CLASS}>
         <thead>
           <tr>
-            {["协议能力", "默认模态", "输出几何", "接入状态", "已接入模型", "典型模型 / 推荐接入"].map((head) => (
+            {[
+              "协议能力",
+              "默认模态",
+              "输出几何",
+              "接入状态",
+              "已接入模型",
+              "典型模型 / 推荐接入",
+            ].map((head) => (
               <th key={head}>{head}</th>
             ))}
           </tr>
@@ -97,30 +104,30 @@ export function ProtocolCapabilityListTable({
                       {mounted.slice(0, 3).map((m) => {
                         const infra = effectiveInfra(m.model, m.backendInfra);
                         return (
-                        <div
-                          key={`${task.id}:${m.backendName}:${m.model.id}`}
-                          className="min-w-0 rounded-sm border border-border bg-muted px-2 py-1.5"
-                        >
                           <div
-                            className="overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-foreground"
-                            title={m.model.display_name ?? m.model.id}
+                            key={`${task.id}:${m.backendName}:${m.model.id}`}
+                            className="min-w-0 rounded-sm border border-border bg-muted px-2 py-1.5"
                           >
-                            {m.model.display_name ?? m.model.id}
-                          </div>
-                          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
-                            {infra && <span>{infraLabel(infra)}</span>}
-                            {m.model.is_interactive && <span>交互式</span>}
-                            <Badge variant={m.source === "env_only" ? "success" : "outline"}>
-                              {m.source === "env_only" ? "自带" : "已注册"}
-                            </Badge>
-                            <span
-                              className="inline-flex min-w-0 items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap"
-                              title={m.backendName}
+                            <div
+                              className="overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-foreground"
+                              title={m.model.display_name ?? m.model.id}
                             >
-                              <Icon name="bot" size={10} /> {m.backendName}
-                            </span>
+                              {m.model.display_name ?? m.model.id}
+                            </div>
+                            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
+                              {infra && <span>{infraLabel(infra)}</span>}
+                              {m.model.is_interactive && <span>交互式</span>}
+                              <Badge variant={m.source === "env_only" ? "success" : "outline"}>
+                                {m.source === "env_only" ? "自带" : "已注册"}
+                              </Badge>
+                              <span
+                                className="inline-flex min-w-0 items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap"
+                                title={m.backendName}
+                              >
+                                <Icon name="bot" size={10} /> {m.backendName}
+                              </span>
+                            </div>
                           </div>
-                        </div>
                         );
                       })}
                       {mounted.length > 3 && (

@@ -51,11 +51,14 @@ GEOMETRY_VALUES: tuple[str, ...] = (
 PROMPT_VALUES: tuple[str, ...] = (
     "none",
     "point",
-    "bbox",
+    "interactive_box",
     "text",
     "exemplar",
-    "sketch",
     "scribble",
+    "sketch",
+    "mask",
+    "correction_frame",
+    "bbox",
 )
 
 # `/setup.models[].supported_inputs` 受控值. `video` 只能由 backend 显式声明, 平台不合成。
@@ -64,6 +67,8 @@ INPUT_VALUES: tuple[str, ...] = (
     "crop",
     "bbox_prompt",
     "point_prompt",
+    "mask_prompt",
+    "scribble_prompt",
     "video",
 )
 

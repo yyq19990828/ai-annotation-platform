@@ -24,7 +24,9 @@ const distDir = join(rootDir, "dist", "assets");
 const budgetPath = join(rootDir, ".size-limit.json");
 
 export function parseSize(s) {
-  const m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB)?$/i);
+  const m = String(s)
+    .trim()
+    .match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB)?$/i);
   if (!m) throw new Error(`invalid size: ${s}`);
   const n = parseFloat(m[1]);
   const unit = (m[2] ?? "B").toUpperCase();
@@ -39,7 +41,9 @@ export function fmt(bytes) {
 
 export function globMatch(pattern, name) {
   // 仅支持 `*` 通配（满足当前所有 budget 模式）
-  const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+  const re = new RegExp(
+    "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$",
+  );
   return re.test(name);
 }
 

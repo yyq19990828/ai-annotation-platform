@@ -29,7 +29,13 @@ export function useReconnectingWebSocket(
   url: string | null,
   options: Options = {},
 ): { state: ReconnectState; retries: number } {
-  const { enabled = true, maxRetries = 8, backoffMs = DEFAULT_BACKOFF, onMessage, onOpen } = options;
+  const {
+    enabled = true,
+    maxRetries = 8,
+    backoffMs = DEFAULT_BACKOFF,
+    onMessage,
+    onOpen,
+  } = options;
   const [state, setState] = useState<ReconnectState>("closed");
   const [retries, setRetries] = useState(0);
   const onMessageRef = useRef(onMessage);

@@ -16,9 +16,7 @@ const SIMPLE_CALIB: SensorCalibration = {
   extrinsic: [
     1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
   ] as unknown as SensorCalibration["extrinsic"],
-  intrinsic: [
-    1000, 0, 500, 0, 1000, 500, 0, 0, 1,
-  ] as unknown as SensorCalibration["intrinsic"],
+  intrinsic: [1000, 0, 500, 0, 1000, 500, 0, 0, 1] as unknown as SensorCalibration["intrinsic"],
 };
 
 // identity 外参下:lidar (x,y,z) → 像素 (1000x/z+500, 1000y/z+500), 深度 w=z。
@@ -36,13 +34,7 @@ describe("selectPointsInRect", () => {
   it("保留投影落在矩形内的相机前方点,排除框外/相机后方点", () => {
     // idx0 (0,0,10)→(500,500) d10;idx1 (1,1,10)→(600,600) d10;idx2 (0,0,5)→(500,500) d5;
     // idx3 (0,0,-5) 相机后方;idx4 (5,0,10)→(1000,500) 框外。
-    const positions = f32(
-      0, 0, 10,
-      1, 1, 10,
-      0, 0, 5,
-      0, 0, -5,
-      5, 0, 10,
-    );
+    const positions = f32(0, 0, 10, 1, 1, 10, 0, 0, 5, 0, 0, -5, 5, 0, 10);
     const sel = selectPointsInRect(positions, { x0: 450, y0: 450, x1: 650, y1: 650 }, SIMPLE_CALIB);
     expect(sel.indices).toEqual([0, 1, 2]);
     expect(sel.depths).toEqual([10, 10, 5]);

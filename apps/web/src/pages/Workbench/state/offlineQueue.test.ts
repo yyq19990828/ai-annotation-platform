@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const idbStore = new Map<string, unknown>();
 vi.mock("idb-keyval", () => ({
   get: vi.fn(async (key: string) => idbStore.get(key)),
-  set: vi.fn(async (key: string, value: unknown) => { idbStore.set(key, value); }),
+  set: vi.fn(async (key: string, value: unknown) => {
+    idbStore.set(key, value);
+  }),
 }));
 
 import {
@@ -33,9 +35,23 @@ describe("offlineQueue.replaceAnnotationId", () => {
   it("把队列中后续 update / delete op 的 annotationId 同步替换", async () => {
     const tmp = "tmp_abc";
     await enqueue({ kind: "create", id: "op1", taskId: "t1", tmpId: tmp, payload: {}, ts: 1 });
-    await enqueue({ kind: "update", id: "op2", taskId: "t1", annotationId: tmp, payload: { foo: 1 }, ts: 2 });
+    await enqueue({
+      kind: "update",
+      id: "op2",
+      taskId: "t1",
+      annotationId: tmp,
+      payload: { foo: 1 },
+      ts: 2,
+    });
     await enqueue({ kind: "delete", id: "op3", taskId: "t1", annotationId: tmp, ts: 3 });
-    await enqueue({ kind: "update", id: "op4", taskId: "t1", annotationId: "other", payload: {}, ts: 4 });
+    await enqueue({
+      kind: "update",
+      id: "op4",
+      taskId: "t1",
+      annotationId: "other",
+      payload: {},
+      ts: 4,
+    });
 
     await replaceAnnotationId(tmp, "real-1");
 
@@ -51,7 +67,14 @@ describe("offlineQueue.replaceAnnotationId", () => {
   });
 
   it("无匹配项时不写盘", async () => {
-    await enqueue({ kind: "update", id: "op1", taskId: "t1", annotationId: "x", payload: {}, ts: 1 });
+    await enqueue({
+      kind: "update",
+      id: "op1",
+      taskId: "t1",
+      annotationId: "x",
+      payload: {},
+      ts: 1,
+    });
     await replaceAnnotationId("not-in-queue", "anything");
     const all = await getAll();
     expect((all[0] as Extract<OfflineOp, { kind: "update" }>).annotationId).toBe("x");
@@ -61,7 +84,9 @@ describe("offlineQueue.replaceAnnotationId", () => {
 describe("offlineQueue.drain · retry_count 累计 + 失败时停止", () => {
   it("handler 抛错 → op.retry_count +1，op 仍留队列", async () => {
     await enqueue({ kind: "delete", id: "op1", taskId: "t1", annotationId: "a", ts: 1 });
-    const handler = vi.fn(async () => { throw new Error("network"); });
+    const handler = vi.fn(async () => {
+      throw new Error("network");
+    });
 
     const result = await drain(handler);
     expect(result).toEqual({ ok: 0, failed: 1 });
@@ -80,7 +105,9 @@ describe("offlineQueue.drain · retry_count 累计 + 失败时停止", () => {
   it("成功的 op 出队，不写 retry_count", async () => {
     await enqueue({ kind: "delete", id: "op1", taskId: "t1", annotationId: "a", ts: 1 });
     await enqueue({ kind: "delete", id: "op2", taskId: "t1", annotationId: "b", ts: 2 });
-    const result = await drain(async () => { /* ok */ });
+    const result = await drain(async () => {
+      /* ok */
+    });
     expect(result).toEqual({ ok: 2, failed: 0 });
     const all = await getAll();
     expect(all).toHaveLength(0);
@@ -91,7 +118,10 @@ describe("offlineQueue.drain · retry_count 累计 + 失败时停止", () => {
     await enqueue({ kind: "delete", id: "fail", taskId: "t1", annotationId: "b", ts: 2 });
     await enqueue({ kind: "delete", id: "later", taskId: "t1", annotationId: "c", ts: 3 });
     let calls = 0;
-    const handler = vi.fn(async () => { calls++; if (calls === 2) throw new Error("boom"); });
+    const handler = vi.fn(async () => {
+      calls++;
+      if (calls === 2) throw new Error("boom");
+    });
 
     const result = await drain(handler);
     expect(result).toEqual({ ok: 1, failed: 1 });

@@ -61,17 +61,17 @@ flowchart TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/api/v1/projects.py` | 触发 `POST /projects/{project_id}/preannotate` |
-| `apps/api/app/workers/tasks.py` | Celery worker `_run_batch()` |
-| `apps/api/app/services/prediction.py` | prediction / failed prediction 写入 |
-| `apps/api/app/db/models/prediction.py` | `Prediction` / `PredictionMeta` / `FailedPrediction` |
-| `apps/api/app/db/models/async_job.py` | `AsyncJob` 汇总表 |
-| `apps/api/app/api/v1/admin_preannotate.py` | `/admin/preannotate-queue` 与批量清理 |
-| `apps/api/app/services/batch.py` | `pre_annotated` 相关状态迁移与 reset |
-| `apps/web/src/pages/AIPreAnnotate/` | 管理端 AI 预标入口与历史表 |
-| `apps/web/src/hooks/usePredictions.ts` | 前端 prediction 查询与采纳 |
+| 位置                                       | 作用                                                 |
+| ------------------------------------------ | ---------------------------------------------------- |
+| `apps/api/app/api/v1/projects.py`          | 触发 `POST /projects/{project_id}/preannotate`       |
+| `apps/api/app/workers/tasks.py`            | Celery worker `_run_batch()`                         |
+| `apps/api/app/services/prediction.py`      | prediction / failed prediction 写入                  |
+| `apps/api/app/db/models/prediction.py`     | `Prediction` / `PredictionMeta` / `FailedPrediction` |
+| `apps/api/app/db/models/async_job.py`      | `AsyncJob` 汇总表                                    |
+| `apps/api/app/api/v1/admin_preannotate.py` | `/admin/preannotate-queue` 与批量清理                |
+| `apps/api/app/services/batch.py`           | `pre_annotated` 相关状态迁移与 reset                 |
+| `apps/web/src/pages/AIPreAnnotate/`        | 管理端 AI 预标入口与历史表                           |
+| `apps/web/src/hooks/usePredictions.ts`     | 前端 prediction 查询与采纳                           |
 
 ## 触发入口
 
@@ -313,21 +313,21 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 
 ## 前端同步点
 
-| 文件 | 为什么要看 |
-|---|---|
-| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 批量预标主入口；按项目 `data_type` 路由到对应面板 |
-| `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` | 图像项目详情面板（含 backend 选择器、SchemaForm 参数面板、RunPanel、HistoryTable） |
-| `apps/web/src/pages/AIPreAnnotate/components/PreannotateConfigForm.tsx` | 阶段卡基底——model-first 单一下拉(`value=model_id`、文案 = 模型市场 `display_name`);doc / 几何 / 文本三路径共用同一交互 |
-| `apps/web/src/pages/AIPreAnnotate/components/StageCard.tsx` | 多阶段编排阶段卡;`parent_class_filter` / `write.keys` chip 多选 + 键冲突配置期预警 + 运行态徽标 + `ProgressBar` 实时统计 |
-| `apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx` | 视频项目引导卡片（提示在工作台逐轨迹 Shift+T 发起，提供跳工作台 + `/ai-pre/jobs?tab=video` 深链） |
-| `apps/web/src/pages/AIPreAnnotate/components/RunPanel.tsx` | 运行触发与进度提示 |
-| `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.tsx` | `pre_annotated` 历史列表与 bulk clear |
-| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx` | AI 任务历史；含「图像」(`async_jobs: batch_predict / prediction_retry`) 和「视频」(`async_jobs: video_tracker`) 两个模态 tab，`?tab=video` 深链 |
-| `apps/web/src/pages/Projects/sections/ClassesSection.tsx` | 项目类别与属性区;入口「导入属性」按钮挂 `ImportAttributesFromBackendDialog` |
+| 文件                                                                         | 为什么要看                                                                                                                                                                          |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx`                     | 批量预标主入口；按项目 `data_type` 路由到对应面板                                                                                                                                   |
+| `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx`         | 图像项目详情面板（含 backend 选择器、SchemaForm 参数面板、RunPanel、HistoryTable）                                                                                                  |
+| `apps/web/src/pages/AIPreAnnotate/components/PreannotateConfigForm.tsx`      | 阶段卡基底——model-first 单一下拉(`value=model_id`、文案 = 模型市场 `display_name`);doc / 几何 / 文本三路径共用同一交互                                                              |
+| `apps/web/src/pages/AIPreAnnotate/components/StageCard.tsx`                  | 多阶段编排阶段卡;`parent_class_filter` / `write.keys` chip 多选 + 键冲突配置期预警 + 运行态徽标 + `ProgressBar` 实时统计                                                            |
+| `apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx`      | 视频项目引导卡片（提示在工作台逐轨迹 Shift+T 发起，提供跳工作台 + `/ai-pre/jobs?tab=video` 深链）                                                                                   |
+| `apps/web/src/pages/AIPreAnnotate/components/RunPanel.tsx`                   | 运行触发与进度提示                                                                                                                                                                  |
+| `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.tsx`               | `pre_annotated` 历史列表与 bulk clear                                                                                                                                               |
+| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx`                 | AI 任务历史；含「图像」(`async_jobs: batch_predict / prediction_retry`) 和「视频」(`async_jobs: video_tracker`) 两个模态 tab，`?tab=video` 深链                                     |
+| `apps/web/src/pages/Projects/sections/ClassesSection.tsx`                    | 项目类别与属性区;入口「导入属性」按钮挂 `ImportAttributesFromBackendDialog`                                                                                                         |
 | `apps/web/src/pages/Projects/sections/ImportAttributesFromBackendDialog.tsx` | 「从 ML Backend 导入属性」对话框——列出自报 `output_attribute_schema` 的所有在线 backend / model,预览勾选字段后一键合并进当前工具单位的 `attribute_schema`(同 key 覆盖、新 key 追加) |
-| `apps/web/src/hooks/usePredictions.ts` | prediction 查询与采纳(含 `attribute_overrides`) |
-| `apps/web/src/pages/Workbench/shell/Topbar.tsx` | 当前 task 所属批次的 `pre_annotated` 提示 |
-| `apps/web/src/components/badges/BatchStatusBadge.tsx` | `pre_annotated` 徽章 |
+| `apps/web/src/hooks/usePredictions.ts`                                       | prediction 查询与采纳(含 `attribute_overrides`)                                                                                                                                     |
+| `apps/web/src/pages/Workbench/shell/Topbar.tsx`                              | 当前 task 所属批次的 `pre_annotated` 提示                                                                                                                                           |
+| `apps/web/src/components/badges/BatchStatusBadge.tsx`                        | `pre_annotated` 徽章                                                                                                                                                                |
 
 ## 相关文档
 

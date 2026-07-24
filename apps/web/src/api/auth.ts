@@ -78,7 +78,11 @@ function uniqFilter<T extends string>(val: unknown, allowed: readonly T[]): T[] 
   if (!Array.isArray(val)) return [];
   const out: T[] = [];
   for (const t of val) {
-    if (typeof t === "string" && (allowed as readonly string[]).includes(t) && !out.includes(t as T)) {
+    if (
+      typeof t === "string" &&
+      (allowed as readonly string[]).includes(t) &&
+      !out.includes(t as T)
+    ) {
       out.push(t as T);
     }
   }
@@ -121,7 +125,7 @@ export interface WorkbenchImagePreferences {
   snapThresholdPx: number;
   zoomStepFactor: 1.05 | 1.1 | 1.15 | 1.2;
   fadedOpacity: number;
-  /** v0.15.27 · showBoxLabels 迁移到 common.labelVisibility(三态枚举)。 */
+  /** 仅用于读取旧偏好；Mask 渲染已统一使用 common.fillOpacity / fillOpacitySelected。 */
   maskOverlayOpacity: number;
 }
 
@@ -402,8 +406,7 @@ export interface MeResponse {
 }
 
 export const authApi = {
-  login: (payload: LoginPayload) =>
-    apiClient.post<TokenResponse>("/auth/login", payload),
+  login: (payload: LoginPayload) => apiClient.post<TokenResponse>("/auth/login", payload),
   me: () => apiClient.get<MeResponse>("/auth/me"),
   logout: () => apiClient.post<void>("/auth/logout", {}),
   logoutAll: () => apiClient.post<TokenResponse>("/auth/logout-all", {}),

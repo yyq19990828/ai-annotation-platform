@@ -46,6 +46,7 @@ src/pages/.../UserMenu.tsx                 # 调用方
 `POST /auth/logout` 把当前 token 的 jti 加到 Redis 黑名单，TTL = 该 token 剩余有效期。下面的代码块由 `check-doc-snippets.mjs` 锁定到源文件 `apps/api/app/api/v1/auth.py` 中的 `logout` 函数（含装饰器），源码改一字 prebuild 即报错：
 
 <!-- snippet:apps/api/app/api/v1/auth.py#logout -->
+
 ```python
 @router.post("/logout", status_code=204)
 async def logout(
@@ -76,6 +77,7 @@ async def logout(
     )
     await db.commit()
 ```
+
 <!-- /snippet -->
 
 要点：
@@ -232,9 +234,7 @@ export async function logout(): Promise<void> {
 调用方在 `UserMenu.tsx` 之类的组件：
 
 ```tsx
-<DropdownMenuItem onClick={() => logout()}>
-  退出登录
-</DropdownMenuItem>
+<DropdownMenuItem onClick={() => logout()}>退出登录</DropdownMenuItem>
 ```
 
 要点：

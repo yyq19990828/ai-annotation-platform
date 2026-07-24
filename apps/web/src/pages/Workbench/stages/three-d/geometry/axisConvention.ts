@@ -46,9 +46,15 @@ const SNIFF_CONVENTIONS: LidarAxisConvention[] = LIDAR_AXIS_CONVENTIONS.filter((
 
 /** 3x3 行主序矩阵 (9 个数, m[r*3+c] = 第 r 行第 c 列)。 */
 export type Mat3 = readonly [
-  number, number, number,
-  number, number, number,
-  number, number, number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
 ];
 
 /**
@@ -70,14 +76,46 @@ const SRC_AXES_IN_ISO: Record<
     readonly [number, number, number],
   ]
 > = {
-  iso_8855: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-  ros_rep103: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-  raw: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-  kitti_camera: [[0, -1, 0], [0, 0, -1], [1, 0, 0]],
-  opencv_camera: [[0, -1, 0], [0, 0, -1], [1, 0, 0]],
-  apollo: [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
-  y_forward: [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
-  sustechpoints_demo: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]],
+  iso_8855: [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ],
+  ros_rep103: [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ],
+  raw: [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ],
+  kitti_camera: [
+    [0, -1, 0],
+    [0, 0, -1],
+    [1, 0, 0],
+  ],
+  opencv_camera: [
+    [0, -1, 0],
+    [0, 0, -1],
+    [1, 0, 0],
+  ],
+  apollo: [
+    [0, -1, 0],
+    [1, 0, 0],
+    [0, 0, 1],
+  ],
+  y_forward: [
+    [0, -1, 0],
+    [1, 0, 0],
+    [0, 0, 1],
+  ],
+  sustechpoints_demo: [
+    [0, 1, 0],
+    [-1, 0, 0],
+    [0, 0, 1],
+  ],
 };
 
 /**
@@ -86,11 +124,7 @@ const SRC_AXES_IN_ISO: Record<
  */
 export function rotationMatrixFor(c: LidarAxisConvention): Mat3 {
   const [cx, cy, cz] = SRC_AXES_IN_ISO[c];
-  return [
-    cx[0], cy[0], cz[0],
-    cx[1], cy[1], cz[1],
-    cx[2], cy[2], cz[2],
-  ];
+  return [cx[0], cy[0], cz[0], cx[1], cy[1], cz[1], cx[2], cy[2], cz[2]];
 }
 
 /**
@@ -103,9 +137,15 @@ export function applyConventionToPositions(
 ): void {
   const m = rotationMatrixFor(convention);
   // 缓存为局部变量, 内层循环避免反复索引。
-  const m00 = m[0], m01 = m[1], m02 = m[2];
-  const m10 = m[3], m11 = m[4], m12 = m[5];
-  const m20 = m[6], m21 = m[7], m22 = m[8];
+  const m00 = m[0],
+    m01 = m[1],
+    m02 = m[2];
+  const m10 = m[3],
+    m11 = m[4],
+    m12 = m[5];
+  const m20 = m[6],
+    m21 = m[7],
+    m22 = m[8];
   const n = positions.length;
   for (let i = 0; i < n; i += 3) {
     const x = positions[i];
@@ -134,13 +174,28 @@ export function applyConventionToExtrinsic(
 ): number[] {
   const m = rotationMatrixFor(convention);
   // R_normᵀ: 行列互换。
-  const t00 = m[0], t01 = m[3], t02 = m[6];
-  const t10 = m[1], t11 = m[4], t12 = m[7];
-  const t20 = m[2], t21 = m[5], t22 = m[8];
+  const t00 = m[0],
+    t01 = m[3],
+    t02 = m[6];
+  const t10 = m[1],
+    t11 = m[4],
+    t12 = m[7];
+  const t20 = m[2],
+    t21 = m[5],
+    t22 = m[8];
   // 取 E_src 的旋转块 (前 3 行 × 前 3 列) 和平移列。
-  const e00 = extrinsic[0], e01 = extrinsic[1], e02 = extrinsic[2], e03 = extrinsic[3];
-  const e10 = extrinsic[4], e11 = extrinsic[5], e12 = extrinsic[6], e13 = extrinsic[7];
-  const e20 = extrinsic[8], e21 = extrinsic[9], e22 = extrinsic[10], e23 = extrinsic[11];
+  const e00 = extrinsic[0],
+    e01 = extrinsic[1],
+    e02 = extrinsic[2],
+    e03 = extrinsic[3];
+  const e10 = extrinsic[4],
+    e11 = extrinsic[5],
+    e12 = extrinsic[6],
+    e13 = extrinsic[7];
+  const e20 = extrinsic[8],
+    e21 = extrinsic[9],
+    e22 = extrinsic[10],
+    e23 = extrinsic[11];
   // 旋转块 = E_src.rot · R_normᵀ。
   const r00 = e00 * t00 + e01 * t10 + e02 * t20;
   const r01 = e00 * t01 + e01 * t11 + e02 * t21;
@@ -152,10 +207,22 @@ export function applyConventionToExtrinsic(
   const r21 = e20 * t01 + e21 * t11 + e22 * t21;
   const r22 = e20 * t02 + e21 * t12 + e22 * t22;
   return [
-    r00, r01, r02, e03,
-    r10, r11, r12, e13,
-    r20, r21, r22, e23,
-    extrinsic[12] ?? 0, extrinsic[13] ?? 0, extrinsic[14] ?? 0, extrinsic[15] ?? 1,
+    r00,
+    r01,
+    r02,
+    e03,
+    r10,
+    r11,
+    r12,
+    e13,
+    r20,
+    r21,
+    r22,
+    e23,
+    extrinsic[12] ?? 0,
+    extrinsic[13] ?? 0,
+    extrinsic[14] ?? 0,
+    extrinsic[15] ?? 1,
   ];
 }
 
@@ -177,10 +244,7 @@ function mat3ToThree(m: Mat3): THREE.Matrix3 {
  *
  * 对 identity convention 是恒等映射, 但仍走完整路径 (类型一致 / 不分支)。
  */
-export function unapplyConventionToPsr(
-  psr: Psr,
-  convention: LidarAxisConvention,
-): Psr {
+export function unapplyConventionToPsr(psr: Psr, convention: LidarAxisConvention): Psr {
   const m = rotationMatrixFor(convention);
   const R = mat3ToThree(m);
   const Rt = R.clone().transpose();
@@ -206,10 +270,7 @@ export function unapplyConventionToPsr(
  * v0.13.12 · 把源系 PSR 映射到平台 ISO 系。用于 convention mismatch 重投影:
  * `psr_new = R_new · R_oldᵀ · psr_old` 可拆成先 unapply(old), 再 apply(new)。
  */
-export function applyConventionToPsr(
-  psr: Psr,
-  convention: LidarAxisConvention,
-): Psr {
+export function applyConventionToPsr(psr: Psr, convention: LidarAxisConvention): Psr {
   const m = rotationMatrixFor(convention);
   const R = mat3ToThree(m);
   const Rt = R.clone().transpose();
@@ -242,11 +303,7 @@ export interface AxisSniffResult {
  * v0.13.12 · 从 front camera 外参 row 2 推断源系 axis convention。
  * fz 可选以兼容原 fx/fy 调用; 有完整外参时应传 fz, 否则 KITTI/OpenCV (+Z 前) 不可区分。
  */
-export function sniffConventionFromForward(
-  fx: number,
-  fy: number,
-  fz = 0,
-): AxisSniffResult | null {
+export function sniffConventionFromForward(fx: number, fy: number, fz = 0): AxisSniffResult | null {
   const norm = Math.hypot(fx, fy, fz);
   if (norm < 1e-9) return null;
   const ux = fx / norm;
@@ -258,9 +315,10 @@ export function sniffConventionFromForward(
     const ey = m[1];
     const ez = m[2];
     const expectedNorm = Math.hypot(ex, ey, ez);
-    const score = expectedNorm < 1e-9
-      ? -1
-      : ux * (ex / expectedNorm) + uy * (ey / expectedNorm) + uz * (ez / expectedNorm);
+    const score =
+      expectedNorm < 1e-9
+        ? -1
+        : ux * (ex / expectedNorm) + uy * (ey / expectedNorm) + uz * (ez / expectedNorm);
     return { convention, score };
   }).sort((a, b) => b.score - a.score);
   const best = candidates[0];

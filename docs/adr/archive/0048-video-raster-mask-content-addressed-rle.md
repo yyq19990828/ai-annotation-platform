@@ -4,6 +4,7 @@
 - **Date:** 2026-07-13
 - **Deciders:** core team
 - **Supersedes:** —
+- **Extended by:** [ADR-0052](../0052-shared-raster-mask-and-image-geometry.md)
 
 ## Context
 
@@ -21,8 +22,8 @@ PostgreSQL JSONB 全量重写、Pydantic materialization、worker staged candida
 | **内容寻址 `coco_rle_ref`** | annotation/staged JSON 体积稳定；mask 可按当前帧懒取与复用 | 增加对象生命周期、鉴权读取与 GC |
 | 每 track 单一外部 blob | 对象数少 | 任一关键帧修改仍重写整轨 blob，无法按帧缓存 / 去重 |
 
-ADR-0013 和 ADR-0022 冻结的是图片工作台与既有 SAM 路径的 `mask -> polygon` 行为；本决策只扩展视频持久化 mask，不改变图片侧
-现状，也不把所有几何统一成通用 blob。
+ADR-0013 和 ADR-0022 冻结的是图片工作台与既有 SAM 路径的 `mask -> polygon` 行为；本决策最初只扩展视频持久化 mask，不改变图片侧
+现状，也不把所有几何统一成通用 blob。ADR-0052 后续在保持本 ADR 的 canonical bytes、内容寻址和生命周期合同不变的前提下，将同一内容层共享给图片 `raster_mask`。
 
 ## Decision
 

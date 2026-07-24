@@ -10,8 +10,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-MAX_MASK_DIMENSION = 4096
-MAX_MASK_PIXELS = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION
+MAX_IMAGE_MASK_DIMENSION = 8192
+MAX_IMAGE_MASK_PIXELS = 67_108_864
+MAX_VIDEO_MASK_DIMENSION = 4096
+MAX_VIDEO_MASK_PIXELS = 16_777_216
+MAX_DENSE_MASK_PIXELS = MAX_VIDEO_MASK_PIXELS
+# Backward-compatible names describe the structural/canonical RLE envelope.
+# Task-aware boundaries narrow video and interactive-AI payloads separately.
+MAX_MASK_DIMENSION = MAX_IMAGE_MASK_DIMENSION
+MAX_MASK_PIXELS = MAX_IMAGE_MASK_PIXELS
 MAX_MASK_RUNS = 1_000_000
 
 
@@ -93,6 +100,12 @@ def decode_coco_rle(rle: Mapping[str, Any]) -> bytearray:
         offset += run_length
         foreground = not foreground
     return out
+
+
+def coco_rle_area(rle: Mapping[str, Any]) -> int:
+    """Return the foreground pixel count without materializing the mask."""
+    _, _, counts = validate_coco_rle(rle)
+    return sum(counts[1::2])
 
 
 def coco_rle_bbox_norm(rle: Mapping[str, Any]) -> dict[str, float]:

@@ -72,7 +72,10 @@ describe("iouShape", () => {
       y: 0,
       w: 1,
       h: 1,
-      polygon: [[0, 0], [1, 0]] as [number, number][],
+      polygon: [
+        [0, 0],
+        [1, 0],
+      ] as [number, number][],
     };
     const b = { x: 0, y: 0, w: 1, h: 1 };
     expect(iouShape(a, b)).toBe(1);

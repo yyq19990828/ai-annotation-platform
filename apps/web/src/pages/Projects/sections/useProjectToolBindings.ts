@@ -72,8 +72,7 @@ export function buildUnitBindings(project: {
       out[k] = {
         enabled: !!b.enabled,
         classRows,
-        attributeFields:
-          (b.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
+        attributeFields: (b.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
         keypointSchema: b.keypoint_schema ?? null,
         videoModes: b.video_modes
           ? { box: b.video_modes.box ?? true, track: b.video_modes.track ?? true }
@@ -127,14 +126,11 @@ function foldRetiredAiInteractive(out: UnitBindingMap, tb: ToolBindings): void {
   const src = (tb as Record<string, ToolBindings[ToolUnitId]>)[AI_INTERACTIVE_KEY];
   if (!src) return;
   const srcClasses = src.classes ?? [];
-  const srcFields =
-    (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+  const srcFields = (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
   if (srcClasses.length === 0 && srcFields.length === 0) return;
 
   const tbAny = tb as Record<string, unknown>;
-  let targets = (["region", "bbox"] as ToolUnitId[]).filter(
-    (t) => tbAny[t] && out[t],
-  );
+  let targets = (["region", "bbox"] as ToolUnitId[]).filter((t) => tbAny[t] && out[t]);
   if (targets.length === 0 && out.bbox) targets = ["bbox"];
 
   for (const t of targets) {
@@ -176,11 +172,7 @@ function projectDataType(project: {
 
 /** 单位是否「无任何配置内容」(纯空)。 */
 function isUnitEmpty(ub: UnitBindingState): boolean {
-  return (
-    ub.classRows.length === 0 &&
-    ub.attributeFields.length === 0 &&
-    !ub.keypointSchema
-  );
+  return ub.classRows.length === 0 && ub.attributeFields.length === 0 && !ub.keypointSchema;
 }
 
 /**
@@ -212,13 +204,9 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
             },
       ),
       attribute_schema:
-        ub.attributeFields.length > 0
-          ? { fields: ub.attributeFields }
-          : { fields: [] },
+        ub.attributeFields.length > 0 ? { fields: ub.attributeFields } : { fields: [] },
       // v0.10.28 · keypoint 单元附带骨骼模板 (后端 ToolBinding.keypoint_schema 就位前不落库)。
-      ...(k === "keypoint" && ub.keypointSchema
-        ? { keypoint_schema: ub.keypointSchema }
-        : {}),
+      ...(k === "keypoint" && ub.keypointSchema ? { keypoint_schema: ub.keypointSchema } : {}),
       // 视频几何单位 (bbox/region/polyline) 附带单帧/轨迹开关 (仅视频项目设置, null 不落库)。
       ...(ub.videoModes ? { video_modes: ub.videoModes } : {}),
     };
@@ -230,13 +218,11 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
 export function useProjectToolBindings(project: ProjectResponse) {
   const initial = useMemo(() => buildUnitBindings(project), [project]);
   const [bindings, setBindings] = useState<UnitBindingMap>(initial);
-  const [activeUnit, setActiveUnit] = useState<ToolUnitId>(() =>
-    firstActiveUnit(initial),
-  );
+  const [activeUnit, setActiveUnit] = useState<ToolUnitId>(() => firstActiveUnit(initial));
 
   useEffect(() => {
     setBindings(initial);
-    setActiveUnit((cur) => initial[cur] ? cur : firstActiveUnit(initial));
+    setActiveUnit((cur) => (initial[cur] ? cur : firstActiveUnit(initial)));
   }, [initial]);
 
   const dirty = JSON.stringify(bindings) !== JSON.stringify(initial);
@@ -252,9 +238,6 @@ export function useProjectToolBindings(project: ProjectResponse) {
 }
 
 function firstActiveUnit(bindings: UnitBindingMap): ToolUnitId {
-  const firstEnabled = (Object.keys(bindings) as ToolUnitId[]).find(
-    (k) => bindings[k]?.enabled,
-  );
-  return firstEnabled
-    ?? ((Object.keys(bindings)[0] as ToolUnitId | undefined) ?? "bbox");
+  const firstEnabled = (Object.keys(bindings) as ToolUnitId[]).find((k) => bindings[k]?.enabled);
+  return firstEnabled ?? (Object.keys(bindings)[0] as ToolUnitId | undefined) ?? "bbox";
 }

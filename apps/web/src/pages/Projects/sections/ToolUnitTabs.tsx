@@ -5,11 +5,7 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { clsx } from "clsx";
-import {
-  TOOL_UNIT_GROUPS,
-  type ProjectDataType,
-  type ToolUnitId,
-} from "@/constants/toolUnits";
+import { TOOL_UNIT_GROUPS, type ProjectDataType, type ToolUnitId } from "@/constants/toolUnits";
 import type { UnitBindingMap } from "./useProjectToolBindings";
 
 interface Props {
@@ -30,9 +26,7 @@ export function ToolUnitTabs({
   allowToggle = false,
   onToggle,
 }: Props) {
-  const visible = TOOL_UNIT_GROUPS.filter(
-    (g) => g.available && bindings[g.id] !== undefined,
-  );
+  const visible = TOOL_UNIT_GROUPS.filter((g) => g.available && bindings[g.id] !== undefined);
   return (
     <div className="mb-3 flex flex-wrap gap-1.5 border-b border-border pb-2">
       {visible.map((g) => {
@@ -69,7 +63,9 @@ export function ToolUnitTabs({
               <Icon name={g.icon} size={12} />
               <span>{label}</span>
               {ub && ub.classRows.length > 0 && (
-                <span className="rounded-sm bg-border px-1.5 py-px text-2xs text-muted-foreground">{ub.classRows.length}</span>
+                <span className="rounded-sm bg-border px-1.5 py-px text-2xs text-muted-foreground">
+                  {ub.classRows.length}
+                </span>
               )}
             </button>
           </div>
@@ -79,11 +75,7 @@ export function ToolUnitTabs({
   );
 }
 
-function toolUnitLabel(
-  unit: ToolUnitId,
-  fallback: string,
-  dataType?: ProjectDataType,
-): string {
+function toolUnitLabel(unit: ToolUnitId, fallback: string, dataType?: ProjectDataType): string {
   if (dataType === "video") {
     // 视频几何单位名简化 (单帧/轨迹变体由单位内子开关区分, 不进 tab 名)。
     if (unit === "bbox") return "矩形框 / 轨迹";

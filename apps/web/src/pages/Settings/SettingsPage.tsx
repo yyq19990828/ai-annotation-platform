@@ -6,7 +6,12 @@ import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
-import { useChangePassword, useUpdateProfile, useRequestDeactivation, useCancelDeactivation } from "@/hooks/useMe";
+import {
+  useChangePassword,
+  useUpdateProfile,
+  useRequestDeactivation,
+  useCancelDeactivation,
+} from "@/hooks/useMe";
 import { useSystemSettings, useUpdateSystemSettings, useTestSmtp } from "@/hooks/useSystemSettings";
 import type { SystemSettingsPatch } from "@/api/settings";
 import { ROLE_LABELS } from "@/constants/roles";
@@ -38,21 +43,26 @@ const INPUT_CLASS =
 const INPUT_BUTTON_CLASS =
   "w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-sm text-foreground disabled:cursor-not-allowed";
 const ACTIONS_END_CLASS = "flex justify-end";
-const SECTION_HEADER_CLASS =
-  "flex items-center justify-between border-b border-border px-4 py-3";
+const SECTION_HEADER_CLASS = "flex items-center justify-between border-b border-border px-4 py-3";
 
 export function SettingsPage() {
   const { role } = usePermissions();
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
 
-  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "bell" | "settings" | "image" | "key" }[] = [
+  const sections: {
+    key: SectionKey;
+    label: string;
+    icon: "user" | "flag" | "bell" | "settings" | "image" | "key";
+  }[] = [
     { key: "profile", label: "个人资料", icon: "user" },
     { key: "workbench", label: "标注偏好", icon: "image" },
     { key: "apikeys", label: "API 密钥", icon: "key" },
     { key: "feedback", label: "我的反馈", icon: "flag" },
     { key: "notifications", label: "通知偏好", icon: "bell" },
-    ...(isAdmin ? [{ key: "system" as SectionKey, label: "系统设置", icon: "settings" as const }] : []),
+    ...(isAdmin
+      ? [{ key: "system" as SectionKey, label: "系统设置", icon: "settings" as const }]
+      : []),
   ];
 
   return (
@@ -77,7 +87,8 @@ export function SettingsPage() {
                         active ? "bg-muted font-semibold text-foreground" : "text-muted-foreground",
                       )}
                     >
-                      <Icon name={s.icon} size={13} />{s.label}
+                      <Icon name={s.icon} size={13} />
+                      {s.label}
                     </button>
                   </li>
                 );
@@ -130,7 +141,9 @@ function ProfileSection() {
       {
         onSuccess: () => {
           pushToast({ msg: "密码已修改", kind: "success" });
-          setOldPwd(""); setNewPwd(""); setNewPwd2("");
+          setOldPwd("");
+          setNewPwd("");
+          setNewPwd2("");
         },
       },
     );
@@ -155,9 +168,7 @@ function ProfileSection() {
               className={INPUT_CLASS}
             />
           </Field>
-          {updateProfile.isError && (
-            <ErrorBanner msg={(updateProfile.error as Error).message} />
-          )}
+          {updateProfile.isError && <ErrorBanner msg={(updateProfile.error as Error).message} />}
           <div className={ACTIONS_END_CLASS}>
             <button
               type="submit"
@@ -204,9 +215,7 @@ function ProfileSection() {
               <div className="mt-1 text-xs text-status-danger">两次密码不一致</div>
             )}
           </Field>
-          {changePwd.isError && (
-            <ErrorBanner msg={(changePwd.error as Error).message} />
-          )}
+          {changePwd.isError && <ErrorBanner msg={(changePwd.error as Error).message} />}
           <div className={ACTIONS_END_CLASS}>
             <button
               type="submit"
@@ -246,15 +255,13 @@ function DangerZoneCard() {
         setReason("");
         setAcknowledged(false);
       },
-      onError: (e) =>
-        pushToast({ msg: "提交失败", sub: (e as Error).message, kind: "warning" }),
+      onError: (e) => pushToast({ msg: "提交失败", sub: (e as Error).message, kind: "warning" }),
     });
   };
   const cancel = () => {
     cancelMut.mutate(undefined, {
       onSuccess: () => pushToast({ msg: "已撤销注销申请", kind: "success" }),
-      onError: (e) =>
-        pushToast({ msg: "撤销失败", sub: (e as Error).message, kind: "warning" }),
+      onError: (e) => pushToast({ msg: "撤销失败", sub: (e as Error).message, kind: "warning" }),
     });
   };
 
@@ -267,90 +274,96 @@ function DangerZoneCard() {
         </div>
         <div className="flex flex-col gap-3 p-4">
           {isPending ? (
-          <>
-            <div className="text-sm text-foreground">
-              <div className="mb-1 font-medium">注销申请已提交</div>
-              <div className="text-muted-foreground">
-                提交时间：{requestedAt ? new Date(requestedAt).toLocaleString("zh-CN") : "—"}
+            <>
+              <div className="text-sm text-foreground">
+                <div className="mb-1 font-medium">注销申请已提交</div>
+                <div className="text-muted-foreground">
+                  提交时间：{requestedAt ? new Date(requestedAt).toLocaleString("zh-CN") : "—"}
+                </div>
+                <div className="text-muted-foreground">
+                  生效时间：{new Date(scheduledAt!).toLocaleString("zh-CN")}（届时账号自动停用）
+                </div>
               </div>
-              <div className="text-muted-foreground">
-                生效时间：{new Date(scheduledAt!).toLocaleString("zh-CN")}（届时账号自动停用）
+              <div>
+                <button
+                  type="button"
+                  onClick={cancel}
+                  disabled={cancelMut.isPending}
+                  className={primaryButtonClassName(cancelMut.isPending)}
+                >
+                  {cancelMut.isPending ? "撤销中..." : "撤销注销申请"}
+                </button>
               </div>
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={cancel}
-                disabled={cancelMut.isPending}
-                className={primaryButtonClassName(cancelMut.isPending)}
-              >
-                {cancelMut.isPending ? "撤销中..." : "撤销注销申请"}
-              </button>
-            </div>
-          </>
-        ) : confirmOpen ? (
-          <>
-            <div className="text-sm text-foreground">
-              注销账号后，您将无法再登录此系统；标注历史与审计记录会保留以满足合规要求。
-              <strong>提交后将进入 7 天冷静期，期间可随时撤销。</strong>
-            </div>
-            <Field label="注销原因（可选）">
-              <textarea
-                rows={3}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                maxLength={500}
-                placeholder="如：不再使用 / 切换账号 / 隐私顾虑..."
-                className={clsx(INPUT_CLASS, "resize-y [font:inherit]")}
-              />
-            </Field>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-              <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
-              我已知晓 7 天冷静期 + 历史数据保留
-            </label>
-            {requestMut.isError && (
-              <ErrorBanner msg={(requestMut.error as Error).message} />
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => { setConfirmOpen(false); setAcknowledged(false); setReason(""); }}
-                className="w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-sm text-foreground"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={!acknowledged || requestMut.isPending}
-                onClick={submit}
-                className={clsx(
-                  "cursor-pointer rounded-md border-0 px-4 py-2 text-sm font-medium",
-                  acknowledged
-                    ? "bg-rose-500 text-white"
-                    : "cursor-not-allowed bg-muted text-muted-foreground",
-                  "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
-                )}
-              >
-                {requestMut.isPending ? "提交中..." : "确认申请注销"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="text-sm text-muted-foreground">
-              如不再需要本账号，可申请自助注销。提交后将进入 7 天冷静期，期间可撤销。
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => setConfirmOpen(true)}
-                className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-2 text-sm font-medium text-status-danger"
-              >
-                申请注销账号
-              </button>
-            </div>
-          </>
-        )}
+            </>
+          ) : confirmOpen ? (
+            <>
+              <div className="text-sm text-foreground">
+                注销账号后，您将无法再登录此系统；标注历史与审计记录会保留以满足合规要求。
+                <strong>提交后将进入 7 天冷静期，期间可随时撤销。</strong>
+              </div>
+              <Field label="注销原因（可选）">
+                <textarea
+                  rows={3}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  maxLength={500}
+                  placeholder="如：不再使用 / 切换账号 / 隐私顾虑..."
+                  className={clsx(INPUT_CLASS, "resize-y [font:inherit]")}
+                />
+              </Field>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(e) => setAcknowledged(e.target.checked)}
+                />
+                我已知晓 7 天冷静期 + 历史数据保留
+              </label>
+              {requestMut.isError && <ErrorBanner msg={(requestMut.error as Error).message} />}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmOpen(false);
+                    setAcknowledged(false);
+                    setReason("");
+                  }}
+                  className="w-auto cursor-pointer rounded-md border border-border bg-card px-3.5 py-2 text-sm text-foreground"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={!acknowledged || requestMut.isPending}
+                  onClick={submit}
+                  className={clsx(
+                    "cursor-pointer rounded-md border-0 px-4 py-2 text-sm font-medium",
+                    acknowledged
+                      ? "bg-rose-500 text-white"
+                      : "cursor-not-allowed bg-muted text-muted-foreground",
+                    "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
+                  )}
+                >
+                  {requestMut.isPending ? "提交中..." : "确认申请注销"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm text-muted-foreground">
+                如不再需要本账号，可申请自助注销。提交后将进入 7 天冷静期，期间可撤销。
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmOpen(true)}
+                  className="cursor-pointer rounded-md border border-rose-500 bg-transparent px-3.5 py-2 text-sm font-medium text-status-danger"
+                >
+                  申请注销账号
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Card>
     </div>
@@ -438,8 +451,7 @@ function SystemSection() {
 
   const onTestSmtp = () => {
     testSmtpMut.mutate(undefined, {
-      onSuccess: (r) =>
-        pushToast({ msg: "测试邮件已发送", sub: `→ ${r.to}`, kind: "success" }),
+      onSuccess: (r) => pushToast({ msg: "测试邮件已发送", sub: `→ ${r.to}`, kind: "success" }),
       onError: (e) =>
         pushToast({ msg: "SMTP 测试失败", sub: (e as Error).message, kind: "warning" }),
     });
@@ -454,7 +466,13 @@ function SystemSection() {
           value={data.environment}
           hint={
             <Badge
-              variant={data.environment === "production" ? "danger" : data.environment === "staging" ? "warning" : "outline"}
+              variant={
+                data.environment === "production"
+                  ? "danger"
+                  : data.environment === "staging"
+                    ? "warning"
+                    : "outline"
+              }
             >
               {data.environment}
             </Badge>
@@ -501,7 +519,12 @@ function SystemSection() {
           </div>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2.5">
             <Field label="主机">
-              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className={INPUT_CLASS} placeholder="smtp.example.com" />
+              <input
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+                className={INPUT_CLASS}
+                placeholder="smtp.example.com"
+              />
             </Field>
             <Field label="端口">
               <input
@@ -513,14 +536,25 @@ function SystemSection() {
               />
             </Field>
             <Field label="账号">
-              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} className={INPUT_CLASS} />
+              <input
+                value={smtpUser}
+                onChange={(e) => setSmtpUser(e.target.value)}
+                className={INPUT_CLASS}
+              />
             </Field>
             <Field label="发件人">
-              <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} className={INPUT_CLASS} placeholder="noreply@example.com" />
+              <input
+                value={smtpFrom}
+                onChange={(e) => setSmtpFrom(e.target.value)}
+                className={INPUT_CLASS}
+                placeholder="noreply@example.com"
+              />
             </Field>
           </div>
           <div className="mt-2.5">
-            <div className={LABEL_CLASS}>密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}</div>
+            <div className={LABEL_CLASS}>
+              密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}
+            </div>
             {pwdEditing ? (
               <div className="flex gap-2">
                 <input
@@ -532,7 +566,10 @@ function SystemSection() {
                 />
                 <button
                   type="button"
-                  onClick={() => { setPwdEditing(false); setSmtpPwd(""); }}
+                  onClick={() => {
+                    setPwdEditing(false);
+                    setSmtpPwd("");
+                  }}
                   className={INPUT_BUTTON_CLASS}
                 >
                   取消
@@ -557,15 +594,11 @@ function SystemSection() {
             >
               {testSmtpMut.isPending ? "发送中..." : "发送测试邮件到我"}
             </button>
-            <span className="ml-2.5 text-xs text-muted-foreground">
-              收件人：当前账号邮箱
-            </span>
+            <span className="ml-2.5 text-xs text-muted-foreground">收件人：当前账号邮箱</span>
           </div>
         </div>
 
-        {updateMut.isError && (
-          <ErrorBanner msg={(updateMut.error as Error).message} />
-        )}
+        {updateMut.isError && <ErrorBanner msg={(updateMut.error as Error).message} />}
         <div className={ACTIONS_END_CLASS}>
           <button
             type="submit"
@@ -616,36 +649,34 @@ function WorkbenchPreferencesSection() {
       <div className={FORM_CLASS}>
         {groups.map(({ category, fields }) => (
           <div key={category} className="mt-2.5">
-            <div className={GROUP_LABEL_CLASS}>
-              {WORKBENCH_SETTING_CATEGORY_LABELS[category]}
-            </div>
+            <div className={GROUP_LABEL_CLASS}>{WORKBENCH_SETTING_CATEGORY_LABELS[category]}</div>
             <div className="flex flex-col gap-0.5">
-              {fields.filter((field) => !field.parentKey).map((field) => {
-                const fieldValue = getFieldValue(config, field);
-                const childFields = fields.filter(
-                  (child) => child.parentKey === field.key,
-                );
-                return (
-                  <div key={field.key} className="flex flex-col gap-px">
-                    <SettingsFieldControl
-                      field={field}
-                      value={fieldValue}
-                      disabled={saving}
-                      onCommit={(value) => commit(field, value)}
-                    />
-                    {childFields.map((child) => (
+              {fields
+                .filter((field) => !field.parentKey)
+                .map((field) => {
+                  const fieldValue = getFieldValue(config, field);
+                  const childFields = fields.filter((child) => child.parentKey === field.key);
+                  return (
+                    <div key={field.key} className="flex flex-col gap-px">
                       <SettingsFieldControl
-                        key={child.key}
-                        field={child}
-                        value={getFieldValue(config, child)}
-                        nested
-                        disabled={saving || !fieldValue}
-                        onCommit={(value) => commit(child, value)}
+                        field={field}
+                        value={fieldValue}
+                        disabled={saving}
+                        onCommit={(value) => commit(field, value)}
                       />
-                    ))}
-                  </div>
-                );
-              })}
+                      {childFields.map((child) => (
+                        <SettingsFieldControl
+                          key={child.key}
+                          field={child}
+                          value={getFieldValue(config, child)}
+                          nested
+                          disabled={saving || !fieldValue}
+                          onCommit={(value) => commit(child, value)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         ))}
@@ -682,11 +713,19 @@ function MyFeedbackSection() {
   }, []);
 
   const statusLabel: Record<string, string> = {
-    new: "新提交", triaged: "已确认", in_progress: "处理中",
-    fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
+    new: "新提交",
+    triaged: "已确认",
+    in_progress: "处理中",
+    fixed: "已修复",
+    wont_fix: "不修复",
+    duplicate: "重复",
   };
   if (loading) {
-    return <Card><div className="p-5 text-sm text-muted-foreground">加载中...</div></Card>;
+    return (
+      <Card>
+        <div className="p-5 text-sm text-muted-foreground">加载中...</div>
+      </Card>
+    );
   }
 
   if (reports.length === 0) {
@@ -718,9 +757,16 @@ function MyFeedbackSection() {
             {reports.map((r) => (
               <tr key={r.id} className="border-b border-border">
                 <td className="mono px-3 py-2 text-xs">{r.display_id}</td>
-                <td className="max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-foreground" title={r.title}>{r.title}</td>
+                <td
+                  className="max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-foreground"
+                  title={r.title}
+                >
+                  {r.title}
+                </td>
                 <td className="whitespace-nowrap px-3 py-2">
-                  <span className={clsx("font-medium", severityClassName(r.severity))}>{r.severity}</span>
+                  <span className={clsx("font-medium", severityClassName(r.severity))}>
+                    {r.severity}
+                  </span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2">
                   <span className="rounded-[3px] bg-muted px-1.5 py-px text-xs">
@@ -757,7 +803,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ReadOnly({ label, value, mono, hint }: { label: string; value: string; mono?: boolean; hint?: React.ReactNode }) {
+function ReadOnly({
+  label,
+  value,
+  mono,
+  hint,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  hint?: React.ReactNode;
+}) {
   return (
     <div>
       <div className={LABEL_CLASS}>{label}</div>
@@ -779,7 +835,8 @@ function ReadOnly({ label, value, mono, hint }: { label: string; value: string; 
 function ErrorBanner({ msg }: { msg: string }) {
   return (
     <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-sm text-status-danger">
-      <Icon name="warning" size={13} />{msg}
+      <Icon name="warning" size={13} />
+      {msg}
     </div>
   );
 }
@@ -875,9 +932,7 @@ function NotificationPreferencesSection() {
         <p className="mb-2.5 text-xs text-muted-foreground">
           关闭某类通知后，新事件不会进入站内通知中心；已存档通知不受影响。邮件 digest 暂未开启。
         </p>
-        {loading && (
-          <div className="text-xs text-muted-foreground">加载中…</div>
-        )}
+        {loading && <div className="text-xs text-muted-foreground">加载中…</div>}
         {!loading &&
           items.map((it) => (
             <div
@@ -886,9 +941,7 @@ function NotificationPreferencesSection() {
             >
               <div>
                 <div className="font-medium">{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
-                <div className="mono text-xs text-muted-foreground">
-                  {it.type}
-                </div>
+                <div className="mono text-xs text-muted-foreground">{it.type}</div>
               </div>
               <label className="inline-flex cursor-pointer items-center gap-1.5">
                 <input

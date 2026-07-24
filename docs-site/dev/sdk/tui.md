@@ -24,11 +24,11 @@ aap tui
 
 ## 四个 Tab
 
-| Tab | 内容 | 列 |
-|---|---|---|
-| **Projects** | 项目列表 | display_id / name / status / 进度(完成/总数) |
-| **Datasets** | 数据集列表(最多 100 条) | display_id / name / data_type / 条目数 / 大小 / created_at |
-| **Jobs** | 异步任务列表(最多 50 条) | kind / status / progress / created_at |
+| Tab             | 内容                             | 列                                                                     |
+| --------------- | -------------------------------- | ---------------------------------------------------------------------- |
+| **Projects**    | 项目列表                         | display_id / name / status / 进度(完成/总数)                           |
+| **Datasets**    | 数据集列表(最多 100 条)          | display_id / name / data_type / 条目数 / 大小 / created_at             |
+| **Jobs**        | 异步任务列表(最多 50 条)         | kind / status / progress / created_at                                  |
 | **ML Backends** | 各项目挂载的 ML Backend 健康状态 | name / 项目 / state / model_version / GPU 利用率 / 显存 / last_checked |
 
 每个主 tab 顶部有一条**动作按钮栏**(鼠标可点,与键盘等价);选中行后回车 / 按 `o` / 点「打开」按钮可**下钻进专属详情子页**(见下「下钻子路由」)。
@@ -45,15 +45,15 @@ aap tui
 
 按键由底部 Footer 实时展示,并**按当前 tab 上下文启用**:`e`(导出)仅在 Projects tab 可用、`c`(取消)仅在 Jobs tab 可用,其余 tab 下这两个键在 Footer 中不显示;进入详情子页后主屏动作键也从子页 Footer 隐藏。
 
-| 按键 | 动作 |
-|---|---|
-| `r` | 刷新当前激活的 tab |
-| `o` / `回车` | 下钻打开选中行详情子页 |
-| `e` | 对 Projects tab 选中项目打开**导出配置框**(按项目类型选格式 + 选项) |
-| `c` | 对 Jobs tab 选中的 pending/running job 软取消(二次确认) |
-| `q` | 退出 |
-| `ctrl+p` | Textual 命令面板 |
-| `esc` | 在详情子页内返回上一层 |
+| 按键         | 动作                                                                |
+| ------------ | ------------------------------------------------------------------- |
+| `r`          | 刷新当前激活的 tab                                                  |
+| `o` / `回车` | 下钻打开选中行详情子页                                              |
+| `e`          | 对 Projects tab 选中项目打开**导出配置框**(按项目类型选格式 + 选项) |
+| `c`          | 对 Jobs tab 选中的 pending/running job 软取消(二次确认)             |
+| `q`          | 退出                                                                |
+| `ctrl+p`     | Textual 命令面板                                                    |
+| `esc`        | 在详情子页内返回上一层                                              |
 
 ## 下钻子路由(v0.15.10)
 

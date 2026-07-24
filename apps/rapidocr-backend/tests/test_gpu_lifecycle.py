@@ -211,8 +211,9 @@ async def test_legacy_workload_rejects_partial_or_invalid_managed_headers(
 
 
 @pytest.mark.asyncio
-async def test_legacy_workload_rejects_valid_managed_headers_without_open_generation(
-) -> None:
+async def test_legacy_workload_rejects_valid_managed_headers_without_open_generation() -> (
+    None
+):
     lifecycle, _pool, key = _domain()
 
     with pytest.raises(LifecycleHTTPError) as error:
@@ -462,17 +463,26 @@ async def test_idle_unload_respects_age_and_borrower_then_closes_generation() ->
     await pool.warmup(target)
     await operation.close()
 
-    assert await lifecycle.try_idle_unload(
-        idle_before=time.monotonic() - 60,
-    ) == 0
+    assert (
+        await lifecycle.try_idle_unload(
+            idle_before=time.monotonic() - 60,
+        )
+        == 0
+    )
     async with pool.borrow(target):
-        assert await lifecycle.try_idle_unload(
-            idle_before=time.monotonic() + 1,
-        ) == 0
+        assert (
+            await lifecycle.try_idle_unload(
+                idle_before=time.monotonic() + 1,
+            )
+            == 0
+        )
 
-    assert await lifecycle.try_idle_unload(
-        idle_before=time.monotonic() + 1,
-    ) == 1
+    assert (
+        await lifecycle.try_idle_unload(
+            idle_before=time.monotonic() + 1,
+        )
+        == 1
+    )
     residency = await lifecycle.residency()
     assert residency.state.value == "unloaded"
     assert residency.gpu_loaded is False

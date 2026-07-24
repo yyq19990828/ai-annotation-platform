@@ -112,7 +112,8 @@ function checkFile(filePath) {
       // Insert missing fields after opening ---
       const fmBlock = extra.replace(/^---\n/, "").replace(/\n---\n$/, "");
       const insertAfter = content.indexOf("\n---", 3);
-      const newContent = content.slice(0, insertAfter) + "\n" + fmBlock + content.slice(insertAfter);
+      const newContent =
+        content.slice(0, insertAfter) + "\n" + fmBlock + content.slice(insertAfter);
       writeFileSync(filePath, newContent);
       console.log(`[fix] Added missing fields [${missing.join(", ")}] to: ${rel}`);
     } else {

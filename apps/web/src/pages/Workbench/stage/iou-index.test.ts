@@ -38,10 +38,7 @@ describe("buildIoUIndex", () => {
   });
 
   it("同类内仅返回包围盒相交的候选", () => {
-    const boxes = [
-      b("near", "car", 0, 0, 0.2, 0.2),
-      b("far", "car", 0.8, 0.8, 0.1, 0.1),
-    ];
+    const boxes = [b("near", "car", 0, 0, 0.2, 0.2), b("far", "car", 0.8, 0.8, 0.1, 0.1)];
     const idx = buildIoUIndex(boxes);
 
     const cands = idx.candidatesForBox(b("q", "car", 0.05, 0.05, 0.1, 0.1));
@@ -63,9 +60,7 @@ describe("buildIoUIndex", () => {
       ],
     };
     const idx = buildIoUIndex([triangle]);
-    expect(
-      idx.candidatesForBox(b("q", "x", 0.15, 0.15, 0.05, 0.05)),
-    ).toHaveLength(1);
+    expect(idx.candidatesForBox(b("q", "x", 0.15, 0.15, 0.05, 0.05))).toHaveLength(1);
     expect(idx.candidatesForBox(b("q", "x", 0.5, 0.5, 0.1, 0.1))).toEqual([]);
   });
 });
@@ -73,11 +68,11 @@ describe("buildIoUIndex", () => {
 describe("buildVertexIndex", () => {
   const pts: Pt[] = [
     [0.05, 0.05], // idx 0  左上
-    [0.25, 0.10], // idx 1  上中
-    [0.50, 0.05], // idx 2  上右
-    [0.95, 0.50], // idx 3  右
-    [0.50, 0.95], // idx 4  下
-    [0.05, 0.50], // idx 5  左
+    [0.25, 0.1], // idx 1  上中
+    [0.5, 0.05], // idx 2  上右
+    [0.95, 0.5], // idx 3  右
+    [0.5, 0.95], // idx 4  下
+    [0.05, 0.5], // idx 5  左
   ];
 
   it("size 反映顶点数", () => {

@@ -4,9 +4,10 @@
 //
 // 目的：让阅读 API 指南的人能一眼看到全量路由，反查到具体模块文件。
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { emitGenerated } from "./_emit.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(here, "../..");
@@ -61,5 +62,9 @@ for (const mod of modules) {
 
 md += `---\n\n_共 ${modules.length} 模块 / ${totalRoutes} 路由_\n`;
 
-writeFileSync(OUT, md);
-console.log(`[generate-api-index] wrote ${totalRoutes} routes from ${modules.length} modules → ${OUT}`);
+emitGenerated({
+  dst: OUT,
+  content: md,
+  label: "generate-api-index",
+  detail: `${totalRoutes} routes from ${modules.length} modules`,
+});

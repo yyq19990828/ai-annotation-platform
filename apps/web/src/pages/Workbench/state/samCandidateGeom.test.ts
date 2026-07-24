@@ -10,14 +10,22 @@ import { samCandidateGeom } from "./useWorkbenchShellModel.helpers";
 describe("samCandidateGeom", () => {
   it("矩形候选取其 bbox", () => {
     expect(
-      samCandidateGeom({ type: "rectanglelabels", bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 } }),
+      samCandidateGeom({
+        type: "rectanglelabels",
+        bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      }),
     ).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
   });
 
   it("多边形候选取顶点外接框", () => {
     const g = samCandidateGeom({
       type: "polygonlabels",
-      points: [[0.2, 0.3], [0.6, 0.3], [0.6, 0.9], [0.2, 0.9]],
+      points: [
+        [0.2, 0.3],
+        [0.6, 0.3],
+        [0.6, 0.9],
+        [0.2, 0.9],
+      ],
     });
     expect(g!.x).toBeCloseTo(0.2);
     expect(g!.y).toBeCloseTo(0.3);
@@ -26,7 +34,15 @@ describe("samCandidateGeom", () => {
   });
 
   it("顶点不足以成面 → null（不该弹 popover）", () => {
-    expect(samCandidateGeom({ type: "polygonlabels", points: [[0, 0], [0.1, 0.1]] })).toBeNull();
+    expect(
+      samCandidateGeom({
+        type: "polygonlabels",
+        points: [
+          [0, 0],
+          [0.1, 0.1],
+        ],
+      }),
+    ).toBeNull();
   });
 
   it("矩形候选缺 bbox → null", () => {
@@ -42,7 +58,11 @@ describe("samCandidateGeom", () => {
       samCandidateGeom({
         type: "rectanglelabels",
         bbox: { x: 0, y: 0, width: 0.5, height: 0.5 },
-        points: [[0.9, 0.9], [1, 0.9], [1, 1]],
+        points: [
+          [0.9, 0.9],
+          [1, 0.9],
+          [1, 1],
+        ],
       }),
     ).toEqual({ x: 0, y: 0, w: 0.5, h: 0.5 });
   });

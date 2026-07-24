@@ -33,7 +33,13 @@ export default function WidgetsPage() {
     queryFn: listWidgets,
   });
   if (isLoading) return <div>加载中...</div>;
-  return <ul>{data?.items.map((w) => <li key={w.id}>{w.name}</li>)}</ul>;
+  return (
+    <ul>
+      {data?.items.map((w) => (
+        <li key={w.id}>{w.name}</li>
+      ))}
+    </ul>
+  );
 }
 ```
 
@@ -65,9 +71,7 @@ it("空态：渲染空列表", async () => {
 
 it("有数据：渲染条目", async () => {
   server.use(
-    http.get("*/api/v1/widgets", () =>
-      HttpResponse.json({ items: [{ id: 1, name: "demo" }] }),
-    ),
+    http.get("*/api/v1/widgets", () => HttpResponse.json({ items: [{ id: 1, name: "demo" }] })),
   );
   render(wrap(<WidgetsPage />));
   expect(await screen.findByText("demo")).toBeInTheDocument();

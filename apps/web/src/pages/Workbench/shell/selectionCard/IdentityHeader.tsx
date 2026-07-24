@@ -28,8 +28,7 @@ const DOT_CLASS = "flex-none size-2.5 rounded-full";
 const NAME_CLASS = "truncate text-sm font-semibold text-foreground";
 const BADGE_CLASS =
   "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium whitespace-nowrap";
-const CONF_PILL_CLASS =
-  "flex-none rounded-full px-1.5 py-px text-xs font-semibold tabular-nums";
+const CONF_PILL_CLASS = "flex-none rounded-full px-1.5 py-px text-xs font-semibold tabular-nums";
 
 const SOURCE_META: Record<
   SourceKind,
@@ -37,8 +36,16 @@ const SOURCE_META: Record<
 > = {
   manual: { label: "手动", icon: "tag", badgeClass: "bg-muted text-muted-foreground" },
   ai: { label: "AI 预测", icon: "sparkle", badgeClass: "bg-status-info-soft text-status-info" },
-  accepted: { label: "AI 采纳", icon: "check", badgeClass: "bg-status-positive-soft text-status-positive" },
-  import: { label: "导入", icon: "upload", badgeClass: "bg-status-caution-soft text-status-caution" },
+  accepted: {
+    label: "AI 采纳",
+    icon: "check",
+    badgeClass: "bg-status-positive-soft text-status-positive",
+  },
+  import: {
+    label: "导入",
+    icon: "upload",
+    badgeClass: "bg-status-caution-soft text-status-caution",
+  },
 };
 
 const TONE_CLASS: Record<ConfidenceTone, string> = {
@@ -62,7 +69,13 @@ export interface IdentityHeaderProps {
  * v0.16.14 · 选中信息卡通用身份头:类别色块 + 类名 + 来源徽章 +(可选)置信度 pill / 帧定位。
  * 四种选中态共用,色块走数据域类别色(与画布/列表同源),徽章/pill 走 Tailwind 语义类。
  */
-export function IdentityHeader({ className, source, confidence, trailing, dotColor }: IdentityHeaderProps) {
+export function IdentityHeader({
+  className,
+  source,
+  confidence,
+  trailing,
+  dotColor,
+}: IdentityHeaderProps) {
   const meta = SOURCE_META[source];
   const showConf = typeof confidence === "number";
   return (

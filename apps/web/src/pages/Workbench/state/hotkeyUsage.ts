@@ -24,7 +24,11 @@ export function recordHotkeyUsage(actionType: string): void {
   const cur = all[actionType] ?? 0;
   if (cur >= MAX_BUCKET) return;
   all[actionType] = cur + 1;
-  try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* quota */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(all));
+  } catch {
+    /* quota */
+  }
 }
 
 export function getHotkeyUsage(): Counts {

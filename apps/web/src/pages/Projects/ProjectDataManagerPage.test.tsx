@@ -98,15 +98,17 @@ describe("DataManagerOverview", () => {
         confidence_buckets: { "025_049": 1, gte_075: 1 },
       },
       unresolved_feedback: 1,
-      attributes: [{
-        tool_unit_id: "bbox",
-        key: "color",
-        label: "颜色",
-        eligible: 8,
-        present: 6,
-        missing: 2,
-        values: { red: 4, blue: 2 },
-      }],
+      attributes: [
+        {
+          tool_unit_id: "bbox",
+          key: "color",
+          label: "颜色",
+          eligible: 8,
+          present: 6,
+          missing: 2,
+          values: { red: 4, blue: 2 },
+        },
+      ],
       kind_metrics: { images_with_dimensions: 3 },
     };
 

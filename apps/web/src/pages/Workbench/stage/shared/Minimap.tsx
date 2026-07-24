@@ -98,7 +98,9 @@ function ViewportRect({
     el.style.setProperty("--minimap-viewport-height", `${h}px`);
   }, [h, w, x, y]);
 
-  return <div ref={ref} className={cn(styles.viewportRect, isDragging && styles.viewportRectDragging)} />;
+  return (
+    <div ref={ref} className={cn(styles.viewportRect, isDragging && styles.viewportRectDragging)} />
+  );
 }
 
 /**
@@ -159,30 +161,37 @@ export function Minimap({
     el.style.cursor = isDragging ? "grabbing" : "grab";
   }, [bottom, isDragging, mh, mw, needsMinimap, right]);
 
-  const moveViewportTo = useCallback((clientX: number, clientY: number) => {
-    if (!ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    const cx = Math.max(0, Math.min(mw, clientX - r.left));
-    const cy = Math.max(0, Math.min(mh, clientY - r.top));
-    // 把图像 (cx/mw, cy/mh) 这点移到容器中心
-    const imgPxX = (cx / mw) * imgW * vp.scale;
-    const imgPxY = (cy / mh) * imgH * vp.scale;
-    setVp({ scale: vp.scale, tx: vpSize.w / 2 - imgPxX, ty: vpSize.h / 2 - imgPxY });
-  }, [mw, mh, imgW, imgH, vp.scale, vpSize.w, vpSize.h, setVp]);
+  const moveViewportTo = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!ref.current) return;
+      const r = ref.current.getBoundingClientRect();
+      const cx = Math.max(0, Math.min(mw, clientX - r.left));
+      const cy = Math.max(0, Math.min(mh, clientY - r.top));
+      // 把图像 (cx/mw, cy/mh) 这点移到容器中心
+      const imgPxX = (cx / mw) * imgW * vp.scale;
+      const imgPxY = (cy / mh) * imgH * vp.scale;
+      setVp({ scale: vp.scale, tx: vpSize.w / 2 - imgPxX, ty: vpSize.h / 2 - imgPxY });
+    },
+    [mw, mh, imgW, imgH, vp.scale, vpSize.w, vpSize.h, setVp],
+  );
 
-  const scheduleMoveViewportTo = useCallback((clientX: number, clientY: number) => {
-    pendingPointRef.current = { clientX, clientY };
-    if (rafRef.current !== null) return;
-    const schedule = typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame
-      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
-    rafRef.current = schedule(() => {
-      rafRef.current = null;
-      const point = pendingPointRef.current;
-      pendingPointRef.current = null;
-      if (point) moveViewportTo(point.clientX, point.clientY);
-    });
-  }, [moveViewportTo]);
+  const scheduleMoveViewportTo = useCallback(
+    (clientX: number, clientY: number) => {
+      pendingPointRef.current = { clientX, clientY };
+      if (rafRef.current !== null) return;
+      const schedule =
+        typeof requestAnimationFrame === "function"
+          ? requestAnimationFrame
+          : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+      rafRef.current = schedule(() => {
+        rafRef.current = null;
+        const point = pendingPointRef.current;
+        pendingPointRef.current = null;
+        if (point) moveViewportTo(point.clientX, point.clientY);
+      });
+    },
+    [moveViewportTo],
+  );
 
   const stopDragging = useCallback(() => {
     draggingRef.current = false;
@@ -191,7 +200,8 @@ export function Minimap({
 
   useEffect(() => {
     return () => {
-      const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
+      const cancel =
+        typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
       if (rafRef.current !== null) cancel(rafRef.current);
     };
   }, []);
@@ -237,7 +247,8 @@ export function Minimap({
   if (!needsMinimap) return null;
 
   const src = thumbnailUrl || fileUrl;
-  const canRenderFrameAxis = typeof currentFrameIndex === "number" && typeof maxFrame === "number" && maxFrame > 0;
+  const canRenderFrameAxis =
+    typeof currentFrameIndex === "number" && typeof maxFrame === "number" && maxFrame > 0;
 
   return (
     <div
@@ -263,14 +274,7 @@ export function Minimap({
       {frameSource ? (
         <canvas ref={canvasRef} className={styles.image} />
       ) : (
-        src && (
-          <img
-            src={src}
-            alt=""
-            draggable={false}
-            className={styles.image}
-          />
-        )
+        src && <img src={src} alt="" draggable={false} className={styles.image} />
       )}
       {cachedFrameRanges.length > 0 && typeof maxFrame === "number" && maxFrame > 0 && (
         <div data-testid="minimap-cached-frame-ranges" className={styles.cachedFrameRanges}>

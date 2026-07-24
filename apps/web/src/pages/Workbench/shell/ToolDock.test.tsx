@@ -57,30 +57,27 @@ describe("ToolDock · video tools", () => {
     const samGroup = within(frameGroup).getByRole("group", { name: "SAM 工具" });
     const trackGroup = screen.getByRole("group", { name: "轨迹工具" });
     const toolIds = (root: HTMLElement) =>
-      [...root.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")]
-        .map((button) => button.dataset.testid?.replace("video-tool-btn-", ""));
+      [...root.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")].map((button) =>
+        button.dataset.testid?.replace("video-tool-btn-", ""),
+      );
 
     expect(toolIds(frameGroup)).toEqual([
       "box",
       "polygon",
       "polyline",
+      "mask",
       "smart-point",
       "smart-box",
       "exemplar",
       "magic-box",
     ]);
     expect(toolIds(samGroup)).toEqual(["smart-point", "smart-box", "exemplar", "magic-box"]);
-    expect(toolIds(trackGroup)).toEqual([
-      "track",
-      "polygon-track",
-      "polyline-track",
-      "mask",
-    ]);
+    expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track", "mask-track"]);
     expect(screen.queryByTestId("video-tool-btn-ai-track")).toBeNull();
     expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
   });
 
-  it("矩形框轨迹使用独立的叠帧图标", () => {
+  it("矩形框轨迹使用独立图标，视频 AI 与 Mask 图标和图片工作台一致", () => {
     render(
       <ToolDock
         tool="select"
@@ -93,9 +90,18 @@ describe("ToolDock · video tools", () => {
 
     const track = screen.getByTestId("video-tool-btn-track");
     const smartPoint = screen.getByTestId("video-tool-btn-smart-point");
+    const smartBox = screen.getByTestId("video-tool-btn-smart-box");
+    const exemplar = screen.getByTestId("video-tool-btn-exemplar");
+    const mask = screen.getByTestId("video-tool-btn-mask");
+    const maskTrack = screen.getByTestId("video-tool-btn-mask-track");
     expect(track).toHaveAccessibleName("矩形框轨迹");
     expect(track.querySelector(".lucide-gallery-horizontal-end")).toBeInTheDocument();
     expect(smartPoint.querySelector(".lucide-target")).toBeInTheDocument();
+    expect(smartBox.querySelector(".lucide-scan")).toBeInTheDocument();
+    expect(exemplar.querySelector(".lucide-copy")).toBeInTheDocument();
+    expect(mask.querySelector(".lucide-pencil")).toBeInTheDocument();
+    expect(maskTrack).toHaveAccessibleName("Mask 轨迹");
+    expect(maskTrack.querySelector(".lucide-scissors")).toBeInTheDocument();
   });
 
   it("项目开关隐藏全部创建工具时不渲染空分组", () => {
@@ -122,7 +128,7 @@ describe("ToolDock · video tools", () => {
 //   2. 后端不支持该 prompt → 置灰
 //   3. 产出几何所属单位未启用 → 隐藏 (smart-* → region, magic-box → bbox)
 describe("ToolDock · AI 工具三层门控", () => {
-  const AI_TOOL_IDS = ["smart-point", "smart-box", "exemplar", "magic-box"];
+  const AI_TOOL_IDS = ["smart-point", "smart-box", "smart-scribble", "exemplar", "magic-box"];
 
   it("默认 (总开关未加载 + 无 tool_bindings) → AI 工具全部显示", () => {
     render(<ToolDock tool="select" onSetTool={vi.fn()} />);
@@ -132,9 +138,7 @@ describe("ToolDock · AI 工具三层门控", () => {
   });
 
   it("层 1 · 项目总开关关闭 → AI 工具整组隐藏, 绘制工具不受影响", () => {
-    render(
-      <ToolDock tool="select" onSetTool={vi.fn()} aiInteractiveEnabled={false} />,
-    );
+    render(<ToolDock tool="select" onSetTool={vi.fn()} aiInteractiveEnabled={false} />);
     for (const id of AI_TOOL_IDS) {
       expect(screen.queryByTestId(`tool-btn-${id}`)).toBeNull();
     }
@@ -143,22 +147,14 @@ describe("ToolDock · AI 工具三层门控", () => {
   });
 
   it("层 1 · 总开关开启 → AI 工具恢复显示", () => {
-    render(
-      <ToolDock tool="select" onSetTool={vi.fn()} aiInteractiveEnabled={true} />,
-    );
+    render(<ToolDock tool="select" onSetTool={vi.fn()} aiInteractiveEnabled={true} />);
     for (const id of AI_TOOL_IDS) {
       expect(screen.getByTestId(`tool-btn-${id}`)).toBeInTheDocument();
     }
   });
 
   it("层 2 · 后端不支持该 prompt → 置灰而非隐藏", () => {
-    render(
-      <ToolDock
-        tool="select"
-        onSetTool={vi.fn()}
-        isPromptSupported={(p) => p !== "point"}
-      />,
-    );
+    render(<ToolDock tool="select" onSetTool={vi.fn()} isPromptSupported={(p) => p !== "point"} />);
     // smart-point 要求 point prompt → 置灰但仍在栏内
     const smartPoint = screen.getByTestId("tool-btn-smart-point");
     expect(smartPoint).toBeInTheDocument();
@@ -168,15 +164,10 @@ describe("ToolDock · AI 工具三层门控", () => {
   });
 
   it("层 3 · 只启用 bbox 单位 → smart-*(产 polygon) 隐藏, magic-box(产 bbox) 仍在", () => {
-    render(
-      <ToolDock
-        tool="select"
-        onSetTool={vi.fn()}
-        enabledToolUnits={new Set(["bbox"])}
-      />,
-    );
+    render(<ToolDock tool="select" onSetTool={vi.fn()} enabledToolUnits={new Set(["bbox"])} />);
     expect(screen.queryByTestId("tool-btn-smart-point")).toBeNull();
     expect(screen.queryByTestId("tool-btn-smart-box")).toBeNull();
+    expect(screen.queryByTestId("tool-btn-smart-scribble")).toBeNull();
     expect(screen.queryByTestId("tool-btn-exemplar")).toBeNull();
     // magic-box 把 SAM 多边形收紧成外接矩形 → 归 bbox 单位, 故仍显示
     expect(screen.getByTestId("tool-btn-magic-box")).toBeInTheDocument();
@@ -187,15 +178,24 @@ describe("ToolDock · AI 工具三层门控", () => {
 
   it("层 3 · 启用 region 单位 → smart-* 恢复显示", () => {
     render(
+      <ToolDock tool="select" onSetTool={vi.fn()} enabledToolUnits={new Set(["bbox", "region"])} />,
+    );
+    expect(screen.getByTestId("tool-btn-smart-point")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-btn-smart-scribble")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-btn-exemplar")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-btn-magic-box")).toBeInTheDocument();
+  });
+
+  it("笔迹后端能力已就绪但未选 Mask 时按上下文置灰", () => {
+    render(
       <ToolDock
         tool="select"
         onSetTool={vi.fn()}
-        enabledToolUnits={new Set(["bbox", "region"])}
+        isPromptSupported={() => true}
+        toolDisabledReasons={{ "smart-scribble": "请先选中原生 Mask" }}
       />,
     );
-    expect(screen.getByTestId("tool-btn-smart-point")).toBeInTheDocument();
-    expect(screen.getByTestId("tool-btn-exemplar")).toBeInTheDocument();
-    expect(screen.getByTestId("tool-btn-magic-box")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-btn-smart-scribble")).toBeDisabled();
   });
 
   it("层 1 优先于层 3 · 总开关关闭时, 即使单位已启用 AI 工具仍隐藏", () => {
@@ -220,7 +220,13 @@ describe("ToolDock · 视频 AI 工具三层门控", () => {
 
   it("默认全开 → 视频 AI 工具显示", () => {
     render(
-      <ToolDock tool="select" onSetTool={vi.fn()} videoMode videoTool="select" onSetVideoTool={vi.fn()} />,
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+      />,
     );
     for (const id of VIDEO_AI) {
       expect(screen.getByTestId(`video-tool-btn-${id}`)).toBeInTheDocument();
@@ -330,7 +336,12 @@ describe("ToolDock · 视频工具角标不撒谎", () => {
         isPromptSupported={() => true}
       />,
     );
-    const base: DispatchCtx = { isInputFocused: false, hasSelection: false, pendingActive: false, videoMode: true };
+    const base: DispatchCtx = {
+      isInputFocused: false,
+      hasSelection: false,
+      pendingActive: false,
+      videoMode: true,
+    };
     const buttons = [...document.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")];
     expect(buttons.length).toBeGreaterThan(0);
 
@@ -340,10 +351,19 @@ describe("ToolDock · 视频工具角标不撒谎", () => {
       const badge = btn.querySelector("span[aria-hidden]")?.textContent?.trim();
       if (!badge) continue; // 无角标 = 未承诺快捷键 (polyline / *-track), 合法
       const action = dispatchKey(
-        { key: badge.toLowerCase(), ctrlKey: false, metaKey: false, shiftKey: false, altKey: false } as KeyboardEvent,
+        {
+          key: badge.toLowerCase(),
+          ctrlKey: false,
+          metaKey: false,
+          shiftKey: false,
+          altKey: false,
+        } as KeyboardEvent,
         base,
       );
-      expect(action, `角标 ${badge} 标在 ${id} 上，但按下去不是切到它`).toEqual({ type: "setVideoTool", tool: id });
+      expect(action, `角标 ${badge} 标在 ${id} 上，但按下去不是切到它`).toEqual({
+        type: "setVideoTool",
+        tool: id,
+      });
       checked += 1;
     }
     expect(checked).toBeGreaterThanOrEqual(7); // V B T P S D E G

@@ -19,8 +19,9 @@ vi.mock("@/api/predictions", () => ({
 }));
 
 const importMock = predictionsApi.import as unknown as ReturnType<typeof vi.fn>;
-const importAnnotationsMock =
-  predictionsApi.importAnnotations as unknown as ReturnType<typeof vi.fn>;
+const importAnnotationsMock = predictionsApi.importAnnotations as unknown as ReturnType<
+  typeof vi.fn
+>;
 
 function makeFile(name = "test.json", content = "{}", type = "application/json"): File {
   return new File([content], name, { type });
@@ -33,17 +34,13 @@ describe("PredictionImportWizard", () => {
   });
 
   it("初始 step 不允许在没有文件时预览", () => {
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-1" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-1" />);
     const previewBtn = screen.getByRole("button", { name: /预览/ });
     expect(previewBtn).toBeDisabled();
   });
 
   it("预测导入默认勾选替换已有外部导入预测", () => {
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-default" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-default" />);
     expect(screen.getByRole("checkbox")).toBeChecked();
   });
 
@@ -51,15 +48,11 @@ describe("PredictionImportWizard", () => {
     importMock.mockResolvedValueOnce({
       imported: 5,
       skipped: 2,
-      errors: [
-        { task_match: { display_id: "T-NOPE" }, reason: "task not found" },
-      ],
+      errors: [{ task_match: { display_id: "T-NOPE" }, reason: "task not found" }],
       dry_run: true,
     });
 
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-1" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-1" />);
 
     const fileInput = document.getElementById("pi-file") as HTMLInputElement;
     fireEvent.change(fileInput, {
@@ -91,9 +84,7 @@ describe("PredictionImportWizard", () => {
       dry_run: true,
     });
 
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-2" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-2" />);
 
     const select = screen.getByLabelText(/格式/) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "coco" } });
@@ -121,9 +112,7 @@ describe("PredictionImportWizard", () => {
       dry_run: true,
     });
 
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-coco" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-coco" />);
 
     fireEvent.change(screen.getByLabelText(/格式/), {
       target: { value: "coco" },
@@ -158,9 +147,7 @@ describe("PredictionImportWizard", () => {
       dry_run: true,
     });
 
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-yolo" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-yolo" />);
 
     fireEvent.change(screen.getByLabelText(/格式/), {
       target: { value: "yolo" },
@@ -190,15 +177,11 @@ describe("PredictionImportWizard", () => {
     importMock.mockResolvedValueOnce({
       imported: 3,
       skipped: 1,
-      errors: [
-        { task_match: { display_id: "T-NOPE" }, reason: "b.json: task not found" },
-      ],
+      errors: [{ task_match: { display_id: "T-NOPE" }, reason: "b.json: task not found" }],
       dry_run: true,
     });
 
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-batch" />,
-    );
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-batch" />);
 
     const fileInput = document.getElementById("pi-file") as HTMLInputElement;
     fireEvent.change(fileInput, {
@@ -218,11 +201,9 @@ describe("PredictionImportWizard", () => {
     expect(screen.getByText(/b\.json: task not found/)).toBeInTheDocument();
   });
 
-  it("标注导入入口默认隐藏 (ANNOTATIONS_IMPORT_ENABLED=false)", () => {
-    // v0.10.54 · 后端就绪但前端暂隐: 不渲染「导入对象」切换, 向导固定走预测导入。
-    render(
-      <PredictionImportWizard open onClose={() => {}} projectId="p-anno" />,
-    );
+  it("预测导入向导不再承载标注导入切换", () => {
+    // Mask 标注导入已迁入独立的 registry-driven 向导，此处固定走预测导入。
+    render(<PredictionImportWizard open onClose={() => {}} projectId="p-anno" />);
     expect(screen.queryByLabelText(/导入对象/)).not.toBeInTheDocument();
     // 预测路径仍可用: 仍能看到「格式」选择。
     expect(screen.getByLabelText(/格式/)).toBeInTheDocument();
@@ -245,12 +226,7 @@ describe("PredictionImportWizard", () => {
 
     const onComplete = vi.fn();
     render(
-      <PredictionImportWizard
-        open
-        onClose={() => {}}
-        projectId="p-3"
-        onComplete={onComplete}
-      />,
+      <PredictionImportWizard open onClose={() => {}} projectId="p-3" onComplete={onComplete} />,
     );
 
     const fileInput = document.getElementById("pi-file") as HTMLInputElement;

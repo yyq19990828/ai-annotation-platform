@@ -44,10 +44,7 @@ import {
   type ObserveTarget,
 } from "@/api/adminMlIntegrations";
 import { mlBackendsApi, type MLBackendVariant } from "@/api/ml-backends";
-import {
-  mergeTopologyAndSnapshot,
-  type RuntimeTopologyViewModel,
-} from "./runtimeTopology";
+import { mergeTopologyAndSnapshot, type RuntimeTopologyViewModel } from "./runtimeTopology";
 import { ServicePoolRuntimeTable } from "./runtime/ServicePoolRuntimeTable";
 import { EnvOnlyContainerCard } from "./runtime/EnvOnlyContainerCard";
 import { FreshnessIndicator } from "./runtime/FreshnessIndicator";
@@ -121,8 +118,7 @@ export function RuntimeObservePanel(): React.ReactElement {
   // url → ObserveTarget (normalized), for residency + env-only.
   const observeByUrl = useMemo(() => {
     const map = new Map<string, ObserveTarget>();
-    for (const t of observeQ.data?.targets ?? [])
-      map.set(normalizeUrl(t.url), t);
+    for (const t of observeQ.data?.targets ?? []) map.set(normalizeUrl(t.url), t);
     return map;
   }, [observeQ.data]);
 
@@ -163,15 +159,9 @@ export function RuntimeObservePanel(): React.ReactElement {
   );
 
   const loading =
-    topologyQ.isLoading ||
-    snapshotQ.isLoading ||
-    observeQ.isLoading ||
-    allQ.isLoading;
+    topologyQ.isLoading || snapshotQ.isLoading || observeQ.isLoading || allQ.isLoading;
   const fetching =
-    topologyQ.isFetching ||
-    snapshotQ.isFetching ||
-    observeQ.isFetching ||
-    allQ.isFetching;
+    topologyQ.isFetching || snapshotQ.isFetching || observeQ.isFetching || allQ.isFetching;
   const hardError = topologyQ.error ?? (topology ? null : snapshotQ.error);
 
   const onWarm = useWarmupDispatcher(projectByBackend, backendsById);
@@ -187,8 +177,7 @@ export function RuntimeObservePanel(): React.ReactElement {
   );
 
   const poolCount = topology?.pools.length ?? 0;
-  const memberCount =
-    topology?.pools.reduce((sum, p) => sum + p.members.length, 0) ?? 0;
+  const memberCount = topology?.pools.reduce((sum, p) => sum + p.members.length, 0) ?? 0;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -239,12 +228,8 @@ export function RuntimeObservePanel(): React.ReactElement {
             {topology && (
               <DataSourceRegion
                 topology={topology}
-                snapshotError={
-                  snapshotQ.error ? String((snapshotQ.error as Error).message) : null
-                }
-                observeError={
-                  observeQ.error ? String((observeQ.error as Error).message) : null
-                }
+                snapshotError={snapshotQ.error ? String((snapshotQ.error as Error).message) : null}
+                observeError={observeQ.error ? String((observeQ.error as Error).message) : null}
               />
             )}
 
@@ -254,32 +239,20 @@ export function RuntimeObservePanel(): React.ReactElement {
               <Alert variant="destructive">
                 <AlertTriangle aria-hidden="true" />
                 <AlertTitle>运行时状态加载失败</AlertTitle>
-                <AlertDescription>
-                  {(hardError as Error).message ?? "未知错误"}
-                </AlertDescription>
+                <AlertDescription>{(hardError as Error).message ?? "未知错误"}</AlertDescription>
               </Alert>
             ) : topology ? (
-              <ServicePoolRuntimeTable
-                topology={topology}
-                lookup={lookup}
-                onWarm={onWarm}
-              />
+              <ServicePoolRuntimeTable topology={topology} lookup={lookup} onWarm={onWarm} />
             ) : null}
 
             {envOnlyTargets.length > 0 && (
-              <EnvOnlySection
-                targets={envOnlyTargets}
-                onRegister={() => setRegisterOpen(true)}
-              />
+              <EnvOnlySection targets={envOnlyTargets} onRegister={() => setRegisterOpen(true)} />
             )}
           </CardContent>
         </Card>
 
         {registerOpen && (
-          <GlobalBackendFormModal
-            open={registerOpen}
-            onClose={() => setRegisterOpen(false)}
-          />
+          <GlobalBackendFormModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
         )}
       </div>
     </TooltipProvider>
@@ -297,13 +270,8 @@ function RuntimeSummaryBand({
   memberCount: number;
   envOnlyCount: number;
 }): React.ReactElement {
-  const routable = topology.pools.reduce(
-    (sum, pool) => sum + pool.availability.routable,
-    0,
-  );
-  const attentionPools = topology.pools.filter(
-    (pool) => pool.status !== "healthy",
-  ).length;
+  const routable = topology.pools.reduce((sum, pool) => sum + pool.availability.routable, 0);
+  const attentionPools = topology.pools.filter((pool) => pool.status !== "healthy").length;
   const staleSources = topology.sources.filter((source) => source.stale).length;
   const freshSources = topology.sources.length - staleSources;
   const routerLabels: Record<string, string> = {
@@ -336,7 +304,9 @@ function RuntimeSummaryBand({
       <SummaryItem
         icon={Server}
         label="数据与纳管"
-        value={topology.sources.length > 0 ? `${freshSources} / ${topology.sources.length}` : "未上报"}
+        value={
+          topology.sources.length > 0 ? `${freshSources} / ${topology.sources.length}` : "未上报"
+        }
         detail={
           envOnlyCount > 0
             ? `${envOnlyCount} 个容器未纳管`
@@ -472,18 +442,14 @@ function DataSourceRegion({
           )}
           <div className="flex flex-wrap gap-1.5">
             {topology.sources.length === 0 && (
-              <span className="text-2xs text-muted-foreground">
-                无来源新鲜度信息
-              </span>
+              <span className="text-2xs text-muted-foreground">无来源新鲜度信息</span>
             )}
             {topology.sources.map((s) => (
               <FreshnessIndicator key={s.name} source={s} />
             ))}
           </div>
           {!topology.partial && snapshotError && (
-            <div className="text-2xs text-status-danger">
-              runtime-snapshot：{snapshotError}
-            </div>
+            <div className="text-2xs text-status-danger">runtime-snapshot：{snapshotError}</div>
           )}
           {!topology.partial && observeError && (
             <div className="text-2xs text-status-danger">observe：{observeError}</div>
@@ -530,18 +496,12 @@ function EnvOnlySection({
           <ChevronDown className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
         )}
         <span>未纳管容器（{targets.length}）</span>
-        <span className="text-2xs font-normal">
-          来自 ML_BACKEND_OBSERVE_URLS，未注册到全局表
-        </span>
+        <span className="text-2xs font-normal">来自 ML_BACKEND_OBSERVE_URLS，未注册到全局表</span>
       </button>
       {!collapsed && (
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
           {targets.map((t) => (
-            <EnvOnlyContainerCard
-              key={t.url}
-              target={t}
-              onRegister={onRegister}
-            />
+            <EnvOnlyContainerCard key={t.url} target={t} onRegister={onRegister} />
           ))}
         </div>
       )}
@@ -597,8 +557,7 @@ function useWarmupDispatcher(
     const projectId = projectByBackend.get(registryId);
     if (!projectId) return;
     const supportsWarmup =
-      backendsById.get(registryId)?.health_meta?.capabilities?.warmup_endpoint ===
-      true;
+      backendsById.get(registryId)?.health_meta?.capabilities?.warmup_endpoint === true;
     if (supportsWarmup) {
       warmup.mutate({ projectId, backendId: registryId, target });
       return;

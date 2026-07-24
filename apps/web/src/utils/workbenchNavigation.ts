@@ -17,7 +17,7 @@ function readLastTaskMap(storage: StorageLike | null): Record<string, string> {
     const raw = storage.getItem(LAST_TASK_BY_BATCH_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, string>
+      ? (parsed as Record<string, string>)
       : {};
   } catch {
     return {};
@@ -54,7 +54,11 @@ export function rememberWorkbenchTask(
   }
 }
 
-export function currentWorkbenchReturnTo(location: { pathname: string; search?: string; hash?: string }) {
+export function currentWorkbenchReturnTo(location: {
+  pathname: string;
+  search?: string;
+  hash?: string;
+}) {
   return `${location.pathname}${location.search ?? ""}${location.hash ?? ""}`;
 }
 

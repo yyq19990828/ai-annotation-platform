@@ -26,7 +26,15 @@ function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
 
-export function CanvasToolbar({ stroke, onSetStroke, shapeCount, onUndo, onClear, onCancel, onDone }: Props) {
+export function CanvasToolbar({
+  stroke,
+  onSetStroke,
+  shapeCount,
+  onUndo,
+  onClear,
+  onCancel,
+  onDone,
+}: Props) {
   return (
     <div
       className="absolute top-3 right-3 flex items-center gap-2 px-2.5 py-1.5 bg-card border border-border rounded-md shadow-md z-local-5"
@@ -50,9 +58,15 @@ export function CanvasToolbar({ stroke, onSetStroke, shapeCount, onUndo, onClear
       <Button size="sm" onClick={onUndo} disabled={shapeCount === 0}>
         <Icon name="trash" size={11} /> 撤销
       </Button>
-      <Button size="sm" onClick={onClear} disabled={shapeCount === 0}>清空</Button>
-      <Button size="sm" onClick={onCancel}>取消</Button>
-      <Button size="sm" variant="primary" onClick={onDone}>完成</Button>
+      <Button size="sm" onClick={onClear} disabled={shapeCount === 0}>
+        清空
+      </Button>
+      <Button size="sm" onClick={onCancel}>
+        取消
+      </Button>
+      <Button size="sm" variant="primary" onClick={onDone}>
+        完成
+      </Button>
     </div>
   );
 }

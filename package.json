@@ -6,7 +6,16 @@
     "dev:web": "pnpm --filter @anno/web dev",
     "build:web": "pnpm --filter @anno/web build",
     "dev:api": "cd apps/api && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3",
-    "lint": "pnpm --filter @anno/web lint",
+    "lint": "pnpm lint:python && pnpm lint:web",
+    "lint:python": "uvx --from ruff==0.15.22 ruff check .",
+    "lint:python:fix": "uvx --from ruff==0.15.22 ruff check --fix .",
+    "lint:web": "pnpm --filter @anno/web lint",
+    "format": "pnpm format:python && pnpm format:prettier",
+    "format:check": "pnpm format:python:check && pnpm format:prettier:check",
+    "format:python": "uvx --from ruff==0.15.22 ruff format .",
+    "format:python:check": "uvx --from ruff==0.15.22 ruff format --check .",
+    "format:prettier": "prettier --write . --ignore-unknown",
+    "format:prettier:check": "prettier --check . --ignore-unknown",
     "typecheck": "pnpm --filter @anno/web typecheck",
     "test": "pnpm --filter @anno/web test",
     "test:e2e": "pnpm --filter @anno/web test:e2e",
@@ -24,6 +33,7 @@
   },
   "packageManager": "pnpm@10.28.1+sha512.7d7dbbca9e99447b7c3bf7a73286afaaf6be99251eb9498baefa7d406892f67b879adb3a1d7e687fc4ccc1a388c7175fbaae567a26ab44d1067b54fcb0d6a316",
   "devDependencies": {
+    "prettier": "3.8.3",
     "shadcn": "^4.11.0"
   }
 }

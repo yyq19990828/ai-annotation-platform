@@ -47,14 +47,22 @@ vi.mock("@/api/datasets", () => ({
 
 vi.mock("@/utils/uploadQueue", () => ({
   putWithProgress: vi.fn().mockResolvedValue(undefined),
-  runUploadQueue: vi.fn().mockImplementation(async (_tasks: unknown[], map: Map<string, { status: string; progress: number }>, opts: { onUpdate?: () => void }) => {
-    for (const [k, v] of map.entries()) {
-      v.status = "done";
-      v.progress = 100;
-      map.set(k, v);
-    }
-    opts?.onUpdate?.();
-  }),
+  runUploadQueue: vi
+    .fn()
+    .mockImplementation(
+      async (
+        _tasks: unknown[],
+        map: Map<string, { status: string; progress: number }>,
+        opts: { onUpdate?: () => void },
+      ) => {
+        for (const [k, v] of map.entries()) {
+          v.status = "done";
+          v.progress = 100;
+          map.set(k, v);
+        }
+        opts?.onUpdate?.();
+      },
+    ),
 }));
 
 vi.mock("@/components/ui/Toast", async () => {

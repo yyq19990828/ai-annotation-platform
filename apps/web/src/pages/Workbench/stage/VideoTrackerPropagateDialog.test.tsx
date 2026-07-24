@@ -48,33 +48,46 @@ describe("visibleTrackerModelOptions", () => {
 
 describe("VideoTrackerPropagateDialog", () => {
   it("按 项目默认 > 用户记忆 > 首个真实模型 > mock 解析默认模型", () => {
-    expect(resolveTrackerDefaultModel({
-      projectDefaultModel: "sam3_video",
-      rememberedModel: "sam2_video",
-      preferNonMockModel: true,
-    })).toBe("sam3_video");
-    expect(resolveTrackerDefaultModel({
-      projectDefaultModel: "missing",
-      rememberedModel: "sam2_video",
-      preferNonMockModel: true,
-    })).toBe("sam2_video");
-    expect(resolveTrackerDefaultModel({
-      projectDefaultModel: null,
-      rememberedModel: null,
-      preferNonMockModel: true,
-    })).toBe("sam2_video");
-    expect(resolveTrackerDefaultModel({
-      projectDefaultModel: null,
-      rememberedModel: null,
-      preferNonMockModel: false,
-    })).toBe("mock_bbox");
+    expect(
+      resolveTrackerDefaultModel({
+        projectDefaultModel: "sam3_video",
+        rememberedModel: "sam2_video",
+        preferNonMockModel: true,
+      }),
+    ).toBe("sam3_video");
+    expect(
+      resolveTrackerDefaultModel({
+        projectDefaultModel: "missing",
+        rememberedModel: "sam2_video",
+        preferNonMockModel: true,
+      }),
+    ).toBe("sam2_video");
+    expect(
+      resolveTrackerDefaultModel({
+        projectDefaultModel: null,
+        rememberedModel: null,
+        preferNonMockModel: true,
+      }),
+    ).toBe("sam2_video");
+    expect(
+      resolveTrackerDefaultModel({
+        projectDefaultModel: null,
+        rememberedModel: null,
+        preferNonMockModel: false,
+      }),
+    ).toBe("mock_bbox");
   });
 
   it("已绑真实后端 (preferNonMockModel) 时下拉隐藏 mock_bbox, 默认落真实模型", () => {
     // 即便用户记忆里残留 mock_bbox, 绑后端项目也不应复现它。
     window.localStorage.setItem(
       videoDialogMemoryStorageKey("u1", "trackerPropagate"),
-      JSON.stringify({ rangePreset: "30", direction: "forward", modelKey: "mock_bbox", samVariant: "" }),
+      JSON.stringify({
+        rangePreset: "30",
+        direction: "forward",
+        modelKey: "mock_bbox",
+        samVariant: "",
+      }),
     );
     render(
       <VideoTrackerPropagateDialog
@@ -92,9 +105,7 @@ describe("VideoTrackerPropagateDialog", () => {
   });
 
   it("未绑后端 / 测试环境仍保留 mock_bbox 可见", () => {
-    render(
-      <VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />,
-    );
+    render(<VideoTrackerPropagateDialog {...baseProps} frameIndex={50} onSubmit={vi.fn()} />);
     const modelSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
     const values = Array.from(modelSelect.options).map((o) => o.value);
     expect(values).toContain("mock_bbox");
@@ -179,15 +190,11 @@ describe("VideoTrackerPropagateDialog", () => {
   });
 
   it("以紧凑检查器停靠画布右侧，并与 AI 单题共用面板内部视觉骨架", () => {
-    render(
-      <VideoTrackerPropagateDialog {...baseProps} frameIndex={5} onSubmit={vi.fn()} />,
-    );
+    render(<VideoTrackerPropagateDialog {...baseProps} frameIndex={5} onSubmit={vi.fn()} />);
 
     const panel = screen.getByTestId("video-tracker-propagate-dialog");
     expect(panel.className).toContain("right-2");
-    expect(panel.className).toContain(
-      "w-[var(--tracker-panel-w,min(360px,calc(100%-1rem)))]",
-    );
+    expect(panel.className).toContain("w-[var(--tracker-panel-w,min(360px,calc(100%-1rem)))]");
     expect(panel.className).toContain("border-violet-500/35");
     expect(panel.className).toContain("rounded-lg");
     expect(panel.className).not.toContain("left-1/2");
@@ -224,12 +231,26 @@ describe("VideoTrackerPropagateDialog", () => {
     const parent = screen.getByTestId("stage-parent");
     Object.defineProperty(panel, "offsetParent", { configurable: true, value: parent });
     vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
-      left: 100, top: 50, width: 900, height: 700, right: 1000, bottom: 750,
-      x: 100, y: 50, toJSON: () => ({}),
+      left: 100,
+      top: 50,
+      width: 900,
+      height: 700,
+      right: 1000,
+      bottom: 750,
+      x: 100,
+      y: 50,
+      toJSON: () => ({}),
     });
     vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
-      left: 500, top: 100, width: 360, height: 500, right: 860, bottom: 600,
-      x: 500, y: 100, toJSON: () => ({}),
+      left: 500,
+      top: 100,
+      width: 360,
+      height: 500,
+      right: 860,
+      bottom: 600,
+      x: 500,
+      y: 100,
+      toJSON: () => ({}),
     });
 
     const header = screen.getByTestId("tracker-panel-header");
@@ -265,12 +286,26 @@ describe("VideoTrackerPropagateDialog", () => {
     const parent = screen.getByTestId("stage-parent");
     Object.defineProperty(panel, "offsetParent", { configurable: true, value: parent });
     vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
-      left: 100, top: 50, width: 900, height: 700, right: 1000, bottom: 750,
-      x: 100, y: 50, toJSON: () => ({}),
+      left: 100,
+      top: 50,
+      width: 900,
+      height: 700,
+      right: 1000,
+      bottom: 750,
+      x: 100,
+      y: 50,
+      toJSON: () => ({}),
     });
     vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
-      left: 500, top: 100, width: 360, height: 500, right: 860, bottom: 600,
-      x: 500, y: 100, toJSON: () => ({}),
+      left: 500,
+      top: 100,
+      width: 360,
+      height: 500,
+      right: 860,
+      bottom: 600,
+      x: 500,
+      y: 100,
+      toJSON: () => ({}),
     });
 
     const handle = screen.getByTestId("tracker-panel-resize-handle");
@@ -290,7 +325,12 @@ describe("VideoTrackerPropagateDialog", () => {
   it("step===1 (采样关闭): 预设标签为「N 帧」, range 用 F{from}→F{to}, 提交源帧", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(
-      <VideoTrackerPropagateDialog {...baseProps} frameIndex={50} samplingStep={1} onSubmit={onSubmit} />,
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={50}
+        samplingStep={1}
+        onSubmit={onSubmit}
+      />,
     );
     // 默认 forward + 30 帧 → F50 → F80
     expect(screen.getByText("30 帧")).toBeTruthy();
@@ -319,7 +359,12 @@ describe("VideoTrackerPropagateDialog", () => {
   it("step>1 (采样开启): 预设语义为网格格子, span 乘 step, range 显示网格序号", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(
-      <VideoTrackerPropagateDialog {...baseProps} frameIndex={100} samplingStep={10} onSubmit={onSubmit} />,
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={100}
+        samplingStep={10}
+        onSubmit={onSubmit}
+      />,
     );
     // 默认 30 格 · step=10 → ≈300 帧, forward: F100 → F400, G10 → G40
     expect(screen.getByText("30 格 (≈300 帧)")).toBeTruthy();
@@ -333,7 +378,12 @@ describe("VideoTrackerPropagateDialog", () => {
   it("step>1 + backward: span 向前乘 step", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(
-      <VideoTrackerPropagateDialog {...baseProps} frameIndex={500} samplingStep={10} onSubmit={onSubmit} />,
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={500}
+        samplingStep={10}
+        onSubmit={onSubmit}
+      />,
     );
     fireEvent.click(screen.getByTestId("tracker-direction-backward"));
     // 30 格 · step=10 → 300 帧, backward: F200 → F500
@@ -346,7 +396,12 @@ describe("VideoTrackerPropagateDialog", () => {
 
   it("到结尾 / 到下一关键帧 预设不受 step 影响 (标签固定)", () => {
     render(
-      <VideoTrackerPropagateDialog {...baseProps} frameIndex={100} samplingStep={10} onSubmit={vi.fn()} />,
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        frameIndex={100}
+        samplingStep={10}
+        onSubmit={vi.fn()}
+      />,
     );
     expect(screen.getByText("到结尾")).toBeTruthy();
     expect(screen.getByText("到下一关键帧")).toBeTruthy();
@@ -383,8 +438,9 @@ describe("VideoTrackerPropagateDialog", () => {
       }),
     );
     await waitFor(() =>
-      expect(window.localStorage.getItem(videoDialogMemoryStorageKey("u1", "trackerPropagate")))
-        .toContain("sam2_video"),
+      expect(
+        window.localStorage.getItem(videoDialogMemoryStorageKey("u1", "trackerPropagate")),
+      ).toContain("sam2_video"),
     );
 
     rerender(
@@ -459,7 +515,6 @@ describe("VideoTrackerPropagateDialog", () => {
 
     expect((screen.getAllByRole("combobox")[1] as HTMLSelectElement).value).toBe("sam3_video");
   });
-
 
   it("未由项目后端声明的模型不出现在下拉中", () => {
     render(
@@ -605,9 +660,7 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(screen.getByTestId("tracker-seed-target-1").textContent).toContain("帧 F50");
     fireEvent.click(screen.getByTestId("tracker-seed-new-target"));
     expect(onNewTarget).toHaveBeenCalled();
-    rerender(
-      <VideoTrackerPropagateDialog {...seedProps} activeSeedTargetId={2} />,
-    );
+    rerender(<VideoTrackerPropagateDialog {...seedProps} activeSeedTargetId={2} />);
     expect(screen.getByTestId("tracker-seed-target-2").textContent).toContain("等待在画布添加种子");
     expect(screen.getByTestId("tracker-seed-target-2").textContent).toContain("当前");
     rerender(
@@ -658,12 +711,7 @@ describe("VideoTrackerPropagateDialog", () => {
     };
     window.localStorage.setItem(key, JSON.stringify(remembered));
     render(
-      <VideoTrackerPropagateDialog
-        {...baseProps}
-        frameIndex={80}
-        userId="u1"
-        onSubmit={vi.fn()}
-      />,
+      <VideoTrackerPropagateDialog {...baseProps} frameIndex={80} userId="u1" onSubmit={vi.fn()} />,
     );
 
     expect(screen.getByText("F20 → F140")).toBeTruthy();
@@ -873,9 +921,7 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
     // 对话框本体仍在 (仅内容切换)。
     expect(screen.getByTestId("video-tracker-propagate-dialog")).toBeInTheDocument();
-    expect(screen.getByTestId("tracker-panel-header").className).toContain(
-      "from-violet-500/10",
-    );
+    expect(screen.getByTestId("tracker-panel-header").className).toContain("from-violet-500/10");
   });
 
   it("U8: 有分窗进度时显示「第 c/t 窗」; 单窗 (total<=1) 不显", () => {

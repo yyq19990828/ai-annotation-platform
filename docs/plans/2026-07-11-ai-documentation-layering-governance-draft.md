@@ -32,16 +32,16 @@
 
 ## 分层模型
 
-| 层 | 回答的问题 | 主要目录 | 真值边界 |
-|---|---|---|---|
+| 层         | 回答的问题                                             | 主要目录                                                          | 真值边界                                                            |
+| ---------- | ------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
 | 用户任务层 | 我怎样完成一个任务，结果处于什么状态，失败后怎么恢复？ | `docs-site/user-guide/`；AI 聚合入口为 `docs-site/user-guide/ai/` | 产品当前交互和用户可见语义；AI 分组负责导航，不复制各业务目录的正文 |
-| 开发概念层 | 为什么这样设计，数据由谁拥有，状态如何流转？ | `docs-site/dev/concepts/` | 架构模型、模块边界和不变量 |
-| 开发操作层 | 我怎样扩展、调试或验证这项能力？ | `docs-site/dev/how-to/`、`tutorials/`、`troubleshooting/` | 可执行开发流程 |
-| 契约参考层 | 精确的字段、状态、事件和能力词表是什么？ | `docs-site/dev/reference/`、`docs-site/api/` | 协议与生成契约；字段表不在概念页复制 |
-| 运维层 | 如何部署、升级、观测、回滚和处理故障？ | `docs-site/ops/` | 运行环境、资源和恢复流程 |
-| 决策层 | 为什么选择这个长期方案？ | `docs/adr/` | 已接受的架构决策与替代方案 |
-| 实施层 | 这次准备做什么、分几步、如何验收？ | `docs/plans/` | 临时实施记录；完成后必须链接正式文档 |
-| 变化层 | 这次发布对使用者有什么变化？ | `CHANGELOG.md` | 版本差异，不承担当前手册职责 |
+| 开发概念层 | 为什么这样设计，数据由谁拥有，状态如何流转？           | `docs-site/dev/concepts/`                                         | 架构模型、模块边界和不变量                                          |
+| 开发操作层 | 我怎样扩展、调试或验证这项能力？                       | `docs-site/dev/how-to/`、`tutorials/`、`troubleshooting/`         | 可执行开发流程                                                      |
+| 契约参考层 | 精确的字段、状态、事件和能力词表是什么？               | `docs-site/dev/reference/`、`docs-site/api/`                      | 协议与生成契约；字段表不在概念页复制                                |
+| 运维层     | 如何部署、升级、观测、回滚和处理故障？                 | `docs-site/ops/`                                                  | 运行环境、资源和恢复流程                                            |
+| 决策层     | 为什么选择这个长期方案？                               | `docs/adr/`                                                       | 已接受的架构决策与替代方案                                          |
+| 实施层     | 这次准备做什么、分几步、如何验收？                     | `docs/plans/`                                                     | 临时实施记录；完成后必须链接正式文档                                |
+| 变化层     | 这次发布对使用者有什么变化？                           | `CHANGELOG.md`                                                    | 版本差异，不承担当前手册职责                                        |
 
 ### 链接规则
 
@@ -70,17 +70,17 @@
 
 `/user-guide/ai/` 按“我现在要做什么”组织，不按模型名称或后端实现组织：
 
-| 导航项 | 首选 canonical page | 主要读者 | 回答的任务 |
-|---|---|---|---|
-| AI 能力总览 | `user-guide/ai/index.md`（新增） | 全部用户 | 有哪些 AI 路径、需要什么角色和前置条件、结果会去哪里 |
-| 图片交互式 AI | `user-guide/workbench/sam-tool.md` | 标注员 | 用点、框、示例或文本完成当前图片的辅助标注 |
-| 批量与多阶段预标 | `user-guide/projects/ai-preannotate.md` | 项目管理员 | 批量运行、编排阶段、查看进度并接管结果 |
-| 视频 AI 追踪 | `user-guide/workbench/video-propagate.md` | 标注员 | 选模型、给种子、纠偏并接受或丢弃候选 |
-| 外部预测与候选 | `user-guide/datasets/prediction-import-export.md` | 项目管理员 | 导入、替换、清理和导出外部模型预测 |
-| 项目模型启用与路由 | `user-guide/projects/ml-backends.md` | 项目管理员 | 启用 backend、设置主后端、理解工具置灰和能力路由 |
-| 编排复用 | `user-guide/projects/pipeline-library.md` | 项目管理员 | 保存、共享和套用预标流水线 |
-| 任务记录与失败恢复 | `user-guide/workflows/failed-prediction-recovery.md`；超管诊断补充见 `superadmin/failed-predictions.md` | 项目管理员、超级管理员 | 取消、部分结果、失败重试和历史追踪 |
-| 模型能力与运行状态 | `user-guide/superadmin/model-market.md` | 项目管理员、超级管理员 | 查模型能力；按权限查看注册与运行时状态 |
+| 导航项             | 首选 canonical page                                                                                     | 主要读者               | 回答的任务                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------- |
+| AI 能力总览        | `user-guide/ai/index.md`（新增）                                                                        | 全部用户               | 有哪些 AI 路径、需要什么角色和前置条件、结果会去哪里 |
+| 图片交互式 AI      | `user-guide/workbench/sam-tool.md`                                                                      | 标注员                 | 用点、框、示例或文本完成当前图片的辅助标注           |
+| 批量与多阶段预标   | `user-guide/projects/ai-preannotate.md`                                                                 | 项目管理员             | 批量运行、编排阶段、查看进度并接管结果               |
+| 视频 AI 追踪       | `user-guide/workbench/video-propagate.md`                                                               | 标注员                 | 选模型、给种子、纠偏并接受或丢弃候选                 |
+| 外部预测与候选     | `user-guide/datasets/prediction-import-export.md`                                                       | 项目管理员             | 导入、替换、清理和导出外部模型预测                   |
+| 项目模型启用与路由 | `user-guide/projects/ml-backends.md`                                                                    | 项目管理员             | 启用 backend、设置主后端、理解工具置灰和能力路由     |
+| 编排复用           | `user-guide/projects/pipeline-library.md`                                                               | 项目管理员             | 保存、共享和套用预标流水线                           |
+| 任务记录与失败恢复 | `user-guide/workflows/failed-prediction-recovery.md`；超管诊断补充见 `superadmin/failed-predictions.md` | 项目管理员、超级管理员 | 取消、部分结果、失败重试和历史追踪                   |
+| 模型能力与运行状态 | `user-guide/superadmin/model-market.md`                                                                 | 项目管理员、超级管理员 | 查模型能力；按权限查看注册与运行时状态               |
 
 landing page 只承担路线选择，不再写一套缩略版手册。建议包含：
 
@@ -160,15 +160,15 @@ landing page 只承担路线选择，不再写一套缩略版手册。建议包�
 
 ## 文档影响决策表
 
-| 代码变化 | 必查文档 | 通常不需要 |
-|---|---|---|
-| 新增用户入口或改变操作结果 | 用户指南、FAQ、图片清单、Changelog | ADR，除非改变长期架构 |
-| 改变 AI 数据写入时点或状态机 | 用户指南、开发概念、API / WS、runbook、Changelog | 单纯截图页不能替代概念页 |
-| 新增 / 修改 API 字段或错误码 | OpenAPI、API 指南、schema boundary | 在多个概念页复制完整 schema |
-| 新增 backend capability / model variant | 用户模型选择、ML 协议、能力词表、部署资源 | 只改模型市场页面 |
-| 新增环境变量或 Compose 透传 | `.env.example`、生成 env reference、部署 / 升级文档 | 手改生成的 env 表 |
-| 权限范围变化 | 用户可见性说明、开发权限概念、API 指南、安全文档、测试 | 仅写 `require_roles` 即视为完成 |
-| 纯内部重构且行为和契约不变 | 必要时开发 how-to | 用户指南、Changelog |
+| 代码变化                                | 必查文档                                               | 通常不需要                      |
+| --------------------------------------- | ------------------------------------------------------ | ------------------------------- |
+| 新增用户入口或改变操作结果              | 用户指南、FAQ、图片清单、Changelog                     | ADR，除非改变长期架构           |
+| 改变 AI 数据写入时点或状态机            | 用户指南、开发概念、API / WS、runbook、Changelog       | 单纯截图页不能替代概念页        |
+| 新增 / 修改 API 字段或错误码            | OpenAPI、API 指南、schema boundary                     | 在多个概念页复制完整 schema     |
+| 新增 backend capability / model variant | 用户模型选择、ML 协议、能力词表、部署资源              | 只改模型市场页面                |
+| 新增环境变量或 Compose 透传             | `.env.example`、生成 env reference、部署 / 升级文档    | 手改生成的 env 表               |
+| 权限范围变化                            | 用户可见性说明、开发权限概念、API 指南、安全文档、测试 | 仅写 `require_roles` 即视为完成 |
+| 纯内部重构且行为和契约不变              | 必要时开发 how-to                                      | 用户指南、Changelog             |
 
 ## 页面模板
 

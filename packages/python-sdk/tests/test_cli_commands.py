@@ -27,6 +27,7 @@ def _plain(text: str) -> str:
     """去 ANSI 转义 + 归一空白, 让 rich 输出断言稳定 (typer CliRunner 下 rich 仍着色)。"""
     return re.sub(r"\s+", " ", _ANSI.sub("", text))
 
+
 # 固定宽度 + 禁色, 让 rich 输出稳定可断言
 ENV = {
     "AAP_BASE_URL": BASE,
@@ -81,7 +82,9 @@ def _isolate(monkeypatch, tmp_path):
     # 隔离宿主机环境变量与真实 config.toml; 轮询不真实 sleep
     monkeypatch.delenv("AAP_BASE_URL", raising=False)
     monkeypatch.delenv("AAP_API_KEY", raising=False)
-    monkeypatch.setattr("ai_annotation.config.config_path", lambda: tmp_path / "config.toml")
+    monkeypatch.setattr(
+        "ai_annotation.config.config_path", lambda: tmp_path / "config.toml"
+    )
     monkeypatch.setattr("ai_annotation.client.time.sleep", lambda s: None)
 
 
@@ -89,16 +92,30 @@ def _isolate(monkeypatch, tmp_path):
 
 
 def test_projects_list_table(respx_mock):
-    respx_mock.get(f"{API}/projects").mock(return_value=httpx.Response(200, json=[PROJECT]))
+    respx_mock.get(f"{API}/projects").mock(
+        return_value=httpx.Response(200, json=[PROJECT])
+    )
     result = runner.invoke(app, ["projects", "list"], env=ENV)
     assert result.exit_code == 0
     plain = _plain(result.output)
-    for cell in ["名称", "类型", "状态", "任务进度", "P-1", "demo", "image", "active", "3/10"]:
+    for cell in [
+        "名称",
+        "类型",
+        "状态",
+        "任务进度",
+        "P-1",
+        "demo",
+        "image",
+        "active",
+        "3/10",
+    ]:
         assert cell in plain
 
 
 def test_projects_list_json(respx_mock):
-    respx_mock.get(f"{API}/projects").mock(return_value=httpx.Response(200, json=[PROJECT]))
+    respx_mock.get(f"{API}/projects").mock(
+        return_value=httpx.Response(200, json=[PROJECT])
+    )
     result = runner.invoke(app, ["projects", "list", "--json"], env=ENV)
     assert result.exit_code == 0
     # 裸 JSON, 无 rich 装饰
@@ -123,9 +140,13 @@ def test_projects_create(respx_mock):
 
 
 def test_projects_create_json(respx_mock):
-    respx_mock.post(f"{API}/projects").mock(return_value=httpx.Response(200, json=PROJECT))
+    respx_mock.post(f"{API}/projects").mock(
+        return_value=httpx.Response(200, json=PROJECT)
+    )
     result = runner.invoke(
-        app, ["projects", "create", "--name", "demo", "--type", "image", "--json"], env=ENV
+        app,
+        ["projects", "create", "--name", "demo", "--type", "image", "--json"],
+        env=ENV,
     )
     assert result.exit_code == 0
     assert json.loads(result.stdout)["id"] == PROJECT["id"]
@@ -185,7 +206,9 @@ def test_login_saves_config_0600(respx_mock, tmp_path):
 
 def test_login_prompts_hidden_api_key(respx_mock, tmp_path):
     respx_mock.get(f"{API}/projects").mock(return_value=httpx.Response(200, json=[]))
-    result = runner.invoke(app, ["login", "--url", BASE], input="ak_prompt\n", env=NO_AUTH_ENV)
+    result = runner.invoke(
+        app, ["login", "--url", BASE], input="ak_prompt\n", env=NO_AUTH_ENV
+    )
     assert result.exit_code == 0
     assert "ak_prompt" not in result.output  # 隐藏输入不回显
     assert 'api_key = "ak_prompt"' in (tmp_path / "config.toml").read_text()
@@ -278,7 +301,9 @@ def test_datasets_upload_single_file_json(respx_mock, tmp_path):
     respx_mock.post(f"{API}/datasets/{DS_ID}/items/upload-complete/{item_id}").mock(
         return_value=httpx.Response(200, json={"status": "ok", "item_id": item_id})
     )
-    result = runner.invoke(app, ["datasets", "upload", DS_ID, str(f), "--json"], env=ENV)
+    result = runner.invoke(
+        app, ["datasets", "upload", DS_ID, str(f), "--json"], env=ENV
+    )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data[0]["item_id"] == item_id
@@ -290,7 +315,14 @@ def test_datasets_upload_zip(respx_mock, tmp_path):
     z.write_bytes(b"PK\x03\x04zip")
     respx_mock.post(f"{API}/datasets/{DS_ID}/items/upload-zip").mock(
         return_value=httpx.Response(
-            200, json={"added": 3, "deduped": 1, "skipped": 0, "errors": [], "total_in_zip": 4}
+            200,
+            json={
+                "added": 3,
+                "deduped": 1,
+                "skipped": 0,
+                "errors": [],
+                "total_in_zip": 4,
+            },
         )
     )
     result = runner.invoke(app, ["datasets", "upload", DS_ID, str(z), "--zip"], env=ENV)
@@ -315,8 +347,12 @@ def test_datasets_link_waits_async_job(respx_mock):
     )
     poll = respx_mock.get(f"{API}/async-jobs/{JOB_ID}").mock(
         side_effect=[
-            httpx.Response(200, json=_job("running", kind="dataset_link", progress_pct=50)),
-            httpx.Response(200, json=_job("completed", kind="dataset_link", progress_pct=100)),
+            httpx.Response(
+                200, json=_job("running", kind="dataset_link", progress_pct=50)
+            ),
+            httpx.Response(
+                200, json=_job("completed", kind="dataset_link", progress_pct=100)
+            ),
         ]
     )
     result = runner.invoke(app, ["datasets", "link", DS_ID, pid], env=ENV)
@@ -456,7 +492,10 @@ def _ml_backend() -> dict:
         "name": "sam2-backend",
         "url": "http://gpu-host:9000",
         "state": "connected",
-        "health_meta": {"model_version": "v1.2", "gpu_info": {"gpu_utilization_percent": 73}},
+        "health_meta": {
+            "model_version": "v1.2",
+            "gpu_info": {"gpu_utilization_percent": 73},
+        },
         "error_message": None,
         "last_checked_at": "2026-06-11T00:00:00Z",
         "created_at": "2026-06-11T00:00:00Z",
@@ -472,7 +511,15 @@ def test_ml_backends_list_table(respx_mock):
     result = runner.invoke(app, ["ml-backends", "list", "--project", pid], env=ENV)
     assert result.exit_code == 0
     plain = _plain(result.output)
-    for cell in ["名称", "状态", "model_version", "sam2-backend", "connected", "v1.2", "73%"]:
+    for cell in [
+        "名称",
+        "状态",
+        "model_version",
+        "sam2-backend",
+        "connected",
+        "v1.2",
+        "73%",
+    ]:
         assert cell in plain
 
 
@@ -555,9 +602,18 @@ def test_export_project_multi_target_options(respx_mock):
     result = runner.invoke(
         app,
         [
-            "export", "project", pid,
-            "--target", "coco", "--target", "yolo-det",
-            "--no-include-attributes", "--axis-frame", "source", "--no-wait", "--json",
+            "export",
+            "project",
+            pid,
+            "--target",
+            "coco",
+            "--target",
+            "yolo-det",
+            "--no-include-attributes",
+            "--axis-frame",
+            "source",
+            "--no-wait",
+            "--json",
         ],
         env=ENV,
     )
@@ -574,9 +630,7 @@ def test_export_project_wait_requires_out(respx_mock):
     pid = str(uuid4())
     _mock_export_flow(respx_mock, pid)
     # --wait (默认) 但缺 --out → BadParameter, 非 0 退出
-    result = runner.invoke(
-        app, ["export", "project", pid, "--target", "coco"], env=ENV
-    )
+    result = runner.invoke(app, ["export", "project", pid, "--target", "coco"], env=ENV)
     assert result.exit_code != 0
 
 

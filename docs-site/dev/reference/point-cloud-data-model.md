@@ -16,13 +16,13 @@ last_reviewed: 2026-07-11
 
 支持点云 + 图像联合标注需要四个后端原语，v0.13.0 一次落地：
 
-| 缺口 | 落地物 | 位置 |
-|---|---|---|
-| G1 任务-数据项 1:N 关联 | `TaskDatasetItemLink` 中间表 | `app/db/models/task_dataset_item_link.py` |
-| G2 标定存储（v0.13.1） | `SensorCalibration` 进 `DatasetItem.metadata_` | `_jsonb_types.py` / `services/pointcloud_import.py` |
-| G3 3D 几何 | `Box3DGeometry` / `PointMaskGeometry` | `app/schemas/_jsonb_types.py` |
-| G4 工具单位 / file_type | `lidar_box_3d`（启用）/ `point_mask_3d`（新增）；点云扩展名 | `_jsonb_types.py` / `services/dataset.py` |
-| G6 跨模态 ID 约定 | 复用 `Annotation.track_id`（不改模型） | 见下文「跨模态身份」 |
+| 缺口                    | 落地物                                                      | 位置                                                |
+| ----------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| G1 任务-数据项 1:N 关联 | `TaskDatasetItemLink` 中间表                                | `app/db/models/task_dataset_item_link.py`           |
+| G2 标定存储（v0.13.1）  | `SensorCalibration` 进 `DatasetItem.metadata_`              | `_jsonb_types.py` / `services/pointcloud_import.py` |
+| G3 3D 几何              | `Box3DGeometry` / `PointMaskGeometry`                       | `app/schemas/_jsonb_types.py`                       |
+| G4 工具单位 / file_type | `lidar_box_3d`（启用）/ `point_mask_3d`（新增）；点云扩展名 | `_jsonb_types.py` / `services/dataset.py`           |
+| G6 跨模态 ID 约定       | 复用 `Annotation.track_id`（不改模型）                      | 见下文「跨模态身份」                                |
 
 > v0.13.0 落 G1/G3/G4/G6 静态地基；v0.13.1 补 **G2 标定存储** + **scene 导入管线**（见下文「scene 导入数据流」）。
 
@@ -97,10 +97,10 @@ POST /datasets/{id}/link  (project.data_type=="lidar"):
 
 加入 `Geometry` discriminated union（`Field(discriminator="type")`），零迁移（几何存 `annotations.geometry` JSONB）：
 
-| `type` | 类 | 字段 | 备注 |
-|---|---|---|---|
-| `box_3d` | `Box3DGeometry` | `center[3]` / `size[3]` / `rotation[3]` | 米 / 长宽高 / 绕各轴弧度；`extra="allow"` 容纳扩展 |
-| `point_mask_3d` | `PointMaskGeometry` | `point_indices: list[int]` | 指向点云的非负整数索引；`extra="forbid"` |
+| `type`          | 类                  | 字段                                    | 备注                                               |
+| --------------- | ------------------- | --------------------------------------- | -------------------------------------------------- |
+| `box_3d`        | `Box3DGeometry`     | `center[3]` / `size[3]` / `rotation[3]` | 米 / 长宽高 / 绕各轴弧度；`extra="allow"` 容纳扩展 |
+| `point_mask_3d` | `PointMaskGeometry` | `point_indices: list[int]`              | 指向点云的非负整数索引；`extra="forbid"`           |
 
 旧 2D 几何（bbox / polygon / …）不受影响。前端强类型由 OpenAPI codegen 落到 `apps/web/src/api/generated/`；手写业务 union（`apps/web/src/types/index.ts`）暂不并入，待 v0.13.2 前端引入 3D 工作台时再加（避免逼迫现有 2D 窄化逻辑处理 3D 分支）。
 
@@ -135,7 +135,7 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
       expires_in }
 ```
 
-实现:`api/v1/tasks/video.py` 用 `get_linked_items` 取 link → 主点云(无 primary_lidar link 时回退 `task.file_path`)+ 各相机 presign + `metadata_["calibration"]`(非法降级 None)。
+实现：`api/v1/tasks/video.py` 用 `get_linked_items` 取 link → 主点云（无 `primary_lidar` link 时回退 `task.file_path`）+ 各相机 presign + `metadata_["calibration"]`（非法降级 None）。
 
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`(`PCDLoader` + OrbitControls + 高度上色 + 大点云抽稀 + dispose 生命周期),相机图只读平铺。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 

@@ -26,9 +26,7 @@ const geoPayload = (backendId: string, keys?: string[], label?: string): Pipelin
 describe("usePipelineComposer", () => {
   // v0.21.6 · 终态: 输入节点(纯数据源, ROOT_SID)[0] + 源模型 stage(SOURCE_SID)[1]; 下游挂 SOURCE_SID。
   it("初始状态: 输入节点 + 源模型 stage, 选中 SOURCE_SID, 无冲突", () => {
-    const { result } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 2 }),
-    );
+    const { result } = renderHook(() => usePipelineComposer({ availableBackendCount: 2 }));
     expect(result.current.stagesGraph).toHaveLength(2);
     expect(result.current.stagesGraph[0].sid).toBe(ROOT_SID);
     expect(result.current.stagesGraph[0].parentSid).toBeNull();
@@ -40,14 +38,10 @@ describe("usePipelineComposer", () => {
   });
 
   it("addStage: 加到源模型 stage 后 stagesGraph 长度=3, 选中新节点; backend<2 时 canAddChildAt=false", () => {
-    const { result } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 1 }),
-    );
+    const { result } = renderHook(() => usePipelineComposer({ availableBackendCount: 1 }));
     expect(result.current.canAddChildAt(SOURCE_SID)).toBe(false);
 
-    const { result: result2 } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 2 }),
-    );
+    const { result: result2 } = renderHook(() => usePipelineComposer({ availableBackendCount: 2 }));
     expect(result2.current.canAddChildAt(SOURCE_SID)).toBe(true);
     act(() => result2.current.addStage(SOURCE_SID));
     expect(result2.current.stagesGraph).toHaveLength(3); // 输入节点 + 源模型 + 新下游
@@ -84,9 +78,7 @@ describe("usePipelineComposer", () => {
   });
 
   it("输入节点 / 源模型 stage 不可删", () => {
-    const { result } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 2 }),
-    );
+    const { result } = renderHook(() => usePipelineComposer({ availableBackendCount: 2 }));
     act(() => result.current.removeStage(ROOT_SID));
     act(() => result.current.removeStage(SOURCE_SID));
     expect(result.current.stagesGraph.map((e) => e.sid)).toEqual([ROOT_SID, SOURCE_SID]);
@@ -117,9 +109,7 @@ describe("usePipelineComposer", () => {
   });
 
   it("键冲突: 两下游写同一最终键 → hasKeyConflict=true, perCard 标出冲突键", () => {
-    const { result } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 2 }),
-    );
+    const { result } = renderHook(() => usePipelineComposer({ availableBackendCount: 2 }));
     act(() => result.current.addStage(SOURCE_SID));
     const sidA = result.current.stagesGraph[2].sid;
     act(() => result.current.addStage(SOURCE_SID));
@@ -139,9 +129,7 @@ describe("usePipelineComposer", () => {
   });
 
   it("reset: 回落到 输入节点 + 源模型 / selectedSid / payloadsRef", () => {
-    const { result } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 2 }),
-    );
+    const { result } = renderHook(() => usePipelineComposer({ availableBackendCount: 2 }));
     act(() => result.current.addStage(SOURCE_SID));
     const sidA = result.current.stagesGraph[2].sid;
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a", ["color"])));
@@ -154,9 +142,7 @@ describe("usePipelineComposer", () => {
   });
 
   it("canReparentConn: 不能连回自己, 不能连到后代, 父须产几何", () => {
-    const { result } = renderHook(() =>
-      usePipelineComposer({ availableBackendCount: 2 }),
-    );
+    const { result } = renderHook(() => usePipelineComposer({ availableBackendCount: 2 }));
     act(() => result.current.addStage(SOURCE_SID)); // A
     const sidA = result.current.stagesGraph[2].sid;
     act(() => result.current.onStageChange(sidA, geoPayload("bk-a")));

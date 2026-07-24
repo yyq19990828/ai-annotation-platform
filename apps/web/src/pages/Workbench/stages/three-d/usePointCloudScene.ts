@@ -64,9 +64,7 @@ interface UsePointCloudSceneResult {
   loadError: string | null;
 }
 
-export function usePointCloudScene(
-  params: UsePointCloudSceneParams,
-): UsePointCloudSceneResult {
+export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCloudSceneResult {
   const {
     viewportRef,
     sceneRef,

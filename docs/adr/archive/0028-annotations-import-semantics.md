@@ -5,7 +5,7 @@
 - **Deciders:** core team（yyq19990828 + Claude）
 - **Supersedes:** —
 
-> **实现状态（2026-05-24）**：本 ADR 的语义已在 v0.10.54 **后端完整落地**（service / 端点 / 审计 / 测试）。**前端入口暂不暴露**——由 `ANNOTATIONS_IMPORT_ENABLED`（`apps/web/src/components/predictions/PredictionImportWizard.tsx`）控制，当前为 `false`：⋮ 菜单无「导入标注」、向导无「导入对象」切换。端点 `POST /projects/{id}/annotations/import` 仍可经 API 直接调用。翻 flag 为 `true` 即恢复 UI 入口。
+> **实现状态（2026-07-23）**：本 ADR 的归属、冲突、审计与状态机语义已完整落地。Dashboard 的「导入 Mask 标注」现由后端项目级 adapter registry 驱动，只展示已验证且允许 UI 使用的格式；旧的 `POST /projects/{id}/annotations/import` 端点继续保留作为 AAP JSON 兼容 API。
 
 ## Context
 

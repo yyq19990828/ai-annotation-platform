@@ -75,11 +75,7 @@ function collectInsidePoints(
     const py = positions[i * 3 + 1];
     const pz = positions[i * 3 + 2];
     tmp.set(px - center[0], py - center[1], pz - center[2]).applyQuaternion(qInv);
-    if (
-      Math.abs(tmp.x) <= hx &&
-      Math.abs(tmp.y) <= hy &&
-      Math.abs(tmp.z) <= hz
-    ) {
+    if (Math.abs(tmp.x) <= hx && Math.abs(tmp.y) <= hy && Math.abs(tmp.z) <= hz) {
       wx[count] = px;
       wy[count] = py;
       wz[count] = pz;
@@ -102,11 +98,7 @@ function collectInsidePoints(
 
 /** size 各分量 clamp 到 MIN_SIZE 下限。 */
 function clampSize(s: Vec3): Vec3 {
-  return [
-    Math.max(MIN_SIZE, s[0]),
-    Math.max(MIN_SIZE, s[1]),
-    Math.max(MIN_SIZE, s[2]),
-  ];
+  return [Math.max(MIN_SIZE, s[0]), Math.max(MIN_SIZE, s[1]), Math.max(MIN_SIZE, s[2])];
 }
 
 /**
@@ -120,11 +112,7 @@ function clampSize(s: Vec3): Vec3 {
  * 新中心 = 旧中心 + R · ((AABBmin + AABBmax)/2) (world 系平移到 AABB 中心),
  * 新 size = (AABBmax - AABBmin) + 2×padding。size 各分量下限 MIN_SIZE。
  */
-export function fitSize(
-  positions: Float32Array,
-  psr: Psr,
-  padding: number = 0.05,
-): Psr {
+export function fitSize(positions: Float32Array, psr: Psr, padding: number = 0.05): Psr {
   const inside = collectInsidePoints(positions, psr);
   if (inside.count < 3) {
     return { center: psr.center, size: psr.size, rotation: psr.rotation };
@@ -304,10 +292,6 @@ export function psrFromPoints(points: Float32Array, padding: number = 0.05): Psr
 /**
  * v0.13.8 · 便捷: fit_size 后再 fit_bottom (默认连击, Q 键)。不嵌入 fit_yaw。
  */
-export function fitSizeAndBottom(
-  positions: Float32Array,
-  psr: Psr,
-  padding: number = 0.05,
-): Psr {
+export function fitSizeAndBottom(positions: Float32Array, psr: Psr, padding: number = 0.05): Psr {
   return fitBottom(positions, fitSize(positions, psr, padding));
 }

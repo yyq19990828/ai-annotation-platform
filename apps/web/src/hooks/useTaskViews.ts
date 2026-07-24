@@ -91,10 +91,7 @@ export function useDataManagerObjectDetail(
   });
 }
 
-export function useDataManagerTrackDetail(
-  projectId: string | undefined,
-  trackRef: string | null,
-) {
+export function useDataManagerTrackDetail(projectId: string | undefined, trackRef: string | null) {
   return useQuery({
     queryKey: ["data-manager-track-detail", projectId, trackRef],
     queryFn: () => taskViewsApi.trackDetail(projectId!, trackRef!),

@@ -26,11 +26,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/shadcn/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/shadcn/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/shadcn/ui/popover";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
 import { DataManagerAnalyticsPanel } from "./data-manager/DataManagerAnalyticsPanel";
 import {
@@ -42,10 +38,7 @@ import { DataManagerSummaryStrip } from "./data-manager/DataManagerOverview";
 import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
 import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
-import {
-  parseDataManagerUrl,
-  updateDataManagerUrl,
-} from "./data-manager/dataManagerUrlState";
+import { parseDataManagerUrl, updateDataManagerUrl } from "./data-manager/dataManagerUrlState";
 import {
   Dialog,
   DialogContent,
@@ -81,9 +74,39 @@ const FIELD_CLASS =
   "h-8 w-full appearance-none rounded-sm border border-border bg-background px-2 py-1.5 text-foreground disabled:bg-muted disabled:text-muted-foreground";
 
 const FALLBACK_FILTER_FIELDS: DataManagerFilterField[] = [
-  { key: "task.status", label: "任务状态", group: "工作流", value_type: "select", operators: ["eq", "ne", "in"], options: [], expensive: false, tool_unit_id: null, attribute_key: null },
-  { key: "annotation.annotation_count", label: "标注数", group: "标注", value_type: "number", operators: ["eq", "ne", "gt", "gte", "lt", "lte", "in"], options: [], expensive: false, tool_unit_id: null, attribute_key: null },
-  { key: "annotation.class_name", label: "标注类别", group: "标注", value_type: "select", operators: ["exists", "eq", "in"], options: [], expensive: false, tool_unit_id: null, attribute_key: null },
+  {
+    key: "task.status",
+    label: "任务状态",
+    group: "工作流",
+    value_type: "select",
+    operators: ["eq", "ne", "in"],
+    options: [],
+    expensive: false,
+    tool_unit_id: null,
+    attribute_key: null,
+  },
+  {
+    key: "annotation.annotation_count",
+    label: "标注数",
+    group: "标注",
+    value_type: "number",
+    operators: ["eq", "ne", "gt", "gte", "lt", "lte", "in"],
+    options: [],
+    expensive: false,
+    tool_unit_id: null,
+    attribute_key: null,
+  },
+  {
+    key: "annotation.class_name",
+    label: "标注类别",
+    group: "标注",
+    value_type: "select",
+    operators: ["exists", "eq", "in"],
+    options: [],
+    expensive: false,
+    tool_unit_id: null,
+    attribute_key: null,
+  },
 ];
 
 const COLUMN_OPTIONS = [
@@ -115,13 +138,11 @@ function isFilterRule(value: unknown): value is TaskFilterRule {
 
 function editableRulesFromFilter(raw: Record<string, unknown> | null | undefined): EditableRule[] {
   if (!raw || !("rules" in raw) || !Array.isArray(raw.rules)) return [];
-  const rules = raw.rules
-    .filter(isFilterRule)
-    .map((rule) => ({
-      field: rule.field,
-      op: rule.op,
-      value: Array.isArray(rule.value) ? rule.value.join(", ") : String(rule.value ?? ""),
-    }));
+  const rules = raw.rules.filter(isFilterRule).map((rule) => ({
+    field: rule.field,
+    op: rule.op,
+    value: Array.isArray(rule.value) ? rule.value.join(", ") : String(rule.value ?? ""),
+  }));
   return rules;
 }
 
@@ -133,7 +154,10 @@ function normalizeRuleValue(rule: EditableRule, fields: DataManagerFilterField[]
   const field = fields.find((item) => item.key === rule.field);
   if (rule.op === "exists" || rule.op === "missing") return true;
   if (["in", "contains_any", "contains_all", "between"].includes(rule.op)) {
-    const values = rule.value.split(",").map((item) => item.trim()).filter(Boolean);
+    const values = rule.value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
     return field?.value_type === "number"
       ? values.map((item) => Number(item)).filter(Number.isFinite)
       : values;
@@ -152,7 +176,10 @@ export function buildFilterJson(
   keyword: string,
 ): Record<string, unknown> {
   const clean = rules
-    .filter((rule) => rule.field && rule.op && (["exists", "missing"].includes(rule.op) || rule.value.trim()))
+    .filter(
+      (rule) =>
+        rule.field && rule.op && (["exists", "missing"].includes(rule.op) || rule.value.trim()),
+    )
     .map((rule) => ({
       field: rule.field,
       op: rule.op,
@@ -242,7 +269,11 @@ function renderRuleValueControl(
   }
   if (field?.value_type === "boolean") {
     return (
-      <select className={FIELD_CLASS} value={rule.value || "true"} onChange={(event) => update(event.target.value)}>
+      <select
+        className={FIELD_CLASS}
+        value={rule.value || "true"}
+        onChange={(event) => update(event.target.value)}
+      >
         <option value="true">是</option>
         <option value="false">否</option>
       </select>
@@ -250,10 +281,16 @@ function renderRuleValueControl(
   }
   if (field?.options.length && rule.op === "eq") {
     return (
-      <select className={FIELD_CLASS} value={rule.value} onChange={(event) => update(event.target.value)}>
+      <select
+        className={FIELD_CLASS}
+        value={rule.value}
+        onChange={(event) => update(event.target.value)}
+      >
         <option value="">请选择</option>
         {field.options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
         ))}
       </select>
     );
@@ -263,7 +300,11 @@ function renderRuleValueControl(
       className={FIELD_CLASS}
       value={rule.value}
       inputMode={field?.value_type === "number" ? "decimal" : undefined}
-      placeholder={["in", "between", "contains_any", "contains_all"].includes(rule.op) ? "多个值用逗号分隔" : undefined}
+      placeholder={
+        ["in", "between", "contains_any", "contains_all"].includes(rule.op)
+          ? "多个值用逗号分隔"
+          : undefined
+      }
       onChange={(event) => update(event.target.value)}
     />
   );
@@ -324,12 +365,7 @@ export function ProjectDataManagerPage() {
     );
   }
 
-  return (
-    <TaskDataManagerPage
-      availableScopes={availableScopes}
-      onScopeChange={changeScope}
-    />
-  );
+  return <TaskDataManagerPage availableScopes={availableScopes} onScopeChange={changeScope} />;
 }
 
 function TaskDataManagerPage({
@@ -359,7 +395,9 @@ function TaskDataManagerPage({
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
-  const [sort, setSort] = useState<TaskSortItem[]>([{ field: "task.created_at", direction: "asc" }]);
+  const [sort, setSort] = useState<TaskSortItem[]>([
+    { field: "task.created_at", direction: "asc" },
+  ]);
   const [page, setPage] = useState(0);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("任务视图");
@@ -376,22 +414,27 @@ function TaskDataManagerPage({
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const filterFields = useMemo(
-    () => (schemaQ.data?.filter_fields ?? FALLBACK_FILTER_FIELDS).filter((field) => field.key !== "task.keyword"),
+    () =>
+      (schemaQ.data?.filter_fields ?? FALLBACK_FILTER_FIELDS).filter(
+        (field) => field.key !== "task.keyword",
+      ),
     [schemaQ.data?.filter_fields],
   );
   const columnOptions = useMemo(
-    () => schemaQ.data?.columns ?? COLUMN_OPTIONS.map((column) => ({
-      ...column,
-      group: "任务",
-      default: DEFAULT_COLUMNS.includes(column.key),
-      expensive: false,
-      sortable: false,
-      sort_field: null,
-    })),
+    () =>
+      schemaQ.data?.columns ??
+      COLUMN_OPTIONS.map((column) => ({
+        ...column,
+        group: "任务",
+        default: DEFAULT_COLUMNS.includes(column.key),
+        expensive: false,
+        sortable: false,
+        sort_field: null,
+      })),
     [schemaQ.data?.columns],
   );
   const defaultColumns = useMemo(
-    () => schemaQ.data?.default_columns?.length ? schemaQ.data.default_columns : DEFAULT_COLUMNS,
+    () => (schemaQ.data?.default_columns?.length ? schemaQ.data.default_columns : DEFAULT_COLUMNS),
     [schemaQ.data?.default_columns],
   );
   const fieldLabel = useMemo(
@@ -399,7 +442,11 @@ function TaskDataManagerPage({
     [filterFields],
   );
   const selectedView = useMemo(() => {
-    return views.find((view) => (view.id ? `saved:${view.id}` : `builtin:${view.key}`) === selectedKey) ?? null;
+    return (
+      views.find(
+        (view) => (view.id ? `saved:${view.id}` : `builtin:${view.key}`) === selectedKey,
+      ) ?? null
+    );
   }, [selectedKey, views]);
 
   useEffect(() => {
@@ -412,14 +459,15 @@ function TaskDataManagerPage({
 
   useEffect(() => {
     if (!selectedView) return;
-    const useUrl = !urlHydratedRef.current
-      && initialUrl.lens === "tasks"
-      && (!initialUrl.view || initialUrl.view === selectedKey);
+    const useUrl =
+      !urlHydratedRef.current &&
+      initialUrl.lens === "tasks" &&
+      (!initialUrl.view || initialUrl.view === selectedKey);
     const hydrated = editableRulesFromFilter(
       useUrl && initialUrl.filter ? initialUrl.filter : selectedView.filter_json,
     );
     const keywordRule = hydrated.find((rule) => rule.field === "task.keyword");
-    const nextKeyword = useUrl ? initialUrl.query : keywordRule?.value ?? "";
+    const nextKeyword = useUrl ? initialUrl.query : (keywordRule?.value ?? "");
     setKeyword(nextKeyword);
     setDebouncedKeyword(nextKeyword);
     setRules(hydrated.filter((rule) => rule.field !== "task.keyword"));
@@ -427,24 +475,26 @@ function TaskDataManagerPage({
     const restoredColumns = (
       useUrl && initialUrl.columns?.length
         ? initialUrl.columns
-        : selectedView.columns_json?.length ? selectedView.columns_json : defaultColumns
-    )
-      .filter((column) => allowedColumns.has(column));
+        : selectedView.columns_json?.length
+          ? selectedView.columns_json
+          : defaultColumns
+    ).filter((column) => allowedColumns.has(column));
     const nextColumns = restoredColumns.length ? restoredColumns : defaultColumns;
-    const nextSort = useUrl && initialUrl.sort?.length
-      ? initialUrl.sort
-      : defaultSortForView(selectedView);
+    const nextSort =
+      useUrl && initialUrl.sort?.length ? initialUrl.sort : defaultSortForView(selectedView);
     setColumns(nextColumns);
     setSort(nextSort);
-    setBaselineSignature(JSON.stringify({
-      filter_json: buildFilterJson(
-        hydrated.filter((rule) => rule.field !== "task.keyword"),
-        filterFields,
-        nextKeyword,
-      ),
-      sort_json: nextSort,
-      columns_json: nextColumns,
-    }));
+    setBaselineSignature(
+      JSON.stringify({
+        filter_json: buildFilterJson(
+          hydrated.filter((rule) => rule.field !== "task.keyword"),
+          filterFields,
+          nextKeyword,
+        ),
+        sort_json: nextSort,
+        columns_json: nextColumns,
+      }),
+    );
     urlHydratedRef.current = true;
     setPage(0);
   }, [columnOptions, defaultColumns, filterFields, initialUrl, selectedKey, selectedView]);
@@ -459,13 +509,16 @@ function TaskDataManagerPage({
     [debouncedKeyword, filterFields, rules],
   );
   useEffect(() => setPage(0), [filterJson]);
-  const queryPayload = useMemo(() => ({
-    filter_json: filterJson,
-    sort_json: sort,
-    columns_json: columns,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  }), [columns, filterJson, page, sort]);
+  const queryPayload = useMemo(
+    () => ({
+      filter_json: filterJson,
+      sort_json: sort,
+      columns_json: columns,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    }),
+    [columns, filterJson, page, sort],
+  );
   const queryReady = Boolean(selectedView && schemaQ.data);
   const tasksQ = useProjectTaskQuery(id, queryPayload, queryReady);
   const summaryQ = useDataManagerSummary(id, filterJson, queryReady);
@@ -475,16 +528,18 @@ function TaskDataManagerPage({
   );
   const isDirty = Boolean(baselineSignature && baselineSignature !== currentSignature);
   const total = tasksQ.data?.total ?? 0;
-  const visibleTotal = summaryQ.data?.scope.visible_task_total
-    ?? views.find((view) => view.key === "all")?.task_count
-    ?? 0;
+  const visibleTotal =
+    summaryQ.data?.scope.visible_task_total ??
+    views.find((view) => view.key === "all")?.task_count ??
+    0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const canManageProject = role === "super_admin" || Boolean(project && user?.id === project.owner_id);
+  const canManageProject =
+    role === "super_admin" || Boolean(project && user?.id === project.owner_id);
   const canEditSelected = Boolean(
-    selectedView?.id
-      && (selectedView.visibility === "private"
-        ? selectedView.owner_id === user?.id || role === "super_admin"
-        : canManageProject),
+    selectedView?.id &&
+    (selectedView.visibility === "private"
+      ? selectedView.owner_id === user?.id || role === "super_admin"
+      : canManageProject),
   );
 
   useEffect(() => {
@@ -501,7 +556,17 @@ function TaskDataManagerPage({
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [columns, filterFields, keyword, rules, searchParams, selectedKey, selectedTask?.id, setSearchParams, sort]);
+  }, [
+    columns,
+    filterFields,
+    keyword,
+    rules,
+    searchParams,
+    selectedKey,
+    selectedTask?.id,
+    setSearchParams,
+    sort,
+  ]);
 
   const selectedHydratedRef = useRef(false);
   useEffect(() => {
@@ -514,7 +579,8 @@ function TaskDataManagerPage({
     if (restored) setSelectedTask(restored);
   }, [initialUrl.selected, tasksQ.data?.items]);
 
-  if (projectLoading) return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
+  if (projectLoading)
+    return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
 
   const saveCurrent = async () => {
@@ -574,9 +640,9 @@ function TaskDataManagerPage({
 
   const visibleColumnSet = new Set(columns);
   const toggleQuickRule = (rule: EditableRule) => {
-    const index = rules.findIndex((item) => (
-      item.field === rule.field && item.op === rule.op && item.value === rule.value
-    ));
+    const index = rules.findIndex(
+      (item) => item.field === rule.field && item.op === rule.op && item.value === rule.value,
+    );
     setRules(index >= 0 ? rules.filter((_, itemIndex) => itemIndex !== index) : [...rules, rule]);
   };
   const toggleAnalytics = () => {
@@ -590,19 +656,34 @@ function TaskDataManagerPage({
     {
       key: "low-confidence",
       label: "低置信",
-      active: rules.some((rule) => rule.field === "ai.low_confidence_prediction_shape_count" && rule.op === "gt" && rule.value === "0"),
-      onClick: () => toggleQuickRule({ field: "ai.low_confidence_prediction_shape_count", op: "gt", value: "0" }),
+      active: rules.some(
+        (rule) =>
+          rule.field === "ai.low_confidence_prediction_shape_count" &&
+          rule.op === "gt" &&
+          rule.value === "0",
+      ),
+      onClick: () =>
+        toggleQuickRule({
+          field: "ai.low_confidence_prediction_shape_count",
+          op: "gt",
+          value: "0",
+        }),
     },
     {
       key: "feedback",
       label: "有反馈",
-      active: rules.some((rule) => rule.field === "feedback.unresolved_count" && rule.op === "gt" && rule.value === "0"),
+      active: rules.some(
+        (rule) =>
+          rule.field === "feedback.unresolved_count" && rule.op === "gt" && rule.value === "0",
+      ),
       onClick: () => toggleQuickRule({ field: "feedback.unresolved_count", op: "gt", value: "0" }),
     },
     {
       key: "manual",
       label: "人工标注",
-      active: rules.some((rule) => rule.field === "annotation.source" && rule.op === "eq" && rule.value === "manual"),
+      active: rules.some(
+        (rule) => rule.field === "annotation.source" && rule.op === "eq" && rule.value === "manual",
+      ),
       onClick: () => toggleQuickRule({ field: "annotation.source", op: "eq", value: "manual" }),
     },
   ];
@@ -621,13 +702,22 @@ function TaskDataManagerPage({
             setRules(next);
           }}
         >
-          {(filterFields.find((field) => field.key === rule.field)?.operators ?? [rule.op]).map((operator) => (
-            <option key={operator} value={operator}>{operatorLabel(operator)}</option>
-          ))}
+          {(filterFields.find((field) => field.key === rule.field)?.operators ?? [rule.op]).map(
+            (operator) => (
+              <option key={operator} value={operator}>
+                {operatorLabel(operator)}
+              </option>
+            ),
+          )}
         </select>
         {renderRuleValueControl(rule, index, rules, setRules, filterFields)}
-        <Button variant="ghost" size="sm" onClick={() => setRules(rules.filter((_, itemIndex) => itemIndex !== index))}>
-          <Icon name="trash" size={12} />移除条件
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setRules(rules.filter((_, itemIndex) => itemIndex !== index))}
+        >
+          <Icon name="trash" size={12} />
+          移除条件
         </Button>
       </div>
     ),
@@ -644,378 +734,465 @@ function TaskDataManagerPage({
           else onScopeChange(nextScope);
         }}
       >
-      <div className="flex h-full min-h-0 flex-col gap-2">
-      <header className="flex shrink-0 items-center justify-between gap-4 max-md:flex-col max-md:items-start">
-        <div className="min-w-0">
-        <button
-          type="button"
-          className="mb-1 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
-          onClick={() => navigate(`/projects/${id}/settings`)}
-        >
-          <Icon name="chevLeft" size={12} />返回项目设置
-        </button>
-            <h1 className="truncate text-lg font-semibold tracking-tight">{project.name} · Data Manager</h1>
-            <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
-              <span className="mono">{project.display_id}</span>
-              <span>{visibleTotal.toLocaleString()} 可见任务</span>
-              <span>{total.toLocaleString()} 当前匹配</span>
-              <span>{views.length.toLocaleString()} 视图</span>
-            </div>
-        </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
-              <Icon name="activity" size={12} />统计
-            </Button>
-            <Button
-              onClick={() => {
-                tasksQ.refetch();
-                summaryQ.refetch();
-                viewsQ.refetch();
-              }}
-              disabled={tasksQ.isFetching || summaryQ.isFetching}
-            >
-              <Icon name="refresh" size={12} />刷新
-            </Button>
-            <Button variant="primary" onClick={saveCurrent} disabled={createView.isPending || updateView.isPending}>
-              <Icon name="save" size={12} />保存视图
-            </Button>
-          </div>
-      </header>
-
-      <DataManagerSummaryStrip
-        summary={summaryQ.data}
-        isLoading={summaryQ.isLoading}
-        onDrill={(rule) => {
-          if (!filterFields.some((item) => item.key === rule.field)) return;
-          toggleQuickRule({ field: rule.field, op: rule.op as TaskFilterOp, value: rule.value });
-        }}
-      />
-
-      {analyticsOpen && (
-        <DataManagerAnalyticsPanel
-          scope="tasks"
-          summary={summaryQ.data}
-          isLoading={summaryQ.isLoading}
-          fields={filterFields}
-          onSelect={(field, value) => {
-            if (!filterFields.some((item) => item.key === field)) return;
-            toggleQuickRule({ field, op: "eq" as const, value });
-          }}
-        />
-      )}
-
-      <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
-        <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
-          <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">视图</div>
-          <div className="mb-2 flex flex-col gap-0.5 max-md:grid max-md:grid-cols-2 max-sm:grid-cols-1">
-            {views.map((view) => {
-              const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
-              const active = key === selectedKey;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={cn(
-                    "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
-                    active && "border-border bg-muted text-foreground",
-                  )}
-                  onClick={() => {
-                    if (key === selectedKey) return;
-                    if (isDirty) setPendingViewKey(key);
-                    else setSelectedKey(key);
-                  }}
-                >
-                  <span>{view.name}</span>
-                  <Badge variant={view.builtin ? "outline" : view.visibility === "project" ? "accent" : "default"}>
-                    {view.invalid_fields.length ? "失效" : view.task_count ?? "—"}
-                  </Badge>
-                </button>
-              );
-            })}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setDeleteConfirmOpen(true)}
-            disabled={!canEditSelected || deleteView.isPending}
-            className="w-full justify-start text-muted-foreground"
-          >
-            <Icon name="trash" size={12} />删除
-          </Button>
-        </aside>
-
-        <main className="flex min-h-0 min-w-0 flex-col gap-2">
-          <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
-            <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
-              <div>
-                <div className="text-sm font-semibold">{selectedView?.name ?? "任务视图"}</div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {selectedView?.builtin ? "内置视图" : selectedView?.visibility === "project" ? "项目共享" : "私有视图"}
-                  <span>·</span>
-                  {total.toLocaleString()} 条匹配
-                </div>
-              </div>
-              <Badge variant={isDirty ? "warning" : canEditSelected ? "accent" : "outline"}>
-                {isDirty ? "未保存" : canEditSelected ? "可编辑" : "只读"}
-              </Badge>
-            </div>
-            <div className="flex gap-2 max-sm:flex-col">
-              <Select
-                value={selectedKey}
-                onValueChange={(key) => {
-                  if (key === selectedKey) return;
-                  if (isDirty) setPendingViewKey(key);
-                  else setSelectedKey(key);
-                }}
+        <div className="flex h-full min-h-0 flex-col gap-2">
+          <header className="flex shrink-0 items-center justify-between gap-4 max-md:flex-col max-md:items-start">
+            <div className="min-w-0">
+              <button
+                type="button"
+                className="mb-1 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
+                onClick={() => navigate(`/projects/${id}/settings`)}
               >
-                <SelectTrigger className="hidden w-44 max-lg:flex">
-                  <SelectValue placeholder="选择视图" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {views.map((view) => {
-                      const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
-                      return <SelectItem key={key} value={key}>{view.name}</SelectItem>;
-                    })}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <div className="relative min-w-0 flex-1">
-                <Icon name="search" size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="搜索任务编号或文件名"
-                  aria-label="搜索任务编号或文件名"
-                  className="h-9 pl-8"
-                />
+                <Icon name="chevLeft" size={12} />
+                返回项目设置
+              </button>
+              <h1 className="truncate text-lg font-semibold tracking-tight">
+                {project.name} · Data Manager
+              </h1>
+              <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                <span className="mono">{project.display_id}</span>
+                <span>{visibleTotal.toLocaleString()} 可见任务</span>
+                <span>{total.toLocaleString()} 当前匹配</span>
+                <span>{views.length.toLocaleString()} 视图</span>
               </div>
-              <Select
-                value={sort[0]?.field ?? "task.created_at"}
-                onValueChange={(field) => {
-                  setSort([{ field, direction: sort[0]?.direction ?? "asc" }]);
-                  setPage(0);
-                }}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="排序字段" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {(schemaQ.data?.sort_fields ?? []).map((field) => (
-                      <SelectItem key={field.value} value={field.value}>{field.label}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
+                <Icon name="activity" size={12} />
+                统计
+              </Button>
               <Button
                 onClick={() => {
-                  const current = sort[0] ?? { field: "task.created_at", direction: "asc" as const };
-                  setSort([{ ...current, direction: current.direction === "asc" ? "desc" : "asc" }]);
-                  setPage(0);
+                  tasksQ.refetch();
+                  summaryQ.refetch();
+                  viewsQ.refetch();
                 }}
+                disabled={tasksQ.isFetching || summaryQ.isFetching}
               >
-                {sort[0]?.direction === "desc" ? "降序" : "升序"}
+                <Icon name="refresh" size={12} />
+                刷新
               </Button>
-              <Popover>
-                <PopoverTrigger asChild><Button>列设置</Button></PopoverTrigger>
-                <PopoverContent align="end" className="w-72">
-                  <div className="mb-2 text-sm font-medium">显示列</div>
-                  <div className="max-h-80 overflow-y-auto">
-                    {columnOptions.map((column) => (
-                      <label key={column.key} className="flex min-h-8 items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={visibleColumnSet.has(column.key)}
-                          disabled={column.key === "display_id"}
-                          onChange={(event) => setColumns(
-                            event.target.checked
-                              ? [...columns, column.key]
-                              : columns.filter((item) => item !== column.key),
-                          )}
-                        />
-                        <span>{column.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              <Button
+                variant="primary"
+                onClick={saveCurrent}
+                disabled={createView.isPending || updateView.isPending}
+              >
+                <Icon name="save" size={12} />
+                保存视图
+              </Button>
             </div>
-            <DataManagerFilterBar
-              fields={filterFields}
-              chips={filterChips}
-              quickFilters={quickFilters}
-              onAdd={(field) => setRules([
-                ...rules,
-                { field: field.key, op: field.operators[0] ?? "eq", value: "" },
-              ])}
-              onClear={() => setRules([])}
-            />
-          </section>
+          </header>
 
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm">
-            <table className="w-full min-w-[980px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_td:first-child]:w-[140px] [&_th:first-child]:w-[140px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
-              <thead className="sticky top-0 z-base">
-                <tr>
-                  {columns.map((column) => (
-                    <th key={column}>{columnOptions.find((item) => item.key === column)?.label ?? column}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tasksQ.data?.items.map((task) => (
-                  <tr
-                    key={task.id}
-                    tabIndex={0}
-                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => setSelectedTask(task)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedTask(task);
-                      }
+          <DataManagerSummaryStrip
+            summary={summaryQ.data}
+            isLoading={summaryQ.isLoading}
+            onDrill={(rule) => {
+              if (!filterFields.some((item) => item.key === rule.field)) return;
+              toggleQuickRule({
+                field: rule.field,
+                op: rule.op as TaskFilterOp,
+                value: rule.value,
+              });
+            }}
+          />
+
+          {analyticsOpen && (
+            <DataManagerAnalyticsPanel
+              scope="tasks"
+              summary={summaryQ.data}
+              isLoading={summaryQ.isLoading}
+              fields={filterFields}
+              onSelect={(field, value) => {
+                if (!filterFields.some((item) => item.key === field)) return;
+                toggleQuickRule({ field, op: "eq" as const, value });
+              }}
+            />
+          )}
+
+          <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+            <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
+              <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">视图</div>
+              <div className="mb-2 flex flex-col gap-0.5 max-md:grid max-md:grid-cols-2 max-sm:grid-cols-1">
+                {views.map((view) => {
+                  const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                  const active = key === selectedKey;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={cn(
+                        "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
+                        active && "border-border bg-muted text-foreground",
+                      )}
+                      onClick={() => {
+                        if (key === selectedKey) return;
+                        if (isDirty) setPendingViewKey(key);
+                        else setSelectedKey(key);
+                      }}
+                    >
+                      <span>{view.name}</span>
+                      <Badge
+                        variant={
+                          view.builtin
+                            ? "outline"
+                            : view.visibility === "project"
+                              ? "accent"
+                              : "default"
+                        }
+                      >
+                        {view.invalid_fields.length ? "失效" : (view.task_count ?? "—")}
+                      </Badge>
+                    </button>
+                  );
+                })}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={!canEditSelected || deleteView.isPending}
+                className="w-full justify-start text-muted-foreground"
+              >
+                <Icon name="trash" size={12} />
+                删除
+              </Button>
+            </aside>
+
+            <main className="flex min-h-0 min-w-0 flex-col gap-2">
+              <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
+                <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
+                  <div>
+                    <div className="text-sm font-semibold">{selectedView?.name ?? "任务视图"}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      {selectedView?.builtin
+                        ? "内置视图"
+                        : selectedView?.visibility === "project"
+                          ? "项目共享"
+                          : "私有视图"}
+                      <span>·</span>
+                      {total.toLocaleString()} 条匹配
+                    </div>
+                  </div>
+                  <Badge variant={isDirty ? "warning" : canEditSelected ? "accent" : "outline"}>
+                    {isDirty ? "未保存" : canEditSelected ? "可编辑" : "只读"}
+                  </Badge>
+                </div>
+                <div className="flex gap-2 max-sm:flex-col">
+                  <Select
+                    value={selectedKey}
+                    onValueChange={(key) => {
+                      if (key === selectedKey) return;
+                      if (isDirty) setPendingViewKey(key);
+                      else setSelectedKey(key);
                     }}
                   >
-                    {columns.map((column) => (
-                      <td key={`${task.id}-${column}`}>{renderCell(task, column)}</td>
-                    ))}
-                  </tr>
-                ))}
-                {tasksQ.isLoading && Array.from({ length: 6 }, (_, rowIndex) => (
-                  <tr key={`loading-${rowIndex}`}>
-                    {columns.map((column) => (
-                      <td key={`loading-${rowIndex}-${column}`}><Skeleton className="h-4 w-full" /></td>
-                    ))}
-                  </tr>
-                ))}
-                {tasksQ.isError && (
-                  <tr>
-                    <td colSpan={Math.max(1, columns.length)} className="text-center text-destructive">
-                      无法加载任务，请刷新重试
-                    </td>
-                  </tr>
-                )}
-                {!tasksQ.isLoading && !tasksQ.isError && !tasksQ.data?.items.length && (
-                  <tr>
-                    <td colSpan={Math.max(1, columns.length)} className="text-center text-muted-foreground">无匹配任务</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    <SelectTrigger className="hidden w-44 max-lg:flex">
+                      <SelectValue placeholder="选择视图" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {views.map((view) => {
+                          const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                          return (
+                            <SelectItem key={key} value={key}>
+                              {view.name}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <div className="relative min-w-0 flex-1">
+                    <Icon
+                      name="search"
+                      size={14}
+                      className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      value={keyword}
+                      onChange={(event) => setKeyword(event.target.value)}
+                      placeholder="搜索任务编号或文件名"
+                      aria-label="搜索任务编号或文件名"
+                      className="h-9 pl-8"
+                    />
+                  </div>
+                  <Select
+                    value={sort[0]?.field ?? "task.created_at"}
+                    onValueChange={(field) => {
+                      setSort([{ field, direction: sort[0]?.direction ?? "asc" }]);
+                      setPage(0);
+                    }}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="排序字段" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {(schemaQ.data?.sort_fields ?? []).map((field) => (
+                          <SelectItem key={field.value} value={field.value}>
+                            {field.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => {
+                      const current = sort[0] ?? {
+                        field: "task.created_at",
+                        direction: "asc" as const,
+                      };
+                      setSort([
+                        { ...current, direction: current.direction === "asc" ? "desc" : "asc" },
+                      ]);
+                      setPage(0);
+                    }}
+                  >
+                    {sort[0]?.direction === "desc" ? "降序" : "升序"}
+                  </Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button>列设置</Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72">
+                      <div className="mb-2 text-sm font-medium">显示列</div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {columnOptions.map((column) => (
+                          <label
+                            key={column.key}
+                            className="flex min-h-8 items-center gap-2 text-xs"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={visibleColumnSet.has(column.key)}
+                              disabled={column.key === "display_id"}
+                              onChange={(event) =>
+                                setColumns(
+                                  event.target.checked
+                                    ? [...columns, column.key]
+                                    : columns.filter((item) => item !== column.key),
+                                )
+                              }
+                            />
+                            <span>{column.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <DataManagerFilterBar
+                  fields={filterFields}
+                  chips={filterChips}
+                  quickFilters={quickFilters}
+                  onAdd={(field) =>
+                    setRules([
+                      ...rules,
+                      { field: field.key, op: field.operators[0] ?? "eq", value: "" },
+                    ])
+                  }
+                  onClear={() => setRules([])}
+                />
+              </section>
 
-          <footer className="flex shrink-0 items-center justify-between gap-3 px-0.5 text-xs text-muted-foreground max-sm:flex-col max-sm:items-start">
-            <div>
-              {[
-                ...(debouncedKeyword ? [`关键词 “${debouncedKeyword}”`] : []),
-                ...rules
-                  .filter((rule) => rule.value.trim() || ["exists", "missing"].includes(rule.op))
-                  .map((rule) => `${fieldLabel.get(rule.field) ?? rule.field} ${operatorLabel(rule.op)}`),
-              ].join(" / ") || "全部任务"}
-            </div>
-            <div className="flex items-center gap-2 whitespace-nowrap">
-              <Button size="sm" disabled={page <= 0} onClick={() => setPage(page - 1)}>
-                <Icon name="chevLeft" size={12} />上一页
-              </Button>
-              <span>{page + 1} / {totalPages}</span>
-              <Button size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>
-                下一页<Icon name="chevRight" size={12} />
-              </Button>
-            </div>
-          </footer>
-        </main>
-      </div>
-      </div>
-      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>保存任务视图</DialogTitle>
-            <DialogDescription>保存当前搜索、筛选、排序和显示列。</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1.5 text-sm">
-              视图名称
-              <Input value={saveName} onChange={(event) => setSaveName(event.target.value)} autoFocus />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              可见性
-              <select
-                className={FIELD_CLASS}
-                value={saveVisibility}
-                onChange={(event) => setSaveVisibility(event.target.value as "private" | "project")}
-              >
-                <option value="private">仅自己</option>
-                {canManageProject && <option value="project">项目共享</option>}
-              </select>
-            </label>
+              <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm">
+                <table className="w-full min-w-[980px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_td:first-child]:w-[140px] [&_th:first-child]:w-[140px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
+                  <thead className="sticky top-0 z-base">
+                    <tr>
+                      {columns.map((column) => (
+                        <th key={column}>
+                          {columnOptions.find((item) => item.key === column)?.label ?? column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tasksQ.data?.items.map((task) => (
+                      <tr
+                        key={task.id}
+                        tabIndex={0}
+                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => setSelectedTask(task)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedTask(task);
+                          }
+                        }}
+                      >
+                        {columns.map((column) => (
+                          <td key={`${task.id}-${column}`}>{renderCell(task, column)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                    {tasksQ.isLoading &&
+                      Array.from({ length: 6 }, (_, rowIndex) => (
+                        <tr key={`loading-${rowIndex}`}>
+                          {columns.map((column) => (
+                            <td key={`loading-${rowIndex}-${column}`}>
+                              <Skeleton className="h-4 w-full" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    {tasksQ.isError && (
+                      <tr>
+                        <td
+                          colSpan={Math.max(1, columns.length)}
+                          className="text-center text-destructive"
+                        >
+                          无法加载任务，请刷新重试
+                        </td>
+                      </tr>
+                    )}
+                    {!tasksQ.isLoading && !tasksQ.isError && !tasksQ.data?.items.length && (
+                      <tr>
+                        <td
+                          colSpan={Math.max(1, columns.length)}
+                          className="text-center text-muted-foreground"
+                        >
+                          无匹配任务
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <footer className="flex shrink-0 items-center justify-between gap-3 px-0.5 text-xs text-muted-foreground max-sm:flex-col max-sm:items-start">
+                <div>
+                  {[
+                    ...(debouncedKeyword ? [`关键词 “${debouncedKeyword}”`] : []),
+                    ...rules
+                      .filter(
+                        (rule) => rule.value.trim() || ["exists", "missing"].includes(rule.op),
+                      )
+                      .map(
+                        (rule) =>
+                          `${fieldLabel.get(rule.field) ?? rule.field} ${operatorLabel(rule.op)}`,
+                      ),
+                  ].join(" / ") || "全部任务"}
+                </div>
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <Button size="sm" disabled={page <= 0} onClick={() => setPage(page - 1)}>
+                    <Icon name="chevLeft" size={12} />
+                    上一页
+                  </Button>
+                  <span>
+                    {page + 1} / {totalPages}
+                  </span>
+                  <Button
+                    size="sm"
+                    disabled={page + 1 >= totalPages}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    下一页
+                    <Icon name="chevRight" size={12} />
+                  </Button>
+                </div>
+              </footer>
+            </main>
           </div>
-          <DialogFooter>
-            <Button onClick={() => setSaveDialogOpen(false)}>取消</Button>
-            <Button variant="primary" onClick={createSavedView} disabled={!saveName.trim() || createView.isPending}>
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <TaskMatchesSheet
-        projectId={id}
-        task={selectedTask}
-        filterJson={filterJson}
-        open={Boolean(selectedTask)}
-        onOpenChange={(open) => !open && setSelectedTask(null)}
-      />
-      <AlertDialog
-        open={Boolean(pendingViewKey || pendingScope)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingViewKey(null);
-            setPendingScope(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>放弃未保存的视图修改？</AlertDialogTitle>
-            <AlertDialogDescription>
-              当前搜索、筛选、排序或显示列尚未保存。切换视图会丢弃这些修改。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>继续编辑</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingViewKey) setSelectedKey(pendingViewKey);
-                if (pendingScope) onScopeChange(pendingScope);
-                setPendingViewKey(null);
-                setPendingScope(null);
-              }}
-            >
-              放弃并切换
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除“{selectedView?.name}”？</AlertDialogTitle>
-            <AlertDialogDescription>
-              仅删除保存的视图配置，不会删除任务或标注。此操作无法撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                await removeCurrent();
-                setDeleteConfirmOpen(false);
-              }}
-            >
-              确认删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </div>
+        <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>保存任务视图</DialogTitle>
+              <DialogDescription>保存当前搜索、筛选、排序和显示列。</DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5 text-sm">
+                视图名称
+                <Input
+                  value={saveName}
+                  onChange={(event) => setSaveName(event.target.value)}
+                  autoFocus
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                可见性
+                <select
+                  className={FIELD_CLASS}
+                  value={saveVisibility}
+                  onChange={(event) =>
+                    setSaveVisibility(event.target.value as "private" | "project")
+                  }
+                >
+                  <option value="private">仅自己</option>
+                  {canManageProject && <option value="project">项目共享</option>}
+                </select>
+              </label>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setSaveDialogOpen(false)}>取消</Button>
+              <Button
+                variant="primary"
+                onClick={createSavedView}
+                disabled={!saveName.trim() || createView.isPending}
+              >
+                保存
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <TaskMatchesSheet
+          projectId={id}
+          task={selectedTask}
+          filterJson={filterJson}
+          open={Boolean(selectedTask)}
+          onOpenChange={(open) => !open && setSelectedTask(null)}
+        />
+        <AlertDialog
+          open={Boolean(pendingViewKey || pendingScope)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingViewKey(null);
+              setPendingScope(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>放弃未保存的视图修改？</AlertDialogTitle>
+              <AlertDialogDescription>
+                当前搜索、筛选、排序或显示列尚未保存。切换视图会丢弃这些修改。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>继续编辑</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingViewKey) setSelectedKey(pendingViewKey);
+                  if (pendingScope) onScopeChange(pendingScope);
+                  setPendingViewKey(null);
+                  setPendingScope(null);
+                }}
+              >
+                放弃并切换
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>删除“{selectedView?.name}”？</AlertDialogTitle>
+              <AlertDialogDescription>
+                仅删除保存的视图配置，不会删除任务或标注。此操作无法撤销。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async () => {
+                  await removeCurrent();
+                  setDeleteConfirmOpen(false);
+                }}
+              >
+                确认删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DataManagerLensTabs>
     </div>
   );
@@ -1028,21 +1205,39 @@ function renderCell(task: DataManagerTask, column: string) {
     case "file_name":
       return task.file_name || "—";
     case "status":
-      return <Badge variant={task.status === "completed" ? "success" : task.status === "review" ? "warning" : "default"}>{statusLabel(task.status)}</Badge>;
+      return (
+        <Badge
+          variant={
+            task.status === "completed"
+              ? "success"
+              : task.status === "review"
+                ? "warning"
+                : "default"
+          }
+        >
+          {statusLabel(task.status)}
+        </Badge>
+      );
     case "annotation_count":
       return task.annotation_count.toLocaleString();
     case "pending_prediction_shape_count":
-      return task.pending_prediction_shape_count
-        ? <Badge variant="warning">{task.pending_prediction_shape_count}</Badge>
-        : "0";
+      return task.pending_prediction_shape_count ? (
+        <Badge variant="warning">{task.pending_prediction_shape_count}</Badge>
+      ) : (
+        "0"
+      );
     case "low_confidence_prediction_shape_count":
-      return task.low_confidence_prediction_shape_count
-        ? <Badge variant="warning">{task.low_confidence_prediction_shape_count}</Badge>
-        : "0";
+      return task.low_confidence_prediction_shape_count ? (
+        <Badge variant="warning">{task.low_confidence_prediction_shape_count}</Badge>
+      ) : (
+        "0"
+      );
     case "pending_tracker_job_count":
-      return task.pending_tracker_job_count
-        ? <Badge variant="warning">{task.pending_tracker_job_count}</Badge>
-        : "0";
+      return task.pending_tracker_job_count ? (
+        <Badge variant="warning">{task.pending_tracker_job_count}</Badge>
+      ) : (
+        "0"
+      );
     case "annotation_source_counts": {
       const parts = [
         ["人工", task.annotation_source_counts.manual],
@@ -1057,7 +1252,11 @@ function renderCell(task: DataManagerTask, column: string) {
     case "prediction_count":
       return task.prediction_count.toLocaleString();
     case "unresolved_feedback_count":
-      return task.unresolved_feedback_count ? <Badge variant="warning">{task.unresolved_feedback_count}</Badge> : "0";
+      return task.unresolved_feedback_count ? (
+        <Badge variant="warning">{task.unresolved_feedback_count}</Badge>
+      ) : (
+        "0"
+      );
     case "scene_name":
       return task.scene_name ?? "—";
     case "frame_index":
@@ -1069,7 +1268,8 @@ function renderCell(task: DataManagerTask, column: string) {
     case "reviewer":
       return task.reviewer?.name ?? "—";
     case "duration":
-      return task.video_metadata?.duration_ms === null || task.video_metadata?.duration_ms === undefined
+      return task.video_metadata?.duration_ms === null ||
+        task.video_metadata?.duration_ms === undefined
         ? "—"
         : `${(task.video_metadata.duration_ms / 1000).toFixed(1)}s`;
     case "fps":
@@ -1089,9 +1289,11 @@ function renderCell(task: DataManagerTask, column: string) {
     case "camera_count":
       return task.camera_count.toLocaleString();
     case "calibration_issue_count":
-      return task.calibration_issue_count
-        ? <Badge variant="warning">{task.calibration_issue_count}</Badge>
-        : "0";
+      return task.calibration_issue_count ? (
+        <Badge variant="warning">{task.calibration_issue_count}</Badge>
+      ) : (
+        "0"
+      );
     case "scene_total_frames":
       return task.scene_total_frames ?? "—";
     default:

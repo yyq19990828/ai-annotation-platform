@@ -3,65 +3,70 @@ audience: [dev]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-07-23
 ---
 
-# Dev 数据保护：DELETE vs TRUNCATE
+# E2E 测试数据污染与隔离
 
 ## 症状
 
-跑完 `pnpm test:e2e`（或 screenshots 自动化）后，本地数据库里的 admin/pm/qa/anno/viewer 等开发账号、自建项目、数据集、标注全部消失，需要重跑 `seed.py` 才能继续工作。
+开发库 `annotation` 中出现 `@e2e.test` 用户、`E2E Demo Project` 或全局
+`E2E SAM Mock`；又或者运行 `pnpm test:e2e` 后发现开发数据发生变化。
 
-## 根因
+## 当前隔离模型
 
-老版 `seed/reset` 端点用 `TRUNCATE TABLE ... CASCADE` 一把清掉全表后重建 fixture，把开发者本地积累的数据连带清空。screenshot 自动化也同样调用了写路径。
+本地 Playwright 不应连接开发进程或开发库：
 
-## 修复
+| 用途                |    Web |    API | 数据库                        |
+| ------------------- | -----: | -----: | ----------------------------- |
+| 日常开发            | `3000` | `8000` | `annotation`                  |
+| Playwright E2E      | `3001` | `8010` | `annotation_e2e`              |
+| 本地截图 / 视觉回归 | `3001` | `8010` | `annotation_screenshots_test` |
+| 视觉回归 CI         | `3000` | `8000` | `annotation_screenshots_test` |
 
-切换为**定向 DELETE**，仅清理 fixture 资源（@e2e.test 用户 + `name='E2E Demo Project'` 项目及其级联）。dev 数据完全保留。
+`pnpm test:e2e` 会幂等创建 `annotation_e2e`、执行迁移，再启动专用 Web/API。
+`reuseExistingServer` 保持关闭，所以 `3001/8010` 被占用时测试直接失败，不会
+静默改用 `3000/8000`。可用 `PLAYWRIGHT_E2E_DATABASE_URL` 覆盖默认测试库，
+但库名必须以 `_e2e` 或 `_test` 结尾。
 
-落地踩了 3 个深坑：
+## Seed 路由的三重门禁
 
-### 1. SAVEPOINT 隔离每条 DELETE
+`/api/v1/__test/seed/*` 会创建、修改或删除固定测试数据，因此必须同时满足：
 
-asyncpg 单条 SQL 失败会让外层事务进入 `InFailedSQLTransactionError aborted` 状态，普通 `try/except` 救不了——必须用 `db.begin_nested()`（SAVEPOINT），失败时 rollback 这个 savepoint 才能继续后续 DELETE。
+1. 进程不是 `production`；
+2. 进程显式设置 `E2E_SEED_ENABLED=true`；
+3. 当前数据库会话的 `current_database()` 以 `_e2e` 或 `_test` 结尾。
 
-### 2. audit_logs immutability trigger 豁免
+缺少开关时路由不挂载；库名不合规时所有 seed/login/cleanup 操作都被
+拒绝。production 即使设置开关也不挂载路由。不要在公共 staging 进程中
+开启这个开关。
 
-`DELETE users` 触发 `audit_logs.actor_id ON DELETE SET NULL`，这是个隐式 UPDATE，会被 audit immutability trigger 拒绝（"audit_logs rows are immutable"）。
+## Cleanup 是兜底，不是隔离
 
-需要在事务开头：
+`reset` 会先清理固定 E2E 资源再重建 fixture；`POST /api/v1/__test/seed/cleanup`
+可幂等删除这些资源。Playwright 的 `globalTeardown` 会在正常结束时调用 cleanup。
 
-```sql
-SET LOCAL "app.allow_audit_update" = 'true';
-```
+强制中断、进程崩溃或 `SIGKILL` 可能使 teardown 来不及执行。这时残留只会留在
+`annotation_e2e`，下次 reset/cleanup 会重新收敛。不能因为存在 teardown 就把
+E2E 指向开发库。
 
-让本事务豁免 trigger，user 删除才能成功。
+## 排查步骤
 
-### 3. 反向引用清单按实际 schema 校对
+1. 查看 Playwright 进程的 `PLAYWRIGHT_E2E_DATABASE_URL`，未设置时应使用
+   `annotation_e2e`。
+2. 确认 API 进程的 `DATABASE_URL` 与迁移、建库步骤完全一致。
+3. 确认本地 E2E 连接 `3001/8010`，而不是已在运行的开发服务。
+4. 截图自动化单独核对 `annotation_screenshots_test`，不要复用
+   `annotation_e2e` 或 `annotation`。
 
-不能凭直觉，必须读 model 文件。常见反向引用：
-
-- `bug_reports.reporter_id`（**不是** `submitter_id`）
-- `annotation_comments.author_id`
-- `bug_comments`、`annotation_drafts` 等
-
-`audit_logs` 自身不删（trigger 守护），fixture 用户在 audit_logs 中残留行通过 `ON DELETE SET NULL` 自动置 NULL。
-
-## 验证
-
-新增回归测试 `test_seed_reset_preserves_dev_data`：造 dev 用户 + dev 项目 → 跑 reset → 断言两者仍存在 + fixture 重建。
-
-实测：跑全套 9 个 spec，dev 10 users / 3 projects 跑前跑后完全一致；7 个开发账号（admin/pm/qa/anno/viewer/anno2/anno3）保留。
-
-## 教训
-
-- **测试夹具必须是「我的」而不是「全部」**：用名字前缀 / 固定 ID / 标签字段标记，删除时只删自己造的。
-- **TRUNCATE 在共享开发环境是核武器**，除非整库即用即抛（compose volume 每次重建）。
-- **审计表的 ON DELETE 行为要专门 review**，trigger 守护可能让看似无关的删除整事务失败。
+如果开发库中已经存在历史 E2E 残留，新门禁会阻止 cleanup 连接该库。
+先备份并核对资源所属，再由维护者对明确的历史 fixture 做一次性定向清理；
+不要为清理方便而放宽库名守卫。
 
 ## 相关
 
-- commit: `c3e0d94` fix(e2e): seed/reset 改为定向 DELETE
-- commit: `3ab5ff0` fix(screenshots): 同样 TRUNCATE 陷阱修复
-- 代码：`apps/api/app/api/v1/seed.py::reset`
+- E2E 运行：`apps/web/e2e/README.md`
+- Playwright 配置：`apps/web/playwright.config.ts`
+- Seed 路由：`apps/api/app/api/v1/_test_seed.py`
+- 路由挂载：`apps/api/app/api/v1/router.py`
+- 专用库准备：`apps/api/scripts/prepare_e2e_db.py`

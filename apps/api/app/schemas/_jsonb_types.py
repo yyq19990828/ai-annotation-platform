@@ -30,6 +30,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.utils.raster_mask_rle import MAX_IMAGE_MASK_DIMENSION
+
 
 # ── v0.13.11 · 点云 lidar 坐标系约定 ──────────────────────────────────
 
@@ -213,7 +215,7 @@ TOOL_UNIT_IDS: tuple[str, ...] = (
     "point_mask_3d",
 )
 
-# 退役的 ai_interactive 值按几何类型归位, 与迁移 0115/0116 的 CASE 逐字一致:
+# 退役的 ai_interactive 值按几何类型归位:
 # polygon 系几何 -> region, 其余 -> bbox。写入 schema 入口映射与 prediction 派生共用。
 RETIRED_AI_INTERACTIVE = "ai_interactive"
 _REGION_GEOMETRY_TYPES = frozenset(
@@ -221,6 +223,8 @@ _REGION_GEOMETRY_TYPES = frozenset(
         "polygon",
         "multi_polygon",
         "mask",
+        "raster_mask",
+        "video_mask",
         "video_polygon",
         "video_track_polygon",
         "video_track_mask",
@@ -653,12 +657,13 @@ class VideoTrackPolylineGeometry(BaseModel):
 class CocoRleMaskRef(BaseModel):
     """Immutable content-addressed COCO uncompressed RLE object reference."""
 
-    encoding: Literal["coco_rle_ref"] = "coco_rle_ref"
+    encoding: Literal["coco_rle_ref", "coco_rle_gzip"] = "coco_rle_ref"
+    storage_encoding: Literal["identity", "gzip"] | None = None
     size: tuple[StrictInt, StrictInt]
     object_key: str = Field(
         min_length=1,
         max_length=255,
-        pattern=r"^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\.json$",
+        pattern=r"^raster-masks/sha256/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\.json(?:\.gz)?$",
     )
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     runs: StrictInt = Field(ge=1, le=1_000_000)
@@ -672,19 +677,76 @@ class CocoRleMaskRef(BaseModel):
         height, width = value
         if height <= 0 or width <= 0:
             raise ValueError("mask size 必须是正整数 [height, width]")
-        if height > 4096 or width > 4096:
-            raise ValueError("mask width / height 必须 <= 4096")
+        if height > MAX_IMAGE_MASK_DIMENSION or width > MAX_IMAGE_MASK_DIMENSION:
+            raise ValueError(f"mask width / height 必须 <= {MAX_IMAGE_MASK_DIMENSION}")
         return value
 
     @model_validator(mode="after")
     def _check_content_address(self):
+        gzip_key = self.object_key.endswith(".json.gz")
         expected = (
             f"raster-masks/sha256/{self.sha256[:2]}/{self.sha256[2:4]}/"
             f"{self.sha256}.json"
         )
+        expected = f"{expected}.gz" if gzip_key else expected
         if self.object_key != expected:
             raise ValueError("mask object_key 必须与 sha256 内容地址一致")
+        if self.storage_encoding == "gzip" and not gzip_key:
+            raise ValueError("gzip mask reference 必须使用 .json.gz")
+        if self.storage_encoding == "identity" and gzip_key:
+            raise ValueError("identity mask reference 必须使用 .json")
+        if self.encoding == "coco_rle_gzip" and not gzip_key:
+            raise ValueError("legacy coco_rle_gzip reference 必须使用 .json.gz")
+        if (
+            gzip_key
+            and self.encoding == "coco_rle_ref"
+            and self.storage_encoding != "gzip"
+        ):
+            raise ValueError(".json.gz mask reference 必须声明 storage_encoding=gzip")
         return self
+
+
+class CocoRleContent(BaseModel):
+    """Materialized uncompressed COCO RLE returned by mask-content APIs."""
+
+    encoding: Literal["coco_rle"] = "coco_rle"
+    size: tuple[StrictInt, StrictInt]
+    counts: list[StrictInt] = Field(min_length=1, max_length=1_000_000)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _check_rle_contract(self):
+        height, width = self.size
+        if (
+            height <= 0
+            or width <= 0
+            or height > MAX_IMAGE_MASK_DIMENSION
+            or width > MAX_IMAGE_MASK_DIMENSION
+        ):
+            raise ValueError(
+                f"mask size 必须是 (0, {MAX_IMAGE_MASK_DIMENSION}] 内的 [height, width]"
+            )
+        total = 0
+        for count in self.counts:
+            if count < 0:
+                raise ValueError("mask counts 必须是非负整数")
+            total += count
+            if total > height * width:
+                raise ValueError("mask counts 总和超过 height * width")
+        if total != height * width:
+            raise ValueError("mask counts 总和必须等于 height * width")
+        return self
+
+
+class VideoMaskGeometry(BaseModel):
+    """Single-frame video raster mask backed by immutable COCO RLE content."""
+
+    type: Literal["video_mask"] = "video_mask"
+    frame_index: StrictInt = Field(ge=0)
+    mask: CocoRleMaskRef
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class VideoTrackMaskKeyframe(BaseModel):
@@ -718,6 +780,19 @@ class VideoTrackMaskGeometry(BaseModel):
         if len(self.model_dump_json().encode()) > 8 * 1024 * 1024:
             raise ValueError("mask track geometry JSON 必须 <= 8 MiB")
         return self
+
+
+class RasterMaskGeometry(BaseModel):
+    """v0.23.6 · 图片栅格掩码几何。
+
+    引用不可变 COCO RLE 对象存储掩码内容，不内联像素数据。
+    只允许图片 DatasetItem（视频使用 video_mask / video_track_mask）。
+    """
+
+    type: Literal["raster_mask"] = "raster_mask"
+    mask: CocoRleMaskRef
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class PolygonGeometry(BaseModel):
@@ -885,6 +960,7 @@ Geometry = Annotated[
     | VideoTrackGeometry
     | VideoTrackPolygonGeometry
     | VideoTrackPolylineGeometry
+    | VideoMaskGeometry
     | VideoTrackMaskGeometry
     | PolygonGeometry
     | MultiPolygonGeometry
@@ -892,7 +968,8 @@ Geometry = Annotated[
     | PolylineGeometry
     | KeypointGeometry
     | Box3DGeometry
-    | PointMaskGeometry,
+    | PointMaskGeometry
+    | RasterMaskGeometry,
     Field(discriminator="type"),
 ]
 

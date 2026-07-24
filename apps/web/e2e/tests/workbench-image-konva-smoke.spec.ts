@@ -27,7 +27,7 @@ test.describe("workbench image konva smoke", () => {
 
     // 固定容器尺寸,降低截图 flaky
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(`/projects/${data.project_id}/annotate`);
+    await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
     // 选 bbox 工具
@@ -54,7 +54,8 @@ test.describe("workbench image konva smoke", () => {
     // 等画布稳定,关动画
     await page.waitForTimeout(500);
     await page.addStyleTag({
-      content: "*,*::before,*::after{animation-duration:0!important;transition-duration:0!important;}",
+      content:
+        "*,*::before,*::after{animation-duration:0!important;transition-duration:0!important;}",
     });
 
     // 对 stage 容器截图基线(非整页),容差抗字体/抗锯齿

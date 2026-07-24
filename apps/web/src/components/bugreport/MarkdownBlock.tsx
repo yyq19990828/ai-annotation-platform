@@ -23,33 +23,19 @@ export function MarkdownBlock({ children, compact = false }: MarkdownBlockProps)
           ol: ({ children: listChildren }) => <ol className={styles.list}>{listChildren}</ol>,
           li: ({ children: itemChildren }) => <li className={styles.listItem}>{itemChildren}</li>,
           blockquote: ({ children: quoteChildren }) => (
-            <blockquote className={styles.blockquote}>
-              {quoteChildren}
-            </blockquote>
+            <blockquote className={styles.blockquote}>{quoteChildren}</blockquote>
           ),
-          code: ({ children: codeChildren }) => (
-            <code className={styles.code}>
-              {codeChildren}
-            </code>
-          ),
-          pre: ({ children: preChildren }) => (
-            <pre className={styles.pre}>
-              {preChildren}
-            </pre>
-          ),
+          code: ({ children: codeChildren }) => <code className={styles.code}>{codeChildren}</code>,
+          pre: ({ children: preChildren }) => <pre className={styles.pre}>{preChildren}</pre>,
           table: ({ children: tableChildren }) => (
             <div className={styles.tableWrap}>
               <table className={styles.table}>{tableChildren}</table>
             </div>
           ),
           th: ({ children: cellChildren }) => (
-            <th className={styles.tableHeader}>
-              {cellChildren}
-            </th>
+            <th className={styles.tableHeader}>{cellChildren}</th>
           ),
-          td: ({ children: cellChildren }) => (
-            <td className={styles.tableCell}>{cellChildren}</td>
-          ),
+          td: ({ children: cellChildren }) => <td className={styles.tableCell}>{cellChildren}</td>,
         }}
       >
         {children}

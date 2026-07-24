@@ -1,9 +1,4 @@
-import type {
-  FullResult,
-  Reporter,
-  TestCase,
-  TestResult,
-} from "@playwright/test/reporter";
+import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -45,10 +40,12 @@ function currentCommit(): string {
 
 function fileCommit(target: string): string {
   try {
-    return execFileSync("git", ["log", "-1", "--format=%H", "--", target], {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-    }).trim() || currentCommit();
+    return (
+      execFileSync("git", ["log", "-1", "--format=%H", "--", target], {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+      }).trim() || currentCommit()
+    );
   } catch {
     return currentCommit();
   }
@@ -76,7 +73,9 @@ function readExistingEntries(): Record<string, LegacyEntry> {
     schema_version?: number;
     entries?: Record<string, LegacyEntry>;
   };
-  return raw.schema_version === 2 && raw.entries ? raw.entries : raw as Record<string, LegacyEntry>;
+  return raw.schema_version === 2 && raw.entries
+    ? raw.entries
+    : (raw as Record<string, LegacyEntry>);
 }
 
 function sortedRecord<T>(entries: Array<[string, T]>): Record<string, T> {
@@ -116,14 +115,15 @@ export default class ScreenshotManifestReporter implements Reporter {
     if (this.runEntries.size === 0) return;
     const expectedTargets = expectedMatrixTargets(SCENES);
     const missingTargets = [...expectedTargets].filter((target) => !this.runEntries.has(target));
-    const runProjects = [...new Set([...this.runEntries.values()].map((entry) => entry.project))].sort();
-    const isCompleteMatrix = missingTargets.length === 0
-      && SCREENSHOT_MATRIX_PROJECTS.every((project) => runProjects.includes(project));
+    const runProjects = [
+      ...new Set([...this.runEntries.values()].map((entry) => entry.project)),
+    ].sort();
+    const isCompleteMatrix =
+      missingTargets.length === 0 &&
+      SCREENSHOT_MATRIX_PROJECTS.every((project) => runProjects.includes(project));
     if (!isCompleteMatrix) {
       if (migrateLegacy) {
-        throw new Error(
-          `manifest 迁移要求完整矩阵，缺少 ${missingTargets.length} 个 target`,
-        );
+        throw new Error(`manifest 迁移要求完整矩阵，缺少 ${missingTargets.length} 个 target`);
       }
       return;
     }
@@ -147,14 +147,17 @@ export default class ScreenshotManifestReporter implements Reporter {
         }
         throw new Error(`手动资产已登记但文件不存在: ${target}`);
       }
-      outputEntries.push([target, {
-        auto: false,
+      outputEntries.push([
         target,
-        note: entry.note,
-        generated_at: entry.generated_at ?? entry.lastRun ?? generatedAt,
-        provenance: "manual",
-        ...fileFacts(target),
-      }]);
+        {
+          auto: false,
+          target,
+          note: entry.note,
+          generated_at: entry.generated_at ?? entry.lastRun ?? generatedAt,
+          provenance: "manual",
+          ...fileFacts(target),
+        },
+      ]);
     }
 
     for (const [target, metadata] of this.runEntries) {
@@ -164,29 +167,32 @@ export default class ScreenshotManifestReporter implements Reporter {
         throw new Error(`截图测试通过但目标文件不存在: ${target}`);
       }
       const previous = existing[target];
-      outputEntries.push([target, {
-        auto: true,
+      outputEntries.push([
         target,
-        scene: metadata.scene,
-        source: metadata.source,
-        capture: metadata.capture,
-        fixture: migrateLegacy ? null : metadata.fixture,
-        seed_profile: "screenshots",
-        seed_revision: migrateLegacy ? "legacy-pre-catalog" : metadata.seed_revision,
-        source_commit: migrateLegacy ? fileCommit(target) : sourceCommit,
-        browser: migrateLegacy
-          ? { name: "chromium", version: "unknown" }
-          : metadata.browser,
-        project: metadata.project,
-        viewport: metadata.viewport,
-        theme: metadata.theme,
-        locale: metadata.locale,
-        generated_at: migrateLegacy
-          ? previous?.generated_at ?? previous?.lastRun ?? fs.statSync(absolute).mtime.toISOString()
-          : generatedAt,
-        provenance: migrateLegacy ? "legacy" : "current-run",
-        ...fileFacts(target),
-      }]);
+        {
+          auto: true,
+          target,
+          scene: metadata.scene,
+          source: metadata.source,
+          capture: metadata.capture,
+          fixture: migrateLegacy ? null : metadata.fixture,
+          seed_profile: "screenshots",
+          seed_revision: migrateLegacy ? "legacy-pre-catalog" : metadata.seed_revision,
+          source_commit: migrateLegacy ? fileCommit(target) : sourceCommit,
+          browser: migrateLegacy ? { name: "chromium", version: "unknown" } : metadata.browser,
+          project: metadata.project,
+          viewport: metadata.viewport,
+          theme: metadata.theme,
+          locale: metadata.locale,
+          generated_at: migrateLegacy
+            ? (previous?.generated_at ??
+              previous?.lastRun ??
+              fs.statSync(absolute).mtime.toISOString())
+            : generatedAt,
+          provenance: migrateLegacy ? "legacy" : "current-run",
+          ...fileFacts(target),
+        },
+      ]);
     }
 
     const seedRevisions = new Set(
@@ -200,7 +206,9 @@ export default class ScreenshotManifestReporter implements Reporter {
       seed_profile: "screenshots",
       seed_revision: migrateLegacy
         ? "legacy-pre-catalog"
-        : seedRevisions.size === 1 ? [...seedRevisions][0] : null,
+        : seedRevisions.size === 1
+          ? [...seedRevisions][0]
+          : null,
       source_commit: sourceCommit,
       projects: [...SCREENSHOT_MATRIX_PROJECTS],
       provenance: migrateLegacy ? "legacy-migration" : "current-run",

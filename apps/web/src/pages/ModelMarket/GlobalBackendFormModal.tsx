@@ -84,7 +84,10 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
   const resources = resourcesQ.data?.resources ?? [];
   const selectedResource = resources.find((resource) => resource.gpu_resource_id === gpuResourceId);
   const hasUnknownCurrentResource =
-    !!gpuResourceId && !resourcesQ.isLoading && !selectedResource && backend?.gpu_resource_id === gpuResourceId;
+    !!gpuResourceId &&
+    !resourcesQ.isLoading &&
+    !selectedResource &&
+    backend?.gpu_resource_id === gpuResourceId;
 
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
@@ -149,9 +152,10 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
   const submitting = create.isPending || update.isPending;
   const parsedBudget = Number(vramBudgetMb);
   const previousBudgetOnResource =
-    backend?.gpu_resource_id === gpuResourceId ? backend.vram_budget_mb ?? 0 : 0;
+    backend?.gpu_resource_id === gpuResourceId ? (backend.vram_budget_mb ?? 0) : 0;
   const projectedClaimedBudget = selectedResource
-    ? selectedResource.claimed_budget_mb - previousBudgetOnResource +
+    ? selectedResource.claimed_budget_mb -
+      previousBudgetOnResource +
       (Number.isInteger(parsedBudget) && parsedBudget > 0 ? parsedBudget : 0)
     : null;
   const projectedOversubscribed =
@@ -178,11 +182,7 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
     }
 
     const priority = Number(evictionPriority);
-    if (
-      !Number.isInteger(priority) ||
-      priority < -2_147_483_648 ||
-      priority > 2_147_483_647
-    ) {
+    if (!Number.isInteger(priority) || priority < -2_147_483_648 || priority > 2_147_483_647) {
       setError("驱逐优先级需为 32 位整数");
       return;
     }
@@ -298,7 +298,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
     >
       <div className="flex flex-col gap-3.5">
         <div>
-          <label htmlFor="global-backend-name" className={LABEL_CLASS}>名称</label>
+          <label htmlFor="global-backend-name" className={LABEL_CLASS}>
+            名称
+          </label>
           <input
             id="global-backend-name"
             value={name}
@@ -309,7 +311,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           />
         </div>
         <div>
-          <label htmlFor="global-backend-url" className={LABEL_CLASS}>URL</label>
+          <label htmlFor="global-backend-url" className={LABEL_CLASS}>
+            URL
+          </label>
           <input
             id="global-backend-url"
             value={url}
@@ -321,7 +325,8 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
             className={clsx(INPUT_CLASS, MONO_INPUT_CLASS)}
           />
           <div className={HELP_CLASS}>
-            后端容器内可达地址。Docker 同主机宿主网常用 <span className="font-mono">172.17.0.1</span>。
+            后端容器内可达地址。Docker 同主机宿主网常用{" "}
+            <span className="font-mono">172.17.0.1</span>。
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="ghost" onClick={onProbe} disabled={probing}>
@@ -433,27 +438,32 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           </div>
           {selectedResource && (
             <div className={HELP_CLASS}>
-              可分配 {selectedResource.allocatable_mb} MiB · 当前静态声明合计 {selectedResource.claimed_budget_mb} MiB
-              · 模式 {selectedResource.desired_mode}→{selectedResource.effective_mode}
+              可分配 {selectedResource.allocatable_mb} MiB · 当前静态声明合计{" "}
+              {selectedResource.claimed_budget_mb} MiB · 模式 {selectedResource.desired_mode}→
+              {selectedResource.effective_mode}
             </div>
           )}
           {projectedOversubscribed && (
             <div className="text-2xs text-status-caution">
-              保存后该卡静态预算合计预计为 {projectedClaimedBudget} MiB，超过可分配容量；这是允许驱逐的弹性超售告警，不会阻止保存。
+              保存后该卡静态预算合计预计为 {projectedClaimedBudget}{" "}
+              MiB，超过可分配容量；这是允许驱逐的弹性超售告警，不会阻止保存。
             </div>
           )}
           {gpuDiagnostics.length > 0 && (
             <ul className="m-0 flex list-none flex-col gap-1 p-0 text-2xs text-status-danger">
               {gpuDiagnostics.map((diagnostic, index) => (
                 <li key={`${diagnostic.code}-${diagnostic.field ?? ""}-${index}`}>
-                  {diagnostic.field ? `${diagnostic.field}：` : ""}{diagnostic.message}
+                  {diagnostic.field ? `${diagnostic.field}：` : ""}
+                  {diagnostic.message}
                 </li>
               ))}
             </ul>
           )}
         </fieldset>
         <div>
-          <label htmlFor="global-backend-auth-method" className={LABEL_CLASS}>认证方式</label>
+          <label htmlFor="global-backend-auth-method" className={LABEL_CLASS}>
+            认证方式
+          </label>
           <select
             id="global-backend-auth-method"
             value={authMethod}
@@ -465,7 +475,9 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
           </select>
           {authMethod === "token" && (
             <div className="mt-2">
-              <label htmlFor="global-backend-auth-token" className={LABEL_CLASS}>Token</label>
+              <label htmlFor="global-backend-auth-token" className={LABEL_CLASS}>
+                Token
+              </label>
               <input
                 id="global-backend-auth-token"
                 type="password"
@@ -514,9 +526,7 @@ export function GlobalBackendFormModal({ open, backend, onClose }: Props) {
               className={clsx(INPUT_CLASS, MONO_INPUT_CLASS, "mt-1.5 resize-y")}
             />
           )}
-          {isEdit && (
-            <div className={HELP_CLASS}>编辑时留空不会清除后端已有的 extra_params。</div>
-          )}
+          {isEdit && <div className={HELP_CLASS}>编辑时留空不会清除后端已有的 extra_params。</div>}
         </div>
         {error && (
           <div className="flex items-start gap-1.5 rounded-md border border-status-danger bg-status-danger-soft px-2.5 py-2 text-xs text-status-danger">

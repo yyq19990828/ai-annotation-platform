@@ -4,12 +4,13 @@
 // 设计取舍：
 // - 数据存 `Uint8Array(W*H)` 单通道 alpha（0/255 二值，无中间灰度）；环境无 OffscreenCanvas
 //   依赖（vitest jsdom 也能跑）。真正展示叠加靠 Konva.Image 拉这块 ImageData 即可。
-// - 笔刷形状只做圆（CVAT 也是默认圆；方笔刷可后续扩）。圆心 + 半径用栅格化双循环画，
+// - 笔刷支持圆 / 方硬边。圆心 + 半径用栅格化双循环画，
 //   半径上限 200px 时单笔 ≤ ~125k 像素操作，远低于 1 帧预算。
 // - polygon → mask 用扫描线填充（ray casting），与浏览器 canvas2d 的 fill 等价；
 //   v1 不引入 d3-contour / scanline 库依赖。
 
 import { decodeCocoRle, encodeCocoRle, type CocoRle } from "./maskRle";
+import { rasterizeMaskBrush, rasterizeMaskPolygon } from "./maskRasterization";
 
 export interface MaskBufferOptions {
   width: number;
@@ -25,6 +26,13 @@ export interface DirtyRect {
   y0: number;
   x1: number;
   y1: number;
+}
+
+export type MaskBrushShape = "circle" | "square";
+
+export interface MaskBufferChange {
+  changedPixels: number;
+  bounds: DirtyRect | null;
 }
 
 /**
@@ -91,6 +99,87 @@ export class MaskBuffer {
     this.markDirty(0, 0, this.width, this.height);
   }
 
+  /** Replace the full binary alpha plane and mark only actually changed pixels dirty. */
+  replaceAlpha(alpha: Uint8Array): MaskBufferChange {
+    if (alpha.length !== this.data.length) {
+      throw new Error("MaskBuffer: replacement alpha length must match the buffer");
+    }
+    for (const value of alpha) {
+      if (value !== 0 && value !== 255) {
+        throw new Error("MaskBuffer: replacement alpha must be binary (0 or 255)");
+      }
+    }
+    let changedPixels = 0;
+    let minX = this.width;
+    let minY = this.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let index = 0; index < alpha.length; index += 1) {
+      const value = alpha[index];
+      if (this.data[index] === value) continue;
+      this.data[index] = value;
+      changedPixels += 1;
+      const x = index % this.width;
+      const y = Math.floor(index / this.width);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    const bounds = changedPixels === 0 ? null : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 };
+    if (bounds) this.markDirty(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+    return { changedPixels, bounds };
+  }
+
+  /** Apply a row-major 1-bit XOR patch at the given pixel origin. */
+  applyXorBits(
+    x0: number,
+    y0: number,
+    width: number,
+    height: number,
+    xorBits: Uint8Array,
+  ): MaskBufferChange {
+    if (
+      !Number.isInteger(x0) ||
+      !Number.isInteger(y0) ||
+      !Number.isInteger(width) ||
+      !Number.isInteger(height) ||
+      x0 < 0 ||
+      y0 < 0 ||
+      width <= 0 ||
+      height <= 0 ||
+      x0 + width > this.width ||
+      y0 + height > this.height
+    ) {
+      throw new Error("MaskBuffer: XOR patch bounds must fit the buffer");
+    }
+    if (xorBits.byteLength !== Math.ceil((width * height) / 8)) {
+      throw new Error("MaskBuffer: XOR patch length does not match its dimensions");
+    }
+    let changedPixels = 0;
+    let minX = this.width;
+    let minY = this.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y += 1) {
+      const targetRow = (y0 + y) * this.width + x0;
+      const patchRow = y * width;
+      for (let x = 0; x < width; x += 1) {
+        const bitIndex = patchRow + x;
+        if ((xorBits[bitIndex >> 3] & (1 << (bitIndex & 7))) === 0) continue;
+        this.data[targetRow + x] = this.data[targetRow + x] === 0 ? 255 : 0;
+        changedPixels += 1;
+        minX = Math.min(minX, x0 + x);
+        minY = Math.min(minY, y0 + y);
+        maxX = Math.max(maxX, x0 + x);
+        maxY = Math.max(maxY, y0 + y);
+      }
+    }
+    const bounds = changedPixels === 0 ? null : { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 };
+    if (bounds) this.markDirty(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+    return { changedPixels, bounds };
+  }
+
   /** 当前非零像素数（调试 / 测试用，O(N)）。 */
   countSet(): number {
     let n = 0;
@@ -105,34 +194,36 @@ export class MaskBuffer {
   }
 
   /**
-   * 圆笔刷：以 (cx, cy) 为中心、半径 r 画一个实心圆（v=255）或擦除（v=0）。
+   * 硬边笔刷：以 (cx, cy) 为中心、半径 r 画实心圆 / 方形（v=255）或擦除（v=0）。
    * 半径 < 1 时仍至少改中心点；越界部分裁掉。
    */
-  brush(cx: number, cy: number, r: number, value: 0 | 255 = 255): void {
-    const radius = Math.max(0.5, r);
-    const rSq = radius * radius;
-    const x0 = Math.max(0, Math.floor(cx - radius));
-    const x1 = Math.min(this.width - 1, Math.ceil(cx + radius));
-    const y0 = Math.max(0, Math.floor(cy - radius));
-    const y1 = Math.min(this.height - 1, Math.ceil(cy + radius));
-    for (let y = y0; y <= y1; y++) {
-      const dy = y - cy;
-      const dy2 = dy * dy;
-      const row = y * this.width;
-      for (let x = x0; x <= x1; x++) {
-        const dx = x - cx;
-        if (dx * dx + dy2 <= rSq) {
-          this.data[row + x] = value;
-        }
-      }
+  brush(
+    cx: number,
+    cy: number,
+    r: number,
+    value: 0 | 255 = 255,
+    shape: MaskBrushShape = "circle",
+  ): void {
+    const change = rasterizeMaskBrush(this.data, this.width, this.height, {
+      cx,
+      cy,
+      radius: r,
+      value,
+      shape,
+    });
+    if (change.touchedBounds) {
+      this.markDirty(
+        change.touchedBounds.x0,
+        change.touchedBounds.y0,
+        change.touchedBounds.x1,
+        change.touchedBounds.y1,
+      );
     }
-    // 脏区 = brush 整个外接方框（半开区间，xCount+1 / yCount+1 是因为上面循环用闭区间）
-    this.markDirty(x0, y0, x1 + 1, y1 + 1);
   }
 
   /** 橡皮 = brush(cx, cy, r, 0) 的语义糖。 */
-  erase(cx: number, cy: number, r: number): void {
-    this.brush(cx, cy, r, 0);
+  erase(cx: number, cy: number, r: number, shape: MaskBrushShape = "circle"): void {
+    this.brush(cx, cy, r, 0, shape);
   }
 
   /**
@@ -140,49 +231,17 @@ export class MaskBuffer {
    *
    * - 用扫描线算法（射线投票判内外）；环不必闭合，会自动连首尾。
    * - 顶点 < 3 时静默不画。
-   * - 与已有 mask 是「OR」叠加，调用方要清零先 `clear()`。
+   * - value=255 与已有 Mask 做 add，value=0 做 subtract；调用方要全量替换时先 `clear()`。
    */
-  fromPolygon(points: ReadonlyArray<readonly [number, number]>): void {
-    if (points.length < 3) return;
-    const { width, height } = this;
-    // 计算 x/y 范围（x 用于脏区，y 用于裁剪迭代上下界）
-    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
-    for (const [px, py] of points) {
-      if (px < xMin) xMin = px;
-      if (px > xMax) xMax = px;
-      if (py < yMin) yMin = py;
-      if (py > yMax) yMax = py;
-    }
-    const y0 = Math.max(0, Math.floor(yMin));
-    const y1 = Math.min(height - 1, Math.ceil(yMax));
-    // 脏区 = polygon bbox（已 clamp）
-    this.markDirty(xMin, yMin, xMax + 1, yMax + 1);
-    const n = points.length;
-    for (let y = y0; y <= y1; y++) {
-      // 收集所有与 y 行相交的 x 值
-      const xs: number[] = [];
-      const yc = y + 0.5;
-      for (let i = 0; i < n; i++) {
-        const a = points[i];
-        const b = points[(i + 1) % n];
-        const [, ay] = a;
-        const [, by] = b;
-        // 半开区间判交：[min, max) 避免顶点重交两次
-        const lower = Math.min(ay, by);
-        const upper = Math.max(ay, by);
-        if (yc < lower || yc >= upper) continue;
-        const [ax, _ay] = a;
-        const [bx, _by] = b;
-        const t = (yc - ay) / (by - ay);
-        xs.push(ax + t * (bx - ax));
-      }
-      xs.sort((p, q) => p - q);
-      for (let i = 0; i + 1 < xs.length; i += 2) {
-        const xa = Math.max(0, Math.floor(xs[i]));
-        const xb = Math.min(width - 1, Math.ceil(xs[i + 1]));
-        const row = y * width;
-        for (let x = xa; x <= xb; x++) this.data[row + x] = 255;
-      }
+  fromPolygon(points: ReadonlyArray<readonly [number, number]>, value: 0 | 255 = 255): void {
+    const change = rasterizeMaskPolygon(this.data, this.width, this.height, points, value);
+    if (change.touchedBounds) {
+      this.markDirty(
+        change.touchedBounds.x0,
+        change.touchedBounds.y0,
+        change.touchedBounds.x1,
+        change.touchedBounds.y1,
+      );
     }
   }
 

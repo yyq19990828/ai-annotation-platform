@@ -79,11 +79,7 @@ export function useTransferProject(id: string) {
 export function useRenameClass(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: {
-      old_name: string;
-      new_name: string;
-      tool_unit_id?: string;
-    }) =>
+    mutationFn: (vars: { old_name: string; new_name: string; tool_unit_id?: string }) =>
       projectsApi.renameClass(id, vars.old_name, vars.new_name, vars.tool_unit_id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", id] });

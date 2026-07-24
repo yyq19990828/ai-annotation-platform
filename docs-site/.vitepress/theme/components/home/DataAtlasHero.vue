@@ -70,12 +70,8 @@ const deckAnimating = ref(false);
 const deckHovered = ref(false);
 const deckFocused = ref(false);
 const motionAllowed = ref(false);
-const mediaWindow = computed(
-  () => new Set(deckOrder.value.slice(0, 2)),
-);
-const deckPaused = computed(
-  () => !motionAllowed.value || deckHovered.value || deckFocused.value,
-);
+const mediaWindow = computed(() => new Set(deckOrder.value.slice(0, 2)));
+const deckPaused = computed(() => !motionAllowed.value || deckHovered.value || deckFocused.value);
 
 let autoplayTimer: number | undefined;
 let drawTimer: number | undefined;
@@ -111,7 +107,10 @@ function preloadSlide(index: number): Promise<void> {
     const image = new Image();
     image.decoding = "async";
     image.onload = () => {
-      void image.decode().catch(() => undefined).then(() => resolve());
+      void image
+        .decode()
+        .catch(() => undefined)
+        .then(() => resolve());
     };
     image.onerror = () => reject(new Error(`Failed to preload hero slide ${index + 1}`));
     image.src = heroSlides[index]?.src ?? "";
@@ -247,9 +246,7 @@ function openSearch(): void {
     btn.click();
     return;
   }
-  window.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }),
-  );
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }));
 }
 </script>
 
@@ -274,24 +271,10 @@ function openSearch(): void {
     </div>
 
     <div class="hero-art">
-      <svg
-        class="hero-atlas"
-        viewBox="0 0 700 760"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <path
-          class="orbit"
-          d="M78 360C130 94 490 30 638 266S527 692 258 642 15 481 78 360Z"
-        />
-        <path
-          class="orbit"
-          d="M126 550C46 308 244 67 493 126S718 483 515 636 188 708 126 550Z"
-        />
-        <path
-          class="orbit"
-          d="M89 225C244 48 586 117 633 380S368 726 150 565-24 352 89 225Z"
-        />
+      <svg class="hero-atlas" viewBox="0 0 700 760" aria-hidden="true" focusable="false">
+        <path class="orbit" d="M78 360C130 94 490 30 638 266S527 692 258 642 15 481 78 360Z" />
+        <path class="orbit" d="M126 550C46 308 244 67 493 126S718 483 515 636 188 708 126 550Z" />
+        <path class="orbit" d="M89 225C244 48 586 117 633 380S368 726 150 565-24 352 89 225Z" />
         <g class="ray">
           <path
             d="M350 380 74 38M350 380 128 17M350 380 188 7M350 380 247 0M350 380 309 2M350 380 371 0M350 380 438 8M350 380 502 21M350 380 561 48M350 380 617 89M350 380 662 142M350 380 688 206M350 380 700 278M350 380 697 350M350 380 690 426M350 380 670 497M350 380 635 559M350 380 589 616M350 380 530 663M350 380 464 701M350 380 393 728M350 380 321 739M350 380 250 728M350 380 181 705M350 380 119 666M350 380 68 613M350 380 29 550M350 380 8 480M350 380 0 407"
@@ -303,9 +286,7 @@ function openSearch(): void {
         <circle class="node" cx="580" cy="581" r="5" />
       </svg>
 
-      <div class="art-label" aria-hidden="true">
-        ANNOTATION ATLAS · LIVE SIGNALS
-      </div>
+      <div class="art-label" aria-hidden="true">ANNOTATION ATLAS · LIVE SIGNALS</div>
 
       <div
         ref="deckRef"

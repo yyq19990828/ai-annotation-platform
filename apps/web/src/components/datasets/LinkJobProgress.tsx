@@ -30,9 +30,7 @@ export function LinkJobProgress({
   const settledRef = useRef<string | null>(null);
 
   const terminal =
-    job?.status === "completed" ||
-    job?.status === "failed" ||
-    job?.status === "cancelled";
+    job?.status === "completed" || job?.status === "failed" || job?.status === "cancelled";
 
   useEffect(() => {
     if (!job || !terminal || settledRef.current === job.id) return;

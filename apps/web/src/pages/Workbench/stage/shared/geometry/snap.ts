@@ -110,29 +110,31 @@ export function buildSnapIndex(annotations: readonly SnapAnnotation[]): SnapInde
 
   for (const annotation of annotations) {
     const polygons = polygonsFromGeometry(annotation.geometry);
-    polygons.forEach((polygon: PolygonGeometry | MultiPolygonGeometry["polygons"][number], polygonIndex) => {
-      const ring = polygon.points;
-      if (ring.length < 3) return;
-      ring.forEach((point, pointIndex) => {
-        points.push({
-          point: [point[0], point[1]],
-          annotationId: annotation.id,
-          polygonIndex,
-          pointIndex,
+    polygons.forEach(
+      (polygon: PolygonGeometry | MultiPolygonGeometry["polygons"][number], polygonIndex) => {
+        const ring = polygon.points;
+        if (ring.length < 3) return;
+        ring.forEach((point, pointIndex) => {
+          points.push({
+            point: [point[0], point[1]],
+            annotationId: annotation.id,
+            polygonIndex,
+            pointIndex,
+          });
         });
-      });
-      for (let edgeIndex = 0; edgeIndex < ring.length; edgeIndex++) {
-        const a = ring[edgeIndex];
-        const b = ring[(edgeIndex + 1) % ring.length];
-        segments.push({
-          a: [a[0], a[1]],
-          b: [b[0], b[1]],
-          annotationId: annotation.id,
-          polygonIndex,
-          edgeIndex,
-        });
-      }
-    });
+        for (let edgeIndex = 0; edgeIndex < ring.length; edgeIndex++) {
+          const a = ring[edgeIndex];
+          const b = ring[(edgeIndex + 1) % ring.length];
+          segments.push({
+            a: [a[0], a[1]],
+            b: [b[0], b[1]],
+            annotationId: annotation.id,
+            polygonIndex,
+            edgeIndex,
+          });
+        }
+      },
+    );
   }
 
   return { points, segments };

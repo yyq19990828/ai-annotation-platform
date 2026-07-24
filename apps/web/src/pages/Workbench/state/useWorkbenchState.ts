@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Annotation } from "@/types";
+import type { Annotation, Keypoint } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
@@ -21,6 +21,7 @@ export type Tool =
   | "mask"
   | "smart-point"
   | "smart-box"
+  | "smart-scribble"
   | "text-prompt"
   | "exemplar"
   // v0.10.17 · 复用 SAM bbox prompt 返回的 mask, 取紧凑外接矩形落 bbox 标注 (Magic Box).
@@ -39,6 +40,7 @@ export type VideoTool =
   | "box"
   | "track"
   | "mask"
+  | "mask-track"
   | "polygon"
   | "polyline"
   | "polygon-track"
@@ -54,7 +56,7 @@ export type ThreeDTool = "select" | "box" | "point-mask";
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
  * 取值由 tool 决定; tool 不是 AI 工具时为 null.
  */
-export type SamSubTool = "point" | "bbox" | "text" | "exemplar";
+export type SamSubTool = "point" | "bbox" | "scribble" | "text" | "exemplar";
 
 /** SAM-point 子工具下的 polarity, "+" / "-" 键切换; 仅 smart-point 时有意义. */
 export type SamPolarity = "positive" | "negative";
@@ -66,6 +68,8 @@ export function toolToSamSubTool(tool: Tool): SamSubTool | null {
       return "point";
     case "smart-box":
       return "bbox";
+    case "smart-scribble":
+      return "scribble";
     // v0.10.17 · Magic Box 也是 bbox prompt; 共用 InteractiveToolBar 的 bbox subtool UI.
     case "magic-box":
       return "bbox";
@@ -97,9 +101,24 @@ const DEFAULT_CANVAS_STROKE = "#ef4444";
 export type Geom = { x: number; y: number; w: number; h: number };
 
 export type PendingDrawing =
-  | { kind?: "bbox"; geom: Geom }
+  | { kind?: "bbox" | "rotated_bbox" | "raster_mask"; geom: Geom }
+  | { kind: "polygon" | "polyline"; geom: Geom; points: [number, number][] }
+  | { kind: "keypoint"; geom: Geom; points: Keypoint[] }
   | {
-      kind: "video_bbox" | "video_track_bbox";
+      kind:
+        | "video_bbox"
+        | "video_track_bbox"
+        | "video_polygon"
+        | "video_polyline"
+        | "video_track_polygon"
+        | "video_track_polyline";
+      frameIndex: number;
+      geom: Geom;
+      anchor: { left: number; top: number };
+      points?: [number, number][];
+    }
+  | {
+      kind: "video_mask";
       frameIndex: number;
       geom: Geom;
       anchor: { left: number; top: number };
@@ -111,6 +130,8 @@ export type EditingClass = {
   annotationId: string;
   geom: Geom;
   currentClass: string;
+  /** 已落库标注自身的工具单位；改类/属性不得复用当前激活工具的类别域。 */
+  toolUnitId?: string;
   anchor?: { left: number; top: number };
   // v0.14.17 · 采纳时选类: 非空时该弹窗不是"改已存标注的类", 而是"为采纳某预测选项目标签",
   // commit 时走 accept(override_class_name) 而非 update(class_name). 复用同一 ClassPickerPopover.
@@ -136,7 +157,9 @@ export function useWorkbenchState() {
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedVideoTrackIds, setLockedVideoTrackIds] = useState<Set<string>>(() => new Set());
   // v0.10.30 · session 级 track 颜色覆盖：trackId -> oklch 颜色字符串（取色器写入）。
-  const [trackColorOverrides, setTrackColorOverrides] = useState<Record<string, string>>(() => ({}));
+  const [trackColorOverrides, setTrackColorOverrides] = useState<Record<string, string>>(
+    () => ({}),
+  );
   // v0.10.2 · samSubTool 改为派生 (见 toolToSamSubTool); polarity + aiToolParams 仍是 state.
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
   // exemplar 子工具输出形态 (box/mask/both); 会话级.
@@ -328,16 +351,19 @@ export function useWorkbenchState() {
     pendingResult: null,
   });
 
-  const beginCanvasDraft = useCallback((annotationId: string | null, initial?: CommentCanvasDrawing | null) => {
-    setCanvasDraft({
-      active: true,
-      annotationId,
-      shapes: initial?.shapes ?? [],
-      stroke: DEFAULT_CANVAS_STROKE,
-      pendingResult: null,
-    });
-    setTool("canvas");
-  }, []);
+  const beginCanvasDraft = useCallback(
+    (annotationId: string | null, initial?: CommentCanvasDrawing | null) => {
+      setCanvasDraft({
+        active: true,
+        annotationId,
+        shapes: initial?.shapes ?? [],
+        stroke: DEFAULT_CANVAS_STROKE,
+        pendingResult: null,
+      });
+      setTool("canvas");
+    },
+    [],
+  );
 
   const appendCanvasShape = useCallback((shape: CanvasDraft["shapes"][number]) => {
     setCanvasDraft((d) => ({ ...d, shapes: [...d.shapes, shape] }));
@@ -410,40 +436,77 @@ export function useWorkbenchState() {
   }, []);
 
   return {
-    currentTaskId, setCurrentTaskId,
-    tool, setTool,
-    videoTool, setVideoTool,
-    threeDTool, setThreeDTool,
-    videoFrameIndex, setVideoFrameIndex,
-    hiddenVideoTrackIds, lockedVideoTrackIds,
-    toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,
-    trackColorOverrides, setVideoTrackColor,
+    currentTaskId,
+    setCurrentTaskId,
+    tool,
+    setTool,
+    videoTool,
+    setVideoTool,
+    threeDTool,
+    setThreeDTool,
+    videoFrameIndex,
+    setVideoFrameIndex,
+    hiddenVideoTrackIds,
+    lockedVideoTrackIds,
+    toggleHiddenVideoTrack,
+    toggleLockedVideoTrack,
+    resetVideoStageUi,
+    trackColorOverrides,
+    setVideoTrackColor,
     // v0.10.2 · 派生 samSubTool (read-only) + polarity + AI 工具参数.
     samSubTool,
-    samPolarity, setSamPolarity,
-    exemplarOutputMode, setExemplarOutputMode,
-    aiToolParams, setAiToolParams,
-    aiVariant, setAiVariant,
-    activeClass, setActiveClass,
-    pendingDrawing, setPendingDrawing,
-    editingClass, setEditingClass,
-    selectedId, setSelectedId,
-    selectedIds, toggleSelected, replaceSelected,
-    confThreshold, setConfThreshold,
-    leftOpen, setLeftOpen,
-    rightOpen, setRightOpen,
-    attrPanelCollapsed, setAttrPanelCollapsed,
-    aiSectionCollapsed, setAiSectionCollapsed,
-    manualSectionCollapsed, setManualSectionCollapsed,
-    trackSectionCollapsed, setTrackSectionCollapsed,
-    discussionCollapsed, setDiscussionCollapsed,
-    workbenchConfig, workbenchConfigLoaded, updateWorkbenchConfig, setWorkbenchFields,
-    workbenchLayout, setWorkbenchLayout,
-    clipboard, setClipboard,
+    samPolarity,
+    setSamPolarity,
+    exemplarOutputMode,
+    setExemplarOutputMode,
+    aiToolParams,
+    setAiToolParams,
+    aiVariant,
+    setAiVariant,
+    activeClass,
+    setActiveClass,
+    pendingDrawing,
+    setPendingDrawing,
+    editingClass,
+    setEditingClass,
+    selectedId,
+    setSelectedId,
+    selectedIds,
+    toggleSelected,
+    replaceSelected,
+    confThreshold,
+    setConfThreshold,
+    leftOpen,
+    setLeftOpen,
+    rightOpen,
+    setRightOpen,
+    attrPanelCollapsed,
+    setAttrPanelCollapsed,
+    aiSectionCollapsed,
+    setAiSectionCollapsed,
+    manualSectionCollapsed,
+    setManualSectionCollapsed,
+    trackSectionCollapsed,
+    setTrackSectionCollapsed,
+    discussionCollapsed,
+    setDiscussionCollapsed,
+    workbenchConfig,
+    workbenchConfigLoaded,
+    updateWorkbenchConfig,
+    setWorkbenchFields,
+    workbenchLayout,
+    setWorkbenchLayout,
+    clipboard,
+    setClipboard,
     canvasDraft,
-    beginCanvasDraft, endCanvasDraft, cancelCanvasDraft,
-    appendCanvasShape, undoCanvasShape, clearCanvasShapes,
-    setCanvasStroke, consumeCanvasResult,
+    beginCanvasDraft,
+    endCanvasDraft,
+    cancelCanvasDraft,
+    appendCanvasShape,
+    undoCanvasShape,
+    clearCanvasShapes,
+    setCanvasStroke,
+    consumeCanvasResult,
   };
 }
 

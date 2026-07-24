@@ -75,16 +75,22 @@ async def seed(n_tasks: int, n_batches: int, n_annotated: int) -> None:
 
         owner_id = (
             await db.execute(
-                text("SELECT id FROM users WHERE role = 'super_admin' ORDER BY created_at LIMIT 1")
+                text(
+                    "SELECT id FROM users WHERE role = 'super_admin' ORDER BY created_at LIMIT 1"
+                )
             )
         ).scalar()
         annotator_id = (
             await db.execute(
-                text("SELECT id FROM users WHERE role = 'annotator' ORDER BY created_at LIMIT 1")
+                text(
+                    "SELECT id FROM users WHERE role = 'annotator' ORDER BY created_at LIMIT 1"
+                )
             )
         ).scalar()
         if not owner_id or not annotator_id:
-            print("[seed_scale] need at least 1 super_admin + 1 annotator (run seed.py first)")
+            print(
+                "[seed_scale] need at least 1 super_admin + 1 annotator (run seed.py first)"
+            )
             raise SystemExit(1)
 
         project_id = (
@@ -124,7 +130,12 @@ async def seed(n_tasks: int, n_batches: int, n_annotated: int) -> None:
                 "SELECT :proj, :ds, 'B-'||nextval('display_seq_batches'), 'batch '||g, 'active', :anno "
                 "FROM generate_series(1, :m) g"
             ),
-            {"proj": project_id, "ds": dataset_id, "m": n_batches, "anno": annotator_id},
+            {
+                "proj": project_id,
+                "ds": dataset_id,
+                "m": n_batches,
+                "anno": annotator_id,
+            },
         )
         await db.commit()
 
@@ -170,12 +181,16 @@ async def seed(n_tasks: int, n_batches: int, n_annotated: int) -> None:
 
         a_batch = (
             await db.execute(
-                text("SELECT id FROM task_batches WHERE project_id = :proj ORDER BY display_id LIMIT 1"),
+                text(
+                    "SELECT id FROM task_batches WHERE project_id = :proj ORDER BY display_id LIMIT 1"
+                ),
                 {"proj": project_id},
             )
         ).scalar()
 
-        print(f"[seed_scale] done: {n_tasks} tasks / {n_batches} batches / {n_annotated} annotated")
+        print(
+            f"[seed_scale] done: {n_tasks} tasks / {n_batches} batches / {n_annotated} annotated"
+        )
         print(f"  project_id   = {project_id}")
         print(f"  a_batch_id   = {a_batch}")
         print(f"  annotator_id = {annotator_id}")

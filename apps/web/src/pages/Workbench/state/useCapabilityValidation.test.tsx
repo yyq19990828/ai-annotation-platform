@@ -57,7 +57,10 @@ describe("useCapabilityValidation", () => {
 
   it("warns when model outputs text but project has no text attribute", () => {
     const toolBindings: ToolBindings = {
-      bbox: { enabled: true, attribute_schema: { fields: [{ key: "tag", label: "标签", type: "select" }] } },
+      bbox: {
+        enabled: true,
+        attribute_schema: { fields: [{ key: "tag", label: "标签", type: "select" }] },
+      },
     };
     const { result } = renderHook(() =>
       useCapabilityValidation({
@@ -75,7 +78,10 @@ describe("useCapabilityValidation", () => {
 
   it("does not warn about text when a text attribute exists", () => {
     const toolBindings: ToolBindings = {
-      bbox: { enabled: true, attribute_schema: { fields: [{ key: "ocr_text", label: "文本", type: "text" }] } },
+      bbox: {
+        enabled: true,
+        attribute_schema: { fields: [{ key: "ocr_text", label: "文本", type: "text" }] },
+      },
     };
     const { result } = renderHook(() =>
       useCapabilityValidation({
@@ -107,7 +113,10 @@ describe("useCapabilityValidation", () => {
 
   it("warns when model outputs language but project has no key=language field", () => {
     const toolBindings: ToolBindings = {
-      bbox: { enabled: true, attribute_schema: { fields: [{ key: "ocr_text", label: "文本", type: "text" }] } },
+      bbox: {
+        enabled: true,
+        attribute_schema: { fields: [{ key: "ocr_text", label: "文本", type: "text" }] },
+      },
     };
     const { result } = renderHook(() =>
       useCapabilityValidation({

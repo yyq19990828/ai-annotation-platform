@@ -64,6 +64,8 @@ export async function waitForScreenshotReady(page: Page): Promise<void> {
         });
       }),
     );
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
   });
 }

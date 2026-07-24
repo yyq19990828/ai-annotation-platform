@@ -54,10 +54,10 @@ last_reviewed: 2026-06-10
     "endpoint": "s3.ap-east-1.amazonaws.com",
     "bucket": "my-annotation-bucket",
     "region": "ap-east-1",
-    "base_prefix": "raw/2026",   // 可选：只看这个前缀下的对象
-    "use_ssl": true               // HTTPS
+    "base_prefix": "raw/2026", // 可选：只看这个前缀下的对象
+    "use_ssl": true, // HTTPS
   },
-  "secret": { "access_key": "AKIA...", "secret_key": "********" }
+  "secret": { "access_key": "AKIA...", "secret_key": "********" },
 }
 ```
 
@@ -69,9 +69,9 @@ last_reviewed: 2026-06-10
     "bucket": "annotation-oss-prod",
     "region": "oss-cn-hangzhou",
     "base_prefix": "",
-    "use_ssl": true
+    "use_ssl": true,
   },
-  "secret": { "access_key": "LTAI...", "secret_key": "********" }
+  "secret": { "access_key": "LTAI...", "secret_key": "********" },
 }
 ```
 
@@ -81,11 +81,11 @@ last_reviewed: 2026-06-10
   "config": {
     "endpoint": "minio.intranet.local:9000",
     "bucket": "datasets",
-    "region": "us-east-1",        // MinIO 无所谓，填默认即可
+    "region": "us-east-1", // MinIO 无所谓，填默认即可
     "base_prefix": "incoming",
-    "use_ssl": false              // 不勾 HTTPS
+    "use_ssl": false, // 不勾 HTTPS
   },
-  "secret": { "access_key": "minioadmin", "secret_key": "********" }
+  "secret": { "access_key": "minioadmin", "secret_key": "********" },
 }
 ```
 
@@ -108,10 +108,10 @@ last_reviewed: 2026-06-10
     "host": "sftp.example.local",
     "port": 22,
     "username": "annotator",
-    "base_path": "/incoming",     // 可选：连接器的根目录
-    "auth_type": "password"
+    "base_path": "/incoming", // 可选：连接器的根目录
+    "auth_type": "password",
   },
-  "secret": { "password": "********" }
+  "secret": { "password": "********" },
 }
 ```
 
@@ -123,12 +123,12 @@ last_reviewed: 2026-06-10
     "port": 2222,
     "username": "annotator",
     "base_path": "/data/datasets",
-    "auth_type": "key"
+    "auth_type": "key",
   },
   "secret": {
     "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
-    "passphrase": "********"       // 私钥无口令时省略
-  }
+    "passphrase": "********", // 私钥无口令时省略
+  },
 }
 ```
 
@@ -166,12 +166,12 @@ last_reviewed: 2026-06-10
 
 白名单条目可以是：
 
-| 形态 | 示例 | 含义 |
-|---|---|---|
-| CIDR 网段 | `10.0.3.0/24` | 内网服务器整段放行 |
-| 单个 IP | `192.168.1.50` | 精确放行一台 |
-| 精确域名 | `oss-cn-hangzhou.aliyuncs.com` | 仅该域名 |
-| 后缀域名（前导点） | `.aliyuncs.com` | 匹配其所有子域 |
+| 形态               | 示例                           | 含义               |
+| ------------------ | ------------------------------ | ------------------ |
+| CIDR 网段          | `10.0.3.0/24`                  | 内网服务器整段放行 |
+| 单个 IP            | `192.168.1.50`                 | 精确放行一台       |
+| 精确域名           | `oss-cn-hangzhou.aliyuncs.com` | 仅该域名           |
+| 后缀域名（前导点） | `.aliyuncs.com`                | 匹配其所有子域     |
 
 **永久硬拒绝**（即使写进白名单也连不出去）的地址类别共 **5** 类，命中即拒：**loopback（回环，如 127.0.0.1）/ link-local（含云元数据 169.254.169.254）/ multicast（组播）/ unspecified（未指定 0.0.0.0）/ reserved（保留段）**。worker 在容器内，访问宿主机请走 docker 网关 IP，不要也无法靠放行 loopback 绕过。
 
@@ -202,7 +202,7 @@ last_reviewed: 2026-06-10
   "connection_id": "0b6f...uuid",
   "source_path": "scene_001/frames",
   "recursive": true,
-  "include_globs": ["*.jpg", "*.png"]
+  "include_globs": ["*.jpg", "*.png"],
 }
 // 202 → { "job_id": "..." }
 ```
@@ -211,11 +211,11 @@ last_reviewed: 2026-06-10
 
 每个模式按 `fnmatch` 匹配，对**完整相对路径**或其 **basename** 任一命中即收录（所以 `*.jpg` 这种只写扩展名的会按 basename 匹配，无需带路径前缀）：
 
-| 模式 | 命中示例 | 说明 |
-|---|---|---|
-| `*.jpg,*.png` | `a/b/img.jpg`、`cover.png` | 按 basename 匹配扩展名 |
-| `scene_*/frames/*.jpg` | `scene_001/frames/0001.jpg` | 按完整相对路径匹配多级目录 |
-| `*.pcd,*.bin` | `lidar/0001.pcd`、`lidar/0001.bin` | 点云 / 二进制帧 |
+| 模式                   | 命中示例                           | 说明                       |
+| ---------------------- | ---------------------------------- | -------------------------- |
+| `*.jpg,*.png`          | `a/b/img.jpg`、`cover.png`         | 按 basename 匹配扩展名     |
+| `scene_*/frames/*.jpg` | `scene_001/frames/0001.jpg`        | 按完整相对路径匹配多级目录 |
+| `*.pcd,*.bin`          | `lidar/0001.pcd`、`lidar/0001.bin` | 点云 / 二进制帧            |
 
 ### 导入上限
 

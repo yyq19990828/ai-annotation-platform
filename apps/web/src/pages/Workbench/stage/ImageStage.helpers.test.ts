@@ -1,6 +1,12 @@
 // v0.16.x 第 2 批 · ImageStage 纯几何函数测试守护(伴随从 toImg 提炼,锁定逆变换公式)。
 import { describe, it, expect } from "vitest";
-import { normalizeImageCoordinate, resolveSnapMatch, siblingHighlightChildren } from "./ImageStage.helpers";
+import {
+  isNormalizedImagePoint,
+  normalizeImageCoordinate,
+  resolveSnapMatch,
+  shouldRenderImageAnnotationShape,
+  siblingHighlightChildren,
+} from "./ImageStage.helpers";
 import type { Pt } from "./polygonGeom";
 
 describe("siblingHighlightChildren", () => {
@@ -12,10 +18,7 @@ describe("siblingHighlightChildren", () => {
   ];
 
   it("单选父框 → 返回其直接子框", () => {
-    expect(siblingHighlightChildren(boxes, "p", 1).map((b) => b.id)).toEqual([
-      "c1",
-      "c2",
-    ]);
+    expect(siblingHighlightChildren(boxes, "p", 1).map((b) => b.id)).toEqual(["c1", "c2"]);
   });
 
   it("单选无子框的框 → 空", () => {
@@ -28,6 +31,31 @@ describe("siblingHighlightChildren", () => {
 
   it("无选 → 空", () => {
     expect(siblingHighlightChildren(boxes, null, 0)).toEqual([]);
+  });
+});
+
+describe("shouldRenderImageAnnotationShape", () => {
+  it("raster_mask 不落入 ImageStage 矢量 shape 分支", () => {
+    expect(
+      shouldRenderImageAnnotationShape({
+        geometry: {
+          type: "raster_mask",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [10, 20],
+            object_key: "raster-masks/sha256/aa/bb/digest.json",
+            sha256: "a".repeat(64),
+            runs: 4,
+            bytes: 32,
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      shouldRenderImageAnnotationShape({
+        geometry: { type: "bbox", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      }),
+    ).toBe(true);
   });
 });
 
@@ -55,6 +83,15 @@ describe("normalizeImageCoordinate", () => {
       50,
     );
     expect(out).toEqual({ x: 0.5, y: 0.5 });
+  });
+});
+
+describe("isNormalizedImagePoint", () => {
+  it("仅接受图片边界内的归一化坐标", () => {
+    expect(isNormalizedImagePoint({ x: 0, y: 1 })).toBe(true);
+    expect(isNormalizedImagePoint({ x: 1.001, y: 0.5 })).toBe(false);
+    expect(isNormalizedImagePoint({ x: 0.5, y: -0.001 })).toBe(false);
+    expect(isNormalizedImagePoint(null)).toBe(false);
   });
 });
 

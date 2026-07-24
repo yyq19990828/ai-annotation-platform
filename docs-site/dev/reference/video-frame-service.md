@@ -66,11 +66,11 @@ stateDiagram-v2
     end note
 ```
 
-| 状态 | 触发 / 含义 |
-|---|---|
+| 状态      | 触发 / 含义                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
 | `pending` | 行刚创建或 retry 后，Celery 任务在排队 / 执行中。API 返回 `202` + `Retry-After: 3s` |
-| `ready` | worker 完成 chunk 生成（含 ffprobe 写 `diagnostics.samples`），返回 signed URL |
-| `failed` | ffmpeg 失败 / 超时；行携带 `error` 字段；客户端可触发 retry |
+| `ready`   | worker 完成 chunk 生成（含 ffprobe 写 `diagnostics.samples`），返回 signed URL      |
+| `failed`  | ffmpeg 失败 / 超时；行携带 `error` 字段；客户端可触发 retry                         |
 
 > 实现：`apps/api/app/services/video_frame_service.py` 第 200、217、344 行。chunk 状态白名单见 `{"pending", "ready", "failed"}`；越界值视为 `pending`。
 
@@ -111,7 +111,14 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples
   "width": 1920,
   "height": 1080,
   "samples": [
-    { "frame_index": 0, "pts_ms": 0, "duration_ms": 33, "is_keyframe": true, "size_bytes": 45123, "offset_in_chunk": 1024 }
+    {
+      "frame_index": 0,
+      "pts_ms": 0,
+      "duration_ms": 33,
+      "is_keyframe": true,
+      "size_bytes": 45123,
+      "offset_in_chunk": 1024
+    }
   ]
 }
 ```
@@ -166,13 +173,13 @@ POST /api/v1/storage/video-assets/retry
 
 失败列表覆盖五类资产：
 
-| asset_type | 来源 | 重试任务 |
-|---|---|---|
-| `probe` | `dataset_items.metadata["video"]["probe_error"]` | `generate_video_metadata` |
-| `poster` | `dataset_items.metadata["video"]["poster_error"]` | `generate_video_metadata` |
+| asset_type        | 来源                                                       | 重试任务                  |
+| ----------------- | ---------------------------------------------------------- | ------------------------- |
+| `probe`           | `dataset_items.metadata["video"]["probe_error"]`           | `generate_video_metadata` |
+| `poster`          | `dataset_items.metadata["video"]["poster_error"]`          | `generate_video_metadata` |
 | `frame_timetable` | `dataset_items.metadata["video"]["frame_timetable_error"]` | `generate_video_metadata` |
-| `chunk` | `video_chunks.status = "failed"` | `ensure_video_chunks` |
-| `frame` | `video_frame_cache.status = "failed"` | `extract_video_frames` |
+| `chunk`           | `video_chunks.status = "failed"`                           | `ensure_video_chunks`     |
+| `frame`           | `video_frame_cache.status = "failed"`                      | `extract_video_frames`    |
 
 `probe` / `poster` / `frame_timetable` 共用 metadata 任务，因此重试任一项都会重新跑视频 metadata 生成链路。`chunk` / `frame` 重试会先把对应行恢复到 `pending` 并清空 `error`，再投递 media 队列。
 
@@ -219,22 +226,26 @@ POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:release
 
 ```http
 POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
+PUT /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+PATCH /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs
 GET /api/v1/video-tracker-jobs?project_id=&status=&model_key=&cursor=&limit=
 GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
 GET /api/v1/video-tracker-jobs/{job_id}/preview
 POST /api/v1/video-tracker-jobs/{job_id}/accept
 POST /api/v1/video-tracker-jobs/{job_id}/discard
+POST /api/v1/video-tracker-jobs/{job_id}/decisions
 ```
 
 创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。当前支持四类 `model_key`：
 
-| model_key | 用途 |
-|---|---|
-| `mock_bbox` | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。 |
-| `sam2_video` | 种子驱动的 SAM2 视频追踪；可消费源轨迹框或 `prompt.seeds` 点 / 框、多目标、多帧提示。 |
-| `sam3_video` | 文本驱动的多目标自动发现；每窗检测后由平台在窗口边界做 IoU 身份关联。 |
-| `sam3_video_interactive` | 种子驱动的 SAM3 PVS 追踪；点 / 框提示通过视频 memory 跨帧传播。 |
+| model_key                | 用途                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `mock_bbox`              | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。               |
+| `sam2_video`             | 种子驱动的 SAM2 视频追踪；可消费源轨迹框或 `prompt.seeds` 点 / 框、多目标、多帧提示。 |
+| `sam3_video`             | 文本驱动的多目标自动发现；每窗检测后由平台在窗口边界做 IoU 身份关联。                 |
+| `sam3_video_interactive` | 种子驱动的 SAM3 PVS 追踪；点 / 框提示通过视频 memory 跨帧传播。                       |
 
 真实 tracker 不再固定调用 `project.ml_backend_id`。`MLBackendService.get_tracker_backend()` 会在项目所有已启用 backend 中按 `health_meta.capabilities.supported_trackers` 选择：项目主后端支持该 tracker 时优先，否则选择其它 connected 的匹配 backend。没有能力匹配时返回不支持；`mock_bbox` 不需要 backend。
 
@@ -253,7 +264,13 @@ POST /api/v1/video-tracker-jobs/{job_id}/discard
         "obj_id": 1,
         "prompts": [
           { "frame_index": 0, "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 } },
-          { "frame_index": 24, "points": [[0.45, 0.5, 1], [0.7, 0.5, 0]] }
+          {
+            "frame_index": 24,
+            "points": [
+              [0.45, 0.5, 1],
+              [0.7, 0.5, 0]
+            ]
+          }
         ]
       }
     ]
@@ -351,9 +368,21 @@ queued -> running -> pending_review -> accepted | discarded
 
 `completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；取消前已收集的结果会暂存为部分候选。待审 / 已接受 / 已丢弃属于终态，不能再取消。
 
-`video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。两个决策都写审计动作。
+`video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。局部 decision 允许 job 创建者、已认领任务的审核员或项目特权角色执行，并在行锁后再次复核身份。所有决定都写审计动作。
 
-接受时 `_partition_results_by_instance()` 把主实例回填到源 annotation，额外 `instance_id` 各创建一条同类轨迹；人工关键帧不会被 prediction 覆盖。丢弃会清空 `staged_result`，不修改 annotation。该数据边界与批量预标的 `Prediction` 不同，见[视频 AI 追踪架构](../concepts/video-ai-tracking)。
+`POST .../decisions` 接受两种互斥 selector：普通 selector 使用 `instance_ids + from_frame + to_frame`；
+QC 区域 selector 使用 `qc_issue_id + candidate_digest`。后者要求当前 issue 是同 task、同 annotation、单帧且
+具有可读取的 region Mask。accept 计算 `current XOR candidate` 后只把 region 内差异写入 annotation；reject
+只从 staged candidate 扣除 region 内差异。剩余差异继续留在 staged result，并在内容变化后获得新的
+candidate digest。`job_revision`、候选摘要或源版本过期均返回结构化 409。
+
+`job_kind` 区分普通 `tracking` 与人工 Mask `correction`。后者同时保存 `track_id_snapshot` 和 `correction_frame`，prompt 冻结源 version / digest、segment lease、方向窗口和精确 backend / pool / model。同一 task + track 的活跃 correction 由 partial unique index 串行化；取消或终态释放租约。correction 不允许整批 accept / discard，只允许带 revision、源版本与显式窗口的局部 decision。
+
+关键帧保存使用独立的 Mask keyframe PUT，删除 / manual outside / held 恢复使用同路径 PATCH，两者都强制 `If-Match`。帧操作按 task → task edit lock → segment → annotation 锁序列化，对 keyframe 与 outside 做局部几何更新，不改写其它帧的引用。纠错保存先于 job 创建，失败重试不得重复写关键帧。原生 correction 每方向只能执行一个 backend window；双向在人工帧处分成两窗，seed frame 不进入 staged candidate。仅 bbox seed 可用时必须由用户确认，并把 fallback 原因写入 lineage。
+
+staged candidate 的保留期为 24 小时。每日内容 GC 先清理过期 staged result：待审 / 部分审阅转为 discarded，cancelled 保持 cancelled；随后对象引用扫描才允许删除已超过宽限期且不再被 annotation、prediction、有效 decision 或 staged job 引用的 RLE。
+
+接受时先在同一事务内复核 task、assignment、segment lease 和按 UUID 排序锁定后的全部源 annotation，再把主实例回填到源、把额外 `instance_id` 创建为同类轨迹；人工关键帧不会被 prediction 覆盖。接受成功与丢弃都会清空 `staged_result`，后者不修改 annotation。该数据边界与批量预标的 `Prediction` 不同，见[视频 AI 追踪架构](../concepts/video-ai-tracking)。
 
 SAM video adapter 会调用能力匹配的 ML Backend `/predict`：
 
@@ -405,18 +434,18 @@ Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数�
 
 ## 配置与指标
 
-| 配置 | 默认值 | 用途 |
-|---|---:|---|
-| `VIDEO_CHUNK_SIZE_FRAMES` | 60 | chunk 帧数 |
-| `VIDEO_CHUNK_WARMUP_LOOKAHEAD` | 1 | chunk warmup look-ahead，命中 chunk N 时顺带预解码 N+1..N+K；设 0 关闭 |
-| `VIDEO_FRAME_CACHE_TTL_DAYS` | 14 | 单帧缓存 TTL |
-| `VIDEO_CHUNK_CACHE_TTL_DAYS` | 30 | chunk 缓存 TTL |
-| `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | 64 | 进程内 frame array LRU 上限 |
-| `VIDEO_SEGMENT_SIZE_FRAMES` | 18000 | 协作 segment 帧数 |
-| `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | 300 | segment lock 心跳 TTL |
-| `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | 300 | tracker 调 ML Backend 的单次 frame window 上限 |
-| `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES` | 16 | SAM3 文本 / PVS tracker 的单次 frame window 上限 |
-| `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | 0.15 | 低置信度 tracker 结果写 outside 的阈值 |
+| 配置                                             | 默认值 | 用途                                                                   |
+| ------------------------------------------------ | -----: | ---------------------------------------------------------------------- |
+| `VIDEO_CHUNK_SIZE_FRAMES`                        |     60 | chunk 帧数                                                             |
+| `VIDEO_CHUNK_WARMUP_LOOKAHEAD`                   |      1 | chunk warmup look-ahead，命中 chunk N 时顺带预解码 N+1..N+K；设 0 关闭 |
+| `VIDEO_FRAME_CACHE_TTL_DAYS`                     |     14 | 单帧缓存 TTL                                                           |
+| `VIDEO_CHUNK_CACHE_TTL_DAYS`                     |     30 | chunk 缓存 TTL                                                         |
+| `VIDEO_FRAME_MEMORY_CACHE_ITEMS`                 |     64 | 进程内 frame array LRU 上限                                            |
+| `VIDEO_SEGMENT_SIZE_FRAMES`                      |  18000 | 协作 segment 帧数                                                      |
+| `VIDEO_SEGMENT_LOCK_TTL_SECONDS`                 |    300 | segment lock 心跳 TTL                                                  |
+| `VIDEO_TRACKER_WINDOW_SIZE_FRAMES`               |    300 | tracker 调 ML Backend 的单次 frame window 上限                         |
+| `VIDEO_TRACKER_SAM3_WINDOW_SIZE_FRAMES`          |     16 | SAM3 文本 / PVS tracker 的单次 frame window 上限                       |
+| `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` |   0.15 | 低置信度 tracker 结果写 outside 的阈值                                 |
 
 Celery route：
 
@@ -429,6 +458,11 @@ Prometheus 指标：
 - `video_frame_cache_total{result,format}`
 - `video_frame_extraction_seconds{outcome,format}`
 - `video_frame_asset_bytes{asset_type}`
+- `mask_ai_correction_jobs{status}`
+- `mask_ai_correction_oldest_age_seconds{status}`
+- `mask_ai_staged_mask_references{job_kind}`
+- `mask_ai_accept_decisions{state}`
+- `mask_ai_backend_inference_total{service,model_role,operation,fallback_reason,candidate_count,outcome}`
 
 ## 运维注意
 

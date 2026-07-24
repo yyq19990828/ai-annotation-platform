@@ -1,10 +1,7 @@
 // v0.10.18 · CreateProjectWizard 第 2 步: 类别按工具单位独立配置.
 // 从 CreateProjectWizard.tsx 抽出.
 
-import {
-  ClassEditor,
-  type ClassRow,
-} from "@/pages/Projects/sections/ClassEditor";
+import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
 import type { FormState } from "../CreateProjectWizard";
 import { UnitTabs } from "./UnitTabs";
 import styles from "../CreateProjectWizard.module.css";
@@ -26,8 +23,7 @@ export function Step2ClassesPerUnit({
         [s.activeUnit]: {
           enabled: s.unitBindings[s.activeUnit]?.enabled ?? true,
           classRows: next,
-          attributeFields:
-            s.unitBindings[s.activeUnit]?.attributeFields ?? [],
+          attributeFields: s.unitBindings[s.activeUnit]?.attributeFields ?? [],
         },
       },
     }));
@@ -35,8 +31,8 @@ export function Step2ClassesPerUnit({
   return (
     <div className={styles.formStack}>
       <div className={styles.sectionHint}>
-        v0.10.17 类别按工具单位独立配置。切换下方 Tab 给每个启用的工具单位单独维护类别。
-        强隔离: 不同工具的同名类是独立记录, 可以同名不同色。
+        v0.10.17 类别按工具单位独立配置。切换下方 Tab 给每个启用的工具单位单独维护类别。 强隔离:
+        不同工具的同名类是独立记录, 可以同名不同色。
       </div>
       <UnitTabs form={form} setForm={setForm} />
       {!activeBinding?.enabled ? (

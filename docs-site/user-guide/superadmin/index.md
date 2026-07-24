@@ -20,28 +20,28 @@ last_reviewed: 2026-07-11
 
 ## 核心职责
 
-| 任务 | 文档 |
-|---|---|
-| 用户与权限管理 | [用户与权限](./user-management) |
+| 任务                   | 文档                                     |
+| ---------------------- | ---------------------------------------- |
+| 用户与权限管理         | [用户与权限](./user-management)          |
 | 注册 / 维护 ML Backend | [ML Backend 注册](./ml-backend-registry) |
-| 跨项目管理 AI 模型 | [模型市场](./model-market) |
-| 排查失败预标 | [失败预测排查](./failed-predictions) |
-| 管理 BUG 反馈 | [BUG 反馈管理](./bug-management) |
-| 治理公共模板 | [公共模板治理](./public-templates) |
-| 审计与合规 | [审计日志](./audit-logs) |
-| 系统监控 | [系统监控](./system-monitoring) |
+| 跨项目管理 AI 模型     | [模型市场](./model-market)               |
+| 排查失败预标           | [失败预测排查](./failed-predictions)     |
+| 管理 BUG 反馈          | [BUG 反馈管理](./bug-management)         |
+| 治理公共模板           | [公共模板治理](./public-templates)       |
+| 审计与合规             | [审计日志](./audit-logs)                 |
+| 系统监控               | [系统监控](./system-monitoring)          |
 
 项目级 AI 操作（启用 backend、运行预标、审阅候选）统一从[AI 辅助标注](../ai/)进入；本章只保留超管独有的注册、运行时观测和跨项目排障入口。
 
 ## 与项目管理员的边界
 
-| 能力 | project_admin | super_admin |
-|---|---|---|
-| 创建项目 | ✅（自己的） | ✅（任何） |
-| 启用 / 停用项目 ML Backend | ✅（自己项目中已注册的 backend） | ✅（任意项目） |
-| 注册 / 编辑 / 删除全局 ML Backend | ❌ | ✅ |
-| 模型市场页面 | ✅（可访问） | ✅ |
-| 全局 ML 观测 / Smoke Test | ❌ | ✅ |
-| 平台概览 dashboard | ❌ | ✅ |
-| 审计日志查看（前端入口） | ❌ | ✅ |
-| BUG 反馈列表（`/bugs`） | ✅ | ✅ |
+| 能力                              | project_admin                    | super_admin    |
+| --------------------------------- | -------------------------------- | -------------- |
+| 创建项目                          | ✅（自己的）                     | ✅（任何）     |
+| 启用 / 停用项目 ML Backend        | ✅（自己项目中已注册的 backend） | ✅（任意项目） |
+| 注册 / 编辑 / 删除全局 ML Backend | ❌                               | ✅             |
+| 模型市场页面                      | ✅（可访问）                     | ✅             |
+| 全局 ML 观测 / Smoke Test         | ❌                               | ✅             |
+| 平台概览 dashboard                | ❌                               | ✅             |
+| 审计日志查看（前端入口）          | ❌                               | ✅             |
+| BUG 反馈列表（`/bugs`）           | ✅                               | ✅             |

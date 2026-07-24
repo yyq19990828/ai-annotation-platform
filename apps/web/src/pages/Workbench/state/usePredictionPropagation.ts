@@ -18,7 +18,7 @@ type PushToast = ReturnType<typeof useToastStore.getState>["push"];
 interface UsePredictionPropagationParams {
   taskId: string | undefined;
   selectedId: string | null;
-  navigateToCrossFrameTask: (targetTaskId: string) => void;
+  navigateToCrossFrameTask: (targetTaskId: string) => Promise<boolean>;
   pushToast: PushToast;
   queryClient: QueryClient;
 }
@@ -50,18 +50,20 @@ export function usePredictionPropagation({
   // 传播落库后统一收尾:仅当起始 task 仍是当前 task 时才导航 + 预约补选。
   // 服务端框已建,失效缓存即可呈现;切走后只是不抢用户当前视图。
   const settleCrossFrameTarget = useCallback(
-    (
+    async (
       startTaskId: string,
       target: { taskId: string; annotationId?: string },
-    ) => {
-      if (latestTaskIdRef.current !== startTaskId) return;
+    ): Promise<boolean> => {
+      if (latestTaskIdRef.current !== startTaskId) return false;
+      const allowed = await navigateToCrossFrameTask(target.taskId);
+      if (!allowed || latestTaskIdRef.current !== startTaskId) return false;
       if (target.annotationId) {
         pendingCrossFrameSelectRef.current = {
           taskId: target.taskId,
           annotationId: target.annotationId,
         };
       }
-      navigateToCrossFrameTask(target.taskId);
+      return true;
     },
     [navigateToCrossFrameTask],
   );
@@ -119,7 +121,7 @@ export function usePredictionPropagation({
           });
           // 源 task 框可能刚被分配 track_id, 失效让本帧高亮同步。
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          settleCrossFrameTarget(taskId, {
+          await settleCrossFrameTarget(taskId, {
             taskId: resolution.taskId,
             annotationId: annotation.id,
           });
@@ -135,14 +137,7 @@ export function usePredictionPropagation({
         crossFrameInFlightRef.current = false;
       }
     },
-    [
-      taskId,
-      selectedId,
-      settleCrossFrameTarget,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
+    [taskId, selectedId, settleCrossFrameTarget, pushToast, queryClient, warnNoMotionCompensation],
   );
 
   // v0.15.1 · 批量延续: 当前帧全部 box_3d 一次运动补偿 propagate 到邻帧。
@@ -180,7 +175,7 @@ export function usePredictionPropagation({
             queryKey: ["annotations", resolution.taskId],
           });
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-          settleCrossFrameTarget(taskId, { taskId: resolution.taskId });
+          await settleCrossFrameTarget(taskId, { taskId: resolution.taskId });
           pushToast({
             msg: `${items.length} 个目标已延续到帧 ${resolution.frameIndex}`,
             kind: "success",
@@ -219,7 +214,7 @@ export function usePredictionPropagation({
         );
         queryClient.invalidateQueries({ queryKey: ["annotations", targetTaskId] });
         queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
-        settleCrossFrameTarget(taskId, {
+        await settleCrossFrameTarget(taskId, {
           taskId: targetTaskId,
           annotationId: annotation.id,
         });
@@ -231,14 +226,7 @@ export function usePredictionPropagation({
         crossFrameInFlightRef.current = false;
       }
     },
-    [
-      taskId,
-      selectedId,
-      settleCrossFrameTarget,
-      pushToast,
-      queryClient,
-      warnNoMotionCompensation,
-    ],
+    [taskId, selectedId, settleCrossFrameTarget, pushToast, queryClient, warnNoMotionCompensation],
   );
 
   // v0.15.1 · 区间插值: 当前 task(起点帧)与 toTask(终点帧)的同 track 框之间,
@@ -249,8 +237,11 @@ export function usePredictionPropagation({
       if (crossFrameInFlightRef.current) return;
       crossFrameInFlightRef.current = true;
       try {
-        const { annotations, motion_compensated, skipped_frames } =
-          await tasksApi.interpolateRange(taskId, trackId, toTaskId);
+        const { annotations, motion_compensated, skipped_frames } = await tasksApi.interpolateRange(
+          taskId,
+          trackId,
+          toTaskId,
+        );
         const affectedTasks = new Set(annotations.map((a) => a.task_id));
         for (const tid of affectedTasks) {
           queryClient.invalidateQueries({ queryKey: ["annotations", tid] });
@@ -263,7 +254,7 @@ export function usePredictionPropagation({
           return;
         }
         const first = annotations[0];
-        settleCrossFrameTarget(taskId, {
+        await settleCrossFrameTarget(taskId, {
           taskId: first.task_id,
           annotationId: first.id,
         });

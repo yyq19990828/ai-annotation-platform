@@ -19,7 +19,10 @@ export interface DrawWindow {
   drawEndMs: number;
 }
 
-export async function runRotatedBbox(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
+export async function runRotatedBbox(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
   await openImageAnnotate(page, catalog);
   await page.waitForTimeout(1400);
 

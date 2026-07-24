@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isCpuFallback,
-  resolveRuntimeCompute,
-  type MLBackendCompute,
-} from "./mlBackendCompute";
+import { isCpuFallback, resolveRuntimeCompute, type MLBackendCompute } from "./mlBackendCompute";
 
 describe("isCpuFallback", () => {
   const cases: Array<[MLBackendCompute | null, boolean]> = [
@@ -53,7 +49,9 @@ describe("resolveRuntimeCompute", () => {
 
   it("uses real-time compute when the HTTP probe succeeds even if backend health is degraded", () => {
     const live = { configured_device: "cuda", effective_device: "cuda" };
-    expect(resolveRuntimeCompute({ status_code: 200, ok: false, compute: live }, staleCpu)).toBe(live);
+    expect(resolveRuntimeCompute({ status_code: 200, ok: false, compute: live }, staleCpu)).toBe(
+      live,
+    );
   });
 
   it("falls back to the snapshot when the real-time probe is unavailable", () => {

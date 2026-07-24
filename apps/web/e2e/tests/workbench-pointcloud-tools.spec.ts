@@ -35,7 +35,8 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     if (!box) throw new Error("canvas boundingBox 不可用");
     const postPromise = page.waitForRequest(
       (req) =>
-        req.method() === "POST" && /\/annotations(\?|$)/.test(req.url().split("/api")[1] ?? req.url()),
+        req.method() === "POST" &&
+        /\/annotations(\?|$)/.test(req.url().split("/api")[1] ?? req.url()),
       { timeout: 10_000 },
     );
     await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.55);

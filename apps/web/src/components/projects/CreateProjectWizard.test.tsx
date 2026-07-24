@@ -92,12 +92,24 @@ describe("CreateProjectWizard", () => {
     mockCreateProjectReset.mockReset();
     mockPushToast.mockReset();
     mockProjectsApiGet.mockReset().mockResolvedValue({
-      id: "src1", name: "Source", type_key: "image-det", data_type: "image",
-      ai_enabled: false, classes: [], classes_config: {}, tool_bindings: {},
+      id: "src1",
+      name: "Source",
+      type_key: "image-det",
+      data_type: "image",
+      ai_enabled: false,
+      classes: [],
+      classes_config: {},
+      tool_bindings: {},
     });
     mockProjectTemplatesApiGet.mockReset().mockResolvedValue({
-      id: "t1", name: "Template", type_key: "image-det", data_type: "image",
-      ai_enabled: false, classes: [], classes_config: {}, tool_bindings: {},
+      id: "t1",
+      name: "Template",
+      type_key: "image-det",
+      data_type: "image",
+      ai_enabled: false,
+      classes: [],
+      classes_config: {},
+      tool_bindings: {},
     });
   });
 
@@ -174,22 +186,21 @@ describe("CreateProjectWizard", () => {
     const onSuccess = mockCreateProjectMutate.mock.calls[0][1]?.onSuccess;
     if (onSuccess) {
       await onSuccess({
-        id: "p-new", display_id: "P-100", name: "成功回调项目",
-        type_key: "image-det", data_type: "image",
+        id: "p-new",
+        display_id: "P-100",
+        name: "成功回调项目",
+        type_key: "image-det",
+        data_type: "image",
       });
     }
     await waitFor(() =>
-      expect(mockPushToast).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "success" }),
-      ),
+      expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" })),
     );
   });
 
   it("sourceProjectId 给定时显示「复制项目配置」横幅", async () => {
     renderUI({ sourceProjectId: "src1" });
-    await waitFor(() =>
-      expect(screen.getByText(/已用源项目配置预填表单/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/已用源项目配置预填表单/)).toBeInTheDocument());
     expect(screen.getByText("复制项目配置")).toBeInTheDocument();
   });
 

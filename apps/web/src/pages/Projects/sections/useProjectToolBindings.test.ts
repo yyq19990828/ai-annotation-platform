@@ -28,14 +28,10 @@ describe("buildUnitBindings", () => {
     // 纠偏后视频几何单位集 = bbox / polyline / region (对齐图片, 各自独立类别)。
     expect(Object.keys(bindings).sort()).toEqual(["bbox", "polyline", "region"]);
     expect(bindings.bbox?.enabled).toBe(true);
-    expect(bindings.bbox?.classRows).toEqual([
-      { name: "car", color: "#0ea5e9" },
-    ]);
+    expect(bindings.bbox?.classRows).toEqual([{ name: "car", color: "#0ea5e9" }]);
     // region 现属视频单位, 保留其独立类别。
     expect(bindings.region?.enabled).toBe(true);
-    expect(bindings.region?.classRows).toEqual([
-      { name: "person", color: "#22c55e" },
-    ]);
+    expect(bindings.region?.classRows).toEqual([{ name: "person", color: "#22c55e" }]);
     // 非视频几何单位仍被过滤。
     expect(bindings.rotated_bbox).toBeUndefined();
   });
@@ -89,9 +85,7 @@ describe("unitBindingsToPayload", () => {
     expect(out.bbox?.enabled).toBe(true);
     // 修复前: 禁用单位整体被丢弃；修复后: enabled:false 但配置保留。
     expect(out.region?.enabled).toBe(false);
-    expect(out.region?.classes).toEqual([
-      { name: "road", color: "#22c55e", order: 0 },
-    ]);
+    expect(out.region?.classes).toEqual([{ name: "road", color: "#22c55e", order: 0 }]);
     expect(out.region?.attribute_schema).toEqual({
       fields: [{ key: "occluded", type: "boolean", label: "遮挡" }],
     });
@@ -126,9 +120,7 @@ describe("unitBindingsToPayload", () => {
         attributeFields: [],
       },
     });
-    expect(out.region?.classes).toEqual([
-      { name: "pedestrian", order: 0, alias_to: ref },
-    ]);
+    expect(out.region?.classes).toEqual([{ name: "pedestrian", order: 0, alias_to: ref }]);
     // 未链接的类照旧带 color/alias。
     expect(out.bbox?.classes).toEqual([
       { name: "person", color: "#ff0000", order: 0, alias: "person" },

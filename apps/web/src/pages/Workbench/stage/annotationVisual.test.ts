@@ -59,16 +59,18 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
 
   it("AI 段 [source,score] · 前缀 + 类别 + 置信度", () => {
     expect(
-      buildLabelText(
-        { className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " },
-        ["source", "score"],
-      ),
+      buildLabelText({ className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " }, [
+        "source",
+        "score",
+      ]),
     ).toBe("✦ 模型 person · 95%");
   });
 
   it("关 score · AI 框去置信度,保留前缀 + 类别", () => {
     expect(
-      buildLabelText({ className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " }, ["source"]),
+      buildLabelText({ className: "person", confidence: 0.95, sourcePrefix: "✦ 模型 " }, [
+        "source",
+      ]),
     ).toBe("✦ 模型 person");
   });
 
@@ -93,7 +95,10 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
   it("勾 attrs · bool 真值显键名、其余只显值、空值跳过", () => {
     expect(
       buildLabelText(
-        { className: "sign", attributes: { truncated: true, hidden: false, text: "STOP", note: "" } },
+        {
+          className: "sign",
+          attributes: { truncated: true, hidden: false, text: "STOP", note: "" },
+        },
         ["attrs"],
       ),
     ).toBe("sign · truncated · STOP");
@@ -122,7 +127,10 @@ describe("buildLabelText(图片:单帧 / AI 段)", () => {
 describe("buildTrackLabelText(视频:轨迹段)", () => {
   it("默认 [id,state] · #号 · 类别 · 状态(对齐旧硬编码观感)", () => {
     expect(
-      buildTrackLabelText({ className: "car", trackNumber: 5, stateSuffix: "插值" }, ["id", "state"]),
+      buildTrackLabelText({ className: "car", trackNumber: 5, stateSuffix: "插值" }, [
+        "id",
+        "state",
+      ]),
     ).toBe("#5 · car · 插值");
   });
 
@@ -146,10 +154,10 @@ describe("buildTrackLabelText(视频:轨迹段)", () => {
 
   it("勾 attrs · 类别后接属性", () => {
     expect(
-      buildTrackLabelText(
-        { className: "car", trackNumber: 5, attributes: { occluded: true } },
-        ["id", "attrs"],
-      ),
+      buildTrackLabelText({ className: "car", trackNumber: 5, attributes: { occluded: true } }, [
+        "id",
+        "attrs",
+      ]),
     ).toBe("#5 · car · occluded");
   });
 

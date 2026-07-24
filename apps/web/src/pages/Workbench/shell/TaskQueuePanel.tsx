@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -89,12 +98,17 @@ function TaskItem({
   const isLocked = task.status === "review" || task.status === "completed";
   const isRejected = task.status === "rejected";
   const statusLabel =
-    task.status === "completed" ? "已完成"
-    : task.status === "review" ? "待审核"
-    : task.status === "rejected" ? "待重做"
-    : task.total_annotations > 0 ? "进行中"
-    : task.total_predictions > 0 ? "AI 已预标"
-    : "未开始";
+    task.status === "completed"
+      ? "已完成"
+      : task.status === "review"
+        ? "待审核"
+        : task.status === "rejected"
+          ? "待重做"
+          : task.total_annotations > 0
+            ? "进行中"
+            : task.total_predictions > 0
+              ? "AI 已预标"
+              : "未开始";
   const markerClassName = cn(
     "absolute left-0.5 top-2 bottom-2 w-[3px] rounded-[2px]",
     isActive ? "bg-brand" : isRejected && "bg-rose-600 dark:bg-rose-400",
@@ -118,8 +132,13 @@ function TaskItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1">
           <span
-            className={cn("mono text-xs font-semibold", isActive ? "text-brand" : "text-foreground")}
-          >{task.display_id}</span>
+            className={cn(
+              "mono text-xs font-semibold",
+              isActive ? "text-brand" : "text-foreground",
+            )}
+          >
+            {task.display_id}
+          </span>
           <div className="flex items-center gap-1">
             {isLocked && (
               <span
@@ -130,7 +149,9 @@ function TaskItem({
               </span>
             )}
             {task.total_annotations > 0 && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-brand/10 text-brand text-2xs font-medium whitespace-nowrap">{task.total_annotations}</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-brand/10 text-brand text-2xs font-medium whitespace-nowrap">
+                {task.total_annotations}
+              </span>
             )}
           </div>
         </div>
@@ -138,7 +159,10 @@ function TaskItem({
           {task.file_name}
         </div>
         <div
-          className={cn("inline-flex items-center gap-1 mt-[3px] text-2xs font-medium", statusClassName(task))}
+          className={cn(
+            "inline-flex items-center gap-1 mt-[3px] text-2xs font-medium",
+            statusClassName(task),
+          )}
         >
           <span className="w-[5px] h-[5px] rounded-full bg-current" />
           {statusLabel}
@@ -148,20 +172,18 @@ function TaskItem({
   );
 }
 
-function VirtualInner({
-  height,
-  children,
-}: {
-  height: number;
-  children: ReactNode;
-}) {
+function VirtualInner({ height, children }: { height: number; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     ref.current?.style.setProperty("height", `${height}px`);
   }, [height]);
 
-  return <div ref={ref} className="relative">{children}</div>;
+  return (
+    <div ref={ref} className="relative">
+      {children}
+    </div>
+  );
 }
 
 function VirtualRow({
@@ -175,31 +197,56 @@ function VirtualRow({
   measureElement?: (node: HTMLDivElement | null) => void;
   children: ReactNode;
 }) {
-  const ref = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      node.style.setProperty("transform", `translateY(${start}px)`);
-    }
-    measureElement?.(node);
-  }, [measureElement, start]);
+  const ref = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node) {
+        node.style.setProperty("transform", `translateY(${start}px)`);
+      }
+      measureElement?.(node);
+    },
+    [measureElement, start],
+  );
 
-  return <div ref={ref} data-index={dataIndex} className="absolute top-0 left-0 w-full">{children}</div>;
+  return (
+    <div ref={ref} data-index={dataIndex} className="absolute top-0 left-0 w-full">
+      {children}
+    </div>
+  );
 }
 
 export function TaskQueuePanel({
-  open, classes, classesConfig, toolLabel, toolIcon, activeClass, recentClasses,
-  tasks, taskId, taskIdx,
-  hasNextPage, isFetchingNextPage, onFetchNextPage,
+  open,
+  classes,
+  classesConfig,
+  toolLabel,
+  toolIcon,
+  activeClass,
+  recentClasses,
+  tasks,
+  taskId,
+  taskIdx,
+  hasNextPage,
+  isFetchingNextPage,
+  onFetchNextPage,
   onSelectTask,
-  batches, selectedBatchId, onSelectBatch,
-  totalCount, isOwner, onGoToBatchSettings,
-  width, onResize,
-  widthMin = 200, widthMax = 560, widthResetTo,
+  batches,
+  selectedBatchId,
+  onSelectBatch,
+  totalCount,
+  isOwner,
+  onGoToBatchSettings,
+  width,
+  onResize,
+  widthMin = 200,
+  widthMax = 560,
+  widthResetTo,
   detachedQueue = false,
   detachedPalette = false,
   onDetachQueue,
   onDetachPalette,
   floatingSection,
-  classPickable = false, onPickClass,
+  classPickable = false,
+  onPickClass,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [paletteHeight, setPaletteHeight] = useState(readPaletteHeight);
@@ -210,7 +257,11 @@ export function TaskQueuePanel({
   const onPaletteResize = useCallback((next: number) => {
     const clamped = Math.max(PALETTE_HEIGHT_MIN, Math.min(PALETTE_HEIGHT_MAX, Math.round(next)));
     setPaletteHeight(clamped);
-    try { window.localStorage.setItem(PALETTE_HEIGHT_KEY, String(clamped)); } catch { /* noop */ }
+    try {
+      window.localStorage.setItem(PALETTE_HEIGHT_KEY, String(clamped));
+    } catch {
+      /* noop */
+    }
   }, []);
 
   // rejected 任务置顶，其余保持原序
@@ -242,7 +293,7 @@ export function TaskQueuePanel({
     if (last.index >= sortedTasks.length - 10 && hasNextPage && !isFetchingNextPage) {
       onFetchNextPage();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showQueue, virtualizer.getVirtualItems(), hasNextPage, isFetchingNextPage]);
 
   useEffect(() => {
@@ -258,7 +309,10 @@ export function TaskQueuePanel({
   // 若仍用 useRef+useEffect([paletteHeight]),依赖未变 effect 不重跑 → 新元素拿不到
   // --left-palette-height → 高度回退到默认(同右栏 B-56「展开收起后回到原位 / 第一次拖拽不跟手」)。
   const rootStyleRef = useElementStyle<HTMLDivElement>(
-    useMemo<CSSProperties>(() => ({ "--left-palette-height": `${paletteHeight}px` }) as CSSProperties, [paletteHeight]),
+    useMemo<CSSProperties>(
+      () => ({ "--left-palette-height": `${paletteHeight}px` }) as CSSProperties,
+      [paletteHeight],
+    ),
   );
 
   if (!open || (!showQueue && !showPalette)) {
@@ -271,7 +325,7 @@ export function TaskQueuePanel({
       className={cn(
         "relative flex flex-col overflow-hidden border-r border-border bg-card",
         floating && "h-full border-r-0",
-        (showQueue !== showPalette) && "[--left-palette-height:auto]",
+        showQueue !== showPalette && "[--left-palette-height:auto]",
       )}
     >
       {showQueue && (
@@ -286,11 +340,15 @@ export function TaskQueuePanel({
                 <option value="">全部批次（{batches.length}）</option>
                 {batches.map((b) => {
                   const statusTag =
-                    b.status === "annotating" ? "标注中"
-                    : b.status === "active" ? "未开始"
-                    : b.status === "rejected" ? "已驳回"
-                    : b.status === "draft" ? "草稿"
-                    : b.status;
+                    b.status === "annotating"
+                      ? "标注中"
+                      : b.status === "active"
+                        ? "未开始"
+                        : b.status === "rejected"
+                          ? "已驳回"
+                          : b.status === "draft"
+                            ? "草稿"
+                            : b.status;
                   return (
                     <option key={b.id} value={b.id}>
                       {b.name} · {statusTag} ({b.completed_tasks}/{b.total_tasks})
@@ -305,7 +363,12 @@ export function TaskQueuePanel({
           {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
             <div className="flex items-center justify-between gap-2 mx-3.5 mt-1.5 px-2.5 py-2 border border-dashed border-border rounded-[var(--radius-sm)] bg-background text-muted-foreground text-xs">
               <span>未分批次 · 任务统一在「未归类」</span>
-              <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className="!px-1.5 !py-0.5 !text-xs">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onGoToBatchSettings}
+                className="!px-1.5 !py-0.5 !text-xs"
+              >
                 前往分批
               </Button>
             </div>
@@ -322,9 +385,7 @@ export function TaskQueuePanel({
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               任务队列
               {selectedBatchId && batches && (
-                <span className="text-muted-foreground text-xs font-normal">
-                  · 当前批次
-                </span>
+                <span className="text-muted-foreground text-xs font-normal">· 当前批次</span>
               )}
               {rejectedCount > 0 && (
                 <span
@@ -386,7 +447,9 @@ export function TaskQueuePanel({
               })}
               {isFetchingNextPage && (
                 <VirtualRow start={virtualizer.getTotalSize()}>
-                  <div className="px-2.5 py-2 text-muted-foreground text-xs text-center">加载更多...</div>
+                  <div className="px-2.5 py-2 text-muted-foreground text-xs text-center">
+                    加载更多...
+                  </div>
                 </VirtualRow>
               )}
             </VirtualInner>
@@ -395,10 +458,12 @@ export function TaskQueuePanel({
       )}
 
       {showPalette && (
-        <div className={cn(
-          "relative flex-[0_1_var(--left-palette-height)] min-h-[112px] max-h-[min(45%,420px)] overflow-y-auto px-3.5 py-4 pt-4 pb-2.5 border-t border-border",
-          !showQueue && "flex-1 max-h-none border-t-0",
-        )}>
+        <div
+          className={cn(
+            "relative flex-[0_1_var(--left-palette-height)] min-h-[112px] max-h-[min(45%,420px)] overflow-y-auto px-3.5 py-4 pt-4 pb-2.5 border-t border-border",
+            !showQueue && "flex-1 max-h-none border-t-0",
+          )}
+        >
           {!floating && showQueue && (
             <ResizeHandle
               side="top"

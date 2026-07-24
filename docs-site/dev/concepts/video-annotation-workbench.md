@@ -25,18 +25,18 @@ last_reviewed: 2026-07-14
 
 `metadata["video"]` 当前字段：
 
-| 字段 | 含义 |
-|---|---|
-| `duration_ms` | 视频时长，毫秒 |
-| `fps` | 帧率，优先取 `avg_frame_rate` |
-| `frame_count` | 帧数，优先取 `nb_frames`，缺失时用 `duration * fps` 估算 |
-| `width` / `height` | 视频原始尺寸 |
-| `codec` | 视频编码名 |
-| `playback_path` / `playback_codec` | 非浏览器兼容编码转码后的 H.264 MP4 对象路径与编码 |
-| `poster_frame_path` | poster 对象存储路径 |
-| `probe_error` / `poster_error` / `playback_error` | 解析、抽帧或播放转码失败原因 |
-| `frame_timetable_frame_count` | 已生成帧时间表的帧数 |
-| `frame_timetable_error` | 帧时间表生成失败原因；失败时前端按 fps 估算降级 |
+| 字段                                              | 含义                                                     |
+| ------------------------------------------------- | -------------------------------------------------------- |
+| `duration_ms`                                     | 视频时长，毫秒                                           |
+| `fps`                                             | 帧率，优先取 `avg_frame_rate`                            |
+| `frame_count`                                     | 帧数，优先取 `nb_frames`，缺失时用 `duration * fps` 估算 |
+| `width` / `height`                                | 视频原始尺寸                                             |
+| `codec`                                           | 视频编码名                                               |
+| `playback_path` / `playback_codec`                | 非浏览器兼容编码转码后的 H.264 MP4 对象路径与编码        |
+| `poster_frame_path`                               | poster 对象存储路径                                      |
+| `probe_error` / `poster_error` / `playback_error` | 解析、抽帧或播放转码失败原因                             |
+| `frame_timetable_frame_count`                     | 已生成帧时间表的帧数                                     |
+| `frame_timetable_error`                           | 帧时间表生成失败原因；失败时前端按 fps 估算降级          |
 
 这些失败字段会出现在 `/storage` 的「视频资产失败」面板中。管理员点击重试后，probe / poster / frame timetable 统一投递 `generate_video_metadata`；chunk / frame cache 失败则投递对应的 `ensure_video_chunks` / `extract_video_frames`。
 
@@ -136,14 +136,15 @@ pnpm --filter @anno/web video:bench
 
 视频工作台 UI 当前消费这些视频 geometry：
 
-| 类型 | 时间语义 | 当前管理能力 |
-|---|---|---|
-| `video_bbox` | 单帧矩形框 | 选择、移动、缩放、改类、删除，可聚合成轨迹 |
-| `video_polygon` / `video_polyline` | 单帧点集 | 绘制、顶点变形、改类、删除 |
-| `video_rotated_bbox` | 单帧旋转框 | 渲染、选择、改类、删除 |
-| `video_track_bbox` | bbox compact 轨迹 | 完整关键帧编辑、outside / occluded、组合、转换、AI 追踪 |
-| `video_track_polygon` / `video_track_polyline` | 点集 compact 轨迹 | 渲染 / 插值、指标、首帧定位、显隐、锁定、改类、整条删除 |
-| `video_track_mask` | 内容寻址 RLE compact 轨迹 | alpha 渲染 / picking、brush / erase、held 关键帧、outside / occluded、AI 追踪、DAVIS / COCO 导出 |
+| 类型                                           | 时间语义                  | 当前管理能力                                                                                     |
+| ---------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `video_bbox`                                   | 单帧矩形框                | 选择、移动、缩放、改类、删除，可聚合成轨迹                                                       |
+| `video_polygon` / `video_polyline`             | 单帧点集                  | 绘制、顶点变形、改类、删除                                                                       |
+| `video_rotated_bbox`                           | 单帧旋转框                | 渲染、选择、改类、删除                                                                           |
+| `video_mask`                                   | 单帧内容寻址 RLE          | alpha 渲染 / picking、brush / erase、帧级选择、改类、删除                                        |
+| `video_track_bbox`                             | bbox compact 轨迹         | 完整关键帧编辑、outside / occluded、组合、转换、AI 追踪                                          |
+| `video_track_polygon` / `video_track_polyline` | 点集 compact 轨迹         | 渲染 / 插值、指标、首帧定位、显隐、锁定、改类、整条删除                                          |
+| `video_track_mask`                             | 内容寻址 RLE compact 轨迹 | alpha 渲染 / picking、brush / erase、held 关键帧、outside / occluded、AI 追踪、DAVIS / COCO 导出 |
 
 后端 `Geometry` union 还包含 `video_keypoint`，但当前视频工具栏没有对应创建入口。前端通过 `videoTool` 与工具单位的 `video_modes` 决定写单帧 geometry 还是 compact track keyframe。
 
@@ -154,9 +155,7 @@ pnpm --filter @anno/web video:bench
   "type": "video_track_bbox",
   "track_id": "trk_...",
   "semantic_label": "car_3",
-  "outside": [
-    { "from": 24, "to": 48, "source": "manual" }
-  ],
+  "outside": [{ "from": 24, "to": 48, "source": "manual" }],
   "keyframes": [
     {
       "frame_index": 0,
@@ -204,12 +203,19 @@ pnpm --filter @anno/web video:bench
 
 点集轨迹与 bbox 轨迹使用相同的 `track_id / outside / keyframes[]` 外壳，但关键帧保存 `points` 而非 `bbox`；polygon 闭合，polyline 不闭合。点集插值要求相邻关键帧顶点可对应，当前工作台先开放渲染与管理层，关键帧表和完整逐帧编辑仍只属于 bbox 轨迹。
 
-Mask 轨迹关键帧保存 `{frame_index, mask, source, occluded?, attributes?}`。`mask` 是 `coco_rle_ref`，包含 `[height,width]`、对象键、SHA-256、runs 和 canonical bytes；像素内容不重复嵌进 annotation JSONB。当前帧解析采用最近关键帧保持、距离相同时选更早帧，`outside` 优先。前端只解码可见帧，缓存键包含 annotation version、resolved keyframe 与内容哈希，淘汰、版本变化或切 task 时关闭 `ImageBitmap`。选择与右键使用 row-major alpha 命中，不用外接框冒充像素命中。
+单帧 Mask 保存 `{type:"video_mask", frame_index, mask}`，只在精确帧显示且不持有
+`track_id`。Mask 轨迹关键帧保存 `{frame_index, mask, source, occluded?, attributes?}`。
+两者的 `mask` 都是 `coco_rle_ref`，包含 `[height,width]`、对象键、SHA-256、runs 和
+canonical bytes；像素内容不重复嵌进 annotation JSONB。轨迹当前帧解析采用最近关键帧保持、
+距离相同时选更早帧，`outside` 优先。前端只解码可见帧，缓存键包含 annotation version、
+resolved frame 与内容哈希，淘汰、版本变化或切 task 时关闭 `ImageBitmap`。选择与右键使用
+row-major alpha 命中，不用外接框冒充像素命中。
 
 内容端点：
 
 ```http
 POST /api/v1/tasks/{task_id}/mask-content
+GET /api/v1/annotations/{annotation_id}/mask-content
 GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}
 GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
 ```
@@ -234,12 +240,12 @@ POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes
 
 字段：
 
-| 字段 | 取值 | 说明 |
-|---|---|---|
-| `operation` | `copy` / `split` | `copy` 保留原 track；`split` 会移除源 keyframe 或删除整条源 track |
-| `scope` | `frame` / `track` | 转换当前帧或整条轨迹 |
-| `frame_index` | number | `scope=frame` 时必填 |
-| `frame_mode` | `keyframes` / `all_frames` | `scope=track` 时决定只转关键帧还是展开插值帧 |
+| 字段          | 取值                       | 说明                                                              |
+| ------------- | -------------------------- | ----------------------------------------------------------------- |
+| `operation`   | `copy` / `split`           | `copy` 保留原 track；`split` 会移除源 keyframe 或删除整条源 track |
+| `scope`       | `frame` / `track`          | 转换当前帧或整条轨迹                                              |
+| `frame_index` | number                     | `scope=frame` 时必填                                              |
+| `frame_mode`  | `keyframes` / `all_frames` | `scope=track` 时决定只转关键帧还是展开插值帧                      |
 
 响应返回源 annotation 的新状态、创建出的 `video_bbox[]`、是否删除源 track，以及被移除的 frame indexes。`copy` 不会改动源轨迹，`removed_frame_indexes` 为空；`split` 才会移除源关键帧或删除整条源轨迹，并返回被移除的帧号。`all_frames` 使用与 Video Tracks JSON 导出相同的后端插值 helper：outside 范围不输出 bbox，也不会跨消失段转换。为避免长视频一次性写爆 annotation 表，单次请求最多生成 5000 个 `video_bbox`。
 
@@ -261,13 +267,13 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 
 字段：
 
-| 字段 | 取值 | 说明 |
-|---|---|---|
-| `operation` | `aggregate_bboxes` / `split_track` / `merge_tracks` / `join_tracks` | 聚合单帧框、拆分轨迹、合并轨迹、跳连轨迹 |
-| `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track_bbox`；合并/跳连时传 2 条 `video_track_bbox` |
-| `frame_index` | number | `split_track` 必填，表示在当前可见帧之后切出后段 |
-| `gap_mode` | `interpolate` / `outside` | `join_tracks` 用：`interpolate` 不写 gap、靠线性插值过渡；`outside` 把 gap 区标 outside 后合并。默认 `interpolate` |
-| `delete_sources` | boolean | `aggregate_bboxes` 默认为 true，成功后删除源 `video_bbox` |
+| 字段             | 取值                                                                | 说明                                                                                                               |
+| ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `operation`      | `aggregate_bboxes` / `split_track` / `merge_tracks` / `join_tracks` | 聚合单帧框、拆分轨迹、合并轨迹、跳连轨迹                                                                           |
+| `annotation_ids` | UUID[]                                                              | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track_bbox`；合并/跳连时传 2 条 `video_track_bbox`                   |
+| `frame_index`    | number                                                              | `split_track` 必填，表示在当前可见帧之后切出后段                                                                   |
+| `gap_mode`       | `interpolate` / `outside`                                           | `join_tracks` 用：`interpolate` 不写 gap、靠线性插值过渡；`outside` 把 gap 区标 outside 后合并。默认 `interpolate` |
+| `delete_sources` | boolean                                                             | `aggregate_bboxes` 默认为 true，成功后删除源 `video_bbox`                                                          |
 
 约束：
 
@@ -383,13 +389,13 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 视频画布与图片工作台**同栈**，统一用 Konva（`react-konva`）的多 Layer 结构（架构决策见 ADR-0041）。坐标走「归一化存储 + 像素空间渲染 + Konva transform」，scale 抵消 / fit-to-canvas / 滚轮缩放与图片复用同一组 viewport 纯函数（`stage/shared/viewport/`）：
 
-| 层 | 文件 | 职责 |
-|---|---|---|
-| media | `VideoKonvaMediaLayer.tsx` | `Konva.Image` 以隐藏 `<video>` 为 source；播放态逐帧重绘视频层，暂停态贴 `ImageBitmap` LRU 缓存帧 |
-| track | `VideoKonvaTracksLayer.tsx` / `VideoKonvaTrackShape.tsx` | committed bbox / 点集几何、track 轨迹预览线、关键帧圆点 |
-| overlay | `VideoKonvaOverlayLayer.tsx` | 标签（Konva `Label`/`Tag`/`Text`）与 pending draft 草稿 |
-| issue | `VideoKonvaIssueLayer.tsx` | pixel-anchored issue 图钉（按当前帧显隐，可点击跳到讨论面板） |
-| interaction | `VideoKonvaInteractionLayer.tsx` | bbox 的 8 向 resize、点集顶点编辑，以及画框 / 移动 / 缩放 live 预览 |
+| 层          | 文件                                                     | 职责                                                                                              |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| media       | `VideoKonvaMediaLayer.tsx`                               | `Konva.Image` 以隐藏 `<video>` 为 source；播放态逐帧重绘视频层，暂停态贴 `ImageBitmap` LRU 缓存帧 |
+| track       | `VideoKonvaTracksLayer.tsx` / `VideoKonvaTrackShape.tsx` | committed bbox / 点集几何、track 轨迹预览线、关键帧圆点                                           |
+| overlay     | `VideoKonvaOverlayLayer.tsx`                             | 标签（Konva `Label`/`Tag`/`Text`）与 pending draft 草稿                                           |
+| issue       | `VideoKonvaIssueLayer.tsx`                               | pixel-anchored issue 图钉（按当前帧显隐，可点击跳到讨论面板）                                     |
+| interaction | `VideoKonvaInteractionLayer.tsx`                         | bbox 的 8 向 resize、点集顶点编辑，以及画框 / 移动 / 缩放 live 预览                               |
 
 `VideoKonvaStage` 负责 Stage 容器、视口 transform、播放，以及各 chrome 浮层（时间轴 `VideoPlaybackOverlay`、minimap、QC 警告、关键帧快跳）。命中由 `videoKonvaCoordinates.ts` 把 client 坐标映射到像素空间，再用 `videoStagePicking.ts` 选择顶层框；画框/移动/缩放/选中由 `videoKonvaInteraction.ts` 分流。当前帧应显示哪些框 / 轨迹预览 / ghost / 标签由纯函数 `videoFrameViews.ts` 派生。视觉规格（线宽 / 填充 / 字号 / 标签）经 `annotationVisual.ts` 与图片栈共用同一组纯函数。
 

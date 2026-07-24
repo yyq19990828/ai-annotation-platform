@@ -25,12 +25,12 @@ ADR-0044 把「一个 ML backend 实例」上提为全局 `ml_backend_registry` 
 
 候选方案：
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
-| **A. 新增服务池 + 路由 ledger（本 ADR）** | 逻辑能力与物理实例解耦；项目启用与请求 lineage 以 pool id 为真值，现有 pipeline / 用户偏好合同继续使用 registry id 并在派发时解析所属 pool；跨进程原子选择、权重、并发、drain、熔断独立于 GPU 仲裁 | 新增两张表 + Redis ledger + 一套 API；第一方调用链需统一解析身份边界 |
-| B. 只把 GPU 仲裁改名复用 | 不加新表 | 违反 ADR-0049 不做负载均衡的边界；CPU / off / observe 实例无路由并发控制；route lease 与 GPU request lease 生命周期冲突 |
-| C. 仅前端把若干 URL 分组 | 零后端改动 | 没有真实路由；选择仍按实例 id；副本扩容时项目配置和用户偏好会漂移 |
-| D. 多策略可插拔 router（随机 / least-request / 加权） | 灵活 | 首版没有数据证明策略收益；插件框架是 speculative 复杂度，违反「一次只做一种生产策略」 |
+| 选项                                                  | 主要卖点                                                                                                                                                                                           | 主要劣势                                                                                                                |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **A. 新增服务池 + 路由 ledger（本 ADR）**             | 逻辑能力与物理实例解耦；项目启用与请求 lineage 以 pool id 为真值，现有 pipeline / 用户偏好合同继续使用 registry id 并在派发时解析所属 pool；跨进程原子选择、权重、并发、drain、熔断独立于 GPU 仲裁 | 新增两张表 + Redis ledger + 一套 API；第一方调用链需统一解析身份边界                                                    |
+| B. 只把 GPU 仲裁改名复用                              | 不加新表                                                                                                                                                                                           | 违反 ADR-0049 不做负载均衡的边界；CPU / off / observe 实例无路由并发控制；route lease 与 GPU request lease 生命周期冲突 |
+| C. 仅前端把若干 URL 分组                              | 零后端改动                                                                                                                                                                                         | 没有真实路由；选择仍按实例 id；副本扩容时项目配置和用户偏好会漂移                                                       |
+| D. 多策略可插拔 router（随机 / least-request / 加权） | 灵活                                                                                                                                                                                               | 首版没有数据证明策略收益；插件框架是 speculative 复杂度，违反「一次只做一种生产策略」                                   |
 
 ## Decision
 
@@ -38,26 +38,26 @@ ADR-0044 把「一个 ML backend 实例」上提为全局 `ml_backend_registry` 
 
 ### 冻结决策
 
-| ID | 决策 |
-|---|---|
-| D1 | pool id 是逻辑请求身份；registry id 是物理执行身份。`Prediction.ml_backend_id` 永远表示实际执行的 selected registry instance；新增 `Prediction.ml_backend_pool_id` 表示 requested pool。 |
-| D2 | 一个 registry instance 同时最多属于一个 service pool（`ml_backend_pool_members.registry_id` 单列 unique）。 |
-| D3 | 一个 service pool 的全部 active 成员必须通过 routing capability fingerprint exact match；不匹配的成员不进入候选，不在运行时临时降级请求 schema。 |
-| D4 | 项目只能请求已启用的 pool；router 不能越过项目绑定选择实例（`project_ml_backend_pool` 是项目 × pool 的唯一启用真值）。 |
-| D5 | 只有 `traffic_state=active` 的成员可接收新 route lease；`draining` 保留既有 lease 不接收新 lease，`inflight=0` 后才能 disable / 移出 / 普通 unload。 |
-| D6 | route lease acquire / heartbeat / finish / cancel 使用 Redis 原子合同（Lua）；进程 crash 由 TTL 回收；`enforce` 下 Redis 不可用时 fail-closed。 |
-| D7 | routing ledger 与 GPU arbitration ledger 完全分离：route lease 不复用 GPU request lease；CPU / off / observe 实例也必须参与路由并发控制；traffic drain 与 GPU residency drain 不共享状态字段或 ACK。 |
-| D8 | GPU dispatch 始终使用 selected registry id；GPU membership / token / lease / generation / fence 不池化。 |
-| D9 | 不做透明跨实例 retry、hedged request 或 speculative execution；失败只影响后续选择，避免预测重复、状态会话破坏和非幂等副作用。 |
-| D10 | 首版只实现 smooth weighted round robin；不预留多策略插件框架。least-request 等策略若需要，单独新增 ADR / feature。 |
-| D11 | 全部候选达到并发上限时返回结构化 503 `ml_backend_pool_saturated` + `Retry-After`；首版没有全局路由等待队列。 |
-| D12 | 多阶段聚合 Prediction 的 `ml_backend_id` 保存 root stage selected instance；每 stage / invocation 的双 ID lineage 必须存进 `PredictionMeta.extra.pipeline.selections[]`，不能把 root instance 冒充全部 shape 的生产者。 |
-| D13 | 没有真实指标时返回 unknown / null，不把缺失值解释成 0 或健康。 |
-| D14 | 被动熔断只把连接拒绝、connect / read timeout、无 HTTP 响应和受控 gateway unavailable 计为 transport failure；业务 4xx、模型校验失败、GPU capacity 503、主动 cancel 不触发 ejection；熔断只作用于后续请求，不重放已失败的非幂等预测。 |
-| D15 | 非空且 enabled 的 pool 必须有 `legacy_instance_id`，且它必须是本池成员；它只服务 `off` / `observe` 兼容 dispatch，不参与 `enforce` 优先级。空 pool 只能 disabled。 |
-| D16 | pool / member / weight / traffic state 任何变更都单调增加 `routing_generation`；旧 generation 不得 acquire。 |
-| D17 | `off` → `observe` → `enforce` 是部署级单一开关（`ML_BACKEND_ROUTER_MODE`）；API / worker / beat 必须读取相同配置，部署时整体重建 / 重启，不能混跑不同 mode。 |
-| D18 | migration 是 forward-only 安全：每个现有 registry 自动得到一个 singleton pool；多成员 pool 创建后 downgrade 不再无损，迁移必须 fail-closed 并提示 forward-only。 |
+| ID  | 决策                                                                                                                                                                                                                                                                                                                                      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | pool id 是逻辑请求身份；registry id 是物理执行身份。`Prediction.ml_backend_id` 永远表示实际执行的 selected registry instance；新增 `Prediction.ml_backend_pool_id` 表示 requested pool。                                                                                                                                                  |
+| D2  | 一个 registry instance 同时最多属于一个 service pool（`ml_backend_pool_members.registry_id` 单列 unique）。                                                                                                                                                                                                                               |
+| D3  | 一个 service pool 的全部 active 成员必须通过 routing capability fingerprint exact match；不匹配的成员不进入候选，不在运行时临时降级请求 schema。                                                                                                                                                                                          |
+| D4  | 项目只能请求已启用的 pool；router 不能越过项目绑定选择实例（`project_ml_backend_pool` 是项目 × pool 的唯一启用真值）。                                                                                                                                                                                                                    |
+| D5  | 只有 `traffic_state=active` 的成员可接收新 route lease；`draining` 保留既有 lease 不接收新 lease，`inflight=0` 后才能 disable / 移出 / 普通 unload。                                                                                                                                                                                      |
+| D6  | route lease acquire / heartbeat / finish / cancel 使用 Redis 原子合同（Lua）；进程 crash 由 TTL 回收；`enforce` 下 Redis 不可用时 fail-closed。                                                                                                                                                                                           |
+| D7  | routing ledger 与 GPU arbitration ledger 完全分离：route lease 不复用 GPU request lease；CPU / off / observe 实例也必须参与路由并发控制；traffic drain 与 GPU residency drain 不共享状态字段或 ACK。                                                                                                                                      |
+| D8  | GPU dispatch 始终使用 selected registry id；GPU membership / token / lease / generation / fence 不池化。                                                                                                                                                                                                                                  |
+| D9  | 不做透明跨实例 retry、hedged request 或 speculative execution；失败只影响后续选择，避免预测重复、状态会话破坏和非幂等副作用。                                                                                                                                                                                                             |
+| D10 | 首版只实现 smooth weighted round robin；不预留多策略插件框架。least-request 等策略若需要，单独新增 ADR / feature。                                                                                                                                                                                                                        |
+| D11 | 全部候选达到并发上限时返回结构化 503 `ml_backend_pool_saturated` + `Retry-After`；首版没有全局路由等待队列。                                                                                                                                                                                                                              |
+| D12 | 多阶段聚合 Prediction 的 `ml_backend_id` 保存 root stage selected instance；每 stage / invocation 的双 ID lineage 必须存进 `PredictionMeta.extra.pipeline.selections[]`，不能把 root instance 冒充全部 shape 的生产者。                                                                                                                   |
+| D13 | 没有真实指标时返回 unknown / null，不把缺失值解释成 0 或健康。                                                                                                                                                                                                                                                                            |
+| D14 | 被动熔断只把连接拒绝、connect / read timeout、无 HTTP 响应和受控 gateway unavailable 计为 transport failure；业务 4xx、模型校验失败、GPU capacity 503、主动 cancel 不触发 ejection；熔断只作用于后续请求，不重放已失败的非幂等预测。                                                                                                      |
+| D15 | 非空且 enabled 的 pool 必须有 `legacy_instance_id`，且它必须是本池成员；它只服务 `off` / `observe` 兼容 dispatch，不参与 `enforce` 优先级。空 pool 只能 disabled。                                                                                                                                                                        |
+| D16 | pool / member / weight / traffic state 任何变更都单调增加 `routing_generation`；旧 generation 不得 acquire。                                                                                                                                                                                                                              |
+| D17 | `off` → `observe` → `enforce` 是部署级单一开关（`ML_BACKEND_ROUTER_MODE`）；API / worker / beat 必须读取相同配置，部署时整体重建 / 重启，不能混跑不同 mode。                                                                                                                                                                              |
+| D18 | migration 是 forward-only 安全：每个现有 registry 自动得到一个 singleton pool；多成员 pool 创建后 downgrade 不再无损，迁移必须 fail-closed 并提示 forward-only。                                                                                                                                                                          |
 | D19 | 字段名或 schema 明确表示 backend / registry 的公共配置不得被迁移静默改写为 pool id。`preannotate_pipeline[].ml_backend_id`、`projects.default_variants` 的 key 以及 `users.preferences.ai` 的 backend 分桶字段保留 registry id；派发时通过 registry 的唯一成员关系取得 requested pool。项目启用/主绑定与新增请求 lineage 仍使用 pool id。 |
 
 ### 数据模型（摘要，详见计划 §5）
@@ -127,11 +127,11 @@ acquire Lua 在一个原子步骤完成：校验 pool / candidate generation →
 
 ### Rollout 模式
 
-| mode | 实际实例 | routing ledger | 失败处理 |
-|---|---|---|---|
-| `off` | 请求携带的 legacy instance；新 pool 请求使用 `legacy_instance_id` | 不 acquire | 保持 v0.23.2 行为 |
-| `observe` | 请求携带的 legacy instance；新 pool 请求使用 `legacy_instance_id` | shadow namespace 计算 would-select、记录诊断，不门控 | ledger 失败不阻断实际请求 |
-| `enforce` | router selected instance | 正式 acquire / heartbeat / finish / cancel | Redis / topology 不确定时 fail-closed |
+| mode      | 实际实例                                                          | routing ledger                                       | 失败处理                              |
+| --------- | ----------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------- |
+| `off`     | 请求携带的 legacy instance；新 pool 请求使用 `legacy_instance_id` | 不 acquire                                           | 保持 v0.23.2 行为                     |
+| `observe` | 请求携带的 legacy instance；新 pool 请求使用 `legacy_instance_id` | shadow namespace 计算 would-select、记录诊断，不门控 | ledger 失败不阻断实际请求             |
+| `enforce` | router selected instance                                          | 正式 acquire / heartbeat / finish / cancel           | Redis / topology 不确定时 fail-closed |
 
 新增环境变量（最终名称在 P0 按 typed settings 冻结）：`ML_BACKEND_ROUTER_MODE`、`ML_BACKEND_ROUTER_HEALTH_MAX_AGE_SECONDS`、`ML_BACKEND_ROUTER_LEASE_TTL_SECONDS`、`ML_BACKEND_ROUTER_HEARTBEAT_INTERVAL_SECONDS`、`ML_BACKEND_ROUTER_PASSIVE_FAILURE_THRESHOLD`、`ML_BACKEND_ROUTER_EJECT_SECONDS`。进入 enforce 前必须：migration / backfill 零 orphan、全部第一方调用方已传 pool id、observe 窗口 actual / would-select 一致且无未知映射、route lease cleanup / crash TTL / Redis 故障 / worker cancel 演练通过、至少一个真实双实例 pool 完成比例 / 饱和 / drain / ejection / GPU 交互验收。
 

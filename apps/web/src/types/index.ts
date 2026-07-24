@@ -2,8 +2,21 @@
 
 export type UserRole = "super_admin" | "project_admin" | "reviewer" | "annotator" | "viewer";
 export type ProjectStatus = "in_progress" | "completed" | "pending_review" | "archived";
-export type TaskStatus = "uploading" | "pending" | "in_progress" | "rejected" | "completed" | "review";
-export type BatchStatus = "draft" | "active" | "annotating" | "reviewing" | "approved" | "rejected" | "archived";
+export type TaskStatus =
+  | "uploading"
+  | "pending"
+  | "in_progress"
+  | "rejected"
+  | "completed"
+  | "review";
+export type BatchStatus =
+  | "draft"
+  | "active"
+  | "annotating"
+  | "reviewing"
+  | "approved"
+  | "rejected"
+  | "archived";
 
 // ── Project ─────────────────────────────────────────────────────────────────
 
@@ -308,11 +321,18 @@ export type VideoTrackPolylineGeometry = {
 };
 export type CocoRleMaskRef = {
   encoding: "coco_rle_ref";
+  storage_encoding?: "identity" | "gzip" | null;
   size: [number, number];
   object_key: string;
   sha256: string;
   runs: number;
   bytes: number;
+};
+/** 视频单帧栅格掩码；内容引用与图片 Raster Mask 一致，额外绑定源视频帧。 */
+export type VideoMaskGeometry = {
+  type: "video_mask";
+  frame_index: number;
+  mask: CocoRleMaskRef;
 };
 export type VideoTrackMaskKeyframe = {
   frame_index: number;
@@ -327,6 +347,11 @@ export type VideoTrackMaskGeometry = {
   semantic_label?: string | null;
   keyframes: VideoTrackMaskKeyframe[];
   outside?: VideoTrackOutsideRange[];
+};
+/** v0.23.6 · 图片栅格掩码几何，引用不可变 COCO RLE 对象存储掩码内容。 */
+export type RasterMaskGeometry = {
+  type: "raster_mask";
+  mask: CocoRleMaskRef;
 };
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
@@ -406,6 +431,7 @@ export type Geometry =
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry
+  | VideoMaskGeometry
   | VideoTrackMaskGeometry
   | PolygonGeometry
   | MultiPolygonGeometry
@@ -413,7 +439,8 @@ export type Geometry =
   | PolylineGeometry
   | KeypointGeometry
   | Box3DGeometry
-  | PointMaskGeometry;
+  | PointMaskGeometry
+  | RasterMaskGeometry;
 
 export interface AIBox {
   id: string;
@@ -464,6 +491,8 @@ export interface Annotation extends AIBox {
   z_order?: number;
   is_locked?: boolean;
   is_hidden?: boolean;
+  /** 后端乐观并发版本；Mask 内容缓存与 If-Match 更新使用。 */
+  version?: number;
   // v0.11.27 · 渲染派生字段：由属性 schema 中标了 style_occluded 的 boolean 属性
   // 为 true 时计算得出（见 transforms.annotationToBox）；驱动虚线+半透视觉。非后端字段。
   occluded?: boolean;
@@ -545,10 +574,7 @@ export type {
 } from "@/api/generated/types.gen";
 
 // v0.14.0 · scene 邻帧导航 (跨 task 帧序列). 由后端 schema 派生.
-export type {
-  NeighborInfo,
-  NeighborsResponse,
-} from "@/api/generated/types.gen";
+export type { NeighborInfo, NeighborsResponse } from "@/api/generated/types.gen";
 
 // v0.15.17 · 批量邻帧标注 (一次返回 ±k 帧的邻帧框). 由后端 schema 派生.
 export type {

@@ -65,13 +65,7 @@ describe("<DropdownMenu />", () => {
 
   it("disabled item 点击不触发 onSelect", () => {
     const onSelect = vi.fn();
-    render(
-      <Wrapper
-        items={[
-          { id: "x", label: "Disabled", disabled: true, onSelect },
-        ]}
-      />,
-    );
+    render(<Wrapper items={[{ id: "x", label: "Disabled", disabled: true, onSelect }]} />);
     fireEvent.click(screen.getByText("打开"));
     fireEvent.click(screen.getByText("Disabled"));
     expect(onSelect).not.toHaveBeenCalled();

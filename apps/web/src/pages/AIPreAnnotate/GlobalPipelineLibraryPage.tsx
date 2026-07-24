@@ -59,7 +59,8 @@ export default function GlobalPipelineLibraryPage() {
   // 当前加载进画布的命名编排 id: 用作源 Inspector 的 key, 切换编排时强制 remount 重新回填。
   // 否则源 Inspector 内部 modelKey 已被上一条编排设过、reverse-sync 短路 → 以新名存旧配置。
   const [loadedPipelineId, setLoadedPipelineId] = useState<string | null>(null);
-  const [pipelineScope, setPipelineScope] = useState<Extract<ProjectPipelineScope, "public" | "organization">>("public");
+  const [pipelineScope, setPipelineScope] =
+    useState<Extract<ProjectPipelineScope, "public" | "organization">>("public");
 
   // 全局池: 所有 backend × 所有 model 展平 (backend state=error 保留展示但禁用).
   const globalModelOptions = useMemo<GlobalModelOption[]>(() => {
@@ -107,8 +108,7 @@ export default function GlobalPipelineLibraryPage() {
   } = usePipelineComposer({
     availableBackendCount: uniqueBackendCount,
     onWarn: (msg, sub) => pushToast({ msg, sub, kind: "warning" }),
-    onCascadeDelete: (n) =>
-      pushToast({ msg: "已删除阶段", sub: `连带移除 ${n} 个子阶段` }),
+    onCascadeDelete: (n) => pushToast({ msg: "已删除阶段", sub: `连带移除 ${n} 个子阶段` }),
   });
 
   // 源阶段 payload (Inspector 独立管).
@@ -140,7 +140,7 @@ export default function GlobalPipelineLibraryPage() {
       const payload =
         sid === SOURCE_SID
           ? sourcePayload
-          : downstreamPayloads[stagesGraph.findIndex((s) => s.sid === sid)] ?? null;
+          : (downstreamPayloads[stagesGraph.findIndex((s) => s.sid === sid)] ?? null);
       if (!payload?.ml_backend_id || !payload?.model_id) return [];
       const opt = globalModelOptions.find(
         (o) => o.key === `${payload.ml_backend_id}::${payload.model_id}`,
@@ -167,9 +167,7 @@ export default function GlobalPipelineLibraryPage() {
   const sourcePool = useMemo(
     () =>
       globalModelOptions.filter((o) =>
-        isVideoTracking
-          ? o.model.task === "tracker"
-          : GEOMETRIC_TASKS.includes(o.model.task ?? ""),
+        isVideoTracking ? o.model.task === "tracker" : GEOMETRIC_TASKS.includes(o.model.task ?? ""),
       ),
     [globalModelOptions, isVideoTracking],
   );
@@ -190,7 +188,9 @@ export default function GlobalPipelineLibraryPage() {
   // graphNodes: 组装源 + 下游节点给画布. 与项目侧结构等价, 缺"运行态" (全局侧不跑).
   const graphNodes = useMemo<GraphNodeModel[]>(() => {
     const srcOption = sourcePayload
-      ? globalModelOptions.find((o) => o.key === `${sourcePayload.ml_backend_id}::${sourcePayload.model_id}`)
+      ? globalModelOptions.find(
+          (o) => o.key === `${sourcePayload.ml_backend_id}::${sourcePayload.model_id}`,
+        )
       : null;
     // v0.21.6 · 输入节点=纯数据源; 源模型 stage(SOURCE_SID)=sourcePayload 承接的整图检测/tracker。
     const srcShape = sourceNodeShape(srcMeta, srcOption?.model);
@@ -273,9 +273,7 @@ export default function GlobalPipelineLibraryPage() {
   }, [stagesGraph]);
 
   // v0.21.6 · 有无 StageCard 下游卡 (父=模型 stage, 非源模型 SOURCE_SID)。
-  const hasDownstreamCards = stagesGraph.some(
-    (e) => e.parentSid != null && e.sid !== SOURCE_SID,
-  );
+  const hasDownstreamCards = stagesGraph.some((e) => e.parentSid != null && e.sid !== SOURCE_SID);
 
   // 保存: 组装 pipeline_stages (源 + N 下游, 按 sid 序号) → POST /project-pipelines (scope=public).
   const savePipeline = async () => {
@@ -387,9 +385,7 @@ export default function GlobalPipelineLibraryPage() {
         const s = stages[i];
         const sid = `loaded-${s.stage}`;
         const parentSid =
-          s.parent_stage == null || s.parent_stage === 0
-            ? SOURCE_SID
-            : `loaded-${s.parent_stage}`;
+          s.parent_stage == null || s.parent_stage === 0 ? SOURCE_SID : `loaded-${s.parent_stage}`;
         newGraph.push({ sid, parentSid });
         seed[sid] = s;
       }
@@ -407,8 +403,7 @@ export default function GlobalPipelineLibraryPage() {
 
   const onDeletePipeline = (id: string, name: string) => {
     deleteProjectPipeline.mutate(id, {
-      onSuccess: () =>
-        pushToast({ msg: "已删除命名编排", sub: name, kind: "success" }),
+      onSuccess: () => pushToast({ msg: "已删除命名编排", sub: name, kind: "success" }),
       onError: (e) =>
         pushToast({
           msg: "删除命名编排失败",
@@ -496,8 +491,8 @@ export default function GlobalPipelineLibraryPage() {
             <Icon name="warning" size={12} />
             <span>
               多个阶段写同一属性键：
-              {Array.from(conflictInfo.displayFinals).join("、")}。保存会被拒绝，请调整
-              各阶段 label / write.keys。
+              {Array.from(conflictInfo.displayFinals).join("、")}。保存会被拒绝，请调整 各阶段 label
+              / write.keys。
             </span>
           </div>
         )}
@@ -536,9 +531,7 @@ export default function GlobalPipelineLibraryPage() {
                 <select
                   className={styles.selectInput}
                   value={srcDataType}
-                  onChange={(e) =>
-                    setSrcDataType(e.target.value as "image" | "video")
-                  }
+                  onChange={(e) => setSrcDataType(e.target.value as "image" | "video")}
                 >
                   <option value="image">图像</option>
                   <option value="video">视频</option>
@@ -550,9 +543,7 @@ export default function GlobalPipelineLibraryPage() {
                   <select
                     className={styles.selectInput}
                     value={srcExecUnit}
-                    onChange={(e) =>
-                      setSrcExecUnit(e.target.value as "video" | "frame")
-                    }
+                    onChange={(e) => setSrcExecUnit(e.target.value as "video" | "frame")}
                   >
                     <option value="video">整段序列（detect-then-track 追踪）</option>
                     <option value="frame">逐帧（图像检测逐帧跑，落单帧框）</option>
@@ -612,7 +603,9 @@ export default function GlobalPipelineLibraryPage() {
         {projectPipelinesQ.isLoading ? (
           <div className={styles.stageEmptyHint}>加载中…</div>
         ) : libraryPipelines.length === 0 ? (
-          <div className={styles.stageEmptyHint}>暂无命名编排。保存一条上方画布后会出现在这里。</div>
+          <div className={styles.stageEmptyHint}>
+            暂无命名编排。保存一条上方画布后会出现在这里。
+          </div>
         ) : (
           <ul className={styles.libraryList}>
             {libraryPipelines.map((p) => (
@@ -620,7 +613,8 @@ export default function GlobalPipelineLibraryPage() {
                 <div className={styles.libraryRowMain}>
                   <strong>{p.name}</strong>
                   <span className={styles.libraryMeta}>
-                    {SCOPE_LABELS[p.scope]} · {p.stages.length} 阶段 · 已套用 {p.usage_count ?? 0} 次
+                    {SCOPE_LABELS[p.scope]} · {p.stages.length} 阶段 · 已套用 {p.usage_count ?? 0}{" "}
+                    次
                   </span>
                 </div>
                 <div className={styles.libraryRowActions}>

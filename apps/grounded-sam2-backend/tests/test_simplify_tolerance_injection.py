@@ -64,13 +64,19 @@ def test_higher_tolerance_returns_fewer_vertices(predictor_with_mocks):
     inst = predictor_with_mocks
     mask = _circle_mask(512, 200)
 
-    low = inst._masks_to_results(mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=0.5)
-    high = inst._masks_to_results(mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=2.0)
+    low = inst._masks_to_results(
+        mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=0.5
+    )
+    high = inst._masks_to_results(
+        mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=2.0
+    )
 
     assert low and high
     n_low = len(low[0]["value"]["points"])
     n_high = len(high[0]["value"]["points"])
-    assert n_high < n_low, f"expected fewer verts at high tolerance: {n_high} >= {n_low}"
+    assert n_high < n_low, (
+        f"expected fewer verts at high tolerance: {n_high} >= {n_low}"
+    )
 
 
 def test_default_tolerance_used_when_none(predictor_with_mocks):
@@ -78,7 +84,9 @@ def test_default_tolerance_used_when_none(predictor_with_mocks):
     inst = predictor_with_mocks
     mask = _square_mask(128, 32)
 
-    out = inst._masks_to_results(mask[None, ...], np.array([0.9]), 128, 128, simplify_tolerance=None)
+    out = inst._masks_to_results(
+        mask[None, ...], np.array([0.9]), 128, 128, simplify_tolerance=None
+    )
     assert out and len(out[0]["value"]["points"]) >= 4
 
 
@@ -90,7 +98,9 @@ def test_vertex_count_warn_logged_for_high_count(predictor_with_mocks, caplog):
     inst = predictor_with_mocks
     mask = _circle_mask(512, 200)
     with caplog.at_level(logging.WARNING):
-        inst._masks_to_results(mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=0.0)
+        inst._masks_to_results(
+            mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=0.0
+        )
 
     warn_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any("polygon vertex count" in r.message for r in warn_msgs), (
@@ -103,7 +113,9 @@ def test_vertex_count_warn_not_logged_for_normal_count(predictor_with_mocks, cap
     inst = predictor_with_mocks
     mask = _circle_mask(512, 200)
     with caplog.at_level(logging.WARNING):
-        inst._masks_to_results(mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=2.0)
+        inst._masks_to_results(
+            mask[None, ...], np.array([0.9]), 512, 512, simplify_tolerance=2.0
+        )
 
     warn_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert not any("polygon vertex count" in r.message for r in warn_msgs), (

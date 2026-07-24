@@ -40,7 +40,7 @@ def test_setup_supported_variants_declare_single_axis():
 def test_setup_default_variants_present_on_each_model():
     """v0.14.13 · 即便单档 sam3, default_variants 仍要写, 让前端按统一规则消费."""
     data = setup()
-    assert len(data["models"]) == 4
+    assert len(data["models"]) == 5
     for model in data["models"]:
         dv = model.get("default_variants")
         assert isinstance(dv, dict) and dv, f"{model['id']} missing default_variants"

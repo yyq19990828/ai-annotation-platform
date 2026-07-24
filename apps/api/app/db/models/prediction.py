@@ -15,6 +15,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
+INTERACTIVE_ACCEPT_PREDICTION_SOURCE = "interactive_accept"
+
+
 class Prediction(Base):
     __tablename__ = "predictions"
 
@@ -46,8 +49,8 @@ class Prediction(Base):
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     cluster: Mapped[int | None] = mapped_column(Integer)
     mislabeling: Mapped[float | None] = mapped_column(Float)
-    # v0.10.15: 区分内部 ML backend 生成 vs 外部导入 (predictions/import 端点).
-    # 枚举: 'ml_backend' | 'external_import' | 'unknown'
+    # 区分普通待审预测、外部导入和交互式候选采纳后的溯源快照。
+    # interactive_accept 只用于审计/模型溯源，不是待审候选。
     source: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

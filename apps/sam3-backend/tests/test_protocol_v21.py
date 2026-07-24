@@ -40,12 +40,16 @@ def test_normalize_predict_context_accepts_legacy_model_variant_with_warning(
     main_module, caplog
 ):
     caplog.set_level("WARNING")
-    ctx = main_module._normalize_predict_context({"type": "text", "model_variant": "sam3"})
+    ctx = main_module._normalize_predict_context(
+        {"type": "text", "model_variant": "sam3"}
+    )
     assert ctx["model_variants"] == {"model_variant": "sam3"}
     assert "context.model_variant -> context.model_variants" in caplog.text
 
 
-def test_normalize_predict_context_invalid_model_variant_returns_standard_422(main_module):
+def test_normalize_predict_context_invalid_model_variant_returns_standard_422(
+    main_module,
+):
     with pytest.raises(Exception) as exc:
         main_module._normalize_predict_context(
             {"type": "text", "model_variants": {"model_variant": "sam3.0"}}
@@ -71,9 +75,7 @@ def test_warmup_invalid_model_variant_returns_standard_422(main_module, monkeypa
         _run(
             main_module.warmup(
                 request,
-                main_module.WarmupRequest(
-                    variants={"model_variant": "sam3.0"}
-                ),
+                main_module.WarmupRequest(variants={"model_variant": "sam3.0"}),
             )
         )
     err = exc.value
@@ -84,7 +86,10 @@ def test_warmup_invalid_model_variant_returns_standard_422(main_module, monkeypa
 def test_multiplex_collects_all_continuation_seed_bboxes(main_module):
     ctx = {
         "seeds": [
-            {"obj_id": 1, "geometry": {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}},
+            {
+                "obj_id": 1,
+                "geometry": {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+            },
             {
                 "obj_id": 2,
                 "geometry": {
@@ -100,6 +105,45 @@ def test_multiplex_collects_all_continuation_seed_bboxes(main_module):
         {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
         {"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.1},
     ]
+
+
+def test_multiplex_collects_correction_fallback_top_level_bbox(main_module):
+    ctx = {
+        "seeds": [
+            {
+                "obj_id": 1,
+                "bbox": {"x": 0.15, "y": 0.25, "w": 0.35, "h": 0.45},
+                "prompts": [{"frame_index": 12}],
+            }
+        ]
+    }
+
+    assert main_module._seed_bboxes_from_video_ctx(ctx) == [
+        {"x": 0.15, "y": 0.25, "w": 0.35, "h": 0.45}
+    ]
+
+
+def test_pvs_preserves_validated_correction_frame_seed(main_module):
+    prompt = {
+        "type": "correction_frame",
+        "frame_index": 12,
+        "direction": "backward",
+        "output_geometry": "mask",
+        "mask_prompt": {
+            "rle": {
+                "encoding": "coco_rle",
+                "size": [2, 3],
+                "counts": [1, 2, 3],
+            },
+            "source_annotation_id": "annotation-1",
+            "source_version": 3,
+            "source_digest": "a" * 64,
+        },
+    }
+
+    assert main_module._seeds_from_video_ctx(
+        {"seeds": [{"obj_id": 4, "prompts": [prompt]}]}
+    ) == [{"obj_id": 4, "prompts": [prompt]}]
 
 
 def test_multiplex_seed_bboxes_fall_back_to_source_geometry(main_module):

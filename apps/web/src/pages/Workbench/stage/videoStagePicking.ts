@@ -1,5 +1,11 @@
-import type { VideoFrameEntry, VideoPoint, VideoStageGeom, VideoTrackGhost } from "./videoStageTypes";
+import type {
+  VideoFrameEntry,
+  VideoPoint,
+  VideoStageGeom,
+  VideoTrackGhost,
+} from "./videoStageTypes";
 import type { VideoMaskRenderRecord } from "./videoMaskFrames";
+import { pickTopRasterMaskAt } from "./shared/rasterMaskRender";
 
 export type PickableVideoEntry = VideoFrameEntry | VideoTrackGhost;
 
@@ -36,13 +42,15 @@ export function pickTopVideoMaskAt(
   records: readonly VideoMaskRenderRecord[],
   point: VideoPoint,
 ): VideoMaskRenderRecord | null {
-  if (point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) return null;
-  const ordered = [...records].sort((a, b) => a.zOrder - b.zOrder);
-  for (let index = ordered.length - 1; index >= 0; index -= 1) {
-    const record = ordered[index];
-    const x = Math.min(record.width - 1, Math.floor(point.x * record.width));
-    const y = Math.min(record.height - 1, Math.floor(point.y * record.height));
-    if (record.alpha[y * record.width + x] > 0) return record;
-  }
-  return null;
+  return pickTopRasterMaskAt(records, point, (record) => ({
+    sourceWidth: record.width,
+    sourceHeight: record.height,
+    crop: {
+      x: 0,
+      y: 0,
+      width: record.width,
+      height: record.height,
+      alpha: record.alpha,
+    },
+  }));
 }

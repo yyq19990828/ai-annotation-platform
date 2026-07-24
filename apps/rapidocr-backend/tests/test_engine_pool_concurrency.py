@@ -128,8 +128,7 @@ async def test_distinct_builders_reserve_capacity_and_reject_fourth() -> None:
 
     pool = EnginePool(3, build, _inspect, build_timeout=1.0)
     tasks = [
-        asyncio.create_task(pool.warmup(_resolved(name)))
-        for name in ("a", "b", "c")
+        asyncio.create_task(pool.warmup(_resolved(name))) for name in ("a", "b", "c")
     ]
     for event in started.values():
         await _wait_for_thread_event(event)
@@ -307,7 +306,9 @@ async def test_timed_out_builder_stays_reserved_until_thread_finishes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repeatedly_cancelled_builder_waits_for_thread_and_cleans_late_engine() -> None:
+async def test_repeatedly_cancelled_builder_waits_for_thread_and_cleans_late_engine() -> (
+    None
+):
     started = threading.Event()
     release = threading.Event()
 
@@ -387,7 +388,9 @@ async def test_cancelled_builder_drops_engine_references_before_cleanup() -> Non
 
 
 @pytest.mark.asyncio
-async def test_provider_snapshot_reads_all_three_chains_and_true_dominates_unknown() -> None:
+async def test_provider_snapshot_reads_all_three_chains_and_true_dominates_unknown() -> (
+    None
+):
     engines = {
         "cpu": _engine("cpu"),
         "mixed": _engine(
@@ -442,7 +445,9 @@ async def test_unknown_provider_name_never_reports_cpu_or_effective_provider() -
 
 
 @pytest.mark.asyncio
-async def test_cleanup_failure_blocks_cold_build_until_forced_cleanup_recovers() -> None:
+async def test_cleanup_failure_blocks_cold_build_until_forced_cleanup_recovers() -> (
+    None
+):
     fail_cleanup = True
 
     def cleanup() -> None:
@@ -472,7 +477,9 @@ async def test_cleanup_failure_blocks_cold_build_until_forced_cleanup_recovers()
 
 
 @pytest.mark.asyncio
-async def test_cpu_replacement_after_partial_cuda_build_stays_unknown_until_cleanup() -> None:
+async def test_cpu_replacement_after_partial_cuda_build_stays_unknown_until_cleanup() -> (
+    None
+):
     pool = EnginePool(
         2,
         lambda _resolved: EngineBuildArtifact(

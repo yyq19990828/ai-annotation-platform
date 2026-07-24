@@ -7,8 +7,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas._jsonb_types import CocoRleMaskRef
+
 
 TrackerDirection = Literal["forward", "backward", "bidirectional"]
+TrackerJobKind = Literal["tracking", "correction"]
 TrackerJobStatus = Literal[
     "queued",
     "running",
@@ -17,6 +20,7 @@ TrackerJobStatus = Literal[
     "cancelled",
     # v0.21.28 · 候选/接受流。
     "pending_review",
+    "partially_reviewed",
     "accepted",
     "discarded",
 ]
@@ -77,6 +81,52 @@ class VideoTrackerPropagateRequest(BaseModel):
         return dict(value or {})
 
 
+class VideoMaskKeyframeSaveRequest(BaseModel):
+    mask: CocoRleMaskRef
+    source: Literal["manual", "prediction"] = "manual"
+    occluded: bool = False
+    attributes: dict[str, Any] | None = None
+
+
+class VideoMaskKeyframeOperationRequest(BaseModel):
+    operation: Literal["delete_keyframe", "mark_outside", "restore_held"]
+
+
+class VideoMaskCorrectionRequest(BaseModel):
+    correction_frame: int = Field(ge=0)
+    from_frame: int = Field(ge=0)
+    to_frame: int = Field(ge=0)
+    model_key: str = Field(min_length=1, max_length=80)
+    model_id: str = Field(min_length=1, max_length=160)
+    backend_id: UUID
+    direction: TrackerDirection
+    segment_id: UUID | None = None
+    source_annotation_version: int = Field(ge=1)
+    corrected_mask_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    allow_bbox_fallback: bool = False
+    text: str | None = Field(default=None, max_length=500)
+    sam_variant: str | None = None
+
+    @model_validator(mode="after")
+    def _valid_correction_window(self) -> "VideoMaskCorrectionRequest":
+        if self.from_frame > self.to_frame:
+            raise ValueError("from_frame must be <= to_frame")
+        if not self.from_frame <= self.correction_frame <= self.to_frame:
+            raise ValueError("correction_frame must be inside the requested window")
+        if self.direction == "forward" and self.correction_frame >= self.to_frame:
+            raise ValueError("forward correction requires a later target frame")
+        if self.direction == "backward" and self.correction_frame <= self.from_frame:
+            raise ValueError("backward correction requires an earlier target frame")
+        if self.direction == "bidirectional" and (
+            self.correction_frame <= self.from_frame
+            or self.correction_frame >= self.to_frame
+        ):
+            raise ValueError(
+                "bidirectional correction requires target frames on both sides"
+            )
+        return self
+
+
 class VideoTrackerJobOut(BaseModel):
     id: UUID
     task_id: UUID
@@ -88,6 +138,11 @@ class VideoTrackerJobOut(BaseModel):
     segment_id: UUID | None = None
     created_by: UUID | None = None
     status: TrackerJobStatus
+    job_kind: TrackerJobKind = "tracking"
+    track_id_snapshot: str | None = None
+    correction_frame: int | None = None
+    revision: int = 1
+    review_replayed: bool = False
     model_key: str
     direction: TrackerDirection
     from_frame: int
@@ -114,3 +169,60 @@ class VideoTrackerJobOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VideoTrackerDecisionRequest(BaseModel):
+    """Select and decide an explicit target/window slice of staged candidates."""
+
+    instance_ids: list[str] | None = Field(default=None, min_length=1, max_length=256)
+    from_frame: int | None = Field(default=None, ge=0)
+    to_frame: int | None = Field(default=None, ge=0)
+    qc_issue_id: UUID | None = None
+    candidate_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    decision: Literal["accept", "reject"]
+    expected_source_versions: dict[UUID, int] = Field(default_factory=dict)
+    job_revision: int = Field(ge=1)
+    override_manual: bool = False
+
+    @field_validator("instance_ids")
+    @classmethod
+    def _unique_instance_ids(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 128 for item in normalized):
+            raise ValueError("instance_ids must contain non-empty values <= 128 chars")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("instance_ids must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> "VideoTrackerDecisionRequest":
+        region_selector = (
+            self.qc_issue_id is not None or self.candidate_digest is not None
+        )
+        legacy_selector = any(
+            value is not None
+            for value in (self.instance_ids, self.from_frame, self.to_frame)
+        )
+        if region_selector:
+            if self.qc_issue_id is None or self.candidate_digest is None:
+                raise ValueError(
+                    "qc_issue_id and candidate_digest must be provided together"
+                )
+            if legacy_selector:
+                raise ValueError(
+                    "QC issue and instance/window decision selectors are mutually exclusive"
+                )
+            return self
+        if (
+            self.instance_ids is None
+            or self.from_frame is None
+            or self.to_frame is None
+        ):
+            raise ValueError(
+                "instance_ids, from_frame and to_frame are required together"
+            )
+        if self.from_frame > self.to_frame:
+            raise ValueError("from_frame must be <= to_frame")
+        return self

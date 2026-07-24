@@ -50,15 +50,13 @@ function refProject(
  * ────────────────────────────────────────────────────────────────────── */
 const FRONT_CALIB: SensorCalibration = {
   extrinsic: [
-    -0.9994466143126584, 0.033033376071303994, -0.003906559137689193,
-    0.20487898588180542, 0.0025198193977806005, -0.0419178508124942,
-    -0.9991178830816032, 0.0013696063542738557, -0.033167991334523576,
-    -0.9985748293686324, 0.04181141593201179, -0.10943480581045151, 0, 0, 0,
+    -0.9994466143126584, 0.033033376071303994, -0.003906559137689193, 0.20487898588180542,
+    0.0025198193977806005, -0.0419178508124942, -0.9991178830816032, 0.0013696063542738557,
+    -0.033167991334523576, -0.9985748293686324, 0.04181141593201179, -0.10943480581045151, 0, 0, 0,
     1,
   ] as unknown as SensorCalibration["extrinsic"],
   intrinsic: [
-    1210.062981, 0.0, 1022.429903, 0.0, 1205.8507139999999, 792.541644, 0.0,
-    0.0, 1.0,
+    1210.062981, 0.0, 1022.429903, 0.0, 1205.8507139999999, 792.541644, 0.0, 0.0, 1.0,
   ] as unknown as SensorCalibration["intrinsic"],
 };
 
@@ -118,9 +116,7 @@ describe("projectPoints — behind-camera 剔除 (identity extrinsic + 简单 in
       1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
     ] as unknown as SensorCalibration["extrinsic"],
     // fx=fy=1000, cx=cy=500。
-    intrinsic: [
-      1000, 0, 500, 0, 1000, 500, 0, 0, 1,
-    ] as unknown as SensorCalibration["intrinsic"],
+    intrinsic: [1000, 0, 500, 0, 1000, 500, 0, 0, 1] as unknown as SensorCalibration["intrinsic"],
   };
 
   it("(c) 相机后方点 visible=false, 前方点 visible=true 且像素=手算 golden", () => {
@@ -135,15 +131,13 @@ describe("projectPoints — behind-camera 剔除 (identity extrinsic + 简单 in
 
     // back: z<0 ⇒ w<0 ⇒ visible=false (像素仍按 u/w,v/w 计算)。
     expect(got.visible[1]).toBe(false);
-    expect(got.pixels[1][0]).toBeCloseTo(1000 * 1 / -5 + 500, 6); // 300
-    expect(got.pixels[1][1]).toBeCloseTo(1000 * 2 / -5 + 500, 6); // 100
+    expect(got.pixels[1][0]).toBeCloseTo((1000 * 1) / -5 + 500, 6); // 300
+    expect(got.pixels[1][1]).toBeCloseTo((1000 * 2) / -5 + 500, 6); // 100
   });
 });
 
 describe("projectPoints — rect 处理", () => {
-  const IDENTITY_RECT = [
-    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-  ];
+  const IDENTITY_RECT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
   it("(d1) identity rect 结果应与无 rect 完全一致", () => {
     const corners = psrToCorners(BOX27.center, BOX27.size, BOX27.rotation);
@@ -162,8 +156,7 @@ describe("projectPoints — rect 处理", () => {
   it("(d2) 非平凡 rect 结果与 oracle 一致", () => {
     // 一个非平凡 (但仍末行 [0,0,0,1]) 的矫正矩阵: 含小角度旋转 + 平移。
     const rect = [
-      0.999, -0.01, 0.005, 0.02, 0.01, 0.9998, -0.002, -0.01, -0.005, 0.002,
-      1.0, 0.03, 0, 0, 0, 1,
+      0.999, -0.01, 0.005, 0.02, 0.01, 0.9998, -0.002, -0.01, -0.005, 0.002, 1.0, 0.03, 0, 0, 0, 1,
     ];
     const calib: SensorCalibration = {
       ...FRONT_CALIB,

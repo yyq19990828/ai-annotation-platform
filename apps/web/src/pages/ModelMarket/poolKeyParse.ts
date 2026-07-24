@@ -50,9 +50,7 @@ export function lastUsedSecondsAgo(iso: string | undefined): number | null {
  * 同上, 但写成 lastUsedSecondsAgo 的 map 形式, 便于按 backend-specific key 查询.
  * key → 秒数 (相对现在). 缺失的 last_used_at 不入 map.
  */
-export function loadedKeysLastUsedMap(
-  keys: PoolLoadedKey[] | undefined,
-): Record<string, number> {
+export function loadedKeysLastUsedMap(keys: PoolLoadedKey[] | undefined): Record<string, number> {
   if (!keys) return {};
   const out: Record<string, number> = {};
   for (const k of keys) {

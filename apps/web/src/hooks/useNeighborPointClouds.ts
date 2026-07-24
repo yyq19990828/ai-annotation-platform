@@ -6,9 +6,7 @@
  */
 import { useQueries } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
-import {
-  loadNeighborPcdPositions,
-} from "@/pages/Workbench/stages/three-d/geometry/loadNeighborPcd";
+import { loadNeighborPcdPositions } from "@/pages/Workbench/stages/three-d/geometry/loadNeighborPcd";
 import type { LidarAxisConvention } from "@/pages/Workbench/stages/three-d/geometry/axisConvention";
 
 export interface NeighborPcd {
@@ -31,11 +29,7 @@ export function useNeighborPointClouds(
         const manifest = await tasksApi.getPointCloudManifest(n.taskId);
         const url = manifest.point_cloud_url;
         if (!url) return null;
-        const positions = await loadNeighborPcdPositions(
-          url,
-          convention,
-          targetCount,
-        );
+        const positions = await loadNeighborPcdPositions(url, convention, targetCount);
         return { taskId: n.taskId, frameIndex: n.frameIndex, positions };
       },
       enabled,

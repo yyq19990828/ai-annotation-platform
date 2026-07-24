@@ -35,7 +35,10 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
     const arr = [...m.values()];
     arr.sort((a, b) => b.pending - a.pending || a.project_name.localeCompare(b.project_name));
     for (const g of arr) {
-      g.items.sort((a, b) => b.review_tasks - a.review_tasks || a.batch_display_id.localeCompare(b.batch_display_id));
+      g.items.sort(
+        (a, b) =>
+          b.review_tasks - a.review_tasks || a.batch_display_id.localeCompare(b.batch_display_id),
+      );
     }
     return arr;
   }, [batches]);
@@ -89,9 +92,7 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
               <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                 {g.project_name}
               </span>
-              {g.pending > 0 && (
-                <Badge variant="warning">{g.pending}</Badge>
-              )}
+              {g.pending > 0 && <Badge variant="warning">{g.pending}</Badge>}
             </button>
 
             {!isCollapsed && (
@@ -115,11 +116,7 @@ export function ReviewSidebar({ batches, selectedBatchId, onSelect }: Props) {
                         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                           {b.batch_name}
                         </span>
-                        {b.review_tasks > 0 && (
-                          <Badge variant="warning">
-                            {b.review_tasks}
-                          </Badge>
-                        )}
+                        {b.review_tasks > 0 && <Badge variant="warning">{b.review_tasks}</Badge>}
                       </div>
                       <div className="mt-0.5 text-2xs text-muted-foreground">
                         共 {b.total_tasks} 任务 · 完成 {b.completed_tasks}

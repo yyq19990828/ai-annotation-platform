@@ -130,8 +130,12 @@ export function AttributeOptionsEditor({ value, onChange }: Props) {
         />
         <div className="mt-1 flex flex-wrap gap-x-3 text-2xs text-muted-foreground">
           <span>{parsed.length} 个选项</span>
-          {invalid > 0 && <span className="text-status-danger">{invalid} 行缺少 value，已忽略</span>}
-          {dropped > 0 && <span className="text-status-danger">{dropped} 行 value 重复，已忽略</span>}
+          {invalid > 0 && (
+            <span className="text-status-danger">{invalid} 行缺少 value，已忽略</span>
+          )}
+          {dropped > 0 && (
+            <span className="text-status-danger">{dropped} 行 value 重复，已忽略</span>
+          )}
         </div>
       </div>
     );

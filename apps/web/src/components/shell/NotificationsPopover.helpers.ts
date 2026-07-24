@@ -1,12 +1,6 @@
 import type { NotificationItem } from "@/api/notifications";
 
-export type NotificationFilter =
-  | "all"
-  | "task"
-  | "batch"
-  | "bug_report"
-  | "async_job"
-  | "export";
+export type NotificationFilter = "all" | "task" | "batch" | "bug_report" | "async_job" | "export";
 
 export type NotificationGroupKey = "today" | "week" | "earlier";
 
@@ -40,10 +34,7 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
-function groupKeyForCreatedAt(
-  iso: string,
-  now = new Date(),
-): NotificationGroupKey {
+function groupKeyForCreatedAt(iso: string, now = new Date()): NotificationGroupKey {
   const ts = new Date(iso);
   if (Number.isNaN(ts.getTime())) return "earlier";
   if (ts >= startOfToday(now)) return "today";

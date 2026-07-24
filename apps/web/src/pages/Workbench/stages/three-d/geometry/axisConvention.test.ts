@@ -102,12 +102,7 @@ describe("rotationMatrixFor · identity convention", () => {
 
 describe("applyConventionToPositions · 退化", () => {
   it("iso_8855 不改任何点", () => {
-    const positions = new Float32Array([
-      1, 2, 3,
-      -4, 5, -6,
-      0.1, 0.2, 0.3,
-      0, 0, 0,
-    ]);
+    const positions = new Float32Array([1, 2, 3, -4, 5, -6, 0.1, 0.2, 0.3, 0, 0, 0]);
     const before = Array.from(positions);
     applyConventionToPositions(positions, "iso_8855");
     for (let i = 0; i < before.length; i += 1) {
@@ -141,12 +136,7 @@ describe("applyConventionToPositions · 非 identity 旋转", () => {
 
 /** 从一个 3x3 行主序旋转 R 和一个平移 t 构造 4x4 行主序 extrinsic。 */
 function makeExtrinsic(R: Mat3, t: readonly [number, number, number]): number[] {
-  return [
-    R[0], R[1], R[2], t[0],
-    R[3], R[4], R[5], t[1],
-    R[6], R[7], R[8], t[2],
-    0, 0, 0, 1,
-  ];
+  return [R[0], R[1], R[2], t[0], R[3], R[4], R[5], t[1], R[6], R[7], R[8], t[2], 0, 0, 0, 1];
 }
 
 /** 从 4x4 行主序 extrinsic 取旋转块 (3x3 行主序)。 */
@@ -223,11 +213,7 @@ describe("applyConventionToExtrinsic · SUSTechPOINTS 实测回归", () => {
       r2[2] * r0[0] - r2[0] * r0[2],
       r2[0] * r0[1] - r2[1] * r0[0],
     ];
-    const Rsrc: Mat3 = [
-      r0[0], r0[1], r0[2],
-      r1[0], r1[1], r1[2],
-      r2[0], r2[1], r2[2],
-    ];
+    const Rsrc: Mat3 = [r0[0], r0[1], r0[2], r1[0], r1[1], r1[2], r2[0], r2[1], r2[2]];
     const Esrc = makeExtrinsic(Rsrc, [0, 0, 0]);
     const Eiso = applyConventionToExtrinsic(Esrc, "sustechpoints_demo");
 
@@ -334,9 +320,7 @@ describe("sniffConventionFromForward · 行为", () => {
       expect(result?.best).toBe(expectedBest);
       expect(result?.score).toBeCloseTo(1, 6);
       expect(
-        result?.candidates.some(
-          (c) => c.convention === convention && Math.abs(c.score - 1) < 1e-6,
-        ),
+        result?.candidates.some((c) => c.convention === convention && Math.abs(c.score - 1) < 1e-6),
       ).toBe(true);
     },
   );

@@ -1,12 +1,21 @@
+import asyncio
+import hashlib
+import io
 import json
 import time
 import uuid
 
 import httpx
+from aap_protocol_v2 import (
+    MAX_MASK_RESPONSE_BYTES,
+    CocoRlePayload,
+    canonical_rle_bytes,
+)
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
+    assert_request_scopes,
     get_db,
     get_gpu_dispatch_context_factory,
     get_gpu_shadow_session_factory,
@@ -17,6 +26,7 @@ from app.deps import (
 from app.db.enums import UserRole
 from app.db.models.ml_backend_pool import MLBackendServicePool
 from app.db.models.ml_backend_registry import MLBackendRegistry
+from app.db.models.dataset import DatasetItem
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.project import Project
@@ -28,6 +38,7 @@ from app.schemas.ml_backend import (
     MLBackendUnloadResponse,
     MLBackendReloadRequest,
     InteractiveRequest,
+    InteractiveAnnotateResponse,
     BackendCapabilities,
     ProjectMLBackendItem,
     ProjectMLBackendList,
@@ -50,10 +61,24 @@ from app.services.ml_backend import (
 )
 from app.services import ml_client as ml_client_module
 from app.services.ml_capabilities import extract_capabilities
+from app.services.ml_interaction_proxy import (
+    normalize_native_mask_response,
+    prepare_interactive_context,
+)
 from app.services.ml_routing.client import RoutedMLBackendClient
 from app.services.prediction import PredictionService, to_video_bbox_result
 from app.services.storage import StorageService
 from app.services.audit import AuditService
+from app.services.ai_mask_receipt import issue_ai_mask_receipt
+from app.services.ai_mask_prompt import resolve_authorized_mask_prompt
+from app.services.ai_mask_session import issue_ai_mask_session
+from app.api.v1.tasks._shared import _assert_task_visible
+from app.observability.metrics import (
+    mask_ai_operation,
+    mask_ai_prompt_family,
+    observe_mask_ai_phase,
+    record_mask_ai_operation,
+)
 
 # v0.10.1 · /setup 代理结果的进程内 TTL 缓存. 工作台进入即拉, 避免 N 次 backend 探活.
 # key = backend_id (绑定改动 → 重绑后新 backend_id 自然 invalidate); 30s TTL 兜底.
@@ -63,6 +88,129 @@ _setup_cache: dict[uuid.UUID, tuple[float, dict]] = {}
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+
+# v0.23.5 · WS-D · D2 · cap on uploaded frame bytes (predict-frame /
+# interactive-annotating-frame). Bounds memory regardless of a lying/missing
+# Content-Length header; 32 MiB comfortably fits a 4K JPEG / PNG with headroom.
+MAX_FRAME_UPLOAD_BYTES = 32 * 1024 * 1024
+MAX_INTERACTIVE_CONTEXT_BODY_BYTES = 1024 * 1024
+# v0.23.5 · WS-D · D2 · streaming read stride (1 MiB) — small enough to abort
+# between chunks when the cap is exceeded, large enough to avoid per-call
+# overhead on legitimate multi-MiB frames.
+_FRAME_READ_CHUNK = 1024 * 1024
+# v0.23.5 · WS-D · D2 · image format / dimension cap mirroring ADR-0048 / 0052
+# (dims ≤ 4096, pixels ≤ 16_777_216). Frames bigger than this can blow up the
+# downstream inference memory budget and are rejected before hitting the backend.
+_ALLOWED_FRAME_IMAGE_FORMATS = {"JPEG", "PNG"}
+_MAX_FRAME_DIMENSION = 4096
+_MAX_FRAME_PIXELS = _MAX_FRAME_DIMENSION * _MAX_FRAME_DIMENSION
+
+
+async def _read_capped_frame(
+    frame: UploadFile,
+    *,
+    request: Request | None = None,
+    max_bytes: int = MAX_FRAME_UPLOAD_BYTES,
+) -> bytes:
+    """v0.23.5 · WS-D · D2 · read an uploaded frame under a hard byte + format cap.
+
+    Two layers of defense against unbounded reads:
+
+    1. If ``Content-Length`` is present on ``request`` (or the Starlette upload
+       exposes ``frame.size``), reject early with 413 when it already exceeds
+       ``max_bytes`` — before we buffer a single byte.
+    2. Stream-read in ``_FRAME_READ_CHUNK`` increments and abort with 413 the
+       moment the running total crosses ``max_bytes``. This catches clients that
+       lie about (or omit) Content-Length.
+
+    After collection the bytes are decoded with PIL: only ``{JPEG, PNG}`` are
+    accepted and dimensions must respect the 4096 / 16M-pixel mask contract.
+    Decode or dimension failures raise 400 (bad request), not 500.
+    """
+    # 1. Pre-flight on declared size, if available.
+    declared: int | None = None
+    size_attr = getattr(frame, "size", None)
+    if isinstance(size_attr, int) and size_attr >= 0:
+        declared = size_attr
+    if (
+        declared is None
+        and request is not None
+        and not request.headers.get("content-type", "").lower().startswith("multipart/")
+    ):
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                declared = int(cl)
+            except (TypeError, ValueError):
+                declared = None
+    if declared is not None and declared > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "reason": "frame_too_large",
+                "max_bytes": max_bytes,
+                "declared_bytes": declared,
+            },
+        )
+
+    # 2. Streaming accumulate (bypasses ``frame.read()`` which buffers fully).
+    buf = bytearray()
+    while True:
+        chunk = await frame.read(_FRAME_READ_CHUNK)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "reason": "frame_too_large",
+                    "max_bytes": max_bytes,
+                    "received_bytes": len(buf),
+                },
+            )
+    data = bytes(buf)
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty frame image")
+
+    # 3. Decode + dimension/format validation via PIL.
+    try:
+        from PIL import Image  # noqa: PLC0415 — Pillow is a declared dep
+    except ImportError as exc:  # pragma: no cover — Pillow is in pyproject
+        raise HTTPException(
+            status_code=500, detail="image validation unavailable"
+        ) from exc
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            fmt = img.format
+            width, height = img.size
+            img.verify()
+        # verify() checks the stream structure but invalidates the decoder;
+        # reopen and load pixels to reject truncated images with valid headers.
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"frame is not a decodable image: {exc}"
+        ) from exc
+    if fmt not in _ALLOWED_FRAME_IMAGE_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported frame image format: {fmt}",
+        )
+    if width > _MAX_FRAME_DIMENSION or height > _MAX_FRAME_DIMENSION:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"frame dimensions exceed {_MAX_FRAME_DIMENSION}px: {width}x{height}"
+            ),
+        )
+    if width * height > _MAX_FRAME_PIXELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"frame pixel count exceeds {_MAX_FRAME_PIXELS}",
+        )
+    return data
 
 
 def _out(backend: MLBackendRegistry, project_id: uuid.UUID) -> MLBackendOut:
@@ -568,6 +716,262 @@ async def _fetch_setup_cached(backend, backend_id: uuid.UUID) -> dict:
     return data
 
 
+async def _prepare_safe_interactive_context(
+    backend: MLBackendRegistry,
+    backend_id: uuid.UUID,
+    context: dict,
+    *,
+    task_id: uuid.UUID,
+    frame_index: int | None = None,
+) -> tuple[dict, str | None]:
+    uses_mask_contract = any(
+        key in context
+        for key in (
+            "mask_prompt",
+            "mask_input",
+            "scribbles",
+            "output_geometry",
+            "model_id",
+        )
+    ) or context.get("type") in {"point", "interactive_box", "mask", "scribble"}
+    if not uses_mask_contract:
+        return dict(context), None
+    setup = await _fetch_setup_cached(backend, backend_id)
+    capabilities = extract_capabilities(setup)
+    return prepare_interactive_context(
+        context,
+        capabilities,
+        task_id=str(task_id),
+        frame_index=frame_index,
+        requested_backend_id=str(backend_id),
+    )
+
+
+async def _task_media_size(
+    db: AsyncSession,
+    task: Task,
+) -> tuple[int, int] | None:
+    if task.dataset_item_id is None:
+        return None
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    if (
+        item is None
+        or not isinstance(item.width, int)
+        or not isinstance(item.height, int)
+        or item.width <= 0
+        or item.height <= 0
+    ):
+        return None
+    return item.width, item.height
+
+
+def _decoded_image_size(data: bytes) -> tuple[int, int]:
+    from PIL import Image  # noqa: PLC0415
+
+    with Image.open(io.BytesIO(data)) as image:
+        return image.size
+
+
+def _interactive_response(
+    result,
+    *,
+    context: dict,
+    expected_size: tuple[int, int] | None,
+    client: RoutedMLBackendClient,
+    requested_backend_id: uuid.UUID,
+    model_id: str | None,
+    task_id: uuid.UUID,
+    frame_index: int | None,
+) -> dict:
+    operation = mask_ai_operation(context)
+    decode_started = time.monotonic()
+    try:
+        normalized, diagnostic = normalize_native_mask_response(
+            result.result,
+            getattr(result, "diagnostic", None),
+            context=context,
+            expected_size=expected_size,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=operation,
+            phase="decode",
+            outcome="error",
+            duration_seconds=time.monotonic() - decode_started,
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=operation,
+        phase="decode",
+        outcome="success",
+        duration_seconds=time.monotonic() - decode_started,
+    )
+    routing = {
+        "requested_backend_id": str(requested_backend_id),
+        "backend_pool_id": str(client.pool_id) if client.pool_id else None,
+        "backend_instance_id": (
+            str(client.last_instance_id) if client.last_instance_id else None
+        ),
+        "model_id": model_id,
+    }
+    accept_receipts: dict[str, str] = {}
+    prompt_revision = context.get("prompt_revision")
+    prompt_summary = _interactive_prompt_summary(context)
+    prompt_source = _interactive_prompt_source(context)
+    accept_target = {
+        "mode": "refine" if prompt_source is not None else "create",
+        "source_annotation_id": (
+            prompt_source.get("source_annotation_id") if prompt_source else None
+        ),
+        "source_version": prompt_source.get("source_version")
+        if prompt_source
+        else None,
+        "frame_index": frame_index,
+    }
+    if context.get("output_geometry") == "mask" and isinstance(prompt_revision, str):
+        for candidate_index, candidate in enumerate(normalized):
+            rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
+            content_digest = hashlib.sha256(canonical_rle_bytes(rle)).hexdigest()
+            candidate_id = str(candidate["candidate_id"])
+            accept_receipts[candidate_id] = issue_ai_mask_receipt(
+                {
+                    "task_id": str(task_id),
+                    "frame_index": frame_index,
+                    "candidate_id": candidate_id,
+                    "candidate_index": candidate_index,
+                    "content_digest": content_digest,
+                    "prompt_revision": prompt_revision,
+                    "score": candidate.get("score"),
+                    "routing": routing,
+                    "inference": {
+                        "model_version": getattr(result, "model_version", None),
+                        "inference_time_ms": result.inference_time_ms,
+                        "cache_hit": result.cache_hit,
+                        "model_load_ms": result.model_load_ms,
+                    },
+                    "prompt_summary": prompt_summary,
+                    "prompt_source": prompt_source,
+                    "accept_target": accept_target,
+                }
+            )
+    mask_input_next = None
+    raw_mask_input = getattr(result, "mask_input_next", None)
+    if isinstance(raw_mask_input, str) and len(normalized) == 1:
+        mask_prompt = context.get("mask_prompt")
+        source = (
+            {
+                "source_annotation_id": mask_prompt.get("source_annotation_id"),
+                "source_version": mask_prompt.get("source_version"),
+                "source_digest": mask_prompt.get("source_digest"),
+            }
+            if isinstance(mask_prompt, dict)
+            else None
+        )
+        try:
+            mask_input_next = issue_ai_mask_session(
+                raw_mask_input,
+                {
+                    "task_id": str(task_id),
+                    "frame_index": frame_index,
+                    "requested_backend_id": str(requested_backend_id),
+                    "model_id": model_id,
+                    "model_variants": context.get("model_variants") or {},
+                    "source": source,
+                    "origin_prompt_revision": prompt_revision,
+                    "candidate_id": normalized[0].get("candidate_id"),
+                    "candidate_index": 0,
+                },
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "reason": "invalid_mask_session_payload",
+                    "message": "backend returned invalid Mask session logits",
+                },
+            ) from exc
+    return {
+        "result": normalized,
+        "score": result.score,
+        "model_version": getattr(result, "model_version", None),
+        "inference_time_ms": result.inference_time_ms,
+        "cache_hit": result.cache_hit,
+        "model_load_ms": result.model_load_ms,
+        "mask_input_next": mask_input_next,
+        "diagnostic": diagnostic,
+        "prompt_revision": prompt_revision,
+        "output_geometry": context.get("output_geometry", "polygon"),
+        "frame_index": frame_index,
+        "routing": routing,
+        "prompt_summary": prompt_summary,
+        "accept_receipts": accept_receipts,
+    }
+
+
+def _interactive_prompt_source(context: dict) -> dict | None:
+    mask_prompt = context.get("mask_prompt")
+    if not isinstance(mask_prompt, dict):
+        return None
+    return {
+        "source_annotation_id": mask_prompt.get("source_annotation_id"),
+        "source_version": mask_prompt.get("source_version"),
+        "source_digest": mask_prompt.get("source_digest"),
+    }
+
+
+def _interactive_prompt_summary(context: dict) -> dict:
+    prompt_type = str(context.get("type") or "point")
+    labels = context.get("labels") if isinstance(context.get("labels"), list) else []
+    exemplars = (
+        context.get("exemplars") if isinstance(context.get("exemplars"), list) else []
+    )
+    scribbles = (
+        context.get("scribbles") if isinstance(context.get("scribbles"), list) else []
+    )
+    excluded = {
+        "type",
+        "points",
+        "labels",
+        "bbox",
+        "exemplars",
+        "scribbles",
+        "mask_prompt",
+        "mask_input",
+        "prompt_revision",
+        "output_geometry",
+        "model_id",
+    }
+    parameters = {key: value for key, value in context.items() if key not in excluded}
+    parameters_digest = (
+        hashlib.sha256(
+            json.dumps(
+                parameters,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if parameters
+        else None
+    )
+    return {
+        "family": prompt_type,
+        "positive_points": sum(label == 1 for label in labels),
+        "negative_points": sum(label == 0 for label in labels),
+        "boxes": 1 if prompt_type == "interactive_box" else len(exemplars),
+        "positive_scribbles": sum(
+            isinstance(stroke, dict) and stroke.get("polarity") == 1
+            for stroke in scribbles
+        ),
+        "negative_scribbles": sum(
+            isinstance(stroke, dict) and stroke.get("polarity") == 0
+            for stroke in scribbles
+        ),
+        "multimask": context.get("multimask_output") is True,
+        "parameters_digest": parameters_digest,
+    }
+
+
 @router.get(
     "/{backend_id}/setup",
     dependencies=[Depends(require_project_visible)],
@@ -738,12 +1142,14 @@ async def predict_test(
 
 @router.post(
     "/{backend_id}/interactive-annotating",
+    response_model=InteractiveAnnotateResponse,
     dependencies=[Depends(require_project_visible)],
 )
 async def interactive_annotating(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     body: InteractiveRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
@@ -767,11 +1173,31 @@ async def interactive_annotating(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, body.task_id, project_id)
+    await _assert_task_visible(db, task, current_user)
+    if (body.context or {}).get("mask_prompt_source") is not None:
+        assert_request_scopes(request, "annotations:read")
 
     # AI 推理参数 (阈值 / 变体等) 已统一改走工作台 AI 面板: 前端按所绑定 backend 的
     # /setup.params 动态渲染、每用户独立调整, 并随 context 透传。平台不再注入项目级 DINO
     # 阈值 (那会把 gsam2 专属参数塞给 sam3 等不支持的后端); 各 backend 缺省值由自身 /setup 决定。
-    context = dict(body.context or {})
+    resolved_context = await resolve_authorized_mask_prompt(
+        db,
+        task=task,
+        context=dict(body.context or {}),
+        frame_index=None,
+    )
+    context, model_id = await _prepare_safe_interactive_context(
+        backend,
+        backend_id,
+        resolved_context,
+        task_id=task.id,
+        frame_index=None,
+    )
+    expected_size = (
+        await _task_media_size(db, task)
+        if context.get("output_geometry") == "mask"
+        else None
+    )
     await db.commit()
 
     client = RoutedMLBackendClient(
@@ -783,19 +1209,81 @@ async def interactive_annotating(
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
-    result = await client.predict_interactive(
-        task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
-        context=context,
+    predict_kwargs = (
+        {"max_response_bytes": MAX_MASK_RESPONSE_BYTES}
+        if context.get("output_geometry") == "mask"
+        else {}
     )
-    return {
-        "result": result.result,
-        "score": result.score,
-        "inference_time_ms": result.inference_time_ms,
-        "cache_hit": result.cache_hit,
-        "model_load_ms": result.model_load_ms,
-        # v0.18.18 · 交互精修 low-res logits 回灌 (前端原样存储、下次点击经 context.mask_input 回传)
-        "mask_input_next": result.mask_input_next,
-    }
+    metric_operation = mask_ai_operation(context)
+    metric_prompt = mask_ai_prompt_family(context)
+    metric_geometry = str(context.get("output_geometry") or "unknown")
+    inference_started = time.monotonic()
+    try:
+        result = await client.predict_interactive(
+            task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
+            context=context,
+            **predict_kwargs,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="inference",
+            outcome="error",
+            duration_seconds=time.monotonic() - inference_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="inference",
+        outcome="success",
+        duration_seconds=time.monotonic() - inference_started,
+    )
+    encode_started = time.monotonic()
+    try:
+        response_body = _interactive_response(
+            result,
+            context=context,
+            expected_size=expected_size,
+            client=client,
+            requested_backend_id=backend_id,
+            model_id=model_id,
+            task_id=task.id,
+            frame_index=None,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="encode",
+            outcome="error",
+            duration_seconds=time.monotonic() - encode_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="encode",
+        outcome="success",
+        duration_seconds=time.monotonic() - encode_started,
+    )
+    record_mask_ai_operation(
+        operation=metric_operation,
+        prompt_family=metric_prompt,
+        output_geometry=metric_geometry,
+        candidate_count=len(response_body["result"]),
+        outcome="success",
+    )
+    return response_body
 
 
 @router.post(
@@ -805,6 +1293,7 @@ async def interactive_annotating(
 async def predict_frame(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
+    request: Request,
     frame: UploadFile = File(...),
     task_id: uuid.UUID = Form(...),
     frame_index: int = Form(...),
@@ -839,6 +1328,7 @@ async def predict_frame(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, task_id, project_id)
+    await _assert_task_visible(db, task, current_user)
 
     try:
         cfg = json.loads(config) if config else {}
@@ -870,13 +1360,16 @@ async def predict_frame(
         ),
     )
 
-    jpeg_bytes = await frame.read()
-    if not jpeg_bytes:
-        raise HTTPException(status_code=400, detail="Empty frame image")
+    # v0.23.5 · WS-D · D2 · bounded frame read (Content-Length + streaming cap
+    # + JPEG/PNG decode + dim/pixel limits) before any storage I/O.
+    jpeg_bytes = await _read_capped_frame(frame, request=request)
 
     storage = StorageService()
-    frame_url = storage.upload_crop_bytes(
-        jpeg_bytes, f"frame-predict/{task_id}/{frame_index}.jpg"
+    # v0.23.5 · WS-D · D5 · boto3 sync put_object wrapped in to_thread.
+    frame_url = await asyncio.to_thread(
+        storage.upload_crop_bytes,
+        jpeg_bytes,
+        f"frame-predict/{task_id}/{frame_index}.jpg",
     )
     await db.commit()
 
@@ -919,15 +1412,17 @@ async def predict_frame(
 
 @router.post(
     "/{backend_id}/interactive-annotating-frame",
+    response_model=InteractiveAnnotateResponse,
     dependencies=[Depends(require_project_visible)],
 )
 async def interactive_annotating_frame(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
+    request: Request,
     frame: UploadFile = File(...),
     task_id: uuid.UUID = Form(...),
     frame_index: int = Form(...),
-    context: str = Form("{}"),
+    context: str = Form("{}", max_length=MAX_INTERACTIVE_CONTEXT_BODY_BYTES),
     db: AsyncSession = Depends(get_db),
     shadow_session_factory: GPUShadowSessionFactory = Depends(
         get_gpu_shadow_session_factory
@@ -941,8 +1436,9 @@ async def interactive_annotating_frame(
 ):
     """视频当前帧的**交互式** SAM 提示 (point / interactive_box / exemplar)。
 
-    与 ``interactive-annotating`` 同一个 backend 契约 (``context`` 原样透传, 见
-    ``InteractiveRequest.context``), 唯一差别是**图从哪来**: 图片 task 由服务端
+    与 ``interactive-annotating`` 同一个 backend 契约（兼容 ``context`` 透传，显式
+    原生 Mask 请求会经过能力预检与响应校验，见 ``InteractiveRequest.context``），
+    唯一差别是**图从哪来**: 图片 task 由服务端
     ``_resolve_task_url(task)`` 取, 而视频 task 的 ``file_path`` 是整段 mp4, SAM 吃不到帧。
     故前端把当前帧解成 JPEG 随 multipart 传入 (复用 ``predict-frame`` 的 client 供图机制:
     上传 import 桶换 presigned URL, 通用 http URL, 不走 ``data:`` 捷径)。
@@ -965,6 +1461,16 @@ async def interactive_annotating_frame(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, task_id, project_id)
+    await _assert_task_visible(db, task, current_user)
+
+    if len(context.encode()) > MAX_INTERACTIVE_CONTEXT_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "reason": "interactive_context_too_large",
+                "message": "interactive context must be <= 1 MiB",
+            },
+        )
 
     try:
         ctx = json.loads(context) if context else {}
@@ -972,14 +1478,63 @@ async def interactive_annotating_frame(
         raise HTTPException(status_code=400, detail="Invalid context JSON")
     if not isinstance(ctx, dict):
         raise HTTPException(status_code=400, detail="context must be a JSON object")
+    if ctx.get("mask_prompt_source") is not None:
+        assert_request_scopes(request, "annotations:read")
 
-    jpeg_bytes = await frame.read()
-    if not jpeg_bytes:
-        raise HTTPException(status_code=400, detail="Empty frame image")
+    ctx = await resolve_authorized_mask_prompt(
+        db,
+        task=task,
+        context=ctx,
+        frame_index=frame_index,
+    )
+    ctx, model_id = await _prepare_safe_interactive_context(
+        backend,
+        backend_id,
+        ctx,
+        task_id=task.id,
+        frame_index=frame_index,
+    )
+
+    # v0.23.5 · WS-D · D2 · bounded frame read (Content-Length + streaming cap
+    # + JPEG/PNG decode + dim/pixel limits) before any storage I/O.
+    jpeg_bytes = await _read_capped_frame(frame, request=request)
+    expected_size = (
+        _decoded_image_size(jpeg_bytes)
+        if ctx.get("output_geometry") == "mask"
+        else None
+    )
 
     storage = StorageService()
-    frame_url = storage.upload_crop_bytes(
-        jpeg_bytes, f"frame-interactive/{task_id}/{frame_index}.jpg"
+    # v0.23.5 · WS-D · D5 · boto3 sync put_object wrapped in to_thread.
+    metric_operation = mask_ai_operation(ctx)
+    metric_prompt = mask_ai_prompt_family(ctx)
+    metric_geometry = str(ctx.get("output_geometry") or "unknown")
+    upload_started = time.monotonic()
+    try:
+        frame_url = await asyncio.to_thread(
+            storage.upload_crop_bytes,
+            jpeg_bytes,
+            f"frame-interactive/{task_id}/{frame_index}.jpg",
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="upload",
+            outcome="error",
+            duration_seconds=time.monotonic() - upload_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="upload",
+        outcome="success",
+        duration_seconds=time.monotonic() - upload_started,
     )
     await db.commit()
 
@@ -994,18 +1549,78 @@ async def interactive_annotating_frame(
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
-    result = await client.predict_interactive(
-        task_data={"id": str(task.id), "file_path": frame_url},
-        context=ctx,
+    predict_kwargs = (
+        {"max_response_bytes": MAX_MASK_RESPONSE_BYTES}
+        if ctx.get("output_geometry") == "mask"
+        else {}
     )
-    return {
-        "result": result.result,
-        "score": result.score,
-        "inference_time_ms": result.inference_time_ms,
-        "cache_hit": result.cache_hit,
-        "model_load_ms": result.model_load_ms,
-        "mask_input_next": result.mask_input_next,
-    }
+    inference_started = time.monotonic()
+    try:
+        result = await client.predict_interactive(
+            task_data={"id": str(task.id), "file_path": frame_url},
+            context=ctx,
+            **predict_kwargs,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="inference",
+            outcome="error",
+            duration_seconds=time.monotonic() - inference_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="inference",
+        outcome="success",
+        duration_seconds=time.monotonic() - inference_started,
+    )
+    encode_started = time.monotonic()
+    try:
+        response_body = _interactive_response(
+            result,
+            context=ctx,
+            expected_size=expected_size,
+            client=client,
+            requested_backend_id=backend_id,
+            model_id=model_id,
+            task_id=task.id,
+            frame_index=frame_index,
+        )
+    except Exception:
+        observe_mask_ai_phase(
+            operation=metric_operation,
+            phase="encode",
+            outcome="error",
+            duration_seconds=time.monotonic() - encode_started,
+        )
+        record_mask_ai_operation(
+            operation=metric_operation,
+            prompt_family=metric_prompt,
+            output_geometry=metric_geometry,
+            outcome="error",
+        )
+        raise
+    observe_mask_ai_phase(
+        operation=metric_operation,
+        phase="encode",
+        outcome="success",
+        duration_seconds=time.monotonic() - encode_started,
+    )
+    record_mask_ai_operation(
+        operation=metric_operation,
+        prompt_family=metric_prompt,
+        output_geometry=metric_geometry,
+        candidate_count=len(response_body["result"]),
+        outcome="success",
+    )
+    return response_body
 
 
 # ── v0.23.3 ADR-0050 §12.2 · 项目服务池绑定 API (pool-level) ──────────────────

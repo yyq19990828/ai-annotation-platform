@@ -17,16 +17,16 @@ last_reviewed: 2026-07-11
 
 ## kind 取值
 
-| kind | 触发位 | 是否支持 cancel API |
-|---|---|---|
-| `batch_predict` | 项目 / 批次预标按钮（AIPreAnnotate 或 ProjectDetailPanel） | ✅（协作取消） |
-| `prediction_retry` | 失败预测列表的重试按钮 | ❌ |
-| `video_tracker` | 视频工作台 tracker 触发 | ❌（走 video tracker 自身取消接口） |
-| `audit_archive` | Celery beat 每月 2 日 03:00 UTC | ✅ |
-| `predictions_import` | 外部 prediction 上传（[Import guide](./import)） | ✅ |
-| `dataset_import` | 数据集连接器导入文件 | ✅ |
-| `create_tasks` | 数据集关联项目且 item 数 > `TASK_CREATE_SYNC_THRESHOLD`（默认 2000）时，建 task 转入后台 | ❌ |
-| `export` | 项目 / 批次导出 | ❌ |
+| kind                 | 触发位                                                                                   | 是否支持 cancel API                 |
+| -------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- |
+| `batch_predict`      | 项目 / 批次预标按钮（AIPreAnnotate 或 ProjectDetailPanel）                               | ✅（协作取消）                      |
+| `prediction_retry`   | 失败预测列表的重试按钮                                                                   | ❌                                  |
+| `video_tracker`      | 视频工作台 tracker 触发                                                                  | ❌（走 video tracker 自身取消接口） |
+| `audit_archive`      | Celery beat 每月 2 日 03:00 UTC                                                          | ✅                                  |
+| `predictions_import` | 外部 prediction 上传（[Import guide](./import)）                                         | ✅                                  |
+| `dataset_import`     | 数据集连接器导入文件                                                                     | ✅                                  |
+| `create_tasks`       | 数据集关联项目且 item 数 > `TASK_CREATE_SYNC_THRESHOLD`（默认 2000）时，建 task 转入后台 | ❌                                  |
+| `export`             | 项目 / 批次导出                                                                          | ❌                                  |
 
 ## 端点
 
@@ -34,14 +34,14 @@ last_reviewed: 2026-07-11
 
 按 `user_id` 过滤（super_admin 看全部）。
 
-| Query | 类型 | 说明 |
-|---|---|---|
-| `status` | enum, repeatable | `pending` / `running` / `completed` / `failed` / `cancelled`；可重复传入，如 `?status=pending&status=running` |
-| `kind` | string, repeatable | 上表 kind 字符串；可重复传入，如 `?kind=batch_predict&kind=prediction_retry` |
-| `project_id` | uuid | 只看某个项目的任务 |
-| `search` | string | 匹配 payload 中的 `prompt` / `batch_display_id` / `model_key` |
-| `limit` | int (1-200) | 默认 50 |
-| `offset` | int | 默认 0 |
+| Query        | 类型               | 说明                                                                                                          |
+| ------------ | ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `status`     | enum, repeatable   | `pending` / `running` / `completed` / `failed` / `cancelled`；可重复传入，如 `?status=pending&status=running` |
+| `kind`       | string, repeatable | 上表 kind 字符串；可重复传入，如 `?kind=batch_predict&kind=prediction_retry`                                  |
+| `project_id` | uuid               | 只看某个项目的任务                                                                                            |
+| `search`     | string             | 匹配 payload 中的 `prompt` / `batch_display_id` / `model_key`                                                 |
+| `limit`      | int (1-200)        | 默认 50                                                                                                       |
+| `offset`     | int                | 默认 0                                                                                                        |
 
 响应：
 
@@ -124,15 +124,15 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 以下 kind 在有 `user_id` 且进入终态后会通过 `notifications` 体系发站内通知：
 
-| kind | `completed` | `failed` | `cancelled` |
-|---|---|---|---|
-| `batch_predict` | `job.completed` | `job.failed` | `job.cancelled` |
-| `prediction_retry` | `job.completed` | `job.failed` | - |
-| `video_tracker` | `job.completed` | `job.failed` | `job.cancelled` |
+| kind                 | `completed`     | `failed`     | `cancelled`     |
+| -------------------- | --------------- | ------------ | --------------- |
+| `batch_predict`      | `job.completed` | `job.failed` | `job.cancelled` |
+| `prediction_retry`   | `job.completed` | `job.failed` | -               |
+| `video_tracker`      | `job.completed` | `job.failed` | `job.cancelled` |
 | `predictions_import` | `job.completed` | `job.failed` | `job.cancelled` |
-| `dataset_import` | `job.completed` | `job.failed` | `job.cancelled` |
-| `create_tasks` | `job.completed` | `job.failed` | - |
-| `audit_archive` | `job.completed` | `job.failed` | `job.cancelled` |
+| `dataset_import`     | `job.completed` | `job.failed` | `job.cancelled` |
+| `create_tasks`       | `job.completed` | `job.failed` | -               |
+| `audit_archive`      | `job.completed` | `job.failed` | `job.cancelled` |
 
 通知 payload 至少包含 `kind` / `status`，并会带上可展示字段（如 `batch_display_id`、
 `task_display_id`、`project_display_id`）和结果摘要（如 `success_count` / `failed_count` /
@@ -152,13 +152,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## 与 `PreannotateJobsBadge` 的区别
 
-| 维度 | PreannotateJobsBadge | JobsBell (本端点) |
-|---|---|---|
-| 数据通道 | Redis pub/sub（`project:{id}:preannotate` + `global:prediction-jobs`） | Polling `/api/v1/async-jobs?limit=20`（5s interval） |
-| 实时性 | 秒级 | 5s |
-| kind 覆盖 | 仅 `batch_predict` | 全部 async_jobs kind |
-| 历史记录 | ❌（仅 in-progress） | ✅（含最近完成） |
-| 用户范围 | super_admin / project_admin | 所有登录用户（owner-scoped） |
+| 维度      | PreannotateJobsBadge                                                   | JobsBell (本端点)                                    |
+| --------- | ---------------------------------------------------------------------- | ---------------------------------------------------- |
+| 数据通道  | Redis pub/sub（`project:{id}:preannotate` + `global:prediction-jobs`） | Polling `/api/v1/async-jobs?limit=20`（5s interval） |
+| 实时性    | 秒级                                                                   | 5s                                                   |
+| kind 覆盖 | 仅 `batch_predict`                                                     | 全部 async_jobs kind                                 |
+| 历史记录  | ❌（仅 in-progress）                                                   | ✅（含最近完成）                                     |
+| 用户范围  | super_admin / project_admin                                            | 所有登录用户（owner-scoped）                         |
 
 两者**并存**，互补不冲突。
 

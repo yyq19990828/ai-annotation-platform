@@ -4,9 +4,26 @@ export interface CocoRle {
   counts: number[];
 }
 
-export const MAX_MASK_DIMENSION = 4096;
-export const MAX_MASK_PIXELS = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION;
+export const MAX_IMAGE_MASK_DIMENSION = 8192;
+export const MAX_IMAGE_MASK_PIXELS = 67_108_864;
+export const MAX_VIDEO_MASK_DIMENSION = 4096;
+export const MAX_VIDEO_MASK_PIXELS = 16_777_216;
+export const MAX_DENSE_MASK_PIXELS = MAX_VIDEO_MASK_PIXELS;
+export const MAX_MASK_DIMENSION = MAX_IMAGE_MASK_DIMENSION;
+export const MAX_MASK_PIXELS = MAX_IMAGE_MASK_PIXELS;
 export const MAX_MASK_RUNS = 1_000_000;
+export const MAX_MASK_GZIP_COMPRESSED_BYTES = 8 * 1024 * 1024;
+export const MAX_MASK_GZIP_UNCOMPRESSED_BYTES = 4 * 1024 * 1024;
+export const MAX_MASK_GZIP_EXPANSION_RATIO = 20;
+export const MASK_GZIP_MIN_BYTES = 64 * 1024;
+
+type GzipCompressor = (input: Uint8Array) => Promise<Uint8Array>;
+
+export interface PreparedCocoRleGzipUpload {
+  body: Blob;
+  compressedBytes: number;
+  uncompressedBytes: number;
+}
 
 function positiveInteger(value: unknown, name: string): number {
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
@@ -46,7 +63,11 @@ export function validateCocoRle(rle: unknown): CocoRle {
   return { encoding: "coco_rle", size: [height, width], counts: [...value.counts] };
 }
 
-export function encodeCocoRle(pixelsRowMajor: ArrayLike<number>, width: number, height: number): CocoRle {
+export function encodeCocoRle(
+  pixelsRowMajor: ArrayLike<number>,
+  width: number,
+  height: number,
+): CocoRle {
   const checkedWidth = positiveInteger(width, "width");
   const checkedHeight = positiveInteger(height, "height");
   if (checkedWidth > MAX_MASK_DIMENSION || checkedHeight > MAX_MASK_DIMENSION) {
@@ -92,4 +113,116 @@ export function decodeCocoRle(rle: unknown): Uint8Array {
     foreground = !foreground;
   }
   return out;
+}
+
+/** Exact point lookup without materializing the full row-major alpha plane. */
+export function cocoRleContainsPixel(rle: CocoRle, x: number, y: number): boolean {
+  const [height, width] = rle.size;
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) {
+    return false;
+  }
+  const target = x * height + y;
+  let offset = 0;
+  let foreground = false;
+  for (const runLength of rle.counts) {
+    if (target < offset + runLength) return foreground;
+    offset += runLength;
+    foreground = !foreground;
+  }
+  return false;
+}
+
+export function cocoRleArea(rle: CocoRle): number {
+  return rle.counts.reduce((area, count, index) => area + ((index & 1) === 1 ? count : 0), 0);
+}
+
+/** Exact normalized foreground bounds without allocating a dense alpha plane. */
+export function cocoRleBounds(rle: CocoRle): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} | null {
+  const [height, width] = rle.size;
+  let offset = 0;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let index = 0; index < rle.counts.length; index += 1) {
+    const runLength = rle.counts[index];
+    if ((index & 1) === 1 && runLength > 0) {
+      const start = offset;
+      const end = offset + runLength - 1;
+      const startX = Math.floor(start / height);
+      const endX = Math.floor(end / height);
+      minX = Math.min(minX, startX);
+      maxX = Math.max(maxX, endX);
+      if (startX === endX) {
+        minY = Math.min(minY, start % height);
+        maxY = Math.max(maxY, end % height);
+      } else {
+        minY = 0;
+        maxY = height - 1;
+      }
+    }
+    offset += runLength;
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return {
+    x: minX / width,
+    y: minY / height,
+    w: (maxX - minX + 1) / width,
+    h: (maxY - minY + 1) / height,
+  };
+}
+
+async function compressWithBrowserStream(input: Uint8Array): Promise<Uint8Array> {
+  if (typeof CompressionStream === "undefined") {
+    throw new Error("CompressionStream is unavailable");
+  }
+  const stream = new Blob([input]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * 为 mask-content 上传准备真实 HTTP gzip 正文。
+ *
+ * 返回 null 表示必须走普通 JSON：小正文、浏览器不支持 gzip、任一绝对上限超出，或
+ * 展开比超过后端 reader 的 20× 安全合同。对象存储偏好与 RLE 正文编码分离，故压缩
+ * 前正文仍保持 encoding=coco_rle，仅额外携带 storage_encoding=gzip。
+ */
+export async function prepareCocoRleGzipUpload(
+  rle: CocoRle,
+  options: { minBytes?: number; compress?: GzipCompressor } = {},
+): Promise<PreparedCocoRleGzipUpload | null> {
+  const checked = validateCocoRle(rle);
+  const json = JSON.stringify({ ...checked, storage_encoding: "gzip" });
+  const raw = new TextEncoder().encode(json);
+  const minBytes = options.minBytes ?? MASK_GZIP_MIN_BYTES;
+  if (raw.byteLength < minBytes || raw.byteLength > MAX_MASK_GZIP_UNCOMPRESSED_BYTES) {
+    return null;
+  }
+  const compress =
+    options.compress ??
+    (typeof CompressionStream === "undefined" ? null : compressWithBrowserStream);
+  if (!compress) return null;
+  let compressed: Uint8Array;
+  try {
+    compressed = await compress(raw);
+  } catch {
+    return null;
+  }
+  if (
+    compressed.byteLength === 0 ||
+    compressed.byteLength > MAX_MASK_GZIP_COMPRESSED_BYTES ||
+    raw.byteLength > compressed.byteLength * MAX_MASK_GZIP_EXPANSION_RATIO
+  ) {
+    return null;
+  }
+  return {
+    body: new Blob([compressed], { type: "application/json" }),
+    compressedBytes: compressed.byteLength,
+    uncompressedBytes: raw.byteLength,
+  };
 }

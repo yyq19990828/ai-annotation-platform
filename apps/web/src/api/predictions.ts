@@ -42,7 +42,13 @@ export interface PredictionPurgeResult {
 }
 
 export const predictionsApi = {
-  listByTask: (taskId: string, modelVersion?: string, minConfidence?: number, limit?: number, offset?: number) => {
+  listByTask: (
+    taskId: string,
+    modelVersion?: string,
+    minConfidence?: number,
+    limit?: number,
+    offset?: number,
+  ) => {
     const params = new URLSearchParams();
     if (modelVersion) params.set("model_version", modelVersion);
     if (minConfidence !== undefined) params.set("min_confidence", String(minConfidence));
@@ -88,9 +94,7 @@ export const predictionsApi = {
    */
   reject: (taskId: string, predictionId: string, shapeIndex?: number) => {
     const qs = shapeIndex !== undefined ? `?shape_index=${shapeIndex}` : "";
-    return apiClient.post<void>(
-      `/tasks/${taskId}/predictions/${predictionId}/reject${qs}`,
-    );
+    return apiClient.post<void>(`/tasks/${taskId}/predictions/${predictionId}/reject${qs}`);
   },
 
   /**
@@ -125,14 +129,11 @@ export const predictionsApi = {
     }
 
     const token = localStorage.getItem("token");
-    const res = await fetch(
-      `/api/v1/projects/${projectId}/predictions/import?${params}`,
-      {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      },
-    );
+    const res = await fetch(`/api/v1/projects/${projectId}/predictions/import?${params}`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { detail?: string };
       throw new Error(body.detail ?? `HTTP ${res.status}`);
@@ -140,15 +141,14 @@ export const predictionsApi = {
     return res.json();
   },
 
-  purge: (projectId: string, payload: {
-    source_scope: PredictionPurgeSourceScope;
-    task_ids?: string[] | null;
-    dry_run?: boolean;
-  }) =>
-    apiClient.post<PredictionPurgeResult>(
-      `/projects/${projectId}/predictions/purge`,
-      payload,
-    ),
+  purge: (
+    projectId: string,
+    payload: {
+      source_scope: PredictionPurgeSourceScope;
+      task_ids?: string[] | null;
+      dry_run?: boolean;
+    },
+  ) => apiClient.post<PredictionPurgeResult>(`/projects/${projectId}/predictions/purge`, payload),
 
   /**
    * v0.10.54 · 导入 AAP JSON 的 annotations[] (ADR-0028).
@@ -167,14 +167,11 @@ export const predictionsApi = {
     if (options.overwrite) form.append("overwrite", "true");
 
     const token = localStorage.getItem("token");
-    const res = await fetch(
-      `/api/v1/projects/${projectId}/annotations/import?${params}`,
-      {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      },
-    );
+    const res = await fetch(`/api/v1/projects/${projectId}/annotations/import?${params}`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { detail?: string };
       throw new Error(body.detail ?? `HTTP ${res.status}`);

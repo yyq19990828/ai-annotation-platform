@@ -5,7 +5,11 @@
 
 import pytest
 
-from attribute_schema import COLOR_OPTIONS, OUTPUT_ATTRIBUTE_SCHEMA, VEHICLE_TYPE_OPTIONS
+from attribute_schema import (
+    COLOR_OPTIONS,
+    OUTPUT_ATTRIBUTE_SCHEMA,
+    VEHICLE_TYPE_OPTIONS,
+)
 
 
 class TestOptionsStructure:

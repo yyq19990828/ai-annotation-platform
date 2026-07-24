@@ -94,7 +94,11 @@ _EXPORT_TARGETS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 # 默认勾选项 (对齐 web): image→coco / video→video_json / lidar→aap_json
-_EXPORT_DEFAULT: dict[str, str] = {"image": "coco", "video": "video_json", "lidar": "aap_json"}
+_EXPORT_DEFAULT: dict[str, str] = {
+    "image": "coco",
+    "video": "video_json",
+    "lidar": "aap_json",
+}
 
 # 全员绩效看板需 super_admin 全局可见 (project_admin 须按项目切分, 用 CLI aap dashboard people --project)
 _PEOPLE_ROLE = "super_admin"
@@ -391,7 +395,9 @@ class _ConfirmCancelModal(ModalScreen):
                 yield from self.compose_body()
             with Horizontal(id="modal-buttons"):
                 yield Button(
-                    self._confirm_label, id="modal-ok", variant=self._confirm_variant  # type: ignore[arg-type]
+                    self._confirm_label,
+                    id="modal-ok",
+                    variant=self._confirm_variant,  # type: ignore[arg-type]
                 )
                 yield Button("取消", id="modal-cancel", variant="default")
 
@@ -618,7 +624,9 @@ def _job_detail(job: Job) -> str:
             lines.append(f"result: {job.result}")
             if job.result.get("download_url"):
                 lines.append(f"导出包地址: {job.result['download_url']}")
-                lines.append("提示: 用 client.exports.download(job_id, dest) 下载到本地")
+                lines.append(
+                    "提示: 用 client.exports.download(job_id, dest) 下载到本地"
+                )
     return "\n".join(lines)
 
 
@@ -733,7 +741,9 @@ def _fmt_pool(pool: dict | None) -> str:
     return " · ".join(parts) if parts else "空闲"
 
 
-_ML_LIVE_CSS = _DETAIL_CSS + """
+_ML_LIVE_CSS = (
+    _DETAIL_CSS
+    + """
 .spark-label {
     color: $text-muted;
     margin-top: 1;
@@ -752,6 +762,7 @@ _ML_LIVE_CSS = _DETAIL_CSS + """
     margin-top: 1;
 }
 """
+)
 
 
 class MlBackendDetailScreen(Screen[None]):
@@ -777,7 +788,9 @@ class MlBackendDetailScreen(Screen[None]):
         self._worker: Any = None
 
     def compose(self) -> ComposeResult:
-        yield Static(f"aap tui ▸ Backend {self._backend.name} · 实时", classes="breadcrumb")
+        yield Static(
+            f"aap tui ▸ Backend {self._backend.name} · 实时", classes="breadcrumb"
+        )
         with VerticalScroll(classes="detail-body") as box:
             box.border_title = "Backend 实时监控 (WS 1s)"
             yield Static(_ml_backend_detail(self._backend), id="ml-static")
@@ -796,7 +809,9 @@ class MlBackendDetailScreen(Screen[None]):
 
     def on_mount(self) -> None:
         if not self._api_key or not self._base_url:
-            self.query_one("#ml-status", Static).update("（缺 base_url/api_key，实时不可用）")
+            self.query_one("#ml-status", Static).update(
+                "（缺 base_url/api_key，实时不可用）"
+            )
             return
         from ai_annotation.tui.ml_stats_ws import MlStatsStream
 
@@ -818,13 +833,19 @@ class MlBackendDetailScreen(Screen[None]):
 
     def _on_err(self, msg: str) -> None:
         try:
-            self.query_one("#ml-status", Static).update(f"⚠ {msg}（顶部为最近一次 REST 快照）")
+            self.query_one("#ml-status", Static).update(
+                f"⚠ {msg}（顶部为最近一次 REST 快照）"
+            )
         except Exception:
             pass
 
     def _apply(self, snap: MLBackendStatsSnapshot) -> None:
         gpu = snap.gpu_info
-        util = float(gpu.gpu_utilization_percent) if gpu and gpu.gpu_utilization_percent is not None else None
+        util = (
+            float(gpu.gpu_utilization_percent)
+            if gpu and gpu.gpu_utilization_percent is not None
+            else None
+        )
         mem_pct = None
         if gpu and gpu.memory_used_mb is not None and gpu.memory_total_mb:
             mem_pct = 100.0 * gpu.memory_used_mb / gpu.memory_total_mb
@@ -842,7 +863,11 @@ class MlBackendDetailScreen(Screen[None]):
             self._hit.append(hit)
             self.query_one("#spark-hit", AxisChart).set_data(list(self._hit))
 
-        loaded = "✅ 已预热" if snap.loaded else ("⚪ 未加载" if snap.loaded is not None else "-")
+        loaded = (
+            "✅ 已预热"
+            if snap.loaded
+            else ("⚪ 未加载" if snap.loaded is not None else "-")
+        )
         live = (
             f"state {snap.state} · {loaded}"
             f" · 空闲卸载 {_fmt_secs(snap.idle_unload_seconds)}"
@@ -896,9 +921,7 @@ class ProjectDetailScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         p = self._project
-        yield Static(
-            f"aap tui ▸ 项目 {p.display_id} · {p.name}", classes="breadcrumb"
-        )
+        yield Static(f"aap tui ▸ 项目 {p.display_id} · {p.name}", classes="breadcrumb")
         with TabbedContent(id="pd-tabs"):
             with TabPane("📋 概览", id="pd-overview"):
                 yield Static(
@@ -913,7 +936,9 @@ class ProjectDetailScreen(Screen[None]):
                     id="pd-members-table", cursor_type="row", zebra_stripes=True
                 )
             with TabPane("⚙ 任务", id="pd-jobs"):
-                yield DataTable(id="pd-jobs-table", cursor_type="row", zebra_stripes=True)
+                yield DataTable(
+                    id="pd-jobs-table", cursor_type="row", zebra_stripes=True
+                )
             with TabPane("🖥 Backends", id="pd-backends"):
                 yield DataTable(
                     id="pd-backends-table", cursor_type="row", zebra_stripes=True
@@ -993,7 +1018,9 @@ class ProjectDetailScreen(Screen[None]):
         bt.clear()
         for b in backends:
             state_style = _ML_STATE_STYLE.get(b.state, "")
-            model_version = (b.health_meta.model_version if b.health_meta else None) or "-"
+            model_version = (
+                b.health_meta.model_version if b.health_meta else None
+            ) or "-"
             bt.add_row(
                 b.name,
                 Text(b.state, style=state_style),
@@ -1190,12 +1217,16 @@ class AapTuiApp(App[None]):
                     yield Button("🔄 刷新", id="proj-refresh", variant="default")
                     yield Button("↳ 打开", id="proj-open", variant="primary")
                     yield Button("⬇ 导出", id="proj-export", variant="success")
-                yield DataTable(id="projects-table", cursor_type="row", zebra_stripes=True)
+                yield DataTable(
+                    id="projects-table", cursor_type="row", zebra_stripes=True
+                )
             with TabPane("🗂 Datasets", id="tab-datasets"):
                 with Horizontal(classes="action-bar"):
                     yield Button("🔄 刷新", id="ds-refresh", variant="default")
                     yield Button("↳ 打开", id="ds-open", variant="primary")
-                yield DataTable(id="datasets-table", cursor_type="row", zebra_stripes=True)
+                yield DataTable(
+                    id="datasets-table", cursor_type="row", zebra_stripes=True
+                )
             with TabPane("⚙ Jobs", id="tab-jobs"):
                 with Horizontal(classes="action-bar"):
                     yield Button("🔄 刷新", id="jobs-refresh", variant="default")
@@ -1215,14 +1246,20 @@ class AapTuiApp(App[None]):
                     yield Static("数据总量 (12 周)", classes="spark-label")
                     yield AxisChart(x_left="-12w", color="#79c0ff", id="spark-total")
                     yield Static("完成量 (12 周)", classes="spark-label")
-                    yield AxisChart(x_left="-12w", color="#56d364", id="spark-completed")
+                    yield AxisChart(
+                        x_left="-12w", color="#56d364", id="spark-completed"
+                    )
                     yield Static("AI 标注率 (12 周)", classes="spark-label")
-                    yield AxisChart(unit="%", x_left="-12w", color="#d2a8ff", id="spark-airate")
+                    yield AxisChart(
+                        unit="%", x_left="-12w", color="#d2a8ff", id="spark-airate"
+                    )
                     yield Static("待审 (12 周)", classes="spark-label")
                     yield AxisChart(x_left="-12w", color="#e3b341", id="spark-review")
             with TabPane("🏆 绩效", id="tab-people"):
                 yield Static("", id="people-note")
-                yield DataTable(id="people-table", cursor_type="row", zebra_stripes=True)
+                yield DataTable(
+                    id="people-table", cursor_type="row", zebra_stripes=True
+                )
         # 底栏: status-bar(动态信息) 在上, Footer(上下文感知按键) 在下
         with Vertical(id="bottom-bar"):
             yield Static(self._hint, id="status-bar")
@@ -1306,7 +1343,9 @@ class AapTuiApp(App[None]):
             self._refresh_jobs()
 
     def _refresh_projects(self) -> None:
-        self.run_worker(self._load_projects, thread=True, exclusive=True, group="projects")
+        self.run_worker(
+            self._load_projects, thread=True, exclusive=True, group="projects"
+        )
 
     def _refresh_stats(self) -> None:
         self.run_worker(self._load_stats, thread=True, exclusive=True, group="stats")
@@ -1314,10 +1353,14 @@ class AapTuiApp(App[None]):
     def _refresh_people(self) -> None:
         """绩效仅 super_admin 全局可见; 其余角色不发请求 (避免 403)。"""
         if self._role == _PEOPLE_ROLE:
-            self.run_worker(self._load_people, thread=True, exclusive=True, group="people")
+            self.run_worker(
+                self._load_people, thread=True, exclusive=True, group="people"
+            )
 
     def _refresh_datasets(self) -> None:
-        self.run_worker(self._load_datasets, thread=True, exclusive=True, group="datasets")
+        self.run_worker(
+            self._load_datasets, thread=True, exclusive=True, group="datasets"
+        )
 
     def _refresh_jobs(self) -> None:
         self.run_worker(self._load_jobs, thread=True, exclusive=True, group="jobs")
@@ -1407,7 +1450,11 @@ class AapTuiApp(App[None]):
     # ---- 渲染 (UI 线程) ----
 
     def _hint_line(self) -> str:
-        return f"{self._hint} · 刷新 {self._last_refresh}" if self._last_refresh else self._hint
+        return (
+            f"{self._hint} · 刷新 {self._last_refresh}"
+            if self._last_refresh
+            else self._hint
+        )
 
     def _set_status(self, msg: str) -> None:
         bar = self.query_one("#status-bar", Static)
@@ -1498,15 +1545,15 @@ class AapTuiApp(App[None]):
             self._set_status(f"{len(flipped)} 个 job 刚完成")
             self.notify(f"{len(flipped)} 个 job 刚完成", severity="information")
 
-    def _render_ml_backends(
-        self, rows: list[tuple[MLBackend, list[Project]]]
-    ) -> None:
+    def _render_ml_backends(self, rows: list[tuple[MLBackend, list[Project]]]) -> None:
         table = self.query_one("#ml-backends-table", DataTable)
         self._ml_backends = {str(b.id): b for b, _ in rows}
         table.clear()
         for b, projects in rows:
             state_style = _ML_STATE_STYLE.get(b.state, "")
-            model_version = (b.health_meta.model_version if b.health_meta else None) or "-"
+            model_version = (
+                b.health_meta.model_version if b.health_meta else None
+            ) or "-"
             project_cell = (
                 projects[0].display_id
                 if len(projects) == 1
@@ -1565,7 +1612,9 @@ class AapTuiApp(App[None]):
         table = self.query_one("#people-table", DataTable)
         table.clear()
         for p in people:
-            rejected = f"{p.rejected_rate * 100:.0f}%" if p.rejected_rate is not None else "-"
+            rejected = (
+                f"{p.rejected_rate * 100:.0f}%" if p.rejected_rate is not None else "-"
+            )
             table.add_row(
                 p.name,
                 p.role,
@@ -1718,7 +1767,9 @@ class AapTuiApp(App[None]):
     def _confirm_and_cancel(self, job: Job) -> None:
         """对给定 job 弹确认 → 软取消 (主屏动作键 / 任务详情屏共用)。终态 job 直接提示。"""
         if job.status not in _CANCELLABLE_STATUS:
-            self._set_status(f"job 处于 {job.status}, 不可取消 (仅 pending/running 可取消)")
+            self._set_status(
+                f"job 处于 {job.status}, 不可取消 (仅 pending/running 可取消)"
+            )
             return
 
         def _on_confirm(ok: bool | None) -> None:

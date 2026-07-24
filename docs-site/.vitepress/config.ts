@@ -15,141 +15,146 @@ import { userGuideSidebar } from "./navigation/user-guide";
 const __here = dirname(fileURLToPath(import.meta.url));
 function loadSidebar(rel: string): DefaultTheme.SidebarItem[] {
   const p = resolve(__here, rel);
-  return existsSync(p)
-    ? (JSON.parse(readFileSync(p, "utf8")) as DefaultTheme.SidebarItem[])
-    : [];
+  return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as DefaultTheme.SidebarItem[]) : [];
 }
 
 const adrSidebarItems = loadSidebar("../dev/adr/sidebar.generated.json");
 const changelogSidebarItems = loadSidebar("../changelog/sidebar.generated.json");
 const roadmapSidebarItems = loadSidebar("../roadmap/sidebar.generated.json");
 
-export default withMermaid(defineConfig({
-  title: "AI Annotation Platform",
-  description: "标注平台文档（用户 / 开发 / API）",
-  lang: "zh-CN",
-  base: process.env.DOCS_BASE ?? "/",
-  cleanUrls: true,
-  lastUpdated: true,
-  rewrites,
-  srcExclude,
-  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/ai-annotation-platform-icon.svg" }]],
-  // 站点地图：hostname 用源站，路径前缀由 base 处理。部署地址
-  // https://yyq19990828.github.io/ai-annotation-platform/ 。提交给 Search Console 用完整 URL。
-  sitemap: {
-    hostname: "https://yyq19990828.github.io/ai-annotation-platform/",
-    transformItems: (items) =>
-      items.filter((item) => !item.url.includes("user-guide/projects/annotation-guide")),
-  },
-  // 允许指向本地开发服务器的链接，构建期不当 dead link
-  ignoreDeadLinks: [
-    /^https?:\/\/localhost(:\d+)?(\/|$)/,
-    // ROADMAP / ADR mirror files contain relative links to source code files outside docs-site
-    (url) => /\.(tsx?|py|json|ya?ml|sh|toml|Dockerfile\w*)$/.test(url),
-    (url) => /\/(apps|infra)\//.test(url),
-    // ADR mirrors may point back to repo-local docs/plans files, which are not
-    // rendered as VitePress pages.（兼容 v0.21+ 引入的 plans/archive/ 子目录）
-    (url) =>
-      /(^|\/)\.\.\/plans\/(archive\/)?\d{4}-/.test(url) ||
-      /\/plans\/(archive\/)?\d{4}-/.test(url),
-    // ROADMAP/inspiration 文档引用本地 clone 的 CVAT 源码（`../../cvat/...`），
-    // 这些不是站点页面，构建期不应判为 dead。
-    (url) => /\/cvat\//.test(url) || /\/cvat-(sdk|cli)(\/|$)/.test(url),
-  ],
-
-  // mermaid 11.x 的 chunk 直接 import `dayjs/dayjs.min.js`（UMD 文件），Vite 当 ESM
-  // 解析失败 → "does not provide an export named 'default'"。alias 指向 ESM 入口。
-  vite: {
-    plugins: [
-      // M4 · 把 apps/web/e2e/screenshots/outputs/manifest.json 暴露为虚拟模块
-      // AutoImage.vue 通过 `import("virtual:screenshot-manifest")` 消费
-      {
-        name: "vite-plugin-screenshot-manifest",
-        resolveId(id: string) {
-          if (id === "virtual:screenshot-manifest") return "\0virtual:screenshot-manifest";
-        },
-        load(id: string) {
-          if (id !== "\0virtual:screenshot-manifest") return;
-          const manifestPath = resolve(__here, "../../apps/web/e2e/screenshots/outputs/manifest.json");
-          try {
-            const data = existsSync(manifestPath)
-              ? JSON.parse(readFileSync(manifestPath, "utf8"))
-              : {};
-            return `export default ${JSON.stringify(data)}`;
-          } catch {
-            return "export default {}";
-          }
-        },
-      },
+export default withMermaid(
+  defineConfig({
+    title: "AI Annotation Platform",
+    description: "标注平台文档（用户 / 开发 / API）",
+    lang: "zh-CN",
+    base: process.env.DOCS_BASE ?? "/",
+    cleanUrls: true,
+    lastUpdated: true,
+    rewrites,
+    srcExclude,
+    head: [
+      ["link", { rel: "icon", type: "image/svg+xml", href: "/ai-annotation-platform-icon.svg" }],
     ],
-    resolve: {
-      alias: [{ find: /^dayjs\/dayjs\.min\.js$/, replacement: "dayjs/esm/index.js" }],
+    // 站点地图：hostname 用源站，路径前缀由 base 处理。部署地址
+    // https://yyq19990828.github.io/ai-annotation-platform/ 。提交给 Search Console 用完整 URL。
+    sitemap: {
+      hostname: "https://yyq19990828.github.io/ai-annotation-platform/",
+      transformItems: (items) =>
+        items.filter((item) => !item.url.includes("user-guide/projects/annotation-guide")),
     },
-    optimizeDeps: {
-      include: ["dayjs/esm/index.js", "@braintree/sanitize-url", "debug"],
-    },
-    build: {
-      // VitePress local search emits a large generated index for the whole docs site.
-      // Keep the threshold above that expected artifact while still warning on accidental
-      // multi-megabyte application chunks.
-      chunkSizeWarningLimit: 2048,
-      rollupOptions: {
-        output: {
-          manualChunks(id: string) {
-            if (!id.includes("node_modules")) return;
-            if (id.includes("/@scalar/")) return "vendor-api-reference";
-            if (id.includes("/minisearch/")) return "vendor-search";
-            if (id.includes("/vitepress/")) return "vendor-vitepress";
-            if (id.includes("/vue/") || id.includes("/@vue/")) return "vendor-vue";
+    // 允许指向本地开发服务器的链接，构建期不当 dead link
+    ignoreDeadLinks: [
+      /^https?:\/\/localhost(:\d+)?(\/|$)/,
+      // ROADMAP / ADR mirror files contain relative links to source code files outside docs-site
+      (url) => /\.(tsx?|py|json|ya?ml|sh|toml|Dockerfile\w*)$/.test(url),
+      (url) => /\/(apps|infra)\//.test(url),
+      // ADR mirrors may point back to repo-local docs/plans files, which are not
+      // rendered as VitePress pages.（兼容 v0.21+ 引入的 plans/archive/ 子目录）
+      (url) =>
+        /(^|\/)\.\.\/plans\/(archive\/)?\d{4}-/.test(url) ||
+        /\/plans\/(archive\/)?\d{4}-/.test(url),
+      // ROADMAP/inspiration 文档引用本地 clone 的 CVAT 源码（`../../cvat/...`），
+      // 这些不是站点页面，构建期不应判为 dead。
+      (url) => /\/cvat\//.test(url) || /\/cvat-(sdk|cli)(\/|$)/.test(url),
+    ],
+
+    // mermaid 11.x 的 chunk 直接 import `dayjs/dayjs.min.js`（UMD 文件），Vite 当 ESM
+    // 解析失败 → "does not provide an export named 'default'"。alias 指向 ESM 入口。
+    vite: {
+      plugins: [
+        // M4 · 把 apps/web/e2e/screenshots/outputs/manifest.json 暴露为虚拟模块
+        // AutoImage.vue 通过 `import("virtual:screenshot-manifest")` 消费
+        {
+          name: "vite-plugin-screenshot-manifest",
+          resolveId(id: string) {
+            if (id === "virtual:screenshot-manifest") return "\0virtual:screenshot-manifest";
+          },
+          load(id: string) {
+            if (id !== "\0virtual:screenshot-manifest") return;
+            const manifestPath = resolve(
+              __here,
+              "../../apps/web/e2e/screenshots/outputs/manifest.json",
+            );
+            try {
+              const data = existsSync(manifestPath)
+                ? JSON.parse(readFileSync(manifestPath, "utf8"))
+                : {};
+              return `export default ${JSON.stringify(data)}`;
+            } catch {
+              return "export default {}";
+            }
+          },
+        },
+      ],
+      resolve: {
+        alias: [{ find: /^dayjs\/dayjs\.min\.js$/, replacement: "dayjs/esm/index.js" }],
+      },
+      optimizeDeps: {
+        include: ["dayjs/esm/index.js", "@braintree/sanitize-url", "debug"],
+      },
+      build: {
+        // VitePress local search emits a large generated index for the whole docs site.
+        // Keep the threshold above that expected artifact while still warning on accidental
+        // multi-megabyte application chunks.
+        chunkSizeWarningLimit: 2048,
+        rollupOptions: {
+          output: {
+            manualChunks(id: string) {
+              if (!id.includes("node_modules")) return;
+              if (id.includes("/@scalar/")) return "vendor-api-reference";
+              if (id.includes("/minisearch/")) return "vendor-search";
+              if (id.includes("/vitepress/")) return "vendor-vitepress";
+              if (id.includes("/vue/") || id.includes("/@vue/")) return "vendor-vue";
+            },
           },
         },
       },
     },
-  },
 
-  themeConfig: {
-    logo: "/ai-annotation-platform-icon.svg",
-    nav,
-    sidebar: {
-      "/user-guide/": userGuideSidebar,
-      "/dev/": createDevSidebar(adrSidebarItems),
-      "/ops/": opsSidebar,
-      "/changelog/": changelogSidebarItems,
-      "/roadmap/": roadmapSidebarItems,
-      "/api/": apiSidebar,
-    },
-
-    socialLinks: [
-      { icon: "github", link: "https://github.com/yyq19990828/ai-annotation-platform" },
-    ],
-
-    search: { provider: "local" },
-
-    footer: {
-      message: "Released under the MIT License.",
-      copyright: "© 2026 AI Annotation Platform",
-    },
-
-    editLink: {
-      // VitePress serializes this callback into the client bundle, so keep it
-      // self-contained instead of closing over helpers from config.ts.
-      pattern: ({ filePath }) => {
-        let sourcePath = `docs-site/${filePath}`;
-        if (filePath === "changelog/index.md") sourcePath = "CHANGELOG.md";
-        else if (filePath.startsWith("changelog/")) {
-          sourcePath = `docs/changelogs/${filePath.slice("changelog/".length)}`;
-        } else if (filePath === "roadmap/index.md") sourcePath = "ROADMAP.md";
-        else if (filePath.startsWith("roadmap/archived-")) {
-          sourcePath = `ROADMAP/archive/${filePath.slice("roadmap/archived-".length)}`;
-        } else if (filePath.startsWith("roadmap/")) {
-          sourcePath = `ROADMAP/${filePath.slice("roadmap/".length)}`;
-        } else if (filePath === "dev/adr/index.md") sourcePath = "docs/adr/README.md";
-        else if (filePath.startsWith("dev/adr/")) {
-          sourcePath = `docs/adr/${filePath.slice("dev/adr/".length)}`;
-        }
-        return `https://github.com/yyq19990828/ai-annotation-platform/edit/main/${sourcePath}`;
+    themeConfig: {
+      logo: "/ai-annotation-platform-icon.svg",
+      nav,
+      sidebar: {
+        "/user-guide/": userGuideSidebar,
+        "/dev/": createDevSidebar(adrSidebarItems),
+        "/ops/": opsSidebar,
+        "/changelog/": changelogSidebarItems,
+        "/roadmap/": roadmapSidebarItems,
+        "/api/": apiSidebar,
       },
-      text: "在 GitHub 编辑此页",
+
+      socialLinks: [
+        { icon: "github", link: "https://github.com/yyq19990828/ai-annotation-platform" },
+      ],
+
+      search: { provider: "local" },
+
+      footer: {
+        message: "Released under the MIT License.",
+        copyright: "© 2026 AI Annotation Platform",
+      },
+
+      editLink: {
+        // VitePress serializes this callback into the client bundle, so keep it
+        // self-contained instead of closing over helpers from config.ts.
+        pattern: ({ filePath }) => {
+          let sourcePath = `docs-site/${filePath}`;
+          if (filePath === "changelog/index.md") sourcePath = "CHANGELOG.md";
+          else if (filePath.startsWith("changelog/")) {
+            sourcePath = `docs/changelogs/${filePath.slice("changelog/".length)}`;
+          } else if (filePath === "roadmap/index.md") sourcePath = "ROADMAP.md";
+          else if (filePath.startsWith("roadmap/archived-")) {
+            sourcePath = `ROADMAP/archive/${filePath.slice("roadmap/archived-".length)}`;
+          } else if (filePath.startsWith("roadmap/")) {
+            sourcePath = `ROADMAP/${filePath.slice("roadmap/".length)}`;
+          } else if (filePath === "dev/adr/index.md") sourcePath = "docs/adr/README.md";
+          else if (filePath.startsWith("dev/adr/")) {
+            sourcePath = `docs/adr/${filePath.slice("dev/adr/".length)}`;
+          }
+          return `https://github.com/yyq19990828/ai-annotation-platform/edit/main/${sourcePath}`;
+        },
+        text: "在 GitHub 编辑此页",
+      },
     },
-  },
-}));
+  }),
+);

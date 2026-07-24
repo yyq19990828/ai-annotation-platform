@@ -41,17 +41,20 @@ function directColorToHex(cssColor: string): string | null {
   const longHex = raw.match(/^#([0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?$/);
   if (longHex) return `#${longHex[1]}`.toLowerCase();
 
-  const rgb = raw.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i);
+  const rgb = raw.match(
+    /^rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i,
+  );
   if (!rgb) return null;
-  const toByte = (value: string) =>
-    Math.max(0, Math.min(255, Math.round(Number(value))));
+  const toByte = (value: string) => Math.max(0, Math.min(255, Math.round(Number(value))));
   const [r, g, b] = [toByte(rgb[1]), toByte(rgb[2]), toByte(rgb[3])];
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
 function hasCanvasColorParser(): boolean {
-  return typeof document !== "undefined" &&
-    !(typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent));
+  return (
+    typeof document !== "undefined" &&
+    !(typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent))
+  );
 }
 
 export function colorToHex(cssColor: string): string {
@@ -82,6 +85,14 @@ export function classColorForCanvas(name: string, config?: ClassesConfig): strin
   return colorToHex(classColor(name, config));
 }
 
+export function hexToRgb(hex: string): readonly [number, number, number] {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
 /** 把 CSS 变量(如 --sc-card)解析为当前主题下的 hex,供 Konva canvas fill 使用
  *  (canvas fillStyle 不解析 var())。themeKey 仅用于调用方 memo 失效。 */
 export function cssVarToHex(varName: string, _themeKey?: string): string {
@@ -91,9 +102,7 @@ export function cssVarToHex(varName: string, _themeKey?: string): string {
 }
 
 export function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+  const [r, g, b] = hexToRgb(hex);
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
@@ -142,7 +151,7 @@ export const TRACK_COLOR_PALETTE: { label: string; value: string }[] = [
 ];
 
 const TRACK_LIGHTNESS_BANDS = [0.56, 0.62, 0.68, 0.74] as const;
-const TRACK_CHROMA_BANDS = [0.23, 0.20, 0.17, 0.14] as const;
+const TRACK_CHROMA_BANDS = [0.23, 0.2, 0.17, 0.14] as const;
 
 export function defaultTrackColor(trackId: string, className: string): string {
   if (!trackId) return classColor(className);

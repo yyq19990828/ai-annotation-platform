@@ -138,6 +138,31 @@ class _FakePropagatePredictor:
         if obj_id not in self._obj_ids:
             self._obj_ids.append(obj_id)
 
+    def add_new_mask(
+        self,
+        *,
+        inference_state,
+        frame_idx,
+        obj_id,
+        mask,
+    ):
+        self.add_calls.append(
+            {
+                "frame_idx": frame_idx,
+                "obj_id": obj_id,
+                "mask": mask,
+            }
+        )
+        if obj_id not in inference_state["obj_id_to_idx"]:
+            idx = len(inference_state["obj_id_to_idx"])
+            inference_state["obj_id_to_idx"][obj_id] = idx
+            inference_state["output_dict_per_obj"][idx] = {
+                "cond_frame_outputs": {},
+                "non_cond_frame_outputs": {},
+            }
+        if obj_id not in self._obj_ids:
+            self._obj_ids.append(obj_id)
+
     def propagate_in_video(self, inference_state, start_frame_idx=None, reverse=False):
         order = sorted(self._frame_masks, reverse=reverse)
         obj_ids = self._obj_ids or [1]
@@ -147,7 +172,9 @@ class _FakePropagatePredictor:
             for oid in obj_ids:
                 m = entry[oid] if isinstance(entry, dict) else entry
                 per_obj.append(np.where(m, 10.0, -10.0))
-            logits = torch.from_numpy(np.stack(per_obj)).float()[:, None]  # [num_obj,1,H,W]
+            logits = torch.from_numpy(np.stack(per_obj)).float()[
+                :, None
+            ]  # [num_obj,1,H,W]
             if local_idx in self._frame_score_logits:
                 idx0 = inference_state["obj_id_to_idx"][obj_ids[0]]
                 inference_state["output_dict_per_obj"][idx0]["non_cond_frame_outputs"][
@@ -226,7 +253,9 @@ def test_propagate_forward_maps_local_to_source_frames(monkeypatch):
     fake = _FakePropagatePredictor(frame_masks)
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
-        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (100, 100, 3))
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (100, 100, 3)),
     )
 
     results = tracker.propagate(
@@ -241,7 +270,13 @@ def test_propagate_forward_maps_local_to_source_frames(monkeypatch):
     assert all(r["instance_id"] == "1" for r in results)
     assert results[0]["outside"] is False
     assert results[2]["outside"] is True
-    assert results[2]["geometry"] == {"type": "bbox", "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
+    assert results[2]["geometry"] == {
+        "type": "bbox",
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0,
+    }
     # forward seed 锚在窗首帧 (local 0)。
     assert fake.add_calls[0]["frame_idx"] == 0
     assert fake.reset_called is True
@@ -253,7 +288,9 @@ def test_propagate_mask_output_preserves_raw_pixels(monkeypatch):
     fake = _FakePropagatePredictor({0: mask})
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
-        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (3, 2, 1))
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (3, 2, 1)),
     )
     result = tracker.propagate(
         video_path="/tmp/x.mp4",
@@ -276,7 +313,9 @@ def test_propagate_backward_anchors_seed_at_window_end(monkeypatch):
     fake = _FakePropagatePredictor(frame_masks)
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
-        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (10, 10, 3))
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (10, 10, 3)),
     )
 
     results = tracker.propagate(
@@ -301,7 +340,9 @@ def test_propagate_multi_obj_emits_per_instance(monkeypatch):
     fake = _FakePropagatePredictor(frame_masks)
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
-        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (20, 10, 2))
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (20, 10, 2)),
     )
 
     results = tracker.propagate(
@@ -332,7 +373,9 @@ def test_propagate_point_seed_passes_points_not_box(monkeypatch):
     fake = _FakePropagatePredictor({0: fg})
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
-        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (10, 10, 1))
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (10, 10, 1)),
     )
 
     tracker.propagate(
@@ -355,7 +398,9 @@ def test_propagate_multi_frame_prompts_seeds_each_frame(monkeypatch):
     fake = _FakePropagatePredictor({0: fg, 1: fg, 2: fg})
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
-        SAM2VideoTracker, "_extract_window_jpegs", staticmethod(lambda *a, **k: (10, 10, 3))
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (10, 10, 3)),
     )
 
     # 窗 [0,2]; obj 1 在源帧 0 (基准框) + 源帧 2 (修正点) 各播种。
@@ -368,7 +413,10 @@ def test_propagate_multi_frame_prompts_seeds_each_frame(monkeypatch):
             {
                 "obj_id": 1,
                 "prompts": [
-                    {"frame_index": 0, "bbox": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}},
+                    {
+                        "frame_index": 0,
+                        "bbox": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+                    },
                     {"frame_index": 2, "points": [[0.5, 0.5, 1]]},
                 ],
             }
@@ -377,6 +425,89 @@ def test_propagate_multi_frame_prompts_seeds_each_frame(monkeypatch):
 
     frames_seeded = sorted(c["frame_idx"] for c in fake.add_calls)
     assert frames_seeded == [0, 2]  # frame_index-lo = 局部帧 0 与 2
+
+
+def test_propagate_consumes_exact_mask_correction_seed(monkeypatch):
+    fg = np.ones((2, 3), dtype=bool)
+    fake = _FakePropagatePredictor({0: fg})
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (3, 2, 1)),
+    )
+
+    tracker.propagate(
+        video_path="/tmp/x.mp4",
+        from_frame=8,
+        to_frame=8,
+        direction="forward",
+        seeds=[
+            {
+                "obj_id": 7,
+                "prompts": [
+                    {
+                        "frame_index": 8,
+                        "mask_prompt": {
+                            "rle": {
+                                "encoding": "coco_rle",
+                                "size": [2, 3],
+                                "counts": [1, 2, 2, 1],
+                            },
+                            "source_annotation_id": "annotation-1",
+                            "source_version": 3,
+                            "source_digest": "a" * 64,
+                        },
+                    }
+                ],
+            }
+        ],
+        output_geometry="mask",
+    )
+
+    call = fake.add_calls[0]
+    assert call["frame_idx"] == 0
+    assert call["obj_id"] == 7
+    assert call["mask"].dtype == torch.bool
+    assert call["mask"].cpu().numpy().astype(np.uint8).tolist() == [
+        [0, 1, 0],
+        [1, 0, 1],
+    ]
+
+
+def test_propagate_rejects_mask_seed_with_wrong_frame_size(monkeypatch):
+    fake = _FakePropagatePredictor({0: np.ones((2, 3), dtype=bool)})
+    tracker = _make_tracker(fake)
+    monkeypatch.setattr(
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (4, 2, 1)),
+    )
+
+    with pytest.raises(ValueError, match="must match video frame"):
+        tracker.propagate(
+            video_path="/tmp/x.mp4",
+            from_frame=0,
+            to_frame=0,
+            direction="forward",
+            seeds=[
+                {
+                    "obj_id": 1,
+                    "mask_prompt": {
+                        "rle": {
+                            "encoding": "coco_rle",
+                            "size": [2, 3],
+                            "counts": [1, 2, 2, 1],
+                        },
+                        "source_annotation_id": "annotation-1",
+                        "source_version": 3,
+                        "source_digest": "a" * 64,
+                    },
+                }
+            ],
+        )
+
+    assert fake.add_calls == []
 
 
 def test_propagate_rejects_empty_seeds():
@@ -431,9 +562,7 @@ def test_object_score_missing_structure_returns_none():
 
 def test_propagate_uses_object_score_as_confidence(monkeypatch):
     fg = np.ones((10, 10), dtype=bool)
-    fake = _FakePropagatePredictor(
-        {0: fg, 1: fg}, frame_score_logits={0: 4.0, 1: -3.0}
-    )
+    fake = _FakePropagatePredictor({0: fg, 1: fg}, frame_score_logits={0: 4.0, 1: -3.0})
     tracker = _make_tracker(fake)
     monkeypatch.setattr(
         SAM2VideoTracker,

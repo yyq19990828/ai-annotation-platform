@@ -50,10 +50,13 @@ from aap_backend_runtime import (
 )
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
+    CorrectionFramePrompt,
     PROTOCOL_VERSION,
     ModelUnavailableError,
+    MaskInteractionDiagnostic,
     PlatformRole,
     VariantNotSupportedError,
+    decode_low_res_mask,
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
@@ -91,20 +94,28 @@ from observability import (
     init_perfhud_collectors,
     record_cache,
     record_inference,
+    record_mask_ai_backend_inference,
     sample_perfhud,
     shutdown_perfhud_collectors,
     update_cache_size,
 )
+from mask_utils import PromptAdapterError
 from predictor import (
     DEFAULT_SCORE_THRESHOLD,
     DEFAULT_SIMPLIFY_TOLERANCE,
     MODEL_VARIANT,
     SAM3Predictor,
 )
-from video_predictor import SAM3MultiplexVideoTracker
-from pvs_video_predictor import SAM3PVSVideoTracker
+from video_predictor import (
+    DEFAULT_MAX_WINDOW_FRAMES as MULTIPLEX_MAX_WINDOW_FRAMES,
+    SAM3MultiplexVideoTracker,
+)
+from pvs_video_predictor import (
+    DEFAULT_MAX_WINDOW_FRAMES as PVS_MAX_WINDOW_FRAMES,
+    SAM3PVSVideoTracker,
+)
 from pool_domain import Sam3Pools
-from schemas import BatchPredictResponse, PredictionResult, WarmupResponse
+from schemas import BatchPredictResponse, Context, PredictionResult, WarmupResponse
 
 logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -127,8 +138,39 @@ MANAGED_LIFECYCLE_VERIFIED = os.getenv(
     "SAM3_MANAGED_LIFECYCLE_VERIFIED",
     "0",
 ).lower() in {"1", "true", "yes"}
+MAX_PREDICT_REQUEST_BYTES = 6 * 1024 * 1024
 
 app = FastAPI(title="sam3-backend", version=BACKEND_VERSION)
+
+
+async def _buffer_bounded_predict_body(request: Request) -> None:
+    """Buffer one JSON predict body before acquiring GPU admission."""
+
+    content_encoding = request.headers.get("content-encoding", "identity").lower()
+    if content_encoding not in {"", "identity"}:
+        raise HTTPException(
+            status_code=415, detail="compressed predict bodies are not supported"
+        )
+    raw_length = request.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            declared = int(raw_length)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="invalid Content-Length"
+            ) from exc
+        if declared > MAX_PREDICT_REQUEST_BYTES:
+            raise HTTPException(
+                status_code=413, detail="predict request body is too large"
+            )
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_PREDICT_REQUEST_BYTES:
+            raise HTTPException(
+                status_code=413, detail="predict request body is too large"
+            )
+    request._body = bytes(body)  # noqa: SLF001 - Starlette body cache after bounded stream
 
 
 class _ManagedAdmissionRoute(APIRoute):
@@ -145,6 +187,8 @@ class _ManagedAdmissionRoute(APIRoute):
             return original
 
         async def admitted(request: Request):
+            if scope == AdmissionScope.PREDICT:
+                await _buffer_bounded_predict_body(request)
             operation = await _begin_workload(request, scope)
             request.state.gpu_workload = operation
             try:
@@ -258,9 +302,7 @@ def _legacy_video_pool_status(
     pvs: dict[str, Any],
 ) -> dict[str, Any]:
     loaded_variants = [
-        item["key"]
-        for snapshot in (multiplex, pvs)
-        for item in snapshot["loaded_keys"]
+        item["key"] for snapshot in (multiplex, pvs) for item in snapshot["loaded_keys"]
     ]
     return {
         "cap": multiplex["cap"] + pvs["cap"],
@@ -594,7 +636,14 @@ def setup() -> dict:
         # v0.18.17 选项 B: 开 inst_interactivity 后宣称 point + interactive_box (SAM-style 单实例
         # 点/框交互, 走 model.predict_inst). "bbox" 已退出交互 prompt 命名空间 (仅几何形状);
         # PCS「找全图相似」统一走 "exemplar" (add_geometric_prompt). text = PCS 文本概念.
-        "supported_prompts": ["point", "interactive_box", "text", "exemplar"],
+        "supported_prompts": [
+            "point",
+            "interactive_box",
+            "mask",
+            "scribble",
+            "text",
+            "exemplar",
+        ],
         # v0.18.19 · exemplar 升级为多正负框 + text 组合 + per-request 阈值重过滤的迭代会话.
         # 前端据此把 exemplar 工具从「一发」升级为 refine 会话 (加正框/负框/拖阈值/叠 text).
         "exemplar_capabilities": {
@@ -605,7 +654,7 @@ def setup() -> dict:
         },
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
-        "supported_geometric_outputs": ["box", "mask", "both"],
+        "supported_geometric_outputs": ["bbox", "polygon", "mask"],
         # v0.21.19 §PR3 · sam3.1_multiplex 视频文本追踪 (text-driven, 每帧按文本检测目标)。
         # 平台据 supported_trackers 判 backend 支持视频追踪; text_driven_trackers 让其区分
         # seed-bbox tracker(sam2) 与文本驱动 tracker(sam3, 需 text)。
@@ -718,7 +767,7 @@ def setup() -> dict:
             "supported_prompts": ["text"],
             # 文本→分割: 整图 / 父框 crop 上跑 (文本驱动, 内置流程)。
             "supported_inputs": ["full_image", "crop"],
-            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
+            "supported_geometric_outputs": ["bbox", "polygon"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": True},
             "supported_text_outputs": ["mask", "both"],
@@ -738,10 +787,22 @@ def setup() -> dict:
             # v0.18.17 · 开 inst 后并入 SAM-style point / interactive_box 单实例交互 (与 exemplar 的
             # PCS 全图相似并列; 三者均走整图、出 polygon)。
             "composition": "atom",
-            "supported_prompts": ["point", "interactive_box", "exemplar"],
+            "supported_prompts": [
+                "point",
+                "interactive_box",
+                "mask",
+                "scribble",
+                "exemplar",
+            ],
             # 交互分割: 点/框/exemplar 提示驱动, 整图 (不作批量 crop/框下游)。
-            "supported_inputs": ["full_image"],
-            "supported_geometric_outputs": ["polygon"],
+            "supported_inputs": [
+                "point_prompt",
+                "bbox_prompt",
+                "mask_prompt",
+                "scribble_prompt",
+                "full_image",
+            ],
+            "supported_geometric_outputs": ["polygon", "mask"],
             # 交互分割: 单实例逐次推理, 不作批量。output_attribute_types 留空 (无类别/置信度产出)。
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_variants": base["supported_variants"],
@@ -761,12 +822,37 @@ def setup() -> dict:
             "composition": "composite",
             # text-driven: 以文本 query 初始化 (非 bbox 种子)。
             "supported_prompts": ["text"],
-            "supported_inputs": ["full_image"],
-            "supported_geometric_outputs": ["polygon"],
+            "supported_inputs": ["video", "bbox_prompt"],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
             "output_attribute_types": ["class"],
             "resource_profile": {"device": "gpu", "batchable": False},
-            "supported_trackers": ["sam3_video", "sam3_video_interactive"],
+            "supported_trackers": ["sam3_video"],
             "text_driven_trackers": ["sam3_video"],
+            "max_window_frames": MULTIPLEX_MAX_WINDOW_FRAMES,
+            "supported_variants": base["supported_variants"],
+            "variants_shared_across_tasks": True,
+            "default_variants": _default_variants,
+            "params": base["params"],
+        },
+        {
+            "id": "sam3-video-interactive-tracker",
+            "display_name": "SAM 3 · 视频交互追踪 (PVS)",
+            "task": "tracker",
+            "model_family": "sam3",
+            "infra": "pytorch",
+            "is_interactive": True,
+            "composition": "composite",
+            "supported_prompts": ["point", "interactive_box", "correction_frame"],
+            "supported_inputs": [
+                "video",
+                "point_prompt",
+                "bbox_prompt",
+                "mask_prompt",
+            ],
+            "supported_geometric_outputs": ["bbox", "polygon", "mask"],
+            "resource_profile": {"device": "gpu", "batchable": False},
+            "supported_trackers": ["sam3_video_interactive"],
+            "max_window_frames": PVS_MAX_WINDOW_FRAMES,
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
             "default_variants": _default_variants,
@@ -810,7 +896,9 @@ async def _request_json(request: Request) -> Any:
     try:
         return await request.json()
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="invalid JSON request body") from exc
+        raise HTTPException(
+            status_code=422, detail="invalid JSON request body"
+        ) from exc
 
 
 @app.post("/unload")
@@ -979,7 +1067,9 @@ def _coerce_simplify_tolerance(ctx: dict) -> float | None:
             detail=f"context.simplify_tolerance must be float, got {raw!r}",
         )
     if val < 0:
-        raise HTTPException(status_code=422, detail="context.simplify_tolerance must be >= 0")
+        raise HTTPException(
+            status_code=422, detail="context.simplify_tolerance must be >= 0"
+        )
     return val
 
 
@@ -991,6 +1081,55 @@ def _coerce_output(ctx: dict) -> str:
             detail=f"context.output must be one of box|mask|both, got {mode!r}",
         )
     return mode
+
+
+def _coerce_interactive_output(ctx: dict) -> tuple[str, str | None]:
+    output_geometry = ctx.get("output_geometry", "polygon")
+    if output_geometry not in ("polygon", "mask"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"context.output_geometry must be polygon|mask, got {output_geometry!r}"
+            ),
+        )
+    prompt_revision = ctx.get("prompt_revision")
+    if output_geometry == "mask" and (
+        not isinstance(prompt_revision, str)
+        or not prompt_revision
+        or len(prompt_revision) > 256
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "context.prompt_revision must contain 1..256 characters "
+                "for output_geometry=mask"
+            ),
+        )
+    return output_geometry, prompt_revision
+
+
+def _validate_mask_context(ctx: dict) -> Context | None:
+    if ctx.get("type") not in {"point", "interactive_box", "mask", "scribble"}:
+        return None
+    try:
+        validated = Context.model_validate(ctx)
+        if validated.mask_input is not None:
+            decode_low_res_mask(validated.mask_input)
+        return validated
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "invalid_mask_prompt",
+                "message": "interactive Mask prompt failed schema validation",
+            },
+        ) from exc
+
+
+def _mask_prompt_payload(context: Context | None) -> dict[str, Any] | None:
+    if context is None or context.mask_prompt is None:
+        return None
+    return context.mask_prompt.model_dump(mode="json")
 
 
 def _coerce_exemplars(ctx: dict) -> list[dict]:
@@ -1058,46 +1197,176 @@ def _run_prompt_sync(
     mask_input_next (v0.18.18) 仅 point 精修单 mask 阶段非空, 其余 prompt 恒 None。
     """
     ptype = ctx.get("type")
+    mask_context = _validate_mask_context(ctx)
+    if (
+        ptype in {"point", "interactive_box", "mask", "scribble"}
+        and mask_context is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "invalid_mask_prompt",
+                "message": "interactive prompt is invalid",
+            },
+        )
+    mask_prompt = _mask_prompt_payload(mask_context)
     cache_key = compute_cache_key(file_path, MODEL_VERSION)
     simplify_tol = _coerce_simplify_tolerance(ctx)
     score_th = ctx.get("score_threshold")
 
     if ptype == "point":
+        if mask_context is None or mask_context.points is None:
+            raise HTTPException(
+                status_code=422, detail="context.points required for type=point"
+            )
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.17 · inst 单实例点交互 (累加正负点; multimask 候选).
-        points = ctx.get("points") or []
-        if not points:
-            raise HTTPException(status_code=422, detail="context.points required for type=point")
-        labels = ctx.get("labels") or [1] * len(points)
-        multimask = bool(ctx.get("multimask_output", False))
-        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
-        return p.predict_interactive(
-            image, points=points, labels=labels, multimask_output=multimask,
-            mask_input=ctx.get("mask_input"),
-            cache_key=cache_key, simplify_tolerance=simplify_tol,
+        points = [list(point) for point in mask_context.points]
+        labels = list(mask_context.labels or [1] * len(points))
+        multimask = mask_context.multimask_output
+        image = (
+            None
+            if _cache.peek(cache_key)
+            else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         )
+        try:
+            return p.predict_interactive(
+                image,
+                points=points,
+                labels=labels,
+                multimask_output=multimask,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": str(exc)},
+            ) from exc
 
     if ptype == "interactive_box":
-        # v0.18.17 · inst 单框单 mask (≠ exemplar 的全图相似; bbox prompt 已退役).
-        box = ctx.get("bbox")
-        if not box or len(box) != 4:
+        if mask_context is None or mask_context.bbox is None:
             raise HTTPException(
-                status_code=422, detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box"
+                status_code=422,
+                detail="context.bbox=[x1,y1,x2,y2] required for type=interactive_box",
             )
-        multimask = bool(ctx.get("multimask_output", False))
-        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
-        return p.predict_interactive(
-            image, box=box, multimask_output=multimask,
-            cache_key=cache_key, simplify_tolerance=simplify_tol,
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
+        # v0.18.17 · inst 单框单 mask (≠ exemplar 的全图相似; bbox prompt 已退役).
+        box = list(mask_context.bbox)
+        multimask = mask_context.multimask_output
+        image = (
+            None
+            if _cache.peek(cache_key)
+            else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
         )
+        try:
+            return p.predict_interactive(
+                image,
+                box=box,
+                multimask_output=multimask,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": str(exc)},
+            ) from exc
+
+    if ptype == "mask":
+        if mask_context is None or mask_prompt is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "invalid_mask_prompt",
+                    "message": "mask prompt is required",
+                },
+            )
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
+        image = (
+            None
+            if _cache.peek(cache_key)
+            else fetch_image(
+                file_path,
+                timeout=IMAGE_DOWNLOAD_TIMEOUT,
+            )
+        )
+        try:
+            return p.predict_interactive(
+                image,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_mask_prompt", "message": str(exc)},
+            ) from exc
+
+    if ptype == "scribble":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
+        if mask_context is None or mask_context.scribbles is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "invalid_scribble_prompt",
+                    "message": "scribbles are required",
+                },
+            )
+        image = (
+            None
+            if _cache.peek(cache_key)
+            else fetch_image(
+                file_path,
+                timeout=IMAGE_DOWNLOAD_TIMEOUT,
+            )
+        )
+        try:
+            return p.predict_interactive(
+                image,
+                scribbles=[
+                    stroke.model_dump(mode="json") for stroke in mask_context.scribbles
+                ],
+                multimask_output=False,
+                mask_input=mask_context.mask_input,
+                mask_prompt=mask_prompt,
+                cache_key=cache_key,
+                simplify_tolerance=simplify_tol,
+                output_geometry=output_geometry,
+                prompt_revision=prompt_revision,
+            )
+        except PromptAdapterError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "invalid_scribble_prompt", "message": str(exc)},
+            ) from exc
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
         if not text:
-            raise HTTPException(status_code=422, detail="context.text required for type=text")
+            raise HTTPException(
+                status_code=422, detail="context.text required for type=text"
+            )
         output_mode = _coerce_output(ctx)
         # SAM 3 PCS text 走 image predictor + 缓存; 与 grounded-sam2 (DINO 原图必拉) 不同,
         # 缓存命中时可省 fetch_image. text/exemplar 不回灌 mask_input → 第 3 项恒 None.
-        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
+        image = (
+            None
+            if _cache.peek(cache_key)
+            else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
+        )
         results, hit = p.predict_text(
             image,
             text,
@@ -1109,11 +1378,16 @@ def _run_prompt_sync(
         return results, hit, None
 
     if ptype == "exemplar":
+        output_geometry, prompt_revision = _coerce_interactive_output(ctx)
         # v0.18.19 · 多正负框 exemplars[] (+ 可选 text 组合) 优先; 缺省退化单 bbox 正框.
         exemplars = _coerce_exemplars(ctx)
         text = (ctx.get("text") or "").strip() or None
         output_mode = _coerce_output(ctx)
-        image = None if _cache.peek(cache_key) else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
+        image = (
+            None
+            if _cache.peek(cache_key)
+            else fetch_image(file_path, timeout=IMAGE_DOWNLOAD_TIMEOUT)
+        )
         results, hit = p.predict_exemplars(
             image,
             exemplars,
@@ -1122,6 +1396,8 @@ def _run_prompt_sync(
             cache_key=cache_key,
             simplify_tolerance=simplify_tol,
             score_threshold=score_th,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
         )
         return results, hit, None
 
@@ -1188,7 +1464,12 @@ def _seed_bbox_from_geometry(geom: Any) -> dict[str, float] | None:
         ys = [float(p[1]) for p in points if len(p) >= 2]
         if not xs or not ys:
             return None
-        return {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
+        return {
+            "x": min(xs),
+            "y": min(ys),
+            "w": max(xs) - min(xs),
+            "h": max(ys) - min(ys),
+        }
 
     def _valid(bbox: dict[str, float] | None) -> dict[str, float] | None:
         if bbox is None:
@@ -1275,9 +1556,13 @@ def _video_local_path(file_path: str) -> str:
         suffix = os.path.splitext(urlsplit(file_path).path)[-1] or ".mp4"
         fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="sam3vid_src_")
         try:
-            with os.fdopen(fd, "wb") as fh, httpx.Client(
-                timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True
-            ) as client, client.stream("GET", file_path) as resp:
+            with (
+                os.fdopen(fd, "wb") as fh,
+                httpx.Client(
+                    timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True
+                ) as client,
+                client.stream("GET", file_path) as resp,
+            ):
                 resp.raise_for_status()
                 for chunk in resp.iter_bytes():
                     fh.write(chunk)
@@ -1290,7 +1575,9 @@ def _video_local_path(file_path: str) -> str:
         return tmp_path
     if os.path.isfile(file_path):
         return file_path
-    raise HTTPException(status_code=400, detail=f"unsupported video file_path: {file_path[:64]}")
+    raise HTTPException(
+        status_code=400, detail=f"unsupported video file_path: {file_path[:64]}"
+    )
 
 
 def _run_video_tracker_sync(
@@ -1335,20 +1622,28 @@ async def _run_video_tracker(
         from_frame = int(ctx["from_frame"])
         to_frame = int(ctx["to_frame"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422,
-                            detail="video_tracker requires integer from_frame / to_frame") from exc
+        raise HTTPException(
+            status_code=422,
+            detail="video_tracker requires integer from_frame / to_frame",
+        ) from exc
     direction = ctx.get("direction") or "forward"
     if direction not in ("forward", "backward"):
-        raise HTTPException(status_code=422,
-                            detail=f"video_tracker direction must be forward|backward, got {direction!r}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"video_tracker direction must be forward|backward, got {direction!r}",
+        )
     text = (ctx.get("text") or "").strip()
     if not text:
-        raise HTTPException(status_code=422,
-                            detail="sam3_video tracker requires context.text (text-driven detection)")
+        raise HTTPException(
+            status_code=422,
+            detail="sam3_video tracker requires context.text (text-driven detection)",
+        )
     output_geometry = ctx.get("output_geometry") or "bbox"
     if output_geometry not in ("bbox", "polygon", "mask"):
-        raise HTTPException(status_code=422,
-                            detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}",
+        )
     seed_bboxes = _seed_bboxes_from_video_ctx(ctx)
     seed_bbox = seed_bboxes[0] if seed_bboxes else None
 
@@ -1381,9 +1676,7 @@ async def _run_video_tracker(
         raise ModelUnavailableError(_MULTIPLEX_KEY, str(exc)) from exc
     except asyncio.CancelledError:
         if operation is not None:
-            operation.track_future(
-                _multiplex_pool.builder_for_now(_MULTIPLEX_KEY)
-            )
+            operation.track_future(_multiplex_pool.builder_for_now(_MULTIPLEX_KEY))
         raise
 
 
@@ -1396,6 +1689,14 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
     1..N。prompts (v0.21.27 U-pvs-2 纠偏) = 多帧 [{frame_index, points?/bbox?}], 原样透传给
     wrapper 逐帧播种; 优先于单帧 bbox/points。
     """
+    if ctx.get("type") == "correction_frame":
+        return [
+            {
+                "obj_id": int(ctx.get("obj_id", 1)),
+                "prompts": [ctx],
+            }
+        ]
+
     raw = ctx.get("seeds")
     if isinstance(raw, list) and raw:
         seeds: list[dict] = []
@@ -1404,16 +1705,29 @@ def _seeds_from_video_ctx(ctx: dict) -> list[dict]:
                 continue
             entry: dict[str, Any] = {"obj_id": int(s.get("obj_id", i + 1))}
             if isinstance(s.get("prompts"), list) and s["prompts"]:
-                entry["prompts"] = s["prompts"]  # 多帧纠偏, 原样透传
+                entry["prompts"] = [
+                    CorrectionFramePrompt.model_validate(prompt).model_dump(mode="json")
+                    if isinstance(prompt, dict)
+                    and prompt.get("type") == "correction_frame"
+                    else prompt
+                    for prompt in s["prompts"]
+                ]
             elif isinstance(s.get("bbox"), dict):
                 entry["bbox"] = s["bbox"]
             elif isinstance(s.get("points"), list) and s["points"]:
                 entry["points"] = s["points"]
+            elif isinstance(s.get("mask_prompt"), dict):
+                entry["mask_prompt"] = s["mask_prompt"]
             elif s.get("geometry") is not None:
                 b = _seed_bbox_from_video_ctx({"source_geometry": s["geometry"]})
                 if b is not None:
                     entry["bbox"] = b
-            if "prompts" in entry or "bbox" in entry or "points" in entry:
+            if (
+                "prompts" in entry
+                or "bbox" in entry
+                or "points" in entry
+                or "mask_prompt" in entry
+            ):
                 seeds.append(entry)
         if seeds:
             return seeds
@@ -1461,21 +1775,28 @@ async def _run_pvs_video_tracker(
         from_frame = int(ctx["from_frame"])
         to_frame = int(ctx["to_frame"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422,
-                            detail="video_tracker requires integer from_frame / to_frame") from exc
+        raise HTTPException(
+            status_code=422,
+            detail="video_tracker requires integer from_frame / to_frame",
+        ) from exc
     direction = ctx.get("direction") or "forward"
     if direction not in ("forward", "backward"):
-        raise HTTPException(status_code=422,
-                            detail=f"video_tracker direction must be forward|backward, got {direction!r}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"video_tracker direction must be forward|backward, got {direction!r}",
+        )
     output_geometry = ctx.get("output_geometry") or "bbox"
     if output_geometry not in ("bbox", "polygon", "mask"):
-        raise HTTPException(status_code=422,
-                            detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}",
+        )
     seeds = _seeds_from_video_ctx(ctx)
     if not seeds:
         raise HTTPException(
             status_code=422,
-            detail="sam3_video_interactive tracker requires a seed (source_geometry / seeds[])")
+            detail="sam3_video_interactive tracker requires a seed (source_geometry / seeds[])",
+        )
 
     global _last_request_at
     if _pvs_pool is None:
@@ -1521,18 +1842,44 @@ async def predict(request: Request):
         # v0.21.26 · 按 model_key 分派: sam3_video_interactive → PVS 点/框 memory 追踪,
         # 否则 (sam3_video) → multiplex 文本追踪。
         if ctx.get("type") == "video_tracker":
-            if ctx.get("model_key") == "sam3_video_interactive":
-                result = await _run_pvs_video_tracker(
-                    task["file_path"],
-                    ctx,
-                    operation,
+            correction = (ctx.get("prompt") or {}).get("correction") or {}
+            model_role = (
+                "sam3_pvs"
+                if ctx.get("model_key") == "sam3_video_interactive"
+                else "sam3_multiplex"
+            )
+            tracker_started = time.perf_counter()
+            try:
+                if ctx.get("model_key") == "sam3_video_interactive":
+                    result = await _run_pvs_video_tracker(
+                        task["file_path"],
+                        ctx,
+                        operation,
+                    )
+                else:
+                    result = await _run_video_tracker(
+                        task["file_path"],
+                        ctx,
+                        operation,
+                    )
+            except Exception:
+                record_mask_ai_backend_inference(
+                    model_role=model_role,
+                    operation="correction" if correction else "tracking",
+                    fallback_reason=correction.get("fallback_reason"),
+                    candidate_count=0,
+                    outcome="error",
+                    duration_seconds=time.perf_counter() - tracker_started,
                 )
-            else:
-                result = await _run_video_tracker(
-                    task["file_path"],
-                    ctx,
-                    operation,
-                )
+                raise
+            record_mask_ai_backend_inference(
+                model_role=model_role,
+                operation="correction" if correction else "tracking",
+                fallback_reason=correction.get("fallback_reason"),
+                candidate_count=len(result),
+                outcome="success",
+                duration_seconds=time.perf_counter() - tracker_started,
+            )
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return PredictionResult(
                 result=result,
@@ -1542,8 +1889,8 @@ async def predict(request: Request):
                 cache_hit=False,
                 model_load_ms=None,
             ).model_dump(exclude_none=True)
-        result, hit, mask_input_next, pool_cache_hit, model_load_ms = (
-            await _run_prompt(task["file_path"], ctx, operation)
+        result, hit, mask_input_next, pool_cache_hit, model_load_ms = await _run_prompt(
+            task["file_path"], ctx, operation
         )
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)
         return PredictionResult(
@@ -1554,6 +1901,20 @@ async def predict(request: Request):
             cache_hit=pool_cache_hit,
             model_load_ms=model_load_ms,
             mask_input_next=mask_input_next,
+            diagnostic=(
+                MaskInteractionDiagnostic(reason="empty_mask")
+                if ctx.get("type")
+                in (
+                    "point",
+                    "interactive_box",
+                    "mask",
+                    "scribble",
+                    "exemplar",
+                )
+                and ctx.get("output_geometry", "polygon") == "mask"
+                and not result
+                else None
+            ),
         ).model_dump(exclude_none=True)
 
     if isinstance(body, dict) and "tasks" in body:
@@ -1595,7 +1956,9 @@ async def predict(request: Request):
                 PredictionResult(
                     task=t.get("id"),
                     result=result,
-                    score=max((r.get("score") or 0.0) for r in result) if result else None,
+                    score=max((r.get("score") or 0.0) for r in result)
+                    if result
+                    else None,
                     model_version=MODEL_VERSION,
                     inference_time_ms=elapsed_ms,
                     # 整批共享同一懒加载结果: 第一条 task 触发, 后续都是 True/None.
@@ -1605,4 +1968,6 @@ async def predict(request: Request):
             )
         return BatchPredictResponse(results=results).model_dump(exclude_none=True)
 
-    raise HTTPException(status_code=422, detail="body must contain 'task'+'context' or 'tasks'")
+    raise HTTPException(
+        status_code=422, detail="body must contain 'task'+'context' or 'tasks'"
+    )

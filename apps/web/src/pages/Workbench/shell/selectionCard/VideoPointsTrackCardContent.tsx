@@ -1,15 +1,23 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, Geometry } from "@/types";
-import { isVideoMaskTrack, isVideoPointsTrack, resolvePointsTrackAtFrame, resolveVideoMaskTrackAtFrame } from "../../stage/videoStageGeometry";
+import {
+  isVideoMaskTrack,
+  isVideoPointsTrack,
+  resolvePointsTrackAtFrame,
+  resolveVideoMaskTrackAtFrame,
+} from "../../stage/videoStageGeometry";
 import { IdentityHeader, annotationSourceKind } from "./IdentityHeader";
 import { MetricGrid } from "./MetricGrid";
 import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics } from "./geometryMetrics";
+import { isFrameOutside } from "../../stage/videoTrackOutside";
+import { visibleKeyframesForTimeline } from "../../stage/videoTrackTimeline";
+import type { VideoMaskKeyframeActionHandlers } from "../../stage/videoMaskKeyframeActions";
+import { VideoKeyframeControls } from "./VideoKeyframeControls";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const FRAME_CHIP_CLASS =
   "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium tabular-nums whitespace-nowrap bg-brand/10 text-brand";
 const FRAME_TIME_CLASS = "text-brand/75";
@@ -32,6 +40,8 @@ export interface VideoPointsTrackCardContentProps {
   onToggleLock: (trackId: string) => void;
   onEditMask?: () => void;
   onPropagate?: () => void;
+  onConvert?: (id: string) => void;
+  maskActions?: VideoMaskKeyframeActionHandlers;
 }
 
 /** 秒 → 紧凑时间码 m:ss。 */
@@ -66,6 +76,8 @@ export function VideoPointsTrackCardContent({
   onToggleLock,
   onEditMask,
   onPropagate,
+  onConvert,
+  maskActions,
 }: VideoPointsTrackCardContentProps) {
   if (!isVideoPointsTrack(annotation) && !isVideoMaskTrack(annotation)) return null;
   const track = annotation.geometry;
@@ -73,18 +85,48 @@ export function VideoPointsTrackCardContent({
   const firstFrame = frames.length ? Math.min(...frames) : null;
   const lastFrame = frames.length ? Math.max(...frames) : null;
 
-  const resolved = isVideoPointsTrack(annotation) ? resolvePointsTrackAtFrame(annotation, frameIndex) : null;
+  const resolved = isVideoPointsTrack(annotation)
+    ? resolvePointsTrackAtFrame(annotation, frameIndex)
+    : null;
   const metricsGeom: Geometry | null = resolved
     ? resolved.open
       ? { type: "video_polyline", frame_index: frameIndex, points: resolved.points }
       : { type: "video_polygon", frame_index: frameIndex, points: resolved.points }
     : null;
-  const metrics = metricsGeom ? geometryMetrics(metricsGeom, imageWidth, imageHeight) : [];
   const resolvedMask = isVideoMaskTrack(annotation)
     ? resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex)
     : null;
-  const exactMaskKeyframe = isVideoMaskTrack(annotation)
-    && annotation.geometry.keyframes.some((keyframe) => keyframe.frame_index === frameIndex);
+  const metrics = metricsGeom
+    ? geometryMetrics(metricsGeom, imageWidth, imageHeight)
+    : resolvedMask
+      ? geometryMetrics(
+          { type: "video_mask", frame_index: frameIndex, mask: resolvedMask.mask },
+          imageWidth,
+          imageHeight,
+        )
+      : [];
+  const exactMaskKeyframe =
+    isVideoMaskTrack(annotation) &&
+    annotation.geometry.keyframes.some((keyframe) => keyframe.frame_index === frameIndex);
+  const visibleFrames = isVideoMaskTrack(annotation)
+    ? visibleKeyframesForTimeline(annotation.geometry).map((keyframe) => keyframe.frame_index)
+    : frames;
+  const previousFrame = [...visibleFrames].reverse().find((frame) => frame < frameIndex) ?? null;
+  const nextFrame = visibleFrames.find((frame) => frame > frameIndex) ?? null;
+  const currentFrameOutside =
+    isVideoMaskTrack(annotation) && isFrameOutside(annotation.geometry, frameIndex);
+  const currentFrameManualOutside =
+    isVideoMaskTrack(annotation) &&
+    (annotation.geometry.outside ?? []).some(
+      (range) =>
+        range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to,
+    );
+  const canMutateMask =
+    isVideoMaskTrack(annotation) &&
+    !readOnly &&
+    !locked &&
+    !annotation.is_locked &&
+    !maskActions?.busy;
 
   const timeLabel = fps ? formatTimecode(frameIndex / fps) : null;
   const frameChip = (
@@ -107,16 +149,86 @@ export function VideoPointsTrackCardContent({
       <div className="border-t border-border pt-2 text-xs text-muted-foreground">
         {track.keyframes.length} 关键帧
         {firstFrame !== null && lastFrame !== null && (
-          <span className="mono"> · F{firstFrame}–F{lastFrame}</span>
+          <span className="mono">
+            {" "}
+            · F{firstFrame}–F{lastFrame}
+          </span>
         )}
         <div className="mt-1 text-2xs">
           {isVideoMaskTrack(annotation)
             ? resolvedMask
-              ? exactMaskKeyframe ? "当前帧为 Mask 关键帧。" : `当前帧保持 F${resolvedMask.keyframeFrame} 的 Mask；编辑会物化新关键帧。`
+              ? exactMaskKeyframe
+                ? "当前帧为 Mask 关键帧。"
+                : `当前帧保持 F${resolvedMask.keyframeFrame} 的 Mask；编辑会物化新关键帧。`
               : "当前帧位于 outside 区间。"
             : "点集轨迹的关键帧逐帧编辑暂未开放,可在画布上拖动顶点改形。"}
         </div>
       </div>
+
+      {isVideoMaskTrack(annotation) && maskActions && (
+        <div className="grid gap-2 border-t border-border pt-2">
+          <VideoKeyframeControls
+            previousFrame={previousFrame}
+            nextFrame={nextFrame}
+            onSeekFrame={onSeekFrame}
+            onCopy={() => maskActions.copyCurrent(annotation)}
+            onPasteSame={() => maskActions.pasteSameTrack(annotation)}
+            onPasteNew={() => maskActions.pasteNewTrack(annotation)}
+            canCopy={Boolean(resolvedMask) && !maskActions.busy}
+            canPasteSame={canMutateMask && maskActions.hasClipboard}
+            canPasteNew={canMutateMask && maskActions.hasClipboard}
+            clipboardLabel={maskActions.clipboardLabel}
+          />
+          <div className="grid grid-cols-2 gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={
+                !canMutateMask ||
+                !exactMaskKeyframe ||
+                track.keyframes.length <= 1 ||
+                currentFrameOutside
+              }
+              title="删除当前精确 Mask 关键帧"
+              onClick={() => maskActions.deleteCurrentKeyframe(annotation)}
+            >
+              <Icon name="trash" size={14} />
+              删除关键帧
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canMutateMask || (currentFrameOutside && !currentFrameManualOutside)}
+              aria-pressed={currentFrameOutside}
+              title={
+                currentFrameOutside
+                  ? currentFrameManualOutside
+                    ? "恢复人工消失状态"
+                    : "预测 outside 不可人工恢复"
+                  : "标记当前帧消失"
+              }
+              onClick={() => maskActions.toggleCurrentOutside(annotation)}
+            >
+              <Icon name="eyeOff" size={14} />
+              {currentFrameOutside
+                ? currentFrameManualOutside
+                  ? "恢复保持"
+                  : "预测消失"
+                : "标记消失"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canMutateMask || !resolvedMask}
+              title="按连通组件拆分当前 Mask 为多条轨迹"
+              onClick={() => maskActions.splitCurrentComponents(annotation)}
+            >
+              <Icon name="scissors" size={14} />
+              组件拆轨
+            </Button>
+          </div>
+        </div>
+      )}
 
       <MetaFooter
         id={annotation.id}
@@ -127,6 +239,18 @@ export function VideoPointsTrackCardContent({
       />
 
       <ActionBar label={isVideoMaskTrack(annotation) ? "Mask 轨迹操作" : "点集轨迹操作"}>
+        {onConvert && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title={isVideoMaskTrack(annotation) ? "转换当前帧为 BBox" : "转换为 Mask"}
+            aria-label={isVideoMaskTrack(annotation) ? "转 BBox" : "转 Mask"}
+            disabled={readOnly || locked || annotation.is_locked}
+            onClick={() => onConvert(annotation.id)}
+          >
+            {isVideoMaskTrack(annotation) ? "转 BBox" : "转 Mask"}
+          </Button>
+        )}
         {isVideoMaskTrack(annotation) && (
           <Button
             variant="ghost"

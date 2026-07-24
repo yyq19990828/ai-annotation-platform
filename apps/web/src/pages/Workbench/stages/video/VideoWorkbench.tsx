@@ -18,7 +18,10 @@ import type { VideoSamCandidateShape } from "../../stage/VideoSamCandidateOverla
 import type { AiBox } from "../../state/transforms";
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
-import type { VideoTimelineChapter, VideoTimelineChapterControls } from "../../stage/VideoPlaybackOverlay";
+import type {
+  VideoTimelineChapter,
+  VideoTimelineChapterControls,
+} from "../../stage/VideoPlaybackOverlay";
 import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../../stage/videoStageTypes";
 import type { VideoMaskCandidate } from "../../stage/videoMaskFrames";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
@@ -26,12 +29,26 @@ import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
 import { resolveAnnotationVisual } from "../../stage/annotationVisual";
 import type { DiffMode } from "../../modes/types";
-import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
+import type {
+  VideoConvertOptions,
+  VideoTrackCompositionOptions,
+} from "./useVideoAnnotationActions";
+import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
+import type { VideoMaskKeyframeActionHandlers } from "../../stage/videoMaskKeyframeActions";
+import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry | VideoTrackMaskGeometry | VideoPolygonGeometry | VideoPolylineGeometry | VideoTrackPolygonGeometry | VideoTrackPolylineGeometry;
+type VideoGeometry =
+  | VideoBboxGeometry
+  | VideoTrackGeometry
+  | VideoTrackMaskGeometry
+  | VideoPolygonGeometry
+  | VideoPolylineGeometry
+  | VideoTrackPolygonGeometry
+  | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
+  maskCompareStore?: MaskCompareTileStore | null;
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
   isLoading?: boolean;
@@ -71,12 +88,15 @@ export interface VideoWorkbenchProps {
   /** v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选 / 点会话 (透传给 VideoKonvaStage)。 */
   onSamPrompt?: (prompt: VideoSamPrompt) => void;
   samCandidates?: VideoSamCandidateShape[];
+  samMaskRecords?: readonly RasterMaskRenderRecord<"interactive">[];
+  onSelectSamMaskCandidate?: (candidateId: string) => void;
   samActiveIdx?: number;
   samSessionPoints?: { pt: [number, number]; polarity: 1 | 0; obj?: number }[];
   /** v0.21.27 · 框修正 · 当前帧已落的 PVS 框种子 (归一化 xyxy)。 */
   samSessionBoxes?: { bbox: [number, number, number, number]; obj?: number }[];
   maskCandidates?: VideoMaskCandidate[];
   maskEditor?: UseMaskEditorReturn;
+  maskKeyframeActions?: VideoMaskKeyframeActionHandlers;
   onMaskCommit?: () => void;
   onMaskCancel?: () => void;
   samPolarity?: "positive" | "negative";
@@ -110,63 +130,70 @@ export interface VideoWorkbenchProps {
 }
 
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
-  function VideoWorkbench({
-    manifest,
-    frameTimetable,
-    isLoading,
-    error,
-    annotations,
-    aiBoxes,
-    selectedId,
-    activeClass,
-    frameIndex,
-    selectedIds = [],
-    reviewDisplayMode,
-    hiddenTrackIds,
-    lockedTrackIds,
-    trackColorOverrides,
-    readOnly,
-    videoTool,
-    isVideoToolEnabled,
-    spacePan = false,
-    onSpacePanDragStart,
-    pendingDrawing,
-    chapters,
-    timelineChapterControls,
-    propagateRange,
-    videoSampling,
-    performanceTier,
-    onSelect,
-    onFrameIndexChange,
-    onCreate,
-    onCreatePointsTrack,
-    onCreatePoints,
-    onSamPrompt,
-    samCandidates,
-    samActiveIdx,
-    samSessionPoints,
-    samSessionBoxes,
-    maskCandidates,
-    maskEditor,
-    onMaskCommit,
-    onMaskCancel,
-    samPolarity,
-    onPendingDraw,
-    onUpdate,
-    onChangeUserBoxClass,
-    onDeleteUserBox,
-    onConvertToBboxes,
-    onAcceptPrediction,
-    onRejectPrediction,
-    onComposeTracks,
-    onToggleHiddenTrack,
-    onToggleLockedTrack,
-    onPropagateTrack,
-    onCursorMove,
-    issuePixelFeedbacks,
-    issueHighlightId,
-    onIssuePinClick,
-  }, ref) {
+  function VideoWorkbench(
+    {
+      maskCompareStore,
+      manifest,
+      frameTimetable,
+      isLoading,
+      error,
+      annotations,
+      aiBoxes,
+      selectedId,
+      activeClass,
+      frameIndex,
+      selectedIds = [],
+      reviewDisplayMode,
+      hiddenTrackIds,
+      lockedTrackIds,
+      trackColorOverrides,
+      readOnly,
+      videoTool,
+      isVideoToolEnabled,
+      spacePan = false,
+      onSpacePanDragStart,
+      pendingDrawing,
+      chapters,
+      timelineChapterControls,
+      propagateRange,
+      videoSampling,
+      performanceTier,
+      onSelect,
+      onFrameIndexChange,
+      onCreate,
+      onCreatePointsTrack,
+      onCreatePoints,
+      onSamPrompt,
+      samCandidates,
+      samMaskRecords,
+      onSelectSamMaskCandidate,
+      samActiveIdx,
+      samSessionPoints,
+      samSessionBoxes,
+      maskCandidates,
+      maskEditor,
+      maskKeyframeActions,
+      onMaskCommit,
+      onMaskCancel,
+      samPolarity,
+      onPendingDraw,
+      onUpdate,
+      onChangeUserBoxClass,
+      onDeleteUserBox,
+      onConvertToBboxes,
+      onAcceptPrediction,
+      onRejectPrediction,
+      onComposeTracks,
+      onToggleHiddenTrack,
+      onToggleLockedTrack,
+      onPropagateTrack,
+      onCursorMove,
+      issuePixelFeedbacks,
+      issueHighlightId,
+      onIssuePinClick,
+    },
+    ref,
+  ) {
     const { config: workbenchConfig } = useWorkbenchConfig();
     const workbenchVideo = workbenchConfig.video;
     // v0.15.27 · 共享标注视觉规格(线宽/填充/字号/标签显隐);与图片工作台共用 common 子集。
@@ -177,6 +204,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     // v0.16.5 · 视频渲染栈统一到 Konva(删旧 SVG 栈,见 ADR-0041):唯一实现,无 flag 分支。
     return (
       <VideoKonvaStage
+        maskCompareStore={maskCompareStore}
         ref={ref}
         manifest={manifest}
         frameTimetable={frameTimetable}
@@ -213,11 +241,14 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onCreatePointsTrack={onCreatePointsTrack}
         onSamPrompt={onSamPrompt}
         samCandidates={samCandidates}
+        samMaskRecords={samMaskRecords}
+        onSelectSamMaskCandidate={onSelectSamMaskCandidate}
         samActiveIdx={samActiveIdx}
         samSessionPoints={samSessionPoints}
         samSessionBoxes={samSessionBoxes}
         maskCandidates={maskCandidates}
         maskEditor={maskEditor}
+        maskKeyframeActions={maskKeyframeActions}
         onMaskCommit={onMaskCommit}
         onMaskCancel={onMaskCancel}
         samPolarity={samPolarity}

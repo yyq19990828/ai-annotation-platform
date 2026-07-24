@@ -50,13 +50,3 @@ testpaths = ["tests"]
 # v0.9.4 phase 3: mask_utils 共享包从 apps/_shared/mask_utils 注入. Docker 容器内由
 # `pip install -e /app/mask_utils` 提供; 本地 pytest 通过 pythonpath 直接定位 src/.
 pythonpath = [".", "../_shared/mask_utils/src", "../_shared/protocol_v2/src", "../_shared/backend_runtime/src"]
-
-[tool.ruff]
-# vendor/grounded-sam-2 是上游仓库 (IDEA-Research/Grounded-SAM-2), 不承担其 lint 债.
-extend-exclude = ["vendor"]
-
-[tool.ruff.lint.per-file-ignores]
-# predictor / video_predictor 必须先 sys.path.insert(vendor_root) 才能 import vendor 包,
-# 后续 import 触发 E402 属集成结构性必然, 非代码质量问题.
-"predictor.py" = ["E402"]
-"video_predictor.py" = ["E402"]

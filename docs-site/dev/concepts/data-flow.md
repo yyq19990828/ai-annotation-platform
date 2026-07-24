@@ -45,6 +45,7 @@ sequenceDiagram
 ```
 
 代码索引：
+
 - 取下一题：`apps/api/app/api/v1/tasks/list.py` (get_next_task / next_smart 端点)
 - 任务锁：`apps/api/app/services/task_lock.py:acquire/heartbeat/release`
 - 提交：`apps/api/app/api/v1/tasks/lifecycle.py:submit_task`
@@ -85,6 +86,7 @@ sequenceDiagram
 ```
 
 代码索引：
+
 - 触发端点：`apps/api/app/api/v1/projects.py` 或 `ml_backends.py`
 - ML client：`apps/api/app/services/ml_client.py:predict` (`ml_client.py:41-62`)
 - ML 协议契约：[`docs-site/dev/ml-backend-protocol.md`](../reference/ml-backend-protocol)
@@ -105,14 +107,18 @@ sequenceDiagram
   participant DB
   participant S as MinIO
 
+  Admin->>A: POST /projects/{id}/mask-formats/exports:preflight
+  A->>DB: 统计 task / geometry 并生成 MaskFormatPlan
+  A-->>Admin: loss class + codes + estimates + digest
   Admin->>A: POST /api/v1/projects/{id}/export?targets=coco
   Note right of A: projects.py:export_project<br/>audit_logs(action='project.export')
   A->>DB: 创建 async_jobs(kind='export')
   A->>R: 派发 app.workers.export.run_export
   A-->>Admin: 202 + job_id
   C->>DB: 拉取所有 annotations + tasks
+  C->>C: 按 adapter / manifest / options key 取 single-flight
   C->>C: 拼装所选格式并生成 ZIP
-  Note right of C: services/exporting/* 格式适配与打包
+  Note right of C: mask_formats registry + exporting/* 打包
   C->>S: 上传 ZIP 到 export bucket
   C->>DB: 写 export_artifacts 缓存<br/>完成 async_jobs.result
   Admin->>A: GET /api/v1/async-jobs/{job_id}
@@ -120,14 +126,27 @@ sequenceDiagram
 ```
 
 代码索引：
+
 - 项目导出端点：`apps/api/app/api/v1/projects.py:export_project`
 - 批次导出端点：`apps/api/app/api/v1/batches.py:export_batch`
 - 作业状态与下载 URL：`apps/api/app/api/v1/async_jobs.py:get_async_job`
 - 审计：所有导出写 `AuditAction.PROJECT_EXPORT` / `BATCH_EXPORT`
 - Worker：`apps/api/app/workers/export.py`（`app.workers.export.run_export` 任务）
-- 导出服务与格式适配：`apps/api/app/services/exporting/`
+- 格式 registry / plan / archive：`apps/api/app/services/mask_formats/`
+- 导出打包：`apps/api/app/services/exporting/`
 
 VOC 保留同步 ZIP 响应；其余目标走上述异步作业与缓存链路。
+
+### 格式导入执行边界
+
+格式导入先通过服务端生成的预签名 URL 上传到 import bucket，预检只接受当前项目与用户前缀下的 object key
+和由调用方提交的 SHA-256。服务端流式复核字节配额与摘要，再将 adapter / manifest 版本、mapping / options digest、
+逐任务计划和 15 分钟 receipt 写入 `mask_format_imports`。
+
+执行时再次复核 object SHA-256 和全部 digest；任何一项变化都拒绝执行。Worker 逐 task 开启独立事务，并在
+`result_json.items` 中记录 `committed / failed / skipped`；续跑只处理未提交项。本地临时目录在成功、失败和取消时都由
+context manager 清理，staged object 由 import bucket 的 7 天 lifecycle 回收。项目标注导入 UI 在至少一个 Mask adapter 完成
+consumer 闭环验证前保持关闭；capability 响应不会把未验证 adapter 暴露给前端。
 
 ---
 
@@ -167,6 +186,7 @@ sequenceDiagram
 - 评论 @ 提及（type=`comment.mention`）
 
 代码索引：
+
 - WS 端点：`apps/api/app/api/v1/ws.py` (`ws.py:70-114`)
 - 通知服务：`apps/api/app/services/notification.py:NotificationService.notify` (`notification.py:51-94`)
 - 通知模型：`apps/api/app/db/models/notification.py`

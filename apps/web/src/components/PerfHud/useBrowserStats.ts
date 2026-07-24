@@ -81,9 +81,11 @@ export function useBrowserStats(enabled: boolean): BrowserStats {
     if (!enabled) return;
     // longtask 不是所有浏览器都支持 — Safari < 16 无, Firefox 无
     if (typeof PerformanceObserver === "undefined") return;
-    const supportedTypes = (PerformanceObserver as unknown as {
-      supportedEntryTypes?: string[];
-    }).supportedEntryTypes;
+    const supportedTypes = (
+      PerformanceObserver as unknown as {
+        supportedEntryTypes?: string[];
+      }
+    ).supportedEntryTypes;
     if (supportedTypes && !supportedTypes.includes("longtask")) return;
 
     type Entry = { t: number; d: number };

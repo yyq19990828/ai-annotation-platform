@@ -10,7 +10,20 @@
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
+
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    labelnames=("method", "path", "status_code"),
+)
+
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    labelnames=("method", "path"),
+)
 
 
 ML_BACKEND_REQUEST_DURATION = Histogram(
@@ -63,6 +76,229 @@ VIDEO_FRAME_ASSET_BYTES = Gauge(
     "视频帧服务已缓存对象字节数",
     labelnames=("asset_type",),
 )
+
+RASTER_MASK_CONTENT_OPERATIONS_TOTAL = Counter(
+    "raster_mask_content_operations_total",
+    "Raster mask 内容存储操作次数",
+    labelnames=("operation", "outcome"),
+)
+
+RASTER_MASK_CONTENT_ERRORS_TOTAL = Counter(
+    "raster_mask_content_errors_total",
+    "Raster mask 内容存储错误次数",
+    labelnames=("operation", "reason"),
+)
+
+RASTER_MASK_ACTIVE_GEOMETRIES = Gauge(
+    "raster_mask_active_geometries",
+    "当前持久化的活跃图片 raster mask 几何数量",
+    labelnames=("kind",),
+)
+
+MASK_AI_OPERATIONS_TOTAL = Counter(
+    "mask_ai_operations_total",
+    "Native Mask AI operations by controlled interaction outcome",
+    labelnames=(
+        "operation",
+        "prompt_family",
+        "output_geometry",
+        "candidate_count",
+        "decision",
+        "fallback_reason",
+        "outcome",
+    ),
+)
+
+MASK_AI_PHASE_DURATION_SECONDS = Histogram(
+    "mask_ai_phase_duration_seconds",
+    "Native Mask AI phase duration in seconds",
+    labelnames=("operation", "phase", "outcome"),
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120),
+)
+
+MASK_AI_CORRECTION_JOBS = Gauge(
+    "mask_ai_correction_jobs",
+    "Video Mask correction jobs by persisted status",
+    labelnames=("status",),
+)
+
+MASK_AI_CORRECTION_OLDEST_AGE_SECONDS = Gauge(
+    "mask_ai_correction_oldest_age_seconds",
+    "Age of the oldest active Video Mask correction job",
+    labelnames=("status",),
+)
+
+MASK_AI_STAGED_MASK_REFERENCES = Gauge(
+    "mask_ai_staged_mask_references",
+    "Distinct staged raster Mask object references by tracker job kind",
+    labelnames=("job_kind",),
+)
+
+MASK_AI_ACCEPT_DECISIONS = Gauge(
+    "mask_ai_accept_decisions",
+    "Native Mask accept idempotency decisions by expiry state",
+    labelnames=("state",),
+)
+
+MASK_AI_OLDEST_EXPIRED_DECISION_AGE_SECONDS = Gauge(
+    "mask_ai_oldest_expired_decision_age_seconds",
+    "Age of the oldest expired native Mask accept decision",
+)
+
+RASTER_MASK_CONTENT_OPERATIONS = frozenset({"load", "store", "verify"})
+RASTER_MASK_CONTENT_OUTCOMES = frozenset({"success", "error"})
+RASTER_MASK_CONTENT_ERROR_REASONS = frozenset(
+    {
+        "missing_object",
+        "digest_mismatch",
+        "size_mismatch",
+        "run_mismatch",
+        "byte_mismatch",
+        "invalid_encoding",
+        "invalid_payload",
+        "storage_unavailable",
+        "unknown",
+    }
+)
+
+MASK_AI_OPERATIONS = frozenset({"single_frame", "refine", "correction"})
+MASK_AI_PROMPT_FAMILIES = frozenset(
+    {
+        "point",
+        "bbox",
+        "mask",
+        "scribble",
+        "text",
+        "exemplar",
+        "correction_frame",
+        "unknown",
+    }
+)
+MASK_AI_OUTPUT_GEOMETRIES = frozenset({"mask", "polygon", "bbox", "unknown"})
+MASK_AI_CANDIDATE_COUNT_BUCKETS = frozenset({"0", "1", "2_3", "4_10", "11_plus"})
+MASK_AI_DECISIONS = frozenset({"none", "accept", "reject", "cancel"})
+MASK_AI_FALLBACK_REASONS = frozenset({"none", "mask_prompt_unsupported", "unknown"})
+MASK_AI_OUTCOMES = frozenset({"success", "error", "conflict"})
+MASK_AI_PHASES = frozenset({"decode", "inference", "encode", "upload", "commit"})
+
+
+def record_raster_mask_content_operation(
+    operation: str,
+    outcome: str,
+    *,
+    error_reason: str | None = None,
+) -> None:
+    """Best-effort metric update; instrumentation never breaks content I/O."""
+    if (
+        operation not in RASTER_MASK_CONTENT_OPERATIONS
+        or outcome not in RASTER_MASK_CONTENT_OUTCOMES
+    ):
+        return
+    reason = (
+        error_reason if error_reason in RASTER_MASK_CONTENT_ERROR_REASONS else "unknown"
+    )
+    try:
+        RASTER_MASK_CONTENT_OPERATIONS_TOTAL.labels(
+            operation=operation,
+            outcome=outcome,
+        ).inc()
+        if outcome == "error":
+            RASTER_MASK_CONTENT_ERRORS_TOTAL.labels(
+                operation=operation,
+                reason=reason,
+            ).inc()
+    except Exception:  # noqa: BLE001 - metrics must not break content I/O
+        return
+
+
+def mask_ai_candidate_count_bucket(count: int) -> str:
+    """Collapse candidate counts into a fixed label vocabulary."""
+    if count <= 0:
+        return "0"
+    if count == 1:
+        return "1"
+    if count <= 3:
+        return "2_3"
+    if count <= 10:
+        return "4_10"
+    return "11_plus"
+
+
+def mask_ai_operation(context: dict | None) -> str:
+    """Classify a single-frame request without retaining prompt contents."""
+    payload = context or {}
+    return (
+        "refine"
+        if payload.get("mask_prompt") or payload.get("mask_input")
+        else "single_frame"
+    )
+
+
+def mask_ai_prompt_family(context: dict | None) -> str:
+    prompt = str((context or {}).get("type") or "unknown")
+    prompt = "bbox" if prompt == "interactive_box" else prompt
+    return prompt if prompt in MASK_AI_PROMPT_FAMILIES else "unknown"
+
+
+def record_mask_ai_operation(
+    *,
+    operation: str,
+    prompt_family: str,
+    output_geometry: str,
+    candidate_count: int = 0,
+    decision: str = "none",
+    fallback_reason: str | None = None,
+    outcome: str,
+) -> None:
+    """Record only controlled, low-cardinality labels; never propagate caller IDs."""
+    normalized = {
+        "operation": operation if operation in MASK_AI_OPERATIONS else "single_frame",
+        "prompt_family": (
+            prompt_family if prompt_family in MASK_AI_PROMPT_FAMILIES else "unknown"
+        ),
+        "output_geometry": (
+            output_geometry
+            if output_geometry in MASK_AI_OUTPUT_GEOMETRIES
+            else "unknown"
+        ),
+        "candidate_count": mask_ai_candidate_count_bucket(candidate_count),
+        "decision": decision if decision in MASK_AI_DECISIONS else "none",
+        "fallback_reason": (
+            fallback_reason
+            if fallback_reason in MASK_AI_FALLBACK_REASONS
+            else "none"
+            if fallback_reason is None
+            else "unknown"
+        ),
+        "outcome": outcome if outcome in MASK_AI_OUTCOMES else "error",
+    }
+    try:
+        MASK_AI_OPERATIONS_TOTAL.labels(**normalized).inc()
+    except Exception:  # noqa: BLE001 - metrics must not break user operations
+        return
+
+
+def observe_mask_ai_phase(
+    *,
+    operation: str,
+    phase: str,
+    outcome: str,
+    duration_seconds: float,
+) -> None:
+    """Observe one controlled phase without high-cardinality request context."""
+    normalized_operation = (
+        operation if operation in MASK_AI_OPERATIONS else "single_frame"
+    )
+    normalized_phase = phase if phase in MASK_AI_PHASES else "inference"
+    normalized_outcome = outcome if outcome in MASK_AI_OUTCOMES else "error"
+    try:
+        MASK_AI_PHASE_DURATION_SECONDS.labels(
+            operation=normalized_operation,
+            phase=normalized_phase,
+            outcome=normalized_outcome,
+        ).observe(max(0.0, duration_seconds))
+    except Exception:  # noqa: BLE001 - metrics must not break user operations
+        return
 
 
 def observe_ml_backend(

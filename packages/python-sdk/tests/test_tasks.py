@@ -44,7 +44,9 @@ def test_list_tasks(client, respx_mock):
 
 def test_get_task(client, respx_mock):
     tid = TASK["id"]
-    respx_mock.get(f"{API}/tasks/{tid}").mock(return_value=httpx.Response(200, json=TASK))
+    respx_mock.get(f"{API}/tasks/{tid}").mock(
+        return_value=httpx.Response(200, json=TASK)
+    )
     t = client.tasks.get(tid)
     assert isinstance(t, Task)
     assert str(t.id) == tid
@@ -61,5 +63,7 @@ def test_next_task(client, respx_mock):
 
 def test_next_task_none(client, respx_mock):
     # 无可领任务时后端返回 null
-    respx_mock.get(f"{API}/tasks/next").mock(return_value=httpx.Response(200, json=None))
+    respx_mock.get(f"{API}/tasks/next").mock(
+        return_value=httpx.Response(200, json=None)
+    )
     assert client.tasks.next(PROJECT_ID, batch_id=uuid4()) is None

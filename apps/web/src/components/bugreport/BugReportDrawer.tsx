@@ -1,8 +1,19 @@
 import { useState, useEffect, type ClipboardEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { bugReportsApi, uploadBugAttachment, type BugAttachment, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
-import { getRecentApiCalls, getRecentConsoleErrors, sanitizeApiCalls, captureScreenshot } from "@/utils/bugReportCapture";
+import {
+  bugReportsApi,
+  uploadBugAttachment,
+  type BugAttachment,
+  type BugReportResponse,
+  type BugReportDetail,
+} from "@/api/bug-reports";
+import {
+  getRecentApiCalls,
+  getRecentConsoleErrors,
+  sanitizeApiCalls,
+  captureScreenshot,
+} from "@/utils/bugReportCapture";
 import {
   appendVideoWorkbenchDiagnostics,
   getVideoWorkbenchDiagnosticsSnapshot,
@@ -26,7 +37,8 @@ const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
-const cx = (...classNames: Array<string | false | null | undefined>) => classNames.filter(Boolean).join(" ");
+const cx = (...classNames: Array<string | false | null | undefined>) =>
+  classNames.filter(Boolean).join(" ");
 
 const severityClassName: Record<string, string> = {
   low: styles.severityLow,
@@ -136,7 +148,9 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
 
   const handlePasteImage = (e: ClipboardEvent) => {
     if (view !== "create") return;
-    const files = Array.from(e.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    const files = Array.from(e.clipboardData.files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
     if (files.length === 0) return;
     e.preventDefault();
     const nextAttachments: PendingAttachment[] = [];
@@ -192,12 +206,18 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       }
       const videoDiagnostics = getVideoWorkbenchDiagnosticsSnapshot();
       const videoDiagnosticsEntry = videoWorkbenchDiagnosticsConsoleEntry(videoDiagnostics);
-      const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({ msg: e.msg, stack: e.stack || "" }));
+      const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({
+        msg: e.msg,
+        stack: e.stack || "",
+      }));
       if (videoDiagnosticsEntry) recentConsoleErrors.unshift(videoDiagnosticsEntry);
       // v0.9.41: 附 workbench longtask 快照，便于 BUG 排查时定位卡顿点。
       const perf = readWorkbenchPerfSnapshot();
       if (perf.longTaskCount > 0) {
-        recentConsoleErrors.unshift({ msg: "[workbench-perf]", stack: JSON.stringify(perf, null, 2) });
+        recentConsoleErrors.unshift({
+          msg: "[workbench-perf]",
+          stack: JSON.stringify(perf, null, 2),
+        });
       }
       await bugReportsApi.create({
         title: title.trim(),
@@ -318,19 +338,18 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
 
   return (
     <>
-      <div
-        data-bug-drawer
-        className={styles.overlay}
-        onClick={onClose}
-      />
-      <div
-        data-bug-drawer
-        className={styles.drawer}
-      >
+      <div data-bug-drawer className={styles.overlay} onClick={onClose} />
+      <div data-bug-drawer className={styles.drawer}>
         {/* Header */}
         <div className={styles.header}>
           <span className={styles.title}>
-            {view === "list" ? "我的反馈" : view === "create" ? "提交反馈" : view === "edit" ? "编辑反馈" : detail?.display_id ?? "详情"}
+            {view === "list"
+              ? "我的反馈"
+              : view === "create"
+                ? "提交反馈"
+                : view === "edit"
+                  ? "编辑反馈"
+                  : (detail?.display_id ?? "详情")}
           </span>
           <div className={styles.headerActions}>
             {view !== "list" && (
@@ -344,10 +363,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 返回
               </button>
             )}
-            <button
-              onClick={onClose}
-              className={styles.closeButton}
-            >
+            <button onClick={onClose} className={styles.closeButton}>
               <Icon name="x" size={16} />
             </button>
           </div>
@@ -375,16 +391,10 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               </button>
               {loading && <div className={styles.loadingState}>加载中...</div>}
               {!loading && reports.length === 0 && (
-                <div className={styles.emptyState}>
-                  暂无反馈
-                </div>
+                <div className={styles.emptyState}>暂无反馈</div>
               )}
               {reports.map((r) => (
-                <div
-                  key={r.id}
-                  onClick={() => loadDetail(r.id)}
-                  className={styles.reportRow}
-                >
+                <div key={r.id} onClick={() => loadDetail(r.id)} className={styles.reportRow}>
                   <div className={styles.reportTitle}>
                     {r.display_id}: {r.title}
                   </div>
@@ -410,9 +420,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 handleSubmit();
               }}
             >
-              <label className={styles.label}>
-                标题 *
-              </label>
+              <label className={styles.label}>标题 *</label>
               <input
                 required
                 value={title}
@@ -422,9 +430,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 className={styles.field}
               />
 
-              <label className={styles.label}>
-                描述 *
-              </label>
+              <label className={styles.label}>描述 *</label>
               <textarea
                 required
                 value={desc}
@@ -434,9 +440,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 className={cx(styles.field, styles.textarea)}
               />
 
-              <label className={styles.label}>
-                严重程度
-              </label>
+              <label className={styles.label}>严重程度</label>
               <select
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value)}
@@ -449,9 +453,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               </select>
 
               <div className={styles.screenshotSection}>
-                <label className={styles.strongLabel}>
-                  截图（可选）
-                </label>
+                <label className={styles.strongLabel}>截图（可选）</label>
                 {screenshotEditing && screenshotBlob ? (
                   <ScreenshotEditor
                     imageBlob={screenshotBlob}
@@ -489,11 +491,16 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                           >
                             <Icon name="image" size={12} />
                             <span className={styles.truncate}>
-                              图 {index + 1} · {att.fileName} · {Math.round(att.blob.size / 1024)} KB
+                              图 {index + 1} · {att.fileName} · {Math.round(att.blob.size / 1024)}{" "}
+                              KB
                             </span>
                             <button
                               type="button"
-                              onClick={() => setPendingAttachments((items) => items.filter((item) => item.id !== att.id))}
+                              onClick={() =>
+                                setPendingAttachments((items) =>
+                                  items.filter((item) => item.id !== att.id),
+                                )
+                              }
                               className={styles.removeButton}
                             >
                               移除
@@ -508,20 +515,24 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
 
               {screenshotUploadFail && (
                 <div className={styles.uploadError}>
-                  <div className={styles.uploadErrorText}>
-                    截图上传失败：{screenshotUploadFail}
-                  </div>
+                  <div className={styles.uploadErrorText}>截图上传失败：{screenshotUploadFail}</div>
                   <div className={styles.inlineActions}>
                     <button
                       type="button"
-                      onClick={() => { setScreenshotUploadFail(null); handleSubmit(false); }}
+                      onClick={() => {
+                        setScreenshotUploadFail(null);
+                        handleSubmit(false);
+                      }}
                       className={styles.smallPrimaryButton}
                     >
                       重试上传
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setScreenshotUploadFail(null); handleSubmit(true); }}
+                      onClick={() => {
+                        setScreenshotUploadFail(null);
+                        handleSubmit(true);
+                      }}
                       className={styles.smallGhostButton}
                     >
                       跳过截图提交
@@ -547,9 +558,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 handleUpdate();
               }}
             >
-              <label className={styles.label}>
-                标题 *
-              </label>
+              <label className={styles.label}>标题 *</label>
               <input
                 required
                 value={title}
@@ -557,9 +566,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 maxLength={500}
                 className={styles.field}
               />
-              <label className={styles.label}>
-                描述 *
-              </label>
+              <label className={styles.label}>描述 *</label>
               <textarea
                 required
                 value={desc}
@@ -567,9 +574,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 rows={4}
                 className={cx(styles.field, styles.textarea)}
               />
-              <label className={styles.label}>
-                严重程度
-              </label>
+              <label className={styles.label}>严重程度</label>
               <select
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value)}
@@ -595,10 +600,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               <div className={styles.detailHeader}>
                 <span className={styles.detailTitle}>{detail.title}</span>
                 <div className={styles.detailActions}>
-                  <button
-                    onClick={() => startEdit(detail)}
-                    className={styles.detailButton}
-                  >
+                  <button onClick={() => startEdit(detail)} className={styles.detailButton}>
                     编辑
                   </button>
                   <button
@@ -613,12 +615,14 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 <span className={cx(styles.severity, severityClassName[detail.severity])}>
                   {detail.severity}
                 </span>
-                <span className={styles.badge}>
-                  {statusLabel[detail.status] ?? detail.status}
-                </span>
+                <span className={styles.badge}>{statusLabel[detail.status] ?? detail.status}</span>
                 {detail.reopen_count > 0 && (
                   <span
-                    title={detail.last_reopened_at ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
+                    title={
+                      detail.last_reopened_at
+                        ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}`
+                        : undefined
+                    }
                     className={cx(styles.badge, styles.reopenBadge)}
                   >
                     曾重开 {detail.reopen_count} 次
@@ -647,10 +651,10 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                         className={styles.attachmentItem}
                       >
                         <Icon name="image" size={12} />
-                        <span className={styles.truncate}>
-                          {att.fileName}
+                        <span className={styles.truncate}>{att.fileName}</span>
+                        <span className={styles.attachmentSize}>
+                          {Math.round(att.size / 1024)} KB
                         </span>
-                        <span className={styles.attachmentSize}>{Math.round(att.size / 1024)} KB</span>
                       </a>
                     ))}
                   </div>
@@ -658,22 +662,17 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               )}
               {detail.resolution && (
                 <div className={styles.resolution}>
-                  <span className={styles.resolutionLabel}>处理结果：</span>{detail.resolution}
+                  <span className={styles.resolutionLabel}>处理结果：</span>
+                  {detail.resolution}
                 </div>
               )}
               <div className={styles.comments}>
-                <div className={styles.sectionTitle}>
-                  评论 ({detail.comments.length})
-                </div>
+                <div className={styles.sectionTitle}>评论 ({detail.comments.length})</div>
                 {detail.comments.map((c) => (
                   <div key={c.id} className={styles.comment}>
                     <div className={styles.commentMeta}>
                       <span className={styles.commentAuthor}>{c.author_name || "未知"}</span>
-                      {c.author_role && (
-                        <span className={styles.roleBadge}>
-                          {c.author_role}
-                        </span>
-                      )}
+                      {c.author_role && <span className={styles.roleBadge}>{c.author_role}</span>}
                       <span className={styles.commentTime}>
                         {new Date(c.created_at).toLocaleString("zh-CN")}
                       </span>
@@ -689,7 +688,8 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 <div className={styles.commentComposer}>
                   {["fixed", "wont_fix", "duplicate"].includes(detail.status) && (
                     <div className={styles.reopenNotice}>
-                      ⚠ 当前状态为「{statusLabel[detail.status] ?? detail.status}」，发送评论将自动重新打开此反馈
+                      ⚠ 当前状态为「{statusLabel[detail.status] ?? detail.status}
+                      」，发送评论将自动重新打开此反馈
                     </div>
                   )}
                   <textarea

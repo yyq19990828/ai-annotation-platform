@@ -18,13 +18,14 @@ export interface PointcloudLegacyMigration {
 }
 
 export function isPointMaskSelectMode(value: unknown): value is PointMaskSelectMode {
-  return typeof value === "string" && POINT_MASK_SELECT_MODES.includes(value as PointMaskSelectMode);
+  return (
+    typeof value === "string" && POINT_MASK_SELECT_MODES.includes(value as PointMaskSelectMode)
+  );
 }
 
 export function isCrossFrameOverlayK(value: unknown): value is CrossFrameOverlayK {
   return (
-    typeof value === "number" &&
-    CROSS_FRAME_OVERLAY_K_VALUES.includes(value as CrossFrameOverlayK)
+    typeof value === "number" && CROSS_FRAME_OVERLAY_K_VALUES.includes(value as CrossFrameOverlayK)
   );
 }
 

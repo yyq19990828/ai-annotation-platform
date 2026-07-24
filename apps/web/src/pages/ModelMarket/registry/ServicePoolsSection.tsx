@@ -58,12 +58,8 @@ import {
 import { useToastStore } from "@/components/ui/Toast";
 
 import { NO_LIMIT, NO_METRICS } from "./registryShared";
-import {
-  AffectedCountChip,
-  CopyableId,
-  EmptyState,
-  NullCell,
-} from "./registryUi";
+import { CapabilityDriftReviewDialog } from "./CapabilityDriftReviewDialog";
+import { AffectedCountChip, CopyableId, EmptyState, NullCell } from "./registryUi";
 import type { RegistryFilters, RegistryScope } from "./registryTypes";
 import type { PoolViewModel } from "../runtimeTopology";
 import { sortPoolsBySeverity } from "../runtimeTopology";
@@ -101,10 +97,7 @@ function policyLabel(policy: string): string {
 type GpuSeverity = "ok" | "info" | "warning" | "critical" | "blocker";
 
 /** Find the highest GPU diagnostic severity touching this pool's members. */
-function poolMaxGpuSeverity(
-  pool: PoolViewModel,
-  scope: RegistryScope,
-): GpuSeverity | null {
+function poolMaxGpuSeverity(pool: PoolViewModel, scope: RegistryScope): GpuSeverity | null {
   if (!scope.gpuResources) return null;
   const gpuIds = new Set<string>();
   for (const m of pool.members) {
@@ -127,11 +120,7 @@ function poolMaxGpuSeverity(
 
 function gpuSeverityBadge(sev: GpuSeverity): ReactNode {
   const variant =
-    sev === "blocker" || sev === "critical"
-      ? "danger"
-      : sev === "warning"
-        ? "warning"
-        : "success";
+    sev === "blocker" || sev === "critical" ? "danger" : sev === "warning" ? "warning" : "success";
   const label =
     sev === "blocker"
       ? "阻断"
@@ -209,7 +198,8 @@ export function ServicePoolsSection({
         {isSuperAdmin && (
           <div className="flex justify-end">
             <Button onClick={() => setCreateOpen(true)}>
-              <Icon name="plus" size={12} />新建服务池
+              <Icon name="plus" size={12} />
+              新建服务池
             </Button>
           </div>
         )}
@@ -231,43 +221,44 @@ export function ServicePoolsSection({
       {isSuperAdmin && (
         <div className="flex justify-end">
           <Button onClick={() => setCreateOpen(true)}>
-            <Icon name="plus" size={12} />新建服务池
+            <Icon name="plus" size={12} />
+            新建服务池
           </Button>
         </div>
       )}
       <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8" />
-          <TableHead>服务池</TableHead>
-          <TableHead>成员</TableHead>
-          <TableHead>容量</TableHead>
-          <TableHead>项目</TableHead>
-          {isSuperAdmin && <TableHead>GPU</TableHead>}
-          <TableHead>状态</TableHead>
-          {isSuperAdmin && <TableHead className="text-right">操作</TableHead>}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((pool) => (
-          <PoolRow
-            key={pool.id}
-            pool={pool}
-            scope={scope}
-            expanded={expanded.has(pool.id)}
-            onToggle={() => togglePool(pool.id)}
-          />
-        ))}
-        {rows.length === 0 && (
+        <TableHeader>
           <TableRow>
-            <TableCell colSpan={isSuperAdmin ? 7 : 5}>
-              <div className="p-6 text-center text-sm text-muted-foreground">
-                没有匹配的服务池
-              </div>
-            </TableCell>
+            <TableHead className="w-8" />
+            <TableHead>服务池</TableHead>
+            <TableHead>成员</TableHead>
+            <TableHead>容量</TableHead>
+            <TableHead>项目</TableHead>
+            {isSuperAdmin && <TableHead>GPU</TableHead>}
+            <TableHead>状态</TableHead>
+            {isSuperAdmin && <TableHead className="text-right">操作</TableHead>}
           </TableRow>
-        )}
-      </TableBody>
+        </TableHeader>
+        <TableBody>
+          {rows.map((pool) => (
+            <PoolRow
+              key={pool.id}
+              pool={pool}
+              scope={scope}
+              expanded={expanded.has(pool.id)}
+              onToggle={() => togglePool(pool.id)}
+            />
+          ))}
+          {rows.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={isSuperAdmin ? 7 : 5}>
+                <div className="p-6 text-center text-sm text-muted-foreground">
+                  没有匹配的服务池
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
       </Table>
       <CreatePoolDialog
         open={createOpen}
@@ -304,7 +295,9 @@ function CreatePoolDialog({
           <DialogDescription>创建后默认停用，加入能力等价的成员后再启用。</DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">
-          <label htmlFor="service-pool-name" className="text-sm font-medium">名称</label>
+          <label htmlFor="service-pool-name" className="text-sm font-medium">
+            名称
+          </label>
           <Input
             id="service-pool-name"
             value={name}
@@ -313,7 +306,9 @@ function CreatePoolDialog({
           />
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>取消</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+            取消
+          </Button>
           <Button onClick={onSubmit} disabled={pending || !name.trim()}>
             {pending ? "创建中…" : "创建"}
           </Button>
@@ -350,10 +345,7 @@ function PoolRow({
 
   return (
     <>
-      <TableRow
-        aria-expanded={expanded}
-        className={expanded ? "bg-muted/40" : undefined}
-      >
+      <TableRow aria-expanded={expanded} className={expanded ? "bg-muted/40" : undefined}>
         <TableCell className="align-middle">
           <button
             type="button"
@@ -430,9 +422,7 @@ function PoolRow({
           )}
         </TableCell>
         {isSuperAdmin && (
-          <TableCell>
-            {gpuSev ? gpuSeverityBadge(gpuSev) : <NullCell>无声明</NullCell>}
-          </TableCell>
+          <TableCell>{gpuSev ? gpuSeverityBadge(gpuSev) : <NullCell>无声明</NullCell>}</TableCell>
         )}
         <TableCell>
           <PoolStatusCell pool={pool} routerMode={vm.router_mode} sources={vm.sources} />
@@ -443,9 +433,7 @@ function PoolRow({
           </TableCell>
         )}
       </TableRow>
-      {expanded && (
-        <PoolMembersSubRows pool={pool} scope={scope} />
-      )}
+      {expanded && <PoolMembersSubRows pool={pool} scope={scope} />}
     </>
   );
 }
@@ -487,7 +475,9 @@ function PoolStatusCell({
 }
 
 /** Pool-level effective routing axis, derived from member routing rollup. */
-function derivePoolEffectiveRouting(pool: PoolViewModel): "routable" | "draining" | "blocked" | "bypassed" | "unknown" {
+function derivePoolEffectiveRouting(
+  pool: PoolViewModel,
+): "routable" | "draining" | "blocked" | "bypassed" | "unknown" {
   if (pool.routing_policy === "unknown") return "unknown";
   if (pool.availability.routable > 0) {
     // If some routable + some draining, the pool is routable.
@@ -555,7 +545,13 @@ function trafficStateLabel(state: string): string {
   }
 }
 
-function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: RegistryScope }): ReactNode {
+function PoolActionsMenu({
+  pool,
+  scope,
+}: {
+  pool: PoolViewModel;
+  scope: RegistryScope;
+}): ReactNode {
   const pushToast = useToastStore((s) => s.push);
   const drain = useDrainPoolMember();
   const resume = useResumePoolMember();
@@ -577,31 +573,23 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
   const onDrainAll = () => {
     const targets = pool.members.filter((m) => m.traffic_state === "active");
     Promise.all(
-      targets.map((m) =>
-        drain.mutateAsync({ poolId: pool.id, registryId: m.registry_id }),
-      ),
+      targets.map((m) => drain.mutateAsync({ poolId: pool.id, registryId: m.registry_id })),
     )
       .then(() =>
         pushToast({ msg: `已对「${pool.name}」${targets.length} 个成员发起停流`, kind: "success" }),
       )
-      .catch((e) =>
-        pushToast({ msg: "停流失败", sub: (e as Error).message, kind: "warning" }),
-      );
+      .catch((e) => pushToast({ msg: "停流失败", sub: (e as Error).message, kind: "warning" }));
   };
 
   const onResumeAll = () => {
     const targets = pool.members.filter((m) => m.traffic_state === "draining");
     Promise.all(
-      targets.map((m) =>
-        resume.mutateAsync({ poolId: pool.id, registryId: m.registry_id }),
-      ),
+      targets.map((m) => resume.mutateAsync({ poolId: pool.id, registryId: m.registry_id })),
     )
       .then(() =>
         pushToast({ msg: `已恢复「${pool.name}」${targets.length} 个成员接流`, kind: "success" }),
       )
-      .catch((e) =>
-        pushToast({ msg: "恢复接流失败", sub: (e as Error).message, kind: "warning" }),
-      );
+      .catch((e) => pushToast({ msg: "恢复接流失败", sub: (e as Error).message, kind: "warning" }));
   };
 
   const onToggleEnabled = () => {
@@ -613,8 +601,7 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
             msg: pool.enabled ? `已停用「${pool.name}」` : `已启用「${pool.name}」`,
             kind: "success",
           }),
-        onError: (e) =>
-          pushToast({ msg: "操作失败", sub: (e as Error).message, kind: "warning" }),
+        onError: (e) => pushToast({ msg: "操作失败", sub: (e as Error).message, kind: "warning" }),
       },
     );
   };
@@ -699,25 +686,25 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
   return (
     <>
       <DropdownMenu
-      minWidth={200}
-      items={items}
-      trigger={({ open, toggle, ref }) => (
-        <Button
-          ref={ref as never}
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          title="服务池操作"
-        >
-          <Icon name="more" size={11} />
-          操作
-        </Button>
-      )}
+        minWidth={200}
+        items={items}
+        trigger={({ open, toggle, ref }) => (
+          <Button
+            ref={ref as never}
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggle();
+            }}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title="服务池操作"
+          >
+            <Icon name="more" size={11} />
+            操作
+          </Button>
+        )}
       />
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
@@ -729,16 +716,22 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
             <div className="grid gap-2">
               <label className="text-sm font-medium">实例</label>
               <Select value={registryId} onValueChange={setRegistryId}>
-                <SelectTrigger><SelectValue placeholder="选择实例" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择实例" />
+                </SelectTrigger>
                 <SelectContent>
                   {candidates.map((backend) => (
-                    <SelectItem key={backend.id} value={backend.id}>{backend.name}</SelectItem>
+                    <SelectItem key={backend.id} value={backend.id}>
+                      {backend.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <label htmlFor={`member-weight-${pool.id}`} className="text-sm font-medium">权重</label>
+              <label htmlFor={`member-weight-${pool.id}`} className="text-sm font-medium">
+                权重
+              </label>
               <Input
                 id={`member-weight-${pool.id}`}
                 type="number"
@@ -750,8 +743,12 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAddOpen(false)}>取消</Button>
-            <Button onClick={submitMember} disabled={!registryId || putMember.isPending}>添加</Button>
+            <Button variant="ghost" onClick={() => setAddOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={submitMember} disabled={!registryId || putMember.isPending}>
+              添加
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -761,30 +758,33 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
             <DialogTitle>重命名服务池</DialogTitle>
             <DialogDescription>名称仅用于展示，不改变服务池 ID 或路由成员。</DialogDescription>
           </DialogHeader>
-          <Input
-            value={nextName}
-            onChange={(event) => setNextName(event.target.value)}
-            autoFocus
-          />
+          <Input value={nextName} onChange={(event) => setNextName(event.target.value)} autoFocus />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenameOpen(false)}>取消</Button>
+            <Button variant="ghost" onClick={() => setRenameOpen(false)}>
+              取消
+            </Button>
             <Button
               disabled={!nextName.trim() || patch.isPending}
-              onClick={() => patch.mutate(
-                { poolId: pool.id, payload: { name: nextName.trim() } },
-                {
-                  onSuccess: () => {
-                    setRenameOpen(false);
-                    pushToast({ msg: "服务池已重命名", kind: "success" });
+              onClick={() =>
+                patch.mutate(
+                  { poolId: pool.id, payload: { name: nextName.trim() } },
+                  {
+                    onSuccess: () => {
+                      setRenameOpen(false);
+                      pushToast({ msg: "服务池已重命名", kind: "success" });
+                    },
+                    onError: (error) =>
+                      pushToast({
+                        msg: "服务池重命名失败",
+                        sub: (error as Error).message,
+                        kind: "warning",
+                      }),
                   },
-                  onError: (error) => pushToast({
-                    msg: "服务池重命名失败",
-                    sub: (error as Error).message,
-                    kind: "warning",
-                  }),
-                },
-              )}
-            >保存</Button>
+                )
+              }
+            >
+              保存
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -798,11 +798,20 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => deletePool.mutate(pool.id, {
-                onSuccess: () => setDeleteOpen(false),
-                onError: (error) => pushToast({ msg: "删除服务池失败", sub: (error as Error).message, kind: "warning" }),
-              })}
-            >删除</AlertDialogAction>
+              onClick={() =>
+                deletePool.mutate(pool.id, {
+                  onSuccess: () => setDeleteOpen(false),
+                  onError: (error) =>
+                    pushToast({
+                      msg: "删除服务池失败",
+                      sub: (error as Error).message,
+                      kind: "warning",
+                    }),
+                })
+              }
+            >
+              删除
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -810,30 +819,80 @@ function PoolActionsMenu({ pool, scope }: { pool: PoolViewModel; scope: Registry
   );
 }
 
-function PoolMemberActions({ pool, member }: { pool: PoolViewModel; member: PoolViewModel["members"][number] }): ReactNode {
+function PoolMemberActions({
+  pool,
+  member,
+}: {
+  pool: PoolViewModel;
+  member: PoolViewModel["members"][number];
+}): ReactNode {
   const pushToast = useToastStore((s) => s.push);
   const put = usePutPoolMember();
   const remove = useRemovePoolMember();
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [weight, setWeight] = useState(String(member.weight ?? 1));
   return (
     <>
-      <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>编辑权重</Button>
-      <Button size="sm" variant="ghost" onClick={() => setRemoveOpen(true)}>移除</Button>
+      <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>
+        编辑权重
+      </Button>
+      {member.traffic_state === "disabled" && (
+        <Button size="sm" variant="ghost" onClick={() => setReviewOpen(true)}>
+          审核能力变更
+        </Button>
+      )}
+      <Button size="sm" variant="ghost" onClick={() => setRemoveOpen(true)}>
+        移除
+      </Button>
+      <CapabilityDriftReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        poolId={pool.id}
+        poolName={pool.name}
+        poolEnabled={pool.enabled}
+        registryId={member.registry_id}
+        registryName={member.name}
+      />
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>编辑「{member.name}」权重</DialogTitle></DialogHeader>
-          <Input type="number" min={1} max={100} value={weight} onChange={(event) => setWeight(event.target.value)} />
+          <DialogHeader>
+            <DialogTitle>编辑「{member.name}」权重</DialogTitle>
+          </DialogHeader>
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+          />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditOpen(false)}>取消</Button>
-            <Button onClick={() => put.mutate(
-              { poolId: pool.id, registryId: member.registry_id, payload: { weight: Number(weight) } },
-              {
-                onSuccess: () => setEditOpen(false),
-                onError: (error) => pushToast({ msg: "权重更新失败", sub: (error as Error).message, kind: "warning" }),
-              },
-            )}>保存</Button>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() =>
+                put.mutate(
+                  {
+                    poolId: pool.id,
+                    registryId: member.registry_id,
+                    payload: { weight: Number(weight) },
+                  },
+                  {
+                    onSuccess: () => setEditOpen(false),
+                    onError: (error) =>
+                      pushToast({
+                        msg: "权重更新失败",
+                        sub: (error as Error).message,
+                        kind: "warning",
+                      }),
+                  },
+                )
+              }
+            >
+              保存
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -841,17 +900,31 @@ function PoolMemberActions({ pool, member }: { pool: PoolViewModel; member: Pool
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>移除成员「{member.name}」</AlertDialogTitle>
-            <AlertDialogDescription>成员必须已 drain，且路由账本能确认 inflight 为 0。</AlertDialogDescription>
+            <AlertDialogDescription>
+              成员必须已 drain，且路由账本能确认 inflight 为 0。
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => remove.mutate(
-              { poolId: pool.id, registryId: member.registry_id },
-              {
-                onSuccess: () => setRemoveOpen(false),
-                onError: (error) => pushToast({ msg: "移除成员失败", sub: (error as Error).message, kind: "warning" }),
-              },
-            )}>移除</AlertDialogAction>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() =>
+                remove.mutate(
+                  { poolId: pool.id, registryId: member.registry_id },
+                  {
+                    onSuccess: () => setRemoveOpen(false),
+                    onError: (error) =>
+                      pushToast({
+                        msg: "移除成员失败",
+                        sub: (error as Error).message,
+                        kind: "warning",
+                      }),
+                  },
+                )
+              }
+            >
+              移除
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

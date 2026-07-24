@@ -19,14 +19,14 @@
 
 ### 2.1 关键事实
 
-| 维度 | 现状 | 文件:行号 |
-|---|---|---|
-| Dataset 表 | 无 batch 字段 | [apps/api/app/db/models/dataset.py:9-20](../../apps/api/app/db/models/dataset.py) |
-| DatasetItem 表 | 无 batch / split 字段 | [apps/api/app/db/models/dataset.py:23-39](../../apps/api/app/db/models/dataset.py) |
-| Project 表 | 无 batch 计数；只有 `total_tasks / completed_tasks / review_tasks` 三个 project 级数 | [apps/api/app/db/models/project.py:29-31](../../apps/api/app/db/models/project.py) |
-| Task 表 | 无 `batch_id`；只有 `status / assignee_id / sequence_order` 三种轴 | [apps/api/app/db/models/task.py:9-31](../../apps/api/app/db/models/task.py) |
-| Annotation 表 | 无批次维度 | [apps/api/app/db/models/annotation.py:9-28](../../apps/api/app/db/models/annotation.py) |
-| ProjectDataset 关联 | 简单 N:M，无 batch 范围字段 | [apps/api/app/db/models/dataset.py:42-48](../../apps/api/app/db/models/dataset.py) |
+| 维度                | 现状                                                                                 | 文件:行号                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Dataset 表          | 无 batch 字段                                                                        | [apps/api/app/db/models/dataset.py:9-20](../../apps/api/app/db/models/dataset.py)       |
+| DatasetItem 表      | 无 batch / split 字段                                                                | [apps/api/app/db/models/dataset.py:23-39](../../apps/api/app/db/models/dataset.py)      |
+| Project 表          | 无 batch 计数；只有 `total_tasks / completed_tasks / review_tasks` 三个 project 级数 | [apps/api/app/db/models/project.py:29-31](../../apps/api/app/db/models/project.py)      |
+| Task 表             | 无 `batch_id`；只有 `status / assignee_id / sequence_order` 三种轴                   | [apps/api/app/db/models/task.py:9-31](../../apps/api/app/db/models/task.py)             |
+| Annotation 表       | 无批次维度                                                                           | [apps/api/app/db/models/annotation.py:9-28](../../apps/api/app/db/models/annotation.py) |
+| ProjectDataset 关联 | 简单 N:M，无 batch 范围字段                                                          | [apps/api/app/db/models/dataset.py:42-48](../../apps/api/app/db/models/dataset.py)      |
 
 ### 2.2 任务生成路径（最关键）
 
@@ -65,55 +65,55 @@ await db.flush()
 
 ### 3.1 业务方 / 数据采购方
 
-| 痛点 | 严重度 | 分包能解决吗 |
-|---|---|---|
-| 一次交付 1 万张，希望按交付批次（如「2026Q2 第一批」）单独跟踪 | 高 | ✅ 直接命中 |
-| 不同来源/不同地区数据想分别看完成度（沿海 vs 内陆） | 中 | ✅ 命中（如果允许按 metadata 切批） |
-| 验收时希望一批一签字，而不是 1 万张一锅端 | 高 | ✅ 命中 |
+| 痛点                                                           | 严重度 | 分包能解决吗                        |
+| -------------------------------------------------------------- | ------ | ----------------------------------- |
+| 一次交付 1 万张，希望按交付批次（如「2026Q2 第一批」）单独跟踪 | 高     | ✅ 直接命中                         |
+| 不同来源/不同地区数据想分别看完成度（沿海 vs 内陆）            | 中     | ✅ 命中（如果允许按 metadata 切批） |
+| 验收时希望一批一签字，而不是 1 万张一锅端                      | 高     | ✅ 命中                             |
 
 ### 3.2 项目经理 / 标注主管 PM
 
-| 痛点 | 严重度 | 分包能解决吗 |
-|---|---|---|
-| 「85% 完成」太模糊，剩 1500 张是分散在哪？卡在哪个标注员？卡在哪类难题？ | 高 | ✅ 部分命中（按批次看清得多，但更彻底要 metadata 维度） |
-| 想给 50 个标注员公平派活：每人 200 张，下一批等做完再发 | 高 | ✅ 命中（批次=分配最小单位） |
-| 希望临时把「这 500 张高优先级」插队 | 中 | ✅ 命中（batch.priority + batch.deadline） |
-| 项目失败要回退：删第二批，留第一批已通过的 | 中 | ✅ 命中（批次级状态/删除） |
+| 痛点                                                                     | 严重度 | 分包能解决吗                                            |
+| ------------------------------------------------------------------------ | ------ | ------------------------------------------------------- |
+| 「85% 完成」太模糊，剩 1500 张是分散在哪？卡在哪个标注员？卡在哪类难题？ | 高     | ✅ 部分命中（按批次看清得多，但更彻底要 metadata 维度） |
+| 想给 50 个标注员公平派活：每人 200 张，下一批等做完再发                  | 高     | ✅ 命中（批次=分配最小单位）                            |
+| 希望临时把「这 500 张高优先级」插队                                      | 中     | ✅ 命中（batch.priority + batch.deadline）              |
+| 项目失败要回退：删第二批，留第一批已通过的                               | 中     | ✅ 命中（批次级状态/删除）                              |
 
 ### 3.3 标注员
 
-| 痛点 | 严重度 | 分包能解决吗 |
-|---|---|---|
-| 每天看自己「今天分到了什么」，而不是「项目还有多少」 | 中 | ✅ 命中（assigned batch） |
-| 不希望同一个项目的 9 千张永远刷不完（心理压力） | 低-中 | ✅ 命中（batch 给清晰边界 + 完成感） |
-| 想知道这一批的截止日期 | 中 | ✅ 命中（batch.deadline） |
+| 痛点                                                 | 严重度 | 分包能解决吗                         |
+| ---------------------------------------------------- | ------ | ------------------------------------ |
+| 每天看自己「今天分到了什么」，而不是「项目还有多少」 | 中     | ✅ 命中（assigned batch）            |
+| 不希望同一个项目的 9 千张永远刷不完（心理压力）      | 低-中  | ✅ 命中（batch 给清晰边界 + 完成感） |
+| 想知道这一批的截止日期                               | 中     | ✅ 命中（batch.deadline）            |
 
 ### 3.4 审核员 / QA
 
-| 痛点 | 严重度 | 分包能解决吗 |
-|---|---|---|
-| 边标边审还是攒一批审？1 万张一直审到底太累 | 高 | ✅ 命中（批次完成后整批进入审核） |
-| 抽检 IAA：拿哪 N 张算？随机抽对 1 万张统计意义弱 | 中 | ✅ 部分命中（按批次抽检 + 批次级 IAA） |
-| 退回机制：不合格的能否整批退、不影响其他批 | 高 | ✅ 命中（batch.status=rejected） |
-| 想看「这批通过率多少」做合作方 KPI | 中 | ✅ 命中 |
+| 痛点                                             | 严重度 | 分包能解决吗                           |
+| ------------------------------------------------ | ------ | -------------------------------------- |
+| 边标边审还是攒一批审？1 万张一直审到底太累       | 高     | ✅ 命中（批次完成后整批进入审核）      |
+| 抽检 IAA：拿哪 N 张算？随机抽对 1 万张统计意义弱 | 中     | ✅ 部分命中（按批次抽检 + 批次级 IAA） |
+| 退回机制：不合格的能否整批退、不影响其他批       | 高     | ✅ 命中（batch.status=rejected）       |
+| 想看「这批通过率多少」做合作方 KPI               | 中     | ✅ 命中                                |
 
 ### 3.5 ML 工程师 / 训练侧
 
-| 痛点 | 严重度 | 分包能解决吗 |
-|---|---|---|
-| 想拿前 2000 张先跑 v1 验证标签设计是否对 | 高 | ✅ 命中（batch 完成即触发训练） |
-| 主动学习闭环：v1 模型预标 batch 2，标注员只改不画 | 高 | ✅ 命中（这是分包最大的差异化价值） |
-| 训练数据快照：v1 训练用了哪些 task？后期不可变追溯 | 高 | ✅ 命中（批次=快照单元） |
-| 数据集越加越大，希望追加而不是重训 → 增量训练 | 中 | ✅ 命中（每批一个训练 round） |
+| 痛点                                               | 严重度 | 分包能解决吗                        |
+| -------------------------------------------------- | ------ | ----------------------------------- |
+| 想拿前 2000 张先跑 v1 验证标签设计是否对           | 高     | ✅ 命中（batch 完成即触发训练）     |
+| 主动学习闭环：v1 模型预标 batch 2，标注员只改不画  | 高     | ✅ 命中（这是分包最大的差异化价值） |
+| 训练数据快照：v1 训练用了哪些 task？后期不可变追溯 | 高     | ✅ 命中（批次=快照单元）            |
+| 数据集越加越大，希望追加而不是重训 → 增量训练      | 中     | ✅ 命中（每批一个训练 round）       |
 
 ### 3.6 运维 / 平台侧
 
-| 痛点 | 严重度 | 分包能解决吗 |
-|---|---|---|
-| 1 万 task 一次拉列表前端卡死 | 高 | ❌ **这是分页 / 虚拟滚动问题，分包不解决** |
-| `link_project` 一次建 1 万 task 把请求卡死 | 高 | ❌ 用 bulk insert + Celery 异步建任务解决，与分包无关 |
-| 整 dataset 导出耗时 / 内存爆 | 中 | ✅ 间接命中（按批次导出可分块） |
-| Progress 实时计算扫全表 | 中 | ✅ 间接命中（按批次预聚合） |
+| 痛点                                       | 严重度 | 分包能解决吗                                          |
+| ------------------------------------------ | ------ | ----------------------------------------------------- |
+| 1 万 task 一次拉列表前端卡死               | 高     | ❌ **这是分页 / 虚拟滚动问题，分包不解决**            |
+| `link_project` 一次建 1 万 task 把请求卡死 | 高     | ❌ 用 bulk insert + Celery 异步建任务解决，与分包无关 |
+| 整 dataset 导出耗时 / 内存爆               | 中     | ✅ 间接命中（按批次导出可分块）                       |
+| Progress 实时计算扫全表                    | 中     | ✅ 间接命中（按批次预聚合）                           |
 
 > **关键提醒**：运维痛点里前两条最常被错误归因到「需要分包」。它们其实是分页 + 异步任务的标准工程问题。把分包当性能方案做，会同时引入业务复杂度且不解决性能根因。
 
@@ -148,19 +148,20 @@ CVAT 的批次是**强制的**——你不能不切 job，因为视频几千帧�
 
 ### 4.3 商业产品
 
-| 产品 | 批次概念 | 关键差异 |
-|---|---|---|
-| **Encord** | Workflow Stage + Batch | Batch 是 workflow 的最小流转单位；Encord Active 做按批次的难例分析 |
-| **Scale AI** | Batch / Project | Batch 有独立 SLA、计费、QA 抽样比例；按批次结算 |
-| **V7 Darwin** | Workflow + Stage | Stage 间通过条件流转；按 stage 分配人员 |
-| **Roboflow** | Version / Batch | Version 是数据快照（用于训练）；上传可以分 batch |
-| **Labelbox** | Batch + Workflow | Batch 是分配 + SLA 单元，workflow 控审核流 |
+| 产品          | 批次概念               | 关键差异                                                           |
+| ------------- | ---------------------- | ------------------------------------------------------------------ |
+| **Encord**    | Workflow Stage + Batch | Batch 是 workflow 的最小流转单位；Encord Active 做按批次的难例分析 |
+| **Scale AI**  | Batch / Project        | Batch 有独立 SLA、计费、QA 抽样比例；按批次结算                    |
+| **V7 Darwin** | Workflow + Stage       | Stage 间通过条件流转；按 stage 分配人员                            |
+| **Roboflow**  | Version / Batch        | Version 是数据快照（用于训练）；上传可以分 batch                   |
+| **Labelbox**  | Batch + Workflow       | Batch 是分配 + SLA 单元，workflow 控审核流                         |
 
 **共同模式**：商业产品里 Batch 几乎都同时承担三件事——**分配单元、SLA/截止单元、训练快照单元**。
 
 ### 4.4 现有调研报告对比
 
 [08-comparison-matrix.md](./08-comparison-matrix.md) §5.3 表里我们已经有的：
+
 - Task Lock ✅、overlap 字段 ✅、ground_truth 字段 🟡
 - 但 IAA / 共识 / 审核 stage 都标的 ❌ 或 🟡
 
@@ -172,16 +173,16 @@ CVAT 的批次是**强制的**——你不能不切 job，因为视频几千帧�
 
 ### 5.1 对比总览
 
-| 维度 | 轻量（A） | 中量（B） | 重量（C） |
-|---|---|---|---|
-| 工时估算 | 0.5-1 天 | 5-8 天 | 15-25 天 |
-| Schema 改动 | task 加 1 字段 | 新表 + Task FK + Service | + workflow stage + 训练触发 |
-| 解决业务方/PM 痛点 | 30% | 80% | 95% |
-| 解决审核员痛点 | 10% | 60% | 90% |
-| 解决 ML 痛点 | 0% | 30%（按批导出） | 95%（含主动学习闭环） |
-| 解决运维性能 | 0% | 0% | 0% |
-| 可逆性（做错能改） | 高 | 中 | 低 |
-| 适用项目阶段 | v0.5-v0.6 | v0.7-v0.8 | v1.0+ |
+| 维度               | 轻量（A）      | 中量（B）                | 重量（C）                   |
+| ------------------ | -------------- | ------------------------ | --------------------------- |
+| 工时估算           | 0.5-1 天       | 5-8 天                   | 15-25 天                    |
+| Schema 改动        | task 加 1 字段 | 新表 + Task FK + Service | + workflow stage + 训练触发 |
+| 解决业务方/PM 痛点 | 30%            | 80%                      | 95%                         |
+| 解决审核员痛点     | 10%            | 60%                      | 90%                         |
+| 解决 ML 痛点       | 0%             | 30%（按批导出）          | 95%（含主动学习闭环）       |
+| 解决运维性能       | 0%             | 0%                       | 0%                          |
+| 可逆性（做错能改） | 高             | 中                       | 低                          |
+| 适用项目阶段       | v0.5-v0.6      | v0.7-v0.8                | v1.0+                       |
 
 ### 5.2 方案 A：轻量（推荐立刻做）
 
@@ -332,6 +333,7 @@ pre_annotated_by_run_id: UUID | None  # 是被哪一轮训练出的模型预标�
 ### 6.1 推荐：**立刻做 A，B 留到 v0.7-v0.8 触发条件满足后再做**
 
 **触发条件（任一满足即升 B）**：
+
 - 真有用户提了批次级 deadline / 退回需求（不是猜的）
 - 单 project task 数超过 5000 且活跃（不是单一历史项目）
 - 审核流要做成"批次级流转"（产品决策）
@@ -378,18 +380,18 @@ pre_annotated_by_run_id: UUID | None  # 是被哪一轮训练出的模型预标�
 
 不同产品/语境下这些词指什么不一样，避免讨论时打架。
 
-| 术语 | 在不同产品中的含义 |
-|---|---|
-| **Batch** | Encord/Scale/Labelbox：分配 + SLA + 训练快照单位（接近本报告 B 方案的 task_batch）<br>Roboflow：上传时分批（语义弱，几乎=upload session）<br>本项目 A 方案：Task 上的字符串 label |
-| **Job** | CVAT：分配最小单位（一个标注员一个 job），有 stage 工序流<br>LS：完全没有这个词<br>本项目：暂无 |
-| **Segment** | CVAT：视频分帧切片（start_frame ~ stop_frame），一个 segment 对应一个 job |
-| **Partition** | 数据集划分（train/val/test），偏 ML 含义；Roboflow Version 接近此意 |
-| **Split** | 同上，多用于 ML 工程语境 |
-| **Round** | 主动学习/迭代训练的轮次（如 round 1 标 2k → 训 v1 → round 2 用 v1 预标 2k） |
-| **Stage** | CVAT Job.stage：annotation / validation / acceptance（工序流）<br>V7 Workflow Stage：可配置的工作流节点 |
-| **Workflow** | LS LSE / V7 / Encord：状态机驱动的整条标注链（含审核、QA、训练） |
-| **Snapshot / Version** | Roboflow Version、Encord Snapshot：用于训练的数据集不可变快照 |
-| **View** | LS Data Manager View：保存的过滤器 + 排序，**不是**批次（不会真切分数据） |
+| 术语                   | 在不同产品中的含义                                                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Batch**              | Encord/Scale/Labelbox：分配 + SLA + 训练快照单位（接近本报告 B 方案的 task_batch）<br>Roboflow：上传时分批（语义弱，几乎=upload session）<br>本项目 A 方案：Task 上的字符串 label |
+| **Job**                | CVAT：分配最小单位（一个标注员一个 job），有 stage 工序流<br>LS：完全没有这个词<br>本项目：暂无                                                                                   |
+| **Segment**            | CVAT：视频分帧切片（start_frame ~ stop_frame），一个 segment 对应一个 job                                                                                                         |
+| **Partition**          | 数据集划分（train/val/test），偏 ML 含义；Roboflow Version 接近此意                                                                                                               |
+| **Split**              | 同上，多用于 ML 工程语境                                                                                                                                                          |
+| **Round**              | 主动学习/迭代训练的轮次（如 round 1 标 2k → 训 v1 → round 2 用 v1 预标 2k）                                                                                                       |
+| **Stage**              | CVAT Job.stage：annotation / validation / acceptance（工序流）<br>V7 Workflow Stage：可配置的工作流节点                                                                           |
+| **Workflow**           | LS LSE / V7 / Encord：状态机驱动的整条标注链（含审核、QA、训练）                                                                                                                  |
+| **Snapshot / Version** | Roboflow Version、Encord Snapshot：用于训练的数据集不可变快照                                                                                                                     |
+| **View**               | LS Data Manager View：保存的过滤器 + 排序，**不是**批次（不会真切分数据）                                                                                                         |
 
 ---
 

@@ -52,14 +52,18 @@ def do_run_migrations(connection: Connection) -> None:
     # 但 "Running upgrade" 日志已打 — 表象就是「跑了但没生效」.
     # 修法: 显式 connection.commit() 把 outer transaction 推进去. 由于 advisory lock
     # 是 session 级 (pg_advisory_lock 而非 pg_advisory_xact_lock), commit 不释放锁.
-    connection.execute(text("SELECT pg_advisory_lock(:k)").bindparams(k=_ALEMBIC_LOCK_ID))
+    connection.execute(
+        text("SELECT pg_advisory_lock(:k)").bindparams(k=_ALEMBIC_LOCK_ID)
+    )
     try:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
         connection.commit()
     finally:
-        connection.execute(text("SELECT pg_advisory_unlock(:k)").bindparams(k=_ALEMBIC_LOCK_ID))
+        connection.execute(
+            text("SELECT pg_advisory_unlock(:k)").bindparams(k=_ALEMBIC_LOCK_ID)
+        )
         connection.commit()
 
 

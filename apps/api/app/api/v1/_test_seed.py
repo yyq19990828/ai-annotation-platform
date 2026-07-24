@@ -1,12 +1,13 @@
-"""v0.8.3 · 仅测试 / 非 production 环境暴露的 seed router。
+"""仅供隔离 E2E / 测试数据库使用的 Seed router。
 
 E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重置数据库
 到固定 fixture（admin / annotator / reviewer 三个用户 + 1 项目 + 5 任务），通过
 `POST /api/v1/__test/seed/login` 跳过 UI 登录直接拿 JWT。
 
 安全：
-  - 仅当 `settings.environment != "production"` 时挂载（main.py 条件 include_router）
-  - 即使误挂到 production，每个端点入口再做一次 environment 守卫
+  - 仅在非 production 且显式设置 `E2E_SEED_ENABLED=true` 时挂载
+  - router 级依赖会再次核对环境、开关与当前数据库名
+  - 数据库名转为小写后必须严格以 `_e2e` 或 `_test` 结尾
   - 不调 AuditService，避免污染审计测试
 
 不暴露给 OpenAPI 公开 schema（include_in_schema=False）。
@@ -27,53 +28,32 @@ from app.core.security import create_access_token
 from app.deps import get_db
 from app.schemas.user import UserOut
 
-router = APIRouter()
 
-
-def _ensure_non_production() -> None:
-    if settings.environment == "production":
+async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None:
+    """纵深保护所有 Seed 端点，并复用端点将要使用的同一数据库会话。"""
+    if settings.environment == "production" or not settings.e2e_seed_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="seed routes disabled in production",
+            detail="E2E seed routes are disabled",
+        )
+
+    database_name = await db.scalar(text("SELECT current_database()"))
+    normalized_name = str(database_name or "").lower()
+    if not normalized_name.endswith(("_e2e", "_test")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="E2E seed routes require an isolated _e2e or _test database",
         )
 
 
-class SeedReset(BaseModel):
-    admin_email: str
-    annotator_email: str
-    reviewer_email: str
-    project_id: str
-    task_ids: list[str]
-    # v0.9.4 phase 3: SAM E2E 走 page.route 拦截 /interactive-annotating, 但项目侧仍需
-    # 「AI 启用 + 有效 ml_backend_id 绑定」, 否则 GeneralSection / 工作台显示「未绑定」红字,
-    # SAM 工具按钮直接 disabled. 这个 backend 的 url 是 mock://e2e-sam (前端不会真的请求,
-    # 由 Playwright page.route 拦截). 字段返回让 spec 可声明依赖.
-    ml_backend_id: str
+router = APIRouter(dependencies=[Depends(_require_e2e_seed_database)])
 
 
-@router.post(
-    "/seed/reset",
-    response_model=SeedReset,
-    status_code=200,
-    include_in_schema=False,
-)
-async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
-    """重置测试数据库为固定 E2E fixture（幂等）。
-
-    v0.8.7+ · 不再 TRUNCATE 整库，改为定向 DELETE：只清除 `@e2e.test` 用户 +
-    name='E2E Demo Project' 项目（含其 task_batches/tasks/annotations/locks 等
-    FK 链条）。开发者本地的 admin/pm/qa/anno 等账号 + dev 项目 / 数据集 / 标注
-    完全保留。
-
-    注：audit_logs 不删（trigger 阻止 + 用户 FK SET NULL 已无害）。
-    """
-    _ensure_non_production()
-
-    from tests.factory import create_user, create_project, create_task
-
+async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
+    """定向删除 E2E fixture，并在当前事务内确认关键残留已清零。"""
     import logging
 
-    log = logging.getLogger("anno-api.seed_reset")
+    log = logging.getLogger("anno-api.seed_cleanup")
 
     # 0) 豁免 audit_logs immutability trigger：DELETE users 触发 audit_logs.actor_id
     #    ON DELETE SET NULL（隐式 UPDATE）会被 trigger 拒绝（"audit_logs rows are
@@ -92,13 +72,13 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         )
     ).fetchall()
     fixture_project_ids = [r[0] for r in fixture_proj_rows]
-    log.info("seed_reset · fixture project ids: %s", fixture_project_ids)
+    log.info("seed_cleanup · fixture project ids: %s", fixture_project_ids)
 
     fixture_user_rows = (
         await db.execute(text("SELECT id FROM users WHERE email LIKE '%@e2e.test'"))
     ).fetchall()
     fixture_user_ids = [r[0] for r in fixture_user_rows]
-    log.info("seed_reset · fixture user ids: %s", fixture_user_ids)
+    log.info("seed_cleanup · fixture user ids: %s", fixture_user_ids)
 
     # 2) 按 FK 依赖顺序定向 DELETE。
     #    用 SAVEPOINT 隔离每个 DELETE：单条失败（如表不存在 / 列名漂移）不让外层
@@ -111,7 +91,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
             async with db.begin_nested():
                 await db.execute(text(sql), params or {})
         except Exception as exc:
-            log.warning("seed_reset skip · %s · %s", sql.split()[2], exc)
+            log.warning("seed_cleanup skip · %s · %s", sql.split()[2], exc)
 
     if fixture_project_ids:
         # 2a) 找 fixture 项目下所有 task/annotation 的 id（在 SAVEPOINT 里）
@@ -140,7 +120,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
                     ).fetchall()
                 ]
             except Exception as exc:
-                log.warning("seed_reset · child id lookup failed: %s", exc)
+                log.warning("seed_cleanup · child id lookup failed: %s", exc)
                 await sp.rollback()
 
         # 2b) 删 annotation_feedbacks (FK → tasks/annotations/projects 均无 ondelete,
@@ -206,6 +186,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
             {"pids": fixture_project_ids},
         )
 
+    # reset 中创建的图像 dataset 不由 project_datasets 反向级联删除；
+    # 必须在删 E2E 用户前显式清理，避免 datasets.created_by 拦住用户删除。
+    await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-%'")
+
     if fixture_user_ids:
         # 删用户的反向引用，再删用户。表名 / 列名见 v0.8.7+ DB schema：
         # bug_reports.reporter_id（不是 submitter_id）；annotation_comments.author_id；
@@ -250,10 +234,94 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
 
     await db.flush()
 
+    residual_row = (
+        (
+            await db.execute(
+                text(
+                    "SELECT "
+                    "(SELECT count(*) FROM users "
+                    " WHERE email LIKE '%@e2e.test') AS users, "
+                    "(SELECT count(*) FROM projects "
+                    " WHERE name = 'E2E Demo Project' "
+                    "    OR display_id LIKE 'P-E2E-%') AS projects, "
+                    "(SELECT count(*) FROM ml_backend_registry "
+                    " WHERE url = 'http://mock-sam.e2e:9999') AS ml_backends"
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    residuals = {
+        key: int(residual_row[key]) for key in ("users", "projects", "ml_backends")
+    }
+    if any(residuals.values()):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "e2e_seed_cleanup_incomplete",
+                "residuals": residuals,
+            },
+        )
+
+
+class SeedCleanup(BaseModel):
+    ok: bool = True
+
+
+@router.post(
+    "/seed/cleanup",
+    response_model=SeedCleanup,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_cleanup(db: AsyncSession = Depends(get_db)) -> SeedCleanup:
+    """幂等清除固定 E2E fixture，同时保留所有非 E2E 数据。"""
+    await _cleanup_e2e_fixtures(db)
+    await db.commit()
+    return SeedCleanup()
+
+
+class SeedReset(BaseModel):
+    admin_email: str
+    annotator_email: str
+    reviewer_email: str
+    project_id: str
+    task_ids: list[str]
+    # v0.9.4 phase 3: SAM E2E 走 page.route 拦截 /interactive-annotating, 但项目侧仍需
+    # 「AI 启用 + 有效 ml_backend_id 绑定」, 否则 GeneralSection / 工作台显示「未绑定」红字,
+    # SAM 工具按钮直接 disabled. 这个 backend 的 url 是 mock://e2e-sam (前端不会真的请求,
+    # 由 Playwright page.route 拦截). 字段返回让 spec 可声明依赖.
+    ml_backend_id: str
+
+
+@router.post(
+    "/seed/reset",
+    response_model=SeedReset,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
+    """先清理旧 fixture，再重建固定 E2E 数据（幂等）。"""
+    from tests.factory import create_user, create_project, create_task
+
+    await _cleanup_e2e_fixtures(db)
+
     admin = await create_user(db, "super_admin", "admin@e2e.test", "E2E Admin")
     annotator = await create_user(db, "annotator", "anno@e2e.test", "E2E Annotator")
     reviewer = await create_user(db, "reviewer", "rev@e2e.test", "E2E Reviewer")
     project = await create_project(db, owner_id=admin.id, name="E2E Demo Project")
+    # Mask E2E 走兼容 polygon 提交；能力握手要求项目显式开启
+    # region 工具。保留 bbox 绑定，避免改变其他工作台 E2E 的基础数据。
+    bbox_binding = project.tool_bindings.get("bbox", {})
+    project.tool_bindings = {
+        **project.tool_bindings,
+        "region": {
+            "enabled": True,
+            "classes": list(bbox_binding.get("classes", [])),
+            "attribute_schema": {"fields": []},
+        },
+    }
 
     # v0.8.5 · 把 annotator / reviewer 加为项目成员，否则 RequireProjectMember 会
     # 在进入 /projects/:id/annotate 时 403 弹回，annotation/batch-flow spec 走不通。
@@ -292,10 +360,56 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     db.add(batch)
     await db.flush()
 
+    # 原生图片 raster_mask 校验必须有真实 DatasetItem 及宽高。
+    # 用固定 MinIO key 覆写一组小 SVG，避免每次 reset 制造孤儿对象。
+    from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+    from app.services.storage import storage_service
+
+    image_dataset = Dataset(
+        display_id="DS-E2E-IMAGE",
+        name="E2E Image Dataset",
+        data_type="image",
+        file_count=5,
+        created_by=admin.id,
+    )
+    db.add(image_dataset)
+    await db.flush()
+    db.add(ProjectDataset(project_id=project.id, dataset_id=image_dataset.id))
+
     tasks = []
-    for _ in range(5):
+    for index in range(5):
+        image_key = f"e2e/image/task-{index + 1}.svg"
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" '
+            'viewBox="0 0 64 48">'
+            f'<rect width="64" height="48" fill="hsl({index * 48} 30% 88%)"/>'
+            '<rect x="4" y="4" width="56" height="40" rx="3" '
+            'fill="none" stroke="#64748b" stroke-width="1"/>'
+            f'<text x="32" y="27" text-anchor="middle" font-size="9" '
+            f'fill="#334155">E2E {index + 1}</text></svg>'
+        ).encode("utf-8")
+        storage_service.client.put_object(
+            Bucket=storage_service.datasets_bucket,
+            Key=image_key,
+            Body=svg,
+            ContentType="image/svg+xml",
+        )
+        item = DatasetItem(
+            dataset_id=image_dataset.id,
+            file_name=f"task-{index + 1}.svg",
+            file_path=image_key,
+            file_type="image",
+            file_size=len(svg),
+            width=64,
+            height=48,
+        )
+        db.add(item)
+        await db.flush()
         t = await create_task(db, project_id=project.id)
         t.batch_id = batch.id
+        t.dataset_item_id = item.id
+        t.file_name = item.file_name
+        t.file_path = item.file_path
         tasks.append(t)
     await db.flush()
     batch.total_tasks = len(tasks)
@@ -416,8 +530,6 @@ def _make_test_pcd_bytes(n_side: int = 8) -> bytes:
 )
 async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     """造点云 E2E fixture(幂等)。需先调 /seed/reset(复用其 E2E 用户),缺则补建。"""
-    _ensure_non_production()
-
     from sqlalchemy import select
 
     from app.db.models.annotation import Annotation
@@ -612,8 +724,6 @@ async def seed_login(
     db: AsyncSession = Depends(get_db),
 ) -> SeedLoginResponse:
     """跳过密码验证发 JWT（仅 E2E 测试用）。"""
-    _ensure_non_production()
-
     from sqlalchemy import select
     from app.db.models.user import User
 
@@ -651,8 +761,6 @@ async def seed_catalog(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """解析 screenshots profile 的稳定逻辑键；数据漂移时明确失败。"""
-    _ensure_non_production()
-
     from app.services.screenshot_seed_catalog import (
         ScreenshotSeedCatalogError,
         build_screenshot_seed_catalog,
@@ -677,8 +785,6 @@ async def seed_catalog(
 )
 async def seed_peek(db: AsyncSession = Depends(get_db)) -> SeedPeekResponse:
     """只读窥探现有数据，给截图自动化用（不破坏开发数据）。"""
-    _ensure_non_production()
-
     from sqlalchemy import select
     from app.db.models.project import Project
     from app.db.models.task import Task
@@ -734,8 +840,6 @@ async def seed_inject_prediction(
     db: AsyncSession = Depends(get_db),
 ) -> InjectPredictionResponse:
     """直插一条 polygonlabels 类型的 prediction。"""
-    _ensure_non_production()
-
     from uuid import UUID
     from app.db.models.prediction import Prediction
 
@@ -761,6 +865,717 @@ async def seed_inject_prediction(
     pred_id = str(pred.id)
     await db.commit()
     return InjectPredictionResponse(prediction_id=pred_id)
+
+
+class ConfigureRasterMaskRequest(BaseModel):
+    project_id: str
+    enabled: bool
+
+
+class ConfigureRasterMaskResponse(BaseModel):
+    project_id: str
+    enabled: bool
+
+
+@router.post(
+    "/seed/configure-raster-mask",
+    response_model=ConfigureRasterMaskResponse,
+    include_in_schema=False,
+)
+async def seed_configure_raster_mask(
+    payload: ConfigureRasterMaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ConfigureRasterMaskResponse:
+    """切换 E2E 项目的原生 Mask opt-in。
+
+    部署级 read/create 总闸仍由当前 API 进程的环境变量决定，
+    本辅助端点只改项目级灰度开关。
+    """
+    from uuid import UUID
+
+    from app.db.models.project import Project
+
+    project = await db.get(Project, UUID(payload.project_id))
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    project.raster_mask_native_editing_enabled = payload.enabled
+    await db.commit()
+    return ConfigureRasterMaskResponse(
+        project_id=str(project.id),
+        enabled=project.raster_mask_native_editing_enabled,
+    )
+
+
+class SeedVideoTaskRequest(BaseModel):
+    project_id: str
+
+
+class SeedVideoTaskResponse(BaseModel):
+    task_id: str
+
+
+@router.post(
+    "/seed/video-task",
+    response_model=SeedVideoTaskResponse,
+    include_in_schema=False,
+)
+async def seed_video_task(
+    payload: SeedVideoTaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoTaskResponse:
+    """Add one deterministic video task to the reset fixture for workbench E2E."""
+    from pathlib import Path
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.task import Task
+    from app.db.models.task_batch import TaskBatch
+    from app.services.storage import storage_service
+
+    project_id = UUID(payload.project_id)
+    image_task = (
+        (
+            await db.execute(
+                select(Task)
+                .where(Task.project_id == project_id, Task.dataset_item_id.is_not(None))
+                .order_by(Task.created_at)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    batch = (
+        (
+            await db.execute(
+                select(TaskBatch)
+                .where(TaskBatch.project_id == project_id)
+                .order_by(TaskBatch.created_at)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if image_task is None or batch is None:
+        raise HTTPException(status_code=404, detail="project fixture not found")
+    image_item = await db.get(DatasetItem, image_task.dataset_item_id)
+    if image_item is None:
+        raise HTTPException(status_code=404, detail="dataset fixture not found")
+
+    source_path = (
+        Path(__file__).resolve().parents[5]
+        / "docs-site/public/home/sam-tools/smart-point.webm"
+    )
+    video = source_path.read_bytes()
+    video_key = "e2e/video/native-mask.webm"
+    storage_service.client.put_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=video_key,
+        Body=video,
+        ContentType="video/webm",
+    )
+    item = DatasetItem(
+        dataset_id=image_item.dataset_id,
+        file_name="native-mask.webm",
+        file_path=video_key,
+        file_type="video",
+        file_size=len(video),
+        width=1440,
+        height=810,
+        metadata_={
+            "video": {
+                "duration_ms": 5000,
+                "fps": 12,
+                "frame_count": 60,
+                "width": 1440,
+                "height": 810,
+                "codec": "vp9",
+            }
+        },
+    )
+    db.add(item)
+    await db.flush()
+    task = Task(
+        project_id=project_id,
+        batch_id=batch.id,
+        dataset_item_id=item.id,
+        display_id=f"T-E2E-VIDEO-{secrets.token_hex(3)}",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="video",
+        status="pending",
+    )
+    db.add(task)
+    batch.total_tasks = int(batch.total_tasks or 0) + 1
+    await db.flush()
+    task_id = str(task.id)
+    await db.commit()
+    return SeedVideoTaskResponse(task_id=task_id)
+
+
+class SeedTrackerReviewRequest(BaseModel):
+    task_id: str
+    user_email: str
+
+
+class SeedTrackerReviewResponse(BaseModel):
+    job_id: str
+    source_annotation_ids: list[str]
+
+
+@router.post(
+    "/seed/tracker-review",
+    response_model=SeedTrackerReviewResponse,
+    include_in_schema=False,
+)
+async def seed_tracker_review(
+    payload: SeedTrackerReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedTrackerReviewResponse:
+    """Create a deterministic two-target staged tracker review for browser E2E."""
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
+    from app.db.models.user import User
+    from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
+
+    task = await db.get(Task, UUID(payload.task_id))
+    user = (
+        await db.execute(select(User).where(User.email == payload.user_email))
+    ).scalar_one_or_none()
+    if task is None or task.file_type != "video" or user is None:
+        raise HTTPException(status_code=404, detail="video task or user not found")
+
+    def source(track_id: str, x: float, frame_index: int) -> Annotation:
+        return Annotation(
+            task_id=task.id,
+            project_id=task.project_id,
+            user_id=user.id,
+            source="manual",
+            annotation_type="video_track_bbox",
+            class_name="car",
+            tool_unit_id="bbox",
+            track_id=track_id,
+            geometry={
+                "type": "video_track_bbox",
+                "track_id": track_id,
+                "keyframes": [
+                    {
+                        "frame_index": frame_index,
+                        "bbox": {"x": x, "y": 0.2, "w": 0.16, "h": 0.18},
+                        "source": "manual",
+                        "occluded": False,
+                    }
+                ],
+                "outside": [],
+            },
+        )
+
+    source_a = source("e2e-track-a", 0.16, 16)
+    source_b = source("e2e-track-b", 0.62, 9)
+    db.add_all([source_a, source_b])
+    await db.flush()
+    results = []
+    for instance_id, x in (("A", 0.16), ("B", 0.62)):
+        for frame_index in range(10, 20):
+            results.append(
+                {
+                    "frame_index": frame_index,
+                    "geometry": {
+                        "type": "bbox",
+                        "x": x + (frame_index - 10) * 0.005,
+                        "y": 0.2,
+                        "w": 0.16,
+                        "h": 0.18,
+                    },
+                    "confidence": 0.92,
+                    "outside": False,
+                    "instance_id": instance_id,
+                    "primary": instance_id == "A",
+                }
+            )
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=task.dataset_item_id,
+        annotation_id=None,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=10,
+        to_frame=19,
+        prompt={
+            "seeds": [
+                {"obj_id": "A", "source_annotation_id": str(source_a.id)},
+                {"obj_id": "B", "source_annotation_id": str(source_b.id)},
+            ],
+            "expected_source_versions": {
+                str(source_a.id): int(source_a.version),
+                str(source_b.id): int(source_b.version),
+            },
+        },
+        staged_result={
+            "results": results,
+            "grid_step": 1,
+            "output_geometry": "bbox",
+        },
+        event_channel="pending",
+    )
+    db.add(job)
+    await db.flush()
+    job.event_channel = f"video-tracker-job:{job.id}"
+    response = SeedTrackerReviewResponse(
+        job_id=str(job.id),
+        source_annotation_ids=[str(source_a.id), str(source_b.id)],
+    )
+    await db.commit()
+    return response
+
+
+class SeedNativeMaskPromptSource(BaseModel):
+    annotation_id: str
+    source_version: int
+    source_digest: str
+
+
+class SeedNativeMaskCandidateRequest(BaseModel):
+    task_id: str
+    variant: Literal["default", "negative_scribble", "multimask_donut"] = "default"
+    prompt_family: Literal["point", "scribble"] = "point"
+    negative_scribbles: int = 0
+    prompt_source: SeedNativeMaskPromptSource | None = None
+
+
+class SeedNativeMaskCandidateResponse(BaseModel):
+    response: dict
+    rle: dict
+    rles: list[dict]
+
+
+@router.post(
+    "/seed/native-mask-candidate",
+    response_model=SeedNativeMaskCandidateResponse,
+    include_in_schema=False,
+)
+async def seed_native_mask_candidate(
+    payload: SeedNativeMaskCandidateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedNativeMaskCandidateResponse:
+    """Issue a real signed receipt for a deterministic transient Mask candidate."""
+    import hashlib
+    from uuid import UUID
+
+    from aap_protocol_v2 import (
+        CocoRlePayload,
+        canonical_rle_bytes,
+        native_mask_candidate_id,
+    )
+
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.ml_backend_pool import MLBackendServicePool
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.services.ai_mask_receipt import issue_ai_mask_receipt
+    from app.utils.raster_mask_rle import coco_rle_bbox_norm, encode_coco_rle
+
+    task = await db.get(Task, UUID(payload.task_id))
+    if task is None or task.dataset_item_id is None:
+        raise HTTPException(status_code=404, detail="task fixture not found")
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    project = await db.get(Project, task.project_id)
+    if item is None or project is None or item.width is None or item.height is None:
+        raise HTTPException(status_code=404, detail="media fixture not found")
+    if project.ml_backend_pool_id is None:
+        raise HTTPException(status_code=404, detail="backend pool fixture not found")
+    pool = await db.get(MLBackendServicePool, project.ml_backend_pool_id)
+    if pool is None or pool.legacy_instance_id is None:
+        raise HTTPException(status_code=404, detail="backend fixture not found")
+
+    total = int(item.width) * int(item.height)
+    foreground_start = total // 4
+    foreground_length = max(
+        1,
+        total // 4 if payload.variant == "negative_scribble" else total // 3,
+    )
+    primary_rle = CocoRlePayload(
+        encoding="coco_rle",
+        size=(int(item.height), int(item.width)),
+        counts=(
+            foreground_start,
+            foreground_length,
+            total - foreground_start - foreground_length,
+        ),
+    )
+    rle_models = [primary_rle]
+    if payload.variant == "multimask_donut":
+        secondary_start = total // 6
+        secondary_length = max(1, total // 5)
+        rle_models.append(
+            CocoRlePayload(
+                encoding="coco_rle",
+                size=(int(item.height), int(item.width)),
+                counts=(
+                    secondary_start,
+                    secondary_length,
+                    total - secondary_start - secondary_length,
+                ),
+            )
+        )
+        width = int(item.width)
+        height = int(item.height)
+        pixels = bytearray(total)
+
+        def rect(x0: float, y0: float, x1: float, y1: float, value: int = 1) -> None:
+            left = max(0, min(width, int(width * x0)))
+            top = max(0, min(height, int(height * y0)))
+            right = max(left, min(width, int(width * x1)))
+            bottom = max(top, min(height, int(height * y1)))
+            for y in range(top, bottom):
+                pixels[y * width + left : y * width + right] = bytes([value]) * (
+                    right - left
+                )
+
+        rect(0.08, 0.08, 0.38, 0.42)
+        rect(0.17, 0.17, 0.29, 0.31, 0)
+        rect(0.53, 0.10, 0.70, 0.30)
+        rect(0.72, 0.58, 0.90, 0.84)
+        rle_models.append(
+            CocoRlePayload.model_validate(encode_coco_rle(pixels, width, height))
+        )
+    rles = [rle_model.model_dump(mode="json") for rle_model in rle_models]
+    prompt_revision = (
+        f"e2e-native-mask:{task.id}:{payload.variant}:{payload.prompt_family}"
+    )
+    routing = {
+        "requested_backend_id": str(pool.legacy_instance_id),
+        "backend_pool_id": str(pool.id),
+        "backend_instance_id": str(pool.legacy_instance_id),
+        "model_id": "e2e-native-mask",
+    }
+    inference = {
+        "model_version": "e2e-native-mask",
+        "inference_time_ms": 7.0,
+        "cache_hit": False,
+        "model_load_ms": 0.0,
+    }
+    # E2E 的视频任务复用图片项目，必须按实际媒体而不是 project.data_type 绑定 receipt。
+    frame_index = 0 if item.file_type == "video" else None
+    prompt_summary = {
+        "family": payload.prompt_family,
+        "positive_points": 1 if payload.prompt_family == "point" else 0,
+        "negative_points": 0,
+        "boxes": 0,
+        "positive_scribbles": 0,
+        "negative_scribbles": payload.negative_scribbles,
+        "multimask": payload.prompt_family == "point",
+        "parameters_digest": None,
+    }
+    prompt_source = (
+        {
+            "source_annotation_id": payload.prompt_source.annotation_id,
+            "source_version": payload.prompt_source.source_version,
+            "source_digest": payload.prompt_source.source_digest,
+        }
+        if payload.prompt_source is not None
+        else None
+    )
+    accept_target = {
+        "mode": "refine" if prompt_source is not None else "create",
+        "source_annotation_id": (
+            prompt_source["source_annotation_id"] if prompt_source else None
+        ),
+        "source_version": prompt_source["source_version"] if prompt_source else None,
+        "frame_index": frame_index,
+    }
+    results = []
+    accept_receipts = {}
+    for candidate_index, rle_model in enumerate(rle_models):
+        candidate_id = native_mask_candidate_id(
+            rle_model,
+            prompt_revision=prompt_revision,
+            candidate_index=candidate_index,
+        )
+        content_digest = hashlib.sha256(canonical_rle_bytes(rle_model)).hexdigest()
+        bounds = coco_rle_bbox_norm(rles[candidate_index])
+        left = bounds["x"]
+        top = bounds["y"]
+        right = left + bounds["w"]
+        bottom = top + bounds["h"]
+        results.append(
+            {
+                "type": "mask",
+                "value": {
+                    "rle": rles[candidate_index],
+                    "masklabels": ["object"],
+                    "preview": {
+                        "points": [
+                            [left, top],
+                            [right, top],
+                            [right, bottom],
+                            [left, bottom],
+                        ]
+                    },
+                },
+                "score": 0.95 - candidate_index * 0.05,
+                "candidate_id": candidate_id,
+            }
+        )
+        accept_receipts[candidate_id] = issue_ai_mask_receipt(
+            {
+                "task_id": str(task.id),
+                "frame_index": frame_index,
+                "candidate_id": candidate_id,
+                "candidate_index": candidate_index,
+                "content_digest": content_digest,
+                "prompt_revision": prompt_revision,
+                "score": 0.95 - candidate_index * 0.05,
+                "routing": routing,
+                "inference": inference,
+                "prompt_summary": prompt_summary,
+                "prompt_source": prompt_source,
+                "accept_target": accept_target,
+            }
+        )
+    response = {
+        "result": results,
+        "score": 0.95,
+        "model_version": inference["model_version"],
+        "inference_time_ms": inference["inference_time_ms"],
+        "cache_hit": inference["cache_hit"],
+        "model_load_ms": inference["model_load_ms"],
+        "mask_input_next": None,
+        "diagnostic": None,
+        "prompt_revision": prompt_revision,
+        "output_geometry": "mask",
+        "frame_index": frame_index,
+        "routing": routing,
+        "prompt_summary": prompt_summary,
+        "accept_receipts": accept_receipts,
+    }
+    return SeedNativeMaskCandidateResponse(response=response, rle=rles[0], rles=rles)
+
+
+RasterMaskFixtureVariant = Literal[
+    "single",
+    "donut_three",
+    "diagonal_two",
+    "island",
+    "corrupt",
+]
+RasterMaskFixtureCanvas = Literal["default", "5k", "8k"]
+
+
+class InjectRasterMaskRequest(BaseModel):
+    task_id: str
+    user_email: str
+    variant: RasterMaskFixtureVariant = "single"
+    label: str = "car"
+    locked: bool = False
+    canvas: RasterMaskFixtureCanvas = "default"
+
+
+class InjectRasterMaskResponse(BaseModel):
+    annotation_id: str
+    variant: RasterMaskFixtureVariant
+    mask: dict
+
+
+class InjectRasterPredictionResponse(BaseModel):
+    prediction_id: str
+    mask: dict
+
+
+def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
+    """生成 64×48 row-major fixture；donut_three = 3 个分量 + 1 个孔洞。"""
+    width, height = 64, 48
+    pixels = [0] * (width * height)
+
+    def _rect(x0: int, y0: int, x1: int, y1: int, value: int = 1) -> None:
+        for y in range(y0, y1):
+            offset = y * width
+            for x in range(x0, x1):
+                pixels[offset + x] = value
+
+    if variant == "single":
+        _rect(12, 10, 43, 34)
+    elif variant == "donut_three":
+        _rect(3, 3, 21, 21)
+        _rect(8, 8, 16, 16, 0)
+        _rect(29, 5, 41, 18)
+        _rect(46, 29, 60, 43)
+    elif variant == "diagonal_two":
+        # 两个 4×4 块只在角点相邻：4 邻域为两个组件，8 邻域合并为一个。
+        _rect(18, 18, 22, 22)
+        _rect(22, 22, 26, 26)
+    elif variant == "island":
+        _rect(24, 31, 28, 35)
+    else:
+        # 损坏 fixture 使用独立形状，并故意不存对象。
+        _rect(6, 30, 18, 42)
+    return pixels
+
+
+def _make_sparse_test_rle(width: int, height: int) -> dict:
+    """Build a centered 64px square without allocating a full large-canvas buffer."""
+    side = min(64, width, height)
+    x0 = (width - side) // 2
+    y0 = (height - side) // 2
+    y1 = y0 + side
+    counts: list[int] = []
+    offset = 0
+    for x in range(x0, x0 + side):
+        foreground_start = x * height + y0
+        counts.extend([foreground_start - offset, side])
+        offset = x * height + y1
+    counts.append(width * height - offset)
+    return {
+        "encoding": "coco_rle",
+        "size": [height, width],
+        "counts": counts,
+    }
+
+
+@router.post(
+    "/seed/inject-raster-mask",
+    response_model=InjectRasterMaskResponse,
+    include_in_schema=False,
+)
+async def seed_inject_raster_mask(
+    payload: InjectRasterMaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> InjectRasterMaskResponse:
+    """直插原生 raster annotation，用于 reader / corrupt / lock E2E。
+
+    端点只在隔离 E2E / 测试数据库挂载，刻意绕过 create gate，以便在
+    ``read=true/create=false`` 矩阵中构造“已有内容可读”的真实基线。
+    """
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.annotation import Annotation
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.task import Task
+    from app.db.models.user import User
+    from app.services.raster_mask_storage import (
+        build_rle_reference,
+        rle_object_key,
+        store_coco_rle,
+    )
+    from app.utils.raster_mask_rle import encode_coco_rle
+
+    task = await db.get(Task, UUID(payload.task_id))
+    user = (
+        await db.execute(select(User).where(User.email == payload.user_email))
+    ).scalar_one_or_none()
+    if task is None or user is None:
+        raise HTTPException(status_code=404, detail="task or user not found")
+
+    if payload.canvas != "default" and payload.variant != "single":
+        raise HTTPException(
+            status_code=422,
+            detail="large-canvas raster fixture only supports the single variant",
+        )
+    dimensions = {
+        "default": (64, 48),
+        "5k": (5120, 2880),
+        "8k": (8192, 8192),
+    }
+    width, height = dimensions[payload.canvas]
+    if payload.canvas == "default":
+        rle = encode_coco_rle(_make_test_raster_mask(payload.variant), width, height)
+    else:
+        rle = _make_sparse_test_rle(width, height)
+    if task.dataset_item_id is not None:
+        item = await db.get(DatasetItem, task.dataset_item_id)
+        if item is not None:
+            item.width = width
+            item.height = height
+    if payload.variant == "corrupt":
+        reference = build_rle_reference(rle)
+        missing_digest = secrets.token_hex(32)
+        reference = {
+            **reference,
+            "sha256": missing_digest,
+            "object_key": rle_object_key(missing_digest),
+        }
+    else:
+        reference = await store_coco_rle(rle)
+
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        source="manual",
+        annotation_type="raster_mask",
+        tool_unit_id="region",
+        class_name=payload.label,
+        geometry={"type": "raster_mask", "mask": reference},
+        confidence=1,
+        is_locked=payload.locked,
+    )
+    db.add(annotation)
+    task.total_annotations = int(task.total_annotations or 0) + 1
+    await db.flush()
+    annotation_id = str(annotation.id)
+    await db.commit()
+    return InjectRasterMaskResponse(
+        annotation_id=annotation_id,
+        variant=payload.variant,
+        mask=reference,
+    )
+
+
+@router.post(
+    "/seed/inject-raster-prediction",
+    response_model=InjectRasterPredictionResponse,
+    include_in_schema=False,
+)
+async def seed_inject_raster_prediction(
+    payload: InjectRasterMaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> InjectRasterPredictionResponse:
+    """构造待接受的 raster prediction，用于验证 accept write gate。"""
+    from uuid import UUID
+
+    from app.db.models.prediction import Prediction
+    from app.db.models.task import Task
+    from app.services.raster_mask_storage import store_coco_rle
+    from app.utils.raster_mask_rle import encode_coco_rle
+
+    task = await db.get(Task, UUID(payload.task_id))
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    rle = encode_coco_rle(_make_test_raster_mask("single"), 64, 48)
+    reference = await store_coco_rle(rle)
+    prediction = Prediction(
+        task_id=task.id,
+        project_id=task.project_id,
+        tool_unit_id="region",
+        score=0.9,
+        source="ml_backend",
+        result=[
+            {
+                "type": "raster_mask",
+                "tool_unit_id": "region",
+                "class_name": payload.label,
+                "geometry": {"type": "raster_mask", "mask": reference},
+                "confidence": 0.9,
+            }
+        ],
+    )
+    db.add(prediction)
+    await db.flush()
+    prediction_id = str(prediction.id)
+    await db.commit()
+    return InjectRasterPredictionResponse(
+        prediction_id=prediction_id,
+        mask=reference,
+    )
 
 
 class AdvanceTaskRequest(BaseModel):
@@ -790,8 +1605,6 @@ async def seed_advance_task(
     db: AsyncSession = Depends(get_db),
 ) -> AdvanceTaskResponse:
     """绕过状态机直接置 task 到目标状态。E2E 写实化用，不调审计。"""
-    _ensure_non_production()
-
     from datetime import datetime, timezone
     from uuid import UUID
     from sqlalchemy import select

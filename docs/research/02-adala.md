@@ -68,6 +68,7 @@ FastAPI
 ```
 
 **生产化设计要点**:
+
 - Kafka 解耦推理请求和工作器,便于水平扩展
 - Celery worker 设置 `worker_max_memory_per_child` 防 LLM 内存泄漏
 - Redis 既做 Celery broker 又做 worker pool 状态

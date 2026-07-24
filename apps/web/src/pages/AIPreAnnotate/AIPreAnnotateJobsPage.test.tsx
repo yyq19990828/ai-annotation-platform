@@ -165,9 +165,7 @@ describe("AIPreAnnotateJobsPage", () => {
     const select = screen.getByRole("combobox") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "failed" } });
     // 变更后重新调用 list
-    expect(mockAsyncJobsList).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "failed" }),
-    );
+    expect(mockAsyncJobsList).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
   });
 
   it("job 有 failed_count > 0 时展示 danger badge", async () => {

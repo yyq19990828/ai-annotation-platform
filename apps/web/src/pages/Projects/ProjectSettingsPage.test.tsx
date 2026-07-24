@@ -54,7 +54,12 @@ import { ProjectSettingsPage } from "./ProjectSettingsPage";
 
 function LocationProbe() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}{location.search}</div>;
+  return (
+    <div data-testid="location">
+      {location.pathname}
+      {location.search}
+    </div>
+  );
 }
 
 function renderSettingsPage(project: Record<string, unknown>) {
@@ -69,12 +74,12 @@ function renderSettingsPage(project: Record<string, unknown>) {
         <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
         <Route
           path="/projects/:id/annotate"
-          element={(
+          element={
             <>
               <div>workbench-target</div>
               <LocationProbe />
             </>
-          )}
+          }
         />
       </Routes>
     </MemoryRouter>,

@@ -19,11 +19,20 @@ export function usePredictions(
     queryKey: ["predictions", taskId, modelVersion, minConfidence, pageSize],
     initialPageParam: 0,
     queryFn: ({ pageParam = 0 }) =>
-      predictionsApi.listByTask(taskId!, modelVersion, minConfidence, pageSize, pageParam as number),
+      predictionsApi.listByTask(
+        taskId!,
+        modelVersion,
+        minConfidence,
+        pageSize,
+        pageParam as number,
+      ),
     getNextPageParam: (lastPage: PredictionResponse[], allPages) => {
       const lastShapes = lastPage.reduce((sum, p) => sum + (p.result?.length ?? 0), 0);
       if (lastShapes < pageSize) return undefined; // 这页就没填满，没下一页了
-      return allPages.reduce((sum, page) => sum + page.reduce((s, p) => s + (p.result?.length ?? 0), 0), 0);
+      return allPages.reduce(
+        (sum, page) => sum + page.reduce((s, p) => s + (p.result?.length ?? 0), 0),
+        0,
+      );
     },
     enabled: !!taskId,
     // 阈值 / 模型版本变化会产生新 query key；旧 key 用默认 5min GC 会在长时间调阈值场景下堆积内存。

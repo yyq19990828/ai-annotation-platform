@@ -38,11 +38,11 @@ const paths = [
     <div class="paper-top">
       <div>
         <span class="section-no">03 / CHOOSE YOUR PATH</span>
-        <h2 class="reveal"><span class="paper-title-word">DOCUMENTATION</span><br />AS A WORKSPACE.</h2>
+        <h2 class="reveal">
+          <span class="paper-title-word">DOCUMENTATION</span><br />AS A WORKSPACE.
+        </h2>
       </div>
-      <p class="paper-note">
-        不是功能清单。每个入口都回答：你是谁、要完成什么、下一步在哪里。
-      </p>
+      <p class="paper-note">不是功能清单。每个入口都回答：你是谁、要完成什么、下一步在哪里。</p>
     </div>
     <div class="paths reveal">
       <a v-for="p in paths" :key="p.title" class="path" :href="p.href">

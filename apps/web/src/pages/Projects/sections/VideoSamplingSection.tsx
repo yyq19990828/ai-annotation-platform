@@ -69,9 +69,7 @@ function previewText(draft: DraftState): string {
 export function VideoSamplingSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const update = useUpdateProject(project.id);
-  const [draft, setDraft] = useState<DraftState>(() =>
-    initDraft(project.video_sampling),
-  );
+  const [draft, setDraft] = useState<DraftState>(() => initDraft(project.video_sampling));
 
   const config = buildConfig(draft);
   const valid = config !== null;
@@ -102,7 +100,8 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
       <div className="p-4">
         <h3 className="text-md font-semibold">视频帧采样（逻辑采样）</h3>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          采样只约束「逐帧导航 + 打点」的网格，不会物理重采样或取代原视频；连续播放仍走原始帧率与所有帧。
+          采样只约束「逐帧导航 +
+          打点」的网格，不会物理重采样或取代原视频；连续播放仍走原始帧率与所有帧。
         </p>
 
         <div className={ROW_CLASS}>
@@ -150,9 +149,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               step="any"
               inputMode="decimal"
               value={draft.targetFps}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, targetFps: e.target.value }))
-              }
+              onChange={(e) => setDraft((d) => ({ ...d, targetFps: e.target.value }))}
               onBlur={() => commit(draft)}
               placeholder="例：10"
               className={INPUT_CLASS}
@@ -172,9 +169,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
               step={1}
               inputMode="numeric"
               value={draft.frameStep}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, frameStep: e.target.value }))
-              }
+              onChange={(e) => setDraft((d) => ({ ...d, frameStep: e.target.value }))}
               onBlur={() => commit(draft)}
               placeholder="例：5"
               className={INPUT_CLASS}
@@ -182,7 +177,10 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
           </div>
         )}
 
-        <div className="mt-3 rounded-md border border-border bg-muted px-3 py-2.5 text-sm text-muted-foreground" data-testid="video-sampling-preview">
+        <div
+          className="mt-3 rounded-md border border-border bg-muted px-3 py-2.5 text-sm text-muted-foreground"
+          data-testid="video-sampling-preview"
+        >
           {previewText(draft)}
         </div>
 
@@ -190,9 +188,7 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
           <p className="text-xs text-status-danger">请填写合法的采样参数，填好后自动保存。</p>
         )}
 
-        {update.isPending && (
-          <div className="mt-3.5 text-xs text-muted-foreground">保存中…</div>
-        )}
+        {update.isPending && <div className="mt-3.5 text-xs text-muted-foreground">保存中…</div>}
       </div>
     </Card>
   );

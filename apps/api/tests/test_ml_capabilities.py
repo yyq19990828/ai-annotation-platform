@@ -440,6 +440,28 @@ def test_supported_inputs_synthesized_for_box_seg():
     assert m["supported_inputs"] == ["bbox_prompt", "full_image"]
 
 
+def test_supported_inputs_synthesized_for_native_mask_prompts():
+    """旧 backend 缺 inputs 时，原生 Mask 相关 prompt 合成受控输入形态。"""
+    setup = {
+        "name": "mask-seg",
+        "infra": "pytorch",
+        "models": [
+            {
+                "id": "mask-seg",
+                "task": "interactive_seg",
+                "supported_prompts": ["mask", "scribble", "correction_frame"],
+                "supported_geometric_outputs": ["mask"],
+            }
+        ],
+    }
+    m = extract_capabilities(setup)["models"][0]
+    assert m["supported_inputs"] == [
+        "mask_prompt",
+        "scribble_prompt",
+        "full_image",
+    ]
+
+
 def test_supported_inputs_union_and_legacy_synth():
     """扁平并集含 supported_inputs; 老 backend (无 models[]) 也合成。"""
     setup = {
@@ -537,6 +559,46 @@ def test_modality_video_from_tracker_task():
     caps = extract_capabilities(setup)
     assert caps is not None
     assert caps["modalities"] == ["video"]
+
+
+def test_tracker_max_window_is_clamped_to_platform_limit(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ml_capabilities.settings.video_tracker_sam3_window_size_frames",
+        16,
+    )
+    caps = extract_capabilities(
+        {
+            "name": "sam3",
+            "models": [
+                {
+                    "id": "tracker",
+                    "task": "tracker",
+                    "supported_trackers": ["sam3_video_interactive"],
+                    "max_window_frames": 64,
+                }
+            ],
+        }
+    )
+
+    assert caps["models"][0]["max_window_frames"] == 16
+
+
+def test_tracker_non_positive_max_window_is_not_advertised():
+    caps = extract_capabilities(
+        {
+            "name": "broken-tracker",
+            "models": [
+                {
+                    "id": "tracker",
+                    "task": "tracker",
+                    "supported_trackers": ["sam2_video"],
+                    "max_window_frames": 0,
+                }
+            ],
+        }
+    )
+
+    assert caps["models"][0]["max_window_frames"] is None
 
 
 def test_modality_lidar_from_geometry():

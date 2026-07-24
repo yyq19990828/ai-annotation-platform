@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 # vendor 内 grounding_dino/groundingdino/util/inference.py 用 `import grounding_dino.groundingdino...`
@@ -35,21 +36,52 @@ import numpy as np
 import torch
 from PIL import Image
 
-from aap_backend_runtime import effective_device, free_gpu_memory, is_device_error, latch_cpu
-from aap_protocol_v2 import decode_low_res_mask, encode_low_res_mask
+from aap_backend_runtime import (
+    effective_device,
+    free_gpu_memory,
+    is_device_error,
+    latch_cpu,
+)
+from aap_protocol_v2 import (
+    CocoRlePayload,
+    MAX_SCRIBBLE_RASTERIZED_PIXELS,
+    NativeMaskCandidate,
+    NativeMaskCandidateValue,
+    decode_low_res_mask,
+    encode_low_res_mask,
+    native_mask_candidate_id,
+)
 from embedding_cache import CacheEntry, EmbeddingCache
-from mask_utils import MultiPolygonRing, mask_to_multi_polygon
+from mask_utils import (
+    MultiPolygonRing,
+    PromptAdapterError,
+    encode_coco_rle,
+    mask_prompt_to_low_res_logits,
+    mask_to_multi_polygon,
+    mask_to_preview_polygon,
+    scribbles_to_point_prompts,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_decode_mask_input(mask_input: str) -> np.ndarray | None:
-    """v0.18.18 · 解码前端回传的 low-res logits; 坏串静默忽略 (不让一次精修整体失败)。"""
-    try:
+def _resolve_mask_input(
+    mask_input: str | None,
+    mask_prompt: Mapping[str, Any] | None,
+    *,
+    width: int,
+    height: int,
+) -> np.ndarray | None:
+    """Resolve a verified session token first, otherwise adapt the source RLE."""
+
+    if mask_input is not None:
         return decode_low_res_mask(mask_input)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ignoring invalid mask_input: %s", exc)
-        return None
+    if mask_prompt is not None:
+        return mask_prompt_to_low_res_logits(
+            mask_prompt,
+            expected_size=(width, height),
+        )
+    return None
 
 
 def _maybe_encode_low_res(low_res: np.ndarray | None, *, enable: bool) -> str | None:
@@ -61,6 +93,7 @@ def _maybe_encode_low_res(low_res: np.ndarray | None, *, enable: bool) -> str | 
     except Exception as exc:  # noqa: BLE001
         logger.warning("failed to encode mask_input_next: %s", exc)
         return None
+
 
 # v0.9.4 phase 3 默认 tolerance (像素). docs/research/13-simplify-tolerance-eval.md
 # 跑出来的合理默认 — 50 张 SAM mask 样本 95% 满足 IoU≥0.95, 顶点数中位 ~70.
@@ -197,10 +230,14 @@ class GroundedSAM2Predictor:
         points: list[list[float]],
         labels: list[int],
         *,
+        scribbles: Sequence[Mapping[str, Any]] | None = None,
         multimask_output: bool = False,
         mask_input: str | None = None,
+        mask_prompt: Mapping[str, Any] | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool, str | None]:
         """返回 (results, cache_hit, mask_input_next). image=None 仅在 cache_key 命中时可省.
 
@@ -210,20 +247,49 @@ class GroundedSAM2Predictor:
         的单 mask 精修阶段把本轮 low-res 编码回 mask_input_next 供下一次回传。
         """
         w, h, hit = self._prime_sam(image, cache_key)
+        if scribbles is not None:
+            if points:
+                raise PromptAdapterError("points and scribbles are mutually exclusive")
+            points, labels = scribbles_to_point_prompts(
+                scribbles,
+                image_size=(w, h),
+                max_rasterized_pixels=MAX_SCRIBBLE_RASTERIZED_PIXELS,
+            )
         px = np.array([[p[0] * w, p[1] * h] for p in points], dtype=np.float32)
         lab = np.array(labels, dtype=np.int32)
         kwargs: dict[str, Any] = {}
-        if mask_input:
-            arr = _safe_decode_mask_input(mask_input)
-            if arr is not None:
-                kwargs["mask_input"] = arr
+        dense_prompt = _resolve_mask_input(
+            mask_input,
+            mask_prompt,
+            width=w,
+            height=h,
+        )
+        if dense_prompt is not None:
+            kwargs["mask_input"] = dense_prompt
         masks, scores, low_res = self._sam_predictor.predict(
-            point_coords=px, point_labels=lab, multimask_output=multimask_output, **kwargs
+            point_coords=px,
+            point_labels=lab,
+            multimask_output=multimask_output,
+            **kwargs,
         )
         results = self._masks_to_results(
-            masks, scores, w, h, simplify_tolerance, sort_by_score=multimask_output
+            masks,
+            scores,
+            w,
+            h,
+            simplify_tolerance,
+            sort_by_score=multimask_output,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
         )
-        return results, hit, _maybe_encode_low_res(low_res, enable=not multimask_output)
+        return (
+            results,
+            hit,
+            _maybe_encode_low_res(
+                low_res,
+                enable=not multimask_output and bool(results),
+            ),
+        )
 
     def predict_bbox(
         self,
@@ -231,8 +297,12 @@ class GroundedSAM2Predictor:
         bbox: list[float],
         *,
         multimask_output: bool = False,
+        mask_input: str | None = None,
+        mask_prompt: Mapping[str, Any] | None = None,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool, str | None]:
         """v0.18.17 · interactive_box 单框单 mask (协议 type=interactive_box 路由到此).
         multimask_output=True 出 3 候选 (按 iou 降序).
@@ -242,13 +312,88 @@ class GroundedSAM2Predictor:
         w, h, hit = self._prime_sam(image, cache_key)
         x1, y1, x2, y2 = bbox
         box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
-        masks, scores, _ = self._sam_predictor.predict(
-            point_coords=None, point_labels=None, box=box_px[None, :],
-            multimask_output=multimask_output,
+        kwargs: dict[str, Any] = {}
+        dense_prompt = _resolve_mask_input(
+            mask_input,
+            mask_prompt,
+            width=w,
+            height=h,
         )
-        return self._masks_to_results(
-            masks, scores, w, h, simplify_tolerance, sort_by_score=multimask_output
-        ), hit, None
+        if dense_prompt is not None:
+            kwargs["mask_input"] = dense_prompt
+        masks, scores, low_res = self._sam_predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            box=box_px[None, :],
+            multimask_output=multimask_output,
+            **kwargs,
+        )
+        results = self._masks_to_results(
+            masks,
+            scores,
+            w,
+            h,
+            simplify_tolerance,
+            sort_by_score=multimask_output,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
+        )
+        return (
+            results,
+            hit,
+            _maybe_encode_low_res(
+                low_res,
+                enable=(
+                    dense_prompt is not None and not multimask_output and bool(results)
+                ),
+            ),
+        )
+
+    def predict_mask(
+        self,
+        image: Image.Image | None,
+        mask_prompt: Mapping[str, Any],
+        *,
+        mask_input: str | None = None,
+        cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool, str | None]:
+        """Refine an authorized Mask seed without an additional sparse prompt."""
+
+        w, h, hit = self._prime_sam(image, cache_key)
+        dense_prompt = _resolve_mask_input(
+            mask_input,
+            mask_prompt,
+            width=w,
+            height=h,
+        )
+        assert dense_prompt is not None
+        masks, scores, low_res = self._sam_predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            mask_input=dense_prompt,
+            multimask_output=False,
+        )
+        results = self._masks_to_results(
+            masks,
+            scores,
+            w,
+            h,
+            simplify_tolerance,
+            sort_by_score=False,
+            output_geometry=output_geometry,
+            prompt_revision=prompt_revision,
+        )
+        return (
+            results,
+            hit,
+            _maybe_encode_low_res(
+                low_res,
+                enable=bool(results),
+            ),
+        )
 
     def predict_boxes(
         self,
@@ -279,9 +424,14 @@ class GroundedSAM2Predictor:
             x1, y1, x2, y2 = bbox
             box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
             masks, scores, _ = self._sam_predictor.predict(
-                point_coords=None, point_labels=None, box=box_px[None, :], multimask_output=False
+                point_coords=None,
+                point_labels=None,
+                box=box_px[None, :],
+                multimask_output=False,
             )
-            for entry in self._masks_to_results(masks, scores, w, h, simplify_tolerance):
+            for entry in self._masks_to_results(
+                masks, scores, w, h, simplify_tolerance
+            ):
                 entry["parent_box_idx"] = parent_idx
                 out.append(entry)
         return out, hit
@@ -335,7 +485,9 @@ class GroundedSAM2Predictor:
         image_tensor = self._dino_image_tensor(np_img)
         # v0.9.2 · 项目级阈值 override；缺省回退到 instance 默认值（来自 backend env）
         eff_box = self.box_threshold if box_threshold is None else float(box_threshold)
-        eff_text = self.text_threshold if text_threshold is None else float(text_threshold)
+        eff_text = (
+            self.text_threshold if text_threshold is None else float(text_threshold)
+        )
         boxes, dino_logits, phrases = dino_predict(
             model=self._dino_model,
             image=image_tensor,
@@ -345,7 +497,7 @@ class GroundedSAM2Predictor:
             device=self.device,
         )
         if boxes is None or len(boxes) == 0:
-            logger.info("DINO returned 0 boxes for caption=%r", caption)
+            logger.info("DINO returned 0 boxes for text prompt")
             return [], False
 
         # 归一化 cxcywh → 像素 xyxy
@@ -355,7 +507,9 @@ class GroundedSAM2Predictor:
         # 之前丢弃 → box 模式硬编码 score=1.0, mask 模式用 SAM mask 质量分 (恒高).
         # 用户层面表现为「明明 DINO 卡到 0.15 才出框, 显示却是 100%」, 此处统一回填.
         dino_scores = (
-            dino_logits.cpu().numpy().tolist() if hasattr(dino_logits, "cpu") else list(dino_logits)
+            dino_logits.cpu().numpy().tolist()
+            if hasattr(dino_logits, "cpu")
+            else list(dino_logits)
         )
 
         def _dino_score(i: int) -> float:
@@ -366,7 +520,9 @@ class GroundedSAM2Predictor:
             results: list[dict[str, Any]] = []
             for i, box_px in enumerate(boxes_xyxy):
                 label = phrases[i] if i < len(phrases) else default_label
-                results.append(self._box_to_rect_label(box_px, w, h, label, _dino_score(i)))
+                results.append(
+                    self._box_to_rect_label(box_px, w, h, label, _dino_score(i))
+                )
             return results, False
 
         # mask / both 共享 SAM image embedding + mask 推理路径.
@@ -390,7 +546,9 @@ class GroundedSAM2Predictor:
 
         results = []
         eff_tol = (
-            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+            DEFAULT_SIMPLIFY_TOLERANCE
+            if simplify_tolerance is None
+            else float(simplify_tolerance)
         )
         for i, mask in enumerate(masks):
             # 用 DINO 检测置信度 (用户语义上的"模型对该目标的把握"), 而非 SAM mask 质量分.
@@ -400,10 +558,14 @@ class GroundedSAM2Predictor:
             rings = mask_to_multi_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
             if not rings:
                 continue
-            self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="text")
+            self._maybe_warn_vertex_count(
+                rings, eff_tol, int(mask.sum()), prompt="text"
+            )
             if output == "both":
                 # 配对返回: 同 instance 一对 rect + poly (前端按需选).
-                results.append(self._box_to_rect_label(boxes_xyxy[i], w, h, label, score))
+                results.append(
+                    self._box_to_rect_label(boxes_xyxy[i], w, h, label, score)
+                )
                 results.append(self._rings_to_polygon_label(rings, label, score))
             else:  # mask
                 results.append(self._rings_to_polygon_label(rings, label, score))
@@ -421,7 +583,12 @@ class GroundedSAM2Predictor:
 
         x/y 是矩形左上, width/height 也都归一化; 与平台 BboxAnnotation 字段一致.
         """
-        x1, y1, x2, y2 = float(box_px[0]), float(box_px[1]), float(box_px[2]), float(box_px[3])
+        x1, y1, x2, y2 = (
+            float(box_px[0]),
+            float(box_px[1]),
+            float(box_px[2]),
+            float(box_px[3]),
+        )
         return {
             "type": "rectanglelabels",
             "value": {
@@ -486,9 +653,7 @@ class GroundedSAM2Predictor:
     def _maybe_warn_vertex_count(
         rings: list[MultiPolygonRing], eff_tol: float, mask_area: int, *, prompt: str
     ) -> None:
-        total = sum(
-            len(r["exterior"]) + sum(len(h) for h in r["holes"]) for r in rings
-        )
+        total = sum(len(r["exterior"]) + sum(len(h) for h in r["holes"]) for r in rings)
         if total > VERTEX_COUNT_WARN_THRESHOLD:
             logger.warning(
                 "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=%s, rings=%d)",
@@ -542,29 +707,67 @@ class GroundedSAM2Predictor:
         simplify_tolerance: float | None = None,
         *,
         sort_by_score: bool = False,
+        output_geometry: str = "polygon",
+        prompt_revision: str | None = None,
     ) -> list[dict[str, Any]]:
         if masks.ndim == 4:
             masks = masks[:, 0]
         # v0.18.17 · multimask 候选按 score 降序, 保证 results[0]=top-1 (与 sam3 对齐);
         # 单 mask / predict_boxes 路径 (sort_by_score=False) 保留原顺序 (parent_box_idx 依赖).
         if sort_by_score and scores is not None and len(scores) > 1:
-            order = np.argsort(-np.asarray(scores))
+            order = np.argsort(-np.asarray(scores), kind="stable")
             masks = masks[order]
             scores = np.asarray(scores)[order]
         out: list[dict[str, Any]] = []
         eff_tol = (
-            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+            DEFAULT_SIMPLIFY_TOLERANCE
+            if simplify_tolerance is None
+            else float(simplify_tolerance)
         )
         for i, mask in enumerate(masks):
-            rings = mask_to_multi_polygon(
-                mask, tolerance=eff_tol, normalize_to=(w, h)
-            )
+            score = float(scores[i]) if scores is not None and i < len(scores) else None
+            binary = np.asarray(mask) > 0
+            if binary.shape != (h, w):
+                raise ValueError(
+                    f"mask shape must be {(h, w)}, got {tuple(binary.shape)}"
+                )
+            if not bool(binary.any()):
+                continue
+            if output_geometry == "mask":
+                if not prompt_revision:
+                    raise ValueError(
+                        "prompt_revision is required for native mask output"
+                    )
+                preview_points = mask_to_preview_polygon(
+                    binary,
+                    tolerance=eff_tol,
+                    normalize_to=(w, h),
+                )
+                rle = CocoRlePayload.model_validate(
+                    encode_coco_rle(binary.reshape(-1), w, h)
+                )
+                candidate_index = len(out)
+                candidate = NativeMaskCandidate(
+                    value=NativeMaskCandidateValue(
+                        rle=rle,
+                        masklabels=["object"],
+                        preview={"points": preview_points},
+                    ),
+                    score=score,
+                    candidate_id=native_mask_candidate_id(
+                        rle,
+                        prompt_revision=prompt_revision,
+                        candidate_index=candidate_index,
+                    ),
+                )
+                out.append(candidate.model_dump(mode="json"))
+                continue
+            rings = mask_to_multi_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
             if not rings:
                 continue
             self._maybe_warn_vertex_count(
                 rings, eff_tol, int(mask.sum()), prompt="point/bbox"
             )
-            score = float(scores[i]) if scores is not None and i < len(scores) else None
             entry = self._rings_to_polygon_label(rings, "object", score or 0.0)
             if score is None:
                 entry.pop("score", None)

@@ -67,7 +67,12 @@ export function VideoTrackColorPicker({
   }, [onClose]);
 
   return (
-    <div ref={rootRef} className="flex flex-col gap-1.5 p-1.5 bg-card border border-border rounded-md shadow-lg" role="dialog" aria-label="选择轨迹颜色">
+    <div
+      ref={rootRef}
+      className="flex flex-col gap-1.5 p-1.5 bg-card border border-border rounded-md shadow-lg"
+      role="dialog"
+      aria-label="选择轨迹颜色"
+    >
       <div className="grid grid-cols-4 gap-1">
         {TRACK_COLOR_PALETTE.map((entry) => (
           <SwatchButton

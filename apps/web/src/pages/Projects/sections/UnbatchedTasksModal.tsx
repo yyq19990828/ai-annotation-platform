@@ -9,7 +9,9 @@ import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useTaskList } from "@/hooks/useTasks";
 
 function VirtualInner({ height, children }: { height: number; children: ReactNode }) {
-  const ref = useElementStyle<HTMLDivElement>({ "--virtual-height": `${height}px` } as CSSProperties);
+  const ref = useElementStyle<HTMLDivElement>({
+    "--virtual-height": `${height}px`,
+  } as CSSProperties);
   return (
     <div ref={ref} className="relative w-full h-[var(--virtual-height)]">
       {children}
@@ -17,13 +19,7 @@ function VirtualInner({ height, children }: { height: number; children: ReactNod
   );
 }
 
-function VirtualRow({
-  start,
-  children,
-}: {
-  start: number;
-  children: ReactNode;
-}) {
+function VirtualRow({ start, children }: { start: number; children: ReactNode }) {
   const ref = useElementStyle<HTMLDivElement>({ "--virtual-start": `${start}px` } as CSSProperties);
   return (
     <div
@@ -45,18 +41,12 @@ export function UnbatchedTasksModal({
   onClose: () => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const {
-    data,
-    isLoading,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = useTaskList(projectId, { unbatched: true });
-
-  const tasks = useMemo(
-    () => data?.pages.flatMap((p) => p.items) ?? [],
-    [data],
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(
+    projectId,
+    { unbatched: true },
   );
+
+  const tasks = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
 
   const virtualizer = useVirtualizer({
     count: tasks.length,
@@ -79,9 +69,7 @@ export function UnbatchedTasksModal({
   return (
     <Modal open onClose={onClose} title={`未归类任务（${count}）`} width={560}>
       <div className="flex min-h-[120px] flex-col">
-        {isLoading && (
-          <div className="py-8 text-center text-sm text-muted-foreground">加载中…</div>
-        )}
+        {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">加载中…</div>}
         {!isLoading && tasks.length === 0 && (
           <div className="py-8 text-center text-sm text-muted-foreground">没有未归类任务。</div>
         )}

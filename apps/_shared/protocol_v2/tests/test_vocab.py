@@ -5,6 +5,7 @@ from __future__ import annotations
 from aap_protocol_v2 import (
     GEOMETRY_VALUES,
     INFRA_VALUES,
+    INPUT_VALUES,
     PROMPT_VALUES,
     TASK_VALUES,
 )
@@ -39,6 +40,16 @@ def test_prompt_values_include_none_for_batch_only() -> None:
     assert "none" in PROMPT_VALUES
     assert "text" in PROMPT_VALUES
     assert "exemplar" in PROMPT_VALUES
+    assert "interactive_box" in PROMPT_VALUES
+    assert "mask" in PROMPT_VALUES
+    assert "scribble" in PROMPT_VALUES
+    assert "correction_frame" in PROMPT_VALUES
+
+
+def test_input_values_cover_native_mask_interaction() -> None:
+    assert "mask_prompt" in INPUT_VALUES
+    assert "scribble_prompt" in INPUT_VALUES
+    assert "video" in INPUT_VALUES
 
 
 def test_task_default_geometry_consistent() -> None:

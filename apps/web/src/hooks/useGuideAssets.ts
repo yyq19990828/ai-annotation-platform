@@ -4,9 +4,7 @@ import { projectsApi } from "@/api/projects";
 /** v0.10.13 · E1 · annotation guide 图片资源上传 / 签发 / 删除. */
 export function useGuideAssets(projectId: string | undefined) {
   // 同一 key 同时多次签发会浪费 storage round-trip; 加内存缓存 (短期 1h, expires_in=3600).
-  const urlCacheRef = useRef<Map<string, { url: string; until: number }>>(
-    new Map(),
-  );
+  const urlCacheRef = useRef<Map<string, { url: string; until: number }>>(new Map());
 
   useEffect(() => {
     // projectId 变更或卸载时清缓存, 防跨项目串味.

@@ -56,12 +56,16 @@ def test_accumulate_and_emit_groups_by_track_id() -> None:
     tracks: dict = {}
     # w=100,h=200。track 3 出现在帧0/1, track 7 仅帧0。
     _accumulate_track_frame(
-        _fake_frame([3, 7], [[10, 20, 50, 80], [0, 0, 100, 200]], [0.9, 0.5], [0, 1], names),
-        0, tracks,
+        _fake_frame(
+            [3, 7], [[10, 20, 50, 80], [0, 0, 100, 200]], [0.9, 0.5], [0, 1], names
+        ),
+        0,
+        tracks,
     )
     _accumulate_track_frame(
         _fake_frame([3], [[12, 22, 52, 82]], [0.8], [0], names),
-        1, tracks,
+        1,
+        tracks,
     )
     items = _emit_tracks(tracks)
 
@@ -109,7 +113,8 @@ def test_coords_clamped_to_unit_range() -> None:
     # 越界框 (亚像素负值 / 超出图幅) 应被 clamp 到 [0,1]。
     _accumulate_track_frame(
         _fake_frame([1], [[-5, -5, 120, 260]], [0.7], [0], {0: "car"}, wh=(100, 200)),
-        0, tracks,
+        0,
+        tracks,
     )
     bbox = _emit_tracks(tracks)[0]["keyframes"][0]["bbox"]
     assert bbox["x"] == 0.0 and bbox["y"] == 0.0

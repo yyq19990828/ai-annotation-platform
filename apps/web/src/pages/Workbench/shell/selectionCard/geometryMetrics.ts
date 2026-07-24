@@ -136,19 +136,23 @@ function polygonMetrics(
   const hasDims = !!(imgW && imgH);
   const holeArea = (holes ?? []).reduce((s, ring) => s + shoelaceArea(ring), 0);
   const netArea = Math.max(0, shoelaceArea(points) - holeArea);
+  const holeVertices = (holes ?? []).reduce((sum, ring) => sum + ring.length, 0);
   const metrics: Metric[] = [
     {
       label: "顶点",
-      value: `${points.length}`,
-      hint: holes?.length ? `+${holes.length} 内环` : undefined,
+      value: `${points.length + holeVertices}`,
+      hint: holes?.length ? `外环 ${points.length} + ${holes.length} 内环` : undefined,
     },
     { label: "占图", value: pctText(netArea) },
   ];
   if (hasDims) {
     metrics.push({ label: "面积", value: `≈ ${group(netArea * imgW! * imgH!)} px²` });
+    const perimeter =
+      polylinePerimeterPx(points, imgW!, imgH!, true) +
+      (holes ?? []).reduce((sum, ring) => sum + polylinePerimeterPx(ring, imgW!, imgH!, true), 0);
     metrics.push({
       label: "周长",
-      value: `≈ ${group(polylinePerimeterPx(points, imgW!, imgH!, true))} px`,
+      value: `≈ ${group(perimeter)} px`,
     });
   }
   return metrics;
@@ -160,13 +164,17 @@ function multiPolygonMetrics(
   imgH: number | null,
 ): Metric[] {
   const hasDims = !!(imgW && imgH);
-  const totalVerts = polygons.reduce((n, p) => n + p.points.length, 0);
+  const ringCount = polygons.reduce((n, p) => n + 1 + (p.holes?.length ?? 0), 0);
+  const totalVerts = polygons.reduce(
+    (n, p) => n + p.points.length + (p.holes ?? []).reduce((sum, ring) => sum + ring.length, 0),
+    0,
+  );
   const netArea = polygons.reduce((s, p) => {
     const holeArea = (p.holes ?? []).reduce((hs, ring) => hs + shoelaceArea(ring), 0);
     return s + Math.max(0, shoelaceArea(p.points) - holeArea);
   }, 0);
   const metrics: Metric[] = [
-    { label: "环 / 顶点", value: `${polygons.length} / ${totalVerts}` },
+    { label: "环 / 顶点", value: `${ringCount} / ${totalVerts}` },
     { label: "占图", value: pctText(netArea) },
   ];
   if (hasDims) {
@@ -200,6 +208,23 @@ function keypointMetrics(points: Keypoint[]): Metric[] {
       value: `${visible} / ${points.length}`,
       hint: occluded ? `${occluded} 遮挡` : undefined,
     },
+  ];
+}
+
+function rasterMaskMetrics(mask: {
+  size: [number, number];
+  runs: number;
+  bytes: number;
+}): Metric[] {
+  const [height, width] = mask.size;
+  const stored =
+    mask.bytes < 1024
+      ? `${mask.bytes} B`
+      : `${(mask.bytes / 1024).toFixed(mask.bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return [
+    { label: "画布", value: `${group(width)}×${group(height)} px` },
+    { label: "编码段", value: group(mask.runs) },
+    { label: "存储", value: stored, hint: "COCO RLE" },
   ];
 }
 
@@ -240,6 +265,9 @@ export function geometryMetrics(
       return polylineMetrics(geometry.points, imgW, imgH);
     case "keypoint":
       return keypointMetrics(geometry.points);
+    case "raster_mask":
+    case "video_mask":
+      return rasterMaskMetrics(geometry.mask);
     default:
       return [];
   }

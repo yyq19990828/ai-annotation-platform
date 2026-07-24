@@ -65,6 +65,7 @@ def test_same_key_single_flight_and_per_entry_use_lock() -> None:
 
     _run(scenario())
 
+
 def test_active_entry_cannot_be_evicted() -> None:
     async def scenario() -> None:
         pool = ManagedLruPool(

@@ -100,12 +100,14 @@ def _fake_image(monkeypatch):
 
 
 def _ctx(output: str, series: str = "yoloe-11"):
-    return Context.model_validate({
-        "type": "text",
-        "text": "cat",
-        "output": output,
-        "model_variants": {"series": series, "size": "s"},
-    })
+    return Context.model_validate(
+        {
+            "type": "text",
+            "text": "cat",
+            "output": output,
+            "model_variants": {"series": series, "size": "s"},
+        }
+    )
 
 
 async def test_output_box_emits_only_rectangles() -> None:
@@ -138,12 +140,14 @@ async def test_world_mask_is_rejected() -> None:
 
 async def test_empty_text_returns_empty() -> None:
     p = YoloPredictor(_FakePool(_FakeYoloe()))
-    ctx = Context.model_validate({
-        "type": "text",
-        "text": "",
-        "output": "mask",
-        "model_variants": {"series": "yoloe-11", "size": "s"},
-    })
+    ctx = Context.model_validate(
+        {
+            "type": "text",
+            "text": "",
+            "output": "mask",
+            "model_variants": {"series": "yoloe-11", "size": "s"},
+        }
+    )
     items, _hit, _load, infer_ms = await p.predict_one("x", ctx)
     assert items == []
     assert infer_ms == 0
@@ -190,10 +194,16 @@ async def test_exemplar_filters_negative_boxes() -> None:
     model = _FakeYoloe()
     p = YoloPredictor(_FakePool(model))
     # 一正一负 → 只保留正框.
-    await p.predict_one("x", _ex_ctx("box", [
-        {"bbox": [0, 0, 0.2, 0.2], "label": True},
-        {"bbox": [0.5, 0.5, 0.9, 0.9], "label": False},
-    ]))
+    await p.predict_one(
+        "x",
+        _ex_ctx(
+            "box",
+            [
+                {"bbox": [0, 0, 0.2, 0.2], "label": True},
+                {"bbox": [0.5, 0.5, 0.9, 0.9], "label": False},
+            ],
+        ),
+    )
     assert len(model.last_predict_kw["visual_prompts"]["bboxes"]) == 1
 
 
@@ -211,7 +221,9 @@ async def test_exemplar_only_negative_returns_empty() -> None:
 async def test_exemplar_score_threshold_maps_to_conf() -> None:
     model = _FakeYoloe()
     p = YoloPredictor(_FakePool(model))
-    await p.predict_one("x", _ex_ctx("box", [{"bbox": [0, 0, 0.2, 0.2]}], score_threshold=0.4))
+    await p.predict_one(
+        "x", _ex_ctx("box", [{"bbox": [0, 0, 0.2, 0.2]}], score_threshold=0.4)
+    )
     assert model.last_predict_kw["conf"] == 0.4
 
 

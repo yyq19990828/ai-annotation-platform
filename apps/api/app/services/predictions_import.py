@@ -27,7 +27,7 @@ import uuid
 import zipfile
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,15 +41,28 @@ from app.schemas.aap_json import (
     AAPPredictionEntry,
     check_schema_major,
 )
+from app.schemas._jsonb_types import Geometry
 from app.services.prediction import PredictionService
+from app.services.mask_formats.image_codecs import normalize_coco_segmentation_rle
 from app.services.project import derive_classes_list
 from app.services.task_matcher import (
     normalize_file_stem_path,
     resolve_task,
     resolve_task_by_file_stem,
 )
+from app.services.raster_mask_storage import (
+    assert_raster_mask_write_enabled,
+    build_rle_reference,
+    resolve_mask_reference_objects,
+    store_coco_rle,
+    store_mask_reference_objects,
+    validate_mask_geometry_for_task,
+)
+from app.utils.raster_mask_rle import coco_rle_area
 
 logger = logging.getLogger(__name__)
+
+_GEOMETRY_ADAPTER = TypeAdapter(Geometry)
 
 
 # ── geometry kind → LabelStudio shape 适配 ─────────────────────────
@@ -225,6 +238,16 @@ def internal_geometry_to_ls_shape(
             "score": score,
         }
 
+    if kind == "raster_mask":
+        return {
+            "type": "raster_mask",
+            "class_name": class_name,
+            "geometry": geometry,
+            "confidence": score,
+            "tool_unit_id": "region",
+            "attributes": {},
+        }
+
     # 本期不支持 video_bbox / video_track_bbox / 其他 kind.
     return None
 
@@ -315,6 +338,8 @@ async def import_aap_json(
 
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
+    stored_mask_keys: set[str] = set()
+    project = await db.get(Project, project_id)
 
     purged_tasks = purged_tasks if purged_tasks is not None else set()
 
@@ -348,18 +373,38 @@ async def import_aap_json(
                 result.skipped += 1
             continue
 
-        if overwrite_existing and not dry_run and task.id not in purged_tasks:
-            await _purge_predictions(
-                db,
-                project_id=project_id,
-                task_ids=[task.id],
-                source_scope="external_import",
-            )
-            purged_tasks.add(task.id)
-
         # AAP JSON 每个 prediction entry 对应一条平台 Prediction 行; entry.shapes
         # 可把多个 shape 合并进同一 Prediction.result.
         for entry in block.predictions:
+            mask_geometries: list[dict[str, Any]] = []
+            try:
+                for raw_shape in _entry_shape_sources(entry):
+                    geometry = _shape_geometry(raw_shape)
+                    if geometry.get("type") != "raster_mask":
+                        continue
+                    validated = _GEOMETRY_ADAPTER.validate_python(geometry)
+                    normalized = validated.model_dump(
+                        mode="json", by_alias=True, exclude_unset=True
+                    )
+                    await validate_mask_geometry_for_task(db, task, normalized)
+                    mask_geometries.append(normalized)
+                resolved_masks = resolve_mask_reference_objects(
+                    mask_geometries, envelope.mask_objects
+                )
+                if any(coco_rle_area(rle) == 0 for _, rle in resolved_masks):
+                    raise ValueError("raster mask must contain foreground pixels")
+                if mask_geometries:
+                    assert_raster_mask_write_enabled(project)
+            except (ValidationError, ValueError) as exc:
+                result.errors.append(
+                    AAPImportErrorEntry(
+                        task_match=match_dict,
+                        reason=f"invalid geometry: {exc}",
+                    )
+                )
+                result.skipped += 1
+                continue
+
             ls_shapes, errors = _entry_to_ls_shapes(entry)
             for reason in errors:
                 result.errors.append(
@@ -381,6 +426,31 @@ async def import_aap_json(
             if dry_run:
                 result.imported += 1
                 continue
+
+            if overwrite_existing and task.id not in purged_tasks:
+                await _purge_predictions(
+                    db,
+                    project_id=project_id,
+                    task_ids=[task.id],
+                    source_scope="external_import",
+                )
+                purged_tasks.add(task.id)
+
+            if resolved_masks:
+                unstored = [
+                    item
+                    for item in resolved_masks
+                    if str(item[0]["object_key"]) not in stored_mask_keys
+                ]
+                await store_mask_reference_objects(
+                    db,
+                    mask_geometries,
+                    unstored,
+                    task_id=task.id,
+                )
+                stored_mask_keys.update(
+                    str(reference["object_key"]) for reference, _ in unstored
+                )
 
             await svc.create_from_ml_result(
                 task_id=task.id,
@@ -460,7 +530,81 @@ def _entry_to_ls_shapes(
     return ls_shapes, errors
 
 
-# ── COCO importer (Detection 子集) ─────────────────────────────────
+# ── COCO importer ──────────────────────────────────────────────────
+
+
+def _coco_bbox_geometry(
+    bbox: Any,
+    *,
+    image_width: float,
+    image_height: float,
+) -> dict[str, Any]:
+    if not isinstance(bbox, list) or len(bbox) != 4:
+        raise ValueError("bbox must be [x, y, width, height]")
+    try:
+        x, y, width, height = (float(value) for value in bbox)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("bbox values must be numbers") from exc
+    if not all(math.isfinite(value) for value in (x, y, width, height)):
+        raise ValueError("bbox values must be finite")
+    if width < 0 or height < 0:
+        raise ValueError("bbox width / height must be non-negative")
+    return {
+        "type": "bbox",
+        "x": x / image_width,
+        "y": y / image_height,
+        "w": width / image_width,
+        "h": height / image_height,
+    }
+
+
+def _coco_polygon_geometry(
+    segmentation: Any,
+    *,
+    image_width: float,
+    image_height: float,
+) -> dict[str, Any]:
+    if not isinstance(segmentation, list) or not segmentation:
+        raise ValueError("polygon segmentation must contain at least one ring")
+    polygons: list[dict[str, Any]] = []
+    for ring in segmentation:
+        if not isinstance(ring, list) or len(ring) < 6 or len(ring) % 2:
+            raise ValueError("polygon ring must contain at least three x/y pairs")
+        try:
+            values = [float(value) for value in ring]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("polygon coordinates must be numbers") from exc
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("polygon coordinates must be finite")
+        polygons.append(
+            {
+                "type": "polygon",
+                "points": [
+                    [values[index] / image_width, values[index + 1] / image_height]
+                    for index in range(0, len(values), 2)
+                ],
+            }
+        )
+    if len(polygons) == 1:
+        return polygons[0]
+    return {"type": "multi_polygon", "polygons": polygons}
+
+
+def _coco_uncompressed_rle(
+    segmentation: Any,
+    *,
+    image_width: float,
+    image_height: float,
+) -> dict[str, Any]:
+    if not isinstance(segmentation, dict):
+        raise ValueError("RLE segmentation must be an object")
+    if not image_width.is_integer() or not image_height.is_integer():
+        raise ValueError("COCO image width / height must be integers")
+    return normalize_coco_segmentation_rle(
+        segmentation,
+        expected_width=int(image_width),
+        expected_height=int(image_height),
+    )
 
 
 async def import_coco(
@@ -474,10 +618,10 @@ async def import_coco(
     image_size_hint: tuple[int, int] | None = None,
     purged_tasks: set[uuid.UUID] | None = None,
 ) -> AAPImportResult:
-    """COCO Detection 格式 importer.
+    """COCO detection / polygon / compressed or uncompressed RLE importer.
 
-    最小子集: 只读 `images[]` + `annotations[]` + `categories[]`. bbox 是 COCO 标准
-    `[x, y, w, h]` 像素坐标; 用 image.width/height 归一化到 [0,1] 后走 bbox kind.
+    bbox 保持历史行为；polygon-only annotation 转内部 polygon；uncompressed RLE
+    写入内容寻址对象后，以 raster_mask 内部 prediction shape 保存。
 
     匹配: 用 image.file_name 当 task.file_path (调用方应保证 dataset 命名一致).
     """
@@ -513,21 +657,24 @@ async def import_coco(
 
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
+    project = await db.get(Project, project_id)
     purged_tasks = purged_tasks if purged_tasks is not None else set()
+    stored_rle_references: dict[str, dict[str, Any]] = {}
 
     for ann in annotations_raw:
         if not isinstance(ann, dict):
             continue
         img_id = ann.get("image_id")
         bbox = ann.get("bbox")
+        segmentation = ann.get("segmentation")
         cat_id = ann.get("category_id")
 
         img = image_map.get(img_id) if isinstance(img_id, int) else None
-        if img is None or not isinstance(bbox, list) or len(bbox) != 4:
+        if img is None:
             result.errors.append(
                 AAPImportErrorEntry(
                     task_match={"coco_image_id": img_id},
-                    reason="invalid coco annotation entry",
+                    reason="invalid COCO annotation: image not found",
                 )
             )
             result.skipped += 1
@@ -574,35 +721,57 @@ async def import_coco(
             result.skipped += 1
             continue
 
-        if overwrite_existing and not dry_run and task.id not in purged_tasks:
-            await _purge_predictions(
-                db,
-                project_id=project_id,
-                task_ids=[task.id],
-                source_scope="external_import",
-            )
-            purged_tasks.add(task.id)
-
-        x, y, w, h = (float(v) for v in bbox)
-        geometry = {
-            "type": "bbox",
-            "x": x / img_w,
-            "y": y / img_h,
-            "w": w / img_w,
-            "h": h / img_h,
-        }
         score = ann.get("score")
         # 预标注导入缺省满分: COCO GT 标注通常无 score, 缺省视作 100% 置信(确定标签)。
         # 否则 score=null 经 to_internal_shape 落为 confidence=0.0, 被工作台默认 50% 阈值
         # 全量过滤而不可见。COCO 结果格式若带 score 则保留原值。
         confidence = float(score) if isinstance(score, (int, float)) else 1.0
 
+        rle: dict[str, Any] | None = None
+        try:
+            if isinstance(segmentation, dict):
+                rle = _coco_uncompressed_rle(
+                    segmentation,
+                    image_width=img_w,
+                    image_height=img_h,
+                )
+                if coco_rle_area(rle) == 0:
+                    raise ValueError("raster mask must contain foreground pixels")
+                assert_raster_mask_write_enabled(project)
+                geometry = {
+                    "type": "raster_mask",
+                    "mask": build_rle_reference(rle),
+                }
+            elif isinstance(segmentation, list):
+                geometry = _coco_polygon_geometry(
+                    segmentation,
+                    image_width=img_w,
+                    image_height=img_h,
+                )
+            elif isinstance(bbox, list):
+                geometry = _coco_bbox_geometry(
+                    bbox,
+                    image_width=img_w,
+                    image_height=img_h,
+                )
+            else:
+                raise ValueError("annotation requires bbox or segmentation")
+        except ValueError as exc:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match=match_dict,
+                    reason=f"invalid COCO annotation: {exc}",
+                )
+            )
+            result.skipped += 1
+            continue
+
         ls_shape = internal_geometry_to_ls_shape(geometry, class_name, confidence)
         if ls_shape is None:
             result.errors.append(
                 AAPImportErrorEntry(
                     task_match=match_dict,
-                    reason="failed to build ls shape from coco bbox",
+                    reason="failed to build prediction shape from COCO annotation",
                 )
             )
             result.skipped += 1
@@ -611,6 +780,25 @@ async def import_coco(
         if dry_run:
             result.imported += 1
             continue
+
+        if overwrite_existing and task.id not in purged_tasks:
+            await _purge_predictions(
+                db,
+                project_id=project_id,
+                task_ids=[task.id],
+                source_scope="external_import",
+            )
+            purged_tasks.add(task.id)
+
+        if rle is not None:
+            object_key = str(geometry["mask"]["object_key"])
+            stored = stored_rle_references.get(object_key)
+            if stored is None:
+                stored = await store_coco_rle(rle)
+                if stored["object_key"] != object_key:
+                    raise ValueError("stored COCO RLE does not match content reference")
+                stored_rle_references[object_key] = stored
+            ls_shape["geometry"] = {"type": "raster_mask", "mask": stored}
 
         await svc.create_from_ml_result(
             task_id=task.id,

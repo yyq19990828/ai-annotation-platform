@@ -38,6 +38,11 @@ const STATUS_STYLE: Record<
     className: "text-status-info bg-status-info-soft",
     cancelClassName: "!text-status-info",
   },
+  partially_reviewed: {
+    label: "部分已审",
+    className: "text-status-warning bg-status-warning-soft",
+    cancelClassName: "!text-status-warning",
+  },
   accepted: {
     label: "已接受",
     className: "text-status-positive bg-status-positive-soft",
@@ -70,11 +75,7 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
     >
       <Icon name="bot" size={12} />
       <span>{statusMeta.label}</span>
-      {progressLabel && (
-        <span className="mono text-muted-foreground">
-          {progressLabel}
-        </span>
-      )}
+      {progressLabel && <span className="mono text-muted-foreground">{progressLabel}</span>}
       {canCancel && (
         <Button
           size="sm"

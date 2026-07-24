@@ -88,9 +88,10 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.23.4"
+    app_version: str = "0.23.11"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
+    e2e_seed_enabled: bool = False
 
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/annotation"
     redis_url: str = "redis://localhost:6379/0"
@@ -149,6 +150,13 @@ class Settings(BaseSettings):
     # v0.11.15 · 连接器导入护栏。超限 job 会失败，不会部分导入。
     dataset_import_max_files: int = 50_000
     dataset_import_max_total_bytes: int = 200 * 1024 * 1024 * 1024
+
+    # Mask format adapter temp/archive budgets. Readers and writers enforce
+    # actual streamed bytes in addition to preflight estimates.
+    mask_format_temp_quota_bytes: int = 8 * 1024 * 1024 * 1024
+    mask_format_max_entry_bytes: int = 512 * 1024 * 1024
+    mask_format_max_archive_files: int = 200_000
+    mask_format_max_compression_ratio: float = 100.0
 
     # v0.12.0 · dataset link 建 task 同步阈值：item 数 ≤ 阈值走同步快路径，
     # > 阈值改入 Celery 异步建 task（避免大 dataset 在 HTTP 单事务里超时 + 长事务锁）。
@@ -245,6 +253,12 @@ class Settings(BaseSettings):
     # Passive circuit: consecutive transport failures before ejection + open duration.
     ml_backend_router_passive_failure_threshold: int = Field(default=3, gt=0, le=100)
     ml_backend_router_eject_seconds: int = Field(default=30, gt=0, le=3600)
+    # Image raster-mask rollout is deliberately split: readers ship first so
+    # existing rows remain consumable. Creation is enabled by default after the
+    # reader/exporter exit matrix passed; the project opt-in remains the normal
+    # rollout boundary and this deployment flag remains an emergency kill switch.
+    raster_mask_read_enabled: bool = True
+    raster_mask_create_enabled: bool = True
     # Every newly confirmed Resident allocation gets a Redis-time protection
     # window before it may participate in victim selection.
     gpu_arbiter_residency_cooldown_seconds: int = Field(default=30, gt=0, le=3600)

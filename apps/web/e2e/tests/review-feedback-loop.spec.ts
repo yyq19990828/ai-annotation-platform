@@ -14,7 +14,7 @@ const API_BASE =
   (typeof globalThis !== "undefined" &&
     (globalThis as { process?: { env?: Record<string, string> } }).process?.env
       ?.PLAYWRIGHT_API_BASE) ||
-  "http://localhost:8000";
+  "http://127.0.0.1:8010";
 
 test.describe("review feedback loop", () => {
   test("reviewer 通过 UI reject 任务 → annotator 看到 review_feedback", async ({
@@ -57,15 +57,13 @@ test.describe("review feedback loop", () => {
     await page.waitForTimeout(500);
 
     // 拿 reviewer token 直查 task 状态
-    const tokenRes = await request.post(
-      `${API_BASE}/api/v1/__test/seed/login`,
-      { data: { email: data.reviewer_email } },
-    );
+    const tokenRes = await request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+      data: { email: data.reviewer_email },
+    });
     const { access_token } = (await tokenRes.json()) as { access_token: string };
-    const taskRes = await request.get(
-      `${API_BASE}/api/v1/tasks/${data.task_ids[0]}`,
-      { headers: { Authorization: `Bearer ${access_token}` } },
-    );
+    const taskRes = await request.get(`${API_BASE}/api/v1/tasks/${data.task_ids[0]}`, {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
     expect(taskRes.ok()).toBeTruthy();
     const task = (await taskRes.json()) as {
       status: string;

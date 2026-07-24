@@ -4,11 +4,11 @@
 
 ## 4.1 多租户:Org > Workspace > Project > Task
 
-| 平台 | 层级 |
-|---|---|
-| LS | **Organization** → Project → Task |
-| CVAT | **Organization** → Project → Task → Job |
-| 你 v0.2.0 | （无 Org）→ Project → Task |
+| 平台      | 层级                                    |
+| --------- | --------------------------------------- |
+| LS        | **Organization** → Project → Task       |
+| CVAT      | **Organization** → Project → Task → Job |
+| 你 v0.2.0 | （无 Org）→ Project → Task              |
 
 **建议**:加一层 `Organization`,即便单租户部署也保留（以后做 SaaS 不用迁移）。
 
@@ -51,11 +51,13 @@ async def get_file_url(id, current_user, db):
 ```
 
 **LS / CVAT 的设计**（更彻底）:
+
 - LS 有 `io_storages` app,定义 `S3ImportStorage` / `GCSImportStorage` / `AzureBlobStorage` 等多种**存储源**
 - CVAT 有 `cloud_provider.py` + `CloudStorage` 模型,用户绑定 AK/SK,平台代为生成 URL
 - 都支持"双向同步":导入时拉数据下来 / 导出时把标注推回去
 
 **给你的建议**（分阶段）:
+
 - v0.3:实现单一 MinIO 的 presigned upload + presigned download
 - v0.5:抽象 `Storage` 表,支持 S3 / OSS / 本地 NFS
 

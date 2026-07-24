@@ -188,6 +188,7 @@ class ModelCapability(BaseModel):
     supported_trackers: list[str] = []
     # v0.21.19 · text-driven tracker (sam3_video) 子集; propagate 需 text/exemplars。
     text_driven_trackers: list[str] = []
+    max_window_frames: int | None = Field(default=None, gt=0)
     supported_variants: list[dict] = []
     # v0.14.12 · 多轴 variants 非笛卡尔积时显式列举合法组合 (前端目录展开用).
     variant_combinations: list[list[str]] = []
@@ -553,7 +554,10 @@ class MLBackendReloadRequest(BaseModel):
 
 
 class InteractiveRequest(BaseModel):
-    """工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。
+    """工作台「AI 助手」单次推理请求。
+
+    兼容请求的 ``context`` 仍是开放 dict；显式请求原生 Mask 时，平台会按目标
+    model 能力预检、重建 prompt revision，并严格校验 backend 候选与字节上限。
 
     `context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：
     - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...],"multimask_output":false}``
@@ -572,3 +576,36 @@ class InteractiveRequest(BaseModel):
         default_factory=dict,
         description="开放 dict；type 字段见 schema docstring 与协议文档 §2.2。",
     )
+
+
+class InteractiveRoutingLineage(BaseModel):
+    requested_backend_id: UUID
+    backend_pool_id: UUID | None = None
+    backend_instance_id: UUID | None = None
+    model_id: str | None = None
+
+
+class InteractiveMaskDiagnostic(BaseModel):
+    reason: str
+    retryable: bool = False
+    message: str | None = None
+    supported_geometric_outputs: list[str] | None = None
+
+
+class InteractiveAnnotateResponse(BaseModel):
+    """Shared image/current-frame interactive response, including native Mask lineage."""
+
+    result: list[dict[str, Any]] = Field(default_factory=list)
+    score: float | None = None
+    model_version: str | None = None
+    inference_time_ms: float | None = None
+    cache_hit: bool | None = None
+    model_load_ms: float | None = None
+    mask_input_next: str | None = None
+    diagnostic: InteractiveMaskDiagnostic | None = None
+    prompt_revision: str | None = None
+    output_geometry: Literal["polygon", "mask"] = "polygon"
+    frame_index: int | None = None
+    routing: InteractiveRoutingLineage
+    prompt_summary: dict[str, Any] | None = None
+    accept_receipts: dict[str, str] = Field(default_factory=dict)

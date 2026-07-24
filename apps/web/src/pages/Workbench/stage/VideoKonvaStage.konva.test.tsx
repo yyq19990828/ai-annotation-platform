@@ -40,9 +40,18 @@ const manifest: TaskVideoManifestResponse = {
 
 describe("VideoKonvaStage · konva mock", () => {
   beforeAll(() => {
-    Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: pauseMock });
-    Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value: playMock });
-    Object.defineProperty(HTMLMediaElement.prototype, "readyState", { configurable: true, get: () => HTMLMediaElement.HAVE_CURRENT_DATA });
+    Object.defineProperty(HTMLMediaElement.prototype, "pause", {
+      configurable: true,
+      value: pauseMock,
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+      configurable: true,
+      value: playMock,
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "readyState", {
+      configurable: true,
+      get: () => HTMLMediaElement.HAVE_CURRENT_DATA,
+    });
   });
   afterAll(() => {
     playMock.mockReset();
@@ -53,7 +62,9 @@ describe("VideoKonvaStage · konva mock", () => {
     render(<VideoKonvaStage manifest={manifest} />);
 
     expect(document.querySelector('[data-testid="video-konva-stage"]')).not.toBeNull();
-    const source = document.querySelector('[data-testid="video-konva-source"]') as HTMLVideoElement | null;
+    const source = document.querySelector(
+      '[data-testid="video-konva-source"]',
+    ) as HTMLVideoElement | null;
     expect(source).not.toBeNull();
     expect(source!.getAttribute("src")).toBe(manifest.video_url);
 
@@ -75,6 +86,8 @@ describe("VideoKonvaStage · konva mock", () => {
     const ref = createRef<VideoStageControls>();
     render(<VideoKonvaStage ref={ref} manifest={manifest} />);
     expect(typeof ref.current?.togglePlayback).toBe("function");
+    expect(typeof ref.current?.seekToFrameReady).toBe("function");
+    expect(typeof ref.current?.focusRegion).toBe("function");
     expect(ref.current?.deleteSelectedTrackKeyframe()).toBe(false); // 轨迹类 no-op
     playMock.mockClear();
     act(() => ref.current?.togglePlayback());

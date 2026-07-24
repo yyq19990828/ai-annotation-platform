@@ -29,7 +29,9 @@ def _pool_with_names(names: dict[int, str], cap: int = 2):
         m.names = names
         return m
 
-    return ModelPool(cap=cap, build_model=_build, free_gpu_memory=lambda: None, build_timeout=5.0)
+    return ModelPool(
+        cap=cap, build_model=_build, free_gpu_memory=lambda: None, build_timeout=5.0
+    )
 
 
 # ── ModelPool.class_names ──────────────────────────────────────────────────

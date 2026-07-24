@@ -23,6 +23,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "bug_comment.created": "反馈评论",
   // B-5 · AI 相关审计
   "ai.preannotate.triggered": "触发 AI 预标注",
+  "video_tracker_job.decision": "审核视频追踪候选",
+  "video_mask.keyframe_correct": "保存视频 Mask 纠错帧",
+  "video_mask.keyframe_operate": "操作视频 Mask 关键帧",
+  "video_correction_job.create": "启动视频 Mask 纠错传播",
+  "video_correction_job.cancel": "取消视频 Mask 纠错传播",
   "ml_backend.created": "注册 ML 后端",
   "ml_backend.updated": "更新 ML 后端",
   "ml_backend.deleted": "删除 ML 后端",
@@ -40,4 +45,14 @@ export const AUDIT_BUSINESS_ACTIONS: string[] = Object.keys(AUDIT_ACTION_LABELS)
   (k) => !k.startsWith("http."),
 );
 
-export const AUDIT_TARGET_TYPES = ["user", "project", "task", "dataset", "annotation", "system", "ml_backend", "bug_report"];
+export const AUDIT_TARGET_TYPES = [
+  "user",
+  "project",
+  "task",
+  "dataset",
+  "annotation",
+  "system",
+  "ml_backend",
+  "bug_report",
+  "video_tracker_job",
+];

@@ -14,8 +14,7 @@ import {
 
 // mention chip(@提及):brand 语义色 + 柔底,亮暗主题统一走 token。
 // 经 raw DOM(insertMentionChip)与 React(renderCommentBody)两条路径共用,故抽成静态串。
-const MENTION_CHIP =
-  "mx-px rounded-[3px] bg-brand/15 px-1.5 py-px font-medium text-brand";
+const MENTION_CHIP = "mx-px rounded-[3px] bg-brand/15 px-1.5 py-px font-medium text-brand";
 
 interface CommentInputProps {
   annotationId: string;
@@ -147,9 +146,26 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   sel.addRange(newRange);
 }
 
-export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, anchor, onPendingDrawingChange, onSubmit }: CommentInputProps) {
+export function CommentInput({
+  annotationId,
+  members,
+  busy,
+  backgroundUrl,
+  imageWidth,
+  imageHeight,
+  enableCanvasDrawing,
+  liveCanvas,
+  anchor,
+  onPendingDrawingChange,
+  onSubmit,
+}: CommentInputProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [picker, setPicker] = useState<PickerState>({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
+  const [picker, setPicker] = useState<PickerState>({
+    open: false,
+    anchor: { left: 0, top: 0 },
+    query: "",
+    triggerRange: null,
+  });
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
   const [canvasDrawing, setCanvasDrawing] = useState<CommentCanvasDrawing | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
@@ -159,7 +175,9 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
   // v0.6.4：消费来自 ImageStage 的 live canvas 结果
   useEffect(() => {
     if (liveCanvas?.result) {
-      setCanvasDrawing(liveCanvas.result.shapes && liveCanvas.result.shapes.length > 0 ? liveCanvas.result : null);
+      setCanvasDrawing(
+        liveCanvas.result.shapes && liveCanvas.result.shapes.length > 0 ? liveCanvas.result : null,
+      );
       liveCanvas.onConsume();
     }
   }, [liveCanvas]);
@@ -217,49 +235,55 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
     });
   }, []);
 
-  const handlePick = useCallback((opt: UserPickerOption) => {
-    if (!picker.triggerRange) return;
-    insertMentionChip(picker.triggerRange, opt);
-    setPicker({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
-    editorRef.current?.focus();
-  }, [picker.triggerRange]);
+  const handlePick = useCallback(
+    (opt: UserPickerOption) => {
+      if (!picker.triggerRange) return;
+      insertMentionChip(picker.triggerRange, opt);
+      setPicker({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
+      editorRef.current?.focus();
+    },
+    [picker.triggerRange],
+  );
 
-  const handleFileUpload = useCallback(async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    const added: CommentAttachment[] = [];
-    try {
-      for (const f of Array.from(files)) {
-        if (f.size > MAX_ATTACH_BYTES) {
-          pushToast({ msg: `${f.name} 超过 20MB，已跳过`, kind: "warning" });
-          continue;
+  const handleFileUpload = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      setUploading(true);
+      const added: CommentAttachment[] = [];
+      try {
+        for (const f of Array.from(files)) {
+          if (f.size > MAX_ATTACH_BYTES) {
+            pushToast({ msg: `${f.name} 超过 20MB，已跳过`, kind: "warning" });
+            continue;
+          }
+          const init = await commentsApi.attachmentUploadInit(annotationId, {
+            file_name: f.name,
+            content_type: f.type || "application/octet-stream",
+          });
+          const putRes = await fetch(init.upload_url, {
+            method: "PUT",
+            body: f,
+            headers: { "Content-Type": f.type || "application/octet-stream" },
+          });
+          if (!putRes.ok) throw new Error(`上传失败 (HTTP ${putRes.status})`);
+          added.push({
+            storageKey: init.storage_key,
+            fileName: f.name,
+            mimeType: f.type || "application/octet-stream",
+            size: f.size,
+          });
         }
-        const init = await commentsApi.attachmentUploadInit(annotationId, {
-          file_name: f.name,
-          content_type: f.type || "application/octet-stream",
-        });
-        const putRes = await fetch(init.upload_url, {
-          method: "PUT",
-          body: f,
-          headers: { "Content-Type": f.type || "application/octet-stream" },
-        });
-        if (!putRes.ok) throw new Error(`上传失败 (HTTP ${putRes.status})`);
-        added.push({
-          storageKey: init.storage_key,
-          fileName: f.name,
-          mimeType: f.type || "application/octet-stream",
-          size: f.size,
-        });
+        if (added.length > 0) {
+          setAttachments((prev) => [...prev, ...added]);
+        }
+      } catch (err) {
+        pushToast({ msg: "附件上传失败", sub: String(err), kind: "error" });
+      } finally {
+        setUploading(false);
       }
-      if (added.length > 0) {
-        setAttachments((prev) => [...prev, ...added]);
-      }
-    } catch (err) {
-      pushToast({ msg: "附件上传失败", sub: String(err), kind: "error" });
-    } finally {
-      setUploading(false);
-    }
-  }, [annotationId, pushToast]);
+    },
+    [annotationId, pushToast],
+  );
 
   const handleSubmit = useCallback(async () => {
     if (!editorRef.current) return;
@@ -356,7 +380,9 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
                 canvasDrawing && "font-semibold text-brand",
                 !backgroundUrl && "cursor-default text-muted-foreground/60",
               )}
-              title={backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"}
+              title={
+                backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"
+              }
             >
               <Icon name="edit" size={12} />
               {canvasDrawing ? `批注 · ${(canvasDrawing.shapes ?? []).length} 条` : "弹窗批注"}
@@ -378,12 +404,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
             </button>
           )}
         </div>
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={submitDisabled}
-          onClick={handleSubmit}
-        >
+        <Button size="sm" variant="primary" disabled={submitDisabled} onClick={handleSubmit}>
           {busy ? "发送中..." : "发送"}
         </Button>
       </div>
@@ -413,7 +434,11 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
 
 /** 把后端返回的 body + mentions[] 还原成 React 节点（用于历史评论渲染）。
  *  渲染规则：mentions 按 offset 排序，依次插入 chip；其它文字作为纯文本。 */
-export function renderCommentBody(body: string, mentions: CommentMention[], onMentionClick?: (userId: string) => void) {
+export function renderCommentBody(
+  body: string,
+  mentions: CommentMention[],
+  onMentionClick?: (userId: string) => void,
+) {
   if (mentions.length === 0) return body;
   const sorted = [...mentions].sort((a, b) => a.offset - b.offset);
   const parts: React.ReactNode[] = [];

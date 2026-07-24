@@ -116,7 +116,12 @@ MODEL_POOL_CAP = int(os.environ.get("YOLO_MODEL_POOL_CAP", "2"))
 BUILD_TIMEOUT = float(os.environ.get("YOLO_BUILD_TIMEOUT", "30"))
 IDLE_UNLOAD_SECONDS = float(os.environ.get("YOLO_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.environ.get("YOLO_IDLE_CHECK_INTERVAL", "60"))
-STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in ("0", "", "false", "False")
+STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in (
+    "0",
+    "",
+    "false",
+    "False",
+)
 CHECKPOINTS_DIR = Path(os.environ.get("YOLO_CHECKPOINTS_DIR", "/app/checkpoints"))
 
 
@@ -140,9 +145,11 @@ def _build_model(task: str, series: str, size: str):
         filename = resolve_openvocab_weight_filename(series, size)
         if openvocab_family(series) == "world":
             from ultralytics import YOLOWorld  # noqa: PLC0415
+
             model_cls = YOLOWorld
         else:
             from ultralytics import YOLOE  # noqa: PLC0415
+
             model_cls = YOLOE
     else:
         filename = resolve_weight_filename(task, series, size)
@@ -236,7 +243,10 @@ async def lifespan(app: FastAPI):
     _idle_task = asyncio.create_task(_idle_watcher())
     logger.info(
         "yolo-backend startup: device=%s pool_cap=%d strict_offline=%s checkpoints=%s",
-        DEVICE, MODEL_POOL_CAP, STRICT_OFFLINE, CHECKPOINTS_DIR,
+        DEVICE,
+        MODEL_POOL_CAP,
+        STRICT_OFFLINE,
+        CHECKPOINTS_DIR,
     )
     try:
         yield
@@ -293,7 +303,9 @@ async def health() -> dict[str, Any]:
         "device_index": device_index,
         "memory_used_mb": used,
         "memory_total_mb": total,
-        "memory_free_mb": (total - used) if (used is not None and total is not None) else None,
+        "memory_free_mb": (total - used)
+        if (used is not None and total is not None)
+        else None,
         "process_memory_mb": process_memory_mb,
         "gpu_utilization_percent": perf.get("gpu_utilization_percent"),
         "gpu_temperature_celsius": perf.get("gpu_temperature_celsius"),
@@ -417,20 +429,29 @@ _BASE_PARAMS_SCHEMA = {
     "type": "object",
     "properties": {
         "conf": {
-            "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.25,
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 0.25,
             "title": "置信度阈值",
             "x-platform-role": PlatformRole.CONFIDENCE.value,
             # task 中性文案: 被 detect/segment/pose/obb/开集六个 model 共用, 不写死"检测/分割".
             "description": "保留置信度高于此值的结果. 调高=更少更准, 调低=更多但含噪.",
         },
         "iou": {
-            "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.70,
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 0.70,
             "title": "NMS IoU 阈值",
             "x-platform-role": PlatformRole.IOU.value,
             "description": "非极大值抑制重叠阈值. 调高保留更多重叠框, 调低更严格去重.",
         },
         "max_det": {
-            "type": "integer", "minimum": 1, "maximum": 1000, "default": 300,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 300,
             "title": "单图最大检出数",
             "x-platform-role": PlatformRole.MAX_DET.value,
         },
@@ -439,8 +460,10 @@ _BASE_PARAMS_SCHEMA = {
 
 
 def _build_params_schema(
-    *, conf_default: float = 0.25,
-    conf_desc: str | None = None, iou_desc: str | None = None,
+    *,
+    conf_default: float = 0.25,
+    conf_desc: str | None = None,
+    iou_desc: str | None = None,
 ) -> dict[str, Any]:
     """从基础参数表派生一份**独立** schema (深拷贝, 避免多处共享同一可变 dict),
     仅按上下文覆盖 conf 默认值/文案与 iou 文案。参数集 (conf/iou/max_det) 保持一致。"""
@@ -460,14 +483,14 @@ _PARAMS_SCHEMA = _build_params_schema()
 # obb: iou 仍走 NMS 但是旋转 (probiou) 版本, 阈值语义不变; 文案补一句说明。conf/max_det 同基础。
 _OBB_PARAMS_SCHEMA = _build_params_schema(
     iou_desc="非极大值抑制重叠阈值 (朝向框走旋转 NMS / probiou, 阈值含义相同). "
-             "调高保留更多重叠框, 调低更严格去重.",
+    "调高保留更多重叠框, 调低更严格去重.",
 )
 
 # 开集文本 (detect-world / detect-yoloe / segment-yoloe): conf 是文本匹配置信度。默认仍取 0.25
 # (与闭集同值)——本版无 GPU 实测证据下调, 不盲改 (见 v0.18.32 计划 §3); 仅文案点明开集语义。
 _OPENVOCAB_PARAMS_SCHEMA = _build_params_schema(
     conf_desc="保留文本匹配置信度高于此值的结果. YOLOE/World 开集打分偏保守, "
-              "调高=更少更准, 调低=更多但含噪.",
+    "调高=更少更准, 调低=更多但含噪.",
 )
 
 # v0.18.24 · exemplar (YOLOE 视觉提示) 专属 params: 用 `score_threshold` 替代 conf 作为置信度
@@ -480,20 +503,28 @@ _EXEMPLAR_PARAMS_SCHEMA = {
     "type": "object",
     "properties": {
         "score_threshold": {
-            "type": "number", "minimum": 0.0, "maximum": 1.0,
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
             "default": _EXEMPLAR_DEFAULT_SCORE_THRESHOLD,
             "title": "置信度阈值",
             "x-platform-role": PlatformRole.CONFIDENCE.value,
             "description": "只保留相似度高于此值的候选。YOLOE 视觉提示对相似目标打分偏保守, 阈值不宜过高; 调低=更多候选但可能含误检。",
         },
         "iou": {
-            "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.70,
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 0.70,
             "title": "NMS IoU 阈值",
             "x-platform-role": PlatformRole.IOU.value,
             "description": "非极大值抑制重叠阈值. 调高保留更多重叠框, 调低更严格去重.",
         },
         "max_det": {
-            "type": "integer", "minimum": 1, "maximum": 1000, "default": 300,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 300,
             "title": "单图最大检出数",
             "x-platform-role": PlatformRole.MAX_DET.value,
         },
@@ -546,7 +577,9 @@ def _default_variants_for(task: str) -> dict[str, str]:
 
 
 def _build_model_entry(
-    model_id: str, display_name: str, task: str,
+    model_id: str,
+    display_name: str,
+    task: str,
     geometric_outputs: list[str],
     *,
     params: dict[str, Any] | None = None,
@@ -583,7 +616,8 @@ def _build_model_entry(
 
 
 def _build_openvocab_variants(
-    series_matrix: dict[str, tuple[str, ...]], default: tuple[str, str],
+    series_matrix: dict[str, tuple[str, ...]],
+    default: tuple[str, str],
 ) -> list[dict[str, Any]]:
     """开集 model 的 series × size 两轴 (series 来自该条目自身的 series 子集)."""
     default_series, default_size = default
@@ -623,8 +657,10 @@ def _openvocab_variant_combinations(
 
 
 def _build_openvocab_model_entry(
-    model_id: str, display_name: str,
-    series_matrix: dict[str, tuple[str, ...]], default: tuple[str, str],
+    model_id: str,
+    display_name: str,
+    series_matrix: dict[str, tuple[str, ...]],
+    default: tuple[str, str],
     *,
     task: str = "detection",
     geometric_outputs: list[str] | None = None,
@@ -770,40 +806,57 @@ def setup() -> dict[str, Any]:
         "params": _PARAMS_SCHEMA,
         "models": [
             _build_model_entry(
-                "detect", "YOLO 目标检测",
-                "detection", ["bbox"],
+                "detect",
+                "YOLO 目标检测",
+                "detection",
+                ["bbox"],
             ),
             _build_model_entry(
-                "segment", "YOLO 实例分割",
-                "segmentation", ["polygon"],
+                "segment",
+                "YOLO 实例分割",
+                "segmentation",
+                ["polygon"],
             ),
             _build_model_entry(
-                "pose", "YOLO 人体关键点",
-                "keypoint", ["keypoint"],
+                "pose",
+                "YOLO 人体关键点",
+                "keypoint",
+                ["keypoint"],
             ),
             _build_model_entry(
-                "obb", "YOLO 朝向框",
-                "obb", ["rotated_bbox"],
+                "obb",
+                "YOLO 朝向框",
+                "obb",
+                ["rotated_bbox"],
                 params=_OBB_PARAMS_SCHEMA,
             ),
             # v0.18.21 · 开集文本检测 (批量文本面板, 与 gsam2 text 同列).
             _build_openvocab_model_entry(
-                "detect-world", "YOLO-World 开集文本检测",
-                OPENVOCAB_WORLD_SERIES, OPENVOCAB_DEFAULT_WORLD,
-                task="detection", geometric_outputs=["bbox"],
+                "detect-world",
+                "YOLO-World 开集文本检测",
+                OPENVOCAB_WORLD_SERIES,
+                OPENVOCAB_DEFAULT_WORLD,
+                task="detection",
+                geometric_outputs=["bbox"],
                 supported_text_outputs=["box"],
             ),
             _build_openvocab_model_entry(
-                "detect-yoloe", "YOLOE 开集文本检测",
-                OPENVOCAB_YOLOE_SERIES, OPENVOCAB_DEFAULT_YOLOE,
-                task="detection", geometric_outputs=["bbox"],
+                "detect-yoloe",
+                "YOLOE 开集文本检测",
+                OPENVOCAB_YOLOE_SERIES,
+                OPENVOCAB_DEFAULT_YOLOE,
+                task="detection",
+                geometric_outputs=["bbox"],
                 supported_text_outputs=["box"],
             ),
             # v0.18.22 · YOLOE 开集文本分割 (同 -seg 权重出 mask, 与 detect-yoloe 共用句柄).
             _build_openvocab_model_entry(
-                "segment-yoloe", "YOLOE 开集文本分割",
-                OPENVOCAB_YOLOE_SERIES, OPENVOCAB_DEFAULT_YOLOE,
-                task="segmentation", geometric_outputs=["polygon"],
+                "segment-yoloe",
+                "YOLOE 开集文本分割",
+                OPENVOCAB_YOLOE_SERIES,
+                OPENVOCAB_DEFAULT_YOLOE,
+                task="segmentation",
+                geometric_outputs=["polygon"],
                 supported_text_outputs=["mask", "both"],
             ),
             # v0.18.23 · YOLOE visual prompt exemplar (交互工具, is_interactive=true).
@@ -936,9 +989,12 @@ def _is_supported_combo(ctx: Context) -> bool:
     return size in MODEL_MATRIX.get(ctx.type, {}).get(series, ())
 
 
-def _unsupported_combo_error(task: str, series: str, size: str) -> VariantNotSupportedError:
+def _unsupported_combo_error(
+    task: str, series: str, size: str
+) -> VariantNotSupportedError:
     if is_openvocab_series(series) or task == "text":
         from model_registry import openvocab_sizes  # noqa: PLC0415
+
         return VariantNotSupportedError("size", size, openvocab_sizes(series))
     task_matrix = MODEL_MATRIX.get(task, {})
     if series not in task_matrix:
@@ -962,14 +1018,18 @@ def _validate_body(model_type, body):
     try:
         return model_type.model_validate(body)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
+        raise HTTPException(
+            status_code=422, detail=exc.errors(include_url=False)
+        ) from exc
 
 
 async def _request_json(request: Request) -> Any:
     try:
         return await request.json()
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="invalid JSON request body") from exc
+        raise HTTPException(
+            status_code=422, detail="invalid JSON request body"
+        ) from exc
 
 
 def _managed_lifecycle_headers(request: Request) -> tuple[str | None, str | None]:
@@ -1124,12 +1184,18 @@ async def _run_warmup(
     try:
         cache_hit, load_ms, evicted = await _model_pool.warmup(pool_task, series, size)
     except FileNotFoundError as exc:
-        raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
+        raise ModelUnavailableError(
+            _pool_key(pool_task, series, size), str(exc)
+        ) from exc
     except ModelBuildTimeout as exc:
         operation.track_future(exc.builder)
-        raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
+        raise ModelUnavailableError(
+            _pool_key(pool_task, series, size), str(exc)
+        ) from exc
     except PoolBusyError as exc:
-        raise ModelUnavailableError(_pool_key(pool_task, series, size), str(exc)) from exc
+        raise ModelUnavailableError(
+            _pool_key(pool_task, series, size), str(exc)
+        ) from exc
     except asyncio.CancelledError:
         operation.track_future(_model_pool.builder_for_now(pool_task, series, size))
         raise

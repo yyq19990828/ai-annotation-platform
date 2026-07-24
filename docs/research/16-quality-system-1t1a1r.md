@@ -16,13 +16,14 @@
 
 **结论三**:质量体系应该拆成三层,不要混成一个 score:
 
-| 层 | 当前是否能做 | 作用 | 依赖 |
-|---|---:|---|---|
-| Review quality | 已有,可深化 | reviewer reject / reopen 派生的相对质量信号 | 现有 task / annotation / feedback |
-| Benchmark / GT | 可先做显式评测 | 标准答案对比,评估绝对正确率 | GT task set + comparator |
-| Consensus / IAA | 暂不落地 | 多人一致性,识别歧义与标注指南问题 | overlap / replica / merge |
+| 层              |   当前是否能做 | 作用                                        | 依赖                              |
+| --------------- | -------------: | ------------------------------------------- | --------------------------------- |
+| Review quality  |    已有,可深化 | reviewer reject / reopen 派生的相对质量信号 | 现有 task / annotation / feedback |
+| Benchmark / GT  | 可先做显式评测 | 标准答案对比,评估绝对正确率                 | GT task set + comparator          |
+| Consensus / IAA |       暂不落地 | 多人一致性,识别歧义与标注指南问题           | overlap / replica / merge         |
 
 **建议路线**:
+
 1. 先把 review-derived quality 的 drilldown 做扎实:冲突类型、per-class、unresolved feedback、任务下钻。
 2. 写 ADR 设计 GT task set + comparator,先做显式 benchmark,不做 hidden honeypot。
 3. 单独设计 overlap / assignment replica / job slice。这个地基出现后,再落 Consensus / IAA 和 hidden honeypot。
@@ -52,13 +53,13 @@ Task
 
 ### 1.2 对 GT / Honeypot / Consensus 的影响
 
-| 能力 | 在 1:1:1 下的问题 |
-|---|---|
-| GT benchmark | 可做,但应显式。标注员知道这是训练/评测题也没关系。 |
-| Hidden honeypot | 不适合直接做。隐藏题要混入生产调度,且结果不应污染真实任务吞吐/审核。 |
-| Consensus / IAA | 缺核心输入。没有多人独立标同一题,就没有 agreement。 |
-| Conflict taxonomy | 可以做。对单个答案 vs GT 或 reviewer feedback 都能分类。 |
-| Confusion matrix | 对 GT 可做;对普通 review 不应硬算成“真实混淆矩阵”。 |
+| 能力              | 在 1:1:1 下的问题                                                    |
+| ----------------- | -------------------------------------------------------------------- |
+| GT benchmark      | 可做,但应显式。标注员知道这是训练/评测题也没关系。                   |
+| Hidden honeypot   | 不适合直接做。隐藏题要混入生产调度,且结果不应污染真实任务吞吐/审核。 |
+| Consensus / IAA   | 缺核心输入。没有多人独立标同一题,就没有 agreement。                  |
+| Conflict taxonomy | 可以做。对单个答案 vs GT 或 reviewer feedback 都能分类。             |
+| Confusion matrix  | 对 GT 可做;对普通 review 不应硬算成“真实混淆矩阵”。                  |
 
 ---
 
@@ -73,11 +74,13 @@ CVAT 的质量体系围绕 GT job / honeypot job / quality report:
 - 报告可以聚合到 job / task / project 级。
 
 可借鉴:
+
 - comparator 和 conflict taxonomy。
 - per-label accuracy / precision / recall / mean IoU。
 - quality threshold 项目级可配置。
 
 不直接照搬:
+
 - CVAT 的 job/segment 层级不能直接替换现有 task/batch。
 - hidden GT 题混入生产流需要先有 job slice / assignment replica,否则会污染当前 1:1:1 语义。
 
@@ -86,11 +89,13 @@ CVAT 的质量体系围绕 GT job / honeypot job / quality report:
 LS 的关键输入是 overlap:同一 task 被多个 annotator 标注,再计算 agreement。其企业版才提供完整 agreement 计算。
 
 可借鉴:
+
 - `overlap` 是调度层概念,不是绩效页上的后算字段。
 - `precomputed_agreement` 适合作为 task 级缓存结果。
 - 不同 control / tool 类型应有不同权重和算法。
 
 不直接照搬:
+
 - XML label config / control tag DSL 不应引入。
 - 当前平台 typed `tool_bindings` 已经是更好的边界。
 
@@ -103,6 +108,7 @@ Labelbox / Kili / Scale / SuperAnnotate 的共同点:
 - Calibration 可把 benchmark 结果用于准入/路由,但这是众包/大团队场景的后续能力。
 
 对本平台的启示:
+
 - 不要把 review reject rate、GT accuracy、consensus score 混成单一质量分。
 - 先做能解释的指标,再做路由或奖惩。
 
@@ -145,6 +151,7 @@ quality_benchmark_results
 ```
 
 关键决策:
+
 - GT answer 应保存 snapshot,不要只引用可变 annotation。
 - Benchmark run 结果不应污染生产 task 的 `status` / `completed_tasks`。
 - 首版只覆盖 image bbox / polygon / rotated_bbox / keypoint 中已稳定的几何;video track / 3D 先不进。
@@ -185,6 +192,7 @@ agreement_result
 ```
 
 关键决策:
+
 - 是复制 task,还是复制 assignment? 推荐先做 assignment/job slice,避免复制 dataset item 与 task 主体。
 - reviewer 看的是 merged result,还是所有 replica? 高质量项目通常需要 reviewer 能看分歧。
 - agreement 是否参与 task 完成判定? 不建议首版参与,先只做报告。
@@ -195,13 +203,13 @@ agreement_result
 
 建议做成 typed geometry comparator,不写一个大函数:
 
-| 几何 | 首版算法 | 输出 |
-|---|---|---|
-| 分类 / tag | exact match | accuracy |
-| bbox / rotated_bbox | IoU + label match | TP / FP / FN / low_overlap |
+| 几何                    | 首版算法                     | 输出                       |
+| ----------------------- | ---------------------------- | -------------------------- |
+| 分类 / tag              | exact match                  | accuracy                   |
+| bbox / rotated_bbox     | IoU + label match            | TP / FP / FN / low_overlap |
 | polygon / multi_polygon | mask IoU 或 polygon area IoU | TP / FP / FN / low_overlap |
-| keypoint | OKS 或距离阈值 | missing / low_quality |
-| attributes | exact / type-aware match | mismatching_attribute |
+| keypoint                | OKS 或距离阈值               | missing / low_quality      |
+| attributes              | exact / type-aware match     | mismatching_attribute      |
 
 冲突类型建议比现有 reject reason 更细:
 

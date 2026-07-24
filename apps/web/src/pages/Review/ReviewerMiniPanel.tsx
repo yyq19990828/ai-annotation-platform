@@ -50,9 +50,7 @@ function Stat({
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-2xs text-muted-foreground">{label}</span>
-      <span className={`mono text-base font-semibold ${accentClass}`}>
-        {value}
-      </span>
+      <span className={`mono text-base font-semibold ${accentClass}`}>{value}</span>
     </div>
   );
 }

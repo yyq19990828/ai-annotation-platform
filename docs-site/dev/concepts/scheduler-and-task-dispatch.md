@@ -100,11 +100,11 @@ flowchart TD
 
 调度顺序由 `Project.sampling` 决定。**`TaskBatch.priority` 始终是主排序键**，sampling 策略只决定同 priority 内的二级顺序——这点对"为什么我创建的紧急批次没立即出现"很关键（见 `scheduler.py:133-145`）：
 
-| sampling | 排序键（从主到次） |
-|---|---|
-| `sequence` | `TaskBatch.priority DESC` → `Task.sequence_order ASC NULLS LAST` → `Task.created_at` |
-| `uniform` | `TaskBatch.priority DESC` → `random()` |
-| `uncertainty` | `TaskBatch.priority DESC` → `Prediction.score ASC NULLS LAST`（低分优先） |
+| sampling      | 排序键（从主到次）                                                                   |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `sequence`    | `TaskBatch.priority DESC` → `Task.sequence_order ASC NULLS LAST` → `Task.created_at` |
+| `uniform`     | `TaskBatch.priority DESC` → `random()`                                               |
+| `uncertainty` | `TaskBatch.priority DESC` → `Prediction.score ASC NULLS LAST`（低分优先）            |
 
 因此，"下一题为什么是这题"很多时候不是 bug，而是 batch priority + 项目级 sampling 配置共同在起作用：调高某批次的 `priority` 可以让它在所有 sampling 策略下都被优先派出。
 
@@ -180,12 +180,12 @@ flowchart TD
 
 ## 常见修改落点
 
-| 你想改什么 | 先看哪里 |
-|---|---|
-| 派题顺序 | `services/scheduler.py` + `db/models/project.py` |
-| 角色可见性 | `scheduler.py` + `api/v1/tasks/_shared.py:_assert_task_visible` |
-| 锁题优先返回 | `scheduler.py` + `services/task_lock.py` |
-| `/tasks/next` 结果结构 | `api/v1/tasks/list.py` + `schemas/task.py` |
+| 你想改什么             | 先看哪里                                                        |
+| ---------------------- | --------------------------------------------------------------- |
+| 派题顺序               | `services/scheduler.py` + `db/models/project.py`                |
+| 角色可见性             | `scheduler.py` + `api/v1/tasks/_shared.py:_assert_task_visible` |
+| 锁题优先返回           | `scheduler.py` + `services/task_lock.py`                        |
+| `/tasks/next` 结果结构 | `api/v1/tasks/list.py` + `schemas/task.py`                      |
 
 ## 相关文档
 

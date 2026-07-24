@@ -1,14 +1,7 @@
 // v0.16.x 第 2 批 · 从 useWorkbenchShellModel 抽出的 issue 图钉子 hook:issue 列表查询、
 // 图钉创建/拖放 UI 状态、与 DiscussionPanel issues tab 的聚焦联动 effect。
 // 行为零变化:state / query / effect 逐字搬运,主 hook 同名解构,消费点不变。
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import type { Viewport } from "./useViewportTransform";
@@ -22,8 +15,7 @@ export function useIssuePins(params: {
   setVideoFrameIndex: (frame: number) => void;
   isVideoTask: boolean;
 }) {
-  const { projectId, taskId, stageGeom, setVp, setVideoFrameIndex, isVideoTask } =
-    params;
+  const { projectId, taskId, stageGeom, setVp, setVideoFrameIndex, isVideoTask } = params;
 
   const [issueCreateOpen, setIssueCreateOpen] = useState(false);
   const [issuePinDropArmed, setIssuePinDropArmed] = useState(false);
@@ -61,7 +53,15 @@ export function useIssuePins(params: {
     const { imgW, imgH, vpSize } = stageGeom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
     setVp((cur) => resolvePinViewport(cur, target.anchor_position!, imgW, imgH, vpSize));
-  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp, isVideoTask, setVideoFrameIndex]);
+  }, [
+    issueFocusTick,
+    activeIssueHighlightId,
+    issuesQuery.data,
+    stageGeom,
+    setVp,
+    isVideoTask,
+    setVideoFrameIndex,
+  ]);
 
   return {
     issueCreateOpen,

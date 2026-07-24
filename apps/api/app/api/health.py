@@ -9,6 +9,9 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db.base import AsyncSessionLocal
+from app.observability.raster_mask import (
+    refresh_raster_mask_active_geometries_safely,
+)
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
 
@@ -33,6 +36,7 @@ async def _check_db() -> dict:
     try:
         async with AsyncSessionLocal() as db:
             await db.execute(text("SELECT 1"))
+            await refresh_raster_mask_active_geometries_safely(db)
         return {
             "status": "ok",
             "latency_ms": round((time.monotonic() - start) * 1000, 1),

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-22
 ---
 
 # 标注模块
@@ -42,18 +42,22 @@ graph TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/db/models/annotation.py` | `Annotation` 主模型 |
-| `apps/api/app/db/models/task_lock.py` | `AnnotationDraft` 模型，当前与 `TaskLock` 同文件 |
-| `apps/api/app/schemas/annotation.py` | annotation 请求 / 响应 schema |
-| `apps/api/app/services/annotation.py` | create / update / delete / accept_prediction / draft |
-| `apps/api/app/api/v1/tasks/annotations.py` · `predictions.py` | annotation 与 prediction 相关 HTTP 入口 |
-| `apps/api/app/services/batch.py` | annotation 写入后 batch 自动迁移 |
-| `apps/web/src/api/tasks.ts` | 前端 annotation API wrapper |
-| `apps/web/src/hooks/useTasks.ts` | React Query mutation 与 optimistic update |
-| `apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts` | 图片工作台 annotation action 主消费方 |
-| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频工作台 annotation action 主消费方 |
+| 位置                                                                                         | 作用                                                 |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `apps/api/app/db/models/annotation.py`                                                       | `Annotation` 主模型                                  |
+| `apps/api/app/db/models/task_lock.py`                                                        | `AnnotationDraft` 模型，当前与 `TaskLock` 同文件     |
+| `apps/api/app/schemas/annotation.py`                                                         | annotation 请求 / 响应 schema                        |
+| `apps/api/app/services/annotation.py`                                                        | create / update / delete / accept_prediction / draft |
+| `apps/api/app/db/models/annotation_operation.py`                                             | 原子多对象操作与 lineage 账本                        |
+| `apps/api/app/services/mask_mutation.py`                                                     | Mask split / copy / join / overlap 事务边界          |
+| `apps/api/app/db/models/annotation_conversion_plan.py` · `services/annotation_conversion.py` | 短期转换计划与原子执行边界                           |
+| `apps/api/app/api/v1/tasks/annotations.py` · `predictions.py`                                | annotation 与 prediction 相关 HTTP 入口              |
+| `apps/api/app/api/v1/tasks/mask_mutations.py`                                                | 任务级 Mask 原子 mutation 入口                       |
+| `apps/api/app/services/batch.py`                                                             | annotation 写入后 batch 自动迁移                     |
+| `apps/web/src/api/tasks.ts`                                                                  | 前端 annotation API wrapper                          |
+| `apps/web/src/hooks/useTasks.ts`                                                             | React Query mutation 与 optimistic update            |
+| `apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts`                     | 图片工作台 annotation action 主消费方                |
+| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts`                     | 视频工作台 annotation action 主消费方                |
 
 ## 数据模型
 
@@ -61,25 +65,25 @@ graph TD
 
 `apps/api/app/db/models/annotation.py` 中当前最关键的字段：
 
-| 字段 | 含义 |
-|---|---|
-| `task_id` | 所属任务 |
-| `project_id` | 所属项目，便于跨 task 聚合 |
-| `user_id` | 标注创建者 |
-| `source` | `manual` / `prediction_based` / `interpolated`（v0.15.x 跨帧区间插值生成框） |
-| `annotation_type` | 几何类型，如 `bbox`、`polygon`、`video_bbox`、`video_track_bbox` |
-| `class_name` | 类目名 |
-| `geometry` | JSONB 几何体 |
-| `confidence` | 置信度，可空 |
-| `parent_prediction_id` | 来自哪条 prediction，可空 |
-| `parent_annotation_id` | 父框 id，可空；表「车牌属于车」这类从属层级（仅一层，见下方父子约束） |
-| `track_id` | 跨帧同一对象的通用标识（`String(64)`，可空，格式 `trk_<uuid.hex>`，几何类型无关）；由单一工厂 `_new_track_id()` 产出，propagate / interpolate / 导出 / 3D 前端统一读本列（见下方跨帧链）<!-- since v0.21.2 · ADR-0045 --> |
-| `lead_time` | 标注耗时 |
-| `attributes` | 扩展属性 |
-| `attributes_meta` | 属性级溯源 sidecar，`{key: {origin, model_ref?}}`（只记 `origin=ai` 的键，见下方属性溯源） |
-| `was_cancelled` | 逻辑取消标记 |
-| `is_active` | 软删除标记 |
-| `version` | 乐观并发控制版本号 |
+| 字段                   | 含义                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_id`              | 所属任务                                                                                                                                                                                                                  |
+| `project_id`           | 所属项目，便于跨 task 聚合                                                                                                                                                                                                |
+| `user_id`              | 标注创建者                                                                                                                                                                                                                |
+| `source`               | `manual` / `prediction_based` / `interpolated`（v0.15.x 跨帧区间插值生成框）                                                                                                                                              |
+| `annotation_type`      | 几何类型，如 `bbox`、`polygon`、`video_bbox`、`video_track_bbox`                                                                                                                                                          |
+| `class_name`           | 类目名                                                                                                                                                                                                                    |
+| `geometry`             | JSONB 几何体                                                                                                                                                                                                              |
+| `confidence`           | 置信度，可空                                                                                                                                                                                                              |
+| `parent_prediction_id` | 来自哪条 prediction，可空                                                                                                                                                                                                 |
+| `parent_annotation_id` | 父框 id，可空；表「车牌属于车」这类从属层级（仅一层，见下方父子约束）                                                                                                                                                     |
+| `track_id`             | 跨帧同一对象的通用标识（`String(64)`，可空，格式 `trk_<uuid.hex>`，几何类型无关）；由单一工厂 `_new_track_id()` 产出，propagate / interpolate / 导出 / 3D 前端统一读本列（见下方跨帧链）<!-- since v0.21.2 · ADR-0045 --> |
+| `lead_time`            | 标注耗时                                                                                                                                                                                                                  |
+| `attributes`           | 扩展属性                                                                                                                                                                                                                  |
+| `attributes_meta`      | 属性级溯源 sidecar，`{key: {origin, model_ref?}}`（只记 `origin=ai` 的键，见下方属性溯源）                                                                                                                                |
+| `was_cancelled`        | 逻辑取消标记                                                                                                                                                                                                              |
+| `is_active`            | 软删除标记                                                                                                                                                                                                                |
+| `version`              | 乐观并发控制版本号                                                                                                                                                                                                        |
 
 设计要点：
 
@@ -100,24 +104,98 @@ graph TD
 
 `geometry` 是 JSONB，但 schema 边界由 `apps/api/app/schemas/_jsonb_types.py` 的 Pydantic discriminated union 约束。当前主分支包括：
 
-| `geometry.type` | 用途 | 持久化语义 |
-|---|---|---|
-| `bbox` | 图片矩形框 | 单个归一化 bbox |
-| `polygon` | 图片多边形 | 单个外环，可带 `holes` |
-| `multi_polygon` | 多连通域 / 空洞预测 | 多个 polygon ring，主要来自 mask adapter |
-| `rotated_bbox` | 旋转框 / OBB | `{cx,cy,w,h,angle}` 归一化，`angle` 顺时针 `[0,360)` |
-| `polyline` | 开放折线 | `points[]`(≥2 顶点)，不闭合、无 `holes`、无自交校验 |
-| `keypoint` | 关键点 (COCO 范式) | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
-| `video_bbox` | 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
-| `video_track_bbox` | 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
-| `video_track_polygon` / `video_track_polyline` | 视频点集轨迹 | compact points keyframes 与 outside |
-| `video_track_mask` | 视频栅格 Mask 轨迹 | compact `coco_rle_ref` keyframes；内容在对象存储 |
+| `geometry.type`                                | 用途                | 持久化语义                                                                              |
+| ---------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------- |
+| `bbox`                                         | 图片矩形框          | 单个归一化 bbox                                                                         |
+| `polygon`                                      | 图片多边形          | 单个外环，可带 `holes`                                                                  |
+| `multi_polygon`                                | 多连通域 / 空洞预测 | 多个 polygon ring，主要来自 mask adapter                                                |
+| `rotated_bbox`                                 | 旋转框 / OBB        | `{cx,cy,w,h,angle}` 归一化，`angle` 顺时针 `[0,360)`                                    |
+| `polyline`                                     | 开放折线            | `points[]`(≥2 顶点)，不闭合、无 `holes`、无自交校验                                     |
+| `keypoint`                                     | 关键点 (COCO 范式)  | `points[]` 各 `{x,y,v}`，`v` 可见性 0/1/2，与类别 `keypoint_schema.nodes` 同 index 对齐 |
+| `raster_mask`                                  | 图片栅格 Mask       | 单个 `coco_rle_ref`；内容在对象存储，创建由独立开关控制                                 |
+| `video_mask`                                   | 视频单帧栅格 Mask   | `frame_index` + 单个 `coco_rle_ref`；没有轨迹身份                                       |
+| `video_bbox`                                   | 视频逐帧框          | 单个 frame 上的 bbox，带 `frame_index`                                                  |
+| `video_track_bbox`                             | 视频对象轨迹        | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]`                                    |
+| `video_track_polygon` / `video_track_polyline` | 视频点集轨迹        | compact points keyframes 与 outside                                                     |
+| `video_track_mask`                             | 视频栅格 Mask 轨迹  | compact `coco_rle_ref` keyframes；内容在对象存储                                        |
 
 `keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在项目设置「类别与属性」里的 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
 
 `video_track_bbox` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达；插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 
-`video_track_mask` 沿用相同的 track 外壳，但关键帧保存内容寻址 RLE 引用。创建 / 更新必须同时通过 Pydantic 强类型与 task 的视频尺寸 / 帧数上下文校验；读取对象还会复核 SHA-256、canonical bytes、runs 和 size。Mask 帧间采用 hold 解析，不写展开帧；对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过 grace period 的内容。
+`raster_mask` 保存单个图片尺寸的内容寻址 RLE 引用；`video_mask` 在同一种引用外增加精确
+`frame_index`；`video_track_mask` 沿用 track 外壳，在关键帧保存引用。创建 / 更新必须同时通过
+Pydantic 强类型与 task 的媒体、尺寸和帧数上下文校验；读取对象还会复核 SHA-256、canonical
+bytes、runs 和 size。单帧视频 Mask 不跨帧显示，Mask 轨迹才采用 hold 解析且不写展开帧；
+对象回收只删除没有任何 active annotation、prediction 或 staged tracker job 引用且超过
+grace period 的内容。
+
+图片工作台通过受任务权限保护的 `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力，不在浏览器复制环境变量。原生写入需同时通过部署总闸、项目 opt-in、`region` 绑定和任务 / 对象锁。`polygon | multi_polygon | raster_mask` 只能在同一 `region` 工具单元内原位转换；类型转换和 Raster 内容替换必须带最新 `If-Match`，同一事务内同步 `annotation_type` 与 `geometry.type`。
+
+浏览器显示缓存按 `navigator.deviceMemory` 分为 64 / 128 / 192 MiB，缺失时使用 128 MiB；下载并发分别为
+1 / 2 / 4。准入同时计算 crop alpha、bitmap 与保留的 RLE counts，在插入前淘汰未 pin LRU，不能让当前帧
+全部 active 对象绕过硬预算。正在编辑和 selected 对象可 pin；其余对象进入可重试 `budget_exceeded`
+状态。同一 SHA-256 的并发内容请求 single-flight。单对象的完整 crop 超预算时保留不超过约一百万像素的
+preview 与 canonical RLE，显示使用 preview，命中按 RLE column-major run 精确查询。
+
+Mask 内容分析与大图操作共享任务级 `RasterMaskWorkerPool`。Low 档位创建 1 个 slot，其余档位创建 2 个；
+等待队列最多 32 项，优先级依次为正在编辑、selected、当前内容、预取。同一 slot 连续处理多个 job，输入
+counts 在主线程边界复制为 `Uint32Array` 后转移所有权，分析 crop alpha、操作结果和实例计划再以
+transferable buffer 返回。分析默认 15 秒、普通操作 30 秒、tile merge 60 秒；运行中取消、超时或 crash
+只终止并补充对应 Worker，其他 slot 继续。pool 按 task 创建，切题或卸载时 dispose，队列、session run
+index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误，不在主线程静默执行大操作。
+
+Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始后只在首次触及某个 tile
+时捕获临时基线，结束时与当前二值像素生成 XOR 并释放基线；高级操作在确认时按变更边界
+生成同种 patch。undo / redo 对当前真值执行同一次 XOR，不再构造 before / after RLE。历史最多
+100 条，并按 Low / Standard / High 档位共享 16 / 32 / 64 MiB 硬预算；新写入会释放 redo，超预算
+时只从最旧 undo 开始淘汰。这是编辑器本地历史，不改变服务端 annotation history 与审计语义。
+
+大画布编辑不创建整图 alpha 或整图 overlay canvas。`SparseMaskTileStore` 以 immutable base RLE 加
+512 像素 materialized override tile 作为真值；base 在 Worker 会话中建 run index，单 tile 按列从
+COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中心和 even-odd 栅格化原语，
+命中优先读 override，未物化区域通过主线程 run index 精确查询 base。viewport 仅 pin 可见 tile
+与一圈预取；全图缩放时不解码全部 tile，而是使用不参与写入和精确命中的受限 overview。
+保存只传 dirty overrides，Worker 按 COCO column-major 顺序合并并直接复用未访问 base 区间。
+
+图片 RLE 结构与任务能力允许最大 8192 像素单边和 67,108,864 总像素；视频与交互式 AI
+仍在媒体感知边界收紧到 4096 和 16,777,216。图片任一边超过 4096 或超过 dense 像素
+预算时选择 sparse backend。大画布只开放局部 brush / erase / lasso；morphology 读取当前视口
+`ROI + halo` 并只写回 core。flood fill、component / hole、split / join / overlap、整图 morphology
+和 conversion 在分配前以 `large_mask_full_scan_required` 拒绝。如果可见 tile 也无法通过硬预算准入，
+编辑器保持只读 overview；已经 dirty 的 tile 与 history 保留到用户保存、重试或显式丢弃。
+
+### 原子多对象 Mask 操作
+
+split / component copy / keyframe copy / join / overlap 不走多次普通 PATCH。客户端在预览时冻结媒体 / 帧范围、成员 ID 和
+`expected_versions`，然后调用 `POST /tasks/{task_id}/annotations/mask-mutations:commit`。服务会稳定锁定范围对象，重算
+fingerprint，复核 task / annotation / segment 锁、类别、帧、内容引用和非空结果，并从对象存储的实际 RLE 校验 copy 子集、split 分区、join 并集与 overlap 差集，再在一个 DB 事务内完成全部
+update / create / soft-delete、任务统计、heartbeat、operation、lineage 和聚合审计。
+
+`annotation_operations` 以 task + actor + idempotency key 去重，保存请求摘要、范围摘要、源 / 结果版本和类型化报告；
+`annotation_lineage_edges` 表示多源到多结果的 split / copied / keyframe-copied / joined / overlap-erased / converted 关系。两张表都不存完整
+geometry 或 RLE counts，source / result annotation ID 为软引用，使账本不会因标注或用户生命周期被意外删除。
+
+### 标注转换计划
+
+polygon、Mask 与紧致 bbox 的图片 / 视频转换使用 `dry-run → execute` 两步协议。dry-run 冻结请求、来源版本 / digest、目标 manifest 和逐项损失报告，只保存十分钟有效的 token 摘要；这一步不写对象存储，也不预留上传配额。
+
+execute 先重验计划与来源快照，重算转换并与冻结报告比对，再按共享锁序预留新 Mask 引用、取得 annotation 行锁并复查快照。内容写入、annotation 变更、`convert_annotations` operation、`converted` lineage、统计、heartbeat 和聚合审计作为一个事务提交。短期计划过期后可清理，已成功请求的幂等回放仍由持久 operation 账本提供。
+
+交互式 AI 的原生 Mask 候选不先写 Prediction，也不由浏览器拆成内容上传和标注创建。平台代理响应为每个候选签发绑定 task、像素、prompt revision 与实际路由的短生命周期 receipt；接受时 `POST /tasks/{task_id}/ai-mask-candidates/accept` 重新检查权限、写闸、锁和源版本，并在同一提交中写 Prediction、PredictionMeta、接受 decision、Annotation 与审计。接受阶段写入的 Prediction 使用 `source=interactive_accept`，只保存模型与路由溯源，不进入工作台或数据管理的 AI 待审集合；关联 Annotation 后续被删除也不会重新暴露为候选。decision 以 task + 客户端幂等键唯一保存完整响应并设有效期；相同请求可安全重放，不同请求复用 key 或过期重放返回冲突。有效 decision 引用的内容受 Raster GC 保活，过期 decision 先清理后才参与对象扫描。
+
+旧预测采纳接口会把 `source=interactive_accept` 的溯源快照视为不可用，避免客户端使用原子采纳响应中的 Prediction ID 再创建重复标注。
+
+### Mask 质检修复批次
+
+Mask 质检修复使用 `dry-run → execute → optional rollback` 协议。dry-run 从当前 issue 与不可变 RLE 计算精确差集或并集，
+冻结 annotation 版本、scope fingerprint、changed pixels、写入 payload 和 task + 100 mutation 分片。数据库只保存 receipt 的 SHA-256；
+execute 必须同时提交原 receipt 和 canonical plan digest，重放同一计划不会二次派发。
+
+确定性分片逐项复用 `MaskMutationService`，因此 task / segment / annotation 锁、当前范围、版本、像素代数、operation、lineage 和 audit
+仍在同一原子事务内校验与写入。`mask_repair_batches` 持久化每片的 operation IDs 与 after versions，允许只重试失败片；
+SAM / Tracker 重跑项只创建候选，不越过候选审阅直接改写 annotation。回滚按原分片逆序执行，先确认全部对象仍处于记录的 after version，
+再恢复 before geometry；任一版本不等时整片失败。收据与回滚保留期内的 before refs 都是 Raster GC live roots。
 
 ### 属性 schema 与派生渲染
 
@@ -143,7 +221,7 @@ graph TD
 
 写入与维护（`AnnotationService`）：
 
-- **采纳预测**（`accept_prediction`）：查 `PredictionMeta`（与 prediction 1:1），从 `extra.pipeline.stages[]` 建「AI 富集属性键 → model_ref」映射。pipeline provenance 是 **stage 级、非 per-key**，per-key 靠前缀反推——富集键 = `f"{label}_{k}" if label else k`（与 `tasks.py` `_run_task_pipeline` 一致）。命中键标 `origin=ai` + model_ref；采纳前经 `attribute_overrides` 人工改过的键不标。`confidence` 在 extra 里不存在，不编造。
+- **采纳预测**（`accept_prediction`）：查 `PredictionMeta`（与 prediction 1:1），从 `extra.pipeline.stages[]` 建「AI 富集属性键 → `model_ref`」映射。pipeline provenance 是 **stage 级、非 per-key**，per-key 靠前缀反推——富集键 = `f"{label}_{k}" if label else k`（与 `tasks.py` 的 `_run_task_pipeline` 一致）。命中键标 `origin=ai` + `model_ref`；采纳前经 `attribute_overrides` 人工改过的键不标。`confidence` 在 extra 里不存在，不编造。
 - **人工改属性**（`update` / `bulk_update`）：经 `_sync_attributes_meta` 同步——某 AI 键**值被改** → 删其 meta（人工认领，回落隐式 human）；**值未改** → 保留；键被**删除** → meta 联动消失。**键同步是正确性红线**（meta 不得残留已不存在的 key）。
 
 前端：`AnnotationResponse.attributes_meta` 透传到 `AttributeForm`，`origin=ai` 的字段旁渲染极轻 `✦ AI` chip（hover 显 model）。
@@ -254,6 +332,28 @@ graph TD
 - 续期 task lock
 - 写 `ANNOTATION_DELETE` 审计
 
+### 5. Mask 实例原子写入
+
+入口与主流程：
+
+- `POST /tasks/{task_id}/annotations/mask-mutations:commit`
+- `MaskMutationService.commit()`
+- 可见性检查先于幂等回放；回放可跳过新事务才需要的版本 / scope 检查，但不能绕过当前 assignment。
+- 响应只返回操作 ID、对象 ID / 版本、删除 ID、lineage、digest 和审计 ID；成功前前端不清除草稿。
+- 图片 join 支持「替换来源」和「创建副本并保留来源」；视频 join 只允许后者，新轨只含当前 manual keyframe。
+- 视频 keyframe copy 通过 `source_frame_index` 锁定来源帧解析值，完整 RLE 等值验证通过后才创建目标帧单关键帧轨迹。
+- 任一校验或写入失败由路由层 rollback，不会留下部分 annotation、lineage 或 audit。
+
+### 6. Mask 质检批量修复
+
+入口与主流程：
+
+- `POST /projects/{project_id}/mask-qc/repairs:dry-run` 创建 15 分钟冻结计划，不修改 annotation。
+- `POST /projects/{project_id}/mask-qc/repairs` 校验 receipt / digest 并创建 `mask_repair` 异步作业。
+- `POST /mask-qc/repairs/{repair_id}/resume` 只重跑未完成分片或候选项。
+- `POST /mask-qc/repairs/{repair_id}/rollback` 绑定当前 result digest 并创建独立回滚作业。
+- Worker 必须在分片 / 候选边界检查协作取消；不得将跳过项计为成功。
+
 ## 跨帧 propagate 与插值（3D 时序）
 
 点云 3D 时序标注支持「跨帧延续 + 区间插值」，把同一物体在 scene 多帧间的 `box_3d` 标注从「逐帧手搬框」升级为「ego 运动补偿延续 + 关键帧插值」。几何核心在 `apps/api/app/services/ego_transform.py`（`box_ego_to_world` / `box_world_to_ego` / `compensate_psr` / `interpolate_psr` 等纯函数，euler 约定与前端 three.js 锁步），业务编排在 `AnnotationService.propagate` / `propagate_batch` / `interpolate_range`，HTTP 入口都在 `api/v1/tasks/annotations.py`。
@@ -270,10 +370,10 @@ graph TD
 
 ### 单条 / 批量 propagate（运动补偿延续）
 
-| 端点 | service | 语义 |
-|---|---|---|
-| `POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` | `propagate()` | 把单条 `box_3d` 延续到目标 task |
-| `POST /tasks/{task_id}/annotations/propagate-batch` | `propagate_batch()` | 整批延续，一个事务，任一失败全部回滚 |
+| 端点                                                                  | service             | 语义                                 |
+| --------------------------------------------------------------------- | ------------------- | ------------------------------------ |
+| `POST /tasks/{task_id}/annotations/{annotation_id}/propagate-to-task` | `propagate()`       | 把单条 `box_3d` 延续到目标 task      |
+| `POST /tasks/{task_id}/annotations/propagate-batch`                   | `propagate_batch()` | 整批延续，一个事务，任一失败全部回滚 |
 
 - `PropagateBatchRequest`：`annotation_ids: list[UUID] | None`（`None` → 源 task 全部 active `box_3d`）+ `to_task_id`。
 - 运动补偿：源 / 目标帧均有 ego pose 时，由「世界位置不变」反算目标帧 PSR（`compensate_psr`），静止物在下一帧自动套住目标；任一帧缺 pose 则退化为原样复制（零回归）。响应带 `motion_compensated: bool` 标记，前端据此轻提示一次。
@@ -401,25 +501,25 @@ annotation 路径几乎都带两个伴随动作：
 
 改 annotation 逻辑时，至少检查这些位置：
 
-| 文件 | 为什么要看 |
-|---|---|
-| `apps/web/src/api/tasks.ts` | annotation API 包装 |
-| `apps/web/src/hooks/useTasks.ts` | create/update/delete mutation |
-| `apps/web/src/hooks/usePredictions.ts` | accept prediction 后的双缓存失效 |
+| 文件                                                                     | 为什么要看                                     |
+| ------------------------------------------------------------------------ | ---------------------------------------------- |
+| `apps/web/src/api/tasks.ts`                                              | annotation API 包装                            |
+| `apps/web/src/hooks/useTasks.ts`                                         | create/update/delete mutation                  |
+| `apps/web/src/hooks/usePredictions.ts`                                   | accept prediction 后的双缓存失效               |
 | `apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts` | 图片 bbox / polygon / SAM / AI 候选 / 批量操作 |
-| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 bbox / track / keyframe / 转换操作 |
-| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx` | reviewer 模式下的 annotation 查看与审核策略 |
-| `apps/web/src/pages/Workbench/state/useCanvasDraftPersistence.ts` | 当前主草稿路径仍在前端本地 |
+| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 bbox / track / keyframe / 转换操作        |
+| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx`                   | reviewer 模式下的 annotation 查看与审核策略    |
+| `apps/web/src/pages/Workbench/state/useCanvasDraftPersistence.ts`        | 当前主草稿路径仍在前端本地                     |
 
 视频工作台还要检查：
 
-| 文件 | 为什么要看 |
-|---|---|
-| `apps/web/src/pages/Workbench/stages/video/VideoWorkbench.tsx` | 视频 Stage concrete implementation |
-| `apps/web/src/pages/Workbench/stage/VideoStage.tsx` | 视频播放、关键帧编辑、轨迹列表和插值显示 |
-| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 annotation payload 与离线兜底 |
-| `apps/web/src/pages/Workbench/state/transforms.ts` | `video_bbox` / `video_track_bbox` 与工作台 shape 的转换 |
-| `apps/api/app/schemas/task.py` | `TaskOut.video_metadata` 和 video manifest response |
+| 文件                                                                     | 为什么要看                                              |
+| ------------------------------------------------------------------------ | ------------------------------------------------------- |
+| `apps/web/src/pages/Workbench/stages/video/VideoWorkbench.tsx`           | 视频 Stage concrete implementation                      |
+| `apps/web/src/pages/Workbench/stage/VideoStage.tsx`                      | 视频播放、关键帧编辑、轨迹列表和插值显示                |
+| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 annotation payload 与离线兜底                      |
+| `apps/web/src/pages/Workbench/state/transforms.ts`                       | `video_bbox` / `video_track_bbox` 与工作台 shape 的转换 |
+| `apps/api/app/schemas/task.py`                                           | `TaskOut.video_metadata` 和 video manifest response     |
 
 ## 常见误解
 

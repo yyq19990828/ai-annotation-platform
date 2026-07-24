@@ -438,7 +438,14 @@ PROMPTS: tuple[PromptSpec, ...] = (
         label="掩膜",
         requires_input=True,
         interactive_route=True,
-        summary="已有 mask 作提示再细化 (预留/迭代)。",
+        summary="已有原生 mask 作提示继续细化。",
+    ),
+    PromptSpec(
+        id="correction_frame",
+        label="纠错帧",
+        requires_input=True,
+        interactive_route=False,
+        summary="以人工纠错关键帧为种子执行有界视频重传播。",
     ),
     PromptSpec(
         id="bbox",
@@ -458,6 +465,12 @@ INPUTS: tuple[InputSpec, ...] = (
         id="bbox_prompt", label="框提示", summary="整图 + 上游 bbox/polygon 框提示。"
     ),
     InputSpec(id="point_prompt", label="点提示", summary="整图 + 点提示。"),
+    InputSpec(
+        id="mask_prompt", label="Mask 提示", summary="整图或视频 + 已有原生 Mask 提示。"
+    ),
+    InputSpec(
+        id="scribble_prompt", label="涂抹提示", summary="整图 + 正负二值涂抹笔迹。"
+    ),
     InputSpec(id="video", label="视频", summary="多帧视频序列输入。"),
 )
 
@@ -473,6 +486,8 @@ INPUT_FULL_IMAGE = "full_image"
 INPUT_CROP = "crop"
 INPUT_BBOX_PROMPT = "bbox_prompt"
 INPUT_POINT_PROMPT = "point_prompt"
+INPUT_MASK_PROMPT = "mask_prompt"
+INPUT_SCRIBBLE_PROMPT = "scribble_prompt"
 INPUT_VIDEO = "video"
 # requires_input 集合 = 旧 _INTERACTIVE_PROMPTS (含 text/bbox); interactive_route 集合 =
 # 旧前端 INTERACTIVE_PROMPTS 的超集 (含预留 scribble/sketch/mask, 不含 text)。

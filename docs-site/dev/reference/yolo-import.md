@@ -32,11 +32,11 @@ YOLO label 文件没有 task id，所以按 label 文件 stem 匹配 task 的图
 
 ## 几何转换
 
-| Variant | YOLO 行 | 内部 geometry |
-|---|---|---|
-| `det` | `cls cx cy w h` | `bbox` |
-| `seg` | `cls x1 y1 x2 y2 ...` | `polygon` |
-| `obb` | `cls x1 y1 ... x4 y4` | `rotated_bbox` 或 `polygon` |
+| Variant | YOLO 行               | 内部 geometry               |
+| ------- | --------------------- | --------------------------- |
+| `det`   | `cls cx cy w h`       | `bbox`                      |
+| `seg`   | `cls x1 y1 x2 y2 ...` | `polygon`                   |
+| `obb`   | `cls x1 y1 ... x4 y4` | `rotated_bbox` 或 `polygon` |
 
 所有坐标必须是归一化 `[0,1]`。`obb` 会先把四角乘以 `DatasetItem.width/height` 进入像素空间，再按导出端同一角点顺序还原 `{cx, cy, w, h, angle}`；四角不满足矩形约束时保留为 polygon，避免错误角度污染训练数据。
 

@@ -13,11 +13,7 @@ import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { type TextOutputMode, type PredictMode } from "@/hooks/usePreannotation";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
 import { hasInput, INPUT_FULL_IMAGE_ID } from "@/api/capabilityInputs";
-import {
-  mlBackendsApi,
-  mlBackendSetupQueryKey,
-  type MLModelCapability,
-} from "@/api/ml-backends";
+import { mlBackendsApi, mlBackendSetupQueryKey, type MLModelCapability } from "@/api/ml-backends";
 import {
   VARIANT_FIELD_KEYS,
   deriveDefaults,
@@ -87,8 +83,8 @@ export function usePreannotateConfig({
   executionUnit,
 }: UsePreannotateConfigArgs) {
   const pushToast = useToastStore((s) => s.push);
-  const canReadAliasFrequency = useAuthStore((s) =>
-    s.user?.role === "project_admin" || s.user?.role === "super_admin",
+  const canReadAliasFrequency = useAuthStore(
+    (s) => s.user?.role === "project_admin" || s.user?.role === "super_admin",
   );
   const qc = useQueryClient();
 
@@ -141,9 +137,7 @@ export function usePreannotateConfig({
 
   const ocrModel = useMemo<MLModelCapability | undefined>(
     () =>
-      (capabilitiesQ.data?.models ?? []).find(
-        (m) => m.task === "ocr" && supportsFullImageInput(m),
-      ),
+      (capabilitiesQ.data?.models ?? []).find((m) => m.task === "ocr" && supportsFullImageInput(m)),
     [capabilitiesQ.data],
   );
   const docLayoutModel = useMemo<MLModelCapability | undefined>(
@@ -211,9 +205,7 @@ export function usePreannotateConfig({
   const geometricModels = useMemo<MLModelCapability[]>(
     () =>
       (capabilitiesQ.data?.models ?? []).filter((m) =>
-        isVideoTracking
-          ? m.task === "tracker"
-          : GEOMETRIC_TASKS.includes(m.task ?? ""),
+        isVideoTracking ? m.task === "tracker" : GEOMETRIC_TASKS.includes(m.task ?? ""),
       ),
     [capabilitiesQ.data, isVideoTracking],
   );
@@ -224,9 +216,7 @@ export function usePreannotateConfig({
   const [geometricTaskId, setGeometricTaskId] = useState<string | null>(null);
   useEffect(() => {
     setGeometricTaskId((prev) =>
-      prev && geometricModels.some((m) => m.id === prev)
-        ? prev
-        : (geometricModels[0]?.id ?? null),
+      prev && geometricModels.some((m) => m.id === prev) ? prev : (geometricModels[0]?.id ?? null),
     );
   }, [backendId, geometricModels]);
   const geometricModel =
@@ -253,7 +243,7 @@ export function usePreannotateConfig({
       if (prev && textModels.some((m) => m.id === prev)) return prev;
       const seg = textModels.find((m) => m.task === "segmentation");
       const det = textModels.find((m) => m.task === "detection");
-      return (preferSeg ? seg ?? det : det ?? seg)?.id ?? textModels[0]?.id ?? null;
+      return (preferSeg ? (seg ?? det) : (det ?? seg))?.id ?? textModels[0]?.id ?? null;
     });
   }, [backendId, textModels, project?.type_key]);
   const textModel = textModels.find((m) => m.id === textTaskId) ?? textModels[0];
@@ -335,7 +325,15 @@ export function usePreannotateConfig({
         topSupportedVariants:
           setupQ.data?.supported_variants ?? capabilitiesQ.data?.supported_variants,
       }),
-    [isDocMode, isGeometricBackend, activeDocModel, geometricModel, textModel, setupQ.data, capabilitiesQ.data],
+    [
+      isDocMode,
+      isGeometricBackend,
+      activeDocModel,
+      geometricModel,
+      textModel,
+      setupQ.data,
+      capabilitiesQ.data,
+    ],
   );
 
   // 输出形态: 文本路径按**选中文本 model** 的 supported_text_outputs 派生 (检测→仅 box 强制隐藏;
@@ -385,8 +383,7 @@ export function usePreannotateConfig({
   // v0.14.13 · 项目级 variant 偏好 merge backend 自报默认 (按当前路径的 variant 来源, 见 variantSource).
   const variantDefaults = useMemo<Record<string, string>>(() => {
     const fromBackend = variantSource.defaults ?? {};
-    const fromProject =
-      (backendId ? project?.default_variants?.[backendId] : undefined) ?? {};
+    const fromProject = (backendId ? project?.default_variants?.[backendId] : undefined) ?? {};
     return { ...fromBackend, ...fromProject };
   }, [variantSource, project?.default_variants, backendId]);
 
@@ -415,9 +412,12 @@ export function usePreannotateConfig({
     );
   }, [variantSource]);
   const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
+    },
+    [],
+  );
 
   const onVariantOrParamsChange = (next: Record<string, unknown>) => {
     setParamsValue(next);
@@ -446,10 +446,11 @@ export function usePreannotateConfig({
   };
 
   // v0.14.16 · 命名预设 (variant + params 快照, 按 backend×task 分桶 localStorage).
-  const { presets, save: savePreset, remove: removePreset } = useAiParamPresets(
-    backendId,
-    taskType,
-  );
+  const {
+    presets,
+    save: savePreset,
+    remove: removePreset,
+  } = useAiParamPresets(backendId, taskType);
   const applyPreset = (values: Record<string, unknown>) => {
     onVariantOrParamsChange({ ...deriveDefaults(paramsSchema), ...variantDefaults, ...values });
   };
@@ -476,8 +477,7 @@ export function usePreannotateConfig({
         queryKey: mlBackendSetupQueryKey(projectId, backendId),
       });
     },
-    onError: (err) =>
-      pushToast({ msg: "预热失败", sub: (err as Error)?.message, kind: "error" }),
+    onError: (err) => pushToast({ msg: "预热失败", sub: (err as Error)?.message, kind: "error" }),
   });
 
   // ── prompt (开放词表文本任务) ──
@@ -567,8 +567,7 @@ export function usePreannotateConfig({
   }, [variantKey]);
 
   /** 配置层的"可运行"判定 (不含批次/任务选择, 由调用方自行 && 上). */
-  const configReady =
-    !!backendId && (isDocMode || isGeometricBackend || !!prompt.trim());
+  const configReady = !!backendId && (isDocMode || isGeometricBackend || !!prompt.trim());
 
   /** 构造单次请求字段袋 (ml_backend_id + 模式相关字段 + predict_mode); 不含 task_ids/batch_id. */
   const buildArgs = (predictMode: PredictMode): PreannotateArgs | null => {
@@ -627,11 +626,7 @@ export function usePreannotateConfig({
   // v0.19.3 WS2 · 当前激活的「源模型」(批量预标流水线的根, 与 buildArgs 选 model 一致)。
   //   自报 resource_profile.batchable=false (交互/有状态) → 不能批量预标, 给非阻断预警
   //   (与端点 _assert_capabilities 源阶段 422 对齐; config-time 前移, 不硬挡)。
-  const sourceModel = isGeometricBackend
-    ? geometricModel
-    : isDocMode
-      ? activeDocModel
-      : textModel;
+  const sourceModel = isGeometricBackend ? geometricModel : isDocMode ? activeDocModel : textModel;
   const sourceBatchableWarning =
     sourceModel?.resource_profile?.batchable === false
       ? "该模型为交互/有状态模型（batchable=false），不能用于批量预标流水线"

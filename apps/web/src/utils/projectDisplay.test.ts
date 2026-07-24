@@ -25,12 +25,14 @@ function project(overrides: Partial<ProjectResponse>): ProjectResponse {
 describe("projectDisplayType", () => {
   it("uses media instead of legacy type_label or tool bindings", () => {
     expect(
-      projectDisplayType(project({
-        tool_bindings: {
-          bbox: { enabled: true },
-          region: { enabled: true },
-        },
-      })),
+      projectDisplayType(
+        project({
+          tool_bindings: {
+            bbox: { enabled: true },
+            region: { enabled: true },
+          },
+        }),
+      ),
     ).toBe("图片");
   });
 
@@ -40,14 +42,16 @@ describe("projectDisplayType", () => {
 
   it("does not include video bbox subtools", () => {
     expect(
-      projectDisplayType(project({
-        data_type: "video",
-        type_key: "video-track",
-        type_label: "视频 · 时序追踪",
-        tool_bindings: {
-          bbox: { enabled: true, video_modes: { box: false, track: true } },
-        },
-      })),
+      projectDisplayType(
+        project({
+          data_type: "video",
+          type_key: "video-track",
+          type_label: "视频 · 时序追踪",
+          tool_bindings: {
+            bbox: { enabled: true, video_modes: { box: false, track: true } },
+          },
+        }),
+      ),
     ).toBe("视频");
   });
 });

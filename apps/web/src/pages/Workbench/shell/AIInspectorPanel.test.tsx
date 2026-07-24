@@ -184,6 +184,18 @@ describe("AIInspectorPanel", () => {
     expect(screen.getByText("标注详情")).toBeInTheDocument();
   });
 
+  it("AI 待审与人工标题在空列表时仍常驻并显示 0", () => {
+    renderUI({
+      onToggleAiSection: vi.fn(),
+      onToggleManualSection: vi.fn(),
+    });
+
+    expect(screen.getByTestId("section-header-ai")).toHaveTextContent("AI 待审");
+    expect(screen.getByTestId("section-header-ai")).toHaveTextContent("0");
+    expect(screen.getByTestId("section-header-manual")).toHaveTextContent("人工");
+    expect(screen.getByTestId("section-header-manual")).toHaveTextContent("0");
+  });
+
   it("点击分离按钮 → 调用 onDetach", () => {
     const onDetach = vi.fn();
     renderUI({ onDetach });
@@ -330,7 +342,14 @@ describe("AIInspectorPanel", () => {
     const polygonBox: AiBox = {
       ...makeAiBox("ai-poly", "cat"),
       annotation_type: "polygon",
-      geometry: { type: "polygon", points: [[0, 0], [0.1, 0], [0.1, 0.1]] },
+      geometry: {
+        type: "polygon",
+        points: [
+          [0, 0],
+          [0.1, 0],
+          [0.1, 0.1],
+        ],
+      },
     };
     renderUI({ aiBoxes: [polygonBox], onRefinePrediction });
     fireEvent.click(screen.getByTestId("refine-ai-poly"));
@@ -347,9 +366,9 @@ describe("AIInspectorPanel", () => {
     expect(childItem).toBeInTheDocument();
     // 子框被缩进包裹 (border-l 连接线), 父框不被包裹
     expect(childItem.parentElement?.className).toContain("border-l-2");
-    expect(
-      screen.getByTestId("box-item-u-parent").parentElement?.className ?? "",
-    ).not.toContain("border-l-2");
+    expect(screen.getByTestId("box-item-u-parent").parentElement?.className ?? "").not.toContain(
+      "border-l-2",
+    );
   });
 
   it("多选时显示 multiSelectionBar", () => {

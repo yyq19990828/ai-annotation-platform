@@ -8,10 +8,7 @@
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
-import {
-  dockAiPanelAtViewportRight,
-  waitForRecordingWorkbenchLayout,
-} from "./_workbench-layout";
+import { dockAiPanelAtViewportRight, waitForRecordingWorkbenchLayout } from "./_workbench-layout";
 
 export interface OcrCleanupRecord {
   projectId: string;
@@ -31,9 +28,7 @@ export async function runOcrInference(
   const models = backend?.capabilities.models ?? [];
   const hasE2e = models.some((model) => model.id === "ocr-e2e");
   if (!backend?.name.toLowerCase().includes("rapidocr") || !hasE2e) {
-    throw new Error(
-      "[ocr-inference] P-OCR 未绑定含 ocr-e2e 的真实 RapidOCR backend",
-    );
+    throw new Error("[ocr-inference] P-OCR 未绑定含 ocr-e2e 的真实 RapidOCR backend");
   }
 
   const task = project.tasks.ocr;
@@ -51,16 +46,23 @@ export async function runOcrInference(
   const modelSelect = modelField.locator("select");
   if (await modelSelect.count()) {
     await modelSelect.selectOption("ocr-e2e");
-  } else if (!(await panel.getByText("当前模型").locator("..").textContent())?.includes("端到端 OCR")) {
+  } else if (
+    !(await panel.getByText("当前模型").locator("..").textContent())?.includes("端到端 OCR")
+  ) {
     throw new Error("[ocr-inference] 当前题 AI 未提供 ocr-e2e 模型");
   }
   await page.waitForTimeout(700);
 
-  const responsePromise = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.request().method() === "POST"
-      && url.pathname === `/api/v1/projects/${project.id}/preannotate`;
-  }, { timeout: 15_000 });
+  const responsePromise = page.waitForResponse(
+    (response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === "POST" &&
+        url.pathname === `/api/v1/projects/${project.id}/preannotate`
+      );
+    },
+    { timeout: 15_000 },
+  );
 
   const drawStartMs = Date.now();
   await panel.getByRole("button", { name: "运行当前题", exact: true }).click();
@@ -68,7 +70,7 @@ export async function runOcrInference(
   if (!response.ok()) {
     throw new Error(`[ocr-inference] 推理派发失败: HTTP ${response.status()}`);
   }
-  const body = await response.json() as { job_id?: string };
+  const body = (await response.json()) as { job_id?: string };
   if (!body.job_id) {
     throw new Error("[ocr-inference] 推理响应缺少 job_id，无法无痕清理");
   }
@@ -81,13 +83,17 @@ export async function runOcrInference(
 
   // 真正完成以 WS 触发的 predictions 重拉和非零待审数为准，
   // POST 200 只代表 Celery 已派发。RapidOCR 首次冷加载给足 120s。
-  await page.waitForFunction(() => {
-    const popover = document.querySelector('[data-testid="ai-prediction-popover"]');
-    if (!popover || !/[1-9]\d*\s*待审/.test(popover.textContent ?? "")) return false;
-    return Array.from(popover.querySelectorAll("button")).some(
-      (button) => button.textContent?.trim() === "运行当前题" && !button.disabled,
-    );
-  }, undefined, { timeout: 120_000 });
+  await page.waitForFunction(
+    () => {
+      const popover = document.querySelector('[data-testid="ai-prediction-popover"]');
+      if (!popover || !/[1-9]\d*\s*待审/.test(popover.textContent ?? "")) return false;
+      return Array.from(popover.querySelectorAll("button")).some(
+        (button) => button.textContent?.trim() === "运行当前题" && !button.disabled,
+      );
+    },
+    undefined,
+    { timeout: 120_000 },
+  );
   await page.waitForTimeout(1800);
 
   return {

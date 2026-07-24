@@ -12,11 +12,14 @@
  *
  * Eviction：
  * - LRU 32 项；最久未访问的先淘汰。
+ * - 原生 RLE 候选同时受 32 MiB 估算字节预算和 2 分钟 TTL 约束。
  * - `clearAll()` 在 mlBackendId / capability 变更时调用。
  */
 import type { PendingCandidate } from "./useInteractiveAI";
 
 const DEFAULT_CAP = 32;
+const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
+export const SAM_CACHE_TTL_MS = 2 * 60 * 1000;
 const COORD_PRECISION = 4;
 
 function roundCoord(n: number): number {
@@ -70,21 +73,79 @@ export function makeSamCacheKey({
 
 export interface SamCacheEntry {
   candidates: PendingCandidate[];
-  timestamp: number;
+  expiresAt: number;
+  byteSize: number;
 }
 
 export interface SamCache {
-  get: (key: string) => PendingCandidate[] | undefined;
-  set: (key: string, candidates: PendingCandidate[]) => void;
+  get: (key: string) => SamCacheLookup | undefined;
+  set: (key: string, candidates: PendingCandidate[]) => SamCacheLookup | undefined;
+  delete: (key: string) => void;
   clearAll: () => void;
   readonly size: number;
+  readonly byteSize: number;
   readonly stats: { hits: number; misses: number };
 }
 
-export function createSamCache(cap: number = DEFAULT_CAP): SamCache {
+export interface SamCacheLookup {
+  candidates: PendingCandidate[];
+  expiresAt: number;
+}
+
+export interface SamCacheOptions {
+  maxEntries?: number;
+  maxBytes?: number;
+  ttlMs?: number;
+  now?: () => number;
+}
+
+export function estimatePendingCandidateBytes(candidate: PendingCandidate): number {
+  const common = candidate.id.length * 2 + candidate.label.length * 2 + 128;
+  if (candidate.type === "mask") {
+    return (
+      common +
+      candidate.rle.counts.length * 8 +
+      candidate.receipt.length * 2 +
+      candidate.promptRevision.length * 2 +
+      512
+    );
+  }
+  if (candidate.type === "polygonlabels") {
+    return common + candidate.points.length * 16;
+  }
+  return common + 32;
+}
+
+function normalizePositive(value: number | undefined, fallback: number): number {
+  if (value == null || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
+export function createSamCache(options: number | SamCacheOptions = {}): SamCache {
+  const normalized = typeof options === "number" ? { maxEntries: options } : options;
+  const maxEntries = normalizePositive(normalized.maxEntries, DEFAULT_CAP);
+  const maxBytes = normalizePositive(normalized.maxBytes, DEFAULT_MAX_BYTES);
+  const ttlMs = normalizePositive(normalized.ttlMs, SAM_CACHE_TTL_MS);
+  const now = normalized.now ?? Date.now;
   const map = new Map<string, SamCacheEntry>();
   let hits = 0;
   let misses = 0;
+  let byteSize = 0;
+
+  const remove = (key: string) => {
+    const entry = map.get(key);
+    if (!entry) return;
+    map.delete(key);
+    byteSize -= entry.byteSize;
+  };
+
+  const evict = () => {
+    while (map.size > maxEntries || byteSize > maxBytes) {
+      const oldestKey = map.keys().next().value;
+      if (oldestKey === undefined) break;
+      remove(oldestKey);
+    }
+  };
 
   return {
     get(key) {
@@ -93,27 +154,46 @@ export function createSamCache(cap: number = DEFAULT_CAP): SamCache {
         misses += 1;
         return undefined;
       }
+      if (entry.expiresAt <= now()) {
+        remove(key);
+        misses += 1;
+        return undefined;
+      }
       // LRU 触摸：删后重插，迭代顺序末尾 = 最新。
       map.delete(key);
-      map.set(key, { ...entry, timestamp: Date.now() });
+      map.set(key, entry);
       hits += 1;
-      return entry.candidates;
+      return { candidates: entry.candidates, expiresAt: entry.expiresAt };
     },
     set(key, candidates) {
-      if (map.has(key)) {
-        map.delete(key);
-      } else if (map.size >= cap) {
-        // 淘汰最早项
-        const oldestKey = map.keys().next().value;
-        if (oldestKey !== undefined) map.delete(oldestKey);
-      }
-      map.set(key, { candidates, timestamp: Date.now() });
+      remove(key);
+      const entryBytes = candidates.reduce(
+        (total, candidate) => total + estimatePendingCandidateBytes(candidate),
+        0,
+      );
+      if (entryBytes > maxBytes) return undefined;
+      map.set(key, {
+        candidates,
+        expiresAt: now() + ttlMs,
+        byteSize: entryBytes,
+      });
+      byteSize += entryBytes;
+      evict();
+      const entry = map.get(key);
+      return entry ? { candidates: entry.candidates, expiresAt: entry.expiresAt } : undefined;
+    },
+    delete(key) {
+      remove(key);
     },
     clearAll() {
       map.clear();
+      byteSize = 0;
     },
     get size() {
       return map.size;
+    },
+    get byteSize() {
+      return byteSize;
     },
     get stats() {
       return { hits, misses };

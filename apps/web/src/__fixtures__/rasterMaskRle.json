@@ -71,8 +71,8 @@
     },
     {
       "name": "dimension_overflow",
-      "size": [4097, 4097],
-      "counts": [16785409]
+      "size": [8193, 8193],
+      "counts": [67125249]
     }
   ]
 }

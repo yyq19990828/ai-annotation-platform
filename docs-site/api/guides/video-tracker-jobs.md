@@ -2,12 +2,12 @@
 audience: [dev]
 type: how-to
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-22
 ---
 
 # Video Tracker Jobs
 
-Video Tracker Job API 用于视频工作台里的异步 AI 追踪。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，调用 accept 后才写入 annotation。
+Video Tracker Job API 用于视频工作台里的异步 AI 追踪。它与批量预标 `Prediction` API 分开：推理结果先暂存为 job candidate，客户端可整批或按目标与帧窗口决定，接受后才写入 annotation。
 
 ## 创建追踪任务
 
@@ -21,11 +21,11 @@ Content-Type: application/json
 
 通过源字段选择模式：
 
-| 模式 | 请求字段 | 类别与落库语义 |
-|---|---|---|
-| 单源延展 | 只传 `source_annotation_id` | 继承源轨迹的类别与工具单位；主实例接受后回填该源轨迹 |
-| 多源批量延展 | 只传非空 `source_annotation_ids` | 每个源自动成为独立种子，并在接受后各自回填对应源轨迹 |
-| 无源发现 | 两个源字段都不传 | 必须传 `target_class_name` 与 `target_tool_unit_id`；接受后全部新建轨迹 |
+| 模式         | 请求字段                         | 类别与落库语义                                                          |
+| ------------ | -------------------------------- | ----------------------------------------------------------------------- |
+| 单源延展     | 只传 `source_annotation_id`      | 继承源轨迹的类别与工具单位；主实例接受后回填该源轨迹                    |
+| 多源批量延展 | 只传非空 `source_annotation_ids` | 每个源自动成为独立种子，并在接受后各自回填对应源轨迹                    |
+| 无源发现     | 两个源字段都不传                 | 必须传 `target_class_name` 与 `target_tool_unit_id`；接受后全部新建轨迹 |
 
 客户端不要同时传单数和复数源字段；当前服务会在复数列表非空时进入多源分支。单源最小请求：
 
@@ -76,14 +76,18 @@ POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
         "obj_id": 1,
         "prompts": [
           { "frame_index": 0, "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 } },
-          { "frame_index": 24, "points": [[0.5, 0.5, 1], [0.7, 0.5, 0]] }
+          {
+            "frame_index": 24,
+            "points": [
+              [0.5, 0.5, 1],
+              [0.7, 0.5, 0]
+            ]
+          }
         ]
       },
       {
         "obj_id": 2,
-        "prompts": [
-          { "frame_index": 0, "points": [[0.8, 0.4, 1]] }
-        ]
+        "prompts": [{ "frame_index": 0, "points": [[0.8, 0.4, 1]] }]
       }
     ]
   }
@@ -104,7 +108,7 @@ POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
   "target_class_name": "car",
   "target_tool_unit_id": "bbox",
   "exemplars": [
-    { "bbox": [0.10, 0.20, 0.32, 0.58], "label": true },
+    { "bbox": [0.1, 0.2, 0.32, 0.58], "label": true },
     { "bbox": [0.62, 0.18, 0.81, 0.55], "label": false }
   ]
 }
@@ -119,6 +123,83 @@ POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate
 ```text
 WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<jwt>
 ```
+
+## 保存 Mask 纠错帧并定向重传播
+
+视频 Mask 纠错分为两个显式步骤。先用 annotation 当前版本保存人工关键帧：
+
+```http
+PUT /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+If-Match: W/"<annotation-version>"
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+请求正文只接受已通过 task 级上传接口验证的 `coco_rle_ref`：
+
+```json
+{
+  "mask": {
+    "encoding": "coco_rle_ref",
+    "size": [1080, 1920],
+    "object_key": "raster-masks/sha256/ab/cd/<sha256>.json",
+    "sha256": "<sha256>",
+    "runs": 4096,
+    "bytes": 16384
+  },
+  "source": "manual",
+  "occluded": false
+}
+```
+
+普通交互可省略 `source`，默认写成 `manual`；撤销 / 重做回放原关键帧时可传回原始 `manual | prediction` 值。服务端按 task → task edit lock → segment → RLE / upload → annotation 的顺序锁定，复核 assignment、segment lease、版本、媒体尺寸和内容引用，从 `outside` 中移除该帧，并返回新的 `ETag`。保存成功后，即使后续传播创建或入队失败，人工关键帧也保留。
+
+关键帧删除和 `outside` 状态使用同路径的 `PATCH`，同样必须携带 annotation 当前版本：
+
+```http
+PATCH /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}
+If-Match: W/"<annotation-version>"
+```
+
+```json
+{ "operation": "delete_keyframe" }
+```
+
+`operation` 可为 `delete_keyframe | mark_outside | restore_held`。删除要求当前帧存在精确关键帧且轨迹仍有其它关键帧；`mark_outside` 只增加 manual 区间，`restore_held` 只移除覆盖当前帧的 manual 区间，不修改 prediction 区间。响应返回新 `ETag`、`X-Resolved-Keyframe-Frame` 与 `X-Restored-Held`；稳定冲突原因包括 `source_version_conflict`、`task_lock_conflict`、`annotation_locked`、`keyframe_missing`、`manual_outside_missing` 和 `frame_already_outside`。
+
+再用返回的新 annotation version、RLE 摘要以及精确 backend/model 创建纠错 job：
+
+```http
+POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs
+```
+
+```json
+{
+  "correction_frame": 50,
+  "from_frame": 40,
+  "to_frame": 50,
+  "direction": "backward",
+  "segment_id": "<segment-uuid>",
+  "source_annotation_version": 8,
+  "corrected_mask_digest": "<sha256>",
+  "backend_id": "<backend-uuid>",
+  "model_id": "sam3-pvs",
+  "model_key": "sam3_video_interactive",
+  "allow_bbox_fallback": false
+}
+```
+
+创建时冻结 backend registry、service pool、model、方向窗口、源版本、segment lease 和 corrected digest。同一 task + track 同时只允许一个 `queued / running / pending_review / partially_reviewed` correction job。平台与 backend 的窗口上限取较小值；双向传播按纠错帧拆成两个独立单窗，纠错帧本身不会成为预测候选。
+
+模型声明 `correction_frame + mask_prompt` 时使用原生 RLE seed。只支持 bbox 的模型必须由用户显式设置 `allow_bbox_fallback=true`；job lineage 会记录 `fallback_reason="mask_prompt_unsupported"`，文本模型还必须提供 `text`。纠错 job 只能通过 `POST .../{job_id}/decisions` 做局部接受或拒绝；对它调用整批 `accept / discard` 固定返回 `correction_requires_local_decision`。
+
+稳定冲突 / 校验原因包括：
+
+- `source_version_conflict`、`corrected_mask_digest_mismatch`；
+- `correction_job_active`、`segment_lease_changed`；
+- `mask_prompt_unsupported`、`correction_prompt_unsupported`、`text_required_for_bbox_fallback`；
+- `tracker_window_capability_missing`、`correction_window_exceeds_native_limit`；
+- `correction_requires_local_decision`。
 
 ## 查询 job 与候选
 
@@ -136,6 +217,12 @@ GET /api/v1/video-tracker-jobs/{job_id}/preview
   "annotation_id": "...",
   "grid_step": 1,
   "output_geometry": "bbox",
+  "job_revision": 1,
+  "expected_source_versions": { "11111111-1111-4111-8111-111111111111": 3 },
+  "candidate_total": 1,
+  "candidate_pending": 1,
+  "candidate_accepted": 0,
+  "candidate_rejected": 0,
   "results": [
     {
       "frame_index": 1,
@@ -143,7 +230,12 @@ GET /api/v1/video-tracker-jobs/{job_id}/preview
       "confidence": 0.91,
       "outside": false,
       "instance_id": "1",
-      "primary": true
+      "primary": true,
+      "candidate_key": "1:1:...",
+      "geometry_digest": "...",
+      "source_annotation_id": "11111111-1111-4111-8111-111111111111",
+      "target_annotation_id": "11111111-1111-4111-8111-111111111111",
+      "manual_protected": false
     }
   ]
 }
@@ -162,14 +254,34 @@ GET /api/v1/video-tracker-jobs/{job_id}/mask-content/{sha256}
 ```http
 POST /api/v1/video-tracker-jobs/{job_id}/accept
 POST /api/v1/video-tracker-jobs/{job_id}/discard
+POST /api/v1/video-tracker-jobs/{job_id}/decisions
 DELETE /api/v1/video-tracker-jobs/{job_id}
 ```
 
 这些写操作要求当前用户是 job 创建者，或对项目拥有特权角色：
 
-- `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。单源模式把主实例回填源轨迹，额外实例新建；多源模式按 `instance_id` 把各实例回填各自源轨迹，未映射实例新建，某个源在运行期间被删除时仅该实例降级为新建；无源模式全部新建。已接受时幂等返回，响应的 `touched_annotation_ids` 列出本次回填和新建的轨迹。
+- `accept`：只对带结果的 `pending_review` / `cancelled` job 应用候选。服务端在同一事务内重新锁定 task、segment 和按 UUID 排序的全部源 annotation，复核 task 状态、assignment、segment lease、源版本与 annotation lock；任一源被软删或变化都 fail closed 返回 409。单源模式把主实例回填源轨迹，额外实例新建；多源模式按 `instance_id` 把各实例回填各自源轨迹；无源模式全部新建。接受后立即清空 staged result（引用已由 annotation 保活），响应的 `touched_annotation_ids` 列出本次回填和新建的轨迹。
 - `discard`：只允许带暂存结果的 `pending_review` / `cancelled` job，清空 staged result，annotation 保持不变；已丢弃时幂等返回，其它状态返回 `409`。
+- `decisions`：显式选择 `instance_ids` 与闭区间 `from_frame / to_frame`，决定 `accept` 或 `reject`。请求还要回传 preview 的 `job_revision` 与 `expected_source_versions`；接受人工关键帧需在收到 `manual_keyframe_protected` 后由用户确认，再用 `override_manual=true` 重试。服务端只处理选区，未选目标、窗口外结果和未决 Mask 引用保持不变；相同决定可安全重试，响应以 `review_replayed=true` 标识回放。
 - `DELETE`：请求停止 queued / running job。已计算的部分结果可能保留为 candidate，之后仍可接受或丢弃。
+
+一般 tracking job 已计算的部分结果可在取消后继续审阅；correction job 取消时会立即丢弃 staged candidate、释放同轨活跃租约，但已保存的人工纠错关键帧不回滚。无人处理的 staged candidate 保留 24 小时，之后清理任务会清空引用：待审 / 部分审阅 job 转为 `discarded`，已取消 job 保持 `cancelled`。
+
+局部决定请求示例：
+
+```json
+{
+  "instance_ids": ["1"],
+  "from_frame": 10,
+  "to_frame": 20,
+  "decision": "accept",
+  "job_revision": 1,
+  "expected_source_versions": {
+    "11111111-1111-4111-8111-111111111111": 3
+  },
+  "override_manual": false
+}
+```
 
 不要把 `DELETE` 当成“回滚已接受结果”；接受后需要通过 annotation API 做后续修改。
 
@@ -180,22 +292,23 @@ GET /api/v1/tasks/{task_id}/video/tracker-jobs/reviewable
 GET /api/v1/tasks/{task_id}/video/tracker-jobs/active
 ```
 
-`reviewable` 返回当前任务中仍可审阅的 `pending_review`，以及带有 staged result 的 `cancelled` job，按创建时间倒序排列。客户端拿到 job 后继续调用 preview 端点加载逐帧候选；不要从 annotation 推导未接受结果。
+`reviewable` 返回当前任务中仍可审阅的 `pending_review`、`partially_reviewed`，以及带有 staged result 的 `cancelled` job，按创建时间倒序排列。客户端拿到 job 后继续调用 preview 端点加载逐帧候选；不要从 annotation 推导未接受结果。
 
 `active` 返回当前任务下仍在运行的 `queued` / `running` job，供刷新后重连 WebSocket——这样运行中的追踪任务不会因整页刷新从界面消失，完成时仍能进入候选审阅。二者共享同一套 task 可见性与归属规则：先执行 task 可见性校验，普通用户只恢复自己创建的 job，项目 owner / 超级管理员可恢复该任务下全部 job。
 
 ## 状态语义
 
-| status | 含义 |
-|---|---|
-| `queued` | 已入队，worker 尚未开始 |
-| `running` | 正在分窗推理 |
-| `pending_review` | 推理完成，候选已暂存，annotation 未改 |
-| `cancelled` | 已取消；可能仍有部分 staged result |
-| `accepted` | 候选已写入 annotation |
-| `discarded` | 候选已丢弃 |
-| `failed` | 推理失败，无可接受结果 |
-| `completed` | 历史兼容状态；当前 runner 正常完成使用 `pending_review` |
+| status               | 含义                                                    |
+| -------------------- | ------------------------------------------------------- |
+| `queued`             | 已入队，worker 尚未开始                                 |
+| `running`            | 正在分窗推理                                            |
+| `pending_review`     | 推理完成，候选已暂存，annotation 未改                   |
+| `partially_reviewed` | 已决定部分候选，仍有 staged result 待审                 |
+| `cancelled`          | 已取消；可能仍有部分 staged result                      |
+| `accepted`           | 候选已写入 annotation                                   |
+| `discarded`          | 候选已丢弃                                              |
+| `failed`             | 推理失败，无可接受结果                                  |
+| `completed`          | 历史兼容状态；当前 runner 正常完成使用 `pending_review` |
 
 ## 管理员列表
 

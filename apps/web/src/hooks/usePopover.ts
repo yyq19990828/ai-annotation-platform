@@ -36,10 +36,13 @@ export function usePopover(opts: UsePopoverOptions = {}): UsePopoverResult {
   const anchorRef = useRef<HTMLElement | null>(null);
   const popoverRef = useRef<HTMLElement | null>(null);
 
-  const setOpen = useCallback((v: boolean) => {
-    setOpenState(v);
-    if (!v) onClose?.();
-  }, [onClose]);
+  const setOpen = useCallback(
+    (v: boolean) => {
+      setOpenState(v);
+      if (!v) onClose?.();
+    },
+    [onClose],
+  );
 
   const toggle = useCallback(() => setOpen(!open), [open, setOpen]);
   const close = useCallback(() => setOpen(false), [setOpen]);

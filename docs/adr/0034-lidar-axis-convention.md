@@ -18,12 +18,12 @@
 
 实测案例(`third-party/SUSTechPOINTS/data/example/calib/camera/front.json`):front 相机外参 row 2 ≈ `(-0.033, -0.999, 0.042)` ≈ -Y 朝前。该数据集 lidar 系实际是 ISO 绕 Z 转 180° + 镜像,与平台默认假设完全错位。
 
-| 选项 | 主要卖点 | 主要劣势 |
-|---|---|---|
-| **方案 C:dataset 声明约定 + 加载侧归一化** | 上层几何代码全部无感知;单一开关 | 每次打开页面要旋转点云一次(实测 < 50ms) |
-| 方案 A:平台内部多约定共存,几何代码读 convention 走分支 | 不动任何字节 | `cameraAnchor` / `frontCameraForward` / `psrFromPoints` / `applyHeightColors` / `estimateGroundZ` / `fitYaw` 6+ 个函数全要加 convention 参数,新增 convention 全链路回归 |
-| 方案 B:导入时改写 PCD 字节 + 改写外参 JSON | 后续工具读到的就是 ISO | 破坏「不动用户原始数据」原则;导出要反写;PCD 重写慢 |
-| 方案 D:不支持,要求用户先在外部预处理成 ISO | 平台零工作 | 把痛点甩给用户;自带的 SUSTechPOINTS 示例直接不能用 |
+| 选项                                                   | 主要卖点                        | 主要劣势                                                                                                                                                                |
+| ------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **方案 C:dataset 声明约定 + 加载侧归一化**             | 上层几何代码全部无感知;单一开关 | 每次打开页面要旋转点云一次(实测 < 50ms)                                                                                                                                 |
+| 方案 A:平台内部多约定共存,几何代码读 convention 走分支 | 不动任何字节                    | `cameraAnchor` / `frontCameraForward` / `psrFromPoints` / `applyHeightColors` / `estimateGroundZ` / `fitYaw` 6+ 个函数全要加 convention 参数,新增 convention 全链路回归 |
+| 方案 B:导入时改写 PCD 字节 + 改写外参 JSON             | 后续工具读到的就是 ISO          | 破坏「不动用户原始数据」原则;导出要反写;PCD 重写慢                                                                                                                      |
+| 方案 D:不支持,要求用户先在外部预处理成 ISO             | 平台零工作                      | 把痛点甩给用户;自带的 SUSTechPOINTS 示例直接不能用                                                                                                                      |
 
 ## Decision
 

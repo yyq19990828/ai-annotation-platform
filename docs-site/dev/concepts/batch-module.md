@@ -48,37 +48,37 @@ graph TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/db/models/task_batch.py` | SQLAlchemy 模型 |
-| `apps/api/app/db/enums.py` | `BatchStatus` 枚举 |
-| `apps/api/app/schemas/batch.py` | 请求 / 响应 schema |
-| `apps/api/app/services/batch.py` | 状态机、分派、split、bulk、reset 核心逻辑 |
-| `apps/api/app/api/v1/batches.py` | HTTP 路由、权限、审计、通知编排 |
-| `apps/api/app/services/scheduler.py` | `/tasks/next` 派题时的 batch 过滤 |
-| `apps/api/app/services/annotation.py` | annotation 写入后触发 batch 自动迁移 |
-| `apps/api/app/api/v1/tasks/lifecycle.py` | withdraw / reopen / accept-rejection 等 task 事件对 batch 的回写 |
-| `apps/web/src/api/batches.ts` | 前端 batch API wrapper |
-| `apps/web/src/pages/Projects/sections/BatchesSection.tsx` | 项目设置页的批次主 UI |
-| `apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx` | 批次看板与前端迁移 dry-run |
+| 位置                                                         | 作用                                                             |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `apps/api/app/db/models/task_batch.py`                       | SQLAlchemy 模型                                                  |
+| `apps/api/app/db/enums.py`                                   | `BatchStatus` 枚举                                               |
+| `apps/api/app/schemas/batch.py`                              | 请求 / 响应 schema                                               |
+| `apps/api/app/services/batch.py`                             | 状态机、分派、split、bulk、reset 核心逻辑                        |
+| `apps/api/app/api/v1/batches.py`                             | HTTP 路由、权限、审计、通知编排                                  |
+| `apps/api/app/services/scheduler.py`                         | `/tasks/next` 派题时的 batch 过滤                                |
+| `apps/api/app/services/annotation.py`                        | annotation 写入后触发 batch 自动迁移                             |
+| `apps/api/app/api/v1/tasks/lifecycle.py`                     | withdraw / reopen / accept-rejection 等 task 事件对 batch 的回写 |
+| `apps/web/src/api/batches.ts`                                | 前端 batch API wrapper                                           |
+| `apps/web/src/pages/Projects/sections/BatchesSection.tsx`    | 项目设置页的批次主 UI                                            |
+| `apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx` | 批次看板与前端迁移 dry-run                                       |
 
 ## 数据模型
 
 `TaskBatch` 的核心字段：
 
-| 字段 | 含义 |
-|---|---|
-| `project_id` | 所属项目 |
-| `dataset_id` | 关联数据集，可空 |
-| `display_id` | 人类可读 ID，如 `B-12` |
-| `status` | batch 状态机当前状态 |
-| `priority` | 工作台派题和列表排序的主序 |
-| `annotator_id` | 单值标注员 |
-| `reviewer_id` | 单值审核员 |
-| `assigned_user_ids` | 兼容旧路径的派生字段，当前由前两者同步生成 |
-| `review_feedback` | 批次被退回时的审核反馈 |
-| `reviewed_at` / `reviewed_by` | 最近一次批次级审核元数据 |
-| `total_tasks` / `completed_tasks` / `review_tasks` / `approved_tasks` / `rejected_tasks` | 聚合计数 |
+| 字段                                                                                     | 含义                                       |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `project_id`                                                                             | 所属项目                                   |
+| `dataset_id`                                                                             | 关联数据集，可空                           |
+| `display_id`                                                                             | 人类可读 ID，如 `B-12`                     |
+| `status`                                                                                 | batch 状态机当前状态                       |
+| `priority`                                                                               | 工作台派题和列表排序的主序                 |
+| `annotator_id`                                                                           | 单值标注员                                 |
+| `reviewer_id`                                                                            | 单值审核员                                 |
+| `assigned_user_ids`                                                                      | 兼容旧路径的派生字段，当前由前两者同步生成 |
+| `review_feedback`                                                                        | 批次被退回时的审核反馈                     |
+| `reviewed_at` / `reviewed_by`                                                            | 最近一次批次级审核元数据                   |
+| `total_tasks` / `completed_tasks` / `review_tasks` / `approved_tasks` / `rejected_tasks` | 聚合计数                                   |
 
 设计要点：
 
@@ -233,12 +233,12 @@ stateDiagram-v2
 
 `split(project_id, data, created_by)` 从项目里尚未归类（未分配批次）的 task 中切出新批次，`BatchSplitRequest.strategy` 决定切分方式：
 
-| 策略 | 说明 |
-|---|---|
-| `metadata` | 按 `metadata_key` / `metadata_value` 过滤出匹配 task，归入一个新批次 |
-| `id_range` | 按显式给定的 `item_ids` 列表把指定 task 归入一个新批次 |
-| `random` | 把未归类 task 切成 `n_batches` 个批次；`shuffle=False` 时按 task 创建顺序切分（不打乱） |
-| `by_scene`（v0.14.4） | 适用 scene 模式项目：按 task 所属 scene 分组，每个 scene 切成一个独立批次 |
+| 策略                  | 说明                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `metadata`            | 按 `metadata_key` / `metadata_value` 过滤出匹配 task，归入一个新批次                    |
+| `id_range`            | 按显式给定的 `item_ids` 列表把指定 task 归入一个新批次                                  |
+| `random`              | 把未归类 task 切成 `n_batches` 个批次；`shuffle=False` 时按 task 创建顺序切分（不打乱） |
+| `by_scene`（v0.14.4） | 适用 scene 模式项目：按 task 所属 scene 分组，每个 scene 切成一个独立批次               |
 
 `by_scene` 细节：
 
@@ -338,14 +338,14 @@ scene / frame_index 的语义见 [scene 与 frame_index](scene-and-frame-index)�
 
 如果你改 batch 状态相关逻辑，至少检查这些文件：
 
-| 文件 | 为什么要看 |
-|---|---|
-| `apps/web/src/api/batches.ts` | 前端请求和返回类型 |
-| `apps/web/src/pages/Projects/sections/BatchesSection.tsx` | 批次列表页按钮、文案、状态标签 |
-| `apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx` | 前端 `VALID_TRANSITIONS` 镜像 |
-| `apps/web/src/components/badges/BatchStatusBadge.tsx` | 状态徽章 |
-| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | 工作台批次筛选 |
-| `apps/web/src/pages/Annotate/AnnotatePage.tsx` | 标注侧送审操作 |
+| 文件                                                         | 为什么要看                     |
+| ------------------------------------------------------------ | ------------------------------ |
+| `apps/web/src/api/batches.ts`                                | 前端请求和返回类型             |
+| `apps/web/src/pages/Projects/sections/BatchesSection.tsx`    | 批次列表页按钮、文案、状态标签 |
+| `apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx` | 前端 `VALID_TRANSITIONS` 镜像  |
+| `apps/web/src/components/badges/BatchStatusBadge.tsx`        | 状态徽章                       |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx`      | 工作台批次筛选                 |
+| `apps/web/src/pages/Annotate/AnnotatePage.tsx`               | 标注侧送审操作                 |
 
 常见坑：
 
@@ -357,13 +357,13 @@ scene / frame_index 的语义见 [scene 与 frame_index](scene-and-frame-index)�
 
 先看这些测试文件：
 
-| 文件 | 覆盖重点 |
-|---|---|
-| `apps/api/tests/test_batch_lifecycle.py` | 批次状态机主干、权限矩阵、bulk 操作 |
-| `apps/api/tests/test_v0_7_6.py` | `reset_to_draft` 与 `pre_annotated → annotating` |
-| `apps/api/tests/test_batch_pre_annotated.py` | `pre_annotated` 合法迁移 |
-| `apps/web/src/pages/Projects/sections/BatchesSection.test.tsx` | BatchesSection 烟测 |
-| `apps/web/src/pages/Projects/sections/BatchesKanbanView.test.tsx` | Kanban 前端迁移限制 |
+| 文件                                                              | 覆盖重点                                         |
+| ----------------------------------------------------------------- | ------------------------------------------------ |
+| `apps/api/tests/test_batch_lifecycle.py`                          | 批次状态机主干、权限矩阵、bulk 操作              |
+| `apps/api/tests/test_v0_7_6.py`                                   | `reset_to_draft` 与 `pre_annotated → annotating` |
+| `apps/api/tests/test_batch_pre_annotated.py`                      | `pre_annotated` 合法迁移                         |
+| `apps/web/src/pages/Projects/sections/BatchesSection.test.tsx`    | BatchesSection 烟测                              |
+| `apps/web/src/pages/Projects/sections/BatchesKanbanView.test.tsx` | Kanban 前端迁移限制                              |
 
 推荐调试顺序：
 

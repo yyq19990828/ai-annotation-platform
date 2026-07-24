@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 
+from app.services.mask_formats.image_codecs import compress_coco_rle
 from app.services.video_frame_service import derive_sampled_frames
 from app.services.video_tracks import resolved_track_frames
 
@@ -345,7 +346,7 @@ def _coco_seg_annotation(
     if include_attributes:
         attrs = dict(attributes or {})
         if track_id is not None:
-            attrs["__track_id"] = track_id
+            attrs["__track_id"] = str(track_id)
         row["attributes"] = attrs
     return row
 
@@ -471,15 +472,13 @@ def build_coco_frames_seg(
                         "bbox": bbox,
                         "area": int(sum(int(value) for value in counts[1::2])),
                         "iscrowd": 1,
-                        "segmentation": {
-                            "size": list(rle["size"]),
-                            "counts": list(counts),
-                        },
+                        "segmentation": compress_coco_rle(rle),
                     }
                     if include_attributes:
                         attrs = dict(attributes or {})
                         if track_id is not None:
-                            attrs["__track_id"] = track_id
+                            attrs["__track_id"] = str(track_id)
+                        attrs["__occluded"] = bool(frame.get("occluded"))
                         row["attributes"] = attrs
                     annotations.append(row)
                     next_ann_id += 1

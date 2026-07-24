@@ -18,10 +18,7 @@ export type Point = { x: number; y: number };
 
 /** 视频元数据宽高 → 固有像素尺寸(等价图片 imgW/imgH)。缺省回退 1280×720(16:9)。
  *  与历史归一化推导逐位一致(向后兼容)。 */
-export function videoIntrinsicSize(
-  width?: number | null,
-  height?: number | null,
-): VideoPixelSize {
+export function videoIntrinsicSize(width?: number | null, height?: number | null): VideoPixelSize {
   const aspect = width && height ? width / height : 16 / 9;
   const w = width || 1280;
   const h = height || Math.round(w / aspect);

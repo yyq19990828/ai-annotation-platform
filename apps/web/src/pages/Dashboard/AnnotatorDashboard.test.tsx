@@ -41,7 +41,9 @@ const fullStats = {
   weekly_target: 200,
   active_minutes_today: 42,
   streak_days: 7,
-  hour_buckets: Array(24).fill(0).map((_, h) => (h === 9 ? 5 : h === 14 ? 2 : 0)),
+  hour_buckets: Array(24)
+    .fill(0)
+    .map((_, h) => (h === 9 ? 5 : h === 14 ? 2 : 0)),
 };
 
 function renderUI() {
@@ -147,9 +149,30 @@ describe("AnnotatorDashboard", () => {
 
   it("项目按剩余任务数倒序", () => {
     const projects = [
-      { id: "a", display_id: "P-A", name: "A", type_label: "图像检测", total_tasks: 10, completed_tasks: 8 }, // 剩 2
-      { id: "b", display_id: "P-B", name: "B", type_label: "图像检测", total_tasks: 10, completed_tasks: 0 }, // 剩 10
-      { id: "c", display_id: "P-C", name: "C", type_label: "图像检测", total_tasks: 10, completed_tasks: 5 }, // 剩 5
+      {
+        id: "a",
+        display_id: "P-A",
+        name: "A",
+        type_label: "图像检测",
+        total_tasks: 10,
+        completed_tasks: 8,
+      }, // 剩 2
+      {
+        id: "b",
+        display_id: "P-B",
+        name: "B",
+        type_label: "图像检测",
+        total_tasks: 10,
+        completed_tasks: 0,
+      }, // 剩 10
+      {
+        id: "c",
+        display_id: "P-C",
+        name: "C",
+        type_label: "图像检测",
+        total_tasks: 10,
+        completed_tasks: 5,
+      }, // 剩 5
     ];
     mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
     mockUseProjects.mockReturnValue({ data: projects });

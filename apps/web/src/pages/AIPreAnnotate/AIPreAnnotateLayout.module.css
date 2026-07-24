@@ -20,7 +20,9 @@
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
-  transition: color 120ms ease, border-color 120ms ease;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .tabActive {

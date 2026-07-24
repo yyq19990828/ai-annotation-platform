@@ -85,17 +85,17 @@ export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<str
 
 export function SchemaForm({ schema, value, onChange, disabled = false }: SchemaFormProps) {
   const entries = useMemo(
-    () => (schema?.properties
-      ? Object.entries(schema.properties).filter(([key, raw]) => !isVariantField(key, asField(raw)))
-      : []),
+    () =>
+      schema?.properties
+        ? Object.entries(schema.properties).filter(
+            ([key, raw]) => !isVariantField(key, asField(raw)),
+          )
+        : [],
     [schema],
   );
   if (entries.length === 0) {
     return (
-      <div
-        data-testid="schema-form-empty"
-        className="text-muted-foreground text-xs py-1.5"
-      >
+      <div data-testid="schema-form-empty" className="text-muted-foreground text-xs py-1.5">
         当前后端无可配置参数
       </div>
     );
@@ -139,7 +139,9 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
     const v = typeof value === "boolean" ? value : Boolean(field.default ?? false);
     return (
       <div data-testid={`schema-field-${name}`} className="flex flex-col gap-1">
-        <label className={`flex items-center gap-1.5 cursor-pointer ${ro ? "cursor-not-allowed" : ""}`}>
+        <label
+          className={`flex items-center gap-1.5 cursor-pointer ${ro ? "cursor-not-allowed" : ""}`}
+        >
           <input
             type="checkbox"
             checked={v}
@@ -165,7 +167,9 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
           className="appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs px-1.5 py-1"
         >
           {field.enum.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
           ))}
         </select>
         {desc}
@@ -179,15 +183,13 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
     const v = typeof value === "number" ? value : def;
     const min = field.minimum;
     const max = field.maximum;
-    const step = isInt ? 1 : (max != null && min != null ? (max - min) / 100 : 0.01);
+    const step = isInt ? 1 : max != null && min != null ? (max - min) / 100 : 0.01;
     const hasRange = min != null && max != null;
     return (
       <div data-testid={`schema-field-${name}`} className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between">
           <span className="text-muted-foreground text-xs">{title}</span>
-          <span className="mono text-foreground text-xs">
-            {isInt ? v : Number(v).toFixed(2)}
-          </span>
+          <span className="mono text-foreground text-xs">{isInt ? v : Number(v).toFixed(2)}</span>
         </div>
         {hasRange && (
           <input
@@ -197,7 +199,9 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             step={step}
             value={v}
             disabled={ro}
-            onChange={(e) => onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
+            onChange={(e) =>
+              onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))
+            }
             className="w-full"
           />
         )}
@@ -209,7 +213,9 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             step={step}
             value={v}
             disabled={ro}
-            onChange={(e) => onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
+            onChange={(e) =>
+              onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))
+            }
             className="appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs px-1.5 py-1"
           />
         )}

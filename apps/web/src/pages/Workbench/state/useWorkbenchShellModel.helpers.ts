@@ -13,16 +13,24 @@ import {
 } from "../shell/floatingPanelSizing";
 import type { FloatingPanelState, FloatingSelectionState } from "@/api/auth";
 import type { Viewport } from "./useViewportTransform";
-import type {
-  PipelineStagePayload,
-  TriggerPreannotationPayload,
-} from "@/hooks/usePreannotation";
+import type { PipelineStagePayload, TriggerPreannotationPayload } from "@/hooks/usePreannotation";
 import { videoIntrinsicSize } from "../stage/videoKonvaCoordinates";
+import { cocoRleBounds, type CocoRle } from "../stage/shared/geometry/maskRle";
 
 export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 
-export const clamp = (v: number, lo: number, hi: number): number =>
-  Math.min(hi, Math.max(lo, v));
+export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+export async function commitAfterNavigationGuard(
+  guard: () => Promise<boolean>,
+  signal: AbortSignal | undefined,
+  commit: () => void,
+): Promise<boolean> {
+  const allowed = await guard();
+  if (!allowed || signal?.aborted) return false;
+  commit();
+  return true;
+}
 
 export function resolveMaskEditorSize(
   isVideoTask: boolean,
@@ -39,7 +47,18 @@ export function resolveMaskEditorSize(
   };
 }
 
-export function omitVariantFields(value: Record<string, unknown> | undefined): Record<string, unknown> {
+export function shouldShowInManualAnnotationSection(
+  annotation: { geometry: { type: string } },
+  isVideoTask: boolean,
+): boolean {
+  if (!isVideoTask) return true;
+  const geometryType = annotation.geometry.type;
+  return geometryType !== "video_track_bbox" && geometryType !== "video_track_mask";
+}
+
+export function omitVariantFields(
+  value: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!value) return out;
   for (const [key, v] of Object.entries(value)) {
@@ -163,8 +182,7 @@ export function buildPipelineRunPayload(
 ): TriggerPreannotationPayload | null {
   if (!stages?.length || !taskId) return null;
   const rootBackendId =
-    stages.find((s) => s.parent_stage == null)?.ml_backend_id ??
-    stages[0]?.ml_backend_id;
+    stages.find((s) => s.parent_stage == null)?.ml_backend_id ?? stages[0]?.ml_backend_id;
   if (!rootBackendId) return null;
   if (availableBackendIds) {
     for (const s of stages) {
@@ -230,12 +248,84 @@ export function resolvePinViewport(
  * 图片与视频两侧共用，避免各写一份而在几何类型上分叉。
  */
 export function samCandidateGeom(
-  candidate: { type?: string; bbox?: { x: number; y: number; width: number; height: number }; points?: [number, number][] } | undefined,
+  candidate:
+    | {
+        type?: string;
+        bbox?: { x: number; y: number; width: number; height: number };
+        points?: [number, number][];
+        rle?: CocoRle;
+        previewPoints?: [number, number][];
+      }
+    | undefined,
 ): { x: number; y: number; w: number; h: number } | null {
   if (!candidate) return null;
+  if (candidate.type === "mask") {
+    if (candidate.previewPoints && candidate.previewPoints.length >= 3) {
+      return polygonBounds(candidate.previewPoints);
+    }
+    if (candidate.rle) return cocoRleBounds(candidate.rle);
+  }
   if (candidate.type === "rectanglelabels" && candidate.bbox) {
-    return { x: candidate.bbox.x, y: candidate.bbox.y, w: candidate.bbox.width, h: candidate.bbox.height };
+    return {
+      x: candidate.bbox.x,
+      y: candidate.bbox.y,
+      w: candidate.bbox.width,
+      h: candidate.bbox.height,
+    };
   }
   if (candidate.points && candidate.points.length >= 3) return polygonBounds(candidate.points);
   return null;
+}
+
+export function resolveSamCandidateClass(
+  candidateLabel: string | undefined,
+  classes: readonly string[],
+  activeClass: string,
+): string {
+  if (candidateLabel && classes.includes(candidateLabel)) return candidateLabel;
+  if (classes.includes(activeClass)) return activeClass;
+  return classes[0] ?? "";
+}
+
+export interface SamCandidateDisplayShape {
+  id: string;
+  type: "polygonlabels" | "rectanglelabels";
+  points?: [number, number][];
+  bbox?: { x: number; y: number; width: number; height: number };
+}
+
+/**
+ * Native Mask bitmaps are decoded lazily. Their backend-supplied polygon preview
+ * keeps every candidate visible in the same lightweight overlay used by vector
+ * output, while the authoritative RLE remains untouched for acceptance.
+ */
+export function samCandidateDisplayShapes(
+  candidates: readonly {
+    id: string;
+    type: "mask" | "polygonlabels" | "rectanglelabels";
+    rle?: CocoRle;
+    previewPoints?: [number, number][];
+    points?: [number, number][];
+    bbox?: { x: number; y: number; width: number; height: number };
+  }[],
+): SamCandidateDisplayShape[] {
+  const shapes: SamCandidateDisplayShape[] = [];
+  for (const candidate of candidates) {
+    if (candidate.type === "polygonlabels") {
+      shapes.push({ id: candidate.id, type: candidate.type, points: candidate.points });
+      continue;
+    }
+    if (candidate.type === "rectanglelabels") {
+      shapes.push({ id: candidate.id, type: candidate.type, bbox: candidate.bbox });
+      continue;
+    }
+    if (candidate.previewPoints && candidate.previewPoints.length >= 3) {
+      shapes.push({
+        id: candidate.id,
+        type: "polygonlabels",
+        points: candidate.previewPoints,
+      });
+    }
+  }
+  return shapes;
 }

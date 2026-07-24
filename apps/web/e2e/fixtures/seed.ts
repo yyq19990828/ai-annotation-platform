@@ -2,7 +2,7 @@
  * v0.8.3 · E2E 共享 fixtures：调用后端 _test_seed router 造数与跳登录。
  *
  * 后端要求（`_test_seed.py`）：
- *   - settings.environment !== 'production' 时挂载
+ *   - development + E2E_SEED_ENABLED=true，且数据库名以 _e2e / _test 结尾
  *   - POST /api/v1/__test/seed/reset → truncate + 重建固定 fixture
  *   - POST /api/v1/__test/seed/login {email} → 返回 access_token
  *
@@ -26,11 +26,7 @@ export interface SeedData {
 }
 
 export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
-export type ScreenshotProjectKey =
-  | "image_demo"
-  | "video_demo"
-  | "pointcloud_demo"
-  | "ocr_demo";
+export type ScreenshotProjectKey = "image_demo" | "video_demo" | "pointcloud_demo" | "ocr_demo";
 export type ScreenshotBackendRequirement = "image_interactive" | "video_tracker" | "ocr";
 
 export interface ScreenshotCatalogUser {
@@ -94,6 +90,51 @@ export interface SeedLidarData {
   lidar_task_ids: string[];
 }
 
+export type RasterMaskFixtureVariant =
+  | "single"
+  | "donut_three"
+  | "diagonal_two"
+  | "island"
+  | "corrupt";
+export type RasterMaskFixtureCanvas = "default" | "5k" | "8k";
+
+export interface SeedRasterMaskData {
+  annotation_id: string;
+  variant: RasterMaskFixtureVariant;
+  mask: {
+    encoding: "coco_rle_ref";
+    size: [number, number];
+    object_key: string;
+    sha256: string;
+    runs: number;
+    bytes: number;
+  };
+}
+
+export interface SeedRasterPredictionData {
+  prediction_id: string;
+  mask: SeedRasterMaskData["mask"];
+}
+
+export interface SeedNativeMaskCandidateData {
+  response: Record<string, unknown>;
+  rle: {
+    encoding: "coco_rle";
+    size: [number, number];
+    counts: number[];
+  };
+  rles: Array<{
+    encoding: "coco_rle";
+    size: [number, number];
+    counts: number[];
+  }>;
+}
+
+export interface SeedTrackerReviewData {
+  job_id: string;
+  source_annotation_ids: string[];
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -102,10 +143,20 @@ export interface SeedPeekData {
   task_id: string | null;
 }
 
-const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
+const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 
-class SeedAPI {
+export class SeedAPI {
   constructor(private request: APIRequestContext) {}
+
+  async accessToken(email: string): Promise<string> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+      data: { email },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
+    }
+    return ((await res.json()) as { access_token: string }).access_token;
+  }
 
   async reset(): Promise<SeedData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`);
@@ -139,6 +190,115 @@ class SeedAPI {
     return (await res.json()) as SeedLidarData;
   }
 
+  /** 只切项目 opt-in；部署级 read/create 总闸由 API 进程环境决定。 */
+  async configureRasterMask(projectId: string, enabled: boolean): Promise<void> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/configure-raster-mask`, {
+      data: { project_id: projectId, enabled },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/configure-raster-mask failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  async videoTask(projectId: string): Promise<{ task_id: string }> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/video-task`, {
+      data: { project_id: projectId },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/video-task failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as { task_id: string };
+  }
+
+  async trackerReview(taskId: string, userEmail: string): Promise<SeedTrackerReviewData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/tracker-review`, {
+      data: { task_id: taskId, user_email: userEmail },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/tracker-review failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedTrackerReviewData;
+  }
+
+  async nativeMaskCandidate(
+    taskId: string,
+    options?: {
+      variant?: "default" | "negative_scribble" | "multimask_donut";
+      promptFamily?: "point" | "scribble";
+      negativeScribbles?: number;
+      promptSource?: {
+        annotationId: string;
+        sourceVersion: number;
+        sourceDigest: string;
+      };
+    },
+  ): Promise<SeedNativeMaskCandidateData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/native-mask-candidate`, {
+      data: {
+        task_id: taskId,
+        variant: options?.variant ?? "default",
+        prompt_family: options?.promptFamily ?? "point",
+        negative_scribbles: options?.negativeScribbles ?? 0,
+        prompt_source: options?.promptSource
+          ? {
+              annotation_id: options.promptSource.annotationId,
+              source_version: options.promptSource.sourceVersion,
+              source_digest: options.promptSource.sourceDigest,
+            }
+          : null,
+      },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/native-mask-candidate failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedNativeMaskCandidateData;
+  }
+
+  /** 构造已有 raster annotation，用于只读、损坏内容与锁定矩阵。 */
+  async injectRasterMask(opts: {
+    taskId: string;
+    userEmail: string;
+    variant?: RasterMaskFixtureVariant;
+    label?: string;
+    locked?: boolean;
+    canvas?: RasterMaskFixtureCanvas;
+  }): Promise<SeedRasterMaskData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-raster-mask`, {
+      data: {
+        task_id: opts.taskId,
+        user_email: opts.userEmail,
+        variant: opts.variant ?? "single",
+        label: opts.label ?? "car",
+        locked: opts.locked ?? false,
+        canvas: opts.canvas ?? "default",
+      },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/inject-raster-mask failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedRasterMaskData;
+  }
+
+  /** 构造待接受的 raster prediction，只用于 gate 关闭矩阵。 */
+  async injectRasterPrediction(opts: {
+    taskId: string;
+    userEmail: string;
+    label?: string;
+  }): Promise<SeedRasterPredictionData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-raster-prediction`, {
+      data: {
+        task_id: opts.taskId,
+        user_email: opts.userEmail,
+        variant: "single",
+        label: opts.label ?? "car",
+      },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/inject-raster-prediction failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedRasterPredictionData;
+  }
+
   /** v0.8.7 F4 · 只读窥探现有数据；不破坏 dev 数据。 */
   async peek(): Promise<SeedPeekData> {
     const res = await this.request.get(`${API_BASE}/api/v1/__test/seed/peek`);
@@ -153,12 +313,9 @@ class SeedAPI {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
       data: { email },
     });
-    if (!res.ok()) {
-      throw new Error(`seed/login failed: ${res.status()}`);
-    }
+    if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
-    const target =
-      baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+    const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
     await page.goto(target);
     await page.evaluate(
       ({ token, user }) => {
@@ -195,18 +352,15 @@ class SeedAPI {
     polygon: [number, number][];
     score?: number;
   }): Promise<{ prediction_id: string }> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/inject-prediction`,
-      {
-        data: {
-          task_id: opts.taskId,
-          project_id: opts.projectId,
-          label: opts.label,
-          polygon: opts.polygon,
-          score: opts.score ?? 0.9,
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-prediction`, {
+      data: {
+        task_id: opts.taskId,
+        project_id: opts.projectId,
+        label: opts.label,
+        polygon: opts.polygon,
+        score: opts.score ?? 0.9,
       },
-    );
+    });
     if (!res.ok()) {
       throw new Error(`seed/inject-prediction failed: ${res.status()} ${await res.text()}`);
     }
@@ -223,21 +377,16 @@ class SeedAPI {
     annotatorEmail?: string;
     reviewerEmail?: string;
   }): Promise<void> {
-    const res = await this.request.post(
-      `${API_BASE}/api/v1/__test/seed/advance_task`,
-      {
-        data: {
-          task_id: opts.taskId,
-          to_status: opts.toStatus,
-          annotator_email: opts.annotatorEmail,
-          reviewer_email: opts.reviewerEmail,
-        },
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/advance_task`, {
+      data: {
+        task_id: opts.taskId,
+        to_status: opts.toStatus,
+        annotator_email: opts.annotatorEmail,
+        reviewer_email: opts.reviewerEmail,
       },
-    );
+    });
     if (!res.ok()) {
-      throw new Error(
-        `seed/advance_task failed: ${res.status()} ${await res.text()}`,
-      );
+      throw new Error(`seed/advance_task failed: ${res.status()} ${await res.text()}`);
     }
   }
 }

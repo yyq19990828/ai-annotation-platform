@@ -38,11 +38,7 @@ import {
   type PoolViewModel,
   type RuntimeTopologyViewModel,
 } from "../runtimeTopology";
-import {
-  effectiveGpuLoaded,
-  isFreshCachedHealth,
-  parseResidency,
-} from "./parseResidency";
+import { effectiveGpuLoaded, isFreshCachedHealth, parseResidency } from "./parseResidency";
 import { LifecycleActions } from "./LifecycleActions";
 
 export interface InstanceDetailSheetProps {
@@ -84,16 +80,13 @@ export function InstanceDetailSheet({
   const trusted = useMemo(() => {
     const hasDirect = observe?.ok === true && observe?.residency != null;
     if (hasDirect) return true;
-    return backend
-      ? isFreshCachedHealth(backend.state, backend.last_checked_at)
-      : false;
+    return backend ? isFreshCachedHealth(backend.state, backend.last_checked_at) : false;
   }, [observe, backend]);
 
   const gpuLoaded = residency ? effectiveGpuLoaded(residency, trusted) : null;
   const modelVersion = observe?.model_version ?? backend?.health_meta?.model_version;
   const compute = observe?.compute ?? backend?.health_meta?.compute ?? null;
-  const cacheHitRate =
-    observe?.cache?.hit_rate ?? backend?.health_meta?.cache?.hit_rate;
+  const cacheHitRate = observe?.cache?.hit_rate ?? backend?.health_meta?.cache?.hit_rate;
 
   const onCopyId = async () => {
     try {
@@ -108,10 +101,7 @@ export function InstanceDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl"
-      >
+      <SheetContent side="right" className="w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl">
         <SheetHeader className="border-b border-border">
           <div className="flex items-center gap-2">
             <SheetTitle className="text-base">{member.name}</SheetTitle>
@@ -126,9 +116,7 @@ export function InstanceDetailSheet({
                     复制 ID
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  registry_id: {member.registry_id}
-                </TooltipContent>
+                <TooltipContent side="bottom">registry_id: {member.registry_id}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -167,11 +155,7 @@ export function InstanceDetailSheet({
                 />
                 <DetailRow
                   label="当前并发"
-                  value={
-                    rt?.route_inflight == null
-                      ? NO_METRICS_LABEL
-                      : String(rt.route_inflight)
-                  }
+                  value={rt?.route_inflight == null ? NO_METRICS_LABEL : String(rt.route_inflight)}
                 />
                 <DetailRow label="最大并发" value="未声明" muted />
                 <DetailRow
@@ -192,9 +176,7 @@ export function InstanceDetailSheet({
                 />
                 <DetailRow
                   label="P95"
-                  value={
-                    rt?.p95_ms == null ? NO_METRICS_LABEL : `${rt.p95_ms}ms`
-                  }
+                  value={rt?.p95_ms == null ? NO_METRICS_LABEL : `${rt.p95_ms}ms`}
                 />
                 <DetailRow
                   label="错误率"
@@ -204,18 +186,11 @@ export function InstanceDetailSheet({
                       : `${(rt.error_rate * 100).toFixed(2)}%`
                   }
                 />
-                <DetailRow
-                  label="最近选中"
-                  value={rt?.last_selected_at ?? NO_METRICS_LABEL}
-                />
+                <DetailRow label="最近选中" value={rt?.last_selected_at ?? NO_METRICS_LABEL} />
                 <DetailRow
                   label="熔断"
                   value={
-                    rt?.circuit_open == null
-                      ? NO_METRICS_LABEL
-                      : rt.circuit_open
-                        ? "是"
-                        : "否"
+                    rt?.circuit_open == null ? NO_METRICS_LABEL : rt.circuit_open ? "是" : "否"
                   }
                 />
               </div>
@@ -244,11 +219,7 @@ export function InstanceDetailSheet({
             {/* Residency detail (full builder/borrower/gate/identity) */}
             <section className="flex flex-col gap-2">
               <SectionTitle>模型驻留（residency）</SectionTitle>
-              <ResidencyDetail
-                residency={residency}
-                gpuLoaded={gpuLoaded}
-                trusted={trusted}
-              />
+              <ResidencyDetail residency={residency} gpuLoaded={gpuLoaded} trusted={trusted} />
             </section>
 
             {/* Variant warmup panel */}
@@ -281,9 +252,7 @@ export function InstanceDetailSheet({
 }
 
 function SectionTitle({ children }: { children: ReactNode }): ReactNode {
-  return (
-    <div className="text-xs font-semibold text-muted-foreground">{children}</div>
-  );
+  return <div className="text-xs font-semibold text-muted-foreground">{children}</div>;
 }
 
 function DetailRow({
@@ -298,9 +267,7 @@ function DetailRow({
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-muted-foreground">{label}</span>
-      <span className={muted ? "text-muted-foreground" : "text-foreground"}>
-        {value}
-      </span>
+      <span className={muted ? "text-muted-foreground" : "text-foreground"}>{value}</span>
     </div>
   );
 }
@@ -311,9 +278,7 @@ function GpuClaimBlock({ backend }: { backend: GlobalBackendItem }): ReactNode {
     return (
       <section className="flex flex-col gap-2">
         <SectionTitle>GPU claim</SectionTitle>
-        <div className="text-xs text-muted-foreground">
-          GPU 配置仅超级管理员可见
-        </div>
+        <div className="text-xs text-muted-foreground">GPU 配置仅超级管理员可见</div>
       </section>
     );
   }
@@ -331,18 +296,13 @@ function GpuClaimBlock({ backend }: { backend: GlobalBackendItem }): ReactNode {
       <SectionTitle>GPU claim</SectionTitle>
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge variant={variant}>GPU claim {status}</Badge>
-        <span className="mono text-muted-foreground">
-          {backend.gpu_resource_id ?? "无声明"}
-        </span>
+        <span className="mono text-muted-foreground">{backend.gpu_resource_id ?? "无声明"}</span>
         {backend.gpu_resource_id && (
           <>
             <span className="text-muted-foreground">
-              预算 {backend.vram_budget_mb ?? "—"}/
-              {config.allocatable_mb ?? "—"} MiB
+              预算 {backend.vram_budget_mb ?? "—"}/{config.allocatable_mb ?? "—"} MiB
             </span>
-            <span className="text-muted-foreground">
-              优先级 {backend.eviction_priority ?? "—"}
-            </span>
+            <span className="text-muted-foreground">优先级 {backend.eviction_priority ?? "—"}</span>
             <span className="text-muted-foreground">
               {config.desired_mode ?? "off"}→{config.effective_mode ?? "off"}
             </span>
@@ -385,10 +345,7 @@ function RuntimeMetricsBlock({
   cacheHitRate?: number;
 }): ReactNode {
   const loadedCount =
-    pool?.current_size ??
-    pool?.loaded_keys?.length ??
-    pool?.loaded_variants?.length ??
-    0;
+    pool?.current_size ?? pool?.loaded_keys?.length ?? pool?.loaded_variants?.length ?? 0;
   const videoLoadedCount =
     videoPool?.current_size ??
     videoPool?.loaded_keys?.length ??
@@ -399,21 +356,16 @@ function RuntimeMetricsBlock({
       {modelVersion && <span className="mono">{modelVersion}</span>}
       {gpuInfo?.memory_used_mb != null && gpuInfo?.memory_total_mb != null && (
         <span title="卡号 · 整卡已用/总显存 · 本容器自用（torch 保留）">
-          GPU{gpuInfo.device_index ?? 0} {gpuInfo.memory_used_mb}/
-          {gpuInfo.memory_total_mb} MB
+          GPU{gpuInfo.device_index ?? 0} {gpuInfo.memory_used_mb}/{gpuInfo.memory_total_mb} MB
           {gpuInfo.process_memory_mb != null && ` · 自用 ${gpuInfo.process_memory_mb} MB`}
         </span>
       )}
-      {(gpuInfo?.physical_device_token ||
-        gpuInfo?.mig_uuid ||
-        gpuInfo?.device_uuid) && (
+      {(gpuInfo?.physical_device_token || gpuInfo?.mig_uuid || gpuInfo?.device_uuid) && (
         <span className="mono" title="backend 上报的物理设备身份">
           {gpuInfo.physical_device_token ?? gpuInfo.mig_uuid ?? gpuInfo.device_uuid}
         </span>
       )}
-      {cacheHitRate != null && (
-        <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>
-      )}
+      {cacheHitRate != null && <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>}
       <span>
         图像池 {loadedCount}
         {pool?.cap != null && `/${pool.cap}`}
@@ -425,13 +377,9 @@ function RuntimeMetricsBlock({
           {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
         </span>
       )}
-      {!modelVersion &&
-        !gpuInfo &&
-        !pool &&
-        !videoPool &&
-        cacheHitRate == null && (
-          <span>{NO_METRICS_LABEL}</span>
-        )}
+      {!modelVersion && !gpuInfo && !pool && !videoPool && cacheHitRate == null && (
+        <span>{NO_METRICS_LABEL}</span>
+      )}
     </div>
   );
 }
@@ -448,8 +396,7 @@ function ResidencyDetail({
   if (!residency) {
     return (
       <div className="text-xs text-muted-foreground">
-        未上报 residency ·{" "}
-        {trusted ? "缓存 health（新鲜）" : "缓存 health（过期或未知）"}
+        未上报 residency · {trusted ? "缓存 health（新鲜）" : "缓存 health（过期或未知）"}
       </div>
     );
   }
@@ -469,19 +416,9 @@ function ResidencyDetail({
           {residency.state}
         </Badge>
         <Badge
-          variant={
-            gpuLoaded === true
-              ? "warning"
-              : gpuLoaded === false
-                ? "success"
-                : "outline"
-          }
+          variant={gpuLoaded === true ? "warning" : gpuLoaded === false ? "success" : "outline"}
         >
-          {gpuLoaded === true
-            ? "GPU 仍驻留"
-            : gpuLoaded === false
-              ? "GPU 空"
-              : "GPU 驻留未知"}
+          {gpuLoaded === true ? "GPU 仍驻留" : gpuLoaded === false ? "GPU 空" : "GPU 驻留未知"}
         </Badge>
         {unmanaged && <Badge variant="warning">unmanaged</Badge>}
         <span className="text-2xs text-muted-foreground">
@@ -498,25 +435,17 @@ function ResidencyDetail({
           residency 含畸形字段，已安全归一化且不参与 GPU 空闲判断。
         </div>
       )}
-      {trusted &&
-        residency.gpuLoaded === false &&
-        gpuLoaded !== false &&
-        !residency.malformed && (
-          <div className="text-2xs text-status-caution">
-            gpu_loaded=false 缺少全 pool、builder 或 borrower 空闲证据，按未知处理。
-          </div>
-        )}
+      {trusted && residency.gpuLoaded === false && gpuLoaded !== false && !residency.malformed && (
+        <div className="text-2xs text-status-caution">
+          gpu_loaded=false 缺少全 pool、builder 或 borrower 空闲证据，按未知处理。
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3 text-2xs text-muted-foreground">
         <span>active {residency.activeRequests ?? "—"}</span>
         <span>builders {residency.builders ?? "—"}</span>
         <span>borrowers {residency.borrowers ?? "—"}</span>
-        <span>
-          draining {residency.draining == null ? "—" : String(residency.draining)}
-        </span>
-        <span>
-          evictable{" "}
-          {residency.evictable == null ? "—" : String(residency.evictable)}
-        </span>
+        <span>draining {residency.draining == null ? "—" : String(residency.draining)}</span>
+        <span>evictable {residency.evictable == null ? "—" : String(residency.evictable)}</span>
         <span>gate {residency.lifecycleGate ?? "—"}</span>
         <span>generation {residency.generation ?? "—"}</span>
         {residency.identityResourceId && (
@@ -567,10 +496,8 @@ function RawFieldsBlock({
     }
     if (identityResourceId) r.identity_gpu_resource_id = identityResourceId;
     if (backend?.gpu_resource_id) r.gpu_resource_id = backend.gpu_resource_id;
-    if (backend?.vram_budget_mb != null)
-      r.vram_budget_mb = backend.vram_budget_mb;
-    if (backend?.eviction_priority != null)
-      r.eviction_priority = backend.eviction_priority;
+    if (backend?.vram_budget_mb != null) r.vram_budget_mb = backend.vram_budget_mb;
+    if (backend?.eviction_priority != null) r.eviction_priority = backend.eviction_priority;
     return r;
   }, [residency, identityResourceId, backend]);
 

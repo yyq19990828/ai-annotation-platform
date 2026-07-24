@@ -34,8 +34,7 @@ interface EnumField {
 }
 
 const SECTION_CLASS = "flex flex-col gap-2";
-const SECTION_TITLE_CLASS =
-  "flex items-center gap-2 text-xs font-semibold text-muted-foreground";
+const SECTION_TITLE_CLASS = "flex items-center gap-2 text-xs font-semibold text-muted-foreground";
 const CAP_CLASS = "text-2xs font-normal text-muted-foreground";
 const NOTE_CLASS = "text-xs text-muted-foreground";
 const HINT_CLASS = "text-2xs leading-normal text-muted-foreground";
@@ -68,7 +67,11 @@ export function VariantPanel({
   onWarm: (target?: VariantWarmTarget) => void;
   isWarming: boolean;
 }) {
-  const { data: setup, isLoading, isError } = useQuery({
+  const {
+    data: setup,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: mlBackendSetupQueryKey(projectId, backend.id),
     queryFn: () => mlBackendsApi.setup(projectId, backend.id),
     staleTime: 30_000,
@@ -147,18 +150,12 @@ export function VariantPanel({
 
   if (isLoading) return <div className={NOTE_CLASS}>加载变体能力…</div>;
   if (isError)
-    return (
-      <div className="text-xs text-status-danger">
-        无法获取 /setup（后端不可达或未实现）
-      </div>
-    );
+    return <div className="text-xs text-status-danger">无法获取 /setup（后端不可达或未实现）</div>;
 
   const isMultiModelBackend =
     !supportsVariants && genericVariantGroups.length === 0 && (setup?.models?.length ?? 0) > 0;
 
-  const isSelectedLoaded = loaded.some(
-    (v) => v.sam_variant === sam && v.dino_variant === dino,
-  );
+  const isSelectedLoaded = loaded.some((v) => v.sam_variant === sam && v.dino_variant === dino);
   const isVideoSelectedLoaded = videoSingleModel
     ? videoLoaded.length > 0
     : videoLoaded.includes(videoSam);
@@ -201,7 +198,9 @@ export function VariantPanel({
               <div className={SECTION_TITLE_CLASS}>通用变体目录</div>
               <GenericVariantDirectory groups={genericVariantGroups} />
               {!supportsVariants && !canGenericWarm && (
-                <div className={HINT_CLASS}>该 backend 暂未实现 warm 接口，变体目录仅用于只读展示。</div>
+                <div className={HINT_CLASS}>
+                  该 backend 暂未实现 warm 接口，变体目录仅用于只读展示。
+                </div>
               )}
             </div>
           )}
@@ -265,9 +264,7 @@ export function VariantPanel({
                       const bucketKey = gsam2ImageVariantsAsCacheBucketKey(v);
                       // lru key 取决于来源: 新 loaded_keys 用 "sam=X/dino=Y" 作 key,
                       // 老 per_variant_lru_ts 用 "sam/dino" 作 key.
-                      const lruKey = useRelativeAgo
-                        ? gsam2ImageVariantsAsLoadedKey(v)
-                        : bucketKey;
+                      const lruKey = useRelativeAgo ? gsam2ImageVariantsAsLoadedKey(v) : bucketKey;
                       const bucket = buckets[bucketKey];
                       const ts = lruTs[lruKey];
                       return (
@@ -285,7 +282,9 @@ export function VariantPanel({
                           </td>
                           <td className="whitespace-nowrap text-muted-foreground">
                             {ts != null
-                              ? (useRelativeAgo ? `t-${ts.toFixed(0)}s` : `t+${ts.toFixed(0)}s`)
+                              ? useRelativeAgo
+                                ? `t-${ts.toFixed(0)}s`
+                                : `t+${ts.toFixed(0)}s`
                               : "—"}
                           </td>
                         </tr>
@@ -314,50 +313,63 @@ export function VariantPanel({
                 {genericWarmLoaded && <Badge variant="success">已在显存</Badge>}
               </div>
             ) : (
-            <div className={WARM_ROW_CLASS}>
-              {samEnum.length > 0 && (
-                <label className={FIELD_CLASS}>
-                  <span className={FIELD_LABEL_CLASS}>SAM</span>
-                  <select value={sam} onChange={(e) => setSam(e.target.value)} className={SELECT_CLASS}>
-                    {samEnum.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {dinoEnum.length > 0 && (
-                <label className={FIELD_CLASS}>
-                  <span className={FIELD_LABEL_CLASS}>DINO</span>
-                  <select value={dino} onChange={(e) => setDino(e.target.value)} className={SELECT_CLASS}>
-                    {dinoEnum.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <Button
-                size="sm"
-                onClick={() => onWarm({
-                  variants: {
-                    ...(sam ? { sam_variant: sam } : {}),
-                    ...(dino ? { dino_variant: dino } : {}),
-                  },
-                })}
-                disabled={isWarming || !supportsVariants}
-                title={supportsVariants ? "预热旧 SAM/DINO 变体" : "待 backend 实现通用 warm 接口"}
-              >
-                <Icon name="play" size={11} />
-                预热
-              </Button>
-              {isSelectedLoaded && <Badge variant="success">已在显存</Badge>}
-            </div>
+              <div className={WARM_ROW_CLASS}>
+                {samEnum.length > 0 && (
+                  <label className={FIELD_CLASS}>
+                    <span className={FIELD_LABEL_CLASS}>SAM</span>
+                    <select
+                      value={sam}
+                      onChange={(e) => setSam(e.target.value)}
+                      className={SELECT_CLASS}
+                    >
+                      {samEnum.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {dinoEnum.length > 0 && (
+                  <label className={FIELD_CLASS}>
+                    <span className={FIELD_LABEL_CLASS}>DINO</span>
+                    <select
+                      value={dino}
+                      onChange={(e) => setDino(e.target.value)}
+                      className={SELECT_CLASS}
+                    >
+                      {dinoEnum.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    onWarm({
+                      variants: {
+                        ...(sam ? { sam_variant: sam } : {}),
+                        ...(dino ? { dino_variant: dino } : {}),
+                      },
+                    })
+                  }
+                  disabled={isWarming || !supportsVariants}
+                  title={
+                    supportsVariants ? "预热旧 SAM/DINO 变体" : "待 backend 实现通用 warm 接口"
+                  }
+                >
+                  <Icon name="play" size={11} />
+                  预热
+                </Button>
+                {isSelectedLoaded && <Badge variant="success">已在显存</Badge>}
+              </div>
             )}
             <div className={HINT_CLASS}>
-              预热把所选变体载入 pool（受 cap 限制，超出按 LRU 驱逐）；预热后请「健康检查」刷新上表。
+              预热把所选变体载入 pool（受 cap 限制，超出按 LRU
+              驱逐）；预热后请「健康检查」刷新上表。
             </div>
           </div>
         </>
@@ -441,10 +453,12 @@ export function VariantPanel({
                 )}
                 <Button
                   size="sm"
-                  onClick={() => onWarm({
-                    taskType: "video",
-                    variants: videoSingleModel || !videoSam ? {} : { sam_variant: videoSam },
-                  })}
+                  onClick={() =>
+                    onWarm({
+                      taskType: "video",
+                      variants: videoSingleModel || !videoSam ? {} : { sam_variant: videoSam },
+                    })
+                  }
                   disabled={isWarming}
                 >
                   <Icon name="play" size={11} />
@@ -495,7 +509,9 @@ function ModelVariantWarmSection({
   const groups = (model.supported_variants ?? []).filter(
     (group) => Array.isArray(group.variants) && group.variants.length > 0,
   );
-  const [variants, setVariants] = useState<Record<string, string>>(() => pickInitialVariants(model));
+  const [variants, setVariants] = useState<Record<string, string>>(() =>
+    pickInitialVariants(model),
+  );
 
   useEffect(() => {
     setVariants(pickInitialVariants(model));
@@ -544,11 +560,12 @@ function ModelVariantWarmSection({
               <select
                 value={variants[group.key] ?? ""}
                 onChange={(event) =>
-                  setVariants((current) => sanitizeVariantSelection(
-                    model,
-                    groups,
-                    { ...current, [group.key]: event.target.value },
-                  ))
+                  setVariants((current) =>
+                    sanitizeVariantSelection(model, groups, {
+                      ...current,
+                      [group.key]: event.target.value,
+                    }),
+                  )
                 }
                 className={SELECT_CLASS}
               >
@@ -639,7 +656,10 @@ function sanitizeVariantSelection(
   return Object.fromEntries(Object.entries(next).filter(([, value]) => value));
 }
 
-function selectedLoadedKey(task: string | undefined, variants: Record<string, string>): string | null {
+function selectedLoadedKey(
+  task: string | undefined,
+  variants: Record<string, string>,
+): string | null {
   const series = variants.series;
   const size = variants.size;
   if (task && series && size) return `${series}/${size}/${task}`;
@@ -655,7 +675,9 @@ function GenericVariantDirectory({ groups }: { groups: MLBackendSupportedVariant
     <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2">
       {groups.map((group) => (
         <div key={group.key} className="flex flex-col gap-1.5">
-          <div className="text-2xs font-semibold text-muted-foreground">{group.title ?? group.key}</div>
+          <div className="text-2xs font-semibold text-muted-foreground">
+            {group.title ?? group.key}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {group.variants!.map((option) => (
               <span
@@ -667,7 +689,9 @@ function GenericVariantDirectory({ groups }: { groups: MLBackendSupportedVariant
                 }`}
               >
                 <span className="mono">{option.label ?? option.value}</span>
-                {option.vram_gb != null && <span className="text-muted-foreground"> · {option.vram_gb}GB</span>}
+                {option.vram_gb != null && (
+                  <span className="text-muted-foreground"> · {option.vram_gb}GB</span>
+                )}
                 {option.tier && <span className="text-muted-foreground"> · {option.tier}</span>}
               </span>
             ))}

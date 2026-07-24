@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
+import type { AnnotationResponse, VideoTrackKeyframe, VideoTrackMaskKeyframe } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
+
+export interface VideoMaskFrameState {
+  keyframe: VideoTrackMaskKeyframe | null;
+  manualOutside: boolean;
+}
 
 /**
  * 标注操作命令栈。每条命令记录足够 redo / undo 的状态。
@@ -9,13 +14,25 @@ import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 export type Command =
   | { kind: "create"; annotationId: string; payload: AnnotationPayload }
   | { kind: "delete"; annotation: AnnotationResponse }
-  | { kind: "update"; annotationId: string; before: AnnotationUpdatePayload; after: AnnotationUpdatePayload }
+  | {
+      kind: "update";
+      annotationId: string;
+      before: AnnotationUpdatePayload;
+      after: AnnotationUpdatePayload;
+    }
   | {
       kind: "videoKeyframe";
       annotationId: string;
       frameIndex: number;
       before: VideoTrackKeyframe | null;
       after: VideoTrackKeyframe | null;
+    }
+  | {
+      kind: "videoMaskFrame";
+      annotationId: string;
+      frameIndex: number;
+      before: VideoMaskFrameState;
+      after: VideoMaskFrameState;
     }
   | { kind: "acceptPrediction"; predictionId: string; createdAnnotationIds: string[] }
   /** 批量命令：undo 时反序应用、redo 时正序应用。子命令必须不含 batch（一层）。 */
@@ -65,6 +82,10 @@ export async function applyLeaf(
     if (!h.updateVideoKeyframe) throw new Error("updateVideoKeyframe handler is required");
     const target = direction === "undo" ? cmd.before : cmd.after;
     await h.updateVideoKeyframe(cmd.annotationId, cmd.frameIndex, target);
+  } else if (cmd.kind === "videoMaskFrame") {
+    if (!h.updateVideoMaskFrame) throw new Error("updateVideoMaskFrame handler is required");
+    const target = direction === "undo" ? cmd.before : cmd.after;
+    await h.updateVideoMaskFrame(cmd.annotationId, cmd.frameIndex, target);
   } else if (cmd.kind === "acceptPrediction") {
     // accept 的 undo：删掉那一批由 prediction 派生的 annotation；redo 走批量删除策略不实现，避免重复采纳引发 ID 漂移。
     if (direction === "undo") {
@@ -75,7 +96,11 @@ export async function applyLeaf(
         // handler 未注入或 cache miss (ann 为空/undefined) → 保持旧行为直删, 不 regress。
         const ann = h.getAnnotation?.(id);
         if (ann && ann.parent_prediction_id !== cmd.predictionId) continue;
-        try { await h.deleteAnnotation(id); } catch { /* ignore */ }
+        try {
+          await h.deleteAnnotation(id);
+        } catch {
+          /* ignore */
+        }
       }
     }
     // redo 不再触发后端 accept（对方端点是幂等的但 id 不复用），仅消费 redo 栈无副作用
@@ -90,6 +115,11 @@ export interface HistoryHandlers {
     annotationId: string,
     frameIndex: number,
     keyframe: VideoTrackKeyframe | null,
+  ) => Promise<unknown>;
+  updateVideoMaskFrame?: (
+    annotationId: string,
+    frameIndex: number,
+    state: VideoMaskFrameState,
   ) => Promise<unknown>;
   /** v0.6.3 P0：tmpId 上的 create undo 不能走远端（必 404）。
    *  调用方在工作台闭包内提供：从 react-query cache 删 tmpId + 从离线队列删对应 create op。 */
@@ -204,7 +234,11 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
       // batch 的子命令在 undo 时倒序、redo 时正序执行
       const ordered = direction === "undo" ? [...cmd.commands].reverse() : cmd.commands;
       for (const sub of ordered) {
-        try { await applyLeaf(sub, direction, h); } catch { /* 单条失败不阻塞 */ }
+        try {
+          await applyLeaf(sub, direction, h);
+        } catch {
+          /* 单条失败不阻塞 */
+        }
       }
       return;
     }
@@ -225,14 +259,22 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
    *  扫栈把 undo + redo 两边命令里的 annotationId（含嵌套 batch）整体替换，
    *  保证 Ctrl+Z / Ctrl+Y 不再尝试操作不存在的 tmp_id。 */
   const replaceAnnotationId = useCallback((tmpId: string, realId: string) => {
-    const swapLeaf = (c: Exclude<Command, { kind: "batch" }>): Exclude<Command, { kind: "batch" }> => {
+    const swapLeaf = (
+      c: Exclude<Command, { kind: "batch" }>,
+    ): Exclude<Command, { kind: "batch" }> => {
       if (c.kind === "create" && c.annotationId === tmpId) return { ...c, annotationId: realId };
       if (c.kind === "update" && c.annotationId === tmpId) return { ...c, annotationId: realId };
       if (c.kind === "delete" && c.annotation.id === tmpId)
         return { ...c, annotation: { ...c.annotation, id: realId } };
-      if (c.kind === "videoKeyframe" && c.annotationId === tmpId) return { ...c, annotationId: realId };
+      if (c.kind === "videoKeyframe" && c.annotationId === tmpId)
+        return { ...c, annotationId: realId };
+      if (c.kind === "videoMaskFrame" && c.annotationId === tmpId)
+        return { ...c, annotationId: realId };
       if (c.kind === "acceptPrediction" && c.createdAnnotationIds.includes(tmpId))
-        return { ...c, createdAnnotationIds: c.createdAnnotationIds.map((id) => (id === tmpId ? realId : id)) };
+        return {
+          ...c,
+          createdAnnotationIds: c.createdAnnotationIds.map((id) => (id === tmpId ? realId : id)),
+        };
       return c;
     };
     const swap = (c: Command): Command => {
@@ -251,7 +293,9 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
       setBusy(true);
       apply(cmd, "undo")
         .then(() => setRedoStack((r) => [...r, cmd]))
-        .catch(() => {/* swallow; 命令已从栈移除 */})
+        .catch(() => {
+          /* swallow; 命令已从栈移除 */
+        })
         .finally(() => setBusy(false));
       return stack.slice(0, -1);
     });
@@ -265,7 +309,9 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
       setBusy(true);
       apply(cmd, "redo")
         .then(() => setUndoStack((u) => [...u, cmd]))
-        .catch(() => {/* swallow */})
+        .catch(() => {
+          /* swallow */
+        })
         .finally(() => setBusy(false));
       return stack.slice(0, -1);
     });

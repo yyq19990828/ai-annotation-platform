@@ -32,8 +32,9 @@ export function isPointerInFabRevealZone(
 }
 
 export function isPointerOverFabTarget(target: EventTarget | null): boolean {
-  return target instanceof Element
-    && target.closest("[data-bug-fab], [data-workbench-fab]") !== null;
+  return (
+    target instanceof Element && target.closest("[data-bug-fab], [data-workbench-fab]") !== null
+  );
 }
 
 /**
@@ -44,12 +45,9 @@ export function useFabAutoHideDriver(): void {
   const hideTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
-      const inZone = isPointerInFabRevealZone(
-        e.clientX,
-        e.clientY,
-        window.innerWidth,
-        window.innerHeight,
-      ) || isPointerOverFabTarget(e.target);
+      const inZone =
+        isPointerInFabRevealZone(e.clientX, e.clientY, window.innerWidth, window.innerHeight) ||
+        isPointerOverFabTarget(e.target);
       const { revealed, set } = useFabRevealStore.getState();
       if (inZone) {
         if (hideTimer.current !== undefined) {

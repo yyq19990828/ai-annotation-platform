@@ -31,8 +31,13 @@ interface Props {
 }
 
 export function CanvasDrawingLayer({
-  shapes, draftStroke, draftColor = "#ef4444",
-  imgW, imgH, scale, editable = false,
+  shapes,
+  draftStroke,
+  draftColor = "#ef4444",
+  imgW,
+  imgH,
+  scale,
+  editable = false,
 }: Props) {
   return (
     <Layer name="canvas-drawing" listening={editable}>

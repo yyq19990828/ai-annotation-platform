@@ -24,10 +24,7 @@ import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
 import { resolveClassVisual, type ClassRefLite } from "./resolveClassVisual";
 import type { KeypointSchema } from "@/types";
-import {
-  unitBindingsToPayload,
-  useProjectToolBindings,
-} from "./useProjectToolBindings";
+import { unitBindingsToPayload, useProjectToolBindings } from "./useProjectToolBindings";
 import {
   dataTypeFromLegacy,
   getToolUnitGroup,
@@ -113,8 +110,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     for (const inst of capInstances?.instances ?? [])
       for (const m of inst.models)
         for (const item of m.output_attribute_schema ?? [])
-          if (LANDING.has(item.key) && !byKey.has(item.key))
-            byKey.set(item.key, itemToField(item));
+          if (LANDING.has(item.key) && !byKey.has(item.key)) byKey.set(item.key, itemToField(item));
     const existing = new Set(
       (activeBinding?.attributeFields ?? []).map((f) => f.key).filter(Boolean),
     );
@@ -127,9 +123,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       (Object.keys(bindings) as ToolUnitId[])
         .filter(
           (u) =>
-            u !== activeUnit &&
-            bindings[u]?.enabled &&
-            (bindings[u]?.classRows.length ?? 0) > 0,
+            u !== activeUnit && bindings[u]?.enabled && (bindings[u]?.classRows.length ?? 0) > 0,
         )
         .map((u) => ({
           unitId: u,
@@ -139,8 +133,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     [bindings, activeUnit],
   );
 
-  const resolveLinked = (ref: ClassRefLite) =>
-    resolveClassVisual(bindings, { aliasTo: ref });
+  const resolveLinked = (ref: ClassRefLite) => resolveClassVisual(bindings, { aliasTo: ref });
 
   const onLink = (rowName: string, ref: ClassRefLite | null) => {
     setBindings((b) => ({
@@ -187,9 +180,10 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     try {
       const usage = await projectsApi.classUsage(project.id);
       const count = usage.classes[row.name] ?? 0;
-      const message = count > 0
-        ? `类别「${row.name}」已被 ${count} 条标注使用。\n\n删除后这些标注将变为孤儿；暂不影响标注数据，加回同名类别即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
-        : `类别「${row.name}」暂无标注引用，可放心删除。\n\n确认删除？`;
+      const message =
+        count > 0
+          ? `类别「${row.name}」已被 ${count} 条标注使用。\n\n删除后这些标注将变为孤儿；暂不影响标注数据，加回同名类别即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
+          : `类别「${row.name}」暂无标注引用，可放心删除。\n\n确认删除？`;
       return window.confirm(message);
     } catch (err) {
       pushToast({
@@ -207,9 +201,10 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     try {
       const usage = await projectsApi.classUsage(project.id);
       const count = usage.attributes[key] ?? 0;
-      const message = count > 0
-        ? `属性「${key}」已被 ${count} 条标注使用。\n\n删除后这些属性值将变为孤儿；暂不影响标注数据，加回同 key 属性即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
-        : `属性「${key}」暂无标注引用，可放心删除。\n\n确认删除？`;
+      const message =
+        count > 0
+          ? `属性「${key}」已被 ${count} 条标注使用。\n\n删除后这些属性值将变为孤儿；暂不影响标注数据，加回同 key 属性即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
+          : `属性「${key}」暂无标注引用，可放心删除。\n\n确认删除？`;
       return window.confirm(message);
     } catch (err) {
       pushToast({
@@ -288,8 +283,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     update.mutate(
       { tool_bindings },
       {
-        onSuccess: () =>
-          pushToast({ msg: "类别与属性配置已保存", kind: "success" }),
+        onSuccess: () => pushToast({ msg: "类别与属性配置已保存", kind: "success" }),
         onError: (err) =>
           pushToast({
             msg: "保存失败",
@@ -340,9 +334,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   const onPrefillFromBackend = ({ classes, attributes }: PrefillPicked) => {
     if (attributes.length > 0) {
       const cur = activeBinding?.attributeFields ?? [];
-      const importedByKey = new Map(
-        attributes.filter((f) => f.key).map((f) => [f.key, f]),
-      );
+      const importedByKey = new Map(attributes.filter((f) => f.key).map((f) => [f.key, f]));
       const merged = cur.map((f) =>
         f.key && importedByKey.has(f.key) ? importedByKey.get(f.key)! : f,
       );
@@ -375,15 +367,12 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
         <h3 className="text-sm font-semibold">类别与属性</h3>
         <div className="flex gap-1.5 whitespace-nowrap">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setPrefillOpen(true)}
-          >
+          <Button size="sm" variant="ghost" onClick={() => setPrefillOpen(true)}>
             <Icon name="sparkles" size={11} />从 ML Backend 预填
           </Button>
           <Button size="sm" variant="ghost" onClick={onExportJson}>
-            <Icon name="download" size={11} />导出属性 JSON
+            <Icon name="download" size={11} />
+            导出属性 JSON
           </Button>
           <label className="cursor-pointer">
             <input
@@ -393,7 +382,8 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
               className="hidden"
             />
             <span className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-sm text-foreground hover:bg-muted">
-              <Icon name="plus" size={11} />导入属性
+              <Icon name="plus" size={11} />
+              导入属性
             </span>
           </label>
         </div>
@@ -427,33 +417,35 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                 </span>
               )}
             </div>
-            {isVideoGeoUnit && activeBinding.enabled && (() => {
-              const vm = activeBinding.videoModes ?? { box: true, track: true };
-              const onlyBox = vm.box && !vm.track;
-              const onlyTrack = !vm.box && vm.track;
-              const labels = videoModeLabels[activeUnit] ?? videoModeLabels.bbox;
-              return (
-                <div className="mt-2 flex flex-wrap items-center gap-4">
-                  <span className="text-sm text-muted-foreground">可用工具</span>
-                  <Switch
-                    checked={vm.box}
-                    onChange={(next) => onToggleVideoMode("box", next)}
-                    label={labels.box}
-                    disabled={onlyBox}
-                    title={onlyBox ? "至少保留一个可用工具" : undefined}
-                    data-testid="video-mode-box-switch"
-                  />
-                  <Switch
-                    checked={vm.track}
-                    onChange={(next) => onToggleVideoMode("track", next)}
-                    label={labels.track}
-                    disabled={onlyTrack}
-                    title={onlyTrack ? "至少保留一个可用工具" : undefined}
-                    data-testid="video-mode-track-switch"
-                  />
-                </div>
-              );
-            })()}
+            {isVideoGeoUnit &&
+              activeBinding.enabled &&
+              (() => {
+                const vm = activeBinding.videoModes ?? { box: true, track: true };
+                const onlyBox = vm.box && !vm.track;
+                const onlyTrack = !vm.box && vm.track;
+                const labels = videoModeLabels[activeUnit] ?? videoModeLabels.bbox;
+                return (
+                  <div className="mt-2 flex flex-wrap items-center gap-4">
+                    <span className="text-sm text-muted-foreground">可用工具</span>
+                    <Switch
+                      checked={vm.box}
+                      onChange={(next) => onToggleVideoMode("box", next)}
+                      label={labels.box}
+                      disabled={onlyBox}
+                      title={onlyBox ? "至少保留一个可用工具" : undefined}
+                      data-testid="video-mode-box-switch"
+                    />
+                    <Switch
+                      checked={vm.track}
+                      onChange={(next) => onToggleVideoMode("track", next)}
+                      label={labels.track}
+                      disabled={onlyTrack}
+                      title={onlyTrack ? "至少保留一个可用工具" : undefined}
+                      data-testid="video-mode-track-switch"
+                    />
+                  </div>
+                );
+              })()}
             <fieldset
               className="m-0 min-w-0 border-0 p-0 disabled:pointer-events-none disabled:opacity-[0.55]"
               disabled={!activeBinding.enabled}
@@ -486,7 +478,9 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                 </section>
                 {activeUnit === "keypoint" && (
                   <section className="min-w-0">
-                    <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">关键点骨骼</h4>
+                    <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">
+                      关键点骨骼
+                    </h4>
                     <KeypointSchemaEditor
                       value={activeBinding.keypointSchema}
                       onChange={onKeypointSchemaChange}
@@ -494,7 +488,9 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
                   </section>
                 )}
                 <section className="min-w-0">
-                  <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">属性 schema</h4>
+                  <h4 className="mb-2 mt-0 text-xs font-semibold text-muted-foreground">
+                    属性 schema
+                  </h4>
                   <AttributeSchemaEditor
                     value={activeBinding.attributeFields}
                     onChange={onAttributeChange}
@@ -528,9 +524,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         onPrefill={onPrefillFromBackend}
         targetUnitLabel={getToolUnitGroup(activeUnit)?.label ?? activeUnit}
         existingClassNames={(activeBinding?.classRows ?? []).map((r) => r.name)}
-        existingAttrKeys={(activeBinding?.attributeFields ?? [])
-          .map((f) => f.key)
-          .filter(Boolean)}
+        existingAttrKeys={(activeBinding?.attributeFields ?? []).map((f) => f.key).filter(Boolean)}
       />
     </Card>
   );

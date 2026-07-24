@@ -64,19 +64,17 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
         flip.y && "-translate-y-full",
       )}
       // eslint-disable-next-line no-restricted-syntax -- 坐标锚点是一次性动态值，经 CSS custom property 注入
-      style={{
-        "--context-menu-x": `${x}px`,
-        "--context-menu-y": `${y}px`,
-      } as CSSProperties}
+      style={
+        {
+          "--context-menu-x": `${x}px`,
+          "--context-menu-y": `${y}px`,
+        } as CSSProperties
+      }
     >
       {items.map((item, index) => {
         if (item.divider) {
           return (
-            <div
-              key={item.id || `div-${index}`}
-              role="separator"
-              className="my-1 h-px bg-border"
-            />
+            <div key={item.id || `div-${index}`} role="separator" className="my-1 h-px bg-border" />
           );
         }
         return (
@@ -94,7 +92,8 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
               "flex w-full appearance-none items-center gap-2 whitespace-nowrap rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-normal text-muted-foreground",
               item.active ? "font-semibold text-foreground" : "hover:bg-accent",
               item.active && "bg-accent",
-              item.disabled && "cursor-not-allowed text-muted-foreground/60 opacity-60 hover:bg-transparent",
+              item.disabled &&
+                "cursor-not-allowed text-muted-foreground/60 opacity-60 hover:bg-transparent",
             )}
           >
             {item.icon && <Icon name={item.icon} size={13} />}
@@ -104,9 +103,7 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
                 {item.kbd}
               </span>
             )}
-            {item.active && !item.kbd && (
-              <Icon name="check" size={12} className="text-brand" />
-            )}
+            {item.active && !item.kbd && <Icon name="check" size={12} className="text-brand" />}
           </button>
         );
       })}

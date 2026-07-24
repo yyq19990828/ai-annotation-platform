@@ -9,6 +9,11 @@
 //
 // 决策见 ADR-0022：v1 不引入 d3-contour；不输出 hole / 多分量，多分量时取最大面积外环
 // 并在调用方提示用户先 mask 编辑合并。
+//
+// v0.23.5 WS-E (ADR-0052 D5 / P4)：不再「静默 pickLargest」。maskToPolygon 仍返回最大
+// 外环顶点 (保持现有调用方不破), 但同时显式标记 lossy=true + 诊断字段, 调用方必须检查
+// lossy 后再决定是否落库。lossy 判据 = 多连通 (components.length > 1) 或存在背景孔洞；
+// 当前仍只返回主外环，因此两类情况都必须阻断 polygon 落库。
 
 import polygonClipping, { type Polygon } from "polygon-clipping";
 
@@ -34,7 +39,26 @@ export interface MaskToPolygonResult {
   points: [number, number][];
   /** 是否检测到多连通：若 true 且 pickLargest=true，则仅返回最大外环。 */
   multipleComponents: boolean;
+  /**
+   * v0.23.5 WS-E · 显式无损/有损标记 (ADR-0052 D5)。lossy=true 表示本次转换丢弃了
+   * 几何信息 (多连通分量 / 孔), 调用方必须在落库前检查并提示用户。
+   *
+   * 判据: components.length > 1，或存在未与画布边界连通的背景分量（孔洞）。
+   */
+  lossy: boolean;
+  /** lossy 时的诊断: 丢弃的连通分量数 (不含保留的主分量)。lossy=false 时为 undefined。 */
+  droppedComponents?: number;
+  /**
+   * lossy 时的诊断: 检测到的孔洞数。没有孔洞时为 undefined。
+   */
+  droppedHoles?: number;
+  /** 文本原因, 供 UI (toast / toolbar) 展示。lossy=false 时为 undefined。 */
+  lossyReason?: string;
 }
+
+/** v0.23.5 WS-E · lossy=true 时的统一提示文案 (ADR-0052 D5)。 */
+const LOSSY_REASON =
+  "Mask 含多个连通分量或孔洞，当前 polygon 提交会丢失几何；请先擦除额外区域或填平孔洞";
 
 /** 像素是否「实心」（>= threshold）。越界视为 0。 */
 function isSolid(mask: MaskLike, x: number, y: number, threshold: number): boolean {
@@ -47,13 +71,26 @@ function isSolid(mask: MaskLike, x: number, y: number, threshold: number): boole
  *
  * 起点 (sx, sy) 是从左上扫到的第一个 solid 像素。返回闭合环（首尾相同时去重）。
  */
-function traceBoundary(mask: MaskLike, sx: number, sy: number, threshold: number): [number, number][] {
+function traceBoundary(
+  mask: MaskLike,
+  sx: number,
+  sy: number,
+  threshold: number,
+): [number, number][] {
   // 8 邻域顺时针：从「左」开始（上一像素 = 起点的左边）
   const dirs: ReadonlyArray<readonly [number, number]> = [
-    [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1],
+    [-1, 0],
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
   ];
   const out: [number, number][] = [];
-  let cx = sx, cy = sy;
+  let cx = sx,
+    cy = sy;
   // 起点的「来向」= 上一帧像素方向 = 左；记录索引 0
   let dir = 0;
   out.push([cx, cy]);
@@ -63,7 +100,8 @@ function traceBoundary(mask: MaskLike, sx: number, sy: number, threshold: number
     for (let k = 0; k < 8; k++) {
       const di = (dir + 1 + k) % 8;
       const [dx, dy] = dirs[di];
-      const nx = cx + dx, ny = cy + dy;
+      const nx = cx + dx,
+        ny = cy + dy;
       if (isSolid(mask, nx, ny, threshold)) {
         // 回到起点 → 终止
         if (nx === sx && ny === sy && out.length > 1) {
@@ -134,6 +172,66 @@ function findComponents(
 }
 
 /**
+ * 统计未与画布边界连通的背景分量。
+ *
+ * 前景使用 4 邻域定义连通分量，背景对应使用 8 邻域：两个背景像素只要对角相邻就仍可
+ * 通向外部，避免把只有对角开口的区域误报为孔洞。先从四条边泛洪所有外部背景，再扫描
+ * 剩余背景分量；每个剩余分量就是一个会在单外环 polygon 中丢失的真实孔洞。
+ */
+function countBackgroundHoles(mask: MaskLike, threshold: number): number {
+  const { width, height } = mask;
+  const visited = new Uint8Array(width * height);
+  const stack: number[] = [];
+
+  const enqueueBackground = (x: number, y: number) => {
+    const idx = y * width + x;
+    if (!visited[idx] && !isSolid(mask, x, y, threshold)) stack.push(idx);
+  };
+  const floodBackground = () => {
+    while (stack.length) {
+      const idx = stack.pop()!;
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+      const x = idx % width;
+      const y = Math.floor(idx / width);
+      if (isSolid(mask, x, y, threshold)) continue;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const nextIdx = ny * width + nx;
+          if (!visited[nextIdx] && !isSolid(mask, nx, ny, threshold)) stack.push(nextIdx);
+        }
+      }
+    }
+  };
+
+  for (let x = 0; x < width; x++) {
+    enqueueBackground(x, 0);
+    if (height > 1) enqueueBackground(x, height - 1);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    enqueueBackground(0, y);
+    if (width > 1) enqueueBackground(width - 1, y);
+  }
+  floodBackground();
+
+  let holes = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (visited[idx] || isSolid(mask, x, y, threshold)) continue;
+      holes++;
+      stack.push(idx);
+      floodBackground();
+    }
+  }
+  return holes;
+}
+
+/**
  * 主入口：alpha mask → polygon 外环。
  *
  * - 空 mask → points=[]
@@ -151,19 +249,38 @@ export function maskToPolygon(
 
   const components = findComponents(mask, threshold);
   if (components.length === 0) {
-    return { points: [], multipleComponents: false };
+    // v0.23.5 WS-E · 空 mask 无损 (无几何可丢)。
+    return { points: [], multipleComponents: false, lossy: false };
   }
+  // 多连通与孔洞都会在单外环输出中丢失。droppedComponents 不含保留的主分量。
+  const multipleComponents = components.length > 1;
+  const holeCount = countBackgroundHoles(mask, threshold);
+  const lossy = multipleComponents || holeCount > 0;
+  const droppedComponents = multipleComponents ? components.length - 1 : undefined;
+  const droppedHoles = holeCount > 0 ? holeCount : undefined;
+  const lossyReason = lossy ? LOSSY_REASON : undefined;
+
   // 多连通时挑面积最大的
   const target = components.reduce((acc, c) => (c.count > acc.count ? c : acc), components[0]);
   let ring = traceBoundary(mask, target.sx, target.sy, threshold);
   if (ring.length < 3) {
-    return { points: ring, multipleComponents: components.length > 1 };
+    return {
+      points: ring,
+      multipleComponents,
+      lossy,
+      droppedComponents,
+      droppedHoles,
+      lossyReason,
+    };
   }
 
   // 用 polygon-clipping union(self) 去自相交 / 修复 marching-squares 锯齿
   try {
     const closed: [number, number][] = [...ring];
-    if (closed[0][0] !== closed[closed.length - 1][0] || closed[0][1] !== closed[closed.length - 1][1]) {
+    if (
+      closed[0][0] !== closed[closed.length - 1][0] ||
+      closed[0][1] !== closed[closed.length - 1][1]
+    ) {
       closed.push([closed[0][0], closed[0][1]]);
     }
     const poly: Polygon = [closed];
@@ -194,10 +311,14 @@ export function maskToPolygon(
     if (!last || last[0] !== p[0] || last[1] !== p[1]) dedup.push(p);
   }
 
-  // 注意：v1 只返回最大分量（暂不支持 multipolygon 落库），但 multipleComponents
-  // 仍为 true 提示上层 UI。
+  // 注意：v1 只返回最大分量（暂不支持 multipolygon 落库），但 multipleComponents / lossy
+  // 仍为 true 提示上层 UI (v0.23.5 WS-E: 调用方必须检查 lossy 后再落库)。
   return {
     points: dedup,
-    multipleComponents: components.length > 1,
+    multipleComponents,
+    lossy,
+    droppedComponents,
+    droppedHoles,
+    lossyReason,
   };
 }

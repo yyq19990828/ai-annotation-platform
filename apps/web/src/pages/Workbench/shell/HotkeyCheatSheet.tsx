@@ -8,8 +8,10 @@ const GROUPS: HotkeyGroup[] = ["draw", "video", "view", "ai", "nav", "threed", "
 
 const KBD_CLASS =
   "whitespace-nowrap rounded-[3px] border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-xs leading-normal text-foreground";
-const HOTKEY_ROW_CLASS = "flex items-center justify-between gap-3 border-b border-border py-1.5 text-sm";
-const PRIMARY_TEXT_CLASS = "min-w-0 max-w-[34ch] leading-[1.35] text-foreground [overflow-wrap:anywhere]";
+const HOTKEY_ROW_CLASS =
+  "flex items-center justify-between gap-3 border-b border-border py-1.5 text-sm";
+const PRIMARY_TEXT_CLASS =
+  "min-w-0 max-w-[34ch] leading-[1.35] text-foreground [overflow-wrap:anywhere]";
 const SECTION_TITLE_CLASS =
   "sticky top-0 z-local-1 mb-2 flex items-center gap-[7px] border-b border-border bg-card px-0 pb-2 pt-1.5 text-xs font-bold uppercase tracking-[0.04em] text-foreground";
 const SECTION_BLOCK_CLASS =
@@ -29,17 +31,16 @@ function HotkeyRow({ h, count }: { h: HotkeyDef; count?: number }) {
       <span className={PRIMARY_TEXT_CLASS}>
         {h.desc}
         {count !== undefined && count > 0 && (
-          <span
-            className="mono ml-1.5 text-2xs text-muted-foreground"
-            title="近期使用次数"
-          >
+          <span className="mono ml-1.5 text-2xs text-muted-foreground" title="近期使用次数">
             ×{count}
           </span>
         )}
       </span>
       <span className="flex max-w-[132px] flex-none flex-wrap justify-end gap-1">
         {h.keys.map((k, j) => (
-          <kbd key={j} className={KBD_CLASS}>{k}</kbd>
+          <kbd key={j} className={KBD_CLASS}>
+            {k}
+          </kbd>
         ))}
       </span>
     </div>
@@ -55,9 +56,7 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
 
   const q = query.trim().toLowerCase();
   const matches = (h: HotkeyDef) =>
-    !q ||
-    h.desc.toLowerCase().includes(q) ||
-    h.keys.join(" ").toLowerCase().includes(q);
+    !q || h.desc.toLowerCase().includes(q) || h.keys.join(" ").toLowerCase().includes(q);
 
   // 属性快捷键：仅 boolean / select 类型的字段且声明了 hotkey 才进入面板
   const attributeItems = (attributeSchema?.fields ?? []).filter(
@@ -72,14 +71,12 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
   // 当 sortByFreq=true 时，把所有命中的 HotkeyDef 平铺并按 usage 倒序，分组消失
   const flatSortedByFreq = useMemo<HotkeyDef[]>(() => {
     if (!sortByFreq) return [];
-    return [...HOTKEYS]
-      .filter(matches)
-      .sort((a, b) => {
-        const ca = a.actionType ? usage[a.actionType] ?? 0 : 0;
-        const cb = b.actionType ? usage[b.actionType] ?? 0 : 0;
-        if (ca !== cb) return cb - ca;
-        return a.desc.localeCompare(b.desc, "zh");
-      });
+    return [...HOTKEYS].filter(matches).sort((a, b) => {
+      const ca = a.actionType ? (usage[a.actionType] ?? 0) : 0;
+      const cb = b.actionType ? (usage[b.actionType] ?? 0) : 0;
+      if (ca !== cb) return cb - ca;
+      return a.desc.localeCompare(b.desc, "zh");
+    });
   }, [sortByFreq, usage, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -109,12 +106,10 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
       {sortByFreq ? (
         <div>
           {flatSortedByFreq.length === 0 ? (
-            <div className="py-5 text-center text-xs text-muted-foreground">
-              无匹配快捷键
-            </div>
+            <div className="py-5 text-center text-xs text-muted-foreground">无匹配快捷键</div>
           ) : (
             flatSortedByFreq.map((h, i) => (
-              <HotkeyRow key={i} h={h} count={h.actionType ? usage[h.actionType] ?? 0 : 0} />
+              <HotkeyRow key={i} h={h} count={h.actionType ? (usage[h.actionType] ?? 0) : 0} />
             ))
           )}
         </div>
@@ -130,7 +125,11 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
                   {GROUP_LABEL[g]}
                 </div>
                 {items.map((h, i) => (
-                  <HotkeyRow key={i} h={h} count={h.actionType ? usage[h.actionType] ?? 0 : undefined} />
+                  <HotkeyRow
+                    key={i}
+                    h={h}
+                    count={h.actionType ? (usage[h.actionType] ?? 0) : undefined}
+                  />
                 ))}
               </div>
             );
@@ -147,10 +146,7 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
               </div>
               <div className="grid gap-x-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))]">
                 {filteredAttr.map((f) => (
-                  <div
-                    key={f.key}
-                    className={HOTKEY_ROW_CLASS}
-                  >
+                  <div key={f.key} className={HOTKEY_ROW_CLASS}>
                     <span className={PRIMARY_TEXT_CLASS}>
                       {f.type === "boolean" ? "切换 " : "循环 "}
                       <span className="font-medium">{f.label}</span>

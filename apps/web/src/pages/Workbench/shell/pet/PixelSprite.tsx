@@ -85,7 +85,10 @@ export function PixelSprite({ mood, size = 56 }: PixelSpriteProps) {
           {/* 错峰由 CSS .sparkle:nth-of-type 控制(避免内联 style)。 */}
           <path className={styles.sparkle} d="M4 5l.6 1.4L6 7l-1.4.6L4 9l-.6-1.4L2 7l1.4-.6Z" />
           <path className={styles.sparkle} d="M20 4l.6 1.4L22 6l-1.4.6L20 8l-.6-1.4L18 6l1.4-.6Z" />
-          <path className={styles.sparkle} d="M19 16l.5 1.1L20.6 18l-1.1.5L19 19.6l-.5-1.1L17.4 18l1.1-.4Z" />
+          <path
+            className={styles.sparkle}
+            d="M19 16l.5 1.1L20.6 18l-1.1.5L19 19.6l-.5-1.1L17.4 18l1.1-.4Z"
+          />
         </g>
       )}
     </svg>

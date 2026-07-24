@@ -61,9 +61,7 @@ describe("Histogram", () => {
   });
 
   it("title 提示包含 xLabels 对应值", () => {
-    const { container } = render(
-      <Histogram values={[7, 9]} xLabels={["AM", "PM"]} />,
-    );
+    const { container } = render(<Histogram values={[7, 9]} xLabels={["AM", "PM"]} />);
     const bars = getBars(container);
     expect(bars[0].title).toBe("AM: 7");
     expect(bars[1].title).toBe("PM: 9");

@@ -44,17 +44,17 @@ graph TD
 
 ## 代码入口
 
-| 位置 | 作用 |
-|---|---|
-| `apps/api/app/api/v1/tasks/lifecycle.py` · `review.py` | task 级 submit / withdraw / review / reopen / accept-rejection |
-| `apps/api/app/api/v1/batches.py` | batch 级 transition / reject / reset |
-| `apps/api/app/services/batch.py` | batch 状态校验、reject_batch、counter 回写 |
-| `apps/api/app/services/scheduler.py` | reviewer 可见性的 batch 过滤 |
-| `apps/web/src/api/tasks.ts` | 前端 task review API |
-| `apps/web/src/pages/Review/ReviewPage.tsx` | reviewer 列表页与批量审核 |
-| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | `mode="review"` 的审核工作台外壳 |
-| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx` | reviewer claim / approve / reject / diffMode 策略 |
-| `apps/web/src/pages/Annotate/AnnotatePage.tsx` | annotator 侧整批送审 |
+| 位置                                                    | 作用                                                           |
+| ------------------------------------------------------- | -------------------------------------------------------------- |
+| `apps/api/app/api/v1/tasks/lifecycle.py` · `review.py`  | task 级 submit / withdraw / review / reopen / accept-rejection |
+| `apps/api/app/api/v1/batches.py`                        | batch 级 transition / reject / reset                           |
+| `apps/api/app/services/batch.py`                        | batch 状态校验、reject_batch、counter 回写                     |
+| `apps/api/app/services/scheduler.py`                    | reviewer 可见性的 batch 过滤                                   |
+| `apps/web/src/api/tasks.ts`                             | 前端 task review API                                           |
+| `apps/web/src/pages/Review/ReviewPage.tsx`              | reviewer 列表页与批量审核                                      |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | `mode="review"` 的审核工作台外壳                               |
+| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx`  | reviewer claim / approve / reject / diffMode 策略              |
+| `apps/web/src/pages/Annotate/AnnotatePage.tsx`          | annotator 侧整批送审                                           |
 
 ## Review 不是单一状态机
 
@@ -379,15 +379,15 @@ issue 在画布上以图钉呈现，与 issues tab 列表双向联动：
 
 ## 前端同步点
 
-| 文件 | 为什么要看 |
-|---|---|
-| `apps/web/src/api/tasks.ts` | task review 端点定义 |
-| `apps/web/src/hooks/useTasks.ts` | approve / reject / reopen mutation |
-| `apps/web/src/pages/Review/ReviewPage.tsx` | reviewer 列表与批量处理 |
-| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | 审核模式共用工作台 |
-| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx` | reviewer 画布预览、AI 对比与 topbar 操作策略 |
-| `apps/web/src/pages/Annotate/AnnotatePage.tsx` | annotator 整批送审入口 |
-| `apps/web/src/hooks/useBatches.ts` | batch reject / reset / transition |
+| 文件                                                    | 为什么要看                                   |
+| ------------------------------------------------------- | -------------------------------------------- |
+| `apps/web/src/api/tasks.ts`                             | task review 端点定义                         |
+| `apps/web/src/hooks/useTasks.ts`                        | approve / reject / reopen mutation           |
+| `apps/web/src/pages/Review/ReviewPage.tsx`              | reviewer 列表与批量处理                      |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | 审核模式共用工作台                           |
+| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx`  | reviewer 画布预览、AI 对比与 topbar 操作策略 |
+| `apps/web/src/pages/Annotate/AnnotatePage.tsx`          | annotator 整批送审入口                       |
+| `apps/web/src/hooks/useBatches.ts`                      | batch reject / reset / transition            |
 
 ## 常见误解
 

@@ -12,14 +12,14 @@ last_reviewed: 2026-07-13
 
 ## 端点
 
-| URL | 鉴权 | 用途 |
-|---|---|---|
-| `/ws/notifications?token=<jwt>` | JWT | 当前用户的通知与异步任务事件。 |
-| `/ws/projects/{project_id}/preannotate` | 当前实现不校验 JWT | 单项目批量预标进度。 |
-| `/ws/batches/project/{project_id}` | 当前实现不校验 JWT | 项目 batch 状态变化。 |
-| `/ws/prediction-jobs?token=<jwt>` | `super_admin` / `project_admin` | 全局预标任务摘要。 |
-| `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT + job 所属 task 可见性 | 单条视频 tracker job 的运行与候选审阅事件。 |
-| `/ws/ml-backend-stats?token=<jwt-or-api-key>` | `super_admin` / `project_admin` | ML backend 运行时指标。 |
+| URL                                           | 鉴权                            | 用途                                        |
+| --------------------------------------------- | ------------------------------- | ------------------------------------------- |
+| `/ws/notifications?token=<jwt>`               | JWT                             | 当前用户的通知与异步任务事件。              |
+| `/ws/projects/{project_id}/preannotate`       | 当前实现不校验 JWT              | 单项目批量预标进度。                        |
+| `/ws/batches/project/{project_id}`            | 当前实现不校验 JWT              | 项目 batch 状态变化。                       |
+| `/ws/prediction-jobs?token=<jwt>`             | `super_admin` / `project_admin` | 全局预标任务摘要。                          |
+| `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT + job 所属 task 可见性      | 单条视频 tracker job 的运行与候选审阅事件。 |
+| `/ws/ml-backend-stats?token=<jwt-or-api-key>` | `super_admin` / `project_admin` | ML backend 运行时指标。                     |
 
 本机 DEV API base 为 `ws://localhost:8000`；远程 DEV 和生产都使用页面同源 `ws(s)://<host>`。这些路径不在 `/api/v1` 下。
 

@@ -9,29 +9,65 @@ function fakeMaskEditor(active: boolean): UseMaskEditorReturn {
   return {
     active,
     mode: "brush",
+    tool: "brush",
+    brushShape: "circle",
+    connectivity: 4,
     radius: 16,
     dirty: false,
     buffer: null,
+    backend: "dense",
+    tiledTiles: [],
+    tiledResources: null,
+    tiledReadOnly: false,
+    commitInFlight: false,
     revision: 0,
     canUndo: false,
     canRedo: false,
+    historyResources: {
+      maxBytes: 32 * 1024 * 1024,
+      maxCommands: 100,
+      retainedBytes: 0,
+      undoCommands: 0,
+      redoCommands: 0,
+      evictedCommands: 0,
+      droppedCommands: 0,
+    },
+    operationPreview: null,
+    instanceOperationPreview: null,
+    operationStatus: "idle",
+    operationError: undefined,
     beginBlank: vi.fn(),
     initFromPolygon: vi.fn(),
     initFromRle: vi.fn(),
+    materializeFromRle: vi.fn(),
     paintAt: vi.fn(),
     beginStroke: vi.fn(),
     endStroke: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     setMode: vi.fn(),
+    setTool: vi.fn(),
+    setBrushShape: vi.fn(),
+    setConnectivity: vi.fn(),
     setRadius: vi.fn(),
+    previewOperation: vi.fn(() => true),
+    runOperation: vi.fn(async () => true),
+    previewInstanceOperation: vi.fn(() => true),
+    runInstanceOperation: vi.fn(async () => true),
+    confirmOperation: vi.fn(() => true),
+    cancelOperation: vi.fn(),
     cancel: vi.fn(),
     commitToPolygon: vi.fn(() => null),
     commitToRle: vi.fn(() => null),
+    commitToRleAsync: vi.fn(async () => null),
+    setViewport: vi.fn(),
   };
 }
 
-function baseCtx(maskEditor: UseMaskEditorReturn | undefined, readOnly = false): ToolPointerContext {
+function baseCtx(
+  maskEditor: UseMaskEditorReturn | undefined,
+  readOnly = false,
+): ToolPointerContext {
   return {
     pt: { x: 0.5, y: 0.5 },
     evt: {} as unknown as MouseEvent,
@@ -74,5 +110,64 @@ describe("MaskTool", () => {
     expect(me.beginBlank).not.toHaveBeenCalled();
     expect(me.paintAt).toHaveBeenCalledTimes(1);
     expect(init.kind).toBe("maskBrush");
+  });
+
+  it("lasso 工具只创建像素路径草稿，不提前修改 Buffer", () => {
+    const me = fakeMaskEditor(true);
+    me.tool = "lasso_subtract";
+    const init = MaskTool.onPointerDown!(baseCtx(me)) as Extract<DragInit, { kind: "maskLasso" }>;
+    expect(init).toEqual({ kind: "maskLasso", points: [[400, 300]] });
+    expect(me.beginStroke).not.toHaveBeenCalled();
+    expect(me.paintAt).not.toHaveBeenCalled();
+  });
+
+  it("flood fill 通过统一 operation runner 生成预览", () => {
+    const me = fakeMaskEditor(true);
+    me.tool = "fill_subtract";
+    expect(MaskTool.onPointerDown!(baseCtx(me))).toBeNull();
+    expect(me.runOperation).toHaveBeenCalledWith("fill_subtract", {
+      type: "flood_fill",
+      x: 400,
+      y: 300,
+      value: 0,
+      connectivity: 4,
+    });
+    expect(me.paintAt).not.toHaveBeenCalled();
+  });
+
+  it("component 与 hole 工具按像素 membership 生成预览", () => {
+    const component = fakeMaskEditor(true);
+    component.tool = "component_keep";
+    expect(MaskTool.onPointerDown!(baseCtx(component))).toBeNull();
+    expect(component.runOperation).toHaveBeenCalledWith("component_keep", {
+      type: "component",
+      action: "keep",
+      x: 400,
+      y: 300,
+      connectivity: 4,
+    });
+
+    const hole = fakeMaskEditor(true);
+    hole.tool = "hole_fill";
+    expect(MaskTool.onPointerDown!(baseCtx(hole))).toBeNull();
+    expect(hole.runOperation).toHaveBeenCalledWith("hole_fill", {
+      type: "fill_holes",
+      mode: "hit",
+      x: 400,
+      y: 300,
+    });
+  });
+
+  it("copy component 只生成待原子提交的 instance plan", () => {
+    const me = fakeMaskEditor(true);
+    me.tool = "component_copy";
+    expect(MaskTool.onPointerDown!(baseCtx(me))).toBeNull();
+    expect(me.runInstanceOperation).toHaveBeenCalledWith("copy_component", {
+      type: "copy_component",
+      x: 400,
+      y: 300,
+      connectivity: 4,
+    });
+    expect(me.runOperation).not.toHaveBeenCalled();
   });
 });

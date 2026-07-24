@@ -12,22 +12,23 @@ type ProofSceneBase = {
   href: string;
 };
 
-type ProofScene = ProofSceneBase & (
-  | { kind: "tools" }
-  | {
-      kind: "image";
-      src: string;
-      meta: string;
-      alt: string;
-    }
-  | {
-      kind: "video";
-      src: string;
-      poster: string;
-      meta: string;
-      alt: string;
-    }
-);
+type ProofScene = ProofSceneBase &
+  (
+    | { kind: "tools" }
+    | {
+        kind: "image";
+        src: string;
+        meta: string;
+        alt: string;
+      }
+    | {
+        kind: "video";
+        src: string;
+        poster: string;
+        meta: string;
+        alt: string;
+      }
+  );
 
 type ToolPreview = {
   no: string;
@@ -146,14 +147,15 @@ let mediaObserver: IntersectionObserver | undefined;
 
 async function playActiveVideo(): Promise<void> {
   await nextTick();
-  if (
-    activeScene.value.kind === "image" ||
-    !autoplayVideo.value ||
-    !mediaInView.value
-  ) return;
-  await videoRef.value?.play()
-    .then(() => { videoPlaying.value = true; })
-    .catch(() => { videoPlaying.value = false; });
+  if (activeScene.value.kind === "image" || !autoplayVideo.value || !mediaInView.value) return;
+  await videoRef.value
+    ?.play()
+    .then(() => {
+      videoPlaying.value = true;
+    })
+    .catch(() => {
+      videoPlaying.value = false;
+    });
 }
 
 function selectScene(index: number): void {
@@ -176,9 +178,14 @@ async function toggleVideo(): Promise<void> {
   const video = videoRef.value;
   if (!video) return;
   if (video.paused) {
-    await video.play()
-      .then(() => { videoPlaying.value = true; })
-      .catch(() => { videoPlaying.value = false; });
+    await video
+      .play()
+      .then(() => {
+        videoPlaying.value = true;
+      })
+      .catch(() => {
+        videoPlaying.value = false;
+      });
   } else {
     video.pause();
     videoPlaying.value = false;
@@ -209,31 +216,34 @@ function onTouchEnd(event: TouchEvent): void {
 function onTabKeydown(event: KeyboardEvent, index: number): void {
   let next = index;
   if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % scenes.length;
-  else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (index - 1 + scenes.length) % scenes.length;
+  else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
+    next = (index - 1 + scenes.length) % scenes.length;
   else if (event.key === "Home") next = 0;
   else if (event.key === "End") next = scenes.length - 1;
   else return;
 
   event.preventDefault();
   activeIndex.value = next;
-  const tabs = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>(
-    '[role="tab"]',
-  );
+  const tabs = (
+    event.currentTarget as HTMLElement
+  ).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
   tabs?.[next]?.focus();
 }
 
 onMounted(() => {
   autoplayVideo.value =
-    window.innerWidth > 600 &&
-    !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  mediaObserver = new IntersectionObserver(([entry]) => {
-    mediaInView.value = entry?.isIntersecting ?? false;
-    if (mediaInView.value) void playActiveVideo();
-    else {
-      videoRef.value?.pause();
-      videoPlaying.value = false;
-    }
-  }, { threshold: 0.15 });
+    window.innerWidth > 600 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  mediaObserver = new IntersectionObserver(
+    ([entry]) => {
+      mediaInView.value = entry?.isIntersecting ?? false;
+      if (mediaInView.value) void playActiveVideo();
+      else {
+        videoRef.value?.pause();
+        videoPlaying.value = false;
+      }
+    },
+    { threshold: 0.15 },
+  );
   if (sectionRef.value) mediaObserver.observe(sectionRef.value);
 });
 
@@ -300,10 +310,7 @@ watch([activeIndex, activeToolIndex], () => {
             @touchend.passive="onTouchEnd"
           >
             <div class="proof-tool-viewport">
-              <Transition
-                :name="toolTransitionName"
-                @after-enter="playActiveVideo"
-              >
+              <Transition :name="toolTransitionName" @after-enter="playActiveVideo">
                 <video
                   :id="`proof-tool-video-${activeTool.no}`"
                   :key="activeTool.no"
@@ -340,9 +347,7 @@ watch([activeIndex, activeToolIndex], () => {
             </div>
 
             <div class="proof-tool-controls">
-              <button type="button" aria-label="上一个 SAM3 工具" @click="stepTool(-1)">
-                ←
-              </button>
+              <button type="button" aria-label="上一个 SAM3 工具" @click="stepTool(-1)">←</button>
               <div class="proof-tool-list" aria-label="选择 SAM3 工具">
                 <button
                   v-for="(tool, index) in toolPreviews"
@@ -352,12 +357,11 @@ watch([activeIndex, activeToolIndex], () => {
                   :aria-pressed="activeToolIndex === index"
                   @click="selectTool(index)"
                 >
-                  <span>{{ tool.no }}</span>{{ tool.name }}
+                  <span>{{ tool.no }}</span
+                  >{{ tool.name }}
                 </button>
               </div>
-              <button type="button" aria-label="下一个 SAM3 工具" @click="stepTool(1)">
-                →
-              </button>
+              <button type="button" aria-label="下一个 SAM3 工具" @click="stepTool(1)">→</button>
             </div>
           </div>
 
@@ -376,7 +380,13 @@ watch([activeIndex, activeToolIndex], () => {
           >
             <source :src="activeScene.src" type="video/webm" />
           </video>
-          <img v-else :src="activeScene.src" :alt="activeScene.alt" loading="lazy" decoding="async" />
+          <img
+            v-else
+            :src="activeScene.src"
+            :alt="activeScene.alt"
+            loading="lazy"
+            decoding="async"
+          />
           <button
             v-if="activeScene.kind === 'video'"
             class="proof-video-toggle"
@@ -397,11 +407,7 @@ watch([activeIndex, activeToolIndex], () => {
           <div class="screen-meta" aria-hidden="true">
             <span>{{ activeScene.kind === "tools" ? activeTool.meta : activeScene.meta }}</span>
             <span>
-              {{
-                activeScene.kind === "tools"
-                  ? "4 TOOLS · REAL INFERENCE"
-                  : "SEED-BACKED SCENE"
-              }}
+              {{ activeScene.kind === "tools" ? "4 TOOLS · REAL INFERENCE" : "SEED-BACKED SCENE" }}
             </span>
           </div>
         </div>

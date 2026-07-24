@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: how-to
 since: v0.15.17
 status: stable
-last_reviewed: 2026-06-12
+last_reviewed: 2026-07-23
 ---
 
 # 开发部署（本地）
@@ -61,7 +61,9 @@ pnpm dev:api
 # 等价于 cd apps/api && uv run uvicorn app.main:app --reload --port 8000
 ```
 
-`--reload` 监听 `apps/api/**` 改动自动重启。`ENVIRONMENT` 默认 `development`，享受宽松 CORS、`/_test_seed` 路由等开发后门（见[运行环境形态](/dev/concepts/runtime-environments)）。
+`--reload` 监听 `apps/api/**` 改动自动重启。`ENVIRONMENT` 默认 `development`，使用本地
+CORS 策略（见[运行环境形态](/dev/concepts/runtime-environments)）。测试 seed 路由默认不挂载；
+仅 Playwright 专用进程会对隔离测试库显式设置 `E2E_SEED_ENABLED=true`。
 
 ### 2.4 起 Web（宿主机，HMR）
 
@@ -94,15 +96,15 @@ uv run python -m scripts.bootstrap_admin
 
 完整规则见 CLAUDE.md §8 与[升级指南](/ops/upgrade-guide)，开发态高频场景速查：
 
-| 改动 | 操作 |
-|---|---|
-| `apps/api/app/**` 业务码（API 进程） | 自动 reload，无需手动 |
-| `apps/api/app/workers/**` worker 码 | `docker restart ai-annotation-platform-celery-worker-1`（Celery 无 reload） |
-| 新增 alembic 迁移 | `uv run alembic upgrade head`（worker 改码同样 restart） |
-| `apps/web/src/**` | HMR 自动 |
-| `.env` 运行期变量 | 重启对应进程 / `docker compose up -d` 重建容器 |
-| `pyproject.toml` / `uv.lock` | `uv sync`；worker 容器需 `docker compose build` |
-| `package.json` / `pnpm-lock.yaml` | `pnpm install` |
+| 改动                                 | 操作                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `apps/api/app/**` 业务码（API 进程） | 自动 reload，无需手动                                                       |
+| `apps/api/app/workers/**` worker 码  | `docker restart ai-annotation-platform-celery-worker-1`（Celery 无 reload） |
+| 新增 alembic 迁移                    | `uv run alembic upgrade head`（worker 改码同样 restart）                    |
+| `apps/web/src/**`                    | HMR 自动                                                                    |
+| `.env` 运行期变量                    | 重启对应进程 / `docker compose up -d` 重建容器                              |
+| `pyproject.toml` / `uv.lock`         | `uv sync`；worker 容器需 `docker compose build`                             |
+| `package.json` / `pnpm-lock.yaml`    | `pnpm install`                                                              |
 
 ---
 

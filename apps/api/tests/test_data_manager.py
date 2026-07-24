@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import (
+    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+    Prediction,
+)
 from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.db.models.video_tracker_job import VideoTrackerJob
@@ -202,7 +205,14 @@ async def test_summary_uses_real_annotation_and_pending_shape_counts(
             {"type": "rectanglelabels", "value": {}, "score": 0.2},
         ],
     )
-    db_session.add_all([prediction, second_prediction])
+    interactive_accept_provenance = Prediction(
+        task_id=task_b.id,
+        project_id=project.id,
+        model_version="sam-interactive",
+        source=INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+        result=[{"type": "raster_mask", "value": {}, "score": 0.1}],
+    )
+    db_session.add_all([prediction, second_prediction, interactive_accept_provenance])
     await db_session.flush()
     db_session.add_all(
         [
@@ -305,6 +315,20 @@ async def test_summary_uses_real_annotation_and_pending_shape_counts(
     )
     assert low_confidence_response.status_code == 200, low_confidence_response.text
     assert low_confidence_response.json()["total"] == 2
+
+    matches = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task_b.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "field": "ai.pending_prediction_shape_count",
+                "op": "gt",
+                "value": 0,
+            }
+        },
+    )
+    assert matches.status_code == 200, matches.text
+    assert matches.json()["total"] == 2
 
 
 async def test_keyword_search_matches_task_id_and_file_name(

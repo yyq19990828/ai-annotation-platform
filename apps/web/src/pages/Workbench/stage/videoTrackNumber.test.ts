@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { VideoTrackGeometry } from "@/types";
 import { deriveTrackNumber } from "./videoStageGeometry";
 
-function track(id: string, trackId: string, firstFrame: number): { id: string; geometry: VideoTrackGeometry } {
+function track(
+  id: string,
+  trackId: string,
+  firstFrame: number,
+): { id: string; geometry: VideoTrackGeometry } {
   return {
     id,
     geometry: {
@@ -31,10 +35,7 @@ describe("deriveTrackNumber", () => {
   });
 
   it("breaks first-frame ties by track_id lexicographically", () => {
-    const result = deriveTrackNumber([
-      track("z", "trk_z", 0),
-      track("a", "trk_a", 0),
-    ]);
+    const result = deriveTrackNumber([track("z", "trk_z", 0), track("a", "trk_a", 0)]);
     expect(result.get("a")).toBe(1);
     expect(result.get("z")).toBe(2);
   });

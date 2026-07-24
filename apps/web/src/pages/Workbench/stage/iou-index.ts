@@ -20,7 +20,10 @@ interface IndexedShape extends BBox {
 
 function shapeBBox(s: ShapeForIoU): BBox {
   if (s.polygon && s.polygon.length >= 3) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const [x, y] of s.polygon) {
       if (x < minX) minX = x;
       if (y < minY) minY = y;
@@ -34,18 +37,14 @@ function shapeBBox(s: ShapeForIoU): BBox {
 
 export interface IoUClassIndex {
   /** 返回与 query 包围盒可能相交的同类 shape 候选（不含 query 自身）。 */
-  candidatesForBox: (
-    query: ShapeForIoU & { cls: string },
-  ) => ShapeForIoU[];
+  candidatesForBox: (query: ShapeForIoU & { cls: string }) => ShapeForIoU[];
 }
 
 /**
  * 按 cls 分桶建 rbush。每桶独立树；查询时仅在 query.cls 桶内 search。
  * 输入 boxes.length === 0 时返回空索引（candidatesForBox 直接返 []）。
  */
-export function buildIoUIndex(
-  boxes: Array<ShapeForIoU & { cls: string }>,
-): IoUClassIndex {
+export function buildIoUIndex(boxes: Array<ShapeForIoU & { cls: string }>): IoUClassIndex {
   const trees = new Map<string, RBush<IndexedShape>>();
   for (const b of boxes) {
     let tree = trees.get(b.cls);
@@ -85,7 +84,11 @@ export interface VertexIndex {
 export function buildVertexIndex(points: Pt[]): VertexIndex {
   const tree = new RBush<IndexedVertex>();
   const items: IndexedVertex[] = points.map(([x, y], idx) => ({
-    minX: x, minY: y, maxX: x, maxY: y, idx,
+    minX: x,
+    minY: y,
+    maxX: x,
+    maxY: y,
+    idx,
   }));
   tree.load(items);
   return {

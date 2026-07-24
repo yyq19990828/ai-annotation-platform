@@ -155,9 +155,7 @@ def test_video_autocast_is_scoped_even_when_inference_fails(
         module.torch,
         "autocast",
         lambda **kwargs: (
-            events.append(
-                f"config:{kwargs['device_type']}:{kwargs['enabled']}"
-            )
+            events.append(f"config:{kwargs['device_type']}:{kwargs['enabled']}")
             or _Autocast()
         ),
     )

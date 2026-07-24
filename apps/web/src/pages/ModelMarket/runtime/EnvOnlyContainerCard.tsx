@@ -29,14 +29,10 @@ export interface EnvOnlyContainerCardProps {
   onRegister?: (url: string) => void;
 }
 
-const CARD_CLASS =
-  "flex flex-col gap-2.5 rounded-md border border-border bg-card p-3";
+const CARD_CLASS = "flex flex-col gap-2.5 rounded-md border border-border bg-card p-3";
 const URL_CLASS = "mono max-w-[420px] truncate text-xs text-muted-foreground";
 
-export function EnvOnlyContainerCard({
-  target,
-  onRegister,
-}: EnvOnlyContainerCardProps): ReactNode {
+export function EnvOnlyContainerCard({ target, onRegister }: EnvOnlyContainerCardProps): ReactNode {
   const pushToast = useToastStore((s) => s.push);
   const [busy, setBusy] = useState(false);
 
@@ -65,10 +61,7 @@ export function EnvOnlyContainerCard({
   const modelVersion = target.model_version;
   const cacheHitRate = target.cache?.hit_rate;
   const loadedCount =
-    pool?.current_size ??
-    pool?.loaded_keys?.length ??
-    pool?.loaded_variants?.length ??
-    0;
+    pool?.current_size ?? pool?.loaded_keys?.length ?? pool?.loaded_variants?.length ?? 0;
   const videoLoadedCount =
     videoPool?.current_size ??
     videoPool?.loaded_keys?.length ??
@@ -90,41 +83,30 @@ export function EnvOnlyContainerCard({
               <TooltipTrigger asChild>
                 <Badge variant="warning">⚠ CPU 回退</Badge>
               </TooltipTrigger>
-              <TooltipContent side="top">
-                配置了 GPU 但已静默退回 CPU 推理
-              </TooltipContent>
+              <TooltipContent side="top">配置了 GPU 但已静默退回 CPU 推理</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
         <span className={URL_CLASS}>{target.url}</span>
-        {target.ok && (
-          <span className="text-xs text-muted-foreground">{target.latency_ms}ms</span>
-        )}
+        {target.ok && <span className="text-xs text-muted-foreground">{target.latency_ms}ms</span>}
       </div>
 
       {!target.ok ? (
-        <div className="text-xs text-status-danger">
-          {target.error ?? "不可达"}
-        </div>
+        <div className="text-xs text-status-danger">{target.error ?? "不可达"}</div>
       ) : (
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           {modelVersion && <span className="mono">{modelVersion}</span>}
           {gpuInfo?.memory_used_mb != null && gpuInfo?.memory_total_mb != null && (
             <span title="整卡已用/总显存">
-              GPU{gpuInfo.device_index ?? 0} {gpuInfo.memory_used_mb}/
-              {gpuInfo.memory_total_mb} MB
+              GPU{gpuInfo.device_index ?? 0} {gpuInfo.memory_used_mb}/{gpuInfo.memory_total_mb} MB
             </span>
           )}
-          {(gpuInfo?.physical_device_token ||
-            gpuInfo?.mig_uuid ||
-            gpuInfo?.device_uuid) && (
+          {(gpuInfo?.physical_device_token || gpuInfo?.mig_uuid || gpuInfo?.device_uuid) && (
             <span className="mono" title="物理设备身份">
               {gpuInfo.physical_device_token ?? gpuInfo.mig_uuid ?? gpuInfo.device_uuid}
             </span>
           )}
-          {cacheHitRate != null && (
-            <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>
-          )}
+          {cacheHitRate != null && <span>cache {(cacheHitRate * 100).toFixed(1)}%</span>}
           <span>
             图像池 {loadedCount}
             {pool?.cap != null && `/${pool.cap}`}
@@ -133,8 +115,7 @@ export function EnvOnlyContainerCard({
             <span>
               视频池 {videoLoadedCount}
               {videoPool.cap != null && `/${videoPool.cap}`}
-              {videoPool.active_sessions != null &&
-                ` · ${videoPool.active_sessions} 会话`}
+              {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
             </span>
           )}
         </div>

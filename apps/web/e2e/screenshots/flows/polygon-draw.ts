@@ -15,7 +15,10 @@ import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import { hidePredictions, openImageAnnotate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-export async function runPolygonDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
+export async function runPolygonDraw(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
   await openImageAnnotate(page, catalog);
   await page.waitForTimeout(1400);
 

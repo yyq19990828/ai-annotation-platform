@@ -3,6 +3,7 @@
 > **性质**：研究输入，不是行动清单。
 > **来源**：对照阅读 `cvat`（v2.x 主干）+ `label-studio`（OSS 1.x 主干）两份代码，结合当前平台 ROADMAP.md / CHANGELOG.md 的现状摸底。
 > **使用方式**：
+>
 > 1. 先看 §7 "与现 ROADMAP 的映射表"，确认每条**是否已在主 ROADMAP 覆盖** / **需要升级范围** / **本次新增**。
 > 2. "新增"或"升级"条目，按颗粒度决定是回流到 `ROADMAP.md` 的 §A/§B/§C，还是单独拆 epic 子文档。
 > 3. "避坑清单（§6）"不是 TODO，而是**保持当前正确选择**的备忘，未来 PR review 时引用。
@@ -35,6 +36,7 @@
 - **现 ROADMAP**：§B 治理/合规只有一句「Slack/Webhook 集成」，缺设计。
 - **建议**：升级为独立 ADR + epic。
 - **核心字段**：
+
   ```python
   class Webhook:
       id: UUID
@@ -56,6 +58,7 @@
       attempt: int
       next_retry_at: datetime | None
   ```
+
 - **重试策略**：失败指数退避（30s / 5m / 1h / 6h / 24h）共 5 次，全失败标记 `webhook.is_active=false` + 给 owner 发通知。
 - **事件清单（首版）**：5 类够用 —— `annotation.created/updated`、`task.assigned/approved/rejected`、`batch.state_changed`、`prediction.completed/failed`、`bug_report.created`。
 - **签名头**：`X-Signature-256: sha256=<hmac>`（GitHub 同款），客户端可直接复用 GitHub webhook 验签代码。
@@ -230,48 +233,48 @@
 
 这一节**不是 TODO**，而是 PR review 时的参考底线。
 
-| 主题 | CVAT / LS 的坑 | 平台当前正确选择 | 何时检查 |
-|---|---|---|---|
-| Job 状态字段 | CVAT `Job.status`/`stage`/`state` 三字段并存（[models.py:1165](../../cvat/cvat/apps/engine/models.py)） | 单 status enum | 加新状态前看一眼是否能用现有 enum 表达 |
-| Label Config | LS XML DSL 难维护、难校验 | JSONB `classes_config` + `attributes_schema` | 永远不要回退到 DSL，要灵活就扩 JSONB schema |
-| Task 双重含义 | LS task 既是标注题目也是后台 job | 题目 / Celery 分离 | §1.7 async_jobs 落地后强化 |
-| Django app 碎片 | LS 24+ apps 跨 module 依赖混乱 | apps/api 单仓 | 不要因为"模块化"动机拆出新 apps/* |
-| Enterprise vs OSS 分叉 | LS `if settings.LABEL_STUDIO_EE` 满地 | 单分支无功能开关 | 商业化前不要拆 OSS/EE，灰度走 feature_flags |
-| 格式适配膨胀 | CVAT 维护 25+ 格式适配 | COCO/YOLO/VOC 三件套 | 客户要新格式走 §3.3 datumaro，**不自己加** |
-| 权限引擎 | CVAT Rego/OPA 学习成本高 | 单 RBAC 中间件 | 不引入 policy engine；权限复杂化时先看是否能在 RBAC 内表达 |
-| AI backend 部署 | CVAT Nuclio 运维复杂 | HTTP `/predict` 协议 + 独立容器（ADR-0012） | 保持；§3.4 plugin 也走 HTTP |
-| Skeleton 递归嵌套 | CVAT sublabel 无限递归实际很少用 | 当前无 skeleton 实现 | §C.7 I10 实现时**只支持 2 层**（label + sublabel），不开放任意嵌套 |
-| Consensus 合并规则 | CVAT 用 Rego 配置 | 当前未实现 | §2.3 I19a 实现时用固定算法 + 阈值参数，不引入策略 DSL |
+| 主题                   | CVAT / LS 的坑                                                                                          | 平台当前正确选择                             | 何时检查                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| Job 状态字段           | CVAT `Job.status`/`stage`/`state` 三字段并存（[models.py:1165](../../cvat/cvat/apps/engine/models.py)） | 单 status enum                               | 加新状态前看一眼是否能用现有 enum 表达                             |
+| Label Config           | LS XML DSL 难维护、难校验                                                                               | JSONB `classes_config` + `attributes_schema` | 永远不要回退到 DSL，要灵活就扩 JSONB schema                        |
+| Task 双重含义          | LS task 既是标注题目也是后台 job                                                                        | 题目 / Celery 分离                           | §1.7 async_jobs 落地后强化                                         |
+| Django app 碎片        | LS 24+ apps 跨 module 依赖混乱                                                                          | apps/api 单仓                                | 不要因为"模块化"动机拆出新 apps/\*                                 |
+| Enterprise vs OSS 分叉 | LS `if settings.LABEL_STUDIO_EE` 满地                                                                   | 单分支无功能开关                             | 商业化前不要拆 OSS/EE，灰度走 feature_flags                        |
+| 格式适配膨胀           | CVAT 维护 25+ 格式适配                                                                                  | COCO/YOLO/VOC 三件套                         | 客户要新格式走 §3.3 datumaro，**不自己加**                         |
+| 权限引擎               | CVAT Rego/OPA 学习成本高                                                                                | 单 RBAC 中间件                               | 不引入 policy engine；权限复杂化时先看是否能在 RBAC 内表达         |
+| AI backend 部署        | CVAT Nuclio 运维复杂                                                                                    | HTTP `/predict` 协议 + 独立容器（ADR-0012）  | 保持；§3.4 plugin 也走 HTTP                                        |
+| Skeleton 递归嵌套      | CVAT sublabel 无限递归实际很少用                                                                        | 当前无 skeleton 实现                         | §C.7 I10 实现时**只支持 2 层**（label + sublabel），不开放任意嵌套 |
+| Consensus 合并规则     | CVAT 用 Rego 配置                                                                                       | 当前未实现                                   | §2.3 I19a 实现时用固定算法 + 阈值参数，不引入策略 DSL              |
 
 ---
 
 ## 7. 与现 ROADMAP 的映射表
 
-| 本文档条目 | 现 ROADMAP 状态 | 建议动作 |
-|---|---|---|
-| §1.1 Annotation Guide | ✅ **已完成 v0.10.13**（2026-05-18） | 配套延伸条目已转录到 ROADMAP §A 项目模块 |
-| §1.2 reject_reason_type | ✅ **已完成 v0.10.16**（2026-05-19） | 4 类 enum + RejectReasonModal 改造 + DuckDB 面板联动 |
-| §1.3 webhook event_version | ✅ **已完成 v0.10.16**（2026-05-19，仅 ADR 草案 + Pydantic 占位） | ADR-0025 Proposed，§2.1 epic 实施时按此 ADR 落地 |
-| §1.4 截图 fixture | 已在 §A 后续观察项 | 不动 |
-| §1.5 Predictions Import | ✅ **已完成 v0.10.15**（2026-05-19） | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸" |
-| §1.6 DuckDB 离线视图 | ✅ **已完成 v0.10.16**（2026-05-19） | 三面板 + super_admin 守卫 + 升级路径 PG → DuckDB → ClickHouse 待触发 |
-| §1.7 async_jobs 统一表 | ✅ **已完成 v0.10.16**（2026-05-19） | 双写双轨 + Topbar 铃铛 + 4 kind 接入；cancel 全 kind / WebSocket 进度推送留 v0.10.17 |
-| §2.1 Webhook 系统 | §B 治理/合规 有 1 句话 | **升级范围**：拆独立 epic + ADR-0018 草案 |
-| §2.2 AnnotationFeedback 收敛 | ◑ **核心已落 v0.10.19–v0.11.0** | 统一表 + view + 双写 + 对账就位；剩 ADR-0027 段三切单源（v0.11.9+，主 ROADMAP I18 跟踪） |
-| §2.3 Consensus / GT 拆分 | §C.7 I19 是 L 体量打包 | **升级范围**：建议 I19a/I19b 拆分 |
-| §2.4 Tracker 协议层 | ✅ **已完成 v0.10.37**（能力协商 epic） | 结论演进：取消 Tracker Registry UI，改 `/setup` 自报 + 动态发现；详见 §2.4 与视频 roadmap §3.2/§3.3 |
-| §2.5 项目规则版本化 | **新增** | 回流到 §A "数据 & 存储" 或长期规划 |
-| §2.6 平台原生 AAP JSON | ✅ **已完成 v0.10.15**（2026-05-19，与 §1.5 同窗口） | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸" |
-| §3.1 公开 SDK + CLI | 长期规划 L7（12 月+） | **优先级升级**：建议从 L7 提升到 P2 |
-| §3.2 Cloud Storage Sync | **新增** | 回流到 §A "数据 & 存储"，触发=企业客户需求 |
-| §3.3 Datumaro 集成 | **新增** | 写入 §A "导出" 子节（如有），或新增 |
-| §3.4 Tool Plugin 注册式 | 长期规划 L7 | **细化**：作 L7 的具体接口形态备忘 |
-| §4.1 Annotator Dashboard | **新增** | 回流到 §B "可观测性"，标"付费决策项" |
-| §4.2 Trace ID | **新增** | 回流到 §B "测试 / 开发体验" |
-| §4.3 ClickHouse 升级 | **新增** | 回流到 "等业务规模触发" 区块 |
-| §5.1 LLM-as-Judge | §B Bug 反馈 LLM 聚类是同源 | **升级范围**：扩为 LLM SDK 接入统一窗口（聚类 / reject 建议 / 类别澄清） |
-| §5.2 主动学习闭环 MVP | 长期规划 L1/L2 抽象 | **细化**：作 L1/L2 的 MVP 形态备忘，依赖 §2.1 Webhook |
-| §6 避坑清单 | 散落于各处 | **新增**：在 ROADMAP.md 末尾或单独维护"决策底线"备忘 |
+| 本文档条目                   | 现 ROADMAP 状态                                                   | 建议动作                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| §1.1 Annotation Guide        | ✅ **已完成 v0.10.13**（2026-05-18）                              | 配套延伸条目已转录到 ROADMAP §A 项目模块                                                            |
+| §1.2 reject_reason_type      | ✅ **已完成 v0.10.16**（2026-05-19）                              | 4 类 enum + RejectReasonModal 改造 + DuckDB 面板联动                                                |
+| §1.3 webhook event_version   | ✅ **已完成 v0.10.16**（2026-05-19，仅 ADR 草案 + Pydantic 占位） | ADR-0025 Proposed，§2.1 epic 实施时按此 ADR 落地                                                    |
+| §1.4 截图 fixture            | 已在 §A 后续观察项                                                | 不动                                                                                                |
+| §1.5 Predictions Import      | ✅ **已完成 v0.10.15**（2026-05-19）                              | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸"                            |
+| §1.6 DuckDB 离线视图         | ✅ **已完成 v0.10.16**（2026-05-19）                              | 三面板 + super_admin 守卫 + 升级路径 PG → DuckDB → ClickHouse 待触发                                |
+| §1.7 async_jobs 统一表       | ✅ **已完成 v0.10.16**（2026-05-19）                              | 双写双轨 + Topbar 铃铛 + 4 kind 接入；cancel 全 kind / WebSocket 进度推送留 v0.10.17                |
+| §2.1 Webhook 系统            | §B 治理/合规 有 1 句话                                            | **升级范围**：拆独立 epic + ADR-0018 草案                                                           |
+| §2.2 AnnotationFeedback 收敛 | ◑ **核心已落 v0.10.19–v0.11.0**                                   | 统一表 + view + 双写 + 对账就位；剩 ADR-0027 段三切单源（v0.11.9+，主 ROADMAP I18 跟踪）            |
+| §2.3 Consensus / GT 拆分     | §C.7 I19 是 L 体量打包                                            | **升级范围**：建议 I19a/I19b 拆分                                                                   |
+| §2.4 Tracker 协议层          | ✅ **已完成 v0.10.37**（能力协商 epic）                           | 结论演进：取消 Tracker Registry UI，改 `/setup` 自报 + 动态发现；详见 §2.4 与视频 roadmap §3.2/§3.3 |
+| §2.5 项目规则版本化          | **新增**                                                          | 回流到 §A "数据 & 存储" 或长期规划                                                                  |
+| §2.6 平台原生 AAP JSON       | ✅ **已完成 v0.10.15**（2026-05-19，与 §1.5 同窗口）              | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸"                            |
+| §3.1 公开 SDK + CLI          | 长期规划 L7（12 月+）                                             | **优先级升级**：建议从 L7 提升到 P2                                                                 |
+| §3.2 Cloud Storage Sync      | **新增**                                                          | 回流到 §A "数据 & 存储"，触发=企业客户需求                                                          |
+| §3.3 Datumaro 集成           | **新增**                                                          | 写入 §A "导出" 子节（如有），或新增                                                                 |
+| §3.4 Tool Plugin 注册式      | 长期规划 L7                                                       | **细化**：作 L7 的具体接口形态备忘                                                                  |
+| §4.1 Annotator Dashboard     | **新增**                                                          | 回流到 §B "可观测性"，标"付费决策项"                                                                |
+| §4.2 Trace ID                | **新增**                                                          | 回流到 §B "测试 / 开发体验"                                                                         |
+| §4.3 ClickHouse 升级         | **新增**                                                          | 回流到 "等业务规模触发" 区块                                                                        |
+| §5.1 LLM-as-Judge            | §B Bug 反馈 LLM 聚类是同源                                        | **升级范围**：扩为 LLM SDK 接入统一窗口（聚类 / reject 建议 / 类别澄清）                            |
+| §5.2 主动学习闭环 MVP        | 长期规划 L1/L2 抽象                                               | **细化**：作 L1/L2 的 MVP 形态备忘，依赖 §2.1 Webhook                                               |
+| §6 避坑清单                  | 散落于各处                                                        | **新增**：在 ROADMAP.md 末尾或单独维护"决策底线"备忘                                                |
 
 ---
 

@@ -1,0 +1,3 @@
+.root {
+  gap: calc(var(--spacing) * var(--toggle-group-gap));
+}

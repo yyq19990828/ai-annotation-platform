@@ -47,7 +47,9 @@ export function ResetPasswordPage() {
         <div className="rounded-2xl border border-border bg-card px-8 py-7 shadow-xl">
           {done ? (
             <div className="text-center">
-              <div className="mb-4 text-sm text-muted-foreground">密码已重置，请使用新密码登录。</div>
+              <div className="mb-4 text-sm text-muted-foreground">
+                密码已重置，请使用新密码登录。
+              </div>
               <Link to="/login" className="text-sm text-brand hover:underline">
                 前往登录
               </Link>

@@ -4,16 +4,15 @@
 // 首次激活时强制走一次全图（rect = 全图），保证 canvas 与 buffer 初态一致。
 //
 // 仍以 useMaskEditor.revision 作为「需要重画」的通知信号；脏区数据不进 React state。
-// 颜色固定为红色，alpha 由工作台图片设置控制，与已有紫色 SAM 候选区分。
+// 颜色跟随当前类别，alpha 复用工作台通用「选中填充透明度」。
 
 import { useEffect, useMemo, useRef } from "react";
 import { Layer, Image as KonvaImage } from "react-konva";
 import type Konva from "konva";
+import { VISUAL_DEFAULTS } from "../annotationVisual";
 import type { MaskBuffer } from "../shared/geometry/maskBuffer";
 
-const FILL_R = 220;
-const FILL_G = 38;
-const FILL_B = 38;
+const DEFAULT_FILL: readonly [number, number, number] = [220, 38, 38];
 
 interface MaskOverlayLayerProps {
   buffer: MaskBuffer | null;
@@ -21,6 +20,7 @@ interface MaskOverlayLayerProps {
   imgW: number;
   imgH: number;
   opacity?: number;
+  color?: readonly [number, number, number];
   /** 仅 mask 工具激活且 active 为 true 时挂载。 */
   visible: boolean;
 }
@@ -30,7 +30,8 @@ export function MaskOverlayLayer({
   revision,
   imgW,
   imgH,
-  opacity = 0.45,
+  opacity = VISUAL_DEFAULTS.fillOpacitySelected,
+  color = DEFAULT_FILL,
   visible,
 }: MaskOverlayLayerProps) {
   const canvas = useMemo(() => {
@@ -56,9 +57,10 @@ export function MaskOverlayLayer({
     const opacityChanged = lastOpacityByteRef.current !== opacityByte;
     lastOpacityByteRef.current = opacityByte;
     // 首次看到该 buffer → 全图；后续 → 取脏区，无脏区直接 skip
-    const rect = isFirstSight || opacityChanged
-      ? { x0: 0, y0: 0, x1: buffer.width, y1: buffer.height }
-      : buffer.consumeDirty();
+    const rect =
+      isFirstSight || opacityChanged
+        ? { x0: 0, y0: 0, x1: buffer.width, y1: buffer.height }
+        : buffer.consumeDirty();
     if (!rect) return;
     // 首次全量时也把 buffer 内部脏区一并清空，避免下一笔被首次全量「吃掉」
     if (isFirstSight || opacityChanged) buffer.consumeDirty();
@@ -67,9 +69,9 @@ export function MaskOverlayLayer({
     const data = buffer.toAlphaImageDataRect(rect);
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] > 0) {
-        data[i] = FILL_R;
-        data[i + 1] = FILL_G;
-        data[i + 2] = FILL_B;
+        data[i] = color[0];
+        data[i + 1] = color[1];
+        data[i + 2] = color[2];
         data[i + 3] = opacityByte;
       }
     }
@@ -78,7 +80,7 @@ export function MaskOverlayLayer({
     ctx.putImageData(img, rect.x0, rect.y0);
     const node = imageRef.current;
     if (node) node.getLayer()?.batchDraw();
-  }, [buffer, canvas, revision, imgW, imgH, opacityByte]);
+  }, [buffer, canvas, revision, imgW, imgH, opacityByte, color]);
 
   if (!visible || !buffer || !canvas) return null;
 

@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type {
-  MLModelCapability,
-  MLBackendSupportedVariantGroup,
-} from "@/api/ml-backends";
-import {
-  derivePanelShape,
-  deriveTextPanelShape,
-  deriveVariantSource,
-} from "./panelShape";
+import type { MLModelCapability, MLBackendSupportedVariantGroup } from "@/api/ml-backends";
+import { derivePanelShape, deriveTextPanelShape, deriveVariantSource } from "./panelShape";
 
 function model(overrides: Partial<MLModelCapability>): MLModelCapability {
   return { id: "m1", ...overrides };

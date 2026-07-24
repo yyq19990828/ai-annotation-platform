@@ -121,9 +121,7 @@ export const batchesApi = {
     const q = new URLSearchParams();
     if (status) q.set("status", status);
     const qs = q.toString();
-    return apiClient.get<BatchResponse[]>(
-      `/projects/${projectId}/batches${qs ? `?${qs}` : ""}`,
-    );
+    return apiClient.get<BatchResponse[]>(`/projects/${projectId}/batches${qs ? `?${qs}` : ""}`);
   },
 
   get: (projectId: string, batchId: string) =>
@@ -133,50 +131,30 @@ export const batchesApi = {
     apiClient.post<BatchResponse>(`/projects/${projectId}/batches`, payload),
 
   update: (projectId: string, batchId: string, payload: BatchUpdatePayload) =>
-    apiClient.patch<BatchResponse>(
-      `/projects/${projectId}/batches/${batchId}`,
-      payload,
-    ),
+    apiClient.patch<BatchResponse>(`/projects/${projectId}/batches/${batchId}`, payload),
 
   remove: (projectId: string, batchId: string, force = false) =>
     apiClient.delete<void>(
       `/projects/${projectId}/batches/${batchId}${force ? "?force=true" : ""}`,
     ),
 
-  transition: (
-    projectId: string,
-    batchId: string,
-    targetStatus: string,
-    reason?: string,
-  ) =>
+  transition: (projectId: string, batchId: string, targetStatus: string, reason?: string) =>
     apiClient.post<BatchResponse>(
       `/projects/${projectId}/batches/${batchId}/transition`,
       reason ? { target_status: targetStatus, reason } : { target_status: targetStatus },
     ),
 
   split: (projectId: string, payload: BatchSplitPayload) =>
-    apiClient.post<BatchResponse[]>(
-      `/projects/${projectId}/batches/split`,
-      payload,
-    ),
+    apiClient.post<BatchResponse[]>(`/projects/${projectId}/batches/split`, payload),
 
   reject: (projectId: string, batchId: string, feedback: string) =>
-    apiClient.post<BatchResponse>(
-      `/projects/${projectId}/batches/${batchId}/reject`,
-      { feedback },
-    ),
+    apiClient.post<BatchResponse>(`/projects/${projectId}/batches/${batchId}/reject`, { feedback }),
 
   // v0.7.6 · 终极重置：任意状态 → draft（owner-only，reason ≥ 10 字）
   reset: (projectId: string, batchId: string, reason: string) =>
-    apiClient.post<BatchResponse>(
-      `/projects/${projectId}/batches/${batchId}/reset`,
-      { reason },
-    ),
+    apiClient.post<BatchResponse>(`/projects/${projectId}/batches/${batchId}/reset`, { reason }),
 
-  distributeBatches: (
-    projectId: string,
-    payload: ProjectDistributeBatchesPayload,
-  ) =>
+  distributeBatches: (projectId: string, payload: ProjectDistributeBatchesPayload) =>
     apiClient.post<BatchDistributeResultResponse>(
       `/projects/${projectId}/batches/distribute-batches`,
       payload,
@@ -184,10 +162,9 @@ export const batchesApi = {
 
   // v0.7.3 · 批量操作
   bulkArchive: (projectId: string, batchIds: string[]) =>
-    apiClient.post<BulkBatchActionResponse>(
-      `/projects/${projectId}/batches/bulk-archive`,
-      { batch_ids: batchIds },
-    ),
+    apiClient.post<BulkBatchActionResponse>(`/projects/${projectId}/batches/bulk-archive`, {
+      batch_ids: batchIds,
+    }),
 
   bulkDelete: (projectId: string, batchIds: string[], force = false) =>
     apiClient.post<BulkBatchActionResponse>(
@@ -202,36 +179,30 @@ export const batchesApi = {
     ),
 
   bulkActivate: (projectId: string, batchIds: string[]) =>
-    apiClient.post<BulkBatchActionResponse>(
-      `/projects/${projectId}/batches/bulk-activate`,
-      { batch_ids: batchIds },
-    ),
+    apiClient.post<BulkBatchActionResponse>(`/projects/${projectId}/batches/bulk-activate`, {
+      batch_ids: batchIds,
+    }),
 
   // v0.9.15 · ADR-0008 admin-lock
   adminLock: (projectId: string, batchId: string, reason: string) =>
-    apiClient.post<BatchResponse>(
-      `/projects/${projectId}/batches/${batchId}/admin-lock`,
-      { reason },
-    ),
+    apiClient.post<BatchResponse>(`/projects/${projectId}/batches/${batchId}/admin-lock`, {
+      reason,
+    }),
 
   adminUnlock: (projectId: string, batchId: string) =>
-    apiClient.post<BatchResponse>(
-      `/projects/${projectId}/batches/${batchId}/admin-unlock`,
-      {},
-    ),
+    apiClient.post<BatchResponse>(`/projects/${projectId}/batches/${batchId}/admin-unlock`, {}),
 
   // v0.9.15 · Bulk approve/reject
   bulkApprove: (projectId: string, batchIds: string[]) =>
-    apiClient.post<BulkBatchActionResponse>(
-      `/projects/${projectId}/batches/bulk-approve`,
-      { batch_ids: batchIds },
-    ),
+    apiClient.post<BulkBatchActionResponse>(`/projects/${projectId}/batches/bulk-approve`, {
+      batch_ids: batchIds,
+    }),
 
   bulkReject: (projectId: string, batchIds: string[], feedback: string) =>
-    apiClient.post<BulkBatchActionResponse>(
-      `/projects/${projectId}/batches/bulk-reject`,
-      { batch_ids: batchIds, feedback },
-    ),
+    apiClient.post<BulkBatchActionResponse>(`/projects/${projectId}/batches/bulk-reject`, {
+      batch_ids: batchIds,
+      feedback,
+    }),
 
   // v0.7.3 · 批次操作历史
   auditLogs: (projectId: string, batchId: string, limit = 50) =>
@@ -241,17 +212,26 @@ export const batchesApi = {
 
   // v0.7.3 · 未归类任务计数（batch_id IS NULL）— 顶部横带提示用
   unclassifiedCount: (projectId: string) =>
-    apiClient.get<{ count: number }>(
-      `/projects/${projectId}/batches/unclassified-count`,
-    ),
+    apiClient.get<{ count: number }>(`/projects/${projectId}/batches/unclassified-count`),
 
   // v0.10.27 · 导出异步化：POST 创建 async_job(kind=export)，返回 {job_id}。
   // 不再直接 blob 下载；产物完成后在 JobsBell 里用预签名 URL 下载。
-  exportBatch: (projectId: string, batchId: string, targets: ExportTarget[], opts?: ExportOptions) => {
+  exportBatch: (
+    projectId: string,
+    batchId: string,
+    targets: ExportTarget[],
+    opts?: ExportOptions,
+  ) => {
     const includeAttr = opts?.includeAttributes !== false;
     const params = new URLSearchParams({ include_attributes: String(includeAttr) });
     targets.forEach((t) => params.append("targets", t));
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
+    if (opts?.videoOverlapPolicy) {
+      params.set("video_overlap_policy", opts.videoOverlapPolicy);
+    }
+    if (opts?.motsFrameBase !== undefined) {
+      params.set("mots_frame_base", String(opts.motsFrameBase));
+    }
     return apiClient.post<{ job_id: string }>(
       `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
     );

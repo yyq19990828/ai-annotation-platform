@@ -70,21 +70,24 @@ export function MarkdownEditor({
     v.focus();
   }, []);
 
-  const handleUpload = useCallback(async (file: File) => {
-    const upload = onUploadRef.current;
-    if (!upload) return;
-    if (!file.type.startsWith("image/")) return;
-    setUploading(file.name);
-    try {
-      const { src, alt } = await upload(file);
-      insertAtCursor(`![${alt ?? file.name}](${src})`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      insertAtCursor(`<!-- 上传失败: ${msg} -->`);
-    } finally {
-      setUploading(null);
-    }
-  }, [insertAtCursor]);
+  const handleUpload = useCallback(
+    async (file: File) => {
+      const upload = onUploadRef.current;
+      if (!upload) return;
+      if (!file.type.startsWith("image/")) return;
+      setUploading(file.name);
+      try {
+        const { src, alt } = await upload(file);
+        insertAtCursor(`![${alt ?? file.name}](${src})`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        insertAtCursor(`<!-- 上传失败: ${msg} -->`);
+      } finally {
+        setUploading(null);
+      }
+    },
+    [insertAtCursor],
+  );
 
   // ── CodeMirror lifecycle ─────────────────────────────────
   useEffect(() => {

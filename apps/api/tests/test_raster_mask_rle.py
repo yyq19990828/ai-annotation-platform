@@ -4,9 +4,12 @@ from pathlib import Path
 import pytest
 
 from app.utils.raster_mask_rle import (
+    MAX_IMAGE_MASK_DIMENSION,
+    MAX_IMAGE_MASK_PIXELS,
     decode_coco_rle,
     encode_coco_rle,
     validate_coco_rle,
+    coco_rle_area,
     coco_rle_bbox_norm,
 )
 
@@ -38,3 +41,27 @@ def test_coco_rle_bbox_norm_is_tight_and_empty_safe():
     rle = encode_coco_rle([0, 1, 0, 0, 1, 0], 3, 2)
     assert coco_rle_bbox_norm(rle) == {"x": 1 / 3, "y": 0, "w": 1 / 3, "h": 1}
     assert coco_rle_bbox_norm(encode_coco_rle([0] * 6, 3, 2)) == {}
+    assert coco_rle_area(rle) == 2
+    assert coco_rle_area(encode_coco_rle([0] * 6, 3, 2)) == 0
+
+
+def test_canonical_rle_accepts_8k_image_envelope_without_materializing_pixels():
+    rle = {
+        "encoding": "coco_rle",
+        "size": [MAX_IMAGE_MASK_DIMENSION, MAX_IMAGE_MASK_DIMENSION],
+        "counts": [MAX_IMAGE_MASK_PIXELS],
+    }
+
+    assert validate_coco_rle(rle) == (
+        MAX_IMAGE_MASK_DIMENSION,
+        MAX_IMAGE_MASK_DIMENSION,
+        [MAX_IMAGE_MASK_PIXELS],
+    )
+    with pytest.raises(ValueError, match="dimensions"):
+        validate_coco_rle(
+            {
+                "encoding": "coco_rle",
+                "size": [MAX_IMAGE_MASK_DIMENSION + 1, 1],
+                "counts": [MAX_IMAGE_MASK_DIMENSION + 1],
+            }
+        )

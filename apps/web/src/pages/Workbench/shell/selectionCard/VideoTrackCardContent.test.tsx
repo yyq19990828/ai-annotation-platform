@@ -6,7 +6,10 @@ import { VideoTrackCardContent } from "./VideoTrackCardContent";
 
 const box = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
 
-function kf(frame_index: number, source: VideoTrackKeyframe["source"] = "manual"): VideoTrackKeyframe {
+function kf(
+  frame_index: number,
+  source: VideoTrackKeyframe["source"] = "manual",
+): VideoTrackKeyframe {
   return { frame_index, bbox: box, source };
 }
 
@@ -71,8 +74,8 @@ describe("VideoTrackCardContent", () => {
     expect(screen.getByText("轨迹整体")).toBeTruthy();
     expect(screen.getByText("当前帧")).toBeTruthy();
     // 关键帧层:导航按钮唯一标识(纯文本"关键帧"会与当前帧状态值重名)。
-    expect(screen.getByTitle("上一关键帧")).toBeTruthy();
-    expect(screen.getByTitle("下一关键帧")).toBeTruthy();
+    expect(screen.getByTitle("上一可见关键帧")).toBeTruthy();
+    expect(screen.getByTitle("下一可见关键帧")).toBeTruthy();
   });
 
   it("单轨 AI 入口明确为延展当前轨迹", () => {
@@ -93,14 +96,14 @@ describe("VideoTrackCardContent", () => {
   it("下一关键帧按钮跳到下一可见关键帧", () => {
     const onSeekFrame = vi.fn();
     renderCard({ onSeekFrame });
-    fireEvent.click(screen.getByTitle("下一关键帧"));
+    fireEvent.click(screen.getByTitle("下一可见关键帧"));
     expect(onSeekFrame).toHaveBeenCalledWith(10);
   });
 
   it("上一关键帧按钮跳到上一可见关键帧", () => {
     const onSeekFrame = vi.fn();
     renderCard({ onSeekFrame });
-    fireEvent.click(screen.getByTitle("上一关键帧"));
+    fireEvent.click(screen.getByTitle("上一可见关键帧"));
     expect(onSeekFrame).toHaveBeenCalledWith(0);
   });
 
@@ -116,7 +119,10 @@ describe("VideoTrackCardContent", () => {
     renderCard({ onAcceptPredictionKeyframe });
     const predRow = screen.getByTestId("video-prediction-keyframe-row");
     fireEvent.click(within(predRow).getByLabelText("接受预测"));
-    expect(onAcceptPredictionKeyframe).toHaveBeenCalledWith(expect.objectContaining({ id: "ann-1" }), 10);
+    expect(onAcceptPredictionKeyframe).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ann-1" }),
+      10,
+    );
   });
 
   it("底部操作栏含显隐 / 锁定 / 改类 / 删除, 点击隐藏与删除回调", () => {
@@ -160,6 +166,9 @@ describe("VideoTrackCardContent", () => {
     const input = screen.getByTestId("video-track-semantic-label-input");
     fireEvent.change(input, { target: { value: "car_3" } });
     fireEvent.blur(input);
-    expect(onUpdateSemanticLabel).toHaveBeenCalledWith(expect.objectContaining({ id: "ann-1" }), "car_3");
+    expect(onUpdateSemanticLabel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ann-1" }),
+      "car_3",
+    );
   });
 });

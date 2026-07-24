@@ -3,7 +3,13 @@ from uuid import uuid4
 
 import httpx
 
-from ai_annotation.models import Dataset, LinkResult, Page, UploadedItem, ZipUploadResult
+from ai_annotation.models import (
+    Dataset,
+    LinkResult,
+    Page,
+    UploadedItem,
+    ZipUploadResult,
+)
 
 from .conftest import API
 
@@ -78,7 +84,9 @@ def test_upload_files_three_step_flow(client, respx_mock, tmp_path):
 
     progress = []
     items = client.datasets.upload_files(
-        DS_ID, [f], on_progress=lambda done, total, name: progress.append((done, total, name))
+        DS_ID,
+        [f],
+        on_progress=lambda done, total, name: progress.append((done, total, name)),
     )
 
     init_body = json.loads(init.calls.last.request.content)

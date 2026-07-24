@@ -23,12 +23,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_index(
-        "ix_prediction_jobs_celery_task_id", table_name="prediction_jobs"
-    )
-    op.drop_index(
-        "ix_prediction_jobs_status_started", table_name="prediction_jobs"
-    )
+    op.drop_index("ix_prediction_jobs_celery_task_id", table_name="prediction_jobs")
+    op.drop_index("ix_prediction_jobs_status_started", table_name="prediction_jobs")
     op.drop_index(
         "ix_prediction_jobs_project_status_started",
         table_name="prediction_jobs",
@@ -59,12 +55,8 @@ def downgrade() -> None:
             nullable=True,
         ),
         sa.Column("prompt", sa.Text(), nullable=False, server_default=""),
-        sa.Column(
-            "output_mode", sa.String(30), nullable=False, server_default="mask"
-        ),
-        sa.Column(
-            "status", sa.String(20), nullable=False, server_default="running"
-        ),
+        sa.Column("output_mode", sa.String(30), nullable=False, server_default="mask"),
+        sa.Column("status", sa.String(20), nullable=False, server_default="running"),
         sa.Column("total_tasks", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("success_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("failed_count", sa.Integer(), nullable=False, server_default="0"),

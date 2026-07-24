@@ -9,8 +9,12 @@ const STATUS_OPTIONS = ["new", "triaged", "in_progress", "fixed", "wont_fix", "d
 const SEVERITY_OPTIONS = ["low", "medium", "high", "critical"];
 
 const statusLabel: Record<string, string> = {
-  new: "新提交", triaged: "已确认", in_progress: "处理中",
-  fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
+  new: "新提交",
+  triaged: "已确认",
+  in_progress: "处理中",
+  fixed: "已修复",
+  wont_fix: "不修复",
+  duplicate: "重复",
 };
 
 const severityClass: Record<string, string> = {
@@ -97,7 +101,9 @@ export function BugsPage() {
         >
           <option value="">全部状态</option>
           {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>{statusLabel[s]}</option>
+            <option key={s} value={s}>
+              {statusLabel[s]}
+            </option>
           ))}
         </select>
         <select
@@ -107,7 +113,9 @@ export function BugsPage() {
         >
           <option value="">全部严重度</option>
           {SEVERITY_OPTIONS.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </select>
         <span className={styles.totalText}>共 {total} 条</span>
@@ -117,9 +125,7 @@ export function BugsPage() {
       <div className={detailId ? styles.layoutWithDetail : styles.layout}>
         <div>
           {loading && <div className={styles.emptyState}>加载中...</div>}
-          {!loading && items.length === 0 && (
-            <div className={styles.emptyState}>暂无反馈</div>
-          )}
+          {!loading && items.length === 0 && <div className={styles.emptyState}>暂无反馈</div>}
           <table className={styles.table}>
             <thead>
               <tr className={styles.headerRow}>
@@ -135,18 +141,30 @@ export function BugsPage() {
                 <tr
                   key={item.id}
                   onClick={() => loadDetail(item.id)}
-                  className={detailId === item.id ? `${styles.itemRow} ${styles.itemRowSelected}` : styles.itemRow}
+                  className={
+                    detailId === item.id
+                      ? `${styles.itemRow} ${styles.itemRowSelected}`
+                      : styles.itemRow
+                  }
                 >
                   <td className={styles.idCell}>{item.display_id}</td>
-                  <td className={styles.titleCell}>{item.title.length > 40 ? item.title.slice(0, 40) + "..." : item.title}</td>
+                  <td className={styles.titleCell}>
+                    {item.title.length > 40 ? item.title.slice(0, 40) + "..." : item.title}
+                  </td>
                   <td className={styles.td}>
-                    <span className={`${styles.severity} ${severityClass[item.severity] ?? ""}`}>{item.severity}</span>
+                    <span className={`${styles.severity} ${severityClass[item.severity] ?? ""}`}>
+                      {item.severity}
+                    </span>
                   </td>
                   <td className={styles.td}>
                     {statusLabel[item.status] ?? item.status}
                     {item.reopen_count > 0 && (
                       <span
-                        title={item.last_reopened_at ? `最近重开：${new Date(item.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
+                        title={
+                          item.last_reopened_at
+                            ? `最近重开：${new Date(item.last_reopened_at).toLocaleString("zh-CN")}`
+                            : undefined
+                        }
                         className={styles.reopenPill}
                       >
                         ↻{item.reopen_count}
@@ -166,22 +184,27 @@ export function BugsPage() {
         {detailId && detail && (
           <div className={styles.detailPanel}>
             <div className={styles.detailHeader}>
-              <h2 className={styles.detailTitle}>{detail.display_id}: {detail.title}</h2>
-              <button
-                onClick={() => setDetailId(null)}
-                className={styles.closeButton}
-              >
+              <h2 className={styles.detailTitle}>
+                {detail.display_id}: {detail.title}
+              </h2>
+              <button onClick={() => setDetailId(null)} className={styles.closeButton}>
                 <Icon name="x" size={14} />
               </button>
             </div>
 
             <div className={styles.metaRow}>
-              <span className={styles.metaText}>路由：<code className={styles.routeCode}>{detail.route}</code></span>
+              <span className={styles.metaText}>
+                路由：<code className={styles.routeCode}>{detail.route}</code>
+              </span>
               <span className={styles.metaText}>角色：{detail.user_role}</span>
               {detail.viewport && <span className={styles.metaText}>{detail.viewport}</span>}
               {detail.reopen_count > 0 && (
                 <span
-                  title={detail.last_reopened_at ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
+                  title={
+                    detail.last_reopened_at
+                      ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}`
+                      : undefined
+                  }
                   className={styles.reopenPillLarge}
                 >
                   曾重开 {detail.reopen_count} 次
@@ -194,9 +217,7 @@ export function BugsPage() {
 
             {detail.attachments?.length > 0 && (
               <div className={styles.section}>
-                <div className={styles.sectionTitle}>
-                  截图附件 ({detail.attachments.length})
-                </div>
+                <div className={styles.sectionTitle}>截图附件 ({detail.attachments.length})</div>
                 <div className={styles.attachments}>
                   {detail.attachments.map((att) => (
                     <a
@@ -207,10 +228,10 @@ export function BugsPage() {
                       className={styles.attachmentLink}
                     >
                       <Icon name="image" size={13} />
-                      <span className={styles.attachmentName}>
-                        {att.fileName}
+                      <span className={styles.attachmentName}>{att.fileName}</span>
+                      <span className={styles.attachmentSize}>
+                        {Math.round(att.size / 1024)} KB
                       </span>
-                      <span className={styles.attachmentSize}>{Math.round(att.size / 1024)} KB</span>
                     </a>
                   ))}
                 </div>
@@ -219,7 +240,8 @@ export function BugsPage() {
 
             {detail.resolution && (
               <div className={styles.resolution}>
-                <span className={styles.mediumText}>处理结果：</span>{detail.resolution}
+                <span className={styles.mediumText}>处理结果：</span>
+                {detail.resolution}
               </div>
             )}
 
@@ -230,7 +252,11 @@ export function BugsPage() {
                   key={s}
                   onClick={() => updateStatus(detail.id, s)}
                   disabled={detail.status === s}
-                  className={detail.status === s ? `${styles.statusButton} ${styles.statusButtonActive}` : styles.statusButton}
+                  className={
+                    detail.status === s
+                      ? `${styles.statusButton} ${styles.statusButtonActive}`
+                      : styles.statusButton
+                  }
                 >
                   {statusLabel[s]}
                 </button>
@@ -239,18 +265,12 @@ export function BugsPage() {
 
             {/* Comments */}
             <div className={styles.commentsSection}>
-              <div className={styles.sectionTitle}>
-                评论 ({detail.comments?.length ?? 0})
-              </div>
+              <div className={styles.sectionTitle}>评论 ({detail.comments?.length ?? 0})</div>
               {detail.comments?.map((c) => (
                 <div key={c.id} className={styles.comment}>
                   <div className={styles.commentMeta}>
                     <span className={styles.commentAuthor}>{c.author_name || "未知"}</span>
-                    {c.author_role && (
-                      <span className={styles.rolePill}>
-                        {c.author_role}
-                      </span>
-                    )}
+                    {c.author_role && <span className={styles.rolePill}>{c.author_role}</span>}
                     <span className={styles.commentTime}>
                       {new Date(c.created_at).toLocaleString("zh-CN")}
                     </span>
@@ -276,7 +296,11 @@ export function BugsPage() {
               <button
                 onClick={addComment}
                 disabled={!commentText.trim()}
-                className={commentText.trim() ? styles.sendButton : `${styles.sendButton} ${styles.sendButtonDisabled}`}
+                className={
+                  commentText.trim()
+                    ? styles.sendButton
+                    : `${styles.sendButton} ${styles.sendButtonDisabled}`
+                }
               >
                 发送
               </button>

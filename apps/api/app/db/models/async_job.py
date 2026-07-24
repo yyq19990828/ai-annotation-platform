@@ -24,12 +24,17 @@ class AsyncJobKind(str, enum.Enum):
 
     BATCH_PREDICT = "batch_predict"  # 项目 / 批次预标
     VIDEO_TRACKER = "video_tracker"  # 视频追踪
+    VIDEO_CORRECTION = "video_correction"  # 视频 Mask 纠错传播
     AUDIT_ARCHIVE = "audit_archive"  # 审计日志月分区归档
     PREDICTIONS_IMPORT = "predictions_import"  # 外部 prediction 导入
     PREDICTION_RETRY = "prediction_retry"  # 失败预测重试
     EXPORT = "export"  # 标注导出（异步化 + 目录镜像）
     DATASET_IMPORT = "dataset_import"  # 外部连接器数据集导入
     CREATE_TASKS = "create_tasks"  # dataset link → 建 task
+    MASK_QC = "mask_qc"  # Raster / Video Mask 异步质量扫描
+    MASK_REPAIR = "mask_repair"  # 可恢复的 Mask 批量修复
+    MASK_REPAIR_ROLLBACK = "mask_repair_rollback"  # 版本保护的批量回滚
+    MASK_FORMAT_IMPORT = "mask_format_import"  # staged receipt 驱动的格式导入
 
 
 class AsyncJobStatus(str, enum.Enum):

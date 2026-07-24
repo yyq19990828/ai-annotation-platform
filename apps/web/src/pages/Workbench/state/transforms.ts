@@ -1,6 +1,17 @@
 import type { AttributeField, ToolBindings } from "@/api/projects";
 import type { ToolUnitId } from "@/constants/toolUnits";
-import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, Keypoint, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse, PredictionSourceValue } from "@/types";
+import type {
+  Annotation,
+  AnnotationResponse,
+  BboxGeometry,
+  Geometry,
+  Keypoint,
+  MultiPolygonGeometry,
+  PolygonGeometry,
+  PolylineGeometry,
+  PredictionResponse,
+  PredictionSourceValue,
+} from "@/types";
 
 /** 把 {x,y,w,h} 包装为 bbox geometry。常用于 commit 几何变更时。 */
 export function bboxGeom(g: { x: number; y: number; w: number; h: number }): BboxGeometry {
@@ -22,10 +33,17 @@ export function keypointGeom(points: Keypoint[]): { type: "keypoint"; points: Ke
 }
 
 /** 计算 polygon 顶点的轴对齐包围盒（归一化）。 */
-export function polygonBounds(points: [number, number][]): { x: number; y: number; w: number; h: number } {
+export function polygonBounds(points: [number, number][]): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
   if (points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
-  let minX = points[0][0], maxX = points[0][0];
-  let minY = points[0][1], maxY = points[0][1];
+  let minX = points[0][0],
+    maxX = points[0][0];
+  let minY = points[0][1],
+    maxY = points[0][1];
   for (let i = 1; i < points.length; i++) {
     const [px, py] = points[i];
     if (px < minX) minX = px;
@@ -39,11 +57,17 @@ export function polygonBounds(points: [number, number][]): { x: number; y: numbe
 /**
  * v0.9.14 · 多连通域 polygons 的合并 bounding rect（取所有 polygon 外环顶点的 union AABB）。
  */
-function multiPolygonBounds(
-  polygons: PolygonGeometry[],
-): { x: number; y: number; w: number; h: number } {
+function multiPolygonBounds(polygons: PolygonGeometry[]): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
   if (polygons.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
   for (const p of polygons) {
     for (const [px, py] of p.points) {
       if (px < minX) minX = px;
@@ -87,7 +111,10 @@ export function geometryToShape(g: Geometry): {
   if (g.type === "keypoint") {
     const visible = g.points.filter((p) => p.v > 0);
     if (visible.length === 0) return { x: 0, y: 0, w: 0, h: 0, keypoints: g.points };
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const p of visible) {
       if (p.x < minX) minX = p.x;
       if (p.y < minY) minY = p.y;
@@ -131,9 +158,18 @@ export function geometryToShape(g: Geometry): {
   if (g.type === "video_rotated_bbox") {
     // v0.21.22 · 单帧 OBB: 四角旋转后 AABB + polygon 顶点 (供列表/Minimap/选中锚点)。
     const rad = (g.angle * Math.PI) / 180;
-    const cos = Math.cos(rad), sin = Math.sin(rad);
-    const hw = g.w / 2, hh = g.h / 2;
-    const corners = ([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as [number, number][]).map(
+    const cos = Math.cos(rad),
+      sin = Math.sin(rad);
+    const hw = g.w / 2,
+      hh = g.h / 2;
+    const corners = (
+      [
+        [-hw, -hh],
+        [hw, -hh],
+        [hw, hh],
+        [-hw, hh],
+      ] as [number, number][]
+    ).map(
       ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
     );
     return { ...polygonBounds(corners), polygon: corners };
@@ -155,9 +191,18 @@ export function geometryToShape(g: Geometry): {
   if (g.type === "rotated_bbox") {
     // 旋转矩形四角旋转后的轴对齐包围盒（供列表 / Minimap / 选中浮条锚点）。
     const rad = (g.angle * Math.PI) / 180;
-    const cos = Math.cos(rad), sin = Math.sin(rad);
-    const hw = g.w / 2, hh = g.h / 2;
-    const corners = ([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as [number, number][]).map(
+    const cos = Math.cos(rad),
+      sin = Math.sin(rad);
+    const hw = g.w / 2,
+      hh = g.h / 2;
+    const corners = (
+      [
+        [-hw, -hh],
+        [hw, -hh],
+        [hw, hh],
+        [-hw, hh],
+      ] as [number, number][]
+    ).map(
       ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
     );
     return polygonBounds(corners);
@@ -167,8 +212,9 @@ export function geometryToShape(g: Geometry): {
     // 2D 画布消费方不画,3D 渲染走 three-d 模块(PointCloudScene)。
     return { x: 0, y: 0, w: 0, h: 0 };
   }
-  if (g.type === "video_track_mask") {
+  if (g.type === "video_mask" || g.type === "video_track_mask" || g.type === "raster_mask") {
     // RLE AABB 需要异步读取 mask content；同步列表适配层不猜外接框。
+    // v0.23.6 · raster_mask 同样需要异步加载，返回空外接框。
     return { x: 0, y: 0, w: 0, h: 0 };
   }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
@@ -179,9 +225,7 @@ export function geometryToShape(g: Geometry): {
  * 这些属性为 true 时，对应标注框渲染为虚线+半透（遮挡样式）。
  */
 export const collectOccludedKeys = (fields: AttributeField[]): Set<string> =>
-  new Set(
-    fields.filter((f) => f.type === "boolean" && f.style_occluded).map((f) => f.key),
-  );
+  new Set(fields.filter((f) => f.type === "boolean" && f.style_occluded).map((f) => f.key));
 
 export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string>): Annotation {
   const shape = geometryToShape(a.geometry);
@@ -200,10 +244,9 @@ export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string
     z_order: a.z_order ?? 0,
     is_locked: a.is_locked ?? false,
     is_hidden: a.is_hidden ?? false,
+    version: a.version ?? 1,
     // v0.11.27 · 遮挡为渲染派生：任一 style_occluded 属性为 true 即触发。
-    occluded: occludedKeys
-      ? [...occludedKeys].some((k) => a.attributes?.[k] === true)
-      : false,
+    occluded: occludedKeys ? [...occludedKeys].some((k) => a.attributes?.[k] === true) : false,
     // v0.20.9 · 父子标注; 透传供侧栏缩进呈现。null/undefined 为顶层框。
     parent_annotation_id: a.parent_annotation_id ?? null,
     // v0.18.0 · 透传属性,供画布标签「标签内容·属性(单帧段)」渲染 (此前漏拷,
@@ -215,7 +258,7 @@ export function annotationToBox(a: AnnotationResponse, occludedKeys?: Set<string
 }
 
 export const PREDICTION_SOURCE_FILTERS = ["ml_backend", "external_import"] as const;
-export type PredictionSourceFilter = typeof PREDICTION_SOURCE_FILTERS[number];
+export type PredictionSourceFilter = (typeof PREDICTION_SOURCE_FILTERS)[number];
 export type PredictionSourceVisibility = Record<PredictionSourceFilter, boolean>;
 export type PredictionSourceCounts = Record<PredictionSourceFilter, number>;
 
@@ -227,8 +270,11 @@ export function emptyPredictionSourceCounts(): PredictionSourceCounts {
   return { ml_backend: 0, external_import: 0 };
 }
 
-export function normalizePredictionSource(source: PredictionSourceValue | undefined): PredictionSourceFilter | null {
-  if (source === "ml_backend" || source === "external_import") return source as PredictionSourceFilter;
+export function normalizePredictionSource(
+  source: PredictionSourceValue | undefined,
+): PredictionSourceFilter | null {
+  if (source === "ml_backend" || source === "external_import")
+    return source as PredictionSourceFilter;
   return null;
 }
 

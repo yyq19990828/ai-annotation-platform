@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.8.1
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-23
 ---
 
 # 审计日志
@@ -18,31 +18,34 @@ last_reviewed: 2026-07-20
 
 ![详情 Modal detail_json + 时间线追溯按钮](../images/superadmin/audit-logs/detail-modal.png)
 
-| 字段 | 含义 |
-|---|---|
-| `actor_id` | 触发动作的用户；`ON DELETE SET NULL` 保留历史 |
-| `action` | 命名空间动作，如 `project.create` / `task.approve` |
-| `target_type` / `target_id` | 操作对象类型与 ID |
-| `detail_json` | JSONB，存上下文（旧值、IP、UA、filter_criteria 等） |
-| `created_at` | timestamptz |
+| 字段                        | 含义                                                |
+| --------------------------- | --------------------------------------------------- |
+| `actor_id`                  | 触发动作的用户；`ON DELETE SET NULL` 保留历史       |
+| `action`                    | 命名空间动作，如 `project.create` / `task.approve`  |
+| `target_type` / `target_id` | 操作对象类型与 ID                                   |
+| `detail_json`               | JSONB，存上下文（旧值、IP、UA、filter_criteria 等） |
+| `created_at`                | timestamptz                                         |
 
-`audit_logs` 受 trigger 守护——**任何 UPDATE/DELETE 默认被拒**（"audit_logs rows are immutable"）。例外：seed/reset 流程通过 `SET LOCAL "app.allow_audit_update" = 'true'` 临时豁免（详见 [Dev 数据保护](../../dev/troubleshooting/dev-data-preservation)）。
+`audit_logs` 受 trigger 守护——**任何 UPDATE/DELETE 默认被拒**（"audit_logs rows are immutable"）。例外：受三重门禁保护的 E2E fixture reset/cleanup 流程通过 `SET LOCAL "app.allow_audit_update" = 'true'` 临时豁免（详见 [E2E 数据隔离](../../dev/troubleshooting/dev-data-preservation)）。
 
 ## 已覆盖动作
 
 按命名空间组织（命名规则：`命名空间.动词`，下面列出主要动作，完整列表见 `apps/api/app/services/audit.py` 的 `AuditAction` 枚举）。前端 `auditLabels` 提供翻译。
 
 ### 用户与权限
+
 - `auth.login` / `auth.logout` / `auth.logout_all`
 - `user.invite` / `user.register` / `user.role_change` / `user.deactivate` / `user.delete`
 - `user.profile_update` / `user.password_change` / `user.password_admin_reset`
 
 ### 项目
+
 - `project.create` / `project.update` / `project.delete` / `project.transfer`
 - `project.member_add` / `project.member_remove`
 - `project.export`
 
 ### 数据
+
 - `dataset.create` / `dataset.delete` / `dataset.import`
 - `dataset.link` / `dataset.unlink`
 - `storage_connection.create` / `storage_connection.update` / `storage_connection.delete`
@@ -51,26 +54,36 @@ last_reviewed: 2026-07-20
 - `batch.export`
 
 ### AI / ML
+
 - `predictions.import` / `predictions.purge`
 - `failed_prediction.dismissed` / `failed_prediction.restored`
-- `video_tracker_job.create` / `video_tracker_job.cancel` / `video_tracker_job.accept` / `video_tracker_job.discard`
+- `video_tracker_job.create` / `video_tracker_job.cancel` / `video_tracker_job.accept` / `video_tracker_job.discard` / `video_tracker_job.decision`
+- `video_correction_job.create` / `video_correction_job.cancel`（人工 Mask 纠错传播创建 / 取消）
+- `video_mask.keyframe_correct` / `video_mask.keyframe_operate`（保存纠错帧，以及删除、消失或恢复关键帧状态）
+- `annotation.mask_mutation`（Mask 拆分、复制、合并或严格非重叠的聚合提交）
+- `annotation.convert`（图片 / 视频标注转换的聚合提交）
 - `ml_registry.created` / `ml_registry.updated` / `ml_registry.deleted`（全局注册 CRUD）
 - `ml_service_pool.created` / `ml_service_pool.updated` / `ml_service_pool.deleted` / `ml_service_pool.member_upserted` / `ml_service_pool.member_removed` / `ml_service_pool.member_drained` / `ml_service_pool.member_resumed`
 - `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted` / `ml_backend.enablement` / `ml_backend.reloaded` / `ml_backend.unloaded` / `ml_backend.warmup` / `ml_backend.smoke_tested`（项目兼容与实例生命周期；详见 [ML Backend 注册](./ml-backend-registry)）
 
 > 上述 ML 相关动作由后端以**原始字符串**写入，目前未纳入 `AuditAction` 枚举。可分别按 `action LIKE 'ml_registry.%'`、`'ml_service_pool.%'` 或 `'ml_backend.%'` 查询。
 
+原生 Mask、实例原子操作、标注转换与视频纠错审计只保存有界摘要和 lineage：对象 / 版本、窗口、backend / pool / model、候选数量、fallback、digest 与人工覆盖前后摘要。审计和普通日志都不保存 RLE counts、完整 geometry、笔迹坐标、logits、receipt 或原始 prompt 正文。
+
 ### 标注
+
 - `annotation.create` / `annotation.update` / `annotation.delete`
 - `annotation.import` / `annotation.group` / `annotation.bulk_update`
 - `annotation.comment_add` / `annotation.comment_delete`
 
 ### 审核
+
 - `task.submit` / `task.withdraw`
 - `task.review_claim` / `task.approve` / `task.reject`
 - `task.reopen` / `task.accept_rejection` / `task.skip`
 
 ### 系统
+
 - `system.settings_update` / `system.bootstrap_admin`
 - `audit.export` / `audit.archive`
 

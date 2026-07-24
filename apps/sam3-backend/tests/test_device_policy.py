@@ -53,7 +53,9 @@ def test_constructor_rejects_cpu_before_vendor_build(
         predictor_type(**kwargs)
 
 
-def test_image_builder_device_failure_is_not_retried_on_cpu(monkeypatch, tmp_path) -> None:
+def test_image_builder_device_failure_is_not_retried_on_cpu(
+    monkeypatch, tmp_path
+) -> None:
     calls: list[dict] = []
     cleanup_calls: list[None] = []
 
@@ -64,7 +66,9 @@ def test_image_builder_device_failure_is_not_retried_on_cpu(monkeypatch, tmp_pat
     fake_sam3 = types.ModuleType("sam3")
     fake_sam3.build_sam3_image_model = build
     monkeypatch.setitem(sys.modules, "sam3", fake_sam3)
-    monkeypatch.setattr(image_module, "free_gpu_memory", lambda: cleanup_calls.append(None))
+    monkeypatch.setattr(
+        image_module, "free_gpu_memory", lambda: cleanup_calls.append(None)
+    )
 
     predictor = object.__new__(image_module.SAM3Predictor)
     predictor.checkpoint_dir = str(tmp_path)
@@ -89,7 +93,9 @@ def test_multiplex_builder_device_failure_is_called_once(monkeypatch) -> None:
     fake_builder.build_sam3_multiplex_video_predictor = build
     monkeypatch.setitem(sys.modules, "sam3.model_builder", fake_builder)
     monkeypatch.setattr(multiplex_module.os.path, "isfile", lambda _path: True)
-    monkeypatch.setattr(multiplex_module, "free_gpu_memory", lambda: cleanup_calls.append(None))
+    monkeypatch.setattr(
+        multiplex_module, "free_gpu_memory", lambda: cleanup_calls.append(None)
+    )
 
     tracker = object.__new__(multiplex_module.SAM3MultiplexVideoTracker)
     tracker.device = "cuda"
@@ -113,7 +119,9 @@ def test_pvs_builder_device_failure_cleans_up_without_cpu_retry(monkeypatch) -> 
     fake_builder.build_sam3_video_model = build
     monkeypatch.setitem(sys.modules, "sam3.model_builder", fake_builder)
     monkeypatch.setattr(pvs_module.os.path, "isfile", lambda _path: True)
-    monkeypatch.setattr(pvs_module, "free_gpu_memory", lambda: cleanup_calls.append(None))
+    monkeypatch.setattr(
+        pvs_module, "free_gpu_memory", lambda: cleanup_calls.append(None)
+    )
 
     tracker = object.__new__(pvs_module.SAM3PVSVideoTracker)
     tracker.device = "cuda"

@@ -4,6 +4,7 @@ import { classColor, getTrackColor } from "./colors";
 import {
   deriveTrackNumber,
   isVideoBbox,
+  isVideoMaskTrack,
   isVideoPolygon,
   isVideoPolygonTrack,
   isVideoPolyline,
@@ -19,7 +20,11 @@ import {
 } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import { gridPrev } from "./videoSamplingGrid";
-import { buildTrackLabelText, shouldShowLabel, type AnnotationVisualConfig } from "./annotationVisual";
+import {
+  buildTrackLabelText,
+  shouldShowLabel,
+  type AnnotationVisualConfig,
+} from "./annotationVisual";
 import type { VideoStageGeom } from "./videoStageTypes";
 import type { VideoReferenceConfig } from "./videoReferencePredict";
 
@@ -160,8 +165,14 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   const videoTracks = annotations.filter(isVideoTrack);
   const polygonTracks = annotations.filter(isVideoPolygonTrack);
   const polylineTracks = annotations.filter(isVideoPolylineTrack);
-  // v0.21.20 · bbox + polygon + polyline track 统一编号 (deriveTrackNumber 只读 frame_index/track_id)。
-  const trackNumbers = deriveTrackNumber([...videoTracks, ...polygonTracks, ...polylineTracks]);
+  const maskTracks = annotations.filter(isVideoMaskTrack);
+  // 所有跨帧几何共享同一轨迹编号序列，避免 Mask 标签与侧栏中的其它轨迹编号漂移。
+  const trackNumbers = deriveTrackNumber([
+    ...videoTracks,
+    ...polygonTracks,
+    ...polylineTracks,
+    ...maskTracks,
+  ]);
   const trackContent = visual.labelContent.track;
 
   // 当前帧应显示的 bbox(legacy bbox + track 解析帧)。
@@ -170,48 +181,126 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   for (const ann of annotations) {
     if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      entries.push(buildEntryView(ann, ann.geometry, "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent));
+      entries.push(
+        buildEntryView(
+          ann,
+          ann.geometry,
+          "legacy",
+          false,
+          undefined,
+          selectedSet,
+          trackNumbers,
+          trackColorOverrides,
+          trackContent,
+        ),
+      );
     } else if (isVideoPolygon(ann) && ann.geometry.frame_index === frameIndex) {
       // v0.21.21 · 单帧 polygon: 外接盒作 geom (标签/选中锚点) + points 供 <Line closed>。
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(
+        ann,
+        boundsOfPoints(ann.geometry.points),
+        "legacy",
+        false,
+        undefined,
+        selectedSet,
+        trackNumbers,
+        trackColorOverrides,
+        trackContent,
+      );
       entries.push({ ...entry, points: ann.geometry.points });
     } else if (isVideoPolyline(ann) && ann.geometry.frame_index === frameIndex) {
       // v0.21.21 · 单帧 polyline: 同 polygon 但开路径 (Line 不闭合、不填充)。
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
-      const entry = buildEntryView(ann, boundsOfPoints(ann.geometry.points), "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(
+        ann,
+        boundsOfPoints(ann.geometry.points),
+        "legacy",
+        false,
+        undefined,
+        selectedSet,
+        trackNumbers,
+        trackColorOverrides,
+        trackContent,
+      );
       entries.push({ ...entry, points: ann.geometry.points, open: true });
     } else if (isVideoRotatedBbox(ann) && ann.geometry.frame_index === frameIndex) {
       // v0.21.22 · 单帧 OBB: 四角旋转顶点作闭合 Line (复用 polygon 渲染路径), 外接盒作 geom。
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
       const corners = rotatedBboxCorners(ann.geometry);
-      const entry = buildEntryView(ann, boundsOfPoints(corners), "legacy", false, undefined, selectedSet, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(
+        ann,
+        boundsOfPoints(corners),
+        "legacy",
+        false,
+        undefined,
+        selectedSet,
+        trackNumbers,
+        trackColorOverrides,
+        trackContent,
+      );
       entries.push({ ...entry, points: corners });
     } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      entries.push(buildEntryView(ann, resolved.geom, resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedSet, trackNumbers, trackColorOverrides, trackContent));
+      entries.push(
+        buildEntryView(
+          ann,
+          resolved.geom,
+          resolved.source,
+          Boolean(resolved.occluded),
+          ann.geometry.track_id,
+          selectedSet,
+          trackNumbers,
+          trackColorOverrides,
+          trackContent,
+        ),
+      );
     } else if (isVideoPolygonTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       // v0.21.20 · polygon track: 解析当前帧多边形 → 外接盒作 geom (标签/选中锚点) + points 供 <Line>。
       const resolved = resolveVideoPolygonTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedSet, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(
+        ann,
+        boundsOfPoints(resolved.points),
+        resolved.source,
+        Boolean(resolved.occluded),
+        ann.geometry.track_id,
+        selectedSet,
+        trackNumbers,
+        trackColorOverrides,
+        trackContent,
+      );
       entries.push({ ...entry, points: resolved.points });
     } else if (isVideoPolylineTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       // v0.21.20 · polyline track: 同 polygon 但开路径 (Line 不闭合)。
       const resolved = resolveVideoPolylineTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;
       currentFrameTrackIds.add(ann.geometry.track_id);
-      const entry = buildEntryView(ann, boundsOfPoints(resolved.points), resolved.source, Boolean(resolved.occluded), ann.geometry.track_id, selectedSet, trackNumbers, trackColorOverrides, trackContent);
+      const entry = buildEntryView(
+        ann,
+        boundsOfPoints(resolved.points),
+        resolved.source,
+        Boolean(resolved.occluded),
+        ann.geometry.track_id,
+        selectedSet,
+        trackNumbers,
+        trackColorOverrides,
+        trackContent,
+      );
       entries.push({ ...entry, points: resolved.points, open: true });
     }
   }
 
   // 轨迹预览线 + 关键帧圆点:可见且当前帧有解析帧的 track。
   const previews: VideoTrackPreviewView[] = videoTracks
-    .filter((ann) => !hiddenTrackIds.has(ann.geometry.track_id) && currentFrameTrackIds.has(ann.geometry.track_id))
+    .filter(
+      (ann) =>
+        !hiddenTrackIds.has(ann.geometry.track_id) &&
+        currentFrameTrackIds.has(ann.geometry.track_id),
+    )
     .map((ann) => {
       const previewTrack = {
         type: "video_track_bbox" as const,
@@ -242,13 +331,18 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   let ghost: VideoGhostView | null = null;
   const selectedTrack = videoTracks.find((ann) => ann.id === selectedId) ?? null;
   if (
-    selectedTrack
-    && !hiddenTrackIds.has(selectedTrack.geometry.track_id)
-    && !lockedTrackIds.has(selectedTrack.geometry.track_id)
-    && visibleInReviewMode("manual", reviewDisplayMode)
-    && !entries.some((e) => e.id === selectedTrack.id)
+    selectedTrack &&
+    !hiddenTrackIds.has(selectedTrack.geometry.track_id) &&
+    !lockedTrackIds.has(selectedTrack.geometry.track_id) &&
+    visibleInReviewMode("manual", reviewDisplayMode) &&
+    !entries.some((e) => e.id === selectedTrack.id)
   ) {
-    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, referenceConfig.mode, referenceConfig.preset);
+    const reference = trackReferenceAtFrame(
+      selectedTrack.geometry,
+      frameIndex,
+      referenceConfig.mode,
+      referenceConfig.preset,
+    );
     if (reference) {
       const num = trackNumbers.get(selectedTrack.id);
       const refLabel = reference.predicted
@@ -257,7 +351,11 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       ghost = {
         id: selectedTrack.id,
         geom: reference.bbox,
-        color: getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides),
+        color: getTrackColor(
+          selectedTrack.geometry.track_id,
+          selectedTrack.class_name,
+          trackColorOverrides,
+        ),
         labelText: `${num !== undefined ? `#${num} · ` : ""}${selectedTrack.class_name} · ${refLabel}`,
         uncertainty: reference.uncertainty,
       };
@@ -268,15 +366,15 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   // 渲染层据 points 画多边形轮廓 / 折线(不硬塞成外接框)。与上面 bbox ghost 互斥(只有点集轨迹被选时才走)。
   if (!ghost) {
     const selectedPointsTrack =
-      polygonTracks.find((ann) => ann.id === selectedId)
-      ?? polylineTracks.find((ann) => ann.id === selectedId)
-      ?? null;
+      polygonTracks.find((ann) => ann.id === selectedId) ??
+      polylineTracks.find((ann) => ann.id === selectedId) ??
+      null;
     if (
-      selectedPointsTrack
-      && !hiddenTrackIds.has(selectedPointsTrack.geometry.track_id)
-      && !lockedTrackIds.has(selectedPointsTrack.geometry.track_id)
-      && visibleInReviewMode("manual", reviewDisplayMode)
-      && !entries.some((e) => e.id === selectedPointsTrack.id)
+      selectedPointsTrack &&
+      !hiddenTrackIds.has(selectedPointsTrack.geometry.track_id) &&
+      !lockedTrackIds.has(selectedPointsTrack.geometry.track_id) &&
+      visibleInReviewMode("manual", reviewDisplayMode) &&
+      !entries.some((e) => e.id === selectedPointsTrack.id)
     ) {
       const reference = nearestPointsTrackKeyframe(selectedPointsTrack.geometry, frameIndex);
       if (reference) {
@@ -286,7 +384,11 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
           geom: boundsOfPoints(reference.points),
           points: reference.points,
           open: isVideoPolylineTrack(selectedPointsTrack),
-          color: getTrackColor(selectedPointsTrack.geometry.track_id, selectedPointsTrack.class_name, trackColorOverrides),
+          color: getTrackColor(
+            selectedPointsTrack.geometry.track_id,
+            selectedPointsTrack.class_name,
+            trackColorOverrides,
+          ),
           labelText: `${num !== undefined ? `#${num} · ` : ""}${selectedPointsTrack.class_name} · 参考 F${reference.originFrame}`,
         };
       }
@@ -307,7 +409,12 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       if (!keyframes.some((kf) => kf.frame_index === prevGridFrame)) continue;
       if (keyframes.some((kf) => kf.frame_index === frameIndex)) continue;
       if (entries.some((e) => e.id === ann.id)) continue;
-      const reference = trackReferenceAtFrame(ann.geometry, frameIndex, referenceConfig.mode, referenceConfig.preset);
+      const reference = trackReferenceAtFrame(
+        ann.geometry,
+        frameIndex,
+        referenceConfig.mode,
+        referenceConfig.preset,
+      );
       if (!reference) continue;
       const num = trackNumbers.get(ann.id);
       carryOverGhosts.push({
@@ -346,19 +453,42 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   const labels: VideoLabelView[] = [];
   for (const entry of entries) {
     if (shouldShowLabel(entry.selected, visibility)) {
-      labels.push({ key: `entry-${entry.key}`, geom: entry.geom, color: entry.color, text: entry.labelText });
+      labels.push({
+        key: `entry-${entry.key}`,
+        geom: entry.geom,
+        color: entry.color,
+        text: entry.labelText,
+      });
     }
   }
   if (pendingDraft && shouldShowLabel(true, visibility)) {
-    labels.push({ key: "pending-draft", geom: pendingDraft.geom, color: classColor(pendingDraft.className), text: pendingDraft.className, opacity: 0.9 });
+    labels.push({
+      key: "pending-draft",
+      geom: pendingDraft.geom,
+      color: classColor(pendingDraft.className),
+      text: pendingDraft.className,
+      opacity: 0.9,
+    });
   }
   if (ghost && shouldShowLabel(true, visibility)) {
-    labels.push({ key: `ghost-${ghost.id}`, geom: ghost.geom, color: ghost.color, text: ghost.labelText, opacity: 0.86 });
+    labels.push({
+      key: `ghost-${ghost.id}`,
+      geom: ghost.geom,
+      color: ghost.color,
+      text: ghost.labelText,
+      opacity: 0.86,
+    });
   }
   // 跨网格帧续写 ghost 的精简标签(更淡):供识别是哪条待续轨迹(Tab / 点选目标)。
   if (shouldShowLabel(true, visibility)) {
     for (const g of carryOverGhosts) {
-      labels.push({ key: `carryover-${g.id}`, geom: g.geom, color: g.color, text: g.labelText, opacity: 0.6 });
+      labels.push({
+        key: `carryover-${g.id}`,
+        geom: g.geom,
+        color: g.color,
+        text: g.labelText,
+        opacity: 0.6,
+      });
     }
   }
 
@@ -368,7 +498,10 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
 /** v0.21.20 · 多边形顶点的轴对齐外接盒 (归一化); 供 polygon track 的标签/选中锚点定位。 */
 function boundsOfPoints(points: [number, number][]): VideoStageGeom {
   if (points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const [x, y] of points) {
     if (x < minX) minX = x;
     if (y < minY) minY = y;

@@ -78,22 +78,32 @@ function ptrack(keyframes: VideoTrackKeyframeWithAttrs[]): VideoTrackGeometry {
 
 describe("propagateKeyframes (2.6)", () => {
   it("forward 复制到后续 N 帧", () => {
-    const next = propagateKeyframes(ptrack([{ frame_index: 5, bbox: pbbox, source: "manual" }]), 5, pbbox, {
-      direction: "forward",
-      count: 3,
-      overwrite: false,
-    });
+    const next = propagateKeyframes(
+      ptrack([{ frame_index: 5, bbox: pbbox, source: "manual" }]),
+      5,
+      pbbox,
+      {
+        direction: "forward",
+        count: 3,
+        overwrite: false,
+      },
+    );
     expect(next?.keyframes.map((kf) => kf.frame_index)).toEqual([5, 6, 7, 8]);
     expect(next?.keyframes[1].bbox).toEqual(pbbox);
     expect(next?.keyframes[1].source).toBe("manual");
   });
 
   it("backward 向前复制并裁掉负帧", () => {
-    const next = propagateKeyframes(ptrack([{ frame_index: 2, bbox: pbbox, source: "manual" }]), 2, pbbox, {
-      direction: "backward",
-      count: 5,
-      overwrite: false,
-    });
+    const next = propagateKeyframes(
+      ptrack([{ frame_index: 2, bbox: pbbox, source: "manual" }]),
+      2,
+      pbbox,
+      {
+        direction: "backward",
+        count: 5,
+        overwrite: false,
+      },
+    );
     expect(next?.keyframes.map((kf) => kf.frame_index)).toEqual([0, 1, 2]);
   });
 
@@ -103,11 +113,19 @@ describe("propagateKeyframes (2.6)", () => {
       { frame_index: 5, bbox: pbbox, source: "manual" },
       { frame_index: 6, bbox: other, source: "manual" },
     ]);
-    const skip = propagateKeyframes(geo, 5, pbbox, { direction: "forward", count: 2, overwrite: false });
+    const skip = propagateKeyframes(geo, 5, pbbox, {
+      direction: "forward",
+      count: 2,
+      overwrite: false,
+    });
     expect(skip?.keyframes.find((kf) => kf.frame_index === 6)?.bbox).toEqual(other);
     expect(skip?.keyframes.find((kf) => kf.frame_index === 7)?.bbox).toEqual(pbbox);
 
-    const force = propagateKeyframes(geo, 5, pbbox, { direction: "forward", count: 2, overwrite: true });
+    const force = propagateKeyframes(geo, 5, pbbox, {
+      direction: "forward",
+      count: 2,
+      overwrite: true,
+    });
     expect(force?.keyframes.find((kf) => kf.frame_index === 6)?.bbox).toEqual(pbbox);
   });
 
@@ -116,13 +134,21 @@ describe("propagateKeyframes (2.6)", () => {
       { frame_index: 5, bbox: pbbox, source: "manual" },
       { frame_index: 6, bbox: pbbox, source: "manual" },
     ]);
-    expect(propagateKeyframes(geo, 5, pbbox, { direction: "forward", count: 1, overwrite: false })).toBeNull();
-    expect(propagateKeyframes(geo, 5, pbbox, { direction: "forward", count: 0, overwrite: false })).toBeNull();
+    expect(
+      propagateKeyframes(geo, 5, pbbox, { direction: "forward", count: 1, overwrite: false }),
+    ).toBeNull();
+    expect(
+      propagateKeyframes(geo, 5, pbbox, { direction: "forward", count: 0, overwrite: false }),
+    ).toBeNull();
   });
 
   it("buildVideoPropagateCommand 生成单条 update 命令", () => {
     const before = ptrack([{ frame_index: 5, bbox: pbbox, source: "manual" }]);
-    const after = propagateKeyframes(before, 5, pbbox, { direction: "forward", count: 2, overwrite: false })!;
+    const after = propagateKeyframes(before, 5, pbbox, {
+      direction: "forward",
+      count: 2,
+      overwrite: false,
+    })!;
     const cmd = buildVideoPropagateCommand("ann-1", before, after);
     expect(cmd.kind).toBe("update");
     expect(cmd.annotationId).toBe("ann-1");

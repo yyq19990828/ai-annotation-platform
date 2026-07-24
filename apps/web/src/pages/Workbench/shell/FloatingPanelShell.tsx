@@ -91,10 +91,7 @@ export function FloatingPanelShell({
     startH: number;
   } | null>(null);
 
-  const size = useMemo(
-    () => ({ w: position.w, h: position.h }),
-    [position.h, position.w],
-  );
+  const size = useMemo(() => ({ w: position.w, h: position.h }), [position.h, position.w]);
   const drag = useDragMove({
     position,
     size,
@@ -172,7 +169,9 @@ export function FloatingPanelShell({
         "fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-floating flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
         (drag.isDragging || isResizing) && "select-none",
         className,
-      ].filter(Boolean).join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
       // eslint-disable-next-line no-restricted-syntax -- 浮窗位置/尺寸来自用户拖拽状态，经 CSS 变量注入。
       style={
         {
@@ -191,7 +190,9 @@ export function FloatingPanelShell({
         {headerContent ?? (
           <div className="inline-flex min-w-0 items-center gap-1.5">
             <Icon name="move" size={14} />
-            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground">{title}</span>
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold text-foreground">
+              {title}
+            </span>
           </div>
         )}
         <div
@@ -235,15 +236,23 @@ export function FloatingPanelShell({
           )}
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-card [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-card [&>*]:min-h-0 [&>*]:flex-1">
+        {children}
+      </div>
       <button
         type="button"
         className="absolute bottom-0 right-0 z-local-2 size-[18px] cursor-nwse-resize appearance-none border-0 bg-transparent p-0 text-muted-foreground"
         onPointerDown={onResizePointerDown}
         aria-label="调整浮窗尺寸"
       >
-        <span aria-hidden className="absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current" />
-        <span aria-hidden className="absolute bottom-2 right-1 h-px w-[5px] origin-right rotate-[-45deg] bg-current" />
+        <span
+          aria-hidden
+          className="absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current"
+        />
+        <span
+          aria-hidden
+          className="absolute bottom-2 right-1 h-px w-[5px] origin-right rotate-[-45deg] bg-current"
+        />
       </button>
     </section>
   );

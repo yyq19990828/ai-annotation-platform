@@ -39,13 +39,7 @@ function petContext(overrides: Partial<WorkbenchPetContext> = {}): WorkbenchPetC
 }
 
 function renderPet(overrides: Partial<React.ComponentProps<typeof WorkbenchPet>> = {}) {
-  return render(
-    <WorkbenchPet
-      context={petContext()}
-      onExpand={vi.fn()}
-      {...overrides}
-    />,
-  );
+  return render(<WorkbenchPet context={petContext()} onExpand={vi.fn()} {...overrides} />);
 }
 
 describe("WorkbenchPet", () => {

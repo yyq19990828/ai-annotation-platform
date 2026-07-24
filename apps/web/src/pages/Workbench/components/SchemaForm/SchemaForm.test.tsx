@@ -41,7 +41,10 @@ describe("SchemaForm", () => {
     const onChange = vi.fn();
     render(
       <SchemaForm
-        schema={{ type: "object", properties: { as_polygon: { type: "boolean", default: false, title: "转多边形" } } }}
+        schema={{
+          type: "object",
+          properties: { as_polygon: { type: "boolean", default: false, title: "转多边形" } },
+        }}
         value={{}}
         onChange={onChange}
       />,
@@ -55,7 +58,10 @@ describe("SchemaForm", () => {
     const onChange = vi.fn();
     render(
       <SchemaForm
-        schema={{ type: "object", properties: { variant: { type: "string", enum: ["base", "large"], default: "base" } } }}
+        schema={{
+          type: "object",
+          properties: { variant: { type: "string", enum: ["base", "large"], default: "base" } },
+        }}
         value={{ variant: "base" }}
         onChange={onChange}
       />,

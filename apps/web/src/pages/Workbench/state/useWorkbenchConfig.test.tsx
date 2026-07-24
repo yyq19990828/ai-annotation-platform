@@ -27,8 +27,7 @@ vi.mock("@/api/auth", async () => {
 // 走 useAuthStore.getState() 取 userId (无法在回调里调 hook), 故 mock 两者都要有。
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: Object.assign(
-    (selector: (s: { user: unknown }) => unknown) =>
-      selector({ user: mockAuthUser.current }),
+    (selector: (s: { user: unknown }) => unknown) => selector({ user: mockAuthUser.current }),
     { getState: () => ({ user: mockAuthUser.current }) },
   ),
 }));
@@ -157,7 +156,9 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     expect(result.current.layout.floatingInspector.detached).toBe(true);
     expect(result.current.layout.floatingDiscussion.detached).toBe(true);
     expect(window.localStorage.getItem("workbench.u1.rightOpen")).toBe("0");
-    expect(window.localStorage.getItem("workbench.u1.floatingDiscussion")).toContain("\"detached\":true");
+    expect(window.localStorage.getItem("workbench.u1.floatingDiscussion")).toContain(
+      '"detached":true',
+    );
     expect(mockUpdatePreferences).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -206,7 +207,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       h: 440,
     });
     expect(window.localStorage.getItem("workbench.u1.floatingSelection")).toContain(
-      "\"collapsed\":true",
+      '"collapsed":true',
     );
 
     await act(async () => {

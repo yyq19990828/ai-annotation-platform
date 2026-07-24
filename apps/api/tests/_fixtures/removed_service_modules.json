@@ -7,16 +7,11 @@
       "exports": [
         {
           "module": "app.services.gpu_arbitration.ledger.keys",
-          "names": [
-            "GPUArbiterKeys",
-            "gpu_arbiter_keys"
-          ]
+          "names": ["GPUArbiterKeys", "gpu_arbiter_keys"]
         },
         {
           "module": "app.services.gpu_arbitration.ledger.store",
-          "names": [
-            "GPUArbiterStore"
-          ]
+          "names": ["GPUArbiterStore"]
         },
         {
           "module": "app.services.gpu_arbitration.ledger.types",
@@ -50,15 +45,10 @@
         },
         {
           "module": "app.services.gpu_arbitration.ledger.validation",
-          "names": [
-            "normalize_gpu_backend_max_concurrency"
-          ]
+          "names": ["normalize_gpu_backend_max_concurrency"]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.admin_ml_integrations",
-        "app.workers.ml_health"
-      ],
+      "consumer_modules": ["app.api.v1.admin_ml_integrations", "app.workers.ml_health"],
       "frozen_symbols": [
         "GPUArbiterKeys",
         "gpu_arbiter_keys",
@@ -97,10 +87,7 @@
       "exports": [
         {
           "module": "app.services.gpu_arbitration.signing",
-          "names": [
-            "GPUAdmissionSignerConfigError",
-            "GPUAdmissionTokenSigner"
-          ]
+          "names": ["GPUAdmissionSignerConfigError", "GPUAdmissionTokenSigner"]
         }
       ],
       "consumer_modules": [
@@ -109,10 +96,7 @@
         "app.services.gpu_arbitration.rollout_control",
         "scripts.validate_gpu_arbitration"
       ],
-      "frozen_symbols": [
-        "GPUAdmissionSignerConfigError",
-        "GPUAdmissionTokenSigner"
-      ]
+      "frozen_symbols": ["GPUAdmissionSignerConfigError", "GPUAdmissionTokenSigner"]
     },
     {
       "facade_module": "app.services.gpu_arbiter_rollout",
@@ -173,9 +157,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.workers.ml_health"
-      ],
+      "consumer_modules": ["app.workers.ml_health"],
       "frozen_symbols": [
         "GPUCollectorDatabase",
         "GPUCollectorDatabaseConfigError",
@@ -190,9 +172,7 @@
       "exports": [
         {
           "module": "app.services.gpu_arbitration.dispatch",
-          "names": [
-            "build_gpu_dispatch_context_factory"
-          ]
+          "names": ["build_gpu_dispatch_context_factory"]
         }
       ],
       "consumer_modules": [
@@ -202,9 +182,7 @@
         "app.workers.tasks",
         "app.workers.video_tracker"
       ],
-      "frozen_symbols": [
-        "build_gpu_dispatch_context_factory"
-      ]
+      "frozen_symbols": ["build_gpu_dispatch_context_factory"]
     },
     {
       "facade_module": "app.services.gpu_membership_activation",
@@ -219,9 +197,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.workers.ml_health"
-      ],
+      "consumer_modules": ["app.workers.ml_health"],
       "frozen_symbols": [
         "GPUMembershipPromotionResult",
         "promote_gpu_backend_membership",
@@ -241,9 +217,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.workers.ml_health"
-      ],
+      "consumer_modules": ["app.workers.ml_health"],
       "frozen_symbols": [
         "GPURolloutControlResult",
         "advance_gpu_backend_rollout_control",
@@ -584,21 +558,11 @@
       "exports": [
         {
           "module": "app.services.exporting.service",
-          "names": [
-            "ExportService",
-            "UnsupportedExportError"
-          ]
+          "names": ["ExportService", "UnsupportedExportError"]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.batches",
-        "app.api.v1.projects",
-        "app.workers.export"
-      ],
-      "frozen_symbols": [
-        "ExportService",
-        "UnsupportedExportError"
-      ]
+      "consumer_modules": ["app.api.v1.batches", "app.api.v1.projects", "app.workers.export"],
+      "frozen_symbols": ["ExportService", "UnsupportedExportError"]
     },
     {
       "facade_module": "app.services.export_packaging",
@@ -619,11 +583,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.batches",
-        "app.api.v1.projects",
-        "app.workers.export"
-      ],
+      "consumer_modules": ["app.api.v1.batches", "app.api.v1.projects", "app.workers.export"],
       "frozen_symbols": [
         "ALL_EXPORT_TARGETS",
         "IMAGE_EXPORT_TARGETS",
@@ -642,23 +602,11 @@
       "exports": [
         {
           "module": "app.services.exporting.cache",
-          "names": [
-            "compute_cache_key",
-            "lookup",
-            "record"
-          ]
+          "names": ["compute_cache_key", "lookup", "record"]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.batches",
-        "app.api.v1.projects",
-        "app.workers.export"
-      ],
-      "frozen_symbols": [
-        "compute_cache_key",
-        "lookup",
-        "record"
-      ]
+      "consumer_modules": ["app.api.v1.batches", "app.api.v1.projects", "app.workers.export"],
+      "frozen_symbols": ["compute_cache_key", "lookup", "record"]
     },
     {
       "facade_module": "app.services.export_video",
@@ -684,11 +632,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.batches",
-        "app.api.v1.projects",
-        "app.workers.export"
-      ],
+      "consumer_modules": ["app.api.v1.batches", "app.api.v1.projects", "app.workers.export"],
       "frozen_symbols": [
         "VIDEO_SINGLE_FRAME_GEOMETRY_TYPES",
         "VIDEO_TRACK_GEOMETRY_TYPES",
@@ -722,11 +666,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.batches",
-        "app.api.v1.projects",
-        "app.workers.export"
-      ],
+      "consumer_modules": ["app.api.v1.batches", "app.api.v1.projects", "app.workers.export"],
       "frozen_symbols": [
         "BoxExportAttrs",
         "LidarFrameExportCtx",
@@ -750,11 +690,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.batches",
-        "app.api.v1.projects",
-        "app.workers.export"
-      ],
+      "consumer_modules": ["app.api.v1.batches", "app.api.v1.projects", "app.workers.export"],
       "frozen_symbols": [
         "DAVIS_MAX_OBJECTS",
         "build_davis_palette_png",
@@ -768,15 +704,11 @@
       "exports": [
         {
           "module": "app.services.data_management.service",
-          "names": [
-            "DataManagerService"
-          ]
+          "names": ["DataManagerService"]
         },
         {
           "module": "app.services.data_management.schema",
-          "names": [
-            "build_data_manager_schema"
-          ]
+          "names": ["build_data_manager_schema"]
         },
         {
           "module": "app.services.data_management.task_metrics",
@@ -788,10 +720,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.data_manager",
-        "app.api.v1.task_views"
-      ],
+      "consumer_modules": ["app.api.v1.data_manager", "app.api.v1.task_views"],
       "frozen_symbols": [
         "DataManagerService",
         "build_data_manager_schema",
@@ -807,11 +736,7 @@
       "exports": [
         {
           "module": "app.services.data_management.task_filters",
-          "names": [
-            "apply_task_visibility",
-            "compile_filter",
-            "visible_tasks_stmt"
-          ]
+          "names": ["apply_task_visibility", "compile_filter", "visible_tasks_stmt"]
         },
         {
           "module": "app.services.data_management.views",
@@ -829,15 +754,10 @@
         },
         {
           "module": "app.services.data_management.schema",
-          "names": [
-            "builtin_view_keys"
-          ]
+          "names": ["builtin_view_keys"]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.data_manager",
-        "app.api.v1.task_views"
-      ],
+      "consumer_modules": ["app.api.v1.data_manager", "app.api.v1.task_views"],
       "frozen_symbols": [
         "apply_task_visibility",
         "compile_filter",
@@ -860,22 +780,11 @@
       "exports": [
         {
           "module": "app.services.data_management.cursor",
-          "names": [
-            "decode_cursor",
-            "encode_cursor",
-            "keyset_after"
-          ]
+          "names": ["decode_cursor", "encode_cursor", "keyset_after"]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.data_manager",
-        "app.api.v1.task_views"
-      ],
-      "frozen_symbols": [
-        "decode_cursor",
-        "encode_cursor",
-        "keyset_after"
-      ]
+      "consumer_modules": ["app.api.v1.data_manager", "app.api.v1.task_views"],
+      "frozen_symbols": ["decode_cursor", "encode_cursor", "keyset_after"]
     },
     {
       "facade_module": "app.services.data_manager_entities",
@@ -891,10 +800,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.data_manager",
-        "app.api.v1.task_views"
-      ],
+      "consumer_modules": ["app.api.v1.data_manager", "app.api.v1.task_views"],
       "frozen_symbols": [
         "COMPACT_TRACK_TYPES",
         "DataManagerObjectService",
@@ -917,10 +823,7 @@
           ]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.data_manager",
-        "app.api.v1.task_views"
-      ],
+      "consumer_modules": ["app.api.v1.data_manager", "app.api.v1.task_views"],
       "frozen_symbols": [
         "builtin_entity_views",
         "compile_entity_filter",
@@ -935,18 +838,11 @@
       "exports": [
         {
           "module": "app.services.data_management.tracks",
-          "names": [
-            "DataManagerTrackService"
-          ]
+          "names": ["DataManagerTrackService"]
         }
       ],
-      "consumer_modules": [
-        "app.api.v1.data_manager",
-        "app.api.v1.task_views"
-      ],
-      "frozen_symbols": [
-        "DataManagerTrackService"
-      ]
+      "consumer_modules": ["app.api.v1.data_manager", "app.api.v1.task_views"],
+      "frozen_symbols": ["DataManagerTrackService"]
     }
   ]
 }

@@ -854,7 +854,8 @@ async def export_batch(
     targets: list[str] = Query(
         default=["coco"],
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
-        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / mot / kitti"
+        " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis"
+        " / youtube-vos / mots / mot / kitti"
         " / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
@@ -869,6 +870,11 @@ async def export_batch(
         pattern="^(iso|source)$",
         description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
     ),
+    video_overlap_policy: str = Query(
+        "error",
+        pattern="^(error|z_order|larger_area|smaller_area)$",
+    ),
+    mots_frame_base: int = Query(0, ge=0, le=1),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -939,6 +945,8 @@ async def export_batch(
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
+            "video_overlap_policy": video_overlap_policy,
+            "mots_frame_base": mots_frame_base,
             "project_id": str(project_id),
             "project_display_id": project.display_id,
             "batch_display_id": batch.display_id,
@@ -964,6 +972,8 @@ async def export_batch(
                 "include_attributes": include_attributes,
                 "video_frame_mode": video_frame_mode,
                 "axis_frame": axis_frame,
+                "video_overlap_policy": video_overlap_policy,
+                "mots_frame_base": mots_frame_base,
             },
         ),
     )
@@ -977,6 +987,8 @@ async def export_batch(
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
+            "video_overlap_policy": video_overlap_policy,
+            "mots_frame_base": mots_frame_base,
         },
         async_job_id=str(job.id),
     )

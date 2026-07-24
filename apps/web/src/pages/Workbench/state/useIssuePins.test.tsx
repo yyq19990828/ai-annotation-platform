@@ -25,19 +25,21 @@ const stageGeom = { imgW: 1000, imgH: 800, vpSize: { w: 600, h: 400 } };
 function setup(over: Partial<Parameters<typeof useIssuePins>[0]> = {}) {
   const setVp = vi.fn();
   const setVideoFrameIndex = vi.fn();
-  const view = renderHook((p: { isVideoTask: boolean }) =>
-    useIssuePins({
-      projectId: "P1",
-      taskId: "T1",
-      stageGeom,
-      setVp,
-      setVideoFrameIndex,
-      isVideoTask: p.isVideoTask,
-      ...over,
-    }),
-  {
-    initialProps: { isVideoTask: false },
-  });
+  const view = renderHook(
+    (p: { isVideoTask: boolean }) =>
+      useIssuePins({
+        projectId: "P1",
+        taskId: "T1",
+        stageGeom,
+        setVp,
+        setVideoFrameIndex,
+        isVideoTask: p.isVideoTask,
+        ...over,
+      }),
+    {
+      initialProps: { isVideoTask: false },
+    },
+  );
   return { ...view, setVp, setVideoFrameIndex };
 }
 

@@ -23,7 +23,10 @@ def test_parse_strips_whitespace_and_blanks() -> None:
 
 
 def test_parse_multiword_class_kept() -> None:
-    assert _parse_open_classes("traffic light, stop sign") == ["traffic light", "stop sign"]
+    assert _parse_open_classes("traffic light, stop sign") == [
+        "traffic light",
+        "stop sign",
+    ]
 
 
 def test_parse_empty_returns_empty() -> None:

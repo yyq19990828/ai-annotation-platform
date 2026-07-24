@@ -19,9 +19,7 @@ describe("MetaFooter", () => {
   });
 
   it("来源映射为中文", () => {
-    const { getByText } = render(
-      <MetaFooter id="x" source="prediction_based" />,
-    );
+    const { getByText } = render(<MetaFooter id="x" source="prediction_based" />);
     expect(getByText("AI 采纳")).not.toBeNull();
   });
 });

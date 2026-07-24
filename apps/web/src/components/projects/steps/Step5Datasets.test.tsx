@@ -14,9 +14,7 @@ vi.mock("@/hooks/useBatches", () => ({
 
 vi.mock("@/components/ui/Toast", async () => {
   const actual =
-    await vi.importActual<typeof import("@/components/ui/Toast")>(
-      "@/components/ui/Toast",
-    );
+    await vi.importActual<typeof import("@/components/ui/Toast")>("@/components/ui/Toast");
   return {
     ...actual,
     useToastStore: <T,>(sel: (s: { push: (...args: unknown[]) => void }) => T) =>
@@ -49,15 +47,17 @@ function Harness() {
   const [form, setForm] = useState<FormState>(baseForm);
   return (
     <Step5Datasets
-      project={{
-        id: "p1",
-        display_id: "P-1",
-        name: "project",
-        type_key: "lidar",
-        type_label: "点云",
-        data_type: "lidar",
-        scene_mode: true,
-      } as unknown as ProjectResponse}
+      project={
+        {
+          id: "p1",
+          display_id: "P-1",
+          name: "project",
+          type_key: "lidar",
+          type_label: "点云",
+          data_type: "lidar",
+          scene_mode: true,
+        } as unknown as ProjectResponse
+      }
       form={form}
       setForm={setForm}
       onNext={vi.fn()}
@@ -105,8 +105,6 @@ describe("Step5Datasets", () => {
 
     render(<Harness />);
 
-    expect(
-      screen.getByText(/没有符合该项目类型且包含时序/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/没有符合该项目类型且包含时序/)).toBeInTheDocument();
   });
 });

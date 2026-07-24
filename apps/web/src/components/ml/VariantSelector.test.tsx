@@ -183,10 +183,7 @@ describe("VariantSelector", () => {
         supportedVariants={[
           {
             key: "series",
-            variants: [
-              { value: "yolov8" },
-              { value: "yolov9" },
-            ],
+            variants: [{ value: "yolov8" }, { value: "yolov9" }],
           },
           {
             key: "size",

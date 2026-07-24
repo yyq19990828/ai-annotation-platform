@@ -108,10 +108,7 @@ export function InvitationListPanel() {
           <thead>
             <tr>
               {["邮箱", "角色", "数据组", "状态", "邀请人", "过期时间", ""].map((h, i) => (
-                <th
-                  key={i}
-                  className={styles.th}
-                >
+                <th key={i} className={styles.th}>
                   {h}
                 </th>
               ))}
@@ -139,7 +136,9 @@ export function InvitationListPanel() {
               return (
                 <tr key={inv.id}>
                   <td className={styles.cell}>
-                    <span className={`mono ${styles.email}`} title={inv.email}>{inv.email}</span>
+                    <span className={`mono ${styles.email}`} title={inv.email}>
+                      {inv.email}
+                    </span>
                   </td>
                   <td className={styles.cell}>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</td>
                   <td className={styles.cell}>

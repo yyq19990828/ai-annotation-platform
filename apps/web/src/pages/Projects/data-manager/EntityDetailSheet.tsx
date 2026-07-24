@@ -14,10 +14,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/shadcn/ui/sheet";
-import {
-  useDataManagerObjectDetail,
-  useDataManagerTrackDetail,
-} from "@/hooks/useTaskViews";
+import { useDataManagerObjectDetail, useDataManagerTrackDetail } from "@/hooks/useTaskViews";
 import { buildWorkbenchUrl } from "@/utils/workbenchNavigation";
 
 function AttributeList({ values }: { values: Record<string, unknown> }) {
@@ -51,14 +48,8 @@ export function EntityDetailSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const objectQ = useDataManagerObjectDetail(
-    projectId,
-    scope === "objects" ? selected : null,
-  );
-  const trackQ = useDataManagerTrackDetail(
-    projectId,
-    scope === "tracks" ? selected : null,
-  );
+  const objectQ = useDataManagerObjectDetail(projectId, scope === "objects" ? selected : null);
+  const trackQ = useDataManagerTrackDetail(projectId, scope === "tracks" ? selected : null);
   const isLoading = scope === "objects" ? objectQ.isLoading : trackQ.isLoading;
   const isError = scope === "objects" ? objectQ.isError : trackQ.isError;
   const object = objectQ.data?.item;
@@ -73,8 +64,7 @@ export function EntityDetailSheet({
         taskId: location.task_id,
         annotationId: location.annotation_id,
         trackId: location.track_id,
-        frameIndex:
-          location.video_frame_index ?? location.scene_frame_index ?? undefined,
+        frameIndex: location.video_frame_index ?? location.scene_frame_index ?? undefined,
         returnTo: window.location.pathname + window.location.search,
       }),
     );
@@ -86,8 +76,8 @@ export function EntityDetailSheet({
         <SheetHeader>
           <SheetTitle>
             {scope === "objects"
-              ? object?.class_name ?? "对象详情"
-              : track?.track_id ?? "轨迹详情"}
+              ? (object?.class_name ?? "对象详情")
+              : (track?.track_id ?? "轨迹详情")}
           </SheetTitle>
           <SheetDescription>
             {location
@@ -136,7 +126,11 @@ export function EntityDetailSheet({
                 <div>
                   <dt className="text-muted-foreground">属性来源</dt>
                   <dd className="mt-1">
-                    {Object.values(object.attribute_origins).filter((value) => value === "ai").length} 个 AI
+                    {
+                      Object.values(object.attribute_origins).filter((value) => value === "ai")
+                        .length
+                    }{" "}
+                    个 AI
                   </dd>
                 </div>
               </dl>
@@ -150,13 +144,17 @@ export function EntityDetailSheet({
                 </Badge>
                 {track.class_name && <Badge variant="outline">{track.class_name}</Badge>}
                 {track.quality_issues.map((issue) => (
-                  <Badge key={issue} variant="warning">{issue}</Badge>
+                  <Badge key={issue} variant="warning">
+                    {issue}
+                  </Badge>
                 ))}
               </div>
               <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
                 <div>
                   <dt className="text-muted-foreground">范围</dt>
-                  <dd className="mt-1 tabular-nums">{track.start_frame ?? "?"} - {track.end_frame ?? "?"}</dd>
+                  <dd className="mt-1 tabular-nums">
+                    {track.start_frame ?? "?"} - {track.end_frame ?? "?"}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">实例</dt>
@@ -168,7 +166,9 @@ export function EntityDetailSheet({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">缺帧 / 重复</dt>
-                  <dd className="mt-1 tabular-nums">{track.missing_frame_count} / {track.duplicate_frame_count}</dd>
+                  <dd className="mt-1 tabular-nums">
+                    {track.missing_frame_count} / {track.duplicate_frame_count}
+                  </dd>
                 </div>
               </dl>
               <Separator />

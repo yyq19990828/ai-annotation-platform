@@ -51,14 +51,7 @@ const ROW_VALUE_CLASS = "truncate text-xs text-muted-foreground";
  * ID 短码 / 来源 / 创建·更新时间 / z-order,各端可经 extra 追加行。
  * 用原生 details/summary,无 JS 状态、键盘可达;无任何行时不渲染。
  */
-export function MetaFooter({
-  id,
-  source,
-  createdAt,
-  updatedAt,
-  zOrder,
-  extra,
-}: MetaFooterProps) {
+export function MetaFooter({ id, source, createdAt, updatedAt, zOrder, extra }: MetaFooterProps) {
   const rows: MetaFooterRow[] = [{ label: "ID", value: shortId(id), mono: true }];
   if (source) rows.push({ label: "来源", value: sourceText(source) });
   if (createdAt) rows.push({ label: "创建", value: formatTime(createdAt), mono: true });

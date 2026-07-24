@@ -90,7 +90,9 @@ def test_cuda_probe_failure_latches_cpu(monkeypatch) -> None:
     assert effective_device_value() == "cpu"
 
     # 二次调用精确不再触发 probe。
-    mock_torch.zeros = lambda *a, **kw: pytest.fail("latched CPU must not probe CUDA again")
+    mock_torch.zeros = lambda *a, **kw: pytest.fail(
+        "latched CPU must not probe CUDA again"
+    )
     assert effective_device("cuda:0") == "cpu"
 
 
@@ -263,7 +265,9 @@ def test_non_device_availability_failure_is_not_latched(monkeypatch) -> None:
 
     mock_torch = types.ModuleType("torch")
     mock_cuda = types.ModuleType("torch.cuda")
-    mock_cuda.is_available = lambda: (_ for _ in ()).throw(ValueError("bad CUDA config"))
+    mock_cuda.is_available = lambda: (_ for _ in ()).throw(
+        ValueError("bad CUDA config")
+    )
     mock_torch.cuda = mock_cuda
     monkeypatch.setitem(sys.modules, "torch", mock_torch)
     monkeypatch.setitem(sys.modules, "torch.cuda", mock_cuda)

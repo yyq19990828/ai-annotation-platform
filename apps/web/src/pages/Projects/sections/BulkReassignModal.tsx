@@ -57,11 +57,7 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
         留空或选择「保留不变」则该字段不会被修改；选择「清空指派」则该字段会被设为未分派。
       </div>
 
-      {isLoading && (
-        <div className="p-4 text-center text-sm text-muted-foreground">
-          加载成员…
-        </div>
-      )}
+      {isLoading && <div className="p-4 text-center text-sm text-muted-foreground">加载成员…</div>}
 
       {!isLoading && (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
@@ -84,11 +80,7 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
 
       <div className="mt-4 flex justify-end gap-2">
         <Button onClick={onClose}>取消</Button>
-        <Button
-          variant="primary"
-          onClick={handleSubmit}
-          disabled={pending || !dirty}
-        >
+        <Button variant="primary" onClick={handleSubmit} disabled={pending || !dirty}>
           {pending ? "提交中…" : `确认改派 ${count} 个批次`}
         </Button>
       </div>
@@ -138,9 +130,7 @@ function Column({
         {icon}
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
           <span className="text-sm font-medium">{label}</span>
-          {sub && (
-            <span className="ml-1.5 text-xs text-muted-foreground">{sub}</span>
-          )}
+          {sub && <span className="ml-1.5 text-xs text-muted-foreground">{sub}</span>}
         </span>
       </button>
     );
@@ -149,15 +139,21 @@ function Column({
   return (
     <div className="max-h-[300px] overflow-y-auto rounded-md border border-border bg-muted p-2">
       <div className="px-1.5 pb-2 pt-1">
-        <Badge variant={roleColor} dot>{title}</Badge>
+        <Badge variant={roleColor} dot>
+          {title}
+        </Badge>
       </div>
       {renderRow("__keep__", "保留不变", "__keep__", "（不修改该字段）")}
-      {renderRow("__clear__", "清空指派", "__clear__", "（设为未分派）", <Icon name="x" size={11} />)}
+      {renderRow(
+        "__clear__",
+        "清空指派",
+        "__clear__",
+        "（设为未分派）",
+        <Icon name="x" size={11} />,
+      )}
       <div className="mx-1.5 my-1 h-px bg-border" />
       {members.length === 0 && (
-        <div className="p-4 text-center text-xs text-muted-foreground">
-          暂无成员
-        </div>
+        <div className="p-4 text-center text-xs text-muted-foreground">暂无成员</div>
       )}
       {members.map((m) =>
         renderRow(

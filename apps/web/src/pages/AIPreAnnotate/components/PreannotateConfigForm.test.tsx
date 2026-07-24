@@ -30,9 +30,14 @@ function docCfg(over: Partial<PreannotateConfig> = {}): PreannotateConfig {
     hasAnyParams: false,
     hasNonVariantParams: false,
     variantGroups: [
-      { key: "version", title: "PP-OCR 版本", variants: [
-        { value: "v5", label: "V5" }, { value: "v6", label: "V6" },
-      ] },
+      {
+        key: "version",
+        title: "PP-OCR 版本",
+        variants: [
+          { value: "v5", label: "V5" },
+          { value: "v6", label: "V6" },
+        ],
+      },
     ],
     variantCombinations: undefined,
     variantDefaults: { version: "v5" },

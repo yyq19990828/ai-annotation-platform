@@ -24,6 +24,7 @@ import { useVideoTrackActions } from "./useVideoTrackActions";
 // VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
+  VideoManagedTrackAnnotation,
   VideoTrackAnnotation,
   VideoTrackCompositionOptions,
   VideoTrackConversionOptions,
@@ -47,7 +48,7 @@ interface VideoTrackSidebarProps {
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
   classes?: string[];
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onToggleHiddenTrack: (trackId: string) => void;
   onToggleLockedTrack: (trackId: string) => void;
   onSeekFrame?: (frameIndex: number) => void;
@@ -55,13 +56,19 @@ interface VideoTrackSidebarProps {
   onRenameTracks?: (annotations: AnnotationResponse[], className: string) => void;
   onDeleteTracks?: (annotations: AnnotationResponse[]) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
-  onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onConvertToBboxes?: (
+    annotation: AnnotationResponse,
+    options: VideoTrackConversionOptions,
+  ) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   /** v0.21.16 WS3 · 上报轨迹多选态给 shell (浮卡多选批量卡消费)。仅 roster 实例传入。 */
   onSelectionChange?: (selectedTracks: VideoTrackAnnotation[]) => void;
   reviewDisplayMode?: DiffMode;
-  trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
-  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  trackerJobsByAnnotation?: Record<
+    string,
+    import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState
+  >;
+  onPropagateTrack?: (annotation: VideoManagedTrackAnnotation) => void;
   /** v0.22.2 · M2 · 批量 AI 追踪: 把多选的 ≥2 条轨迹一次喂给追踪对话框 (单 job 多源)。 */
   onBatchTrack?: (annotations: AnnotationResponse[]) => void;
   onCancelTrackerJob?: (jobId: string) => void;
@@ -70,8 +77,15 @@ interface VideoTrackSidebarProps {
   onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
   // v0.10.30 · 1B 属性 / propagate / semantic_label 透传。
   attributeSchema?: AttributeSchema;
-  onUpdateTrackAttributes?: (annotation: VideoTrackAnnotation, attributes: Record<string, unknown>) => void;
-  onUpdateKeyframeAttributes?: (annotation: VideoTrackAnnotation, frameIndex: number, attributes: Record<string, unknown>) => void;
+  onUpdateTrackAttributes?: (
+    annotation: VideoTrackAnnotation,
+    attributes: Record<string, unknown>,
+  ) => void;
+  onUpdateKeyframeAttributes?: (
+    annotation: VideoTrackAnnotation,
+    frameIndex: number,
+    attributes: Record<string, unknown>,
+  ) => void;
   onPropagateKeyframe?: (
     annotation: VideoTrackAnnotation,
     fromFrame: number,
@@ -170,9 +184,14 @@ export function VideoTrackSidebar({
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const maskTracks = useMemo(
-    () => annotations.filter(isVideoMaskTrack).filter((annotation) => (
-      trackFilter === "all" || resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex) !== null
-    )),
+    () =>
+      annotations
+        .filter(isVideoMaskTrack)
+        .filter(
+          (annotation) =>
+            trackFilter === "all" ||
+            resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex) !== null,
+        ),
     [annotations, frameIndex, trackFilter],
   );
   const selectedBboxes = useMemo(
@@ -211,20 +230,24 @@ export function VideoTrackSidebar({
   useEffect(() => {
     onSelectionChange?.(selectedTracks);
   }, [onSelectionChange, selectedTracks]);
-  const canMergeSelectedTracks = selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
+  const canMergeSelectedTracks =
+    selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
   // join: 恰好两条同类且可见帧区间不重叠的 track。
-  const canJoinSelectedTracks = selectedTracks.length === 2
-    && selectedTracks[0].class_name === selectedTracks[1].class_name
-    && !trackRangesOverlap(selectedTracks[0], selectedTracks[1]);
+  const canJoinSelectedTracks =
+    selectedTracks.length === 2 &&
+    selectedTracks[0].class_name === selectedTracks[1].class_name &&
+    !trackRangesOverlap(selectedTracks[0], selectedTracks[1]);
   // v0.21.14 · 合并 / 跳连禁用时按当前选择态给出动态原因 (差在哪), 而非笼统「只支持…」。
   const mergeDisabledReason = useMemo(() => {
     if (canMergeSelectedTracks) return null;
-    if (selectedTracks.length !== 2) return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
+    if (selectedTracks.length !== 2)
+      return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
     return "两条轨迹需同类";
   }, [canMergeSelectedTracks, selectedTracks]);
   const joinDisabledReason = useMemo(() => {
     if (canJoinSelectedTracks) return null;
-    if (selectedTracks.length !== 2) return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
+    if (selectedTracks.length !== 2)
+      return `需恰好选中 2 条轨迹（当前 ${selectedTracks.length} 条）`;
     if (selectedTracks[0].class_name !== selectedTracks[1].class_name) return "两条轨迹需同类";
     return "两条轨迹的可见帧区间不能重叠";
   }, [canJoinSelectedTracks, selectedTracks]);
@@ -238,7 +261,13 @@ export function VideoTrackSidebar({
     const out: VideoFrameEntry[] = [];
     for (const ann of annotations) {
       if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
-        out.push({ id: ann.id, ann, geom: ann.geometry, className: ann.class_name, source: "legacy" });
+        out.push({
+          id: ann.id,
+          ann,
+          geom: ann.geometry,
+          className: ann.class_name,
+          source: "legacy",
+        });
       } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
         const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
         if (resolved) {
@@ -263,7 +292,12 @@ export function VideoTrackSidebar({
     // 锁定轨迹视为已确认,不再提示参考框(与画布 ghost 一致)。
     if (lockedTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
-    const reference = trackReferenceAtFrame(selectedTrack.geometry, frameIndex, referenceConfig.mode, referenceConfig.preset);
+    const reference = trackReferenceAtFrame(
+      selectedTrack.geometry,
+      frameIndex,
+      referenceConfig.mode,
+      referenceConfig.preset,
+    );
     if (!reference) return null;
     return {
       id: `ghost-${selectedTrack.id}`,
@@ -274,9 +308,18 @@ export function VideoTrackSidebar({
       trackId: selectedTrack.geometry.track_id,
       originFrame: reference.originFrame,
     };
-  }, [currentFrameEntries, frameIndex, hiddenTrackIds, lockedTrackIds, referenceConfig, selectedTrack]);
+  }, [
+    currentFrameEntries,
+    frameIndex,
+    hiddenTrackIds,
+    lockedTrackIds,
+    referenceConfig,
+    selectedTrack,
+  ]);
 
-  const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
+  const selectedTrackLocked = selectedTrack
+    ? lockedTrackIds.has(selectedTrack.geometry.track_id)
+    : false;
   const trackActions = useVideoTrackActions({
     selectedTrack,
     frameIndex,
@@ -288,62 +331,72 @@ export function VideoTrackSidebar({
     },
     onToggleHiddenTrack,
     onToggleLockedTrack,
-    onPropagateTrack: onPropagateTrack
-      ? (annotation) => {
-          if (annotation.geometry.type === "video_track_bbox") onPropagateTrack(annotation as VideoTrackAnnotation);
-        }
-      : undefined,
+    onPropagateTrack,
   });
 
-  const selectTrack = useCallback((id: string, opts?: { toggle?: boolean }) => {
-    if (opts?.toggle) {
-      const next = new Set(selectedTrackIds);
-      if (next.has(id) && next.size > 1) {
-        next.delete(id);
+  const selectTrack = useCallback(
+    (id: string, opts?: { toggle?: boolean }) => {
+      if (opts?.toggle) {
+        const next = new Set(selectedTrackIds);
+        if (next.has(id) && next.size > 1) {
+          next.delete(id);
+          setSelectedTrackIds(next);
+          onSelect(next.values().next().value ?? id);
+          return;
+        }
+        next.add(id);
         setSelectedTrackIds(next);
-        onSelect(next.values().next().value ?? id);
+        onSelect(id);
         return;
       }
-      next.add(id);
-      setSelectedTrackIds(next);
+      setSelectedTrackIds(new Set([id]));
       onSelect(id);
-      return;
-    }
-    setSelectedTrackIds(new Set([id]));
-    onSelect(id);
-  }, [onSelect, selectedTrackIds]);
+    },
+    [onSelect, selectedTrackIds],
+  );
 
   const startNewTrack = useCallback(() => {
     setSelectedTrackIds(new Set());
     onSelect(null);
   }, [onSelect]);
 
-  const setSelectedTracksHidden = useCallback((hidden: boolean) => {
-    for (const ann of selectedTracks) {
-      const isHidden = hiddenTrackIds.has(ann.geometry.track_id);
-      if (isHidden !== hidden) onToggleHiddenTrack(ann.geometry.track_id);
-    }
-  }, [hiddenTrackIds, onToggleHiddenTrack, selectedTracks]);
+  const setSelectedTracksHidden = useCallback(
+    (hidden: boolean) => {
+      for (const ann of selectedTracks) {
+        const isHidden = hiddenTrackIds.has(ann.geometry.track_id);
+        if (isHidden !== hidden) onToggleHiddenTrack(ann.geometry.track_id);
+      }
+    },
+    [hiddenTrackIds, onToggleHiddenTrack, selectedTracks],
+  );
 
   // 全选中才算「已隐藏 / 已锁定」→ 切换按钮翻转为反向动作; 部分选中时仍显示正向动作。
   // 空选时 every 恒 true, 会让按钮显示成反向态 —— 故显式要求非空。
-  const allSelectedTracksHidden = selectedTracks.length > 0
-    && selectedTracks.every((ann) => hiddenTrackIds.has(ann.geometry.track_id));
+  const allSelectedTracksHidden =
+    selectedTracks.length > 0 &&
+    selectedTracks.every((ann) => hiddenTrackIds.has(ann.geometry.track_id));
 
-  const allSelectedTracksLocked = selectedTracks.length > 0
-    && selectedTracks.every((ann) => lockedTrackIds.has(ann.geometry.track_id));
+  const allSelectedTracksLocked =
+    selectedTracks.length > 0 &&
+    selectedTracks.every((ann) => lockedTrackIds.has(ann.geometry.track_id));
 
-  const setSelectedTracksLocked = useCallback((locked: boolean) => {
-    for (const ann of selectedTracks) {
-      const isLocked = lockedTrackIds.has(ann.geometry.track_id);
-      if (isLocked !== locked) onToggleLockedTrack(ann.geometry.track_id);
-    }
-  }, [lockedTrackIds, onToggleLockedTrack, selectedTracks]);
+  const setSelectedTracksLocked = useCallback(
+    (locked: boolean) => {
+      for (const ann of selectedTracks) {
+        const isLocked = lockedTrackIds.has(ann.geometry.track_id);
+        if (isLocked !== locked) onToggleLockedTrack(ann.geometry.track_id);
+      }
+    },
+    [lockedTrackIds, onToggleLockedTrack, selectedTracks],
+  );
 
-  const renameSelectedTracks = useCallback((className: string) => {
-    if (!className || selectedTracks.length <= 1) return;
-    onRenameTracks?.(selectedTracks, className);
-  }, [onRenameTracks, selectedTracks]);
+  const renameSelectedTracks = useCallback(
+    (className: string) => {
+      if (!className || selectedTracks.length <= 1) return;
+      onRenameTracks?.(selectedTracks, className);
+    },
+    [onRenameTracks, selectedTracks],
+  );
 
   // v0.22.2 · M2 · 批量 AI 追踪: 把当前多选的 ≥2 条轨迹一次喂给追踪对话框。
   const batchTrackSelectedTracks = useCallback(() => {
@@ -359,11 +412,14 @@ export function VideoTrackSidebar({
   }, [onDeleteTracks, selectedTracks]);
 
   // 单条轨迹删除:右栏每行 + 选中卡底部操作栏共用;删整条 = onDeleteTracks([ann])。
-  const deleteTrack = useCallback((ann: VideoTrackAnnotation) => {
-    if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || !onDeleteTracks) return;
-    if (!window.confirm("确定删除这条轨迹？")) return;
-    onDeleteTracks([ann]);
-  }, [lockedTrackIds, onDeleteTracks, readOnly]);
+  const deleteTrack = useCallback(
+    (ann: VideoTrackAnnotation) => {
+      if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || !onDeleteTracks) return;
+      if (!window.confirm("确定删除这条轨迹？")) return;
+      onDeleteTracks([ann]);
+    },
+    [lockedTrackIds, onDeleteTracks, readOnly],
+  );
 
   const aggregateSelectedBboxes = useCallback(() => {
     if (selectedBboxes.length <= 1 || readOnly || !onComposeTracks) return;
@@ -375,7 +431,13 @@ export function VideoTrackSidebar({
   }, [onComposeTracks, readOnly, selectedBboxes]);
 
   const splitSelectedTrack = useCallback(() => {
-    if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id) || !onComposeTracks) return;
+    if (
+      !selectedTrack ||
+      readOnly ||
+      lockedTrackIds.has(selectedTrack.geometry.track_id) ||
+      !onComposeTracks
+    )
+      return;
     onComposeTracks({
       operation: "split_track",
       annotationIds: [selectedTrack.id],
@@ -391,32 +453,55 @@ export function VideoTrackSidebar({
     });
   }, [canMergeSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
 
-  const joinSelectedTracks = useCallback((gapMode: VideoTrackGapMode) => {
-    if (!canJoinSelectedTracks || readOnly || !onComposeTracks) return;
-    onComposeTracks({
-      operation: "join_tracks",
-      annotationIds: selectedTracks.map((ann) => ann.id),
-      gapMode,
-    });
-  }, [canJoinSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
+  const joinSelectedTracks = useCallback(
+    (gapMode: VideoTrackGapMode) => {
+      if (!canJoinSelectedTracks || readOnly || !onComposeTracks) return;
+      onComposeTracks({
+        operation: "join_tracks",
+        annotationIds: selectedTracks.map((ann) => ann.id),
+        gapMode,
+      });
+    },
+    [canJoinSelectedTracks, onComposeTracks, readOnly, selectedTracks],
+  );
 
-  const updateSemanticLabel = useCallback((ann: VideoTrackAnnotation, semanticLabel: string) => {
-    if (readOnly || lockedTrackIds.has(ann.geometry.track_id)) return;
-    onUpdate(ann, { ...ann.geometry, semantic_label: semanticLabel || undefined });
-  }, [lockedTrackIds, onUpdate, readOnly]);
+  const updateSemanticLabel = useCallback(
+    (ann: VideoTrackAnnotation, semanticLabel: string) => {
+      if (readOnly || lockedTrackIds.has(ann.geometry.track_id)) return;
+      onUpdate(ann, { ...ann.geometry, semantic_label: semanticLabel || undefined });
+    },
+    [lockedTrackIds, onUpdate, readOnly],
+  );
 
   const copySelectedTrackToCurrentFrame = useCallback(() => {
-    if (!selectedTrack || !selectedTrackGhost || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
-    onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom));
+    if (
+      !selectedTrack ||
+      !selectedTrackGhost ||
+      readOnly ||
+      lockedTrackIds.has(selectedTrack.geometry.track_id)
+    )
+      return;
+    onUpdate(
+      selectedTrack,
+      upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom),
+    );
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack, selectedTrackGhost]);
 
-  const deleteTrackKeyframe = useCallback((ann: VideoTrackAnnotation, targetFrame: number) => {
-    if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || ann.geometry.keyframes.length <= 1) return;
-    onUpdate(ann, {
-      ...ann.geometry,
-      keyframes: sortedKeyframes(ann.geometry).filter((kf) => kf.frame_index !== targetFrame),
-    });
-  }, [lockedTrackIds, onUpdate, readOnly]);
+  const deleteTrackKeyframe = useCallback(
+    (ann: VideoTrackAnnotation, targetFrame: number) => {
+      if (
+        readOnly ||
+        lockedTrackIds.has(ann.geometry.track_id) ||
+        ann.geometry.keyframes.length <= 1
+      )
+        return;
+      onUpdate(ann, {
+        ...ann.geometry,
+        keyframes: sortedKeyframes(ann.geometry).filter((kf) => kf.frame_index !== targetFrame),
+      });
+    },
+    [lockedTrackIds, onUpdate, readOnly],
+  );
 
   const copyCurrentKeyframe = useCallback(() => {
     if (!selectedTrack || !currentKeyframe) return;
@@ -429,18 +514,19 @@ export function VideoTrackSidebar({
   }, [currentKeyframe, frameIndex, selectedTrack]);
 
   const pasteKeyframeToCurrentFrame = useCallback(() => {
-    if (!selectedTrack || !copiedKeyframe || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
+    if (
+      !selectedTrack ||
+      !copiedKeyframe ||
+      readOnly ||
+      lockedTrackIds.has(selectedTrack.geometry.track_id)
+    )
+      return;
     onUpdate(
       selectedTrack,
-      upsertKeyframe(
-        selectedTrack.geometry,
-        frameIndex,
-        copiedKeyframe.keyframe.bbox,
-        {
-          source: "manual",
-          occluded: copiedKeyframe.keyframe.occluded ?? false,
-        },
-      ),
+      upsertKeyframe(selectedTrack.geometry, frameIndex, copiedKeyframe.keyframe.bbox, {
+        source: "manual",
+        occluded: copiedKeyframe.keyframe.occluded ?? false,
+      }),
     );
   }, [copiedKeyframe, frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
 
@@ -466,9 +552,7 @@ export function VideoTrackSidebar({
       if (readOnly) return;
       const exact = track.geometry.keyframes.find((kf) => kf.frame_index === targetFrame);
       if (!exact || exact.source !== "prediction") return;
-      const nextKeyframes = track.geometry.keyframes.filter(
-        (kf) => kf.frame_index !== targetFrame,
-      );
+      const nextKeyframes = track.geometry.keyframes.filter((kf) => kf.frame_index !== targetFrame);
       const withOutside = addOutsideRange(
         { ...track.geometry, keyframes: nextKeyframes },
         { from: targetFrame, to: targetFrame, source: "prediction" },
@@ -497,14 +581,20 @@ export function VideoTrackSidebar({
         selectedTrackHidden={hiddenTrackIds.has(selectedTrack.geometry.track_id)}
         copiedKeyframeLabel={copiedKeyframeLabel}
         canCopyCurrentKeyframe={Boolean(selectedTrack && currentKeyframe)}
-        canPasteKeyframe={Boolean(copiedKeyframe && selectedTrack && !readOnly && !selectedTrackLocked)}
+        canPasteKeyframe={Boolean(
+          copiedKeyframe && selectedTrack && !readOnly && !selectedTrackLocked,
+        )}
         trackerJob={trackerJobsByAnnotation?.[selectedTrack.id]}
         samplingStep={samplingStep}
         propagateOverwrite={propagateOverwrite}
         onSeekFrame={onSeekFrame}
         onToggleHidden={() => onToggleHiddenTrack(selectedTrack.geometry.track_id)}
         onToggleLock={() => onToggleLockedTrack(selectedTrack.geometry.track_id)}
-        onChangeClass={onChangeUserBoxClass ? (anchor) => onChangeUserBoxClass(selectedTrack.id, anchor) : undefined}
+        onChangeClass={
+          onChangeUserBoxClass
+            ? (anchor) => onChangeUserBoxClass(selectedTrack.id, anchor)
+            : undefined
+        }
         onDeleteTrack={onDeleteTracks ? () => deleteTrack(selectedTrack) : undefined}
         onSplitSelectedTrack={onComposeTracks ? splitSelectedTrack : undefined}
         onPropagateTrack={onPropagateTrack}
@@ -528,49 +618,51 @@ export function VideoTrackSidebar({
   return (
     <Fragment>
       <VideoTrackPanel
-      videoTracks={videoTracks}
-      selectedId={selectedId}
-      selectedTrackIds={selectedTrackIds}
-      selectedTrack={selectedTrack}
-      frameIndex={frameIndex}
-      trackFilter={trackFilter}
-      readOnly={readOnly}
-      selectedBboxCount={selectedBboxes.length}
-      classes={classes}
-      hiddenTrackIds={hiddenTrackIds}
-      lockedTrackIds={lockedTrackIds}
-      onSelect={selectTrack}
-      onToggleHiddenTrack={onToggleHiddenTrack}
-      onToggleLockedTrack={onToggleLockedTrack}
-      onSeekFrame={onSeekFrame}
-      onStartNewTrack={startNewTrack}
-      onChangeUserBoxClass={onChangeUserBoxClass}
-      onDeleteTrack={onDeleteTracks ? deleteTrack : undefined}
-      onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
-      onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}
-      onBatchTrackTracks={onBatchTrack ? batchTrackSelectedTracks : undefined}
-      onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
-      onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
-      canMergeSelectedTracks={canMergeSelectedTracks}
-      mergeDisabledReason={mergeDisabledReason}
-      onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
-      canJoinSelectedTracks={canJoinSelectedTracks}
-      joinDisabledReason={joinDisabledReason}
-      allSelectedTracksHidden={allSelectedTracksHidden}
-      allSelectedTracksLocked={allSelectedTracksLocked}
-      onToggleSelectedTracksHidden={() => setSelectedTracksHidden(!allSelectedTracksHidden)}
-      onToggleSelectedTracksLocked={() => setSelectedTracksLocked(!allSelectedTracksLocked)}
-      reviewDisplayMode={reviewDisplayMode}
-      trackColorOverrides={trackColorOverrides}
-      onSetTrackColor={onSetTrackColor}
-      collapsed={trackSectionCollapsed}
-      onToggleCollapsed={onToggleTrackSection}
+        videoTracks={videoTracks}
+        selectedId={selectedId}
+        selectedTrackIds={selectedTrackIds}
+        selectedTrack={selectedTrack}
+        frameIndex={frameIndex}
+        trackFilter={trackFilter}
+        readOnly={readOnly}
+        selectedBboxCount={selectedBboxes.length}
+        classes={classes}
+        hiddenTrackIds={hiddenTrackIds}
+        lockedTrackIds={lockedTrackIds}
+        onSelect={selectTrack}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        onSeekFrame={onSeekFrame}
+        onStartNewTrack={startNewTrack}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+        onDeleteTrack={onDeleteTracks ? deleteTrack : undefined}
+        onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
+        onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}
+        onBatchTrackTracks={onBatchTrack ? batchTrackSelectedTracks : undefined}
+        onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
+        onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
+        canMergeSelectedTracks={canMergeSelectedTracks}
+        mergeDisabledReason={mergeDisabledReason}
+        onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
+        canJoinSelectedTracks={canJoinSelectedTracks}
+        joinDisabledReason={joinDisabledReason}
+        allSelectedTracksHidden={allSelectedTracksHidden}
+        allSelectedTracksLocked={allSelectedTracksLocked}
+        onToggleSelectedTracksHidden={() => setSelectedTracksHidden(!allSelectedTracksHidden)}
+        onToggleSelectedTracksLocked={() => setSelectedTracksLocked(!allSelectedTracksLocked)}
+        reviewDisplayMode={reviewDisplayMode}
+        trackColorOverrides={trackColorOverrides}
+        onSetTrackColor={onSetTrackColor}
+        collapsed={trackSectionCollapsed}
+        onToggleCollapsed={onToggleTrackSection}
       />
       {maskTracks.length > 0 && (
         <section className="border-t border-border px-2 py-2" aria-label="Mask 轨迹">
           <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
             <span>Mask 轨迹</span>
-            <span className="text-2xs font-normal text-muted-foreground">{maskTracks.length} 条 · 帧间保持</span>
+            <span className="text-2xs font-normal text-muted-foreground">
+              {maskTracks.length} 条 · 帧间保持
+            </span>
           </div>
           <div className="space-y-1">
             {maskTracks.map((annotation) => {
@@ -580,23 +672,46 @@ export function VideoTrackSidebar({
               return (
                 <div
                   key={annotation.id}
-                  className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${selectedId === annotation.id ? "border-brand/40 bg-brand/10" : "border-border bg-card"}`}
+                  className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${selectedId === annotation.id || selectedIds.includes(annotation.id) ? "border-brand/40 bg-brand/10" : "border-border bg-card"}`}
                 >
                   <button
                     type="button"
+                    data-testid={`video-mask-track-${annotation.id}`}
                     className="min-w-0 flex-1 text-left"
-                    onClick={() => onSelect(annotation.id)}
+                    onClick={(event) => onSelect(annotation.id, { shift: event.shiftKey })}
                   >
-                    <span className="block truncate text-xs font-medium text-foreground">{annotation.class_name}</span>
+                    <span className="block truncate text-xs font-medium text-foreground">
+                      {annotation.class_name}
+                    </span>
                     <span className="block text-2xs text-muted-foreground">
-                      {annotation.geometry.keyframes.length} 关键帧 · {resolved ? `保持 F${resolved.keyframeFrame}` : "当前 outside"}
+                      {annotation.geometry.keyframes.length} 关键帧 ·{" "}
+                      {resolved ? `保持 F${resolved.keyframeFrame}` : "当前 outside"}
                     </span>
                   </button>
-                  <Button variant="ghost" size="sm" title={hidden ? "显示轨迹" : "隐藏轨迹"} onClick={() => onToggleHiddenTrack(annotation.geometry.track_id)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title={hidden ? "显示轨迹" : "隐藏轨迹"}
+                    onClick={() => onToggleHiddenTrack(annotation.geometry.track_id)}
+                  >
                     <Icon name={hidden ? "eyeOff" : "eye"} size={13} />
                   </Button>
-                  <Button variant="ghost" size="sm" title={locked ? "解锁轨迹" : "锁定轨迹"} onClick={() => onToggleLockedTrack(annotation.geometry.track_id)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title={locked ? "解锁轨迹" : "锁定轨迹"}
+                    onClick={() => onToggleLockedTrack(annotation.geometry.track_id)}
+                  >
                     <Icon name={locked ? "lock" : "unlock"} size={13} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="AI 延展 Mask 轨迹"
+                    disabled={readOnly || locked || !onPropagateTrack}
+                    onClick={() => onPropagateTrack?.(annotation)}
+                  >
+                    <Icon name="bot" size={13} />
                   </Button>
                   <Button
                     variant="danger"
@@ -604,7 +719,8 @@ export function VideoTrackSidebar({
                     title="删除 Mask 轨迹"
                     disabled={readOnly || locked || !onDeleteTracks}
                     onClick={() => {
-                      if (window.confirm("确定删除这条 Mask 轨迹？")) onDeleteTracks?.([annotation]);
+                      if (window.confirm("确定删除这条 Mask 轨迹？"))
+                        onDeleteTracks?.([annotation]);
                     }}
                   >
                     <Icon name="trash" size={13} />

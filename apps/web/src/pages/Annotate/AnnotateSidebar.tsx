@@ -42,9 +42,7 @@ export function AnnotateSidebar({ batches, selectedBatchId, onSelect }: Props) {
       m.set(b.project_id, g);
     }
     const arr = [...m.values()];
-    arr.sort(
-      (a, b) => b.remaining - a.remaining || a.project_name.localeCompare(b.project_name),
-    );
+    arr.sort((a, b) => b.remaining - a.remaining || a.project_name.localeCompare(b.project_name));
     const STATUS_ORDER: Record<string, number> = {
       annotating: 0,
       rejected: 1,
@@ -107,9 +105,7 @@ export function AnnotateSidebar({ batches, selectedBatchId, onSelect }: Props) {
               className={styles.projectButton}
             >
               <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
-              <span className={styles.ellipsis}>
-                {g.project_name}
-              </span>
+              <span className={styles.ellipsis}>{g.project_name}</span>
               {g.remaining > 0 && (
                 <span className={styles.countBadge}>
                   <Badge variant="accent">{g.remaining}</Badge>
@@ -131,15 +127,17 @@ export function AnnotateSidebar({ batches, selectedBatchId, onSelect }: Props) {
                       className={`${styles.batchButton} ${active ? styles.batchButtonActive : ""}`}
                     >
                       <div className={styles.batchTitleRow}>
-                        <span className={`mono ${styles.batchId}`}>
-                          {b.batch_display_id}
-                        </span>
-                        <span className={styles.batchName}>
-                          {b.batch_name}
-                        </span>
+                        <span className={`mono ${styles.batchId}`}>{b.batch_display_id}</span>
+                        <span className={styles.batchName}>{b.batch_name}</span>
                         <span className={styles.statusBadge}>
                           <Badge variant={variant}>
-                            {b.status === "annotating" ? "进行" : b.status === "rejected" ? "驳回" : b.status === "reviewing" ? "送审" : "未启"}
+                            {b.status === "annotating"
+                              ? "进行"
+                              : b.status === "rejected"
+                                ? "驳回"
+                                : b.status === "reviewing"
+                                  ? "送审"
+                                  : "未启"}
                           </Badge>
                         </span>
                       </div>

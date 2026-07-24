@@ -72,9 +72,7 @@ describe("buildPipelineRunPayload", () => {
 
   it("missingBackendIdsForStages: 缺则报缺项, 重复引用去重", () => {
     const dup: PipelineStagePayload[] = [...STAGES, { ...STAGES[1]!, stage: 2 }];
-    expect(missingBackendIdsForStages(dup, new Set(["be-detect"]))).toEqual(
-      ["be-classify"],
-    );
+    expect(missingBackendIdsForStages(dup, new Set(["be-detect"]))).toEqual(["be-classify"]);
     expect(missingBackendIdsForStages(STAGES, new Set(["be-detect", "be-classify"]))).toEqual([]);
     // 空集合 / 空 stages 守卫。
     expect(missingBackendIdsForStages([], new Set())).toEqual([]);
@@ -105,9 +103,9 @@ describe("buildPipelineRunPayload", () => {
       { stage: 0, ml_backend_id: "legacy", model_id: "legacy-detect" },
     ];
 
-    expect(
-      selectProjectPipelineStages([{ is_default: false, stages: STAGES }], legacy),
-    ).toBe(legacy);
+    expect(selectProjectPipelineStages([{ is_default: false, stages: STAGES }], legacy)).toBe(
+      legacy,
+    );
     expect(selectProjectPipelineStages([], legacy)).toBe(legacy);
     expect(selectProjectPipelineStages(undefined, null)).toBeNull();
   });

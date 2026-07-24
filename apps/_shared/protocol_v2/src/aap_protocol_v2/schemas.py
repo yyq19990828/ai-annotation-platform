@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from aap_protocol_v2.mask_interaction import MaskInteractionDiagnostic
+
 
 class TaskItem(BaseModel):
     """`/predict` 入参里的单个 task. `id` 透传回响应, `file_path` 是图像 URL 或绝对路径."""
@@ -48,6 +50,8 @@ class PredictionResult(BaseModel):
     # 仅 multimask_output=False 的单 mask 路径返回 (规避多候选 index 歧义); 前端原样
     # 存储、下次点击经 context.mask_input 回传。None = 本轮不回灌。
     mask_input_next: str | None = None
+    # 原生 Mask 候选的空结果 / 降级诊断；旧 backend 缺失时保持 None。
+    diagnostic: MaskInteractionDiagnostic | None = None
 
 
 class BatchPredictResponse(BaseModel):

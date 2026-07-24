@@ -42,8 +42,17 @@ class _PredictorMissingWeight:
 
 class _PredictorOneBox:
     async def predict_one(self, file_path, ctx):
-        item = {"type": "rectanglelabels", "value": {"x": 1, "y": 1, "width": 1, "height": 1,
-                "rectanglelabels": ["object0"]}, "score": 0.9}
+        item = {
+            "type": "rectanglelabels",
+            "value": {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "height": 1,
+                "rectanglelabels": ["object0"],
+            },
+            "score": 0.9,
+        }
         return [item], True, None, 5
 
 
@@ -61,7 +70,9 @@ class _PredictorHTTPError:
         raise HTTPException(status_code=422, detail="unsupported output")
 
 
-def test_predict_singular_task_wire_returns_singular_shape(app_client, monkeypatch) -> None:
+def test_predict_singular_task_wire_returns_singular_shape(
+    app_client, monkeypatch
+) -> None:
     """v0.18.23 · 平台交互调用发单数 {task, context}; 响应须为单数形 (顶层 result, 无 results),
     否则平台 predict_interactive 读 data["result"] 拿不到结果 (exemplar 候选丢失)。"""
     main, client = app_client
@@ -93,7 +104,10 @@ def test_predict_plural_tasks_wire_returns_batch_shape(app_client, monkeypatch) 
         "/predict",
         json={
             "tasks": [{"id": "t1", "file_path": "unused.jpg"}],
-            "context": {"type": "detection", "model_variants": {"series": "yolo11", "size": "s"}},
+            "context": {
+                "type": "detection",
+                "model_variants": {"series": "yolo11", "size": "s"},
+            },
         },
     )
     assert resp.status_code == 200, resp.text
@@ -200,7 +214,9 @@ def test_predict_invalid_combo_returns_standard_422(app_client, monkeypatch) -> 
     }
 
 
-def test_predict_missing_weight_returns_503_retry_after(app_client, monkeypatch) -> None:
+def test_predict_missing_weight_returns_503_retry_after(
+    app_client, monkeypatch
+) -> None:
     main, client = app_client
     monkeypatch.setattr(main, "_predictor", _PredictorMissingWeight())
     resp = client.post(

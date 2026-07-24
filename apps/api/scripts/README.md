@@ -153,6 +153,9 @@ stub 默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100`，�
 `--ml-backend-url` 覆盖。图片、视频和 OCR 项目都会创建唯一启用关联并设置主 backend；
 切回 live 模式时会移除 screenshot seed 自有的 stub registry。
 
-非 production 环境提供只读 `GET /api/v1/__test/seed/catalog`。它按固定逻辑键解析用户、
-项目、任务、批次和运行时 UUID，并硬校验 ML Backend 主绑定、项目启用关联、connected
-状态及场景级能力；数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。
+截图 API 进程需要指向 `annotation_screenshots_test` 并显式设置
+`E2E_SEED_ENABLED=true`，才会提供只读
+`GET /api/v1/__test/seed/catalog`。路由会在当前数据库会话中复核 `_test` 后缀；
+production 始终不挂载。catalog 按固定逻辑键解析用户、项目、任务、批次和运行时
+UUID，并硬校验 ML Backend 主绑定、项目启用关联、connected 状态及场景级能力；
+数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。

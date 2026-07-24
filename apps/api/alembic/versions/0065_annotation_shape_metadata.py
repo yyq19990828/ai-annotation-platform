@@ -28,15 +28,21 @@ def upgrade() -> None:
     )
     op.add_column(
         "annotations",
-        sa.Column("is_locked", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_locked", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
     )
     op.add_column(
         "annotations",
-        sa.Column("is_hidden", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_hidden", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
     )
     op.add_column(
         "annotations",
-        sa.Column("is_occluded", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_occluded", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
     )
 
 

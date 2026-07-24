@@ -80,6 +80,29 @@ class TaskFileUrlResponse(BaseModel):
     expires_in: int
 
 
+MaskCapabilityReason = Literal[
+    "read_disabled",
+    "deployment_disabled",
+    "project_disabled",
+    "region_disabled",
+    "task_locked",
+    "enabled",
+]
+
+
+class TaskMaskCapabilitiesResponse(BaseModel):
+    read_enabled: bool
+    write_enabled: bool
+    legacy_polygon_commit_enabled: bool
+    project_enabled: bool
+    region_enabled: bool
+    reason: MaskCapabilityReason
+    max_dimension: int
+    max_pixels: int
+    max_runs: int
+    max_bytes: int
+
+
 class TaskVideoManifestResponse(BaseModel):
     task_id: UUID
     dataset_item_id: UUID | None = None

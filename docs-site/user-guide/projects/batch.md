@@ -97,16 +97,16 @@ stateDiagram-v2
 
 ## 状态语义
 
-| 状态 | 含义 | 典型进入方式 | 下一步 |
-|---|---|---|---|
-| `draft` | 批次已建好，但还未正式投入生产 | 新建批次、`reset → draft` | owner 激活 |
-| `active` | 已准备好，可开始分派或开始标注，但尚未进入“进行中” | `draft → active`、`archived → active`、`rejected → active`、`pre_annotated → active` | 标注员开始后自动转 `annotating`，或 owner 归档，或 AI 预标完成后转 `pre_annotated` |
-| `pre_annotated` | AI 预标已跑完，等待人工接管 | AI 文本批量预标完成 | 标注员接管后自动转 `annotating`，owner 也可丢弃预标结果退回 `active` |
-| `annotating` | 批次处于标注进行中 | 任一 task 进入 `in_progress` | 全部任务完成后进 `reviewing`，或 owner 归档 |
-| `reviewing` | 审核员开始整批复核 | 标注员送审或系统自动推进 | reviewer 通过到 `approved`，退回到 `rejected` |
-| `approved` | 审核完成，业务上通过 | reviewer approve | owner 可归档，也可重开审核 |
-| `rejected` | 审核退回，批次需要返工 | reviewer reject | 标注员重做，或 owner 直接重新激活 / 重开审核 / 归档 |
-| `archived` | 批次结束，不再作为工作中的生产批次使用 | owner archive | owner 可撤销归档回 `active` |
+| 状态            | 含义                                               | 典型进入方式                                                                         | 下一步                                                                             |
+| --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `draft`         | 批次已建好，但还未正式投入生产                     | 新建批次、`reset → draft`                                                            | owner 激活                                                                         |
+| `active`        | 已准备好，可开始分派或开始标注，但尚未进入“进行中” | `draft → active`、`archived → active`、`rejected → active`、`pre_annotated → active` | 标注员开始后自动转 `annotating`，或 owner 归档，或 AI 预标完成后转 `pre_annotated` |
+| `pre_annotated` | AI 预标已跑完，等待人工接管                        | AI 文本批量预标完成                                                                  | 标注员接管后自动转 `annotating`，owner 也可丢弃预标结果退回 `active`               |
+| `annotating`    | 批次处于标注进行中                                 | 任一 task 进入 `in_progress`                                                         | 全部任务完成后进 `reviewing`，或 owner 归档                                        |
+| `reviewing`     | 审核员开始整批复核                                 | 标注员送审或系统自动推进                                                             | reviewer 通过到 `approved`，退回到 `rejected`                                      |
+| `approved`      | 审核完成，业务上通过                               | reviewer approve                                                                     | owner 可归档，也可重开审核                                                         |
+| `rejected`      | 审核退回，批次需要返工                             | reviewer reject                                                                      | 标注员重做，或 owner 直接重新激活 / 重开审核 / 归档                                |
+| `archived`      | 批次结束，不再作为工作中的生产批次使用             | owner archive                                                                        | owner 可撤销归档回 `active`                                                        |
 
 ## 自动迁移与手工迁移
 
@@ -134,11 +134,11 @@ stateDiagram-v2
 
 ## 角色分工
 
-| 角色 | 主要动作 |
-|---|---|
+| 角色                     | 主要动作                                         |
+| ------------------------ | ------------------------------------------------ |
 | 项目 owner / super_admin | 创建批次、分配人、激活、归档、逆向迁移、终极重置 |
-| 标注员 | 在自己负责的批次上开始标注，把批次送审 |
-| 审核员 | 审核 `reviewing` 批次，决定通过或退回 |
+| 标注员                   | 在自己负责的批次上开始标注，把批次送审           |
+| 审核员                   | 审核 `reviewing` 批次，决定通过或退回            |
 
 补充：
 
@@ -212,11 +212,11 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 
 项目管理员可以按批次导出当前批次内的任务标注。支持格式按项目数据类型如下：
 
-| 数据类型 | 可选导出格式 |
-|---|---|
-| 图片 | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载） |
-| 视频 | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`、`coco-frames-seg`、`davis`（palette PNG） |
-| 3D 点云 | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask` |
+| 数据类型 | 可选导出格式                                                                                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 图片     | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载）                                            |
+| 视频     | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`、`coco-frames-seg`、`davis`（palette PNG）、`youtube-vos`、`mots` |
+| 3D 点云  | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask`                                                                                                           |
 
 点云 `aap_json` / `kitti` 导出支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。
 

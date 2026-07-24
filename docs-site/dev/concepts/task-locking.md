@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-07-22
 ---
 
 # Task Lock
@@ -64,6 +64,12 @@ flowchart TD
 ### cleanup expired
 
 访问时会顺手清理过期锁，不依赖单独后台任务。
+
+### 写入边界
+
+需要把“检查当前锁持有人”和后续 annotation 写入视为一个原子决定的路径，会调用 `assert_write_allowed()`。服务使用按 task 派生的 PostgreSQL transaction advisory lock，把 acquire、release、heartbeat 与这类写入串行化；随后再锁定当前 task lock 行复核持有人。原生 AI Mask 接受和多对象 Mask 原子 mutation 都使用这条边界，避免检查通过后另一会话恰好拿锁并同时提交。
+
+Mask 原子 mutation 还需要同时锁定多个 annotation、可选的视频 segment 和内容引用。固定顺序是：`Task` row → task edit advisory / task-lock rows → video segment → 按 object key 排序的 RLE advisory → `RasterMaskUpload` row → 按 UUID 排序的范围 annotation。标注转换 execute 也遵循这一顺序：先用未加行锁的冻结快照重算 manifest，取得 RLE / upload 锁后再按 UUID 锁 annotation 并复查快照，对象内容只在复查通过后写入。普通 Mask create / PATCH、视频 Mask 单帧保存，以及关键帧删除、outside 标记与恢复 held 也先锁 Task，再锁对应 segment 与 annotation；内容上传从 reservation、对象写入到事务提交全程持有同一 RLE advisory。DELETE 和纯字段更新先锁 Task 再修改 annotation。GC 按 RLE advisory → upload row 工作：先提交可恢复的数据库删除，再开启第二事务重新取得同一 RLE 锁，复查引用和新 reservation 后才在持锁期间删除对象。因此失败最多留下可再清理的存储孤儿，也不会误删同键并发上传或留下指向缺失对象的数据库行。新的多对象写路径不得调换这个顺序。
 
 ## TTL 与 takeover
 
@@ -133,12 +139,12 @@ lock 不等于状态：
 
 ## 常见修改落点
 
-| 你想改什么 | 先看哪里 |
-|---|---|
-| 调整 TTL | `services/task_lock.py` + `db/models/project.py` |
-| 调整 takeover 逻辑 | `services/task_lock.py` |
-| 改前端续期节奏 | `apps/web/src/hooks/useTaskLock.ts` |
-| 改提交/切题时释放锁 | `api/v1/tasks/lifecycle.py` |
+| 你想改什么          | 先看哪里                                         |
+| ------------------- | ------------------------------------------------ |
+| 调整 TTL            | `services/task_lock.py` + `db/models/project.py` |
+| 调整 takeover 逻辑  | `services/task_lock.py`                          |
+| 改前端续期节奏      | `apps/web/src/hooks/useTaskLock.ts`              |
+| 改提交/切题时释放锁 | `api/v1/tasks/lifecycle.py`                      |
 
 ## 相关文档
 

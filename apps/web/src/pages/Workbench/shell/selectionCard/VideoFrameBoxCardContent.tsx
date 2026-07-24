@@ -9,8 +9,7 @@ import { MetaFooter } from "./MetaFooter";
 import { ActionBar } from "./ActionBar";
 import { geometryMetrics } from "./geometryMetrics";
 
-const BODY_CLASS =
-  "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
+const BODY_CLASS = "flex min-h-0 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-2.5";
 const ATTR_BLOCK_CLASS = "border-t border-border pt-2";
 const FRAME_CHIP_CLASS =
   "inline-flex flex-none items-center gap-1 rounded-full px-1.5 py-px text-2xs font-medium tabular-nums whitespace-nowrap bg-brand/10 text-brand";
@@ -18,7 +17,8 @@ const FRAME_TIME_CLASS = "text-brand/75";
 
 export interface VideoFrameBoxCardContentProps {
   /**
-   * 视频单帧标注(不属任何轨迹): video_bbox / video_polygon / video_polyline / video_rotated_bbox。
+   * 视频单帧标注(不属任何轨迹): video_bbox / video_polygon / video_polyline /
+   * video_rotated_bbox / video_mask。
    * v0.21.26 起承接全部单帧几何(此前仅 video_bbox);帧定位 + 指标 + 属性 + 改类 / 删除。
    */
   annotation: AnnotationResponse;
@@ -32,6 +32,8 @@ export interface VideoFrameBoxCardContentProps {
   onChangeClass: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdateAttributes: (id: string, next: Record<string, unknown>) => void;
+  onConvert?: (id: string) => void;
+  onEditMask?: () => void;
 }
 
 /** 秒 → 紧凑时间码 m:ss(帧定位 chip 用,不带毫秒)。 */
@@ -60,13 +62,16 @@ export function VideoFrameBoxCardContent({
   onChangeClass,
   onDelete,
   onUpdateAttributes,
+  onConvert,
+  onEditMask,
 }: VideoFrameBoxCardContentProps) {
   const geom = annotation.geometry;
   const frameIndex =
-    geom.type === "video_bbox"
-    || geom.type === "video_polygon"
-    || geom.type === "video_polyline"
-    || geom.type === "video_rotated_bbox"
+    geom.type === "video_bbox" ||
+    geom.type === "video_polygon" ||
+    geom.type === "video_polyline" ||
+    geom.type === "video_rotated_bbox" ||
+    geom.type === "video_mask"
       ? geom.frame_index
       : null;
   const metrics = geometryMetrics(geom, imageWidth, imageHeight);
@@ -114,6 +119,31 @@ export function VideoFrameBoxCardContent({
       />
 
       <ActionBar label="单帧标注操作">
+        {geom.type === "video_mask" && onEditMask && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="编辑 Mask"
+            aria-label="编辑 Mask"
+            disabled={readOnly || annotation.is_locked}
+            onClick={onEditMask}
+          >
+            <Icon name="edit" size={14} />
+            编辑
+          </Button>
+        )}
+        {geom.type === "video_polygon" && onConvert && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="转为 Mask"
+            aria-label="转为 Mask"
+            disabled={readOnly || annotation.is_locked}
+            onClick={() => onConvert(annotation.id)}
+          >
+            转 Mask
+          </Button>
+        )}
         {frameIndex !== null && (
           <Button
             variant="ghost"

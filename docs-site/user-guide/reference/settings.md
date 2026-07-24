@@ -10,14 +10,14 @@ last_reviewed: 2026-06-11
 
 侧边栏底部 **设置**（`/settings`）是所有用户都可见的个性化入口。左侧导航按角色显示 4 ~ 5 个分区：
 
-| 分区 | 谁能看 | 主要内容 |
-|---|---|---|
-| 个人资料 | 所有人 | 姓名、邮箱、密码、注销账号 |
-| 标注偏好 | 所有人 | 工作台默认值（图像显示、视频播放、点云视角 / 上色、性能采样率） |
-| API 密钥 | 所有人 | 自助创建 / 吊销个人 API key（程序化访问 / SDK / CLI） |
-| 我的反馈 | 所有人 | 自己提交的 BUG 工单与状态 |
-| 通知偏好 | 所有人 | 单独静音 in-app / 邮件通知 type |
-| **系统设置** | **仅 super_admin** | SMTP、开放注册、邀请有效期、前端基础地址等全局配置 |
+| 分区         | 谁能看             | 主要内容                                                        |
+| ------------ | ------------------ | --------------------------------------------------------------- |
+| 个人资料     | 所有人             | 姓名、邮箱、密码、注销账号                                      |
+| 标注偏好     | 所有人             | 工作台默认值（图像显示、视频播放、点云视角 / 上色、性能采样率） |
+| API 密钥     | 所有人             | 自助创建 / 吊销个人 API key（程序化访问 / SDK / CLI）           |
+| 我的反馈     | 所有人             | 自己提交的 BUG 工单与状态                                       |
+| 通知偏好     | 所有人             | 单独静音 in-app / 邮件通知 type                                 |
+| **系统设置** | **仅 super_admin** | SMTP、开放注册、邀请有效期、前端基础地址等全局配置              |
 
 实现位于 `apps/web/src/pages/Settings/SettingsPage.tsx`。
 
@@ -41,25 +41,25 @@ last_reviewed: 2026-06-11
 
 驱动工作台的用户级配置（`useWorkbenchConfig`），存于后端用户偏好，跨浏览器同步。v0.15.3 起按 **通用 / 图片 / 视频 / 点云** 四分类组织（暂无字段的分类不显示），并新增工作台内的设置抽屉入口（齿轮菜单 →「工作台设置」，改动实时预览），详见 [工作台设置](../workbench/settings)：
 
-| 分类 | 字段 | 说明 |
-|---|---|---|
-| 通用 | `leftWidthPct` / `rightWidthPct` | 左 / 右边栏宽度，占工作台宽度的百分比（10%–35%，默认 15%）；也可直接拖拽边栏分隔条调整，与设置面板双向同步，双击分隔条或点「重置」回到 15% |
-| 通用 | `longTaskSampleRate` | PerformanceObserver longtask 采样率（0–1），性能调试用；普通用户保持默认 |
-| 通用 | `confirmDelete` / `recentClassesLimit` | 删除确认策略和最近类别数量 |
-| 通用 | `crossFrameOverlayEnabled` / `crossFrameOverlayK` / `crossFrameOverlayScope` | 邻帧框叠加开关、帧数与对象范围 |
-| 通用 | `performanceTier` | 视频缓存 / 预取窗口与点云抽稀上限档位（轻量 / 标准 / 激进） |
-| 图片 | `smoothImage` | 图像平滑开关；关闭后显示像素级 nearest-neighbor（适合医学影像 / 像素艺术） |
-| 图片 | `cssImageFilter` | 任意 CSS 滤镜字符串（如 `brightness(1.2) contrast(1.1)`）；失焦时保存；留空恢复原图 |
-| 图片 | `controlPointsSize` | 多边形 / 折线顶点控制点半径（像素，2–20），影响拖拽手柄大小 |
-| 图片 | `autoFitOnResize` | 展开 / 收起边栏或画布容器尺寸变化后，自动让图片重新适应画布 |
-| 视频 | `defaultPlaybackRate` / `largeFrameStep` | 视频任务默认播放速率和大步进帧数 |
-| 视频 | `autoFitOnResize` | 展开 / 收起或拖宽边栏后，自动让视频重新适应画布 |
-| 点云 | `pointSize` / `pointMaskSelectMode` | 点云点径和点云分割工具的默认点选模式 |
-| 点云 | `neighborPointOverlay` / `neighborPointOverlayK` / `neighborPointCull` | 邻帧点云叠加开关、帧数与动态目标处理方式 |
-| 点云 | `persistCameraView` | 记住 3D 主视角的相机位置、目标点、up 向量和 orbit / BEV 模式 |
-| 点云 | `colorizeWithCamera` / `colorizeContrast` / `colorizeBrightness` / `colorizeGamma` | 相机 RGB 上色开关与色彩调整 |
-| 点云 | `showDepthHint` | 相机图深度热力与 hover 深度读数 |
-| 点云 | `showGrid` / `showAxisGizmo` / `cameraDamping` | 地面网格、坐标轴和 OrbitControls 阻尼 |
+| 分类 | 字段                                                                               | 说明                                                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 通用 | `leftWidthPct` / `rightWidthPct`                                                   | 左 / 右边栏宽度，占工作台宽度的百分比（10%–35%，默认 15%）；也可直接拖拽边栏分隔条调整，与设置面板双向同步，双击分隔条或点「重置」回到 15% |
+| 通用 | `longTaskSampleRate`                                                               | PerformanceObserver longtask 采样率（0–1），性能调试用；普通用户保持默认                                                                   |
+| 通用 | `confirmDelete` / `recentClassesLimit`                                             | 删除确认策略和最近类别数量                                                                                                                 |
+| 通用 | `crossFrameOverlayEnabled` / `crossFrameOverlayK` / `crossFrameOverlayScope`       | 邻帧框叠加开关、帧数与对象范围                                                                                                             |
+| 通用 | `performanceTier`                                                                  | 视频缓存 / 预取窗口与点云抽稀上限档位（轻量 / 标准 / 激进）                                                                                |
+| 图片 | `smoothImage`                                                                      | 图像平滑开关；关闭后显示像素级 nearest-neighbor（适合医学影像 / 像素艺术）                                                                 |
+| 图片 | `cssImageFilter`                                                                   | 任意 CSS 滤镜字符串（如 `brightness(1.2) contrast(1.1)`）；失焦时保存；留空恢复原图                                                        |
+| 图片 | `controlPointsSize`                                                                | 多边形 / 折线顶点控制点半径（像素，2–20），影响拖拽手柄大小                                                                                |
+| 图片 | `autoFitOnResize`                                                                  | 展开 / 收起边栏或画布容器尺寸变化后，自动让图片重新适应画布                                                                                |
+| 视频 | `defaultPlaybackRate` / `largeFrameStep`                                           | 视频任务默认播放速率和大步进帧数                                                                                                           |
+| 视频 | `autoFitOnResize`                                                                  | 展开 / 收起或拖宽边栏后，自动让视频重新适应画布                                                                                            |
+| 点云 | `pointSize` / `pointMaskSelectMode`                                                | 点云点径和点云分割工具的默认点选模式                                                                                                       |
+| 点云 | `neighborPointOverlay` / `neighborPointOverlayK` / `neighborPointCull`             | 邻帧点云叠加开关、帧数与动态目标处理方式                                                                                                   |
+| 点云 | `persistCameraView`                                                                | 记住 3D 主视角的相机位置、目标点、up 向量和 orbit / BEV 模式                                                                               |
+| 点云 | `colorizeWithCamera` / `colorizeContrast` / `colorizeBrightness` / `colorizeGamma` | 相机 RGB 上色开关与色彩调整                                                                                                                |
+| 点云 | `showDepthHint`                                                                    | 相机图深度热力与 hover 深度读数                                                                                                            |
+| 点云 | `showGrid` / `showAxisGizmo` / `cameraDamping`                                     | 地面网格、坐标轴和 OrbitControls 阻尼                                                                                                      |
 
 修改即时生效，不需要重登。被项目级工作台规范锁定的字段显示「项目锁定」并禁用。
 
@@ -108,12 +108,12 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 只对 super_admin 显示，对应 `app/services/system_settings_service.py`（`EDITABLE_KEYS` 白名单）。UI 可配条目：
 
-| 条目 | 说明 |
-|---|---|
-| **开放注册** (`allow_open_registration`) | 允许新用户自助注册（注册为 Viewer 角色） |
-| **邀请有效期** (`invitation_ttl_days`) | 邀请链接有效天数（1–90 天） |
-| **前端基础地址** (`frontend_base_url`) | 用于生成邀请 / 重置密码邮件中的链接 |
-| **SMTP 服务器** | host / port / 账号 / 发件人 / 密码；底部「发送测试邮件到我」按钮验证连通 |
+| 条目                                     | 说明                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| **开放注册** (`allow_open_registration`) | 允许新用户自助注册（注册为 Viewer 角色）                                 |
+| **邀请有效期** (`invitation_ttl_days`)   | 邀请链接有效天数（1–90 天）                                              |
+| **前端基础地址** (`frontend_base_url`)   | 用于生成邀请 / 重置密码邮件中的链接                                      |
+| **SMTP 服务器**                          | host / port / 账号 / 发件人 / 密码；底部「发送测试邮件到我」按钮验证连通 |
 
 修改后立即落 DB，无需重启 API 容器。
 

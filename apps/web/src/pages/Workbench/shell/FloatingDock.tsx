@@ -18,7 +18,15 @@ interface FloatingDockProps {
  * 与 Konva viewport 贴合，不占 Topbar 横向空间。
  */
 export function FloatingDock({
-  scale, canUndo, canRedo, onUndo, onRedo, onZoomIn, onZoomOut, onFit, showHistory = true,
+  scale,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onZoomIn,
+  onZoomOut,
+  onFit,
+  showHistory = true,
 }: FloatingDockProps) {
   return (
     <div className="absolute bottom-3 right-3 z-dock flex select-none items-center gap-0.5 rounded-lg border border-border bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
@@ -68,7 +76,9 @@ function DockButton({ onClick, disabled, title, children, variant }: DockButtonP
         "inline-flex h-7 min-w-[28px] cursor-pointer appearance-none items-center justify-center rounded border-0 bg-transparent p-0 text-foreground transition-colors enabled:hover:bg-muted",
         disabled ? "cursor-default text-muted-foreground/60" : "",
         variant === "fit" ? "px-2.5 text-xs font-medium" : "",
-      ].filter(Boolean).join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {children}
     </button>

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,8 +19,11 @@ from app.core.ratelimit import limiter
 from app.middleware.audit import AuditMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.upload_body_limits import UploadBodyLimitMiddleware
 from app.services.storage import storage_service
 from app.services.ml_routing.contracts import RoutingError
+from app.deps import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import logging
 
@@ -208,35 +211,28 @@ app.add_middleware(
     else settings.cors_allow_headers,
 )
 
+# Pure ASGI pre-parser guard: registered outermost so multipart/JSON parsing can
+# never spool an unbounded selected upload before endpoint validation runs.
+app.add_middleware(UploadBodyLimitMiddleware)
+
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(ws_router)
 app.include_router(health_router, prefix="/health", tags=["health"])
 
 # Prometheus metrics — 仅供内部 scrape，不经过 AuditMiddleware
 from prometheus_client import (  # noqa: E402
-    Counter,
-    Histogram,
     make_asgi_app as _prom_app,
     CONTENT_TYPE_LATEST,
 )
 from starlette.responses import Response as StarletteResponse  # noqa: E402
 
-_http_requests = Counter(
-    "http_requests_total",
-    "Total HTTP requests",
-    ["method", "path", "status_code"],
-)
-_http_latency = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request duration",
-    ["method", "path"],
-)
-
 _prom_asgi = _prom_app()
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics():
+async def metrics(db: AsyncSession = Depends(get_db)):
     from prometheus_client import generate_latest
+    from app.observability.mask_ai import refresh_mask_ai_inventory_safely
 
+    await refresh_mask_ai_inventory_safely(db)
     return StarletteResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

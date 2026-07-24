@@ -28,12 +28,8 @@ export function RejectReasonModal({
   onConfirm,
   skipReasonHint,
 }: RejectReasonModalProps) {
-  const [reasonType, setReasonType] = useState<RejectReasonType>(
-    REJECT_REASON_TYPE_ORDER[0],
-  );
-  const [comment, setComment] = useState(
-    skipReasonHint ? `标注员跳过：${skipReasonHint}` : "",
-  );
+  const [reasonType, setReasonType] = useState<RejectReasonType>(REJECT_REASON_TYPE_ORDER[0]);
+  const [comment, setComment] = useState(skipReasonHint ? `标注员跳过：${skipReasonHint}` : "");
 
   // v0.10.16: reason_type 必填，自由文本 comment 可空
   const handleConfirm = () => {
@@ -45,12 +41,7 @@ export function RejectReasonModal({
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={`退回原因（${count} 个任务）`}
-      width={460}
-    >
+    <Modal open={open} onClose={onClose} title={`退回原因（${count} 个任务）`} width={460}>
       <div className="flex flex-col gap-2.5">
         {skipReasonHint && (
           <div
@@ -92,11 +83,7 @@ export function RejectReasonModal({
         />
         <div className="mt-1.5 flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>
-          <Button
-            variant="danger"
-            onClick={handleConfirm}
-            data-testid="reject-confirm"
-          >
+          <Button variant="danger" onClick={handleConfirm} data-testid="reject-confirm">
             确认退回
           </Button>
         </div>

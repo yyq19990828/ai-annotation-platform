@@ -37,6 +37,7 @@ def test_re_export_aligned():
     assert caps.INFRA_VALUES == reg.INFRA_VALUES
     assert caps.TASK_VALUES == reg.TASK_VALUES
     assert caps.GEOMETRY_VALUES == reg.GEOMETRY_VALUES
+    assert caps.INPUT_VALUES == reg.INPUT_VALUES
 
 
 def test_protocol_v2_task_count_and_ids():
@@ -94,13 +95,15 @@ def test_backend_vocab_mirror_matches_registry():
     """vocab.py 自称是 capability_registry 的最小镜像; 锁死防漂移 (v0.14.17).
 
     backend 进程不反向依赖 apps/api, 无法在 protocol_v2 包内断言; 由 apps/api 侧
-    (唯一同时知道两边的地方) 用文件加载核对 3 张受控词表 + TASK_DEFAULT_GEOMETRY。
+    (唯一同时知道两边的地方) 用文件加载核对 5 张受控词表 + TASK_DEFAULT_GEOMETRY。
     历史上 ocr / tracker 的默认几何在两边漂移过 (PR #35 审查发现)。
     """
     vocab = _load_backend_vocab()
     assert vocab.TASK_VALUES == reg.TASK_VALUES
     assert vocab.INFRA_VALUES == reg.INFRA_VALUES
     assert vocab.GEOMETRY_VALUES == reg.GEOMETRY_VALUES
+    assert vocab.PROMPT_VALUES == reg.PROMPT_VALUES
+    assert vocab.INPUT_VALUES == reg.INPUT_VALUES
     # registry 侧值是 list、vocab 侧是 tuple, 归一化为 tuple 后逐 task 比较。
     reg_geom = {k: tuple(v) for k, v in reg.TASK_DEFAULT_GEOMETRY.items()}
     vocab_geom = {k: tuple(v) for k, v in vocab.TASK_DEFAULT_GEOMETRY.items()}

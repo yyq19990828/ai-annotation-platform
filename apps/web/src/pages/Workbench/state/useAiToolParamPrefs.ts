@@ -20,7 +20,9 @@ export function useAiToolParamPrefs(backendId: string | null | undefined) {
   const userId = useAuthStore((s) => s.user?.id);
   const queryClient = useQueryClient();
   const { prefs, loaded } = useUserPreferences();
-  const server = prefs?.ai?.params_by_backend as Record<string, Record<string, unknown>> | undefined;
+  const server = prefs?.ai?.params_by_backend as
+    | Record<string, Record<string, unknown>>
+    | undefined;
   const [byBackend, setByBackend] = useState<Record<string, Record<string, unknown>>>({});
   const pendingRef = useRef<Record<string, Record<string, unknown>> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

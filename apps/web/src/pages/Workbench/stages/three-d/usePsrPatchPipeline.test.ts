@@ -10,7 +10,15 @@ import type { AnnotationResponse } from "@/types";
 import type { PsrField } from "./ThreeDWorkbench.helpers";
 
 const VALID: Record<PsrField, string> = {
-  cx: "1", cy: "2", cz: "3", l: "4", w: "5", h: "6", yaw: "0", pitch: "0", roll: "0",
+  cx: "1",
+  cy: "2",
+  cz: "3",
+  l: "4",
+  w: "5",
+  h: "6",
+  yaw: "0",
+  pitch: "0",
+  roll: "0",
 };
 const INVALID: Record<PsrField, string> = { ...VALID, h: "0" }; // 尺寸 0 → 非法
 
@@ -52,7 +60,10 @@ describe("usePsrPatchPipeline", () => {
     act(() => vi.advanceTimersByTime(250));
     expect(update.mutate).toHaveBeenCalledTimes(1);
     expect(update.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ annotationId: "a1", payload: expect.objectContaining({ geometry: expect.anything() }) }),
+      expect.objectContaining({
+        annotationId: "a1",
+        payload: expect.objectContaining({ geometry: expect.anything() }),
+      }),
     );
     expect(history.push).toHaveBeenCalledTimes(1);
   });
@@ -82,7 +93,10 @@ describe("usePsrPatchPipeline", () => {
   });
 
   it("非 box_3d 几何仍 PATCH 但不入 history", () => {
-    const ann = { id: "a1", geometry: { type: "point_mask_3d", point_indices: [] } } as unknown as AnnotationResponse;
+    const ann = {
+      id: "a1",
+      geometry: { type: "point_mask_3d", point_indices: [] },
+    } as unknown as AnnotationResponse;
     const { result, update, history } = setup({ selectedAnn: ann });
     act(() => result.current.schedulePatch(VALID));
     act(() => vi.advanceTimersByTime(250));
@@ -125,9 +139,7 @@ describe("usePsrPatchPipeline", () => {
     selectedId = "a2";
     act(() => rerender());
     expect(update.mutate).toHaveBeenCalledTimes(1);
-    expect(update.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ annotationId: "a1" }),
-    );
+    expect(update.mutate).toHaveBeenCalledWith(expect.objectContaining({ annotationId: "a1" }));
     // 定时器已被 flush 清掉,再推进时间不应二次提交。
     act(() => vi.advanceTimersByTime(250));
     expect(update.mutate).toHaveBeenCalledTimes(1);

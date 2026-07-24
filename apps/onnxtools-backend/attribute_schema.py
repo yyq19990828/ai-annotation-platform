@@ -41,6 +41,11 @@ COLOR_OPTIONS = [
 
 # 协议③：/setup model 条目自报的属性 schema（含 select options）
 OUTPUT_ATTRIBUTE_SCHEMA = [
-    {"key": "vehicle_type", "label": "车型", "type": "select", "options": VEHICLE_TYPE_OPTIONS},
+    {
+        "key": "vehicle_type",
+        "label": "车型",
+        "type": "select",
+        "options": VEHICLE_TYPE_OPTIONS,
+    },
     {"key": "color", "label": "颜色", "type": "select", "options": COLOR_OPTIONS},
 ]

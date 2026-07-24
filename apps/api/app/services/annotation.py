@@ -8,7 +8,10 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import (
+    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
+    Prediction,
+)
 from app.db.models.task import Task
 from app.db.models.task_lock import AnnotationDraft
 from app.services.video_tracks import (
@@ -31,13 +34,44 @@ from app.services.annotation_propagation import (
 )
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
-    lock_raster_mask_references,
-    validate_mask_geometry_for_task,
+    prepare_mask_geometry_for_annotation_write,
+    prepare_mask_payload_for_write,
 )
 
 logger = logging.getLogger("app.services.annotation")
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
+
+
+def validate_geometry_type_transition(
+    *,
+    tool_unit_id: str,
+    previous_geometry: dict | None,
+    next_geometry: dict,
+) -> None:
+    """Reject unsupported geometry type changes without storage or database I/O."""
+    previous_type = str((previous_geometry or {}).get("type") or "")
+    next_type = str(next_geometry.get("type") or "")
+    if previous_type == next_type:
+        return
+    region_types = {"polygon", "multi_polygon", "raster_mask"}
+    if (
+        tool_unit_id == "region"
+        and previous_type in region_types
+        and next_type in region_types
+    ):
+        return
+
+    from fastapi import HTTPException
+
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "reason": "geometry_type_transition_not_allowed",
+            "from_type": previous_type,
+            "to_type": next_type,
+        },
+    )
 
 
 def _sync_attributes_meta(
@@ -172,9 +206,7 @@ class AnnotationService:
         if parent_annotation_id is not None:
             await self._validate_parent_annotation(task_id, parent_annotation_id)
 
-        if task is not None:
-            await validate_mask_geometry_for_task(self.db, task, geometry)
-            await lock_raster_mask_references(self.db, geometry)
+        await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
         geometry, track_id = prepare_compact_track_identity(geometry)
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -182,7 +214,7 @@ class AnnotationService:
             project_id=task.project_id if task else None,
             user_id=user_id,
             source=source,
-            annotation_type=annotation_type,
+            annotation_type=str(geometry.get("type") or annotation_type),
             tool_unit_id=tool_unit_id,
             class_name=class_name,
             geometry=geometry,
@@ -214,7 +246,8 @@ class AnnotationService:
           每条 annotation 在 attributes 里写入 _shape_index, 让前端能按 (predictionId, shapeIndex) 双键判定.
 
         返回值 (v0.20.22 契约):
-        - 找不到 prediction / shape_index 越界 → None (路由层转 404)。
+        - 找不到 prediction、交互式采纳溯源快照或 shape_index 越界 → None
+          (路由层转 404)。
         - 成功 → 本次新建的 annotation 列表 (单 shape 场景返回 `[ann]`)。
           原实现只返回循环最后一条, 上游 route 忽略返回值、另跑 `list_by_task` 回整题全量,
           导致前端把整题当作"刚新建"逐条 PATCH 合并 AI 候选属性 → 污染人工标注 (改动 1 根因)。
@@ -227,6 +260,30 @@ class AnnotationService:
         ).scalar_one_or_none()
         if not prediction:
             return None
+        if prediction.source == INTERACTIVE_ACCEPT_PREDICTION_SOURCE:
+            return None
+
+        # Convert and validate every selected geometry before constructing or adding
+        # any Annotation row.  This closes the accept path that previously bypassed
+        # the raster create gate and linked uploads immediately before flush.
+        from app.services.prediction import to_internal_shape
+
+        raw_shapes = list(prediction.result or [])
+        if shape_index is not None:
+            if not (0 <= shape_index < len(raw_shapes)):
+                return None
+            indexed = [(shape_index, to_internal_shape(raw_shapes[shape_index]))]
+        else:
+            indexed = [
+                (index, to_internal_shape(raw_shape))
+                for index, raw_shape in enumerate(raw_shapes)
+            ]
+        task = await self.db.get(Task, prediction.task_id)
+        await prepare_mask_payload_for_write(
+            self.db,
+            task,
+            [shape.get("geometry", {}) for _, shape in indexed],
+        )
 
         # v0.20.10 · 属性级溯源: 从 PredictionMeta.extra.pipeline 建「AI 富集属性键 → model_ref」
         # 映射。pipeline 是 stage 级 (非 per-key), 但 enriched key = f"{label}_{k}" if label else k
@@ -257,7 +314,6 @@ class AnnotationService:
                     ai_key_model[f"{prefix}{k}"] = model_ref
 
         # v0.9.7 fix · prediction.result 是 LabelStudio 标准, 转内部 schema 后入 annotation
-        from app.services.prediction import to_internal_shape
         from app.db.models.project import Project
 
         # B-11 · DINO 写入的 class_name 是项目类别的英文 alias; 采纳时反查
@@ -293,17 +349,8 @@ class AnnotationService:
                 if isinstance(fkey, str) and opts:
                     attr_select_options[fkey] = opts
 
-        raw_shapes = list(prediction.result or [])
-        if shape_index is not None:
-            if not (0 <= shape_index < len(raw_shapes)):
-                return None
-            indexed = [(shape_index, raw_shapes[shape_index])]
-        else:
-            indexed = list(enumerate(raw_shapes))
-
         anns: list[Annotation] = []
-        for idx, raw_shape in indexed:
-            shape = to_internal_shape(raw_shape)
+        for idx, shape in indexed:
             raw_class = shape.get("class_name", "") or ""
             # v0.14.17 · 采纳时选类: override_class_name 非空时直接用它 (人工指定项目标签),
             # 跳过 alias 反查 — 用于"预测类名既不在标签集、又无 alias 命中"时让人当场选类落库,
@@ -396,9 +443,6 @@ class AnnotationService:
             self.db.add(annotation)
             anns.append(annotation)
 
-        await lock_raster_mask_references(
-            self.db, [annotation.geometry for annotation in anns]
-        )
         await self.db.flush()
         await self._update_task_stats(prediction.task_id)
         return anns
@@ -475,6 +519,7 @@ class AnnotationService:
         if not annotation:
             return False
         annotation.is_active = False
+        annotation.version += 1
         # v0.20.9 · 级联软删子框: 删父框时其所有 active 子框一并软删, 不留 orphan。
         # 父子仅一层 (create 时约束), 故无需递归。
         children = (
@@ -491,6 +536,7 @@ class AnnotationService:
         )
         for child in children:
             child.is_active = False
+            child.version += 1
         await self.db.flush()
         await self._update_task_stats(annotation.task_id)
         return True
@@ -523,6 +569,35 @@ class AnnotationService:
             raise HTTPException(
                 status_code=404,
                 detail=f"annotations not found: {sorted(str(m) for m in missing)}",
+            )
+        mask_task_ids = sorted(
+            {
+                row.task_id
+                for row in rows
+                if (row.geometry or {}).get("type")
+                in {"raster_mask", "video_mask", "video_track_mask"}
+            },
+            key=str,
+        )
+        if mask_task_ids:
+            await self.db.execute(
+                select(Task)
+                .where(Task.id.in_(mask_task_ids))
+                .order_by(Task.id)
+                .with_for_update()
+            )
+            rows = (
+                (
+                    await self.db.execute(
+                        select(Annotation)
+                        .where(Annotation.id.in_(ids))
+                        .order_by(Annotation.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .all()
             )
         # 整体校验: 任一被锁 / 已软删 → 422 + 整体回滚 (调用方上游事务承担).
         for r in rows:
@@ -1082,6 +1157,7 @@ class AnnotationService:
         z_order: int | None = None,
         is_locked: bool | None = None,
         is_hidden: bool | None = None,
+        mask_payload_prepared: bool = False,
     ) -> Annotation | None:
         """Surgical update of mutable fields. Increments version for optimistic concurrency."""
         annotation = await self.db.get(Annotation, annotation_id)
@@ -1094,10 +1170,17 @@ class AnnotationService:
                 annotation.project_id, annotation.tool_unit_id, class_name
             )
         if geometry is not None:
-            task = await self.db.get(Task, annotation.task_id)
-            if task is not None:
-                await validate_mask_geometry_for_task(self.db, task, geometry)
-                await lock_raster_mask_references(self.db, geometry)
+            next_type = str(geometry.get("type") or "")
+            validate_geometry_type_transition(
+                tool_unit_id=annotation.tool_unit_id,
+                previous_geometry=annotation.geometry,
+                next_geometry=geometry,
+            )
+            if not mask_payload_prepared:
+                task = await self.db.get(Task, annotation.task_id)
+                await prepare_mask_geometry_for_annotation_write(
+                    self.db, task, geometry
+                )
             try:
                 geometry, track_id = prepare_compact_track_identity(
                     geometry,
@@ -1109,6 +1192,7 @@ class AnnotationService:
 
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             annotation.geometry = geometry
+            annotation.annotation_type = next_type
             annotation.track_id = track_id
         if class_name is not None:
             annotation.class_name = class_name

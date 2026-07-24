@@ -57,11 +57,13 @@ export function RuntimeStatusBadge({
   prefix,
   className,
 }: RuntimeStatusBadgeProps): ReactNode {
-  const token = tokenFor(axis, value) ?? {
-    label: "未知",
-    variant: "outline",
-    icon: "circleDot",
-  } as AxisToken;
+  const token =
+    tokenFor(axis, value) ??
+    ({
+      label: "未知",
+      variant: "outline",
+      icon: "circleDot",
+    } as AxisToken);
   const label = prefix ? `${prefix}: ${token.label}` : token.label;
   return (
     <Badge variant={token.variant} className={className}>

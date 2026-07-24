@@ -6,12 +6,12 @@
 
 ## 能力盘点
 
-| Prompt | 链路 | 用途 |
-|---|---|---|
-| `context.type=point` | SAM 2.1 image_predictor 直接出 mask | 工作台单点/多点交互分割 |
-| `context.type=interactive_box` | SAM 2.1 image_predictor 直接出 mask | 工作台单框交互分割 |
-| `context.type=text` | GroundingDINO → boxes → SAM 2.1 → mask | 文本批量预标 |
-| `context.type=video_tracker` | SAM 2.1 video predictor 窗口传播 | 视频框、多边形或 mask 跟踪 |
+| Prompt                         | 链路                                   | 用途                       |
+| ------------------------------ | -------------------------------------- | -------------------------- |
+| `context.type=point`           | SAM 2.1 image_predictor 直接出 mask    | 工作台单点/多点交互分割    |
+| `context.type=interactive_box` | SAM 2.1 image_predictor 直接出 mask    | 工作台单框交互分割         |
+| `context.type=text`            | GroundingDINO → boxes → SAM 2.1 → mask | 文本批量预标               |
+| `context.type=video_tracker`   | SAM 2.1 video predictor 窗口传播       | 视频框、多边形或 mask 跟踪 |
 
 返回数据均为 `polygonlabels`（归一化 [0,1] 顶点列表）+ score + model_version + inference_time_ms。
 
@@ -66,6 +66,7 @@ git add vendor/grounded-sam-2 && git commit -m "vendor: bump grounded-sam-2 to <
 ## 本地启动 (GPU 主机)
 
 前置条件：
+
 - NVIDIA driver ≥ **525.60.13**（CUDA 12.1 minimum；A100 集群通常已满足，老机房需先升驱动）
 - `nvidia-container-toolkit` 已装好
 - 主机 GPU 架构在 `TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9;9.0"` 范围内（覆盖 V100 / T4 / A100 / RTX 30 / RTX 40 / H100）。
@@ -95,16 +96,16 @@ curl -X POST http://localhost:8001/predict \
 
 通过环境变量切换（默认值见 `.env.example`）：
 
-| Env | 默认 | 可选 | 备注 |
-|---|---|---|---|
-| `SAM_VARIANT` | `tiny` | `tiny` / `small` / `base_plus` / `large` | 4060 8GB 推荐 tiny |
-| `DINO_VARIANT` | `T` | `T` / `B` | B 显存翻倍 |
-| `BOX_THRESHOLD` | `0.35` | 0.20 ~ 0.50 | 召回不足下调 |
-| `TEXT_THRESHOLD` | `0.25` | 0.20 ~ 0.40 | 短语 prompt 默认 0.25 |
-| `EMBEDDING_CACHE_SIZE` | `16` | 8 ~ 64 | tiny 单条 ≈ 4 MB；large ≈ 24 MB；按 GPU 显存调 |
-| `MODEL_POOL_CAP` | `1` | ≥ 1 | 图像变体并存上限；满池仅驱逐无 borrower 的 LRU |
-| `VIDEO_MODEL_POOL_CAP` | `1` | ≥ 1 | 视频变体独立并存上限 |
-| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | `0` / `1` | 实卡完成全量卸载验收后才发布受管能力 |
+| Env                                        | 默认   | 可选                                     | 备注                                           |
+| ------------------------------------------ | ------ | ---------------------------------------- | ---------------------------------------------- |
+| `SAM_VARIANT`                              | `tiny` | `tiny` / `small` / `base_plus` / `large` | 4060 8GB 推荐 tiny                             |
+| `DINO_VARIANT`                             | `T`    | `T` / `B`                                | B 显存翻倍                                     |
+| `BOX_THRESHOLD`                            | `0.35` | 0.20 ~ 0.50                              | 召回不足下调                                   |
+| `TEXT_THRESHOLD`                           | `0.25` | 0.20 ~ 0.40                              | 短语 prompt 默认 0.25                          |
+| `EMBEDDING_CACHE_SIZE`                     | `16`   | 8 ~ 64                                   | tiny 单条 ≈ 4 MB；large ≈ 24 MB；按 GPU 显存调 |
+| `MODEL_POOL_CAP`                           | `1`    | ≥ 1                                      | 图像变体并存上限；满池仅驱逐无 borrower 的 LRU |
+| `VIDEO_MODEL_POOL_CAP`                     | `1`    | ≥ 1                                      | 视频变体独立并存上限                           |
+| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0`    | `0` / `1`                                | 实卡完成全量卸载验收后才发布受管能力           |
 
 请求可通过 `context.model_variants` 在运行期选择变体。图像池与视频池的容量和 LRU 独立，但共享冷构建串行锁，避免两套重模型同时抢占显存。
 
@@ -149,11 +150,11 @@ GET  /cache/stats   → 图像池各变体 embedding cache 的聚合统计
 
 ## 性能参考
 
-| 硬件 | text 全链单图 | 缓存命中点击 (M1 后) |
-|---|---|---|
-| 4060 8GB | 200-500 ms | < 50 ms |
-| 3090 24GB | 100-200 ms | < 30 ms |
-| A100 40GB | 50-100 ms | < 20 ms |
+| 硬件      | text 全链单图 | 缓存命中点击 (M1 后) |
+| --------- | ------------- | -------------------- |
+| 4060 8GB  | 200-500 ms    | < 50 ms              |
+| 3090 24GB | 100-200 ms    | < 30 ms              |
+| A100 40GB | 50-100 ms     | < 20 ms              |
 
 LRU embedding 缓存的 key 为 `sha1(url_path|sam_variant)`（剥掉 MinIO presigned 的 query string，跨 TTL 滚动稳定）。同图二次 point/interactive_box 点击直接 restore SAM 内部 `_features`/`_orig_hw` 而不再 `set_image()`，并跳过图片下载；text 路径仍需 DINO 走原图，但 SAM 端同样命中。缓存与 predictor 属于同一个池条目，驱逐或卸载时一起释放。
 

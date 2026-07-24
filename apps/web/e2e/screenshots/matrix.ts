@@ -16,9 +16,11 @@ export function shouldRunInProject(scene: ScreenshotScene, axis: MatrixAxis): bo
   const viewports = scene.matrix.viewports ?? ["desktop"];
   const themes = scene.matrix.themes ?? [scene.matrix.primaryTheme ?? "light"];
   const locales = scene.matrix.locales ?? ["zh-CN"];
-  return viewports.includes(axis.viewport)
-    && themes.includes(axis.theme)
-    && locales.includes(axis.locale);
+  return (
+    viewports.includes(axis.viewport) &&
+    themes.includes(axis.theme) &&
+    locales.includes(axis.locale)
+  );
 }
 
 export function resolveOutputPath(scene: ScreenshotScene, axis: MatrixAxis): string {

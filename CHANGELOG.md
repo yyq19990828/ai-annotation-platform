@@ -6,8 +6,8 @@
 
 历史版本详情见 [`docs/changelogs/`](docs/changelogs/)：
 
-| 版本组 | 文件 |
-|--------|------|
+| 版本组 | 文件                                                   |
+| ------ | ------------------------------------------------------ |
 | 0.22.x | [docs/changelogs/0.22.x.md](docs/changelogs/0.22.x.md) |
 | 0.21.x | [docs/changelogs/0.21.x.md](docs/changelogs/0.21.x.md) |
 | 0.20.x | [docs/changelogs/0.20.x.md](docs/changelogs/0.20.x.md) |
@@ -21,20 +21,349 @@
 | 0.12.x | [docs/changelogs/0.12.x.md](docs/changelogs/0.12.x.md) |
 | 0.11.x | [docs/changelogs/0.11.x.md](docs/changelogs/0.11.x.md) |
 | 0.10.x | [docs/changelogs/0.10.x.md](docs/changelogs/0.10.x.md) |
-| 0.9.x | [docs/changelogs/0.9.x.md](docs/changelogs/0.9.x.md) |
-| 0.8.x | [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md) |
-| 0.7.x | [docs/changelogs/0.7.x.md](docs/changelogs/0.7.x.md) |
-| 0.6.x | [docs/changelogs/0.6.x.md](docs/changelogs/0.6.x.md) |
-| 0.5.x | [docs/changelogs/0.5.x.md](docs/changelogs/0.5.x.md) |
-| 0.4.x | [docs/changelogs/0.4.x.md](docs/changelogs/0.4.x.md) |
-| 0.3.x | [docs/changelogs/0.3.x.md](docs/changelogs/0.3.x.md) |
-| 0.2.x | [docs/changelogs/0.2.x.md](docs/changelogs/0.2.x.md) |
-| 0.1.x | [docs/changelogs/0.1.x.md](docs/changelogs/0.1.x.md) |
-
+| 0.9.x  | [docs/changelogs/0.9.x.md](docs/changelogs/0.9.x.md)   |
+| 0.8.x  | [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md)   |
+| 0.7.x  | [docs/changelogs/0.7.x.md](docs/changelogs/0.7.x.md)   |
+| 0.6.x  | [docs/changelogs/0.6.x.md](docs/changelogs/0.6.x.md)   |
+| 0.5.x  | [docs/changelogs/0.5.x.md](docs/changelogs/0.5.x.md)   |
+| 0.4.x  | [docs/changelogs/0.4.x.md](docs/changelogs/0.4.x.md)   |
+| 0.3.x  | [docs/changelogs/0.3.x.md](docs/changelogs/0.3.x.md)   |
+| 0.2.x  | [docs/changelogs/0.2.x.md](docs/changelogs/0.2.x.md)   |
+| 0.1.x  | [docs/changelogs/0.1.x.md](docs/changelogs/0.1.x.md)   |
 
 ---
 
 ## [Unreleased]
+
+### Changed
+
+- **Mask 画布反馈与编辑工具条统一到其它标注工具**. 图片和视频 Mask 使用类别色、真实像素轮廓选中态与统一的画布标签，普通、选中和编辑态分别复用通用填充透明度设置，不再保留独立 Mask 覆盖透明度入口；详情卡补充画布尺寸、RLE 编码段和存储信息。视频渲染改用前景裁剪位图以减少空白区域的显存占用，编辑工具条同步采用工作台的紧凑字号、按钮和图标规格；原“淡化透明度”也明确命名为仅作用于重复 AI 候选。
+- **全仓格式化改为可复现双层门禁**. 第一方 Python 统一由固定版 Ruff 检查和格式化，前端、文档与配置文件统一由 Prettier 管理；CI 先执行全仓只读格式与静态检查，再以 manual 阶段复核 pre-commit 全文件行为，不再修改分支并自动提交局部 API 修复。pre-commit 与根命令使用相同边界并明确排除 vendor、生成物和锁文件。
+- **生成物更新补齐本地自动刷新与 CI 只读阻断**. 共享协议 schema 变更现在会触发 OpenAPI 快照重导；API 路由索引与快捷键、工作台设置生成页共用 pre-commit 自动暂存和 `check:codegen` 一致性检查，路由源码也会直接触发文档校验工作流。
+
+### Fixed
+
+- **Mask 原子操作冲突后可以直接恢复，Tracker 人工帧可确认覆盖**. 实例范围变化导致提交冲突时，
+  “刷新范围”在错误态仍可使用，不再因编辑权限收紧形成恢复死锁；视频追踪候选包含受保护的人工
+  关键帧时会在服务端拒绝后弹出二次确认，并按用户选择重新提交覆盖。
+- **原生 Mask 采纳记录不能再被旧预测接口重复采纳**. 交互式采纳生成的模型溯源快照会在服务层被旧预测采纳入口拒绝，不再允许用响应中的 Prediction ID 再创建一份重复标注。
+- **图片 Mask 取消后回到选择工具**. 按 `Esc` 或点击编辑工具条的取消按钮会丢弃当前缓冲并切回
+  选择工具，不再意外进入矩形框工具；区域操作预览仍按第一次 `Esc` 仅取消预览的分层规则处理。
+- **Mask 像素光标与已存标注加载更加稳定**. 图片笔刷光标改为直接更新画布节点，只在进出图片
+  边界时触发界面状态更新；光标离开图片会立即恢复系统光标，滚轮可在图片和视频画面内直接调节
+  半径。任务级 Mask Worker 不再被开发环境的严格模式模拟卸载提前销毁，已存 Mask 不会因此偶发
+  显示“图像构建失败”。
+- **视频单帧 Mask 与 Mask 轨迹恢复为两个独立工具**. `M` 创建只属于当前帧、归入“人工”
+  分组的 `video_mask`；工具栏重新提供跨帧 `video_track_mask`，其关键帧只出现在 Mask
+  轨迹分组，不再把“单帧”按钮实际落成轨迹。
+- **标注详情中的“AI 待审”和“人工”分组标题保持常驻**. 即使当前分组为空，标题与 `0`
+  计数仍会保留，不再因采纳或删除最后一个对象而让分组入口消失。
+- **图片与视频工作台的多工具类别流不再串到矩形框**. 已有标注改类和属性编辑会按对象自身的
+  工具单位读取配置；多边形、折线、旋转框、关键点与新建 Mask 完成几何后统一弹出对应类别，
+  不再直接套用推荐类别。视频工具栏补回单帧 Mask，并与图片工作台共用 AI / Mask 图标语义。
+- **远程 HTTP 下标注转换与 Mask 操作不再因 UUID API 缺失失败**. 转换、视频 Mask 剪贴板、
+  拆分和原子操作统一使用兼容 ID 生成器，非安全上下文也能生成合法幂等键和轨迹 ID。
+- **已存 Mask 的偶发空白与“图像构建失败”可自动恢复**. 位图创建失败时降级到 Canvas2D，
+  Worker 瞬时失败会在替换后自动重试一次，不再要求刷新整页。
+- **删除交互式 Mask 标注后不再冒出幽灵 AI 待审**. 交互候选采纳时保留的模型溯源快照
+  现在明确标记为已决策记录，并从工作台与数据管理的待审统计中排除；已有快照会随迁移
+  自动修正。
+- **采纳原生 Mask 后可立即继续创建下一个对象**. 新建候选落库后不再自动选中并误入上一对象
+  的 Mask 精修模式；SAM3 也会按模型实际低分辨率输入尺寸适配 Mask prompt，避免连续操作
+  触发张量尺寸不一致的 502。
+- **远程 HTTP 工作台可以采纳原生 Mask 候选**. 非安全上下文缺少 `crypto.randomUUID`
+  时，备用幂等键现在始终满足服务端长度约束；请求校验失败也会直接显示具体字段与原因，
+  不再只提示 `Unprocessable Entity`。
+- **原生 Mask 大批候选不再拖慢画布交互**. 原生候选使用轻量 polygon 轮廓完成全量动态
+  预览、缩放与 `Tab` 高亮，只为当前候选解码像素层；后端 RLE 编码改为向量化实现，避免
+  Exemplar 多实例结果逐像素占用 CPU，同时落库仍保持未经转换的原始 Mask。
+- **原生 Mask AI 多候选可完整预览并正常采纳**. 候选确认不再复用其他工具单位的过期类别，
+  会从 `region` 类别中选择合法默认值；大量 RLE 候选会立即显示稳定外接边界，像素预览按资源预算
+  异步填充，使用 `Tab` 切换时不再出现候选临时冒出后消失。
+- **ML Backend 能力升级后可安全恢复接流**. 服务池成员因 `/setup` 能力指纹变化被自动禁用后，
+  超级管理员现在可以先审核旧/新指纹及字段差异，再通过重新探活和候选指纹复核接受新基线；
+  成员恢复、服务池启用、路由代际和审计记录原子提交，不再只能长期保持“路由阻塞”。
+- **E2E 固定数据不再残留到开发库**. 本地 Playwright 现在幂等准备
+  `annotation_e2e`，并自启专用 `3001/8010` 服务，不再静默复用开发环境；
+  正常结束时的全局 cleanup 会收敛 fixture，截图与视觉回归也改用
+  `annotation_screenshots_test`。
+
+### Security
+
+- **测试 seed 路由改为显式授权**. Seed、login 与 cleanup 端点只在
+  `E2E_SEED_ENABLED=true` 且当前数据库名以 `_e2e` 或 `_test` 结尾时可用；
+  production 始终不挂载这组路由，避免开发或 staging 配置被误用为测试数据入口。
+
+## [0.23.11] - 2026-07-23
+
+### Added
+
+- **Mask 修订账本与质量内核**. Raster / Video Mask 的几何变更现在会在同一数据库事务中
+  保留不可变前置版本，为版本对比、冲突安全修复和回滚提供真值依据；新的稀疏 RLE
+  质量内核以前景 8 连通 / 背景 4 连通计算组件、孔洞、边界、重叠、桥接、边界噪声与
+  时序漂移，大画布只物化 tile 与 halo，不创建全帧 alpha / RGBA。
+- **异步 Mask 质检与持久问题**. 项目可保存带 revision 的质检阈值，并按项目、
+  任务或标注范围发起 single-flight 扫描；质检运行、进度和去重 issue 都有持久记录，
+  支持分页筛选、取消、解决、放弃修复与过期识别。
+- **Mask 质检审阅与像素对比**. 审核工作台新增独立质检页签，可按状态、严重级别与规则
+  在当前任务或整个项目范围分页导航问题，原子定位图片区域或视频帧，并将当前 Mask 与上一版本、
+  精确选定的 Tracker / AI 候选或邻近关键帧做叠加、边界、XOR、新增和移除对比。区域评论可按
+  不可变摘要和 Tracker 实例身份重放；对比期间冻结未提交 Mask 编辑层，大图使用基于
+  RLE 区间的有界 LOD 分块，不建立整图 RGBA。
+- **Tracker 候选区域决定**. 视频 Mask 质检可对精确单帧问题区域接受或拒绝 Tracker 差异，
+  区域外、其它帧和其它实例保持不变；未决像素继续保留为带新摘要的 staged candidate。
+  区域决定写入独立 reviewed scope 账本，记录审核员、来源任务、版本、帧、区域和候选证据。
+- **可审计的 Mask 批量修复**. 质检问题可先冻结精确像素、版本、范围与分片进行 dry-run，
+  再异步删除小孤岛、填充小孔洞或解决同类重叠；失败分片可续跑，修复后未被再次修改的对象可在保留期内冲突安全地回滚。
+  锁定、已审、人工关键帧与版本冲突都作为逐条跳过或失败证据，SAM / Tracker 重跑只产生待审候选。
+- **Mask 格式 adapter 与预检合同**. 导入、导出格式由带 adapter / manifest 版本的统一 registry 声明，
+  预检返回逐任务的无损、有损或不支持结论、稳定损失码与对象 / 文件 / 字节估算。
+  导入使用短时收据绑定 staged object SHA-256、mapping、options 与 plan digest，并按任务原子执行、保留可续跑结果。
+- **图片 Mask 格式双向闭环**. COCO 现接受 polygon、uncompressed 与 compressed RLE，并以标准
+  compressed RLE 导出；新增 Label Studio BrushLabels、逐实例 Binary PNG、Indexed PNG 和 YOLO Segmentation
+  标注导入 / 导出，使用真实下游 consumer 验证像素、类别、实例 ID 与有损报告。
+- **视频 Mask 格式双向闭环**. COCO Frames 与 DAVIS 现支持导入，YouTube-VOS 和 MOTS 支持导入 / 导出；
+  track、类别、源帧、outside 与 occluded 语义通过显式 manifest 和映射保留。COCO Frames / MOTS 使用
+  标准 compressed RLE，稀疏帧、帧号基准和 palette 重叠都必须选择明确策略并进入预检报告。
+
+### Changed
+
+- **图片原生 Mask 编辑正式默认开启**. 新建和既有项目现在默认允许原生 Raster Mask 写入，
+  项目管理员仍可按项目关闭；部署创建总闸继续优先于项目选择，可紧急将所有项目切为只读。
+- **审阅接入 Mask 质检证据**. 提交任务后自动排队当前 Mask 扫描，阻断配置下必须拥有
+  与当前标注及配置一致的完成证据且无未解决 blocker 才能通过；非阻断模式保留
+  警告、质检摘要与审阅备注。调度失败会明确标记两本账本，但不回滚已成功的提交。
+- **Tracker 审阅认领语义**. 任务进入 review 后，已认领审核员可恢复并决定原标注员创建的
+  待审 Tracker 候选；completed 任务、未认领用户和冲突中的有效分段租约仍会被拒绝。
+- **导出先预检再入队**. 导出弹窗现在先显示格式损失报告；无损计划直接入队，有损计划必须二次确认，
+  含不支持项的计划不可执行。缓存键同步绑定 adapter / manifest 版本与 options digest，相同未命中请求合并为一次构建。
+- **Mask 标注导入按项目 adapter 能力开放**. Dashboard 不再依赖编译期隐藏开关，只展示后端
+  registry 中已验证且适配当前媒体类型的格式；未知类别需映射并重新预检，有损项需显式确认。
+- **Video JSON 明确标识不可移植媒体引用**. 该格式继续适合平台内轨迹检查，但导出预检会报告
+  非可移植媒体引用；需要跨实例无损迁移时应选择 AAP JSON。
+
+### Fixed
+
+- **Mask prompt 源内容冲突返回精确原因**. refine 收据绑定的源 Mask 像素已变化时，现在优先返回
+  `mask_prompt_source_changed`，不再被通用 annotation 版本冲突提前覆盖。
+
+### Security
+
+- **Mask 质检权限与旧结果隔离**. 项目级列表只返回当前审核员可见批次中的任务，审阅操作
+  在行锁下复核可见性与 claim owner；标注版本、活性或配置改变后，旧 issue 立即变为
+  只读 stale，不再参与阻断、告警接受或状态修改。
+- **Mask 对比内容授权**. 当前、历史、Tracker 候选和质检区域内容只通过授权定位程序读取，
+  API Key 必须具有 `annotations:read`；已逻辑到期或摘要不匹配的不可变内容不会在清理窗口内继续泄露。
+- **Mask 质检评论防陈旧**. 区域评论提交时会在服务端核对 issue、task、annotation、frame、region
+  与当前标注版本，已过期或锚点被篡改的请求不会写入。
+- **区域决定冲突隔离**. Tracker 区域决定在同一事务内锁定 job、task、源标注、issue 与当前
+  reviewed scope，并复核 manual keyframe、annotation / segment lock、候选摘要和源版本；任一冲突
+  都会整组失败，普通用户不能通过 override 参数覆盖人工关键帧。
+- **修复收据与回滚隔离**. 服务端只持久化短生命收据的摘要，执行和回滚均绑定 canonical digest、当前可见性与对象版本；
+  超时、篡改或人工新改后的批次不会覆盖当前真值。
+- **安全 archive 与格式资源边界**. 数据集 ZIP 与格式 adapter 共用安全 reader，拒绝路径穿越、绝对路径、
+  重复规范化路径、大小写折叠冲突、symlink、过高压缩比和悬空 manifest 引用；PNG 同时校验 magic、位深与尺寸。
+  导入与导出按实际流式字节、单 entry 和文件数持续执行可调配配额，失败时清理本地临时产物。
+
+## [0.23.10] - 2026-07-22
+
+### Added
+
+- **8K 图片 Mask 分块编辑**. 图片 Mask 最大支持 8192 像素单边与 67,108,864 总像素；
+  任一边超过 4096 或总像素超过 16,777,216 时，工作台自动使用稀疏 tile 后端，保留
+  笔刷、橡皮、套索加减、撤销重做、保存刷新与当前视口 ROI 形态学，不分配整图 alpha 或 canvas。
+
+### Changed
+
+- **Mask 显示缓存硬预算**. 工作台按设备内存使用 Low / Standard / High 缓存与下载并发档位，在插入前执行
+  retained bytes 准入并优先保护正在编辑或选中的对象；同一内容摘要的并发读取合并为一次请求。无法准入的
+  对象进入可重试的延后状态，单个超大对象改用受限 bitmap 预览并继续按原始 RLE 做精确像素命中，避免
+  active 对象绕过预算持续增长。
+- **Mask 计算复用 Worker 池**. 同一任务的内容分析、高级编辑和实例操作共享按设备分档的固定 Worker，
+  COCO RLE counts 改为 `Uint32Array` transferable；编辑、选中、当前和预取任务按优先级进入有界队列，
+  取消、超时或单 Worker 崩溃只替换对应 slot，并在切题或离开工作台时释放全部 Worker 与会话索引。
+- **Mask XOR 分块历史**. 笔刷、橡皮和已确认操作改为保留 512 像素 tile 的 1-bit XOR patch，
+  笔画期间仅捕获首次触及 tile 的临时基线，不再为每次编辑生成 before / after RLE。撤销与重做
+  共用同一 patch，最多保留 100 条并同时受 16 / 32 / 64 MiB 设备档位硬预算约束。
+- **Mask 稀疏 tile 编辑核心**. 大画布真值由不可变 base RLE 与按需解码的 512 像素 override tile 组成；
+  brush、erase、lasso、精确命中与 XOR history 均只读写相交 tile。viewport 只 pin 可见区及一圈预取，
+  全图缩放使用受限 overview；保存在 Worker 中合并 dirty tile 与未访问 base 区间，不物化整图 alpha。
+- **Mask 媒体边界与全图降级**. 图片持久化边界与视频、交互式 AI 的 4096 / 16,777,216
+  边界分离；超出 dense 预算的 mutation、conversion、组件、孔洞与全图扫描工具会在分配前以
+  `large_mask_full_scan_required` 明确拒绝。当可见 tile 无法进入设备硬预算时，工作台保留只读预览与未丢失草稿的重试路径。
+
+## [0.23.9] - 2026-07-22
+
+### Added
+
+- **Mask 高级像素操作内核**. 图片与视频共用的二值 Buffer 现具备圆形 / 方形硬边写入、像素中心
+  polygon 加减、4 / 8 邻域 flood fill、可命中的连通域 / hole membership，以及方形 / 圆盘 kernel
+  的膨胀、腐蚀、开闭运算；所有操作返回统一的面积、拓扑、变化像素与脏区报告。
+- **Mask 区域加减工作流**. 图片与视频像素编辑器新增套索添加 / 减去、4 / 8 邻域区域填充和圆形 /
+  方形笔头；区域操作先显示变化像素与橙色预览，确认后才作为单步历史写入。大画布计算转入可取消的
+  Worker，会话或来源版本已变化时丢弃迟到结果。
+- **Mask 组件、孔洞与形态学编辑**. 高级菜单可按真实像素 membership 保留 / 删除组件、填充单个或
+  批量孔洞、按面积去毛刺，并以圆盘 / 方形 kernel 执行膨胀、腐蚀、开闭运算和边界平滑；预览统一展示
+  面积与拓扑前后指标，空结果需要二次确认。组件复制、拆分和多 Mask 合并复用不落库的实例计划模型。
+- **Mask 实例原子操作**. 新增任务级原子 mutation 端点与 operation / lineage 账本，图片和视频可在
+  一个事务内复制、拆分、合并 Mask，或执行同类 / 全类严格非重叠；范围、版本、任务 / 标注 / 分段锁、
+  类别、内容引用和实际 RLE 像素代数均在服务端统一复核，任一冲突都不会部分落库。图片合并可选择替换或保留来源；视频合并仅创建当前帧副本，不删除源轨迹。
+- **视频 Mask 关键帧生产力**. 选中卡、右键菜单和快捷键补齐可见关键帧导航、当前解析 Mask 复制、同轨草稿 / 新轨预览粘贴、关键帧删除、manual outside / held 恢复和当前组件拆轨；新轨粘贴和拆轨仅创建当前人工关键帧。
+- **标注转换中心**. 图片与视频的 polygon、Mask 和紧致 bbox 转换统一为带逐对象损失报告的 dry-run / token / execute 工作流；支持同类型批量 copy / replace、视频 current-frame / keyframes 与显式 held 物化。预览不写 Mask 内容或占用配额，执行时以版本摘要、报告重算、幂等 operation、lineage 和单事务提交保证冲突时零部分写入。
+
+### Changed
+
+- **实例预览保留与重算**. 蓝色实例预览现在冻结生成时的范围与版本；冲突或网络失败保留 Buffer、选择和
+  幂等键，只有用户选择「刷新范围」时才基于最新 Mask 重算。恢复动作按错误类型收窄，删除图片实例前显示二次确认；视频 Mask 轨迹清单也支持 `Shift` 多选合并。
+- **Mask 帧状态来源保真**. 撤销 / 重做保留关键帧的 manual / prediction 来源、遮挡和属性；manual 与 prediction `outside` 区间分别归并，人工恢复不再改写预测区间。
+
+### Fixed
+
+- **Mask 高级预览与多选合并可达性**. 选择 8 邻域时，预览中的组件前后数量现在按同一邻域统计，
+  不再显示实际合并但报告仍按 4 邻域计算的矛盾结果；从多选对象进入 Mask 编辑也会保留选择集合，
+  「合并已选 Mask」不再因入口把多选收敛成单选而保持禁用。
+- **Mask 原子提交安全边界**. 上传到提交结束期间现在统一阻止取消、切题和切 batch，预览后新锁定的受影响视频轨迹也会在提交前再次拒绝，避免用户已丢弃界面稿件但服务端仍落库。
+- **Mask 内容锁序与计算预算**. 普通写入、视频单帧保存、内容上传与原子 mutation 统一 Task / RLE / upload / annotation 锁序；GC 先提交可恢复的数据库删除，再重新取得同键锁并复查引用和新上传 reservation 后删除对象。范围、派生 runs、累计代数步数和非重叠候选对均有硬上限，copy / split 会按指定的 4 / 8 连通性复核完整连通域。
+- **视频 Mask 帧操作冲突边界**. 保存、删除、outside 与 held 恢复统一复核 task / annotation / segment 锁和 `If-Match`；删除最后一个关键帧、恢复纯预测 outside、过期版本和范围变化都会稳定拒绝，不再由通用 geometry PATCH 绕过。
+
+## [0.23.8] - 2026-07-22
+
+### Added
+
+- **原生 Mask AI 交互协议地基**. 扩展 ML capability 受控词表与共享协议包，冻结原生 COCO RLE
+  候选、Mask prompt、正负 scribble、视频纠错帧、空结果诊断和显式 fallback lineage；Tracker
+  同时按真实输入声明 `video`，未实现的 Mask 交互能力继续保持不声明。
+- **交互模型原生 RLE 候选**. Grounded-SAM2 和 SAM3 image 的点、框与多候选路径可显式
+  返回原分辨率 COCO RLE，hole、孤岛和多连通区不再经过 polygon 简化；旧请求继续返回 polygon。
+- **SAM3 PVS Mask 纠错种子**. 视频交互 Tracker 可校验并解码受控内联 RLE，在准确的窗内帧调用
+  `add_new_mask`；能力目录将 Multiplex 与 PVS 拆分为独立 model 条目。
+- **原生 Mask 候选预览与原子采纳**. 图片和视频单帧候选复用共享 Raster renderer、字节预算与
+  alpha picking；任务级采纳接口在一个事务内创建 Prediction、lineage、decision 和 Annotation，
+  视频结果直接成为当前帧 `video_track_mask` 关键帧。
+- **原生候选幂等账本**. 数据库迁移新增 24 小时接受 decision，用任务与客户端 key 保证响应丢失后
+  重试只产生一次标注变更；有效快照在生命周期内参与 Mask 引用扫描，过期后由清理任务回收。
+- **已存 Mask 多轮 AI 精修**. 图片工作台可在选中的原生 Mask 上交替追加正负点、框和笔迹，
+  接受候选后原位更新同一 annotation；Grounded-SAM2 与 SAM3 共享 Mask / scribble adapter。
+- **视频追踪候选局部审核**. 审阅条可按目标与帧窗口接受或拒绝候选，未决窗口继续保留并可在
+  刷新后恢复；全部候选决定后才结束审核，新发现实例在分批接受时保持同一轨迹映射。
+- **视频 Mask 纠错与定向重传播**. 当前帧可先以人工 RLE 关键帧保存，再选择向前、向后或双向窗口
+  生成待审候选；Grounded-SAM2 与 SAM3 PVS 消费原生 Mask seed，SAM3 Multiplex 只在用户明示确认后使用 bbox fallback。
+- **Mask AI 发布可观测性**. 新增低基数操作与阶段耗时、纠错 job / staged 引用 / 幂等决定库存指标，
+  Prometheus 告警覆盖失败率、冲突率、纠错排队与待审积压；平台和 ML Backend Grafana 面板可分别
+  定位 upload / inference / decode / encode / commit 与 grounded-SAM2、SAM3 Multiplex / PVS 推理。
+- **原生 Mask AI 生命周期决策（ADR-0053）**. 冻结瞬态候选、加密 logits 令牌、服务端原子接受、
+  Tracker 局部决定、人工纠错关键帧、定向重传播与 staged 引用 TTL 的统一边界。
+
+### Changed
+
+- **交互候选代理返回路由 lineage**. 图片与视频单帧响应补充请求 backend、实际实例、
+  服务池、目标 model 与模型版本，为后续原子接受提供可追溯输入。
+- **图片 Mask 部署写能力默认开启**. reader / exporter / 浏览器退出矩阵通过后，部署总闸改为默认
+  开启；项目级原生编辑 opt-in 仍默认关闭，总闸继续作为紧急 kill switch。
+- **视频追踪人工帧保护**. 局部接受默认跳闸而不是覆盖人工关键帧；用户显式二次确认后才可覆盖，
+  窗口外关键帧、其它目标与未决候选保持不变。
+- **纠错路由与窗口冻结**. 纠错作业绑定精确 backend、model、segment lease、源版本与 RLE 摘要，
+  并使用平台与 backend 能力的较小单窗上限；同轨迹仅允许一个活跃纠错作业。
+
+### Fixed
+
+- **SAM3 Tracker Mask 像素与空帧保真**. Multiplex 的原生 Mask 输出不再做形态学开运算或丢弃
+  小连通区，无目标帧返回尺寸正确的全背景 RLE 与 `outside=true`，不再误报 bbox。
+- **原生候选失败恢复**. 网络错误、版本冲突或服务端失败不再提前清空候选、prompt 与幂等键；
+  成功响应才消费候选，取消、切题、切帧、切模型、切输出类型和 TTL 到期会释放会话缓存。
+- **多轮 prompt 失败恢复**. 交互请求失败时保留已存 Mask、候选和本轮正负输入，工具栏可按原始
+  payload 重试；成功空结果才结束上一轮候选，避免瞬时网络故障中断精修。
+- **纠错作业失败恢复**. 人工关键帧保存后入队失败会释放活跃作业租约；可重试错误只重建作业，
+  不重复保存关键帧。WebSocket 断线后使用有界退避轮询，取消时立即清除候选并忽略迟到状态。
+- **Tracker staged Mask 引用回收**. 待审或已取消的候选超过 24 小时后会清空 staged result 并释放
+  内容引用与同轨纠错租约；待审 job 转为 discarded，已取消 job 保持取消状态，不再无限阻塞 GC。
+- **HTTP 指标路由基数**. 请求计数与延迟现统一按 FastAPI 路由模板聚合，未知 API 归入固定
+  `/api/unmatched`，不再为含 UUID 的真实 URL 创建无界时序。
+
+### Security
+
+- **原生 Mask 安全代理**. 平台按同一目标 model 同时检查 prompt 与输出能力，重建 prompt
+  revision，校验候选 RLE、媒体尺寸、ID 与空结果诊断；单对象 4 MiB 和整体 16 MiB
+  上限在读取 backend 响应流时执行，超限返回稳定 413 reason。
+- **原生 Mask 采纳授权与血缘签名**. 接口复核任务可编辑状态、assignment、任务/标注锁、项目写闸、
+  类别和源版本；签名 receipt 绑定像素、prompt 摘要、模型与历史路由，跨 actor 回放和同 key 异请求
+  均稳定拒绝，普通日志与审计不记录 RLE counts。
+- **Mask prompt 鉴权与短期 logits**. 浏览器只提交源 annotation ID 与版本；平台复核任务、帧、锁和
+  版本后解析 RLE，并以绑定 actor、backend、model、prompt revision 和候选的短期加密鉴权令牌连接多轮
+  推理。输入正文、解压结果、笔迹数量和点数均有上限，日志不记录 RLE 或 logits。
+- **视频局部决策并发边界**. 每次接受或拒绝都在同一事务内复核 job revision、源轨迹版本、任务与
+  assignment 状态、segment lease 和标注锁；重复同一决定幂等回放，冲突返回稳定 reason 并保留候选。
+- **Mask AI 日志与指标隐私守卫**. 普通日志不再记录文本提示、RLE counts、scribble 点集、logits 或
+  对象 key；指标对未知 label 强制归一化，HTTP path 只取静态路由模板，避免正文泄露和高基数放大。
+
+## [0.23.7] - 2026-07-21
+
+### Added
+
+- **Raster Mask 内容可观测性**. 新增低基数的内容 load / store / verify 成功与错误计数、固定错误原因分类，
+  并由健康巡检和保守 GC 精确刷新活跃图片 Mask 标注与预测 Gauge；指标不携带任务、对象或标注标识。
+- **图片原生 RasterMaskGeometry schema**. 新增 `raster_mask` 几何类型，用于图片任务的栅格掩码标注。
+  掩码内容通过 `CocoRleMaskRef` 引用存储在 S3 的不可变 COCO RLE 对象，与视频 `video_track_mask`
+  共享内容层基础设施。
+- **图片掩码静态内容 API**. 新增 `GET /annotations/{annotation_id}/mask-content` 端点，
+  支持获取图片掩码的 COCO RLE 内容，带 ETag 支持条件请求（304 Not Modified）。
+- **图片 Mask 项目级灰度能力**. 项目新增默认关闭的原生编辑 opt-in，工作台可通过
+  `GET /tasks/{task_id}/mask-capabilities` 获取有效读写能力、稳定禁用原因与内容上限。
+- **图片原生 Mask 工作台**. 已有 Mask 按 cropped alpha 渲染与像素命中，支持空白创建、RLE 重载再编辑、笔画撤销/重做、逐对象状态与定向重试。
+- **Mask 显式双向转换**. 单对象 polygon / multi-polygon 与 Raster Mask 可原位互转，默认不简化，并在写入前展示面积、组件、孔洞、顶点和像素 XOR 损失报告。
+- **Raster Mask 发布观测与浏览器矩阵**. Prometheus 告警与 Grafana 面板覆盖内容损坏、存储不可用和活跃几何指标缺失；独立的只读与原生写入 Playwright 矩阵固化 12 条发布退出门。
+
+### Changed
+
+- **共享掩码验证逻辑**. `validate_mask_geometry_for_task` 扩展支持 `raster_mask` 类型，
+  验证图片掩码尺寸与数据集项匹配。
+- **前端类型定义**. `Geometry` union 添加 `RasterMaskGeometry` 类型，`rasterMasksApi`
+  拆分为 `annotationRasterMaskContent`（图片）和 `annotationVideoMaskContent`（视频）。
+- **Mask 渲染加载核心**. 图片与视频复用 cropped alpha 分析和命中检测；图片加载器按对象
+  隔离 loading / ready / error，并提供 Worker 解码分析、有界并发、定向重试、LRU 与 bitmap 释放。
+- **Mask 缓存与性能预算**. 缓存从对象数上限改为 128 MiB 估算字节预算，并增加稀疏、密集、孔洞和三分量 1080p 基准，记录 decode / Worker analyze / bitmap / pipeline p95 与 20 Mask 稳态缓存字节。
+- **数据库迁移 0135**. 为项目增加默认关闭的原生 Raster Mask 编辑开关；回滚会删除该列，已创建的 Raster Mask 内容仍保留，应优先采用 forward-fix。
+
+### Fixed
+
+- **Raster Mask 持久化门禁**. 预测结果写入与预测采纳现与标注创建共用同一个写入边界，
+  在创建开关关闭或媒体、尺寸、前景、引用校验失败时，不再留下 Prediction / Annotation 行或提前关联上传对象。
+- **Mask 转换并发与类型一致性**. 替换 raster 内容或转换 geometry 类型缺少 `If-Match`
+  时返回 428，旧版本返回稳定 409；成功转换会同步 `annotation_type`，且仅允许同一
+  `region` 工具内的 polygon / multi-polygon / raster Mask 互转。
+- **图片 Mask 可移植导入导出**. AAP JSON 会把图片与视频引用的 RLE 正文统一写入
+  `mask_objects`，导入先验证并重建不可变对象；COCO 图片导入识别 RLE segmentation，导出从
+  实际像素计算 segmentation、bbox 与 area，不再把栅格 Mask 静默跳过或降级为 bbox。
+- **图片 Mask 只读前端安全**. 原生像素渲染器上线前，工作台明确阻止 `raster_mask` 进入普通
+  bbox 的移动、缩放和复制路径，避免只读引用被覆盖或复制成零尺寸框。
+- **静态 Mask 条件读取合同**. 图片静态读取与兼容逐帧路径共享强类型响应、任务上下文尺寸校验
+  和 `If-None-Match` 处理；命中内容摘要时返回 304，不再重复下载对象正文。
+- **损坏 Mask 定向恢复**. 静态内容读取的 409 错误现返回稳定 `reason / retryable / message`，工作台保留健康兄弟对象并只重拉失败 Mask。
+- **图片 Mask 上传与锁定边界**. 图片内容上传在保留对象和写入存储前先执行有效写闸，包括无数据集项关联的图片任务；已锁定 annotation 的 geometry PATCH 和删除均返回稳定冲突，不再依赖前端禁用。
+- **点云相邻任务预取**. 无 DatasetItem 的点云任务现从 datasets 桶签发文件 URL，工作台也不再把 PCD 当图片预取，避免切入点云工作台时产生后台 404。
+
+### Security
+
+- **Mask 任务级授权与灰度门禁**. 图片和视频 Mask 内容读取统一执行批次状态与标注员分派校验，
+  防止同项目跨任务读取；有效写能力同时受部署 read / create 开关、项目 opt-in 和
+  `region` 工具绑定约束，直接写入、预测、采纳及 AAP / COCO 导入均无法绕过。
+
+## [0.23.5] - 2026-07-21
+
+### Added
+
+- **栅格 Mask 可靠性与安全地基 (ADR-0052)**. 为图像 / 视频栅格 Mask 统一 Epic 的 Phase 1，
+  冻结 v0.23.6 实施所需的全部共享边界：`raster_mask` 类型名、共享 `coco_rle_ref` schema、
+  泛化静态 GET API、polygon ↔ Mask 显式无损 / 有损转换报告、gzip 传输契约、编辑会话状态机语义、
+  JSONB 加法扩展部署顺序与 forward-fix 回滚限制。
+- **图片 polygon 的 hole / multi_polygon 渲染**. `KonvaPolygon` 现使用 even-odd 填充渲染
+  `holes` 与全部 `multi_polygon` 外环，不再只画单个外环；`maskToPolygon` 在多连通 / 含孔时
+  显式标记 `lossy` 并阻止有损的 polygon 提交（提示等待原生 Mask 工作台），不再静默取最大环。
+- **Mask 编辑会话状态机**. 新增 `useMaskEditorSession`，统一
+  `idle → loading → ready → dirty → saving → error` 相位；`sessionId + generation`
+  隔离过期 GET 回包；保存走单飞 Promise，失败
+  保留 buffer / history 并可 retry。`canEditMask` 单一闸门同时检查 task 只读、annotation
+  `is_locked`、轨迹 lock、segment lock 与编辑器相位，供 toolbar / 快捷键 / pointer / commit 复用。
 
 ### Changed
 
@@ -44,6 +373,10 @@
 
 ### Fixed
 
+- 修复视频 Mask 选中时按 `Delete` 会误删整条轨迹的问题；现仅删除当前关键帧，整轨删除改为 `Ctrl/⌘+Delete` 或右键菜单（与 `video_track_bbox` 语义一致）。
+- 修复图片 Mask 笔迹无 undo 历史的问题；`ImageStage` 现为每一笔接入 `beginStroke / endStroke`，与视频路径一致。
+- 修复 Enter 在 Mask 无变化时仍物化 held keyframe 的问题；现要求 `dirty` 才提交。
+- 修复锁定 / 只读对象经 Enter 提交、笔刷模式切换或视频 pointer 落笔仍可修改 mask 的问题；`canEditMask` 现接入图片 / 视频 pointer 入口、B/E 快捷键、MaskToolbar 与 `commitMaskAsPolygon` / `commitVideoMask` 提交边界，task 只读或 annotation `is_locked` 任一为真即拒绝。
 - 修复首页 Hero 在首次打开或慢网络下同时请求所有大图，导致个别卡片轮播时短暂空白的问题；现仅挂载当前与下一张，并在切换前完成预加载和解码。
 - 修复新注册 ML Backend 的 singleton 服务池未随项目启用而激活，以及批量、逐帧、重试、二次推理和同步预测绕过服务池路由的问题；这些请求现统一按池选择物理实例，并遵守 drain、跨进程并发和熔断门禁。
 - 修复标注员进入图片工作台时误请求管理员专用类别频率接口、重复弹出权限告警的问题。
@@ -53,6 +386,26 @@
 - 修复路由 generation 与 Redis 账本可漂移、追踪任务忽略路由选中实例或拒绝结果、中途取消泄漏 lease 及 heartbeat 失败仍静默继续的问题。
 - 修复缺失或过期的 inflight 数据被当作零而允许卸载或移除成员的问题。纳管实例的卸载、移除和物理删除现均要求 enforce 路由、draining 状态、新鲜账本和精确 `inflight=0`，Redis 不可用时失败关闭。
 - 修复服务池成员 PUT 重复插入、API `PATCH` 丢失 `If-Match` 等额外 header、通用预热按钮错发 reload、GPU 静态超售告警无法触发，以及注册管理缺少服务池和成员增删改、权重编辑与实例联动筛选的问题。
+
+### Security
+
+- **Mask 内容 gzip 传输 + bounded decompress**. 上传正文继续使用 `coco_rle`，HTTP 压缩由
+  `Content-Encoding: gzip` 表示，对象存储压缩由 `storage_encoding: gzip` 表示；引用保持
+  `coco_rle_ref` 并使用 `.json.gz` 对象 key。流式 `zlib` 解压在压缩输入超过 8 MiB、
+  解压输出超过 4 MiB 或膨胀比超过 20× 时立即拒绝，关闭 zip bomb 向量；SHA-256
+  仍对未压缩 canonical bytes 计算，旧未压缩引用及历史混合编码继续可读。
+- **交互式帧上传 size cap**. `predict-frame` 与 `interactive-annotating-frame` 现检查
+  `Content-Length` 并流式累计字节，超过 32 MiB 返回 413；解码后校验宽高 ≤ 4096、总像素
+  ≤ 16M、格式 ∈ {JPEG, PNG}。此前 `await frame.read()` 无任何上限。
+- **Mask 内容上传配额**. `POST /tasks/{task_id}/mask-content` 现记录上传归属，并以任务级事务锁
+  串行化配额预留；每个任务最多保留 256 个尚未被 annotation 事务认领的 mask 对象，GC 删除
+  对象时同步清理归属，防止并发请求绕过计数或无限累积 orphan。
+- **Tracker accept 并发冲突 → 409**. `accept_tracker_job` 现在创建 job 时记录全部源 annotation
+  version，accept 时按稳定顺序重锁并复核任务、assignment、segment lease、源对象存活 / 锁定 /
+  版本；任一漂移返回 409，旧 job 缺少快照时失败关闭，不再 last-writer-wins。accept 成功后清除
+  staged 结果，GC 仅保留仍待审核或已取消且处于宽限期的对象。
+- **对象存储 I/O 不阻塞 async event loop**. `store_coco_rle` / `load_coco_rle` 及 GC
+  `delete_object` 的 boto3 同步调用现统一经 `asyncio.to_thread` 包裹，不再阻塞 FastAPI 事件循环。
 
 ## [0.23.4] - 2026-07-20
 

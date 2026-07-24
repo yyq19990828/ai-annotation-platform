@@ -3,7 +3,7 @@ import type { ScreenshotSeedCatalog } from "../fixtures/seed";
 import { storeScreenshotCatalog } from "./catalog-runtime";
 
 export default async function screenshotGlobalSetup(_config: FullConfig): Promise<void> {
-  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
   const context = await request.newContext({ baseURL: apiBase });
   try {
     const response = await context.get("/api/v1/__test/seed/catalog?profile=screenshots");

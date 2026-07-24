@@ -52,9 +52,11 @@ export function shouldSuppressImageContextMenu(args: {
   point: { x: number; y: number };
   thresholdPx?: number;
 }): boolean {
-  return args.readOnly
-    || args.keypointDraftPending
-    || didImageContextMenuDrag(args.down, args.point, args.thresholdPx);
+  return (
+    args.readOnly ||
+    args.keypointDraftPending ||
+    didImageContextMenuDrag(args.down, args.point, args.thresholdPx)
+  );
 }
 
 export function findContextMenuAnnotationId(node: NodeLike | null): string | null {
@@ -93,16 +95,18 @@ export function buildImageContextMenuItems({
         })
       : false,
   );
-  const joinDisabled = readOnly
-    || !onJoinSelected
-    || joinableSelected.length < 2
-    || new Set(joinableSelected.map((item) => item.cls)).size > 1
-    || !joinableSelected.some((item) => item.id === annotation.id);
+  const joinDisabled =
+    readOnly ||
+    !onJoinSelected ||
+    joinableSelected.length < 2 ||
+    new Set(joinableSelected.map((item) => item.cls)).size > 1 ||
+    !joinableSelected.some((item) => item.id === annotation.id);
   // 裁切:基准框(右键的那个)减去其余选中多边形,不要求同类别(常用于遮挡:前景压背景)。
-  const cropDisabled = readOnly
-    || !onCropSelected
-    || joinableSelected.length < 2
-    || !joinableSelected.some((item) => item.id === annotation.id);
+  const cropDisabled =
+    readOnly ||
+    !onCropSelected ||
+    joinableSelected.length < 2 ||
+    !joinableSelected.some((item) => item.id === annotation.id);
 
   const items: DropdownItem[] = [
     {
@@ -164,7 +168,7 @@ export function buildImageContextMenuItems({
       label: "复制",
       icon: "copy",
       kbd: "Ctrl+C",
-      disabled: !clipboard,
+      disabled: !clipboard || annotation.geometry?.type === "raster_mask",
       onSelect: () => {
         clipboard?.copyAnnotation(annotation);
       },

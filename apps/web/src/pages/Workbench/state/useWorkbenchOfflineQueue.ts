@@ -57,46 +57,49 @@ export function useWorkbenchOfflineQueue({
   const { online, queueCount } = useOnlineStatus();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const enqueueOnError = useCallback((err: unknown, fallback: () => void) => {
-    if (isOfflineCandidate(err)) {
-      fallback();
-      pushToast({ msg: "已暂存到离线队列", sub: "恢复连接后将自动同步", kind: "warning" });
-    } else {
-      pushToast({ msg: "操作失败", sub: String(err), kind: "error" });
-    }
-  }, [pushToast]);
-
-  const flushOne = useCallback(async (op: OfflineOp) => {
-    if (op.kind === "create") {
-      const real = await tasksApi.createAnnotation(
-        op.taskId,
-        op.payload as Parameters<typeof tasksApi.createAnnotation>[1],
-      );
-      if (op.tmpId) {
-        history.replaceAnnotationId(op.tmpId, real.id);
-        queryClient.setQueryData<AnnotationResponse[]>(
-          ["annotations", op.taskId],
-          (prev) => (prev ?? []).map((a) =>
-            a.id === op.tmpId
-              ? { ...real, render_key: a.render_key ?? op.tmpId }
-              : a,
-          ),
-        );
-        // v0.6.3 P0：跨队列替换 tmpId → realId，保后续 update/delete 不 404
-        await offlineQueueReplaceAnnotationId(op.tmpId, real.id);
+  const enqueueOnError = useCallback(
+    (err: unknown, fallback: () => void) => {
+      if (isOfflineCandidate(err)) {
+        fallback();
+        pushToast({ msg: "已暂存到离线队列", sub: "恢复连接后将自动同步", kind: "warning" });
       } else {
-        queryClient.invalidateQueries({ queryKey: ["annotations", op.taskId] });
+        pushToast({ msg: "操作失败", sub: String(err), kind: "error" });
       }
-    } else if (op.kind === "update") {
-      await tasksApi.updateAnnotation(
-        op.taskId,
-        op.annotationId,
-        op.payload as Parameters<typeof tasksApi.updateAnnotation>[2],
-      );
-    } else {
-      await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
-    }
-  }, [history, queryClient]);
+    },
+    [pushToast],
+  );
+
+  const flushOne = useCallback(
+    async (op: OfflineOp) => {
+      if (op.kind === "create") {
+        const real = await tasksApi.createAnnotation(
+          op.taskId,
+          op.payload as Parameters<typeof tasksApi.createAnnotation>[1],
+        );
+        if (op.tmpId) {
+          history.replaceAnnotationId(op.tmpId, real.id);
+          queryClient.setQueryData<AnnotationResponse[]>(["annotations", op.taskId], (prev) =>
+            (prev ?? []).map((a) =>
+              a.id === op.tmpId ? { ...real, render_key: a.render_key ?? op.tmpId } : a,
+            ),
+          );
+          // v0.6.3 P0：跨队列替换 tmpId → realId，保后续 update/delete 不 404
+          await offlineQueueReplaceAnnotationId(op.tmpId, real.id);
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["annotations", op.taskId] });
+        }
+      } else if (op.kind === "update") {
+        await tasksApi.updateAnnotation(
+          op.taskId,
+          op.annotationId,
+          op.payload as Parameters<typeof tasksApi.updateAnnotation>[2],
+        );
+      } else {
+        await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
+      }
+    },
+    [history, queryClient],
+  );
 
   const flushAll = useCallback(async () => {
     const result = await drain(flushOne);

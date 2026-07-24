@@ -89,9 +89,7 @@ def upgrade() -> None:
     op.create_table(
         "gpu_arbiter_rollouts",
         sa.Column("gpu_resource_id", sa.String(length=512), nullable=False),
-        sa.Column(
-            "state", sa.String(length=16), server_default="off", nullable=False
-        ),
+        sa.Column("state", sa.String(length=16), server_default="off", nullable=False),
         sa.Column(
             "effective_mode",
             sa.String(length=16),
@@ -104,12 +102,8 @@ def upgrade() -> None:
             server_default="off",
             nullable=False,
         ),
-        sa.Column(
-            "transition_id", postgresql.UUID(as_uuid=True), nullable=True
-        ),
-        sa.Column(
-            "last_transition_id", postgresql.UUID(as_uuid=True), nullable=True
-        ),
+        sa.Column("transition_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("last_transition_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("transition_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("blocker_reason", sa.String(length=256), nullable=True),
         sa.Column("revision", sa.BigInteger(), server_default="1", nullable=False),

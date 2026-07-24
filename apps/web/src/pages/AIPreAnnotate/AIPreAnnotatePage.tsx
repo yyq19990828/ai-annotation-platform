@@ -35,7 +35,8 @@ export default function AIPreAnnotatePage() {
       <header>
         <h1 className={styles.title}>AI 预标</h1>
         <p className={styles.subtitle}>
-          先选项目（仅展示已绑定 ML backend 的项目）。图像项目多选批次跑文本批量预标；视频项目的 AI 追踪在工作台逐轨迹发起（Ctrl+B）。
+          先选项目（仅展示已绑定 ML backend 的项目）。图像项目多选批次跑文本批量预标；视频项目的 AI
+          追踪在工作台逐轨迹发起（Ctrl+B）。
         </p>
       </header>
 

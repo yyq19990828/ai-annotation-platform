@@ -1,5 +1,10 @@
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { tasksApi, type AnnotationPayload, type AnnotationUpdatePayload, type TaskListParams } from "../api/tasks";
+import {
+  tasksApi,
+  type AnnotationPayload,
+  type AnnotationUpdatePayload,
+  type TaskListParams,
+} from "../api/tasks";
 import type { AnnotationResponse } from "@/types";
 import { ApiError } from "../api/client";
 import { randomId } from "@/utils/id";
@@ -41,6 +46,15 @@ export function useTask(id: string) {
     queryKey: ["task", id],
     queryFn: () => tasksApi.get(id),
     enabled: !!id,
+  });
+}
+
+export function useMaskCapabilities(taskId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["task-mask-capabilities", taskId],
+    queryFn: () => tasksApi.getMaskCapabilities(taskId!),
+    enabled: !!taskId && enabled,
+    staleTime: 30_000,
   });
 }
 
@@ -102,10 +116,10 @@ export function useCreateAnnotation(taskId: string | undefined) {
         updated_at: null,
         render_key: tmpId,
       };
-      qc.setQueryData<AnnotationResponse[]>(
-        ["annotations", taskId],
-        (old) => [...(old ?? []), optimistic],
-      );
+      qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (old) => [
+        ...(old ?? []),
+        optimistic,
+      ]);
       return { prev, tmpId };
     },
     onError: (_err, _payload, ctx) => {
@@ -114,12 +128,9 @@ export function useCreateAnnotation(taskId: string | undefined) {
     },
     onSuccess: (created, _payload, ctx) => {
       if (ctx?.tmpId) {
-        qc.setQueryData<AnnotationResponse[]>(
-          ["annotations", taskId],
-          (old) => (old ?? []).map((a) =>
-            a.id === ctx.tmpId
-              ? { ...created, render_key: a.render_key ?? ctx.tmpId }
-              : a,
+        qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (old) =>
+          (old ?? []).map((a) =>
+            a.id === ctx.tmpId ? { ...created, render_key: a.render_key ?? ctx.tmpId } : a,
           ),
         );
       }
@@ -140,9 +151,8 @@ export function useDeleteAnnotation(taskId: string | undefined) {
     onMutate: async (annotationId) => {
       await qc.cancelQueries({ queryKey: ["annotations", taskId] });
       const prev = qc.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
-      qc.setQueryData<AnnotationResponse[]>(
-        ["annotations", taskId],
-        (old) => (old ?? []).filter((a) => a.id !== annotationId),
+      qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (old) =>
+        (old ?? []).filter((a) => a.id !== annotationId),
       );
       return { prev };
     },
@@ -164,7 +174,11 @@ export function useUpdateAnnotation(
 ) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ annotationId, payload, etag }: {
+    mutationFn: ({
+      annotationId,
+      payload,
+      etag,
+    }: {
       annotationId: string;
       payload: AnnotationUpdatePayload;
       etag?: string;
@@ -175,9 +189,8 @@ export function useUpdateAnnotation(
     onMutate: async ({ annotationId, payload }) => {
       await qc.cancelQueries({ queryKey: ["annotations", taskId] });
       const prev = qc.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
-      qc.setQueryData<AnnotationResponse[]>(
-        ["annotations", taskId],
-        (old) => (old ?? []).map((a) =>
+      qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (old) =>
+        (old ?? []).map((a) =>
           a.id === annotationId
             ? {
                 ...a,
@@ -192,14 +205,18 @@ export function useUpdateAnnotation(
     },
     onError: (err, _vars, ctx) => {
       if (err instanceof ApiError && err.status === 409) {
-        const detail = (err.detailRaw as { current_version?: number } | undefined);
+        const detail = err.detailRaw as { current_version?: number } | undefined;
         const annotationId = (_vars as { annotationId?: string } | undefined)?.annotationId ?? "";
         if (detail?.current_version && onConflict) {
           onConflict(annotationId, detail.current_version);
-          return; // don't rollback — let user decide
         }
       }
       if (ctx?.prev !== undefined) qc.setQueryData(["annotations", taskId], ctx.prev);
+    },
+    onSuccess: (annotation) => {
+      qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (old) =>
+        (old ?? []).map((item) => (item.id === annotation.id ? annotation : item)),
+      );
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });

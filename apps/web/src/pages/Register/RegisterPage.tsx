@@ -3,7 +3,13 @@ import { clsx } from "clsx";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Captcha, isCaptchaRequired } from "@/components/Captcha";
-import { useResolveInvitation, useRegister, useRegistrationStatus, useOpenRegister, useResendVerification } from "@/hooks/useInvitation";
+import {
+  useResolveInvitation,
+  useRegister,
+  useRegistrationStatus,
+  useOpenRegister,
+  useResendVerification,
+} from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
@@ -63,7 +69,11 @@ function OpenRegisterForm() {
   const captchaRequired = isCaptchaRequired();
 
   if (regStatus.isLoading) {
-    return <CenteredCard><span className={styles.mutedText}>加载中…</span></CenteredCard>;
+    return (
+      <CenteredCard>
+        <span className={styles.mutedText}>加载中…</span>
+      </CenteredCard>
+    );
   }
 
   if (!regStatus.data?.open_registration_enabled) {
@@ -106,13 +116,9 @@ function OpenRegisterForm() {
       <Brand />
       <div className={styles.card}>
         <h1 className={styles.title}>注册账号</h1>
-        <p className={styles.description}>
-          创建账号后默认为观察者角色，管理员可为你分配更高权限。
-        </p>
+        <p className={styles.description}>创建账号后默认为观察者角色，管理员可为你分配更高权限。</p>
 
-        {openRegister.isError && (
-          <ErrorBanner msg={(openRegister.error as Error).message} />
-        )}
+        {openRegister.isError && <ErrorBanner msg={(openRegister.error as Error).message} />}
 
         <form onSubmit={submit} className={styles.form}>
           <Field label="邮箱">
@@ -169,9 +175,7 @@ function OpenRegisterForm() {
               onChange={(e) => setPwd2(e.target.value)}
               className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
-            {!passwordsMatch && (
-              <div className={styles.mismatchText}>两次密码不一致</div>
-            )}
+            {!passwordsMatch && <div className={styles.mismatchText}>两次密码不一致</div>}
           </Field>
 
           <Captcha onChange={setCaptchaToken} />
@@ -186,7 +190,10 @@ function OpenRegisterForm() {
               openRegister.isPending ||
               (captchaRequired && !captchaToken)
             }
-            className={clsx(styles.primaryButton, openRegister.isPending && styles.primaryButtonPending)}
+            className={clsx(
+              styles.primaryButton,
+              openRegister.isPending && styles.primaryButtonPending,
+            )}
           >
             {openRegister.isPending ? "注册中..." : "注册"}
           </button>
@@ -194,7 +201,9 @@ function OpenRegisterForm() {
 
         <div className={styles.loginPrompt}>
           <span className={styles.mutedText}>已有账号？</span>{" "}
-          <a href="/login" className={styles.link}>立即登录</a>
+          <a href="/login" className={styles.link}>
+            立即登录
+          </a>
         </div>
       </div>
     </CenteredCard>
@@ -214,16 +223,22 @@ function InviteRegisterForm({ token }: { token: string }) {
   const [showPwd, setShowPwd] = useState(false);
 
   if (resolve.isLoading) {
-    return <CenteredCard><span className={styles.mutedText}>正在校验邀请链接…</span></CenteredCard>;
+    return (
+      <CenteredCard>
+        <span className={styles.mutedText}>正在校验邀请链接…</span>
+      </CenteredCard>
+    );
   }
 
   if (resolve.isError) {
     const err = resolve.error as ApiError;
     const status = err?.status;
     const detail =
-      status === 404 ? "邀请链接无效" :
-      status === 410 ? (err.message ?? "该邀请已失效") :
-      (err?.message ?? "无法读取邀请信息");
+      status === 404
+        ? "邀请链接无效"
+        : status === 410
+          ? (err.message ?? "该邀请已失效")
+          : (err?.message ?? "无法读取邀请信息");
     return <ErrorPanel title={detail} hint="请联系管理员重新发送邀请。" />;
   }
 
@@ -264,9 +279,7 @@ function InviteRegisterForm({ token }: { token: string }) {
           <Pill>有效期至 {new Date(inv.expires_at).toLocaleString("zh-CN")}</Pill>
         </div>
 
-        {register.isError && (
-          <ErrorBanner msg={(register.error as Error).message} />
-        )}
+        {register.isError && <ErrorBanner msg={(register.error as Error).message} />}
 
         <form onSubmit={submit} className={styles.form}>
           <Field label="姓名">
@@ -311,15 +324,16 @@ function InviteRegisterForm({ token }: { token: string }) {
               onChange={(e) => setPwd2(e.target.value)}
               className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
-            {!passwordsMatch && (
-              <div className={styles.mismatchText}>两次密码不一致</div>
-            )}
+            {!passwordsMatch && <div className={styles.mismatchText}>两次密码不一致</div>}
           </Field>
 
           <button
             type="submit"
             disabled={!name.trim() || !passwordsValid || !passwordsMatch || register.isPending}
-            className={clsx(styles.primaryButton, register.isPending && styles.primaryButtonPending)}
+            className={clsx(
+              styles.primaryButton,
+              register.isPending && styles.primaryButtonPending,
+            )}
           >
             {register.isPending ? "创建中..." : "完成注册并登录"}
           </button>
@@ -332,7 +346,12 @@ function InviteRegisterForm({ token }: { token: string }) {
 function Brand() {
   return (
     <div className={styles.brand}>
-      <img src="/ai-annotation-platform-icon.svg" alt="" aria-hidden="true" className={styles.brandIcon} />
+      <img
+        src="/ai-annotation-platform-icon.svg"
+        alt=""
+        aria-hidden="true"
+        className={styles.brandIcon}
+      />
       <div>
         <div className={styles.brandTitle}>标注中心</div>
         <div className={styles.brandSubtitle}>AI Annotation Platform</div>
@@ -397,16 +416,23 @@ function VerificationSentPanel({ email }: { email: string }) {
       <div className={styles.card}>
         <h1 className={styles.title}>验证邮件已发送</h1>
         <p className={styles.description}>
-          我们已向 <span className={clsx("mono", styles.inviteEmail)}>{email}</span> 发送了一封验证邮件，
-          请点击邮件中的链接完成验证后再登录。
+          我们已向 <span className={clsx("mono", styles.inviteEmail)}>{email}</span>{" "}
+          发送了一封验证邮件， 请点击邮件中的链接完成验证后再登录。
         </p>
         <button
           type="button"
           onClick={handleResend}
           disabled={cooldown > 0 || resend.isPending}
-          className={clsx(styles.primaryButton, (cooldown > 0 || resend.isPending) && styles.primaryButtonPending)}
+          className={clsx(
+            styles.primaryButton,
+            (cooldown > 0 || resend.isPending) && styles.primaryButtonPending,
+          )}
         >
-          {resend.isPending ? "发送中..." : cooldown > 0 ? `重新发送（${cooldown}s）` : "重新发送验证邮件"}
+          {resend.isPending
+            ? "发送中..."
+            : cooldown > 0
+              ? `重新发送（${cooldown}s）`
+              : "重新发送验证邮件"}
         </button>
         <div className={styles.loginPrompt}>
           <button type="button" onClick={() => navigate("/login")} className={styles.link}>
@@ -421,7 +447,8 @@ function VerificationSentPanel({ email }: { email: string }) {
 function ErrorBanner({ msg }: { msg: string }) {
   return (
     <div className={styles.errorBanner}>
-      <Icon name="warning" size={13} />{msg}
+      <Icon name="warning" size={13} />
+      {msg}
     </div>
   );
 }
@@ -436,9 +463,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className={styles.pill}>
-      {children}
-    </span>
-  );
+  return <span className={styles.pill}>{children}</span>;
 }

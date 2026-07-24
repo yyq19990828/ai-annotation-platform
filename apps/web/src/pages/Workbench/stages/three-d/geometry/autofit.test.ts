@@ -2,13 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import type { Psr } from "./triview";
 import { MIN_SIZE } from "./triview";
-import {
-  fitSize,
-  fitBottom,
-  fitYaw,
-  fitSizeAndBottom,
-  psrFromPoints,
-} from "./autofit";
+import { fitSize, fitBottom, fitYaw, fitSizeAndBottom, psrFromPoints } from "./autofit";
 
 /* ──────────────────────────────────────────────────────────────────────
  * v0.13.8 · autofit 纯几何单测。合成数据 + 手算预期 + toBeCloseTo 浮点比较。

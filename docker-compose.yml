@@ -54,8 +54,8 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
     environment:
       MP_MAX_MESSAGES: 500
     healthcheck:
@@ -114,7 +114,8 @@ services:
     # 必须用 CMD-SHELL — exec-form 无 shell, $$HOSTNAME 不展开会 ping 字面节点名导致永远 unhealthy。
     # start_period 留足 image 冷启 + broker 连接; SIGTERM 后给 30s warm shutdown 跑完在途任务。
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -165,7 +166,8 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -213,7 +215,8 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -252,7 +255,8 @@ services:
       - ./apps/api:/app
       - /app/.venv
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -297,7 +301,8 @@ services:
     # 必须用 CMD-SHELL — exec-form 无 shell, $$HOSTNAME 不展开会 ping 字面节点名导致永远 unhealthy。
     # start_period 留足 image 冷启 + broker 连接; SIGTERM 后给 30s warm shutdown 跑完在途任务。
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -373,9 +378,9 @@ services:
     image: grafana/grafana-oss:11.4.0
     profiles: ["monitoring"]
     ports:
-      - "3001:3000"  # 避开前端 dev 3000
+      - "3001:3000" # 避开前端 dev 3000
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin  # dev-only；production 改 env
+      GF_SECURITY_ADMIN_PASSWORD: admin # dev-only；production 改 env
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro

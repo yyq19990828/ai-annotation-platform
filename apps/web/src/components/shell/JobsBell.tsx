@@ -65,12 +65,17 @@ function persistDismissed(set: Set<string>) {
 const KIND_LABEL: Record<string, string> = {
   batch_predict: "批量预标",
   video_tracker: "视频追踪",
+  video_correction: "视频 Mask 纠错",
   audit_archive: "审计分区归档",
   predictions_import: "预测导入",
   prediction_retry: "失败预测重试",
   dataset_import: "数据集导入",
   create_tasks: "建任务",
   export: "数据导出",
+  mask_qc: "Mask 质检",
+  mask_repair: "Mask 批量修复",
+  mask_repair_rollback: "Mask 修复回滚",
+  mask_format_import: "Mask 格式导入",
 };
 
 /** export job 完成时 result 的下载字段（后端 mark_complete 写入）。 */
@@ -137,20 +142,12 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
   );
 }
 
-function JobRow({
-  job,
-  onDismiss,
-}: {
-  job: AsyncJob;
-  onDismiss?: (id: string) => void;
-}) {
+function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) => void }) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
   // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
   const downloadUrl =
-    job.kind === "export" && job.status === "completed"
-      ? exportDownloadUrl(job.result)
-      : null;
+    job.kind === "export" && job.status === "completed" ? exportDownloadUrl(job.result) : null;
   const detail = jobDetail(job);
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
@@ -366,9 +363,7 @@ export function JobsBell() {
                   {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
                 </div>
               ) : (
-                visibleJobs.map((j) => (
-                  <JobRow key={j.id} job={j} onDismiss={dismissOne} />
-                ))
+                visibleJobs.map((j) => <JobRow key={j.id} job={j} onDismiss={dismissOne} />)
               )}
             </div>
           </div>

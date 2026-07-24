@@ -22,7 +22,10 @@ DB 里存的是 **LabelStudio 标准格式**（保导出/CVAT 兼容性）：
 {
   "type": "rectanglelabels",
   "value": {
-    "x": 12, "y": 34, "width": 56, "height": 78,
+    "x": 12,
+    "y": 34,
+    "width": 56,
+    "height": 78,
     "rectanglelabels": ["dog"]
   },
   "score": 0.91

@@ -10,30 +10,30 @@
 
 两个 backend **并存** — sam3-backend 是高精度首选, grounded-sam2-backend 兜底 (笔记本能跑). 路由策略见路线图 §3.3, v0.10.1 在 apps/api 落地.
 
-| 能力 | grounded-sam2-backend | sam3-backend |
-|---|---|---|
-| `point` prompt (单实例点交互) | ✅ SAM 2.1 直接 | ✅ inst predictor (`model.predict_inst`, v0.18.17 开 inst) |
-| `interactive_box` prompt (单框单 mask) | ✅ SAM 2.1 直接 | ✅ inst predictor (v0.18.17) |
-| `text` prompt | ✅ DINO → SAM 复合链 | ✅ SAM 3 PCS 单模型一步出 |
-| **`exemplar` prompt** (全图相似) | ❌ | ✅ SAM 3 PCS 视觉示例 → 全图相似实例 |
-| 推荐 GPU | 4060 / 3090 / A100 | **3090 / A100** (不部署 4060) |
-| Python / CUDA | 3.10 / 12.1 | 3.12 / 12.6 |
+| 能力                                   | grounded-sam2-backend | sam3-backend                                               |
+| -------------------------------------- | --------------------- | ---------------------------------------------------------- |
+| `point` prompt (单实例点交互)          | ✅ SAM 2.1 直接       | ✅ inst predictor (`model.predict_inst`, v0.18.17 开 inst) |
+| `interactive_box` prompt (单框单 mask) | ✅ SAM 2.1 直接       | ✅ inst predictor (v0.18.17)                               |
+| `text` prompt                          | ✅ DINO → SAM 复合链  | ✅ SAM 3 PCS 单模型一步出                                  |
+| **`exemplar` prompt** (全图相似)       | ❌                    | ✅ SAM 3 PCS 视觉示例 → 全图相似实例                       |
+| 推荐 GPU                               | 4060 / 3090 / A100    | **3090 / A100** (不部署 4060)                              |
+| Python / CUDA                          | 3.10 / 12.1           | 3.12 / 12.6                                                |
 
 ---
 
 ## 能力盘点
 
-> v0.18.17 选项 B: 启用 `enable_inst_interactivity`, 解锁 SAM-style 单实例点/框交互 (`model.predict_inst`). multiplex 权重自带 tracker.*, 无需额外下载; 代价是常驻显存 +2-3GB.
+> v0.18.17 选项 B: 启用 `enable_inst_interactivity`, 解锁 SAM-style 单实例点/框交互 (`model.predict_inst`). multiplex 权重自带 tracker.\*, 无需额外下载; 代价是常驻显存 +2-3GB.
 
-| Prompt | 链路 | 用途 |
-|---|---|---|
-| `context.type=point` | `model.predict_inst(point_coords, point_labels)` → 单实例 mask | 单点交互, 正/负点累加精修 (前端重发全量点); `multimask_output` 出 3 候选 |
-| `context.type=interactive_box` | `model.predict_inst(box)` → 单框单 mask | SAM 2 式「框内出一个 mask」; ≠ exemplar 的全图相似 |
-| `context.type=text` | `set_text_prompt(prompt)` → PCS 一步出全图匹配概念 | 文本批量预标 / `/ai-pre` |
-| `context.type=exemplar` | `(可选)set_text_prompt → 顺序多次 add_geometric_prompt(box, label)` → 全图相似实例 | PCS 视觉示例迭代 refine: 多正负框累加 (`exemplars[]`, 正框扩召回 / 负框排误检) + 可选 text 概念组合 + per-request 阈值重过滤; 缺省退化单 `bbox` 正框 |
-| `context.type=video_tracker`, `model_key=sam3_video` | multiplex 文本发现与跨帧传播 | 按文本发现多目标并输出逐帧 bbox / polygon / mask |
-| `context.type=video_tracker`, `model_key=sam3_video_interactive` | PVS 点/框 seed 与 memory 传播 | 按稳定 `obj_id` 逐对象跨帧追踪 |
-| ~~`context.type=bbox`~~ | — | v0.18.17 退役 (仅作几何形状); 旧请求落 422 |
+| Prompt                                                           | 链路                                                                               | 用途                                                                                                                                                 |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context.type=point`                                             | `model.predict_inst(point_coords, point_labels)` → 单实例 mask                     | 单点交互, 正/负点累加精修 (前端重发全量点); `multimask_output` 出 3 候选                                                                             |
+| `context.type=interactive_box`                                   | `model.predict_inst(box)` → 单框单 mask                                            | SAM 2 式「框内出一个 mask」; ≠ exemplar 的全图相似                                                                                                   |
+| `context.type=text`                                              | `set_text_prompt(prompt)` → PCS 一步出全图匹配概念                                 | 文本批量预标 / `/ai-pre`                                                                                                                             |
+| `context.type=exemplar`                                          | `(可选)set_text_prompt → 顺序多次 add_geometric_prompt(box, label)` → 全图相似实例 | PCS 视觉示例迭代 refine: 多正负框累加 (`exemplars[]`, 正框扩召回 / 负框排误检) + 可选 text 概念组合 + per-request 阈值重过滤; 缺省退化单 `bbox` 正框 |
+| `context.type=video_tracker`, `model_key=sam3_video`             | multiplex 文本发现与跨帧传播                                                       | 按文本发现多目标并输出逐帧 bbox / polygon / mask                                                                                                     |
+| `context.type=video_tracker`, `model_key=sam3_video_interactive` | PVS 点/框 seed 与 memory 传播                                                      | 按稳定 `obj_id` 逐对象跨帧追踪                                                                                                                       |
+| ~~`context.type=bbox`~~                                          | —                                                                                  | v0.18.17 退役 (仅作几何形状); 旧请求落 422                                                                                                           |
 
 point / interactive_box 与 PCS 共用同一 `backbone_out` 缓存 (开 inst 后 `set_image` 一次同产两路特征). 返回数据均为 `polygonlabels` / `rectanglelabels` (归一化 [0,1]) + score + model_version + inference_time_ms.
 
@@ -86,6 +86,7 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 > ✅ **2026-05-13 状态**: vendor 已就位 + `predictor.py` / `embedding_cache.py` / `tests/` 已按真实 API 重写 (45 单测全绿). v0.10.0 选项 A: 不启用 `enable_inst_interactivity`, 放弃 point prompt, 让 grounded-sam2-backend 兜底单点交互. 等首位 GPU 部署者跑端到端验收 (HF_TOKEN + `--profile gpu-sam3`).
 
 升级 commit 时务必跑 5-clicks 集成验收, 复核以下签名是否仍然存在:
+
 - `Sam3Processor` 公共方法 (`set_image` / `set_text_prompt` / `add_geometric_prompt` / `reset_all_prompts`) 与 `state` dict 字段 (`backbone_out` / `geometric_prompt` / `masks` / `boxes` / `scores`)。
 - v0.18.17 inst 路径: `model.predict_inst(inference_state, point_coords=, point_labels=, box=, multimask_output=)` 返回 `(masks CxHxW, iou C, low_res Cx256x256)`; `SAM3InteractiveImagePredictor.predict(...)` 签名; `state["backbone_out"]["sam2_backbone_out"]` 字段 (开 inst 后 `set_image` 产出)。
 - v0.18.19 exemplar refine 依赖: `geometric_prompt.append_boxes(boxes, labels)` 是**累加**语义 (concat 非覆盖, 见 `geometry_encoders.py`), 多次 `add_geometric_prompt` 顺序叠框; `add_geometric_prompt(box, label, state)` 的 `label: bool` 约定 `True`=正框 / `False`=负框; `set_text_prompt` 后再叠几何框可组合 (后者在 `language_features` 已存在时不补 dummy "visual")。任一约定变更需同步 `predict_exemplars`。
@@ -113,6 +114,7 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 ## 本地启动 (GPU 主机)
 
 前置条件:
+
 - NVIDIA driver ≥ **570** (CUDA 12.8 minimum, 对齐 vendor README §70); 老机房需先升驱动.
 - `nvidia-container-toolkit` 已装好.
 - 主机 GPU 架构在 `TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"` 范围内 (A100 / RTX 30 / RTX 40 / H100 / H200).
@@ -182,23 +184,23 @@ POST /drain        → 受管停流；`/drain/cancel` 取消尚未完成的迁�
 
 ## 环境变量
 
-| Env | 默认 | 说明 |
-|---|---|---|
-| `HF_TOKEN` | — | **必填**; sam3 / sam3.1 均为 gated repo. |
-| `CHECKPOINT_DIR` | `/app/checkpoints` | 权重落盘点 (volume 挂载). |
-| `SAM3_IMAGE_HF_REPO_ID` | `facebook/sam3` | 图像模型 (PCS + inst) repo. |
-| `SAM3_IMAGE_CHECKPOINT_FILE` | `sam3.pt` | 图像模型权重文件名. |
-| `SAM3_HF_REPO_ID` | `facebook/sam3.1` | 视频 multiplex repo (预留). |
-| `SAM3_CHECKPOINT_FILE` | `sam3.1_multiplex.pt` | 视频追踪权重文件名 (预留). |
-| `SAM3_EMBEDDING_CACHE_SIZE` | `32` | LRU 容量; A100 充裕可调到 64. |
-| `SAM3_SCORE_THRESHOLD` | `0.5` | text / exemplar 路径 PCS score 过滤阈值. |
-| `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING. |
-| `IMAGE_DOWNLOAD_TIMEOUT` | `30` | 拉远端图片超时 (秒). |
-| `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲多少秒后自动卸载模型释放显存; ≤0 关闭定时卸载. |
-| `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (秒). |
-| `SAM3_MODEL_POOL_BUILD_TIMEOUT` | `120` | 冷构建等待超时；超时后真实 builder 仍跟踪到结束. |
-| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | 空 | 平台 Ed25519 公钥 keyring；非空时必须可完整解析. |
-| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前制品/权重/硬件完成三池实卡验收后设为 `1`. |
+| Env                               | 默认                  | 说明                                               |
+| --------------------------------- | --------------------- | -------------------------------------------------- |
+| `HF_TOKEN`                        | —                     | **必填**; sam3 / sam3.1 均为 gated repo.           |
+| `CHECKPOINT_DIR`                  | `/app/checkpoints`    | 权重落盘点 (volume 挂载).                          |
+| `SAM3_IMAGE_HF_REPO_ID`           | `facebook/sam3`       | 图像模型 (PCS + inst) repo.                        |
+| `SAM3_IMAGE_CHECKPOINT_FILE`      | `sam3.pt`             | 图像模型权重文件名.                                |
+| `SAM3_HF_REPO_ID`                 | `facebook/sam3.1`     | 视频 multiplex repo (预留).                        |
+| `SAM3_CHECKPOINT_FILE`            | `sam3.1_multiplex.pt` | 视频追踪权重文件名 (预留).                         |
+| `SAM3_EMBEDDING_CACHE_SIZE`       | `32`                  | LRU 容量; A100 充裕可调到 64.                      |
+| `SAM3_SCORE_THRESHOLD`            | `0.5`                 | text / exemplar 路径 PCS score 过滤阈值.           |
+| `LOG_LEVEL`                       | `INFO`                | DEBUG / INFO / WARNING.                            |
+| `IMAGE_DOWNLOAD_TIMEOUT`          | `30`                  | 拉远端图片超时 (秒).                               |
+| `SAM3_IDLE_UNLOAD_SECONDS`        | `600`                 | 空闲多少秒后自动卸载模型释放显存; ≤0 关闭定时卸载. |
+| `SAM3_IDLE_CHECK_INTERVAL`        | `60`                  | idle 检查器轮询间隔 (秒).                          |
+| `SAM3_MODEL_POOL_BUILD_TIMEOUT`   | `120`                 | 冷构建等待超时；超时后真实 builder 仍跟踪到结束.   |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON`  | 空                    | 平台 Ed25519 公钥 keyring；非空时必须可完整解析.   |
+| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0`                   | 仅在当前制品/权重/硬件完成三池实卡验收后设为 `1`.  |
 
 ---
 
@@ -214,10 +216,15 @@ SAM3 把 image、multiplex video、PVS video 作为三个独立 `cap=1` 池。�
 仓库默认保持 `SAM3_MANAGED_LIFECYCLE_VERIFIED=0`，此时 `/setup` 不发布 `managed_lifecycle`、`/lifecycle/mode` 拒绝 enforce。只有与已验收制品匹配，或在当前部署重新运行 `scripts/validate_managed_lifecycle.py` 通过后，才能显式开启。
 
 `/health` 返回字段:
+
 ```json
 {
   "loaded": true,
-  "residency": {"state": "resident", "gpu_loaded": true, "pools": {"image": {"resident": true}}},
+  "residency": {
+    "state": "resident",
+    "gpu_loaded": true,
+    "pools": { "image": { "resident": true } }
+  },
   "idle_unload_seconds": 600,
   "last_request_age_seconds": 123.45
 }
@@ -229,11 +236,11 @@ SAM3 把 image、multiplex video、PVS video 作为三个独立 `cap=1` 池。�
 
 ## 性能参考 (FP16 实测目标; 实际数据待 v0.10.0 落地后回填)
 
-| 硬件 | text 全链单图 | 缓存命中点击 |
-|---|---|---|
-| 3090 24 GB | 200-400 ms | < 50 ms |
-| A100 40 GB | 100-200 ms | < 30 ms |
-| H200 | 30-60 ms / 100+ obj | < 20 ms |
+| 硬件       | text 全链单图       | 缓存命中点击 |
+| ---------- | ------------------- | ------------ |
+| 3090 24 GB | 200-400 ms          | < 50 ms      |
+| A100 40 GB | 100-200 ms          | < 30 ms      |
+| H200       | 30-60 ms / 100+ obj | < 20 ms      |
 
 ---
 

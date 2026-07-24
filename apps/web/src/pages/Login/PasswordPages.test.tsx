@@ -49,9 +49,7 @@ describe("ForgotPasswordPage", () => {
       target: { value: "x@y.com" },
     });
     fireEvent.click(screen.getByText("发送重置链接"));
-    await waitFor(() =>
-      screen.getByText(/如果该邮箱已注册，您将收到一封包含重置链接的邮件/),
-    );
+    await waitFor(() => screen.getByText(/如果该邮箱已注册，您将收到一封包含重置链接的邮件/));
     // v0.8.7 F1 · payload 增加 captcha_token（VITE_TURNSTILE_SITE_KEY 缺省时为 null）
     expect(mockPublicPost).toHaveBeenCalledWith("/auth/forgot-password", {
       email: "x@y.com",
@@ -100,18 +98,24 @@ describe("ResetPasswordPage", () => {
 
   it("两次密码不一致 → 显示提示 + 按钮 disabled", () => {
     renderUI();
-    const pwds = document.querySelectorAll('input[type="password"]') as NodeListOf<HTMLInputElement>;
+    const pwds = document.querySelectorAll(
+      'input[type="password"]',
+    ) as NodeListOf<HTMLInputElement>;
     fireEvent.change(pwds[0], { target: { value: "Abcdef12" } });
     fireEvent.change(pwds[1], { target: { value: "Different1" } });
     expect(screen.getByText("两次密码不一致")).toBeInTheDocument();
-    const btn = screen.getByRole("button", { name: "重置密码" }).closest("button") as HTMLButtonElement;
+    const btn = screen
+      .getByRole("button", { name: "重置密码" })
+      .closest("button") as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
   });
 
   it("提交成功 → 显示完成文案", async () => {
     mockPublicPost.mockResolvedValue(undefined);
     renderUI();
-    const pwds = document.querySelectorAll('input[type="password"]') as NodeListOf<HTMLInputElement>;
+    const pwds = document.querySelectorAll(
+      'input[type="password"]',
+    ) as NodeListOf<HTMLInputElement>;
     fireEvent.change(pwds[0], { target: { value: "Abcdef12" } });
     fireEvent.change(pwds[1], { target: { value: "Abcdef12" } });
     fireEvent.click(screen.getByRole("button", { name: "重置密码" }));
@@ -125,7 +129,9 @@ describe("ResetPasswordPage", () => {
   it("API 失败带 message → 显示该 message", async () => {
     mockPublicPost.mockRejectedValue(new Error("token expired"));
     renderUI();
-    const pwds = document.querySelectorAll('input[type="password"]') as NodeListOf<HTMLInputElement>;
+    const pwds = document.querySelectorAll(
+      'input[type="password"]',
+    ) as NodeListOf<HTMLInputElement>;
     fireEvent.change(pwds[0], { target: { value: "Abcdef12" } });
     fireEvent.change(pwds[1], { target: { value: "Abcdef12" } });
     fireEvent.click(screen.getByRole("button", { name: "重置密码" }));

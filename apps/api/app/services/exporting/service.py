@@ -43,6 +43,7 @@ from app.services.exporting.video import (
     VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
 )
+from app.services.mask_formats.image_codecs import compress_coco_rle
 from app.services.video_tracks import (
     VIDEO_FRAME_MODES,
     clean_keyframe,
@@ -50,7 +51,12 @@ from app.services.video_tracks import (
     resolved_track_frames,
     sorted_keyframes,
 )
-from app.services.raster_mask_storage import load_coco_rle
+from app.services.raster_mask_storage import collect_mask_references, load_coco_rle
+from app.utils.raster_mask_rle import (
+    coco_rle_area,
+    coco_rle_bbox_norm,
+    validate_coco_rle,
+)
 
 
 def _sanitize_export_geometry(
@@ -103,6 +109,17 @@ def _export_annotation_copy(
         allowed_attribute_keys,
     )
     return cast(Annotation, SimpleNamespace(**data))
+
+
+async def _collect_portable_mask_objects(
+    geometry: dict,
+    mask_objects: dict[str, dict],
+) -> None:
+    """Load each referenced RLE once for an AAP portable envelope."""
+    for reference in collect_mask_references(geometry):
+        digest = str(reference.get("sha256") or "")
+        if digest and digest not in mask_objects:
+            mask_objects[digest] = await load_coco_rle(reference)
 
 
 IMG_W, IMG_H = 1920, 1280
@@ -672,7 +689,11 @@ class ExportService:
             return 0
 
         # v0.10.27 · 像素坐标改用 DatasetItem.width/height 真值, 缺失再回退常量。
-        items = dataset_items or {}
+        items = (
+            dataset_items
+            if dataset_items is not None
+            else await self._load_dataset_items(tasks)
+        )
 
         def _dims_for(task: Task) -> tuple[int, int]:
             item = items.get(task.dataset_item_id) if task.dataset_item_id else None
@@ -702,16 +723,32 @@ class ExportService:
             if img_id is None:
                 continue
             g = ann.geometry or {}
-            aabb = _coco_aabb_norm(g)
-            if aabb is None:
-                # rotated_bbox / polyline / 空几何不进 COCO（各有专属目标）。
-                skipped += 1
-                continue
             img_w, img_h = dims_by_task.get(ann.task_id, (IMG_W, IMG_H))
-            x_px = aabb[0] * img_w
-            y_px = aabb[1] * img_h
-            w_px = aabb[2] * img_w
-            h_px = aabb[3] * img_h
+            raster_rle: dict | None = None
+            if g.get("type") == "raster_mask":
+                raster_rle = await load_coco_rle(g.get("mask") or {})
+                rle_h, rle_w, _ = validate_coco_rle(raster_rle)
+                if (rle_w, rle_h) != (img_w, img_h):
+                    raise ValueError(
+                        "raster mask size does not match COCO image dimensions"
+                    )
+                aabb = coco_rle_bbox_norm(raster_rle)
+                x_px = aabb.get("x", 0.0) * img_w
+                y_px = aabb.get("y", 0.0) * img_h
+                w_px = aabb.get("w", 0.0) * img_w
+                h_px = aabb.get("h", 0.0) * img_h
+                area = coco_rle_area(raster_rle)
+            else:
+                aabb = _coco_aabb_norm(g)
+                if aabb is None:
+                    # rotated_bbox / polyline / 空几何不进 COCO（各有专属目标）。
+                    skipped += 1
+                    continue
+                x_px = aabb[0] * img_w
+                y_px = aabb[1] * img_h
+                w_px = aabb[2] * img_w
+                h_px = aabb[3] * img_h
+                area = w_px * h_px
             row = {
                 "id": len(coco_annotations),
                 "image_id": img_id,
@@ -722,12 +759,16 @@ class ExportService:
                     round(w_px, 2),
                     round(h_px, 2),
                 ],
-                "area": round(w_px * h_px, 2),
-                "iscrowd": 0,
+                "area": round(area, 2),
+                # COCO uses iscrowd=1 for RLE segmentation and 0 for polygons.
+                "iscrowd": 1 if raster_rle is not None else 0,
             }
-            seg = _coco_segmentation(g, img_w, img_h)
-            if seg:
-                row["segmentation"] = seg
+            if raster_rle is not None:
+                row["segmentation"] = compress_coco_rle(raster_rle)
+            else:
+                seg = _coco_segmentation(g, img_w, img_h)
+                if seg:
+                    row["segmentation"] = seg
             kp = _coco_keypoints(g, img_w, img_h)
             if kp is not None:
                 row["keypoints"], row["num_keypoints"] = kp
@@ -927,12 +968,7 @@ class ExportService:
                     dataset_convention=axis_by_task.get(t.id),
                     axis_frame=axis_frame,
                 )
-                if geometry.get("type") == "video_track_mask":
-                    for keyframe in geometry.get("keyframes") or []:
-                        reference = keyframe.get("mask") or {}
-                        digest = reference.get("sha256")
-                        if digest and digest not in mask_objects:
-                            mask_objects[digest] = load_coco_rle(reference)
+                await _collect_portable_mask_objects(geometry, mask_objects)
                 ann_entries.append(
                     AAPAnnotationEntry(
                         geometry=geometry,
@@ -963,6 +999,7 @@ class ExportService:
                         dataset_convention=axis_by_task.get(t.id),
                         axis_frame=axis_frame,
                     )
+                    await _collect_portable_mask_objects(geometry, mask_objects)
                     pred_entries.append(
                         AAPPredictionEntry(
                             geometry=geometry,

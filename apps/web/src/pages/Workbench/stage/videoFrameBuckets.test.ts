@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildVideoFrameBuckets, videoFrameBucketMarkers, videoTimelineMarkers } from "./videoFrameBuckets";
+import {
+  buildVideoFrameBuckets,
+  videoFrameBucketMarkers,
+  videoTimelineMarkers,
+} from "./videoFrameBuckets";
 import type { VideoTrackGeometry } from "@/types";
 
 describe("videoFrameBuckets", () => {
@@ -16,9 +20,7 @@ describe("videoFrameBuckets", () => {
       {
         type: "video_track_bbox",
         track_id: "trk_a",
-        keyframes: [
-          { frame_index: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
-        ],
+        keyframes: [{ frame_index: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" }],
       },
     ];
 
@@ -43,14 +45,16 @@ describe("videoFrameBuckets", () => {
   });
 
   it("uses the last keyframe when a track repeats a frame", () => {
-    const tracks: VideoTrackGeometry[] = [{
-      type: "video_track_bbox",
-      track_id: "trk",
-      keyframes: [
-        { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
-        { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
-      ],
-    }];
+    const tracks: VideoTrackGeometry[] = [
+      {
+        type: "video_track_bbox",
+        track_id: "trk",
+        keyframes: [
+          { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
+          { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
+        ],
+      },
+    ];
 
     expect(videoFrameBucketMarkers(buildVideoFrameBuckets(tracks))[0]).toMatchObject({
       frame: 1,
@@ -60,15 +64,17 @@ describe("videoFrameBuckets", () => {
   });
 
   it("emits outside timeline segments separately from keyframe density", () => {
-    const tracks: VideoTrackGeometry[] = [{
-      type: "video_track_bbox",
-      track_id: "trk",
-      outside: [{ from: 3, to: 5 }],
-      keyframes: [
-        { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
-        { frame_index: 7, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
-      ],
-    }];
+    const tracks: VideoTrackGeometry[] = [
+      {
+        type: "video_track_bbox",
+        track_id: "trk",
+        outside: [{ from: 3, to: 5 }],
+        keyframes: [
+          { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
+          { frame_index: 7, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
+        ],
+      },
+    ];
 
     expect(videoTimelineMarkers(tracks)).toEqual([
       {

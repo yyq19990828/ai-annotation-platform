@@ -57,9 +57,13 @@ describe("usePendingGeom", () => {
     // 主收敛路径是 (a) annotations cache 命中新几何, (b) useUpdateAnnotation.onSettled 主动
     // clear; 兜底超时提到 10s 让慢网 mutation 也在 pending 保持内完成 (避免 <800ms 即 drop
     // 让画面在 onError rollback 到旧几何时闪一下)。
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
     expect(result.current.pendingGeomMap.has("a")).toBe(true);
-    act(() => { vi.advanceTimersByTime(5500); });
+    act(() => {
+      vi.advanceTimersByTime(5500);
+    });
     expect(result.current.pendingGeomMap.has("a")).toBe(false);
   });
 
@@ -88,7 +92,14 @@ describe("usePendingGeom", () => {
   });
 
   it("按 geometry.type 分辨: polygon 不会误命中 bbox", () => {
-    const poly: PolygonGeometry = { type: "polygon", points: [[0, 0], [1, 0], [1, 1]] };
+    const poly: PolygonGeometry = {
+      type: "polygon",
+      points: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+      ],
+    };
     const { result } = renderHook(() => usePendingGeom([ann("a", G1)]));
     act(() => result.current.markPendingGeom("a", poly));
     // 消费方 ImageStage.overrideGeom 只在 type==="bbox" 时返回值; type 不匹配返回 null。

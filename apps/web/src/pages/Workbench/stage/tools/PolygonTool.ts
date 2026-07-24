@@ -17,7 +17,14 @@ export const PolygonTool: CanvasTool = {
   label: "多边形",
   icon: "polygon",
   cursor: "crosshair",
-  onPointerDown: ({ pt, evt, readOnly, pendingDrawing, polygonDraft, snapPoint }: ToolPointerContext): DragInit | null => {
+  onPointerDown: ({
+    pt,
+    evt,
+    readOnly,
+    pendingDrawing,
+    polygonDraft,
+    snapPoint,
+  }: ToolPointerContext): DragInit | null => {
     if (readOnly || pendingDrawing || !polygonDraft) return null;
     if (evt.button !== 0) return null; // 仅左键落点
     const target = snapPoint?.(pt, evt) ?? pt;

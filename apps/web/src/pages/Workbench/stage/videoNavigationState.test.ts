@@ -55,13 +55,21 @@ describe("videoNavigationState", () => {
   });
 
   it("parses persisted navigation state defensively", () => {
-    expect(parseStoredLoopRegion(JSON.stringify({ startFrame: 9, endFrame: 2 }), 10)).toEqual({ startFrame: 2, endFrame: 9 });
+    expect(parseStoredLoopRegion(JSON.stringify({ startFrame: 9, endFrame: 2 }), 10)).toEqual({
+      startFrame: 2,
+      endFrame: 9,
+    });
     expect(parseStoredLoopRegion("not-json", 10)).toBeNull();
 
-    expect(parseStoredBookmarks(JSON.stringify([
-      { id: "a", frameIndex: 12, createdAt: 2 },
-      { id: "bad", frameIndex: "x", createdAt: 1 },
-    ]), 9)).toEqual([{ id: "a", frameIndex: 9, label: "F 9", createdAt: 2 }]);
+    expect(
+      parseStoredBookmarks(
+        JSON.stringify([
+          { id: "a", frameIndex: 12, createdAt: 2 },
+          { id: "bad", frameIndex: "x", createdAt: 1 },
+        ]),
+        9,
+      ),
+    ).toEqual([{ id: "a", frameIndex: 9, label: "F 9", createdAt: 2 }]);
 
     expect(parseStoredJumpHistory(JSON.stringify({ entries: [0, 3, 12], cursor: 99 }), 9)).toEqual({
       entries: [0, 3, 9],

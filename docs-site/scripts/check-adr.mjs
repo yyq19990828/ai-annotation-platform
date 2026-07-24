@@ -23,10 +23,7 @@ function collect(dir, label) {
     .map((f) => ({ f, dir, label }));
 }
 
-const files = [
-  ...collect(ADR_DIR, "active"),
-  ...collect(ARCHIVE_DIR, "archive"),
-];
+const files = [...collect(ADR_DIR, "active"), ...collect(ARCHIVE_DIR, "archive")];
 const errors = [];
 const numbers = new Map();
 

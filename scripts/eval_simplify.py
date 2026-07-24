@@ -31,7 +31,9 @@ import numpy as np
 
 # 让脚本能在 repo root 直接调; 共享包通过 uv --project 安装到本地 venv,
 # 本路径作为 fallback (开发者直接 `python scripts/eval_simplify.py` 时也能跑).
-_MASK_UTILS_SRC = Path(__file__).resolve().parents[1] / "apps" / "_shared" / "mask_utils" / "src"
+_MASK_UTILS_SRC = (
+    Path(__file__).resolve().parents[1] / "apps" / "_shared" / "mask_utils" / "src"
+)
 if _MASK_UTILS_SRC.is_dir() and str(_MASK_UTILS_SRC) not in sys.path:
     sys.path.insert(0, str(_MASK_UTILS_SRC))
 
@@ -91,7 +93,9 @@ def _summary(values: list[float], precision: int = 3) -> dict[str, float]:
     }
 
 
-def _eval_dir(masks_dir: Path, tolerances: list[float]) -> tuple[list[dict], dict[float, dict]]:
+def _eval_dir(
+    masks_dir: Path, tolerances: list[float]
+) -> tuple[list[dict], dict[float, dict]]:
     rows: list[dict] = []
     per_tol_iou: dict[float, list[float]] = {t: [] for t in tolerances}
     per_tol_verts: dict[float, list[int]] = {t: [] for t in tolerances}
@@ -167,9 +171,7 @@ def _eval_dir(masks_dir: Path, tolerances: list[float]) -> tuple[list[dict], dic
                     100.0
                     * sum(
                         1
-                        for s, m in zip(
-                            per_tol_iou[tol], per_tol_iou_multi[tol]
-                        )
+                        for s, m in zip(per_tol_iou[tol], per_tol_iou_multi[tol])
                         if m - s >= 0.02
                     )
                     / max(1, len(per_tol_iou[tol])),
@@ -207,7 +209,9 @@ def _render_markdown(
     lines.append("")
     lines.append("## 汇总 (per tolerance) — 单 polygon (v0.9.13 之前)")
     lines.append("")
-    lines.append("| tolerance (px) | n | IoU mean | IoU median | IoU p95 | IoU≥0.95 % | verts mean | verts median | verts p95 |")
+    lines.append(
+        "| tolerance (px) | n | IoU mean | IoU median | IoU p95 | IoU≥0.95 % | verts mean | verts median | verts p95 |"
+    )
     lines.append("|---|---|---|---|---|---|---|---|---|")
     for tol in tolerances:
         s = summary[tol]
@@ -225,7 +229,9 @@ def _render_markdown(
         "这部分样本是「多连通 / 带空洞」的长尾根因。"
     )
     lines.append("")
-    lines.append("| tolerance | IoU mean | IoU median | IoU≥0.95 % | rings median | multi_only_helps % |")
+    lines.append(
+        "| tolerance | IoU mean | IoU median | IoU≥0.95 % | rings median | multi_only_helps % |"
+    )
     lines.append("|---|---|---|---|---|---|")
     for tol in tolerances:
         s = summary[tol]
@@ -256,7 +262,11 @@ def _render_markdown(
             "项目级常量化触发条件：客户提需求或下次重跑此脚本 IoU<0.95 占比 > 5%。"
         )
     elif iou95 >= 85.0 and iou_mean >= 0.95:
-        verts_warn = "" if verts_med <= 200 else "（**注意**：超 200 顶点 WARN 阈值，调 tolerance 到 2-3 可降到 ~50）"
+        verts_warn = (
+            ""
+            if verts_med <= 200
+            else "（**注意**：超 200 顶点 WARN 阈值，调 tolerance 到 2-3 可降到 ~50）"
+        )
         lines.append(
             f"**`DEFAULT_SIMPLIFY_TOLERANCE = {primary_tol}` 接近验收线但未达** "
             f"（tolerance={primary_tol} IoU≥0.95 占比 {iou95}% < 95%、但 IoU mean {iou_mean} ≥ 0.95、"
@@ -287,11 +297,21 @@ def _render_markdown(
                 f"差异仅 {iou_spread:.3f}，调 tolerance 收益微小。常见结构性原因："
             )
             lines.append("")
-            lines.append("- `mask_to_polygon` 取面积最大连通域，多片段 SAM mask 的小碎块被丢弃 → 应支持 `multi_polygon` 输出（follow-up）")
-            lines.append("- `cv2.RETR_EXTERNAL` 丢内部空洞 → mask 含空心结构时 IoU 偏低（follow-up：`RETR_CCOMP` + 内外环编码）")
-            lines.append("- SAM mask 边界本身有像素级噪声 → polygon 化前先 morphological closing")
+            lines.append(
+                "- `mask_to_polygon` 取面积最大连通域，多片段 SAM mask 的小碎块被丢弃 → 应支持 `multi_polygon` 输出（follow-up）"
+            )
+            lines.append(
+                "- `cv2.RETR_EXTERNAL` 丢内部空洞 → mask 含空心结构时 IoU 偏低（follow-up：`RETR_CCOMP` + 内外环编码）"
+            )
+            lines.append(
+                "- SAM mask 边界本身有像素级噪声 → polygon 化前先 morphological closing"
+            )
             lines.append("")
-            verts_warn = "（已超 200 顶点 WARN 阈值，运维侧会高频告警）" if verts_med > 200 else ""
+            verts_warn = (
+                "（已超 200 顶点 WARN 阈值，运维侧会高频告警）"
+                if verts_med > 200
+                else ""
+            )
             lines.append(
                 f"**保持 `DEFAULT_SIMPLIFY_TOLERANCE = 1.0` 不动**{verts_warn}，"
                 "把多片段 / 空洞处理作为 follow-up epic 进 ROADMAP（v0.9.5 候选或 v0.10.x 与 sam3-backend 一并做）。"
@@ -299,9 +319,7 @@ def _render_markdown(
             )
         else:
             # IoU 在 tolerance 间有显著差异 → 调 tolerance 有意义, 推荐最优档
-            best_tol = max(
-                tolerances, key=lambda t: summary[t]["iou>=0.95_pct"]
-            )
+            best_tol = max(tolerances, key=lambda t: summary[t]["iou>=0.95_pct"])
             lines.append(
                 f"**建议把 `DEFAULT_SIMPLIFY_TOLERANCE` 调到 {best_tol}** "
                 f"（该档 IoU≥0.95 占比 {summary[best_tol]['iou>=0.95_pct']}% 最优）。"
@@ -374,7 +392,9 @@ def main() -> int:
     else:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(md, encoding="utf-8")
-        print(f"✓ wrote {args.out} ({len(rows)} samples × {len(tolerances)} tolerances)")
+        print(
+            f"✓ wrote {args.out} ({len(rows)} samples × {len(tolerances)} tolerances)"
+        )
     return 0
 
 

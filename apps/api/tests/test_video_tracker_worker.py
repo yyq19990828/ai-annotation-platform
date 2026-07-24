@@ -90,7 +90,11 @@ async def test_tracker_worker_completes_mock_bbox_job_and_writes_video_track(
         direction="forward",
         from_frame=0,
         to_frame=2,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {str(annotation.id): int(annotation.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -422,7 +426,11 @@ async def test_tracker_worker_preserves_partial_results_on_cancel(
         direction="forward",
         from_frame=1,
         to_frame=3,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {str(annotation.id): int(annotation.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -501,7 +509,11 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
         direction="forward",
         from_frame=0,
         to_frame=4,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {str(annotation.id): int(annotation.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -620,7 +632,11 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
         direction="forward",
         from_frame=1,
         to_frame=2,
-        prompt={"type": "bbox", "geometry": annotation.geometry},
+        prompt={
+            "type": "bbox",
+            "geometry": annotation.geometry,
+            "expected_source_versions": {str(annotation.id): int(annotation.version)},
+        },
         event_channel="video-tracker-job:test",
     )
     db_session.add(job)
@@ -1002,7 +1018,7 @@ async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeyp
     assert aj.status == "completed"
 
 
-def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
+async def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
     from app.services.video_tracking.runner import _materialize_tracker_mask_result
 
     reference = {
@@ -1013,10 +1029,14 @@ def test_materialize_tracker_mask_result_stores_rle_and_adds_aabb(monkeypatch):
         "runs": 3,
         "bytes": 58,
     }
+
+    async def _fake_store(rle):
+        return reference
+
     monkeypatch.setattr(
-        "app.services.video_tracking.runner.store_coco_rle", lambda rle: reference
+        "app.services.video_tracking.runner.store_coco_rle", _fake_store
     )
-    result = _materialize_tracker_mask_result(
+    result = await _materialize_tracker_mask_result(
         TrackerFrameResult(
             frame_index=3,
             geometry={
@@ -1184,7 +1204,10 @@ async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
         direction="forward",
         from_frame=0,
         to_frame=1,
-        prompt={"output_geometry": "mask"},
+        prompt={
+            "output_geometry": "mask",
+            "expected_source_versions": {str(annotation.id): int(annotation.version)},
+        },
         event_channel="video-tracker-job:test",
         staged_result={
             "grid_step": 1,

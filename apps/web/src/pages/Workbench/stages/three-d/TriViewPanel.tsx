@@ -82,12 +82,16 @@ function TriAxisGlyph({ view }: { view: TriView }) {
       <g className={axisClass(axes.u)}>
         <path className={TRI_AXIS_PATH} d="M10 42H38" />
         <path className={TRI_AXIS_PATH} d="M38 42L32 37M38 42L32 47" />
-        <text className={TRI_AXIS_TEXT} x="42" y="46">{AXIS_LABEL[axes.u]}</text>
+        <text className={TRI_AXIS_TEXT} x="42" y="46">
+          {AXIS_LABEL[axes.u]}
+        </text>
       </g>
       <g className={axisClass(axes.v)}>
         <path className={TRI_AXIS_PATH} d="M10 42V12" />
         <path className={TRI_AXIS_PATH} d="M10 12L5 18M10 12L15 18" />
-        <text className={TRI_AXIS_TEXT} x="4" y="10">{AXIS_LABEL[axes.v]}</text>
+        <text className={TRI_AXIS_TEXT} x="4" y="10">
+          {AXIS_LABEL[axes.v]}
+        </text>
       </g>
       <circle className={TRI_AXIS_ORIGIN} cx="10" cy="42" r="2.8" />
     </svg>
@@ -203,7 +207,8 @@ export function TriViewPanel({
         </div>
       ))}
       {!selected && (
-        <div className={TRI_EMPTY}>选中一个 3D 框后
+        <div className={TRI_EMPTY}>
+          选中一个 3D 框后
           <br />
           在此俯 / 侧 / 正三视图精修
         </div>

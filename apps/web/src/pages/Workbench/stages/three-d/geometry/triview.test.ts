@@ -149,12 +149,8 @@ describe("dragRotation · 三轴 yaw/pitch/roll", () => {
     const there = dragRotation(start, view, 0.3);
     const back = dragRotation(there, view, -0.3);
     // 经四元数往返, 欧拉分量应复原 (用四元数比较避免欧拉多解歧义)。
-    const q0 = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(...start.rotation, "XYZ"),
-    );
-    const q1 = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(...back.rotation, "XYZ"),
-    );
+    const q0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(...start.rotation, "XYZ"));
+    const q1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(...back.rotation, "XYZ"));
     expect(Math.abs(q0.dot(q1))).toBeCloseTo(1); // 同一朝向 (dot=±1)
   });
 

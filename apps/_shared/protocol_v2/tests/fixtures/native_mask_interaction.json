@@ -1,0 +1,72 @@
+{
+  "candidate": {
+    "type": "mask",
+    "value": {
+      "rle": {
+        "encoding": "coco_rle",
+        "size": [3, 4],
+        "counts": [0, 1, 11]
+      },
+      "masklabels": ["object"],
+      "preview": {
+        "points": [
+          [0.0, 0.0],
+          [0.25, 0.0],
+          [0.25, 0.3333333333],
+          [0.0, 0.3333333333]
+        ]
+      }
+    },
+    "score": 0.97,
+    "candidate_id": "sha256:04c00d643489db5a261ba9d4caab5638ae052180e9853e0106873a3437c6f564"
+  },
+  "prompt_revision": "revision-7",
+  "candidate_index": 0,
+  "mask_prompt": {
+    "rle": {
+      "encoding": "coco_rle",
+      "size": [3, 4],
+      "counts": [0, 1, 11]
+    },
+    "source_annotation_id": "annotation-1",
+    "source_version": 3,
+    "source_digest": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "scribble": {
+    "type": "scribble",
+    "scribbles": [
+      {
+        "polarity": 1,
+        "points": [
+          [0.1, 0.2],
+          [0.2, 0.25]
+        ],
+        "width": 0.008
+      },
+      {
+        "polarity": 0,
+        "points": [
+          [0.4, 0.3],
+          [0.45, 0.35]
+        ],
+        "width": 0.008
+      }
+    ],
+    "output_geometry": "mask"
+  },
+  "correction_frame": {
+    "type": "correction_frame",
+    "frame_index": 12,
+    "direction": "forward",
+    "output_geometry": "mask"
+  },
+  "empty_mask_diagnostic": {
+    "reason": "empty_mask",
+    "retryable": false
+  },
+  "mask_prompt_fallback": {
+    "fallback_reason": "mask_prompt_unsupported",
+    "output_geometry": "bbox",
+    "seed_digest": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}
