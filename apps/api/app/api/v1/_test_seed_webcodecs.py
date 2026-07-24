@@ -1,0 +1,236 @@
+"""WebCodecs E2E 确定性 fixture 生成(test-only,无 DB / 存储依赖)。
+
+用 numpy 生成每帧可机器识别的像素图案(背景亮度按帧分组 + 四角 bit 编码帧号低位 +
+中心场景色),用 ffmpeg 编码成不同 profile / GOP / B 帧的 H.264,再复用生产同构的
+ffprobe packet probe 与 avcC 提取产出 chunk samples + codec description。这样前端
+demux / decode 路径在 E2E 里拿到的是与真实 worker 完全相同的字节结构,而不是手搓的
+假数据。unsupported / malformed 场景在真实 baseline 基础上确定性篡改 metadata。
+
+帧身份编码(供 Playwright 像素采样):
+  - 背景顶部窄条:灰度 = clip(32 + (i % 8) * 28),按帧分组,辅助识别相邻帧误取;
+  - 四角 22×22 方块:编码 frame_index 低 4 位(bit0=TL, bit1=TR, bit2=BL, bit3=BR),
+    白(235) / 黑(18),高对比,容差判定;
+  - 中心 40×32 方块:场景色,区分不同 fixture。
+H.264 有色度抽样与有损压缩,验证用亮度阈值 / 色距容差,不比较完全相同的 RGBA hash。
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import Any, Literal
+
+import numpy as np
+from PIL import Image
+
+from app.workers.media_codec import _extract_decoder_config
+from app.workers.media_probe import probe_chunk_samples
+
+FRAME_W = 160
+FRAME_H = 120
+FRAME_FPS = 30
+BIT_EDGE = 22
+
+SceneName = Literal["red", "blue", "green", "magenta"]
+
+SCENE_RGB: dict[str, tuple[int, int, int]] = {
+    "red": (210, 50, 50),
+    "blue": (50, 80, 210),
+    "green": (50, 200, 80),
+    "magenta": (200, 50, 200),
+}
+
+WebCodecsFixture = Literal[
+    "h264-baseline-gop12",
+    "h264-main-bframes-gop30",
+    "h264-boundary-gop8",
+    "h264-vfr",
+    "unsupported-config",
+    "malformed-samples",
+]
+
+# 每个真实编码 fixture 的 ffmpeg 参数与帧数。frame_count 控制在几秒内保证 E2E 速度。
+FIXTURE_SPECS: dict[str, dict[str, Any]] = {
+    "h264-baseline-gop12": {
+        "profile": "baseline",
+        "gop": 12,
+        "bframes": 0,
+        "frames": 12,
+        "scene": "red",
+        "vfr": False,
+    },
+    "h264-main-bframes-gop30": {
+        "profile": "main",
+        "gop": 30,
+        "bframes": 2,
+        "frames": 48,
+        "scene": "blue",
+        "vfr": False,
+    },
+    "h264-boundary-gop8": {
+        "profile": "baseline",
+        "gop": 8,
+        "bframes": 0,
+        "frames": 24,
+        "scene": "green",
+        "vfr": False,
+    },
+    "h264-vfr": {
+        "profile": "main",
+        "gop": 24,
+        "bframes": 0,
+        "frames": 24,
+        "scene": "magenta",
+        "vfr": True,
+    },
+}
+
+# 帧身份采样区(归一化坐标,相对视频帧;E2E 据此映射到 Konva canvas)。
+_BG_NORM = {"x": 0.40, "y": 0.04, "w": 0.20, "h": 0.05}
+_BIT_NORM = [
+    {"bit": 0, "x": 0.0375, "y": 0.0500, "w": 0.1375, "h": 0.1833},  # TL
+    {"bit": 1, "x": 0.8250, "y": 0.0500, "w": 0.1375, "h": 0.1833},  # TR
+    {"bit": 2, "x": 0.0375, "y": 0.7667, "w": 0.1375, "h": 0.1833},  # BL
+    {"bit": 3, "x": 0.8250, "y": 0.7667, "w": 0.1375, "h": 0.1833},  # BR
+]
+
+
+def _make_frame(frame_index: int, scene_rgb: tuple[int, int, int]) -> np.ndarray:
+    """生成单帧:背景分组灰度 + 四角 bit 编码 + 中心场景色。"""
+    img = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
+    bg = int(np.clip(32 + (frame_index % 8) * 28, 0, 255))
+    img[:, :] = bg
+    # 中心场景色块(避开四角与背景采样条)。
+    img[44:76, 60:100] = scene_rgb
+    corners = [
+        (6, 6),
+        (FRAME_W - 6 - BIT_EDGE, 6),
+        (6, FRAME_H - 6 - BIT_EDGE),
+        (FRAME_W - 6 - BIT_EDGE, FRAME_H - 6 - BIT_EDGE),
+    ]
+    for j, (x, y) in enumerate(corners):
+        on = (frame_index >> j) & 1
+        img[y : y + BIT_EDGE, x : x + BIT_EDGE] = 235 if on else 18
+    return img
+
+
+def _ffmpeg_encode(spec: dict[str, Any], frames_dir: Path, out: Path) -> None:
+    """用 libx264 编码 PNG 序列为 AVCC mp4(chunk bytes 直供前端切片)。"""
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-framerate",
+        str(FRAME_FPS),
+        "-i",
+        str(frames_dir / "f%04d.png"),
+        "-frames:v",
+        str(spec["frames"]),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        spec["profile"],
+        "-g",
+        str(spec["gop"]),
+        "-keyint_min",
+        str(spec["gop"]),
+        "-bf",
+        str(spec["bframes"]),
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-movflags",
+        "+faststart",
+    ]
+    if spec.get("vfr"):
+        # VFR:奇数帧 PTS × 1.5 → 相邻帧 duration 不同,验证前端不以 fps 猜 PTS。
+        cmd += ["-vf", "setpts='PTS*(1+0.5*mod(N,2))'", "-vsync", "vfr"]
+    cmd.append(str(out))
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            proc.stderr.strip() or "ffmpeg webcodecs fixture encode failed"
+        )
+
+
+def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
+    """生成真实编码 fixture 的 mp4 bytes 与生产同结构 chunk samples / codec metadata。
+
+    返回:{mp4_bytes, samples, codec_string, description, width, height, fps, frame_count}。
+    unsupported / malformed 由 apply_metadata_mutation 在此结果上篡改。
+    """
+    spec = FIXTURE_SPECS[_real_fixture_name(fixture)]
+    scene_rgb = SCENE_RGB[spec["scene"]]
+    frames_dir = Path(tmpdir) / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(spec["frames"]):
+        Image.fromarray(_make_frame(i, scene_rgb)).save(frames_dir / f"f{i:04d}.png")
+    out = Path(tmpdir) / "chunk.mp4"
+    _ffmpeg_encode(spec, frames_dir, out)
+
+    samples = probe_chunk_samples(out, 0)
+    codec, description = _extract_decoder_config(out)
+    if not samples or not codec or not description:
+        raise RuntimeError(
+            f"webcodecs fixture {fixture} produced empty samples / codec / description"
+        )
+    return {
+        "mp4_bytes": out.read_bytes(),
+        "samples": samples,
+        "codec_string": codec,
+        "description": description,
+        "width": FRAME_W,
+        "height": FRAME_H,
+        "fps": FRAME_FPS,
+        "frame_count": spec["frames"],
+    }
+
+
+def _real_fixture_name(fixture: str) -> str:
+    """unsupported / malformed 复用 baseline 真实编码,再篡改 metadata。"""
+    if fixture in ("unsupported-config", "malformed-samples"):
+        return "h264-baseline-gop12"
+    return fixture
+
+
+def apply_metadata_mutation(fixture: str, meta: dict[str, Any]) -> dict[str, Any]:
+    """对 unsupported / malformed 场景做确定性 metadata 篡改,其余原样返回。"""
+    if fixture == "unsupported-config":
+        # 真实 avcC description 保留,codec string 改成浏览器必拒的值 → isConfigSupported false。
+        meta = {**meta, "codec_string": "avc1.ffff00"}
+    elif fixture == "malformed-samples":
+        # 把第二帧的字节偏移顶到 chunk 之外 → 前端切片越界 → demux fallback。
+        mutated = [dict(s) for s in meta["samples"]]
+        if len(mutated) > 1:
+            mutated[1] = {**mutated[1], "offset_in_chunk": 10**9, "size_bytes": 10**9}
+        meta = {**meta, "samples": mutated}
+    return meta
+
+
+def frame_expectations(fixture: str) -> dict[str, Any]:
+    """返回每帧的目标像素签名(视频像素空间),供 Playwright 像素采样判定。"""
+    spec = FIXTURE_SPECS[_real_fixture_name(fixture)]
+    frames: list[dict[str, Any]] = []
+    for i in range(spec["frames"]):
+        bg = int(np.clip(32 + (i % 8) * 28, 0, 255))
+        bits = [(i >> j) & 1 for j in range(4)]
+        frames.append({"frame_index": i, "background_luma": bg, "corner_bits": bits})
+    return {
+        "scene_id": fixture,
+        "scene_color": spec["scene"],
+        "width": FRAME_W,
+        "height": FRAME_H,
+        "fps": FRAME_FPS,
+        "frame_count": spec["frames"],
+        "sample_regions": {
+            "background": {**_BG_NORM, "kind": "luma"},
+            "corners": [{**b, "kind": "bit"} for b in _BIT_NORM],
+        },
+        "frames": frames,
+    }

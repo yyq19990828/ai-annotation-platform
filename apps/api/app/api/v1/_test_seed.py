@@ -186,6 +186,14 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
             {"pids": fixture_project_ids},
         )
 
+    # WebCodecs seed 的 video_chunks 随 dataset_item CASCADE,这里显式双保险,
+    # 确保 E2E 反复 seed 不残留旧 chunk 行。
+    await _try_delete(
+        "DELETE FROM video_chunks WHERE dataset_item_id IN ("
+        " SELECT id FROM dataset_items WHERE dataset_id IN ("
+        "   SELECT id FROM datasets WHERE display_id LIKE 'DS-E2E-%'))"
+    )
+
     # reset 中创建的图像 dataset 不由 project_datasets 反向级联删除；
     # 必须在删 E2E 用户前显式清理，避免 datasets.created_by 拦住用户删除。
     await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-%'")
@@ -233,6 +241,22 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     )
 
     await db.flush()
+
+    # WebCodecs seed 的 chunk mp4 对象不随 DB 级联删除,按前缀显式清空。
+    try:
+        from app.services.storage import storage_service
+
+        _wc_resp = storage_service.client.list_objects_v2(
+            Bucket=storage_service.datasets_bucket, Prefix="e2e/video/webcodecs/"
+        )
+        _wc_keys = [o["Key"] for o in _wc_resp.get("Contents", [])]
+        if _wc_keys:
+            storage_service.client.delete_objects(
+                Bucket=storage_service.datasets_bucket,
+                Delete={"Objects": [{"Key": k} for k in _wc_keys], "Quiet": True},
+            )
+    except Exception as exc:
+        log.warning("seed_cleanup skip · e2e/video/webcodecs minio · %s", exc)
 
     residual_row = (
         (
@@ -1012,6 +1036,213 @@ async def seed_video_task(
     task_id = str(task.id)
     await db.commit()
     return SeedVideoTaskResponse(task_id=task_id)
+
+
+class SeedVideoWebCodecsRequest(BaseModel):
+    project_id: str
+    fixture: str = "h264-baseline-gop12"
+    chunk_status: Literal["ready", "pending"] = "ready"
+
+
+class SeedVideoWebCodecsResponse(BaseModel):
+    task_id: str
+    dataset_item_id: str
+    chunk_id: int
+    chunk_size_frames: int
+    frame_expectations: dict
+
+
+@router.post(
+    "/seed/video-webcodecs",
+    response_model=SeedVideoWebCodecsResponse,
+    include_in_schema=False,
+)
+async def seed_video_webcodecs(
+    payload: SeedVideoWebCodecsRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoWebCodecsResponse:
+    """Seed a deterministic H.264 WebCodecs fixture for precise-frame E2E.
+
+    Generates a small machine-readable H.264 clip (numpy → ffmpeg), probes it with
+    the same ffprobe / avcC pipeline the worker uses, and writes dataset item +
+    task + one VideoChunk whose diagnostics carry the production-shaped samples /
+    codec / description. ``chunk_status`` lets specs exercise the pending → ready
+    contract without a media Celery worker.
+    """
+    from tempfile import mkdtemp
+    from uuid import UUID
+    import shutil
+
+    from sqlalchemy import select
+
+    from app.api.v1._test_seed_webcodecs import (
+        FIXTURE_SPECS,
+        apply_metadata_mutation,
+        frame_expectations,
+        generate_fixture,
+    )
+    from app.db.models.dataset import DatasetItem, VideoChunk
+    from app.db.models.task import Task
+    from app.db.models.task_batch import TaskBatch
+    from app.services.storage import storage_service
+
+    valid_fixtures = set(FIXTURE_SPECS) | {"unsupported-config", "malformed-samples"}
+    if payload.fixture not in valid_fixtures:
+        raise HTTPException(status_code=422, detail="unknown_fixture")
+
+    project_id = UUID(payload.project_id)
+    batch = (
+        (
+            await db.execute(
+                select(TaskBatch)
+                .where(TaskBatch.project_id == project_id)
+                .order_by(TaskBatch.created_at)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    ref_task = (
+        (
+            await db.execute(
+                select(Task)
+                .where(Task.project_id == project_id, Task.dataset_item_id.is_not(None))
+                .order_by(Task.created_at)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if batch is None or ref_task is None or ref_task.dataset_item_id is None:
+        raise HTTPException(status_code=404, detail="project fixture not found")
+    ref_item = await db.get(DatasetItem, ref_task.dataset_item_id)
+    if ref_item is None:
+        raise HTTPException(status_code=404, detail="dataset fixture not found")
+
+    fixture = payload.fixture
+    tmp = mkdtemp(prefix="webcodecs-seed-")
+    try:
+        meta = generate_fixture(fixture, tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    meta = apply_metadata_mutation(fixture, meta)
+
+    mp4_bytes = meta["mp4_bytes"]
+    # 幂等 key:同一 fixture 反复 seed 覆盖同一对象,cleanup 按前缀一次清空。
+    chunk_key = f"e2e/video/webcodecs/{fixture}.mp4"
+    storage_service.client.put_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=chunk_key,
+        Body=mp4_bytes,
+        ContentType="video/mp4",
+    )
+
+    duration_ms = int(round(meta["frame_count"] / meta["fps"] * 1000))
+    item = DatasetItem(
+        dataset_id=ref_item.dataset_id,
+        file_name=f"{fixture}.mp4",
+        file_path=chunk_key,
+        file_type="video",
+        file_size=len(mp4_bytes),
+        width=meta["width"],
+        height=meta["height"],
+        metadata_={
+            "video": {
+                "duration_ms": duration_ms,
+                "fps": meta["fps"],
+                "frame_count": meta["frame_count"],
+                "width": meta["width"],
+                "height": meta["height"],
+                "codec": "h264",
+            }
+        },
+    )
+    db.add(item)
+    await db.flush()
+    task = Task(
+        project_id=project_id,
+        batch_id=batch.id,
+        dataset_item_id=item.id,
+        display_id=f"T-E2E-WC-{fixture[:10]}-{secrets.token_hex(3)}",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="video",
+        status="pending",
+    )
+    db.add(task)
+    await db.flush()
+    chunk = VideoChunk(
+        dataset_item_id=item.id,
+        chunk_id=0,
+        start_frame=0,
+        end_frame=meta["frame_count"] - 1,
+        start_pts_ms=0,
+        end_pts_ms=duration_ms,
+        storage_key=chunk_key,
+        byte_size=len(mp4_bytes),
+        generation_mode="transcode",
+        status=payload.chunk_status,
+        diagnostics={
+            "samples": meta["samples"],
+            "codec_string": meta["codec_string"],
+            "description": meta["description"],
+            "width": meta["width"],
+            "height": meta["height"],
+            "source_codec": "h264",
+            "output_codec": "h264",
+        },
+    )
+    db.add(chunk)
+    batch.total_tasks = int(batch.total_tasks or 0) + 1
+    await db.flush()
+    await db.commit()
+    return SeedVideoWebCodecsResponse(
+        task_id=str(task.id),
+        dataset_item_id=str(item.id),
+        chunk_id=0,
+        chunk_size_frames=meta["frame_count"],
+        frame_expectations=frame_expectations(fixture),
+    )
+
+
+class SeedVideoWebCodecsTransitionRequest(BaseModel):
+    dataset_item_id: str
+    chunk_id: int = 0
+
+
+class SeedVideoWebCodecsTransitionResponse(BaseModel):
+    status: Literal["ready", "pending", "failed"]
+
+
+@router.post(
+    "/seed/video-webcodecs/transition-ready",
+    response_model=SeedVideoWebCodecsTransitionResponse,
+    include_in_schema=False,
+)
+async def seed_video_webcodecs_transition(
+    payload: SeedVideoWebCodecsTransitionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoWebCodecsTransitionResponse:
+    """Deterministically flip a seeded chunk pending → ready (no Celery worker needed)."""
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.dataset import VideoChunk
+
+    row = (
+        await db.execute(
+            select(VideoChunk).where(
+                VideoChunk.dataset_item_id == UUID(payload.dataset_item_id),
+                VideoChunk.chunk_id == payload.chunk_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="chunk_not_found")
+    row.status = "ready"
+    await db.commit()
+    return SeedVideoWebCodecsTransitionResponse(status=row.status)
 
 
 class SeedTrackerReviewRequest(BaseModel):

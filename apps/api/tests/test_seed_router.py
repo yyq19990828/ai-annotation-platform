@@ -406,3 +406,19 @@ async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
         await db_session.execute(select(User).where(User.email == "admin@e2e.test"))
     ).scalar_one_or_none()
     assert e2e_admin is not None, "E2E fixture admin 应被重建"
+
+
+async def test_seed_video_webcodecs_rejects_unknown_fixture():
+    """未知 fixture 名在 DB 操作前被拒(422),不触碰数据库。"""
+    from fastapi import HTTPException
+
+    from app.api.v1 import _test_seed
+
+    req = _test_seed.SeedVideoWebCodecsRequest(
+        project_id="11111111-1111-4111-8111-111111111111",
+        fixture="not-a-real-fixture",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await _test_seed.seed_video_webcodecs(req, db=None)
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "unknown_fixture"
