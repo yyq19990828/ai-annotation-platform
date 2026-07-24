@@ -559,7 +559,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     category: "experiment",
     storage: "local",
     label: "WebCodecs 精确解码",
-    description: "实验性,刷新后生效",
+    description: "实验性;暂停、逐帧和 seek 使用精确解码,刷新后生效",
     control: { type: "toggle" },
     read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),

@@ -7,6 +7,7 @@ import type {
   Geometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
+  VideoManifestV2Response,
   TaskPointCloudManifestResponse,
   NeighborsResponse,
   NeighborAnnotationsResponse,
@@ -177,6 +178,11 @@ export const tasksApi = {
 
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
+
+  // manifest v2:精确帧 pipeline(WebCodecs)激活时增量查询 chunk_size_frames / dataset_item_id。
+  // 实验链路失败会静默回退,不弹全局 toast;signal 让切 task / 卸载能取消旧请求。
+  getVideoManifestV2: (id: string, init?: RequestInit) =>
+    apiClient.silentGet<VideoManifestV2Response>(`/tasks/${id}/video/manifest-v2`, init),
 
   getPointCloudManifest: (id: string) =>
     apiClient.get<TaskPointCloudManifestResponse>(`/tasks/${id}/point-cloud/manifest`),

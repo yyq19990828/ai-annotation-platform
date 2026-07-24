@@ -12,6 +12,24 @@ import { VideoKonvaStage } from "./VideoKonvaStage";
 import type { VideoStageControls } from "./videoStageControls";
 import type { TaskVideoManifestResponse } from "@/types";
 
+vi.mock("./useVideoPreciseFrame", () => ({
+  useVideoPreciseFrame: () => ({
+    active: false,
+    bitmap: null,
+    sourceState: "disabled",
+    fallbackReason: null,
+    diagnostics: {
+      decoderActive: false,
+      chunkId: null,
+      datasetItemId: null,
+      chunkSizeFrames: null,
+      decodeRequests: 0,
+      decoderErrors: 0,
+      urlRefreshed: false,
+    },
+  }),
+}));
+
 const playMock = vi.fn();
 const pauseMock = vi.fn();
 
@@ -74,6 +92,11 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(image).not.toBeNull();
     expect(image!.getAttribute("data-width")).toBe("1000");
     expect(image!.getAttribute("data-height")).toBe("500");
+    // data-video-frame-source 暴露当前显示来源(webcodecs / native bitmap / video element),供 E2E 与诊断。
+    const stage = document.querySelector('[data-testid="video-konva-stage"]') as HTMLElement;
+    expect(["webcodecs", "video-bitmap", "video-element"]).toContain(
+      stage.getAttribute("data-video-frame-source"),
+    );
   });
 
   it("loading 态显示占位,不渲染 Stage", () => {

@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { EncodedVideoDecodePlan, PreciseFrameFallbackReason } from "./videoChunkDemux";
 
 /**
- * v0.10.29 · Wave3-H · WebCodecs 精确帧解码 (实验性, 默认关闭)。
+ * WebCodecs 精确帧解码核心(实验性,默认关闭)。
  *
- * 目标：用浏览器原生 `WebCodecs`（`VideoDecoder`）解 chunk 字节得到精确帧，绕过原生
- * `<video>` seek 不精确的问题。解出的 `VideoFrame` 转 `ImageBitmap` 后塞进缓存，
- * 缓存/诊断风格刻意对齐 `useVideoBitmapCache`（LRU + 命中/未命中计数）。
+ * 用浏览器原生 WebCodecs(`VideoDecoder`)解 chunk 字节得到精确帧,绕过原生 `<video>`
+ * seek 不精确的问题。解出的 `VideoFrame`(按 timestamp 匹配目标)转 `ImageBitmap` 入缓存,
+ * 风格刻意对齐 `useVideoBitmapCache`(LRU + 命中/未命中计数)。
  *
- * ── 边界 / TODO ──────────────────────────────────────────────────────────────
- * 本 hook 只实现「解码核心」：给定一组已 demux 的 `EncodedVideoChunk` + `VideoDecoderConfig`，
- * 解码并把目标帧落进缓存。**它不做 mp4 demux**。
+ * 本 hook 只实现「解码核心 + 缓存」:给定 `EncodedVideoDecodePlan`(由 `videoChunkDemux`
+ * 从后端 sample manifest 构造),解码目标帧并入缓存。**它不做 mp4 demux、不拉 chunk
+ * 字节、不轮询 chunk 状态**——那是 `useVideoPreciseFrame` 的职责。flag 关闭或 WebCodecs
+ * 不可用时本路径完全不激活,调用方继续走原有 `<video>` / native bitmap 路径。
  *
- * demux（mp4 字节 → EncodedVideoChunk + codec config）刻意留空，原因：
- *   1. 项目约束禁止引入 ffmpeg.wasm / Broadway.js 或任何重型解码依赖；
- *   2. 浏览器没有原生 mp4 demuxer；手写完整 mp4 box 解析（moov/stbl/stsz/stco/...）
- *      是个兔子洞，超出本实验性 feature 的范围。
- *   3. 前端 `TaskVideoManifestResponse` 目前还没暴露 `chunks_manifest_url` /
- *      `frame_service_base` / `chunk_size_frames`（见 apps/web/src/types/index.ts），
- *      所以 chunk 字节获取链路本身也还没接上。
- *
- * 因此调用方需要自己拿到 `EncodedVideoChunk[]`（未来由一个轻量自写 mp4 box 解析器或
- * 后端预 demux 的 sample 列表提供），再调用本 hook 的 `decodeChunks`。flag 关闭或
- * WebCodecs 不可用时本路径完全不激活，调用方继续走原有 `<video>` 路径。
+ * 连续播放仍由隐藏 `<video>` 提供;精确帧只在暂停 / 逐帧 / 稳定 seek 后使用。
  */
 
 /** localStorage / URL query 开关键。默认关闭。 */
@@ -35,36 +27,49 @@ export interface DecodedVideoFrameBitmap {
   height: number;
 }
 
+export type VideoChunkDecodeResult =
+  | { bitmap: DecodedVideoFrameBitmap; fallbackReason: null }
+  | { bitmap: null; fallbackReason: PreciseFrameFallbackReason };
+
 export interface VideoChunkDecoderDiagnostics {
   supported: boolean;
   enabled: boolean;
+  /** isSecureContext 只作诊断字段(某些本地环境实现差异),不单独阻断。 */
+  secureContext: boolean;
   cacheSize: number;
   activeFrameIndex: number | null;
   hits: number;
   misses: number;
   decodes: number;
   errors: number;
+  /** isConfigSupported 返回 false(或 configure 抛错)的次数。 */
+  configUnsupported: number;
+  /** task 变化后被丢弃的解码结果次数。 */
+  staleResults: number;
+  lastFallbackReason: PreciseFrameFallbackReason | null;
+  lastDecodeMs: number | null;
 }
 
 interface UseVideoChunkDecoderArgs {
   taskId: string | null | undefined;
-  /** feature flag 的解析结果由调用方传入（或缺省时本 hook 自行从环境探测）。 */
+  /** feature flag 的解析结果由调用方传入(或缺省时本 hook 自行从环境探测)。 */
   enabled?: boolean;
   maxItems?: number;
 }
 
 const DEFAULT_MAX_ITEMS = 48;
 
-/** 能力探测：当前运行环境是否提供 WebCodecs 的 `VideoDecoder`。jsdom 下为 false。 */
+/** 能力探测:当前运行环境是否提供 WebCodecs 解码所需的全部原语。jsdom 下为 false。 */
 export function detectWebCodecsSupport(): boolean {
   return (
     typeof globalThis !== "undefined" &&
     typeof (globalThis as { VideoDecoder?: unknown }).VideoDecoder !== "undefined" &&
+    typeof (globalThis as { EncodedVideoChunk?: unknown }).EncodedVideoChunk !== "undefined" &&
     typeof globalThis.createImageBitmap === "function"
   );
 }
 
-/** 缓存键：与 useVideoBitmapCache 同构（`${taskId}:${frameIndex}`）。 */
+/** 缓存键:与 useVideoBitmapCache 同构(`${taskId}:${frameIndex}`)。 */
 export function chunkDecoderCacheKey(taskId: string, frameIndex: number): string {
   return `${taskId}:${frameIndex}`;
 }
@@ -117,48 +122,103 @@ function closeFrame(frame: VideoFrame) {
 }
 
 /**
- * 给定一组已 demux 的 EncodedVideoChunk + config，解码出目标帧的 VideoFrame，
- * 转成 ImageBitmap 返回。VideoFrame / VideoDecoder 在内部即时 close，避免泄漏
- * （WebCodecs 的 VideoFrame 持有 GPU/内存资源，必须显式释放）。
+ * 按 plan 解码目标帧:用 `VideoFrame.timestamp === plan.targetTimestampUs` 选目标输出
+ * (B 帧下 output 顺序与 decode order 无关,只有 timestamp 可靠),其余 frame 立即 close。
+ * flush 后 `createImageBitmap(wanted)` 返回;VideoFrame / VideoDecoder 在 finally 关闭,
+ * bitmap 交给调用方(缓存)拥有,不在 finally 关闭。
  *
- * 纯解码核心，不触碰 React state，便于在主进程跑真实/mock 解码单测。
+ * @param onFallback 可选诊断回调:config 不支持 → "codec_unsupported";其余失败 → "decode_failed"。
  */
-export async function decodeChunkToBitmap(
-  config: VideoDecoderConfig,
-  chunks: EncodedVideoChunk[],
-  targetFrameIndex: number,
+export async function decodePlanToBitmap(
+  plan: EncodedVideoDecodePlan,
+  onFallback?: (reason: PreciseFrameFallbackReason) => void,
 ): Promise<DecodedVideoFrameBitmap | null> {
-  if (!detectWebCodecsSupport()) return null;
-  if (chunks.length === 0) return null;
+  if (!detectWebCodecsSupport()) {
+    onFallback?.("codec_unsupported");
+    return null;
+  }
+  if (plan.chunks.length === 0) {
+    onFallback?.("decode_failed");
+    return null;
+  }
 
-  const frames: VideoFrame[] = [];
-  const decoder = new VideoDecoder({
-    output: (frame) => frames.push(frame),
-    error: () => {
-      /* 错误由下方 flush 的 reject 路径感知。 */
-    },
-  });
+  // WebCodecs 把能力探测定义在构造器上,不是 decoder 实例方法。旧实现若缺少该静态方法,
+  // 仍允许走 configure try/catch;真实 Chromium 则使用返回的规范化 config。
+  let supportedConfig = plan.config;
+  if (typeof VideoDecoder.isConfigSupported === "function") {
+    try {
+      const support = await VideoDecoder.isConfigSupported(plan.config);
+      if (!support.supported) {
+        onFallback?.("codec_unsupported");
+        return null;
+      }
+      supportedConfig = support.config ?? plan.config;
+    } catch {
+      onFallback?.("codec_unsupported");
+      return null;
+    }
+  }
+
+  // 用对象 ref 持有目标帧:TS 对闭包赋值的 let 变量不做 control-flow 收窄,直接用 let 会让
+  // flush 后的读取被判定为初始 null → never;改走对象属性保持 VideoFrame | null 类型。
+  const wantedRef: { frame: VideoFrame | null } = { frame: null };
+  let decodeError: DOMException | null = null;
+  let decoder: VideoDecoder | null = null;
+
   try {
-    decoder.configure(config);
-    for (const chunk of chunks) decoder.decode(chunk);
+    try {
+      decoder = new VideoDecoder({
+        output: (frame) => {
+          if (wantedRef.frame === null && frame.timestamp === plan.targetTimestampUs) {
+            wantedRef.frame = frame;
+          } else {
+            closeFrame(frame);
+          }
+        },
+        error: (err: DOMException) => {
+          if (decodeError === null) decodeError = err;
+        },
+      });
+    } catch {
+      onFallback?.("decode_failed");
+      return null;
+    }
+
+    try {
+      decoder.configure(supportedConfig);
+    } catch {
+      onFallback?.("codec_unsupported");
+      return null;
+    }
+
+    for (const chunk of plan.chunks) decoder.decode(chunk);
     await decoder.flush();
-    const wanted = frames[targetFrameIndex] ?? frames[frames.length - 1];
-    if (!wanted) return null;
+
+    const wanted = wantedRef.frame;
+    // flush 后即便 promise 正常,只要有 decode error 或未命中目标帧,都按失败处理(不重复无限重试)。
+    if (decodeError !== null || wanted === null) {
+      onFallback?.("decode_failed");
+      return null;
+    }
+
     const bitmap = await globalThis.createImageBitmap(wanted);
     return {
-      frameIndex: targetFrameIndex,
+      frameIndex: plan.targetFrameIndex,
       bitmap,
       width: bitmap.width || wanted.displayWidth,
       height: bitmap.height || wanted.displayHeight,
     };
   } catch {
+    onFallback?.("decode_failed");
     return null;
   } finally {
-    for (const frame of frames) closeFrame(frame);
-    try {
-      decoder.close();
-    } catch {
-      // decoder 可能已 close。
+    if (wantedRef.frame) closeFrame(wantedRef.frame);
+    if (decoder) {
+      try {
+        decoder.close();
+      } catch {
+        // decoder 可能已 close。
+      }
     }
   }
 }
@@ -170,30 +230,40 @@ export function useVideoChunkDecoder({
 }: UseVideoChunkDecoderArgs) {
   const supported = detectWebCodecsSupport();
   const resolvedEnabled = enabled ?? resolveEnabledFromEnv();
+  const secureContext = typeof window !== "undefined" ? window.isSecureContext : false;
   const active = supported && resolvedEnabled;
 
   const cacheRef = useRef(new Map<string, DecodedVideoFrameBitmap>());
-  const inFlightRef = useRef(new Set<string>());
+  // single-flight:同 `taskId:frameIndex` 的并发请求共享同一 promise(Set 只能拒绝,无法去重 await)。
+  const inFlightRef = useRef(new Map<string, Promise<VideoChunkDecodeResult>>());
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
+  const mountedRef = useRef(true);
+  const lifecycleGenerationRef = useRef(0);
 
   const [activeFrameIndex, setActiveFrameIndex] = useState<number | null>(null);
   const [version, setVersion] = useState(0);
   const [diagnostics, setDiagnostics] = useState<VideoChunkDecoderDiagnostics>({
     supported,
     enabled: resolvedEnabled,
+    secureContext,
     cacheSize: 0,
     activeFrameIndex: null,
     hits: 0,
     misses: 0,
     decodes: 0,
     errors: 0,
+    configUnsupported: 0,
+    staleResults: 0,
+    lastFallbackReason: null,
+    lastDecodeMs: null,
   });
 
   const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
 
+  /** decode 成功只入缓存(不自动激活 active 指针);active 由显式 showFrame 修改。 */
   const remember = useCallback(
-    (key: string, entry: DecodedVideoFrameBitmap) => {
+    (key: string, entry: DecodedVideoFrameBitmap, decodeMs: number) => {
       const cache = cacheRef.current;
       const old = cache.get(key);
       if (old) closeBitmap(old.bitmap);
@@ -211,8 +281,8 @@ export function useVideoChunkDecoder({
         supported,
         enabled: resolvedEnabled,
         cacheSize: cache.size,
-        activeFrameIndex: entry.frameIndex,
         decodes: cur.decodes + 1,
+        lastDecodeMs: decodeMs,
       }));
       bumpVersion();
     },
@@ -238,44 +308,72 @@ export function useVideoChunkDecoder({
   }, [bumpVersion, maxItems, resolvedEnabled, supported]);
 
   /**
-   * 解码目标帧并入缓存。flag 关闭 / 不支持时直接 no-op 返回 null（调用方降级到 <video>）。
-   * @param config WebCodecs codec 配置（codec / description / coded 尺寸）。
-   * @param chunks 已 demux 的该帧所需 EncodedVideoChunk（含其前置依赖帧）。
-   * @param frameIndex 目标帧的全局帧号（作缓存键）。
+   * 解码 plan 并把结果入缓存(**不自动激活**)。flag 关闭 / 不支持 / 已缓存 / 在途 → 直接返回。
+   * @returns 命中缓存或解码成功的 entry;null 表示跳过 / 失败(调用方降级到 <video>)。
    */
-  const decodeChunks = useCallback(
-    async (config: VideoDecoderConfig, chunks: EncodedVideoChunk[], frameIndex: number) => {
-      if (!taskId || !active) return null;
-      const normalizedFrame = Math.max(0, Math.round(frameIndex));
+  const decodePlan = useCallback(
+    async (plan: EncodedVideoDecodePlan): Promise<VideoChunkDecodeResult> => {
+      if (!taskId || !active) {
+        return { bitmap: null, fallbackReason: "flag_disabled" };
+      }
+      const normalizedFrame = Math.max(0, Math.round(plan.targetFrameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
       const cached = cacheRef.current.get(key);
-      if (cached) return cached;
-      if (inFlightRef.current.has(key)) return null;
-      inFlightRef.current.add(key);
-      try {
-        const decoded = await decodeChunkToBitmap(config, chunks, normalizedFrame);
+      if (cached) return { bitmap: cached, fallbackReason: null };
+      const existing = inFlightRef.current.get(key);
+      if (existing) return existing;
+      const lifecycleGeneration = lifecycleGenerationRef.current;
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      const promise = (async (): Promise<VideoChunkDecodeResult> => {
+        const failureRef: { reason: PreciseFrameFallbackReason | null } = { reason: null };
+        const decoded = await decodePlanToBitmap(plan, (reason) => {
+          failureRef.reason = reason;
+        });
+        const decodeMs =
+          typeof performance !== "undefined" ? Math.round(performance.now() - startedAt) : 0;
+        const stillCurrent =
+          mountedRef.current &&
+          lifecycleGenerationRef.current === lifecycleGeneration &&
+          taskIdRef.current === taskId;
         if (!decoded) {
-          setDiagnostics((cur) => ({ ...cur, errors: cur.errors + 1 }));
-          return null;
+          if (stillCurrent) {
+            const reason = failureRef.reason ?? "decode_failed";
+            setDiagnostics((cur) => ({
+              ...cur,
+              errors: cur.errors + 1,
+              lastFallbackReason: reason,
+              configUnsupported:
+                reason === "codec_unsupported" ? cur.configUnsupported + 1 : cur.configUnsupported,
+            }));
+            return { bitmap: null, fallbackReason: reason };
+          }
+          return { bitmap: null, fallbackReason: "stale_request" };
         }
-        if (taskIdRef.current !== taskId) {
+        // task / generation 变化或组件已卸载:关闭旧结果,绝不写回已清空缓存。
+        if (!stillCurrent) {
           closeBitmap(decoded.bitmap);
-          return null;
+          if (mountedRef.current) {
+            setDiagnostics((cur) => ({ ...cur, staleResults: cur.staleResults + 1 }));
+          }
+          return { bitmap: null, fallbackReason: "stale_request" };
         }
         const entry: DecodedVideoFrameBitmap = { ...decoded, frameIndex: normalizedFrame };
-        remember(key, entry);
-        setActiveFrameIndex(normalizedFrame);
-        return entry;
+        remember(key, entry, decodeMs);
+        return { bitmap: entry, fallbackReason: null };
+      })();
+      inFlightRef.current.set(key, promise);
+      try {
+        return await promise;
       } finally {
-        inFlightRef.current.delete(key);
+        if (inFlightRef.current.get(key) === promise) inFlightRef.current.delete(key);
       }
     },
     [active, remember, taskId],
   );
 
-  /** 命中缓存则把它提到 LRU 末尾并设为 active；未命中返回 null（调用方走解码 / <video>）。 */
+  /** 显式激活某帧(命中缓存则提到 LRU 末尾并设为 active);未命中返回 null(调用方走解码 / <video>)。 */
   const showFrame = useCallback(
-    (frameIndex: number) => {
+    (frameIndex: number): DecodedVideoFrameBitmap | null => {
       if (!taskId || !active) return null;
       const normalizedFrame = Math.max(0, Math.round(frameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
@@ -300,6 +398,7 @@ export function useVideoChunkDecoder({
   );
 
   const clear = useCallback(() => {
+    lifecycleGenerationRef.current += 1;
     for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
     cacheRef.current.clear();
     inFlightRef.current.clear();
@@ -308,15 +407,19 @@ export function useVideoChunkDecoder({
     bumpVersion();
   }, [bumpVersion]);
 
-  // 卸载清理：释放全部 ImageBitmap（仿 useVideoBitmapCache）。
-  useEffect(
-    () => () => {
-      for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
-      cacheRef.current.clear();
-      inFlightRef.current.clear();
-    },
-    [],
-  );
+  // 卸载清理:先使在途 generation 失效;稍后完成的 bitmap 会在 promise 内立即 close。
+  useEffect(() => {
+    mountedRef.current = true;
+    const cache = cacheRef.current;
+    const inFlight = inFlightRef.current;
+    return () => {
+      mountedRef.current = false;
+      lifecycleGenerationRef.current += 1;
+      for (const entry of cache.values()) closeBitmap(entry.bitmap);
+      cache.clear();
+      inFlight.clear();
+    };
+  }, []);
 
   // taskId 切换时清空缓存。
   useEffect(() => {
@@ -335,7 +438,7 @@ export function useVideoChunkDecoder({
     active,
     activeBitmap,
     activeFrameIndex,
-    decodeChunks,
+    decodePlan,
     showFrame,
     clear,
     diagnostics,

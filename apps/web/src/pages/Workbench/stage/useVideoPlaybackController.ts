@@ -15,6 +15,7 @@ import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from ".
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
+import { useVideoPreciseFrame } from "./useVideoPreciseFrame";
 import { imageBitmapToJpeg, videoElementToJpeg } from "@/utils/imageBitmapToJpeg";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import type { VideoFramePreview } from "./useVideoFramePreview";
@@ -54,8 +55,6 @@ import {
 } from "./videoStageGeometry";
 import type { VideoStageGeom, VideoDragState, VideoTrackAnnotation } from "./videoStageTypes";
 import type { VideoStageControls } from "./videoStageControls";
-
-// TODO(v0.16.x): WebCodecs chunk-decoder 路径暂未迁到 Konva 栈(flag-gated 实验特性)。
 
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
 const DEFAULT_VIDEO_PLAYBACK_RATE: VideoPlaybackRate = 1;
@@ -115,7 +114,7 @@ export interface UseVideoPlaybackControllerResult {
   activeBitmap: CachedVideoBitmap | null;
   cachedRanges: { from: number; to: number }[];
   displayBitmap: CachedVideoBitmap | null;
-  showCachedBitmap: boolean;
+  frameSource: "webcodecs" | "video-bitmap" | "video-element";
   framePreview: VideoFramePreview | null;
   previewFrame: (frameIndex: number | null) => void;
   samplingStep: number;
@@ -302,12 +301,29 @@ export function useVideoPlaybackController({
     maxItems: performanceConfig.videoBitmapCache,
   });
 
-  // 精确帧: 无 WebCodecs 路径，直接用 <video> 位图缓存。
-  const displayBitmap = activeBitmap;
-  // v0.21.4 · 当前帧位图 ref(读最新值, 避免把 activeBitmap 塞进 controls memo deps → 逐帧重建句柄)。
-  const activeBitmapRef = useRef(activeBitmap);
-  activeBitmapRef.current = activeBitmap;
-  const showCachedBitmap = Boolean(displayBitmap && !isPlaybackActive);
+  // 精确帧:WebCodecs decoder 激活时优先 precise bitmap,回退 native <video> capture bitmap。
+  const precise = useVideoPreciseFrame({
+    taskId: manifest?.task_id,
+    frameIndex,
+    enabled: !isPlaybackActive && !frameClock.isSeeking,
+    maxItems: performanceConfig.videoDecoderCache,
+  });
+  const preciseBitmap =
+    precise.bitmap && precise.bitmap.frameIndex === frameIndex ? precise.bitmap : null;
+  const nativeBitmap = activeBitmap && activeBitmap.frameIndex === frameIndex ? activeBitmap : null;
+  // 播放态的真实显示源始终是 <video>;暂停态只接受与当前 frameIndex 严格匹配的 bitmap。
+  // 这份选择同时供 Konva、Minimap 与 captureCurrentFrameJpeg 使用,避免画面 / 标注 / AI 串帧。
+  const displayBitmap = isPlaybackActive ? null : (preciseBitmap ?? nativeBitmap);
+  // 当前帧位图 ref(读最新值, 避免把 displayBitmap 塞进 controls memo deps → 逐帧重建句柄)。
+  const displayBitmapRef = useRef(displayBitmap);
+  displayBitmapRef.current = displayBitmap;
+  const frameSource: "webcodecs" | "video-bitmap" | "video-element" = isPlaybackActive
+    ? "video-element"
+    : preciseBitmap
+      ? "webcodecs"
+      : nativeBitmap
+        ? "video-bitmap"
+        : "video-element";
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
 
@@ -1014,7 +1030,7 @@ export function useVideoPlaybackController({
       deleteSelectedTrackKeyframe,
       // v0.21.4 · 当前帧 → JPEG(视频单题 AI / 交互式 SAM 供图), 经 ref 读最新位图故不入 deps。
       captureCurrentFrameJpeg: async (quality?: number) => {
-        const bmp = activeBitmapRef.current?.bitmap;
+        const bmp = displayBitmapRef.current?.bitmap;
         if (bmp) return imageBitmapToJpeg(bmp, quality);
         // v0.21.23 · 位图缓存未命中时画布画的是 <video> 本身(pickMediaImageSource 的回退),
         // 只认 bitmap 会在画面明明可见时谎报「当前帧尚未就绪」。取帧与渲染取同一源。
@@ -1054,7 +1070,7 @@ export function useVideoPlaybackController({
     activeBitmap,
     cachedRanges,
     displayBitmap,
-    showCachedBitmap,
+    frameSource,
     framePreview,
     previewFrame,
     samplingStep,

@@ -463,7 +463,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       isJogPlaying,
       jogPlayback,
       playbackError,
-      activeBitmap,
+      displayBitmap,
+      frameSource,
       cachedRanges,
       framePreview,
       previewFrame,
@@ -1832,6 +1833,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       <div
         ref={setContainerNode}
         data-testid="video-konva-stage"
+        data-video-frame-source={frameSource}
         className={`${styles.root} ${cursorClass}`}
         onContextMenu={handleContextMenu}
         onPointerDown={beginPan}
@@ -1866,7 +1868,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           >
             <VideoKonvaMediaLayer
               videoEl={videoEl}
-              bitmap={activeBitmap?.bitmap ?? null}
+              bitmap={displayBitmap?.bitmap ?? null}
               size={size}
               viewport={viewportSize}
               isPlaybackActive={isPlaybackActive}
@@ -2291,7 +2293,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             thumbnailUrl={manifest.poster_url ?? null}
             fileUrl={null}
             frameSource={
-              pickMediaImageSource(isPlaybackActive, videoEl, activeBitmap?.bitmap ?? null) ?? null
+              pickMediaImageSource(isPlaybackActive, videoEl, displayBitmap?.bitmap ?? null) ?? null
             }
             frameVersion={frameIndex}
             isLive={isPlaybackActive}
