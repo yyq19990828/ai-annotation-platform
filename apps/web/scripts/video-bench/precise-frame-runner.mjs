@@ -30,6 +30,46 @@ function sliderValueForFrame(targetFrame, maxFrame, sliderMax = 10_000) {
   return Math.round((targetFrame / maxFrame) * sliderMax);
 }
 
+function seededSampleTargets(frames, count, seed = 0x23_15_20_26) {
+  if (!Array.isArray(frames) || frames.length === 0 || count <= 0) return [];
+  let state = seed >>> 0;
+  const random = () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    return state / 0x1_0000_0000;
+  };
+  const targets = [];
+  while (targets.length < count) {
+    const shuffled = [...frames];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    targets.push(...shuffled.slice(0, count - targets.length));
+  }
+  return targets;
+}
+
+async function readBrowserGpuEnvironment(browser) {
+  try {
+    const session = await browser.newBrowserCDPSession();
+    const info = await session.send("SystemInfo.getInfo");
+    await session.detach();
+    const profiles = Array.isArray(info.gpu?.videoDecoding) ? info.gpu.videoDecoding : [];
+    return {
+      gpuFeatureStatus: info.gpu?.featureStatus ?? null,
+      hardwareVideoDecodeProfiles: profiles,
+      hardwareVideoDecode:
+        info.gpu?.featureStatus?.video_decode === "enabled" && profiles.length > 0,
+    };
+  } catch {
+    return {
+      gpuFeatureStatus: null,
+      hardwareVideoDecodeProfiles: null,
+      hardwareVideoDecode: null,
+    };
+  }
+}
+
 async function seekFrame(page, targetFrame, maxFrame) {
   await page.evaluate(
     ({ selector, target, frameMax }) => {
@@ -92,6 +132,7 @@ async function readPreciseSnapshot(page) {
       source: stage?.getAttribute("data-video-frame-source") ?? null,
       state: stage?.getAttribute("data-video-precise-state") ?? null,
       frameIndex: Number(stage?.getAttribute("data-video-frame-index") ?? -1),
+      paintedFrameIndex: Number(stage?.getAttribute("data-video-painted-frame-index") ?? -1),
       precise: task?.preciseFrame ?? null,
     };
   }, STAGE_SELECTOR);
@@ -105,11 +146,13 @@ async function waitForFrameTerminal(page, targetFrame) {
         if (!stage || Number(stage.getAttribute("data-video-frame-index")) !== target) return false;
         const source = stage.getAttribute("data-video-frame-source");
         const state = stage.getAttribute("data-video-precise-state");
+        const paintedFrame = Number(stage.getAttribute("data-video-painted-frame-index") ?? -1);
         const store = window.__videoWorkbenchDiagnostics;
         const task = store?.activeTaskId ? store.byTask?.[store.activeTaskId] : null;
         return (
           (source === "webcodecs" &&
             state === "ready" &&
+            paintedFrame === target &&
             task?.preciseFrame?.frameIndex === target) ||
           state === "fallback"
         );
@@ -124,6 +167,21 @@ async function waitForFrameTerminal(page, targetFrame) {
       { cause: error },
     );
   }
+}
+
+async function waitForFrameResourcesSettled(page) {
+  // Konva 已完成目标帧 draw 时，supplemental/prefetch bitmap 的异步 close 可能尚未发布到诊断。
+  // 延迟统计已经截断；这里先跨两个常规帧窗口，再读取资源账本，避免 0 → 1 的发布竞态。
+  await page.waitForTimeout(32);
+  await page.waitForFunction(
+    () => {
+      const store = window.__videoWorkbenchDiagnostics;
+      const task = store?.activeTaskId ? store.byTask?.[store.activeTaskId] : null;
+      return task?.preciseFrame?.counters?.liveVideoFrames === 0;
+    },
+    undefined,
+    { timeout: 5_000 },
+  );
 }
 
 async function probeWindow(page, startTime, endTime) {
@@ -148,6 +206,9 @@ async function measureSeek(page, targetFrame, maxFrame, scenario) {
   await seekFrame(page, targetFrame, maxFrame);
   await waitForFrameTerminal(page, targetFrame);
   const latencyMs = performance.now() - startedAt;
+  // 延迟在真实 Konva draw 时截断；资源快照另等后台 supplemental/prefetch frame close，
+  // 避免把允许存在的短时转换误报成“操作结束仍泄漏 VideoFrame”。
+  await waitForFrameResourcesSettled(page);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
   const endTime = await page.evaluate(() => performance.now());
   const [windowProbe, snapshot] = await Promise.all([
@@ -164,6 +225,14 @@ async function measureSeek(page, targetFrame, maxFrame, scenario) {
     // buildGopPlan 覆盖 sample 校验、GOP 规划、description 解码和 EncodedVideoChunk 构造，
     // 是可迁移到 Worker 的具名同步 slice；不能用整段操作的 event-loop delay 冒充。
     pipelineBlockingMs: snapshot.precise?.lastDemuxMs ?? null,
+    queueMs: snapshot.precise?.lastQueueMs ?? null,
+    codecMs: snapshot.precise?.lastCodecMs ?? null,
+    decodeMs: snapshot.precise?.lastDecodeMs ?? null,
+    bitmapMs: snapshot.precise?.lastBitmapMs ?? null,
+    decodeMode: snapshot.precise?.lastDecodeMode ?? null,
+    paintMs: snapshot.precise?.lastPaintMs ?? null,
+    visibleMs: snapshot.precise?.lastVisibleMs ?? null,
+    paintedFrameIndex: snapshot.paintedFrameIndex,
     longTasks: windowProbe.longTasks,
     diagnostics: snapshot.precise,
   };
@@ -394,6 +463,11 @@ function summarizeRow(row, config) {
   const pipelineBlockingValues = seekObservations
     .map((item) => item.pipelineBlockingMs)
     .filter((value) => typeof value === "number");
+  const phaseP95 = (field) =>
+    percentile(
+      seekObservations.map((item) => item[field]).filter((value) => typeof value === "number"),
+      0.95,
+    );
   const fallbackCount = seekObservations.filter(
     (item) => item.source !== "webcodecs" || item.state !== "ready",
   ).length;
@@ -492,6 +566,12 @@ function summarizeRow(row, config) {
     samples: seekObservations.length,
     warmSameGopSeekP95Ms,
     warmSameChunkRandomSeekP95Ms,
+    queueP95Ms: phaseP95("queueMs"),
+    codecP95Ms: phaseP95("codecMs"),
+    decodeP95Ms: phaseP95("decodeMs"),
+    bitmapP95Ms: phaseP95("bitmapMs"),
+    paintP95Ms: phaseP95("paintMs"),
+    visibleP95Ms: phaseP95("visibleMs"),
     latencyWithinBudget,
     pipelineBlockingP95Ms: percentile(pipelineBlockingValues, 0.95),
     attributedLongTaskGte50Ms,
@@ -544,7 +624,7 @@ function workerDecision(rows, budgets) {
   };
 }
 
-async function measureRow(browser, resolution, config, args) {
+async function measureRow(browser, browserGpuEnvironment, resolution, config, args) {
   console.log(`precise-frame ${resolution.id}: start`);
   const rawTaskUrl = process.env[resolution.taskUrlEnv];
   if (!rawTaskUrl) {
@@ -589,7 +669,10 @@ async function measureRow(browser, resolution, config, args) {
   await waitForFrameTerminal(page, 0);
   const coldReadyMs = performance.now() - startedAt;
   const initial = await readPreciseSnapshot(page);
-  const environment = await taskEnvironment(page);
+  const environment = {
+    ...(await taskEnvironment(page)),
+    ...browserGpuEnvironment,
+  };
   const manifestPayload = await waitForNetworkPayload(() => payloads.manifest);
   const samplesPayload = await waitForNetworkPayload(() => payloads.samples);
   const maxFrame = Number(manifestPayload?.frame_count) - 1;
@@ -644,7 +727,16 @@ async function measureRow(browser, resolution, config, args) {
         sample.frame_index < row.fixture.chunkSizeFrames,
     ) &&
     keyframes.length >= 2;
-  if (
+  const softwareDiagnosticOverride =
+    !args.strict && process.env.VIDEO_BENCH_ALLOW_SOFTWARE_DECODE === "1";
+  environment.softwareDiagnosticOverride = softwareDiagnosticOverride;
+  if (environment.hardwareVideoDecode !== true && !softwareDiagnosticOverride) {
+    row.capability = "hardware-video-decode-unavailable";
+    row.reason =
+      environment.hardwareVideoDecode === false
+        ? "GPU compositing is available, but Chromium reports no hardware video decode profiles"
+        : "Chromium hardware video decode capability could not be verified";
+  } else if (
     environment.width !== resolution.width ||
     environment.height !== resolution.height ||
     maxFrame < 32 ||
@@ -673,12 +765,9 @@ async function measureRow(browser, resolution, config, args) {
         { length: config.samples.warmSameGop },
         (_, index) => firstGopFrames[index % firstGopFrames.length],
       );
-      const randomTargets = Array.from(
-        { length: config.samples.warmSameChunkRandom },
-        (_, index) =>
-          sameChunkFrames[
-            (index * Math.max(1, sameChunkFrames.length - 1)) % sameChunkFrames.length
-          ],
+      const randomTargets = seededSampleTargets(
+        sameChunkFrames,
+        config.samples.warmSameChunkRandom,
       );
       const crossTargets = Array.from({ length: config.samples.crossGopRoundtrip }, (_, index) =>
         index % 2 === 0 ? firstGopFrames[0] : keyframes[1],
@@ -690,13 +779,7 @@ async function measureRow(browser, resolution, config, args) {
         (_, index) => ((index * (stabilitySpan - 1)) % stabilitySpan) + 1,
       );
       const stabilitySplit = Math.ceil(stabilityTargets.length / 2);
-      const interactionTargets = Array.from(
-        { length: 30 },
-        (_, index) =>
-          sameChunkFrames[
-            (index * Math.max(1, sameChunkFrames.length - 1)) % sameChunkFrames.length
-          ],
-      );
+      const interactionTargets = seededSampleTargets(sameChunkFrames, 30, 0x23_15_1a_f0);
       row.interactionRaf = await interactionRafObservation(
         page,
         interactionTargets,
@@ -712,6 +795,11 @@ async function measureRow(browser, resolution, config, args) {
         ),
         maxFrame,
       );
+      // cold-first-frame 已由页面首开记录；warm same-GOP 正式采样前先把目标 GOP/session
+      // 预热一次，避免把跨场景切换成本混进 warm 指标。
+      await seekFrame(page, firstGopFrames[0], maxFrame);
+      await waitForFrameTerminal(page, firstGopFrames[0]);
+      await waitForFrameResourcesSettled(page);
       row.observations.push(
         ...(await measureSeekSeries(page, maxFrame, "warm-same-gop-seek", sameGopTargets)),
         ...(await measureSeekSeries(page, maxFrame, "warm-same-chunk-random-seek", randomTargets)),
@@ -798,9 +886,10 @@ export async function runPreciseFrameMeasurements(config, args) {
     channel,
   });
   try {
+    const browserGpuEnvironment = await readBrowserGpuEnvironment(browser);
     const rows = [];
     for (const resolution of config.resolutions) {
-      rows.push(await measureRow(browser, resolution, config, args));
+      rows.push(await measureRow(browser, browserGpuEnvironment, resolution, config, args));
     }
     return {
       environment: {
@@ -810,6 +899,9 @@ export async function runPreciseFrameMeasurements(config, args) {
         headed: args.headed,
         performanceTier: process.env.VIDEO_BENCH_TIER ?? "standard",
         webcodecsFlag: true,
+        softwareDiagnosticOverride:
+          !args.strict && process.env.VIDEO_BENCH_ALLOW_SOFTWARE_DECODE === "1",
+        ...browserGpuEnvironment,
       },
       rows,
       workerDecision: workerDecision(rows, config.budgets),
@@ -821,6 +913,7 @@ export async function runPreciseFrameMeasurements(config, args) {
 
 export const preciseFrameMath = {
   percentile,
+  seededSampleTargets,
   sliderValueForFrame,
   summarizeRow,
   workerDecision,

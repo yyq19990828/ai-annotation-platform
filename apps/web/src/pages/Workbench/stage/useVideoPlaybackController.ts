@@ -122,6 +122,8 @@ export interface UseVideoPlaybackControllerResult {
   frameSource: "webcodecs" | "video-bitmap" | "video-element";
   /** 精确帧 pipeline 的当前状态(供 stage 暴露 data-video-precise-state 给 E2E)。 */
   preciseSourceState: PreciseFrameSourceState;
+  precisePaintedFrameIndex: number | null;
+  markPreciseFramePainted: (frameIndex: number) => void;
   framePreview: VideoFramePreview | null;
   previewFrame: (frameIndex: number | null) => void;
   samplingStep: number;
@@ -312,7 +314,8 @@ export function useVideoPlaybackController({
   const precise = useVideoPreciseFrame({
     taskId: manifest?.task_id,
     frameIndex,
-    enabled: !isPlaybackActive && !frameClock.isSeeking,
+    enabled: !isPlaybackActive,
+    decodeEnabled: !frameClock.isSeeking,
     bitmapBudgetBytes: performanceConfig.videoDecoderBitmapCacheBytes,
     chunkBudgetBytes: performanceConfig.videoChunkByteCacheBytes,
     prefetchFrames: performanceConfig.videoDecodePrefetchFrames,
@@ -368,7 +371,14 @@ export function useVideoPlaybackController({
         codec: precise.performance.codec,
         fallbackReason: precise.fallbackReason,
         lastDemuxMs: precise.performance.lastDemuxMs,
+        lastQueueMs: precise.performance.lastQueueMs,
+        lastCodecMs: precise.performance.lastCodecMs,
         lastDecodeMs: precise.performance.lastDecodeMs,
+        lastBitmapMs: precise.performance.lastBitmapMs,
+        lastDecodeMode: precise.performance.lastDecodeMode,
+        lastPaintMs: precise.performance.lastPaintMs,
+        lastVisibleMs: precise.performance.lastVisibleMs,
+        paintedFrameIndex: precise.performance.paintedFrameIndex,
         cache: {
           bitmapBytes: precise.performance.bitmapBytes,
           bitmapBudgetBytes: precise.performance.bitmapBudgetBytes,
@@ -1146,6 +1156,8 @@ export function useVideoPlaybackController({
     displayBitmap,
     frameSource,
     preciseSourceState: precise.sourceState,
+    precisePaintedFrameIndex: precise.performance.paintedFrameIndex,
+    markPreciseFramePainted: precise.markFramePainted,
     framePreview,
     previewFrame,
     samplingStep,

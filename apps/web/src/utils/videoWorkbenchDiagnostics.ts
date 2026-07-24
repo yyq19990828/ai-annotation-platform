@@ -22,7 +22,14 @@ export interface VideoPreciseFrameDiagnosticsSnapshot {
   codec: string | null;
   fallbackReason: string | null;
   lastDemuxMs: number | null;
+  lastQueueMs: number | null;
+  lastCodecMs: number | null;
   lastDecodeMs: number | null;
+  lastBitmapMs: number | null;
+  lastDecodeMode: "bitmap-cache" | "supplemental-cache" | "session" | null;
+  lastPaintMs: number | null;
+  lastVisibleMs: number | null;
+  paintedFrameIndex: number | null;
   cache: {
     bitmapBytes: number;
     bitmapBudgetBytes: number;
@@ -140,6 +147,7 @@ let preciseLastPublishAt = 0;
 let preciseTrailingTimer: ReturnType<typeof setTimeout> | null = null;
 let preciseLastState: string | null = null;
 let preciseLastFallback: string | null = null;
+let preciseLastPaintedFrame: number | null = null;
 
 function ensureDiagnosticsStore(): VideoWorkbenchDiagnosticsStore | null {
   if (typeof window === "undefined") return null;
@@ -188,9 +196,12 @@ export function publishVideoPreciseFrameDiagnostics(
   route: string,
 ): void {
   const urgent =
-    snapshot.state !== preciseLastState || snapshot.fallbackReason !== preciseLastFallback;
+    snapshot.state !== preciseLastState ||
+    snapshot.fallbackReason !== preciseLastFallback ||
+    snapshot.paintedFrameIndex !== preciseLastPaintedFrame;
   preciseLastState = snapshot.state;
   preciseLastFallback = snapshot.fallbackReason;
+  preciseLastPaintedFrame = snapshot.paintedFrameIndex;
 
   clearPreciseTrailingTimer();
   const now = Date.now();
@@ -217,6 +228,7 @@ export function setActiveVideoWorkbenchTask(taskId: string | null): void {
   preciseLastPublishAt = 0;
   preciseLastState = null;
   preciseLastFallback = null;
+  preciseLastPaintedFrame = null;
   clearPreciseTrailingTimer();
 }
 

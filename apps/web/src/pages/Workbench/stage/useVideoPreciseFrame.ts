@@ -11,8 +11,10 @@ import type { CachedVideoBitmap } from "./useVideoBitmapCache";
 export interface UseVideoPreciseFrameArgs {
   taskId: string | null | undefined;
   frameIndex: number;
-  /** 暂停 + 非 seeking 时为 true(由调用方 frameClock / 播放态决定)。 */
+  /** 暂停态为 true；允许立即展示已经缓存的精确帧。 */
   enabled: boolean;
+  /** 原生 seek 稳定后为 true；缓存未命中时才允许启动新的 WebCodecs decode。 */
+  decodeEnabled?: boolean;
   /** 已解码 bitmap 的字节预算上限(性能档位 videoDecoderBitmapCacheBytes)。 */
   bitmapBudgetBytes: number;
   /** chunk 原始字节缓存的预算上限(性能档位 videoChunkByteCacheBytes)。 */
@@ -69,8 +71,16 @@ export interface VideoPreciseFramePerformanceDiagnostics {
   lastSamplesMs: number | null;
   lastChunkFetchMs: number | null;
   lastDemuxMs: number | null;
+  lastQueueMs: number | null;
+  lastCodecMs: number | null;
   lastDecodeMs: number | null;
   lastBitmapMs: number | null;
+  lastDecodeMode: "bitmap-cache" | "supplemental-cache" | "session" | null;
+  /** 当前精确帧 ready 到 Konva media layer 完成 draw 的时间。 */
+  lastPaintMs: number | null;
+  /** 当前精确帧从 buildGopPlan 开始到 Konva media layer 完成 draw 的总时间。 */
+  lastVisibleMs: number | null;
+  paintedFrameIndex: number | null;
   /** 最近一次成功 decode 所属 GOP 的起点 decode index(排障 GOP 边界 / reset)。 */
   gopStartDecodeIndex: number | null;
   /** 最近一次 decode 目标帧的 pts 微秒(确认 timestamp 匹配而非数组下标)。 */
@@ -88,6 +98,8 @@ export interface UseVideoPreciseFrameResult {
   fallbackReason: PreciseFrameFallbackReason | null;
   diagnostics: VideoPreciseFrameDiagnostics;
   performance: VideoPreciseFramePerformanceDiagnostics;
+  /** Konva media layer 完成当前精确帧 draw 后回执，用于可见帧门与阶段计时。 */
+  markFramePainted: (frameIndex: number) => void;
 }
 
 const BYTES_GC_MS = 60_000;
@@ -139,6 +151,7 @@ export function useVideoPreciseFrame({
   taskId,
   frameIndex,
   enabled,
+  decodeEnabled = enabled,
   bitmapBudgetBytes,
   chunkBudgetBytes,
   prefetchFrames,
@@ -147,12 +160,13 @@ export function useVideoPreciseFrame({
   const active = decoder.active;
   // 1-2. decoder inactive(无 flag / 无 WebCodecs)→ 全链路 disabled。
   const pipelineEnabled = active && !!taskId && enabled;
+  const canDecode = pipelineEnabled && decodeEnabled;
 
   const decoderRef = useRef(decoder);
   decoderRef.current = decoder;
   // latest-request-wins:effect 内异步 decode 完成后只激活仍匹配的 frame。
-  const latestRef = useRef({ taskId, frameIndex, enabled });
-  latestRef.current = { taskId, frameIndex, enabled };
+  const latestRef = useRef({ taskId, frameIndex, enabled: canDecode });
+  latestRef.current = { taskId, frameIndex, enabled: canDecode };
   // 单调递增的请求 token;decode 完成后与 latestRef 一起保证旧请求不覆盖当前显示帧。
   const generationRef = useRef(0);
   // 方向感知预取:记录上次 frameIndex,差值符号决定预取方向;0 表示方向未知不预取。
@@ -184,6 +198,15 @@ export function useVideoPreciseFrame({
   const [chunkCacheVersion, setChunkCacheVersion] = useState(0);
   const [lastChunkFetchMs, setLastChunkFetchMs] = useState<number | null>(null);
   const [lastDemuxMs, setLastDemuxMs] = useState<number | null>(null);
+  const [lastPaintMs, setLastPaintMs] = useState<number | null>(null);
+  const [lastVisibleMs, setLastVisibleMs] = useState<number | null>(null);
+  const [paintedFrameIndex, setPaintedFrameIndex] = useState<number | null>(null);
+  const visibleTimingRef = useRef<{
+    taskId: string | null | undefined;
+    frameIndex: number;
+    startedAt: number;
+    readyAt: number | null;
+  } | null>(null);
 
   const [decoding, setDecoding] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<PreciseFrameFallbackReason | null>(null);
@@ -263,7 +286,30 @@ export function useVideoPreciseFrame({
   useEffect(() => {
     setFallbackReason(null);
     setDecoding(false);
+    setPaintedFrameIndex(null);
+    setLastPaintMs(null);
+    setLastVisibleMs(null);
   }, [taskId, frameIndex]);
+
+  // 原生 <video> seek 尚未完成时不启动新 decode，但缓存帧不需要等待媒体元素。这样逐帧
+  // 回看 / 小范围往返可以直接进入 Konva，缓存未命中仍保留“稳定 seek 后解码”的限流合同。
+  useEffect(() => {
+    if (!pipelineEnabled) return;
+    const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+    const shown = decoderRef.current.showFrame(frameIndex);
+    if (!shown || shown.frameIndex !== frameIndex) return;
+    const readyAt = typeof performance !== "undefined" ? performance.now() : startedAt;
+    visibleTimingRef.current = {
+      taskId,
+      frameIndex,
+      startedAt,
+      readyAt,
+    };
+    if (prefetchedFramesRef.current.has(frameIndex)) {
+      setPrefetchHits((n) => n + 1);
+    }
+    setFallbackReason(null);
+  }, [frameIndex, pipelineEnabled, taskId]);
   useEffect(() => {
     refreshedKeyRef.current = null;
     refreshingUrlKeyRef.current = null;
@@ -458,6 +504,12 @@ export function useVideoPreciseFrame({
       return;
     }
     const demuxStart = typeof performance !== "undefined" ? performance.now() : 0;
+    visibleTimingRef.current = {
+      taskId,
+      frameIndex,
+      startedAt: demuxStart,
+      readyAt: null,
+    };
     const result = buildGopPlan(bytes, samples, frameIndex);
     const demuxMs = typeof performance !== "undefined" ? performance.now() - demuxStart : 0;
     if (!result.ok) {
@@ -482,6 +534,11 @@ export function useVideoPreciseFrame({
       targetTimestampUs: targetSample?.timestampUs ?? null,
       codec: plan.config.codec ?? null,
     });
+    // 缓存帧可以在原生 seek 尚未结束时立即显示，但仍需发布与画面同帧的 GOP / PTS
+    // 诊断；因此先构建 metadata，再决定是否需要提交新的 decode。
+    if (decoderRef.current.activeBitmap?.frameIndex === frameIndex || !canDecode) {
+      return;
+    }
     const gopIdentity = {
       taskId: taskId as string,
       datasetItemId,
@@ -520,18 +577,51 @@ export function useVideoPreciseFrame({
       if (prefetchedFramesRef.current.has(frameIndex)) {
         setPrefetchHits((n) => n + 1);
       }
+      const timing = visibleTimingRef.current;
+      if (timing && timing.taskId === taskId && timing.frameIndex === frameIndex) {
+        timing.readyAt = typeof performance !== "undefined" ? performance.now() : timing.startedAt;
+      }
       setFallbackReason(null);
     })();
     return () => {
       cancelled = true;
     };
-  }, [bytes, samples, frameIndex, targetChunkId, datasetItemId, pipelineEnabled, taskId]);
+  }, [
+    bytes,
+    samples,
+    canDecode,
+    frameIndex,
+    targetChunkId,
+    datasetItemId,
+    taskId,
+    pipelineEnabled,
+  ]);
 
   const bitmap = useMemo<CachedVideoBitmap | null>(() => {
     const ab = decoder.activeBitmap;
     if (ab && ab.frameIndex === frameIndex) return ab;
     return null;
   }, [decoder.activeBitmap, frameIndex]);
+
+  const markFramePainted = useCallback(
+    (paintedFrame: number) => {
+      const timing = visibleTimingRef.current;
+      if (
+        !timing ||
+        timing.taskId !== taskId ||
+        timing.frameIndex !== paintedFrame ||
+        paintedFrame !== frameIndex ||
+        timing.readyAt === null
+      ) {
+        return;
+      }
+      const paintedAt = typeof performance !== "undefined" ? performance.now() : timing.readyAt;
+      setPaintedFrameIndex((current) => (current === paintedFrame ? current : paintedFrame));
+      setLastPaintMs(Math.max(0, paintedAt - timing.readyAt));
+      setLastVisibleMs(Math.max(0, paintedAt - timing.startedAt));
+    },
+    [frameIndex, taskId],
+  );
 
   // 方向感知:frameIndex 变化时用差值符号更新预取方向。
   useEffect(() => {
@@ -563,6 +653,10 @@ export function useVideoPreciseFrame({
     setBytesFetched(0);
     setChunkByteCacheHits(0);
     setLastChunkFetchMs(null);
+    setLastPaintMs(null);
+    setLastVisibleMs(null);
+    setPaintedFrameIndex(null);
+    visibleTimingRef.current = null;
     chunkBytesCacheRef.current.clear();
     if (chunkExpiryTimerRef.current !== null) {
       clearTimeout(chunkExpiryTimerRef.current);
@@ -623,6 +717,7 @@ export function useVideoPreciseFrame({
           targetFrameIndex: fi,
           generation: gen,
           retainUncached: false,
+          allowReset: false,
         });
         if (decoded.bitmap) prefetchedFramesRef.current.add(fi);
       }
@@ -713,8 +808,14 @@ export function useVideoPreciseFrame({
       lastSamplesMs: null,
       lastChunkFetchMs,
       lastDemuxMs,
+      lastQueueMs: decoder.diagnostics.lastQueueMs,
+      lastCodecMs: decoder.diagnostics.lastCodecMs,
       lastDecodeMs: decoder.diagnostics.lastDecodeMs,
-      lastBitmapMs: null,
+      lastBitmapMs: decoder.diagnostics.lastBitmapMs,
+      lastDecodeMode: decoder.diagnostics.lastDecodeMode,
+      lastPaintMs,
+      lastVisibleMs,
+      paintedFrameIndex,
       gopStartDecodeIndex: currentPlanMeta.gopStartDecodeIndex,
       targetTimestampUs: currentPlanMeta.targetTimestampUs,
       codec: currentPlanMeta.codec,
@@ -729,6 +830,9 @@ export function useVideoPreciseFrame({
     prefetchHits,
     lastDemuxMs,
     lastChunkFetchMs,
+    lastPaintMs,
+    lastVisibleMs,
+    paintedFrameIndex,
     pipelineEnabled,
     planMeta,
     taskId,
@@ -753,5 +857,6 @@ export function useVideoPreciseFrame({
     fallbackReason,
     diagnostics,
     performance: performanceDiagnostics,
+    markFramePainted,
   };
 }

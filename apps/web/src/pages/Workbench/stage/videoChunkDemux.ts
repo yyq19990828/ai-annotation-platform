@@ -148,6 +148,7 @@ export function buildEncodedVideoDecodePlan(
     codedWidth: samples.width,
     codedHeight: samples.height,
     description,
+    hardwareAcceleration: "prefer-hardware",
     // 精确帧 session 不会在每次目标后 flush（flush 会破坏同 GOP 增量 decode）。
     // 要求 decoder 尽快交付已解出的帧，避免硬件 AVC decoder 把 GOP key/P 帧留在
     // reorder queue，直到下一 access unit 或 flush 才输出。
@@ -181,7 +182,7 @@ export function videoDecoderConfigFingerprint(config: VideoDecoderConfig): strin
     // description 是 BufferSource;我们的来源是 atob 解码出的 Uint8Array(offset 0,独占 buffer)。
     descBytes = Array.from(config.description as unknown as Uint8Array);
   }
-  return `${config.codec ?? ""}|${config.codedWidth ?? 0}x${config.codedHeight ?? 0}|${descBytes.join(",")}`;
+  return `${config.codec ?? ""}|${config.codedWidth ?? 0}x${config.codedHeight ?? 0}|${config.hardwareAcceleration ?? "no-preference"}|${descBytes.join(",")}`;
 }
 
 /** GOP 内单个 access unit(decode order)的预构造输入。 */
@@ -310,6 +311,7 @@ export function buildGopPlan(
     codedWidth: samples.width,
     codedHeight: samples.height,
     description,
+    hardwareAcceleration: "prefer-hardware",
     optimizeForLatency: true,
   };
 

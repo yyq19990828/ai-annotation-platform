@@ -65,6 +65,15 @@ describe("precise-frame benchmark decision", () => {
     expect(() => preciseFrameMath.sliderValueForFrame(1950, 1949)).toThrow("outside 0..1949");
   });
 
+  it("same-chunk 目标是可复现的均匀洗牌，不退化为逐帧倒序", () => {
+    const frames = Array.from({ length: 60 }, (_, index) => index);
+    const first = preciseFrameMath.seededSampleTargets(frames, 30);
+    const second = preciseFrameMath.seededSampleTargets(frames, 30);
+    expect(first).toEqual(second);
+    expect(new Set(first).size).toBe(30);
+    expect(first).not.toEqual(Array.from({ length: 30 }, (_, index) => (60 - index) % 60));
+  });
+
   it("最后一个样本 fallback 也必须让矩阵保持 inconclusive", () => {
     const diagnostics = (gopStartDecodeIndex) => ({
       gopStartDecodeIndex,

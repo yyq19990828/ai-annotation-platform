@@ -607,8 +607,8 @@ describe("useVideoPreciseFrame", () => {
       });
     });
     await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(5));
-    expect(global.fetch).toHaveBeenCalledTimes(3);
-    expect(result.current.performance.bytesFetched).toBe(64 * 3);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.performance.bytesFetched).toBe(64 * 3));
   });
 
   it("chunk byte cache 的 60 秒 TTL 不因命中续期，到期后释放缓存引用", async () => {
@@ -789,6 +789,46 @@ describe("useVideoPreciseFrame", () => {
     });
     await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(6));
     expect(result.current.performance.prefetchHits).toBeGreaterThanOrEqual(1);
+  });
+
+  it("原生 seek 未稳定时立即展示已缓存精确帧，不启动新的 decode", async () => {
+    getManifestV2.mockResolvedValue(manifest(10));
+    getChunk.mockResolvedValue(readyChunk());
+    getSamples.mockResolvedValue(multiSamples(10));
+    vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(makeBytes(116)),
+    } as unknown as Response);
+    const base = {
+      taskId: "t1",
+      enabled: true,
+      decodeEnabled: true,
+      bitmapBudgetBytes: 4_000_000,
+      chunkBudgetBytes: 8_000_000,
+      prefetchFrames: 0,
+    };
+    const { result, rerender } = renderPrecise({ ...base, frameIndex: 3 });
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(3));
+    await act(async () => rerender({ ...base, frameIndex: 4 }));
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(4));
+    const decodeCalls = decoders.reduce(
+      (count, decoder) => count + decoder.decode.mock.calls.length,
+      0,
+    );
+
+    await act(async () =>
+      rerender({
+        ...base,
+        frameIndex: 3,
+        decodeEnabled: false,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(3));
+    await waitFor(() => expect(result.current.performance.targetTimestampUs).toBe(99_000));
+    expect(decoders.reduce((count, decoder) => count + decoder.decode.mock.calls.length, 0)).toBe(
+      decodeCalls,
+    );
   });
 
   it("light 档(prefetchFrames=0)与播放态(enabled=false)均不预取", async () => {

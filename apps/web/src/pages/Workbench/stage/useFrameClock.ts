@@ -139,14 +139,18 @@ export function useFrameClock({
       const mediaFrame = timeToFrame(mediaTime, timebase);
       const seekTarget = targetFrameRef.current;
       let nextFrame: number;
-      if (seekTarget !== null && Math.abs(seekTarget - mediaFrame) <= 1) {
-        // 活跃 seek：±1 容差内吸附回目标帧。
-        nextFrame = seekTarget;
-      } else if (
-        seekTarget === null &&
-        !isPlayingRef.current &&
-        Math.abs(mediaFrame - frameIndexRef.current) <= 1
-      ) {
+      if (seekTarget !== null) {
+        if (Math.abs(seekTarget - mediaFrame) <= 1) {
+          // 活跃 seek：±1 容差内吸附回目标帧。
+          nextFrame = seekTarget;
+        } else {
+          // 连续大跨度 seek 时，前一次 seeked/timeupdate 可能晚于新请求到达。旧媒体帧
+          // 不能把已经提交给 React 的新目标覆盖掉；等新目标就绪或 timeout 再结算。
+          const cur = diagnosticsRef.current;
+          setDiagnosticsPatch({ staleCallbacks: cur.staleCallbacks + 1 });
+          return;
+        }
+      } else if (!isPlayingRef.current && Math.abs(mediaFrame - frameIndexRef.current) <= 1) {
         // 暂停且无活跃 seek 时，seeked/timeupdate 把 currentTime 反算成相邻帧的 ±1 抖动
         // 不要漂移已提交帧（否则 seek 到网格帧 30 后落成 29，破坏采样网格导航 → “逢9”帧、卡顿）。
         nextFrame = frameIndexRef.current;
@@ -156,7 +160,7 @@ export function useFrameClock({
       onFrameChange(nextFrame);
       recordFrameReady(source, nextFrame);
     },
-    [onFrameChange, recordFrameReady, timebase],
+    [onFrameChange, recordFrameReady, setDiagnosticsPatch, timebase],
   );
 
   const seekTo = useCallback(

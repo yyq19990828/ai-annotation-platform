@@ -466,6 +466,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       displayBitmap,
       frameSource,
       preciseSourceState,
+      precisePaintedFrameIndex,
+      markPreciseFramePainted,
       cachedRanges,
       framePreview,
       previewFrame,
@@ -1843,6 +1845,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         }
         data-video-precise-state={preciseSourceState}
         data-video-frame-index={frameIndex}
+        data-video-painted-frame-index={precisePaintedFrameIndex ?? -1}
         className={`${styles.root} ${cursorClass}`}
         onContextMenu={handleContextMenu}
         onPointerDown={beginPan}
@@ -1878,6 +1881,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
             <VideoKonvaMediaLayer
               videoEl={videoEl}
               bitmap={displayBitmap?.bitmap ?? null}
+              frameIndex={frameIndex}
+              preciseFrameIndex={frameSource === "webcodecs" ? frameIndex : null}
+              onPreciseFramePainted={markPreciseFramePainted}
               size={size}
               viewport={viewportSize}
               isPlaybackActive={isPlaybackActive}

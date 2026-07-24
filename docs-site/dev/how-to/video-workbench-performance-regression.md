@@ -66,11 +66,14 @@ fps、H.264 codec、chunk size 和关键帧边界后再派生 same-GOP / cross-G
 
 有 GPU 但没有物理显示输出的 X11 runner 可能把有头页的 BeginFrame 降到约 1 Hz。runner
 在有头模式自动传入 `--disable-gpu-vsync` 恢复 Chrome 的正常帧调度，并把实际参数写入
-`manifest.environment.chromiumArgs`；仍须同时核对 `gpuAdapter` 与
-`hardwareAcceleration=true`，不能只凭命令行参数宣称硬件解码。
+`manifest.environment.chromiumArgs`。资格结论还会通过 CDP `SystemInfo.getInfo` 核对
+`video_decode` 状态与非空的硬件解码 profile；`gpuAdapter` 只证明 GPU 合成，不能证明
+WebCodecs 使用硬件视频解码。无法验证硬解时矩阵保持 `inconclusive`。
 
 `--strict` 用于固定 GPU runner 的资格门：报告仍会先落盘，但 `inconclusive` 或 Worker 门触发
 会令命令以非零状态退出。开发机探索可省略该参数，保留三态报告而不把能力不足误当通过。
+如果只是定位软件解码路径的阶段耗时，可在非 strict 运行中临时设置
+`VIDEO_BENCH_ALLOW_SOFTWARE_DECODE=1`；该开关在 strict 运行中无效，不能生成发布资格证据。
 
 产物写到 `test-results/video-bench/<run-id>/`：
 

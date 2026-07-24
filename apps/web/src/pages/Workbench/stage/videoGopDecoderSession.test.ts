@@ -241,6 +241,23 @@ describe("VideoGopDecoderSession", () => {
     expect(session.getStats().sessionCreates).toBe(1);
   });
 
+  it("prefer-hardware 不可用时回退到默认配置，而不是误报 codec unsupported", async () => {
+    const plan = gopPlan(10);
+    const fallbackConfig = { ...plan.config };
+    delete fallbackConfig.hardwareAcceleration;
+    vi.mocked(VideoDecoder.isConfigSupported)
+      .mockResolvedValueOnce({ supported: false, config: plan.config })
+      .mockResolvedValueOnce({ supported: true, config: fallbackConfig });
+    const session = newSession(plan);
+
+    const outcome = await session.decode(req(plan, 0));
+
+    expect(outcome.ok).toBe(true);
+    expect(VideoDecoder.isConfigSupported).toHaveBeenNthCalledWith(1, plan.config);
+    expect(VideoDecoder.isConfigSupported).toHaveBeenNthCalledWith(2, fallbackConfig);
+    expect(lastDecoder().configure).toHaveBeenCalledWith(fallbackConfig);
+  });
+
   it("首目标从 GOP key sample 提交到目标(提交 0..target 共 target+1 个 chunk)", async () => {
     const plan = gopPlan(30);
     const session = newSession(plan);
@@ -284,6 +301,23 @@ describe("VideoGopDecoderSession", () => {
     expect(lastDecoder().configure).toHaveBeenCalledTimes(2); // 初始 + reconfigure
     expect(lastDecoder().decode).toHaveBeenCalledTimes(6); // 0..5
     expect(session.getStats().resets).toBe(1);
+  });
+
+  it("后台预取需要后退时直接跳过，不 reset 前台 session", async () => {
+    const plan = gopPlan(30);
+    const session = newSession(plan);
+    await session.decode(req(plan, 10));
+    vi.mocked(lastDecoder().decode).mockClear();
+
+    const outcome = await session.decode({
+      ...req(plan, 5, 1),
+      allowReset: false,
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "reset_required" });
+    expect(lastDecoder().reset).not.toHaveBeenCalled();
+    expect(lastDecoder().decode).not.toHaveBeenCalled();
+    expect(session.getStats().resets).toBe(0);
   });
 
   it("dispose 关闭 decoder;新建 session 与旧 session 互不干扰(identity 隔离)", async () => {

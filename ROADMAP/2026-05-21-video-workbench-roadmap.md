@@ -26,7 +26,7 @@
 
 > 已于 v0.10.29 落地，详见 [CHANGELOG v0.10.29](../CHANGELOG.md)。软网格语义（绝对网格锚定 0、`←/→` 跳网格、暂停吸附、`Shift+←/→` 逃生口微调 ±1 源帧、`Alt+←/→` 关键帧跳）是后续 Phase 的设计前提，保留于此供参考。
 >
-> **进展**：WebCodecs 精确帧解码链路（mp4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话、字节预算缓存、Konva 显示与当前帧 JPEG 同源）已于 v0.23.13–v0.23.15 接通（实验开关，默认关闭）。剩余收尾：在有头 Chrome / GPU runner 完成浏览器资格矩阵（key / P / B / GOP / VFR 像素、1080p/4K 性能、长稳内存）并独立决策是否默认开启；headless Chromium 无可用 `VideoDecoder` 软解，CI 只锁定 flag off 零请求与安全回退合同。
+> **进展**：WebCodecs 精确帧解码链路（mp4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话、字节预算缓存、Konva 显示与当前帧 JPEG 同源）已接通并按客户端能力安全降级（实验开关，默认关闭）。真实 Chrome 已验证 key / P / B / GOP / VFR 像素、软件解码、资源预算与 fallback；后续只保留受支持客户端硬解、跨浏览器 1080p/4K strict 性能矩阵和默认开启决策。解码发生在运行网页的客户端浏览器，Linux 服务端部署不要求本机具备浏览器硬解能力。
 >
 > **明确不做（D1）**：物理重采样 / 生成低 fps 新 mp4 / 从视频抽成独立图片数据集。
 

@@ -27,6 +27,8 @@ export interface SessionDecodeRequest {
   targetDecodeIndex: number;
   targetTimestampUs: number;
   generation: number;
+  /** 后台预取设为 false：若目标需要回退/重置，直接跳过，不能阻塞前台绘制。 */
+  allowReset?: boolean;
 }
 
 /** session 进入 failed 的细分原因(映射到 precise-frame fallback reason)。 */
@@ -41,6 +43,7 @@ export type SessionDecodeOutcome =
         | "decoder_error"
         | "codec_unsupported"
         | "supplemental_cached"
+        | "reset_required"
         | "disposed"
         | "stale_request"
         | "out_of_gop";
@@ -52,6 +55,10 @@ export interface VideoGopSessionStats {
   state: VideoGopSessionState;
   activeDecoders: number;
   liveVideoFrames: number;
+  /** 最近一次 decode 在串行命令队列中的等待时间。 */
+  lastQueueMs: number | null;
+  /** 最近一次 decode 从开始执行命令到目标 outcome 返回的 codec/session 时间。 */
+  lastCodecMs: number | null;
   /** 已提交到的绝对 decode index(gopStartDecodeIndex - 1 表示尚未提交)。 */
   cursor: number;
   /** 累计提交的 EncodedVideoChunk 数(诊断增量 decode 是否生效的核心指标)。 */
@@ -106,6 +113,10 @@ function closeFrame(frame: VideoFrame) {
   }
 }
 
+function nowMs(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
 /**
  * 单 decoder、串行命令队列、timestamp waiter 的 GOP 解码会话。
  *
@@ -154,6 +165,8 @@ export class VideoGopDecoderSession {
   private errors = 0;
   private failureReason: SessionFailureReason | null = null;
   private duplicateOutputs = 0;
+  private lastQueueMs: number | null = null;
+  private lastCodecMs: number | null = null;
 
   constructor(options: VideoGopDecoderSessionOptions) {
     this.plan = options.plan;
@@ -174,6 +187,8 @@ export class VideoGopDecoderSession {
       state: this.state,
       activeDecoders: this.decoder ? 1 : 0,
       liveVideoFrames: this.pendingTarget?.frame ? 1 : 0,
+      lastQueueMs: this.lastQueueMs,
+      lastCodecMs: this.lastCodecMs,
       cursor: this.cursor,
       submits: this.submits,
       sessionCreates: this.sessionCreates,
@@ -205,7 +220,16 @@ export class VideoGopDecoderSession {
         this.settlePending(pending, { ok: false, reason: "stale_request" });
       }
     }
-    return this.enqueue(() => this.doDecode(request));
+    const queuedAt = nowMs();
+    return this.enqueue(async () => {
+      const startedAt = nowMs();
+      this.lastQueueMs = Math.max(0, startedAt - queuedAt);
+      try {
+        return await this.doDecode(request);
+      } finally {
+        this.lastCodecMs = Math.max(0, nowMs() - startedAt);
+      }
+    });
   }
 
   /** 显式 reset:关闭并重建 decoder,cursor 回到 GOP 起点(用于 identity 不变的强制刷新)。 */
@@ -318,7 +342,12 @@ export class VideoGopDecoderSession {
     // 后退 / 原地，或目标所需的 presentation lookahead 已被提交但 output 未缓存时，
     // decoder 不会重发已解码帧，必须 hard reset 从 key sample 重解。
     // forward(target > cursor)则只提交增量。
-    if (submitThroughDecodeIndex <= this.cursor || targetTimestampUs <= this.maxOutputTimestampUs) {
+    const resetRequired =
+      submitThroughDecodeIndex <= this.cursor || targetTimestampUs <= this.maxOutputTimestampUs;
+    if (resetRequired && req.allowReset === false) {
+      return { ok: false, reason: "reset_required" };
+    }
+    if (resetRequired) {
       await this.hardReset();
       if (this.getState() !== "ready" || !this.decoder) {
         return { ok: false, reason: this.failureReason ?? "decoder_error" };
@@ -388,12 +417,20 @@ export class VideoGopDecoderSession {
       typeof VideoDecoder.isConfigSupported === "function"
     ) {
       try {
-        const support = await VideoDecoder.isConfigSupported(this.plan.config);
+        let support = await VideoDecoder.isConfigSupported(this.plan.config);
+        if (!support.supported && this.plan.config.hardwareAcceleration === "prefer-hardware") {
+          const fallbackConfig = { ...this.plan.config };
+          delete fallbackConfig.hardwareAcceleration;
+          support = await VideoDecoder.isConfigSupported(fallbackConfig);
+          if (support.supported) supportedConfig = support.config ?? fallbackConfig;
+        }
         if (!support.supported) {
           this.markFailed("codec_unsupported");
           return;
         }
-        supportedConfig = support.config ?? this.plan.config;
+        if (supportedConfig === this.plan.config) {
+          supportedConfig = support.config ?? this.plan.config;
+        }
       } catch {
         this.markFailed("codec_unsupported");
         return;

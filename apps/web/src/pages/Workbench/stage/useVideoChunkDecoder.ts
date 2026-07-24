@@ -64,7 +64,16 @@ export interface VideoChunkDecoderDiagnostics {
   /** task 变化后被丢弃的解码结果次数。 */
   staleResults: number;
   lastFallbackReason: PreciseFrameFallbackReason | null;
+  /** 最近一次前台 decode 在 GOP session 串行队列中的等待时间。 */
+  lastQueueMs: number | null;
+  /** 最近一次前台 decode 的 codec/session 执行时间（不含 bitmap 转换）。 */
+  lastCodecMs: number | null;
+  /** 最近一次前台 VideoFrame → ImageBitmap 转换时间。 */
+  lastBitmapMs: number | null;
+  /** 最近一次前台 decodePlan 总耗时。 */
   lastDecodeMs: number | null;
+  /** 最近一次前台请求实际走过的路径，避免缓存命中沿用上一轮阶段耗时。 */
+  lastDecodeMode: "bitmap-cache" | "supplemental-cache" | "session" | null;
   /** bitmap 缓存与 GOP session 的实时资源诊断(从 ByteLru / session 读取)。 */
   bitmapBytes: number;
   bitmapBudgetBytes: number;
@@ -191,12 +200,20 @@ export async function decodePlanToBitmap(
   let supportedConfig = plan.config;
   if (typeof VideoDecoder.isConfigSupported === "function") {
     try {
-      const support = await VideoDecoder.isConfigSupported(plan.config);
+      let support = await VideoDecoder.isConfigSupported(plan.config);
+      if (!support.supported && plan.config.hardwareAcceleration === "prefer-hardware") {
+        const fallbackConfig = { ...plan.config };
+        delete fallbackConfig.hardwareAcceleration;
+        support = await VideoDecoder.isConfigSupported(fallbackConfig);
+        if (support.supported) supportedConfig = support.config ?? fallbackConfig;
+      }
       if (!support.supported) {
         onFallback?.("codec_unsupported");
         return null;
       }
-      supportedConfig = support.config ?? plan.config;
+      if (supportedConfig === plan.config) {
+        supportedConfig = support.config ?? plan.config;
+      }
     } catch {
       onFallback?.("codec_unsupported");
       return null;
@@ -315,7 +332,11 @@ export function useVideoChunkDecoder({
     configUnsupported: 0,
     staleResults: 0,
     lastFallbackReason: null,
+    lastQueueMs: null,
+    lastCodecMs: null,
+    lastBitmapMs: null,
     lastDecodeMs: null,
+    lastDecodeMode: null,
     bitmapBytes: 0,
     bitmapBudgetBytes,
     activeDecoders: 0,
@@ -361,6 +382,12 @@ export function useVideoChunkDecoder({
       entry: DecodedVideoFrameBitmap,
       decodeMs: number,
       retainUncached: boolean,
+      phases?: {
+        queueMs: number | null;
+        codecMs: number | null;
+        bitmapMs: number;
+        mode: "session";
+      },
     ): boolean => {
       const cache = cacheRef.current;
       const bytes = bitmapBytes(entry.width, entry.height);
@@ -389,7 +416,11 @@ export function useVideoChunkDecoder({
         enabled: resolvedEnabled,
         cacheSize: ownedBitmapCount(),
         decodes: cur.decodes + 1,
-        lastDecodeMs: decodeMs,
+        lastQueueMs: phases ? phases.queueMs : cur.lastQueueMs,
+        lastCodecMs: phases ? phases.codecMs : cur.lastCodecMs,
+        lastBitmapMs: phases ? phases.bitmapMs : cur.lastBitmapMs,
+        lastDecodeMs: phases ? decodeMs : cur.lastDecodeMs,
+        lastDecodeMode: phases ? phases.mode : cur.lastDecodeMode,
       }));
       bumpVersion();
       return cached || retainUncached;
@@ -450,6 +481,8 @@ export function useVideoChunkDecoder({
       generation: number;
       /** 前台目标允许单张超预算 bitmap 在 LRU 外等待 showFrame 接管；预取必须为 false。 */
       retainUncached?: boolean;
+      /** 后台预取不得触发 decoder reset；需要回退重解时直接跳过。 */
+      allowReset?: boolean;
     }): Promise<VideoChunkDecodeResult> => {
       if (!taskId || !active) {
         return { bitmap: null, fallbackReason: "flag_disabled" };
@@ -460,7 +493,19 @@ export function useVideoChunkDecoder({
         activeBitmapRef.current?.key === key
           ? activeBitmapRef.current.entry
           : (cacheRef.current.peek(key) ?? uncachedBitmapRef.current.get(key)?.entry);
-      if (cached) return { bitmap: cached, fallbackReason: null };
+      if (cached) {
+        if (args.retainUncached ?? true) {
+          setDiagnostics((cur) => ({
+            ...cur,
+            lastQueueMs: 0,
+            lastCodecMs: 0,
+            lastBitmapMs: 0,
+            lastDecodeMs: 0,
+            lastDecodeMode: "bitmap-cache",
+          }));
+        }
+        return { bitmap: cached, fallbackReason: null };
+      }
       const existing = inFlightRef.current.get(key);
       if (existing) return existing;
       const lifecycleGeneration = lifecycleGenerationRef.current;
@@ -542,14 +587,29 @@ export function useVideoChunkDecoder({
           targetDecodeIndex: targetSample.decodeIndex,
           targetTimestampUs: targetSample.timestampUs,
           generation: args.generation,
+          allowReset: args.allowReset,
         });
         const decodeMs =
           typeof performance !== "undefined" ? Math.round(performance.now() - startedAt) : 0;
+        let sessionStats = session.getStats();
         if (!outcome.ok && outcome.reason === "supplemental_cached") {
           const supplemental =
             cacheRef.current.peek(key) ?? uncachedBitmapRef.current.get(key)?.entry ?? null;
           if (supplemental) {
+            if (args.retainUncached ?? true) {
+              setDiagnostics((cur) => ({
+                ...cur,
+                lastQueueMs: sessionStats.lastQueueMs,
+                lastCodecMs: sessionStats.lastCodecMs,
+                lastBitmapMs: 0,
+                lastDecodeMs: decodeMs,
+                lastDecodeMode: "supplemental-cache",
+              }));
+            }
             return { bitmap: supplemental, fallbackReason: null };
+          }
+          if (args.allowReset === false) {
+            return { bitmap: null, fallbackReason: "stale_request" };
           }
           await session.reset();
           outcome = await session.decode({
@@ -557,10 +617,15 @@ export function useVideoChunkDecoder({
             targetDecodeIndex: targetSample.decodeIndex,
             targetTimestampUs: targetSample.timestampUs,
             generation: args.generation,
+            allowReset: args.allowReset,
           });
+          sessionStats = session.getStats();
         }
         // 在每个 await 之后重新评估:createImageBitmap 阻塞期间可能发生 unmount / task 切换。
         if (!outcome.ok) {
+          if (outcome.reason === "reset_required") {
+            return { bitmap: null, fallbackReason: "stale_request" };
+          }
           if (isStillCurrent()) {
             const reason: PreciseFrameFallbackReason =
               outcome.reason === "stale_request" || outcome.reason === "disposed"
@@ -593,6 +658,7 @@ export function useVideoChunkDecoder({
         let bitmap: ImageBitmap;
         const displayWidth = frame.displayWidth;
         const displayHeight = frame.displayHeight;
+        const bitmapStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
         try {
           bitmap = await globalThis.createImageBitmap(frame);
         } catch {
@@ -631,7 +697,20 @@ export function useVideoChunkDecoder({
           width: bitmap.width || displayWidth,
           height: bitmap.height || displayHeight,
         };
-        if (!remember(key, entry, decodeMs, args.retainUncached ?? true)) {
+        const totalMs =
+          typeof performance !== "undefined"
+            ? Math.max(0, performance.now() - startedAt)
+            : decodeMs;
+        const bitmapMs =
+          typeof performance !== "undefined" ? Math.max(0, performance.now() - bitmapStartedAt) : 0;
+        if (
+          !remember(key, entry, totalMs, args.retainUncached ?? true, {
+            queueMs: sessionStats.lastQueueMs,
+            codecMs: sessionStats.lastCodecMs,
+            bitmapMs,
+            mode: "session",
+          })
+        ) {
           return { bitmap: null, fallbackReason: "memory_budget_exceeded" };
         }
         return { bitmap: entry, fallbackReason: null };
