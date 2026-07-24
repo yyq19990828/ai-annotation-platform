@@ -193,7 +193,12 @@ describe("useVideoPreciseFrame", () => {
 
   it("flag 关闭(decoder inactive)→ manifest/chunk/samples/bytes 零请求,sourceState=disabled", async () => {
     vi.unstubAllGlobals(); // jsdom 无 WebCodecs → decoder inactive
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     expect(result.current.sourceState).toBe("disabled");
     expect(result.current.active).toBe(false);
     // 等 React Query 空转稳定。
@@ -204,14 +209,24 @@ describe("useVideoPreciseFrame", () => {
   });
 
   it("enabled=false(播放 / seeking 中)→ manifest 不请求", async () => {
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: false, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: false,
+      bitmapBudgetBytes: 4_000_000,
+    });
     expect(result.current.sourceState).toBe("disabled");
     await waitFor(() => expect(getManifestV2).not.toHaveBeenCalled());
   });
 
   it("manifest chunk_size_frames 非法 → fallback api_unavailable", async () => {
     getManifestV2.mockResolvedValue({ ...manifest(0) });
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.fallbackReason).toBe("api_unavailable"));
     expect(getChunk).not.toHaveBeenCalled();
   });
@@ -219,7 +234,12 @@ describe("useVideoPreciseFrame", () => {
   it("chunk failed → fallback chunk_failed", async () => {
     getManifestV2.mockResolvedValue(manifest());
     getChunk.mockResolvedValue(failedChunk());
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.fallbackReason).toBe("chunk_failed"));
   });
 
@@ -230,7 +250,7 @@ describe("useVideoPreciseFrame", () => {
       taskId: "t1",
       frameIndex: 5,
       enabled: true,
-      maxItems: 8,
+      bitmapBudgetBytes: 4_000_000,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("api_unavailable"));
     expect(result.current.sourceState).toBe("fallback");
@@ -240,7 +260,12 @@ describe("useVideoPreciseFrame", () => {
     getManifestV2.mockResolvedValue(manifest());
     getChunk.mockResolvedValue(readyChunk());
     getSamples.mockRejectedValue(apiError(404, "samples_not_available"));
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.fallbackReason).toBe("samples_unavailable"));
     // retry:false → 只请求一次。
     expect(getSamples).toHaveBeenCalledTimes(1);
@@ -251,7 +276,12 @@ describe("useVideoPreciseFrame", () => {
     getChunk.mockResolvedValue(readyChunk());
     getSamples.mockResolvedValue(samples());
     vi.mocked(global.fetch).mockResolvedValue({ ok: false, status: 500 } as Response);
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.fallbackReason).toBe("chunk_fetch_failed"));
   });
 
@@ -268,7 +298,12 @@ describe("useVideoPreciseFrame", () => {
     decoderCtrl.flushImpl = async (d) => {
       d.emit(fakeFrame(166000).frame);
     };
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.sourceState).toBe("chunk-pending"));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
@@ -301,7 +336,7 @@ describe("useVideoPreciseFrame", () => {
       taskId: "t1",
       frameIndex: 5,
       enabled: true,
-      maxItems: 8,
+      bitmapBudgetBytes: 4_000_000,
     });
 
     await waitFor(() => expect(result.current.sourceState).toBe("ready"));
@@ -326,7 +361,7 @@ describe("useVideoPreciseFrame", () => {
       taskId: "t1",
       frameIndex: 5,
       enabled: true,
-      maxItems: 8,
+      bitmapBudgetBytes: 4_000_000,
     });
 
     await waitFor(() => expect(result.current.fallbackReason).toBe("chunk_fetch_failed"));
@@ -346,7 +381,12 @@ describe("useVideoPreciseFrame", () => {
     decoderCtrl.flushImpl = async (d) => {
       d.emit(fakeFrame(166000).frame);
     };
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.sourceState).toBe("ready"));
     expect(result.current.bitmap).not.toBeNull();
     expect(result.current.bitmap?.frameIndex).toBe(5);
@@ -363,7 +403,12 @@ describe("useVideoPreciseFrame", () => {
     } as Response);
     // flush 不 emit 任何帧 → wanted null → decode_failed。
     decoderCtrl.flushImpl = async () => {};
-    const { result } = renderPrecise({ taskId: "t1", frameIndex: 5, enabled: true, maxItems: 8 });
+    const { result } = renderPrecise({
+      taskId: "t1",
+      frameIndex: 5,
+      enabled: true,
+      bitmapBudgetBytes: 4_000_000,
+    });
     await waitFor(() => expect(result.current.fallbackReason).toBe("decode_failed"));
     expect(result.current.bitmap).toBeNull();
   });
@@ -383,7 +428,7 @@ describe("useVideoPreciseFrame", () => {
       taskId: "t1",
       frameIndex: 5,
       enabled: true,
-      maxItems: 8,
+      bitmapBudgetBytes: 4_000_000,
     });
     await waitFor(() => expect(result.current.fallbackReason).toBe("codec_unsupported"));
     expect(result.current.sourceState).toBe("fallback");
@@ -405,7 +450,7 @@ describe("useVideoPreciseFrame", () => {
       taskId: "t1",
       frameIndex: 5,
       enabled: true,
-      maxItems: 8,
+      bitmapBudgetBytes: 4_000_000,
     });
     await waitFor(() => expect(getManifestV2).toHaveBeenCalledTimes(1));
     unmount();
@@ -428,13 +473,13 @@ describe("useVideoPreciseFrame", () => {
       taskId: "t1",
       frameIndex: 5,
       enabled: true,
-      maxItems: 8,
+      bitmapBudgetBytes: 4_000_000,
     });
     await waitFor(() => expect(result.current.bitmap?.frameIndex).toBe(5));
     // 快速 seek 到 frame 6:即便旧 frame 5 的 bitmap 仍在 decoder 缓存,frameIndex 守卫确保它
     // 不被当作当前帧显示(bitmap.frameIndex 必须严格匹配当前 frameIndex)。
     act(() => {
-      rerender({ taskId: "t1", frameIndex: 6, enabled: true, maxItems: 8 });
+      rerender({ taskId: "t1", frameIndex: 6, enabled: true, bitmapBudgetBytes: 4_000_000 });
     });
     expect(result.current.bitmap).toBeNull();
   });

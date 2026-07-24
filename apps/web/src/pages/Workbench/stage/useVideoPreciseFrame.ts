@@ -12,7 +12,8 @@ export interface UseVideoPreciseFrameArgs {
   frameIndex: number;
   /** 暂停 + 非 seeking 时为 true(由调用方 frameClock / 播放态决定)。 */
   enabled: boolean;
-  maxItems: number;
+  /** 已解码 bitmap 的字节预算上限(性能档位 videoDecoderBitmapCacheBytes)。 */
+  bitmapBudgetBytes: number;
 }
 
 export type PreciseFrameSourceState =
@@ -88,9 +89,9 @@ export function useVideoPreciseFrame({
   taskId,
   frameIndex,
   enabled,
-  maxItems,
+  bitmapBudgetBytes,
 }: UseVideoPreciseFrameArgs): UseVideoPreciseFrameResult {
-  const decoder = useVideoChunkDecoder({ taskId, maxItems });
+  const decoder = useVideoChunkDecoder({ taskId, bitmapBudgetBytes });
   const active = decoder.active;
   // 1-2. decoder inactive(无 flag / 无 WebCodecs)→ 全链路 disabled。
   const pipelineEnabled = active && !!taskId && enabled;

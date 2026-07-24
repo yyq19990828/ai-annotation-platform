@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EncodedVideoDecodePlan, PreciseFrameFallbackReason } from "./videoChunkDemux";
+import { ByteLru } from "./videoByteLru";
 
 /**
  * WebCodecs 精确帧解码核心(实验性,默认关闭)。
@@ -14,6 +15,10 @@ import type { EncodedVideoDecodePlan, PreciseFrameFallbackReason } from "./video
  * 不可用时本路径完全不激活,调用方继续走原有 `<video>` / native bitmap 路径。
  *
  * 连续播放仍由隐藏 `<video>` 提供;精确帧只在暂停 / 逐帧 / 稳定 seek 后使用。
+ *
+ * 缓存按字节预算淘汰(v0.23.14):单张 bitmap 按 codedWidth*codedHeight*4 估算占用,
+ * 预算由性能档位 `videoDecoderBitmapCacheBytes` 决定。decode 仍是无状态的(每次新建
+ * decoder 重解整段 GOP);增量 GOP session 复用由后续阶段接入。
  */
 
 /** localStorage / URL query 开关键。默认关闭。 */
@@ -54,10 +59,11 @@ interface UseVideoChunkDecoderArgs {
   taskId: string | null | undefined;
   /** feature flag 的解析结果由调用方传入(或缺省时本 hook 自行从环境探测)。 */
   enabled?: boolean;
-  maxItems?: number;
+  /** 已解码 bitmap 的字节预算上限(性能档位 videoDecoderBitmapCacheBytes)。 */
+  bitmapBudgetBytes?: number;
 }
 
-const DEFAULT_MAX_ITEMS = 48;
+const DEFAULT_BITMAP_BUDGET_BYTES = 256 * 1024 * 1024;
 
 /** 能力探测:当前运行环境是否提供 WebCodecs 解码所需的全部原语。jsdom 下为 false。 */
 export function detectWebCodecsSupport(): boolean {
@@ -119,6 +125,11 @@ function closeFrame(frame: VideoFrame) {
   } catch {
     // 同上。
   }
+}
+
+/** 估算单张 bitmap 的字节占用(RGBA 4 bytes/pixel)。 */
+function bitmapBytes(width: number, height: number): number {
+  return Math.max(0, Math.round(width) * Math.round(height) * 4);
 }
 
 /**
@@ -226,14 +237,14 @@ export async function decodePlanToBitmap(
 export function useVideoChunkDecoder({
   taskId,
   enabled,
-  maxItems = DEFAULT_MAX_ITEMS,
+  bitmapBudgetBytes = DEFAULT_BITMAP_BUDGET_BYTES,
 }: UseVideoChunkDecoderArgs) {
   const supported = detectWebCodecsSupport();
   const resolvedEnabled = enabled ?? resolveEnabledFromEnv();
   const secureContext = typeof window !== "undefined" ? window.isSecureContext : false;
   const active = supported && resolvedEnabled;
 
-  const cacheRef = useRef(new Map<string, DecodedVideoFrameBitmap>());
+  const cacheRef = useRef(new ByteLru<string, DecodedVideoFrameBitmap>(bitmapBudgetBytes));
   // single-flight:同 `taskId:frameIndex` 的并发请求共享同一 promise(Set 只能拒绝,无法去重 await)。
   const inFlightRef = useRef(new Map<string, Promise<VideoChunkDecodeResult>>());
   const taskIdRef = useRef(taskId);
@@ -265,17 +276,11 @@ export function useVideoChunkDecoder({
   const remember = useCallback(
     (key: string, entry: DecodedVideoFrameBitmap, decodeMs: number) => {
       const cache = cacheRef.current;
-      const old = cache.get(key);
-      if (old) closeBitmap(old.bitmap);
-      cache.delete(key);
-      cache.set(key, entry);
-      while (cache.size > maxItems) {
-        const oldestKey = cache.keys().next().value;
-        if (!oldestKey) break;
-        const oldest = cache.get(oldestKey);
-        if (oldest) closeBitmap(oldest.bitmap);
-        cache.delete(oldestKey);
-      }
+      cache.set(key, {
+        value: entry,
+        bytes: bitmapBytes(entry.width, entry.height),
+        dispose: ({ bitmap }) => closeBitmap(bitmap),
+      });
       setDiagnostics((cur) => ({
         ...cur,
         supported,
@@ -286,18 +291,13 @@ export function useVideoChunkDecoder({
       }));
       bumpVersion();
     },
-    [bumpVersion, maxItems, resolvedEnabled, supported],
+    [bumpVersion, resolvedEnabled, supported],
   );
 
+  // 字节预算变化(性能档位切换)立即收缩已有缓存。
   useEffect(() => {
     const cache = cacheRef.current;
-    while (cache.size > maxItems) {
-      const oldestKey = cache.keys().next().value;
-      if (!oldestKey) break;
-      const oldest = cache.get(oldestKey);
-      if (oldest) closeBitmap(oldest.bitmap);
-      cache.delete(oldestKey);
-    }
+    cache.setBudget(bitmapBudgetBytes);
     setDiagnostics((cur) => ({
       ...cur,
       supported,
@@ -305,7 +305,7 @@ export function useVideoChunkDecoder({
       cacheSize: cache.size,
     }));
     bumpVersion();
-  }, [bumpVersion, maxItems, resolvedEnabled, supported]);
+  }, [bumpVersion, bitmapBudgetBytes, resolvedEnabled, supported]);
 
   /**
    * 解码 plan 并把结果入缓存(**不自动激活**)。flag 关闭 / 不支持 / 已缓存 / 在途 → 直接返回。
@@ -318,7 +318,7 @@ export function useVideoChunkDecoder({
       }
       const normalizedFrame = Math.max(0, Math.round(plan.targetFrameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
-      const cached = cacheRef.current.get(key);
+      const cached = cacheRef.current.peek(key);
       if (cached) return { bitmap: cached, fallbackReason: null };
       const existing = inFlightRef.current.get(key);
       if (existing) return existing;
@@ -377,14 +377,13 @@ export function useVideoChunkDecoder({
       if (!taskId || !active) return null;
       const normalizedFrame = Math.max(0, Math.round(frameIndex));
       const key = chunkDecoderCacheKey(taskId, normalizedFrame);
-      const cached = cacheRef.current.get(key);
-      if (cached) {
-        cacheRef.current.delete(key);
-        cacheRef.current.set(key, cached);
+      const cache = cacheRef.current;
+      if (cache.has(key)) {
+        const cached = cache.get(key) ?? null;
         setActiveFrameIndex(normalizedFrame);
         setDiagnostics((cur) => ({
           ...cur,
-          cacheSize: cacheRef.current.size,
+          cacheSize: cache.size,
           activeFrameIndex: normalizedFrame,
           hits: cur.hits + 1,
         }));
@@ -399,7 +398,6 @@ export function useVideoChunkDecoder({
 
   const clear = useCallback(() => {
     lifecycleGenerationRef.current += 1;
-    for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
     cacheRef.current.clear();
     inFlightRef.current.clear();
     setActiveFrameIndex(null);
@@ -415,7 +413,6 @@ export function useVideoChunkDecoder({
     return () => {
       mountedRef.current = false;
       lifecycleGenerationRef.current += 1;
-      for (const entry of cache.values()) closeBitmap(entry.bitmap);
       cache.clear();
       inFlight.clear();
     };
@@ -429,7 +426,7 @@ export function useVideoChunkDecoder({
   const activeBitmap = useMemo(() => {
     void version;
     if (!taskId || activeFrameIndex === null) return null;
-    return cacheRef.current.get(chunkDecoderCacheKey(taskId, activeFrameIndex)) ?? null;
+    return cacheRef.current.peek(chunkDecoderCacheKey(taskId, activeFrameIndex)) ?? null;
   }, [activeFrameIndex, taskId, version]);
 
   return {

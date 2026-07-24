@@ -306,7 +306,7 @@ export function useVideoPlaybackController({
     taskId: manifest?.task_id,
     frameIndex,
     enabled: !isPlaybackActive && !frameClock.isSeeking,
-    maxItems: performanceConfig.videoDecoderCache,
+    bitmapBudgetBytes: performanceConfig.videoDecoderBitmapCacheBytes,
   });
   const preciseBitmap =
     precise.bitmap && precise.bitmap.frameIndex === frameIndex ? precise.bitmap : null;
