@@ -163,3 +163,160 @@ export function buildEncodedVideoDecodePlan(
     },
   };
 }
+
+// ── GOP session plan(v0.23.14)────────────────────────────────────────────────
+
+/**
+ * 计算 VideoDecoderConfig 的稳定指纹:codec + codedWidth×codedHeight + description 字节。
+ * 用于 session identity —— 任一字段变化都必须重建 decoder,禁止对已 configure 的 decoder
+ * 静默换 description。不包含 signed URL / 当前 target / 临时请求 id。
+ */
+export function videoDecoderConfigFingerprint(config: VideoDecoderConfig): string {
+  let descBytes: number[] = [];
+  if (config.description) {
+    // description 是 BufferSource;我们的来源是 atob 解码出的 Uint8Array(offset 0,独占 buffer)。
+    descBytes = Array.from(config.description as unknown as Uint8Array);
+  }
+  return `${config.codec ?? ""}|${config.codedWidth ?? 0}x${config.codedHeight ?? 0}|${descBytes.join(",")}`;
+}
+
+/** GOP 内单个 access unit(decode order)的预构造输入。 */
+export interface GopSample {
+  /** 在 chunk samples 数组中的绝对 decode 下标(packet decode order)。 */
+  decodeIndex: number;
+  /** 全局平台帧号(presentation rank,非 decoder output 下标)。 */
+  frameIndex: number;
+  /** pts 微秒,decoder output 选择键。 */
+  timestampUs: number;
+  /** 预构造的 EncodedVideoChunk。 */
+  chunk: EncodedVideoChunk;
+}
+
+/**
+ * 完整 GOP 解码计划:从 GOP 起点关键帧到下一个关键帧(不含)/ samples 末尾的全部 access
+ * unit。用于有状态 GOP session 的增量 decode —— cursor 前进时只提交尚未解码的 chunk,
+ * 后退 / 跨 GOP 时由 session reset 重解。目标帧仍用 timestampUs 匹配 output,不依赖数组下标。
+ */
+export interface VideoGopPlan {
+  config: VideoDecoderConfig;
+  configFingerprint: string;
+  chunkId: number;
+  gopStartDecodeIndex: number;
+  /** GOP 末尾(exclusive):下一个关键帧位置或 samples.length。 */
+  gopEndDecodeIndex: number;
+  /** 完整 GOP access unit(decode order);samples[i].decodeIndex = gopStartDecodeIndex + i。 */
+  samples: GopSample[];
+}
+
+export type BuildGopPlanResult =
+  | { ok: true; plan: VideoGopPlan }
+  | { ok: false; reason: PreciseFrameFallbackReason };
+
+/**
+ * 构造完整 GOP 解码计划。与 buildEncodedVideoDecodePlan 共享契约验证,但 chunks 覆盖整个
+ * GOP(到下一个关键帧前),以便 session 向前增量 decode 到 GOP 内任意帧而不重复提交。
+ */
+export function buildGopPlan(
+  chunkBytes: ArrayBuffer,
+  samples: VideoChunkSamplesResponse,
+  targetFrameIndex: number,
+): BuildGopPlanResult {
+  if (
+    !samples.codec_string ||
+    !Number.isFinite(samples.width) ||
+    samples.width <= 0 ||
+    !Number.isFinite(samples.height) ||
+    samples.height <= 0 ||
+    !Array.isArray(samples.samples) ||
+    samples.samples.length === 0
+  ) {
+    return { ok: false, reason: "invalid_sample_range" };
+  }
+
+  const targetDecodeIndex = samples.samples.findIndex((s) => s.frame_index === targetFrameIndex);
+  if (targetDecodeIndex < 0) {
+    return { ok: false, reason: "invalid_sample_range" };
+  }
+
+  let gopStartDecodeIndex = -1;
+  for (let i = targetDecodeIndex; i >= 0; i--) {
+    if (samples.samples[i].is_keyframe) {
+      gopStartDecodeIndex = i;
+      break;
+    }
+  }
+  if (gopStartDecodeIndex < 0) {
+    return { ok: false, reason: "invalid_sample_range" };
+  }
+
+  // GOP 末尾:从 gopStart 之后找下一个关键帧(不含);无则到 samples 末尾。
+  let gopEndDecodeIndex = samples.samples.length;
+  for (let i = gopStartDecodeIndex + 1; i < samples.samples.length; i++) {
+    if (samples.samples[i].is_keyframe) {
+      gopEndDecodeIndex = i;
+      break;
+    }
+  }
+
+  const byteLen = chunkBytes.byteLength;
+  for (let i = gopStartDecodeIndex; i < gopEndDecodeIndex; i++) {
+    const s = samples.samples[i];
+    if (
+      !Number.isSafeInteger(s.offset_in_chunk) ||
+      !Number.isSafeInteger(s.size_bytes) ||
+      s.offset_in_chunk < 0 ||
+      s.size_bytes <= 0 ||
+      s.offset_in_chunk + s.size_bytes > byteLen ||
+      !Number.isFinite(s.pts_ms) ||
+      !Number.isFinite(s.duration_ms)
+    ) {
+      return { ok: false, reason: "invalid_sample_range" };
+    }
+  }
+
+  const descRaw = samples.description;
+  if (!descRaw) {
+    return { ok: false, reason: "description_unavailable" };
+  }
+  const description = decodeBase64ToBytes(descRaw);
+  if (!description || description.length === 0) {
+    return { ok: false, reason: "description_unavailable" };
+  }
+
+  const gopSamples: GopSample[] = [];
+  for (let i = gopStartDecodeIndex; i < gopEndDecodeIndex; i++) {
+    const s = samples.samples[i];
+    const view = new Uint8Array(chunkBytes, s.offset_in_chunk, s.size_bytes);
+    const init: EncodedVideoChunkInit = {
+      type: s.is_keyframe ? "key" : "delta",
+      timestamp: Math.round(s.pts_ms * 1000),
+      data: view,
+    };
+    if (s.duration_ms > 0) init.duration = Math.round(s.duration_ms * 1000);
+    gopSamples.push({
+      decodeIndex: i,
+      frameIndex: s.frame_index,
+      timestampUs: Math.round(s.pts_ms * 1000),
+      chunk: new EncodedVideoChunk(init),
+    });
+  }
+
+  const config: VideoDecoderConfig = {
+    codec: samples.codec_string,
+    codedWidth: samples.width,
+    codedHeight: samples.height,
+    description,
+  };
+
+  return {
+    ok: true,
+    plan: {
+      config,
+      configFingerprint: videoDecoderConfigFingerprint(config),
+      chunkId: samples.chunk_id,
+      gopStartDecodeIndex,
+      gopEndDecodeIndex,
+      samples: gopSamples,
+    },
+  };
+}
