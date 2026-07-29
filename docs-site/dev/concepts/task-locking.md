@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-29
 ---
 
 # Task Lock
@@ -28,19 +28,13 @@ task lock 的目标是让“同一时刻谁在编辑这题”有一个明确答�
 
 ## 生命周期
 
-```mermaid
-flowchart TD
-  A["acquire(task_id, user_id)"] --> B{"已有我的锁?"}
-  B -->|有| C["续期 + 清理重复锁"]
-  B -->|无| D{"已有他人锁?"}
-  D -->|无| E["创建新锁"]
-  D -->|有且可接管| F["删除 stale 锁后创建新锁"]
-  D -->|有且不可接管| G["返回 None / 409"]
-  E --> H["heartbeat 周期续期"]
-  C --> H
-  F --> H
-  H --> I["release 或过期清理"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/task-dispatch-and-lock.svg"
+  alt="在线派题先复用旧锁或过滤、排序最多二十个候选，再逐个尝试占锁；TaskLockService 在单题 advisory lock 下清理过期行、判断接管并用 upsert 创建或续期锁，同时标出旧锁复用和自定义 TTL 尚未端到端的实现边界"
+  caption="Scheduler 候选选择、Task Lock 占锁决策与受保护写入边界"
+/>
+
+图中的两层不要混用：scheduler 只决定候选顺序，真正的互斥结果由 `TaskLockService.acquire()` 决定。当前 `/tasks/next` 复用旧 lock 行的分支没有先过滤 `expire_at`，也不会 cleanup、续期或重新 acquire；前端进入题目后仍会通过显式 lock 端点取得编辑锁。这是当前实现边界，不应把“接口返回了题目”解释成“后端已确认持有有效锁”。
 
 ## 核心语义
 
@@ -48,10 +42,13 @@ flowchart TD
 
 `TaskLockService.acquire()` 做的不是“简单 insert 一行”，它还处理：
 
-- 同一用户的多行残留锁
+- 同一 task 的多用户残留锁
 - 他人锁是否已 stale
 - assignee 的 force takeover
 - 并发插入的 upsert 兜底
+- PostgreSQL deadlock / serialization failure 的最多 3 次整事务重试
+
+数据库唯一键是 `(task_id, user_id)`，不是单独的 `task_id`；所以服务必须在单题 advisory lock 内读取全部行、清理他人残影，再用 `INSERT ... ON CONFLICT` 创建或续期当前用户的行。
 
 ### heartbeat
 
@@ -63,7 +60,7 @@ flowchart TD
 
 ### cleanup expired
 
-访问时会顺手清理过期锁，不依赖单独后台任务。
+`TaskLockService` 的 acquire、读锁与写入守卫会按当前 task 顺手清理过期行，不依赖单独后台任务。`/tasks/next` 开头直接复用旧行的查询是例外，当前没有先走这一步。
 
 ### 写入边界
 
@@ -73,14 +70,15 @@ Mask 原子 mutation 还需要同时锁定多个 annotation、可选的视频 se
 
 ## TTL 与 takeover
 
-当前默认：
+当前默认 `DEFAULT_TTL = 300s`，前端每 60s heartbeat。需要区分三条路径：
 
-- `DEFAULT_TTL = 300s`
-- stale 判定阈值约为 `TTL / 2`
+- scheduler 首次 acquire 会传入 `project.task_lock_ttl_seconds`。
+- 显式 `POST /tasks/{task_id}/lock` 和 heartbeat 端点没有传项目 TTL，当前都会回到 300s 默认值。
+- 自动接管阈值固定使用 `DEFAULT_TTL / 2 = 150s`，不随项目配置变化。
 
-项目还可以通过 `project.task_lock_ttl_seconds` 覆盖 TTL。
+因此项目 TTL 目前只影响 scheduler 首次占锁，并不是端到端租约配置。修改该字段语义时必须同时检查显式 acquire、heartbeat 与 takeover，不能只改 scheduler。
 
-这样做的目的：
+300s 默认租约配合 60s heartbeat 的目的：
 
 - 避免用户刚断网几十秒就被踢锁
 - 又不至于一把死锁占一整天
@@ -89,11 +87,11 @@ Mask 原子 mutation 还需要同时锁定多个 annotation、可选的视频 se
 
 task lock 和 scheduler 是串联关系：
 
-1. `scheduler.get_next_task()` 会先查你有没有锁题
-2. 没有才会选新题
-3. 选出后立刻 acquire lock
+1. `scheduler.get_next_task()` 先按 `expire_at` 取当前项目下最近的本人 lock 行；当前没有过滤是否过期。
+2. 没有可复用行时才构造候选，并在同 scene 优先或经典采样后逐个尝试 acquire。
+3. 最多检查 20 个候选，竞态中被别人先拿走的题会跳过；首个占锁成功者才会返回。
 
-所以从用户体感上看，“下一题”和“拿到锁”是一个动作。
+所以经典候选路径会把“下一题”和“拿到锁”串在同一个服务调用里，但候选查询与 acquire 之间仍有 TOCTOU 窗口；正确性来自“占锁失败就不返回该候选”，而不是假设查询结果不会变化。
 
 ## 与 task 状态机的关系
 

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-03
+last_reviewed: 2026-07-29
 ---
 
 # 计数与派生字段
@@ -36,16 +36,13 @@ last_reviewed: 2026-06-03
 
 ## 模块关系
 
-```mermaid
-graph TD
-  Annotation["Annotation"] --> TaskAgg["Task 聚合字段"]
-  Prediction["Prediction"] --> TaskAgg
-  Task["Task.status"] --> BatchAgg["Batch 聚合字段"]
-  BatchAgg --> ProjectAgg["Project 聚合字段"]
-  DatasetOps["dataset unlink / orphan cleanup"] --> BatchAgg
-  DatasetOps --> ProjectAgg
-  ProjectAgg --> Dashboard["Dashboard / 列表页 / badge"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/derived-state-propagation.svg"
+  alt="Annotation 和 Prediction 事实分别更新 Task 物化字段，Task 状态变化有条件地触发 Batch 自动迁移与计数重算，Project 计数直接扫描项目 Task，Dashboard、Scheduler 与工作流判断各自读取不同层"
+  caption="事实、Task 投影、Batch/Project 物化缓存与下游消费者"
+/>
+
+关键边界是 Project counters 并不把各 Batch counters 相加：`_sync_project_counters()` 直接扫描项目下全部 Task，再单独扫描 TaskBatch 生成 `batch_summary`。因此 Batch 与 Project 字段是同一批 Task 事实的两套物化视图，不是严格的父子汇总链。
 
 ## 代码入口
 
@@ -138,7 +135,7 @@ graph TD
 - `review_tasks`
 - `in_progress_tasks`
 
-这一步通常跟在 `recalculate_counters(batch_id)` 后面。
+这一步通常跟在 `recalculate_counters(batch_id)` 后面，但查询口径不是对 Batch 字段求和，而是直接按 `Task.project_id` 统计；`batch_summary` 则另查 TaskBatch。
 
 所以在绝大多数 task / batch 业务路径里，project counters 是 batch service 顺手同步上去的。
 
@@ -152,7 +149,7 @@ graph TD
 - accept prediction
 - delete annotation
 
-路径：
+`_update_task_stats()` 每次都会重算当前 Task 的 annotation 投影，但只有 `pending ↔ in_progress` 实际翻转、Task 有 batch 且 `trigger_batch_transitions=true` 时，才继续执行：
 
 1. `_update_task_stats()`
 2. `BatchService.check_auto_transitions()`
@@ -171,7 +168,7 @@ graph TD
 - `reopen`
 - `accept-rejection`
 
-虽然其中有些路径还手工先改了部分 project 字段，但最终仍会回到 batch 重算链路。
+虽然其中有些路径还手工先改了部分 project 字段，但最终仍会回到 batch 重算链路，由 Task 真值扫描覆盖为当前快照。
 
 ### 3. Batch 级操作
 
@@ -273,7 +270,7 @@ dashboard 和列表页有两种取数方式：
 ## 绩效派生聚合（即时计算，不持久化）
 
 上面那些是「持久化的缓存字段」。绩效页（`/me/performance`、`/admin/people/{user_id}`）还有一类
-**查询时即时聚合、不落库**的派生值，v0.12.4（A1）新增三项（v0.12.6 起均可按 `project_id` 切分）：
+**查询时即时聚合、不落库**的派生值，当前三项均可按 `project_id` 切分：
 
 | 字段                      | 口径                                                                                | helper                     |
 | ------------------------- | ----------------------------------------------------------------------------------- | -------------------------- |
