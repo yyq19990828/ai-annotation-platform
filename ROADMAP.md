@@ -13,6 +13,7 @@
 详见[视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
 
 - WebCodecs 精确解码链路（MP4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话与 Konva 显示）已完成并按客户端能力安全降级（实验开关，默认关闭）。后续产品门只保留受支持客户端的硬解与跨浏览器 1080p/4K strict 性能矩阵，以及是否默认开启的独立决策；Linux 服务端不参与浏览器解码，当前 Linux/NVIDIA Chrome 仅验证了软件解码与 fallback。
+- 客户端硬解验证提醒：在 MacBook 本地部署同提交的无 ML backend 完整栈，以宿主机原生有头 Chrome 访问 `localhost`，复用 H.264 / B-frame / 4K fixture 跑 strict 矩阵，并同时记录 VideoToolbox 硬解 profile 与实际命中证据；该结果只代表 macOS 客户端，不外推为 Linux 客户端或服务端 GPU 能力。
 - 支持外部视频预测导入，包括 AAP JSON 的 bbox / polygon / polyline / mask 轨迹预测；标注导入不在此范围。
 - 按 segment / frame range 聚合导出，并补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
 - 实现视频单帧 keypoint 与 rotated-box 绘制；OBB 还需要旋转手柄。
