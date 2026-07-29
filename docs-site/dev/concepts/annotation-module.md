@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-29
 ---
 
 # 标注模块
@@ -22,17 +22,13 @@ last_reviewed: 2026-07-22
 
 ## 模块定位
 
-Annotation 是“用户最终提交的结构化标注结果”。它不是工作流状态机本身，但它会驱动状态机变化。
+Annotation 是“用户最终提交的结构化标注结果”。它不是工作流状态机本身；只有改变有效 annotation 数量并引起 task 状态翻转的写入，才会继续触发 batch 自动迁移。经典 Prediction 必须经用户 accept 才创建 Annotation，`parent_prediction_id` 是业务软引用；原生交互 Mask 接受则在独立事务里同时写 provenance 和 Annotation。
 
-```mermaid
-graph TD
-  Task["Task"] --> Annotation["Annotation"]
-  Prediction["Prediction"] --> Annotation
-  Annotation --> TaskStats["task.total_annotations / is_labeled"]
-  TaskStats --> BatchAuto["BatchService.check_auto_transitions()"]
-  AnnotationAPI["api/v1/tasks/annotations.py"] --> AnnotationService["services/annotation.py"]
-  AnnotationService --> Draft["AnnotationDraft"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/annotation-module-map.svg"
+  alt="Annotation 模块关系图，展示当前手工写入主链、经典预测采纳、原生交互 Mask 接受、条件性的 task 与 batch 回写，以及当前未接入路由的 AnnotationDraft"
+  caption="Annotation 模块全景：实线为当前主链，灰色虚线表示未接入的后端草稿模型"
+/>
 
 一句话理解：
 
@@ -89,7 +85,7 @@ graph TD
 
 - 真实删除走 soft delete，`delete()` 只会把 `is_active` 置 `False`
 - “有效标注数量”同时要求 `is_active=True` 且 `was_cancelled=False`
-- `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”
+- `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”；该列是业务软引用，不是数据库外键
 
 #### 父子标注（`parent_annotation_id`）
 
@@ -253,8 +249,7 @@ SAM / Tracker 重跑项只创建候选，不越过候选审阅直接改写 annot
 - `result`
 - `was_postponed`
 
-但要注意：**当前主工作台草稿并不主要依赖后端 draft 表。**
-前端仍大量使用 `sessionStorage["canvas_draft:*"]` 做本地草稿恢复；后端 draft service 已存在，但还不是当前主路径。
+但要注意：后端目前只有 `save_draft()` / `get_draft()` service，没有对应 HTTP 路由或主链调用者，`AnnotationDraft` 仍是未接入能力。前端的 `sessionStorage["canvas_draft:*"]` 只保存讨论区评论画布的红圈 / 涂画，TTL 为 5 分钟；它不是 bbox、polygon、mask 等通用 annotation 草稿存储。
 
 ## 写入路径
 
@@ -452,7 +447,7 @@ annotation 必须携带 `tool_unit_id: String(30)`（枚举 bbox / polyline / re
 - `count == 0` 且 `task.status == "in_progress"`
   `in_progress → pending`
 
-如果 task 挂在 batch 下，还会继续：
+只有当调用方允许 batch transition、上述计数变化实际触发 `pending ↔ in_progress`，且 task 挂在 batch 下时，才会继续：
 
 - `BatchService.check_auto_transitions(batch_id)`
 - `BatchService.recalculate_counters(batch_id)`

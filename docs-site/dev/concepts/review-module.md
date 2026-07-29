@@ -28,19 +28,13 @@ last_reviewed: 2026-07-29
 2. **batch 级审核**
    reviewer 对整批做 `approved / rejected`
 
-这两层不是重复实现，而是串联关系。
+这两层不是重复实现：task 事件会重算 counters，并可能触发 batch 自动送审，但 task reject 不会直接把 batch 设为 `rejected`。
 
-```mermaid
-graph TD
-  Annotator["Annotator"] --> Submit["task.submit / task.skip"]
-  Submit --> TaskReview["Task.status = review"]
-  Reviewer["Reviewer"] --> Claim["review/claim"]
-  Claim --> Approve["review/approve"]
-  Claim --> Reject["review/reject"]
-  Approve --> BatchCounters["batch counters / project counters"]
-  Reject --> Rework["annotator accept-rejection / reopen / withdraw"]
-  BatchReview["batch.transition / batch.reject"] --> Notifications["notifications + audit"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/review-module-map.svg"
+  alt="Review 模块关系图，分开表示 task 与 batch 审核，拆分 withdraw、reopen 和 accept rejection 三条恢复路径，并标出 claim、Mask QC、计数、审计与通知规则"
+  caption="Review 模块全景：上下两层仅通过 task counters 与自动迁移关联"
+/>
 
 ## 代码入口
 
@@ -153,6 +147,7 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 - 若 `assignee_id` 为空，则把当前提交者补成 assignee
 - 释放当前 task lock
 - 清空上一轮 reviewer 痕迹
+- 对启用了相关 Mask QC 配置的任务运行提交前检查；`skip` 不运行这一步
 
 这解释了为什么提交后 annotator 不能继续直接编辑当前题。
 
@@ -168,6 +163,7 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 - `skipped_at`
 
 所以 skip 不是“丢弃任务”，而是“把任务连同跳过理由一起送 reviewer 复核”。
+`submit` 与 `skip` 都写审计，但不发送 task 通知。
 
 ### `withdraw`
 
@@ -197,6 +193,8 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 - 后续调用幂等读取，不覆盖
 - 一旦 claim，annotator 侧 withdraw 被锁死
 
+普通 reviewer 与非 owner 的 project admin 必须先 claim 才能 approve / reject；project owner 与 super admin 可以绕过 claim，也能处理已被他人领取的任务。
+
 ### `review/approve`
 
 入口：
@@ -211,6 +209,8 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 - project / batch counters 回写
 - 给 annotator 发 `task.approved` 通知
 
+approve 还受 Mask QC 摘要新鲜度、阻断项与 warning 确认门禁约束。
+
 ### `review/reject`
 
 入口：
@@ -224,6 +224,7 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 - 回写 `reviewed_at`
 - project / batch counters 回写
 - 给 annotator 发 `task.rejected` 通知
+- 同步写入 `annotation_feedbacks`，供标注侧展示退回反馈
 
 `reject_reason` 会在 `accept-rejection` 后保留，前端可继续提示“重做中”。
 
@@ -262,14 +263,14 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 
 ### annotating → reviewing
 
-该迁移有两条入口：系统检测到批次内不再存在 `pending / in_progress / rejected` task 时自动推进，或 annotator 在批次页 / 标注页上主动提交整批。
+该迁移有两条入口：系统检测到批次内不再存在 `pending / in_progress / rejected` task 时自动推进，或 annotator 在批次页 / 标注页上主动提交整批。自动路径有上述 task 就绪条件；手工 transition 只校验角色与合法状态，没有同等的服务端就绪门禁。
 
 对应：
 
 - `POST /projects/{project_id}/batches/{batch_id}/transition`
 - `target_status = "reviewing"`
 
-这一步不要求每条 task 都已 `completed`；但批次 counters 和 reviewer 页面会立刻反映整批送审。
+因此手工路径不要求每条 task 都已 `completed`；批次 counters 和 reviewer 页面会立刻反映整批送审。
 
 ### reviewing → approved
 
@@ -279,7 +280,8 @@ reviewer 通过 batch transition 放行整批。
 
 - `BatchService.transition()`
 - `target_status == approved` 时会触发 `on_batch_approved()`
-- 批次通过后，task 仍保留各自 `completed` 状态
+- 批次通过只修改 batch，不修改任何 task；通常已审核任务是 `completed`，但服务端没有强制批次内所有 task 都必须处于该状态
+- 写 `BATCH_STATUS_CHANGED` 审计，不发送 batch 通知
 
 ### reviewing → rejected
 
@@ -293,6 +295,7 @@ reviewer 通过 batch transition 放行整批。
 - 写 `batch.review_feedback`
 - 写 `reviewed_at` / `reviewed_by`
 - 重新计算 batch counters
+- 写审计，并向标注员发送 `batch.rejected`
 
 这是一种“批次级软重做”，不会删 annotation 历史。
 
@@ -306,9 +309,10 @@ reviewer 通过 batch transition 放行整批。
 
 系统会：
 
-- `approved → reviewing`、`rejected → reviewing` 强制填写 `reason`；`rejected → active` 当前不要求理由
-- 写 `BATCH_STATUS_CHANGED` 审计
-- 按方向给 reviewer / annotator 发通知
+- `approved → reviewing`、`rejected → reviewing` 强制填写 `reason`；仅当目标 reviewer 不是操作者时发送 `batch.review_reopened`
+- `rejected → active` 当前不要求理由，也不发通知
+- `archived → active` 按对象发送 `batch.unarchived`
+- 所有迁移写 `BATCH_STATUS_CHANGED` 审计；`reset_to_draft` 是独立管理动作，不发通知
 
 ## 审计与通知
 

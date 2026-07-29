@@ -22,19 +22,13 @@ last_reviewed: 2026-07-29
 
 ## 模块定位
 
-Task 是系统中的最小工作单元，一条数据最终总是落实到一条或多条 task 的状态变化。
+Task 是系统中的最小工作单元，一条数据最终总是落实到一条或多条 task 的状态变化。Project 归属必填，DatasetItem 与 TaskBatch 归属可空；当前 React 工作台通过 `GET /tasks` 拉列表后在客户端选题，再分别读取详情、annotations、predictions 并获取编辑锁。
 
-```mermaid
-graph TD
-  Project["Project"] --> Task["Task"]
-  Batch["TaskBatch"] --> Task
-  Task --> Annotation["Annotation"]
-  Task --> Prediction["Prediction / FailedPrediction"]
-  Task --> Lock["TaskLock"]
-  Scheduler["scheduler.get_next_task()"] --> Task
-  TaskAPI["api/v1/tasks/"] --> Task
-  AnnotationSvc["services/annotation.py"] --> Task
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/task-module-map.svg"
+  alt="Task 模块关系图，展示数据模型归属、当前 React 工作台取题和锁流程、未被当前工作台消费的 tasks next 调度旁路，以及 annotation 计数对 task 和 batch 的条件回写"
+  caption="Task 模块全景：当前工作台主链与 scheduler side API 分开表示"
+/>
 
 一句话理解：
 
@@ -65,7 +59,7 @@ graph TD
 | ----------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `project_id`                              | 所属项目                                                                                     |
 | `batch_id`                                | 所属批次，可空                                                                               |
-| `dataset_item_id`                         | 数据集项引用                                                                                 |
+| `dataset_item_id`                         | 数据集项引用，可空                                                                           |
 | `display_id`                              | 人类可读任务 ID                                                                              |
 | `file_name` / `file_path` / `file_type`   | 原始素材信息                                                                                 |
 | `status`                                  | 任务工作流状态                                                                               |
@@ -151,11 +145,11 @@ review
 
 ### `/tasks/next`
 
-`scheduler.get_next_task()` 是真实派题入口。它会：
+`scheduler.get_next_task()` 是 `/tasks/next` 的派题入口。当前 React 工作台没有调用这个端点：它通过 `GET /tasks` 获取列表，再按 URL、上次选择或首项在客户端选题。其它客户端调用 `/tasks/next` 时，它会：
 
 1. 先看用户是否已有未完成锁任务
 2. 基于 project 配置、batch 状态、可见性和采样策略构造候选集
-3. 选出一题并加 task lock
+3. 按顺序尝试候选 task 的 lock，只返回成功加锁的一题
 
 关键过滤条件：
 
@@ -179,7 +173,7 @@ review
 - 标注全删空时：
   `in_progress → pending`
 
-如果 task 挂在某个 batch 下，还会继续：
+只有当 `_update_task_stats()` 确实触发 `pending ↔ in_progress` 状态翻转、允许 batch transition，且 task 挂在某个 batch 下时，才会继续：
 
 - 调 `BatchService.check_auto_transitions(batch_id)`
 - 调 `BatchService.recalculate_counters(batch_id)`
