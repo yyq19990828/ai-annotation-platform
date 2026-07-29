@@ -20,7 +20,20 @@ last_reviewed: 2026-07-29
 | 频繁随协议更改的时序或状态图 | Mermaid        | 文本 diff 更容易审查和同步       |
 | 临时草图或很小的线性流程     | Mermaid        | 维护成本更低                     |
 
-迁移采用按需方式：只有当现有 Mermaid 图的可读性或布局受限时，才转换为 Excalidraw。
+对发布文档按“是否适合长期维护”分类：稳定的架构、数据流和业务流程使用 Excalidraw；需要频繁随协议修改并审查文本 diff 的图保留 Mermaid。不以消除 Mermaid 计数为目标。
+
+## 当前保留边界
+
+- `docs-site/` 发布正文中，`/ws/video-tracker-jobs/{job_id}` 的精确事件状态图保留 Mermaid。它与 WebSocket 事件名、局部审阅和取消语义同步变更，文本 diff 比固定布局更重要。
+- `docs/plans/**` 是版本化的实施决策快照，其 Mermaid 作为 Markdown 源文本原样保留，不改成依赖文档站组件的引用。若同一关系需要进入当前态发布文档，在 `docs-site/public/diagrams/` 建立 canonical Excalidraw 资产，不为统一风格反向改写历史计划。
+
+全仓盘点时使用：
+
+````bash
+rg -n '^```mermaid' -g '*.md' --glob '!node_modules/**' .
+````
+
+发现新的 Mermaid 时，先判断它是当前态发布说明、频繁变更的协议图，还是历史计划快照；只有第一类中布局与视觉层级更重要的稳定图才迁移。
 
 ## 单文件合同
 
