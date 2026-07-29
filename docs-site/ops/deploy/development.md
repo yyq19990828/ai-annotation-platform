@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: how-to
 since: v0.15.17
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-29
 ---
 
 # 开发部署（本地）
@@ -25,10 +25,10 @@ last_reviewed: 2026-07-23
 ```
 ┌─ 宿主机进程 ──────────────┐   ┌─ docker compose 容器 ─────────┐
 │ uvicorn  :8000 (--reload) │──▶│ postgres :5432                │
-│ vite     :5173 (HMR)      │   │ redis    :6379                │
+│ vite     :3000 (HMR)      │   │ redis    :6379                │
 │   └ /api,/ws → 127.0.0.1:8000 │ minio    :9000 / :9001        │
 └───────────────────────────┘   │ mailpit  :1025 / :8025        │
-                                 │ celery-worker / -export / beat│
+                                 │ five workers + celery-beat    │
                                  └───────────────────────────────┘
 ```
 
@@ -44,7 +44,7 @@ last_reviewed: 2026-07-23
 docker compose up -d
 ```
 
-默认（不带 `--profile`）拉起 9 个容器：postgres / redis / minio / mailpit / celery-worker / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。GPU ML backend（profile `gpu` / `gpu-sam3` / `gpu-yolo`）与监控（profile `monitoring`）默认不启动，按需单独开。
+默认（不带 `--profile`）拉起 10 个容器：postgres / redis / minio / mailpit / celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。五个 ML backend profile（`gpu` / `gpu-sam3` / `gpu-yolo` / `gpu-onnxtools` / `gpu-rapidocr`）与监控（`monitoring`）默认不启动，按需单独开。
 
 ### 2.2 跑数据库迁移
 
@@ -72,7 +72,9 @@ pnpm install
 pnpm dev:web
 ```
 
-vite 跑在 `:5173`，把 `/api` `/ws` 反代到 `127.0.0.1:8000`（`apps/web/vite.config.ts`）。前端 API base 是硬编码同源相对路径 `/api/v1`，**不读 `VITE_API_URL`**，所以无需配后端地址。
+Vite 跑在 `:3000`，把 `/api` `/ws` 反代到 `127.0.0.1:8000`（`apps/web/vite.config.ts`）。前端 API base 是硬编码同源相对路径 `/api/v1`，**不读 `VITE_API_URL`**，所以无需配后端地址。
+
+本地若未在系统设置中覆盖 `frontend_base_url`，还要把 `FRONTEND_BASE_URL` 设为 `http://localhost:3000`，否则邀请、验证和重置密码链接会指向配置中的旧默认地址。
 
 > 多 worktree 并行（各分支后端跑不同端口）时，用 `API_PROXY_TARGET=http://127.0.0.1:8010 pnpm dev:web` 覆盖代理目标。
 
@@ -88,7 +90,7 @@ ADMIN_NAME='本地管理员' \
 uv run python -m scripts.bootstrap_admin
 ```
 
-之后用浏览器打开 `http://localhost:5173` 登录。
+之后用浏览器打开 `http://localhost:3000` 登录。
 
 ---
 

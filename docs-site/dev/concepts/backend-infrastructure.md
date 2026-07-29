@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-29
 ---
 
 # 后端基础设施（容器）
@@ -12,55 +12,25 @@ last_reviewed: 2026-07-11
 
 ## 一图看全
 
-```mermaid
-graph TB
-  subgraph Default[默认 compose 服务]
-    PG[(postgres<br/>5432)]
-    RD[(redis<br/>6379)]
-    MIO[(minio<br/>9000/9001)]
-    MAIL[mailpit<br/>1025/8025]
-    CW[celery-worker<br/>default/media/cleanup/audit]
-    CWG[celery-worker-gpu<br/>ml/gpu]
-    CWC[celery-worker-cpu<br/>ml.cpu]
-    CWE[celery-worker-export<br/>export]
-    BEAT[celery-beat]
-  end
-  subgraph GPU["可选 ML profiles"]
-    GSAM[grounded-sam2<br/>8001]
-    SAM3[sam3<br/>8002]
-    YOLO[yolo<br/>8003]
-    ONNX[onnxtools<br/>8004]
-    OCR[rapidocr<br/>8005]
-  end
-  subgraph Mon["profile: monitoring"]
-    PROM[prometheus<br/>9090]
-    GRAF[grafana<br/>3001]
-  end
-  Host[host: api 8000 · web 5173] -.uvicorn / vite.-> Host
-  Host -->|asyncpg| PG
-  Host -->|aioredis 多用途| RD
-  Host -->|boto3| MIO
-  CW -->|consumer| RD
-  CW --> PG
-  CW --> MIO
-  CW -.HTTP /predict.-> GSAM
-  PROM -.scrape host:8000/metrics.-> Host
-  GRAF --> PROM
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/backend-infrastructure.svg"
+  alt="开发环境宿主应用、默认 Compose 基础设施、五类 Celery worker、可选 ML 后端与监控服务拓扑"
+  caption="开发环境基础设施与可选 profile"
+/>
 
 > **api / web 不在 compose 里**：dev 直接 host 跑（`uvicorn` / `vite`），compose 只管「不便本机跑的」基础设施。production 形态的 api 容器化在 [部署拓扑](./deployment-topology) 与 [部署指南](/ops/deploy/docker-compose)。
 
 ## 启动 / 关停速查
 
 ```bash
-# 默认服务（postgres / redis / minio / mailpit / 四类 worker / beat）
+# 默认服务（postgres / redis / minio / mailpit / 五类 worker / beat）
 docker compose up -d
 
 # GPU 推理（需 NVIDIA Container Toolkit；backend 在叠加文件 docker-compose.ml.yml）
 docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu up -d grounded-sam2-backend
 
 # 可观测性（dev 多吃 ~200MB，按需）
-docker compose --profile monitoring up -d prometheus grafana
+docker compose --profile monitoring up -d prometheus grafana alertmanager
 
 # 全部停（保留 volume）
 docker compose down
@@ -98,12 +68,12 @@ docker compose down -v
 - **端口**：宿主 `6379`
 - **存什么（**全在内存 + 不开 RDB**）**：
 
-  | 用途                            | key 形态                                                                   | 写入方                 |
-  | ------------------------------- | -------------------------------------------------------------------------- | ---------------------- |
-  | Celery broker（任务队列）       | `default / ml / ml.cpu / media / gpu / export / unacked / kombu.binding.*` | api 入队 / worker 消费 |
-  | Celery result backend           | `celery-task-meta-<task_id>`                                               | worker 写结果          |
-  | WebSocket pub/sub（多副本广播） | `notify:<user_id>`、`predict:<project_id>`                                 | api / worker → 前端 ws |
-  | 限流 / 失败计数 / 进度缓存      | `ratelimit:*`、`login_fail:<ip>`、`progress:*`                             | middleware / api       |
+  | 用途                            | key 形态                                                                                 | 写入方                 |
+  | ------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------- |
+  | Celery broker（任务队列）       | `default / ml / ml.cpu / media / gpu / gpu.control / export / unacked / kombu.binding.*` | api 入队 / worker 消费 |
+  | Celery result backend           | `celery-task-meta-<task_id>`                                                             | worker 写结果          |
+  | WebSocket pub/sub（多副本广播） | `notify:<user_id>`、`predict:<project_id>`                                               | api / worker → 前端 ws |
+  | 限流 / 失败计数 / 进度缓存      | `ratelimit:*`、`login_fail:<ip>`、`progress:*`                                           | middleware / api       |
 
 - **持久化**：**无 volume**。容器删 / 重启即清空 — 包括未消费的 Celery 任务、ws session、限流计数。dev 上是合意的；生产部署需挂 AOF volume。
 - **常用命令**
@@ -122,7 +92,7 @@ docker compose down -v
 
 - **镜像**：`minio/minio`
 - **端口**：宿主 `9000`（S3 API）/ `9001`（Web 控制台 → http://localhost:9001 ， `minioadmin / minioadmin`）
-- **存什么**：所有大文件 — 标注任务的图片帧、缩略图（blurhash 占位 + 真图）、批量导出包（COCO/YOLO/JSON zip）、评论附件、SAM 推理 fixture、用户上传 dataset；按 bucket 分（`local`、`exports`、`thumbnails` 等）
+- **存什么**：所有大文件 — 标注任务的图片帧、缩略图（blurhash 占位 + 真图）、批量导出包（COCO/YOLO/JSON zip）、评论附件、SAM 推理 fixture、用户上传 dataset；按 bucket 分（`annotations`、`datasets`、`media-cache`、`import`、`export` 等）
 - **持久化**：volume `miniodata` → `/data`
 - **常用命令**
 
@@ -143,18 +113,20 @@ docker compose down -v
 
 Celery 里任务先被**投递（publish）到某个命名队列**，worker 只**消费它显式订阅（`-Q`）的队列**。投到没人订阅的队列的任务会一直躺着、永不执行。
 
-- **worker 分组订阅**（按设备隔离并发）：主 worker `-Q default,media,cleanup,audit`（`--concurrency=4`）；GPU worker `-Q ml,gpu`（`CELERY_GPU_CONCURRENCY=2`，低并发护显存）；CPU worker `-Q ml.cpu`（`CELERY_CPU_CONCURRENCY=4`）；导出 worker `-Q export`。预标任务按模型 `resource_profile.device` 路由：整条 pipeline 全 CPU → `ml.cpu`，任一 GPU/未自报 → `ml`（保守，零退化）。
+- **worker 分组订阅**（按设备与权限隔离并发）：主 worker `-Q default,media,cleanup,audit`（`--concurrency=4`）；GPU 控制 worker `-Q gpu.control`（单并发、唯一持有 collector 数据库凭据）；GPU worker `-Q ml,gpu`（`CELERY_GPU_CONCURRENCY=2`，低并发护显存）；CPU worker `-Q ml.cpu`（`CELERY_CPU_CONCURRENCY=4`）；导出 worker `-Q export`。预标任务按模型 `resource_profile.device` 路由：整条 pipeline 全 CPU → `ml.cpu`，任一 GPU/未自报 → `ml`（保守，零退化）。
 - **任务 → 队列 的映射**：`apps/api/app/workers/celery_app.py` 的 `task_routes` 显式指定；**未显式路由的任务落到 `task_default_queue`**。
 
-  | Queue     | 谁路由进来                                                                      | 典型任务                                                                                                                                                    | 前端可见？                                |
-  | --------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-  | `default` | `task_default_queue` 兜底 + ml_health                                           | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点）              |
-  | `ml`      | `batch_predict`（device=gpu/未自报）/ `retry_failed_prediction`                 | 跑 GPU ML backend / 重试失败预测                                                                                                                            | ✅ 工作台 AI 候选框                       |
-  | `ml.cpu`  | `batch_predict`（整条 pipeline 全 device=cpu）                                  | 跑 CPU 模型预标（高并发）                                                                                                                                   | ✅ 工作台 AI 候选框                       |
-  | `media`   | `generate_thumbnail` / `extract_video_frames` / `run_dataset_import` 等         | 缩略图、视频帧、媒体 backfill、连接器数据集导入                                                                                                             | ✅ 列表 / 工作台的图与帧 / 数据集导入进度 |
-  | `gpu`     | `run_video_tracker_job`                                                         | 视频目标追踪                                                                                                                                                | ✅ 视频追踪结果                           |
-  | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步                                                                                                                     | 间接（效率看板数据）                      |
-  | `audit`   | `persist_audit_entry` / `persist_task_events_batch`                             | 审计日志 / task event 批量入库                                                                                                                              | ✅ admin 审计页                           |
+  | Queue         | 谁路由进来                                                                      | 典型任务                                                                                                                                                    | 前端可见？                                |
+  | ------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+  | `default`     | `task_default_queue` 兜底 + ml_health                                           | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点）              |
+  | `ml`          | `batch_predict`（device=gpu/未自报）/ `retry_failed_prediction`                 | 跑 GPU ML backend / 重试失败预测                                                                                                                            | ✅ 工作台 AI 候选框                       |
+  | `ml.cpu`      | `batch_predict`（整条 pipeline 全 device=cpu）                                  | 跑 CPU 模型预标（高并发）                                                                                                                                   | ✅ 工作台 AI 候选框                       |
+  | `media`       | `generate_thumbnail` / `extract_video_frames` / `run_dataset_import` 等         | 缩略图、视频帧、媒体 backfill、连接器数据集导入                                                                                                             | ✅ 列表 / 工作台的图与帧 / 数据集导入进度 |
+  | `gpu`         | `run_video_tracker_job`                                                         | 视频目标追踪                                                                                                                                                | ✅ 视频追踪结果                           |
+  | `cleanup`     | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步                                                                                                                     | 间接（效率看板数据）                      |
+  | `audit`       | `persist_audit_entry` / `persist_task_events_batch`                             | 审计日志 / task event 批量入库                                                                                                                              | ✅ admin 审计页                           |
+  | `gpu.control` | GPU 显存仲裁控制面任务                                                          | 显存 repair、tombstone GC 与 collector 账本维护                                                                                                             | 间接（GPU 资源治理）                      |
+  | `export`      | `app.workers.export.run_export`                                                 | 独立构建并上传导出产物                                                                                                                                      | ✅ 异步导出状态与下载                     |
 
   ::: warning 易踩坑：`task_default_queue`
   Celery 内置默认队列名是 `celery`，**不在 worker 的 `-Q` 列表里**。若某 beat / 异步任务忘了在 `task_routes` 里路由、且 `task_default_queue` 仍是 `celery`，它就投进无人消费的 `celery` 队列里**静默堆积、永不执行**。修复：`celery_app.conf` 设 `task_default_queue="default"`，让兜底任务落到 worker 实际订阅的 `default` 队列。排查时 `redis-cli llen celery` 看死队列是否堆积。
@@ -197,6 +169,7 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 - **持久化**：volume `prometheus_data` → `/prometheus`
 - **scrape 目标**（`infra/prometheus/prometheus.yml`）：
   - `host.docker.internal:8000/metrics` ← FastAPI（host 上跑）
+  - `/api/v1/internal/metrics-targets` ← 从 `ml_backends` 注册表动态发现 ML backend，再抓取各自 `/metrics`
   - `localhost:9090` ← 自身
 - **Linux 注意**：`host.docker.internal` 需要 compose 的 `extra_hosts: host-gateway` 才能解析（已配）；不通时把 target 改成宿主机 LAN IP
 
@@ -210,6 +183,14 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 - **数据源 / 看板预置**：`infra/grafana/provisioning/`（datasource）+ `infra/grafana/dashboards/anno-overview.json`（5 panel：HTTP / ML / Celery）只读 mount 进容器
 - **依赖**：`depends_on: prometheus`
 
+### alertmanager · 告警路由
+
+- **镜像**：`prom/alertmanager` <!-- image tag: v0.27.0 -->
+- **端口**：宿主 `9093`
+- **profile**：`monitoring`
+- **作用**：接收 Prometheus firing 告警，分组和去重后按 `infra/alertmanager/alertmanager.yml` 路由到 Mailpit 或生产 SMTP
+- **持久化**：volume `alertmanager_data` → `/alertmanager`
+
 ## Volume 一览
 
 | Volume                               | 容器                  | 作用                          | dev 抹掉影响                                 |
@@ -222,12 +203,13 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
 | `yolo_checkpoints`                   | yolo-backend          | YOLO 权重缓存                 | 下次按需下载                                 |
 | `prometheus_data`                    | prometheus            | 历史指标                      | 历史曲线丢失                                 |
 | `grafana_data`                       | grafana               | 看板配置                      | 自定义面板丢失（provisioned 看板会重建）     |
+| `alertmanager_data`                  | alertmanager          | 告警分组与静默状态            | 告警运行状态与静默规则丢失                   |
 
 > redis **没有** volume，不在表内。
 
 ## 健康检查与依赖关系
 
-`postgres / redis / minio`、各类 worker 和 GPU backend 都配了 `healthcheck`；四类 worker 在 `depends_on.condition: service_healthy` 上等底层服务 ready 后才启动。`celery-beat` 不是 consumer，没有 inspect healthcheck；`grafana` 只 `depends_on: prometheus`（无健康门控）。
+`postgres / redis / minio`、各类 worker 和 GPU backend 都配了 `healthcheck`；五类 worker 在 `depends_on.condition: service_healthy` 上等待各自所需的底层服务，`gpu-control` 只依赖 Redis 与 Postgres，其余业务 worker 还依赖 MinIO。`celery-beat` 不是 consumer，没有 inspect healthcheck；`grafana` 只 `depends_on: prometheus`（无健康门控）。
 
 dev 上常见 race：刚 `docker compose up -d` 立刻起 api，会因为 postgres 还在 healthcheck 中而连不上 — 等 5–15 秒再起 host 上的 `uvicorn` 即可。
 

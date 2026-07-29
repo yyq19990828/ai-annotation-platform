@@ -129,42 +129,30 @@ Token claims：
 
 ## 4. 邀请流程
 
-```mermaid
-sequenceDiagram
-    participant Admin as project_admin
-    participant API as FastAPI
-    participant DB
-    participant Email as SMTP / log
-    participant Invitee as 被邀请人
-
-    Admin->>API: POST /invitations { email, role }
-    API->>API: check_daily_limit(actor) ≤ MAX_INVITATIONS_PER_DAY
-    API->>DB: INSERT invitations(token, expires_at = now + 7d)
-    API->>Email: 发送 / 日志 reset_url
-    API->>DB: INSERT audit_logs(action='user.invite')
-
-    Invitee->>API: GET /invitations/{token}
-    API-->>Invitee: { email, role, expired? }
-    Invitee->>API: POST /invitations/{token}/accept { password, name }
-    API->>API: validate_password_strength(password)
-    API->>DB: INSERT users(role=邀请角色), DELETE invitations
-    API->>DB: INSERT audit_logs(action='user.register', detail.method='invitation')
-    API-->>Invitee: { access_token, user }
-```
+<ExcalidrawDiagram
+  src="/diagrams/ops/security/invitation-lifecycle.svg"
+  alt="管理员创建并复制邀请链接、被邀请人公开解析 token、注册后保留邀请接受记录并签发访问令牌的流程"
+  caption="邀请链接的创建、解析与接受生命周期"
+/>
 
 要点：
 
-- `MAX_INVITATIONS_PER_DAY` 默认 30（`config.py:66`）。计数按发起人 + UTC 日期。
-- TTL 默认 7 天（`INVITATION_TTL_DAYS`）。过期后 token 直接拒绝、不返回 email 防枚举。
-- `super_admin` 邀请 super_admin 时 audit detail 含特殊标记，便于复盘。
+- `project_admin` 与 `super_admin` 调用 `POST /api/v1/users/invite`。每个发起人的新建邀请按过去 24 小时滚动统计，默认上限 30；已激活邮箱会被拒绝，同邮箱未接受的旧邀请会立即过期。
+- TTL 从运行时 `invitation_ttl_days` 系统设置读取，默认 7 天。API 返回 `invite_url / token / expires_at`，管理端复制链接并通过外部安全渠道分享；平台不发送邀请邮件。
+- 被邀请人先调用 `GET /api/v1/auth/invitations/{token}`。不存在的 token 返回 404，已接受或过期返回 410，只有有效 token 才返回 email、角色、数据组、过期时间与邀请人。
+- 接受邀请使用 `POST /api/v1/auth/register {token,name,password}`。用户以邀请角色创建并视为邮箱已验证；邀请行不会删除，而是写入 `accepted_at / accepted_user_id`，同时记录 `user.register` 审计，再返回 access token 与用户。
+
+::: warning 邀请链接是 bearer credential
+任何持有尚未失效邀请链接的人都能以链接中分配的角色完成注册。明文 token 会存入邀请表并返回给管理端，应只通过受控渠道分享，避免写入公开聊天、工单或日志。
+:::
 
 ### 4.1 开放注册
 
 `POST /auth/register-open`，`ALLOW_OPEN_REGISTRATION=true` 时启用。新用户角色固定 `viewer`（最低权限），3/min 限流。
 
-**邮箱验证（v0.12.0+）**：由 `REQUIRE_EMAIL_VERIFICATION` 控制，留空时按环境派生（production 默认开、dev/staging 默认关）。开关打开时，开放注册后 `email_verified_at` 为空、登录被 `400 {code: "email_not_verified"}` 拦截，须点验证邮件链接（`POST /auth/verify-email`，24h 一次性 token）后方可登录；`POST /auth/send-verification-email` 可重发（防枚举恒 202）。邀请注册与管理员建号恒视为已验证。验证邮件复用 SMTP 配置；SMTP 未配置时仅把验证链接写入日志（dev 友好）。
+**邮箱验证**：由 `REQUIRE_EMAIL_VERIFICATION` 控制，留空时按环境派生（production 默认开、dev/staging 默认关）。开关打开时，开放注册后 `email_verified_at` 为空、登录被 `400 {code: "email_not_verified"}` 拦截，须点验证邮件链接（`POST /auth/verify-email`，24h 一次性 token）后方可登录；`POST /auth/send-verification-email` 可重发（防枚举恒 202）。邀请注册与管理员建号恒视为已验证。验证邮件复用 SMTP 配置；SMTP 未配置时仅把验证链接写入日志（dev 友好）。
 
-CAPTCHA 已在 v0.8.7 落地（Turnstile，见 §3）。
+CAPTCHA 使用 Turnstile（见 §3）。
 
 ---
 
@@ -176,7 +164,7 @@ CAPTCHA 已在 v0.8.7 落地（Turnstile，见 §3）。
 
 | 字段                                  | 类型        | 说明                                                                                |
 | ------------------------------------- | ----------- | ----------------------------------------------------------------------------------- |
-| `id`                                  | uuid        | 主键                                                                                |
+| `id`                                  | bigint      | 主键                                                                                |
 | `actor_id` `actor_email` `actor_role` | —           | 行为发起人三元组（actor 删除后仍保留 email/role 快照）                              |
 | `action`                              | str         | `AuditAction` 枚举值，见 `services/audit.py:14-66`                                  |
 | `target_type` `target_id`             | str         | 受影响实体（`task` / `user` / `project` / `batch` / ...）                           |

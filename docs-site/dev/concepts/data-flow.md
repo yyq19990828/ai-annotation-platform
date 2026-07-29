@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-29
 ---
 
 # 数据流
@@ -12,46 +12,26 @@ last_reviewed: 2026-07-17
 
 ## 标注一条任务的完整链路
 
-```mermaid
-sequenceDiagram
-  participant U as 标注员浏览器
-  participant W as React App
-  participant A as FastAPI
-  participant DB as Postgres
-  participant R as Redis
-  participant C as Celery Worker
-  participant S as MinIO
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/annotation-task-flow.svg"
+  alt="当前 React 工作台加载任务列表、申请与续期锁、分别读取媒体和预测、实时写标注、提交审核及条件 Mask 质检流程"
+  caption="当前工作台完成一条标注任务的主链"
+/>
 
-  U->>W: 进入工作台
-  W->>A: GET /api/v1/tasks/next?project_id=...
-  Note right of A: tasks.py:get_next_task
-  A->>DB: 锁定一条 pending 任务<br/>task_lock TTL=300s
-  Note right of DB: services/task_lock.py:acquire
-  A->>S: 生成图像 presigned URL
-  Note right of S: services/storage.py:presign_get
-  A-->>W: { task, image_url, ai_predictions }
-  W-->>U: 渲染画布 + 已有 AI 候选
+当前 React 工作台先分页读取 `/tasks`，在本地选择记忆项、URL 指定项或首项，再单独申请 task lock；`GET /tasks/next` 是仍可用的调度旁路 API，但不是当前 UI 主链。`TaskOut.file_url`、annotations 与 predictions 分开读取，浏览器用签名 URL 直接访问对象存储。
 
-  U->>W: 标注 + 提交 (E 键)
-  W->>A: POST /api/v1/tasks/{id}/submit
-  Note right of A: tasks.py:submit_task<br/>annotation.py:create_many
-  A->>DB: 写 annotations + task.status='review'<br/>audit_logs(action='task.submit')
-  A->>R: publish notify:{reviewer_id}
-  Note right of R: services/notification.py:notify
-  A-->>W: 200 + 下一条任务
-  C->>R: 取队列项
-  C->>DB: 写 IoU 计算结果
-  Note right of C: workers/tasks.py
-```
+标注在绘制过程中通过 POST / PATCH / DELETE 实时落库，首个有效标注会使 `pending → in_progress`。提交接口只负责 `pending / in_progress → review`、释放锁、批次计数 / 自动流转与 `task.submit` 审计；它不批量创建标注、不通知 reviewer，也不在响应中返回下一题。若项目启用提交时 Mask QC 且任务包含有效 Mask，事务提交后才会异步派发质检。
 
 代码索引：
 
-- 取下一题：`apps/api/app/api/v1/tasks/list.py` (get_next_task / next_smart 端点)
-- 任务锁：`apps/api/app/services/task_lock.py:acquire/heartbeat/release`
+- 当前工作台选题：`apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx`
+- 任务列表与调度旁路：`apps/api/app/api/v1/tasks/list.py:list_tasks / next_task`、`apps/api/app/services/scheduler.py:get_next_task`
+- Task 输出与签名 URL：`apps/api/app/api/v1/tasks/_shared.py:_task_with_url`、`apps/api/app/services/storage.py:generate_download_url`
+- 任务锁：`apps/web/src/hooks/useTaskLock.ts`、`apps/api/app/api/v1/tasks/locks.py`、`apps/api/app/services/task_lock.py`
+- 标注写入：`apps/api/app/api/v1/tasks/annotations.py`、`apps/api/app/services/annotation.py`
 - 提交：`apps/api/app/api/v1/tasks/lifecycle.py:submit_task`
 - 审计：`apps/api/app/services/audit.py:AuditAction.TASK_SUBMIT`
-- 通知：`apps/api/app/services/notification.py:NotificationService.notify`
-- presigned URL：`apps/api/app/services/storage.py`
+- 条件 Mask QC：`apps/api/app/services/mask_qc/service.py`、`apps/api/app/workers/mask_qc.py`
 
 ---
 
@@ -180,10 +160,9 @@ sequenceDiagram
 
 服务端 push 主要事件：
 
-- 任务被分配 / 被回退（type=`task.assigned` / `task.review_rejected`）
-- AI 预标注完成（type=`ai.preannotate_done`）
-- 导出完成（type=`export.completed`）
-- 评论 @ 提及（type=`comment.mention`）
+- 任务通过、驳回或重开（type=`task.approved` / `task.rejected` / `task.reopened`）
+- 导出完成或失败（type=`export.ready` / `export.failed`）
+- 用户发起的白名单后台作业终态（type=`job.completed` / `job.failed` / `job.cancelled`）
 
 代码索引：
 

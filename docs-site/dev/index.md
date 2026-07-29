@@ -3,7 +3,7 @@ pageClass: docs-hub-page
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-12
+last_reviewed: 2026-07-29
 ---
 
 # 开发文档
@@ -17,7 +17,7 @@ git clone https://github.com/yyq19990828/ai-annotation-platform
 cd ai-annotation-platform
 cp .env.example .env
 docker compose up -d
-# API: http://localhost:8000  Web: http://localhost:5173
+# API: http://localhost:8000  Web: http://localhost:3000
 ```
 
 详见 [本地开发](./tutorials/local-dev)。
