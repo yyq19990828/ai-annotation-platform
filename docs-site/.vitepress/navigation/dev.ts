@@ -99,6 +99,7 @@ export function createDevSidebar(
         { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
         { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
         { text: "更新截图", link: "/dev/how-to/update-screenshots" },
+        { text: "更新 Excalidraw 图表", link: "/dev/how-to/update-excalidraw-diagrams" },
         {
           text: "迁移内联样式到 CSS Modules",
           link: "/dev/how-to/migrate-inline-style-to-css-modules",
