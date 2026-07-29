@@ -62,32 +62,19 @@ API 成功派发时返回 HTTP 200，`job_id` 是 Celery task ID；worker 后续
 
 ## 数据导出
 
-```mermaid
-sequenceDiagram
-  participant Admin
-  participant A as FastAPI
-  participant R as Redis
-  participant C as Celery
-  participant DB
-  participant S as MinIO
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/async-export-delivery.svg"
+  alt="项目和批次导出从可选 Mask 预检、持久化派发、Worker 缓存与 Redis single-flight，到临时 ZIP、MinIO 工件、预签名下载和失败补偿的完整边界"
+  caption="异步导出交付链：先提交作业与审计，再派发；缓存未命中时单飞构建可下载工件"
+/>
 
-  Admin->>A: POST /projects/{id}/mask-formats/exports:preflight
-  A->>DB: 统计 task / geometry 并生成 MaskFormatPlan
-  A-->>Admin: loss class + codes + estimates + digest
-  Admin->>A: POST /api/v1/projects/{id}/export?targets=coco
-  Note right of A: projects.py:export_project<br/>audit_logs(action='project.export')
-  A->>DB: 创建 async_jobs(kind='export')
-  A->>R: 派发 app.workers.export.run_export
-  A-->>Admin: 202 + job_id
-  C->>DB: 拉取所有 annotations + tasks
-  C->>C: 按 adapter / manifest / options key 取 single-flight
-  C->>C: 拼装所选格式并生成 ZIP
-  Note right of C: mask_formats registry + exporting/* 打包
-  C->>S: 上传 ZIP 到 export bucket
-  C->>DB: 写 export_artifacts 缓存<br/>完成 async_jobs.result
-  Admin->>A: GET /api/v1/async-jobs/{job_id}
-  A-->>Admin: status + result.download_url
-```
+Mask export preflight 是项目范围的可选、只读计划步骤：adapter 统计对象和文件，返回 loss class、losses / warnings、容量估算与 plan digest。当前导出端点不接收该 digest，因此它帮助用户决策，但不锁定后续执行快照。
+
+项目与批次导出先校验 targets / options。VOC 仅允许单选，在记录审计后同步返回 ZIP；其他目标创建 `AsyncJob(kind=export)` 并写导出审计，两者成功 `commit` 后才调用 `run_export.delay()`，然后返回 HTTP 202 与 `job_id`。因此 broker 不会拿到尚未提交的作业 ID。
+
+Worker 将 active annotation 的 `max(updated_at) + count` 与 scope、targets、options、adapter contract 版本合成 cache key。未过期且 MinIO 对象仍存在时，缓存命中路径会生成新的 7 天预签名 URL，直接完成作业并发 `export.ready`。未命中时，Worker 用 Redis `SET NX EX 6h` 对 cache key 做 single-flight；竞争失败会每 5 秒重试，最多 120 次，持锁后还会重查一次缓存。
+
+真正构建时按块读取任务与标注，ZIP 写磁盘 tempfile，再流式多段上传到 export bucket。`ExportArtifact` 记录提交后，Worker 才生成友好文件名与预签名 URL、写入 `AsyncJob.result` 并发送完成通知；客户端也可轮询 `/async-jobs/{job_id}` 读终态。异常路径会回滚、删除已上传但未记录的孤儿对象、写 `failed` 与 `export.failed`；tempfile 和已获取的 Redis 锁在 `finally` 中清理。
 
 代码索引：
 
@@ -96,6 +83,7 @@ sequenceDiagram
 - 作业状态与下载 URL：`apps/api/app/api/v1/async_jobs.py:get_async_job`
 - 审计：所有导出写 `AuditAction.PROJECT_EXPORT` / `BATCH_EXPORT`
 - Worker：`apps/api/app/workers/export.py`（`app.workers.export.run_export` 任务）
+- 工件缓存：`apps/api/app/services/exporting/cache.py`
 - 格式 registry / plan / archive：`apps/api/app/services/mask_formats/`
 - 导出打包：`apps/api/app/services/exporting/`
 
