@@ -37,41 +37,25 @@ last_reviewed: 2026-07-29
 
 ## AI 预标注
 
-```mermaid
-sequenceDiagram
-  participant Admin as 项目管理员
-  participant A as FastAPI
-  participant R as Redis
-  participant C as Celery Worker
-  participant ML as ML 推理服务
-  participant DB as Postgres
-  participant WS as WS 频道
+<ExcalidrawDiagram
+  src="/diagrams/shared/ai/ai-preannotation-handoff.svg"
+  alt="AI 预标注在 Web、FastAPI、Redis、Celery worker、服务池路由、物理 ML 实例、Postgres 与人工工作台之间的数据流"
+  caption="AI 预标注数据流：派发边界、持久化作业、路由推理与人工接管"
+/>
 
-  Admin->>A: POST /api/v1/projects/{id}/preannotate
-  Note right of A: ml_backends.py / projects.py
-  A->>R: 入队 batch_predict(project_id)
-  Note right of R: workers/tasks.py:batch_predict
-  A-->>Admin: 202 Accepted
+API 成功派发时返回 HTTP 200，`job_id` 是 Celery task ID；worker 后续才创建不同 UUID 的 `AsyncJob(kind=batch_predict)`。worker 不是每 batch 一次把所有媒体交给 ML，而是按 task 处理：根阶段通常每次 `/predict` 一题，成功写 `Prediction + PredictionMeta`，失败写 `FailedPrediction`，然后单题提交。
 
-  loop 每 batch
-    C->>R: 取队列项
-    C->>ML: POST /predict { tasks: [...] }
-    Note right of ML: ml_client.py:predict<br/>schema 见 ml-backend-protocol.md
-    ML-->>C: { results: [...] }
-    C->>DB: 写 predictions / prediction_metas<br/>错误写 failed_predictions
-    C->>R: publish project:{pid}:preannotate<br/>{current, total, status}
-    R->>WS: 通过 ws.py 转发到订阅者
-  end
-  WS-->>Admin: 进度 100%
-```
+请求中的 registry ID 先解析到项目已启用的逻辑 service pool，`RoutedMLBackendClient` 再选物理实例。物理 backend 使用签名 URL 向 MinIO 拉取原媒体；多阶段 crop 才额外由 worker 读取原图、上传 ROI，下游 backend 再拉取 crop。
 
 代码索引：
 
-- 触发端点：`apps/api/app/api/v1/projects.py` 或 `ml_backends.py`
-- ML client：`apps/api/app/services/ml_client.py:predict` (`ml_client.py:41-62`)
+- 触发端点：`apps/api/app/api/v1/projects.py:trigger_preannotation`
+- 服务池路由与 ML client：`apps/api/app/services/ml_routing/client.py:RoutedMLBackendClient`
 - ML 协议契约：[`docs-site/dev/ml-backend-protocol.md`](../reference/ml-backend-protocol)
-- Worker：`apps/api/app/workers/tasks.py:batch_predict`
-- WS 频道：`apps/api/app/api/v1/ws.py:preannotate_progress` (`ws.py:48-67`)
+- Worker：`apps/api/app/workers/tasks.py:batch_predict / _run_batch`
+- 对象存储签名 URL：`apps/api/app/services/storage.py:resolve_task_url`
+- 项目 WS 中继：`apps/api/app/api/v1/ws.py:preannotate_progress`（当前无鉴权）
+- 全局 admin WS：`apps/api/app/api/v1/ws.py:prediction_jobs_socket`
 - WS 协议：[`docs-site/dev/ws-protocol.md`](../reference/ws-protocol)
 
 ---

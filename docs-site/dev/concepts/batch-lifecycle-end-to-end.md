@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-07-29
 ---
 
 # 批次生命周期（端到端）
@@ -18,40 +18,25 @@ last_reviewed: 2026-05-10
 
 ## 全链路总图
 
-```mermaid
-flowchart TD
-  A["创建 batch (draft)"] --> B["分派 annotator / reviewer"]
-  B --> C["owner 激活 batch (active)"]
-  C --> D{"是否先跑 AI 预标?"}
-  D -->|否| E["annotator 开始标注"]
-  D -->|是| F["project preannotate + worker 写 predictions"]
-  F --> G["batch -> pre_annotated"]
-  G --> E
-  E --> H["annotation 写入 -> task pending->in_progress"]
-  H --> I["BatchService.check_auto_transitions()"]
-  I --> J["batch -> annotating"]
-  J --> K["annotator submit batch -> reviewing"]
-  K --> L{"reviewer 审核结果"}
-  L -->|通过| M["batch -> approved"]
-  L -->|退回整批| N["batch.reject -> rejected"]
-  N --> O["task review/completed -> pending"]
-  O --> C
-  M --> P["archive / reopen review / reset"]
-  J --> Q["task review/reject/reopen/accept-rejection"]
-  Q --> I
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/batch-lifecycle-end-to-end.svg"
+  alt="Batch 从 owner 创建分派、激活、可选 AI 预标、task 自动回写、送审、整批退回到归档和重置的端到端生命周期"
+  caption="Batch 端到端主链：区分自动推进、batch-only 手工迁移与带 task 副作用的业务退回"
+/>
+
+图中的“创建 → 分派 → 激活”是常用组合，不是一个强制线性事务；“task 动作 → check_auto”也不意味着 batch 一定迁移。当前 `pre_annotated` 对普通 assigned annotator 不可见，而 `reviewing` 中的 task reject 也不会自动把 batch 拉回 `annotating`；这些实现断点在图和下文中都显式保留。
 
 ## 参与者与真值源
 
-| 角色 / 模块                     | 负责什么                                                       |
-| ------------------------------- | -------------------------------------------------------------- |
-| owner / super_admin             | 建批、分派、激活、逆向迁移、重置                               |
-| annotator                       | 编辑 task、推动 `annotating`、提交批次送审                     |
-| reviewer                        | task 审核、batch 放行或驳回                                    |
-| `BatchService`                  | batch 状态机、计数、reset、reject                              |
-| `AnnotationService`             | annotation 写入后触发 task / batch 自动推进                    |
-| `scheduler.get_next_task()`     | 工作台按可见性与采样策略发题                                   |
-| `workers/tasks.py:_run_batch()` | AI 预标 worker，写 predictions 并把 batch 置为 `pre_annotated` |
+| 角色 / 模块                     | 负责什么                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| owner / super_admin             | 建批、分派、激活、逆向迁移、重置                                          |
+| annotator                       | 编辑 task、推动 `annotating`、提交批次送审                                |
+| reviewer                        | task 审核、batch 放行或驳回                                               |
+| `BatchService`                  | batch 状态机、计数、reset、reject                                         |
+| `AnnotationService`             | annotation 写入后触发 task / batch 自动推进                               |
+| `scheduler.get_next_task()`     | `/tasks/next` 调度旁路；当前 React 工作台主链是 `GET /tasks` 后客户端选题 |
+| `workers/tasks.py:_run_batch()` | AI 预标 worker，写 predictions 并把 batch 置为 `pre_annotated`            |
 
 ## 阶段 1：创建与分派
 
@@ -65,9 +50,11 @@ batch 初始通常从 `draft` 开始。
 - 可以挂 task
 - 但还不参与正常生产、审核和常规派题
 
+`POST /batches` 只创建空 draft；常见的“建批并挂任务”走 `/batches/split`，把未归类 / `B-DEFAULT` task 改挂到新 batch。
+
 ### 分派
 
-分派发生在 batch 层，但会级联回写 task：
+通过 PATCH / distribute / bulk-reassign 修改分派时，batch 层字段会级联回写 task：
 
 - `annotator_id`
 - `reviewer_id`
@@ -80,6 +67,8 @@ batch 初始通常从 `draft` 开始。
 - reviewer 侧待审树
 - annotator 侧我的批次
 
+`split` payload 直接带 annotator / reviewer 时，当前 `_assign_tasks` 只写 `task.batch_id`，不会做上述 task assignee / reviewer 级联；后续仍应经过正常分派入口收敛。
+
 ## 阶段 2：激活进入生产
 
 `draft → active` 是 owner 主动动作，不是自动迁移。
@@ -88,11 +77,12 @@ batch 初始通常从 `draft` 开始。
 
 - 空批次不能激活
 - 激活后 batch 才进入正常工作流
+- 单个 transition API 的硬条件是“非空”；bulk activate 和当前 Web UI 还会要求已分派 annotator
 
 从这里开始，batch 会影响两个主要入口：
 
-1. 工作台里用户能否看到该批次
-2. `/tasks/next` 是否会从该批次派题
+1. 工作台 `GET /tasks` 能否返回该批次的题
+2. 旁路 `/tasks/next` 是否会从该批次派题
 
 当前常规派题只从：
 
@@ -124,19 +114,21 @@ owner 从项目级入口触发：
 
 worker 会：
 
-1. 拉本项目或指定 batch 的 `pending` task
+1. 显式 `task_ids` 时当前只按 ID 选取；否则拉指定 batch 或本项目的 `pending` task
 2. 调 ML backend 产出 predictions
-3. 写 `predictions / prediction_metas / failed_predictions / prediction_jobs`
-4. 指定 batch 且当前仍为 `active` 时：
+3. 写 `predictions / prediction_metas / failed_predictions / async_jobs(kind=batch_predict)`
+4. 指定 batch、处理单元非空、不是全部失败，且收尾时仍为 `active` 时：
    `active → pre_annotated`
+
+`execution_unit=frame` 的 fan-out 走另一收尾器，当前只完成 AsyncJob，不推进 batch 到 `pre_annotated`。worker 直接写 batch.status，也不会产生普通 `BatchService.transition` 的状态 WS 事件和 transition audit。
 
 `pre_annotated` 的业务语义是：
 
 - AI 候选框已经就绪
 - 还没有人工真正开工
-- 可以从工作台 / 批次入口进入接管
+- 当前只有 owner / super_admin 可通过 `/ai-pre` 深链进入首次接管
 
-当前它**不是**常规 `/tasks/next` 继续出题的主状态；更接近“等待人工接管”的过渡态。
+当前它**不是**常规 `/tasks/next` 继续出题的主状态，普通 annotator 的 task 列表 / 点查可见性也排除它。因此当前链路存在实际断点：需 owner / super_admin 先产生 annotation 或显式把 batch 转入 `annotating`，assigned annotator 才能继续常规工作流。
 
 ## 阶段 4：任务推进批次
 
@@ -146,10 +138,11 @@ worker 会：
 
 最常见触发点有：
 
-- 新建 annotation
-- 采纳 prediction
-- 删除 annotation 导致 task 再次清空
+- 新建 annotation 或采纳 classic prediction，使有效对象计数从 0 变为非 0
+- 删除 annotation 或改变对象数的原子操作，使计数再次归零
 - task 退回 / 重开 / 接受退回
+
+只有这些动作真正使 task 在 `pending ↔ in_progress` 之间翻转、路径允许 `trigger_batch_transitions`，且 task 属于某 batch 时，annotation service 才会继续调自动迁移与计数重算。普通几何 / 类别 / 属性 PATCH 不会无条件触发它。
 
 ### 自动迁移规则
 
@@ -164,16 +157,21 @@ worker 会：
 
 - `rejected` 在 batch 维度仍算“还在标注中”
 - batch 是否进入 `reviewing` 看的是“是否还有未完成或待重做任务”
+- `admin_locked` 时 `check_auto_transitions()` 直接跳过，不会自动推进
 
 ## 阶段 5：送审与 reviewer 处理
 
-### annotator 提交整批
+### task 提交的自动送审
+
+当工作台提交 / 跳过一题时，task 进入 `review`、当前锁被释放，再调 `check_auto_transitions()`。最后一个 `pending / in_progress / rejected` blocker 消失时，batch 会自动 `annotating → reviewing`；这是当前 React 工作台的常用主链。
+
+### annotator 手工提交整批
 
 annotator 在自己负责的 `annotating` 批次上手工触发：
 
 - `annotating → reviewing`
 
-这是 batch 级送审，不等于每一条 task 都已经 individually `completed`。
+这是 batch-only 送审，没有 readiness 硬闸门：即使还有 `pending / rejected` task 也可进入 `reviewing`。它不提交 task、不释放 task lock、不修改 task counter，也不等于每一条 task 都已经 individually `completed`。
 
 ### reviewer 决策
 
@@ -187,6 +185,8 @@ reviewer 有两类决定：
 
 task 级动作改变的是单题状态；batch 级动作改变的是整批是否放行。
 
+`reviewing → approved` 当前只改 batch 状态，不检查所有 task 是否已 completed，也不修改 task 状态、lock 或 review metadata。因此 `approved` 表示批次级放行，不是“所有 task 必然通过”的派生真值。
+
 ## 阶段 6：驳回、重做与复审
 
 ### task 级退回
@@ -197,17 +197,22 @@ task 级动作改变的是单题状态；batch 级动作改变的是整批是否
 - `reject_reason` 保留
 - annotator 后续可 `accept-rejection`
 
-这通常会把 batch 继续维持在 `annotating` 语义上，直到重做完成。
+只有 batch 原本还在 `annotating`（例如其他 task 仍是 blocker）时，它才会继续维持在该语义上。如果 batch 已是 `reviewing`，task reject / reopen / accept-rejection 都不会自动将它拉回 `annotating`，而且普通 annotator 对 reviewing batch 不可见。
 
 ### batch 级驳回
 
-当 reviewer 驳回整批：
+当 reviewer 走专用 `POST /batches/{id}/reject` 驳回整批：
 
 - `batch.status = rejected`
 - `review_feedback` 写入批次
 - 所有 `review / completed` task 回到 `pending`
+- annotation 与单批路径的 `is_labeled` 保留，同步重算 batch / project counter，写 audit 并通知 annotator
 
 这是一种“整批退回重做”，不清 annotation 历史，但会把生产流重新拉回前段。
+
+不要把它与通用 `transition target=rejected` 混为一条边：通用迁移只改 batch.status，不写 feedback、不重置 task、不做业务退回通知。bulk reject 又额外把 `is_labeled=False`，并使用不同计数同步路径；这是当前仍待收敛的副作用差异。
+
+专用 reject 后 batch 仍是 `rejected`，check_auto 不会替 annotator 自动恢复。要重新进入正常生产，owner 必须选择 `rejected → active`（无需 reason），或 `rejected → reviewing`（需 reason，直接复审）。
 
 ### owner 复审重开
 
@@ -217,6 +222,8 @@ owner 可把：
 - `rejected → reviewing`
 
 用于发起复审。系统要求 `reason`，并会发 `batch.review_reopened` 通知。
+
+`approved → reviewing` 会清 batch 上次 feedback / reviewed metadata；`rejected → reviewing` 保留上次 feedback。`pre_annotated → active` 的通用 reverse 只改状态，不清 predictions；要清 AI 候选并同步回 active，应走 `/admin/preannotate-queue/bulk-clear` 的 `predictions_only`。
 
 ## 阶段 7：归档或重置
 
@@ -229,6 +236,8 @@ owner 可把：
 - 常规工作台与 reviewer 流程不再以它为主
 - owner 仍可 `archived → active` 重新拉回生产
 
+归档是状态迁移，不会清 task、annotation、prediction、lock 或 assignment。`draft / reviewing` 当前不能直接归档。
+
 ### reset_to_draft
 
 这是最重的兜底动作：
@@ -237,7 +246,11 @@ owner 可把：
 - task 全部回 `pending`
 - 删除 `task_locks`
 - 清批次 review 元数据
-- 级联删 `predictions / failed_predictions / prediction_jobs / prediction_metas`
+- 删除 `predictions / failed_predictions / prediction_metas / async_jobs(kind=batch_predict)`
+- 软停用该批内 active `Annotation.source=prediction_based`，手工 annotation 保留
+- 清除剩余 annotation 的 `parent_prediction_id`，重算 task 物化计数 / `is_labeled`
+
+它不清 batch assignment 或 `admin_locked`，也没有统一清 task 级 submitted / reviewer / reject / skip 元数据。
 
 它适用于：
 
@@ -249,10 +262,10 @@ owner 可把：
 
 `delete` 不是 `reset_to_draft` 的反面，而是"解绑 task 并删批次本体"，但同样要做级联清理，避免删批次时留下悬挂的 AI 预标产物。
 
-默认有保护（v0.11.25）：
+默认有保护：
 
 - `delete(batch_id, force=False)` 先数 `_count_protected_tasks`：有进行中/已完成 task 或被 AI 预标过的 task 时，抛 409 `batch_has_active_work`（`requires_force=true`），提示改用归档或确认强制删除
-- `force=True` 时才执行：先 `_reset_and_clean_batch_tasks`（task 回 `pending`、删 `task_locks`、清 predictions / failed_predictions / prediction_jobs / prediction_metas），再把 task 的 `batch_id` 解绑、删除批次
+- `force=True` 时才跳过保护；无论是否 force，真正删除前都调 `_reset_and_clean_batch_tasks`（task 回 `pending`、删 lock 和 AI 预标产物、软停用 prediction-based annotation），再把 task 移到 `B-DEFAULT` 或解绑 `batch_id`、删除批次
 
 所以删批次和 `reset_to_draft` 共用同一套级联清理（`_reset_and_clean_batch_tasks` → `clean_task_predictions`），区别只在删完后批次本体是否还在、task 是否解绑。改删批次或重置逻辑时，两条路径要一起回归。
 
@@ -264,12 +277,12 @@ owner 可把：
 2. owner 激活到 `active`
 3. owner 跑 AI 预标
 4. worker 写 prediction，batch 变 `pre_annotated`
-5. annotator 进入任务，采纳或修改 prediction
-6. 首条有效 annotation 产生，batch 自动变 `annotating`
-7. annotator 提交整批到 `reviewing`
-8. reviewer 驳回其中若干 task 或整批
-9. annotator 重做后再次送审
-10. reviewer 放行到 `approved`
+5. owner / super_admin 从 `/ai-pre` 进入任务，采纳、修改 prediction 或先强制转 `annotating`
+6. 首条有效 annotation 产生且未被 `admin_locked` 抑制时，batch 自动变 `annotating`，assigned annotator 恢复可见
+7. annotator 逐题提交，最后一个 blocker 消失后自动到 `reviewing`；或手工整批送审
+8. reviewer 驳回其中若干 task 或走专用整批 reject
+9. 整批 reject 后 owner 先 `rejected → active`，annotator 重做并再次送审
+10. reviewer 在 batch 级放行到 `approved`
 11. owner 归档，或必要时 reopen review / reset
 
 如果你改的是下面任一项，最好按这条链路通读一遍：

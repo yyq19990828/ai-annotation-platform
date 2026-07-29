@@ -37,7 +37,7 @@
 
 ### Changed
 
-- **核心文档图可以下载后继续编辑**. 系统全景、JWT 注销、视频 Chunk、Batch/Task 生命周期、开发与生产基础设施、审计通知、邀请注册、标注任务主链，以及 Project、Batch、Task、Annotation、Review 模块全景改用内嵌 Excalidraw scene 与手写字体的 SVG；重复状态图共享同一个 canonical 资产，文档站仍提供点击放大和可编辑源文件下载入口。迁移验收同时按当前 Compose、API 与前端调用链修正 worker、监控、邀请、任务提交、服务池绑定、工作台取题、标注计数回写和审核副作用等文档漂移。
+- **核心文档图可以下载后继续编辑**. 系统全景、JWT 注销、视频 Chunk、Batch/Task 生命周期、开发与生产基础设施、审计通知、邀请注册、标注任务主链、AI 预标注与持久化作业，以及 Project、Batch、Task、Annotation、Review 模块全景改用内嵌 Excalidraw scene 与手写字体的 SVG；重复状态图和预标数据流共享 canonical 资产，文档站仍提供点击放大和可编辑源文件下载入口。迁移验收同时按当前 Compose、API 与前端调用链修正 worker、监控、邀请、任务提交、服务池绑定、Celery / AsyncJob ID 边界、预标可见性、工作台取题、标注计数回写和审核副作用等文档漂移。
 
 ## [0.23.15] - 2026-07-25
 

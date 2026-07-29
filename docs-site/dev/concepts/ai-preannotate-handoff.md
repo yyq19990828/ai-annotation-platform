@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-24
+last_reviewed: 2026-07-29
 ---
 
 # AI 预标注接管
@@ -35,25 +35,15 @@ AI 预标注的目标不是直接把 task 变成“完成”，而是：
 
 ## 全链路总图
 
-```mermaid
-flowchart TD
-  A["owner 调 POST /projects/{id}/preannotate"] --> B["校验 ML backend / batch 归属 / active 状态"]
-  B --> C["Celery batch_predict.delay(...)"]
-  C --> D["worker 拉 pending task"]
-  D --> E["调用 ML backend.predict()"]
-  E --> F["写 Prediction / PredictionMeta"]
-  E --> G["失败写 FailedPrediction"]
-  F --> H["更新 async_jobs 汇总"]
-  G --> H
-  H --> I{"指定 batch 且仍为 active?"}
-  I -->|是| J["batch -> pre_annotated"]
-  I -->|否| K["保持原状态"]
-  J --> L["/ai-pre 页面显示待接管批次"]
-  L --> M["annotator 打开 task 查看 AI 候选"]
-  M --> N["accept prediction 或手工改写"]
-  N --> O["annotation 写入 -> task pending->in_progress"]
-  O --> P["batch pre_annotated -> annotating"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/ai/ai-preannotation-handoff.svg"
+  alt="AI 预标注从 owner 触发、Celery 派发、worker 建立 AsyncJob、服务池路由推理、预测落库到 owner 首次人工接管的完整流程"
+  caption="AI 预标注与人工接管：区分 Celery 派发 ID、持久化作业 ID 和当前接管断点"
+/>
+
+当前实现有两个不可互换的 ID：触发端点返回 Celery task ID，worker 启动后才创建新的 `async_jobs.id` 并把前者记入 `celery_task_id`。因此刚返回 `status="queued"` 时尚无可轮询的 `async_jobs` 行，前端不应把返回 ID 直接当作 AsyncJob 主键。
+
+`pre_annotated` 还存在一个当前接管断点：普通 assigned annotator 的 task 列表和 `/tasks/next` 都排除该状态；现阶段需 owner / super_admin 从 `/ai-pre` 深链进入工作台，先产生有效 annotation 使批次进入 `annotating`，普通标注员才恢复常规可见性。
 
 > **模态说明**：`/ai-pre` 入口按项目 `data_type` 分流。图像项目走上图所示批量链路；视频项目显示引导卡片，实际追踪由工作台逐轨迹 Shift+T 发起，不走本页批量 Celery 链路；lidar 项目暂显占位。
 
@@ -89,6 +79,13 @@ flowchart TD
 - `params` —— 选中 backend 的 `/setup.params` 值；worker 合并进 `/predict` context，覆盖项目级阈值兜底；无此字段时行为不变
 - `pipeline_stages` —— **多阶段编排**，声明源 + 下游 stage 列表，把单 backend 调用扩展为「检测 → 分类 / 几何分割 → 写回属性」跨 backend 流水线；缺省时与原单阶段批量预标逐字等价，完全向后兼容。形态、ROI 路由、并行兄弟语义详见 [prediction-pipeline §多阶段预标注](./prediction-pipeline#多阶段预标注pipeline_stages路径-b) 与 [ADR 0043](../adr/archive/0043-staged-preannotation-pipeline)
 
+成功派发返回 HTTP 200 和：
+
+- `job_id`：Celery task ID，不是 `async_jobs.id`
+- `status: "queued"`
+- 仅 batch 模式可得的 `total_tasks` 提示
+- 项目进度频道与可选警告
+
 ### 当前约束
 
 指定 `batch_id` 时，后端会校验：
@@ -112,12 +109,11 @@ flowchart TD
 
 worker 会按三种模式选任务：
 
-1. 显式 `task_ids`
+1. 显式 `task_ids`：当前只按 ID 选取，不叠加 project / batch / `pending` 约束
 2. 显式 `batch_id` 时，取该 batch 下 `pending` task
 3. 否则取整个 project 下 `pending` task
 
-这里有个很关键的语义：**预标默认只跑 `pending` task。**
-已经开始人工标注的 task 不会被同一轮批量预标覆盖。
+`skip_predicted` 会在三种模式上再排除 `total_predictions > 0` 的 task。“默认只跑 `pending`”只对 batch / project 选取分支成立；显式 `task_ids` 是当前需要特别防范的实现边界。同时传 `task_ids + batch_id` 时，API 的进度提示按 batch 计数，worker 却优先按 `task_ids` 执行，调用方不应混用两种 scope。
 
 ### 输出产物
 
@@ -134,7 +130,7 @@ worker 会按三种模式选任务：
 
 整批运行级别还会写：
 
-- `AsyncJob(kind=batch_predict)`,多阶段下额外写 `result.pipeline_stages`(终态逐阶段统计 `{detected, targeted, ok, failed, skipped_geometry}`,WS 重连/运行后回看都走它,不丢)
+- `AsyncJob(kind=batch_predict)`；它由 worker 创建，`pending → running` 在同次提交前完成，通常首次可见就是 `running`。多阶段下额外写 `result.pipeline_stages`(终态逐阶段统计 `{detected, targeted, ok, failed, skipped_geometry}`,WS 重连/运行后回看都走它,不丢)
 - 存在 GPU 仲裁拒绝时，`result.gpu_arbiter_failures` 按错误码给出有界聚合摘要；逐帧执行单元只落作业摘要，不生成无法按帧重试的失败行
 
 其中 `AsyncJob` 会记录：
@@ -157,7 +153,9 @@ worker 会按三种模式选任务：
 当 worker 跑完且满足：
 
 - 这次请求指定了 `batch_id`
+- 本轮至少有一个可处理单元，且不是全部失败
 - batch 当前仍是 `active`
+- 走常规 task 批处理收尾；当前 `execution_unit=frame` 的 fan-out finalizer 不会推进 batch
 
 就会自动：
 
@@ -184,13 +182,13 @@ worker 会按三种模式选任务：
 
 当前接管主要依赖这些前端路径：
 
-- `/ai-pre` 页面查看历史批次
-- 工作台里能看到 `pre_annotated` 批次
+- owner / super_admin 在 `/ai-pre` 页面查看历史批次并深链进入工作台
 - task 详情 / 画布里加载 prediction 候选
+- 首个有效 annotation 让 batch 进入 `annotating` 后，assigned annotator 才能从常规 task 列表和调度路径继续处理
 
 ### 接管动作
 
-annotator 可选择：
+首次接管者可选择：
 
 1. `accept prediction`(候选层 → annotation)
 2. 在 prediction 基础上继续改
@@ -299,11 +297,11 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 
 两者通过 `parent_prediction_id` 关联，但不共用一张表。
 
-### 误解 2：batch 进入 `pre_annotated` 后 `/tasks/next` 会像 `active` 一样继续派题
+### 误解 2：batch 进入 `pre_annotated` 后 assigned annotator 会像 `active` 一样继续取题
 
-当前不是。`scheduler.get_next_task()` 仍只从 `active / annotating` 中选题。
+当前不是。`scheduler.get_next_task()` 仍只从 `active / annotating` 中选题，task 列表 / 点查可见性也对普通 annotator 排除 `pre_annotated`。
 
-`pre_annotated` 更像等待人工通过批次 / task 入口接手的过渡态。
+`pre_annotated` 更像等待 owner / super_admin 首次接手的过渡态；这是当前需要修复的普通标注员可见性断点，不应在文档中被描述成已打通的主链。
 
 ### 误解 3：清理 prediction 不需要动 batch 状态
 
