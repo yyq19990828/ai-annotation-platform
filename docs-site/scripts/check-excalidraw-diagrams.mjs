@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const DEFAULT_DOCS_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
@@ -145,6 +146,29 @@ function validateSvg(file, rel, failures) {
   const payload = svg.match(/<!--\s*payload-start\s*-->([\s\S]*?)<!--\s*payload-end\s*-->/i)?.[1];
   if (!payload || payload.trim().length < 16) {
     failures.push(`${rel}: Excalidraw scene payload 为空或不完整`);
+  } else {
+    try {
+      const envelope = JSON.parse(Buffer.from(payload.trim(), "base64").toString("latin1"));
+      if (envelope.encoding !== "bstring" || typeof envelope.encoded !== "string") {
+        throw new Error("未知的 payload 编码");
+      }
+      const encoded = Buffer.from(envelope.encoded, "latin1");
+      const sceneJson = envelope.compressed
+        ? inflateSync(encoded).toString("utf8")
+        : encoded.toString("utf8");
+      const scene = JSON.parse(sceneJson);
+      if (
+        scene.type !== "excalidraw" ||
+        !Array.isArray(scene.elements) ||
+        !scene.appState ||
+        typeof scene.appState !== "object"
+      ) {
+        throw new Error("缺少 Excalidraw scene 字段");
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      failures.push(`${rel}: Excalidraw scene payload 无法解码（${reason}）`);
+    }
   }
   if (!/\bVirgil\b/.test(svg) || !/data:font\/woff2?;base64,/i.test(svg)) {
     failures.push(`${rel}: 需要以 data URI 内嵌 Virgil 字体`);

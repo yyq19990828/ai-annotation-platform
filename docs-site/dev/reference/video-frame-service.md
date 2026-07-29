@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.25
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-29
 ---
 
 # 视频后端帧服务
@@ -52,19 +52,11 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}
 
 ### Chunk 状态机
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending: API 首次请求 / 失败重试
-    pending --> ready: worker 写入 storage_key 成功
-    pending --> failed: ffmpeg 失败 / 超时（写 error 字段）
-    failed --> pending: POST /chunks:retry 重新投递
-    ready --> [*]
-    note right of ready
-        分两种 generation_mode:
-        smart_copy (stream copy, 0 转码) /
-        transcode (H.264 baseline fallback)
-    end note
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/reference/video-chunk-lifecycle.svg"
+  alt="视频 chunk 从 pending 进入 ready 或 failed，failed 可通过 retry 重新投递，ready 记录 smart_copy 或 transcode 生成模式"
+  caption="Chunk 生成、失败重试与就绪后的生成模式"
+/>
 
 | 状态      | 触发 / 含义                                                                         |
 | --------- | ----------------------------------------------------------------------------------- |

@@ -3,7 +3,7 @@ audience: [ops]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-29
 ---
 
 # 安全模型
@@ -95,24 +95,11 @@ Token claims：
 
 ### 3.2 注销机制
 
-```mermaid
-sequenceDiagram
-    participant Web as 浏览器
-    participant API as FastAPI
-    participant Redis
-
-    Note over Web,API: 单设备登出
-    Web->>API: POST /auth/logout (Bearer <token>)
-    API->>Redis: SETEX token_bl:<jti> <ttl> "1"
-    API-->>Web: 204
-    Note over API: 后续带该 jti 的请求被 require_user 拒绝
-
-    Note over Web,API: 全设备登出
-    Web->>API: POST /auth/logout-all
-    API->>Redis: INCR token_gen:<user_id> → new_gen
-    API-->>Web: { access_token: <带 new_gen 的新 token> }
-    Note over API: 旧 token 的 gen != new_gen，全部拒绝
-```
+<ExcalidrawDiagram
+  src="/diagrams/ops/security/logout-lifecycle.svg"
+  alt="单设备登出将 JWT jti 加入 Redis 黑名单，全设备登出递增用户 token generation 使旧 token 失效"
+  caption="JWT 单设备与全设备注销链路"
+/>
 
 实现：
 

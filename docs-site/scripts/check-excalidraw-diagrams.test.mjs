@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { deflateSync } from "node:zlib";
 import { checkExcalidrawDiagrams } from "./check-excalidraw-diagrams.mjs";
 
 function withFixture(run) {
@@ -18,13 +19,28 @@ function withFixture(run) {
 function writeValidSvg(docsRoot, relative = "dev/system-overview.svg") {
   const target = path.join(docsRoot, "public/diagrams", relative);
   fs.mkdirSync(path.dirname(target), { recursive: true });
+  const scene = JSON.stringify({
+    type: "excalidraw",
+    version: 2,
+    source: "https://excalidraw.com",
+    elements: [],
+    appState: { viewBackgroundColor: "#ffffff" },
+    files: {},
+  });
+  const envelope = JSON.stringify({
+    version: "1",
+    encoding: "bstring",
+    compressed: true,
+    encoded: deflateSync(scene).toString("latin1"),
+  });
+  const payload = Buffer.from(envelope, "latin1").toString("base64");
   fs.writeFileSync(
     target,
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
 <!-- svg-source:excalidraw -->
 <metadata>
 <!-- payload-type:application/vnd.excalidraw+json -->
-<!-- payload-start -->embedded-scene-payload<!-- payload-end -->
+<!-- payload-start -->${payload}<!-- payload-end -->
 </metadata>
 <defs><style>@font-face{font-family:"Virgil";src:url("data:font/woff2;base64,AA==")}</style></defs>
 <text font-family="Virgil">System</text>
