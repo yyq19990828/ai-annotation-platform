@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-06
+last_reviewed: 2026-07-29
 ---
 
 # 任务模块
@@ -101,25 +101,23 @@ review
 
 - 审核退回时，task 路由会把 `status` 写成字符串 `"rejected"`
 
-这意味着现仓里存在“枚举定义”和“运行时业务状态”并不完全对齐的历史现象。开发时不要只看 `TaskStatus` 枚举，还要看 `tasks.py` 的真实分支。
+这意味着现仓里存在“枚举定义”和“运行时业务状态”并不完全对齐的历史现象。开发时不要只看 `TaskStatus` 枚举，还要看 `tasks/lifecycle.py`、`tasks/review.py` 和 `services/annotation.py` 的真实分支。
 
 ### 主要工作流
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending
-    pending --> in_progress: 首次产生 annotation / 拿题后开始编辑
-    in_progress --> review: submit
-    review --> in_progress: withdraw
-    review --> completed: reviewer approve
-    review --> rejected: reviewer reject
-    completed --> in_progress: reopen
-    rejected --> in_progress: accept-rejection
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/task-lifecycle.svg"
+  alt="Task 可由待处理进入编辑，也可从待处理或编辑中送审；审核可撤回、通过或退回，完成和退回后可重新编辑"
+  caption="Task 主工作流（运行时代码包含 rejected 状态）"
+/>
 
 补充：
 
-- `uploading` 主要存在于上传阶段，不是标注主流程的常驻态
+- `uploading` 只用于直接 `/files/upload-init` 上传旁路，普通数据集关联创建的 task 直接进入 `pending`
+- 只有首个有效 annotation 会触发 `pending → in_progress`；拿题、加锁或打开编辑器本身不会改变状态
+- `pending / in_progress` 都可以通过 `submit / skip` 直接进入 `review`
+- 删掉最后一个有效 annotation 会触发 `in_progress → pending`
+- 批次级驳回会把 `review / completed` task 回退到 `pending`；批次终极重置或强制删除则会把所有非 `pending` task 回退到 `pending`
 - `rejected` 虽不在当前 `TaskStatus` 枚举中，但在业务代码中是实际存在状态
 
 ## 可见性与派题
@@ -202,8 +200,8 @@ stateDiagram-v2
 
 ### 语义要点
 
-- `submit`
-  `in_progress → review`
+- `submit / skip`
+  `pending / in_progress → review`
 - `withdraw`
   标注员在 reviewer 未 claim 前把 `review → in_progress`
 - `review/claim`

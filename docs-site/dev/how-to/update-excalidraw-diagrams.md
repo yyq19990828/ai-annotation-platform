@@ -49,6 +49,7 @@ docs-site/public/diagrams/dev/concepts/system-overview.svg
 3. 包含背景，并保留适度画布留白。
 
 将导出文件直接保存到 `docs-site/public/diagrams/` 下对应的文档域。
+跨多个页面复用的 canonical 图放在 `docs-site/public/diagrams/shared/`，所有页面引用同一个 SVG，不要为不同受众复制资产。
 
 ### 2. 在 Markdown 中引用
 

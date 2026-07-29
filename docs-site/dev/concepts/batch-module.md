@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-29
 ---
 
 # 批次模块
@@ -102,34 +102,21 @@ archived
 
 状态机总图：
 
-```mermaid
-stateDiagram-v2
-    [*] --> draft
-    draft --> active
-    active --> pre_annotated
-    active --> annotating
-    active --> archived
-    pre_annotated --> annotating
-    pre_annotated --> active
-    pre_annotated --> archived
-    annotating --> reviewing
-    annotating --> archived
-    reviewing --> approved
-    reviewing --> rejected
-    approved --> archived
-    approved --> reviewing
-    rejected --> active
-    rejected --> reviewing
-    rejected --> archived
-    archived --> active
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/batch-lifecycle.svg"
+  alt="Batch 的全部正常合法迁移，包括 AI 预标、标注、审核、归档和 owner 逆向恢复路径"
+  caption="Batch 正常状态迁移（对应 BatchService.VALID_TRANSITIONS）"
+/>
 
 后端真值源在 `apps/api/app/services/batch.py:VALID_TRANSITIONS`。
+`reset_to_draft` 是正常状态机外的 owner 管理旁路，可从任意状态回到 `draft`，不属于 `VALID_TRANSITIONS`。
 
 ### 自动迁移
 
-`BatchService.check_auto_transitions()` 当前只处理两类自动迁移：
+运行时有三类自动迁移来源：
 
+- `active → pre_annotated`
+  条件：AI 批量预标成功结束且不是全量失败，由 worker 推进
 - `active | pre_annotated → annotating`
   条件：batch 内存在 `Task.status in ["in_progress", "rejected"]`
 - `annotating → reviewing`
@@ -165,7 +152,7 @@ stateDiagram-v2
 这会影响 3 个地方：
 
 1. `VALID_TRANSITIONS`
-   `active → pre_annotated`、`pre_annotated → annotating | active | archived`
+   `active → pre_annotated`、`pre_annotated → annotating | active | archived`；其中通用的 `pre_annotated → active` 只改变状态，是否清理 predictions 取决于具体业务入口
 2. `check_auto_transitions()`
    标注员开始动 task 后，`pre_annotated → annotating`
 3. 前端展示

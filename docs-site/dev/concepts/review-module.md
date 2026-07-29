@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-25
+last_reviewed: 2026-07-29
 ---
 
 # 审核模块
@@ -62,17 +62,12 @@ graph TD
 
 `task` 在审核相关的主路径如下：
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending
-    pending --> review: submit / skip
-    in_progress --> review: submit / skip
-    review --> in_progress: withdraw
-    review --> completed: review/approve
-    review --> rejected: review/reject
-    completed --> in_progress: reopen
-    rejected --> in_progress: accept-rejection
-```
+- `pending / in_progress → review`：`submit / skip`
+- `review → in_progress`：`withdraw`
+- `review → completed / rejected`：reviewer `approve / reject`
+- `completed / rejected → in_progress`：annotator `reopen / accept-rejection`
+
+完整状态和批次级覆盖路径见 [Task 状态机](./task-module#task-状态机)。
 
 这里最重要的事实有两个：
 
@@ -83,15 +78,12 @@ stateDiagram-v2
 
 `batch` 的 review 相关主路径如下：
 
-```mermaid
-stateDiagram-v2
-    annotating --> reviewing: annotator submit batch
-    reviewing --> approved: reviewer approve batch
-    reviewing --> rejected: reviewer reject batch
-    approved --> reviewing: owner reopen review
-    rejected --> reviewing: owner reopen review
-    rejected --> active: owner reverse reset
-```
+- `annotating → reviewing`：全部任务完成后自动推进，或被分派 annotator 主动送审
+- `reviewing → approved / rejected`：reviewer 通过或退回
+- `approved / rejected → reviewing`：owner 填写理由后重开审核
+- `rejected → active`：owner 重新激活返工
+
+完整状态、归档路径和终极重置见 [Batch 状态机](./batch-module#状态机)。
 
 要区分：
 
@@ -145,7 +137,7 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 - `archived → active`
 - `reset_to_draft`
 
-这些操作多数都要求填写 `reason`，并落审计。
+其中 `approved → reviewing`、`rejected → reviewing`、`archived → active` 和 `pre_annotated → active` 要求填写 `reason`；`rejected → active` 当前不要求理由。所有操作都会落审计。
 
 ## Task 级审核细节
 
@@ -228,7 +220,7 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 行为：
 
 - `review → rejected`
-- `reject_reason` 必填
+- `reject_reason_type` 必填，补充说明文本 `reject_reason` 可选
 - 回写 `reviewed_at`
 - project / batch counters 回写
 - 给 annotator 发 `task.rejected` 通知
@@ -270,7 +262,7 @@ owner 是反向迁移和兜底操作的最终执行者，例如：
 
 ### annotating → reviewing
 
-当前是 annotator 在批次页 / 标注页上手工提交整批。
+该迁移有两条入口：系统检测到批次内不再存在 `pending / in_progress / rejected` task 时自动推进，或 annotator 在批次页 / 标注页上主动提交整批。
 
 对应：
 
@@ -314,7 +306,7 @@ reviewer 通过 batch transition 放行整批。
 
 系统会：
 
-- 强制填写 `reason`
+- `approved → reviewing`、`rejected → reviewing` 强制填写 `reason`；`rejected → active` 当前不要求理由
 - 写 `BATCH_STATUS_CHANGED` 审计
 - 按方向给 reviewer / annotator 发通知
 
