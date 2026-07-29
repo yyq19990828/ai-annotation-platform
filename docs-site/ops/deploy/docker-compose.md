@@ -58,23 +58,23 @@ last_reviewed: 2026-07-29
 
 ### 2.3 对象存储 (MinIO / S3 兼容)
 
-| 变量                                | 默认             | 说明                                                                                                                                                                 |
-| ----------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MINIO_ENDPOINT` **必填**           | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。                                                                                                |
-| `MINIO_ACCESS_KEY` **必填**         | `minioadmin`     | 等价 AWS Access Key ID。                                                                                                                                             |
-| `MINIO_SECRET_KEY` **必填**         | `minioadmin`     | 生产**必须**换。                                                                                                                                                     |
-| `MINIO_BUCKET`                      | `annotations`    | 主标注文件桶（图像 / 视频帧）。                                                                                                                                      |
-| `MINIO_DATASETS_BUCKET`             | `datasets`       | 上传 dataset 桶。                                                                                                                                                    |
-| `MINIO_BUG_REPORTS_BUCKET`          | `bug-reports`    | bug 反馈附件桶。                                                                                                                                                     |
-| `MINIO_DATA_DIR`                    | `miniodata`      | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。                        |
-| `MINIO_PUBLIC_URL`                  | 空               | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。                                                                     |
-| `MINIO_USE_SSL`                     | `false`          | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。                                                                                                      |
-| `ML_BACKEND_STORAGE_HOST`           | 空               | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
-| `ML_BACKEND_DEFAULT_URL`            | 空               | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。                                                                                              |
-| `MASK_FORMAT_TEMP_QUOTA_BYTES`      | `8589934592`     | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。                                                                                         |
-| `MASK_FORMAT_MAX_ENTRY_BYTES`       | `536870912`      | 安全 archive 单 entry 的最大展开字节数。                                                                                                                             |
-| `MASK_FORMAT_MAX_ARCHIVE_FILES`     | `200000`         | 单个 Mask 格式包允许的最大文件数。                                                                                                                                   |
-| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100`            | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。                                                                                                       |
+| 变量                                | 默认             | 说明                                                                                                                                                                                            |
+| ----------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MINIO_ENDPOINT` **必填**           | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。                                                                                                                           |
+| `MINIO_ACCESS_KEY` **必填**         | `minioadmin`     | 等价 AWS Access Key ID。                                                                                                                                                                        |
+| `MINIO_SECRET_KEY` **必填**         | `minioadmin`     | 生产**必须**换。                                                                                                                                                                                |
+| `MINIO_BUCKET`                      | `annotations`    | 主标注文件桶（图像 / 视频帧）。                                                                                                                                                                 |
+| `MINIO_DATASETS_BUCKET`             | `datasets`       | 上传 dataset 桶。                                                                                                                                                                               |
+| `MINIO_BUG_REPORTS_BUCKET`          | `bug-reports`    | bug 反馈附件桶。                                                                                                                                                                                |
+| `MINIO_DATA_DIR`                    | `miniodata`      | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。                                                   |
+| `MINIO_PUBLIC_URL`                  | 空               | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。                                                                                                |
+| `MINIO_USE_SSL`                     | `false`          | 决定 API / worker 连 `MINIO_ENDPOINT` 以 HTTP 还是 HTTPS；只有该 endpoint 本身提供 TLS 时才设 `true`。公网预签名 URL 是否 HTTPS 由 `MINIO_PUBLIC_URL` 决定，不要因外层 LB 终结 TLS 而误改本项。 |
+| `ML_BACKEND_STORAGE_HOST`           | 空               | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。                            |
+| `ML_BACKEND_DEFAULT_URL`            | 空               | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。                                                                                                                         |
+| `MASK_FORMAT_TEMP_QUOTA_BYTES`      | `8589934592`     | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。                                                                                                                    |
+| `MASK_FORMAT_MAX_ENTRY_BYTES`       | `536870912`      | 安全 archive 单 entry 的最大展开字节数。                                                                                                                                                        |
+| `MASK_FORMAT_MAX_ARCHIVE_FILES`     | `200000`         | 单个 Mask 格式包允许的最大文件数。                                                                                                                                                              |
+| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100`            | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。                                                                                                                                  |
 
 Mask 格式 staged object 使用 import bucket，导出产物使用 export bucket，两者均由 API 初始化为 7 天 lifecycle。
 调小配额时应同时观察 `media` / `export` 队列的失败率；只需修改 `.env` 并重建容器，不需要重建镜像。
@@ -383,18 +383,18 @@ mc mirror anno/datasets    s3-backup/anno/datasets
 
 ### 5.3 Redis
 
-不需要持久备份——Redis 当前只装：
+Redis 当前没有 volume，也不是业务系统真值，但其中运行状态丢失后不能简单当作“无影响重启”：
 
-- Celery 队列（短暂）
-- 限流计数（5 分钟窗口）
-- token 黑名单（≤ token 剩余有效期）
-- 通知 Pub/Sub（瞬时）
+- Celery broker 的排队 / 在途交付状态可能丢失，PostgreSQL 中的作业记录需重试或对账。
+- 任务锁、限流计数、ML 路由 lease / 熔断与 GPU 资源账本会重置。
+- 通知 Pub/Sub 消息是瞬时的；持久化通知可从 PostgreSQL 的 GET 端点补齐。
+- 已撤销 token 的黑名单会丢失，这些 token 在自身过期前可能再次被接受，恢复时需按安全事件评估。
 
-崩溃影响：用户当下需重新登录、断线 30s 内 publish 的通知可能丢失（兜底 GET 端点会补齐）。
+因此 Redis 通常不做业务数据备份，但必须有明确的崩溃恢复、作业对账和 token 处置流程。
 
 ### 5.4 卷存储位置（命名卷 vs 宿主机统一前缀）
 
-`docker-compose.yml` 默认用 **Docker 托管的命名卷**（`pgdata` / `miniodata` / 模型权重 / 监控），数据落在 `/var/lib/docker/volumes/<project>_<vol>`。想把它们集中到宿主机一个统一目录（便于备份、迁移、放到指定磁盘），叠加 `docker-compose.hostvols.yml`：
+`docker-compose.yml` 与 `docker-compose.ml.yml` 默认使用 **Docker 托管的命名卷**（`pgdata` / `miniodata` / 模型权重 / 监控），数据落在 `/var/lib/docker/volumes/<project>_<vol>`。`docker-compose.hostvols.yml` 可把其中明确列出的卷集中到宿主机统一目录，便于备份、迁移或放到指定磁盘：
 
 ```bash
 export DATA_ROOT=/srv/annotation-data   # 绝对路径
@@ -403,7 +403,7 @@ mkdir -p "$DATA_ROOT"/{pgdata,minio,gsam2-checkpoints,gsam2-hf-cache,sam3-checkp
 docker compose -f docker-compose.yml -f docker-compose.hostvols.yml up -d
 ```
 
-不挂这个文件时行为完全不变（仍是命名卷）。想免去每次敲 `-f`，在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.hostvols.yml`。
+当前叠加文件重定向 `pgdata`、`miniodata`、Grounded-SAM-2 / SAM 3 权重与缓存、`prometheus_data` 和 `grafana_data`。`yolo_checkpoints`、`alertmanager_data` 等未列出的卷仍由 Docker 托管；`./data/duckdb` 本来就是 bind mount。不挂该文件时行为不变。想免去每次敲 `-f`，在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.hostvols.yml`。
 
 > 切换不会自动迁移数据：从命名卷转 bind 前，先 `docker compose stop`，把旧卷内容（`docker volume inspect <vol>` 查 `Mountpoint`）`cp` 到 `$DATA_ROOT` 对应子目录，否则容器会以为数据为空。
 

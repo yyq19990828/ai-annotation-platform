@@ -3,7 +3,7 @@ audience: [ops, dev]
 type: explanation
 since: v0.15.17
 status: stable
-last_reviewed: 2026-06-12
+last_reviewed: 2026-07-29
 ---
 
 # 端口暴露与网络安全
@@ -35,6 +35,7 @@ last_reviewed: 2026-06-12
 | 6379               | redis                               |    ❌ **不发布**    | 同上 `redis:6379`；broker / 限流 / 黑名单                                |
 | 9000 / 9001        | MinIO API / 控制台                  |    ❌ **不发布**    | 同上 `minio:9000`；presigned URL 可达性见 §5                             |
 | 8025 / 1025        | mailpit（dev）                      |    ❌ **不发布**    | 假收件箱，**生产应禁用**，改真实 SMTP                                    |
+| 8001–8005          | 可选 ML Backend profile             |  ⚠️ 当前发布到宿主  | `docker-compose.ml.yml` 不自动收紧绑定；只允许 worker 所在可信网络访问   |
 | 9090 / 3001 / 9093 | Prometheus / Grafana / Alertmanager |    ⚠️ 仅内网/VPN    | 监控 profile，默认不启动；启用时务必限内网                               |
 
 > **两层绑定**：① 容器**内部**互通走 compose 内网 service DNS（`postgres:5432` 等），不需要发布到宿主——所以 prod 用 `ports: !reset []` 把基础文件给 dev 用的 `0.0.0.0` 发布**整个移除**，PG/Redis/MinIO 在宿主网卡上完全不可见。② api/web 仍需让外层反代够到，故发布但绑回环 `${PROXY_BIND_HOST:-127.0.0.1}`。
@@ -100,34 +101,17 @@ services:
 
 端口映射 `"8080:8000"` 冒号左边是宿主机口子、右边是容器内服务；**左边不写 IP 时默认绑 `0.0.0.0`**——这就是收紧前的隐患。下面两种部署形态决定 `PROXY_BIND_HOST` 怎么填：
 
-**情形 A —— 反代与容器同机（绝大多数，默认即安全，无需改）**
+<ExcalidrawDiagram
+  src="/diagrams/shared/deployment/production-network-boundaries.svg"
+  alt="生产环境的外层反代与容器同机时通过回环 8088 进入 web，异机时通过容器主机内网 IP 的 8088 进入 web，两者的公网都只暴露 443"
+  caption="反向代理同机与异机时的网卡绑定边界"
+/>
 
-```mermaid
-graph LR
-  Net[公网] -->|HTTPS 443| Nginx
-  subgraph Host[宿主机 server-1]
-    Nginx[nginx 反代] -->|127.0.0.1:8088| Web[web 容器]
-    Web -->|内部网络| API[api 容器]
-  end
-```
+**情形 A —— 反代与容器同机（绝大多数，默认即安全，无需改）**
 
 nginx 和容器是「邻居」，走回环 `127.0.0.1:8088` 就能互通；公网只摸得到 443，8080/8088 因绑回环而进不来。
 
 **情形 B —— 反代与容器不同机（需设 `PROXY_BIND_HOST=内网IP`）**
-
-```mermaid
-graph LR
-  Net[公网] -->|HTTPS 443| Nginx
-  subgraph S1[server-1 反代机]
-    Nginx[nginx 反代]
-  end
-  subgraph S2[server-2 容器机]
-    Web[web 容器]
-    API[api 容器]
-    Web --> API
-  end
-  Nginx -->|10.0.0.5:8088 内网| Web
-```
 
 nginx 要**跨机器**连 server-2 的容器。若 server-2 端口绑 `127.0.0.1`，回环出不了 server-2，nginx 永远连不上 → 必须绑内网 IP（`PROXY_BIND_HOST=10.0.0.5`），让 nginx 走内网到达。仍**不要**绑 `0.0.0.0`：绑内网 IP 时公网网卡依旧碰不到，安全性不变。
 
@@ -157,7 +141,7 @@ export AAP_API_KEY=ak_...
 export AAP_BASE_URL=http://1.2.3.4:8000
 ```
 
-部署侧务必把 `app.example.com` 的 443 指向反代、反代再转 `api:8000`（[生产部署 §3](/ops/deploy/docker-compose) 有 nginx 示例）。
+部署侧务必把 `app.example.com` 的 443 指向外层反代，反代再转到 web 容器的 8088，由 web 容器内 Nginx 把 `/api/` 和 `/ws/` 转给 `api:8000`（[生产部署 §3](/ops/deploy/docker-compose) 有 nginx 示例）。
 
 ### 5.2 API Key 管理
 
@@ -174,7 +158,7 @@ export AAP_BASE_URL=http://1.2.3.4:8000
 
 如果后端签发的 URL 指向 MinIO **内网地址**（`http://minio:9000` 或内网 IP），远程机器**连不上**——表现为「API 调用成功，但上传/下载卡住或连接失败」。
 
-修复：后端配 `MINIO_PUBLIC_URL` 为对外可解析、可访问的地址（与容器内 `MINIO_ENDPOINT` 是两层视角，详见[生产部署 §2.3](/ops/deploy/docker-compose)）。对象存储那一段同样建议上 TLS（`MINIO_USE_SSL=true`）。
+修复：后端配 `MINIO_PUBLIC_URL` 为对外可解析、可访问的 HTTPS 地址（与容器内 `MINIO_ENDPOINT` 是两层视角，详见[生产部署 §2.3](/ops/deploy/docker-compose)）。`MINIO_USE_SSL` 控制的是 API / worker 到 `MINIO_ENDPOINT` 这一段：只有内部 endpoint 本身提供 TLS 时才设为 `true`，它不代替公网 URL 的 HTTPS 配置。
 
 ---
 
@@ -182,11 +166,12 @@ export AAP_BASE_URL=http://1.2.3.4:8000
 
 - [ ] 后端 8080 / web 8088 端口绑 `127.0.0.1:` 或内网 IP，**不是** `0.0.0.0`（prod compose 已默认绑回环，确认没被 `PROXY_BIND_HOST=0.0.0.0` 覆盖；`ss -tlnp` 验证）
 - [ ] PG 5432 / Redis 6379 / MinIO 9000 **完全不向宿主发布**（prod 叠加文件 `ports: !reset []`；`docker compose ... config` 里这几个服务应无 `ports`，`ss -tlnp` 看不到对应监听）
+- [ ] 如启用 ML profile，8001–8005 只对 worker 所在可信网络开放；不依赖默认宿主发布，用绑定覆盖、安全组或 `DOCKER-USER` 明确收紧
 - [ ] 确认 ufw 没被 Docker 绕过（用 §4 的绑定姿势或 `DOCKER-USER` 链）
 - [ ] 公网只开 443，外层反代终结 TLS（证书有效、HSTS 已开）
 - [ ] `ENVIRONMENT=production`、`SECRET_KEY` 已换强随机、`CORS_ALLOW_ORIGINS` 显式列（这三项启动断言，见[安全模型 §6](/ops/security/)）
 - [ ] `/metrics` 反代里限内网 `allow / deny`
-- [ ] `MINIO_PUBLIC_URL` 指向对外可达地址，`MINIO_USE_SSL=true`，MinIO 默认凭据已换
+- [ ] `MINIO_PUBLIC_URL` 指向对外可达的 HTTPS 地址；`MINIO_USE_SSL` 与内部 `MINIO_ENDPOINT` 的实际协议一致；MinIO 默认凭据已换
 - [ ] Redis 设 `requirepass`（并同步 `REDIS_URL` 带密码）——纵深防御，即便端口不发布，共享宿主上 Redis 仍是经典横向移动目标
 - [ ] mailpit 已禁用，改真实 SMTP
 - [ ] 远程 SDK 调用方用 `https://` base_url，API Key 走 `0600` 配置文件、定期轮换
