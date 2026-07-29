@@ -300,70 +300,29 @@ WS /ws/video-tracker-jobs/{job_id}?token=<access-token>
 - `job_completed`
 - `job_failed`
 - `job_cancelled`
+- `job_partially_reviewed`
 - `job_accepted`
 - `job_discarded`
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant FE as 前端 (WS 订阅)
-    participant API as FastAPI
-    participant W as Celery worker (runner)
-    participant ML as ML Backend (/predict)
-    participant Pub as Redis Pub/Sub<br/>(video-tracker-job:{job_id})
+<ExcalidrawDiagram
+  src="/diagrams/shared/video/video-tracker-human-loop.svg"
+  alt="视频 AI 追踪从单轨、多轨、无源发现或人工纠错入口，经能力路由和固定实例执行分窗推理，把候选暂存后通过预览、局部决定、版本复核与整批兼容入口进入已接受或已丢弃状态"
+  caption="视频追踪的运行事件、持久化候选与人工决策闭环"
+/>
 
-    FE->>API: POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate
-    API->>W: enqueue runner
-    API-->>FE: 201 { job_id, event_channel }
-    FE->>API: WS /ws/video-tracker-jobs/{job_id}?token=...
-    W->>Pub: publish job_started
-    Pub-->>FE: job_started
+WebSocket 只承载运行期提示：`frame_result` 中的实例 id 仍可能是窗口局部值，最终 job 状态、候选内容、revision 与源版本必须从 HTTP job / preview 接口读取。正常完成会暂存候选并进入 `pending_review`；tracking 取消时可保留已收集的部分候选，correction 取消会清空候选，失败则没有可审候选。
 
-    loop 长区间分窗
-        W->>ML: /predict (source_geometry + seeds/text)
-        ML-->>W: stream frame_result[]
-        loop 每帧
-            W->>Pub: publish frame_result {idx, geometry, confidence}
-            Pub-->>FE: frame_result
-        end
-        W->>Pub: publish job_progress {current, total}
-        Pub-->>FE: job_progress
-    end
-
-    alt 正常结束
-        W->>W: staged_result 暂存候选
-        W->>Pub: publish job_completed
-        Pub-->>FE: job_completed
-        FE->>API: GET /video-tracker-jobs/{id}/preview
-        API-->>FE: 候选逐帧结果
-        alt 用户接受
-            FE->>API: POST /video-tracker-jobs/{id}/accept
-            API->>API: 主实例回填源轨迹，额外实例新建轨迹
-        else 用户丢弃
-            FE->>API: POST /video-tracker-jobs/{id}/discard
-            API->>API: 清 staged_result，annotation 不变
-        end
-    else 出错
-        W->>Pub: publish job_failed {error}
-        Pub-->>FE: job_failed
-    else 用户取消 (DELETE)
-        FE->>API: DELETE /video-tracker-jobs/{job_id}
-        API->>W: 写 cancel_requested_at
-        W->>W: 若已有结果则暂存部分候选
-        W->>Pub: publish job_cancelled
-        Pub-->>FE: job_cancelled
-    end
-```
+局部 `/decisions` 以 revision、源 annotation version 和稳定 candidate key 做并发复核，决定后仍有候选时进入 `partially_reviewed` 并发布同名事件。`accept / discard` 是普通 tracking job 的整批兼容入口，不替代局部决定契约。
 
 DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：
 
 ```text
-queued -> running -> pending_review -> accepted | discarded
+queued -> running -> pending_review -> partially_reviewed -> accepted | discarded
                   -> failed
-                  -> cancelled -> accepted | discarded   # 有部分 staged_result 时
+                  -> cancelled --(tracking 有部分 staged_result)--> partially_reviewed | accepted | discarded
 ```
 
-`completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；取消前已收集的结果会暂存为部分候选。待审 / 已接受 / 已丢弃属于终态，不能再取消。
+`completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；tracking 取消前已收集的结果会暂存为部分候选，correction 取消则清空候选并释放租约。`accepted / discarded / failed` 属于终态；有暂存结果的 `cancelled` 仍可审阅。
 
 `video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。局部 decision 允许 job 创建者、已认领任务的审核员或项目特权角色执行，并在行锁后再次复核身份。所有决定都写审计动作。
 

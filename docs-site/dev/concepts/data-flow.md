@@ -116,31 +116,15 @@ consumer 闭环验证前保持关闭；capability 响应不会把未验证 adapt
 
 ## 实时通知
 
-```mermaid
-sequenceDiagram
-  participant Web as 浏览器
-  participant API as FastAPI HTTP
-  participant DB as Postgres
-  participant Pub as Redis Pub/Sub
-  participant WS as FastAPI WS
+<ExcalidrawDiagram
+  src="/diagrams/shared/realtime/durable-notification-delivery.svg"
+  alt="用户通知在业务事务中先 flush Postgres 行、再尝试发布 Redis PubSub，调用方之后才 commit 或 rollback；浏览器将 WebSocket 推送当作刷新提示并用 REST 读已提交真值"
+  caption="通知的在线快路径、事务时序与两个失败窗口"
+/>
 
-  Web->>WS: connect /ws/notifications?token=<jwt>
-  Note right of WS: ws.py:notifications_socket<br/>JWT 校验 → SUBSCRIBE notify:{user_id}
-  WS->>Pub: SUBSCRIBE notify:{user_id}
+通知的持久化真值是 Postgres，Redis Pub/Sub 只是在线刷新提示。`NotificationService.notify()` 在调用方事务中先 `db.add + flush`，随后 best-effort publish，最终由调用方 `commit` 或 `rollback`：发布失败但提交成功时，前端靠 30s REST 轮询补齐；发布成功但事务回滚时，客户端可能收到一次“幽灵提示”，重新读取 REST 后不会看到记录。当前链路没有 outbox，也不提供至少一次投递保证。
 
-  Note over API,Pub: 任意业务路径触发通知
-  API->>DB: INSERT notifications (持久化)
-  API->>Pub: PUBLISH notify:{user_id} <NotificationOut JSON>
-  Pub-->>WS: message
-  WS-->>Web: send_text(<json>)
-
-  loop 每 30s
-    WS-->>Web: { "type": "ping" }
-    Note right of WS: 防 LB idle 断连
-  end
-
-  Note over Web: 断线后<br/>useReconnectingWebSocket 指数退避
-```
+`useNotificationSocket` 为通知频道维护独立的 1s → 30s 无限重连循环，并在 `1008 / 4001` 鉴权关闭码下刷新 token。收到业务消息后它只让查询缓存失效，展示数据仍以 REST 已提交结果为准；连接打开本身不会触发一次补拉。
 
 服务端 push 主要事件：
 
@@ -150,9 +134,8 @@ sequenceDiagram
 
 代码索引：
 
-- WS 端点：`apps/api/app/api/v1/ws.py` (`ws.py:70-114`)
-- 通知服务：`apps/api/app/services/notification.py:NotificationService.notify` (`notification.py:51-94`)
+- WS 端点：`apps/api/app/api/v1/ws.py:notifications_socket`
+- 通知服务：`apps/api/app/services/notification.py:NotificationService.notify`
 - 通知模型：`apps/api/app/db/models/notification.py`
 - 前端 hook：`apps/web/src/hooks/useNotificationSocket.ts`
-- 重连基础：`apps/web/src/hooks/useReconnectingWebSocket.ts`
 - WS 协议详细：[`docs-site/dev/ws-protocol.md`](../reference/ws-protocol)
