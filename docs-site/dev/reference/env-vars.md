@@ -106,6 +106,7 @@ last_reviewed: 2026-07-30
 | `YOLO_IDLE_CHECK_INTERVAL` | `60` | — |
 | `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
 | `YOLO_STRICT_OFFLINE` | `0` | — |
+| `YOLO_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 YOLO 多模型池真实 GPU load → full unload → baseline 验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
 | `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | `—` | Managed GPU lifecycle Ed25519 public-key ring (kid -> unpadded base64url key). Empty keeps the backend in legacy-compatible mode; a non-empty invalid value fails startup. |
 

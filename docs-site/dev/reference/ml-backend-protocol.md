@@ -224,8 +224,11 @@ challenge `/health` 与 `/setup` 请求都携带 `Cache-Control: no-cache`，共
 并发健康扫描采用保守的 observation-window fence：写回锁内若发现另一轮扫描已在本轮 `probe_started_at` 之后
 提交，就丢弃本轮迟到结果。慢 `/setup` 因而不能借更晚的结束时间给旧 `/health` 续鲜并覆盖更新快照。
 
-只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 已完整宣告
-`managed_lifecycle`。ONNXTools 已实现固定三句柄池的 single-flight、borrower、取消安全 executor、全池清理与
+只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 已实现模型池的
+single-flight、borrower、取消安全 executor、全池清理与完整 lifecycle wire，但能力声明同样受部署验收门槛
+保护。默认 `YOLO_MANAGED_LIFECYCLE_VERIFIED=0`；只有当前镜像、权重与硬件完成多模型池真实加载、受管全池
+卸载和物理显存回落验收后才设为 `1`，否则 `/setup` 隐藏能力、拒绝 enforce 且 `evictable=false`。
+ONNXTools 已实现固定三句柄池的 single-flight、borrower、取消安全 executor、全池清理与
 完整 lifecycle wire，但部署还必须完成真实四 session GPU 回落验证；验证前
 `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED=0`，`/setup` 不宣告该能力、`/lifecycle/mode` 拒绝切入
 enforce，且 `evictable=false`。RapidOCR 也已实现动态 composite 引擎池、完整 lifecycle
