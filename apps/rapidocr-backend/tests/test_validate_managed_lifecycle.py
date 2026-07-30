@@ -8,6 +8,12 @@ import pytest
 from scripts import validate_managed_lifecycle as validator
 
 
+def test_rapidocr_version_uses_distribution_metadata(monkeypatch) -> None:
+    monkeypatch.setattr(validator, "distribution_version", lambda name: f"{name}-3.9.0")
+
+    assert validator._rapidocr_version() == "rapidocr-3.9.0"
+
+
 def test_approved_weights_require_exact_hash_manifest(tmp_path, monkeypatch) -> None:
     relative_paths = ["v5/det.onnx", "v5/cls.onnx", "v5/rec.onnx"]
     manifest = {}

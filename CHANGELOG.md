@@ -45,6 +45,10 @@
 - **WebCodecs 精确帧改为按客户端能力默认尝试**. 暂停、逐帧与稳定 seek 缺省使用既有有状态 GOP 解码链路；用户可在工作台设置或以 URL / localStorage 显式关闭，浏览器不支持、codec / chunk 异常和预算不足继续安全回退原生视频路径。硬解与跨浏览器 1080p/4K 矩阵继续作为后验验证，不把软件解码或 GPU 合成误记为硬解。
 - **Raster Mask WebGPU 候选进入默认构建**. 大 ROI `square dilate` 在首次相关操作时才惰性探测客户端 adapter，并继续受操作、尺寸、设备档位与字节预算门禁约束；任何能力或运行错误都精确回退 CPU Worker。生产镜像新增可回滚 build arg，设为 `false` 重建后不会加载 provider 或请求 adapter；macOS、Wayland 与 Windows 的 correctness、长会话、性能和 fallback rate 继续在路线图跟踪。
 
+### Fixed
+
+- **RapidOCR 部署验收能够在 3.9.0 镜像中完整输出证据**. 验收器改从标准 distribution metadata 读取版本，避免因上游包不暴露 `__version__` 而在 GPU 加载、卸载全部成功后误报失败。
+
 ## [0.23.19] - 2026-07-30
 
 ### Changed

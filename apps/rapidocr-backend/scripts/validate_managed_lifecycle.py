@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import uuid
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -51,6 +52,10 @@ POOL_TARGETS = (
     ("ocr-rec", {"version": "v5", "size": "server", "lang": "universal"}),
     ("ocr-e2e", {"version": "v6", "size": "medium", "lang": "universal"}),
 )
+
+
+def _rapidocr_version() -> str:
+    return distribution_version("rapidocr")
 
 
 def _required_env(name: str) -> str:
@@ -514,7 +519,7 @@ async def _run() -> dict[str, Any]:
                         "onnxruntime": str(onnxruntime.__version__),
                         "onnxruntime_device": str(onnxruntime.get_device()),
                         "cuda": gpu["runtime_version"],
-                        "rapidocr": str(__import__("rapidocr").__version__),
+                        "rapidocr": _rapidocr_version(),
                         "backend": str(main.BACKEND_VERSION),
                     },
                     "pool_topology": {
