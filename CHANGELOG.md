@@ -47,6 +47,7 @@
 
 ### Fixed
 
+- **开发态 GPU collector 可以与普通应用账户形成真实权限隔离**. Compose 内的 Celery worker 新增独立可覆盖的数据库连接串，不再被硬编码的 schema owner 账户锁死；当前部署可以让 API/worker 使用无 membership/fence DELETE 的非特权角色，同时把最小 DELETE 权限只交给 `gpu.control` 的 collector 角色。
 - **RapidOCR 部署验收能够在 3.9.0 镜像中完整输出证据**. 验收器改从标准 distribution metadata 读取版本，避免因上游包不暴露 `__version__` 而在 GPU 加载、卸载全部成功后误报失败。
 - **GPU 部署验收证据保持为可直接校验的单一 JSON 文档**. 五个 Backend 的验收器现将第三方模型加载输出隔离到 stderr，避免进度、权重诊断或 provider 日志污染 stdout 中的严格证据。
 

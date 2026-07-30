@@ -77,7 +77,7 @@ services:
     # ml.cpu 拆到 celery-worker-cpu, 实现设备感知并发隔离。
     command: celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -137,7 +137,7 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -187,7 +187,7 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=${CELERY_GPU_CONCURRENCY:-2}
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -238,7 +238,7 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=${CELERY_CPU_CONCURRENCY:-4}
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -278,7 +278,7 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -325,7 +325,7 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin

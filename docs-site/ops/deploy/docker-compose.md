@@ -3,7 +3,7 @@ audience: [ops]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-29
+last_reviewed: 2026-07-30
 ---
 
 # 生产部署（Docker Compose）
@@ -43,6 +43,7 @@ last_reviewed: 2026-07-29
 | 变量                                                  | 默认                           | 说明                                                                                                                                                                                                                                          |
 | ----------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL` **必填**                               | dev 连本机                     | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
+| `DATABASE_URL_DOCKER`                                 | dev 连 `postgres` service      | 仅供开发态 Compose 内的 Celery worker 使用；可独立切换到非 owner、非超级用户的普通应用角色。生产叠加文件继续统一读取 `DATABASE_URL`。                                                                                                         |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。                                                                     |
 
 容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）在启动时**自动** `alembic upgrade head`，无需手动跑。进程式部署才需手动 `uv run alembic upgrade head`（见 §4.5）。

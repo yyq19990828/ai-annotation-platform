@@ -17,6 +17,7 @@ last_reviewed: 2026-07-30
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串，格式：postgresql+asyncpg://用户名:密码@主机:端口/数据库名 本地开发可直接使用下方默认值；生产环境请替换为真实凭据 注：驱动必须是 postgresql+asyncpg；托管库走 SSL 时用 ?ssl=require（asyncpg 不认 sslmode=） |
+| `DATABASE_URL_DOCKER` | `postgresql+asyncpg://user:pass@postgres:5432/annotation` | 仅供开发态 Compose 内的 Celery worker 使用；容器访问 PostgreSQL 应使用 postgres 服务名。 GPU collector 启用前请改成独立、非 owner、非超级用户且无 membership/fence DELETE 的应用角色。 生产叠加文件仍统一读取 DATABASE_URL，不使用此项。 |
 
 ## 仅供 docker-compose.yml 里的 postgres 容器初始化用（后端不读这三项）。
 
