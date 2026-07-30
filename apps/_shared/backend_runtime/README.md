@@ -21,6 +21,11 @@ ML backend 运行时共享的**无状态叶子函数**。单一来源, 避免跨
   `AAP_GPU_PHYSICAL_DEVICE_TOKEN` 解析宿主物理卡 token；它未设置时才回落
   runtime 可见设备配置，避免把重映射后的逻辑 `cuda:0` 误当宿主卡 0。
 - `validate_single_gpu_device_set()` — backend 启动门禁，拒绝逗号多卡列表和已暴露 GPU 的无界 `all` 可见集合。
+- `build_managed_lifecycle_evidence()` / `validate_managed_lifecycle_evidence()` — 五个 Backend
+  共用的部署级受管生命周期验收证据外壳；严格校验部署与 GPU 身份、制品摘要、两轮显存回落、
+  必做故障合同、最终空池状态和运行时中间产物，并从 blockers 自动推导 `passed`。
+- `artifact_evidence()` / `memory_cycle_evidence()` — 生成不含本地路径的权重/fixture 摘要，
+  以及 64 MiB 稳定窗口与 90% 工作集回收率指标。
 
 **不包含** (见 `docs/plans/archive/2026-06-29-v0.20.3-ml-backend-shared-layer-extraction.md`):
 
@@ -35,6 +40,8 @@ ML backend 运行时共享的**无状态叶子函数**。单一来源, 避免跨
 - `torch` **不在依赖里**: 各 backend 的 torch / torchvision 由 docker base image 锁定, 在此声明会让
   `pip install -e` 误升级覆盖预装版本。`free_gpu_memory` / `gpu_info_snapshot` 把 `import torch` 包在
   try 里, 不可用时降级。
+- lifecycle evidence helper 只使用 Python 标准库，不读取或持久化签名私钥、admission token、
+  原始业务图像、文件路径或 signed URL；证据应写入仓库外的受限目录。
 
 ## 引用方式 (backend Dockerfile)
 
