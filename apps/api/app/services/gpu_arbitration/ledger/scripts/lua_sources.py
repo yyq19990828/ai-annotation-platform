@@ -3406,6 +3406,10 @@ end
 if ARGV[24] ~= '0' and ARGV[24] ~= '1' then
   return cjson.encode({status='config_mismatch', reason='cold_owner_mode_invalid', committed_mb=ledger.committed, lease_count=0})
 end
+local reconcile_deadline_grace = tonumber(ARGV[25])
+if not valid_integer(reconcile_deadline_grace, 0, 300000) then
+  return cjson.encode({status='config_mismatch', reason='reconcile_deadline_grace_invalid', committed_mb=ledger.committed, lease_count=0})
+end
 if ARGV[23] == '1' and ARGV[24] == '1' then
   return cjson.encode({status='config_mismatch', reason='admission_mode_conflict', committed_mb=ledger.committed, lease_count=0})
 end
@@ -3423,6 +3427,12 @@ if allocatable <= 0 then
 end
 
 local now = now_ms()
+local heartbeat_deadline = now + tonumber(ARGV[11])
+local hard_deadline = now + tonumber(ARGV[12])
+local renewed_reconcile_deadline = hard_deadline + reconcile_deadline_grace
+if renewed_reconcile_deadline > now + 300000 then
+  renewed_reconcile_deadline = now + 300000
+end
 local committed = calculate_committed(KEYS[2])
 if not committed then
   return cjson.encode({status='ledger_corrupt', reason='allocation_decode_failed', committed_mb=0, lease_count=0})
@@ -3654,8 +3664,6 @@ for _, item in ipairs(decoded_leases) do
 end
 redis.call('HSET', KEYS[2], ARGV[2], cjson.encode(allocation))
 
-local heartbeat_deadline = now + tonumber(ARGV[11])
-local hard_deadline = now + tonumber(ARGV[12])
 local lease = {
   lease_id=ARGV[8], backend_id=ARGV[2], owner_id=ARGV[9], generation=ARGV[4],
   operation=ARGV[10], state='active', created_at_ms=now,
@@ -3683,6 +3691,10 @@ redis.call('HSET', KEYS[1],
   'lease_counts', cjson.encode(ledger.lease_counts),
   'backend_queue_counts', cjson.encode(ledger.backend_queue_counts),
   'updated_at_ms', tostring(now))
+if renewed_reconcile_deadline > reconcile_deadline then
+  redis.call('HSET', KEYS[1],
+    'reconcile_deadline_ms', tostring(renewed_reconcile_deadline))
+end
 if ARGV[24] == '1' then
   redis.call('DEL', KEYS[4])
   redis.call('HSET', KEYS[1], 'transition_mirror', '')
@@ -5010,18 +5022,18 @@ local function eviction_branch_matches(transition, source_state, target_state)
   if source_state == 'resident' and target_state == 'draining' then
     return transition.eviction_branch == nil
   end
-  if transition.require_idle == true then
-    return transition.eviction_branch == nil
-  end
   if source_state == 'draining' and target_state == 'unloading' then
     return transition.eviction_branch == 'unload'
+  end
+  if source_state == 'unloading' then
+    return transition.eviction_branch == 'unload'
+  end
+  if transition.require_idle == true then
+    return transition.eviction_branch == nil
   end
   if source_state == 'draining'
      and (target_state == 'resident' or target_state == 'unknown') then
     return transition.eviction_branch == 'cancel'
-  end
-  if source_state == 'unloading' then
-    return transition.eviction_branch == 'unload'
   end
   return false
 end
@@ -5233,22 +5245,22 @@ if transition_owned then
       if transition.eviction_branch ~= nil then
         return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
       end
-    elseif transition.require_idle == true then
-      if transition.eviction_branch ~= nil then
-        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
-      end
     elseif allocation.state == 'draining' and ARGV[4] == 'unloading' then
       if transition.eviction_branch == 'cancel' then
         return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
       end
       arm_unload_branch = transition.eviction_branch == nil
+    elseif allocation.state == 'unloading' then
+      if transition.eviction_branch ~= 'unload' then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
+    elseif transition.require_idle == true then
+      if transition.eviction_branch ~= nil then
+        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
+      end
     elseif allocation.state == 'draining'
        and (ARGV[4] == 'resident' or ARGV[4] == 'unknown') then
       if transition.eviction_branch ~= 'cancel' then
-        return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
-      end
-    elseif allocation.state == 'unloading' then
-      if transition.eviction_branch ~= 'unload' then
         return cjson.encode({status='branch_conflict', state=allocation.state, generation=allocation.generation, committed_mb=ledger.committed})
       end
     end

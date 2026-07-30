@@ -1537,16 +1537,26 @@ async def _run_action(
             }
         )
     except GPUArbiterDispatchError as exc:
+        injected = bool(
+            fault
+            and fault.kind == "health-timeout"
+            and fault.hits == 1
+            and fault.hit_action_id == action.id
+        )
         expected = action.expected_error_code
         matched = bool(
-            expected is not None
+            not injected
+            and expected is not None
             and exc.error_code == expected
             and "grant_generation" not in row
             and "http_started_monotonic_ms" not in row
         )
         row.update(
             {
-                "status": "passed" if matched else "failed",
+                "status": (
+                    "fault_injected" if injected else "passed" if matched else "failed"
+                ),
+                "fault": fault.kind if injected and fault else None,
                 "expected_error_code": expected,
                 "error_code": exc.error_code,
                 "error_http_status": exc.status_code,
@@ -1700,6 +1710,12 @@ def _final_truth_checks(
         for action in manifest.actions
         if action.expected_error_code is not None
     }
+    if fault is not None and fault.kind == "health-timeout":
+        expected_rejection_backend_ids.update(
+            action.backend_id
+            for action in manifest.actions
+            if action.id == fault.hit_action_id
+        )
     before_allocation_backend_ids = {
         allocation["backend_id"]
         for resource in before.get("redis", {}).get("resources", {}).values()

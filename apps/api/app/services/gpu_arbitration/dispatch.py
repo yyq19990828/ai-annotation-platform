@@ -72,6 +72,7 @@ from app.services.gpu_arbitration.ledger import (
     GPUCardSnapshot,
     GPUQueueResult,
 )
+from app.services.gpu_arbitration.policy import _HEALTH_EVIDENCE_MAX_AGE
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import MLBackendClient
 
@@ -81,6 +82,11 @@ logger = structlog.get_logger(__name__)
 _GPU_RUNTIME_HEARTBEAT_TTL_MS = 15_000
 _GPU_RUNTIME_HEARTBEAT_INTERVAL_SECONDS = 5.0
 _GPU_RUNTIME_HARD_DEADLINE_GRACE_SECONDS = 30
+_GPU_RUNTIME_RECONCILE_DEADLINE_GRACE_MS = int(
+    _HEALTH_EVIDENCE_MAX_AGE.total_seconds() * 1000
+)
+_GPU_RUNTIME_MAX_RECONCILE_HORIZON_MS = 300_000
+_GPU_RUNTIME_MIN_RECONCILE_GRACE_MS = 120_000
 _GPU_RUNTIME_MIN_TOKEN_WINDOW_SECONDS = 5
 _GPU_RUNTIME_RETRY_AFTER_SECONDS = 1
 _GPU_RUNTIME_COLD_INTENT_TTL_MS = 30_000
@@ -730,6 +736,16 @@ def _runtime_hard_ttl_ms(
             "GPU runtime hard TTL is invalid",
         )
     return hard_ttl_ms
+
+
+def _runtime_reconcile_deadline_grace_ms(hard_ttl_ms: int) -> int:
+    available_grace_ms = _GPU_RUNTIME_MAX_RECONCILE_HORIZON_MS - hard_ttl_ms
+    if available_grace_ms < _GPU_RUNTIME_MIN_RECONCILE_GRACE_MS:
+        raise _dispatch_error(
+            GPUArbiterErrorCode.CONFIG_INVALID,
+            "GPU runtime timeout leaves no safe reconcile proof window",
+        )
+    return min(_GPU_RUNTIME_RECONCILE_DEADLINE_GRACE_MS, available_grace_ms)
 
 
 def _admission_timeout_ms(
@@ -2416,6 +2432,7 @@ async def _dispatch_cold_runtime(
         config,
         heartbeat_ttl_ms=heartbeat_ttl_ms,
     )
+    reconcile_deadline_grace_ms = _runtime_reconcile_deadline_grace_ms(hard_ttl_ms)
     admission_timeout_ms = _admission_timeout_ms(
         config,
         override_seconds=admission_timeout_seconds,
@@ -2692,6 +2709,7 @@ async def _dispatch_cold_runtime(
             "operation": request.operation,
             "heartbeat_ttl_ms": heartbeat_ttl_ms,
             "hard_ttl_ms": hard_ttl_ms,
+            "reconcile_deadline_grace_ms": reconcile_deadline_grace_ms,
             "card_ticket_id": card_ticket_id,
             "require_cold_owner": True,
         }
@@ -2985,6 +3003,9 @@ def build_gpu_dispatch_context_factory(
                 config,
                 heartbeat_ttl_ms=heartbeat_ttl_ms,
             )
+            reconcile_deadline_grace_ms = _runtime_reconcile_deadline_grace_ms(
+                hard_ttl_ms
+            )
             lease_may_exist = True
             admission_kwargs = {
                 "backend_id": str(subject.backend_registry_id),
@@ -2999,6 +3020,7 @@ def build_gpu_dispatch_context_factory(
                 "operation": request.operation,
                 "heartbeat_ttl_ms": heartbeat_ttl_ms,
                 "hard_ttl_ms": hard_ttl_ms,
+                "reconcile_deadline_grace_ms": reconcile_deadline_grace_ms,
                 "require_resident": True,
             }
             try:

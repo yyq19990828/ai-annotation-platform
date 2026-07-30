@@ -1373,6 +1373,46 @@ async def test_concurrent_health_fault_is_attributed_to_exact_action(
     assert fault.hit_action_id == "health-a"
 
 
+@pytest.mark.asyncio
+async def test_wrapped_victim_health_fault_is_attributed_to_requester_action() -> None:
+    fault = FaultController(kind="health-timeout", target=_BACKEND_A)
+
+    @asynccontextmanager
+    async def dispatch_factory(_request):
+        assert fault.hit_health(uuid.UUID(_BACKEND_A))
+        raise GPUArbiterDispatchError(GPUArbiterErrorCode.CAPACITY_UNAVAILABLE)
+        yield  # pragma: no cover - async context manager shape only
+
+    async def database_clock() -> str:
+        return "2026-07-16T00:00:00Z"
+
+    action = ActionSpec.model_validate(
+        {
+            "id": "requester-b",
+            "role": "requester",
+            "backend_id": _BACKEND_B,
+            "resource_id": _RESOURCE_A,
+            "operation": "warmup",
+            "body": {},
+        },
+        strict=True,
+    )
+    row = await _run_action(
+        action,
+        endpoint=BackendEndpoint(
+            _BACKEND_B, _RESOURCE_A, "http://b.invalid", "none", None
+        ),
+        dispatch_factory=dispatch_factory,
+        database_clock=database_clock,
+        fault=fault,
+    )
+
+    assert row["status"] == "fault_injected"
+    assert row["fault"] == "health-timeout"
+    assert row["error_code"] == "gpu_capacity_unavailable"
+    assert fault.hit_action_id == "requester-b"
+
+
 def _dual_card_transport_fault_evidence() -> tuple[
     ValidationManifest,
     list[dict],
@@ -1805,6 +1845,70 @@ def test_health_timeout_preserves_complete_victim_allocation() -> None:
         fault=fault,
     )
     assert not [check for check in checks if check["status"] != "passed"]
+
+    absent_requester = deepcopy(after)
+    snapshot = absent_requester["redis"]["resources"][_RESOURCE_A]["snapshot"]
+    snapshot["allocations"] = [
+        allocation
+        for allocation in snapshot["allocations"]
+        if allocation["backend_id"] != _BACKEND_B
+    ]
+    snapshot["committed_mb"] = 4000
+    requester_residency = absent_requester["backends"][_BACKEND_B]["residency"]
+    requester_residency.update(
+        {
+            "state": "unloaded",
+            "gpu_loaded": False,
+            "evictable": False,
+            "generation": None,
+        }
+    )
+    requester_residency["pools"]["pool"].update({"resident": False, "device": None})
+    absent_before = {
+        "database": deepcopy(absent_requester["database"]),
+        "redis": deepcopy(absent_requester["redis"]),
+    }
+    requester_fault = FaultController(
+        kind="health-timeout",
+        target=_BACKEND_A,
+        hits=1,
+        hit_action_id="warm-b",
+    )
+    requester_actions = [
+        {
+            **actions[0],
+            "status": "passed",
+            "fault": None,
+            "http_status": 200,
+            "http_started_monotonic_ms": 0.0,
+            "http_finished_monotonic_ms": 1000.0,
+        },
+        {
+            **actions[1],
+            "status": "fault_injected",
+            "fault": "health-timeout",
+        },
+    ]
+    for field in (
+        "grant_generation",
+        "http_status",
+        "http_started_database_clock",
+        "http_finished_database_clock",
+        "http_started_monotonic_ms",
+        "http_finished_monotonic_ms",
+    ):
+        requester_actions[1].pop(field, None)
+    requester_checks = evaluate_run(
+        manifest=manifest,
+        actions=requester_actions,
+        before=absent_before,
+        after=absent_requester,
+        baseline_samples=_gpu_samples(),
+        during_samples=[],
+        recovery_samples=_gpu_samples(),
+        fault=requester_fault,
+    )
+    assert not [check for check in requester_checks if check["status"] != "passed"]
 
     changed = deepcopy(after)
     changed["redis"]["resources"][_RESOURCE_A]["snapshot"]["allocations"][0][

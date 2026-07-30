@@ -35,6 +35,8 @@
 
 ## [Unreleased]
 
+## [0.23.20] - 2026-07-30
+
 ### Added
 
 - **五个 GPU ML Backend 提供真实受管生命周期验收器**. YOLO、Grounded-SAM2、SAM3、ONNXTools 和 RapidOCR 都会在目标镜像内执行真实业务推理、两轮全池卸载、GPU provider/device 判定和共享故障矩阵，并用同一严格外壳记录部署与物理 GPU 身份、脱敏制品摘要、显存稳定/工作集回收、最终空池状态和中间产物清理结果；`passed` 由完整证据与 blockers 推导，不能由验收器自行声明。
@@ -42,11 +44,15 @@
 ### Changed
 
 - **五个 ML Backend 统一采用部署级受管生命周期声明门槛**. YOLO 不再仅凭代码实现就无条件发布 `managed_lifecycle`；默认保持 legacy，只有当前镜像、权重和物理 GPU 完成真实加载、全池卸载与显存回落验收后才允许声明能力、进入 enforce 并报告可驱逐，避免 GPU 调度接管未经验证的部署。五个验收开关只接受字面量 `0` 或 `1`，非法值会拒绝启动。
+- **GPU 仲裁已完成双 RTX 3090 的逐卡实机 canary**. 五个第一方 Backend 的声明、registry claim、membership、fence、物理 GPU identity、签名控制和数据库角色隔离均已闭环；卡 0 验证共驻、容量拒绝与空闲驱逐，卡 1 验证独立 promotion/demotion，双卡冷加载可真实并行。发布仍保持 observe 安全默认，生产 enforce 继续按资源逐卡启用。
 - **WebCodecs 精确帧改为按客户端能力默认尝试**. 暂停、逐帧与稳定 seek 缺省使用既有有状态 GOP 解码链路；用户可在工作台设置或以 URL / localStorage 显式关闭，浏览器不支持、codec / chunk 异常和预算不足继续安全回退原生视频路径。硬解与跨浏览器 1080p/4K 矩阵继续作为后验验证，不把软件解码或 GPU 合成误记为硬解。
 - **Raster Mask WebGPU 候选进入默认构建**. 大 ROI `square dilate` 在首次相关操作时才惰性探测客户端 adapter，并继续受操作、尺寸、设备档位与字节预算门禁约束；任何能力或运行错误都精确回退 CPU Worker。生产镜像新增可回滚 build arg，设为 `false` 重建后不会加载 provider 或请求 adapter；macOS、Wayland 与 Windows 的 correctness、长会话、性能和 fallback rate 继续在路线图跟踪。
 
 ### Fixed
 
+- **长时间 GPU 加载不会在 admission token 有效期内丢失卡级证明**. 每次成功 admission 现在原子续期 `reconcile_deadline` 到 workload hard deadline 之后，并保留有界健康证明窗口；超长预测配置会在 Backend HTTP 前明确报配置错误，不再让 4K/大模型加载中途因定时 reconcile deadline 过期连续返回 503。
+- **空闲驱逐会冻结且完成唯一的 unload 分支**. victim 从 draining 进入 unloading 时先持久冻结 `eviction_branch=unload`，终态只接受同 owner/generation 的 unloading → unloaded，同一请求在响应丢失后可幂等重试；不再因通用 idle 分支抢先匹配而缺失分支证据，或在真实卸载后报 `branch_conflict` 并保守卡住账本。
+- **GPU 验收器能正确记录被 dispatch 包装的 health timeout**. Resident victim 健康刷新超时即使被转换为结构化容量错误，也会归因到精确 requester action 并保留错误码；最终真值允许该未获 grant 的 requester 不产生 allocation，同时继续要求 victim allocation 完全不变，避免真实故障注入被误报为普通失败。
 - **RapidOCR PP-OCRv6 不再在 RTX 3090 上静默回退 CPU**. 镜像固定含非对称 padding 卷积修复的 cuDNN 9.10.2；部署验收在真实推理后重新检查三引擎九条 ORT session，任一 det/cls/rec provider 链降为 CPU 都会给出具体引擎与组件并拒绝受管声明，并以全池 priming 后的稳定 ORT/CUDA context 计量模型工作集回收。
 - **Grounded-SAM2 双池卸载覆盖进程级 CUDA workspace**. image/video 全池清理会在已有 CUDA context 中同步并释放 cuBLAS workspace 与 allocator cache；实卡验收先执行一次双根真实推理和全卸载，以成熟 CUDA/cuDNN context 作为随后两轮工作集回收基线，避免把一次性 runtime 常驻误判成模型泄漏。
 - **YOLO 全池卸载会释放进程级 cuBLAS workspace**. 受管清理在模型池对象归零后同步 CUDA、清除 PyTorch cuBLAS 工作区并释放 allocator cache，避免仍残留 32 MiB live allocation 而错误宣告显存已回收；验收器先完成一次真实卷积 priming 与全卸载，以成熟 CUDA/cuDNN context 作为两轮回收基线；tracker 的 `lap` 依赖同时烤入镜像，不再在首个视频请求中联网 AutoUpdate。

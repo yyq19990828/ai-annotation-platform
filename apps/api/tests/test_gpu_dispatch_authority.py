@@ -2940,6 +2940,39 @@ async def test_cold_authority_rejects_invalid_ttl_before_secret_redis_or_prepare
 
 
 @pytest.mark.asyncio
+async def test_cold_authority_requires_post_token_reconcile_window(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    subject = _cold_subject()
+    _install_cold_authority_fakes(monkeypatch, events, subject)
+
+    def load_signer():
+        events.append("signer")
+        raise AssertionError("signer must not be loaded")
+
+    def open_store():
+        events.append("store")
+        raise AssertionError("store must not be opened")
+
+    factory = authority_module.build_gpu_dispatch_context_factory(
+        _session_factory(events),
+        config=Settings(_env_file=None, ml_predict_timeout=151),
+        store_factory=open_store,  # type: ignore[arg-type]
+        signer_factory=load_signer,  # type: ignore[arg-type]
+    )
+    with pytest.raises(GPUArbiterDispatchError) as caught:
+        async with factory(_request(subject)):
+            raise AssertionError("grant must not be exposed")
+
+    assert caught.value.error_code == GPUArbiterErrorCode.CONFIG_INVALID.value
+    assert "reconcile proof window" in str(caught.value)
+    assert "signer" not in events
+    assert "store" not in events
+    assert "prepare" not in events
+
+
+@pytest.mark.asyncio
 async def test_cold_authority_finishes_uncertain_cleanup_under_repeated_cancel(
     monkeypatch,
 ) -> None:

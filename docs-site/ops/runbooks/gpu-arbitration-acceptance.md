@@ -3,7 +3,7 @@ title: Runbook：GPU 显存仲裁验收
 audience: [ops, developer]
 type: how-to
 status: active
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-30
 ---
 
 # Runbook：GPU 显存仲裁验收
@@ -241,6 +241,23 @@ exact resource/backend/generation 出现 uncertain/stale lease。health timeout 
 - 显存回收率下限：90%，只适用于隔离的 full-unload 生命周期证据。跨 Backend 驱逐完成后
   requester 仍驻留，整卡显存不会回到空卡基线，因此常规 co-residency/eviction run 不执行该断言；
   报告的 `threshold_applicability` 会明确标记这一边界。
+
+## 运行时 deadline 与驱逐分支检查
+
+每次成功 admission 都会在同一条 Redis 原子脚本中，把卡级 `reconcile_deadline_ms`
+至少续到本次 workload 的 hard deadline 之后。续期使用剩余 health proof 窗口，且从 admission
+时刻起不得超过 5 分钟；这保证长于定时 repair 周期的真实模型加载不会在 token 仍有效时因卡级
+证明过期被中途拒绝。enforce 部署的 `ml_predict_timeout` 必须不大于 150 秒，从而在 30 秒 hard
+deadline 收尾之后仍保留至少 120 秒 reconcile proof 窗口；配置超出该边界会在 HTTP 前以
+`gpu_config_invalid` 阻断。验收长加载时应同时确认 workload lease 的 hard deadline、卡级 reconcile
+deadline 单调续期，以及操作结束后 lease 正常释放。
+
+空闲驱逐从 `draining` 进入 `unloading` 时必须原子冻结 `eviction_branch=unload`，并移除 transition
+的自动过期时间。随后只有同一 owner、generation 的 `unloading → unloaded` 能完成该分支；cancel
+分支不得再接管，同一跃迁的响应丢失重试必须返回幂等成功且不增加 ledger revision。若 victim
+在冻结前重新变忙，则走新的 generation 和 `eviction_branch=cancel`
+恢复 Resident。验收报告必须保留冻结后的 transition 快照和最终 allocation，不能只凭 Backend
+返回 200 判断驱逐成功。
 
 报告包含脱敏 manifest、原 manifest 内容摘要、数据库控制窗口、Redis
 allocation/lease/queue/transition、challenge health、`nvidia-smi`、HTTP 执行窗口、故障命中与
