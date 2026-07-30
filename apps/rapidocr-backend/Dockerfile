@@ -56,6 +56,13 @@ RUN python3 -m pip install "rapidocr==3.9.0" "onnxruntime-gpu==1.23.2" \
     && python3 -m pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null; \
        python3 -m pip install "opencv-python-headless>=4.5.1"
 
+# wheelhouse 路径会先装 GUI/headless 两个共享 cv2 文件的 distribution；卸载 GUI 版后
+# 强制恢复 headless 文件。标准索引路径不预装 headless，因此无需重复安装。
+RUN if [ -n "$PIP_FIND_LINKS" ]; then \
+        python3 -m pip install --no-index --no-deps --force-reinstall \
+            "opencv-python-headless==5.0.0.93"; \
+    fi
+
 # Base 已提供 CUDA 12.8 依赖，只覆盖 cuDNN；禁止 wheel 额外拉取重复的 CUDA/cuBLAS。
 RUN python3 -m pip install --no-deps "nvidia-cudnn-cu12==9.10.2.21"
 
