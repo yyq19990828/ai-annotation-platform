@@ -23,6 +23,7 @@ class RuntimeTileBackend implements SparseMaskTileBackend {
   readonly sessions = new Map<string, RasterMaskWorkerSession>();
   decodeCalls: RasterMaskTileRect[] = [];
   mergeCalls: RasterMaskTileOverride[][] = [];
+  lastMorphologyRequest: Parameters<SparseMaskTileBackend["morphologyRoi"]>[0] | null = null;
 
   registerSession(sessionId: string, sha256: string, rle: CocoRle): void {
     this.sessions.set(
@@ -62,6 +63,7 @@ class RuntimeTileBackend implements SparseMaskTileBackend {
   ): ReturnType<SparseMaskTileBackend["morphologyRoi"]> {
     const session = this.sessions.get(request.sessionId);
     if (!session || session.sha256 !== request.sha256) throw new Error("missing session");
+    this.lastMorphologyRequest = request;
     return {
       kind: "morphology_roi",
       id: 1,
@@ -216,6 +218,23 @@ describe("SparseMaskTileStore", () => {
       for (let x = 510; x <= 512; x += 1) expected[y * width + x] = 255;
     }
     expect(decodeCocoRle(await store.merge())).toEqual(expected);
+  });
+
+  it("forwards a benchmark-only XOR patch strategy without persisting it", async () => {
+    const { backend, store } = makeStore(16, 8);
+
+    await store.morphologyRoi(
+      { x: 0, y: 0, width: 16, height: 8 },
+      { operation: "dilate", kernelShape: "square", radius: 1 },
+      {
+        name: "benchmark",
+        sourceRevision: 0,
+        benchmarkXorPatchStrategy: "dense-per-bit",
+      },
+    );
+
+    expect(backend.lastMorphologyRequest?.benchmarkXorPatchStrategy).toBe("dense-per-bit");
+    expect(store.snapshot()).not.toHaveProperty("benchmarkXorPatchStrategy");
   });
 
   it("bounds tile decode concurrency for ROIs larger than the Worker queue", async () => {

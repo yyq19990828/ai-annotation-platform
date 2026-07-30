@@ -301,6 +301,128 @@ describe("rasterMaskWorkerRuntime", () => {
     ).toThrow(/tail bits/);
   });
 
+  it("keeps dense word-scatter exact across 8/32/512 alignment and image edges", () => {
+    const coreWidths = [1, 7, 8, 9, 31, 32, 33, 511, 512, 513];
+    const coreOrigins = [0, 1, 7, 8, 31, 32, 511, 512];
+    let seed = 0x23_19_00_01;
+    const nextWord = () => {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+      return seed;
+    };
+
+    for (const coreWidth of coreWidths) {
+      for (const coreX of coreOrigins) {
+        const width = coreX + coreWidth + 3;
+        const height = 7;
+        const session = buildRasterMaskWorkerSession(
+          "sha",
+          transferred(new Uint8Array(width * height), width, height),
+        );
+        const request = {
+          sourceRevision: 1,
+          core: { x: coreX, y: 1, width: coreWidth, height: 5 },
+          input: {
+            x: Math.max(0, coreX - 1),
+            y: 0,
+            width: Math.min(width, coreX + coreWidth + 1) - Math.max(0, coreX - 1),
+            height,
+          },
+          operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
+          dirtyOverrides: [],
+          backendPolicy: "webgpu-candidate" as const,
+          computeBudgetBytes: 128 * 1024 * 1024,
+        };
+        const wordsPerRow = Math.ceil(coreWidth / 32);
+        const xorWords = Uint32Array.from({ length: wordsPerRow * request.core.height }, () =>
+          nextWord(),
+        );
+        const remainder = coreWidth & 31;
+        if (remainder !== 0) {
+          const tailMask = 0xffff_ffff >>> (32 - remainder);
+          for (let y = 0; y < request.core.height; y += 1) {
+            xorWords[y * wordsPerRow + wordsPerRow - 1] &= tailMask;
+          }
+        }
+
+        const perBit = buildRasterMaskMorphologyPatchesFromXorWords(
+          session,
+          request,
+          xorWords,
+          wordsPerRow,
+          "dense-per-bit",
+        );
+        const wordScatter = buildRasterMaskMorphologyPatchesFromXorWords(
+          session,
+          request,
+          xorWords,
+          wordsPerRow,
+          "dense-word-scatter",
+        );
+
+        expect(wordScatter.patches).toEqual(perBit.patches);
+        expect(wordScatter.changedPixels).toBe(perBit.changedPixels);
+        expect(wordScatter.changedBounds).toEqual(perBit.changedBounds);
+        expect(wordScatter.xorTotalWords).toBe(xorWords.length);
+        expect(wordScatter.xorNonZeroWords).toBe([...xorWords].filter((word) => word !== 0).length);
+        expect(wordScatter.xorTouchedTiles).toBe(wordScatter.patches.length);
+        expect(wordScatter.patches.map((patch) => [patch.tileY, patch.tileX])).toEqual(
+          [...wordScatter.patches]
+            .sort((left, right) => left.tileY - right.tileY || left.tileX - right.tileX)
+            .map((patch) => [patch.tileY, patch.tileX]),
+        );
+      }
+    }
+  });
+
+  it.each([
+    ["empty", 0x0000_0000],
+    ["lowest", 0x0000_0001],
+    ["highest", 0x8000_0000],
+    ["alternating", 0xaaaa_aaaa],
+    ["full", 0xffff_ffff],
+  ])("matches the per-bit golden for %s XOR words", (_name, word) => {
+    const width = 1031;
+    const height = 515;
+    const session = buildRasterMaskWorkerSession(
+      "sha",
+      transferred(new Uint8Array(width * height), width, height),
+    );
+    const request = {
+      sourceRevision: 2,
+      core: { x: 511, y: 511, width: 33, height: 3 },
+      input: { x: 510, y: 510, width: 35, height: 5 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
+      dirtyOverrides: [],
+      backendPolicy: "webgpu-candidate" as const,
+      computeBudgetBytes: 128 * 1024 * 1024,
+    };
+    const wordsPerRow = 2;
+    const xorWords = new Uint32Array(wordsPerRow * request.core.height);
+    for (let y = 0; y < request.core.height; y += 1) {
+      xorWords[y * wordsPerRow] = word;
+      xorWords[y * wordsPerRow + 1] = word & 1;
+    }
+
+    const perBit = buildRasterMaskMorphologyPatchesFromXorWords(
+      session,
+      request,
+      xorWords,
+      wordsPerRow,
+      "dense-per-bit",
+    );
+    const wordScatter = buildRasterMaskMorphologyPatchesFromXorWords(
+      session,
+      request,
+      xorWords,
+      wordsPerRow,
+      "dense-word-scatter",
+    );
+
+    expect(wordScatter.patches).toEqual(perBit.patches);
+    expect(wordScatter.changedPixels).toBe(perBit.changedPixels);
+    expect(wordScatter.changedBounds).toEqual(perBit.changedBounds);
+  });
+
   it("rejects an oversized morphology ROI before allocating its dense source", () => {
     const width = 4097;
     const height = 4097;

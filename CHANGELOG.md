@@ -35,6 +35,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Raster Mask WebGPU dense XOR 改用 word-scatter 构造 history patches**. Worker 先按 non-zero words 计算 changed summary，再以有界 byte spans 写入稳定 tile row-major patches，不再为每个 set bit 重算像素与 tile 坐标；benchmark-only selector 可在同一 bundle 单选旧 per-bit builder 做 A/B，生产请求默认只运行 word-scatter。诊断同步暴露 XOR word density、scan、allocation、scatter 与 touched tiles，为后续 bounded sparse output 决策提供 raw evidence。
+
 ## [0.23.18] - 2026-07-30
 
 ### Changed

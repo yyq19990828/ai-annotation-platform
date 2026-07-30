@@ -39,6 +39,11 @@ export interface RasterMaskPackedTileOverride extends RasterMaskTileRect {
 export type RasterMaskMorphologyBackendPolicy = "cpu" | "webgpu-candidate";
 export type RasterMaskMorphologyBackend = "cpu" | "webgpu" | "cpu-fallback";
 export type RasterMaskPrepareStrategy = "dense-cpu" | "direct-rle" | "packed-cache";
+export type RasterMaskXorPatchStrategy = "dense-per-bit" | "dense-word-scatter";
+export type RasterMaskXorOutputStrategy =
+  | "cpu-dense"
+  | "cpu-after-gpu-failure"
+  | RasterMaskXorPatchStrategy;
 export type RasterMaskWebGpuFallbackReason =
   | "gate-disabled"
   | "unsupported-operation"
@@ -66,6 +71,16 @@ export interface RasterMaskMorphologyMetrics {
   sourceScratchCapacityBytes: number;
   computeMs: number;
   diffOrPatchMs: number;
+  xorOutputStrategy: RasterMaskXorOutputStrategy;
+  xorTotalWords: number;
+  xorNonZeroWords: number;
+  xorWordDensity: number;
+  xorChangedPixels: number;
+  xorTouchedTiles: number;
+  xorScanMs: number;
+  xorPatchAllocateMs: number;
+  xorPatchScatterMs: number;
+  wordPatchBuildMs: number;
   gpuUploadSubmitMs: number | null;
   gpuReadbackMs: number | null;
   gpuPassMs: number | null;
@@ -187,6 +202,7 @@ export type RasterMaskMorphologyRoiRequest = {
   dirtyOverrides: RasterMaskPackedTileOverride[];
   backendPolicy: RasterMaskMorphologyBackendPolicy;
   computeBudgetBytes: number;
+  benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
 };
 
 type CompareTileWorkerRequest = {

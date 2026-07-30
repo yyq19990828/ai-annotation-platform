@@ -24,6 +24,7 @@ import type {
   RasterMaskPackedTileOverride,
   RasterMaskTileRect,
   RasterMaskTransferredRle,
+  RasterMaskXorPatchStrategy,
 } from "./rasterMaskWorkerProtocol";
 
 const MIB = 1024 * 1024;
@@ -62,6 +63,7 @@ export interface SparseMaskTileBackend {
       dirtyOverrides: readonly RasterMaskPackedTileOverride[];
       backendPolicy: RasterMaskMorphologyBackendPolicy;
       computeBudgetBytes: number;
+      benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
     },
     options?: RasterMaskWorkerRunOptions,
   ) => Promise<RasterMaskMorphologyRoiResponse>;
@@ -642,7 +644,12 @@ export class SparseMaskTileStore {
       kernelShape: MaskKernelShape;
       radius: number;
     },
-    options: { name: string; sourceRevision: number; signal?: AbortSignal },
+    options: {
+      name: string;
+      sourceRevision: number;
+      signal?: AbortSignal;
+      benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
+    },
   ): Promise<MaskHistoryCommand | null> {
     this.assertActive();
     const coreX0 = Math.max(0, Math.floor(rect.x));
@@ -727,6 +734,7 @@ export class SparseMaskTileStore {
         dirtyOverrides,
         backendPolicy: this.morphologyBackendPolicy,
         computeBudgetBytes: this.computeBudgetBytes,
+        benchmarkXorPatchStrategy: options.benchmarkXorPatchStrategy,
       },
       { priority: "editing", signal: options.signal },
     );

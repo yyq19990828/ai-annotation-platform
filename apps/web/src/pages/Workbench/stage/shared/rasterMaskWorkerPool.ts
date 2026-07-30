@@ -25,6 +25,7 @@ import type {
   RasterMaskWorkerJobKind,
   RasterMaskWorkerJobRequest,
   RasterMaskWorkerResponse,
+  RasterMaskXorPatchStrategy,
 } from "./rasterMaskWorkerProtocol";
 
 export type RasterMaskWorkerPriority = "editing" | "selected" | "current" | "prefetch";
@@ -99,6 +100,10 @@ export interface RasterMaskComputeResources {
     baseCacheHitTiles: number;
     baseCacheMissTiles: number;
     baseCacheEvictedTiles: number;
+    densePerBitJobs: number;
+    denseWordScatterJobs: number;
+    totalXorWords: number;
+    totalNonZeroXorWords: number;
   };
 }
 
@@ -174,6 +179,10 @@ function initialComputeResources(
       baseCacheHitTiles: 0,
       baseCacheMissTiles: 0,
       baseCacheEvictedTiles: 0,
+      densePerBitJobs: 0,
+      denseWordScatterJobs: 0,
+      totalXorWords: 0,
+      totalNonZeroXorWords: 0,
     },
   };
 }
@@ -475,6 +484,7 @@ export class RasterMaskWorkerPool {
       dirtyOverrides: readonly RasterMaskPackedTileOverride[];
       backendPolicy: RasterMaskMorphologyBackendPolicy;
       computeBudgetBytes: number;
+      benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
     },
     options: RasterMaskWorkerRunOptions = {},
   ): Promise<RasterMaskMorphologyRoiResponse> {
@@ -916,6 +926,13 @@ export class RasterMaskWorkerPool {
     this.compute.counters.baseCacheHitTiles += response.metrics.baseCacheHitTiles;
     this.compute.counters.baseCacheMissTiles += response.metrics.baseCacheMissTiles;
     this.compute.counters.baseCacheEvictedTiles += response.metrics.baseCacheEvictedTiles;
+    if (response.metrics.xorOutputStrategy === "dense-per-bit") {
+      this.compute.counters.densePerBitJobs += 1;
+    } else if (response.metrics.xorOutputStrategy === "dense-word-scatter") {
+      this.compute.counters.denseWordScatterJobs += 1;
+    }
+    this.compute.counters.totalXorWords += response.metrics.xorTotalWords;
+    this.compute.counters.totalNonZeroXorWords += response.metrics.xorNonZeroWords;
     if (response.backend === "webgpu") {
       this.compute.webGpuState = "ready";
       this.compute.gpuOwnerWorkers = 1;

@@ -288,6 +288,16 @@ describe("RasterMaskWorkerPool", () => {
         sourceScratchCapacityBytes: 0,
         computeMs: 0.7,
         diffOrPatchMs: 0.1,
+        xorOutputStrategy: "cpu-dense",
+        xorTotalWords: 0,
+        xorNonZeroWords: 0,
+        xorWordDensity: 0,
+        xorChangedPixels: 0,
+        xorTouchedTiles: 0,
+        xorScanMs: 0,
+        xorPatchAllocateMs: 0,
+        xorPatchScatterMs: 0,
+        wordPatchBuildMs: 0,
         gpuUploadSubmitMs: null,
         gpuReadbackMs: null,
         gpuPassMs: null,
@@ -387,11 +397,13 @@ describe("RasterMaskWorkerPool", () => {
       dirtyOverrides: [],
       backendPolicy: "webgpu-candidate",
       computeBudgetBytes: 128 * 1024 * 1024,
+      benchmarkXorPatchStrategy: "dense-per-bit",
     });
     const request = worker.jobRequests()[0];
     if (!request || request.kind !== "morphology_roi") {
       throw new Error("missing morphology request");
     }
+    expect(request.benchmarkXorPatchStrategy).toBe("dense-per-bit");
     worker.respond({
       kind: "morphology_roi",
       id: request.id,
@@ -419,6 +431,16 @@ describe("RasterMaskWorkerPool", () => {
         sourceScratchCapacityBytes: 2048,
         computeMs: 1,
         diffOrPatchMs: 1.5,
+        xorOutputStrategy: "dense-per-bit",
+        xorTotalWords: 128,
+        xorNonZeroWords: 8,
+        xorWordDensity: 0.0625,
+        xorChangedPixels: 16,
+        xorTouchedTiles: 1,
+        xorScanMs: 0.25,
+        xorPatchAllocateMs: 0.25,
+        xorPatchScatterMs: 1,
+        wordPatchBuildMs: 0,
         gpuUploadSubmitMs: 0.2,
         gpuReadbackMs: 0.8,
         gpuPassMs: null,
@@ -445,6 +467,10 @@ describe("RasterMaskWorkerPool", () => {
         baseCacheHitTiles: 3,
         baseCacheMissTiles: 1,
         baseCacheEvictedTiles: 2,
+        densePerBitJobs: 1,
+        denseWordScatterJobs: 0,
+        totalXorWords: 128,
+        totalNonZeroXorWords: 8,
       },
     });
     pool.dispose();

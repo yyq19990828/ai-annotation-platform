@@ -1,8 +1,9 @@
 import { chromium } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 import { cpus, platform, release } from "node:os";
 
 const baseUrl = process.env.RASTER_MASK_WEBGPU_BASE_URL ?? "http://localhost:3000";
-const iterations = Number(process.env.RASTER_MASK_WEBGPU_OPERATION_ITERATIONS ?? 10);
+const iterations = Number(process.env.RASTER_MASK_WEBGPU_OPERATION_ITERATIONS ?? 20);
 const warmup = Number(process.env.RASTER_MASK_WEBGPU_OPERATION_WARMUP ?? 3);
 const radius = Number(process.env.RASTER_MASK_WEBGPU_RADIUS ?? 2);
 const candidateBudgetMiB = Number(process.env.RASTER_MASK_WEBGPU_OPERATION_BUDGET_MIB ?? 128);
@@ -10,6 +11,7 @@ const headless = process.env.RASTER_MASK_WEBGPU_HEADLESS !== "0";
 const requireWebGpu = process.env.RASTER_MASK_WEBGPU_REQUIRE === "1";
 const executablePath = process.env.RASTER_MASK_WEBGPU_EXECUTABLE_PATH;
 const enableUnsafeVulkan = process.env.RASTER_MASK_WEBGPU_UNSAFE_VULKAN === "1";
+const outputPath = process.env.RASTER_MASK_WEBGPU_OUTPUT_PATH;
 const caseNames = (process.env.RASTER_MASK_WEBGPU_OPERATION_CASES ?? "1024,2048,4k")
   .split(",")
   .map((value) => value.trim().toLowerCase())
@@ -66,7 +68,7 @@ try {
       const summarize = (values) => {
         const sorted = [...values].sort((left, right) => left - right);
         const percentile = (quantile) =>
-          sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * quantile))];
+          sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * quantile) - 1))];
         return {
           p50_ms: percentile(0.5),
           p95_ms: percentile(0.95),
@@ -161,6 +163,15 @@ try {
             morphologyBackendPolicy: "cpu",
             computeBudgetBytes: 0,
           }),
+          baseline: new SparseMaskTileStore({
+            sessionId: `baseline-${entry.name}`,
+            sha256: `baseline-${entry.name}`,
+            baseRle,
+            backend: pool,
+            deviceMemory: 8,
+            morphologyBackendPolicy: "webgpu-candidate",
+            computeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+          }),
           candidate: new SparseMaskTileStore({
             sessionId: `candidate-${entry.name}`,
             sha256: `candidate-${entry.name}`,
@@ -201,13 +212,28 @@ try {
         const cores = entry.cores ?? [
           entry.core ?? { x: 0, y: 0, width: entry.width, height: entry.height },
         ];
+        const sampleContext = (core) => ({
+          workload_id: entry.name,
+          core,
+          roi: {
+            x: Math.max(0, core.x - radius),
+            y: Math.max(0, core.y - radius),
+            width:
+              Math.min(entry.width, core.x + core.width + radius) - Math.max(0, core.x - radius),
+            height:
+              Math.min(entry.height, core.y + core.height + radius) - Math.max(0, core.y - radius),
+          },
+          radius,
+        });
         const cpuHistory = [];
+        const baselineHistory = [];
         const candidateHistory = [];
-        const run = async (store, history, name, revision, core) => {
+        const run = async (store, history, name, revision, core, benchmarkXorPatchStrategy) => {
           const started = performance.now();
           const command = await store.morphologyRoi(core, operation, {
             name,
             sourceRevision: revision,
+            ...(benchmarkXorPatchStrategy ? { benchmarkXorPatchStrategy } : {}),
           });
           if (command) {
             store.retainHistoryCommand(command);
@@ -220,30 +246,68 @@ try {
         };
 
         let lastCpu;
+        let lastBaseline;
         let lastCandidate;
         const cpuWarmupSamples = [];
+        const baselineWarmupSamples = [];
         const candidateWarmupSamples = [];
         for (let index = 0; index < warmup; index += 1) {
           const core = cores[index % cores.length];
           lastCpu = await run(entry.cpu, cpuHistory, "cpu-warmup", index, core);
-          lastCandidate = await run(
-            entry.candidate,
-            candidateHistory,
-            "candidate-warmup",
-            index,
-            core,
-          );
+          const pair = [
+            () =>
+              run(
+                entry.baseline,
+                baselineHistory,
+                "baseline-warmup",
+                index,
+                core,
+                "dense-per-bit",
+              ).then((sample) => {
+                lastBaseline = sample;
+              }),
+            () =>
+              run(
+                entry.candidate,
+                candidateHistory,
+                "candidate-warmup",
+                index,
+                core,
+                "dense-word-scatter",
+              ).then((sample) => {
+                lastCandidate = sample;
+              }),
+          ];
+          if ((index & 1) === 1) pair.reverse();
+          for (const execute of pair) await execute();
+          if (
+            lastCpu.checksum !== lastBaseline.checksum ||
+            lastBaseline.checksum !== lastCandidate.checksum
+          ) {
+            throw new Error(
+              `${entry.name}: warmup patch strategy parity mismatch ` +
+                `(cpu=${lastCpu.checksum}, per-bit=${lastBaseline.checksum}, word=${lastCandidate.checksum})`,
+            );
+          }
           cpuWarmupSamples.push({
+            ...sampleContext(core),
             phase: index === 0 ? "cold" : "warmup",
-            core,
             elapsed_ms: lastCpu.elapsed,
             backend: lastCpu.compute.lastBackend,
             fallback_reason: lastCpu.compute.lastFallbackReason,
             metrics: lastCpu.compute.lastMetrics,
           });
-          candidateWarmupSamples.push({
+          baselineWarmupSamples.push({
+            ...sampleContext(core),
             phase: index === 0 ? "cold" : "warmup",
-            core,
+            elapsed_ms: lastBaseline.elapsed,
+            backend: lastBaseline.compute.lastBackend,
+            fallback_reason: lastBaseline.compute.lastFallbackReason,
+            metrics: lastBaseline.compute.lastMetrics,
+          });
+          candidateWarmupSamples.push({
+            ...sampleContext(core),
+            phase: index === 0 ? "cold" : "warmup",
             elapsed_ms: lastCandidate.elapsed,
             backend: lastCandidate.compute.lastBackend,
             fallback_reason: lastCandidate.compute.lastFallbackReason,
@@ -251,41 +315,79 @@ try {
           });
         }
         const cpuTimes = [];
+        const baselineTimes = [];
         const candidateTimes = [];
         const cpuComputeTimes = [];
+        const baselineComputeTimes = [];
         const candidateComputeTimes = [];
         const cpuSamples = [];
+        const baselineSamples = [];
         const candidateSamples = [];
         const candidateAllocatedBytes = [];
         const candidateOwnerWorkers = [];
         for (let index = 0; index < iterations; index += 1) {
           const core = cores[(warmup + index) % cores.length];
           lastCpu = await run(entry.cpu, cpuHistory, "cpu", warmup + index, core);
-          lastCandidate = await run(
-            entry.candidate,
-            candidateHistory,
-            "candidate",
-            warmup + index,
-            core,
-          );
-          if (lastCpu.checksum !== lastCandidate.checksum) {
-            throw new Error(`${entry.name}: CPU/WebGPU XOR patch parity mismatch`);
+          const pair = [
+            () =>
+              run(
+                entry.baseline,
+                baselineHistory,
+                "baseline",
+                warmup + index,
+                core,
+                "dense-per-bit",
+              ).then((sample) => {
+                lastBaseline = sample;
+              }),
+            () =>
+              run(
+                entry.candidate,
+                candidateHistory,
+                "candidate",
+                warmup + index,
+                core,
+                "dense-word-scatter",
+              ).then((sample) => {
+                lastCandidate = sample;
+              }),
+          ];
+          if ((index & 1) === 1) pair.reverse();
+          for (const execute of pair) await execute();
+          if (
+            lastCpu.checksum !== lastBaseline.checksum ||
+            lastBaseline.checksum !== lastCandidate.checksum
+          ) {
+            throw new Error(
+              `${entry.name}: CPU/per-bit/word-scatter patch parity mismatch ` +
+                `(cpu=${lastCpu.checksum}, per-bit=${lastBaseline.checksum}, word=${lastCandidate.checksum})`,
+            );
           }
           cpuTimes.push(lastCpu.elapsed);
+          baselineTimes.push(lastBaseline.elapsed);
           candidateTimes.push(lastCandidate.elapsed);
           cpuComputeTimes.push(lastCpu.compute.lastTotalMs ?? 0);
+          baselineComputeTimes.push(lastBaseline.compute.lastTotalMs ?? 0);
           candidateComputeTimes.push(lastCandidate.compute.lastTotalMs ?? 0);
           cpuSamples.push({
+            ...sampleContext(core),
             phase: "measured",
-            core,
             elapsed_ms: lastCpu.elapsed,
             backend: lastCpu.compute.lastBackend,
             fallback_reason: lastCpu.compute.lastFallbackReason,
             metrics: lastCpu.compute.lastMetrics,
           });
-          candidateSamples.push({
+          baselineSamples.push({
+            ...sampleContext(core),
             phase: "measured",
-            core,
+            elapsed_ms: lastBaseline.elapsed,
+            backend: lastBaseline.compute.lastBackend,
+            fallback_reason: lastBaseline.compute.lastFallbackReason,
+            metrics: lastBaseline.compute.lastMetrics,
+          });
+          candidateSamples.push({
+            ...sampleContext(core),
+            phase: "measured",
             elapsed_ms: lastCandidate.elapsed,
             backend: lastCandidate.compute.lastBackend,
             fallback_reason: lastCandidate.compute.lastFallbackReason,
@@ -295,11 +397,16 @@ try {
           candidateOwnerWorkers.push(lastCandidate.compute.gpuOwnerWorkers);
         }
         const cpuSavedRle = await entry.cpu.merge();
+        const baselineSavedRle = await entry.baseline.merge();
         const candidateSavedRle = await entry.candidate.merge();
         const cpuSavedChecksum = rleChecksum(cpuSavedRle);
+        const baselineSavedChecksum = rleChecksum(baselineSavedRle);
         const candidateSavedChecksum = rleChecksum(candidateSavedRle);
-        if (cpuSavedChecksum !== candidateSavedChecksum) {
-          throw new Error(`${entry.name}: CPU/WebGPU save parity mismatch`);
+        if (
+          cpuSavedChecksum !== baselineSavedChecksum ||
+          baselineSavedChecksum !== candidateSavedChecksum
+        ) {
+          throw new Error(`${entry.name}: CPU/per-bit/word-scatter save parity mismatch`);
         }
         const reloaded = new SparseMaskTileStore({
           sessionId: `reload-${entry.name}`,
@@ -316,7 +423,18 @@ try {
           throw new Error(`${entry.name}: reloaded save parity mismatch`);
         }
         const cpu = summarize(cpuTimes);
+        const baseline = summarize(baselineTimes);
         const candidate = summarize(candidateTimes);
+        const baselinePatch = summarize(
+          baselineSamples.map((sample) => sample.metrics?.diffOrPatchMs ?? 0),
+        );
+        const candidatePatch = summarize(
+          candidateSamples.map((sample) => sample.metrics?.diffOrPatchMs ?? 0),
+        );
+        const wordDensities = candidateSamples.map((sample) => sample.metrics?.xorWordDensity ?? 0);
+        const capacityFitPercent = (fraction) =>
+          (wordDensities.filter((density) => density <= fraction).length / wordDensities.length) *
+          100;
         rows.push({
           name: entry.name,
           width: entry.width,
@@ -326,24 +444,52 @@ try {
           fallback_reason: lastCandidate.compute.lastFallbackReason,
           checksum: lastCandidate.checksum,
           cpu,
+          baseline,
           candidate,
           worker_cpu: summarize(cpuComputeTimes),
+          worker_baseline: summarize(baselineComputeTimes),
           worker_candidate: summarize(candidateComputeTimes),
+          patch_baseline: baselinePatch,
+          patch_candidate: candidatePatch,
+          sparse_capacity_analysis: {
+            one_sixteenth_fit_percent: capacityFitPercent(1 / 16),
+            one_eighth_fit_percent: capacityFitPercent(1 / 8),
+            one_quarter_fit_percent: capacityFitPercent(1 / 4),
+            min_word_density: Math.min(...wordDensities),
+            max_word_density: Math.max(...wordDensities),
+          },
+          patch_p95_improvement_percent:
+            lastBaseline.compute.lastBackend === "webgpu" &&
+            lastCandidate.compute.lastBackend === "webgpu" &&
+            baselinePatch.p95_ms > 0
+              ? ((baselinePatch.p95_ms - candidatePatch.p95_ms) / baselinePatch.p95_ms) * 100
+              : null,
+          total_p95_improvement_percent:
+            lastBaseline.compute.lastBackend === "webgpu" &&
+            lastCandidate.compute.lastBackend === "webgpu" &&
+            baseline.p95_ms > 0
+              ? ((baseline.p95_ms - candidate.p95_ms) / baseline.p95_ms) * 100
+              : null,
           p95_improvement_percent:
             lastCandidate.compute.lastBackend === "webgpu"
               ? ((cpu.p95_ms - candidate.p95_ms) / cpu.p95_ms) * 100
               : null,
           saved_checksum: candidateSavedChecksum,
           reloaded_saved_checksum: reloadedSavedChecksum,
-          warmup_samples: { cpu: cpuWarmupSamples, candidate: candidateWarmupSamples },
+          warmup_samples: {
+            cpu: cpuWarmupSamples,
+            baseline: baselineWarmupSamples,
+            candidate: candidateWarmupSamples,
+          },
           resource_plateau: {
             min_allocated_bytes: Math.min(...candidateAllocatedBytes),
             max_allocated_bytes: Math.max(...candidateAllocatedBytes),
             max_owner_workers: Math.max(...candidateOwnerWorkers),
           },
-          samples: { cpu: cpuSamples, candidate: candidateSamples },
+          samples: { cpu: cpuSamples, baseline: baselineSamples, candidate: candidateSamples },
         });
         for (const command of cpuHistory) entry.cpu.releaseHistoryCommand(command);
+        for (const command of baselineHistory) entry.baseline.releaseHistoryCommand(command);
         for (const command of candidateHistory) entry.candidate.releaseHistoryCommand(command);
       }
 
@@ -355,6 +501,7 @@ try {
       const beforeDispose = pool.getSnapshot();
       for (const entry of stores) {
         entry.cpu.dispose();
+        entry.baseline.dispose();
         entry.candidate.dispose();
       }
       pool.dispose();
@@ -378,23 +525,26 @@ try {
   await browser.close();
 }
 
-process.stdout.write(
-  `${JSON.stringify(
-    {
-      schema: "mask-webgpu-production-operation/v3",
-      generated_at: new Date().toISOString(),
-      environment: {
-        platform: platform(),
-        release: release(),
-        cpu: cpus()[0]?.model ?? null,
-        browser: browserVersion,
-        headless,
-        unsafe_vulkan: enableUnsafeVulkan,
-      },
-      config: { baseUrl, iterations, warmup, radius, candidateBudgetMiB, caseNames },
-      result,
-    },
-    null,
-    2,
-  )}\n`,
-);
+const report = {
+  schema: "mask-webgpu-production-operation/v4",
+  generated_at: new Date().toISOString(),
+  environment: {
+    platform: platform(),
+    release: release(),
+    cpu: cpus()[0]?.model ?? null,
+    browser: browserVersion,
+    headless,
+    unsafe_vulkan: enableUnsafeVulkan,
+  },
+  config: { baseUrl, iterations, warmup, radius, candidateBudgetMiB, caseNames },
+  result,
+};
+const serialized = `${JSON.stringify(report, null, 2)}\n`;
+if (outputPath) {
+  await writeFile(outputPath, serialized, "utf8");
+  process.stdout.write(
+    `${JSON.stringify({ schema: report.schema, generated_at: report.generated_at, outputPath })}\n`,
+  );
+} else {
+  process.stdout.write(serialized);
+}
