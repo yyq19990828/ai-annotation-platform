@@ -5,6 +5,8 @@
 - **Deciders:** core team
 - **Supersedes:** —（细化 [ADR-0057](./0057-raster-mask-webgpu-packed-xor-contract.md) 的 packed source prepare，不改变 GPU shader、CPU fallback、history 或保存格式）
 
+> 默认关闭的 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；immutable cache、预算与生命周期合同继续有效。
+
 ## Context
 
 ADR-0057 让 WebGPU 成功路径直接从 immutable base RLE 与 dirty overrides 构造 packed ROI，并只回读

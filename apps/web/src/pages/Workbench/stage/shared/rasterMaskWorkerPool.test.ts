@@ -372,7 +372,7 @@ describe("RasterMaskWorkerPool", () => {
     });
     expect(workers[1].messages.some((entry) => entry.request.kind === "reset_webgpu")).toBe(false);
     expect(pool.getSnapshot().compute).toMatchObject({
-      webGpuState: "disabled",
+      webGpuState: "idle",
       gpuAllocatedBytes: 0,
       counters: { initAttempts: 0 },
     });

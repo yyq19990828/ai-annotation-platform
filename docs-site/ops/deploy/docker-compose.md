@@ -95,11 +95,12 @@ Mask 格式 staged object 使用 import bucket，导出产物使用 export bucke
 
 > 前端 API base 是硬编码的同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），**不读 `VITE_API_URL`**——dev 由 vite proxy、生产由 web 容器内 nginx 反代 `/api/`→`api:8000`，故无需构建时注入 API 地址。
 
-| 变量                      | 默认                    | 说明                                                           |
-| ------------------------- | ----------------------- | -------------------------------------------------------------- |
-| `VITE_TURNSTILE_SITE_KEY` | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。    |
-| `VITE_SENTRY_DSN`         | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                        |
-| `FRONTEND_BASE_URL`       | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
+| 变量                                   | 默认                    | 说明                                                                                   |
+| -------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
+| `VITE_TURNSTILE_SITE_KEY`              | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。                            |
+| `VITE_SENTRY_DSN`                      | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                                                |
+| `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `true`                  | 前端构建参数；大 ROI Mask 计算按浏览器能力使用 WebGPU。设为 `false` 后重建可整体回滚。 |
+| `FRONTEND_BASE_URL`                    | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。                         |
 
 ### 2.6 错误监控 (Sentry)
 
@@ -262,7 +263,7 @@ docker compose --env-file .env.production \
 这一条命令做完整套生产部署：
 
 - **构建并起 api 容器**（`infra/docker/Dockerfile.api`）：entrypoint `apps/api/scripts/entrypoint.sh` 先 `alembic upgrade head`，再 exec uvicorn（`--host 0.0.0.0 --port 8000`，宿主映射 `8080:8000`）。**迁移自动跑，无需手动**。
-- **构建并起 web 容器**（`infra/docker/Dockerfile.web`，多阶段）：`pnpm build` 产物交容器内 nginx 托管，nginx 反代 `/api/` `/ws/`→`api:8000`（`infra/docker/nginx.conf`），宿主映射 `8088:80`。
+- **构建并起 web 容器**（`infra/docker/Dockerfile.web`，多阶段）：`pnpm build` 产物交容器内 nginx 托管，nginx 反代 `/api/` `/ws/`→`api:8000`（`infra/docker/nginx.conf`），宿主映射 `8088:80`。Compose 会把 Raster Mask WebGPU 的非敏感 build arg 注入镜像；修改后必须重新构建而非只重启容器。
 - **celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
 
 两个 `-f` 与 `--env-file .env.production` **都不可省**：前者把 prod 叠加文件合进来才会容器化 api/web，后者是 worker 用 `${VAR}` 覆盖 dev 凭据的插值源（原理见[运行环境形态](/dev/concepts/runtime-environments)）。

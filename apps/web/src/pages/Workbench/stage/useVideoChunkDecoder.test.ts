@@ -23,9 +23,9 @@ describe("chunkDecoderCacheKey", () => {
 describe("isWebCodecsExperimentEnabled · flag 解析", () => {
   const storageWith = (value: string | null) => ({ getItem: () => value });
 
-  it("缺省关闭 (无 query 无 storage)", () => {
-    expect(isWebCodecsExperimentEnabled("", storageWith(null))).toBe(false);
-    expect(isWebCodecsExperimentEnabled(null, null)).toBe(false);
+  it("缺省开启 (无 query 无 storage)", () => {
+    expect(isWebCodecsExperimentEnabled("", storageWith(null))).toBe(true);
+    expect(isWebCodecsExperimentEnabled(null, null)).toBe(true);
   });
 
   it("URL query ?webcodecs=1 / =true 开启", () => {
@@ -37,21 +37,26 @@ describe("isWebCodecsExperimentEnabled · flag 解析", () => {
     expect(isWebCodecsExperimentEnabled(`?${WEBCODECS_FLAG_QUERY_KEY}=0`, storageWith("1"))).toBe(
       false,
     );
+    expect(
+      isWebCodecsExperimentEnabled(`?${WEBCODECS_FLAG_QUERY_KEY}=false`, storageWith("1")),
+    ).toBe(false);
   });
 
-  it("localStorage 真值开启 (query 缺省时)", () => {
+  it("localStorage 显式值覆盖默认值 (query 缺省时)", () => {
     expect(isWebCodecsExperimentEnabled("", storageWith("1"))).toBe(true);
     expect(isWebCodecsExperimentEnabled("", storageWith("true"))).toBe(true);
     expect(isWebCodecsExperimentEnabled("", storageWith("0"))).toBe(false);
+    expect(isWebCodecsExperimentEnabled("", storageWith("false"))).toBe(false);
+    expect(isWebCodecsExperimentEnabled("", storageWith("invalid"))).toBe(true);
   });
 
-  it("storage.getItem 抛错时安全降级为 false", () => {
+  it("storage.getItem 抛错时仍使用默认开启并由能力探测负责回退", () => {
     const throwing = {
       getItem: () => {
         throw new Error("blocked");
       },
     };
-    expect(isWebCodecsExperimentEnabled("", throwing)).toBe(false);
+    expect(isWebCodecsExperimentEnabled("", throwing)).toBe(true);
   });
 });
 

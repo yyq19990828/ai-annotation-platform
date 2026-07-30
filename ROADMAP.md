@@ -12,8 +12,8 @@
 
 详见[视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
 
-- WebCodecs 精确解码链路（MP4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话与 Konva 显示）已完成并按客户端能力安全降级（实验开关，默认关闭）。后续产品门只保留受支持客户端的硬解与跨浏览器 1080p/4K strict 性能矩阵，以及是否默认开启的独立决策；Linux 服务端不参与浏览器解码，当前 Linux/NVIDIA Chrome 仅验证了软件解码与 fallback。
-- 客户端硬解验证提醒：在 MacBook 本地部署同提交的无 ML backend 完整栈，以宿主机原生有头 Chrome 访问 `localhost`，复用 H.264 / B-frame / 4K fixture 跑 strict 矩阵，并同时记录 VideoToolbox 硬解 profile 与实际命中证据；该结果只代表 macOS 客户端，不外推为 Linux 客户端或服务端 GPU 能力。
+- WebCodecs 精确解码链路（MP4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话与 Konva 显示）已按客户端能力默认尝试；用户显式关闭、浏览器不支持、codec/chunk 异常或预算不足时安全回退原生 `<video>` / 位图。Linux 服务端不参与浏览器解码，当前 Linux/NVIDIA Chrome 只验证了软件解码与 fallback。
+- 默认开启后的后验验证继续保留：在 MacBook 本地部署同提交的无 ML backend 完整栈，以宿主机原生有头 Chrome 访问 `localhost`，复用 H.264 / B-frame / 4K fixture 跑 strict 矩阵，并同时记录 VideoToolbox 硬解 profile 与实际命中证据；随后补齐 Chrome / Edge / Safari 的 1080p/4K correctness、可见延迟、资源 plateau 与 fallback rate。任一客户端异常只回滚本机开关，不外推为 Linux 客户端或服务端 GPU 能力。
 - 支持外部视频预测导入，包括 AAP JSON 的 bbox / polygon / polyline / mask 轨迹预测；标注导入不在此范围。
 - 按 segment / frame range 聚合导出，并补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
 - 实现视频单帧 keypoint 与 rotated-box 绘制；OBB 还需要旋转手柄。
@@ -26,10 +26,10 @@
 和 [v0.23.19 有界 sparse XOR compaction 与 word-patch pipeline 计划](docs/plans/2026-07-30-v0.23.19-raster-mask-sparse-xor-compaction.md)。
 
 - 持久 CPU Worker session、packed dirty tile 输入与 XOR history patch 输出已经接入，大图 tiled ROI morphology 不再在主线程重建连续 alpha 或扫描 before / after；保存格式仍是 canonical COCO RLE。
-- default-off WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B；Worker 从 base RLE 直接构造 packed ROI，shader 只回读 core XOR words，成功 GPU 请求不再生成 dense alpha、重复 bit-pack 或扫描 core-wide before / after diff。默认构建保持零 adapter 请求，无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
-- Worker 内有界 immutable packed base tile cache、word span ROI assemble 与 dirty masked overwrite 已完成；Linux RTX 3090 两轮 warm A/B 的 prepare p95 改善约 76%–86%，端到端 p95 改善约 30%–41%，overlap pan 只 miss 新进入的 tiles。同 bundle direct-RLE cold control 的回归低于 3%，Linux default X11、gate off、cache bypass 与 save/reload matrix exact。cache 不作为 mutable current truth，预算不足时继续使用 direct-RLE packed 路径；默认 gate 不变。
+- WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B，并在默认构建中启用 capability-first 路由；仅在大 ROI `square dilate` 发起时惰性探测 adapter。Worker 从 base RLE 直接构造 packed ROI，shader 只回读 core XOR words，成功 GPU 请求不再生成 dense alpha、重复 bit-pack 或扫描 core-wide before / after diff；无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
+- Worker 内有界 immutable packed base tile cache、word span ROI assemble 与 dirty masked overwrite 已完成；Linux RTX 3090 两轮 warm A/B 的 prepare p95 改善约 76%–86%，端到端 p95 改善约 30%–41%，overlap pan 只 miss 新进入的 tiles。同 bundle direct-RLE cold control 的回归低于 3%，Linux default X11、显式 gate off、cache bypass 与 save/reload matrix exact。cache 不作为 mutable current truth，预算不足时继续使用 direct-RLE packed 路径；运维可用 `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU=false` 重建前端紧急回滚。
 - dense XOR 已改用 CPU word-scatter 构造 history patches；最终 Linux RTX 3090 两轮中，2048² / 4K 端到端 p95 相对上一封版分别改善约 16%–34% / 33%–42%，patch、save、reload exact 且 Long Task 为 0。固定 `coreWords / 4` 的 atomic sparse records prototype 虽然 20/20 canonical 样本无 overflow、payload 仅约 32–35 KiB，但 `readback + patch` p95 在 2048² 退化约 22%、4K 仅改善约 1%，因此 shader binding、buffers、record protocol 与诊断均已删除；不继续 prefix-sum、不建立 GPU-resident current source，也不扩大 kernel 面。
-- 剩余产品门只有 macOS / Wayland / Windows 无 flag 的 correctness、长会话与性能矩阵，以及是否默认开启的独立决策。WebGPU 使用访问页面的客户端 GPU，不使用 Linux API / Celery 部署机器的 GPU。
+- 默认开启后的验证债务为 macOS Metal、Linux Wayland 与 Windows D3D12 的无额外浏览器 flag correctness、长会话、p95、fallback rate 和 dispose 资源矩阵；验证失败时保持 CPU 自动回退并评估是否按平台回滚，不因默认开启扩大 kernel 面。WebGPU 使用访问页面的客户端 GPU，不使用 Linux API / Celery 部署机器的 GPU。
 
 ### 点云与图像联合标注
 

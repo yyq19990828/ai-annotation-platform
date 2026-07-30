@@ -208,8 +208,8 @@ const norm = (raw) => {
 };
 
 // 本机 local 字段(不在 preferences 默认树)中默认「开启」的覆盖。
-// experiment.videoKonva 自 v0.16.4 切默认为开(逃生舱仍可关),见 videoKonvaFlag.ts。
-const LOCAL_TOGGLE_DEFAULT_ON = new Set(["experiment.videoKonva"]);
+// 默认开启项仍保留本机逃生开关，生成文档必须与运行时缺省值一致。
+const LOCAL_TOGGLE_DEFAULT_ON = new Set(["experiment.videoKonva", "experiment.webcodecs"]);
 
 // 默认值的人类可读呈现。
 function renderDefault(field) {

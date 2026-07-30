@@ -24,15 +24,15 @@ GPU，而 Linux 服务端完全不参与该计算。
 
 `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` 是 Vite build-time 开关：
 
-- 默认 `false`，provider module 不加载，adapter 请求次数为 0；
-- 修改 `.env` 后必须重建前端 image；只重启 API 或 Celery 不会改变已生成的浏览器 bundle；
+- 默认 `true`，仅在大 ROI morphology 请求时惰性加载 provider 并探测 adapter；
+- 设为 `false` 后重建可紧急回滚；只重启 API 或 Celery 不会改变已生成的浏览器 bundle；
 - 该开关不是用户设置，也不会启用 WebCodecs 视频硬件解码。
 
 ## 诊断状态
 
 | 状态 / reason                | 含义                                                                                   | 处理                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `disabled` / `gate-disabled` | 当前前端 bundle 关闭实验 gate                                                          | 如确需试运行，以 `true` 重建前端；否则保持默认                         |
+| `disabled` / `gate-disabled` | 当前前端 bundle 显式关闭 WebGPU gate                                                   | 检查构建参数；需要恢复时以 `true` 重建前端                             |
 | `initializing`               | adapter / device / pipeline 仍在后台初始化                                             | 当次操作走 CPU；不要让 UI 等待初始化                                   |
 | `adapter-unavailable`        | 浏览器无法取得兼容 adapter                                                             | 保留 CPU；检查浏览器、OS、驱动与安全上下文，不把服务端 GPU 当作证据    |
 | `below-pixel-threshold`      | ROI 小于 `2048²`                                                                       | 预期行为；小 ROI 使用 CPU 更快                                         |
@@ -41,9 +41,10 @@ GPU，而 Linux 服务端完全不参与该计算。
 | `device-lost`                | 浏览器报告 device 丢失                                                                 | 当前请求回退 CPU，provider 保持 lost；切 task 或重建 pool 后再资格探测 |
 | `gpu-runtime-failed`         | submit、map、readback 等运行阶段失败                                                   | 当前请求回退 CPU，provider 不在同一会话反复重试                        |
 
-## 验证默认关闭没有访问 GPU
+## 验证默认开启与显式回滚
 
-以默认环境构建后，检查 Raster Mask pool snapshot：
+默认构建尚未执行 morphology 时允许保持 `webGpuState=idle` 且 `initAttempts=0`；第一次符合条件的请求才会
+进入 ready 或稳定 fallback。以 `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU=false` 重建后，检查：
 
 ```text
 webGpuGateEnabled=false
@@ -55,8 +56,8 @@ baseCacheRetainedBytes=0
 sourceScratchCapacityBytes=0
 ```
 
-即使浏览器以可用的 Vulkan / Metal / D3D adapter 启动，这些字段也必须保持零。若出现初始化次数，说明
-gate 被错误地运行时化或 provider 被静态导入，应视为回归。
+即使浏览器以可用的 Vulkan / Metal / D3D adapter 启动，显式回滚构建的这些字段也必须保持零。若出现
+初始化次数，说明 false build-time gate 未被正确裁剪，应视为回归。
 
 ## 研发 A/B
 

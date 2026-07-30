@@ -140,7 +140,7 @@ const DEFAULT_QUEUE_LIMIT = 32;
 const ANALYZE_TIMEOUT_MS = 15_000;
 const OPERATION_TIMEOUT_MS = 30_000;
 const TILE_MERGE_TIMEOUT_MS = 60_000;
-const WEBGPU_GATE_ENABLED = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU === "true";
+const WEBGPU_GATE_ENABLED = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU !== "false";
 
 function initialComputeResources(
   state: RasterMaskWebGpuWorkerSnapshot["state"] = WEBGPU_GATE_ENABLED ? "idle" : "disabled",

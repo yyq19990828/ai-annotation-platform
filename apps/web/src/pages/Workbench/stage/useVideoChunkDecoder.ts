@@ -8,7 +8,7 @@ import { ByteLru } from "./videoByteLru";
 import { VideoGopDecoderSession, type VideoGopSessionIdentity } from "./videoGopDecoderSession";
 
 /**
- * WebCodecs 精确帧解码核心(实验性,默认关闭)。
+ * WebCodecs 精确帧解码核心(实验性,默认开启并按客户端能力安全回退)。
  *
  * 用浏览器原生 WebCodecs(`VideoDecoder`)解 chunk 字节得到精确帧,绕过原生 `<video>`
  * seek 不精确的问题。解出的 `VideoFrame`(按 timestamp 匹配目标)转 `ImageBitmap` 入缓存,
@@ -27,9 +27,10 @@ import { VideoGopDecoderSession, type VideoGopSessionIdentity } from "./videoGop
  * 重建 decoder;`decodePlanToBitmap` 保留为无状态回退参考实现。
  */
 
-/** localStorage / URL query 开关键。默认关闭。 */
+/** localStorage / URL query 开关键。缺省开启，显式 0 / false 关闭。 */
 export const WEBCODECS_FLAG_STORAGE_KEY = "video.experimental.webcodecs";
 export const WEBCODECS_FLAG_QUERY_KEY = "webcodecs";
+export const WEBCODECS_DEFAULT_ENABLED = true;
 
 export interface DecodedVideoFrameBitmap {
   frameIndex: number;
@@ -123,27 +124,32 @@ export function gopIdentityEquals(a: VideoGopSessionIdentity, b: VideoGopSession
 }
 
 /**
- * 解析实验开关。优先级：URL query `?webcodecs=1` > localStorage `video.experimental.webcodecs`。
- * 任一为真值（"1" / "true"）即开启；缺省关闭。纯函数，便于单测。
+ * 解析实验开关。优先级：URL query > localStorage > 默认开启。
+ * `1` / `true` 开启，`0` / `false` 关闭。纯函数，便于单测。
  */
 export function isWebCodecsExperimentEnabled(
   search?: string | null,
   storage?: Pick<Storage, "getItem"> | null,
 ): boolean {
-  const truthy = (v: string | null | undefined) => v === "1" || v === "true";
+  const enabled = (value: string | null | undefined) => {
+    if (value === null || value === undefined) return WEBCODECS_DEFAULT_ENABLED;
+    if (value === "1" || value === "true") return true;
+    if (value === "0" || value === "false") return false;
+    return WEBCODECS_DEFAULT_ENABLED;
+  };
   try {
     const params = new URLSearchParams(search ?? "");
     if (params.has(WEBCODECS_FLAG_QUERY_KEY)) {
-      return truthy(params.get(WEBCODECS_FLAG_QUERY_KEY));
+      return enabled(params.get(WEBCODECS_FLAG_QUERY_KEY));
     }
   } catch {
     // 非法 search 串 → 忽略，继续看 localStorage。
   }
   try {
-    return truthy(storage?.getItem(WEBCODECS_FLAG_STORAGE_KEY));
+    return enabled(storage?.getItem(WEBCODECS_FLAG_STORAGE_KEY));
   } catch {
     // localStorage 在隐私模式 / SSR 下可能不可用。
-    return false;
+    return WEBCODECS_DEFAULT_ENABLED;
   }
 }
 

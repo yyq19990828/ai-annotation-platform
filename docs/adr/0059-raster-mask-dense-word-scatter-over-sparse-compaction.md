@@ -5,6 +5,8 @@
 - **Deciders:** core team
 - **Supersedes:** —（细化 [ADR-0057](./0057-raster-mask-webgpu-packed-xor-contract.md) 的 XOR result → history patch 数据面）
 
+> D3 的默认关闭 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；dense word-scatter 与 sparse no-go 决策继续有效。
+
 ## Context
 
 ADR-0058 将 warm packed prepare p95 降到约 2–7 ms 后，dense core XOR words → 512² history tile patches

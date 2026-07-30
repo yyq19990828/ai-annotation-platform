@@ -5,6 +5,8 @@
 - **Deciders:** core team
 - **Supersedes:** —（扩展 [ADR-0054](./0054-raster-mask-large-canvas-memory-and-tiles.md) 的 sparse tile、固定 Worker pool 与 XOR history，不改变 canonical COCO RLE 持久格式）
 
+> 默认关闭的 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；持久会话、CPU fallback 与资源合同继续有效。
+
 ## Context
 
 大画布 Raster Mask 已以 immutable base RLE 加 materialized dirty tile 取代整图 alpha，但 tiled

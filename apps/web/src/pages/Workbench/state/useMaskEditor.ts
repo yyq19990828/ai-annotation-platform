@@ -185,7 +185,7 @@ export function useMaskEditor({
   historyMaxBytes,
   tileMaxBytes,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
-  const webGpuCandidateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU === "true";
+  const webGpuCandidateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU !== "false";
   const resolvedHistoryMaxBytes =
     historyMaxBytes ??
     (deviceMemory === undefined

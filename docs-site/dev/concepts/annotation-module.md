@@ -179,8 +179,8 @@ COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中�
 和 conversion 在分配前以 `large_mask_full_scan_required` 拒绝。如果可见 tile 也无法通过硬预算准入，
 编辑器保持只读 overview；已经 dirty 的 tile 与 history 保留到用户保存、重试或显式丢弃。
 
-WebGPU 只是大 ROI `square dilate` 的客户端候选后端，build-time gate 默认关闭。关闭时 Worker 不加载
-provider、不请求 adapter；开启后也只有 slot 0 可以持有一个 device，且仅在 ROI 至少 `2048²`、客户端
+WebGPU 只是大 ROI `square dilate` 的客户端候选后端，build-time gate 默认开启，并在首次相关 morphology
+请求时惰性探测 adapter；显式关闭时 Worker 不加载 provider、不请求 adapter。只有 slot 0 可以持有一个 device，且仅在 ROI 至少 `2048²`、客户端
 adapter 已 ready、设备档位和 compute byte budget 允许时路由。初始化中、无 adapter、预算不足、device
 lost、运行时失败或不支持的 operation 都在同一 Worker 精确回退 CPU。该 GPU 属于访问网页的浏览器；
 Linux API、Celery 与 ML backend 主机不会因为此 gate 使用服务端 GPU。pool snapshot 暴露 provider 状态、

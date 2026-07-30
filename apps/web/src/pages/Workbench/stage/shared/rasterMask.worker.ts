@@ -35,7 +35,7 @@ type WorkerScope = {
 const workerScope = self as unknown as WorkerScope;
 const sessions = new Map<string, RasterMaskWorkerSession>();
 const packedBaseCache = new RasterMaskPackedBaseCache();
-const webGpuGateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU === "true";
+const webGpuGateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU !== "false";
 let webGpuProviderPromise: Promise<RasterMaskWebGpuProvider> | null = null;
 
 function disabledWebGpuSnapshot(): RasterMaskWebGpuWorkerSnapshot {
