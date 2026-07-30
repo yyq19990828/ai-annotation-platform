@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import gc
-import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -27,6 +27,13 @@ import cv2
 import httpx
 import numpy as np
 from PIL import Image, ImageDraw
+from aap_backend_runtime import (
+    REQUIRED_CONTRACT_CHECKS,
+    artifact_evidence,
+    build_managed_lifecycle_evidence,
+    exercise_lifecycle_fault_matrix,
+    memory_cycle_evidence,
+)
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     AdmissionTokenClaims,
@@ -47,14 +54,66 @@ CONTROL_SCOPES = {
 }
 REGISTRY_ID = "sam3-validation"
 RESOURCE_ID = "local-validation-gpu"
+SHA256_LENGTH = 64
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def _approved_artifact(
+    path: Path,
+    *,
+    kind: str,
+    approval_ref: str,
+    expected_sha_env: str | None = None,
+) -> dict[str, Any]:
+    evidence = artifact_evidence(path, kind=kind, approval_ref=approval_ref)
+    if expected_sha_env is not None:
+        expected = _required_env(expected_sha_env)
+        if len(expected) != SHA256_LENGTH or any(
+            char not in "0123456789abcdef" for char in expected
+        ):
+            raise RuntimeError(f"{expected_sha_env} must be a lowercase SHA-256")
+        if evidence["sha256"] != expected:
+            raise RuntimeError(f"{path.name} does not match the approved SHA-256")
+    return evidence
+
+
+def _gpu_metadata(target_uuid: str | None) -> dict[str, Any]:
+    output = subprocess.check_output(
+        [
+            "nvidia-smi",
+            "--query-gpu=uuid,memory.total,driver_version",
+            "--format=csv,noheader,nounits",
+        ],
+        text=True,
+    )
+    rows = [
+        [part.strip() for part in line.split(",")]
+        for line in output.splitlines()
+        if line.strip()
+    ]
+    if target_uuid is not None:
+        matching = [row for row in rows if row[0] == target_uuid]
+        if len(matching) != 1:
+            raise RuntimeError(f"GPU UUID {target_uuid!r} is not visible")
+        row = matching[0]
+    elif len(rows) == 1:
+        row = rows[0]
+    else:
+        raise RuntimeError(
+            "VALIDATION_GPU_UUID is required when multiple GPUs are visible"
+        )
+    return {
+        "uuid": row[0],
+        "total_memory_mb": int(row[1]),
+        "driver_version": row[2],
+        "visible_device_count": len(rows),
+    }
 
 
 def _gpu_memory_mb(target_uuid: str | None) -> int:
@@ -266,6 +325,10 @@ def _make_inputs(root: Path) -> tuple[Path, Path]:
 
 
 async def _run() -> dict[str, Any]:
+    git_commit = _required_env("VALIDATION_GIT_COMMIT")
+    image_id = _required_env("VALIDATION_IMAGE_ID")
+    model_approval_ref = _required_env("VALIDATION_MODEL_APPROVAL_REF")
+    fixture_approval_ref = _required_env("VALIDATION_FIXTURE_APPROVAL_REF")
     private_key = Ed25519PrivateKey.generate()
     os.environ["GPU_LIFECYCLE_VERIFY_KEYS_JSON"] = json.dumps(
         {"validation": encode_ed25519_public_key(private_key.public_key())}
@@ -279,13 +342,21 @@ async def _run() -> dict[str, Any]:
 
     validation_root = Path(tempfile.mkdtemp(prefix="sam3_lifecycle_validation_"))
     image_path, video_path = _make_inputs(validation_root)
-    target_uuid = os.getenv("VALIDATION_GPU_UUID") or None
-    timings_ms: dict[str, int] = {}
+    gpu = _gpu_metadata(os.getenv("VALIDATION_GPU_UUID") or None)
+    target_uuid = gpu["uuid"]
     memory: dict[str, Any] = {}
+    contract_checks = {name: False for name in REQUIRED_CONTRACT_CHECKS}
 
-    await main._load_models()  # noqa: SLF001
-    assert main._gpu_lifecycle is not None  # noqa: SLF001
-    boot_id = main._gpu_lifecycle.boot_id  # noqa: SLF001
+    try:
+        await main._load_models()  # noqa: SLF001
+        assert main._gpu_lifecycle is not None  # noqa: SLF001
+        boot_id = main._gpu_lifecycle.boot_id  # noqa: SLF001
+    except BaseException:
+        try:
+            await main._shutdown()  # noqa: SLF001
+        finally:
+            shutil.rmtree(validation_root, ignore_errors=True)
+        raise
 
     def token(
         scope: AdmissionScope,
@@ -294,6 +365,7 @@ async def _run() -> dict[str, Any]:
         control_epoch: str = "2",
         owner: str = "validation",
         operation: str = "validation",
+        jti: str | None = None,
     ) -> str:
         control = scope in CONTROL_SCOPES
         claims = AdmissionTokenClaims(
@@ -303,7 +375,7 @@ async def _run() -> dict[str, Any]:
             generation=generation,
             control_epoch=control_epoch,
             scope=scope,
-            jti=f"validation-{scope.value}-{uuid.uuid4().hex}",
+            jti=jti or f"validation-{scope.value}-{uuid.uuid4().hex}",
             exp=int(time.time()) + 1800,
             owner=owner if control else None,
             operation=operation if control else None,
@@ -327,11 +399,7 @@ async def _run() -> dict[str, Any]:
         json_body: dict[str, Any],
         request_headers: dict[str, str],
     ) -> dict[str, Any]:
-        started = time.perf_counter()
         response = await client.post(path, json=json_body, headers=request_headers)
-        timings_ms[f"{path}:{len(timings_ms)}"] = int(
-            (time.perf_counter() - started) * 1000
-        )
         if response.status_code >= 400:
             raise RuntimeError(
                 f"{path} returned {response.status_code}: {response.text[:1000]}"
@@ -389,6 +457,10 @@ async def _run() -> dict[str, Any]:
                 },
             )
             assert mode["gate"] == "enforce"
+            setup = (await client.get("/setup")).json()
+            if "managed_lifecycle" not in setup:
+                raise AssertionError("managed lifecycle capability was not advertised")
+            contract_checks["managed_lifecycle_advertised"] = True
 
             await checked_post(
                 client,
@@ -403,6 +475,7 @@ async def _run() -> dict[str, Any]:
                 },
                 request_headers=headers(AdmissionScope.PREDICT, "1"),
             )
+            contract_checks["real_inference"] = True
             await checked_post(
                 client,
                 "/predict",
@@ -452,6 +525,12 @@ async def _run() -> dict[str, Any]:
                 for pool_id in ("image", "multiplex_video", "pvs_video")
             )
             assert health["video_pool"]["active_sessions"] == 0
+            effective_device = health["compute"]["effective_device"]
+            if not effective_device or not effective_device.startswith("cuda"):
+                raise AssertionError(
+                    f"SAM3 did not remain on CUDA: {health['compute']}"
+                )
+            contract_checks["provider_or_device_gpu"] = True
             memory["cycle_1_loaded_mb"] = _gpu_memory_mb(target_uuid)
 
             drain_owner = "cycle-1"
@@ -511,18 +590,21 @@ async def _run() -> dict[str, Any]:
             memory["cycle_2_loaded_mb"] = _gpu_memory_mb(target_uuid)
 
             drain_owner = "cycle-2"
-            await checked_post(
-                client,
-                "/drain",
-                json_body={"generation": "4"},
-                request_headers={
-                    GPU_GENERATION_HEADER: "4",
-                    GPU_ADMISSION_TOKEN_HEADER: token(
-                        AdmissionScope.DRAIN,
-                        generation="4",
-                        operation=drain_owner,
-                    ),
-                },
+            contract_checks.update(
+                await exercise_lifecycle_fault_matrix(
+                    client=client,
+                    lifecycle=main._gpu_lifecycle,  # noqa: SLF001
+                    token=token,
+                    workload_scope=AdmissionScope.WARMUP,
+                    drain_scope=AdmissionScope.DRAIN,
+                    unload_scope=AdmissionScope.UNLOAD,
+                    workload_path="/warmup",
+                    workload_body={},
+                    current_generation="3",
+                    stale_generation="1",
+                    next_generation="4",
+                    drain_owner=drain_owner,
+                )
             )
             unloaded = await checked_post(
                 client,
@@ -551,6 +633,7 @@ async def _run() -> dict[str, Any]:
                 torch_memory=memory["cycle_2_torch_unloaded_mb"],
                 pool_snapshot=cycle_2_pool,
             )
+            contract_checks["full_cleanup"] = True
 
         _assert_repeated_memory_recovery(memory)
 
@@ -564,22 +647,71 @@ async def _run() -> dict[str, Any]:
             raise RuntimeError(f"temporary video artifacts remain: {leftovers}")
 
         checkpoint_dir = Path(os.getenv("CHECKPOINT_DIR", "/app/checkpoints"))
-        checkpoints = {
-            name: {
-                "size": (checkpoint_dir / name).stat().st_size,
-                "sha256": _sha256(checkpoint_dir / name),
-            }
-            for name in ("sam3.pt", "sam3.1_multiplex.pt")
+        artifacts = [
+            _approved_artifact(
+                checkpoint_dir / "sam3.pt",
+                kind="weight",
+                approval_ref=model_approval_ref,
+                expected_sha_env="VALIDATION_SAM3_SHA256",
+            ),
+            _approved_artifact(
+                checkpoint_dir / "sam3.1_multiplex.pt",
+                kind="weight",
+                approval_ref=model_approval_ref,
+                expected_sha_env="VALIDATION_MULTIPLEX_SHA256",
+            ),
+            _approved_artifact(
+                image_path,
+                kind="fixture",
+                approval_ref=fixture_approval_ref,
+            ),
+            _approved_artifact(
+                video_path,
+                kind="fixture",
+                approval_ref=fixture_approval_ref,
+            ),
+        ]
+        gpu["runtime_version"] = str(main.torch.version.cuda)
+        pool_topology = {
+            pool_id: {"cap": int(snapshot["cap"])}
+            for pool_id, snapshot in cycle_2_pool["pools"].items()
         }
-        return {
-            "image_id": os.getenv("VALIDATION_IMAGE_ID"),
-            "gpu_uuid": target_uuid,
-            "boot_id": boot_id,
-            "checkpoints": checkpoints,
-            "timings_ms": timings_ms,
-            "memory_mb": memory,
-            "final_residency": final_health["residency"],
-        }
+        cycles = [
+            memory_cycle_evidence(
+                cycle=1,
+                generation="2",
+                context_samples_mb=memory["context_baseline"]["samples_mb"],
+                loaded_samples_mb=[memory["cycle_1_loaded_mb"]],
+                unloaded_samples_mb=memory["cycle_1_unloaded_mb"],
+            ),
+            memory_cycle_evidence(
+                cycle=2,
+                generation="4",
+                context_samples_mb=memory["context_baseline"]["samples_mb"],
+                loaded_samples_mb=[memory["cycle_2_loaded_mb"]],
+                unloaded_samples_mb=memory["cycle_2_unloaded_mb"],
+            ),
+        ]
+        return build_managed_lifecycle_evidence(
+            backend_name="sam3-backend",
+            deployment={
+                "git_commit": git_commit,
+                "image_id": image_id,
+                "runtime_versions": {
+                    "python": platform.python_version(),
+                    "torch": str(main.torch.__version__),
+                    "cuda": str(main.torch.version.cuda),
+                    "backend": str(main.BACKEND_VERSION),
+                },
+                "pool_topology": pool_topology,
+            },
+            artifacts=artifacts,
+            gpu=gpu,
+            cycles=cycles,
+            contract_checks=contract_checks,
+            final_residency=final_health["residency"],
+            runtime_ephemera_clean=True,
+        )
     finally:
         try:
             await main._shutdown()  # noqa: SLF001
@@ -587,8 +719,44 @@ async def _run() -> dict[str, Any]:
             shutil.rmtree(validation_root, ignore_errors=True)
 
 
+def _failed_evidence(exc: Exception) -> dict[str, Any]:
+    return build_managed_lifecycle_evidence(
+        backend_name="sam3-backend",
+        deployment={
+            "git_commit": os.getenv("VALIDATION_GIT_COMMIT") or None,
+            "image_id": os.getenv("VALIDATION_IMAGE_ID") or None,
+            "runtime_versions": {"python": platform.python_version()},
+            "pool_topology": {},
+        },
+        artifacts=[],
+        gpu={
+            "uuid": os.getenv("VALIDATION_GPU_UUID") or None,
+            "total_memory_mb": None,
+            "driver_version": None,
+            "runtime_version": None,
+            "visible_device_count": None,
+        },
+        cycles=[],
+        contract_checks={name: False for name in REQUIRED_CONTRACT_CHECKS},
+        final_residency=None,
+        runtime_ephemera_clean=False,
+        blockers=[
+            {
+                "code": "validation_exception",
+                "message": f"validation failed with {type(exc).__name__}",
+            }
+        ],
+    )
+
+
 def main() -> None:
-    print(json.dumps(asyncio.run(_run()), ensure_ascii=False, sort_keys=True))
+    try:
+        evidence = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 - emit fail-closed evidence before exit
+        print(f"managed lifecycle validation failed: {exc}", file=sys.stderr)
+        print(json.dumps(_failed_evidence(exc), ensure_ascii=False, sort_keys=True))
+        raise SystemExit(1) from exc
+    print(json.dumps(evidence, ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ import gc
 import hashlib
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -23,6 +24,13 @@ from statistics import median
 from typing import Any
 
 import httpx
+from aap_backend_runtime import (
+    REQUIRED_CONTRACT_CHECKS,
+    artifact_evidence,
+    build_managed_lifecycle_evidence,
+    exercise_lifecycle_fault_matrix,
+    memory_cycle_evidence,
+)
 from aap_protocol_v2.lifecycle import (
     AdmissionScope,
     AdmissionTokenClaims,
@@ -139,7 +147,7 @@ def _gpu_query(fields: str) -> list[list[str]]:
 
 
 def _gpu_row(target_uuid: str | None) -> list[str]:
-    rows = _gpu_query("uuid,memory.used,memory.total")
+    rows = _gpu_query("uuid,memory.used,memory.total,driver_version")
     if target_uuid:
         for row in rows:
             if row[0] == target_uuid:
@@ -150,6 +158,17 @@ def _gpu_row(target_uuid: str | None) -> list[str]:
             "VALIDATION_GPU_UUID is required when multiple GPUs are visible"
         )
     return rows[0]
+
+
+def _gpu_metadata(target_uuid: str | None) -> dict[str, Any]:
+    rows = _gpu_query("uuid,memory.used,memory.total,driver_version")
+    row = _gpu_row(target_uuid)
+    return {
+        "uuid": row[0],
+        "total_memory_mb": int(row[2]),
+        "driver_version": row[3],
+        "visible_device_count": len(rows),
+    }
 
 
 def _gpu_memory_mb(target_uuid: str | None) -> int:
@@ -292,9 +311,13 @@ async def _provider_evidence(main_module: Any) -> dict[str, list[list[str]]]:
 
 
 async def _run() -> dict[str, Any]:
+    git_commit = _required_env("VALIDATION_GIT_COMMIT")
+    image_id = _required_env("VALIDATION_IMAGE_ID")
+    fixture_approval_ref = _required_env("VALIDATION_FIXTURE_APPROVAL_REF")
     artifacts = _validate_artifacts()
     requested_uuid = os.getenv("VALIDATION_GPU_UUID", "").strip() or None
-    target_uuid = _gpu_row(requested_uuid)[0]
+    gpu = _gpu_metadata(requested_uuid)
+    target_uuid = gpu["uuid"]
     cold_baseline = _assert_isolated_before_start(target_uuid)
 
     private_key = Ed25519PrivateKey.generate()
@@ -309,7 +332,7 @@ async def _run() -> dict[str, Any]:
     sys.path.insert(0, str(app_root))
     import main  # noqa: PLC0415
 
-    timings_ms: dict[str, int] = {}
+    contract_checks = {name: False for name in REQUIRED_CONTRACT_CHECKS}
     memory: dict[str, Any] = {
         "cold_card_baseline": cold_baseline,
         "gpu_total_mb": _gpu_total_memory_mb(target_uuid),
@@ -328,6 +351,7 @@ async def _run() -> dict[str, Any]:
             control_epoch: str = "2",
             owner: str = "validation",
             operation: str = "validation",
+            jti: str | None = None,
         ) -> str:
             control = scope in CONTROL_SCOPES
             claims = AdmissionTokenClaims(
@@ -337,7 +361,7 @@ async def _run() -> dict[str, Any]:
                 generation=generation,
                 control_epoch=control_epoch,
                 scope=scope,
-                jti=f"validation-{scope.value}-{uuid.uuid4().hex}",
+                jti=jti or f"validation-{scope.value}-{uuid.uuid4().hex}",
                 exp=int(time.time()) + 1800,
                 owner=owner if control else None,
                 operation=operation if control else None,
@@ -361,14 +385,10 @@ async def _run() -> dict[str, Any]:
             json_body: dict[str, Any],
             request_headers: dict[str, str],
         ) -> dict[str, Any]:
-            started = time.perf_counter()
             response = await client.post(
                 path,
                 json=json_body,
                 headers=request_headers,
-            )
-            timings_ms[f"{path}:{len(timings_ms)}"] = int(
-                (time.perf_counter() - started) * 1000
             )
             if response.status_code >= 400:
                 raise RuntimeError(
@@ -421,6 +441,7 @@ async def _run() -> dict[str, Any]:
             setup = (await client.get("/setup")).json()
             if "managed_lifecycle" not in setup:
                 raise AssertionError("managed lifecycle capability was not advertised")
+            contract_checks["managed_lifecycle_advertised"] = True
 
             for model_id in (
                 "vehicle-attr",
@@ -437,6 +458,7 @@ async def _run() -> dict[str, Any]:
                     request_headers=workload_headers(AdmissionScope.PREDICT, "1"),
                 )
                 _assert_predict_results(model_id, payload)
+            contract_checks["real_inference"] = True
 
             provider_evidence = await _provider_evidence(main)
             snapshot = await main._handle_pool.snapshot()  # noqa: SLF001
@@ -455,6 +477,7 @@ async def _run() -> dict[str, Any]:
                 and residency["pools"][name]["provider"] == "CUDAExecutionProvider"
                 for name in EXPECTED_SESSIONS
             )
+            contract_checks["provider_or_device_gpu"] = True
             memory["cycle_1_loaded_mb"] = _gpu_memory_samples(target_uuid, count=3)
 
             drain_owner = "cycle-1"
@@ -511,19 +534,23 @@ async def _run() -> dict[str, Any]:
                 )
             memory["cycle_2_loaded_mb"] = _gpu_memory_samples(target_uuid, count=3)
 
+            warmup_body = {"model_id": "vehicle-detect"}
             drain_owner = "cycle-2"
-            await checked_post(
-                client,
-                "/drain",
-                json_body={"generation": "4"},
-                request_headers={
-                    GPU_GENERATION_HEADER: "4",
-                    GPU_ADMISSION_TOKEN_HEADER: token(
-                        AdmissionScope.DRAIN,
-                        generation="4",
-                        operation=drain_owner,
-                    ),
-                },
+            contract_checks.update(
+                await exercise_lifecycle_fault_matrix(
+                    client=client,
+                    lifecycle=main._gpu_lifecycle,  # noqa: SLF001
+                    token=token,
+                    workload_scope=AdmissionScope.WARMUP,
+                    drain_scope=AdmissionScope.DRAIN,
+                    unload_scope=AdmissionScope.UNLOAD,
+                    workload_path="/warmup",
+                    workload_body=warmup_body,
+                    current_generation="3",
+                    stale_generation="1",
+                    next_generation="4",
+                    drain_owner=drain_owner,
+                )
             )
             unloaded = await checked_post(
                 client,
@@ -547,26 +574,111 @@ async def _run() -> dict[str, Any]:
                 snapshot=final_snapshot,
                 samples=memory["cycle_2_unloaded_mb"],
             )
+            contract_checks["full_cleanup"] = True
 
         _assert_memory_recovery(memory)
-        return {
-            "image_id": os.getenv("VALIDATION_IMAGE_ID"),
-            "gpu_uuid": target_uuid,
-            "boot_id": boot_id,
-            "artifacts": artifacts,
-            "onnxruntime": {
-                "version": __import__("onnxruntime").__version__,
-                "available_providers": main._available_providers(),  # noqa: SLF001
-                "business_session_providers": provider_evidence,
+        approval_ref = artifacts["approval_ref"]
+        artifact_records = [
+            artifact_evidence(
+                artifacts["detector"]["path"],
+                kind="weight",
+                approval_ref=approval_ref,
+            ),
+            artifact_evidence(
+                artifacts["vehicle_attribute"]["path"],
+                kind="weight",
+                approval_ref=approval_ref,
+            ),
+            artifact_evidence(
+                artifacts["validation_image"]["path"],
+                kind="fixture",
+                approval_ref=fixture_approval_ref,
+            ),
+        ]
+        onnxruntime_version = str(__import__("onnxruntime").__version__)
+        cuda_version = os.getenv("CUDA_VERSION", "").strip()
+        if not cuda_version:
+            raise RuntimeError("CUDA_VERSION is required from the deployment image")
+        gpu["runtime_version"] = cuda_version
+        cycles = [
+            memory_cycle_evidence(
+                cycle=1,
+                generation="2",
+                context_samples_mb=memory["context_baseline_mb"],
+                loaded_samples_mb=memory["cycle_1_loaded_mb"],
+                unloaded_samples_mb=memory["cycle_1_unloaded_mb"],
+            ),
+            memory_cycle_evidence(
+                cycle=2,
+                generation="4",
+                context_samples_mb=memory["context_baseline_mb"],
+                loaded_samples_mb=memory["cycle_2_loaded_mb"],
+                unloaded_samples_mb=memory["cycle_2_unloaded_mb"],
+            ),
+        ]
+        return build_managed_lifecycle_evidence(
+            backend_name="onnxtools-backend",
+            deployment={
+                "git_commit": git_commit,
+                "image_id": image_id,
+                "runtime_versions": {
+                    "python": platform.python_version(),
+                    "onnxruntime": onnxruntime_version,
+                    "cuda": cuda_version,
+                    "backend": str(main.BACKEND_VERSION),
+                },
+                "pool_topology": {
+                    name: {"handle_cap": 1, "expected_sessions": count}
+                    for name, count in EXPECTED_SESSIONS.items()
+                },
             },
-            "timings_ms": timings_ms,
-            "memory_mb": memory,
-            "final_residency": final_health["residency"],
-        }
+            artifacts=artifact_records,
+            gpu=gpu,
+            cycles=cycles,
+            contract_checks=contract_checks,
+            final_residency=final_health["residency"],
+            runtime_ephemera_clean=True,
+        )
+
+
+def _failed_evidence(exc: Exception) -> dict[str, Any]:
+    return build_managed_lifecycle_evidence(
+        backend_name="onnxtools-backend",
+        deployment={
+            "git_commit": os.getenv("VALIDATION_GIT_COMMIT") or None,
+            "image_id": os.getenv("VALIDATION_IMAGE_ID") or None,
+            "runtime_versions": {"python": platform.python_version()},
+            "pool_topology": {},
+        },
+        artifacts=[],
+        gpu={
+            "uuid": os.getenv("VALIDATION_GPU_UUID") or None,
+            "total_memory_mb": None,
+            "driver_version": None,
+            "runtime_version": None,
+            "visible_device_count": None,
+        },
+        cycles=[],
+        contract_checks={name: False for name in REQUIRED_CONTRACT_CHECKS},
+        final_residency=None,
+        runtime_ephemera_clean=False,
+        blockers=[
+            {
+                "code": "validation_exception",
+                "message": f"validation failed with {type(exc).__name__}",
+            }
+        ],
+    )
 
 
 def main() -> None:
-    print(json.dumps(asyncio.run(_run()), ensure_ascii=False, sort_keys=True))
+    try:
+        evidence = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 - emit fail-closed evidence before exit
+        print(f"managed lifecycle validation failed: {exc}", file=sys.stderr)
+        print(json.dumps(_failed_evidence(exc), ensure_ascii=False, sort_keys=True))
+        raise SystemExit(1) from exc
+    print(json.dumps(evidence, ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == "__main__":

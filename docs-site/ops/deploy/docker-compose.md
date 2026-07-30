@@ -607,7 +607,7 @@ docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapi
 - nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit。默认 grounded-sam2 / yolo / onnxtools / rapidocr 用卡 0，sam3 用卡 1；单卡机器设置 `SAM3_GPU_DEVICE_ID=0`。任一 `*_GPU_DEVICE_ID` 都必须是单个索引或 UUID，不接受逗号列表和已暴露 GPU runtime 的 `all`。
 - healthcheck `start_period`：grounded-sam2 `120s`（冷启加载 ~80-100s）、sam3 `180s`（首次启动默认下载图像 + 视频约 6.6GB gated 权重）
 - 显存 / 变体相关 env 见 §2.8（grounded-sam2）与 §2.8.1（sam3）；两者 `IDLE_*` / `MODEL_POOL_*` 前缀解耦，可独立调
-- 五个 Backend 的受管生命周期能力都采用部署级验收开关，且默认关闭。只有当前镜像、权重与物理 GPU 完成对应的真实加载、全池卸载和显存回落验收后，才把 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED`、`SAM3_MANAGED_LIFECYCLE_VERIFIED`、`YOLO_MANAGED_LIFECYCLE_VERIFIED`、`ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` 或 `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` 设为 `1`；复制其他机器的结论不能替代当前部署证据。
+- 五个 Backend 的受管生命周期能力都采用部署级验收开关，且默认关闭。只有当前镜像、权重与物理 GPU 完成对应的真实加载、全池卸载和显存回落验收后，才把 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED`、`SAM3_MANAGED_LIFECYCLE_VERIFIED`、`YOLO_MANAGED_LIFECYCLE_VERIFIED`、`ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` 或 `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` 设为字面量 `1`；值只能是 `0` 或 `1`，非法值会使对应 Backend 拒绝启动。复制其他机器的结论不能替代当前部署证据。
 
 ### dev 跨容器存储访问（`ML_BACKEND_STORAGE_HOST`）
 

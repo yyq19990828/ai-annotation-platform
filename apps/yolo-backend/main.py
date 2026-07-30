@@ -25,6 +25,7 @@ from typing import Any
 
 import torch
 from aap_backend_runtime import (
+    deployment_verified_flag,
     effective_device,
     effective_device_value,
     free_gpu_memory,
@@ -125,10 +126,7 @@ STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in (
 CHECKPOINTS_DIR = Path(os.environ.get("YOLO_CHECKPOINTS_DIR", "/app/checkpoints"))
 # Code support and deployment verification are separate. The backend does not
 # advertise or enter enforce mode until real-card load/unload evidence exists.
-MANAGED_LIFECYCLE_VERIFIED = os.environ.get(
-    "YOLO_MANAGED_LIFECYCLE_VERIFIED",
-    "0",
-).lower() in {"1", "true", "yes"}
+MANAGED_LIFECYCLE_VERIFIED = deployment_verified_flag("YOLO_MANAGED_LIFECYCLE_VERIFIED")
 
 
 def _strict_free_gpu_memory() -> None:

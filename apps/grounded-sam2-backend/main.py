@@ -32,6 +32,7 @@ from typing import Any, Callable
 import httpx
 import torch
 from aap_backend_runtime import (
+    deployment_verified_flag,
     effective_device_value,
     fetch_image,
     physical_gpu_identity,
@@ -136,10 +137,9 @@ VIDEO_TRACKER_MAX_WINDOW_FRAMES = int(
 VIDEO_IDLE_UNLOAD_SECONDS = float(os.getenv("VIDEO_IDLE_UNLOAD_SECONDS", "600"))
 # Code support and deployment verification are separate.  The backend does not
 # advertise or enter enforce mode until real-card load/unload evidence exists.
-MANAGED_LIFECYCLE_VERIFIED = os.getenv(
-    "GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED",
-    "0",
-).lower() in {"1", "true", "yes"}
+MANAGED_LIFECYCLE_VERIFIED = deployment_verified_flag(
+    "GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED"
+)
 MAX_PREDICT_REQUEST_BYTES = 6 * 1024 * 1024
 
 # v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).

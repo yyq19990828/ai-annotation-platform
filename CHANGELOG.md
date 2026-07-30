@@ -37,11 +37,11 @@
 
 ### Added
 
-- **ML Backend 受管生命周期验收采用共享证据合同**. 五个 Backend 可用同一严格外壳记录部署与物理 GPU 身份、脱敏制品摘要、两轮显存稳定/工作集回收、故障合同、最终空池状态和中间产物清理结果；`passed` 由完整证据与 blockers 推导，不能由验收器自行声明。
+- **五个 GPU ML Backend 提供真实受管生命周期验收器**. YOLO、Grounded-SAM2、SAM3、ONNXTools 和 RapidOCR 都会在目标镜像内执行真实业务推理、两轮全池卸载、GPU provider/device 判定和共享故障矩阵，并用同一严格外壳记录部署与物理 GPU 身份、脱敏制品摘要、显存稳定/工作集回收、最终空池状态和中间产物清理结果；`passed` 由完整证据与 blockers 推导，不能由验收器自行声明。
 
 ### Changed
 
-- **五个 ML Backend 统一采用部署级受管生命周期声明门槛**. YOLO 不再仅凭代码实现就无条件发布 `managed_lifecycle`；默认保持 legacy，只有当前镜像、权重和物理 GPU 完成真实加载、全池卸载与显存回落验收后才允许声明能力、进入 enforce 并报告可驱逐，避免 GPU 调度接管未经验证的部署。
+- **五个 ML Backend 统一采用部署级受管生命周期声明门槛**. YOLO 不再仅凭代码实现就无条件发布 `managed_lifecycle`；默认保持 legacy，只有当前镜像、权重和物理 GPU 完成真实加载、全池卸载与显存回落验收后才允许声明能力、进入 enforce 并报告可驱逐，避免 GPU 调度接管未经验证的部署。五个验收开关只接受字面量 `0` 或 `1`，非法值会拒绝启动。
 - **WebCodecs 精确帧改为按客户端能力默认尝试**. 暂停、逐帧与稳定 seek 缺省使用既有有状态 GOP 解码链路；用户可在工作台设置或以 URL / localStorage 显式关闭，浏览器不支持、codec / chunk 异常和预算不足继续安全回退原生视频路径。硬解与跨浏览器 1080p/4K 矩阵继续作为后验验证，不把软件解码或 GPU 合成误记为硬解。
 - **Raster Mask WebGPU 候选进入默认构建**. 大 ROI `square dilate` 在首次相关操作时才惰性探测客户端 adapter，并继续受操作、尺寸、设备档位与字节预算门禁约束；任何能力或运行错误都精确回退 CPU Worker。生产镜像新增可回滚 build arg，设为 `false` 重建后不会加载 provider 或请求 adapter；macOS、Wayland 与 Windows 的 correctness、长会话、性能和 fallback rate 继续在路线图跟踪。
 

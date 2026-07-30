@@ -215,6 +215,26 @@ SAM3 把 image、multiplex video、PVS video 作为三个独立 `cap=1` 池。�
 
 仓库默认保持 `SAM3_MANAGED_LIFECYCLE_VERIFIED=0`，此时 `/setup` 不发布 `managed_lifecycle`、`/lifecycle/mode` 拒绝 enforce。只有与已验收制品匹配，或在当前部署重新运行 `scripts/validate_managed_lifecycle.py` 通过后，才能显式开启。
 
+独占目标卡并确认 image 与 multiplex 权重审批摘要后执行：
+
+```bash
+set -o pipefail
+install -d -m 700 "$EVIDENCE_DIR"
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile gpu-sam3 run --rm --no-deps --entrypoint python3 \
+  -e VALIDATION_GIT_COMMIT -e VALIDATION_IMAGE_ID -e VALIDATION_GPU_UUID \
+  -e VALIDATION_MODEL_APPROVAL_REF -e VALIDATION_FIXTURE_APPROVAL_REF \
+  -e VALIDATION_SAM3_SHA256 -e VALIDATION_MULTIPLEX_SHA256 \
+  sam3-backend /app/scripts/validate_managed_lifecycle.py \
+  | tee "$EVIDENCE_DIR/sam3-managed-lifecycle.json"
+jq -e '.passed == true and .runtime_ephemera_clean == true' \
+  "$EVIDENCE_DIR/sam3-managed-lifecycle.json"
+```
+
+验收器真实运行 image、multiplex video 和 PVS video 三池，检查 BF16/CUDA 路径、两轮整池卸载、
+90% 工作集回收门和共享故障矩阵。运行前必须从目标镜像和当前权重计算环境变量，不得复用其他机器的
+结论。
+
 `/health` 返回字段:
 
 ```json

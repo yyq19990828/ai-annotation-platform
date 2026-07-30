@@ -30,6 +30,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from aap_backend_runtime import (
+    deployment_verified_flag,
     physical_gpu_identity,
     validate_single_gpu_device_set,
     versions_payload,
@@ -120,9 +121,9 @@ IDLE_CHECK_INTERVAL = float(os.environ.get("ONNXTOOLS_IDLE_CHECK_INTERVAL", "60"
 BUILD_TIMEOUT = float(os.environ.get("ONNXTOOLS_BUILD_TIMEOUT", "30"))
 # The code path is available before deployment calibration, but it may not advertise
 # or report itself evictable until a real four-session GPU unload returns to baseline.
-MANAGED_LIFECYCLE_VERIFIED = os.environ.get(
-    "ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED", "0"
-).lower() in {"1", "true", "yes"}
+MANAGED_LIFECYCLE_VERIFIED = deployment_verified_flag(
+    "ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED"
+)
 
 
 # ORT provider 构造偏好 (None=未探测)。一旦探过即缓存，启动后不再重复试 CUDA。

@@ -106,7 +106,7 @@ last_reviewed: 2026-07-30
 | `YOLO_IDLE_CHECK_INTERVAL` | `60` | — |
 | `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
 | `YOLO_STRICT_OFFLINE` | `0` | — |
-| `YOLO_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 YOLO 多模型池真实 GPU load → full unload → baseline 验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
+| `YOLO_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 YOLO 多模型池真实 GPU load → full unload → baseline 验收后设为 1。 只接受字面量 0 或 1；其他值拒绝启动。未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
 | `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | `—` | Managed GPU lifecycle Ed25519 public-key ring (kid -> unpadded base64url key). Empty keeps the backend in legacy-compatible mode; a non-empty invalid value fails startup. |
 
@@ -120,7 +120,7 @@ last_reviewed: 2026-07-30
 | `ONNXTOOLS_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
 | `ONNXTOOLS_IDLE_UNLOAD_SECONDS` | `600` | 全池空闲卸载阈值（秒）；非正数关闭。 |
 | `ONNXTOOLS_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
-| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成真实 GPU 四 session warmup → full unload → baseline 验证后设为 1。 |
+| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成真实 GPU 四 session warmup → full unload → baseline 验证后设为 1；只接受字面量 0 或 1。 |
 | `ONNXTOOLS_LOG_LEVEL` | `INFO` | ONNXTools 日志级别。 |
 
 ## RapidOCR 动态 composite 引擎池与受管生命周期
@@ -132,7 +132,7 @@ last_reviewed: 2026-07-30
 | `RAPIDOCR_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
 | `RAPIDOCR_IDLE_UNLOAD_SECONDS` | `600` | 整池空闲卸载阈值（秒）；非正数关闭。 |
 | `RAPIDOCR_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
-| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0` | 部署级 opt-in；当前参考制品已完成实卡验证，硬件、镜像或模型不匹配时须重新验证。 |
+| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前镜像、权重与物理 GPU 的满池实卡验收通过后设为 1；只接受字面量 0 或 1。 |
 | `RAPIDOCR_LOG_LEVEL` | `INFO` | RapidOCR 日志级别。 |
 
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
@@ -277,7 +277,7 @@ last_reviewed: 2026-07-30
 | `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 排队等显存的超时 (秒), 超时 503; video build 比图片慢, 默认 60. |
 | `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存); 超此值的窗口拒绝. |
 | `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭. |
-| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在 Grounded-SAM2 完成实卡 image/video/双池/full-unload 验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
+| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在 Grounded-SAM2 完成实卡 image/video/双池/full-unload 验收后设为 1。 只接受字面量 0 或 1；其他值拒绝启动。未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## SAM 3 ML Backend
 
@@ -295,7 +295,7 @@ last_reviewed: 2026-07-30
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
 | `SAM3_MODEL_POOL_BUILD_TIMEOUT` | `120` | 三个模型池等待冷构建的超时 (秒); 超时后真实 builder 仍由 backend 跟踪至结束。 |
-| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 image/multiplex/PVS 真实推理与全池显存回落验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
+| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 image/multiplex/PVS 真实推理与全池显存回落验收后设为 1。 只接受字面量 0 或 1；其他值拒绝启动。未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## ML Backend GPU 分卡 (多卡机器可选)
 

@@ -540,6 +540,18 @@ def test_unverified_deployment_does_not_advertise_managed_lifecycle(
     assert "managed_lifecycle" not in main.setup()
 
 
+def test_invalid_deployment_gate_fails_import(monkeypatch) -> None:
+    monkeypatch.setenv("RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED", "true")
+    import main
+
+    try:
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            importlib.reload(main)
+    finally:
+        monkeypatch.setenv("RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED", "0")
+        importlib.reload(main)
+
+
 def test_invalid_nonempty_keyring_fails_startup(monkeypatch) -> None:
     monkeypatch.setenv("GPU_LIFECYCLE_VERIFY_KEYS_JSON", "not-json")
     import main

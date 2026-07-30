@@ -46,17 +46,61 @@ effective `enforce`。证明刷新不会修改 claim、fence、rollout mode 或 
 - manifest action Backend 与资源域内每个现存 allocation Backend 都已注册到声明的唯一
   `gpu_resource_id`；preflight 会逐一核对 durable fence、challenge health、物理卡身份、预算和并发参数，
   任一存量 Backend 不可信都不会执行 workload。
-- ONNXTools 加入 manifest 前，先按其 README 运行镜像内
-  `scripts/validate_managed_lifecycle.py`，用已批准 SHA-256 的真实检测/属性模型关闭四
-  ORT session 的 CUDA provider 与全池显存回落门禁。模型不要求与生产制品完全同名或摘要一致，
-  但代表性模型必须经过明确审批，并保持相同 Backend/ORT/CUDA 加载路径、一个检测加三个属性
-  session 拓扑、受管卸载行为及不低于目标负载的峰值显存；未经批准的结构相似模型不能关闭门禁。
+- 任一 Backend 加入仲裁 manifest 前，先在目标镜像内运行其
+  `scripts/validate_managed_lifecycle.py`。验收必须使用即将上线的完整业务权重、实际 pool cap、物理 GPU
+  和 runtime；只是结构相似、更小或未经批准的模型不能关闭部署门禁。
 
 先创建一个仓库外证据目录，避免把运行产物混入源码：
 
 ```bash
 install -d -m 700 /tmp/aap-gpu-acceptance
 ```
+
+## 先完成 Backend 部署资格
+
+五个验收器使用同一严格 JSON 证据合同，但会调用各 Backend 的真实业务路径与模型池：
+
+| Backend       | 必须验证的驻留面                                                | 模型审批变量                                                  |
+| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------- |
+| YOLO          | detect / segment / pose / OBB 多权重池、video tracker、整池清理 | `VALIDATION_WEIGHT_SHA256_JSON`                               |
+| Grounded-SAM2 | image + video 双池、DINO/SAM、embedding cache                   | `VALIDATION_WEIGHT_SHA256_JSON`                               |
+| RapidOCR      | 3 个 composite engine、9 条 det/cls/rec ORT session             | `VALIDATION_WEIGHT_SHA256_JSON`                               |
+| SAM3          | image / multiplex / PVS 三池、BF16 CUDA 路径                    | `VALIDATION_SAM3_SHA256`、`VALIDATION_MULTIPLEX_SHA256`       |
+| ONNXTools     | pipeline / detector / va 三句柄、4 条 ORT session               | `VALIDATION_DET_SHA256`、`VALIDATION_VA_SHA256`、经批准代表图 |
+
+公共环境变量为：
+
+- `VALIDATION_GIT_COMMIT`：当前镜像对应的完整 commit；
+- `VALIDATION_IMAGE_ID`：实际执行验收器的 image ID 或 digest；
+- `VALIDATION_GPU_UUID`：该容器唯一可见卡的完整 UUID；
+- `VALIDATION_MODEL_APPROVAL_REF` 和 `VALIDATION_FIXTURE_APPROVAL_REF`：可审计的批准记录引用。
+
+每个后端的 README 给出了可直接执行的镜像内命令。必须在命令前启用 `set -o pipefail`，否则
+`tee` 可能遮蔽验收器的非零退出码。证据只写入上述仓库外、权限 `0700` 的目录；不得存放私钥、
+admission token、原始业务图像、签名 URL 或本地路径。
+
+通过证据必须同时满足：
+
+```bash
+jq -e '
+  .schema_version == "1" and
+  .passed == true and
+  .blockers == [] and
+  .runtime_ephemera_clean == true and
+  (.cycles | length) == 2 and
+  .final_residency.state == "unloaded" and
+  .final_residency.gpu_loaded == false
+' /tmp/aap-gpu-acceptance/<backend>-managed-lifecycle.json
+```
+
+两轮都必须有 5 个卸载稳定样本，最大波动不超过 64 MiB，且工作集回收率至少 90%。五个
+contract check 组会共同覆盖真实推理、GPU provider/device、partial header、token replay、旧 generation、
+取消计费、busy unload 和 full cleanup。任一项失败都使 `passed=false`，且不得将对应
+`*_MANAGED_LIFECYCLE_VERIFIED` 改为 `1`。
+
+通过后先复核证据中的 commit、image、权重摘要、GPU UUID、driver/runtime 和 pool 拓扑，再单独把
+该 Backend 的验收开关设为字面量 `1` 并重创容器。值只能是 `0` 或 `1`；非法值会拒绝启动。重创后必须读回
+`/setup.managed_lifecycle` 严格九字段对象和空池 `/health.residency`，不能因已声明能力就伪造当前驻留。
 
 ## 编写 manifest
 

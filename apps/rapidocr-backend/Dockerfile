@@ -42,13 +42,14 @@ RUN python3 -m pip install --no-build-isolation -e /app/backend_runtime
 # 容器无 GUI → 换 opencv-python-headless（仿 RapidOCR 官方 Dockerfile）。
 RUN python3 -m pip install "rapidocr==3.9.0" "onnxruntime-gpu==1.23.2" \
         "cryptography>=43.0.0" "PyJWT>=2.10,<3" \
-        "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5" "httpx>=0.27" "numpy>=1.24,<3.0" \
+        "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5" "httpx>=0.27" "numpy>=1.24,<3.0" "Pillow>=10" \
     && python3 -m pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null; \
        python3 -m pip install "opencv-python-headless>=4.5.1"
 
 COPY rapidocr-backend/main.py rapidocr-backend/predictor.py \
      rapidocr-backend/schemas.py rapidocr-backend/catalog.py \
      rapidocr-backend/engine_pool.py rapidocr-backend/gpu_lifecycle.py ./
+COPY rapidocr-backend/scripts/validate_managed_lifecycle.py /app/scripts/
 
 # 模型目录：13 个 onnx 由 bind mount 注入（download_models.py 下载，见 docker-compose.ml.yml）。
 RUN mkdir -p /app/models

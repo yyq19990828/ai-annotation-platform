@@ -44,13 +44,20 @@ export VALIDATION_IMAGE_PATH=/absolute/path/to/representative-vehicle.jpg
 export VALIDATION_DET_SHA256=<approved-rtdetr-sha256>
 export VALIDATION_VA_SHA256=<approved-va-sha256>
 export VALIDATION_MODEL_APPROVAL_REF=<approval-record-or-ticket>
+export VALIDATION_FIXTURE_APPROVAL_REF=<approved-fixture-record-or-ticket>
 export VALIDATION_GPU_UUID=GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+export VALIDATION_GIT_COMMIT=$(git rev-parse HEAD)
+export EVIDENCE_DIR=/tmp/aap-gpu-acceptance
+install -d -m 700 "$EVIDENCE_DIR"
+set -o pipefail
 
 docker run --rm --gpus '"device=0"' --entrypoint python3 \
   -e VALIDATION_GPU_UUID \
   -e VALIDATION_DET_SHA256 \
   -e VALIDATION_VA_SHA256 \
   -e VALIDATION_MODEL_APPROVAL_REF \
+  -e VALIDATION_FIXTURE_APPROVAL_REF \
+  -e VALIDATION_GIT_COMMIT \
   -e VALIDATION_IMAGE_PATH=/validation/vehicle.jpg \
   -e VALIDATION_IMAGE_ID="$(docker image inspect \
     ai-annotation-platform-onnxtools-backend:latest --format '{{.Id}}')" \
@@ -58,10 +65,12 @@ docker run --rm --gpus '"device=0"' --entrypoint python3 \
   -v "$VALIDATION_IMAGE_PATH:/validation/vehicle.jpg:ro" \
   ai-annotation-platform-onnxtools-backend:latest \
   /app/scripts/validate_managed_lifecycle.py \
-  | tee /tmp/onnxtools-managed-lifecycle-evidence.json
+  | tee "$EVIDENCE_DIR/onnxtools-managed-lifecycle.json"
+jq -e '.passed == true and .runtime_ephemera_clean == true' \
+  "$EVIDENCE_DIR/onnxtools-managed-lifecycle.json"
 ```
 
-代表图必须让 `vehicle-attr` 复合管道实际产生检测与分类结果。验收器会执行两轮三句柄/四 session 加载与受签全池卸载，拒绝任一 session 退回 CPU，并要求每轮卸载后显存稳定、回收至上下文基线且至少回收 90% 的模型工作集。输出 JSON 记录镜像 ID、物理 GPU UUID、模型/输入摘要、四 session provider chain、显存样本与最终 residency。仅在该证据通过并完成复核后，才能在目标部署中把 `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` 设为 `1`。
+代表图必须让 `vehicle-attr` 复合管道实际产生检测与分类结果。验收器会执行两轮三句柄/四 session 加载与受签全池卸载，拒绝任一 session 退回 CPU，并要求每轮卸载后显存稳定、回收至上下文基线且至少回收 90% 的模型工作集。严格证据只保留路径无关的制品指纹、物理 GPU 身份、显存样本与最终 residency；仅在 `passed=true` 并完成复核后，才能在目标部署中把 `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` 设为 `1`。
 
 ## 环境变量
 

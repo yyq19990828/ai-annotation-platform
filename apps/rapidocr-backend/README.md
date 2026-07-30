@@ -50,7 +50,7 @@ curl -s localhost:8005/setup | python3 -m json.tool
 | `RAPIDOCR_BUILD_TIMEOUT`              | `30`          | 调用方等待冷启动的秒数；超时后 builder 仍由池跟踪                                                                                           |
 | `RAPIDOCR_IDLE_UNLOAD_SECONDS`        | `600`         | 整池空闲卸载阈值；非正数关闭                                                                                                                |
 | `RAPIDOCR_IDLE_CHECK_INTERVAL`        | `60`          | 空闲检查周期                                                                                                                                |
-| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0`           | 部署级 opt-in；当前镜像/模型的参考实卡证据见 v0.22.4 仲裁计划，硬件或制品不匹配时须重新验证                                                 |
+| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0`           | 部署级验收门；只有当前镜像、权重和物理 GPU 的严格证据通过后才设为 `1`                                                                       |
 | `GPU_LIFECYCLE_VERIFY_KEYS_JSON`      | 空            | Ed25519 验签公钥 keyring；空值保持 legacy gate                                                                                              |
 
 ## 引擎池与受管生命周期
@@ -73,6 +73,26 @@ admission。无 body 的 `/unload` 继续作为 legacy best-effort 兼容路径�
 session。CUDA composite 构造异常只在确认为设备错误时才尝试 CPU 替代；即使替代成功，
 由于无法直接观测部分构造的私有所有权链，residency 仍保持 unknown，直到一次成功的
 全池清理。
+
+默认 cap=3 的部署验收会同时构建三个 composite engine，并要求 9 条 det/cls/rec 业务
+session 全部以 CUDA 为首 provider。独占目标卡后执行：
+
+```bash
+set -o pipefail
+install -d -m 700 "$EVIDENCE_DIR"
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile gpu-rapidocr run --rm --no-deps --entrypoint python3 \
+  -e VALIDATION_GIT_COMMIT -e VALIDATION_IMAGE_ID -e VALIDATION_GPU_UUID \
+  -e VALIDATION_MODEL_APPROVAL_REF -e VALIDATION_FIXTURE_APPROVAL_REF \
+  -e VALIDATION_WEIGHT_SHA256_JSON \
+  rapidocr-backend /app/scripts/validate_managed_lifecycle.py \
+  | tee "$EVIDENCE_DIR/rapidocr-managed-lifecycle.json"
+jq -e '.passed == true and .runtime_ephemera_clean == true' \
+  "$EVIDENCE_DIR/rapidocr-managed-lifecycle.json"
+```
+
+`VALIDATION_WEIGHT_SHA256_JSON` 的 key 是验收器选中权重相对 `RAPIDOCR_MODEL_DIR` 的路径，必须与该次
+v5 mobile、v5 server 和 v6 medium 三引擎所需权重精确相等。验收失败时不能开启声明。
 
 ## 接入平台
 

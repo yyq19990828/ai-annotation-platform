@@ -72,6 +72,26 @@ python scripts/download_weights.py --series yolo11
 拒绝进入 `enforce` 且不会报告可驱逐；只有当前镜像、权重和 GPU 完成多模型池加载、受管全池卸载与
 显存回落基线验证后，才能把该开关设为 `1`。
 
+独占目标卡并准备好 detect / segment / pose / OBB 四份业务权重后，在目标镜像内执行：
+
+```bash
+set -o pipefail
+install -d -m 700 "$EVIDENCE_DIR"
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile gpu-yolo run --rm --no-deps --entrypoint python3 \
+  -e VALIDATION_GIT_COMMIT -e VALIDATION_IMAGE_ID -e VALIDATION_GPU_UUID \
+  -e VALIDATION_MODEL_APPROVAL_REF -e VALIDATION_FIXTURE_APPROVAL_REF \
+  -e VALIDATION_WEIGHT_SHA256_JSON \
+  yolo-backend /app/scripts/validate_managed_lifecycle.py \
+  | tee "$EVIDENCE_DIR/yolo-managed-lifecycle.json"
+jq -e '.passed == true and .runtime_ephemera_clean == true' \
+  "$EVIDENCE_DIR/yolo-managed-lifecycle.json"
+```
+
+`VALIDATION_WEIGHT_SHA256_JSON` 必须精确列出本次验证的四份权重文件名与小写 SHA-256。
+验收器会跑图像四任务、视频 tracker、两轮整池加载/卸载和共享故障矩阵；只有严格证据中
+`passed=true` 才可以开启声明。完整的隔离、审批引用和回滚要求见 GPU 仲裁验收 runbook。
+
 ## 结果映射
 
 | task         | result.type                          | apps/api Geometry        |

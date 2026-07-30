@@ -224,28 +224,23 @@ challenge `/health` 与 `/setup` 请求都携带 `Cache-Control: no-cache`，共
 并发健康扫描采用保守的 observation-window fence：写回锁内若发现另一轮扫描已在本轮 `probe_started_at` 之后
 提交，就丢弃本轮迟到结果。慢 `/setup` 因而不能借更晚的结束时间给旧 `/health` 续鲜并覆盖更新快照。
 
-只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。YOLO 已实现模型池的
-single-flight、borrower、取消安全 executor、全池清理与完整 lifecycle wire，但能力声明同样受部署验收门槛
-保护。默认 `YOLO_MANAGED_LIFECYCLE_VERIFIED=0`；只有当前镜像、权重与硬件完成多模型池真实加载、受管全池
-卸载和物理显存回落验收后才设为 `1`，否则 `/setup` 隐藏能力、拒绝 enforce 且 `evictable=false`。
-ONNXTools 已实现固定三句柄池的 single-flight、borrower、取消安全 executor、全池清理与
-完整 lifecycle wire，但部署还必须完成真实四 session GPU 回落验证；验证前
-`ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED=0`，`/setup` 不宣告该能力、`/lifecycle/mode` 拒绝切入
-enforce，且 `evictable=false`。RapidOCR 也已实现动态 composite 引擎池、完整 lifecycle
-wire 与全池清理；仓库参考镜像和模型已完成真实满池 GPU 回落与显式 CPU 路径验证。
-该门槛仍按部署 opt-in，默认 `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、硬件与
-验证证据匹配或重新完成同等验证后才设为 `1`，否则继续隐藏能力并拒绝 enforce。
-Grounded-SAM2 已实现 image/video 双池的 single-flight、borrower、共享冷构建锁、取消安全 executor、
-三态 residency 与 managed full-pool cleanup；bodyless legacy `/unload` 仍只清 image pool。仓库参考镜像、
-六份 checkpoint 与物理 GPU 已完成真实 image/video load→LRU→full-unload 回落验证。该门槛仍按部署
-opt-in，默认 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、模型与硬件匹配或重新完成
-同等验证后才设为 `1`，否则隐藏能力、拒绝 enforce 且 `evictable=false`。
-SAM3 已实现 image、multiplex video 与 PVS video 三池 single-flight、borrower/use lock、
-共享冷构建锁、取消安全 executor、三态 residency 和 managed full-pool cleanup。三条推理
-路径使用请求级 BF16 autocast，卸载不保留 vendor 的转换权重缓存。部署门槛默认
-`SAM3_MANAGED_LIFECYCLE_VERIFIED=0`；只有制品、权重和硬件与已冻结证据匹配，或重新完成
-图像与两类视频真实推理、两轮 generation 冷启和物理显存回落验收后才设为 `1`，
-否则隐藏能力、拒绝 enforce 且 `evictable=false`。
+只导入 schema、保留 legacy `/unload` 或返回部分 residency 字段都不构成该能力。五个第一方
+GPU Backend 的源码都已实现完整 wire 和各自的全池所有权清理：YOLO 覆盖多权重池与 tracker，
+Grounded-SAM2 覆盖 image/video 双池和 embedding cache，SAM3 覆盖 image/multiplex/PVS 三池，
+ONNXTools 覆盖三句柄四业务 session，RapidOCR 覆盖三引擎九业务 session。源码能力不等于
+当前部署已取得资格，仓库文档也不替任何实例作资格背书。
+
+每个 Backend 都必须在目标镜像、完整业务权重和唯一可见物理 GPU 上运行镜像内
+`scripts/validate_managed_lifecycle.py`。五个验收器共用严格证据外壳，同时执行真实业务推理、
+两轮 full-pool drain/unload、90% 工作集回收门、provider/device 判定，以及 partial header、token replay、
+旧 generation、取消计费和 busy unload 故障矩阵。证据必须绑定 git commit、image ID、权重/经批准
+fixture 的路径无关 SHA-256、GPU UUID、driver/runtime 和 pool 拓扑，且最终
+`passed=true` 与 `runtime_ephemera_clean=true`。
+
+对应的 `*_MANAGED_LIFECYCLE_VERIFIED` 只接受字面量 `0` 或 `1`，非法值使 Backend 拒绝启动。
+默认值 `0` 会隐藏能力、拒绝 enforce 并使 `evictable=false`；只有运维已复核当前部署的通过证据时
+才设为 `1`。镜像、权重、pool cap、GPU UUID、driver 或 runtime 任一变化都使旧证据失效，必须恢复 `0`
+并重新验收。
 
 `/health` 在实现后新增顶层 `residency`，并保留原有 `compute`、`loaded`、`pool` 等兼容字段：
 

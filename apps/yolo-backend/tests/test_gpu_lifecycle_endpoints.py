@@ -160,6 +160,18 @@ def test_unverified_deployment_does_not_advertise_managed_lifecycle(
     assert "managed_lifecycle" not in main.setup()
 
 
+def test_invalid_deployment_gate_fails_import(monkeypatch) -> None:
+    monkeypatch.setenv("YOLO_MANAGED_LIFECYCLE_VERIFIED", "true")
+    import main
+
+    try:
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            importlib.reload(main)
+    finally:
+        monkeypatch.setenv("YOLO_MANAGED_LIFECYCLE_VERIFIED", "0")
+        importlib.reload(main)
+
+
 def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(
     managed_client,
 ) -> None:
