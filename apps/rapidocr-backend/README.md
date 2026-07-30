@@ -38,7 +38,9 @@ curl -s localhost:8005/setup | python3 -m json.tool
 ```
 
 端口 8005。base 与瘦身后的 onnxtools-backend 共享 `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04`，
-当前 `gpu-rapidocr` compose profile 会无条件申请 NVIDIA 设备，因此只用于 GPU 部署。backend
+RapidOCR 镜像会在其上固定 cuDNN 9.10.2，以保证 PP-OCRv6 非对称 padding 卷积在
+RTX 3090 上不会从 CUDAExecutionProvider 回退到 CPUExecutionProvider。当前 `gpu-rapidocr`
+compose profile 会无条件申请 NVIDIA 设备，因此只用于 GPU 部署。backend
 也支持显式 CPU 模式；无 GPU reservation 时可直接运行同一镜像并设置
 `RAPIDOCR_DEVICE=cpu`。环境变量：
 
@@ -92,7 +94,9 @@ jq -e '.passed == true and .runtime_ephemera_clean == true' \
 ```
 
 `VALIDATION_WEIGHT_SHA256_JSON` 的 key 是验收器选中权重相对 `RAPIDOCR_MODEL_DIR` 的路径，必须与该次
-v5 mobile、v5 server 和 v6 medium 三引擎所需权重精确相等。验收失败时不能开启声明。
+v5 mobile、v5 server 和 v6 medium 三引擎所需权重精确相等。验收会在真实推理后重新读取
+9 条 session 的 provider chain，因此 ORT 运行期整 session CPU fallback 也会阻断声明。
+验收失败时不能开启声明。
 
 ## 接入平台
 

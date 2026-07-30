@@ -74,7 +74,10 @@ def test_full_pool_requires_nine_cuda_sessions() -> None:
                 "resident": True,
                 "device": "cuda",
                 "provider": "CUDAExecutionProvider",
-                "sessions": sessions,
+                "sessions": {
+                    component: list(providers)
+                    for component, providers in sessions.items()
+                },
             }
             for key in ("mobile", "server", "medium")
         },
@@ -83,7 +86,7 @@ def test_full_pool_requires_nine_cuda_sessions() -> None:
     validator._assert_full_gpu_pool(snapshot)
 
     snapshot["engines"]["medium"]["sessions"]["rec"] = ["CPUExecutionProvider"]
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="runtime provider fallback.*medium.*rec"):
         validator._assert_full_gpu_pool(snapshot)
 
 

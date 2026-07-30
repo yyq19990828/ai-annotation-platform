@@ -55,6 +55,7 @@ RUN pip install --upgrade "pip" "setuptools>=68" "wheel" && \
         "opencv-python-headless>=4.9" \
         "prometheus-client>=0.20" \
         "ultralytics>=8.4.0,<8.5" \
+        "lap>=0.5.12" \
         "pynvml>=11.5" \
         "psutil>=5.9"
 

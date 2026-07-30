@@ -276,8 +276,16 @@ def _build_predictor(
 def _strict_free_gpu_memory() -> None:
     """Release managed CUDA allocator state without hiding a failed cleanup."""
 
-    if not torch.cuda.is_available():
+    if not torch.cuda.is_available() or not torch.cuda.is_initialized():
         return
+    torch.cuda.synchronize()
+    clear_cublas_workspaces = getattr(
+        torch._C,  # noqa: SLF001 - PyTorch exposes no public equivalent
+        "_cuda_clearCublasWorkspaces",
+        None,
+    )
+    if callable(clear_cublas_workspaces):
+        clear_cublas_workspaces()
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
 

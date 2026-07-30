@@ -177,6 +177,13 @@ def test_managed_cleanup_propagates_cuda_runtime_failure(monkeypatch) -> None:
     import main
 
     monkeypatch.setattr(main.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(main.torch.cuda, "is_initialized", lambda: True)
+    monkeypatch.setattr(main.torch.cuda, "synchronize", lambda: None)
+    monkeypatch.setattr(
+        main.torch._C,
+        "_cuda_clearCublasWorkspaces",
+        lambda: None,
+    )
 
     def _broken_empty_cache() -> None:
         raise RuntimeError("CUDA allocator unavailable")
@@ -185,6 +192,60 @@ def test_managed_cleanup_propagates_cuda_runtime_failure(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="allocator unavailable"):
         main._strict_free_gpu_memory()
+
+
+def test_managed_cleanup_releases_cublas_workspace_before_allocator(
+    monkeypatch,
+) -> None:
+    import main
+
+    events: list[str] = []
+    monkeypatch.setattr(main.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(main.torch.cuda, "is_initialized", lambda: True)
+    monkeypatch.setattr(
+        main.torch.cuda,
+        "synchronize",
+        lambda: events.append("synchronize"),
+    )
+    monkeypatch.setattr(
+        main.torch._C,
+        "_cuda_clearCublasWorkspaces",
+        lambda: events.append("clear-cublas"),
+    )
+    monkeypatch.setattr(
+        main.torch.cuda,
+        "empty_cache",
+        lambda: events.append("empty-cache"),
+    )
+    monkeypatch.setattr(
+        main.torch.cuda,
+        "ipc_collect",
+        lambda: events.append("ipc-collect"),
+    )
+
+    main._strict_free_gpu_memory()
+
+    assert events == [
+        "synchronize",
+        "clear-cublas",
+        "empty-cache",
+        "ipc-collect",
+    ]
+
+
+def test_managed_cleanup_does_not_initialize_an_unused_cuda_context(
+    monkeypatch,
+) -> None:
+    import main
+
+    synchronize = MagicMock()
+    monkeypatch.setattr(main.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(main.torch.cuda, "is_initialized", lambda: False)
+    monkeypatch.setattr(main.torch.cuda, "synchronize", synchronize)
+
+    main._strict_free_gpu_memory()
+
+    synchronize.assert_not_called()
 
 
 def test_model_move_commits_latch_after_cpu_replacement(monkeypatch) -> None:

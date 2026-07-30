@@ -127,7 +127,8 @@ jq -e '.passed == true and .runtime_ephemera_clean == true' \
 
 权重 manifest 必须精确包含 `sam2.1_hiera_tiny.pt` 和 `groundingdino_swint_ogc.pth`。验收器覆盖
 image/video 双池、embedding cache、两轮 full cleanup 和故障矩阵；失败不会改动运行配置，并会清理
-验收器创建的 fixture 与模型池。
+验收器创建的 fixture 与模型池。两轮计量前会先执行一次 image/video 真实推理与全池卸载，以成熟
+CUDA/cuDNN context 为稳定基线；受管卸载同步清理 cuBLAS workspace 与 allocator cache。
 
 ---
 

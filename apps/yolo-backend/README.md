@@ -91,6 +91,9 @@ jq -e '.passed == true and .runtime_ephemera_clean == true' \
 `VALIDATION_WEIGHT_SHA256_JSON` 必须精确列出本次验证的四份权重文件名与小写 SHA-256。
 验收器会跑图像四任务、视频 tracker、两轮整池加载/卸载和共享故障矩阵；只有严格证据中
 `passed=true` 才可以开启声明。完整的隔离、审批引用和回滚要求见 GPU 仲裁验收 runbook。
+镜像已固定安装 tracker 所需的 `lap`，运行时不会联网 AutoUpdate；全池卸载还会清理 PyTorch
+进程级 cuBLAS workspace，再释放 allocator cache，避免池对象已空但显存仍被工作区占用。验收器会先做
+一次真实卷积 priming 与全卸载，以成熟 CUDA/cuDNN context 作为随后两轮 90% 工作集回收的稳定基线。
 
 ## 结果映射
 

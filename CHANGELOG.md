@@ -47,6 +47,9 @@
 
 ### Fixed
 
+- **RapidOCR PP-OCRv6 不再在 RTX 3090 上静默回退 CPU**. 镜像固定含非对称 padding 卷积修复的 cuDNN 9.10.2；部署验收在真实推理后重新检查三引擎九条 ORT session，任一 det/cls/rec provider 链降为 CPU 都会给出具体引擎与组件并拒绝受管声明。
+- **Grounded-SAM2 双池卸载覆盖进程级 CUDA workspace**. image/video 全池清理会在已有 CUDA context 中同步并释放 cuBLAS workspace 与 allocator cache；实卡验收先执行一次双根真实推理和全卸载，以成熟 CUDA/cuDNN context 作为随后两轮工作集回收基线，避免把一次性 runtime 常驻误判成模型泄漏。
+- **YOLO 全池卸载会释放进程级 cuBLAS workspace**. 受管清理在模型池对象归零后同步 CUDA、清除 PyTorch cuBLAS 工作区并释放 allocator cache，避免仍残留 32 MiB live allocation 而错误宣告显存已回收；验收器先完成一次真实卷积 priming 与全卸载，以成熟 CUDA/cuDNN context 作为两轮回收基线；tracker 的 `lap` 依赖同时烤入镜像，不再在首个视频请求中联网 AutoUpdate。
 - **开发态 GPU collector 可以与普通应用账户形成真实权限隔离**. Compose 内的 Celery worker 新增独立可覆盖的数据库连接串，不再被硬编码的 schema owner 账户锁死；当前部署可以让 API/worker 使用无 membership/fence DELETE 的非特权角色，同时把最小 DELETE 权限只交给 `gpu.control` 的 collector 角色。
 - **RapidOCR 部署验收能够在 3.9.0 镜像中完整输出证据**. 验收器改从标准 distribution metadata 读取版本，避免因上游包不暴露 `__version__` 而在 GPU 加载、卸载全部成功后误报失败。
 - **GPU 部署验收证据保持为可直接校验的单一 JSON 文档**. 五个 Backend 的验收器现将第三方模型加载输出隔离到 stderr，避免进度、权重诊断或 provider 日志污染 stdout 中的严格证据。

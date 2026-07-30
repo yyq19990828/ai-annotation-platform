@@ -14,6 +14,7 @@ import tempfile
 import time
 import uuid
 from contextlib import redirect_stdout
+from functools import partial
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -343,11 +344,48 @@ async def _run() -> dict[str, Any]:
                     raise RuntimeError(
                         "validation GPU is not isolated before CUDA init"
                     )
-                memory["context_baseline_mb"] = _initialize_context_baseline(
+                memory["cold_context_baseline_mb"] = _initialize_context_baseline(
                     main.torch, target_uuid
                 )
                 if len(_gpu_compute_processes(target_uuid)) != 1:
                     raise RuntimeError("validator is not the sole GPU compute process")
+                # The first real convolution initializes process-level CUDA/cuDNN
+                # runtime state that survives an otherwise complete model unload.
+                # Prime that state once, clean the pool, then use the mature context
+                # as the baseline for both measured lifecycle generations.
+                async with main._model_pool.borrow(  # noqa: SLF001
+                    "detection",
+                    series,
+                    size,
+                ) as priming_lease:
+                    priming_results = await asyncio.get_running_loop().run_in_executor(
+                        None,
+                        partial(
+                            priming_lease.model.predict,
+                            str(image_path),
+                            device=str(priming_lease.model.device),
+                            verbose=False,
+                        ),
+                    )
+                del priming_results
+                del priming_lease
+                await main._model_pool.unload_all(  # noqa: SLF001
+                    reason="manual",
+                    force_cleanup=True,
+                )
+                primed_snapshot = await main._model_pool.snapshot()  # noqa: SLF001
+                if primed_snapshot["current_size"] != 0:
+                    raise AssertionError("YOLO context priming did not empty the pool")
+                primed_torch_memory = _torch_memory_mb(main.torch)
+                if (
+                    primed_torch_memory["allocated_bytes"]
+                    or primed_torch_memory["reserved_bytes"]
+                ):
+                    raise AssertionError(
+                        "YOLO context priming retained PyTorch memory: "
+                        f"{primed_torch_memory}"
+                    )
+                memory["context_baseline_mb"] = _gpu_memory_samples(target_uuid)
                 await checked_post(
                     client,
                     "/lifecycle/mode",

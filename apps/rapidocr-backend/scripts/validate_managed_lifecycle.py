@@ -170,22 +170,37 @@ def _assert_unloaded(residency: dict[str, Any], snapshot: dict[str, Any]) -> Non
 
 
 def _assert_full_gpu_pool(snapshot: dict[str, Any]) -> None:
-    assert snapshot["cap"] == 3
-    assert snapshot["current_size"] == 3
-    assert snapshot["session_count"] == 9
-    assert snapshot["gpu_resident"] is True
-    assert snapshot["device"] == "cuda"
-    assert snapshot["provider"] == "CUDAExecutionProvider"
-    assert len(snapshot["engines"]) == 3
-    for engine in snapshot["engines"].values():
-        assert engine["resident"] is True
-        assert engine["device"] == "cuda"
-        assert engine["provider"] == "CUDAExecutionProvider"
-        assert set(engine["sessions"]) == {"det", "cls", "rec"}
-        assert all(
-            providers and providers[0] == "CUDAExecutionProvider"
-            for providers in engine["sessions"].values()
+    if snapshot["cap"] != 3 or snapshot["current_size"] != 3:
+        raise AssertionError(
+            "RapidOCR validation requires all three representative engines resident"
         )
+    if snapshot["session_count"] != 9 or len(snapshot["engines"]) != 3:
+        raise AssertionError(
+            "RapidOCR validation requires exactly nine owned ORT sessions"
+        )
+    if (
+        snapshot["gpu_resident"] is not True
+        or snapshot["device"] != "cuda"
+        or snapshot["provider"] != "CUDAExecutionProvider"
+    ):
+        raise AssertionError("RapidOCR aggregate pool is not fully CUDA resident")
+    for key, engine in snapshot["engines"].items():
+        if (
+            engine["resident"] is not True
+            or engine["device"] != "cuda"
+            or engine["provider"] != "CUDAExecutionProvider"
+        ):
+            raise AssertionError(f"RapidOCR engine {key!r} is not CUDA resident")
+        if set(engine["sessions"]) != {"det", "cls", "rec"}:
+            raise AssertionError(
+                f"RapidOCR engine {key!r} does not own det/cls/rec sessions"
+            )
+        for component, providers in engine["sessions"].items():
+            if not providers or providers[0] != "CUDAExecutionProvider":
+                raise AssertionError(
+                    "RapidOCR runtime provider fallback detected for "
+                    f"engine {key!r} component {component!r}: {providers!r}"
+                )
 
 
 def _assert_baseline_recovery(

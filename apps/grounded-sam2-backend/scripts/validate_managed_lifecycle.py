@@ -274,7 +274,7 @@ async def _run() -> dict[str, Any]:
         scope: AdmissionScope,
         *,
         generation: str | None = None,
-        control_epoch: str = "2",
+        control_epoch: str = "3",
         owner: str = "validation",
         operation: str = "validation",
         jti: str | None = None,
@@ -313,6 +313,31 @@ async def _run() -> dict[str, Any]:
             )
         return response.json()
 
+    image_predict_body = {
+        "task": {"file_path": str(image_path)},
+        "context": {
+            "type": "text",
+            "text": "red rectangle",
+            "output": "both",
+        },
+    }
+    video_predict_body = {
+        "task": {"file_path": str(video_path)},
+        "context": {
+            "type": "video_tracker",
+            "from_frame": 0,
+            "to_frame": 4,
+            "direction": "forward",
+            "output_geometry": "bbox",
+            "source_geometry": {
+                "type": "bbox",
+                "x": 0.16,
+                "y": 0.25,
+                "w": 0.47,
+                "h": 0.53,
+            },
+        },
+    }
     transport = httpx.ASGITransport(app=main.app)
     try:
         async with httpx.AsyncClient(
@@ -334,20 +359,56 @@ async def _run() -> dict[str, Any]:
             )
             if _gpu_compute_processes(target_uuid):
                 raise RuntimeError("validation GPU is not isolated before CUDA init")
-            memory["context_baseline_mb"] = _initialize_context_baseline(
+            memory["cold_context_baseline_mb"] = _initialize_context_baseline(
                 main.torch, target_uuid
             )
             if len(_gpu_compute_processes(target_uuid)) != 1:
                 raise RuntimeError("validator is not the sole GPU compute process")
+            # Prime both real inference roots once so the measured baseline includes
+            # process-level CUDA/cuDNN state that survives a complete pool unload.
+            await checked_post(client, "/predict", image_predict_body, {})
+            await checked_post(client, "/predict", video_predict_body, {})
+            await main._pool_domain.unload_all(  # noqa: SLF001
+                reason="manual",
+                force_cleanup=True,
+            )
+            primed_snapshot = await main._pool_domain.snapshot()  # noqa: SLF001
+            if primed_snapshot["current_size"] != 0:
+                raise AssertionError(
+                    "Grounded-SAM2 context priming did not empty both pools"
+                )
+            primed_torch_memory = _torch_memory(main.torch)
+            if any(primed_torch_memory.values()):
+                raise AssertionError(
+                    "Grounded-SAM2 context priming retained PyTorch memory: "
+                    f"{primed_torch_memory}"
+                )
+            memory["context_baseline_mb"] = _gpu_memory_samples(target_uuid)
+            # Legacy priming intentionally exercised both public inference roots,
+            # which makes the lifecycle controller distrust its earlier empty
+            # observation. Re-establish that trust with a fresh signed reset only
+            # after both pools and PyTorch allocations have been proven empty.
+            await checked_post(
+                client,
+                "/lifecycle/reset",
+                {"control_epoch": "2"},
+                {
+                    GPU_ADMISSION_TOKEN_HEADER: token(
+                        AdmissionScope.RESET,
+                        control_epoch="2",
+                        operation="reset-2",
+                    )
+                },
+            )
             await checked_post(
                 client,
                 "/lifecycle/mode",
-                {"gate": "enforce", "control_epoch": "2"},
+                {"gate": "enforce", "control_epoch": "3"},
                 {
                     GPU_ADMISSION_TOKEN_HEADER: token(
                         AdmissionScope.MODE,
-                        control_epoch="2",
-                        operation="mode-2",
+                        control_epoch="3",
+                        operation="mode-3",
                     )
                 },
             )
@@ -359,36 +420,13 @@ async def _run() -> dict[str, Any]:
             await checked_post(
                 client,
                 "/predict",
-                {
-                    "task": {"file_path": str(image_path)},
-                    "context": {
-                        "type": "text",
-                        "text": "red rectangle",
-                        "output": "both",
-                    },
-                },
+                image_predict_body,
                 headers(AdmissionScope.PREDICT, "1"),
             )
             await checked_post(
                 client,
                 "/predict",
-                {
-                    "task": {"file_path": str(video_path)},
-                    "context": {
-                        "type": "video_tracker",
-                        "from_frame": 0,
-                        "to_frame": 4,
-                        "direction": "forward",
-                        "output_geometry": "bbox",
-                        "source_geometry": {
-                            "type": "bbox",
-                            "x": 0.16,
-                            "y": 0.25,
-                            "w": 0.47,
-                            "h": 0.53,
-                        },
-                    },
-                },
+                video_predict_body,
                 headers(AdmissionScope.PREDICT, "1"),
             )
             contract_checks["real_inference"] = True
