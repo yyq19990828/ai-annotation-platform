@@ -21,6 +21,10 @@ import type {
   RasterMaskMorphologyRoiResponse,
   RasterMaskWebGpuWorkerSnapshot,
 } from "./rasterMaskWorkerProtocol";
+import {
+  rasterMaskPackedBaseCacheCapBytes,
+  RasterMaskPackedBaseCache,
+} from "./rasterMaskPackedBaseCache";
 import type { RasterMaskWebGpuProvider } from "./rasterMaskWebGpu";
 
 type WorkerScope = {
@@ -30,6 +34,7 @@ type WorkerScope = {
 
 const workerScope = self as unknown as WorkerScope;
 const sessions = new Map<string, RasterMaskWorkerSession>();
+const packedBaseCache = new RasterMaskPackedBaseCache();
 const webGpuGateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU === "true";
 let webGpuProviderPromise: Promise<RasterMaskWebGpuProvider> | null = null;
 
@@ -80,8 +85,7 @@ function cpuMorphologyResult(
   fallbackReason: RasterMaskMorphologyRoiResponse["fallbackReason"],
   backend: "cpu" | "cpu-fallback" = "cpu",
   allocatedGpuBytes = 0,
-  priorPrepareMs = 0,
-  packedSourceBytes = 0,
+  priorPacked: ReturnType<typeof preparePackedRasterMaskMorphologyRoi> | null = null,
 ): Omit<RasterMaskMorphologyRoiResponse, "kind" | "id" | "ok" | "sessionId" | "sha256"> {
   const dense = prepared ?? prepareRasterMaskMorphologyRoi(session, request);
   const computeStarted = performance.now();
@@ -107,7 +111,17 @@ function cpuMorphologyResult(
     patches: diff.patches,
     metrics: {
       totalMs: performance.now() - totalStarted,
-      backendPrepareMs: priorPrepareMs + dense.materializeMs,
+      backendPrepareMs: (priorPacked?.packedPrepareMs ?? 0) + dense.materializeMs,
+      prepareStrategy: priorPacked?.prepareStrategy ?? "dense-cpu",
+      directRleScanMs: priorPacked?.directRleScanMs ?? 0,
+      baseCacheFillMs: priorPacked?.baseCacheFillMs ?? 0,
+      packedAssembleMs: priorPacked?.packedAssembleMs ?? 0,
+      dirtyOverlayMs: priorPacked?.dirtyOverlayMs ?? 0,
+      baseCacheHitTiles: priorPacked?.baseCacheHitTiles ?? 0,
+      baseCacheMissTiles: priorPacked?.baseCacheMissTiles ?? 0,
+      baseCacheEvictedTiles: priorPacked?.baseCacheEvictedTiles ?? 0,
+      baseCacheRetainedBytes: priorPacked?.baseCacheRetainedBytes ?? 0,
+      sourceScratchCapacityBytes: priorPacked?.sourceScratchCapacityBytes ?? 0,
       computeMs,
       diffOrPatchMs: diff.diffMs,
       gpuUploadSubmitMs: null,
@@ -115,7 +129,7 @@ function cpuMorphologyResult(
       gpuPassMs: null,
       fallbackMaterializeMs: backend === "cpu-fallback" ? dense.materializeMs : null,
       inputAlphaBytes: dense.source.byteLength,
-      packedSourceBytes,
+      packedSourceBytes: priorPacked?.sourceWords.byteLength ?? 0,
       xorReadbackBytes: 0,
       allocatedGpuBytes,
       gpuSourceCapacityBytes: 0,
@@ -177,9 +191,34 @@ async function runMorphologyRoi(
   if (preflightFailure) {
     return cpuMorphologyResult(session, request, null, totalStarted, preflightFailure);
   }
-  const packed = preparePackedRasterMaskMorphologyRoi(session, request);
+  const packedSourceBytes = Math.ceil(request.input.width / 32) * request.input.height * 4;
+  const cacheCapBytes = rasterMaskPackedBaseCacheCapBytes(request.computeBudgetBytes);
+  const prospectiveScratchCapacityBytes =
+    packedBaseCache.prospectiveScratchCapacityBytes(packedSourceBytes);
+  const cacheReservationBytes =
+    cacheCapBytes + Math.max(0, prospectiveScratchCapacityBytes - packedSourceBytes);
+  const cacheBudgetFailure = provider.preflightSquareDilateXor({
+    ...shape,
+    reservedBytes: cacheReservationBytes,
+  });
+  let packed: ReturnType<typeof preparePackedRasterMaskMorphologyRoi>;
+  if (cacheBudgetFailure === null && cacheCapBytes > 0) {
+    try {
+      packed = packedBaseCache.prepare(request.sessionId, session, request, cacheCapBytes);
+    } catch {
+      packedBaseCache.clear();
+      packed = preparePackedRasterMaskMorphologyRoi(session, request);
+    }
+  } else {
+    packedBaseCache.clear();
+    packed = preparePackedRasterMaskMorphologyRoi(session, request);
+  }
+  const reservedBytes =
+    packed.baseCacheRetainedBytes +
+    Math.max(0, packed.sourceScratchCapacityBytes - packed.sourceWords.byteLength);
   const gpu = await provider.runSquareDilateXor({
     ...shape,
+    reservedBytes,
     sourceWords: packed.sourceWords,
     sourceWordsPerRow: packed.wordsPerRow,
     coreOffsetX: request.core.x - request.input.x,
@@ -194,8 +233,7 @@ async function runMorphologyRoi(
       gpu.reason,
       gpu.attemptedGpu ? "cpu-fallback" : "cpu",
       gpu.allocatedBytes,
-      packed.packedPrepareMs,
-      packed.sourceWords.byteLength,
+      packed,
     );
   }
   const diff = buildRasterMaskMorphologyPatchesFromXorWords(
@@ -214,6 +252,16 @@ async function runMorphologyRoi(
     metrics: {
       totalMs: performance.now() - totalStarted,
       backendPrepareMs: packed.packedPrepareMs,
+      prepareStrategy: packed.prepareStrategy,
+      directRleScanMs: packed.directRleScanMs,
+      baseCacheFillMs: packed.baseCacheFillMs,
+      packedAssembleMs: packed.packedAssembleMs,
+      dirtyOverlayMs: packed.dirtyOverlayMs,
+      baseCacheHitTiles: packed.baseCacheHitTiles,
+      baseCacheMissTiles: packed.baseCacheMissTiles,
+      baseCacheEvictedTiles: packed.baseCacheEvictedTiles,
+      baseCacheRetainedBytes: packed.baseCacheRetainedBytes,
+      sourceScratchCapacityBytes: packed.sourceScratchCapacityBytes,
       computeMs: gpu.metrics.totalMs,
       diffOrPatchMs: diff.diffMs,
       gpuUploadSubmitMs: gpu.metrics.uploadSubmitMs,
@@ -234,11 +282,14 @@ async function runMorphologyRoi(
 workerScope.onmessage = async (event) => {
   const request = event.data;
   if (request.kind === "register_session") {
+    packedBaseCache.releaseSession(request.sessionId);
     sessions.set(request.sessionId, buildRasterMaskWorkerSession(request.sha256, request.rle));
     return;
   }
   if (request.kind === "release_session") {
     sessions.delete(request.sessionId);
+    packedBaseCache.releaseSession(request.sessionId);
+    if (sessions.size === 0) packedBaseCache.clear();
     return;
   }
   if (request.kind === "reset_webgpu") {

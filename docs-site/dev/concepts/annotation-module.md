@@ -147,11 +147,13 @@ index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误�
 填满 Worker 等待队列。响应必须先通过 session、内容摘要、source / tile revision、尺寸、尾位和 core 边界
 校验，再一次性应用；取消、过期或畸形响应不会产生部分写入。
 
-WebGPU ready 时，Worker 不先重建 dense alpha，而是从 immutable base RLE 直接生成 row-aligned packed
-input，再用 dirty packed overrides 做 exact set / clear。shader 对含 halo 的 input 执行 morphology，并只
-回读 core `after XOR source` words；Worker 扫描 non-zero words 构造同一种 history patch。GPU submit、map
-或 device lost 中途失败时才惰性生成 dense alpha 并走 CPU，因此成功 GPU 请求没有 input-sized alpha，
-fallback 仍只有一个 production 正确性实现。
+WebGPU ready 时，Worker 不先重建 dense alpha，而是按 session 惰性缓存 immutable base RLE 的 512²
+row-aligned packed tiles，再以 word span 组装 ROI scratch；本次请求显式携带的 dirty packed overrides 以
+masked overwrite 做 exact set / clear，绝不写回 base cache。cache 不是 mutable current truth，miss、预算
+不足或 cache invariant failure 时可继续从 immutable RLE 直接构造 packed input。shader 对含 halo 的 input
+执行 morphology，并只回读 core `after XOR source` words；Worker 扫描 non-zero words 构造同一种 history
+patch。GPU submit、map 或 device lost 中途失败时才惰性生成 dense alpha 并走 CPU，因此成功 GPU 请求没有
+input-sized alpha，fallback 仍只有一个 production 正确性实现。
 
 Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始后只在首次触及某个 tile
 时捕获临时基线，结束时与当前二值像素生成 XOR 并释放基线；高级操作在确认时按变更边界
@@ -181,8 +183,10 @@ provider、不请求 adapter；开启后也只有 slot 0 可以持有一个 devi
 adapter 已 ready、设备档位和 compute byte budget 允许时路由。初始化中、无 adapter、预算不足、device
 lost、运行时失败或不支持的 operation 都在同一 Worker 精确回退 CPU。该 GPU 属于访问网页的浏览器；
 Linux API、Celery 与 ML backend 主机不会因为此 gate 使用服务端 GPU。pool snapshot 暴露 provider 状态、
-owner、source / XOR / readback capacity、分段延迟、backend 与稳定 fallback reason，不包含 Mask 内容；
-dispose 后这些资源与 session 一起归零。
+owner、source / XOR / readback capacity、base cache / scratch bytes、prepare strategy、cache hit / miss / evict、
+分段延迟、backend 与稳定 fallback reason，不包含 Mask 内容。base cache 上限取 32 MiB 与 compute budget
+四分之一中的较小值，并与 scratch、request output 及 GPU buffer 共用 prospective budget preflight；session
+release 会清理所属 entries，dispose 后这些资源与 session 一起归零。
 
 ### 原子多对象 Mask 操作
 

@@ -421,6 +421,56 @@ R1.4 决策是 **保留 packed XOR production path，继续 default-off**。下�
 packed prepare 与 patch build 仍大于 GPU wall，但在 macOS / Wayland / Windows 无 flag 矩阵通过前，不
 建立 GPU-resident 可写 session、不增加 readback ring、不引入 subgroups，也不扩展 morphology kernel。
 
+#### R1.5 Immutable packed base cache 与有界 ROI assemble
+
+R1.4 每次请求都会重复扫描 immutable column-major RLE。R1.5 在 owner Worker 内增加按 session 隔离的
+512² row-aligned packed base tile cache；cache 只表达 canonical base，不保存 current truth。相交 tile 以
+word span 组装到 grow-only scratch，本次请求声明的 dirty packed overrides 再以 masked overwrite 覆盖，
+既可 set 也可 clear。cache miss、预算不足或 invariant failure 都可使用 direct-RLE packed prepare，不改变
+GPU shader、XOR history、CPU fallback 或保存合同。
+
+cache 上限为 `min(32 MiB, computeBudget / 4)`。多个 session 共用确定性 LRU；cache retained bytes、scratch
+capacity 与 GPU 三类 buffer 一起进入 provider 的 prospective budget preflight。session release 会移除所属
+entries，最后一个 session release、Worker replacement 或 dispose 后所有资源归零。
+
+同一 RTX 3090、Chrome 150、有头强制 Vulkan 下，两轮均为 3 次预热 + 10 次记录，measured core 交替执行：
+
+| ROI         | R1.4 total p95 两轮 |   cache total p50 / p95 两轮 | total p95 改善 | R1.4 prepare p95 两轮 | cache prepare p95 两轮 |  prepare 改善 |
+| ----------- | ------------------: | ---------------------------: | -------------: | --------------------: | ---------------------: | ------------: |
+| `2048²`     |      37.7 / 40.9 ms | 21.2 / 22.1 · 22.1 / 24.7 ms |  41.4% / 39.6% |        16.9 / 17.6 ms |           2.3 / 2.5 ms | 86.4% / 85.8% |
+| `3840×2160` |      61.4 / 57.0 ms | 33.9 / 39.3 · 34.5 / 40.2 ms |  36.0% / 29.5% |        28.8 / 27.4 ms |           6.1 / 6.5 ms | 78.8% / 76.3% |
+
+warm 样本中，2048² 每次命中 16 tiles、4K 每次命中 40 tiles，miss 都为 0。对应 cache / scratch plateau
+分别为 512 KiB / 512 KiB 与约 1.49 MiB / 1 MiB。两轮 patch checksum、undo 后 save checksum 精确一致，
+Long Task 为 0，owner 始终为 1，dispose 后 GPU、cache、scratch、Worker 与 session 全部归零。
+
+pan 探针进一步区分了复用与偶然抖动：
+
+- 50% overlap 首次移到相邻 core 时命中 16、miss 4，仅填充新进入的 tiles；返回原 core 时 20 hit / 0 miss；
+- disjoint 首次移动是 0 hit / 20 miss，返回已缓存 core 后恢复 20 hit / 0 miss；
+- 两侧完全 warm 后，overlap / disjoint 交替 p95 分别为 24.4 / 19.9 ms，每个样本均 20 hit / 0 miss；
+- 两种 probe 的 CPU / WebGPU patch 与 save checksum 均 exact，Long Task 为 0，dispose 后资源归零。
+
+聚合结果见
+[`data/21-mask-webgpu-packed-base-cache-ab.json`](./data/21-mask-webgpu-packed-base-cache-ab.json)。runner schema
+升级为 v3，raw samples 保留 warmup / cold / measured phase、core、prepare strategy、RLE scan、cache fill、
+assemble、dirty overlay、hit / miss / evict 与 cache / scratch 字节。
+
+R1.5 的 warm prepare、端到端与 cold 门均通过。cold 资格使用同一 candidate bundle、同一 provider，只将
+compute budget 降到 `3 MiB` 以准入 dense WebGPU buffers 但绕过 cache；两轮 direct-RLE / cache cold wall
+分别为 `128.5 → 130.4 ms` 与 `134.7 → 138.1 ms`，回归 `1.5% / 2.5%`。这种 paired control 避免把不同
+dev server 的 Vite 首次编译和调度噪声误记成 cache fill 成本。
+
+封版矩阵还验证了：Linux default X11 无 unsafe Vulkan 时以 `adapter-unavailable` 返回 exact CPU patch；
+gate off 即使 Vulkan adapter 可用也保持 init attempts、GPU/cache/scratch bytes 为 0；`3 MiB` cache bypass
+保持 `backend=webgpu`、`prepareStrategy=direct-rle`；2048² / 4K、gate off、adapter unavailable 与 bypass
+的 save 后 reload checksum 都 exact。provider write failure 注入继续稳定返回 `gpu-runtime-failed`，不误记
+device lost。macOS、Wayland、Windows 无 flag 矩阵仍未验证，因此结论仍是 **default-off candidate**。
+
+新分段显示 patch build p95 约 10–16 ms，已超过 warm prepare 与 GPU wall，是下一版唯一值得优先调研的
+计算阶段；若设计 GPU sparse XOR compaction，必须保留 bounded capacity、overflow、stable ordering 和
+dense XOR exact fallback，不能把 atomic append 当成无界输出。
+
 ### R2：视频底图 spike（条件触发）
 
 只有当生产诊断显示 `lastBitmapMs` / `lastPaintMs` 占可见延迟主要部分，或产品明确需要逐帧 GPU

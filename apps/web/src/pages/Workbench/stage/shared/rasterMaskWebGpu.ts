@@ -76,6 +76,7 @@ interface RasterMaskWebGpuShape {
   coreHeight: number;
   radius: number;
   budgetBytes: number;
+  reservedBytes?: number;
 }
 
 export interface RasterMaskWebGpuRunOptions extends RasterMaskWebGpuShape {
@@ -287,6 +288,10 @@ export class RasterMaskWebGpuProvider {
     if (!Number.isSafeInteger(options.budgetBytes) || options.budgetBytes <= 0) {
       return "budget-insufficient";
     }
+    const reservedBytes = options.reservedBytes ?? 0;
+    if (!Number.isSafeInteger(reservedBytes) || reservedBytes < 0) {
+      return "budget-insufficient";
+    }
     const estimate = estimateRasterMaskWebGpuBytes(
       options.inputWidth,
       options.inputHeight,
@@ -300,7 +305,10 @@ export class RasterMaskWebGpuProvider {
       Math.max(current?.readbackCapacityBytes ?? 0, estimate.readbackCapacityBytes) +
       PARAMS_BYTES;
     if (
-      prospectiveAllocatedBytes + estimate.sourcePackedBytes + estimate.xorPackedBytes >
+      reservedBytes +
+        prospectiveAllocatedBytes +
+        estimate.sourcePackedBytes +
+        estimate.xorPackedBytes >
       options.budgetBytes
     ) {
       return "budget-insufficient";
@@ -344,7 +352,12 @@ export class RasterMaskWebGpuProvider {
       const xorWordsPerRow = Math.ceil(options.coreWidth / 32);
       const sourceBytes = options.sourceWords.byteLength;
       const xorBytes = xorWordsPerRow * options.coreHeight * 4;
-      const buffers = this.ensureBuffers(sourceBytes, xorBytes, options.budgetBytes);
+      const buffers = this.ensureBuffers(
+        sourceBytes,
+        xorBytes,
+        options.budgetBytes,
+        options.reservedBytes ?? 0,
+      );
       if (!buffers) return this.unavailableResult("budget-insufficient", false);
       const resources = this.resources!;
       const uploadStarted = performance.now();
@@ -469,6 +482,7 @@ export class RasterMaskWebGpuProvider {
     sourceBytes: number,
     xorBytes: number,
     budgetBytes: number,
+    reservedBytes: number,
   ): RasterMaskWebGpuBuffers | null {
     if (!this.resources) return null;
     const current = this.resources.buffers;
@@ -483,7 +497,7 @@ export class RasterMaskWebGpuProvider {
     );
     const allocatedBytes =
       sourceCapacityBytes + xorCapacityBytes + readbackCapacityBytes + PARAMS_BYTES;
-    if (allocatedBytes + sourceBytes + xorBytes > budgetBytes) return null;
+    if (reservedBytes + allocatedBytes + sourceBytes + xorBytes > budgetBytes) return null;
     if (
       current &&
       current.sourceCapacityBytes >= sourceBytes &&

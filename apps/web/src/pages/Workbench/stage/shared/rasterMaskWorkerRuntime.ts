@@ -180,7 +180,7 @@ function runtimeNowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now();
 }
 
-function validatePackedTileOverride(
+export function validatePackedTileOverride(
   session: RasterMaskWorkerSession,
   tile: RasterMaskPackedTileOverride,
 ): void {
@@ -245,6 +245,28 @@ export interface RasterMaskPreparedPackedMorphologyRoi {
   sourceWords: Uint32Array;
   wordsPerRow: number;
   packedPrepareMs: number;
+  prepareStrategy: "direct-rle" | "packed-cache";
+  directRleScanMs: number;
+  baseCacheFillMs: number;
+  packedAssembleMs: number;
+  dirtyOverlayMs: number;
+  baseCacheHitTiles: number;
+  baseCacheMissTiles: number;
+  baseCacheEvictedTiles: number;
+  baseCacheRetainedBytes: number;
+  sourceScratchCapacityBytes: number;
+}
+
+export interface RasterMaskPackedBaseTile {
+  tileX: number;
+  tileY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  wordsPerRow: number;
+  words: Uint32Array;
+  byteSize: number;
 }
 
 export interface RasterMaskMorphologyRoiDiff {
@@ -393,6 +415,8 @@ export function preparePackedRasterMaskMorphologyRoi(
       sourceOffset = nextOffset;
     }
   }
+  const directRleScanMs = runtimeNowMs() - started;
+  const dirtyStarted = runtimeNowMs();
   applyPackedOverridesToPackedRoi(
     session,
     request.input,
@@ -400,10 +424,72 @@ export function preparePackedRasterMaskMorphologyRoi(
     wordsPerRow,
     request.dirtyOverrides,
   );
+  const dirtyOverlayMs = runtimeNowMs() - dirtyStarted;
   return {
     sourceWords,
     wordsPerRow,
     packedPrepareMs: runtimeNowMs() - started,
+    prepareStrategy: "direct-rle",
+    directRleScanMs,
+    baseCacheFillMs: 0,
+    packedAssembleMs: 0,
+    dirtyOverlayMs,
+    baseCacheHitTiles: 0,
+    baseCacheMissTiles: 0,
+    baseCacheEvictedTiles: 0,
+    baseCacheRetainedBytes: 0,
+    sourceScratchCapacityBytes: 0,
+  };
+}
+
+export function buildRasterMaskPackedBaseTile(
+  session: RasterMaskWorkerSession,
+  tileX: number,
+  tileY: number,
+): RasterMaskPackedBaseTile {
+  const [sourceHeight, sourceWidth] = session.size;
+  if (!Number.isSafeInteger(tileX) || tileX < 0 || !Number.isSafeInteger(tileY) || tileY < 0) {
+    throw new Error("packed base tile coordinates must be non-negative integers");
+  }
+  const x = tileX * MASK_HISTORY_TILE_SIZE;
+  const y = tileY * MASK_HISTORY_TILE_SIZE;
+  if (x >= sourceWidth || y >= sourceHeight) {
+    throw new Error("packed base tile is outside the session bounds");
+  }
+  const width = Math.min(MASK_HISTORY_TILE_SIZE, sourceWidth - x);
+  const height = Math.min(MASK_HISTORY_TILE_SIZE, sourceHeight - y);
+  const wordsPerRow = Math.ceil(width / 32);
+  const words = new Uint32Array(wordsPerRow * height);
+  for (let localX = 0; localX < width; localX += 1) {
+    const columnStart = (x + localX) * sourceHeight;
+    const inputStart = columnStart + y;
+    const inputEnd = inputStart + height;
+    const targetWord = localX >>> 5;
+    const targetMask = (1 << (localX & 31)) >>> 0;
+    let sourceOffset = inputStart;
+    let runIndex = runIndexAt(session.runEnds, sourceOffset);
+    while (sourceOffset < inputEnd) {
+      while (session.runEnds[runIndex] <= sourceOffset) runIndex += 1;
+      const nextOffset = Math.min(inputEnd, session.runEnds[runIndex]);
+      if ((runIndex & 1) === 1) {
+        for (let offset = sourceOffset; offset < nextOffset; offset += 1) {
+          words[(offset - inputStart) * wordsPerRow + targetWord] |= targetMask;
+        }
+      }
+      sourceOffset = nextOffset;
+    }
+  }
+  clearUnusedPackedRowBits(words, width, height, wordsPerRow);
+  return {
+    tileX,
+    tileY,
+    x,
+    y,
+    width,
+    height,
+    wordsPerRow,
+    words,
+    byteSize: words.byteLength,
   };
 }
 
@@ -592,6 +678,16 @@ export function morphologyRasterMaskSessionRoi(
     metrics: {
       totalMs: runtimeNowMs() - totalStarted,
       backendPrepareMs: prepared.materializeMs,
+      prepareStrategy: "dense-cpu",
+      directRleScanMs: 0,
+      baseCacheFillMs: 0,
+      packedAssembleMs: 0,
+      dirtyOverlayMs: 0,
+      baseCacheHitTiles: 0,
+      baseCacheMissTiles: 0,
+      baseCacheEvictedTiles: 0,
+      baseCacheRetainedBytes: 0,
+      sourceScratchCapacityBytes: 0,
       computeMs,
       diffOrPatchMs: diff.diffMs,
       gpuUploadSubmitMs: null,

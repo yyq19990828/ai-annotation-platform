@@ -276,6 +276,16 @@ describe("RasterMaskWorkerPool", () => {
       metrics: {
         totalMs: 1,
         backendPrepareMs: 0.2,
+        prepareStrategy: "dense-cpu",
+        directRleScanMs: 0,
+        baseCacheFillMs: 0,
+        packedAssembleMs: 0,
+        dirtyOverlayMs: 0,
+        baseCacheHitTiles: 0,
+        baseCacheMissTiles: 0,
+        baseCacheEvictedTiles: 0,
+        baseCacheRetainedBytes: 0,
+        sourceScratchCapacityBytes: 0,
         computeMs: 0.7,
         diffOrPatchMs: 0.1,
         gpuUploadSubmitMs: null,
@@ -358,6 +368,86 @@ describe("RasterMaskWorkerPool", () => {
     });
     pool.dispose();
     expect(pool.getSnapshot().compute.webGpuState).toBe("closed");
+  });
+
+  it("aggregates packed cache hits, misses, capacities, and peak bytes", async () => {
+    const worker = new FakeWorker();
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => worker as unknown as Worker,
+    });
+    pool.registerSession("mask", "sha", zeroRle(4, 4));
+    const pending = pool.morphologyRoi({
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 2,
+      core: { x: 0, y: 0, width: 4, height: 4 },
+      input: { x: 0, y: 0, width: 4, height: 4 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "webgpu-candidate",
+      computeBudgetBytes: 128 * 1024 * 1024,
+    });
+    const request = worker.jobRequests()[0];
+    if (!request || request.kind !== "morphology_roi") {
+      throw new Error("missing morphology request");
+    }
+    worker.respond({
+      kind: "morphology_roi",
+      id: request.id,
+      ok: true,
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 2,
+      backend: "webgpu",
+      fallbackReason: null,
+      changedPixels: 0,
+      changedBounds: null,
+      patches: [],
+      metrics: {
+        totalMs: 4,
+        backendPrepareMs: 1.5,
+        prepareStrategy: "packed-cache",
+        directRleScanMs: 0,
+        baseCacheFillMs: 0.5,
+        packedAssembleMs: 0.8,
+        dirtyOverlayMs: 0.2,
+        baseCacheHitTiles: 3,
+        baseCacheMissTiles: 1,
+        baseCacheEvictedTiles: 2,
+        baseCacheRetainedBytes: 4096,
+        sourceScratchCapacityBytes: 2048,
+        computeMs: 1,
+        diffOrPatchMs: 1.5,
+        gpuUploadSubmitMs: 0.2,
+        gpuReadbackMs: 0.8,
+        gpuPassMs: null,
+        fallbackMaterializeMs: null,
+        inputAlphaBytes: 0,
+        packedSourceBytes: 1024,
+        xorReadbackBytes: 512,
+        allocatedGpuBytes: 3072,
+        gpuSourceCapacityBytes: 1024,
+        gpuXorCapacityBytes: 1024,
+        gpuReadbackCapacityBytes: 1024,
+      },
+    });
+
+    await pending;
+    expect(pool.getComputeResources()).toMatchObject({
+      baseCacheRetainedBytes: 4096,
+      sourceScratchCapacityBytes: 2048,
+      peakBaseCacheRetainedBytes: 4096,
+      peakSourceScratchCapacityBytes: 2048,
+      counters: {
+        packedCacheJobs: 1,
+        directRlePackedJobs: 0,
+        baseCacheHitTiles: 3,
+        baseCacheMissTiles: 1,
+        baseCacheEvictedTiles: 2,
+      },
+    });
+    pool.dispose();
   });
 
   it("keeps shared compute alive until the final registered session is released", async () => {

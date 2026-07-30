@@ -38,6 +38,7 @@ export interface RasterMaskPackedTileOverride extends RasterMaskTileRect {
 
 export type RasterMaskMorphologyBackendPolicy = "cpu" | "webgpu-candidate";
 export type RasterMaskMorphologyBackend = "cpu" | "webgpu" | "cpu-fallback";
+export type RasterMaskPrepareStrategy = "dense-cpu" | "direct-rle" | "packed-cache";
 export type RasterMaskWebGpuFallbackReason =
   | "gate-disabled"
   | "unsupported-operation"
@@ -53,6 +54,16 @@ export type RasterMaskWebGpuFallbackReason =
 export interface RasterMaskMorphologyMetrics {
   totalMs: number;
   backendPrepareMs: number;
+  prepareStrategy: RasterMaskPrepareStrategy;
+  directRleScanMs: number;
+  baseCacheFillMs: number;
+  packedAssembleMs: number;
+  dirtyOverlayMs: number;
+  baseCacheHitTiles: number;
+  baseCacheMissTiles: number;
+  baseCacheEvictedTiles: number;
+  baseCacheRetainedBytes: number;
+  sourceScratchCapacityBytes: number;
   computeMs: number;
   diffOrPatchMs: number;
   gpuUploadSubmitMs: number | null;

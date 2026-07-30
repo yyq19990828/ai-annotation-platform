@@ -100,3 +100,4 @@
 - [0055](0055-mask-quality-and-format-contracts.md) — Mask 质量闭环采用版本化账本，格式适配使用 preflight、显式损失与真实 consumer 门
 - [0056](0056-raster-mask-persistent-client-compute-session.md) — Raster Mask 大 ROI 使用持久客户端计算会话与 default-off WebGPU 候选后端
 - [0057](0057-raster-mask-webgpu-packed-xor-contract.md) — Raster Mask WebGPU 使用 packed source 与 core XOR result，保留惰性 CPU fallback
+- [0058](0058-raster-mask-immutable-packed-base-cache.md) — Raster Mask Worker 使用有界 immutable packed base cache 与 word-span ROI assemble

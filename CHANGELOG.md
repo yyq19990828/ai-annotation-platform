@@ -35,6 +35,12 @@
 
 ## [Unreleased]
 
+## [0.23.18] - 2026-07-30
+
+### Changed
+
+- **Raster Mask WebGPU 候选复用有界 immutable packed base cache**. Worker 按 session 惰性缓存 canonical RLE 的 512² packed base tiles，以 word span 组装 ROI scratch，再用 dirty packed overrides 做可 set / clear 的 masked overwrite；cache、scratch 与 GPU buffers 共用 compute budget，预算不足或 cache 异常时继续使用 direct-RLE packed prepare。pool 诊断同步暴露 prepare strategy、RLE scan、cache fill / assemble / overlay、hit / miss / evict 与资源 plateau，release / replacement / dispose 后归零；默认构建仍不包含 provider、shader 或 adapter 请求。
+
 ## [0.23.17] - 2026-07-30
 
 ### Changed

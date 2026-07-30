@@ -163,6 +163,17 @@ describe("RasterMaskWebGpuProvider", () => {
         budgetBytes: exact.requiredBytes - 1,
       }),
     ).toBe("budget-insufficient");
+    expect(
+      provider.preflightSquareDilateXor({
+        inputWidth: 64,
+        inputHeight: 8,
+        coreWidth: 17,
+        coreHeight: 3,
+        radius: 1,
+        budgetBytes: exact.requiredBytes,
+        reservedBytes: 4,
+      }),
+    ).toBe("budget-insufficient");
     expect(provider.snapshot()).toMatchObject({ state: "idle", initAttempts: 0 });
   });
 

@@ -73,6 +73,8 @@ export interface RasterMaskComputeResources {
   gpuSourceCapacityBytes: number;
   gpuXorCapacityBytes: number;
   gpuReadbackCapacityBytes: number;
+  baseCacheRetainedBytes: number;
+  sourceScratchCapacityBytes: number;
   gpuBudgetBytes: number;
   lastBackend: RasterMaskMorphologyBackend | null;
   lastFallbackReason: RasterMaskWebGpuFallbackReason | null;
@@ -80,6 +82,8 @@ export interface RasterMaskComputeResources {
   lastMetrics: RasterMaskMorphologyMetrics | null;
   peakPackedSourceBytes: number;
   peakXorReadbackBytes: number;
+  peakBaseCacheRetainedBytes: number;
+  peakSourceScratchCapacityBytes: number;
   counters: {
     cpuJobs: number;
     gpuJobs: number;
@@ -90,6 +94,11 @@ export interface RasterMaskComputeResources {
     packedGpuJobs: number;
     gpuAlphaMaterializations: number;
     gpuRuntimeFallbackMaterializations: number;
+    packedCacheJobs: number;
+    directRlePackedJobs: number;
+    baseCacheHitTiles: number;
+    baseCacheMissTiles: number;
+    baseCacheEvictedTiles: number;
   };
 }
 
@@ -139,6 +148,8 @@ function initialComputeResources(
     gpuSourceCapacityBytes: 0,
     gpuXorCapacityBytes: 0,
     gpuReadbackCapacityBytes: 0,
+    baseCacheRetainedBytes: 0,
+    sourceScratchCapacityBytes: 0,
     gpuBudgetBytes: 0,
     lastBackend: null,
     lastFallbackReason: null,
@@ -146,6 +157,8 @@ function initialComputeResources(
     lastMetrics: null,
     peakPackedSourceBytes: 0,
     peakXorReadbackBytes: 0,
+    peakBaseCacheRetainedBytes: 0,
+    peakSourceScratchCapacityBytes: 0,
     counters: {
       cpuJobs: 0,
       gpuJobs: 0,
@@ -156,6 +169,11 @@ function initialComputeResources(
       packedGpuJobs: 0,
       gpuAlphaMaterializations: 0,
       gpuRuntimeFallbackMaterializations: 0,
+      packedCacheJobs: 0,
+      directRlePackedJobs: 0,
+      baseCacheHitTiles: 0,
+      baseCacheMissTiles: 0,
+      baseCacheEvictedTiles: 0,
     },
   };
 }
@@ -871,6 +889,8 @@ export class RasterMaskWorkerPool {
     this.compute.gpuSourceCapacityBytes = response.metrics.gpuSourceCapacityBytes;
     this.compute.gpuXorCapacityBytes = response.metrics.gpuXorCapacityBytes;
     this.compute.gpuReadbackCapacityBytes = response.metrics.gpuReadbackCapacityBytes;
+    this.compute.baseCacheRetainedBytes = response.metrics.baseCacheRetainedBytes;
+    this.compute.sourceScratchCapacityBytes = response.metrics.sourceScratchCapacityBytes;
     this.compute.gpuBudgetBytes = budgetBytes;
     this.compute.peakPackedSourceBytes = Math.max(
       this.compute.peakPackedSourceBytes,
@@ -880,6 +900,22 @@ export class RasterMaskWorkerPool {
       this.compute.peakXorReadbackBytes,
       response.metrics.xorReadbackBytes,
     );
+    this.compute.peakBaseCacheRetainedBytes = Math.max(
+      this.compute.peakBaseCacheRetainedBytes,
+      response.metrics.baseCacheRetainedBytes,
+    );
+    this.compute.peakSourceScratchCapacityBytes = Math.max(
+      this.compute.peakSourceScratchCapacityBytes,
+      response.metrics.sourceScratchCapacityBytes,
+    );
+    if (response.metrics.prepareStrategy === "packed-cache") {
+      this.compute.counters.packedCacheJobs += 1;
+    } else if (response.metrics.prepareStrategy === "direct-rle") {
+      this.compute.counters.directRlePackedJobs += 1;
+    }
+    this.compute.counters.baseCacheHitTiles += response.metrics.baseCacheHitTiles;
+    this.compute.counters.baseCacheMissTiles += response.metrics.baseCacheMissTiles;
+    this.compute.counters.baseCacheEvictedTiles += response.metrics.baseCacheEvictedTiles;
     if (response.backend === "webgpu") {
       this.compute.webGpuState = "ready";
       this.compute.gpuOwnerWorkers = 1;
