@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.23.15",
+  "version": "0.23.16",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -33,7 +33,8 @@
     "image:bench": "node scripts/image-bench/run-image-bench.mjs",
     "mask:bench": "node scripts/benchmark-image-raster-mask.mjs",
     "mask:operations-bench": "node scripts/benchmark-mask-operations.mjs",
-    "mask:large-canvas-bench": "node scripts/benchmark-mask-large-canvas.mjs"
+    "mask:large-canvas-bench": "node scripts/benchmark-mask-large-canvas.mjs",
+    "mask:webgpu-operation-bench": "node scripts/benchmark-mask-webgpu-operation.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -87,6 +88,7 @@
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^2.1.9",
+    "@webgpu/types": "^0.1.71",
     "eslint": "^9.16.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",

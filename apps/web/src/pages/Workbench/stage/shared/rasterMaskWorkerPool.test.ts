@@ -216,6 +216,169 @@ describe("RasterMaskWorkerPool", () => {
     pool.dispose();
   });
 
+  it("pins morphology to slot 0 without blocking ordinary work on slot 1", async () => {
+    const workers: FakeWorker[] = [];
+    const pool = new RasterMaskWorkerPool({
+      size: 2,
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+    });
+    pool.registerSession("mask", "sha", zeroRle(4, 4));
+    const blocking = pool.analyze(zeroRle(1));
+    const morphology = pool.morphologyRoi({
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 3,
+      core: { x: 0, y: 0, width: 4, height: 4 },
+      input: { x: 0, y: 0, width: 4, height: 4 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "cpu",
+      computeBudgetBytes: 0,
+    });
+    const ordinary = pool.analyze(zeroRle(2));
+
+    const slotOneRequest = workers[1].jobRequests()[0];
+    expect(slotOneRequest?.kind).toBe("analyze");
+    if (!slotOneRequest || slotOneRequest.kind !== "analyze") {
+      throw new Error("missing slot 1 analyze request");
+    }
+    workers[1].respondAnalyze(slotOneRequest.id);
+    const slotZeroBlocking = workers[0].jobRequests()[0];
+    if (!slotZeroBlocking || slotZeroBlocking.kind !== "analyze") {
+      throw new Error("missing slot 0 analyze request");
+    }
+    workers[0].respondAnalyze(slotZeroBlocking.id);
+
+    const morphologyRequest = workers[0].jobRequests()[1];
+    expect(morphologyRequest?.kind).toBe("morphology_roi");
+    expect(workers[1].jobRequests().some((request) => request.kind === "morphology_roi")).toBe(
+      false,
+    );
+    if (!morphologyRequest || morphologyRequest.kind !== "morphology_roi") {
+      throw new Error("missing slot 0 morphology request");
+    }
+    workers[0].respond({
+      kind: "morphology_roi",
+      id: morphologyRequest.id,
+      ok: true,
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 3,
+      backend: "cpu",
+      fallbackReason: "gate-disabled",
+      changedPixels: 0,
+      changedBounds: null,
+      patches: [],
+      metrics: {
+        totalMs: 1,
+        materializeMs: 0.2,
+        computeMs: 0.7,
+        diffMs: 0.1,
+        allocatedGpuBytes: 0,
+      },
+    });
+
+    await Promise.all([blocking, morphology, ordinary]);
+    pool.dispose();
+  });
+
+  it("tracks bounded WebGPU diagnostics and resets only the owner slot", async () => {
+    const workers: FakeWorker[] = [];
+    const pool = new RasterMaskWorkerPool({
+      size: 2,
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+    });
+    const warmup = pool.warmupWebGpu();
+    const request = workers[0].jobRequests()[0];
+    expect(workers[1].jobRequests()).toEqual([]);
+    if (!request || request.kind !== "webgpu_warmup") throw new Error("missing warmup request");
+    workers[0].respond({
+      kind: "webgpu_warmup",
+      id: request.id,
+      ok: true,
+      snapshot: {
+        state: "warming",
+        allocatedBytes: 0,
+        capacityBytes: 0,
+        initAttempts: 1,
+        deviceLost: 0,
+        lastFailure: null,
+      },
+    });
+    await warmup;
+    expect(pool.getSnapshot().compute).toMatchObject({
+      webGpuState: "warming",
+      gpuOwnerWorkers: 0,
+      gpuAllocatedBytes: 0,
+      counters: { initAttempts: 1 },
+    });
+
+    pool.releaseCompute();
+    expect(workers[0].messages[workers[0].messages.length - 1]?.request).toEqual({
+      kind: "reset_webgpu",
+    });
+    expect(workers[1].messages.some((entry) => entry.request.kind === "reset_webgpu")).toBe(false);
+    expect(pool.getSnapshot().compute).toMatchObject({
+      webGpuState: "disabled",
+      gpuAllocatedBytes: 0,
+      counters: { initAttempts: 0 },
+    });
+    pool.dispose();
+    expect(pool.getSnapshot().compute.webGpuState).toBe("closed");
+  });
+
+  it("keeps shared compute alive until the final registered session is released", async () => {
+    const worker = new FakeWorker();
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => worker as unknown as Worker,
+    });
+    pool.registerSession("mask-a", "sha-a", zeroRle(2, 2));
+    pool.registerSession("mask-b", "sha-b", zeroRle(2, 2));
+    const warmup = pool.warmupWebGpu();
+    const request = worker.jobRequests()[0];
+    if (!request || request.kind !== "webgpu_warmup") throw new Error("missing warmup request");
+    worker.respond({
+      kind: "webgpu_warmup",
+      id: request.id,
+      ok: true,
+      snapshot: {
+        state: "ready",
+        allocatedBytes: 1024,
+        capacityBytes: 256,
+        initAttempts: 1,
+        deviceLost: 0,
+        lastFailure: null,
+      },
+    });
+    await warmup;
+
+    pool.releaseSession("mask-a");
+    expect(worker.messages.some((entry) => entry.request.kind === "reset_webgpu")).toBe(false);
+    expect(pool.getSnapshot().compute).toMatchObject({
+      webGpuState: "ready",
+      gpuAllocatedBytes: 1024,
+    });
+
+    pool.releaseSession("mask-b");
+    expect(worker.messages[worker.messages.length - 1]?.request).toEqual({
+      kind: "reset_webgpu",
+    });
+    expect(pool.getSnapshot()).toMatchObject({
+      sessions: 0,
+      compute: { gpuAllocatedBytes: 0 },
+    });
+    pool.dispose();
+  });
+
   it("routes operation and instance-operation responses through one reusable slot", async () => {
     const worker = new FakeWorker();
     const pool = new RasterMaskWorkerPool({

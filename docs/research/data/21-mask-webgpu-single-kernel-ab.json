@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-07-29T11:13:42.553Z",
+  "environment": {
+    "browser": "Google Chrome 150.0.7871.114",
+    "browser_mode": "headed",
+    "os": "linux-5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "driver": "595.84",
+    "adapter": {
+      "vendor": "nvidia",
+      "architecture": "ampere"
+    },
+    "unsafe_vulkan": true,
+    "default_x11_adapter_available": false
+  },
+  "operation": {
+    "type": "dilate",
+    "kernel_shape": "square",
+    "radius": 2,
+    "gpu_representation": "row-aligned 1-bit storage buffer"
+  },
+  "method": {
+    "warmup": 1,
+    "iterations": 5,
+    "rounds": 2,
+    "webgpu_total_includes": ["pack", "upload", "dispatch", "readback", "unpack"],
+    "parity": "exact"
+  },
+  "rounds": [
+    {
+      "adapter_ms": 2047.4,
+      "device_ms": 1119.8,
+      "pipeline_ms": 8.7,
+      "rows": [
+        {
+          "name": "4k",
+          "resolution": [3840, 2160],
+          "pixels": 8294400,
+          "alpha_bytes": 8294400,
+          "packed_gpu_bytes": 1036800,
+          "checksum": 3407852090,
+          "cpu_kernel": { "p50_ms": 153.0, "p95_ms": 212.8 },
+          "webgpu": {
+            "pack_p95_ms": 40.0,
+            "submit_readback_p95_ms": 5.0,
+            "unpack_p95_ms": 22.1,
+            "total_p50_ms": 46.7,
+            "total_p95_ms": 66.0
+          },
+          "p95_improvement_percent": 69.0
+        },
+        {
+          "name": "8k",
+          "resolution": [8192, 8192],
+          "pixels": 67108864,
+          "alpha_bytes": 67108864,
+          "packed_gpu_bytes": 8388608,
+          "checksum": 3486334075,
+          "cpu_kernel": { "p50_ms": 3249.3, "p95_ms": 4400.8 },
+          "webgpu": {
+            "pack_p95_ms": 132.6,
+            "submit_readback_p95_ms": 43.3,
+            "unpack_p95_ms": 814.3,
+            "total_p50_ms": 345.8,
+            "total_p95_ms": 988.2
+          },
+          "p95_improvement_percent": 77.5
+        }
+      ]
+    },
+    {
+      "adapter_ms": 2142.1,
+      "device_ms": 111.3,
+      "pipeline_ms": 9.1,
+      "rows": [
+        {
+          "name": "4k",
+          "resolution": [3840, 2160],
+          "pixels": 8294400,
+          "alpha_bytes": 8294400,
+          "packed_gpu_bytes": 1036800,
+          "checksum": 3407852090,
+          "cpu_kernel": { "p50_ms": 144.1, "p95_ms": 201.5 },
+          "webgpu": {
+            "pack_p95_ms": 38.4,
+            "submit_readback_p95_ms": 4.9,
+            "unpack_p95_ms": 21.6,
+            "total_p50_ms": 46.2,
+            "total_p95_ms": 64.3
+          },
+          "p95_improvement_percent": 68.1
+        },
+        {
+          "name": "8k",
+          "resolution": [8192, 8192],
+          "pixels": 67108864,
+          "alpha_bytes": 67108864,
+          "packed_gpu_bytes": 8388608,
+          "checksum": 3486334075,
+          "cpu_kernel": { "p50_ms": 3530.5, "p95_ms": 4188.3 },
+          "webgpu": {
+            "pack_p95_ms": 128.0,
+            "submit_readback_p95_ms": 44.3,
+            "unpack_p95_ms": 792.9,
+            "total_p50_ms": 343.8,
+            "total_p95_ms": 949.7
+          },
+          "p95_improvement_percent": 77.3
+        }
+      ]
+    }
+  ]
+}

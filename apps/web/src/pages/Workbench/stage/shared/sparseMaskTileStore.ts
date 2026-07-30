@@ -4,19 +4,24 @@ import {
   rasterizeMaskPolygon,
   type MaskRasterBrushShape,
 } from "./geometry/maskRasterization";
+import type { MaskKernelShape, MaskMorphologyOperation } from "./geometry/maskOperations";
 import {
-  applyMaskMorphology,
-  type MaskKernelShape,
-  type MaskMorphologyOperation,
-} from "./geometry/maskOperations";
-import {
+  createMaskHistoryCommandFromPatches,
   MaskHistoryCheckpoint,
   MASK_HISTORY_TILE_SIZE,
   type MaskHistoryCommand,
+  type MaskHistoryPatch,
 } from "./maskHistory";
-import type { RasterMaskWorkerPriority, RasterMaskWorkerRunOptions } from "./rasterMaskWorkerPool";
+import type {
+  RasterMaskComputeResources,
+  RasterMaskWorkerPriority,
+  RasterMaskWorkerRunOptions,
+} from "./rasterMaskWorkerPool";
 import type {
   RasterMaskTileOverride,
+  RasterMaskMorphologyBackendPolicy,
+  RasterMaskMorphologyRoiResponse,
+  RasterMaskPackedTileOverride,
   RasterMaskTileRect,
   RasterMaskTransferredRle,
 } from "./rasterMaskWorkerProtocol";
@@ -24,6 +29,7 @@ import type {
 const MIB = 1024 * 1024;
 const TILE_METADATA_BYTES = 96;
 const MAX_VIEWPORT_MATERIALIZED_TILES = 16;
+const MAX_CONCURRENT_TILE_DECODES = 2;
 const MAX_ROI_PIXELS = 16_777_216;
 
 export interface SparseMaskTileBackend {
@@ -41,6 +47,26 @@ export interface SparseMaskTileBackend {
     tiles: readonly RasterMaskTileOverride[],
     options?: RasterMaskWorkerRunOptions,
   ) => Promise<{ sessionId: string; sha256: string; rle: RasterMaskTransferredRle }>;
+  morphologyRoi: (
+    request: {
+      sessionId: string;
+      sha256: string;
+      sourceRevision: number;
+      core: RasterMaskTileRect;
+      input: RasterMaskTileRect;
+      operation: {
+        operation: MaskMorphologyOperation;
+        kernelShape: MaskKernelShape;
+        radius: number;
+      };
+      dirtyOverrides: readonly RasterMaskPackedTileOverride[];
+      backendPolicy: RasterMaskMorphologyBackendPolicy;
+      computeBudgetBytes: number;
+    },
+    options?: RasterMaskWorkerRunOptions,
+  ) => Promise<RasterMaskMorphologyRoiResponse>;
+  warmupWebGpu?: (options?: RasterMaskWorkerRunOptions) => Promise<unknown>;
+  getComputeResources?: () => RasterMaskComputeResources;
 }
 
 export interface SparseMaskViewportRect {
@@ -72,11 +98,13 @@ export interface SparseMaskTileResources {
   tilesEvicted: number;
   overviewOnly: boolean;
   admissionBlocked: boolean;
+  compute: RasterMaskComputeResources | null;
   disposed: boolean;
 }
 
 interface SparseMaskTile extends SparseMaskRenderableTile {
   baseBits: Uint8Array;
+  currentBits: Uint8Array;
   byteSize: number;
   historyReferences: number;
   viewportPinned: boolean;
@@ -121,10 +149,27 @@ export function sparseMaskTileBudgetBytes(deviceMemory?: number | null): number 
   return 64 * MIB;
 }
 
-function navigatorTileBudgetBytes(): number {
-  if (typeof navigator === "undefined") return sparseMaskTileBudgetBytes();
+export function sparseMaskComputeBudgetBytes(deviceMemory?: number | null): number {
+  if (
+    deviceMemory != null &&
+    Number.isFinite(deviceMemory) &&
+    deviceMemory > 0 &&
+    deviceMemory <= 2
+  ) {
+    return 0;
+  }
+  if (deviceMemory != null && Number.isFinite(deviceMemory) && deviceMemory >= 8) return 128 * MIB;
+  return 64 * MIB;
+}
+
+function navigatorDeviceMemory(): number | undefined {
+  if (typeof navigator === "undefined") return undefined;
   const value = (navigator as Navigator & { deviceMemory?: unknown }).deviceMemory;
-  return sparseMaskTileBudgetBytes(typeof value === "number" ? value : undefined);
+  return typeof value === "number" ? value : undefined;
+}
+
+function navigatorTileBudgetBytes(): number {
+  return sparseMaskTileBudgetBytes(navigatorDeviceMemory());
 }
 
 function keyFor(tileX: number, tileY: number): string {
@@ -141,6 +186,41 @@ function packBits(alpha: Uint8Array): Uint8Array {
     if (alpha[index] !== 0) bits[index >> 3] |= 1 << (index & 7);
   }
   return bits;
+}
+
+function setBit(bits: Uint8Array, index: number, enabled: boolean): void {
+  const mask = 1 << (index & 7);
+  if (enabled) bits[index >> 3] |= mask;
+  else bits[index >> 3] &= ~mask;
+}
+
+function bitsEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function patchHasOnlyValidBits(patch: MaskHistoryPatch): boolean {
+  const pixelCount = patch.width * patch.height;
+  const remainder = pixelCount & 7;
+  if (remainder === 0 || patch.xorBits.length === 0) return true;
+  const validMask = (1 << remainder) - 1;
+  return (patch.xorBits[patch.xorBits.length - 1] & ~validMask) === 0;
+}
+
+function forEachPatchBit(patch: MaskHistoryPatch, visit: (index: number) => void): void {
+  const pixelCount = patch.width * patch.height;
+  for (let byteIndex = 0; byteIndex < patch.xorBits.length; byteIndex += 1) {
+    const byte = patch.xorBits[byteIndex];
+    if (byte === 0) continue;
+    for (let bit = 0; bit < 8; bit += 1) {
+      if ((byte & (1 << bit)) === 0) continue;
+      const index = byteIndex * 8 + bit;
+      if (index < pixelCount) visit(index);
+    }
+  }
 }
 
 class CocoRleRunIndex {
@@ -223,6 +303,9 @@ export class SparseMaskTileStore {
   private overviewOnly = false;
   private admissionBlocked = false;
   private disposed = false;
+  private mutationGeneration = 0;
+  private readonly morphologyBackendPolicy: RasterMaskMorphologyBackendPolicy;
+  private readonly computeBudgetBytes: number;
 
   constructor(options: {
     sessionId: string;
@@ -231,6 +314,8 @@ export class SparseMaskTileStore {
     backend: SparseMaskTileBackend;
     maxCacheBytes?: number;
     deviceMemory?: number | null;
+    morphologyBackendPolicy?: RasterMaskMorphologyBackendPolicy;
+    computeBudgetBytes?: number;
   }) {
     this.sessionId = options.sessionId;
     this.sha256 = options.sha256;
@@ -245,6 +330,18 @@ export class SparseMaskTileStore {
         : sparseMaskTileBudgetBytes(options.deviceMemory));
     if (!Number.isFinite(this.maxCacheBytes) || this.maxCacheBytes <= 0) {
       throw new SparseMaskTileStoreError("mask tile cache budget must be positive");
+    }
+    this.computeBudgetBytes =
+      options.computeBudgetBytes ??
+      sparseMaskComputeBudgetBytes(
+        options.deviceMemory === undefined ? navigatorDeviceMemory() : options.deviceMemory,
+      );
+    this.morphologyBackendPolicy =
+      options.morphologyBackendPolicy === "webgpu-candidate" && this.computeBudgetBytes > 0
+        ? "webgpu-candidate"
+        : "cpu";
+    if (!Number.isFinite(this.computeBudgetBytes) || this.computeBudgetBytes < 0) {
+      throw new SparseMaskTileStoreError("mask compute budget must be non-negative");
     }
     this.backend.registerSession(this.sessionId, this.sha256, options.baseRle);
   }
@@ -269,7 +366,7 @@ export class SparseMaskTileStore {
 
   private requiredBytes(rect: RasterMaskTileRect): number {
     const pixels = rect.width * rect.height;
-    return pixels + Math.ceil(pixels / 8) + TILE_METADATA_BYTES;
+    return pixels + Math.ceil(pixels / 8) * 2 + TILE_METADATA_BYTES;
   }
 
   private evictFor(requiredBytes: number): boolean {
@@ -337,13 +434,15 @@ export class SparseMaskTileStore {
             throw new SparseMaskTileStoreError("tile decode response must contain binary alpha");
           }
         }
+        const baseBits = packBits(response.alpha);
         const tile: SparseMaskTile = {
           key,
           tileX,
           tileY,
           ...rect,
           alpha: response.alpha,
-          baseBits: packBits(response.alpha),
+          baseBits,
+          currentBits: new Uint8Array(baseBits),
           byteSize,
           historyReferences: 0,
           viewportPinned: this.viewportKeys.has(key),
@@ -407,17 +506,42 @@ export class SparseMaskTileStore {
     return tiles;
   }
 
-  private refreshDirty(tile: SparseMaskTile): void {
-    let matchesBase = true;
-    for (let index = 0; index < tile.alpha.length; index += 1) {
-      if ((tile.alpha[index] !== 0) !== bitIsSet(tile.baseBits, index)) {
-        matchesBase = false;
-        break;
+  private refreshCurrentBits(
+    tile: SparseMaskTile,
+    bounds: { x0: number; y0: number; x1: number; y1: number },
+  ): void {
+    for (let y = bounds.y0; y < bounds.y1; y += 1) {
+      const row = y * tile.width;
+      for (let x = bounds.x0; x < bounds.x1; x += 1) {
+        const index = row + x;
+        setBit(tile.currentBits, index, tile.alpha[index] !== 0);
       }
     }
-    tile.dirty = !matchesBase;
+    this.markTileChanged(tile);
+  }
+
+  private markTileChanged(tile: SparseMaskTile): void {
+    tile.dirty = !bitsEqual(tile.currentBits, tile.baseBits);
     tile.revision += 1;
     tile.lastAccess = ++this.accessCounter;
+    this.mutationGeneration += 1;
+  }
+
+  private async materializeCoords(
+    coords: readonly { tileX: number; tileY: number }[],
+    options: { priority: RasterMaskWorkerPriority; signal?: AbortSignal },
+  ): Promise<SparseMaskRenderableTile[]> {
+    const materialized: SparseMaskRenderableTile[] = [];
+    for (let index = 0; index < coords.length; index += MAX_CONCURRENT_TILE_DECODES) {
+      materialized.push(
+        ...(await Promise.all(
+          coords
+            .slice(index, index + MAX_CONCURRENT_TILE_DECODES)
+            .map(({ tileX, tileY }) => this.materializeTile(tileX, tileY, options)),
+        )),
+      );
+    }
+    return materialized;
   }
 
   async brush(options: {
@@ -436,11 +560,10 @@ export class SparseMaskTileStore {
       width: radius * 2 + 1,
       height: radius * 2 + 1,
     });
-    const materialized = await Promise.all(
-      tiles.map(({ tileX, tileY }) =>
-        this.materializeTile(tileX, tileY, { priority: "editing", signal: options.signal }),
-      ),
-    );
+    const materialized = await this.materializeCoords(tiles, {
+      priority: "editing",
+      signal: options.signal,
+    });
     let changedPixels = 0;
     for (const value of materialized) {
       const tile = value as SparseMaskTile;
@@ -455,7 +578,9 @@ export class SparseMaskTileStore {
         originY: tile.y,
       });
       changedPixels += change.changedPixels;
-      if (change.touchedBounds) this.refreshDirty(tile);
+      if (change.changedPixels > 0 && change.touchedBounds) {
+        this.refreshCurrentBits(tile, change.touchedBounds);
+      }
     }
     return changedPixels;
   }
@@ -485,11 +610,10 @@ export class SparseMaskTileStore {
       width: maxX - minX + 1,
       height: maxY - minY + 1,
     });
-    const materialized = await Promise.all(
-      coords.map(({ tileX, tileY }) =>
-        this.materializeTile(tileX, tileY, { priority: "editing", signal: options.signal }),
-      ),
-    );
+    const materialized = await this.materializeCoords(coords, {
+      priority: "editing",
+      signal: options.signal,
+    });
     let changedPixels = 0;
     for (const valueTile of materialized) {
       const tile = valueTile as SparseMaskTile;
@@ -504,7 +628,9 @@ export class SparseMaskTileStore {
         tile.y,
       );
       changedPixels += change.changedPixels;
-      if (change.touchedBounds) this.refreshDirty(tile);
+      if (change.changedPixels > 0 && change.touchedBounds) {
+        this.refreshCurrentBits(tile, change.touchedBounds);
+      }
     }
     return changedPixels;
   }
@@ -516,8 +642,8 @@ export class SparseMaskTileStore {
       kernelShape: MaskKernelShape;
       radius: number;
     },
-    options: { checkpoint?: MaskHistoryCheckpoint; signal?: AbortSignal } = {},
-  ): Promise<number> {
+    options: { name: string; sourceRevision: number; signal?: AbortSignal },
+  ): Promise<MaskHistoryCommand | null> {
     this.assertActive();
     const coreX0 = Math.max(0, Math.floor(rect.x));
     const coreY0 = Math.max(0, Math.floor(rect.y));
@@ -538,62 +664,171 @@ export class SparseMaskTileStore {
     const inputHeight = inputY1 - inputY0;
     if (inputWidth * inputHeight > MAX_ROI_PIXELS) {
       throw new LargeMaskFullScanRequiredError(
-        `viewport ROI plus halo exceeds the ${MAX_ROI_PIXELS}-pixel synchronous budget`,
+        `viewport ROI plus halo exceeds the ${MAX_ROI_PIXELS}-pixel compute budget`,
       );
     }
 
-    const inputCoords = this.tileRange({
-      x: inputX0,
-      y: inputY0,
-      width: inputWidth,
-      height: inputHeight,
-    });
-    await Promise.all(
-      inputCoords.map(({ tileX, tileY }) =>
-        this.materializeTile(tileX, tileY, { priority: "editing", signal: options.signal }),
-      ),
-    );
-    const source = new Uint8Array(inputWidth * inputHeight);
-    for (let y = inputY0; y < inputY1; y += 1) {
-      for (let x = inputX0; x < inputX1; x += 1) {
-        const tileX = Math.floor(x / MASK_HISTORY_TILE_SIZE);
-        const tileY = Math.floor(y / MASK_HISTORY_TILE_SIZE);
-        const tile = this.tiles.get(keyFor(tileX, tileY));
-        if (!tile) throw new SparseMaskTileStoreError("ROI tile is no longer materialized");
-        source[(y - inputY0) * inputWidth + x - inputX0] =
-          tile.alpha[(y - tile.y) * tile.width + x - tile.x];
-      }
-    }
-    const after = applyMaskMorphology(source, inputWidth, inputHeight, operation).alpha;
-    const coreCoords = this.tileRange({
+    const core = {
       x: coreX0,
       y: coreY0,
       width: coreX1 - coreX0,
       height: coreY1 - coreY0,
+    };
+    const input = { x: inputX0, y: inputY0, width: inputWidth, height: inputHeight };
+    const coreCoords = this.tileRange(core);
+    await this.materializeCoords(coreCoords, {
+      priority: "editing",
+      signal: options.signal,
     });
+    const expectedMutationGeneration = this.mutationGeneration;
+    const expectedRevisions = new Map<string, number>();
     for (const { tileX, tileY } of coreCoords) {
       const tile = this.tiles.get(keyFor(tileX, tileY));
       if (!tile) throw new SparseMaskTileStoreError("ROI core tile is no longer materialized");
-      options.checkpoint?.captureTile(tile.tileX, tile.tileY, tile.width, tile.height, tile.alpha);
+      expectedRevisions.set(tile.key, tile.revision);
     }
-    const touched = new Set<SparseMaskTile>();
-    let changedPixels = 0;
-    for (let y = coreY0; y < coreY1; y += 1) {
-      for (let x = coreX0; x < coreX1; x += 1) {
-        const tile = this.tiles.get(
-          keyFor(Math.floor(x / MASK_HISTORY_TILE_SIZE), Math.floor(y / MASK_HISTORY_TILE_SIZE)),
+    const dirtyOverrides = [...this.tiles.values()]
+      .filter(
+        (tile) =>
+          tile.dirty &&
+          tile.x < inputX1 &&
+          tile.x + tile.width > inputX0 &&
+          tile.y < inputY1 &&
+          tile.y + tile.height > inputY0,
+      )
+      .map((tile) => ({
+        x: tile.x,
+        y: tile.y,
+        width: tile.width,
+        height: tile.height,
+        tileX: tile.tileX,
+        tileY: tile.tileY,
+        revision: tile.revision,
+        bits: tile.currentBits,
+      }));
+    for (const override of dirtyOverrides) {
+      expectedRevisions.set(keyFor(override.tileX, override.tileY), override.revision);
+    }
+    const compute = this.backend.getComputeResources?.();
+    if (
+      this.morphologyBackendPolicy === "webgpu-candidate" &&
+      (!compute || compute.webGpuState === "idle")
+    ) {
+      void this.backend.warmupWebGpu?.({ priority: "editing" }).catch(() => undefined);
+    }
+    const response = await this.backend.morphologyRoi(
+      {
+        sessionId: this.sessionId,
+        sha256: this.sha256,
+        sourceRevision: options.sourceRevision,
+        core,
+        input,
+        operation,
+        dirtyOverrides,
+        backendPolicy: this.morphologyBackendPolicy,
+        computeBudgetBytes: this.computeBudgetBytes,
+      },
+      { priority: "editing", signal: options.signal },
+    );
+    this.assertActive();
+    if (this.mutationGeneration !== expectedMutationGeneration) {
+      throw new SparseMaskTileStoreError("morphology source changed while the Worker was running");
+    }
+    if (
+      response.sessionId !== this.sessionId ||
+      response.sha256 !== this.sha256 ||
+      response.sourceRevision !== options.sourceRevision
+    ) {
+      throw new SparseMaskTileStoreError("morphology response belongs to a stale session");
+    }
+    for (const [key, revision] of expectedRevisions) {
+      if (this.tiles.get(key)?.revision !== revision) {
+        throw new SparseMaskTileStoreError(
+          "morphology source changed while the Worker was running",
         );
-        if (!tile) throw new SparseMaskTileStoreError("ROI core tile is no longer materialized");
-        const tileIndex = (y - tile.y) * tile.width + x - tile.x;
-        const next = after[(y - inputY0) * inputWidth + x - inputX0];
-        if (tile.alpha[tileIndex] === next) continue;
-        tile.alpha[tileIndex] = next;
-        touched.add(tile);
-        changedPixels += 1;
       }
     }
-    for (const tile of touched) this.refreshDirty(tile);
-    return changedPixels;
+
+    const seenPatches = new Set<string>();
+    let validatedChangedPixels = 0;
+    let minChangedX = this.width;
+    let minChangedY = this.height;
+    let maxChangedX = -1;
+    let maxChangedY = -1;
+    for (const patch of response.patches) {
+      const key = keyFor(patch.tileX, patch.tileY);
+      if (seenPatches.has(key)) {
+        throw new SparseMaskTileStoreError("morphology response contains duplicate tile patches");
+      }
+      seenPatches.add(key);
+      const tile = this.tiles.get(key);
+      if (!tile || tile.width !== patch.width || tile.height !== patch.height) {
+        throw new SparseMaskTileStoreError("morphology patch dimensions do not match the tile");
+      }
+      if (
+        !(patch.xorBits instanceof Uint8Array) ||
+        patch.xorBits.length !== Math.ceil((patch.width * patch.height) / 8) ||
+        !patchHasOnlyValidBits(patch)
+      ) {
+        throw new SparseMaskTileStoreError("morphology patch bitset is invalid");
+      }
+      let patchChangedPixels = 0;
+      forEachPatchBit(patch, (index) => {
+        const x = tile.x + (index % tile.width);
+        const y = tile.y + Math.floor(index / tile.width);
+        if (x < coreX0 || x >= coreX1 || y < coreY0 || y >= coreY1) {
+          throw new SparseMaskTileStoreError("morphology patch writes outside the core ROI");
+        }
+        patchChangedPixels += 1;
+        validatedChangedPixels += 1;
+        minChangedX = Math.min(minChangedX, x);
+        minChangedY = Math.min(minChangedY, y);
+        maxChangedX = Math.max(maxChangedX, x);
+        maxChangedY = Math.max(maxChangedY, y);
+      });
+      if (patchChangedPixels === 0) {
+        throw new SparseMaskTileStoreError("morphology response contains an empty tile patch");
+      }
+    }
+    const validatedBounds =
+      validatedChangedPixels === 0
+        ? null
+        : {
+            x: minChangedX,
+            y: minChangedY,
+            width: maxChangedX - minChangedX + 1,
+            height: maxChangedY - minChangedY + 1,
+          };
+    if (
+      response.changedPixels !== validatedChangedPixels ||
+      JSON.stringify(response.changedBounds) !== JSON.stringify(validatedBounds)
+    ) {
+      throw new SparseMaskTileStoreError("morphology response summary does not match its patches");
+    }
+    const command = createMaskHistoryCommandFromPatches(
+      options.name,
+      options.sourceRevision,
+      response.patches,
+    );
+    if ((command?.changedPixels ?? 0) !== response.changedPixels) {
+      throw new SparseMaskTileStoreError("morphology history command does not match its response");
+    }
+    if (!command) return null;
+    this.applyValidatedPatches(command.patches);
+    return command;
+  }
+
+  private applyValidatedPatches(patches: readonly MaskHistoryPatch[]): void {
+    for (const patch of patches) {
+      const tile = this.tiles.get(keyFor(patch.tileX, patch.tileY))!;
+      for (let byteIndex = 0; byteIndex < patch.xorBits.length; byteIndex += 1) {
+        tile.currentBits[byteIndex] ^= patch.xorBits[byteIndex];
+      }
+      forEachPatchBit(patch, (index) => {
+        tile.alpha[index] = bitIsSet(tile.currentBits, index) ? 255 : 0;
+      });
+      this.markTileChanged(tile);
+    }
   }
 
   retainHistoryCommand(command: MaskHistoryCommand): void {
@@ -621,12 +856,15 @@ export class SparseMaskTileStore {
       if (tile.width !== patch.width || tile.height !== patch.height) {
         throw new SparseMaskTileStoreError("history patch dimensions do not match the tile");
       }
-      for (let index = 0; index < tile.alpha.length; index += 1) {
-        if (!bitIsSet(patch.xorBits, index)) continue;
-        tile.alpha[index] = tile.alpha[index] === 0 ? 255 : 0;
+      if (
+        !(patch.xorBits instanceof Uint8Array) ||
+        patch.xorBits.length !== Math.ceil((patch.width * patch.height) / 8) ||
+        !patchHasOnlyValidBits(patch)
+      ) {
+        throw new SparseMaskTileStoreError("history patch bitset is invalid");
       }
-      this.refreshDirty(tile);
     }
+    this.applyValidatedPatches(command.patches);
   }
 
   containsPixel(x: number, y: number): boolean {
@@ -758,6 +996,7 @@ export class SparseMaskTileStore {
       tilesEvicted: this.tilesEvicted,
       overviewOnly: this.overviewOnly,
       admissionBlocked: this.admissionBlocked,
+      compute: this.backend.getComputeResources?.() ?? null,
       disposed: this.disposed,
     };
   }

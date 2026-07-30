@@ -35,6 +35,12 @@
 
 ## [Unreleased]
 
+## [0.23.16] - 2026-07-30
+
+### Added
+
+- **大画布 Raster Mask morphology 改用持久客户端 Worker 会话，并提供默认关闭的 WebGPU 候选后端**. Sparse tile 现在同时维护受预算约束的 packed 当前真值，方形 / 圆形核的膨胀、腐蚀、开闭运算由 Worker 从 immutable base RLE 与 dirty overrides 精确重建 ROI，只回传可直接应用和撤销的 XOR tile patches；4K core tile 解码采用有界并发，不再填满固定 Worker 队列。实验构建仅在客户端浏览器 adapter ready、ROI 至少 `2048²`、操作为 square dilation 且字节预算允许时使用单 owner WebGPU provider，初始化中、无 adapter、预算不足、device lost、运行错误和不支持操作均在同一 Worker 精确回退 CPU。默认构建不加载 provider、不请求 adapter，切题或卸载会释放 session、Worker、device 与 buffer。
+
 ### Changed
 
 - **核心文档图可以下载后继续编辑**. 系统全景、JWT 注销、视频 Chunk、Batch/Task 生命周期、开发与生产基础设施、部署演进、生产网络与持久化边界、审计通知、邀请注册、标注任务主链、AI 预标注与持久化作业、实时通知、视频追踪人机闭环、在线派题与 Task Lock、派生状态传播、Project 状态约定、异步导出交付和反馈双写对账，以及 Project、Batch、Task、Annotation、Review 模块全景改用内嵌 Excalidraw scene 与手写字体的 SVG；重复状态图、预标数据流、生产网络边界、通知可靠性边界、追踪审阅闭环、派题加锁和派生字段传播共享 canonical 资产，文档站仍提供点击放大和可编辑源文件下载入口。迁移验收同时按当前 Compose、API 与前端调用链修正 worker、监控、邀请、任务提交、服务池绑定与物理实例路由、Celery / AsyncJob ID 边界、预标可见性、工作台取题、标注计数回写、审核副作用、生产端口绑定、对象存储的双网络视角、Redis 恢复风险、通知事务窗口与专用重连、视频追踪局部审阅和取消后部分候选、scheduler 候选窗口与 TOCTOU、过期锁复用、自定义 TTL、Project 状态非受控写入、Project 计数直接扫描 Task、导出预检非执行快照、导出提交后派发与工件补偿，以及反馈对账的分组计数差额等文档漂移。全仓验收明确保留频繁随协议变更的 Tracker 事件状态 Mermaid 和 `docs/plans/**` 中的历史决策快照，并修正截图基建、WebCodecs Epic 与模型市场计划的完成状态漂移。

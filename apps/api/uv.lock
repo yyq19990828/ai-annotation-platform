@@ -52,7 +52,7 @@ wheels = [
 
 [[package]]
 name = "anno-api"
-version = "0.23.15"
+version = "0.23.16"
 source = { virtual = "." }
 dependencies = [
     { name = "aap-protocol-v2" },

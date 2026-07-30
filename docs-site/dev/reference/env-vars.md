@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-30
 ---
 
 # 环境变量参考
@@ -166,6 +166,12 @@ last_reviewed: 2026-07-23
 |---|---|---|
 | `RASTER_MASK_READ_ENABLED` | `true` | 图片原生 raster_mask reader 默认开启，保证新后端可读取已有 geometry。 |
 | `RASTER_MASK_CREATE_ENABLED` | `true` | 持久化创建与项目原生编辑均默认开启；本项保留为部署紧急总闸，项目仍可单独关闭。 |
+
+## 前端 Raster Mask 实验计算
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `false` | Vite build-time 开关。默认 false：不加载 WebGPU provider，也不请求浏览器 GPU adapter。 true 只允许符合 ROI、设备档位和字节预算的 square dilate 候选 WebGPU；其余操作及任何 adapter/device 故障都在客户端 Raster Mask Worker 内精确回退 CPU。使用的是访问页面的 用户浏览器 GPU，不是 Linux API、Celery 或部署机器 GPU。修改后必须重建前端镜像。 |
 
 ## 认证 / 安全
 

@@ -141,14 +141,23 @@ transferable buffer 返回。分析默认 15 秒、普通操作 30 秒、tile me
 只终止并补充对应 Worker，其他 slot 继续。pool 按 task 创建，切题或卸载时 dispose，队列、session run
 index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误，不在主线程静默执行大操作。
 
+大 ROI morphology 也复用同一 pool 与持久 base RLE session。store 只发送 core、halo 后的 input、operation
+和相交 dirty tile 的 packed overrides；Worker 在 session 内重建 ROI，CPU 路径复用完整 morphology 语义，
+结果只返回 core 内 non-empty XOR tile patches。core tile 以最多两个并发 decode 有界物化，避免大 ROI 一次
+填满 Worker 等待队列。响应必须先通过 session、内容摘要、source / tile revision、尺寸、尾位和 core 边界
+校验，再一次性应用；取消、过期或畸形响应不会产生部分写入。
+
 Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始后只在首次触及某个 tile
 时捕获临时基线，结束时与当前二值像素生成 XOR 并释放基线；高级操作在确认时按变更边界
-生成同种 patch。undo / redo 对当前真值执行同一次 XOR，不再构造 before / after RLE。历史最多
+由 Worker 直接返回同种 patch，不再在主线程创建 before checkpoint 或扫描 after。undo / redo 对当前
+真值执行同一次 XOR，不再构造 before / after RLE。历史最多
 100 条，并按 Low / Standard / High 档位共享 16 / 32 / 64 MiB 硬预算；新写入会释放 redo，超预算
 时只从最旧 undo 开始淘汰。这是编辑器本地历史，不改变服务端 annotation history 与审计语义。
 
 大画布编辑不创建整图 alpha 或整图 overlay canvas。`SparseMaskTileStore` 以 immutable base RLE 加
-512 像素 materialized override tile 作为真值；base 在 Worker 会话中建 run index，单 tile 按列从
+512 像素 materialized override tile 作为真值；每个 tile 的显示 alpha、immutable `baseBits` 和可写
+`currentBits` 都计入准入预算，dirty 由两份 packed bits 比较。brush / erase / lasso 只同步 touched bits，
+history patch 同时更新 alpha 与 current bits。base 在 Worker 会话中建 run index，单 tile 按列从
 COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中心和 even-odd 栅格化原语，
 命中优先读 override，未物化区域通过主线程 run index 精确查询 base。viewport 仅 pin 可见 tile
 与一圈预取；全图缩放时不解码全部 tile，而是使用不参与写入和精确命中的受限 overview。
@@ -160,6 +169,14 @@ COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中�
 `ROI + halo` 并只写回 core。flood fill、component / hole、split / join / overlap、整图 morphology
 和 conversion 在分配前以 `large_mask_full_scan_required` 拒绝。如果可见 tile 也无法通过硬预算准入，
 编辑器保持只读 overview；已经 dirty 的 tile 与 history 保留到用户保存、重试或显式丢弃。
+
+WebGPU 只是大 ROI `square dilate` 的客户端候选后端，build-time gate 默认关闭。关闭时 Worker 不加载
+provider、不请求 adapter；开启后也只有 slot 0 可以持有一个 device，且仅在 ROI 至少 `2048²`、客户端
+adapter 已 ready、设备档位和 compute byte budget 允许时路由。初始化中、无 adapter、预算不足、device
+lost、运行时失败或不支持的 operation 都在同一 Worker 精确回退 CPU。该 GPU 属于访问网页的浏览器；
+Linux API、Celery 与 ML backend 主机不会因为此 gate 使用服务端 GPU。pool snapshot 暴露 provider 状态、
+owner、allocated bytes、backend 与稳定 fallback reason，不包含 Mask 内容；dispose 后这些资源与 session
+一起归零。
 
 ### 原子多对象 Mask 操作
 

@@ -4,15 +4,22 @@ import type {
   MaskInstanceOperationSpec,
 } from "./geometry/maskInstanceOperations";
 import type { MaskOperationResult, MaskOperationSpec } from "./geometry/maskOperations";
+import type { MaskKernelShape, MaskMorphologyOperation } from "./geometry/maskOperations";
 import type { RasterMaskAnalysis } from "./rasterMaskRender";
 import type {
   RasterMaskCompareMode,
   RasterMaskCompareMetrics,
   RasterMaskCompareSessionRef,
+  RasterMaskMorphologyBackendPolicy,
+  RasterMaskMorphologyBackend,
+  RasterMaskMorphologyRoiResponse,
   RasterMaskOperationContext,
+  RasterMaskPackedTileOverride,
   RasterMaskTileOverride,
   RasterMaskTileRect,
   RasterMaskTransferredRle,
+  RasterMaskWebGpuWorkerSnapshot,
+  RasterMaskWebGpuFallbackReason,
   RasterMaskWorkerControlRequest,
   RasterMaskWorkerJobKind,
   RasterMaskWorkerJobRequest,
@@ -53,7 +60,27 @@ export interface RasterMaskWorkerPoolSnapshot {
   cancelled: number;
   timedOut: number;
   sessions: number;
+  compute: RasterMaskComputeResources;
   disposed: boolean;
+}
+
+export interface RasterMaskComputeResources {
+  webGpuGateEnabled: boolean;
+  webGpuState: RasterMaskWebGpuWorkerSnapshot["state"];
+  gpuOwnerWorkers: number;
+  gpuAllocatedBytes: number;
+  gpuBudgetBytes: number;
+  lastBackend: RasterMaskMorphologyBackend | null;
+  lastFallbackReason: RasterMaskWebGpuFallbackReason | null;
+  lastTotalMs: number | null;
+  counters: {
+    cpuJobs: number;
+    gpuJobs: number;
+    cpuFallbackJobs: number;
+    initAttempts: number;
+    deviceLost: number;
+    budgetRejected: number;
+  };
 }
 
 interface RegisteredSession {
@@ -71,6 +98,7 @@ interface PoolJob {
   timeoutMs: number;
   signal?: AbortSignal;
   sessionIds?: readonly string[];
+  affinitySlot?: number;
   abort?: () => void;
   timer?: unknown;
   resolve: (value: unknown) => void;
@@ -88,6 +116,30 @@ const DEFAULT_QUEUE_LIMIT = 32;
 const ANALYZE_TIMEOUT_MS = 15_000;
 const OPERATION_TIMEOUT_MS = 30_000;
 const TILE_MERGE_TIMEOUT_MS = 60_000;
+const WEBGPU_GATE_ENABLED = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU === "true";
+
+function initialComputeResources(
+  state: RasterMaskWebGpuWorkerSnapshot["state"] = WEBGPU_GATE_ENABLED ? "idle" : "disabled",
+): RasterMaskComputeResources {
+  return {
+    webGpuGateEnabled: WEBGPU_GATE_ENABLED,
+    webGpuState: state,
+    gpuOwnerWorkers: 0,
+    gpuAllocatedBytes: 0,
+    gpuBudgetBytes: 0,
+    lastBackend: null,
+    lastFallbackReason: null,
+    lastTotalMs: null,
+    counters: {
+      cpuJobs: 0,
+      gpuJobs: 0,
+      cpuFallbackJobs: 0,
+      initAttempts: 0,
+      deviceLost: 0,
+      budgetRejected: 0,
+    },
+  };
+}
 
 const nativeClock: RasterMaskWorkerClock = {
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
@@ -197,6 +249,7 @@ export class RasterMaskWorkerPool {
   private failed = 0;
   private cancelled = 0;
   private timedOut = 0;
+  private compute = initialComputeResources();
 
   constructor(options: RasterMaskWorkerPoolOptions = {}) {
     this.size = normalizedLimit(options.size, defaultRasterMaskWorkerPoolSize());
@@ -219,8 +272,16 @@ export class RasterMaskWorkerPool {
       cancelled: this.cancelled,
       timedOut: this.timedOut,
       sessions: this.sessions.size,
+      compute: {
+        ...this.compute,
+        counters: { ...this.compute.counters },
+      },
       disposed: this.disposed,
     };
+  }
+
+  getComputeResources(): RasterMaskComputeResources {
+    return { ...this.compute, counters: { ...this.compute.counters } };
   }
 
   analyze(rle: CocoRle, options: RasterMaskWorkerRunOptions = {}): Promise<RasterMaskAnalysis> {
@@ -303,6 +364,7 @@ export class RasterMaskWorkerPool {
     this.cancelSessionJobs(sessionId);
     const request: RasterMaskWorkerControlRequest = { kind: "release_session", sessionId };
     for (const slot of this.slots) this.postControl(slot, request, []);
+    if (this.sessions.size === 0) this.releaseCompute();
   }
 
   decodeTile(
@@ -354,6 +416,76 @@ export class RasterMaskWorkerPool {
         return { sessionId: response.sessionId, sha256: response.sha256, rle: response.rle };
       },
     });
+  }
+
+  morphologyRoi(
+    request: {
+      sessionId: string;
+      sha256: string;
+      sourceRevision: number;
+      core: RasterMaskTileRect;
+      input: RasterMaskTileRect;
+      operation: {
+        operation: MaskMorphologyOperation;
+        kernelShape: MaskKernelShape;
+        radius: number;
+      };
+      dirtyOverrides: readonly RasterMaskPackedTileOverride[];
+      backendPolicy: RasterMaskMorphologyBackendPolicy;
+      computeBudgetBytes: number;
+    },
+    options: RasterMaskWorkerRunOptions = {},
+  ): Promise<RasterMaskMorphologyRoiResponse> {
+    this.assertSession(request.sessionId, request.sha256);
+    const dirtyOverrides = request.dirtyOverrides.map((tile) => ({
+      ...tile,
+      bits: new Uint8Array(tile.bits),
+    }));
+    const id = ++this.nextId;
+    return this.enqueue({
+      id,
+      kind: "morphology_roi",
+      request: { kind: "morphology_roi", id, ...request, dirtyOverrides },
+      transfer: dirtyOverrides.map((tile) => tile.bits.buffer),
+      timeoutMs: options.timeoutMs ?? TILE_MERGE_TIMEOUT_MS,
+      options,
+      sessionIds: [request.sessionId],
+      affinitySlot: 0,
+      read: (response) => {
+        if (response.kind !== "morphology_roi" || !response.ok) {
+          throw new RasterMaskWorkerError("invalid morphology ROI response");
+        }
+        this.recordMorphologyResponse(response, request.computeBudgetBytes);
+        return response;
+      },
+    });
+  }
+
+  warmupWebGpu(options: RasterMaskWorkerRunOptions = {}): Promise<RasterMaskWebGpuWorkerSnapshot> {
+    const id = ++this.nextId;
+    return this.enqueue({
+      id,
+      kind: "webgpu_warmup",
+      request: { kind: "webgpu_warmup", id },
+      transfer: [],
+      timeoutMs: options.timeoutMs ?? OPERATION_TIMEOUT_MS,
+      options,
+      affinitySlot: 0,
+      read: (response) => {
+        if (response.kind !== "webgpu_warmup" || !response.ok) {
+          throw new RasterMaskWorkerError("invalid WebGPU warmup response");
+        }
+        this.recordWebGpuSnapshot(response.snapshot);
+        return response.snapshot;
+      },
+    });
+  }
+
+  releaseCompute(): void {
+    if (this.disposed || !this.initialized || this.sessions.size > 0) return;
+    const slot = this.slots[0];
+    if (slot) this.postControl(slot, { kind: "reset_webgpu" }, []);
+    this.compute = initialComputeResources();
   }
 
   compareTile(
@@ -430,6 +562,7 @@ export class RasterMaskWorkerPool {
       this.terminateSlotWorker(slot);
     }
     this.sessions.clear();
+    this.compute = initialComputeResources("closed");
   }
 
   private enqueue<T>({
@@ -440,6 +573,7 @@ export class RasterMaskWorkerPool {
     timeoutMs,
     options,
     sessionIds,
+    affinitySlot,
     read,
   }: {
     id: number;
@@ -449,12 +583,20 @@ export class RasterMaskWorkerPool {
     timeoutMs: number;
     options: RasterMaskWorkerRunOptions;
     sessionIds?: readonly string[];
+    affinitySlot?: number;
     read: (response: RasterMaskWorkerResponse) => T;
   }): Promise<T> {
     if (this.disposed)
       return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker pool is disposed"));
     if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
     this.ensureWorkers();
+    if (affinitySlot != null && !this.slots[affinitySlot]?.worker) {
+      return Promise.reject(
+        new RasterMaskWorkerError(
+          `Raster Mask Worker affinity slot ${affinitySlot} is unavailable`,
+        ),
+      );
+    }
     if (!this.slots.some((slot) => slot.worker)) {
       return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker is unavailable"));
     }
@@ -472,6 +614,7 @@ export class RasterMaskWorkerPool {
         timeoutMs,
         signal: options.signal,
         sessionIds,
+        affinitySlot,
         resolve: (value) => resolve(value as T),
         reject,
         read,
@@ -561,7 +704,11 @@ export class RasterMaskWorkerPool {
     if (this.disposed) return;
     for (const slot of this.slots) {
       if (!slot.worker || slot.current || this.queue.length === 0) continue;
-      const job = this.queue.shift()!;
+      const jobIndex = this.queue.findIndex(
+        (candidate) => candidate.affinitySlot == null || candidate.affinitySlot === slot.index,
+      );
+      if (jobIndex < 0) continue;
+      const job = this.queue.splice(jobIndex, 1)[0];
       slot.current = job;
       job.timer = this.clock.setTimeout(() => {
         if (slot.current?.id !== job.id) return;
@@ -637,6 +784,7 @@ export class RasterMaskWorkerPool {
   }
 
   private replaceWorker(slot: WorkerSlot): void {
+    if (slot.index === 0) this.compute = initialComputeResources();
     this.terminateSlotWorker(slot);
     this.installWorker(slot, true);
     if (!this.slots.some((candidate) => candidate.worker)) {
@@ -672,6 +820,54 @@ export class RasterMaskWorkerPool {
       if (!slot.current?.sessionIds?.includes(sessionId)) continue;
       this.cancelled += 1;
       this.rejectRunning(slot, new RasterMaskWorkerCancelledError(), true);
+    }
+  }
+
+  private recordWebGpuSnapshot(snapshot: RasterMaskWebGpuWorkerSnapshot): void {
+    this.compute.webGpuState = snapshot.state;
+    this.compute.gpuOwnerWorkers = snapshot.state === "ready" ? 1 : 0;
+    this.compute.gpuAllocatedBytes = snapshot.allocatedBytes;
+    this.compute.counters.initAttempts = snapshot.initAttempts;
+    this.compute.counters.deviceLost = snapshot.deviceLost;
+    if (snapshot.lastFailure) this.compute.lastFallbackReason = snapshot.lastFailure;
+  }
+
+  private recordMorphologyResponse(
+    response: RasterMaskMorphologyRoiResponse,
+    budgetBytes: number,
+  ): void {
+    this.compute.lastBackend = response.backend;
+    this.compute.lastFallbackReason = response.fallbackReason;
+    this.compute.lastTotalMs = response.metrics.totalMs;
+    this.compute.gpuAllocatedBytes = response.metrics.allocatedGpuBytes;
+    this.compute.gpuBudgetBytes = budgetBytes;
+    if (response.backend === "webgpu") {
+      this.compute.webGpuState = "ready";
+      this.compute.gpuOwnerWorkers = 1;
+      this.compute.counters.gpuJobs += 1;
+    } else if (response.backend === "cpu-fallback") {
+      this.compute.counters.cpuFallbackJobs += 1;
+    } else {
+      this.compute.counters.cpuJobs += 1;
+    }
+    if (response.fallbackReason === "budget-insufficient") {
+      this.compute.counters.budgetRejected += 1;
+    } else if (response.fallbackReason === "initializing") {
+      this.compute.webGpuState = "warming";
+    } else if (
+      response.fallbackReason === "navigator-gpu-unavailable" ||
+      response.fallbackReason === "adapter-unavailable" ||
+      response.fallbackReason === "initialization-failed" ||
+      response.fallbackReason === "gpu-runtime-failed"
+    ) {
+      this.compute.webGpuState = "unavailable";
+      this.compute.gpuOwnerWorkers = 0;
+    } else if (response.fallbackReason === "device-lost") {
+      this.compute.webGpuState = "lost";
+      this.compute.gpuOwnerWorkers = 0;
+    } else if (response.fallbackReason === "gate-disabled") {
+      this.compute.webGpuState = "disabled";
+      this.compute.gpuOwnerWorkers = 0;
     }
   }
 }

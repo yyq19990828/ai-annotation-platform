@@ -18,6 +18,14 @@
 - 按 segment / frame range 聚合导出，并补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
 - 实现视频单帧 keypoint 与 rotated-box 绘制；OBB 还需要旋转手柄。
 
+### Raster Mask 客户端计算收尾
+
+详见 [v0.23.16 Raster Mask 持久计算会话与 WebGPU 有界试运行计划](docs/plans/2026-07-29-v0.23.16-raster-mask-persistent-compute-webgpu.md)。
+
+- 持久 CPU Worker session、packed dirty tile 输入与 XOR history patch 输出已经接入，大图 tiled ROI morphology 不再在主线程重建连续 alpha 或扫描 before / after；保存格式仍是 canonical COCO RLE。
+- default-off WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B；默认构建保持零 adapter 请求，无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
+- 剩余产品门只有 macOS / Wayland / Windows 无 flag 的 correctness、长会话与性能矩阵，以及是否默认开启的独立决策。WebGPU 使用访问页面的客户端 GPU，不使用 Linux API / Celery 部署机器的 GPU。
+
 ### 点云与图像联合标注
 
 详见[点云 + 图像联合标注路线](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)。

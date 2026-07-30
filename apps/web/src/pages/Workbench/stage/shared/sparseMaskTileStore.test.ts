@@ -6,12 +6,14 @@ import {
   buildRasterMaskWorkerSession,
   decodeRasterMaskSessionTile,
   mergeRasterMaskSessionTiles,
+  morphologyRasterMaskSessionRoi,
   type RasterMaskWorkerSession,
 } from "./rasterMaskWorkerRuntime";
 import type { RasterMaskWorkerRunOptions } from "./rasterMaskWorkerPool";
 import type { RasterMaskTileOverride, RasterMaskTileRect } from "./rasterMaskWorkerProtocol";
 import {
   SparseMaskTileBudgetError,
+  sparseMaskComputeBudgetBytes,
   SparseMaskTileStore,
   sparseMaskTileBudgetBytes,
   type SparseMaskTileBackend,
@@ -53,6 +55,65 @@ class RuntimeTileBackend implements SparseMaskTileBackend {
     if (!session || session.sha256 !== sha256) throw new Error("missing session");
     this.mergeCalls.push([...tiles]);
     return { sessionId, sha256, rle: mergeRasterMaskSessionTiles(session, tiles) };
+  }
+
+  async morphologyRoi(
+    request: Parameters<SparseMaskTileBackend["morphologyRoi"]>[0],
+  ): ReturnType<SparseMaskTileBackend["morphologyRoi"]> {
+    const session = this.sessions.get(request.sessionId);
+    if (!session || session.sha256 !== request.sha256) throw new Error("missing session");
+    return {
+      kind: "morphology_roi",
+      id: 1,
+      ok: true,
+      sessionId: request.sessionId,
+      sha256: request.sha256,
+      ...morphologyRasterMaskSessionRoi(session, request),
+    };
+  }
+}
+
+class BoundedDecodeBackend extends RuntimeTileBackend {
+  activeDecodes = 0;
+  maxActiveDecodes = 0;
+
+  override async decodeTile(
+    sessionId: string,
+    sha256: string,
+    rect: RasterMaskTileRect,
+    options?: RasterMaskWorkerRunOptions,
+  ) {
+    this.activeDecodes += 1;
+    this.maxActiveDecodes = Math.max(this.maxActiveDecodes, this.activeDecodes);
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      return await super.decodeTile(sessionId, sha256, rect, options);
+    } finally {
+      this.activeDecodes -= 1;
+    }
+  }
+}
+
+class DeferredMorphologyBackend extends RuntimeTileBackend {
+  private startedResolve!: () => void;
+  private resumeResolve!: () => void;
+  readonly started = new Promise<void>((resolve) => {
+    this.startedResolve = resolve;
+  });
+  private readonly resumePromise = new Promise<void>((resolve) => {
+    this.resumeResolve = resolve;
+  });
+
+  override async morphologyRoi(
+    request: Parameters<SparseMaskTileBackend["morphologyRoi"]>[0],
+  ): ReturnType<SparseMaskTileBackend["morphologyRoi"]> {
+    this.startedResolve();
+    await this.resumePromise;
+    return super.morphologyRoi(request);
+  }
+
+  resume(): void {
+    this.resumeResolve();
   }
 }
 
@@ -126,6 +187,105 @@ describe("SparseMaskTileStore", () => {
     expect(backend.mergeCalls[0].length).toBe(2);
   });
 
+  it("applies Worker morphology patches atomically across tiles and reuses them for history", async () => {
+    const width = 513;
+    const height = 5;
+    const baseAlpha = new Uint8Array(width * height);
+    baseAlpha[2 * width + 511] = 255;
+    const base = encodeCocoRle(baseAlpha, width, height);
+    const { store } = makeStore(width, height, base);
+    const command = await store.morphologyRoi(
+      { x: 510, y: 1, width: 3, height: 3 },
+      { operation: "dilate", kernelShape: "square", radius: 1 },
+      { name: "dilate", sourceRevision: 7 },
+    );
+
+    expect(command).toMatchObject({ name: "dilate", sourceRevision: 7, changedPixels: 8 });
+    expect(command?.patches.map((patch) => patch.tileX)).toEqual([0, 1]);
+    expect(store.containsPixel(510, 1)).toBe(true);
+    expect(store.containsPixel(512, 3)).toBe(true);
+
+    store.applyHistoryCommand(command!);
+    expect(store.containsPixel(510, 1)).toBe(false);
+    expect(store.containsPixel(511, 2)).toBe(true);
+    expect(store.snapshot().dirtyTiles).toBe(0);
+    store.applyHistoryCommand(command!);
+
+    const expected = new Uint8Array(baseAlpha);
+    for (let y = 1; y <= 3; y += 1) {
+      for (let x = 510; x <= 512; x += 1) expected[y * width + x] = 255;
+    }
+    expect(decodeCocoRle(await store.merge())).toEqual(expected);
+  });
+
+  it("bounds tile decode concurrency for ROIs larger than the Worker queue", async () => {
+    const width = 512 * 33;
+    const height = 1;
+    const backend = new BoundedDecodeBackend();
+    const store = new SparseMaskTileStore({
+      sessionId: "wide-roi",
+      sha256: "wide-roi-sha",
+      baseRle: blankRle(width, height),
+      backend,
+    });
+
+    await expect(
+      store.morphologyRoi(
+        { x: 0, y: 0, width, height },
+        { operation: "dilate", kernelShape: "square", radius: 1 },
+        { name: "wide-dilate", sourceRevision: 0 },
+      ),
+    ).resolves.toBeNull();
+    expect(backend.decodeCalls).toHaveLength(33);
+    expect(backend.maxActiveDecodes).toBeLessThanOrEqual(2);
+  });
+
+  it("feeds packed brush overrides into Worker morphology and keeps no-op revisions stable", async () => {
+    const { store } = makeStore(513, 5);
+    await store.brush({ cx: 511, cy: 2, radius: 0.5, value: 255, shape: "square" });
+    const command = await store.morphologyRoi(
+      { x: 510, y: 1, width: 3, height: 3 },
+      { operation: "dilate", kernelShape: "square", radius: 1 },
+      { name: "dirty-dilate", sourceRevision: 1 },
+    );
+    expect(command?.changedPixels).toBe(8);
+    expect(store.containsPixel(512, 3)).toBe(true);
+    const afterFirst = store.getRenderableTiles().map((tile) => tile.revision);
+
+    const noOp = await store.morphologyRoi(
+      { x: 510, y: 1, width: 3, height: 3 },
+      { operation: "dilate", kernelShape: "square", radius: 1 },
+      { name: "no-op", sourceRevision: 2 },
+    );
+    expect(noOp).toBeNull();
+    expect(store.getRenderableTiles().map((tile) => tile.revision)).toEqual(afterFirst);
+  });
+
+  it("rejects a morphology response after any concurrent store mutation", async () => {
+    const width = 1025;
+    const height = 4;
+    const backend = new DeferredMorphologyBackend();
+    const store = new SparseMaskTileStore({
+      sessionId: "stale-morphology",
+      sha256: "stale-sha",
+      baseRle: blankRle(width, height),
+      backend,
+    });
+    const operation = store.morphologyRoi(
+      { x: 1024, y: 1, width: 1, height: 1 },
+      { operation: "dilate", kernelShape: "square", radius: 1 },
+      { name: "stale", sourceRevision: 0 },
+    );
+    await backend.started;
+    await store.brush({ cx: 0, cy: 0, radius: 0.5, value: 255, shape: "square" });
+    const rejection = expect(operation).rejects.toThrow(/source changed/);
+    backend.resume();
+
+    await rejection;
+    expect(store.containsPixel(0, 0)).toBe(true);
+    expect(store.containsPixel(1024, 1)).toBe(false);
+  });
+
   it("subtracts from an immutable foreground base while exact picking reads overrides first", async () => {
     const width = 1025;
     const height = 4;
@@ -169,7 +329,7 @@ describe("SparseMaskTileStore", () => {
   });
 
   it("evicts the least-recent clean tile before admission", async () => {
-    const fullTileBytes = 512 * 512 + (512 * 512) / 8 + 96;
+    const fullTileBytes = 512 * 512 + ((512 * 512) / 8) * 2 + 96;
     const { store } = makeStore(1536, 512, undefined, fullTileBytes * 2);
     await store.materializeTile(0, 0);
     await store.materializeTile(1, 0);
@@ -180,7 +340,7 @@ describe("SparseMaskTileStore", () => {
   });
 
   it("does not evict dirty or history-referenced tiles, then reclaims them after release", async () => {
-    const fullTileBytes = 512 * 512 + (512 * 512) / 8 + 96;
+    const fullTileBytes = 512 * 512 + ((512 * 512) / 8) * 2 + 96;
     const { store } = makeStore(1024, 512, undefined, fullTileBytes);
     const checkpoint = store.beginHistoryCheckpoint();
     await store.brush({ cx: 10, cy: 10, radius: 1, value: 255, shape: "square", checkpoint });
@@ -222,5 +382,8 @@ describe("SparseMaskTileStore", () => {
     expect(sparseMaskTileBudgetBytes(2)).toBe(32 * 1024 * 1024);
     expect(sparseMaskTileBudgetBytes(undefined)).toBe(64 * 1024 * 1024);
     expect(sparseMaskTileBudgetBytes(8)).toBe(128 * 1024 * 1024);
+    expect(sparseMaskComputeBudgetBytes(2)).toBe(0);
+    expect(sparseMaskComputeBudgetBytes(undefined)).toBe(64 * 1024 * 1024);
+    expect(sparseMaskComputeBudgetBytes(8)).toBe(128 * 1024 * 1024);
   });
 });

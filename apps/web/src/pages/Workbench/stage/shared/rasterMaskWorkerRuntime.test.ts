@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeCocoRle, encodeCocoRle } from "./geometry/maskRle";
+import { applyMaskMorphology } from "./geometry/maskOperations";
+import { MASK_HISTORY_TILE_SIZE, type MaskHistoryPatch } from "./maskHistory";
 import {
   buildRasterMaskWorkerSession,
   compareRasterMaskSessionMetrics,
@@ -7,11 +9,31 @@ import {
   decodeRasterMaskSessionTile,
   decodeRasterMaskTransferredRle,
   mergeRasterMaskSessionTiles,
+  morphologyRasterMaskSessionRoi,
+  prepareRasterMaskMorphologyRoi,
 } from "./rasterMaskWorkerRuntime";
 
 function transferred(alpha: Uint8Array, width: number, height: number) {
   const rle = encodeCocoRle(alpha, width, height);
   return { size: rle.size, counts: Uint32Array.from(rle.counts) };
+}
+
+function applyPatches(
+  alpha: Uint8Array,
+  width: number,
+  patches: readonly MaskHistoryPatch[],
+): Uint8Array {
+  const result = new Uint8Array(alpha);
+  for (const patch of patches) {
+    for (let index = 0; index < patch.width * patch.height; index += 1) {
+      if ((patch.xorBits[index >> 3] & (1 << (index & 7))) === 0) continue;
+      const x = patch.tileX * MASK_HISTORY_TILE_SIZE + (index % patch.width);
+      const y = patch.tileY * MASK_HISTORY_TILE_SIZE + Math.floor(index / patch.width);
+      const target = y * width + x;
+      result[target] = result[target] === 0 ? 255 : 0;
+    }
+  }
+  return result;
 }
 
 describe("rasterMaskWorkerRuntime", () => {
@@ -54,6 +76,134 @@ describe("rasterMaskWorkerRuntime", () => {
         counts: Array.from(merged.counts),
       }),
     ).toEqual(expected);
+  });
+
+  it("computes a clipped-halo ROI and returns exact cross-tile XOR patches", () => {
+    const width = 513;
+    const height = 5;
+    const base = new Uint8Array(width * height);
+    base[2 * width + 511] = 255;
+    const session = buildRasterMaskWorkerSession("sha", transferred(base, width, height));
+    const result = morphologyRasterMaskSessionRoi(session, {
+      sourceRevision: 7,
+      core: { x: 510, y: 1, width: 3, height: 3 },
+      input: { x: 509, y: 0, width: 4, height: 5 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "cpu",
+      computeBudgetBytes: 0,
+    });
+    const expected = applyMaskMorphology(base, width, height, {
+      operation: "dilate",
+      kernelShape: "square",
+      radius: 1,
+    }).alpha;
+
+    expect(result).toMatchObject({
+      sourceRevision: 7,
+      backend: "cpu",
+      fallbackReason: "gate-disabled",
+      changedPixels: 8,
+      changedBounds: { x: 510, y: 1, width: 3, height: 3 },
+    });
+    expect(result.patches.map((patch) => patch.tileX)).toEqual([0, 1]);
+    expect(applyPatches(base, width, result.patches)).toEqual(expected);
+  });
+
+  it("materializes packed dirty overrides before morphology", () => {
+    const width = 513;
+    const height = 5;
+    const base = new Uint8Array(width * height);
+    const current = new Uint8Array(base);
+    current[2 * width + 511] = 255;
+    const bits = new Uint8Array(Math.ceil((512 * height) / 8));
+    const tileIndex = 2 * 512 + 511;
+    bits[tileIndex >> 3] |= 1 << (tileIndex & 7);
+    const session = buildRasterMaskWorkerSession("sha", transferred(base, width, height));
+    const result = morphologyRasterMaskSessionRoi(session, {
+      sourceRevision: 1,
+      core: { x: 510, y: 1, width: 3, height: 3 },
+      input: { x: 509, y: 0, width: 4, height: 5 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [
+        {
+          tileX: 0,
+          tileY: 0,
+          x: 0,
+          y: 0,
+          width: 512,
+          height,
+          revision: 1,
+          bits,
+        },
+      ],
+      backendPolicy: "cpu",
+      computeBudgetBytes: 0,
+    });
+    const expected = applyMaskMorphology(current, width, height, {
+      operation: "dilate",
+      kernelShape: "square",
+      radius: 1,
+    }).alpha;
+
+    expect(result.changedPixels).toBe(8);
+    expect(applyPatches(current, width, result.patches)).toEqual(expected);
+  });
+
+  it("rejects an oversized morphology ROI before allocating its dense source", () => {
+    const width = 4097;
+    const height = 4097;
+    const session = buildRasterMaskWorkerSession("sha", {
+      size: [height, width],
+      counts: Uint32Array.of(width * height),
+    });
+    expect(() =>
+      prepareRasterMaskMorphologyRoi(session, {
+        sourceRevision: 0,
+        core: { x: 0, y: 0, width, height },
+        input: { x: 0, y: 0, width, height },
+        operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+        dirtyOverrides: [],
+        backendPolicy: "cpu",
+        computeBudgetBytes: 0,
+      }),
+    ).toThrow(/pixel budget/);
+  });
+
+  it.each([
+    ["dilate", "square"],
+    ["dilate", "disk"],
+    ["erode", "square"],
+    ["erode", "disk"],
+    ["open", "square"],
+    ["open", "disk"],
+    ["close", "square"],
+    ["close", "disk"],
+  ] as const)("matches production %s/%s morphology exactly", (operation, kernelShape) => {
+    const width = 19;
+    const height = 17;
+    const source = new Uint8Array(width * height);
+    for (let y = 3; y < 14; y += 1) {
+      for (let x = 4; x < 16; x += 1) source[y * width + x] = 255;
+    }
+    source[8 * width + 10] = 0;
+    source[1 * width + 1] = 255;
+    const session = buildRasterMaskWorkerSession("sha", transferred(source, width, height));
+    const result = morphologyRasterMaskSessionRoi(session, {
+      sourceRevision: 1,
+      core: { x: 0, y: 0, width, height },
+      input: { x: 0, y: 0, width, height },
+      operation: { operation, kernelShape, radius: 2 },
+      dirtyOverrides: [],
+      backendPolicy: "cpu",
+      computeBudgetBytes: 0,
+    });
+    const expected = applyMaskMorphology(source, width, height, {
+      operation,
+      kernelShape,
+      radius: 2,
+    }).alpha;
+    expect(applyPatches(source, width, result.patches)).toEqual(expected);
   });
 
   it("matches dense replacement across deterministic sparse fixtures", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MaskBuffer } from "./geometry/maskBuffer";
 import {
   chargeMaskHistoryPatches,
+  createMaskHistoryCommandFromPatches,
   MaskHistoryCheckpoint,
   MaskHistoryStore,
   MASK_HISTORY_MAX_COMMANDS,
@@ -33,6 +34,27 @@ function syntheticCommand(name: string, chargedBytes: number): MaskHistoryComman
 }
 
 describe("MaskHistoryCheckpoint", () => {
+  it("builds a charged command directly from non-empty Worker XOR patches", () => {
+    const nonEmpty = {
+      tileX: 0,
+      tileY: 0,
+      width: 8,
+      height: 1,
+      xorBits: Uint8Array.from([0b1000_0001]),
+    };
+    const empty = { ...nonEmpty, tileX: 1, xorBits: new Uint8Array(1) };
+    const command = createMaskHistoryCommandFromPatches("worker", 9, [empty, nonEmpty]);
+
+    expect(command).toEqual({
+      name: "worker",
+      sourceRevision: 9,
+      patches: [nonEmpty],
+      changedPixels: 2,
+      chargedBytes: chargeMaskHistoryPatches([nonEmpty]),
+    });
+    expect(createMaskHistoryCommandFromPatches("empty", 0, [empty])).toBeNull();
+  });
+
   it("captures only touched tiles and applies one XOR command in both directions", () => {
     const width = MASK_HISTORY_TILE_SIZE + 2;
     const height = 3;

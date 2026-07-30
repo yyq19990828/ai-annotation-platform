@@ -39,6 +39,7 @@ import {
 import type { MaskEditorPhase } from "./canEditMask";
 import {
   LargeMaskFullScanRequiredError,
+  sparseMaskComputeBudgetBytes,
   SparseMaskTileStore,
   type SparseMaskRenderableTile,
   type SparseMaskTileResources,
@@ -184,6 +185,7 @@ export function useMaskEditor({
   historyMaxBytes,
   tileMaxBytes,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
+  const webGpuCandidateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU === "true";
   const resolvedHistoryMaxBytes =
     historyMaxBytes ??
     (deviceMemory === undefined
@@ -365,6 +367,12 @@ export function useMaskEditor({
         sha256: sequence.toString(16).padStart(64, "0"),
         baseRle: rle,
         backend: workerPool,
+        morphologyBackendPolicy: webGpuCandidateEnabled ? "webgpu-candidate" : "cpu",
+        ...(webGpuCandidateEnabled
+          ? deviceMemory === undefined
+            ? {}
+            : { computeBudgetBytes: sparseMaskComputeBudgetBytes(deviceMemory) }
+          : { computeBudgetBytes: 0 }),
         ...(deviceMemory === undefined ? {} : { deviceMemory }),
         ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
       });
@@ -388,6 +396,7 @@ export function useMaskEditor({
       disposeTiledStore,
       resetHistory,
       tileMaxBytes,
+      webGpuCandidateEnabled,
       workerPool,
     ],
   );
@@ -653,23 +662,26 @@ export function useMaskEditor({
         operationAbortRef.current = controller;
         setOperationStatus("computing");
         setOperationError(undefined);
-        const checkpoint = tiledStore.beginHistoryCheckpoint();
         let changedPixels = 0;
         const succeeded = await enqueueTiledAction(tiledStore, async () => {
+          let command: MaskHistoryCommand | null = null;
           if (operation.type === "polygon") {
+            const checkpoint = tiledStore.beginHistoryCheckpoint();
             changedPixels = await tiledStore.lasso(operation.points, operation.value, {
               checkpoint,
               signal: controller.signal,
             });
+            command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
           } else if (operation.type === "morphology" && viewportRef.current) {
-            changedPixels = await tiledStore.morphologyRoi(viewportRef.current, operation, {
-              checkpoint,
+            command = await tiledStore.morphologyRoi(viewportRef.current, operation, {
+              name,
+              sourceRevision,
               signal: controller.signal,
             });
+            changedPixels = command?.changedPixels ?? 0;
           } else {
             throw new LargeMaskFullScanRequiredError();
           }
-          const command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
           if (!command) return;
           historyRef.current.push(command);
           setDirty(true);

@@ -1,0 +1,141 @@
+{
+  "generated_at": "2026-07-29T14:14:20.118Z",
+  "environment": {
+    "browser": "Google Chrome 150.0.7871.114",
+    "browser_mode": "headed",
+    "os": "linux-5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "adapter": {
+      "vendor": "nvidia",
+      "architecture": "ampere"
+    },
+    "unsafe_vulkan": true,
+    "default_x11_adapter_available": false
+  },
+  "operation": {
+    "type": "dilate",
+    "kernel_shape": "square",
+    "radius": 2,
+    "tile_size": 512,
+    "execution": "Dedicated Worker",
+    "end_to_end_stages": [
+      "transfer tile copies",
+      "materialize contiguous ROI",
+      "CPU or WebGPU morphology",
+      "production before/after analysis and report",
+      "production COCO RLE encode",
+      "transfer output alpha and RLE"
+    ]
+  },
+  "contracts": {
+    "production_alpha": "exact",
+    "production_report": "exact",
+    "production_rle": "exact",
+    "cpu_gpu_alpha": "exact",
+    "cpu_gpu_report": "exact",
+    "cpu_gpu_rle": "exact",
+    "main_thread_long_tasks": 0,
+    "default_x11_fallback": "adapter-unavailable",
+    "one_mib_budget_rejected": true
+  },
+  "canonical_run": {
+    "warmup": 3,
+    "iterations": 10,
+    "budget_bytes": 134217728,
+    "rows": [
+      {
+        "name": "1024",
+        "resolution": [1024, 1024],
+        "tiles": 4,
+        "admission_bytes": 9961472,
+        "cpu_round_trip": { "p50_ms": 36.9, "p95_ms": 50.5 },
+        "webgpu_round_trip": { "p50_ms": 31.1, "p95_ms": 41.0 },
+        "webgpu_phases_p95_ms": {
+          "materialize": 2.1,
+          "compute": 17.2,
+          "analysis_report": 15.5,
+          "rle": 4.6,
+          "pack": 5.9,
+          "submit_readback": 4.6,
+          "unpack": 6.6
+        },
+        "p95_improvement_percent": 18.8
+      },
+      {
+        "name": "2048",
+        "resolution": [2048, 2048],
+        "tiles": 16,
+        "admission_bytes": 39845888,
+        "cpu_round_trip": { "p50_ms": 158.4, "p95_ms": 162.7 },
+        "webgpu_round_trip": { "p50_ms": 109.4, "p95_ms": 116.3 },
+        "webgpu_phases_p95_ms": {
+          "materialize": 7.1,
+          "compute": 27.5,
+          "analysis_report": 58.5,
+          "rle": 20.1,
+          "pack": 10.1,
+          "submit_readback": 6.4,
+          "unpack": 11.4
+        },
+        "p95_improvement_percent": 28.5
+      },
+      {
+        "name": "4k",
+        "resolution": [3840, 2160],
+        "tiles": 40,
+        "admission_bytes": 78796800,
+        "cpu_round_trip": { "p50_ms": 297.9, "p95_ms": 302.8 },
+        "webgpu_round_trip": { "p50_ms": 205.9, "p95_ms": 210.4 },
+        "webgpu_phases_p95_ms": {
+          "materialize": 15.8,
+          "compute": 51.5,
+          "analysis_report": 112.6,
+          "rle": 30.7,
+          "pack": 21.2,
+          "submit_readback": 9.5,
+          "unpack": 22.9
+        },
+        "p95_improvement_percent": 30.5
+      }
+    ]
+  },
+  "repeat_short_runs": {
+    "warmup": 1,
+    "iterations": 3,
+    "p95_improvement_percent": {
+      "1024": [-96.2, -108.7],
+      "2048": [29.2, 29.4],
+      "4k": [33.8, 33.6]
+    }
+  },
+  "tail_sensitivity_probe": {
+    "case": "4k",
+    "warmup": 3,
+    "iterations": 3,
+    "cpu_p95_ms": 315.6,
+    "webgpu_p95_ms": 259.7,
+    "p95_improvement_percent": 17.7,
+    "cause_observed": "one pack/unpack latency spike",
+    "decision": "production gate remains closed"
+  },
+  "budget_routing": [
+    {
+      "budget_mib": 32,
+      "largest_admitted_case": "1024"
+    },
+    {
+      "budget_mib": 64,
+      "largest_admitted_case": "2048"
+    },
+    {
+      "budget_mib": 128,
+      "largest_admitted_case": "4k"
+    }
+  ],
+  "candidate_threshold": {
+    "pixels": 4194304,
+    "resolution": [2048, 2048],
+    "status": "benchmark candidate only; not a production default"
+  }
+}
