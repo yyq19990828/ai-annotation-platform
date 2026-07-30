@@ -95,7 +95,8 @@ jq -e '.passed == true and .runtime_ephemera_clean == true' \
 
 `VALIDATION_WEIGHT_SHA256_JSON` 的 key 是验收器选中权重相对 `RAPIDOCR_MODEL_DIR` 的路径，必须与该次
 v5 mobile、v5 server 和 v6 medium 三引擎所需权重精确相等。验收会在真实推理后重新读取
-9 条 session 的 provider chain，因此 ORT 运行期整 session CPU fallback 也会阻断声明。
+9 条 session 的 provider chain，因此 ORT 运行期整 session CPU fallback 也会阻断声明。正式两轮
+计量前会先加载并卸载一次三引擎全池，以成熟 ORT/CUDA/cuDNN context 作为稳定回收基线。
 验收失败时不能开启声明。
 
 ## 接入平台

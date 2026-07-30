@@ -277,7 +277,7 @@ async def _run() -> dict[str, Any]:
         scope: AdmissionScope,
         *,
         generation: str | None = None,
-        control_epoch: str = "2",
+        control_epoch: str = "3",
         owner: str = "validation",
         operation: str = "validation",
         jti: str | None = None,
@@ -343,16 +343,61 @@ async def _run() -> dict[str, Any]:
                         "validation GPU is not isolated before CUDA init"
                     )
                 gc.collect()
+                memory["cold_context_baseline_mb"] = _gpu_memory_samples(target_uuid)
+                # Prime all representative ORT roots once so the measured baseline
+                # includes stable CUDA/cuDNN process state that survives releasing
+                # every business session. Otherwise the first cycle incorrectly
+                # counts that context as model memory which should be recoverable.
+                for model_id, variants in POOL_TARGETS:
+                    await checked_post(
+                        client,
+                        "/predict",
+                        {
+                            "tasks": [{"id": model_id, "file_path": str(image_path)}],
+                            "context": {
+                                "model_id": model_id,
+                                "model_variants": variants,
+                            },
+                        },
+                        {},
+                    )
+                await main._engine_pool.unload_all(  # noqa: SLF001
+                    reason="manual",
+                    force_cleanup=True,
+                )
+                primed_snapshot = await main._engine_pool.snapshot()  # noqa: SLF001
+                if (
+                    primed_snapshot["current_size"] != 0
+                    or primed_snapshot["session_count"] != 0
+                    or primed_snapshot["engines"]
+                ):
+                    raise AssertionError(
+                        "RapidOCR context priming did not release every ORT session"
+                    )
                 memory["context_baseline_mb"] = _gpu_memory_samples(target_uuid)
+                # Legacy priming makes the lifecycle controller distrust the prior
+                # empty observation. Restore trust only after the pool proves empty.
+                await checked_post(
+                    client,
+                    "/lifecycle/reset",
+                    {"control_epoch": "2"},
+                    {
+                        GPU_ADMISSION_TOKEN_HEADER: token(
+                            AdmissionScope.RESET,
+                            control_epoch="2",
+                            operation="reset-2",
+                        )
+                    },
+                )
                 await checked_post(
                     client,
                     "/lifecycle/mode",
-                    {"gate": "enforce", "control_epoch": "2"},
+                    {"gate": "enforce", "control_epoch": "3"},
                     {
                         GPU_ADMISSION_TOKEN_HEADER: token(
                             AdmissionScope.MODE,
-                            control_epoch="2",
-                            operation="mode-2",
+                            control_epoch="3",
+                            operation="mode-3",
                         )
                     },
                 )
