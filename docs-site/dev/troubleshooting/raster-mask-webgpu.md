@@ -108,6 +108,12 @@ LRU 上限。先对照 `workersReplaced`、session 数、`prepareStrategy` 和 r
 XOR words 生成 tile patch 的时间。若 `backend=cpu-fallback`，`fallbackMaterializeMs` 应为非空，表示 GPU
 中途失败后惰性重建 dense alpha；普通 gate / capability CPU 路由不应先构造 packed source。
 
+成功 GPU 请求的 `xorOutputStrategy` 应为 `dense-word-scatter`。`xorTotalWords` / `xorNonZeroWords` /
+`xorWordDensity` 用于判断 core XOR 稀疏度，`xorChangedPixels` / `xorTouchedTiles` 描述实际 patch 工作量；
+`xorScanMs`、`xorPatchAllocateMs`、`xorPatchScatterMs` 与 `wordPatchBuildMs` 用于定位 dense plane 扫描、tile
+payload 分配和 byte-span 写入。当前 production 不含 atomic sparse records、overflow 或 record buffer；不要
+把缺少 sparse counters 误判为诊断未加载。
+
 ## 回滚
 
 将 `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU=false` 后重建前端。CPU Worker session、主线程 sparse packed

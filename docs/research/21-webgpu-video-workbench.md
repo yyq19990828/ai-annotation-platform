@@ -471,6 +471,44 @@ device lost。macOS、Wayland、Windows 无 flag 矩阵仍未验证，因此结�
 计算阶段；若设计 GPU sparse XOR compaction，必须保留 bounded capacity、overflow、stable ordering 和
 dense XOR exact fallback，不能把 atomic append 当成无界输出。
 
+#### R1.6 Dense word-scatter 胜出，atomic sparse compaction no-go
+
+Worker 的 dense XOR patch builder 改为 word-oriented scatter：先以 popcount 和首尾 bit 汇总 changed pixels /
+bounds，再把每个 non-zero `u32` 按 history tile 边界拆成 byte spans；最终 patches 仍按 tile row-major 排序。
+旧 per-set-bit builder 仅作为同 bundle benchmark selector 与 unit golden，不进入 production 默认请求。
+
+Linux X11、Chrome 150、RTX 3090、driver 595.84、有头强制 Vulkan 的最终 bundle 重跑两轮，每轮 3 次预热
+
+- 20 次记录：
+
+| ROI         | v0.23.18 → word total p95 两轮 |    total 改善 | per-bit → word patch p95 两轮 |
+| ----------- | -----------------------------: | ------------: | ----------------------------: |
+| `2048²`     |   22.1 → 18.6 · 24.7 → 16.4 ms | 15.8% / 33.6% |    10.2 → 7.0 · 10.8 → 2.8 ms |
+| `3840×2160` |   39.3 → 26.3 · 40.2 → 23.2 ms | 33.1% / 42.3% |    15.2 → 2.8 · 15.8 → 2.8 ms |
+
+2048² 第一轮保留了调度尖峰，word patch p95 改善为 31.4%，仍高于 25% 单轮下限；其余最终轮及先行 M1
+轮次为 72%–82%。两轮 patch、save、reload checksum exact，Long Task 为 0，owner 为 1，dispose 后资源
+归零。canonical non-zero word density 为 1.70%–3.06%。
+
+基于该 density 同时实现了固定 `coreWords / 4` capacity 的 atomic sparse prototype：shader 同次写 dense
+recovery target 与无序 `(wordIndex, xorWord)` records，成功路径 map 固定上限 buffer，overflow / invalid
+则不 redispatch、只回读同次 dense target。20/20 canonical 样本均为 sparse success，record payload 约
+32–35 KiB，未发生 overflow；correctness、边界、duplicate、tail、预算和资源单测都通过。
+
+但最终单遍 record builder 仍未达到性能门：
+
+| ROI         | dense → sparse readback + patch p95 | 联合增益 | dense → sparse total p95 |
+| ----------- | ----------------------------------: | -------: | -----------------------: |
+| `2048²`     |                        6.0 → 7.3 ms |   -21.7% |           17.5 → 15.2 ms |
+| `3840×2160` |                        7.4 → 7.3 ms |    +1.4% |           21.2 → 22.1 ms |
+
+因此结论是 **保留 dense word-scatter，删除 atomic sparse compaction**。production 没有 sparse shader
+binding、buffer、record protocol、validator、metrics 或 circuit breaker；默认 gate 仍关闭。聚合与 raw
+数组见
+[`data/21-mask-webgpu-sparse-xor-compaction-ab.json`](./data/21-mask-webgpu-sparse-xor-compaction-ab.json)。
+该结果说明减少 readback payload 不能直接推导 map wall 或端到端收益；后续不应在没有新的瓶颈证据时改做
+prefix-sum、GPU tile payload 或 GPU-resident mutable source。
+
 ### R2：视频底图 spike（条件触发）
 
 只有当生产诊断显示 `lastBitmapMs` / `lastPaintMs` 占可见延迟主要部分，或产品明确需要逐帧 GPU

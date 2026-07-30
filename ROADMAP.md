@@ -28,7 +28,7 @@
 - 持久 CPU Worker session、packed dirty tile 输入与 XOR history patch 输出已经接入，大图 tiled ROI morphology 不再在主线程重建连续 alpha 或扫描 before / after；保存格式仍是 canonical COCO RLE。
 - default-off WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B；Worker 从 base RLE 直接构造 packed ROI，shader 只回读 core XOR words，成功 GPU 请求不再生成 dense alpha、重复 bit-pack 或扫描 core-wide before / after diff。默认构建保持零 adapter 请求，无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
 - Worker 内有界 immutable packed base tile cache、word span ROI assemble 与 dirty masked overwrite 已完成；Linux RTX 3090 两轮 warm A/B 的 prepare p95 改善约 76%–86%，端到端 p95 改善约 30%–41%，overlap pan 只 miss 新进入的 tiles。同 bundle direct-RLE cold control 的回归低于 3%，Linux default X11、gate off、cache bypass 与 save/reload matrix exact。cache 不作为 mutable current truth，预算不足时继续使用 direct-RLE packed 路径；默认 gate 不变。
-- 新分段中 patch build 已成为约 10–16 ms 的第一 CPU 阶段；下一优化先以 dense XOR + CPU word-scatter 验证逐 set-bit 成本，再条件试验有界 GPU sparse records。只有联合 readback + patch 与端到端门都通过才保留 compaction，不先扩大 kernel 面、不建立 GPU-resident current source，也不把 GPU pass 微调当成主方向。
+- dense XOR 已改用 CPU word-scatter 构造 history patches；最终 Linux RTX 3090 两轮中，2048² / 4K 端到端 p95 相对上一封版分别改善约 16%–34% / 33%–42%，patch、save、reload exact 且 Long Task 为 0。固定 `coreWords / 4` 的 atomic sparse records prototype 虽然 20/20 canonical 样本无 overflow、payload 仅约 32–35 KiB，但 `readback + patch` p95 在 2048² 退化约 22%、4K 仅改善约 1%，因此 shader binding、buffers、record protocol 与诊断均已删除；不继续 prefix-sum、不建立 GPU-resident current source，也不扩大 kernel 面。
 - 剩余产品门只有 macOS / Wayland / Windows 无 flag 的 correctness、长会话与性能矩阵，以及是否默认开启的独立决策。WebGPU 使用访问页面的客户端 GPU，不使用 Linux API / Celery 部署机器的 GPU。
 
 ### 点云与图像联合标注
