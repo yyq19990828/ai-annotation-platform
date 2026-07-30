@@ -48,6 +48,7 @@
 ### Fixed
 
 - **RapidOCR 部署验收能够在 3.9.0 镜像中完整输出证据**. 验收器改从标准 distribution metadata 读取版本，避免因上游包不暴露 `__version__` 而在 GPU 加载、卸载全部成功后误报失败。
+- **GPU 部署验收证据保持为可直接校验的单一 JSON 文档**. 五个 Backend 的验收器现将第三方模型加载输出隔离到 stderr，避免进度、权重诊断或 provider 日志污染 stdout 中的严格证据。
 
 ## [0.23.19] - 2026-07-30
 

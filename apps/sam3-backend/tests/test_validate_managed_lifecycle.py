@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pytest
 
 from scripts import validate_managed_lifecycle as validator
+
+
+def test_main_keeps_runtime_output_out_of_json(monkeypatch, capsys) -> None:
+    evidence = validator._failed_evidence(RuntimeError("expected"))
+
+    async def noisy_run():
+        print("third-party diagnostic")
+        return evidence
+
+    monkeypatch.setattr(validator, "_run", noisy_run)
+
+    validator.main()
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == evidence
+    assert "third-party diagnostic" in captured.err
 
 
 def test_approved_artifact_requires_exact_hash(tmp_path, monkeypatch) -> None:

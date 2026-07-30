@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import uuid
+from contextlib import redirect_stdout
 from importlib.metadata import version as distribution_version
 from pathlib import Path
 from statistics import median
@@ -573,7 +574,8 @@ def _failed_evidence(exc: Exception) -> dict[str, Any]:
 
 def main() -> None:
     try:
-        evidence = asyncio.run(_run())
+        with redirect_stdout(sys.stderr):
+            evidence = asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001 - emit fail-closed evidence before exit
         print(f"managed lifecycle validation failed: {exc}", file=sys.stderr)
         print(json.dumps(_failed_evidence(exc), ensure_ascii=False, sort_keys=True))
