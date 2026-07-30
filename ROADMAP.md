@@ -22,7 +22,8 @@
 
 详见 [v0.23.16 Raster Mask 持久计算会话与 WebGPU 有界试运行计划](docs/plans/2026-07-29-v0.23.16-raster-mask-persistent-compute-webgpu.md)
 、[v0.23.17 WebGPU packed 输入与 XOR 回读优化计划](docs/plans/2026-07-30-v0.23.17-raster-mask-webgpu-packed-xor-pipeline.md)
-和 [v0.23.18 packed base cache 与有界 ROI assemble 计划](docs/plans/2026-07-30-v0.23.18-raster-mask-packed-base-cache.md)。
+、[v0.23.18 packed base cache 与有界 ROI assemble 计划](docs/plans/2026-07-30-v0.23.18-raster-mask-packed-base-cache.md)
+和 [v0.23.19 有界 sparse XOR compaction 与 word-patch pipeline 计划](docs/plans/2026-07-30-v0.23.19-raster-mask-sparse-xor-compaction.md)。
 
 - 持久 CPU Worker session、packed dirty tile 输入与 XOR history patch 输出已经接入，大图 tiled ROI morphology 不再在主线程重建连续 alpha 或扫描 before / after；保存格式仍是 canonical COCO RLE。
 - default-off WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B；Worker 从 base RLE 直接构造 packed ROI，shader 只回读 core XOR words，成功 GPU 请求不再生成 dense alpha、重复 bit-pack 或扫描 core-wide before / after diff。默认构建保持零 adapter 请求，无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
