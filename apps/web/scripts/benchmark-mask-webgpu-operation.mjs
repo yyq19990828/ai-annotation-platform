@@ -13,7 +13,7 @@ const caseNames = (process.env.RASTER_MASK_WEBGPU_OPERATION_CASES ?? "1024,2048,
   .split(",")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
-const supportedCases = new Set(["1024", "2048", "4k"]);
+const supportedCases = new Set(["1024", "2048", "4k", "unaligned"]);
 
 if (
   !Number.isInteger(iterations) ||
@@ -114,6 +114,12 @@ try {
         { name: "1024", width: 1024, height: 1024 },
         { name: "2048", width: 2048, height: 2048 },
         { name: "4k", width: 3840, height: 2160 },
+        {
+          name: "unaligned",
+          width: 2112,
+          height: 2112,
+          core: { x: 31, y: 31, width: 2048, height: 2048 },
+        },
       ].filter((entry) => caseNames.includes(entry.name));
       const stores = [];
       for (const entry of cases) {
@@ -170,7 +176,7 @@ try {
       const operation = { operation: "dilate", kernelShape: "square", radius };
 
       for (const entry of stores) {
-        const core = { x: 0, y: 0, width: entry.width, height: entry.height };
+        const core = entry.core ?? { x: 0, y: 0, width: entry.width, height: entry.height };
         const cpuHistory = [];
         const candidateHistory = [];
         const run = async (store, history, name, revision) => {
@@ -199,6 +205,8 @@ try {
         const candidateTimes = [];
         const cpuComputeTimes = [];
         const candidateComputeTimes = [];
+        const cpuSamples = [];
+        const candidateSamples = [];
         const candidateAllocatedBytes = [];
         const candidateOwnerWorkers = [];
         for (let index = 0; index < iterations; index += 1) {
@@ -211,6 +219,18 @@ try {
           candidateTimes.push(lastCandidate.elapsed);
           cpuComputeTimes.push(lastCpu.compute.lastTotalMs ?? 0);
           candidateComputeTimes.push(lastCandidate.compute.lastTotalMs ?? 0);
+          cpuSamples.push({
+            elapsed_ms: lastCpu.elapsed,
+            backend: lastCpu.compute.lastBackend,
+            fallback_reason: lastCpu.compute.lastFallbackReason,
+            metrics: lastCpu.compute.lastMetrics,
+          });
+          candidateSamples.push({
+            elapsed_ms: lastCandidate.elapsed,
+            backend: lastCandidate.compute.lastBackend,
+            fallback_reason: lastCandidate.compute.lastFallbackReason,
+            metrics: lastCandidate.compute.lastMetrics,
+          });
           candidateAllocatedBytes.push(lastCandidate.compute.gpuAllocatedBytes);
           candidateOwnerWorkers.push(lastCandidate.compute.gpuOwnerWorkers);
         }
@@ -243,6 +263,7 @@ try {
             max_allocated_bytes: Math.max(...candidateAllocatedBytes),
             max_owner_workers: Math.max(...candidateOwnerWorkers),
           },
+          samples: { cpu: cpuSamples, candidate: candidateSamples },
         });
         for (const command of cpuHistory) entry.cpu.releaseHistoryCommand(command);
         for (const command of candidateHistory) entry.candidate.releaseHistoryCommand(command);
@@ -282,6 +303,7 @@ try {
 process.stdout.write(
   `${JSON.stringify(
     {
+      schema: "mask-webgpu-production-operation/v2",
       generated_at: new Date().toISOString(),
       environment: {
         platform: platform(),

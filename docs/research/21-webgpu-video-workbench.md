@@ -1,6 +1,6 @@
 # WebGPU 在视频工作台中的适用性调研
 
-> 调研日期：2026-07-25 · Production provider A/B：2026-07-30 · 状态：R1.3 完成，候选后端默认关闭
+> 调研日期：2026-07-25 · Production provider A/B：2026-07-30 · 状态：R1.4 完成，候选后端默认关闭
 >
 > 目标：判断 WebGPU 能否改善视频精确帧、Konva 合成或 Raster Mask 性能，并明确它与 Linux
 > 服务端 GPU、客户端硬件解码之间的边界。
@@ -19,11 +19,12 @@
    同时交给 Konva、Minimap 和 `captureCurrentFrameJpeg`。若把 WebGPU canvas 再作为
    `Konva.Image` 输入，会多一次 canvas 间同步 / 拷贝；若独立放到 Konva canvas 下方，则必须重建
    viewport 变换、精确帧回执、抓帧与上下文丢失合同。
-4. **Raster Mask 端到端证据支持继续优化，不支持直接上线。** 加入 512 tile 传输与
-   materialize、production before/after analysis / report、COCO RLE 和结果回传后，10 次正式样本中
-   `1024²` p95 只改善 18.8%，`2048²` 改善 28.5%，4K 改善 30.5%。但独立 4K
-   复测曾因 pack / unpack 尾延迟将改善压到 17.7%，因此生产候选门槛上移到
-   `2048²`，且必须先消除 JS pack / unpack 抖动。
+4. **Raster Mask packed 输入与 core XOR 回读通过工程性能门，但仍不支持默认开启。** production
+   Worker 直接从 base RLE 构造 packed ROI、shader 只回读 core XOR 后，`2048²` 两轮 p95 为
+   37.7 / 40.9 ms，4K 为 61.4 / 57.0 ms；相对上一条 production provider 分别再改善
+   77.5% / 76.6% 与 76.8% / 78.8%。成功 GPU 请求不再分配 input-sized alpha，XOR / save
+   checksum、非 32 对齐 core、Long Task 和资源释放均通过；macOS、Wayland、Windows 无 flag 矩阵
+   仍阻断默认开启。
 5. **WebGPU 不是解决 Linux 服务器 WebCodecs 硬解问题的手段。** 如果确实要让服务端 RTX 3090
    承担视频解码，需要另建 FFmpeg/NVDEC、CUDA 或 GStreamer 服务端路径，并承担帧传输、缓存、并发
    和画面一致性成本；这属于另一套架构。
@@ -368,6 +369,57 @@ R1.3 决策是 **保留 default-off production candidate**：CPU Worker session 
 交付；WebGPU 仅在构建期开关启用、客户端 adapter ready、ROI 至少 `2048²`、操作为 square dilate
 且字节预算允许时参与路由。Linux 强制 Vulkan 只证明工程可行性，不构成默认 Linux 支持声明；
 macOS、Wayland 和 Windows 无 flag 矩阵继续阻断默认开启。
+
+#### R1.4 Packed source 与 core XOR production A/B
+
+R1.3 的成功 GPU 路径仍先从 base RLE materialize dense alpha，再逐像素 pack；回读 full after plane
+后又对 core 逐像素 diff。R1.4 保持 store、history 与保存合同不变，只替换 Worker 内部数据路径：
+
+```text
+base RLE + dirty packed overrides
+  → row-aligned packed input
+  → WebGPU square dilate + source XOR
+  → core-only XOR words
+  → non-zero words / set bits → existing tile history patches
+```
+
+provider ready 前先做无分配 preflight。gate 关闭、adapter 不可用、warming、预算不足和不支持操作仍
+直接 materialize dense alpha 走 CPU；GPU submit / map / device lost 等中途失败才惰性 materialize alpha
+并返回 `cpu-fallback`。source、XOR target、readback 改为独立 grow-only capacity，snapshot 报告实际总和。
+
+同一 RTX 3090、Chrome 150、有头强制 Vulkan 下，两轮均为 3 次预热 + 10 次记录。下表的“相对上一
+候选”使用 R1.3 两轮 WebGPU p95 作为固定基线：
+
+| ROI         | R1.3 WebGPU p95 两轮 (ms) | packed XOR p50 / p95 两轮 (ms) | 相对上一候选 p95 改善 | GPU bytes plateau |
+| ----------- | ------------------------: | -----------------------------: | --------------------: | ----------------: |
+| `2048²`     |             167.2 / 175.0 |      33.5 / 37.7 · 34.9 / 40.9 |         77.5% / 76.6% |         1,572,912 |
+| `3840×2160` |             265.2 / 268.9 |      52.4 / 61.4 · 48.3 / 57.0 |         76.8% / 78.8% |         3,145,776 |
+
+候选分段 p95：
+
+| ROI         | packed prepare 两轮 | GPU wall 两轮 | patch build 两轮 | upload / submit 两轮 | readback 两轮 |
+| ----------- | ------------------: | ------------: | ---------------: | -------------------: | ------------: |
+| `2048²`     |      16.9 / 17.6 ms |  4.8 / 4.0 ms |   10.3 / 10.2 ms |         0.3 / 0.2 ms |  4.4 / 3.9 ms |
+| `3840×2160` |      28.8 / 27.4 ms |  6.5 / 6.0 ms |   15.6 / 15.3 ms |         0.5 / 0.6 ms |  6.0 / 5.4 ms |
+
+资格证据同时满足：
+
+- CPU / WebGPU XOR patch checksum 与 undo 后 save checksum 精确一致；
+- `(31, 31, 2048, 2048)` 非 32 对齐 core 在 `2112²` 图上命中 WebGPU，并与 CPU exact；
+- 每个成功 GPU 样本 `inputAlphaBytes=0`，不再执行 core-wide dense diff；
+- source / XOR / readback capacity 分别计账，记录窗口稳定，owner 始终为 1；
+- 两轮 Long Task 均为 0，dispose 后 device、buffer、owner、Worker 与 session 归零；
+- X11 默认 Chrome 仍以 `adapter-unavailable` 精确回退；gate off 即使强制 Vulkan 可用，也保持
+  init attempts 0、GPU bytes 0。
+
+聚合结果见
+[`data/21-mask-webgpu-packed-xor-ab.json`](./data/21-mask-webgpu-packed-xor-ab.json)。runner schema
+升级后同时输出每个 raw sample 的 prepare、compute、patch、upload / submit、readback、alpha / packed /
+XOR bytes 与 buffer capacities，资格结论仍以 operation end-to-end wall time 为准。
+
+R1.4 决策是 **保留 packed XOR production path，继续 default-off**。下一优化点由新的阶段占比触发：
+packed prepare 与 patch build 仍大于 GPU wall，但在 macOS / Wayland / Windows 无 flag 矩阵通过前，不
+建立 GPU-resident 可写 session、不增加 readback ring、不引入 subgroups，也不扩展 morphology kernel。
 
 ### R2：视频底图 spike（条件触发）
 

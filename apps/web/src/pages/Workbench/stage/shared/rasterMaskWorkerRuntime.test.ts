@@ -4,12 +4,14 @@ import { applyMaskMorphology } from "./geometry/maskOperations";
 import { MASK_HISTORY_TILE_SIZE, type MaskHistoryPatch } from "./maskHistory";
 import {
   buildRasterMaskWorkerSession,
+  buildRasterMaskMorphologyPatchesFromXorWords,
   compareRasterMaskSessionMetrics,
   compareRasterMaskSessionTile,
   decodeRasterMaskSessionTile,
   decodeRasterMaskTransferredRle,
   mergeRasterMaskSessionTiles,
   morphologyRasterMaskSessionRoi,
+  preparePackedRasterMaskMorphologyRoi,
   prepareRasterMaskMorphologyRoi,
 } from "./rasterMaskWorkerRuntime";
 
@@ -34,6 +36,23 @@ function applyPatches(
     }
   }
   return result;
+}
+
+function unpackRows(
+  words: Uint32Array,
+  width: number,
+  height: number,
+  wordsPerRow: number,
+): Uint8Array {
+  const alpha = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (((words[y * wordsPerRow + (x >>> 5)] >>> (x & 31)) & 1) !== 0) {
+        alpha[y * width + x] = 255;
+      }
+    }
+  }
+  return alpha;
 }
 
 describe("rasterMaskWorkerRuntime", () => {
@@ -148,6 +167,138 @@ describe("rasterMaskWorkerRuntime", () => {
 
     expect(result.changedPixels).toBe(8);
     expect(applyPatches(current, width, result.patches)).toEqual(expected);
+  });
+
+  it("directly prepares a row-aligned packed ROI with exact set and clear overrides", () => {
+    const width = 517;
+    const height = 7;
+    const base = Uint8Array.from({ length: width * height }, (_, index) =>
+      (index * 17 + Math.floor(index / width) * 3) % 11 < 4 ? 255 : 0,
+    );
+    const current = new Uint8Array(base);
+    const tileWidth = 512;
+    const bits = new Uint8Array(Math.ceil((tileWidth * height) / 8));
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < tileWidth; x += 1) {
+        const enabled = (x + y * 5) % 7 === 0;
+        current[y * width + x] = enabled ? 255 : 0;
+        if (enabled) {
+          const tileIndex = y * tileWidth + x;
+          bits[tileIndex >>> 3] |= 1 << (tileIndex & 7);
+        }
+      }
+    }
+    const session = buildRasterMaskWorkerSession("sha", transferred(base, width, height));
+    const request = {
+      sourceRevision: 3,
+      core: { x: 31, y: 1, width: 483, height: 5 },
+      input: { x: 30, y: 0, width: 485, height: 7 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
+      dirtyOverrides: [
+        {
+          tileX: 0,
+          tileY: 0,
+          x: 0,
+          y: 0,
+          width: tileWidth,
+          height,
+          revision: 3,
+          bits,
+        },
+      ],
+      backendPolicy: "webgpu-candidate" as const,
+      computeBudgetBytes: 128 * 1024 * 1024,
+    };
+
+    const dense = prepareRasterMaskMorphologyRoi(session, request).source;
+    const packed = preparePackedRasterMaskMorphologyRoi(session, request);
+
+    expect(packed.wordsPerRow).toBe(Math.ceil(request.input.width / 32));
+    expect(
+      unpackRows(packed.sourceWords, request.input.width, request.input.height, packed.wordsPerRow),
+    ).toEqual(dense);
+    const tailMask = 0xffff_ffff >>> (32 - (request.input.width & 31));
+    for (let y = 0; y < request.input.height; y += 1) {
+      expect(packed.sourceWords[y * packed.wordsPerRow + packed.wordsPerRow - 1] & ~tailMask).toBe(
+        0,
+      );
+    }
+  });
+
+  it.each([1, 31, 32, 33, 511, 512, 513])(
+    "matches dense RLE materialization at packed row width %i",
+    (width) => {
+      const height = 5;
+      const base = Uint8Array.from({ length: width * height }, (_, index) =>
+        (index * 13 + Math.floor(index / width) * 7) % 9 < 3 ? 255 : 0,
+      );
+      const session = buildRasterMaskWorkerSession("sha", transferred(base, width, height));
+      const request = {
+        sourceRevision: 0,
+        core: { x: 0, y: 0, width, height },
+        input: { x: 0, y: 0, width, height },
+        operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
+        dirtyOverrides: [],
+        backendPolicy: "webgpu-candidate" as const,
+        computeBudgetBytes: 128 * 1024 * 1024,
+      };
+      const packed = preparePackedRasterMaskMorphologyRoi(session, request);
+      expect(unpackRows(packed.sourceWords, width, height, packed.wordsPerRow)).toEqual(base);
+      if ((width & 31) !== 0) {
+        const tailMask = 0xffff_ffff >>> (32 - (width & 31));
+        for (let y = 0; y < height; y += 1) {
+          expect(
+            packed.sourceWords[y * packed.wordsPerRow + packed.wordsPerRow - 1] & ~tailMask,
+          ).toBe(0);
+        }
+      }
+    },
+  );
+
+  it("builds exact cross-tile patches from non-aligned core XOR words", () => {
+    const width = 517;
+    const height = 7;
+    const base = new Uint8Array(width * height);
+    const session = buildRasterMaskWorkerSession("sha", transferred(base, width, height));
+    const request = {
+      sourceRevision: 4,
+      core: { x: 31, y: 1, width: 484, height: 5 },
+      input: { x: 30, y: 0, width: 486, height: 7 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
+      dirtyOverrides: [],
+      backendPolicy: "webgpu-candidate" as const,
+      computeBudgetBytes: 128 * 1024 * 1024,
+    };
+    const wordsPerRow = Math.ceil(request.core.width / 32);
+    const xorWords = new Uint32Array(wordsPerRow * request.core.height);
+    const changed = [
+      [0, 0],
+      [31, 0],
+      [32, 1],
+      [480, 2],
+      [483, 4],
+    ];
+    for (const [x, y] of changed) {
+      xorWords[y * wordsPerRow + (x >>> 5)] |= 1 << (x & 31);
+    }
+
+    const result = buildRasterMaskMorphologyPatchesFromXorWords(
+      session,
+      request,
+      xorWords,
+      wordsPerRow,
+    );
+
+    expect(result.changedPixels).toBe(changed.length);
+    expect(result.changedBounds).toEqual({ x: 31, y: 1, width: 484, height: 5 });
+    expect(result.patches.map(({ tileX }) => tileX)).toEqual([0, 1]);
+    const expected = new Uint8Array(base);
+    for (const [x, y] of changed) expected[(request.core.y + y) * width + request.core.x + x] = 255;
+    expect(applyPatches(base, width, result.patches)).toEqual(expected);
+    xorWords[wordsPerRow - 1] |= 0x8000_0000;
+    expect(() =>
+      buildRasterMaskMorphologyPatchesFromXorWords(session, request, xorWords, wordsPerRow),
+    ).toThrow(/tail bits/);
   });
 
   it("rejects an oversized morphology ROI before allocating its dense source", () => {

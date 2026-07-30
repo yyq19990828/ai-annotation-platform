@@ -52,16 +52,28 @@ export type RasterMaskWebGpuFallbackReason =
 
 export interface RasterMaskMorphologyMetrics {
   totalMs: number;
-  materializeMs: number;
+  backendPrepareMs: number;
   computeMs: number;
-  diffMs: number;
+  diffOrPatchMs: number;
+  gpuUploadSubmitMs: number | null;
+  gpuReadbackMs: number | null;
+  gpuPassMs: number | null;
+  fallbackMaterializeMs: number | null;
+  inputAlphaBytes: number;
+  packedSourceBytes: number;
+  xorReadbackBytes: number;
   allocatedGpuBytes: number;
+  gpuSourceCapacityBytes: number;
+  gpuXorCapacityBytes: number;
+  gpuReadbackCapacityBytes: number;
 }
 
 export interface RasterMaskWebGpuWorkerSnapshot {
   state: "disabled" | "idle" | "warming" | "ready" | "unavailable" | "lost" | "closed";
   allocatedBytes: number;
-  capacityBytes: number;
+  sourceCapacityBytes: number;
+  xorCapacityBytes: number;
+  readbackCapacityBytes: number;
   initAttempts: number;
   deviceLost: number;
   lastFailure: RasterMaskWebGpuFallbackReason | null;

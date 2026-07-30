@@ -30310,7 +30310,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.16"
+    "version": "0.23.17"
   },
   "openapi": "3.1.0",
   "paths": {

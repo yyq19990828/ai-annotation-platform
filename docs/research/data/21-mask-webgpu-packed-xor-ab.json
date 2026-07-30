@@ -1,0 +1,181 @@
+{
+  "schema": "mask-webgpu-packed-xor-ab/v1",
+  "generated_at": "2026-07-30T03:23:24.000Z",
+  "environment": {
+    "platform": "linux",
+    "kernel": "5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "driver": "595.84",
+    "browser": "Chrome 150.0.7871.114",
+    "headless": false,
+    "unsafe_vulkan": true
+  },
+  "baseline": {
+    "commit": "096108b69191a4bf54677f612c6bf33530f1e021",
+    "version": "0.23.16",
+    "source": "21-mask-webgpu-production-provider-ab.json",
+    "candidate_p95_ms": {
+      "2048": [167.2, 175.0],
+      "4k": [265.2, 268.9]
+    }
+  },
+  "candidate": {
+    "config": {
+      "warmup": 3,
+      "iterations": 10,
+      "radius": 2,
+      "cases": ["2048", "4k"],
+      "runner_schema": "mask-webgpu-production-operation/v2",
+      "runner_emits_raw_samples": true
+    },
+    "rounds": [
+      {
+        "generated_at": "2026-07-30T03:21:40.798Z",
+        "rows": [
+          {
+            "roi": "2048x2048",
+            "backend": "webgpu",
+            "cpu_p50_ms": 243.8,
+            "cpu_p95_ms": 432.9,
+            "candidate_p50_ms": 33.5,
+            "candidate_p95_ms": 37.7,
+            "relative_to_v0_23_16_candidate_p95_percent": 77.5,
+            "stage_p95_ms": {
+              "packed_prepare": 16.9,
+              "gpu_wall": 4.8,
+              "patch_build": 10.3,
+              "upload_submit": 0.3,
+              "readback": 4.4
+            },
+            "input_alpha_bytes": 0,
+            "packed_source_bytes": 524288,
+            "xor_readback_bytes": 524288,
+            "gpu_allocated_bytes": 1572912
+          },
+          {
+            "roi": "3840x2160",
+            "backend": "webgpu",
+            "cpu_p50_ms": 468.1,
+            "cpu_p95_ms": 485.3,
+            "candidate_p50_ms": 52.4,
+            "candidate_p95_ms": 61.4,
+            "relative_to_v0_23_16_candidate_p95_percent": 76.8,
+            "stage_p95_ms": {
+              "packed_prepare": 28.8,
+              "gpu_wall": 6.5,
+              "patch_build": 15.6,
+              "upload_submit": 0.5,
+              "readback": 6.0
+            },
+            "input_alpha_bytes": 0,
+            "packed_source_bytes": 1036800,
+            "xor_readback_bytes": 1036800,
+            "gpu_allocated_bytes": 3145776
+          }
+        ],
+        "long_tasks": 0,
+        "max_gpu_owner_workers": 1,
+        "disposed_gpu_bytes": 0,
+        "disposed_gpu_owner_workers": 0
+      },
+      {
+        "generated_at": "2026-07-30T03:21:57.614Z",
+        "rows": [
+          {
+            "roi": "2048x2048",
+            "backend": "webgpu",
+            "cpu_p50_ms": 252.3,
+            "cpu_p95_ms": 408.2,
+            "candidate_p50_ms": 34.9,
+            "candidate_p95_ms": 40.9,
+            "relative_to_v0_23_16_candidate_p95_percent": 76.6,
+            "stage_p95_ms": {
+              "packed_prepare": 17.6,
+              "gpu_wall": 4.0,
+              "patch_build": 10.2,
+              "upload_submit": 0.2,
+              "readback": 3.9
+            },
+            "input_alpha_bytes": 0,
+            "packed_source_bytes": 524288,
+            "xor_readback_bytes": 524288,
+            "gpu_allocated_bytes": 1572912
+          },
+          {
+            "roi": "3840x2160",
+            "backend": "webgpu",
+            "cpu_p50_ms": 450.0,
+            "cpu_p95_ms": 459.0,
+            "candidate_p50_ms": 48.3,
+            "candidate_p95_ms": 57.0,
+            "relative_to_v0_23_16_candidate_p95_percent": 78.8,
+            "stage_p95_ms": {
+              "packed_prepare": 27.4,
+              "gpu_wall": 6.0,
+              "patch_build": 15.3,
+              "upload_submit": 0.6,
+              "readback": 5.4
+            },
+            "input_alpha_bytes": 0,
+            "packed_source_bytes": 1036800,
+            "xor_readback_bytes": 1036800,
+            "gpu_allocated_bytes": 3145776
+          }
+        ],
+        "long_tasks": 0,
+        "max_gpu_owner_workers": 1,
+        "disposed_gpu_bytes": 0,
+        "disposed_gpu_owner_workers": 0
+      }
+    ]
+  },
+  "alignment_probe": {
+    "image": [2112, 2112],
+    "core": { "x": 31, "y": 31, "width": 2048, "height": 2048 },
+    "input": { "x": 29, "y": 29, "width": 2052, "height": 2052 },
+    "backend": "webgpu",
+    "iterations": 2,
+    "candidate_p95_ms": 37.5,
+    "patch_checksum": "15138:1637110137",
+    "save_checksum": "3680:2013547006",
+    "input_alpha_bytes": 0,
+    "gpu_allocated_bytes": 2097200,
+    "long_tasks": 0
+  },
+  "fallback_matrix": [
+    {
+      "name": "gate-on-default-x11",
+      "gate_enabled": true,
+      "unsafe_vulkan": false,
+      "provider_state": "unavailable",
+      "backend": "cpu",
+      "fallback_reason": "adapter-unavailable",
+      "init_attempts": 1,
+      "gpu_allocated_bytes": 0,
+      "patch_checksum": "14708:3120182536",
+      "save_checksum": "3570:2215193346"
+    },
+    {
+      "name": "gate-off-unsafe-vulkan-available",
+      "gate_enabled": false,
+      "unsafe_vulkan": true,
+      "provider_state": "disabled",
+      "backend": "cpu",
+      "fallback_reason": "gate-disabled",
+      "init_attempts": 0,
+      "gpu_allocated_bytes": 0,
+      "patch_checksum": "14708:3120182536",
+      "save_checksum": "3570:2215193346"
+    }
+  ],
+  "decision": {
+    "packed_xor_performance_gate": "pass",
+    "exact_patch_and_save_parity": true,
+    "successful_gpu_dense_alpha_allocations": 0,
+    "default_enabled": false,
+    "macos_without_flags": "not-tested",
+    "wayland_without_flags": "not-tested",
+    "windows_without_flags": "not-tested"
+  }
+}

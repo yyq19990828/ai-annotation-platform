@@ -35,6 +35,16 @@
 
 ## [Unreleased]
 
+## [0.23.17] - 2026-07-30
+
+### Changed
+
+- **Raster Mask WebGPU 候选改用 packed 输入与 core XOR 回读**. Worker 在 GPU ready 后直接从 immutable base RLE 与 dirty packed overrides 构造 row-aligned source，不再生成整 ROI alpha 或再次逐像素 bit-pack；shader 只回读 core XOR words，Worker 按 non-zero words 生成既有 tile history patches，避免 core-wide before / after diff。GPU 未 ready 或运行失败仍惰性使用完整 CPU morphology，默认构建继续零 adapter 请求；分段指标现在区分 prepare、upload / submit、readback、patch、fallback materialize 与三类 buffer 容量。
+
+### Fixed
+
+- **开启 Raster Mask WebGPU gate 的前端可以生成 production bundle**. Vite 现在按现有 `type: module` 合同输出 ES module Worker，使 Worker 内懒加载的 provider 能安全 code-split；默认关闭构建仍不包含 provider chunk 或 adapter 请求。
+
 ## [0.23.16] - 2026-07-30
 
 ### Added

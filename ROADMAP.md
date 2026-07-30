@@ -20,10 +20,12 @@
 
 ### Raster Mask 客户端计算收尾
 
-详见 [v0.23.16 Raster Mask 持久计算会话与 WebGPU 有界试运行计划](docs/plans/2026-07-29-v0.23.16-raster-mask-persistent-compute-webgpu.md)。
+详见 [v0.23.16 Raster Mask 持久计算会话与 WebGPU 有界试运行计划](docs/plans/2026-07-29-v0.23.16-raster-mask-persistent-compute-webgpu.md)
+和 [v0.23.17 WebGPU packed 输入与 XOR 回读优化计划](docs/plans/2026-07-30-v0.23.17-raster-mask-webgpu-packed-xor-pipeline.md)。
 
 - 持久 CPU Worker session、packed dirty tile 输入与 XOR history patch 输出已经接入，大图 tiled ROI morphology 不再在主线程重建连续 alpha 或扫描 before / after；保存格式仍是 canonical COCO RLE。
-- default-off WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B；默认构建保持零 adapter 请求，无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
+- default-off WebGPU 候选已经通过 Linux RTX 3090 强制 Vulkan 的两轮 production provider A/B；Worker 从 base RLE 直接构造 packed ROI，shader 只回读 core XOR words，成功 GPU 请求不再生成 dense alpha、重复 bit-pack 或扫描 core-wide before / after diff。默认构建保持零 adapter 请求，无能力、冷启动、预算不足、device lost 和不支持操作都保留 CPU Worker 精确路径。
+- 下一阶段按最新分段证据优先评估 revisioned packed session cache 与增量 dirty update，降低仍占主导的 Worker prepare；patch build 优化必须继续输出既有 exact XOR tile history，不先扩大 kernel 面，也不把 GPU pass 微调当成主方向。
 - 剩余产品门只有 macOS / Wayland / Windows 无 flag 的 correctness、长会话与性能矩阵，以及是否默认开启的独立决策。WebGPU 使用访问页面的客户端 GPU，不使用 Linux API / Celery 部署机器的 GPU。
 
 ### 点云与图像联合标注

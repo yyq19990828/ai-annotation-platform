@@ -37,6 +37,11 @@ const config: Parameters<typeof defineConfig>[0] = {
     },
     chunkSizeWarningLimit: 600,
   },
+  // Both production Workers are module Workers. ES output is also required when
+  // the default-off Raster Mask Worker gate enables its lazy WebGPU provider chunk.
+  worker: {
+    format: "es",
+  },
   server: {
     port: process.env.PORT ? Number(process.env.PORT) : 3000,
     proxy: {

@@ -4,14 +4,17 @@ import { analyzeRasterMaskAlpha } from "./rasterMaskRender";
 import type { RasterMaskWorkerRequest, RasterMaskWorkerResponse } from "./rasterMaskWorkerProtocol";
 import {
   buildRasterMaskWorkerSession,
+  buildRasterMaskMorphologyPatchesFromXorWords,
   compareRasterMaskSessionTile,
   compareRasterMaskSessionMetrics,
   decodeRasterMaskSessionTile,
   decodeRasterMaskTransferredRle,
   diffRasterMaskMorphologyRoi,
   mergeRasterMaskSessionTiles,
+  preparePackedRasterMaskMorphologyRoi,
   prepareRasterMaskMorphologyRoi,
   type RasterMaskWorkerSession,
+  validateRasterMaskMorphologyRoiRequest,
 } from "./rasterMaskWorkerRuntime";
 import type {
   RasterMaskMorphologyRoiRequest,
@@ -34,7 +37,9 @@ function disabledWebGpuSnapshot(): RasterMaskWebGpuWorkerSnapshot {
   return {
     state: "disabled",
     allocatedBytes: 0,
-    capacityBytes: 0,
+    sourceCapacityBytes: 0,
+    xorCapacityBytes: 0,
+    readbackCapacityBytes: 0,
     initAttempts: 0,
     deviceLost: 0,
     lastFailure: "gate-disabled",
@@ -70,15 +75,18 @@ function uniqueBuffers(buffers: ArrayBuffer[]): Transferable[] {
 function cpuMorphologyResult(
   session: RasterMaskWorkerSession,
   request: RasterMaskMorphologyRoiRequest,
-  prepared: ReturnType<typeof prepareRasterMaskMorphologyRoi>,
+  prepared: ReturnType<typeof prepareRasterMaskMorphologyRoi> | null,
   totalStarted: number,
   fallbackReason: RasterMaskMorphologyRoiResponse["fallbackReason"],
   backend: "cpu" | "cpu-fallback" = "cpu",
   allocatedGpuBytes = 0,
+  priorPrepareMs = 0,
+  packedSourceBytes = 0,
 ): Omit<RasterMaskMorphologyRoiResponse, "kind" | "id" | "ok" | "sessionId" | "sha256"> {
+  const dense = prepared ?? prepareRasterMaskMorphologyRoi(session, request);
   const computeStarted = performance.now();
   const after = applyMaskMorphology(
-    prepared.source,
+    dense.source,
     request.input.width,
     request.input.height,
     request.operation,
@@ -87,7 +95,7 @@ function cpuMorphologyResult(
   const diff = diffRasterMaskMorphologyRoi(
     session,
     request,
-    prepared.source,
+    dense.source,
     (inputIndex) => after[inputIndex] !== 0,
   );
   return {
@@ -99,10 +107,20 @@ function cpuMorphologyResult(
     patches: diff.patches,
     metrics: {
       totalMs: performance.now() - totalStarted,
-      materializeMs: prepared.materializeMs,
+      backendPrepareMs: priorPrepareMs + dense.materializeMs,
       computeMs,
-      diffMs: diff.diffMs,
+      diffOrPatchMs: diff.diffMs,
+      gpuUploadSubmitMs: null,
+      gpuReadbackMs: null,
+      gpuPassMs: null,
+      fallbackMaterializeMs: backend === "cpu-fallback" ? dense.materializeMs : null,
+      inputAlphaBytes: dense.source.byteLength,
+      packedSourceBytes,
+      xorReadbackBytes: 0,
       allocatedGpuBytes,
+      gpuSourceCapacityBytes: 0,
+      gpuXorCapacityBytes: 0,
+      gpuReadbackCapacityBytes: 0,
     },
   };
 }
@@ -127,8 +145,6 @@ function webGpuRouteFailure(
   ) {
     return "budget-insufficient";
   }
-  const packedBytes = Math.ceil(request.input.width / 32) * request.input.height * 4;
-  if (packedBytes * 5 + 16 > request.computeBudgetBytes) return "budget-insufficient";
   return null;
 }
 
@@ -137,42 +153,56 @@ async function runMorphologyRoi(
 ): Promise<Omit<RasterMaskMorphologyRoiResponse, "kind" | "id" | "ok" | "sessionId" | "sha256">> {
   const totalStarted = performance.now();
   const session = sessionFor(request.sessionId, request.sha256);
-  const prepared = prepareRasterMaskMorphologyRoi(session, request);
+  validateRasterMaskMorphologyRoiRequest(session, request);
   const routeFailure = webGpuRouteFailure(request);
   if (routeFailure) {
-    return cpuMorphologyResult(session, request, prepared, totalStarted, routeFailure);
+    return cpuMorphologyResult(session, request, null, totalStarted, routeFailure);
   }
 
   let provider: RasterMaskWebGpuProvider;
   try {
     provider = await webGpuProvider()!;
   } catch {
-    return cpuMorphologyResult(session, request, prepared, totalStarted, "initialization-failed");
+    return cpuMorphologyResult(session, request, null, totalStarted, "initialization-failed");
   }
-  const gpu = await provider.runSquareDilate({
-    alpha: prepared.source,
-    width: request.input.width,
-    height: request.input.height,
+  const shape = {
+    inputWidth: request.input.width,
+    inputHeight: request.input.height,
+    coreWidth: request.core.width,
+    coreHeight: request.core.height,
     radius: request.operation.radius,
     budgetBytes: request.computeBudgetBytes,
+  };
+  const preflightFailure = provider.preflightSquareDilateXor(shape);
+  if (preflightFailure) {
+    return cpuMorphologyResult(session, request, null, totalStarted, preflightFailure);
+  }
+  const packed = preparePackedRasterMaskMorphologyRoi(session, request);
+  const gpu = await provider.runSquareDilateXor({
+    ...shape,
+    sourceWords: packed.sourceWords,
+    sourceWordsPerRow: packed.wordsPerRow,
+    coreOffsetX: request.core.x - request.input.x,
+    coreOffsetY: request.core.y - request.input.y,
   });
   if (!gpu.ok) {
     return cpuMorphologyResult(
       session,
       request,
-      prepared,
+      null,
       totalStarted,
       gpu.reason,
       gpu.attemptedGpu ? "cpu-fallback" : "cpu",
       gpu.allocatedBytes,
+      packed.packedPrepareMs,
+      packed.sourceWords.byteLength,
     );
   }
-  const diff = diffRasterMaskMorphologyRoi(
+  const diff = buildRasterMaskMorphologyPatchesFromXorWords(
     session,
     request,
-    prepared.source,
-    (_inputIndex, localX, localY) =>
-      ((gpu.words[localY * gpu.wordsPerRow + (localX >>> 5)] >>> (localX & 31)) & 1) === 1,
+    gpu.xorWords,
+    gpu.xorWordsPerRow,
   );
   return {
     sourceRevision: request.sourceRevision,
@@ -183,10 +213,20 @@ async function runMorphologyRoi(
     patches: diff.patches,
     metrics: {
       totalMs: performance.now() - totalStarted,
-      materializeMs: prepared.materializeMs,
-      computeMs: gpu.computeMs,
-      diffMs: diff.diffMs,
-      allocatedGpuBytes: gpu.allocatedBytes,
+      backendPrepareMs: packed.packedPrepareMs,
+      computeMs: gpu.metrics.totalMs,
+      diffOrPatchMs: diff.diffMs,
+      gpuUploadSubmitMs: gpu.metrics.uploadSubmitMs,
+      gpuReadbackMs: gpu.metrics.readbackMs,
+      gpuPassMs: gpu.metrics.gpuPassMs,
+      fallbackMaterializeMs: null,
+      inputAlphaBytes: 0,
+      packedSourceBytes: packed.sourceWords.byteLength,
+      xorReadbackBytes: gpu.xorWords.byteLength,
+      allocatedGpuBytes: gpu.snapshot.allocatedBytes,
+      gpuSourceCapacityBytes: gpu.snapshot.sourceCapacityBytes,
+      gpuXorCapacityBytes: gpu.snapshot.xorCapacityBytes,
+      gpuReadbackCapacityBytes: gpu.snapshot.readbackCapacityBytes,
     },
   };
 }

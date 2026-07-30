@@ -275,14 +275,37 @@ describe("RasterMaskWorkerPool", () => {
       patches: [],
       metrics: {
         totalMs: 1,
-        materializeMs: 0.2,
+        backendPrepareMs: 0.2,
         computeMs: 0.7,
-        diffMs: 0.1,
+        diffOrPatchMs: 0.1,
+        gpuUploadSubmitMs: null,
+        gpuReadbackMs: null,
+        gpuPassMs: null,
+        fallbackMaterializeMs: null,
+        inputAlphaBytes: 16,
+        packedSourceBytes: 0,
+        xorReadbackBytes: 0,
         allocatedGpuBytes: 0,
+        gpuSourceCapacityBytes: 0,
+        gpuXorCapacityBytes: 0,
+        gpuReadbackCapacityBytes: 0,
       },
     });
 
     await Promise.all([blocking, morphology, ordinary]);
+    expect(pool.getComputeResources()).toMatchObject({
+      lastMetrics: {
+        inputAlphaBytes: 16,
+        packedSourceBytes: 0,
+        xorReadbackBytes: 0,
+      },
+      counters: {
+        cpuJobs: 1,
+        packedGpuJobs: 0,
+        gpuAlphaMaterializations: 0,
+        gpuRuntimeFallbackMaterializations: 0,
+      },
+    });
     pool.dispose();
   });
 
@@ -307,7 +330,9 @@ describe("RasterMaskWorkerPool", () => {
       snapshot: {
         state: "warming",
         allocatedBytes: 0,
-        capacityBytes: 0,
+        sourceCapacityBytes: 0,
+        xorCapacityBytes: 0,
+        readbackCapacityBytes: 0,
         initAttempts: 1,
         deviceLost: 0,
         lastFailure: null,
@@ -353,7 +378,9 @@ describe("RasterMaskWorkerPool", () => {
       snapshot: {
         state: "ready",
         allocatedBytes: 1024,
-        capacityBytes: 256,
+        sourceCapacityBytes: 512,
+        xorCapacityBytes: 256,
+        readbackCapacityBytes: 256,
         initAttempts: 1,
         deviceLost: 0,
         lastFailure: null,

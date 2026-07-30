@@ -12,6 +12,7 @@ import type {
   RasterMaskCompareSessionRef,
   RasterMaskMorphologyBackendPolicy,
   RasterMaskMorphologyBackend,
+  RasterMaskMorphologyMetrics,
   RasterMaskMorphologyRoiResponse,
   RasterMaskOperationContext,
   RasterMaskPackedTileOverride,
@@ -69,10 +70,16 @@ export interface RasterMaskComputeResources {
   webGpuState: RasterMaskWebGpuWorkerSnapshot["state"];
   gpuOwnerWorkers: number;
   gpuAllocatedBytes: number;
+  gpuSourceCapacityBytes: number;
+  gpuXorCapacityBytes: number;
+  gpuReadbackCapacityBytes: number;
   gpuBudgetBytes: number;
   lastBackend: RasterMaskMorphologyBackend | null;
   lastFallbackReason: RasterMaskWebGpuFallbackReason | null;
   lastTotalMs: number | null;
+  lastMetrics: RasterMaskMorphologyMetrics | null;
+  peakPackedSourceBytes: number;
+  peakXorReadbackBytes: number;
   counters: {
     cpuJobs: number;
     gpuJobs: number;
@@ -80,6 +87,9 @@ export interface RasterMaskComputeResources {
     initAttempts: number;
     deviceLost: number;
     budgetRejected: number;
+    packedGpuJobs: number;
+    gpuAlphaMaterializations: number;
+    gpuRuntimeFallbackMaterializations: number;
   };
 }
 
@@ -126,10 +136,16 @@ function initialComputeResources(
     webGpuState: state,
     gpuOwnerWorkers: 0,
     gpuAllocatedBytes: 0,
+    gpuSourceCapacityBytes: 0,
+    gpuXorCapacityBytes: 0,
+    gpuReadbackCapacityBytes: 0,
     gpuBudgetBytes: 0,
     lastBackend: null,
     lastFallbackReason: null,
     lastTotalMs: null,
+    lastMetrics: null,
+    peakPackedSourceBytes: 0,
+    peakXorReadbackBytes: 0,
     counters: {
       cpuJobs: 0,
       gpuJobs: 0,
@@ -137,6 +153,9 @@ function initialComputeResources(
       initAttempts: 0,
       deviceLost: 0,
       budgetRejected: 0,
+      packedGpuJobs: 0,
+      gpuAlphaMaterializations: 0,
+      gpuRuntimeFallbackMaterializations: 0,
     },
   };
 }
@@ -274,6 +293,7 @@ export class RasterMaskWorkerPool {
       sessions: this.sessions.size,
       compute: {
         ...this.compute,
+        lastMetrics: this.compute.lastMetrics ? { ...this.compute.lastMetrics } : null,
         counters: { ...this.compute.counters },
       },
       disposed: this.disposed,
@@ -281,7 +301,11 @@ export class RasterMaskWorkerPool {
   }
 
   getComputeResources(): RasterMaskComputeResources {
-    return { ...this.compute, counters: { ...this.compute.counters } };
+    return {
+      ...this.compute,
+      lastMetrics: this.compute.lastMetrics ? { ...this.compute.lastMetrics } : null,
+      counters: { ...this.compute.counters },
+    };
   }
 
   analyze(rle: CocoRle, options: RasterMaskWorkerRunOptions = {}): Promise<RasterMaskAnalysis> {
@@ -827,6 +851,9 @@ export class RasterMaskWorkerPool {
     this.compute.webGpuState = snapshot.state;
     this.compute.gpuOwnerWorkers = snapshot.state === "ready" ? 1 : 0;
     this.compute.gpuAllocatedBytes = snapshot.allocatedBytes;
+    this.compute.gpuSourceCapacityBytes = snapshot.sourceCapacityBytes;
+    this.compute.gpuXorCapacityBytes = snapshot.xorCapacityBytes;
+    this.compute.gpuReadbackCapacityBytes = snapshot.readbackCapacityBytes;
     this.compute.counters.initAttempts = snapshot.initAttempts;
     this.compute.counters.deviceLost = snapshot.deviceLost;
     if (snapshot.lastFailure) this.compute.lastFallbackReason = snapshot.lastFailure;
@@ -839,14 +866,33 @@ export class RasterMaskWorkerPool {
     this.compute.lastBackend = response.backend;
     this.compute.lastFallbackReason = response.fallbackReason;
     this.compute.lastTotalMs = response.metrics.totalMs;
+    this.compute.lastMetrics = { ...response.metrics };
     this.compute.gpuAllocatedBytes = response.metrics.allocatedGpuBytes;
+    this.compute.gpuSourceCapacityBytes = response.metrics.gpuSourceCapacityBytes;
+    this.compute.gpuXorCapacityBytes = response.metrics.gpuXorCapacityBytes;
+    this.compute.gpuReadbackCapacityBytes = response.metrics.gpuReadbackCapacityBytes;
     this.compute.gpuBudgetBytes = budgetBytes;
+    this.compute.peakPackedSourceBytes = Math.max(
+      this.compute.peakPackedSourceBytes,
+      response.metrics.packedSourceBytes,
+    );
+    this.compute.peakXorReadbackBytes = Math.max(
+      this.compute.peakXorReadbackBytes,
+      response.metrics.xorReadbackBytes,
+    );
     if (response.backend === "webgpu") {
       this.compute.webGpuState = "ready";
       this.compute.gpuOwnerWorkers = 1;
       this.compute.counters.gpuJobs += 1;
+      this.compute.counters.packedGpuJobs += 1;
+      if (response.metrics.inputAlphaBytes > 0) {
+        this.compute.counters.gpuAlphaMaterializations += 1;
+      }
     } else if (response.backend === "cpu-fallback") {
       this.compute.counters.cpuFallbackJobs += 1;
+      if (response.metrics.fallbackMaterializeMs != null) {
+        this.compute.counters.gpuRuntimeFallbackMaterializations += 1;
+      }
     } else {
       this.compute.counters.cpuJobs += 1;
     }
