@@ -31,6 +31,13 @@
 - dense XOR 已改用 CPU word-scatter 构造 history patches；最终 Linux RTX 3090 两轮中，2048² / 4K 端到端 p95 相对上一封版分别改善约 16%–34% / 33%–42%，patch、save、reload exact 且 Long Task 为 0。固定 `coreWords / 4` 的 atomic sparse records prototype 虽然 20/20 canonical 样本无 overflow、payload 仅约 32–35 KiB，但 `readback + patch` p95 在 2048² 退化约 22%、4K 仅改善约 1%，因此 shader binding、buffers、record protocol 与诊断均已删除；不继续 prefix-sum、不建立 GPU-resident current source，也不扩大 kernel 面。
 - 默认开启后的验证债务为 macOS Metal、Linux Wayland 与 Windows D3D12 的无额外浏览器 flag correctness、长会话、p95、fallback rate 和 dispose 资源矩阵；验证失败时保持 CPU 自动回退并评估是否按平台回滚，不因默认开启扩大 kernel 面。WebGPU 使用访问页面的客户端 GPU，不使用 Linux API / Celery 部署机器的 GPU。
 
+### ML GPU 仲裁与受管生命周期就绪
+
+详见 [ML Backend 受管 GPU 生命周期全量声明与仲裁就绪计划](docs/plans/2026-07-30-v0.23.20-ml-managed-lifecycle-declaration-readiness.md)。
+
+- GPU Arbiter 的逐卡预算准入、Redis lease/FIFO、驱逐、generation fence、signed lifecycle 和多卡验收地基已完成，但当前部署仍是全局/resource `off` 且 rollout latch 关闭。
+- 当前运行的第一方 GPU Backend 中只有 YOLO 发布 `managed_lifecycle`；Grounded-SAM2、SAM3 和 RapidOCR 的部署验收开关未启用，ONNXTools 尚未在当前环境运行/注册。下一阶段先统一五套实卡验收器、声明门、密钥与平台证明链，再进入 `observe` 和逐卡 enforce canary。
+
 ### 点云与图像联合标注
 
 详见[点云 + 图像联合标注路线](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)。
