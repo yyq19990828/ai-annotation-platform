@@ -207,6 +207,12 @@ last_reviewed: 2026-07-31
 |---|---|---|
 | `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `true` | Vite build-time 开关。默认 true，但只在大 ROI morphology 请求时惰性探测浏览器 adapter。 true 只允许符合 ROI、设备档位和字节预算的 square dilate 候选 WebGPU；其余操作及任何 adapter/device 故障都在客户端 Raster Mask Worker 内精确回退 CPU。使用的是访问页面的 用户浏览器 GPU，不是 Linux API、Celery 或部署机器 GPU。设为 false 可紧急回滚；修改后必须重建前端镜像。 |
 
+## 前端超大图 Tile
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VITE_EXPERIMENTAL_LARGE_IMAGE_TILES` | `true` | Vite build-time 开关。默认 true：有 ready pyramid 的图片只请求 overview 与当前视口切片， required 大图在生成中/失败时不会自动下载整张原图。背景继续由浏览器解码 + Konva Canvas2D 绘制，不依赖 WebGPU。设为 false 可紧急停止选择切片路径；修改后必须重建前端镜像。 |
+
 ## 认证 / 安全
 
 | 变量 | 默认值 | 说明 |

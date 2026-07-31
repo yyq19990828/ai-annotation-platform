@@ -84,8 +84,7 @@ import {
   type ImageContextMenuClipboardActions,
 } from "./imageStageContextMenu";
 import { wheelZoomFactor } from "./imageStageSettings";
-import { fitToCanvas } from "./shared/viewport/fit";
-import { zoomAtPoint } from "./shared/viewport/zoom";
+import { fitAwareScaleRange, zoomAtPoint } from "./shared/viewport/zoom";
 import { supportsSingleRingPolygonEdit } from "./shared/geometry/geometryEditPolicy";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
@@ -94,6 +93,10 @@ import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "./shared/useRasterMaskRecords";
 import { RasterMaskVisual } from "./RasterMaskVisual";
+import { KonvaImageTileLayer } from "./KonvaImageTileLayer";
+import type { WorkbenchImageSource } from "./imagePyramid";
+import { useImageTileScheduler } from "./useImageTileScheduler";
+import { useImageStageFit } from "./useImageStageFit";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -206,6 +209,8 @@ interface ImageStageProps {
   onRetryRasterMask?: (id: string) => void;
   maskReadOnly?: boolean;
   fileUrl: string | null;
+  imageSource?: WorkbenchImageSource | null;
+  onRetryImagePyramid?: () => Promise<void>;
   mediaKey?: string | null;
   blurhash?: string | null;
   /** 已知图片尺寸 (task.image_width/height): 有值则翻页时同步算 fit, 不必等 image onload, 首帧即正确。 */
@@ -499,6 +504,8 @@ export function ImageStage({
   maskReadOnly = false,
   tiledMaskOverviewRecord,
   fileUrl,
+  imageSource,
+  onRetryImagePyramid,
   mediaKey,
   blurhash,
   imageWidth,
@@ -621,30 +628,85 @@ export function ImageStage({
   userBoxesRef.current = userBoxes;
   const { ref: setContainerNode, size: vpSize } = useElementSize(containerRef);
 
-  // file_url is presigned and can change when annotation mutations refetch the
-  // task list. Keep the already loaded source while the underlying media is the
-  // same, otherwise the background image reloads and the whole stage flashes.
-  const imageIdentity = mediaKey ?? fileUrl ?? "";
+  const resolvedImageSource = useMemo<WorkbenchImageSource | null>(() => {
+    if (imageSource !== undefined) return imageSource;
+    if (!fileUrl) return null;
+    return {
+      kind: "single",
+      identity: mediaKey ?? fileUrl,
+      url: fileUrl,
+      width: imageWidth ?? undefined,
+      height: imageHeight ?? undefined,
+      blurhash: blurhash ?? undefined,
+    };
+  }, [blurhash, fileUrl, imageHeight, imageSource, imageWidth, mediaKey]);
+  const imageIdentity = resolvedImageSource?.identity ?? "";
+  const [pyramidRetryState, setPyramidRetryState] = useState<"idle" | "pending" | "failed">("idle");
+  useEffect(() => setPyramidRetryState("idle"), [imageIdentity]);
+  const retryImagePyramid = useCallback(async () => {
+    if (!onRetryImagePyramid || pyramidRetryState === "pending") return;
+    setPyramidRetryState("pending");
+    try {
+      await onRetryImagePyramid();
+      setPyramidRetryState("idle");
+    } catch {
+      setPyramidRetryState("failed");
+    }
+  }, [onRetryImagePyramid, pyramidRetryState]);
+  const previewUrl =
+    resolvedImageSource?.kind === "single"
+      ? resolvedImageSource.url
+      : (resolvedImageSource?.overviewUrl ?? resolvedImageSource?.thumbnailUrl ?? null);
+  // Presigned overview/original URLs can change when task queries refetch. Keep
+  // the loaded URL while the immutable media identity is unchanged.
   const imageSourceRef = useRef<{ identity: string; url: string | null }>({
     identity: imageIdentity,
-    url: fileUrl,
+    url: previewUrl,
   });
   if (imageSourceRef.current.identity !== imageIdentity) {
-    imageSourceRef.current = { identity: imageIdentity, url: fileUrl };
-  } else if (!imageSourceRef.current.url && fileUrl) {
-    imageSourceRef.current.url = fileUrl;
+    imageSourceRef.current = { identity: imageIdentity, url: previewUrl };
+  } else if (!imageSourceRef.current.url && previewUrl) {
+    imageSourceRef.current.url = previewUrl;
   }
-  const imageSourceUrl = imageSourceRef.current.url;
-  const [image, imageStatus] = useImage(imageSourceUrl ?? "");
+  const previewSourceUrl = imageSourceRef.current.url;
+  const [image, imageStatus] = useImage(previewSourceUrl ?? "");
   // 已知尺寸 (task 元数据) 优先, 让翻页时无需等 image onload 就能算 fit; 回退到加载后的自然尺寸。
   // 图像与标注都按同一 imgW/imgH 渲染, 故即便已知值与自然值偶有出入也始终对齐 (不产生 jank)。
-  const imgW = imageWidth || image?.naturalWidth || 900;
-  const imgH = imageHeight || image?.naturalHeight || 600;
+  const sourceWidth =
+    resolvedImageSource?.kind === "pyramid"
+      ? resolvedImageSource.manifest.width
+      : resolvedImageSource?.kind === "pyramid-pending" ||
+          resolvedImageSource?.kind === "pyramid-failed"
+        ? resolvedImageSource.width
+        : resolvedImageSource?.width;
+  const sourceHeight =
+    resolvedImageSource?.kind === "pyramid"
+      ? resolvedImageSource.manifest.height
+      : resolvedImageSource?.kind === "pyramid-pending" ||
+          resolvedImageSource?.kind === "pyramid-failed"
+        ? resolvedImageSource.height
+        : resolvedImageSource?.height;
+  const imgW = sourceWidth || imageWidth || image?.naturalWidth || 900;
+  const imgH = sourceHeight || imageHeight || image?.naturalHeight || 600;
+  const imageScaleRange = useMemo(
+    () => fitAwareScaleRange(vpSize.w, vpSize.h, imgW, imgH),
+    [imgH, imgW, vpSize.h, vpSize.w],
+  );
   const imageLoaded = !!image?.naturalWidth;
   // 尺寸是否就绪: 已知尺寸成对存在 → 立即就绪 (不等加载); 否则退回「图已加载」。
   // 图加载失败 (404/坏链) 也算就绪: 否则 konvaHost 因 !fitted 永久 visibility:hidden, 吞掉所有
   // 画布交互 (mask 笔刷 / 框选等); 失败时没有"正确位置"需保护, 用回退尺寸 (900×600) 立即揭开即可。
-  const dimsReady = !!((imageWidth && imageHeight) || imageLoaded || imageStatus === "failed");
+  const dimsReady = !!(
+    (sourceWidth && sourceHeight) ||
+    (imageWidth && imageHeight) ||
+    imageLoaded ||
+    imageStatus === "failed"
+  );
+  const imageTiles = useImageTileScheduler({
+    source: resolvedImageSource,
+    viewport: vp,
+    viewportSize: vpSize,
+  });
   const maskCursorNodeRef = useRef<Konva.Circle>(null);
   const maskCursorVisibleRef = useRef(false);
   const [maskCursorVisible, setMaskCursorVisible] = useState(false);
@@ -820,44 +882,18 @@ export function ImageStage({
   );
 
   // ── fit ──────────────────────────────────────────────────────────────────
-  const fitNow = useCallback(() => {
-    const next = fitToCanvas(vpSize.w, vpSize.h, imgW, imgH);
-    if (next) setVp(next);
-  }, [vpSize.w, vpSize.h, imgW, imgH, setVp]);
-
-  // 修翻页首帧 jank: vp 跨 task 持久化, 换图瞬间标注会先用上一张的变换画一帧, 等新图 onload
-  // 算出 fit 后才 snap → 视觉上标注从左上角小比例缩放到正确位置。修法三点:
-  // (1) fitted 设为 state 并在 media identity 变化时**渲染期同步**重置 (render-time setState,
-  //     比 effect 早一帧, 保证新图首个 render 就 fitted=false); (2) fit 跑在 useLayoutEffect → paint 前 setVp 生效,
-  //     onload 那帧的错位永不落屏; (3) 未 fit 完隐藏 Konva 层 (见 konvaHost), 由 blurhash 占位顶着,
-  //     揭开时已在正确位置。
-  const [fitted, setFitted] = useState(false);
-  const prevImageIdentityRef = useRef(imageIdentity);
-  if (prevImageIdentityRef.current !== imageIdentity) {
-    prevImageIdentityRef.current = imageIdentity;
-    setFitted(false);
-  }
-  // autoFitOnResize 只应在视口尺寸真正变化（窗口 / 边栏致容器 resize）时重新适应。原条件
-  // `!fitted || autoFitOnResize` 在开关开启时恒真 → 每次该 effect 重跑都 fitNow()；而画框落框 /
-  // 删除标注引发的重渲染会让 imgW/imgH 派生重算、fitNow 身份变化触发本 effect 重跑，于是把用户
-  // 的缩放强行拉回适应大小 (B-60)。记录上次 fit 时的视口尺寸，仅当尺寸确有变化才跟随开关重适应。
-  const fittedVpRef = useRef({ w: 0, h: 0 });
-  useLayoutEffect(() => {
-    if (!(vpSize.w && vpSize.h && dimsReady)) return;
-    if (!fitted) {
-      fitNow();
-      setFitted(true);
-      fittedVpRef.current = { w: vpSize.w, h: vpSize.h };
-      return;
-    }
-    if (
-      workbenchConfig.image.autoFitOnResize &&
-      (fittedVpRef.current.w !== vpSize.w || fittedVpRef.current.h !== vpSize.h)
-    ) {
-      fitNow();
-      fittedVpRef.current = { w: vpSize.w, h: vpSize.h };
-    }
-  }, [fitted, vpSize.w, vpSize.h, dimsReady, fitNow, workbenchConfig.image.autoFitOnResize]);
+  // media identity 是 fit 边界：任务切换后先隐藏新画布，在 paint 前按新图尺寸重算视口。
+  // 不再在渲染期 setState，避免连续 task/source 更新丢掉 fitted 重置。
+  const { fitted, fitNow } = useImageStageFit({
+    imageIdentity,
+    imageWidth: imgW,
+    imageHeight: imgH,
+    dimsReady,
+    viewportSize: vpSize,
+    setViewport: setVp,
+    fitTick,
+    autoFitOnResize: workbenchConfig.image.autoFitOnResize,
+  });
 
   // 揭开 konvaHost 前强制同步重绘一次: react-konva 的 batchDraw 是 rAF 异步, 否则 fitted 翻 true、
   // konvaHost 转可见的那一帧 canvas 像素还停在旧 vp (上一张) → 残留「左上角小比例闪一下」。
@@ -865,14 +901,6 @@ export function ImageStage({
   useLayoutEffect(() => {
     if (fitted) stageRef.current?.draw();
   }, [fitted]);
-
-  const lastFitTickRef = useRef(fitTick);
-  useEffect(() => {
-    if (fitTick !== lastFitTickRef.current) {
-      lastFitTickRef.current = fitTick;
-      fitNow();
-    }
-  }, [fitTick, fitNow]);
 
   // ── wheel zoom ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -909,11 +937,19 @@ export function ImageStage({
       const cy = e.clientY - rect.top;
       const factor = wheelZoomFactor(e.deltaY, workbenchConfig.image.zoomStepFactor);
       const cur = vpRef.current;
-      setVp(zoomAtPoint(cur, cx, cy, cur.scale * factor));
+      setVp(zoomAtPoint(cur, cx, cy, cur.scale * factor, imageScaleRange));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [maskCompareActive, setVp, maskEditor, toImg, tool, workbenchConfig.image.zoomStepFactor]);
+  }, [
+    imageScaleRange,
+    maskCompareActive,
+    setVp,
+    maskEditor,
+    toImg,
+    tool,
+    workbenchConfig.image.zoomStepFactor,
+  ]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
   // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
@@ -1663,12 +1699,39 @@ export function ImageStage({
       }}
     >
       {/* blurhash 占位（图像加载前） */}
-      {!imageLoaded && imageSourceUrl && blurhash && <BlurhashLayer hash={blurhash} />}
+      {!imageLoaded && previewSourceUrl && blurhash && <BlurhashLayer hash={blurhash} />}
 
-      {!imageSourceUrl && (
+      {!resolvedImageSource && (
         <div className={styles.emptyState}>
           <Icon name="warning" size={32} />
           <div className={styles.emptyStateText}>图像不可用</div>
+        </div>
+      )}
+
+      {(resolvedImageSource?.kind === "pyramid-pending" ||
+        resolvedImageSource?.kind === "pyramid-failed") && (
+        <div className={styles.pyramidStatus} role="status">
+          <Icon
+            name={resolvedImageSource.kind === "pyramid-pending" ? "clock" : "warning"}
+            size={14}
+          />
+          {resolvedImageSource.kind === "pyramid-pending"
+            ? "高清切片生成中，当前显示预览"
+            : "高清切片暂不可用，当前显示安全预览"}
+          {resolvedImageSource.kind === "pyramid-failed" && onRetryImagePyramid && (
+            <button
+              type="button"
+              className={styles.pyramidRetryButton}
+              disabled={pyramidRetryState === "pending"}
+              onClick={() => void retryImagePyramid()}
+            >
+              {pyramidRetryState === "pending"
+                ? "重试中…"
+                : pyramidRetryState === "failed"
+                  ? "重试失败，再试一次"
+                  : "重新生成"}
+            </button>
+          )}
         </div>
       )}
 
@@ -1685,20 +1748,30 @@ export function ImageStage({
           onMouseMove={handleStageMouseMove}
           onDblClick={handleStageDblClick}
         >
-          {/* bg 层：图像本体；不响应 hit-test，独立缓存 */}
-          <Layer name="bg" listening={false}>
-            {image && (
-              <KonvaImage
-                image={image}
-                x={0}
-                y={0}
-                width={imgW}
-                height={imgH}
-                listening={false}
-                imageSmoothingEnabled={workbenchConfig.image.smoothImage}
-              />
-            )}
-          </Layer>
+          {resolvedImageSource?.kind === "pyramid" ? (
+            <KonvaImageTileLayer
+              key={imageIdentity}
+              overviewImage={image}
+              imageWidth={imgW}
+              imageHeight={imgH}
+              tiles={imageTiles.tiles}
+              imageSmoothingEnabled={workbenchConfig.image.smoothImage}
+            />
+          ) : (
+            <Layer name="bg" listening={false}>
+              {image && (
+                <KonvaImage
+                  image={image}
+                  x={0}
+                  y={0}
+                  width={imgW}
+                  height={imgH}
+                  listening={false}
+                  imageSmoothingEnabled={workbenchConfig.image.smoothImage}
+                />
+              )}
+            </Layer>
+          )}
 
           {/* committed Mask 独立于背景与 AI/vector 之间，不参与 Konva hit-test。 */}
           <Layer name="image-mask" listening={false}>

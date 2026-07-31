@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { useWorkbenchConfig } from "../../state/useWorkbenchConfig";
-import { clampScale } from "../../stage/shared/viewport/zoom";
+import { clampScale, fitAwareScaleRange } from "../../stage/shared/viewport/zoom";
 import { CanvasToolbar } from "../../stage/CanvasToolbar";
 import { FloatingDock } from "../../shell/FloatingDock";
 import { ImageStage } from "../../stage/ImageStage";
@@ -16,6 +16,8 @@ import type { ImageContextMenuClipboardActions } from "../../stage/imageStageCon
 import type { RasterMaskRenderRecord } from "../../stage/shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "../../stage/shared/useRasterMaskRecords";
 import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
+import type { WorkbenchImageSource } from "../../stage/imagePyramid";
+import { workbenchImagePreviewUrl } from "../../stage/useWorkbenchImageSource";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -29,6 +31,8 @@ export interface ImageWorkbenchProps {
   maskReadOnly?: boolean;
   readOnly: boolean;
   fileUrl: string | null;
+  imageSource?: WorkbenchImageSource | null;
+  onRetryImagePyramid?: () => Promise<void>;
   mediaKey?: string | null;
   blurhash?: string | null;
   imageWidth?: number | null;
@@ -156,6 +160,8 @@ export function ImageWorkbench({
   maskReadOnly,
   readOnly,
   fileUrl,
+  imageSource,
+  onRetryImagePyramid,
   mediaKey,
   blurhash,
   imageWidth,
@@ -235,6 +241,11 @@ export function ImageWorkbench({
   issuePinDropArmed,
   onIssuePinDrop,
 }: ImageWorkbenchProps) {
+  const imageScaleRange = useMemo(
+    () =>
+      fitAwareScaleRange(stageGeom.vpSize.w, stageGeom.vpSize.h, stageGeom.imgW, stageGeom.imgH),
+    [stageGeom.imgH, stageGeom.imgW, stageGeom.vpSize.h, stageGeom.vpSize.w],
+  );
   const displayedRasterMaskRecords = useMemo(() => {
     const hiddenIds = new Set(
       userBoxes.filter((annotation) => annotation.is_hidden).map((annotation) => annotation.id),
@@ -319,6 +330,8 @@ export function ImageWorkbench({
       maskReadOnly={maskReadOnly || !!maskEditor?.tiledReadOnly}
       readOnly={readOnly}
       fileUrl={fileUrl}
+      imageSource={imageSource}
+      onRetryImagePyramid={onRetryImagePyramid}
       mediaKey={mediaKey}
       blurhash={blurhash}
       imageWidth={imageWidth}
@@ -391,8 +404,18 @@ export function ImageWorkbench({
             canRedo={canRedo}
             onUndo={onUndo}
             onRedo={onRedo}
-            onZoomIn={() => setVp((cur) => ({ ...cur, scale: Math.min(8, cur.scale * 1.2) }))}
-            onZoomOut={() => setVp((cur) => ({ ...cur, scale: Math.max(0.2, cur.scale / 1.2) }))}
+            onZoomIn={() =>
+              setVp((cur) => ({
+                ...cur,
+                scale: clampScale(cur.scale * 1.2, imageScaleRange),
+              }))
+            }
+            onZoomOut={() =>
+              setVp((cur) => ({
+                ...cur,
+                scale: clampScale(cur.scale / 1.2, imageScaleRange),
+              }))
+            }
             onFit={() => setFitTick((n) => n + 1)}
           />
           {canvasEditable && (
@@ -413,8 +436,11 @@ export function ImageWorkbench({
               vpSize={stageGeom.vpSize}
               vp={vp}
               setVp={setVp}
-              thumbnailUrl={thumbnailUrl}
-              fileUrl={fileUrl}
+              thumbnailUrl={workbenchImagePreviewUrl(imageSource ?? null) ?? thumbnailUrl}
+              fileUrl={
+                imageSource?.kind === "single" ? imageSource.url : imageSource ? null : fileUrl
+              }
+              bottom={64}
             />
           )}
           {overlays}

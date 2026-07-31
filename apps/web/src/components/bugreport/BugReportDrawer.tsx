@@ -25,6 +25,11 @@ import {
   getRasterMaskComputeDiagnosticsSnapshot,
   rasterMaskComputeDiagnosticsConsoleEntry,
 } from "@/utils/rasterMaskComputeDiagnostics";
+import {
+  appendImageTileDiagnostics,
+  getImageTileDiagnosticsSnapshot,
+  imageTileDiagnosticsConsoleEntry,
+} from "@/utils/imageTileDiagnostics";
 import { readWorkbenchPerfSnapshot } from "@/pages/Workbench/stage/shared/useWorkbenchPerf";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
@@ -214,12 +219,15 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       const rasterMaskDiagnostics = getRasterMaskComputeDiagnosticsSnapshot();
       const rasterMaskDiagnosticsEntry =
         rasterMaskComputeDiagnosticsConsoleEntry(rasterMaskDiagnostics);
+      const imageTileDiagnostics = getImageTileDiagnosticsSnapshot();
+      const imageTileDiagnosticsEntry = imageTileDiagnosticsConsoleEntry(imageTileDiagnostics);
       const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({
         msg: e.msg,
         stack: e.stack || "",
       }));
       if (videoDiagnosticsEntry) recentConsoleErrors.unshift(videoDiagnosticsEntry);
       if (rasterMaskDiagnosticsEntry) recentConsoleErrors.unshift(rasterMaskDiagnosticsEntry);
+      if (imageTileDiagnosticsEntry) recentConsoleErrors.unshift(imageTileDiagnosticsEntry);
       // v0.9.41: 附 workbench longtask 快照，便于 BUG 排查时定位卡顿点。
       const perf = readWorkbenchPerfSnapshot();
       if (perf.longTaskCount > 0) {
@@ -230,9 +238,12 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       }
       await bugReportsApi.create({
         title: title.trim(),
-        description: appendRasterMaskComputeDiagnostics(
-          appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
-          rasterMaskDiagnostics,
+        description: appendImageTileDiagnostics(
+          appendRasterMaskComputeDiagnostics(
+            appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
+            rasterMaskDiagnostics,
+          ),
+          imageTileDiagnostics,
         ),
         severity: severity as "low" | "medium" | "high" | "critical",
         route: location.pathname + location.search,

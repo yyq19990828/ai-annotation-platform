@@ -14,7 +14,12 @@ import type {
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
-import type { TaskMaskCapabilitiesResponse } from "./generated";
+import type { ImagePyramidRetryResponse, TaskMaskCapabilitiesResponse } from "./generated";
+import type {
+  ImagePyramidAssetRequest,
+  ImagePyramidAssetUrlsResponse,
+  ImagePyramidResponse,
+} from "@/pages/Workbench/stage/imagePyramid";
 
 /** v0.20.11 · 选中框单框二次推理请求: 在选中框 ROI 上跑一个能力。 */
 export interface SecondaryInferenceRequest {
@@ -175,6 +180,19 @@ export const tasksApi = {
 
   getMaskCapabilities: (id: string) =>
     apiClient.get<TaskMaskCapabilitiesResponse>(`/tasks/${id}/mask-capabilities`),
+
+  getImagePyramid: (id: string, init?: RequestInit) =>
+    apiClient.silentGet<ImagePyramidResponse>(`/tasks/${id}/image-pyramid`, init),
+
+  getImagePyramidAssetUrls: (id: string, items: ImagePyramidAssetRequest[], init?: RequestInit) =>
+    apiClient.post<ImagePyramidAssetUrlsResponse>(
+      `/tasks/${id}/image-pyramid/asset-urls`,
+      { items },
+      init,
+    ),
+
+  retryImagePyramid: (id: string) =>
+    apiClient.post<ImagePyramidRetryResponse>(`/tasks/${id}/image-pyramid/retry`, {}),
 
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),

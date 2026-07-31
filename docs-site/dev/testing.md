@@ -112,6 +112,28 @@ it("空态文案", async () => {
 ✅ 写：渲染分支、用户交互后的状态变化、与服务端契约的校验
 ❌ 不写：颜色样式、像素级布局、内部状态字段名
 
+### 超大图 Tile
+
+纯逻辑测试覆盖 manifest 校验、full-resolution 半开视口 rect、DPR/LOD hysteresis、overlap crop、
+edge tile、批量签发、decode、stale commit 和 dispose：
+
+```bash
+pnpm --filter @anno/web exec vitest run \
+  src/pages/Workbench/stage/imagePyramid.test.ts \
+  src/pages/Workbench/stage/imageTileScheduler.test.ts \
+  src/pages/Workbench/stage/useWorkbenchImageSource.test.ts \
+  src/pages/Workbench/stage/useImageTileScheduler.test.tsx \
+  src/pages/Workbench/stage/useImageStageFit.test.ts \
+  src/pages/Workbench/stages/image/ImageWorkbench.test.tsx
+```
+
+真实 50MP/200MP 浏览器回归使用 `P-LARGE-IMG` / `DS-LARGE-IMG` 开发夹具；先按
+[超大图金字塔派生资产](/dev/concepts/image-pyramid-assets#可复现开发夹具)下载、入库并等待 ready。
+required 大图用例必须断言自动路径没有 original 请求；快速 pan/zoom/切题后检查 BUG 诊断中的
+stale commit、reserved/retained bytes、live bitmap/ObjectURL 与 request 数在停止后进入 plateau，
+离开任务后全部归零。临时下载和浏览器 trace 只写入 gitignored `test-results/`，测试结束后删除。
+不同长宽比的大图切题回归还必须检查：新 source 不得渲染已释放的旧瓦片，缩放比例按新图尺寸重新 fit，先放大再连续缩小可通过滚轮和浮条回到当前全图适应比例，且放大后 Minimap 与右下角缩放浮条的边界不相交。
+
 ## 前端：Playwright E2E
 
 详见 `apps/web/e2e/README.md`。

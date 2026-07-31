@@ -58,6 +58,7 @@ import type { RasterMaskRenderRecord } from "../stage/shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframeActions";
 import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore";
+import type { WorkbenchImageSource } from "../stage/imagePyramid";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -196,6 +197,8 @@ interface WorkbenchStageHostImageProps {
   editingRasterMaskId?: string | null;
   maskReadOnly?: boolean;
   fileUrl: string | null;
+  imageSource?: WorkbenchImageSource | null;
+  onRetryImagePyramid?: () => Promise<void>;
   mediaKey?: string | null;
   blurhash?: string | null;
   // 已知图片尺寸 (task.image_width/height), 让 ImageStage 翻页时同步算 fit, 不必等 image onload。
@@ -428,6 +431,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       editingRasterMaskId,
       maskReadOnly,
       fileUrl,
+      imageSource,
+      onRetryImagePyramid,
       mediaKey,
       blurhash,
       imageWidth,
@@ -612,6 +617,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             maskReadOnly={maskReadOnly}
             readOnly={readOnly}
             fileUrl={fileUrl}
+            imageSource={imageSource}
+            onRetryImagePyramid={onRetryImagePyramid}
             mediaKey={mediaKey}
             blurhash={blurhash}
             imageWidth={imageWidth}

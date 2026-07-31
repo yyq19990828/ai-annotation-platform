@@ -11,7 +11,8 @@ last_reviewed: 2026-07-31
 图片金字塔把超大源图转换为可按视口加载的 overview 和 tile。它是服务端派生资产：源图片和标注坐标仍是
 权威数据，金字塔可重建，不能反向覆盖 source。
 
-当前图片工作台尚不消费 tile；Task API 已提供稳定合同，供客户端切换时复用。
+图片与审核工作台会把 ready pyramid 解析为视口图片源，只加载 overview、当前 LOD 可见 tile 和有界
+overscan。没有 ready pyramid 的小图继续使用原 single-image 路径。
 
 ## 可复现开发夹具
 
@@ -90,6 +91,34 @@ manifest schema 是 `aap-image-pyramid/v1`：
 
 客户端不得依赖对象前缀，也不得从 tile 坐标自行拼存储 key。
 
+## 客户端视口调度
+
+Task 层先把图片解析成 `single`、`pyramid`、`pyramid-pending` 或 `pyramid-failed`。required 大图在
+building/failed 或客户端 gate 关闭时只使用 overview、thumbnail 或 blurhash，不自动请求 original；
+optional 图片可以继续使用有界的 single-image 路径。
+
+ready pyramid 的 level 由 `viewport scale × scaleFactor × devicePixelRatio` 决定，当前 level 在
+`0.75..1.25` 的采样区间内保持，避免连续缩放时跨阈值抖动。tile node 仍占 full-resolution world rect；
+1px 存储 overlap 只用于 crop，不改变标注、Mask、Issue 或 Minimap 坐标。
+
+调度器分两阶段工作：
+
+```text
+逻辑坐标批签（最多 128 项）
+  → 有界 fetch / Blob
+     → createImageBitmap
+        └─ 失败时 HTMLImageElement + ObjectURL
+```
+
+低、标准、高设备档位的 decoded tile budget 分别为 32/64/128 MiB，并发为 2/4/6。成本按
+`decodedWidth × decodedHeight × 4` 计算；可见 tile pin，非可见 tile 按 LRU 淘汰。
+`ImageBitmap.close()`、ObjectURL revoke、请求 abort、reservation 和 stale commit 都进入 resource
+snapshot。overview 与已缓存的粗层级在目标 tile 到达前保持，单 tile 失败不会制造空白棋盘。
+短期 tile URL 过期或首次拉取失败时只重新批签一次；仍失败的区域继续由 overview/粗层级覆盖。
+
+背景路径不读取 `navigator.gpu`。Raster Mask 的 WebGPU/CPU 计算与图片 tile 是独立资源域，只共享
+full-resolution viewport；联合压力协调另有独立边界。
+
 ## API 边界
 
 Task 列表和详情只附带 `image_pyramid` 轻量摘要，不附完整 levels 或 URL。
@@ -106,6 +135,9 @@ generation、level/grid 坐标和对象存在性，再统一签发到期时间�
 
 对象缺失或 source fence 不匹配时，不返回 URL，并把 active generation 标记为不一致或陈旧。retry 对
 pending/building 是幂等的，对失败请求有冷却和频率限制。
+
+Minimap、评论画布和相邻任务预取只消费 thumbnail/overview；审核页复用同一个图片源与调度器。ML Backend、
+导出和用户显式下载原文件仍使用 original，不把有损 WebP tile 当权威媒体。
 
 ## 资源与生命周期
 
@@ -126,3 +158,4 @@ lease、非 active 旧代次和孤儿前缀。source 或 owner 删除时同步�
 不使用普通媒体缓存的固定期限 lifecycle。
 
 相关运维步骤见[图片金字塔运行手册](/ops/runbooks/image-pyramid)。
+客户端选择与资源决策见 [ADR-0063](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/0063-konva-viewport-image-tiles.md)。

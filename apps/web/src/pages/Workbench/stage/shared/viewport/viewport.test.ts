@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fitToCanvas } from "./fit";
-import { SCALE_RANGE, clampScale, zoomAtPoint } from "./zoom";
+import { SCALE_RANGE, clampScale, fitAwareScaleRange, zoomAtPoint } from "./zoom";
 import { dashToWorld, screenToWorld } from "./scaleCancel";
 
 describe("fitToCanvas", () => {
@@ -40,6 +40,16 @@ describe("clampScale", () => {
     expect(clampScale(5, { min: 1, max: 4 })).toBe(4);
     expect(clampScale(0.5, { min: 1, max: 4 })).toBe(1);
   });
+
+  it("大图下限放宽到当前视口的适应比例", () => {
+    const range = fitAwareScaleRange(1200, 800, 21_600, 10_800);
+    expect(range.min).toBeCloseTo(1200 / 21_600);
+    expect(range.max).toBe(SCALE_RANGE.max);
+  });
+
+  it("普通图片仍保持默认 20% 下限", () => {
+    expect(fitAwareScaleRange(1200, 800, 1200, 800)).toEqual(SCALE_RANGE);
+  });
 });
 
 describe("zoomAtPoint", () => {
@@ -67,6 +77,12 @@ describe("zoomAtPoint", () => {
   it("clamp 后 scale 未变 → 原样返回同一引用(不抖动)", () => {
     const vp = { scale: SCALE_RANGE.max, tx: 10, ty: 20 };
     expect(zoomAtPoint(vp, 100, 100, 999)).toBe(vp);
+  });
+
+  it("自定义大图下限时可从 20% 以下继续缩小", () => {
+    const range = fitAwareScaleRange(1200, 800, 21_600, 10_800);
+    const next = zoomAtPoint({ scale: 0.1, tx: 0, ty: 0 }, 600, 400, 0.08, range);
+    expect(next.scale).toBeCloseTo(0.08);
   });
 });
 

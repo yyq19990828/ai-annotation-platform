@@ -15,6 +15,10 @@ import { CommentsPanel } from "@/pages/Workbench/shell/CommentsPanel";
 import { ReviewerMiniPanel } from "./ReviewerMiniPanel";
 import { useAuthStore } from "@/stores/authStore";
 import type { ReviewClaimResponse } from "@/types";
+import {
+  useWorkbenchImageSource,
+  workbenchImagePreviewUrl,
+} from "@/pages/Workbench/stage/useWorkbenchImageSource";
 
 type DiffMode = "final" | "raw" | "diff";
 
@@ -50,6 +54,11 @@ export function ReviewWorkbench({
   onNext,
 }: ReviewWorkbenchProps) {
   const { data: task } = useTask(taskId);
+  const { source: imageSource, retry: retryImagePyramid } = useWorkbenchImageSource(
+    task,
+    task?.dataset_item_id ?? task?.id ?? null,
+  );
+  const imagePreviewUrl = workbenchImagePreviewUrl(imageSource);
   const { data: project } = useProject(task?.project_id ?? "");
   const { data: annotationsData } = useAnnotations(taskId);
   const predictionsInfinite = usePredictions(taskId);
@@ -210,6 +219,12 @@ export function ReviewWorkbench({
 
         <ImageStage
           fileUrl={task?.file_url ?? null}
+          imageSource={imageSource}
+          onRetryImagePyramid={retryImagePyramid}
+          mediaKey={task?.dataset_item_id ?? task?.id ?? null}
+          blurhash={task?.blurhash}
+          imageWidth={task?.image_width}
+          imageHeight={task?.image_height}
           tool="hand"
           activeClass=""
           selectedId={selectedId}
@@ -248,7 +263,7 @@ export function ReviewWorkbench({
             annotationId={selectedAnnotation.id}
             projectId={selectedAnnotation.project_id}
             currentUserId={meUserId}
-            backgroundUrl={task?.file_url ?? null}
+            backgroundUrl={imagePreviewUrl}
             enableCanvasDrawing
             annotationClassById={annotationClassById}
             onSelectAnnotation={setSelectedId}

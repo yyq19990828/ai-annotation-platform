@@ -56,9 +56,13 @@ docker compose exec celery-worker-image-pyramid \
 | `IMAGE_PYRAMID_URL_EXPIRY_SECONDS`     |         `900` | overview/tile URL 有效期      |
 | `IMAGE_PYRAMID_RETRY_COOLDOWN_SECONDS` |         `300` | 失败后重试冷却                |
 | `IMAGE_PYRAMID_VIPS_CONCURRENCY`       |           `4` | 单 job libvips 并发           |
+| `VITE_EXPERIMENTAL_LARGE_IMAGE_TILES`  |        `true` | 前端是否选择 ready pyramid    |
 
 `profile_version` 或 `normalization_version` 变更会产生新资产身份/输出合同，不能只改一台 Worker。所有 API、
 media Worker 和 image-pyramid Worker 必须使用一致值。
+
+`VITE_EXPERIMENTAL_LARGE_IMAGE_TILES` 是 Vite build-time 开关，修改后必须重建 Web 镜像。它与
+`IMAGE_PYRAMID_AUTO_GENERATE` 独立：前者只控制浏览器选择，后者只控制新资产是否自动入队。
 
 ## 安全启用与回填
 
@@ -130,6 +134,12 @@ generation。可用重复的 `--id <fixture-id>` 缩小范围。production 环�
 - 队列持续增长且 Worker 无 ready 结果；
 - Worker RSS 接近 `--max-memory-per-child` 或临时卷接近容量上限。
 
+浏览器 BUG 反馈会附带 `Large Image Tile Diagnostics`，其中包括 current level、visible/desired tile、
+queue/fetch/decode 状态、cache hit/eviction、requested/decoded/reserved/retained/budget bytes、
+ImageBitmap/HTML image/ObjectURL 存量、abort、stale commit、签发批次数、URL 刷新和目标细节
+coverage。该快照不包含签名 URL、storage key 或文件名。排查长会话时应确认停止交互后
+retained/live/request 进入平台档位内 plateau，离开任务后 reserved/retained/live 全部归零。
+
 ## 故障码处理
 
 | 错误码                                  | 含义                                   | 处理                                             |
@@ -154,8 +164,9 @@ Celery beat 每日触发 reconciliation，分批处理过期 lease、失败/旧 
 紧急回滚时：
 
 1. 设 `IMAGE_PYRAMID_AUTO_GENERATE=false` 并重启 API/media Worker；
-2. 停止专用 Worker，保留数据库表和 ready 对象；
-3. 客户端继续使用原图片路径；
-4. 不通过批量删除 ready 对象回滚。
+2. 如需停止客户端选择，设 `VITE_EXPERIMENTAL_LARGE_IMAGE_TILES=false` 并重建 Web 镜像；
+3. 停止专用 Worker，保留数据库表和 ready 对象；
+4. required 大图会显示当前产品限制与安全预览，不会自动退回无界整图解码；
+5. 不通过批量删除 ready 对象回滚。
 
 保留状态后可以修复 Worker 并显式 retry，无需重新上传 source。

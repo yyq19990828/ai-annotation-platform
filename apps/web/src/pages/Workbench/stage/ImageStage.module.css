@@ -28,6 +28,39 @@
   font-size: 13px;
 }
 
+.pyramidStatus {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+  background: var(--sc-card);
+  color: var(--sc-muted-foreground);
+  padding: 6px 10px;
+  font-size: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.pyramidRetryButton {
+  border: 0;
+  border-radius: var(--sc-radius-sm);
+  background: var(--sc-primary);
+  color: var(--sc-primary-foreground);
+  padding: 3px 7px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pyramidRetryButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .konvaHost {
   position: absolute;
   top: 0;

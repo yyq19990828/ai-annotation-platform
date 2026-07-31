@@ -92,6 +92,7 @@ export interface TaskResponse {
   image_height: number | null;
   thumbnail_url: string | null;
   blurhash: string | null;
+  image_pyramid?: import("@/pages/Workbench/stage/imagePyramid").ImagePyramidSummary | null;
   video_metadata: VideoMetadata | null;
   // v0.6.5 · 状态机锁定相关
   submitted_at: string | null;

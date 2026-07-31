@@ -89,6 +89,7 @@ services:
       dockerfile: infra/docker/Dockerfile.web
       args:
         VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU: ${VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU:-true}
+        VITE_EXPERIMENTAL_LARGE_IMAGE_TILES: ${VITE_EXPERIMENTAL_LARGE_IMAGE_TILES:-true}
     # 容器内 nginx 监听 80：托管静态产物 + 反代 /api/ /ws/ 到 api:8000。
     # 宿主端口 8088 避开 dev 前端 3000 与 grafana 3001；生产由外层反代 (nginx/Caddy) 终结 TLS 指向它。
     # 同 api：默认绑回环，反代异机时用 PROXY_BIND_HOST 覆盖（见上）。
