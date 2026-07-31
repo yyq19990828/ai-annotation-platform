@@ -327,6 +327,20 @@ pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物�
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
 
+真实超大图回归使用固定来源、字节数和 SHA-256 的开发夹具。基础服务和专用
+`image-pyramid` Worker 启动后，可下载、入库并等待生成完成：
+
+```bash
+pnpm --filter @anno/web image:seeds
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --enqueue-pyramids --wait-seconds 1800
+```
+
+命令幂等创建 `P-LARGE-IMG` / `DS-LARGE-IMG`，原图只保存在 gitignored 的
+`test-results/image-seeds/` 与当前开发对象存储；production 环境会拒绝运行。完整门槛、回填与诊断见
+[图片金字塔运行手册](docs-site/ops/runbooks/image-pyramid.md)。
+
 ## 截图自动化
 
 用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，

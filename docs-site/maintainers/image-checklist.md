@@ -254,6 +254,17 @@
 - [x] `images/workbench/ocr-real-scene.gif` — 真实 RapidOCR 当前题从派发、推理中到生成文本多边形候选 `[auto-gif]`（flows/ocr-inference，P-OCR）
 - [x] `images/workbench/ocr-real-scene.png` — OCR 面板无脚本静态备用图 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
+
+#### 超大图片
+
+> 固定项目/数据集为 `P-LARGE-IMG` / `DS-LARGE-IMG`。服务端 pyramid 夹具已经可生成，但当前工作台
+> 尚未消费 tile；前两项必须等客户端视口 tile、状态提示和 screenshot seed catalog 接入后再拍，不能用
+> 整图加载画面冒充渐进 LOD。
+
+- [ ] `images/workbench/large-image-progressive-detail.gif` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含快速平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[auto-gif]`
+- [ ] `images/workbench/large-image-pyramid-status.png` — required 超大图的“高清切片生成中”与失败/重试状态；不得自动请求整张原图 **[Tier A]** `[auto]`
+- [ ] `images/mask-brush/large-image-limit.png` — 超大底图仍可浏览并使用矢量工具，同时 Mask 能力明确显示尺寸超限原因 **[Tier A]** `[auto]`（可先用 `P-LARGE-IMG` 建 scene）
+
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，落库类型由任务 Mask 能力决定）
 - [ ] `images/mask-brush/video-mask-track-edit.gif` — 视频帧按 `M` 从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷 / 橡皮修正 → `Enter` 物化第二个人工关键帧；同时露出 Mask、轨迹卡和时间轴关键帧变化 **[Tier A]** `[auto-gif]`（需新增 flow，结束后恢复 screenshot seed）

@@ -1,8 +1,9 @@
 ---
 title: 图片金字塔运行手册
-audience:
-  - operator
-  - backend
+audience: [ops]
+type: how-to
+status: stable
+last_reviewed: 2026-07-31
 ---
 
 # 图片金字塔运行手册
@@ -94,6 +95,18 @@ pnpm --filter @anno/web image:seeds -- --verify-only
 
 清单包含高熵 RGB PNG、接近硬上限的超宽 JPEG 和 optional 边界的超高 RGBA 竖图。每项记录 NASA
 官方来源页、原始下载地址、署名和媒体使用政策；自动化输出不得暗示 NASA 或合作机构背书。
+
+当前开发栈可把已校验原图导入固定项目/数据集，并显式等待专用 Worker 生成完成：
+
+```bash
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --enqueue-pyramids --wait-seconds 1800
+```
+
+命令幂等创建 `P-LARGE-IMG` / `DS-LARGE-IMG` 与逐图 Task。它不会开启全局
+`IMAGE_PYRAMID_AUTO_GENERATE`，只为本次选中的 eligible 夹具入队；重复运行复用同源 active
+generation。可用重复的 `--id <fixture-id>` 缩小范围。production 环境会拒绝执行。
 
 观察连续任务的 RSS、临时盘、失败率和队列积压稳定后，才把
 `IMAGE_PYRAMID_AUTO_GENERATE=true` 注入 API/media Worker 与专用 Worker，并重建或重启对应服务。

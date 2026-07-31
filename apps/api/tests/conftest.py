@@ -38,10 +38,11 @@ os.environ["E2E_SEED_ENABLED"] = "true"
 
 
 def _default_test_db_url() -> str:
-    """默认测试库：跟随本环境 .env 的 DATABASE_URL（host/port/账号/驱动），库名固定
-    annotation_test。这样多 worktree（各连不同 postgres 端口，如点云隔离栈 5433）无需
-    手动设 TEST_DATABASE_URL。CI / 显式场景仍可用 TEST_DATABASE_URL 覆盖（见 test_db_url）。
-    settings 不可用时回退到历史默认（localhost:5432）。"""
+    """默认测试库：跟随本环境 .env 的迁移连接（host/port/账号/驱动），库名固定
+    annotation_test。测试 fixture 需要运行 Alembic 并直接写表，因此分离数据库角色时
+    使用 schema owner；单角色环境仍回退 DATABASE_URL。多 worktree（各连不同 postgres
+    端口，如点云隔离栈 5433）无需手动设 TEST_DATABASE_URL。CI / 显式场景仍可用
+    TEST_DATABASE_URL 覆盖（见 test_db_url）。settings 不可用时回退到历史默认。"""
     try:
         from sqlalchemy.engine import make_url
 
@@ -50,7 +51,7 @@ def _default_test_db_url() -> str:
         # render_as_string(hide_password=False)：str(URL) 会把密码渲染成 ***，
         # 直接用会导致认证失败，必须显式不隐藏。
         return (
-            make_url(settings.database_url)
+            make_url(settings.effective_migration_database_url)
             .set(database="annotation_test")
             .render_as_string(hide_password=False)
         )

@@ -90,6 +90,8 @@
   同一套代码在三种环境下的运行差异（谁进容器 / profile / ENVIRONMENT 断言）
 - [性能 HUD](./perfhud)：
   开发期内置性能面板的原理与使用
+- [超大图金字塔派生资产](./image-pyramid-assets)：
+  超大源图如何生成不可变 overview/tile、怎样安全交付，以及现实开发夹具如何复现
 
 ## 尚未覆盖（待补充）
 

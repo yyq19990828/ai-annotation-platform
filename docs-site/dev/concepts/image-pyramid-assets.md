@@ -1,9 +1,9 @@
 ---
 title: 超大图金字塔派生资产
-audience:
-  - backend
-  - frontend
-  - platform
+audience: [dev]
+type: explanation
+status: stable
+last_reviewed: 2026-07-31
 ---
 
 # 超大图金字塔派生资产
@@ -12,6 +12,27 @@ audience:
 权威数据，金字塔可重建，不能反向覆盖 source。
 
 当前图片工作台尚不消费 tile；Task API 已提供稳定合同，供客户端切换时复用。
+
+## 可复现开发夹具
+
+浏览器基准、文档截图和服务端生成验证共用
+`apps/web/scripts/image-bench/fixtures.json` 的 `realLargeImages` 清单。三种输入分别覆盖高熵 RGB、
+接近硬上限的超宽 JPEG，以及 optional 门附近的超高 RGBA 竖图；清单固定尺寸、字节数、SHA-256、
+来源页、署名和使用政策。
+
+下载器只把原图写到 gitignored 的 `test-results/image-seeds/`。API 脚本会在写数据库和对象存储前再次
+核对完整性，幂等创建 `P-LARGE-IMG` / `DS-LARGE-IMG` 和逐图 Task，并可显式入队、等待 generation
+进入终态：
+
+```bash
+pnpm --filter @anno/web image:seeds
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --enqueue-pyramids --wait-seconds 1800
+```
+
+该入口只服务 development/staging，production 会拒绝执行。固定资源带 seed ownership 标记；如果同一
+display ID 已被其它数据占用，脚本不会自动接管或覆盖。
 
 ## 所有权与代次
 

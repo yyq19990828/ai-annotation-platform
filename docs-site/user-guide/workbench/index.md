@@ -3,7 +3,7 @@ audience: [annotator]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-07-31
 ---
 
 # 标注工作台 — 界面与快捷键
@@ -25,6 +25,19 @@ last_reviewed: 2026-07-14
 图片与视频画布右下角提供缩小、当前比例、放大和「适应」浮条，并贴齐画布可用区域的右侧边缘；图片任务还会在同一浮条中显示撤销 / 重做。浮条相对画布定位，展开或收起侧栏后会随画布边界一起移动。
 
 图片交互工具、批量预标候选和视频追踪的入口、结果与审阅方式不同。按任务选择说明见 [AI 辅助标注](../ai/)，图片候选的接受 / 拒绝与数据边界见[审阅 AI 候选](../ai/candidate-review)。
+
+## 超大图片的当前行为
+
+<!-- TODO IMAGE_CHECKLIST: images/workbench/large-image-progressive-detail.gif — overview 到目标 LOD 的渐进清晰过程 [auto-gif] -->
+<!-- TODO IMAGE_CHECKLIST: images/workbench/large-image-pyramid-status.png — required 超大图生成中与失败/重试状态 [auto] -->
+
+图片背景浏览不要求 WebGPU；没有独立 GPU 的浏览器仍可打开、缩放和平移图片。目前工作台会一次加载并
+解码完整源图，因此数千万像素以上图片的首次出现时间和内存占用仍取决于浏览器与客户端资源。若画布长期
+停留在空白或透明占位，请先刷新一次；仍失败时保留任务编号并联系管理员，不要在看不到底图时继续标注。
+
+背景图片尺寸与 Raster Mask 编辑上限是两条独立边界：能够查看超大底图，不代表能创建同尺寸 Mask。
+Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可使用 bbox、Polygon 等矢量工具，具体限制见
+[Mask 笔刷编辑器的“大画布图片”](./mask-brush#大画布图片)。
 
 顶部 ⚙ 菜单里可以打开“隐藏孤儿标注”。孤儿标注指项目设置中已删除当前类别定义、但历史标注仍保留旧 `class_name` 的数据；开关打开后画布和右侧人工列表会同步隐藏，关闭时列表行会以“已删除”标记提示。
 

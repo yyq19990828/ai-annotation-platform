@@ -35,9 +35,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **现实超大图可一键进入当前开发栈并生成金字塔**. 固定 SHA-256 的 NASA 高熵、超宽和超高图片可幂等导入专用项目/数据集、创建可打开 Task，并显式入队等待 pyramid 终态，供浏览器回归、性能基准与文档截图共用。
+
 ### Fixed
 
 - **运行角色收紧为无 DDL 权限后仍可正常启动和迁移**. Alembic 支持独立的 schema-owner 数据库连接，API/Celery 继续使用最小权限运行连接；Compose 只让指定迁移入口自动升级，避免每个 Worker 都持有 DDL 凭据。
+- **现实大图下载器不再把夹具写进错误的 `apps/test-results` 目录**. 默认输出现在与文档和 gitignore 一致落在仓库根 `test-results/image-seeds`；同时刷新 NASA 官方已替换字节的竖图摘要，恢复完整清单下载。
 
 ## [0.23.22] - 2026-07-31
 

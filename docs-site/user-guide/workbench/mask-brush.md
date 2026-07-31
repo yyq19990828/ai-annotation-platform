@@ -60,6 +60,8 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
 
 ## 大画布图片
 
+<!-- TODO IMAGE_CHECKLIST: images/mask-brush/large-image-limit.png — 超大底图可浏览但 Mask 尺寸超限提示 [auto] -->
+
 图片 Mask 最大支持 8192 像素单边和 67,108,864 总像素。任一边超过 4096 或总像素
 超过 16,777,216 时，工作台自动进入分块模式：
 
