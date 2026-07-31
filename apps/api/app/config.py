@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     e2e_seed_enabled: bool = False
 
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/annotation"
+    # Alembic may use a schema-owner connection while API/Celery keep a least-privilege
+    # runtime role. Empty/unset preserves the historical single-connection behavior.
+    migration_database_url: str | None = None
     redis_url: str = "redis://localhost:6379/0"
 
     # CORS — dev 默认允许三个常见前端端口 + localhost regex；
@@ -447,6 +450,10 @@ class Settings(BaseSettings):
     @property
     def effective_celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url
+
+    @property
+    def effective_migration_database_url(self) -> str:
+        return self.migration_database_url or self.database_url
 
     @property
     def smtp_configured(self) -> bool:

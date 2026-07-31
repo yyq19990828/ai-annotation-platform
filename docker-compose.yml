@@ -78,6 +78,7 @@ services:
     command: celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL_DOCKER:-}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -142,6 +143,7 @@ services:
     command: celery -A app.workers.celery_app worker -l info -Q image-pyramid --concurrency=1 --prefetch-multiplier=1 --max-memory-per-child=1572864
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -192,6 +194,7 @@ services:
     command: celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -242,6 +245,7 @@ services:
     command: celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=${CELERY_GPU_CONCURRENCY:-2}
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -293,6 +297,7 @@ services:
     command: celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=${CELERY_CPU_CONCURRENCY:-4}
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -333,6 +338,7 @@ services:
     command: celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -380,6 +386,7 @@ services:
     command: celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin

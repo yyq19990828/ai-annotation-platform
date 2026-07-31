@@ -35,6 +35,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **运行角色收紧为无 DDL 权限后仍可正常启动和迁移**. Alembic 支持独立的 schema-owner 数据库连接，API/Celery 继续使用最小权限运行连接；Compose 只让指定迁移入口自动升级，避免每个 Worker 都持有 DDL 凭据。
+
 ## [0.23.22] - 2026-07-31
 
 ### Added

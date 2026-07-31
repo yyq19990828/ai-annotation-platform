@@ -40,13 +40,17 @@ last_reviewed: 2026-07-30
 
 ### 2.1 数据库 (PostgreSQL)
 
-| 变量                                                  | 默认                           | 说明                                                                                                                                                                                                                                          |
-| ----------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL` **必填**                               | dev 连本机                     | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
-| `DATABASE_URL_DOCKER`                                 | dev 连 `postgres` service      | 仅供开发态 Compose 内的 Celery worker 使用；可独立切换到非 owner、非超级用户的普通应用角色。生产叠加文件继续统一读取 `DATABASE_URL`。                                                                                                         |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。                                                                     |
+| 变量                                                  | 默认                           | 说明                                                                                                                                                                             |
+| ----------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` **必填**                               | dev 连本机                     | API/Celery 运行连接。格式为 `postgresql+asyncpg://用户名:密码@主机:端口/库`；托管库走 SSL 用 `?ssl=require`。密码含特殊字符要 URL 编码。可使用无 schema DDL 权限的普通应用角色。 |
+| `MIGRATION_DATABASE_URL`                              | 空 → `DATABASE_URL`            | Alembic 专用 schema-owner 连接。运行角色没有 `public` schema CREATE 权限时必须配置；API/Celery 业务连接不会读取它。                                                              |
+| `DATABASE_URL_DOCKER`                                 | dev 连 `postgres` service      | 仅供开发态 Compose 内的 Celery worker 使用；可独立切换到非 owner、非超级用户的普通应用角色。生产叠加文件继续统一读取 `DATABASE_URL`。                                            |
+| `MIGRATION_DATABASE_URL_DOCKER`                       | 空 → Worker 运行连接           | 仅供开发态 Compose 的指定迁移入口使用，地址通常为 `postgres:5432`。其他 Worker 设置 `ALEMBIC_AUTO_UPGRADE=false`，不接收 DDL 凭据。                                              |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用。分离角色时对应 schema owner / `MIGRATION_DATABASE_URL`，不要求与普通运行连接同角色；用托管 RDS/Cloud SQL 时忽略。              |
 
-容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）在启动时**自动** `alembic upgrade head`，无需手动跑。进程式部署才需手动 `uv run alembic upgrade head`（见 §4.5）。
+容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）使用迁移连接自动执行
+`alembic upgrade head`，随后清除 owner 连接再启动应用；生产 Worker 禁止重复自动迁移。
+进程式部署需在启动 API 前执行同一命令（见 §4.5）。
 
 ### 2.2 缓存 / 消息队列 (Redis)
 
@@ -469,7 +473,13 @@ A: 即使前后端同源也要设。回填 `CORS_ALLOW_ORIGINS=["https://app.exa
 A: 检查 nginx `proxy_read_timeout`。默认 60s 会被 30s 心跳保住，但反代链路上还有别的 LB（云厂商 ALB / WAF）也要 ≥ 60s。
 
 **Q: `uv run alembic upgrade head` 报 `psycopg2 not installed` / 类似错误**
-A: 这个项目用 asyncpg。Alembic 配置在 `apps/api/alembic.ini` 里指向 `app.db.base`，确保 `DATABASE_URL` 走 `postgresql+asyncpg://`。
+A: 这个项目用 asyncpg。Alembic 配置在 `apps/api/alembic.ini` 里指向 `app.db.base`，确保
+`MIGRATION_DATABASE_URL`（未设置时为 `DATABASE_URL`）使用 `postgresql+asyncpg://`。
+
+**Q: 启动时报 `permission denied for schema public`**
+A: 运行连接使用了无 DDL 权限的普通角色，但没有配置迁移连接。保持 `DATABASE_URL` 不变，
+将 schema owner 的 asyncpg URL 写入 `MIGRATION_DATABASE_URL`；不要永久给运行角色授予
+`public` schema CREATE 权限。
 
 **Q: ML Backend 测试连接 504**
 A: 接入方实现的 `/health` 没在 `ml_health_timeout`（10s）内返回。如果你的 backend 冷启动慢，调高 `ML_HEALTH_TIMEOUT`，或在 backend 侧加 warm-up endpoint。详见 [`ml-backend-protocol.md`](/dev/reference/ml-backend-protocol)。

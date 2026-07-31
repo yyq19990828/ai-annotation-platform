@@ -20,6 +20,8 @@
 # worker/beat 共用：覆盖基础文件硬编码的 dev infra 凭据，全部从 .env.production 取（缺失即报错）。
 x-prod-infra-env: &prod-infra-env
   DATABASE_URL: ${DATABASE_URL:?.env.production 必须设置 DATABASE_URL}
+  MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
+  ALEMBIC_AUTO_UPGRADE: "false"
   REDIS_URL: ${REDIS_URL:?.env.production 必须设置 REDIS_URL}
   MINIO_ENDPOINT: ${MINIO_ENDPOINT:?.env.production 必须设置 MINIO_ENDPOINT}
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?.env.production 必须设置 MINIO_ACCESS_KEY}

@@ -128,7 +128,12 @@ pnpm dev:web
 pnpm dev:api
 ```
 
-等价命令为 `cd apps/api && uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3`；依赖由一次性 setup 中的 `uv sync --extra test` 安装，不要在本地手工拼装依赖列表。
+该命令先执行 `alembic upgrade head`，再启动
+`uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3`。若 `DATABASE_URL`
+使用无 DDL 权限的普通运行角色，在 `.env` 另设 schema owner 的
+`MIGRATION_DATABASE_URL`；FastAPI 仍只使用 `DATABASE_URL`。依赖由一次性 setup 中的
+`uv sync --extra test` 安装，不要在本地手工拼装依赖列表。迁移完成后启动脚本会清空
+owner 连接，运行进程不保留 DDL 凭据。
 
 > `--timeout-graceful-shutdown 3`：代码改动触发 `--reload` 时，若有浏览器标签页还连着
 > WebSocket（工作台 / AI 预标页），uvicorn 默认会无限等待这些连接结束，卡在

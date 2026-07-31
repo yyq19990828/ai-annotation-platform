@@ -17,13 +17,16 @@ last_reviewed: 2026-07-31
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串，格式：postgresql+asyncpg://用户名:密码@主机:端口/数据库名 本地开发可直接使用下方默认值；生产环境请替换为真实凭据 注：驱动必须是 postgresql+asyncpg；托管库走 SSL 时用 ?ssl=require（asyncpg 不认 sslmode=） |
+| `MIGRATION_DATABASE_URL` | `—` | 可选的 Alembic schema-owner 连接；运行角色没有 DDL 权限时必须配置。 未设置或留空时迁移仍回退 DATABASE_URL，保持单角色部署兼容。 |
 | `DATABASE_URL_DOCKER` | `postgresql+asyncpg://user:pass@postgres:5432/annotation` | 仅供开发态 Compose 内的 Celery worker 使用；容器访问 PostgreSQL 应使用 postgres 服务名。 GPU collector 启用前请改成独立、非 owner、非超级用户且无 membership/fence DELETE 的应用角色。 生产叠加文件仍统一读取 DATABASE_URL，不使用此项。 |
+| `MIGRATION_DATABASE_URL_DOCKER` | `—` | 仅供开发态 Compose 的指定迁移入口使用；容器地址通常为 postgres:5432。 |
+| `ALEMBIC_AUTO_UPGRADE` | `true` | API 镜像 entrypoint 是否自动执行 Alembic；生产 API 保持 true，普通 Worker 由 Compose 强制为 false。仅在部署平台已有独立 migration job 时关闭。 |
 
 ## 仅供 docker-compose.yml 里的 postgres 容器初始化用（后端不读这三项）。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `POSTGRES_USER` | `user` | 若沿用 compose 自带的 postgres 容器，生产请在此设强凭据，且必须与上面 DATABASE_URL 的 用户名/密码/库名完全一致；用托管 RDS/Cloud SQL 时这三项可忽略。 |
+| `POSTGRES_USER` | `user` | 若沿用 compose 自带的 postgres 容器，生产请在此设强凭据；分离运行/迁移角色时应与 MIGRATION_DATABASE_URL 的 owner 凭据对应，而 DATABASE_URL 可使用普通应用角色。 用托管 RDS/Cloud SQL 时这三项可忽略。 |
 | `POSTGRES_PASSWORD` | `pass` | — |
 | `POSTGRES_DB` | `annotation` | — |
 
