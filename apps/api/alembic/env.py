@@ -60,6 +60,12 @@ def do_run_migrations(connection: Connection) -> None:
         with context.begin_transaction():
             context.run_migrations()
         connection.commit()
+    except Exception:
+        # PostgreSQL marks the transaction aborted after any failed DDL. Roll it
+        # back before the session-level unlock, otherwise the unlock itself raises
+        # InFailedSQLTransaction and hides the migration's real root cause.
+        connection.rollback()
+        raise
     finally:
         connection.execute(
             text("SELECT pg_advisory_unlock(:k)").bindparams(k=_ALEMBIC_LOCK_ID)

@@ -108,6 +108,12 @@ services:
       <<: *prod-infra-env
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
 
+  celery-worker-image-pyramid:
+    env_file:
+      - .env.production
+    environment:
+      <<: *prod-infra-env
+
   celery-worker-gpu-control:
     env_file:
       - .env.production

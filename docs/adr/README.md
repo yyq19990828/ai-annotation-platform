@@ -104,3 +104,4 @@
 - [0059](0059-raster-mask-dense-word-scatter-over-sparse-compaction.md) — Raster Mask 保留 dense word-scatter，不采用 atomic sparse compaction
 - [0060](0060-default-enable-capability-gated-client-acceleration.md) — 默认启用按客户端能力安全回退的 WebCodecs 与 Raster Mask WebGPU
 - [0061](0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) — Raster Mask 大 ROI 使用 packed CPU fallback、双预算与独立 WebGPU 熔断
+- [0062](0062-immutable-image-pyramid-assets.md) — 超大图采用不可变代次金字塔与批量鉴权交付

@@ -86,6 +86,7 @@ export function createDevSidebar(
               link: "/dev/concepts/runtime-environments",
             },
             { text: "性能 HUD", link: "/dev/concepts/perfhud" },
+            { text: "超大图金字塔派生资产", link: "/dev/concepts/image-pyramid-assets" },
           ],
         },
       ],

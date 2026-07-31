@@ -6,6 +6,7 @@ from typing import Literal
 from app.schemas._jsonb_types import LidarAxisConvention, SensorCalibration
 from app.schemas.scene_pose import FramePose
 from app.schemas.user import UserBrief
+from app.schemas.image_pyramid import ImagePyramidSummary
 
 
 class VideoMetadata(BaseModel):
@@ -48,6 +49,7 @@ class TaskOut(BaseModel):
     image_height: int | None = None
     thumbnail_url: str | None = None
     blurhash: str | None = None
+    image_pyramid: ImagePyramidSummary | None = None
     video_metadata: VideoMetadata | None = None
     # v0.6.5 · 状态机锁定相关
     submitted_at: datetime | None = None

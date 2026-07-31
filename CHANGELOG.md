@@ -35,6 +35,25 @@
 
 ## [Unreleased]
 
+## [0.23.22] - 2026-07-31
+
+### Added
+
+- **超大图获得不可变代次金字塔生成与安全交付地基**. DatasetItem 共享或 direct Task 独占的 asset 现在以数据库约束和 generation lease 单飞生成 full-resolution-first、512 core + 1px overlap 的 WebP 金字塔；专用单并发 Worker 使用 pyvips/libvips 流式处理 EXIF、ICC、灰度与 alpha，在完整网格、edge、摘要和远端对象校验后才原子发布 ready。源字节、解码像素、tile、派生/临时字节、分阶段耗时、状态和 GC 均可观测。
+- **Task API 提供轻量金字塔状态、manifest 与批量私有资源签发**. Task 列表/详情只附带 O(1) summary；鉴权 manifest 支持 source/generation fence、private ETag/304 和短期 overview，最多 128 项的 overview/tile batch 只接受逻辑坐标并在验证对象存在后签发，缺失对象会使 generation 自失效而不是返回坏 URL。失败重试具备幂等、冷却和频率限制。
+- **提供有界回填与生命周期对账工具**. 管理脚本可按 cursor、owner 类型和 dry-run 小批量入队；每日 reconciliation 回收过期 lease、旧代次和孤儿前缀，source/DatasetItem 删除同步清理派生对象，金字塔不进入普通媒体缓存的固定期限 lifecycle。
+- **现实大图 seed 可按需校验下载**. 浏览器 E2E、性能基准和文档截图可从 NASA 官方来源顺序获取高熵 RGB PNG、接近硬上限的超宽 JPEG 与 optional 边界 RGBA 竖图；manifest 固定尺寸、字节数、SHA-256、署名和媒体使用政策，原图只进入 gitignored 测试目录。
+
+### Changed
+
+- **普通图片 thumbnail 不再先把整个对象聚合进 Python bytes**. 小图缩略图改为流式下载到临时文件后解码，逻辑尺寸按 EXIF orientation 探测；达到金字塔门槛的图片不会再走 Pillow 整图解码，启用自动生成时转入专用队列。direct Task 缩略图同时统一写入 media-cache bucket，使读取和生命周期路由一致。
+- **API 镜像加入 libvips 与 sRGB ICC profile 运行依赖**. image-pyramid Worker 固定 libvips 并发、缓存和 allocator 回收参数，并以独立队列、单并发、prefetch 1 和子进程内存上限隔离大图资源域；自动生成默认关闭，部署可先发布 schema/API 再分批开启。
+
+### Fixed
+
+- **Alembic 迁移失败不再被 advisory unlock 的二次事务错误掩盖**. PostgreSQL DDL 失败后会先回滚 aborted transaction 再释放 session lock，日志保留原始迁移根因。
+- **金字塔生成期间替换源对象不会发布陈旧像素**. Worker 在生成前和发布前分别校验 ETag、字节数与可用对象版本，API 读取也执行同一 fence；旧 generation 会稳定进入 stale/failed，而不会继续和新标注坐标叠加。
+
 ## [0.23.21] - 2026-07-31
 
 ### Added

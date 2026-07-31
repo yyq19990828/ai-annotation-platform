@@ -491,6 +491,14 @@
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | DELETE | `/{task_id}/annotations/{annotation_id}` |
 
+## `tasks/image_pyramid.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/image-pyramid` |
+| POST | `/{task_id}/image-pyramid/asset-urls` |
+| POST | `/{task_id}/image-pyramid/retry` |
+
 ## `tasks/lifecycle.py`
 
 | Method | Path |
@@ -615,4 +623,4 @@
 
 ---
 
-_共 58 模块 / 343 路由_
+_共 59 模块 / 346 路由_

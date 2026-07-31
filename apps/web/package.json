@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.23.21",
+  "version": "0.23.22",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -31,6 +31,7 @@
     "size": "node scripts/check-bundle-size.mjs",
     "video:bench": "node scripts/video-bench/run-video-bench.mjs",
     "image:bench": "node scripts/image-bench/run-image-bench.mjs",
+    "image:seeds": "node scripts/image-bench/fetch-real-large-images.mjs",
     "mask:bench": "node scripts/benchmark-image-raster-mask.mjs",
     "mask:operations-bench": "node scripts/benchmark-mask-operations.mjs",
     "mask:large-canvas-bench": "node scripts/benchmark-mask-large-canvas.mjs",

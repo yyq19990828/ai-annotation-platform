@@ -24,9 +24,6 @@
 详见
 [v0.23.21–v0.23.25 超大图 Tile 与 Raster Mask 客户端计算 Epic](docs/plans/2026-07-31-v0.23.21-v0.23.25-large-image-tile-webgpu-epic.md)。
 
-- v0.23.22 建立 50MP 以上图片的 immutable 512px 金字塔、规范化坐标合同、active/building
-  generation、manifest、overview/tile URL 批签、幂等生成、重试与派生资产 GC；不复制现有会
-  整图读入内存的 Pillow thumbnail 路径。
 - v0.23.23 接入 viewport LOD、ancestor coverage、有界 ImageBitmap/HTMLImageElement LRU 和
   Konva 背景 tile，并同步收口邻题预取、Minimap、审核与评论画布的隐藏整图解码。背景 tile
   不依赖 WebGPU，没有 GPU 的客户端仍可完整使用。

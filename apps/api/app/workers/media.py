@@ -69,6 +69,28 @@ FFMPEG_POSTER_TIMEOUT_SECONDS = 60
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 600
 BROWSER_PLAYABLE_VIDEO_CODECS = {"h264", "avc1"}
 SMART_COPY_VIDEO_CODECS = {"h264", "avc1", "hevc", "h265"}
+THUMBNAIL_MAX_SOURCE_BYTES = 512 * 1024 * 1024
+
+
+def _thumbnail_from_path(source_path: Path) -> tuple[bytes, str]:
+    from PIL import Image, ImageOps
+
+    with Image.open(source_path) as source:
+        img = ImageOps.exif_transpose(source).convert("RGB")
+        max_side = 256
+        w, h = img.size
+        scale = min(max_side / w, max_side / h)
+        thumb = img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS
+        )
+
+        import blurhash as bh
+
+        small = img.resize((32, 32), Image.Resampling.LANCZOS)
+        hash_str = bh.encode(small, x_components=4, y_components=3)
+        buf = io.BytesIO()
+        thumb.save(buf, format="WEBP", quality=80)
+        return buf.getvalue(), hash_str
 
 
 def extract_video_poster(input_path: str | Path, output_path: str | Path) -> None:
@@ -206,11 +228,28 @@ async def _generate_thumbnail(item_id: str) -> None:
             return
 
         storage = StorageService()
+        if item.width is None or item.height is None:
+            dimensions = storage.read_image_dimensions(
+                item.file_path, bucket=storage.datasets_bucket
+            )
+            if dimensions:
+                item.width, item.height = dimensions
+                await db.commit()
+        from app.services.image_pyramid import pyramid_eligible
+
+        if pyramid_eligible(item.width, item.height):
+            if settings.image_pyramid_auto_generate:
+                from app.workers.image_pyramid import enqueue_image_pyramid
+
+                enqueue_image_pyramid("dataset_item", item.id)
+            return
+
         try:
-            resp = storage.client.get_object(
+            head = storage.client.head_object(
                 Bucket=storage.datasets_bucket, Key=item.file_path
             )
-            raw = resp["Body"].read()
+            if int(head.get("ContentLength") or 0) > THUMBNAIL_MAX_SOURCE_BYTES:
+                raise RuntimeError("thumbnail_source_too_large")
         except Exception as exc:
             meta = dict(item.metadata_ or {})
             meta["thumbnail_error"] = str(exc)
@@ -219,24 +258,15 @@ async def _generate_thumbnail(item_id: str) -> None:
             return
 
         try:
-            from PIL import Image
-
-            img = Image.open(io.BytesIO(raw)).convert("RGB")
-            max_side = 256
-            w, h = img.size
-            scale = min(max_side / w, max_side / h)
-            thumb = img.resize(
-                (max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS
-            )
-
-            import blurhash as bh
-
-            small = img.resize((32, 32), Image.LANCZOS)
-            hash_str = bh.encode(small, x_components=4, y_components=3)
-
-            buf = io.BytesIO()
-            thumb.save(buf, format="WEBP", quality=80)
-            buf.seek(0)
+            with tempfile.TemporaryDirectory(prefix="anno-thumbnail-") as tmp:
+                source_path = Path(tmp) / "source"
+                with source_path.open("xb") as stream:
+                    storage.client.download_fileobj(
+                        Bucket=storage.datasets_bucket,
+                        Key=item.file_path,
+                        Fileobj=stream,
+                    )
+                thumbnail_bytes, hash_str = _thumbnail_from_path(source_path)
         except Exception as exc:
             meta = dict(item.metadata_ or {})
             meta["thumbnail_error"] = str(exc)
@@ -250,7 +280,7 @@ async def _generate_thumbnail(item_id: str) -> None:
             storage.client.put_object(
                 Bucket=storage.media_cache_bucket,
                 Key=thumb_key,
-                Body=buf.getvalue(),
+                Body=thumbnail_bytes,
                 ContentType="image/webp",
             )
         except Exception as exc:
@@ -499,41 +529,40 @@ async def _generate_task_thumbnail(task_id: str) -> None:
             return
 
         storage = StorageService()
-        try:
-            resp = storage.client.get_object(Bucket=storage.bucket, Key=task.file_path)
-            raw = resp["Body"].read()
-        except Exception:
+        dimensions = storage.read_image_dimensions(
+            task.file_path, bucket=storage.bucket
+        )
+        from app.services.image_pyramid import pyramid_eligible
+
+        if dimensions and pyramid_eligible(*dimensions):
+            if settings.image_pyramid_auto_generate:
+                from app.workers.image_pyramid import enqueue_image_pyramid
+
+                enqueue_image_pyramid("task", task.id, force=True)
             return
-
         try:
-            from PIL import Image
-
-            img = Image.open(io.BytesIO(raw)).convert("RGB")
-            max_side = 256
-            w, h = img.size
-            scale = min(max_side / w, max_side / h)
-            thumb = img.resize(
-                (max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS
-            )
-
-            import blurhash as bh
-
-            small = img.resize((32, 32), Image.LANCZOS)
-            hash_str = bh.encode(small, x_components=4, y_components=3)
-
-            buf = io.BytesIO()
-            thumb.save(buf, format="WEBP", quality=80)
-            buf.seek(0)
+            head = storage.client.head_object(Bucket=storage.bucket, Key=task.file_path)
+            if int(head.get("ContentLength") or 0) > THUMBNAIL_MAX_SOURCE_BYTES:
+                return
+            with tempfile.TemporaryDirectory(prefix="anno-task-thumbnail-") as tmp:
+                source_path = Path(tmp) / "source"
+                with source_path.open("xb") as stream:
+                    storage.client.download_fileobj(
+                        Bucket=storage.bucket,
+                        Key=task.file_path,
+                        Fileobj=stream,
+                    )
+                thumbnail_bytes, hash_str = _thumbnail_from_path(source_path)
         except Exception:
             return
 
         thumb_key = f"thumbnails/{task_id}.webp"
         try:
-            storage.ensure_bucket(storage.bucket)
+            storage.ensure_bucket(storage.media_cache_bucket)
             storage.client.put_object(
-                Bucket=storage.bucket,
+                Bucket=storage.media_cache_bucket,
                 Key=thumb_key,
-                Body=buf.getvalue(),
+                Body=thumbnail_bytes,
                 ContentType="image/webp",
             )
         except Exception:

@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 ---
 
 # 环境变量参考
@@ -57,7 +57,36 @@ last_reviewed: 2026-07-30
 | `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
 | `MINIO_IMPORT_BUCKET` | `import` | 导入预标注产物桶（7 天 lifecycle，短生命周期） |
 | `MINIO_EXPORT_BUCKET` | `export` | 导出标注产物桶（7 天 lifecycle，短生命周期） |
-| `MINIO_DATA_DIR` | `/mnt/fast-disk/ai-annotation-platform/minio` | 可选：把 MinIO 数据目录 bind 到宿主机路径，用于测试不同磁盘的对象存储性能。 留空时继续使用 Docker 托管的 miniodata 命名卷。 |
+
+## 超大图 Image Pyramid
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `IMAGE_PYRAMID_AUTO_GENERATE` | `false` | 默认只发布 schema/API，不在上传时自动生成；容量验收后再显式开启。 |
+| `IMAGE_PYRAMID_PROFILE_VERSION` | `pyramid-v1` | — |
+| `IMAGE_PYRAMID_NORMALIZATION_VERSION` | `exif-autorotate-srgb-v1` | — |
+| `IMAGE_PYRAMID_OPTIONAL_PIXELS` | `16777216` | 16MP 起可选生成，50MP 起客户端必须使用（客户端切换在后续版本）。 |
+| `IMAGE_PYRAMID_REQUIRED_PIXELS` | `50000000` | — |
+| `IMAGE_PYRAMID_MAX_PIXELS` | `300000000` | — |
+| `IMAGE_PYRAMID_MAX_DIMENSION` | `32768` | — |
+| `IMAGE_PYRAMID_MAX_TILES` | `20000` | — |
+| `IMAGE_PYRAMID_MAX_SOURCE_BYTES` | `8589934592` | — |
+| `IMAGE_PYRAMID_MAX_DERIVED_BYTES` | `8589934592` | — |
+| `IMAGE_PYRAMID_MAX_TEMP_BYTES` | `12884901888` | — |
+| `IMAGE_PYRAMID_JOB_TIMEOUT_SECONDS` | `1800` | — |
+| `IMAGE_PYRAMID_LEASE_SECONDS` | `2100` | — |
+| `IMAGE_PYRAMID_URL_EXPIRY_SECONDS` | `900` | — |
+| `IMAGE_PYRAMID_ASSET_URL_BATCH_MAX` | `128` | — |
+| `IMAGE_PYRAMID_RETRY_COOLDOWN_SECONDS` | `300` | — |
+| `IMAGE_PYRAMID_GC_GRACE_HOURS` | `24` | — |
+| `IMAGE_PYRAMID_VIPS_CONCURRENCY` | `4` | 独立 worker 内 libvips 的像素流水线线程数；不要跟宿主 100+ 核数线性放大 RSS。 |
+| `IMAGE_PYRAMID_SRGB_PROFILE` | `/usr/share/color/icc/sRGB.icc` | 容器由 icc-profiles-free 提供；宿主开发若路径不同可覆盖。 |
+
+## 可选：把 MinIO 数据目录 bind 到宿主机路径，用于测试不同磁盘的对象存储性能。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MINIO_DATA_DIR` | `/mnt/fast-disk/ai-annotation-platform/minio` | 留空时继续使用 Docker 托管的 miniodata 命名卷。 |
 | `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
 
 ## ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
