@@ -1,0 +1,171 @@
+{
+  "generated_at": "2026-07-31T03:51:45.995Z",
+  "baseline_commit": "ab35d73c",
+  "environment": {
+    "os": "linux-5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "browser_headless": "Chromium 147.0.7727.15",
+    "browser_gpu": "Google Chrome 150.0.7871.114",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "driver": "595.84"
+  },
+  "configuration": {
+    "production_warmup": 3,
+    "production_iterations": 10,
+    "kernel_warmup": 1,
+    "kernel_iterations": 3,
+    "rounds": 2,
+    "operation": "square dilate",
+    "radii": [1, 8, 31],
+    "cpu_budget_bytes": 134217728,
+    "gpu_budget_bytes": 134217728,
+    "production_runner_schema": "mask-webgpu-production-operation/v5",
+    "kernel_runner_schema": "mask-packed-cpu-kernel/v1"
+  },
+  "production_cpu_fallback": [
+    {
+      "radius": 1,
+      "resolution": [2048, 2048],
+      "dense_baseline_p95_ms": [246.5, 253.8],
+      "packed_final_p95_ms": [25.7, 31.6],
+      "p95_improvement_percent": [89.6, 87.5],
+      "worker_dense_baseline_p95_ms": [235.7, 239.8],
+      "worker_packed_final_p95_ms": [15.8, 17.7],
+      "packed_cpu_transient_bytes": 3670016
+    },
+    {
+      "radius": 1,
+      "resolution": [3840, 2160],
+      "dense_baseline_p95_ms": [474.0, 491.1],
+      "packed_final_p95_ms": [48.6, 56.4],
+      "p95_improvement_percent": [89.7, 88.5],
+      "worker_dense_baseline_p95_ms": [454.2, 471.4],
+      "worker_packed_final_p95_ms": [31.5, 38.4],
+      "packed_cpu_transient_bytes": 8842240
+    },
+    {
+      "radius": 8,
+      "resolution": [2048, 2048],
+      "dense_baseline_p95_ms": [264.5, 265.4],
+      "packed_final_p95_ms": [25.3, 23.1],
+      "p95_improvement_percent": [90.4, 91.3],
+      "worker_dense_baseline_p95_ms": [248.7, 254.2],
+      "worker_packed_final_p95_ms": [13.6, 13.5],
+      "packed_cpu_transient_bytes": 3670016
+    },
+    {
+      "radius": 8,
+      "resolution": [3840, 2160],
+      "dense_baseline_p95_ms": [504.9, 499.7],
+      "packed_final_p95_ms": [50.5, 58.1],
+      "p95_improvement_percent": [90.0, 88.4],
+      "worker_dense_baseline_p95_ms": [482.2, 474.2],
+      "worker_packed_final_p95_ms": [29.1, 32.1],
+      "packed_cpu_transient_bytes": 8842240
+    },
+    {
+      "radius": 31,
+      "resolution": [2048, 2048],
+      "dense_baseline_p95_ms": [286.5, 297.3],
+      "packed_final_p95_ms": [56.9, 49.3],
+      "p95_improvement_percent": [80.1, 83.4],
+      "worker_dense_baseline_p95_ms": [267.1, 275.7],
+      "worker_packed_final_p95_ms": [32.9, 28.7],
+      "packed_cpu_transient_bytes": 3670016
+    },
+    {
+      "radius": 31,
+      "resolution": [3840, 2160],
+      "dense_baseline_p95_ms": [523.0, 535.7],
+      "packed_final_p95_ms": [80.8, 83.9],
+      "p95_improvement_percent": [84.6, 84.3],
+      "worker_dense_baseline_p95_ms": [487.0, 500.0],
+      "worker_packed_final_p95_ms": [52.2, 54.6],
+      "packed_cpu_transient_bytes": 8842240
+    }
+  ],
+  "kernel_qualification": [
+    {
+      "radius": 1,
+      "resolution": [2048, 2048],
+      "direct_p95_ms": [8.0, 7.9],
+      "separable_p95_ms": [6.4, 5.8],
+      "p95_improvement_percent": [20.0, 26.6]
+    },
+    {
+      "radius": 1,
+      "resolution": [3840, 2160],
+      "direct_p95_ms": [22.5, 22.0],
+      "separable_p95_ms": [14.2, 15.3],
+      "p95_improvement_percent": [36.9, 30.5]
+    },
+    {
+      "radius": 8,
+      "resolution": [2048, 2048],
+      "direct_p95_ms": [98.7, 98.7],
+      "separable_p95_ms": [10.3, 9.9],
+      "p95_improvement_percent": [89.6, 90.0]
+    },
+    {
+      "radius": 8,
+      "resolution": [3840, 2160],
+      "direct_p95_ms": [169.3, 173.0],
+      "separable_p95_ms": [19.5, 20.1],
+      "p95_improvement_percent": [88.5, 88.4]
+    },
+    {
+      "radius": 31,
+      "resolution": [2048, 2048],
+      "direct_p95_ms": [743.2, 712.4],
+      "separable_p95_ms": [27.2, 23.9],
+      "p95_improvement_percent": [96.3, 96.6]
+    },
+    {
+      "radius": 31,
+      "resolution": [3840, 2160],
+      "direct_p95_ms": [1355.2, 1320.8],
+      "separable_p95_ms": [45.9, 76.5],
+      "p95_improvement_percent": [96.6, 94.2]
+    }
+  ],
+  "gpu_success_probe": {
+    "launch": "headed Chrome with unsafe Vulkan qualification flags",
+    "radius": 8,
+    "warmup_state": "ready",
+    "init_attempts": 1,
+    "consecutive_failures": 0,
+    "rows": [
+      {
+        "resolution": [2048, 2048],
+        "backend": "webgpu",
+        "operation_p95_ms": 16.2,
+        "worker_p95_ms": 8.2,
+        "gpu_allocated_bytes": 1572912
+      },
+      {
+        "resolution": [3840, 2160],
+        "backend": "webgpu",
+        "operation_p95_ms": 31.7,
+        "worker_p95_ms": 17.6,
+        "gpu_allocated_bytes": 3145776
+      }
+    ],
+    "owner_workers": 1,
+    "long_tasks": 0,
+    "resources_after_dispose": 0
+  },
+  "contracts": {
+    "production_case_count": 12,
+    "patch_checksum_exact": true,
+    "save_checksum_exact": true,
+    "reload_checksum_exact": true,
+    "cpu_strategy": "packed-separable",
+    "headless_linux_fallback_reason": "adapter-unavailable",
+    "headless_linux_failure_stage": "adapter-request",
+    "headless_linux_circuit_state": "cooldown",
+    "gpu_success_preserved": true,
+    "main_performance_gate_minimum_percent": 35,
+    "minimum_observed_improvement_percent": 80.1,
+    "decision": "ship packed separable CPU route at the 4194304 input-pixel crossover"
+  }
+}

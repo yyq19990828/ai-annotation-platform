@@ -39,7 +39,8 @@ import {
 import type { MaskEditorPhase } from "./canEditMask";
 import {
   LargeMaskFullScanRequiredError,
-  sparseMaskComputeBudgetBytes,
+  sparseMaskCpuComputeBudgetBytes,
+  sparseMaskGpuBufferBudgetBytes,
   SparseMaskTileStore,
   type SparseMaskRenderableTile,
   type SparseMaskTileResources,
@@ -368,11 +369,16 @@ export function useMaskEditor({
         baseRle: rle,
         backend: workerPool,
         morphologyBackendPolicy: webGpuCandidateEnabled ? "webgpu-candidate" : "cpu",
-        ...(webGpuCandidateEnabled
-          ? deviceMemory === undefined
+        ...(deviceMemory === undefined
+          ? webGpuCandidateEnabled
             ? {}
-            : { computeBudgetBytes: sparseMaskComputeBudgetBytes(deviceMemory) }
-          : { computeBudgetBytes: 0 }),
+            : { gpuBufferBudgetBytes: 0 }
+          : {
+              cpuComputeBudgetBytes: sparseMaskCpuComputeBudgetBytes(deviceMemory),
+              gpuBufferBudgetBytes: webGpuCandidateEnabled
+                ? sparseMaskGpuBufferBudgetBytes(deviceMemory)
+                : 0,
+            }),
         ...(deviceMemory === undefined ? {} : { deviceMemory }),
         ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
       });

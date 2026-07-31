@@ -10,13 +10,19 @@ import {
   decodeRasterMaskSessionTile,
   decodeRasterMaskTransferredRle,
   diffRasterMaskMorphologyRoi,
+  estimateRasterMaskDenseCpuBytes,
   mergeRasterMaskSessionTiles,
   preparePackedRasterMaskMorphologyRoi,
   prepareRasterMaskMorphologyRoi,
   type RasterMaskWorkerSession,
   validateRasterMaskMorphologyRoiRequest,
 } from "./rasterMaskWorkerRuntime";
+import {
+  estimateRasterMaskPackedCpuBytes,
+  squareDilatePackedXorSeparable,
+} from "./rasterMaskPackedMorphology";
 import type {
+  RasterMaskComputeFailureStage,
   RasterMaskMorphologyRoiRequest,
   RasterMaskMorphologyRoiResponse,
   RasterMaskWebGpuWorkerSnapshot,
@@ -48,6 +54,10 @@ function disabledWebGpuSnapshot(): RasterMaskWebGpuWorkerSnapshot {
     initAttempts: 0,
     deviceLost: 0,
     lastFailure: "gate-disabled",
+    lastFailureStage: null,
+    circuitState: "eligible",
+    cooldownRemainingMs: 0,
+    consecutiveFailures: 0,
   };
 }
 
@@ -77,17 +87,19 @@ function uniqueBuffers(buffers: ArrayBuffer[]): Transferable[] {
   return [...new Set(buffers)] as Transferable[];
 }
 
-function cpuMorphologyResult(
+function denseCpuMorphologyResult(
   session: RasterMaskWorkerSession,
   request: RasterMaskMorphologyRoiRequest,
-  prepared: ReturnType<typeof prepareRasterMaskMorphologyRoi> | null,
   totalStarted: number,
   fallbackReason: RasterMaskMorphologyRoiResponse["fallbackReason"],
-  backend: "cpu" | "cpu-fallback" = "cpu",
-  allocatedGpuBytes = 0,
-  priorPacked: ReturnType<typeof preparePackedRasterMaskMorphologyRoi> | null = null,
+  failureStage: RasterMaskComputeFailureStage | null = null,
+  gpuSnapshot: RasterMaskWebGpuWorkerSnapshot | null = null,
 ): Omit<RasterMaskMorphologyRoiResponse, "kind" | "id" | "ok" | "sessionId" | "sha256"> {
-  const dense = prepared ?? prepareRasterMaskMorphologyRoi(session, request);
+  const estimate = estimateRasterMaskDenseCpuBytes(request);
+  if (estimate.requiredBytes > request.cpuComputeBudgetBytes) {
+    throw new Error("Raster Mask CPU compute budget is insufficient");
+  }
+  const dense = prepareRasterMaskMorphologyRoi(session, request);
   const computeStarted = performance.now();
   const after = applyMaskMorphology(
     dense.source,
@@ -104,27 +116,31 @@ function cpuMorphologyResult(
   );
   return {
     sourceRevision: request.sourceRevision,
-    backend,
+    backend: "cpu",
     fallbackReason,
     changedPixels: diff.changedPixels,
     changedBounds: diff.changedBounds,
     patches: diff.patches,
     metrics: {
       totalMs: performance.now() - totalStarted,
-      backendPrepareMs: (priorPacked?.packedPrepareMs ?? 0) + dense.materializeMs,
-      prepareStrategy: priorPacked?.prepareStrategy ?? "dense-cpu",
-      directRleScanMs: priorPacked?.directRleScanMs ?? 0,
-      baseCacheFillMs: priorPacked?.baseCacheFillMs ?? 0,
-      packedAssembleMs: priorPacked?.packedAssembleMs ?? 0,
-      dirtyOverlayMs: priorPacked?.dirtyOverlayMs ?? 0,
-      baseCacheHitTiles: priorPacked?.baseCacheHitTiles ?? 0,
-      baseCacheMissTiles: priorPacked?.baseCacheMissTiles ?? 0,
-      baseCacheEvictedTiles: priorPacked?.baseCacheEvictedTiles ?? 0,
-      baseCacheRetainedBytes: priorPacked?.baseCacheRetainedBytes ?? 0,
-      sourceScratchCapacityBytes: priorPacked?.sourceScratchCapacityBytes ?? 0,
+      cpuStrategy: "dense",
+      failureStage,
+      inputPixels: request.input.width * request.input.height,
+      corePixels: request.core.width * request.core.height,
+      backendPrepareMs: dense.materializeMs,
+      prepareStrategy: "dense-cpu",
+      directRleScanMs: 0,
+      baseCacheFillMs: 0,
+      packedAssembleMs: 0,
+      dirtyOverlayMs: 0,
+      baseCacheHitTiles: 0,
+      baseCacheMissTiles: 0,
+      baseCacheEvictedTiles: 0,
+      baseCacheRetainedBytes: 0,
+      sourceScratchCapacityBytes: 0,
       computeMs,
       diffOrPatchMs: diff.diffMs,
-      xorOutputStrategy: backend === "cpu-fallback" ? "cpu-after-gpu-failure" : "cpu-dense",
+      xorOutputStrategy: "cpu-dense",
       xorTotalWords: 0,
       xorNonZeroWords: 0,
       xorWordDensity: 0,
@@ -137,14 +153,186 @@ function cpuMorphologyResult(
       gpuUploadSubmitMs: null,
       gpuReadbackMs: null,
       gpuPassMs: null,
-      fallbackMaterializeMs: backend === "cpu-fallback" ? dense.materializeMs : null,
+      fallbackMaterializeMs: null,
+      cpuBudgetBytes: request.cpuComputeBudgetBytes,
+      gpuBudgetBytes: request.gpuBufferBudgetBytes,
+      cpuTransientBytes: estimate.requiredBytes,
+      denseTransientBytes: estimate.requiredBytes,
+      packedIntermediateBytes: 0,
+      patchUpperBoundBytes: estimate.patchUpperBoundBytes,
       inputAlphaBytes: dense.source.byteLength,
-      packedSourceBytes: priorPacked?.sourceWords.byteLength ?? 0,
+      packedSourceBytes: 0,
       xorReadbackBytes: 0,
-      allocatedGpuBytes,
+      allocatedGpuBytes: 0,
       gpuSourceCapacityBytes: 0,
       gpuXorCapacityBytes: 0,
       gpuReadbackCapacityBytes: 0,
+      webGpuCircuitState: gpuSnapshot?.circuitState ?? "eligible",
+      webGpuCooldownRemainingMs: gpuSnapshot?.cooldownRemainingMs ?? 0,
+      webGpuConsecutiveFailures: gpuSnapshot?.consecutiveFailures ?? 0,
+      webGpuDeviceLost: gpuSnapshot?.deviceLost ?? 0,
+    },
+  };
+}
+
+function packedCpuEligible(request: RasterMaskMorphologyRoiRequest): boolean {
+  return (
+    request.operation.operation === "dilate" &&
+    request.operation.kernelShape === "square" &&
+    request.operation.radius <= 31 &&
+    request.input.width * request.input.height >= 4_194_304
+  );
+}
+
+function packedCpuEstimate(
+  request: RasterMaskMorphologyRoiRequest,
+  sourceChargeBytes?: number,
+  baseCacheRetainedBytes?: number,
+) {
+  return estimateRasterMaskPackedCpuBytes({
+    inputWidth: request.input.width,
+    inputHeight: request.input.height,
+    coreWidth: request.core.width,
+    coreHeight: request.core.height,
+    ...(sourceChargeBytes === undefined ? {} : { sourceChargeBytes }),
+    ...(baseCacheRetainedBytes === undefined ? {} : { baseCacheRetainedBytes }),
+  });
+}
+
+function preparePackedCpuSource(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRoiRequest,
+): ReturnType<typeof preparePackedRasterMaskMorphologyRoi> | null {
+  if (!packedCpuEligible(request)) return null;
+  const directEstimate = packedCpuEstimate(request);
+  if (directEstimate.requiredBytes > request.cpuComputeBudgetBytes) return null;
+
+  const packedSourceBytes = Math.ceil(request.input.width / 32) * request.input.height * 4;
+  const cacheCapBytes = rasterMaskPackedBaseCacheCapBytes(request.cpuComputeBudgetBytes);
+  const prospectiveScratchCapacityBytes =
+    packedBaseCache.prospectiveScratchCapacityBytes(packedSourceBytes);
+  const cacheEstimate = packedCpuEstimate(request, prospectiveScratchCapacityBytes, cacheCapBytes);
+  let packed: ReturnType<typeof preparePackedRasterMaskMorphologyRoi>;
+  if (cacheCapBytes > 0 && cacheEstimate.requiredBytes <= request.cpuComputeBudgetBytes) {
+    try {
+      packed = packedBaseCache.prepare(request.sessionId, session, request, cacheCapBytes);
+    } catch {
+      packedBaseCache.clear();
+      packed = preparePackedRasterMaskMorphologyRoi(session, request);
+    }
+  } else {
+    packedBaseCache.clear();
+    packed = preparePackedRasterMaskMorphologyRoi(session, request);
+  }
+  const actualEstimate = packedCpuEstimate(
+    request,
+    packed.sourceScratchCapacityBytes || packed.sourceWords.byteLength,
+    packed.baseCacheRetainedBytes,
+  );
+  if (actualEstimate.requiredBytes <= request.cpuComputeBudgetBytes) return packed;
+
+  packedBaseCache.clear();
+  packed = preparePackedRasterMaskMorphologyRoi(session, request);
+  return packedCpuEstimate(request, packed.sourceWords.byteLength, 0).requiredBytes <=
+    request.cpuComputeBudgetBytes
+    ? packed
+    : null;
+}
+
+function packedCpuMorphologyResult(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRoiRequest,
+  packed: ReturnType<typeof preparePackedRasterMaskMorphologyRoi>,
+  totalStarted: number,
+  fallbackReason: RasterMaskMorphologyRoiResponse["fallbackReason"],
+  backend: "cpu" | "cpu-fallback",
+  failureStage: RasterMaskComputeFailureStage | null = null,
+  gpuSnapshot: RasterMaskWebGpuWorkerSnapshot | null = null,
+): Omit<RasterMaskMorphologyRoiResponse, "kind" | "id" | "ok" | "sessionId" | "sha256"> {
+  const estimate = packedCpuEstimate(
+    request,
+    packed.sourceScratchCapacityBytes || packed.sourceWords.byteLength,
+    packed.baseCacheRetainedBytes,
+  );
+  if (estimate.requiredBytes > request.cpuComputeBudgetBytes) {
+    throw new Error("Raster Mask CPU compute budget is insufficient");
+  }
+  const computeStarted = performance.now();
+  const cpu = squareDilatePackedXorSeparable({
+    sourceWords: packed.sourceWords,
+    sourceWordsPerRow: packed.wordsPerRow,
+    inputWidth: request.input.width,
+    inputHeight: request.input.height,
+    coreOffsetX: request.core.x - request.input.x,
+    coreOffsetY: request.core.y - request.input.y,
+    coreWidth: request.core.width,
+    coreHeight: request.core.height,
+    radius: request.operation.radius,
+  });
+  const computeMs = performance.now() - computeStarted;
+  const diff = buildRasterMaskMorphologyPatchesFromXorWords(
+    session,
+    request,
+    cpu.xorWords,
+    cpu.xorWordsPerRow,
+  );
+  return {
+    sourceRevision: request.sourceRevision,
+    backend,
+    fallbackReason,
+    changedPixels: diff.changedPixels,
+    changedBounds: diff.changedBounds,
+    patches: diff.patches,
+    metrics: {
+      totalMs: performance.now() - totalStarted,
+      cpuStrategy: "packed-separable",
+      failureStage,
+      inputPixels: request.input.width * request.input.height,
+      corePixels: request.core.width * request.core.height,
+      backendPrepareMs: packed.packedPrepareMs,
+      prepareStrategy: packed.prepareStrategy,
+      directRleScanMs: packed.directRleScanMs,
+      baseCacheFillMs: packed.baseCacheFillMs,
+      packedAssembleMs: packed.packedAssembleMs,
+      dirtyOverlayMs: packed.dirtyOverlayMs,
+      baseCacheHitTiles: packed.baseCacheHitTiles,
+      baseCacheMissTiles: packed.baseCacheMissTiles,
+      baseCacheEvictedTiles: packed.baseCacheEvictedTiles,
+      baseCacheRetainedBytes: packed.baseCacheRetainedBytes,
+      sourceScratchCapacityBytes: packed.sourceScratchCapacityBytes,
+      computeMs,
+      diffOrPatchMs: diff.diffMs,
+      xorOutputStrategy: "dense-word-scatter",
+      xorTotalWords: diff.xorTotalWords ?? 0,
+      xorNonZeroWords: diff.xorNonZeroWords ?? 0,
+      xorWordDensity: diff.xorWordDensity ?? 0,
+      xorChangedPixels: diff.changedPixels,
+      xorTouchedTiles: diff.xorTouchedTiles ?? diff.patches.length,
+      xorScanMs: diff.xorScanMs ?? 0,
+      xorPatchAllocateMs: diff.xorPatchAllocateMs ?? 0,
+      xorPatchScatterMs: diff.xorPatchScatterMs ?? 0,
+      wordPatchBuildMs: diff.wordPatchBuildMs ?? 0,
+      gpuUploadSubmitMs: null,
+      gpuReadbackMs: null,
+      gpuPassMs: null,
+      fallbackMaterializeMs: null,
+      cpuBudgetBytes: request.cpuComputeBudgetBytes,
+      gpuBudgetBytes: request.gpuBufferBudgetBytes,
+      cpuTransientBytes: estimate.requiredBytes,
+      denseTransientBytes: 0,
+      packedIntermediateBytes: cpu.intermediateBytes,
+      patchUpperBoundBytes: estimate.patchUpperBoundBytes,
+      inputAlphaBytes: 0,
+      packedSourceBytes: packed.sourceWords.byteLength,
+      xorReadbackBytes: cpu.xorWords.byteLength,
+      allocatedGpuBytes: gpuSnapshot?.allocatedBytes ?? 0,
+      gpuSourceCapacityBytes: gpuSnapshot?.sourceCapacityBytes ?? 0,
+      gpuXorCapacityBytes: gpuSnapshot?.xorCapacityBytes ?? 0,
+      gpuReadbackCapacityBytes: gpuSnapshot?.readbackCapacityBytes ?? 0,
+      webGpuCircuitState: gpuSnapshot?.circuitState ?? "eligible",
+      webGpuCooldownRemainingMs: gpuSnapshot?.cooldownRemainingMs ?? 0,
+      webGpuConsecutiveFailures: gpuSnapshot?.consecutiveFailures ?? 0,
+      webGpuDeviceLost: gpuSnapshot?.deviceLost ?? 0,
     },
   };
 }
@@ -162,13 +350,7 @@ function webGpuRouteFailure(
   }
   const pixels = request.input.width * request.input.height;
   if (pixels < 4_194_304) return "below-pixel-threshold";
-  if (
-    request.computeBudgetBytes <= 0 ||
-    (request.computeBudgetBytes <= 64 * 1024 * 1024 &&
-      (request.input.width > 2_112 || request.input.height > 2_112))
-  ) {
-    return "budget-insufficient";
-  }
+  if (request.gpuBufferBudgetBytes <= 0) return "budget-insufficient";
   return null;
 }
 
@@ -179,15 +361,34 @@ async function runMorphologyRoi(
   const session = sessionFor(request.sessionId, request.sha256);
   validateRasterMaskMorphologyRoiRequest(session, request);
   const routeFailure = webGpuRouteFailure(request);
+  const packed = preparePackedCpuSource(session, request);
   if (routeFailure) {
-    return cpuMorphologyResult(session, request, null, totalStarted, routeFailure);
+    return packed
+      ? packedCpuMorphologyResult(session, request, packed, totalStarted, routeFailure, "cpu")
+      : denseCpuMorphologyResult(session, request, totalStarted, routeFailure);
   }
 
   let provider: RasterMaskWebGpuProvider;
   try {
     provider = await webGpuProvider()!;
   } catch {
-    return cpuMorphologyResult(session, request, null, totalStarted, "initialization-failed");
+    return packed
+      ? packedCpuMorphologyResult(
+          session,
+          request,
+          packed,
+          totalStarted,
+          "initialization-failed",
+          "cpu",
+          "device-request",
+        )
+      : denseCpuMorphologyResult(
+          session,
+          request,
+          totalStarted,
+          "initialization-failed",
+          "device-request",
+        );
   }
   const shape = {
     inputWidth: request.input.width,
@@ -195,64 +396,73 @@ async function runMorphologyRoi(
     coreWidth: request.core.width,
     coreHeight: request.core.height,
     radius: request.operation.radius,
-    budgetBytes: request.computeBudgetBytes,
+    budgetBytes: request.gpuBufferBudgetBytes,
   };
   const preflightFailure = provider.preflightSquareDilateXor(shape);
   if (preflightFailure) {
-    return cpuMorphologyResult(session, request, null, totalStarted, preflightFailure);
+    return packed
+      ? packedCpuMorphologyResult(
+          session,
+          request,
+          packed,
+          totalStarted,
+          preflightFailure,
+          "cpu",
+          provider.snapshot().lastFailureStage,
+          provider.snapshot(),
+        )
+      : denseCpuMorphologyResult(
+          session,
+          request,
+          totalStarted,
+          preflightFailure,
+          provider.snapshot().lastFailureStage,
+          provider.snapshot(),
+        );
   }
-  const packedSourceBytes = Math.ceil(request.input.width / 32) * request.input.height * 4;
-  const cacheCapBytes = rasterMaskPackedBaseCacheCapBytes(request.computeBudgetBytes);
-  const prospectiveScratchCapacityBytes =
-    packedBaseCache.prospectiveScratchCapacityBytes(packedSourceBytes);
-  const cacheReservationBytes =
-    cacheCapBytes + Math.max(0, prospectiveScratchCapacityBytes - packedSourceBytes);
-  const cacheBudgetFailure = provider.preflightSquareDilateXor({
-    ...shape,
-    reservedBytes: cacheReservationBytes,
-  });
-  let packed: ReturnType<typeof preparePackedRasterMaskMorphologyRoi>;
-  if (cacheBudgetFailure === null && cacheCapBytes > 0) {
-    try {
-      packed = packedBaseCache.prepare(request.sessionId, session, request, cacheCapBytes);
-    } catch {
-      packedBaseCache.clear();
-      packed = preparePackedRasterMaskMorphologyRoi(session, request);
-    }
-  } else {
-    packedBaseCache.clear();
-    packed = preparePackedRasterMaskMorphologyRoi(session, request);
+  if (!packed) {
+    return denseCpuMorphologyResult(session, request, totalStarted, "budget-insufficient");
   }
-  const reservedBytes =
-    packed.baseCacheRetainedBytes +
-    Math.max(0, packed.sourceScratchCapacityBytes - packed.sourceWords.byteLength);
   const gpu = await provider.runSquareDilateXor({
     ...shape,
-    reservedBytes,
     sourceWords: packed.sourceWords,
     sourceWordsPerRow: packed.wordsPerRow,
     coreOffsetX: request.core.x - request.input.x,
     coreOffsetY: request.core.y - request.input.y,
   });
   if (!gpu.ok) {
-    return cpuMorphologyResult(
+    return packedCpuMorphologyResult(
       session,
       request,
-      null,
+      packed,
       totalStarted,
       gpu.reason,
       gpu.attemptedGpu ? "cpu-fallback" : "cpu",
-      gpu.allocatedBytes,
-      packed,
+      gpu.failureStage,
+      provider.snapshot(),
     );
   }
-  const diff = buildRasterMaskMorphologyPatchesFromXorWords(
-    session,
-    request,
-    gpu.xorWords,
-    gpu.xorWordsPerRow,
-    request.benchmarkXorPatchStrategy ?? "dense-word-scatter",
-  );
+  let diff: ReturnType<typeof buildRasterMaskMorphologyPatchesFromXorWords>;
+  try {
+    diff = buildRasterMaskMorphologyPatchesFromXorWords(
+      session,
+      request,
+      gpu.xorWords,
+      gpu.xorWordsPerRow,
+    );
+  } catch {
+    provider.failAfterReadback("patch-build");
+    return packedCpuMorphologyResult(
+      session,
+      request,
+      packed,
+      totalStarted,
+      "gpu-runtime-failed",
+      "cpu-fallback",
+      "patch-build",
+      provider.snapshot(),
+    );
+  }
   return {
     sourceRevision: request.sourceRevision,
     backend: "webgpu",
@@ -262,6 +472,10 @@ async function runMorphologyRoi(
     patches: diff.patches,
     metrics: {
       totalMs: performance.now() - totalStarted,
+      cpuStrategy: "not-run",
+      failureStage: null,
+      inputPixels: request.input.width * request.input.height,
+      corePixels: request.core.width * request.core.height,
       backendPrepareMs: packed.packedPrepareMs,
       prepareStrategy: packed.prepareStrategy,
       directRleScanMs: packed.directRleScanMs,
@@ -289,6 +503,19 @@ async function runMorphologyRoi(
       gpuReadbackMs: gpu.metrics.readbackMs,
       gpuPassMs: gpu.metrics.gpuPassMs,
       fallbackMaterializeMs: null,
+      cpuBudgetBytes: request.cpuComputeBudgetBytes,
+      gpuBudgetBytes: request.gpuBufferBudgetBytes,
+      cpuTransientBytes: (() => {
+        const estimate = packedCpuEstimate(
+          request,
+          packed.sourceScratchCapacityBytes || packed.sourceWords.byteLength,
+          packed.baseCacheRetainedBytes,
+        );
+        return estimate.requiredBytes - estimate.horizontalIntermediateBytes;
+      })(),
+      denseTransientBytes: 0,
+      packedIntermediateBytes: 0,
+      patchUpperBoundBytes: Math.ceil((request.core.width * request.core.height) / 8),
       inputAlphaBytes: 0,
       packedSourceBytes: packed.sourceWords.byteLength,
       xorReadbackBytes: gpu.xorWords.byteLength,
@@ -296,6 +523,10 @@ async function runMorphologyRoi(
       gpuSourceCapacityBytes: gpu.snapshot.sourceCapacityBytes,
       gpuXorCapacityBytes: gpu.snapshot.xorCapacityBytes,
       gpuReadbackCapacityBytes: gpu.snapshot.readbackCapacityBytes,
+      webGpuCircuitState: gpu.snapshot.circuitState,
+      webGpuCooldownRemainingMs: gpu.snapshot.cooldownRemainingMs,
+      webGpuConsecutiveFailures: gpu.snapshot.consecutiveFailures,
+      webGpuDeviceLost: gpu.snapshot.deviceLost,
     },
   };
 }

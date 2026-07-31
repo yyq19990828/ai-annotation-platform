@@ -161,7 +161,8 @@ try {
             backend: pool,
             deviceMemory: 8,
             morphologyBackendPolicy: "cpu",
-            computeBudgetBytes: 0,
+            cpuComputeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+            gpuBufferBudgetBytes: 0,
           }),
           baseline: new SparseMaskTileStore({
             sessionId: `baseline-${entry.name}`,
@@ -170,7 +171,8 @@ try {
             backend: pool,
             deviceMemory: 8,
             morphologyBackendPolicy: "webgpu-candidate",
-            computeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+            cpuComputeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+            gpuBufferBudgetBytes: candidateBudgetMiB * 1024 * 1024,
           }),
           candidate: new SparseMaskTileStore({
             sessionId: `candidate-${entry.name}`,
@@ -179,7 +181,8 @@ try {
             backend: pool,
             deviceMemory: 8,
             morphologyBackendPolicy: "webgpu-candidate",
-            computeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+            cpuComputeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+            gpuBufferBudgetBytes: candidateBudgetMiB * 1024 * 1024,
           }),
         });
       }
@@ -228,12 +231,11 @@ try {
         const cpuHistory = [];
         const baselineHistory = [];
         const candidateHistory = [];
-        const run = async (store, history, name, revision, core, benchmarkXorPatchStrategy) => {
+        const run = async (store, history, name, revision, core) => {
           const started = performance.now();
           const command = await store.morphologyRoi(core, operation, {
             name,
             sourceRevision: revision,
-            ...(benchmarkXorPatchStrategy ? { benchmarkXorPatchStrategy } : {}),
           });
           if (command) {
             store.retainHistoryCommand(command);
@@ -256,27 +258,17 @@ try {
           lastCpu = await run(entry.cpu, cpuHistory, "cpu-warmup", index, core);
           const pair = [
             () =>
-              run(
-                entry.baseline,
-                baselineHistory,
-                "baseline-warmup",
-                index,
-                core,
-                "dense-per-bit",
-              ).then((sample) => {
-                lastBaseline = sample;
-              }),
+              run(entry.baseline, baselineHistory, "baseline-warmup", index, core).then(
+                (sample) => {
+                  lastBaseline = sample;
+                },
+              ),
             () =>
-              run(
-                entry.candidate,
-                candidateHistory,
-                "candidate-warmup",
-                index,
-                core,
-                "dense-word-scatter",
-              ).then((sample) => {
-                lastCandidate = sample;
-              }),
+              run(entry.candidate, candidateHistory, "candidate-warmup", index, core).then(
+                (sample) => {
+                  lastCandidate = sample;
+                },
+              ),
           ];
           if ((index & 1) === 1) pair.reverse();
           for (const execute of pair) await execute();
@@ -285,8 +277,8 @@ try {
             lastBaseline.checksum !== lastCandidate.checksum
           ) {
             throw new Error(
-              `${entry.name}: warmup patch strategy parity mismatch ` +
-                `(cpu=${lastCpu.checksum}, per-bit=${lastBaseline.checksum}, word=${lastCandidate.checksum})`,
+              `${entry.name}: warmup production route parity mismatch ` +
+                `(cpu=${lastCpu.checksum}, baseline=${lastBaseline.checksum}, candidate=${lastCandidate.checksum})`,
             );
           }
           cpuWarmupSamples.push({
@@ -330,27 +322,17 @@ try {
           lastCpu = await run(entry.cpu, cpuHistory, "cpu", warmup + index, core);
           const pair = [
             () =>
-              run(
-                entry.baseline,
-                baselineHistory,
-                "baseline",
-                warmup + index,
-                core,
-                "dense-per-bit",
-              ).then((sample) => {
-                lastBaseline = sample;
-              }),
+              run(entry.baseline, baselineHistory, "baseline", warmup + index, core).then(
+                (sample) => {
+                  lastBaseline = sample;
+                },
+              ),
             () =>
-              run(
-                entry.candidate,
-                candidateHistory,
-                "candidate",
-                warmup + index,
-                core,
-                "dense-word-scatter",
-              ).then((sample) => {
-                lastCandidate = sample;
-              }),
+              run(entry.candidate, candidateHistory, "candidate", warmup + index, core).then(
+                (sample) => {
+                  lastCandidate = sample;
+                },
+              ),
           ];
           if ((index & 1) === 1) pair.reverse();
           for (const execute of pair) await execute();
@@ -359,8 +341,8 @@ try {
             lastBaseline.checksum !== lastCandidate.checksum
           ) {
             throw new Error(
-              `${entry.name}: CPU/per-bit/word-scatter patch parity mismatch ` +
-                `(cpu=${lastCpu.checksum}, per-bit=${lastBaseline.checksum}, word=${lastCandidate.checksum})`,
+              `${entry.name}: production route patch parity mismatch ` +
+                `(cpu=${lastCpu.checksum}, baseline=${lastBaseline.checksum}, candidate=${lastCandidate.checksum})`,
             );
           }
           cpuTimes.push(lastCpu.elapsed);
@@ -406,7 +388,7 @@ try {
           cpuSavedChecksum !== baselineSavedChecksum ||
           baselineSavedChecksum !== candidateSavedChecksum
         ) {
-          throw new Error(`${entry.name}: CPU/per-bit/word-scatter save parity mismatch`);
+          throw new Error(`${entry.name}: production route save parity mismatch`);
         }
         const reloaded = new SparseMaskTileStore({
           sessionId: `reload-${entry.name}`,
@@ -415,7 +397,8 @@ try {
           backend: pool,
           deviceMemory: 8,
           morphologyBackendPolicy: "cpu",
-          computeBudgetBytes: 0,
+          cpuComputeBudgetBytes: candidateBudgetMiB * 1024 * 1024,
+          gpuBufferBudgetBytes: 0,
         });
         const reloadedSavedChecksum = rleChecksum(await reloaded.merge());
         reloaded.dispose();
@@ -526,7 +509,7 @@ try {
 }
 
 const report = {
-  schema: "mask-webgpu-production-operation/v4",
+  schema: "mask-webgpu-production-operation/v5",
   generated_at: new Date().toISOString(),
   environment: {
     platform: platform(),

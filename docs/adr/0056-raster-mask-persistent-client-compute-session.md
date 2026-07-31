@@ -6,6 +6,9 @@
 - **Supersedes:** —（扩展 [ADR-0054](./0054-raster-mask-large-canvas-memory-and-tiles.md) 的 sparse tile、固定 Worker pool 与 XOR history，不改变 canonical COCO RLE 持久格式）
 
 > 默认关闭的 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；持久会话、CPU fallback 与资源合同继续有效。
+> dense CPU fallback 与联合 compute budget 随后由
+> [ADR-0061](./0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) 的 packed CPU fallback、双预算和
+> 独立 circuit 取代。
 
 ## Context
 

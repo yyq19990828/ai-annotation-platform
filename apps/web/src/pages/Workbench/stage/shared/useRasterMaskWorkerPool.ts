@@ -12,7 +12,10 @@ export function useRasterMaskWorkerPool(
   taskId: string | null | undefined,
 ): RasterMaskWorkerPool | undefined {
   const pool = useMemo(
-    () => (typeof Worker === "undefined" || !taskId ? undefined : new RasterMaskWorkerPool()),
+    () =>
+      typeof Worker === "undefined" || !taskId
+        ? undefined
+        : new RasterMaskWorkerPool({ diagnosticsTaskId: taskId }),
     [taskId],
   );
   const activePoolRef = useRef<RasterMaskWorkerPool | undefined>(pool);

@@ -24,7 +24,6 @@ import type {
   RasterMaskPackedTileOverride,
   RasterMaskTileRect,
   RasterMaskTransferredRle,
-  RasterMaskXorPatchStrategy,
 } from "./rasterMaskWorkerProtocol";
 
 const MIB = 1024 * 1024;
@@ -62,8 +61,8 @@ export interface SparseMaskTileBackend {
       };
       dirtyOverrides: readonly RasterMaskPackedTileOverride[];
       backendPolicy: RasterMaskMorphologyBackendPolicy;
-      computeBudgetBytes: number;
-      benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
+      cpuComputeBudgetBytes: number;
+      gpuBufferBudgetBytes: number;
     },
     options?: RasterMaskWorkerRunOptions,
   ) => Promise<RasterMaskMorphologyRoiResponse>;
@@ -151,7 +150,20 @@ export function sparseMaskTileBudgetBytes(deviceMemory?: number | null): number 
   return 64 * MIB;
 }
 
-export function sparseMaskComputeBudgetBytes(deviceMemory?: number | null): number {
+export function sparseMaskCpuComputeBudgetBytes(deviceMemory?: number | null): number {
+  if (
+    deviceMemory != null &&
+    Number.isFinite(deviceMemory) &&
+    deviceMemory > 0 &&
+    deviceMemory <= 2
+  ) {
+    return 32 * MIB;
+  }
+  if (deviceMemory != null && Number.isFinite(deviceMemory) && deviceMemory >= 8) return 128 * MIB;
+  return 64 * MIB;
+}
+
+export function sparseMaskGpuBufferBudgetBytes(deviceMemory?: number | null): number {
   if (
     deviceMemory != null &&
     Number.isFinite(deviceMemory) &&
@@ -307,7 +319,8 @@ export class SparseMaskTileStore {
   private disposed = false;
   private mutationGeneration = 0;
   private readonly morphologyBackendPolicy: RasterMaskMorphologyBackendPolicy;
-  private readonly computeBudgetBytes: number;
+  private readonly cpuComputeBudgetBytes: number;
+  private readonly gpuBufferBudgetBytes: number;
 
   constructor(options: {
     sessionId: string;
@@ -317,7 +330,8 @@ export class SparseMaskTileStore {
     maxCacheBytes?: number;
     deviceMemory?: number | null;
     morphologyBackendPolicy?: RasterMaskMorphologyBackendPolicy;
-    computeBudgetBytes?: number;
+    cpuComputeBudgetBytes?: number;
+    gpuBufferBudgetBytes?: number;
   }) {
     this.sessionId = options.sessionId;
     this.sha256 = options.sha256;
@@ -333,17 +347,21 @@ export class SparseMaskTileStore {
     if (!Number.isFinite(this.maxCacheBytes) || this.maxCacheBytes <= 0) {
       throw new SparseMaskTileStoreError("mask tile cache budget must be positive");
     }
-    this.computeBudgetBytes =
-      options.computeBudgetBytes ??
-      sparseMaskComputeBudgetBytes(
-        options.deviceMemory === undefined ? navigatorDeviceMemory() : options.deviceMemory,
-      );
+    const deviceMemory =
+      options.deviceMemory === undefined ? navigatorDeviceMemory() : options.deviceMemory;
+    this.cpuComputeBudgetBytes =
+      options.cpuComputeBudgetBytes ?? sparseMaskCpuComputeBudgetBytes(deviceMemory);
+    this.gpuBufferBudgetBytes =
+      options.gpuBufferBudgetBytes ?? sparseMaskGpuBufferBudgetBytes(deviceMemory);
     this.morphologyBackendPolicy =
-      options.morphologyBackendPolicy === "webgpu-candidate" && this.computeBudgetBytes > 0
+      options.morphologyBackendPolicy === "webgpu-candidate" && this.gpuBufferBudgetBytes > 0
         ? "webgpu-candidate"
         : "cpu";
-    if (!Number.isFinite(this.computeBudgetBytes) || this.computeBudgetBytes < 0) {
-      throw new SparseMaskTileStoreError("mask compute budget must be non-negative");
+    if (!Number.isSafeInteger(this.cpuComputeBudgetBytes) || this.cpuComputeBudgetBytes <= 0) {
+      throw new SparseMaskTileStoreError("mask CPU compute budget must be a positive integer");
+    }
+    if (!Number.isSafeInteger(this.gpuBufferBudgetBytes) || this.gpuBufferBudgetBytes < 0) {
+      throw new SparseMaskTileStoreError("mask GPU buffer budget must be a non-negative integer");
     }
     this.backend.registerSession(this.sessionId, this.sha256, options.baseRle);
   }
@@ -648,7 +666,6 @@ export class SparseMaskTileStore {
       name: string;
       sourceRevision: number;
       signal?: AbortSignal;
-      benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
     },
   ): Promise<MaskHistoryCommand | null> {
     this.assertActive();
@@ -719,6 +736,10 @@ export class SparseMaskTileStore {
     const compute = this.backend.getComputeResources?.();
     if (
       this.morphologyBackendPolicy === "webgpu-candidate" &&
+      operation.operation === "dilate" &&
+      operation.kernelShape === "square" &&
+      operation.radius <= 31 &&
+      inputWidth * inputHeight >= 4_194_304 &&
       (!compute || compute.webGpuState === "idle")
     ) {
       void this.backend.warmupWebGpu?.({ priority: "editing" }).catch(() => undefined);
@@ -733,8 +754,8 @@ export class SparseMaskTileStore {
         operation,
         dirtyOverrides,
         backendPolicy: this.morphologyBackendPolicy,
-        computeBudgetBytes: this.computeBudgetBytes,
-        benchmarkXorPatchStrategy: options.benchmarkXorPatchStrategy,
+        cpuComputeBudgetBytes: this.cpuComputeBudgetBytes,
+        gpuBufferBudgetBytes: this.gpuBufferBudgetBytes,
       },
       { priority: "editing", signal: options.signal },
     );

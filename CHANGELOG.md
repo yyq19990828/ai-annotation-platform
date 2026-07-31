@@ -35,6 +35,22 @@
 
 ## [Unreleased]
 
+## [0.23.21] - 2026-07-31
+
+### Added
+
+- **Raster Mask WebGPU 提供一次冷却重试与页内熔断诊断**. adapter、device、shader、pipeline、buffer、queue、encode、submit、map、readback 和 patch-build 故障现在记录稳定 stage；首次失败进入 30 秒 cooldown，到期后的新 eligible 请求只重试一次，连续第二次失败后当前页面固定 CPU，避免 adapter/device 重试风暴。任务内最近 20 次 typed compute event 可随 BUG 报告附带，但不包含完整 task id、Mask 内容、adapter/driver 或浏览器原始错误。
+
+### Changed
+
+- **大 ROI 方形膨胀的 CPU 路径改用 packed separable kernel**. 2048² 及以上、radius 1–31 的 `square dilate` 会复用 immutable packed base cache 与 dirty overrides，先做水平 word expansion，再做纵向 OR，并继续使用唯一的 word-scatter history builder；gate 关闭、无 GPU、adapter/device 初始化失败、GPU budget 不足或运行时失败均复用同一 packed source，不再重新 materialize dense alpha。两轮 2048²/4K、radius 1/8/31 的 12 个 production case 相对 dense baseline p95 改善 80.1%–91.3%，patch、save、reload checksum 全部精确一致。
+- **Raster Mask CPU compute 与 GPU buffer 使用独立 hard budget**. 低内存客户端默认保留 32 MiB CPU budget 并将 GPU budget 设为零，常规/高内存档位分别使用 64/128 MiB；关闭 WebGPU 或客户端没有 adapter 不会再把 CPU budget 清零。prospective ledger 分别报告 packed/dense transient、水平 intermediate、patch upper bound、cache/scratch 与 GPU capacity。
+- **production morphology 协议删除 benchmark-only per-bit selector**. Worker 固定使用已胜出的 dense word-scatter builder；direct packed kernel 只保留在纯函数测试与独立内核 runner 中，避免资格赛选择器继续污染产品消息协议和计数器。
+
+### Fixed
+
+- **无 GPU 的默认 Linux 浏览器不再退回数量级更慢的 dense 大 ROI morphology**. X11 默认 Chrome 的真实 `adapter-unavailable` 路径现在稳定使用 packed CPU，仍保留精确 history/save/reload 与零 GPU allocation；本机 RTX 3090 强制 Vulkan 的 WebGPU 成功路径也完成回归，单 owner、资源 plateau、零 Long Task 和 dispose 归零合同不变。
+
 ## [0.23.20] - 2026-07-30
 
 ### Added

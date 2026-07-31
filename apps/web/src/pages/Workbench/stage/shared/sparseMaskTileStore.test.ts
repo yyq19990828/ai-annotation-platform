@@ -13,7 +13,8 @@ import type { RasterMaskWorkerRunOptions } from "./rasterMaskWorkerPool";
 import type { RasterMaskTileOverride, RasterMaskTileRect } from "./rasterMaskWorkerProtocol";
 import {
   SparseMaskTileBudgetError,
-  sparseMaskComputeBudgetBytes,
+  sparseMaskCpuComputeBudgetBytes,
+  sparseMaskGpuBufferBudgetBytes,
   SparseMaskTileStore,
   sparseMaskTileBudgetBytes,
   type SparseMaskTileBackend,
@@ -220,21 +221,28 @@ describe("SparseMaskTileStore", () => {
     expect(decodeCocoRle(await store.merge())).toEqual(expected);
   });
 
-  it("forwards a benchmark-only XOR patch strategy without persisting it", async () => {
-    const { backend, store } = makeStore(16, 8);
+  it("keeps a positive CPU budget when the low-memory GPU budget disables WebGPU", async () => {
+    const backend = new RuntimeTileBackend();
+    const store = new SparseMaskTileStore({
+      sessionId: "low-memory",
+      sha256: "low-memory-sha",
+      baseRle: blankRle(16, 8),
+      backend,
+      deviceMemory: 2,
+      morphologyBackendPolicy: "webgpu-candidate",
+    });
 
     await store.morphologyRoi(
       { x: 0, y: 0, width: 16, height: 8 },
       { operation: "dilate", kernelShape: "square", radius: 1 },
-      {
-        name: "benchmark",
-        sourceRevision: 0,
-        benchmarkXorPatchStrategy: "dense-per-bit",
-      },
+      { name: "low-memory", sourceRevision: 0 },
     );
 
-    expect(backend.lastMorphologyRequest?.benchmarkXorPatchStrategy).toBe("dense-per-bit");
-    expect(store.snapshot()).not.toHaveProperty("benchmarkXorPatchStrategy");
+    expect(backend.lastMorphologyRequest).toMatchObject({
+      backendPolicy: "cpu",
+      cpuComputeBudgetBytes: 32 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
+    });
   });
 
   it("bounds tile decode concurrency for ROIs larger than the Worker queue", async () => {
@@ -401,8 +409,11 @@ describe("SparseMaskTileStore", () => {
     expect(sparseMaskTileBudgetBytes(2)).toBe(32 * 1024 * 1024);
     expect(sparseMaskTileBudgetBytes(undefined)).toBe(64 * 1024 * 1024);
     expect(sparseMaskTileBudgetBytes(8)).toBe(128 * 1024 * 1024);
-    expect(sparseMaskComputeBudgetBytes(2)).toBe(0);
-    expect(sparseMaskComputeBudgetBytes(undefined)).toBe(64 * 1024 * 1024);
-    expect(sparseMaskComputeBudgetBytes(8)).toBe(128 * 1024 * 1024);
+    expect(sparseMaskCpuComputeBudgetBytes(2)).toBe(32 * 1024 * 1024);
+    expect(sparseMaskCpuComputeBudgetBytes(undefined)).toBe(64 * 1024 * 1024);
+    expect(sparseMaskCpuComputeBudgetBytes(8)).toBe(128 * 1024 * 1024);
+    expect(sparseMaskGpuBufferBudgetBytes(2)).toBe(0);
+    expect(sparseMaskGpuBufferBudgetBytes(undefined)).toBe(64 * 1024 * 1024);
+    expect(sparseMaskGpuBufferBudgetBytes(8)).toBe(128 * 1024 * 1024);
   });
 });

@@ -25,8 +25,12 @@ import type {
   RasterMaskWorkerJobKind,
   RasterMaskWorkerJobRequest,
   RasterMaskWorkerResponse,
-  RasterMaskXorPatchStrategy,
 } from "./rasterMaskWorkerProtocol";
+import {
+  activateRasterMaskComputeDiagnostics,
+  clearRasterMaskComputeDiagnostics,
+  publishRasterMaskComputeDiagnostic,
+} from "../../../../utils/rasterMaskComputeDiagnostics";
 
 export type RasterMaskWorkerPriority = "editing" | "selected" | "current" | "prefetch";
 export type RasterMaskWorkerFactory = () => Worker;
@@ -41,6 +45,7 @@ export interface RasterMaskWorkerPoolOptions {
   queueLimit?: number;
   createWorker?: RasterMaskWorkerFactory;
   clock?: RasterMaskWorkerClock;
+  diagnosticsTaskId?: string;
 }
 
 export interface RasterMaskWorkerRunOptions {
@@ -76,7 +81,13 @@ export interface RasterMaskComputeResources {
   gpuReadbackCapacityBytes: number;
   baseCacheRetainedBytes: number;
   sourceScratchCapacityBytes: number;
+  cpuBudgetBytes: number;
   gpuBudgetBytes: number;
+  webGpuFailureStage: RasterMaskMorphologyMetrics["failureStage"];
+  webGpuCircuitState: RasterMaskWebGpuWorkerSnapshot["circuitState"];
+  webGpuCooldownRemainingMs: number;
+  webGpuConsecutiveFailures: number;
+  webGpuDeviceLost: number;
   lastBackend: RasterMaskMorphologyBackend | null;
   lastFallbackReason: RasterMaskWebGpuFallbackReason | null;
   lastTotalMs: number | null;
@@ -100,7 +111,9 @@ export interface RasterMaskComputeResources {
     baseCacheHitTiles: number;
     baseCacheMissTiles: number;
     baseCacheEvictedTiles: number;
-    densePerBitJobs: number;
+    denseCpuJobs: number;
+    packedCpuJobs: number;
+    packedCpuFallbackJobs: number;
     denseWordScatterJobs: number;
     totalXorWords: number;
     totalNonZeroXorWords: number;
@@ -155,7 +168,13 @@ function initialComputeResources(
     gpuReadbackCapacityBytes: 0,
     baseCacheRetainedBytes: 0,
     sourceScratchCapacityBytes: 0,
+    cpuBudgetBytes: 0,
     gpuBudgetBytes: 0,
+    webGpuFailureStage: null,
+    webGpuCircuitState: "eligible",
+    webGpuCooldownRemainingMs: 0,
+    webGpuConsecutiveFailures: 0,
+    webGpuDeviceLost: 0,
     lastBackend: null,
     lastFallbackReason: null,
     lastTotalMs: null,
@@ -179,7 +198,9 @@ function initialComputeResources(
       baseCacheHitTiles: 0,
       baseCacheMissTiles: 0,
       baseCacheEvictedTiles: 0,
-      densePerBitJobs: 0,
+      denseCpuJobs: 0,
+      packedCpuJobs: 0,
+      packedCpuFallbackJobs: 0,
       denseWordScatterJobs: 0,
       totalXorWords: 0,
       totalNonZeroXorWords: 0,
@@ -281,6 +302,7 @@ export class RasterMaskWorkerPool {
   private readonly queueLimit: number;
   private readonly createWorker: RasterMaskWorkerFactory;
   private readonly clock: RasterMaskWorkerClock;
+  private readonly diagnosticsTaskId: string | null;
   private readonly slots: WorkerSlot[] = [];
   private readonly queue: PoolJob[] = [];
   private readonly sessions = new Map<string, RegisteredSession>();
@@ -302,6 +324,10 @@ export class RasterMaskWorkerPool {
     this.queueLimit = normalizedLimit(options.queueLimit, DEFAULT_QUEUE_LIMIT);
     this.createWorker = options.createWorker ?? createDefaultWorker;
     this.clock = options.clock ?? nativeClock;
+    this.diagnosticsTaskId = options.diagnosticsTaskId ?? null;
+    if (this.diagnosticsTaskId) {
+      activateRasterMaskComputeDiagnostics(this.diagnosticsTaskId);
+    }
   }
 
   getSnapshot(): RasterMaskWorkerPoolSnapshot {
@@ -483,8 +509,8 @@ export class RasterMaskWorkerPool {
       };
       dirtyOverrides: readonly RasterMaskPackedTileOverride[];
       backendPolicy: RasterMaskMorphologyBackendPolicy;
-      computeBudgetBytes: number;
-      benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
+      cpuComputeBudgetBytes: number;
+      gpuBufferBudgetBytes: number;
     },
     options: RasterMaskWorkerRunOptions = {},
   ): Promise<RasterMaskMorphologyRoiResponse> {
@@ -507,7 +533,11 @@ export class RasterMaskWorkerPool {
         if (response.kind !== "morphology_roi" || !response.ok) {
           throw new RasterMaskWorkerError("invalid morphology ROI response");
         }
-        this.recordMorphologyResponse(response, request.computeBudgetBytes);
+        this.recordMorphologyResponse(
+          response,
+          request.cpuComputeBudgetBytes,
+          request.gpuBufferBudgetBytes,
+        );
         return response;
       },
     });
@@ -615,6 +645,9 @@ export class RasterMaskWorkerPool {
     }
     this.sessions.clear();
     this.compute = initialComputeResources("closed");
+    if (this.diagnosticsTaskId) {
+      clearRasterMaskComputeDiagnostics(this.diagnosticsTaskId);
+    }
   }
 
   private enqueue<T>({
@@ -884,12 +917,18 @@ export class RasterMaskWorkerPool {
     this.compute.gpuReadbackCapacityBytes = snapshot.readbackCapacityBytes;
     this.compute.counters.initAttempts = snapshot.initAttempts;
     this.compute.counters.deviceLost = snapshot.deviceLost;
+    this.compute.webGpuFailureStage = snapshot.lastFailureStage;
+    this.compute.webGpuCircuitState = snapshot.circuitState;
+    this.compute.webGpuCooldownRemainingMs = snapshot.cooldownRemainingMs;
+    this.compute.webGpuConsecutiveFailures = snapshot.consecutiveFailures;
+    this.compute.webGpuDeviceLost = snapshot.deviceLost;
     if (snapshot.lastFailure) this.compute.lastFallbackReason = snapshot.lastFailure;
   }
 
   private recordMorphologyResponse(
     response: RasterMaskMorphologyRoiResponse,
-    budgetBytes: number,
+    cpuBudgetBytes: number,
+    gpuBudgetBytes: number,
   ): void {
     this.compute.lastBackend = response.backend;
     this.compute.lastFallbackReason = response.fallbackReason;
@@ -901,7 +940,13 @@ export class RasterMaskWorkerPool {
     this.compute.gpuReadbackCapacityBytes = response.metrics.gpuReadbackCapacityBytes;
     this.compute.baseCacheRetainedBytes = response.metrics.baseCacheRetainedBytes;
     this.compute.sourceScratchCapacityBytes = response.metrics.sourceScratchCapacityBytes;
-    this.compute.gpuBudgetBytes = budgetBytes;
+    this.compute.cpuBudgetBytes = cpuBudgetBytes;
+    this.compute.gpuBudgetBytes = gpuBudgetBytes;
+    this.compute.webGpuFailureStage = response.metrics.failureStage;
+    this.compute.webGpuCircuitState = response.metrics.webGpuCircuitState;
+    this.compute.webGpuCooldownRemainingMs = response.metrics.webGpuCooldownRemainingMs;
+    this.compute.webGpuConsecutiveFailures = response.metrics.webGpuConsecutiveFailures;
+    this.compute.webGpuDeviceLost = response.metrics.webGpuDeviceLost;
     this.compute.peakPackedSourceBytes = Math.max(
       this.compute.peakPackedSourceBytes,
       response.metrics.packedSourceBytes,
@@ -926,10 +971,16 @@ export class RasterMaskWorkerPool {
     this.compute.counters.baseCacheHitTiles += response.metrics.baseCacheHitTiles;
     this.compute.counters.baseCacheMissTiles += response.metrics.baseCacheMissTiles;
     this.compute.counters.baseCacheEvictedTiles += response.metrics.baseCacheEvictedTiles;
-    if (response.metrics.xorOutputStrategy === "dense-per-bit") {
-      this.compute.counters.densePerBitJobs += 1;
-    } else if (response.metrics.xorOutputStrategy === "dense-word-scatter") {
+    if (response.metrics.xorOutputStrategy === "dense-word-scatter") {
       this.compute.counters.denseWordScatterJobs += 1;
+    }
+    if (response.metrics.cpuStrategy === "dense") {
+      this.compute.counters.denseCpuJobs += 1;
+    } else if (response.metrics.cpuStrategy === "packed-separable") {
+      this.compute.counters.packedCpuJobs += 1;
+      if (response.backend === "cpu-fallback") {
+        this.compute.counters.packedCpuFallbackJobs += 1;
+      }
     }
     this.compute.counters.totalXorWords += response.metrics.xorTotalWords;
     this.compute.counters.totalNonZeroXorWords += response.metrics.xorNonZeroWords;
@@ -967,6 +1018,53 @@ export class RasterMaskWorkerPool {
     } else if (response.fallbackReason === "gate-disabled") {
       this.compute.webGpuState = "disabled";
       this.compute.gpuOwnerWorkers = 0;
+    }
+    if (this.diagnosticsTaskId) {
+      publishRasterMaskComputeDiagnostic(this.diagnosticsTaskId, {
+        recordedAt: new Date().toISOString(),
+        backend: response.backend,
+        cpuStrategy: response.metrics.cpuStrategy,
+        prepareStrategy: response.metrics.prepareStrategy,
+        fallbackReason: response.fallbackReason,
+        failureStage: response.metrics.failureStage,
+        inputPixels: response.metrics.inputPixels,
+        corePixels: response.metrics.corePixels,
+        timingsMs: {
+          prepare: response.metrics.backendPrepareMs,
+          compute: response.metrics.computeMs,
+          uploadSubmit: response.metrics.gpuUploadSubmitMs,
+          readback: response.metrics.gpuReadbackMs,
+          patch: response.metrics.diffOrPatchMs,
+          total: response.metrics.totalMs,
+        },
+        bytes: {
+          cpuBudget: response.metrics.cpuBudgetBytes,
+          gpuBudget: response.metrics.gpuBudgetBytes,
+          cpuTransient: response.metrics.cpuTransientBytes,
+          denseTransient: response.metrics.denseTransientBytes,
+          packedIntermediate: response.metrics.packedIntermediateBytes,
+          baseCacheRetained: response.metrics.baseCacheRetainedBytes,
+          sourceScratchCapacity: response.metrics.sourceScratchCapacityBytes,
+          gpuAllocated: response.metrics.allocatedGpuBytes,
+        },
+        cache: {
+          hits: response.metrics.baseCacheHitTiles,
+          misses: response.metrics.baseCacheMissTiles,
+          evictions: response.metrics.baseCacheEvictedTiles,
+        },
+        webGpu: {
+          circuitState: response.metrics.webGpuCircuitState,
+          cooldownRemainingMs: response.metrics.webGpuCooldownRemainingMs,
+          consecutiveFailures: response.metrics.webGpuConsecutiveFailures,
+          deviceLost: response.metrics.webGpuDeviceLost,
+        },
+        pool: {
+          queued: this.queue.length,
+          running: this.slots.filter((slot) => slot.current).length,
+          sessions: this.sessions.size,
+          gpuOwnerWorkers: this.compute.gpuOwnerWorkers,
+        },
+      });
     }
   }
 }

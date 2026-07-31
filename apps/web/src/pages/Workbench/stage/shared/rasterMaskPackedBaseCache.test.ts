@@ -61,7 +61,8 @@ function requestFor(
     operation: { operation: "dilate", kernelShape: "square", radius } as const,
     dirtyOverrides,
     backendPolicy: "webgpu-candidate" as const,
-    computeBudgetBytes: 128 * 1024 * 1024,
+    cpuComputeBudgetBytes: 128 * 1024 * 1024,
+    gpuBufferBudgetBytes: 128 * 1024 * 1024,
   };
 }
 

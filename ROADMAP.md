@@ -24,9 +24,6 @@
 详见
 [v0.23.21–v0.23.25 超大图 Tile 与 Raster Mask 客户端计算 Epic](docs/plans/2026-07-31-v0.23.21-v0.23.25-large-image-tile-webgpu-epic.md)。
 
-- v0.23.21 先让无 GPU、adapter 不可用、device lost 和 gate off 的大 ROI `square dilate`
-  复用 packed CPU/XOR 数据面，并收口能力路由、预算、熔断、诊断与封版后遗留的 benchmark
-  production surface。
 - v0.23.22 建立 50MP 以上图片的 immutable 512px 金字塔、规范化坐标合同、active/building
   generation、manifest、overview/tile URL 批签、幂等生成、重试与派生资产 GC；不复制现有会
   整图读入内存的 Pillow thumbnail 路径。

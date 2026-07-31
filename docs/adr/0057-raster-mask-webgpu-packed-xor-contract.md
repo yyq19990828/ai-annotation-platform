@@ -6,6 +6,8 @@
 - **Supersedes:** —（细化 [ADR-0056](./0056-raster-mask-persistent-client-compute-session.md) 的 WebGPU provider 数据合同，不改变 CPU Worker、history 或保存格式）
 
 > 默认关闭的 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；packed source、core XOR 与惰性 CPU fallback 合同继续有效。
+> GPU 失败后惰性 materialize dense alpha 的 fallback 随后由
+> [ADR-0061](./0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) 的 packed separable CPU 复用取代。
 
 ## Context
 

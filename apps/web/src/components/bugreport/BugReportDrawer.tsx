@@ -20,6 +20,11 @@ import {
   taskIdFromVideoWorkbenchDiagnostics,
   videoWorkbenchDiagnosticsConsoleEntry,
 } from "@/utils/videoWorkbenchDiagnostics";
+import {
+  appendRasterMaskComputeDiagnostics,
+  getRasterMaskComputeDiagnosticsSnapshot,
+  rasterMaskComputeDiagnosticsConsoleEntry,
+} from "@/utils/rasterMaskComputeDiagnostics";
 import { readWorkbenchPerfSnapshot } from "@/pages/Workbench/stage/shared/useWorkbenchPerf";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
@@ -206,11 +211,15 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       }
       const videoDiagnostics = getVideoWorkbenchDiagnosticsSnapshot();
       const videoDiagnosticsEntry = videoWorkbenchDiagnosticsConsoleEntry(videoDiagnostics);
+      const rasterMaskDiagnostics = getRasterMaskComputeDiagnosticsSnapshot();
+      const rasterMaskDiagnosticsEntry =
+        rasterMaskComputeDiagnosticsConsoleEntry(rasterMaskDiagnostics);
       const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({
         msg: e.msg,
         stack: e.stack || "",
       }));
       if (videoDiagnosticsEntry) recentConsoleErrors.unshift(videoDiagnosticsEntry);
+      if (rasterMaskDiagnosticsEntry) recentConsoleErrors.unshift(rasterMaskDiagnosticsEntry);
       // v0.9.41: 附 workbench longtask 快照，便于 BUG 排查时定位卡顿点。
       const perf = readWorkbenchPerfSnapshot();
       if (perf.longTaskCount > 0) {
@@ -221,7 +230,10 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       }
       await bugReportsApi.create({
         title: title.trim(),
-        description: appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
+        description: appendRasterMaskComputeDiagnostics(
+          appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
+          rasterMaskDiagnostics,
+        ),
         severity: severity as "low" | "medium" | "high" | "critical",
         route: location.pathname + location.search,
         browser_ua: navigator.userAgent.slice(0, 200),

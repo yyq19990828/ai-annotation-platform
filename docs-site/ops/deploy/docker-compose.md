@@ -96,12 +96,12 @@ Mask 格式 staged object 使用 import bucket，导出产物使用 export bucke
 
 > 前端 API base 是硬编码的同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），**不读 `VITE_API_URL`**——dev 由 vite proxy、生产由 web 容器内 nginx 反代 `/api/`→`api:8000`，故无需构建时注入 API 地址。
 
-| 变量                                   | 默认                    | 说明                                                                                   |
-| -------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
-| `VITE_TURNSTILE_SITE_KEY`              | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。                            |
-| `VITE_SENTRY_DSN`                      | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                                                |
-| `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `true`                  | 前端构建参数；大 ROI Mask 计算按浏览器能力使用 WebGPU。设为 `false` 后重建可整体回滚。 |
-| `FRONTEND_BASE_URL`                    | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。                         |
+| 变量                                   | 默认                    | 说明                                                                                                                                                                               |
+| -------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_TURNSTILE_SITE_KEY`              | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。                                                                                                                        |
+| `VITE_SENTRY_DSN`                      | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                                                                                                                                            |
+| `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `true`                  | 前端构建参数；大 ROI Mask 计算按浏览器能力与独立 GPU buffer budget 候选 WebGPU。设为 `false` 后重建只回滚 GPU provider；packed/dense CPU fallback 与 CPU compute budget 继续可用。 |
+| `FRONTEND_BASE_URL`                    | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。                                                                                                                     |
 
 ### 2.6 错误监控 (Sentry)
 
@@ -268,6 +268,12 @@ docker compose --env-file .env.production \
 - **celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
 
 两个 `-f` 与 `--env-file .env.production` **都不可省**：前者把 prod 叠加文件合进来才会容器化 api/web，后者是 worker 用 `${VAR}` 覆盖 dev 凭据的插值源（原理见[运行环境形态](/dev/concepts/runtime-environments)）。
+
+Raster Mask WebGPU 使用访问网页的客户端 GPU，不使用 Compose 主机或 Celery GPU。客户端首次失败会
+进入 30 秒 cooldown，下一次 eligible foreground request 只重试一次；连续第二次失败后当前页面固定 CPU。
+这不是服务端容器故障，不应重启 API/Celery。先从 BUG 报告的 Raster Mask compute diagnostics 查看
+`fallbackReason`、`failureStage`、`webGpuCircuitState`、CPU/GPU budgets 与 transient/capacity bytes；
+需要整体停止 adapter 请求时，将 build arg 设为 `false` 后重新构建 web 镜像。
 
 跑完后栈内共 12 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。五个 ML backend 分别使用 `gpu`、`gpu-sam3`、`gpu-yolo`、`gpu-onnxtools`、`gpu-rapidocr` profile，监控使用 `monitoring` profile，均按需启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
 

@@ -72,6 +72,7 @@ describe("RasterMaskWebGpuProvider", () => {
       sourceCapacityBytes: 524_288,
       xorCapacityBytes: 524_288,
       readbackCapacityBytes: 524_288,
+      allocatedCapacityBytes: 1_572_912,
       requiredBytes: 2_621_488,
     });
     expect(estimateRasterMaskWebGpuBytes(33, 1)).toEqual({
@@ -80,6 +81,7 @@ describe("RasterMaskWebGpuProvider", () => {
       sourceCapacityBytes: 8,
       xorCapacityBytes: 8,
       readbackCapacityBytes: 8,
+      allocatedCapacityBytes: 72,
       requiredBytes: 88,
     });
     expect(() => estimateRasterMaskWebGpuBytes(0, 1)).toThrow(/positive integers/);
@@ -106,14 +108,18 @@ describe("RasterMaskWebGpuProvider", () => {
     ).toEqual({
       ok: false,
       reason: "navigator-gpu-unavailable",
+      failureStage: "adapter-request",
       attemptedGpu: false,
       allocatedBytes: 0,
     });
     expect(provider.snapshot()).toMatchObject({
       state: "unavailable",
       allocatedBytes: 0,
-      initAttempts: 0,
+      initAttempts: 1,
       lastFailure: "navigator-gpu-unavailable",
+      lastFailureStage: "adapter-request",
+      circuitState: "cooldown",
+      consecutiveFailures: 1,
     });
     provider.dispose();
     provider.dispose();
@@ -160,7 +166,7 @@ describe("RasterMaskWebGpuProvider", () => {
         coreWidth: 17,
         coreHeight: 3,
         radius: 1,
-        budgetBytes: exact.requiredBytes - 1,
+        budgetBytes: exact.allocatedCapacityBytes - 1,
       }),
     ).toBe("budget-insufficient");
     expect(
@@ -170,11 +176,10 @@ describe("RasterMaskWebGpuProvider", () => {
         coreWidth: 17,
         coreHeight: 3,
         radius: 1,
-        budgetBytes: exact.requiredBytes,
-        reservedBytes: 4,
+        budgetBytes: exact.allocatedCapacityBytes,
       }),
-    ).toBe("budget-insufficient");
-    expect(provider.snapshot()).toMatchObject({ state: "idle", initAttempts: 0 });
+    ).toBe("navigator-gpu-unavailable");
+    expect(provider.snapshot()).toMatchObject({ state: "unavailable", initAttempts: 1 });
   });
 
   it("releases resources and enters a stable lost state when the device is lost", async () => {
@@ -191,6 +196,8 @@ describe("RasterMaskWebGpuProvider", () => {
       allocatedBytes: 0,
       deviceLost: 1,
       lastFailure: "device-lost",
+      circuitState: "cooldown",
+      consecutiveFailures: 1,
     });
     expect(fake.device.destroy).toHaveBeenCalledOnce();
   });
@@ -284,6 +291,7 @@ describe("RasterMaskWebGpuProvider", () => {
     ).resolves.toEqual({
       ok: false,
       reason: "gpu-runtime-failed",
+      failureStage: "queue-write",
       attemptedGpu: true,
       allocatedBytes: 0,
     });
@@ -294,8 +302,48 @@ describe("RasterMaskWebGpuProvider", () => {
       allocatedBytes: 0,
       deviceLost: 0,
       lastFailure: "gpu-runtime-failed",
+      lastFailureStage: "queue-write",
+      circuitState: "cooldown",
+      consecutiveFailures: 1,
     });
     expect(fake.destroyedBuffers).toHaveLength(4);
     expect(fake.destroyedBuffers.every((destroy) => destroy.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("retries once after cooldown and then fixes the page circuit on a second failure", () => {
+    let now = 0;
+    const provider = new RasterMaskWebGpuProvider(null, {
+      now: () => now,
+      cooldownMs: 100,
+    });
+    const shape = {
+      inputWidth: 32,
+      inputHeight: 1,
+      coreWidth: 32,
+      coreHeight: 1,
+      radius: 1,
+      budgetBytes: 1024,
+    };
+
+    expect(provider.preflightSquareDilateXor(shape)).toBe("navigator-gpu-unavailable");
+    expect(provider.snapshot()).toMatchObject({
+      initAttempts: 1,
+      circuitState: "cooldown",
+      consecutiveFailures: 1,
+    });
+    expect(provider.preflightSquareDilateXor(shape)).toBe("navigator-gpu-unavailable");
+    expect(provider.snapshot().initAttempts).toBe(1);
+
+    now = 100;
+    expect(provider.preflightSquareDilateXor(shape)).toBe("navigator-gpu-unavailable");
+    expect(provider.snapshot()).toMatchObject({
+      initAttempts: 2,
+      circuitState: "page-fixed",
+      consecutiveFailures: 2,
+    });
+
+    now = 10_000;
+    expect(provider.preflightSquareDilateXor(shape)).toBe("navigator-gpu-unavailable");
+    expect(provider.snapshot().initAttempts).toBe(2);
   });
 });

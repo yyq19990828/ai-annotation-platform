@@ -45,6 +45,8 @@ describe("BugReportDrawer", () => {
       .__videoWorkbenchDiagnostics;
     delete (window as unknown as { __videoFrameClockDiagnostics?: unknown })
       .__videoFrameClockDiagnostics;
+    delete (window as unknown as { __rasterMaskComputeDiagnostics?: unknown })
+      .__rasterMaskComputeDiagnostics;
   });
 
   it("adds pasted clipboard screenshots and allows removing them", async () => {
@@ -120,6 +122,72 @@ describe("BugReportDrawer", () => {
     expect(payload.description).toContain('"frameIndex": 42');
     expect(payload.recent_console_errors[0].msg).toBe("[video-workbench-diagnostics]");
     expect(payload.recent_console_errors[0].stack).toContain('"timelineMode": "selected-track"');
+  });
+
+  it("attaches bounded Raster Mask compute diagnostics without exposing its task scope", async () => {
+    (
+      window as unknown as { __rasterMaskComputeDiagnostics?: unknown }
+    ).__rasterMaskComputeDiagnostics = {
+      activeTaskId: "private-task-scope",
+      route: window.location.pathname + window.location.search,
+      updatedAt: "2026-07-31T00:00:00.000Z",
+      events: [
+        {
+          recordedAt: "2026-07-31T00:00:00.000Z",
+          backend: "cpu",
+          cpuStrategy: "packed-separable",
+          prepareStrategy: "direct-rle",
+          fallbackReason: "navigator-gpu-unavailable",
+          failureStage: "adapter-request",
+          inputPixels: 4_194_304,
+          corePixels: 4_194_304,
+          timingsMs: {
+            prepare: 1,
+            compute: 2,
+            uploadSubmit: null,
+            readback: null,
+            patch: 3,
+            total: 6,
+          },
+          bytes: {
+            cpuBudget: 64,
+            gpuBudget: 0,
+            cpuTransient: 16,
+            denseTransient: 0,
+            packedIntermediate: 8,
+            baseCacheRetained: 0,
+            sourceScratchCapacity: 4,
+            gpuAllocated: 0,
+          },
+          cache: { hits: 0, misses: 1, evictions: 0 },
+          webGpu: {
+            circuitState: "cooldown",
+            cooldownRemainingMs: 30_000,
+            consecutiveFailures: 1,
+            deviceLost: 0,
+          },
+          pool: { queued: 0, running: 1, sessions: 1, gpuOwnerWorkers: 0 },
+        },
+      ],
+    };
+
+    render(<BugReportDrawer open onClose={() => {}} />);
+    await screen.findByText("暂无反馈");
+    fireEvent.click(screen.getByText("提交新反馈"));
+    fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
+      target: { value: "Mask 膨胀慢" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("详细描述问题..."), {
+      target: { value: "大图操作回退" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const payload = mocks.create.mock.calls[0][0];
+    expect(payload.description).toContain("Raster Mask Compute Diagnostics");
+    expect(payload.description).toContain('"cpuStrategy": "packed-separable"');
+    expect(payload.description).not.toContain("private-task-scope");
+    expect(payload.recent_console_errors[0].msg).toBe("[raster-mask-compute-diagnostics]");
   });
 
   it("attaches precise-frame diagnostics without leaking sensitive media fields", async () => {

@@ -142,19 +142,24 @@ transferable buffer 返回。分析默认 15 秒、普通操作 30 秒、tile me
 index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误，不在主线程静默执行大操作。
 
 大 ROI morphology 也复用同一 pool 与持久 base RLE session。store 只发送 core、halo 后的 input、operation
-和相交 dirty tile 的 packed overrides；Worker 在 session 内重建 ROI，CPU 路径复用完整 morphology 语义，
-结果只返回 core 内 non-empty XOR tile patches。core tile 以最多两个并发 decode 有界物化，避免大 ROI 一次
-填满 Worker 等待队列。响应必须先通过 session、内容摘要、source / tile revision、尺寸、尾位和 core 边界
-校验，再一次性应用；取消、过期或畸形响应不会产生部分写入。
+和相交 dirty tile 的 packed overrides；结果只返回 core 内 non-empty XOR tile patches。core tile 以最多两个
+并发 decode 有界物化，避免大 ROI 一次填满 Worker 等待队列。响应必须先通过 session、内容摘要、
+source / tile revision、尺寸、尾位和 core 边界校验，再一次性应用；取消、过期或畸形响应不会产生部分写入。
 
-WebGPU ready 时，Worker 不先重建 dense alpha，而是按 session 惰性缓存 immutable base RLE 的 512²
-row-aligned packed tiles，再以 word span 组装 ROI scratch；本次请求显式携带的 dirty packed overrides 以
-masked overwrite 做 exact set / clear，绝不写回 base cache。cache 不是 mutable current truth，miss、预算
-不足或 cache invariant failure 时可继续从 immutable RLE 直接构造 packed input。shader 对含 halo 的 input
-执行 morphology，并只回读 core `after XOR source` words；Worker 以 popcount、首尾 bit 和跨 tile byte
-spans 直接把 non-zero words scatter 成同一种 history patch，不再逐 set bit 重算像素与 tile 坐标。GPU
-submit、map 或 device lost 中途失败时才惰性生成 dense alpha 并走 CPU，因此成功 GPU 请求没有
-input-sized alpha，fallback 仍只有一个 production 正确性实现。
+对于 input 至少 4 MP、radius `1..31` 的 `square dilate`，Worker 按 session 惰性缓存 immutable base RLE
+的 512² row-aligned packed tiles，再以 word span 组装 ROI scratch；本次请求显式携带的 dirty packed
+overrides 以 masked overwrite 做 exact set / clear，绝不写回 base cache。cache 不是 mutable current truth，
+miss、CPU budget 不足或 invariant failure 时可从 immutable RLE 直接构造 packed input。
+
+WebGPU ready 时，shader 对含 halo 的 input 执行 morphology，并只回读 core `after XOR source` words。
+WebGPU gate 关闭、adapter/device 不可用、初始化中、GPU budget 不足，或 submit/map/device lost 等运行时
+失败时，同一 packed source 交给 separable CPU kernel：水平 word expansion 只计算一次，再按纵向窗口 OR。
+因此大 ROI CPU fallback 不重建 input-sized dense alpha。小 ROI、不支持的 operation 或 packed prospective
+admission 失败时才使用完整 dense CPU morphology。
+
+两种 backend 的 core XOR 都由同一 builder 处理：Worker 以 popcount、首尾 bit 和跨 tile byte spans 把
+non-zero words scatter 成 history patch，不逐 set bit 重算像素与 tile 坐标。production 协议没有 benchmark
+selector；direct packed kernel 只作为 test/benchmark oracle。
 
 Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始后只在首次触及某个 tile
 时捕获临时基线，结束时与当前二值像素生成 XOR 并释放基线；高级操作在确认时按变更边界
@@ -180,15 +185,22 @@ COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中�
 编辑器保持只读 overview；已经 dirty 的 tile 与 history 保留到用户保存、重试或显式丢弃。
 
 WebGPU 只是大 ROI `square dilate` 的客户端候选后端，build-time gate 默认开启，并在首次相关 morphology
-请求时惰性探测 adapter；显式关闭时 Worker 不加载 provider、不请求 adapter。只有 slot 0 可以持有一个 device，且仅在 ROI 至少 `2048²`、客户端
-adapter 已 ready、设备档位和 compute byte budget 允许时路由。初始化中、无 adapter、预算不足、device
-lost、运行时失败或不支持的 operation 都在同一 Worker 精确回退 CPU。该 GPU 属于访问网页的浏览器；
-Linux API、Celery 与 ML backend 主机不会因为此 gate 使用服务端 GPU。pool snapshot 暴露 provider 状态、
-owner、source / XOR / readback capacity、base cache / scratch bytes、prepare strategy、cache hit / miss / evict、
-XOR word density / touched tiles、scan / allocation / scatter 分段、backend 与稳定 fallback reason，不包含
-Mask 内容。base cache 上限取 32 MiB 与 compute budget
-四分之一中的较小值，并与 scratch、request output 及 GPU buffer 共用 prospective budget preflight；session
-release 会清理所属 entries，dispose 后这些资源与 session 一起归零。
+请求时惰性探测 adapter；显式关闭时 Worker 不加载 provider、不请求 adapter。只有 slot 0 可以持有一个
+device，且仅在 input 至少 `2048²`、客户端 adapter ready、operation 和独立 GPU buffer budget 允许时路由。
+CPU compute budget 单独约束 packed/dense scratch、XOR、patch upper bound 与 retained cache；GPU budget
+为零不会清空 CPU budget。
+
+第一次 WebGPU failure 销毁 device/buffers 并进入 30 秒 cooldown；到期后的下一次 eligible foreground
+request 只重试一次，连续第二次失败后当前 page/provider lifecycle 固定 CPU。新 Mask session 不清除
+circuit；最后 session release、Worker replacement 或 dispose 会销毁 provider。该 GPU 属于访问网页的
+浏览器；Linux API、Celery 与 ML backend 主机不会因为此 gate 使用服务端 GPU。
+
+pool snapshot 暴露 provider/circuit 状态、稳定 failure stage、owner、CPU/GPU budgets、source / XOR /
+readback capacity、packed/dense transient、base cache / scratch bytes、prepare strategy、cache hit / miss /
+evict、XOR word density / touched tiles、scan / allocation / scatter 分段与 backend，不包含 Mask 内容。
+最近 20 次 typed compute event 可附到 BUG 报告；完整 task id、adapter/driver 和浏览器原始错误不进入该
+快照。base cache 上限取 32 MiB 与 CPU budget 四分之一中的较小值；session release 会清理所属 entries，
+dispose 后这些资源与 session 一起归零。
 
 ### 原子多对象 Mask 操作
 

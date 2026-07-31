@@ -1,6 +1,6 @@
 # WebGPU 在视频工作台中的适用性调研
 
-> 调研日期：2026-07-25 · Production provider A/B：2026-07-30 · 状态：R1.4 完成，候选后端默认关闭
+> 调研日期：2026-07-25 · 最近 Production A/B：2026-07-31 · 状态：R1.7 完成，按客户端能力默认候选
 >
 > 目标：判断 WebGPU 能否改善视频精确帧、Konva 合成或 Raster Mask 性能，并明确它与 Linux
 > 服务端 GPU、客户端硬件解码之间的边界。
@@ -19,12 +19,11 @@
    同时交给 Konva、Minimap 和 `captureCurrentFrameJpeg`。若把 WebGPU canvas 再作为
    `Konva.Image` 输入，会多一次 canvas 间同步 / 拷贝；若独立放到 Konva canvas 下方，则必须重建
    viewport 变换、精确帧回执、抓帧与上下文丢失合同。
-4. **Raster Mask packed 输入与 core XOR 回读通过工程性能门，但仍不支持默认开启。** production
-   Worker 直接从 base RLE 构造 packed ROI、shader 只回读 core XOR 后，`2048²` 两轮 p95 为
-   37.7 / 40.9 ms，4K 为 61.4 / 57.0 ms；相对上一条 production provider 分别再改善
-   77.5% / 76.6% 与 76.8% / 78.8%。成功 GPU 请求不再分配 input-sized alpha，XOR / save
-   checksum、非 32 对齐 core、Long Task 和资源释放均通过；macOS、Wayland、Windows 无 flag 矩阵
-   仍阻断默认开启。
+4. **Raster Mask packed 输入现在同时服务 WebGPU 与 CPU fallback。** production Worker 直接从 base
+   RLE 构造 packed ROI；GPU 可用时只回读 core XOR，不可用时使用 packed separable CPU kernel。
+   2048²/4K、radius 1/8/31 两轮共 12 个 CPU fallback case 相对 dense baseline 的端到端 p95 改善
+   80.1%–91.3%。build gate 缺省开启，但 operation、4 MP crossover、CPU/GPU 独立预算、客户端能力与
+   cooldown/page-fixed circuit 仍共同决定实际 backend；不支持客户端始终精确回退 CPU。
 5. **WebGPU 不是解决 Linux 服务器 WebCodecs 硬解问题的手段。** 如果确实要让服务端 RTX 3090
    承担视频解码，需要另建 FFmpeg/NVDEC、CUDA 或 GStreamer 服务端路径，并承担帧传输、缓存、并发
    和画面一致性成本；这属于另一套架构。
@@ -508,6 +507,63 @@ binding、buffer、record protocol、validator、metrics 或 circuit breaker；�
 [`data/21-mask-webgpu-sparse-xor-compaction-ab.json`](./data/21-mask-webgpu-sparse-xor-compaction-ab.json)。
 该结果说明减少 readback payload 不能直接推导 map wall 或端到端收益；后续不应在没有新的瓶颈证据时改做
 prefix-sum、GPU tile payload 或 GPU-resident mutable source。
+
+R1.6 资格时 build gate 仍默认关闭，production 协议也暂时保留了 benchmark selector。随后
+ADR-0060 将 capability-gated build 默认值改为开启；R1.7 则删除 selector，并为无 GPU 的正常客户端补齐
+独立优化的 CPU fallback。前述历史时点数据不据此重写。
+
+#### R1.7 Packed separable CPU fallback、双预算与 WebGPU circuit
+
+默认候选后，Linux X11 默认 Chrome 的真实 `adapter-unavailable` 路径变成必须优化的正常产品路径。
+R1.7 保持 4 MP crossover 与既有 exact history/save 合同，新增两种 packed CPU kernel：
+
+- direct kernel 逐输出 word 扫描纵向与横向 radius，作为 test/benchmark oracle；
+- separable kernel 只计算一次水平 expansion intermediate，再按纵向窗口 OR，作为 production winner。
+
+CPU 和 GPU 准入改为两个 hard budget：CPU budget 负责 packed/dense scratch、XOR、patch upper bound 与
+retained base cache；GPU budget 只负责 prospective source/XOR/readback/params capacities。关闭 gate、
+adapter 不可用或低内存档位 GPU budget 为零时，CPU budget 仍保持 32/64/128 MiB 档位，不再因为没有
+客户端 GPU 而拒绝 CPU 操作。
+
+冻结 `ab35d73c` 的 dense production runner 后，在同一 Linux 主机与 headless Chromium 上分别以
+radius 1/8/31 执行 2048²/4K 两轮，每轮 3 次预热 + 10 次记录：
+
+| radius | ROI         | dense baseline p95 两轮 | packed final p95 两轮 |  p95 改善两轮 |
+| -----: | ----------- | ----------------------: | --------------------: | ------------: |
+|      1 | `2048²`     |        246.5 / 253.8 ms |        25.7 / 31.6 ms | 89.6% / 87.5% |
+|      1 | `3840×2160` |        474.0 / 491.1 ms |        48.6 / 56.4 ms | 89.7% / 88.5% |
+|      8 | `2048²`     |        264.5 / 265.4 ms |        25.3 / 23.1 ms | 90.4% / 91.3% |
+|      8 | `3840×2160` |        504.9 / 499.7 ms |        50.5 / 58.1 ms | 90.0% / 88.4% |
+|     31 | `2048²`     |        286.5 / 297.3 ms |        56.9 / 49.3 ms | 80.1% / 83.4% |
+|     31 | `3840×2160` |        523.0 / 535.7 ms |        80.8 / 83.9 ms | 84.6% / 84.3% |
+
+12/12 case 的 patch、save 与 reload checksum 都与 dense baseline exact。code-derived CPU transient 为
+2048² 3.50 MiB、4K 8.43 MiB，包含 packed source charge、retained cache、水平 intermediate、XOR output
+与 worst-case patch bits。
+
+内核 A/B 同样执行两轮。radius 1 的 direct → separable p95 改善为 20.0%–36.9%；radius 8 为
+88.4%–90.0%；radius 31 为 94.2%–96.6%。因此 production 只保留 separable，direct 只作为纯函数
+oracle 与 runner，不进入 Worker route。
+
+本机 RTX 3090、Chrome 150、有头强制 Vulkan 的成功路径也重跑了 radius 8：
+
+| ROI         | backend | operation p95 | Worker p95 | GPU capacity |
+| ----------- | ------- | ------------: | ---------: | -----------: |
+| `2048²`     | WebGPU  |       16.2 ms |     8.2 ms |    1,572,912 |
+| `3840×2160` | WebGPU  |       31.7 ms |    17.6 ms |    3,145,776 |
+
+两条 GPU 路径均为单 owner、零 Long Task、保存/重载 exact，dispose 后 GPU/Worker/session 资源归零。
+这只证明本机强制 Vulkan 资格，不改变 X11 默认 adapter 不可用、跨平台矩阵未完成的口径。
+
+provider 故障策略改为：第一次失败进入 30 秒 cooldown；到期后的下一次 eligible foreground request
+只重试一次；连续第二次失败后当前 page/provider lifecycle 固定 CPU。failure stage 至少区分 adapter、
+device、shader、pipeline、buffer、queue、encode、submit、map、readback 与 patch build。最近 20 次
+typed compute event 可进入 BUG 报告，但不含完整 task id、Mask 内容、adapter/driver 或浏览器原始错误。
+
+聚合证据见
+[`data/21-mask-packed-cpu-fallback-ab.json`](./data/21-mask-packed-cpu-fallback-ab.json)。R1.7 决策是
+**ship packed separable CPU fallback and independent WebGPU circuit**；WebGPU 可分离 kernel、
+长会话联合资源账本与超大图 tile/pyramid 继续由后续计划单独资格，不在本轮扩张。
 
 ### R2：视频底图 spike（条件触发）
 

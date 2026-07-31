@@ -6,6 +6,8 @@
 - **Supersedes:** —（细化 [ADR-0057](./0057-raster-mask-webgpu-packed-xor-contract.md) 的 packed source prepare，不改变 GPU shader、CPU fallback、history 或保存格式）
 
 > 默认关闭的 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；immutable cache、预算与生命周期合同继续有效。
+> cache 与 GPU buffers 共用单项 compute budget 的准入随后由
+> [ADR-0061](./0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) 的 CPU/GPU 双预算取代。
 
 ## Context
 

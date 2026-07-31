@@ -6,6 +6,8 @@
 - **Supersedes:** —（细化 [ADR-0057](./0057-raster-mask-webgpu-packed-xor-contract.md) 的 XOR result → history patch 数据面）
 
 > D3 的默认关闭 rollout 决策已由 [ADR-0060](./0060-default-enable-capability-gated-client-acceleration.md) 取代；dense word-scatter 与 sparse no-go 决策继续有效。
+> production benchmark selector 与旧 per-bit builder 随后由
+> [ADR-0061](./0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) 删除；word-scatter winner 不变。
 
 ## Context
 

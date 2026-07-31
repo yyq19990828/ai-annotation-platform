@@ -38,12 +38,12 @@ export interface RasterMaskPackedTileOverride extends RasterMaskTileRect {
 
 export type RasterMaskMorphologyBackendPolicy = "cpu" | "webgpu-candidate";
 export type RasterMaskMorphologyBackend = "cpu" | "webgpu" | "cpu-fallback";
+export type RasterMaskCpuStrategy = "not-run" | "dense" | "packed-separable";
 export type RasterMaskPrepareStrategy = "dense-cpu" | "direct-rle" | "packed-cache";
-export type RasterMaskXorPatchStrategy = "dense-per-bit" | "dense-word-scatter";
 export type RasterMaskXorOutputStrategy =
   | "cpu-dense"
   | "cpu-after-gpu-failure"
-  | RasterMaskXorPatchStrategy;
+  | "dense-word-scatter";
 export type RasterMaskWebGpuFallbackReason =
   | "gate-disabled"
   | "unsupported-operation"
@@ -55,9 +55,26 @@ export type RasterMaskWebGpuFallbackReason =
   | "initialization-failed"
   | "device-lost"
   | "gpu-runtime-failed";
+export type RasterMaskComputeFailureStage =
+  | "adapter-request"
+  | "device-request"
+  | "shader-compile"
+  | "pipeline-create"
+  | "buffer-create"
+  | "queue-write"
+  | "encode"
+  | "submit"
+  | "map"
+  | "readback-validate"
+  | "patch-build";
+export type RasterMaskWebGpuCircuitState = "eligible" | "cooldown" | "page-fixed";
 
 export interface RasterMaskMorphologyMetrics {
   totalMs: number;
+  cpuStrategy: RasterMaskCpuStrategy;
+  failureStage: RasterMaskComputeFailureStage | null;
+  inputPixels: number;
+  corePixels: number;
   backendPrepareMs: number;
   prepareStrategy: RasterMaskPrepareStrategy;
   directRleScanMs: number;
@@ -85,6 +102,12 @@ export interface RasterMaskMorphologyMetrics {
   gpuReadbackMs: number | null;
   gpuPassMs: number | null;
   fallbackMaterializeMs: number | null;
+  cpuBudgetBytes: number;
+  gpuBudgetBytes: number;
+  cpuTransientBytes: number;
+  denseTransientBytes: number;
+  packedIntermediateBytes: number;
+  patchUpperBoundBytes: number;
   inputAlphaBytes: number;
   packedSourceBytes: number;
   xorReadbackBytes: number;
@@ -92,6 +115,10 @@ export interface RasterMaskMorphologyMetrics {
   gpuSourceCapacityBytes: number;
   gpuXorCapacityBytes: number;
   gpuReadbackCapacityBytes: number;
+  webGpuCircuitState: RasterMaskWebGpuCircuitState;
+  webGpuCooldownRemainingMs: number;
+  webGpuConsecutiveFailures: number;
+  webGpuDeviceLost: number;
 }
 
 export interface RasterMaskWebGpuWorkerSnapshot {
@@ -103,6 +130,10 @@ export interface RasterMaskWebGpuWorkerSnapshot {
   initAttempts: number;
   deviceLost: number;
   lastFailure: RasterMaskWebGpuFallbackReason | null;
+  lastFailureStage: RasterMaskComputeFailureStage | null;
+  circuitState: RasterMaskWebGpuCircuitState;
+  cooldownRemainingMs: number;
+  consecutiveFailures: number;
 }
 
 export interface RasterMaskMorphologyRoiResponse {
@@ -201,8 +232,8 @@ export type RasterMaskMorphologyRoiRequest = {
   };
   dirtyOverrides: RasterMaskPackedTileOverride[];
   backendPolicy: RasterMaskMorphologyBackendPolicy;
-  computeBudgetBytes: number;
-  benchmarkXorPatchStrategy?: RasterMaskXorPatchStrategy;
+  cpuComputeBudgetBytes: number;
+  gpuBufferBudgetBytes: number;
 };
 
 type CompareTileWorkerRequest = {

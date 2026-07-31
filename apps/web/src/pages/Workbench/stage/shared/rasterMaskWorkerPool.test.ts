@@ -8,6 +8,7 @@ import {
   RasterMaskWorkerTimeoutError,
   type RasterMaskWorkerClock,
 } from "./rasterMaskWorkerPool";
+import { getRasterMaskComputeDiagnosticsSnapshot } from "../../../../utils/rasterMaskComputeDiagnostics";
 
 function zeroRle(width: number, height = 1) {
   return {
@@ -237,7 +238,8 @@ describe("RasterMaskWorkerPool", () => {
       operation: { operation: "dilate", kernelShape: "square", radius: 1 },
       dirtyOverrides: [],
       backendPolicy: "cpu",
-      computeBudgetBytes: 0,
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
     });
     const ordinary = pool.analyze(zeroRle(2));
 
@@ -275,6 +277,10 @@ describe("RasterMaskWorkerPool", () => {
       patches: [],
       metrics: {
         totalMs: 1,
+        cpuStrategy: "dense",
+        failureStage: null,
+        inputPixels: 16,
+        corePixels: 16,
         backendPrepareMs: 0.2,
         prepareStrategy: "dense-cpu",
         directRleScanMs: 0,
@@ -302,6 +308,12 @@ describe("RasterMaskWorkerPool", () => {
         gpuReadbackMs: null,
         gpuPassMs: null,
         fallbackMaterializeMs: null,
+        cpuBudgetBytes: 64 * 1024 * 1024,
+        gpuBudgetBytes: 0,
+        cpuTransientBytes: 64,
+        denseTransientBytes: 64,
+        packedIntermediateBytes: 0,
+        patchUpperBoundBytes: 2,
         inputAlphaBytes: 16,
         packedSourceBytes: 0,
         xorReadbackBytes: 0,
@@ -309,6 +321,10 @@ describe("RasterMaskWorkerPool", () => {
         gpuSourceCapacityBytes: 0,
         gpuXorCapacityBytes: 0,
         gpuReadbackCapacityBytes: 0,
+        webGpuCircuitState: "eligible",
+        webGpuCooldownRemainingMs: 0,
+        webGpuConsecutiveFailures: 0,
+        webGpuDeviceLost: 0,
       },
     });
 
@@ -356,6 +372,10 @@ describe("RasterMaskWorkerPool", () => {
         initAttempts: 1,
         deviceLost: 0,
         lastFailure: null,
+        lastFailureStage: null,
+        circuitState: "eligible",
+        cooldownRemainingMs: 0,
+        consecutiveFailures: 0,
       },
     });
     await warmup;
@@ -385,6 +405,7 @@ describe("RasterMaskWorkerPool", () => {
     const pool = new RasterMaskWorkerPool({
       size: 1,
       createWorker: () => worker as unknown as Worker,
+      diagnosticsTaskId: "task-scope",
     });
     pool.registerSession("mask", "sha", zeroRle(4, 4));
     const pending = pool.morphologyRoi({
@@ -396,14 +417,14 @@ describe("RasterMaskWorkerPool", () => {
       operation: { operation: "dilate", kernelShape: "square", radius: 1 },
       dirtyOverrides: [],
       backendPolicy: "webgpu-candidate",
-      computeBudgetBytes: 128 * 1024 * 1024,
-      benchmarkXorPatchStrategy: "dense-per-bit",
+      cpuComputeBudgetBytes: 128 * 1024 * 1024,
+      gpuBufferBudgetBytes: 128 * 1024 * 1024,
     });
     const request = worker.jobRequests()[0];
     if (!request || request.kind !== "morphology_roi") {
       throw new Error("missing morphology request");
     }
-    expect(request.benchmarkXorPatchStrategy).toBe("dense-per-bit");
+    expect(request).not.toHaveProperty("benchmarkXorPatchStrategy");
     worker.respond({
       kind: "morphology_roi",
       id: request.id,
@@ -418,6 +439,10 @@ describe("RasterMaskWorkerPool", () => {
       patches: [],
       metrics: {
         totalMs: 4,
+        cpuStrategy: "not-run",
+        failureStage: null,
+        inputPixels: 16,
+        corePixels: 16,
         backendPrepareMs: 1.5,
         prepareStrategy: "packed-cache",
         directRleScanMs: 0,
@@ -431,7 +456,7 @@ describe("RasterMaskWorkerPool", () => {
         sourceScratchCapacityBytes: 2048,
         computeMs: 1,
         diffOrPatchMs: 1.5,
-        xorOutputStrategy: "dense-per-bit",
+        xorOutputStrategy: "dense-word-scatter",
         xorTotalWords: 128,
         xorNonZeroWords: 8,
         xorWordDensity: 0.0625,
@@ -445,6 +470,12 @@ describe("RasterMaskWorkerPool", () => {
         gpuReadbackMs: 0.8,
         gpuPassMs: null,
         fallbackMaterializeMs: null,
+        cpuBudgetBytes: 128 * 1024 * 1024,
+        gpuBudgetBytes: 128 * 1024 * 1024,
+        cpuTransientBytes: 4096,
+        denseTransientBytes: 0,
+        packedIntermediateBytes: 0,
+        patchUpperBoundBytes: 512,
         inputAlphaBytes: 0,
         packedSourceBytes: 1024,
         xorReadbackBytes: 512,
@@ -452,6 +483,10 @@ describe("RasterMaskWorkerPool", () => {
         gpuSourceCapacityBytes: 1024,
         gpuXorCapacityBytes: 1024,
         gpuReadbackCapacityBytes: 1024,
+        webGpuCircuitState: "eligible",
+        webGpuCooldownRemainingMs: 0,
+        webGpuConsecutiveFailures: 0,
+        webGpuDeviceLost: 0,
       },
     });
 
@@ -467,11 +502,19 @@ describe("RasterMaskWorkerPool", () => {
         baseCacheHitTiles: 3,
         baseCacheMissTiles: 1,
         baseCacheEvictedTiles: 2,
-        densePerBitJobs: 1,
-        denseWordScatterJobs: 0,
+        denseCpuJobs: 0,
+        packedCpuJobs: 0,
+        packedCpuFallbackJobs: 0,
+        denseWordScatterJobs: 1,
         totalXorWords: 128,
         totalNonZeroXorWords: 8,
       },
+    });
+    expect(getRasterMaskComputeDiagnosticsSnapshot()?.events[0]).toMatchObject({
+      backend: "webgpu",
+      cpuStrategy: "not-run",
+      inputPixels: 16,
+      bytes: { gpuAllocated: 3072 },
     });
     pool.dispose();
   });
@@ -500,6 +543,10 @@ describe("RasterMaskWorkerPool", () => {
         initAttempts: 1,
         deviceLost: 0,
         lastFailure: null,
+        lastFailureStage: null,
+        circuitState: "eligible",
+        cooldownRemainingMs: 0,
+        consecutiveFailures: 0,
       },
     });
     await warmup;

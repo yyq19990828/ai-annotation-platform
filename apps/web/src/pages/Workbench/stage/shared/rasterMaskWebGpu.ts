@@ -1,6 +1,11 @@
-import type { RasterMaskWebGpuFallbackReason } from "./rasterMaskWorkerProtocol";
+import type {
+  RasterMaskComputeFailureStage,
+  RasterMaskWebGpuCircuitState,
+  RasterMaskWebGpuFallbackReason,
+} from "./rasterMaskWorkerProtocol";
 
 const PARAMS_BYTES = 48;
+const DEFAULT_COOLDOWN_MS = 30_000;
 
 export type RasterMaskWebGpuState =
   | "idle"
@@ -19,6 +24,10 @@ export interface RasterMaskWebGpuSnapshot {
   initAttempts: number;
   deviceLost: number;
   lastFailure: RasterMaskWebGpuFallbackReason | null;
+  lastFailureStage: RasterMaskComputeFailureStage | null;
+  circuitState: RasterMaskWebGpuCircuitState;
+  cooldownRemainingMs: number;
+  consecutiveFailures: number;
 }
 
 export interface RasterMaskWebGpuRunMetrics {
@@ -39,6 +48,7 @@ export type RasterMaskWebGpuRunResult =
   | {
       ok: false;
       reason: RasterMaskWebGpuFallbackReason;
+      failureStage: RasterMaskComputeFailureStage | null;
       attemptedGpu: boolean;
       allocatedBytes: number;
     };
@@ -66,6 +76,7 @@ export interface RasterMaskWebGpuByteEstimate {
   sourceCapacityBytes: number;
   xorCapacityBytes: number;
   readbackCapacityBytes: number;
+  allocatedCapacityBytes: number;
   requiredBytes: number;
 }
 
@@ -76,7 +87,6 @@ interface RasterMaskWebGpuShape {
   coreHeight: number;
   radius: number;
   budgetBytes: number;
-  reservedBytes?: number;
 }
 
 export interface RasterMaskWebGpuRunOptions extends RasterMaskWebGpuShape {
@@ -84,6 +94,11 @@ export interface RasterMaskWebGpuRunOptions extends RasterMaskWebGpuShape {
   sourceWordsPerRow: number;
   coreOffsetX: number;
   coreOffsetY: number;
+}
+
+export interface RasterMaskWebGpuProviderOptions {
+  now?: () => number;
+  cooldownMs?: number;
 }
 
 function checkedPackedBytes(width: number, height: number, label: string): number {
@@ -126,6 +141,8 @@ export function estimateRasterMaskWebGpuBytes(
     xorCapacityBytes +
     readbackCapacityBytes +
     PARAMS_BYTES;
+  const allocatedCapacityBytes =
+    sourceCapacityBytes + xorCapacityBytes + readbackCapacityBytes + PARAMS_BYTES;
   if (!Number.isSafeInteger(requiredBytes)) {
     throw new Error("WebGPU Raster Mask compute bytes exceed the safe byte limit");
   }
@@ -135,6 +152,7 @@ export function estimateRasterMaskWebGpuBytes(
     sourceCapacityBytes,
     xorCapacityBytes,
     readbackCapacityBytes,
+    allocatedCapacityBytes,
     requiredBytes,
   };
 }
@@ -230,9 +248,24 @@ export class RasterMaskWebGpuProvider {
   private initAttempts = 0;
   private deviceLost = 0;
   private lastFailure: RasterMaskWebGpuFallbackReason | null = null;
+  private lastFailureStage: RasterMaskComputeFailureStage | null = null;
+  private circuitState: RasterMaskWebGpuCircuitState = "eligible";
+  private cooldownUntilMs = 0;
+  private consecutiveFailures = 0;
   private generation = 0;
+  private readonly now: () => number;
+  private readonly cooldownMs: number;
 
-  constructor(private readonly gpu: GPU | null = RasterMaskWebGpuProvider.navigatorGpu()) {}
+  constructor(
+    private readonly gpu: GPU | null = RasterMaskWebGpuProvider.navigatorGpu(),
+    options: RasterMaskWebGpuProviderOptions = {},
+  ) {
+    this.now = options.now ?? (() => globalThis.performance?.now?.() ?? Date.now());
+    this.cooldownMs =
+      Number.isFinite(options.cooldownMs) && options.cooldownMs! >= 0
+        ? Math.floor(options.cooldownMs!)
+        : DEFAULT_COOLDOWN_MS;
+  }
 
   private static navigatorGpu(): GPU | null {
     if (!globalThis.isSecureContext) return null;
@@ -257,18 +290,25 @@ export class RasterMaskWebGpuProvider {
       initAttempts: this.initAttempts,
       deviceLost: this.deviceLost,
       lastFailure: this.lastFailure,
+      lastFailureStage: this.lastFailureStage,
+      circuitState: this.circuitState,
+      cooldownRemainingMs:
+        this.circuitState === "cooldown"
+          ? Math.max(0, Math.ceil(this.cooldownUntilMs - this.now()))
+          : 0,
+      consecutiveFailures: this.consecutiveFailures,
     };
   }
 
   warmup(): RasterMaskWebGpuState {
+    this.prepareCooldownRetry();
     if (this.state !== "idle") return this.state;
+    this.initAttempts += 1;
     if (!this.gpu) {
-      this.state = "unavailable";
-      this.lastFailure = "navigator-gpu-unavailable";
+      this.recordFailure("navigator-gpu-unavailable", "adapter-request", "unavailable");
       return this.state;
     }
     this.state = "warming";
-    this.initAttempts += 1;
     const generation = ++this.generation;
     this.initPromise = this.initialize(generation).finally(() => {
       if (this.generation === generation) this.initPromise = null;
@@ -288,10 +328,6 @@ export class RasterMaskWebGpuProvider {
     if (!Number.isSafeInteger(options.budgetBytes) || options.budgetBytes <= 0) {
       return "budget-insufficient";
     }
-    const reservedBytes = options.reservedBytes ?? 0;
-    if (!Number.isSafeInteger(reservedBytes) || reservedBytes < 0) {
-      return "budget-insufficient";
-    }
     const estimate = estimateRasterMaskWebGpuBytes(
       options.inputWidth,
       options.inputHeight,
@@ -304,15 +340,10 @@ export class RasterMaskWebGpuProvider {
       Math.max(current?.xorCapacityBytes ?? 0, estimate.xorCapacityBytes) +
       Math.max(current?.readbackCapacityBytes ?? 0, estimate.readbackCapacityBytes) +
       PARAMS_BYTES;
-    if (
-      reservedBytes +
-        prospectiveAllocatedBytes +
-        estimate.sourcePackedBytes +
-        estimate.xorPackedBytes >
-      options.budgetBytes
-    ) {
+    if (prospectiveAllocatedBytes > options.budgetBytes) {
       return "budget-insufficient";
     }
+    this.prepareCooldownRetry();
     if (this.state === "idle") {
       const warmupState = this.warmup();
       return warmupState === "unavailable"
@@ -331,7 +362,14 @@ export class RasterMaskWebGpuProvider {
     options: RasterMaskWebGpuRunOptions,
   ): Promise<RasterMaskWebGpuRunResult> {
     const routeFailure = this.preflightSquareDilateXor(options);
-    if (routeFailure) return this.unavailableResult(routeFailure, false);
+    if (routeFailure) {
+      const snapshot = this.snapshot();
+      return this.unavailableResult(
+        routeFailure,
+        snapshot.lastFailure === routeFailure ? snapshot.lastFailureStage : null,
+        false,
+      );
+    }
     const expectedSourceWordsPerRow = Math.ceil(options.inputWidth / 32);
     if (
       !(options.sourceWords instanceof Uint32Array) ||
@@ -347,20 +385,20 @@ export class RasterMaskWebGpuProvider {
       throw new Error("WebGPU Raster Mask packed source or core rectangle is invalid");
     }
 
+    const totalStarted = this.now();
+    const xorWordsPerRow = Math.ceil(options.coreWidth / 32);
+    const sourceBytes = options.sourceWords.byteLength;
+    const xorBytes = xorWordsPerRow * options.coreHeight * 4;
+    let buffers: RasterMaskWebGpuBuffers | null;
     try {
-      const totalStarted = performance.now();
-      const xorWordsPerRow = Math.ceil(options.coreWidth / 32);
-      const sourceBytes = options.sourceWords.byteLength;
-      const xorBytes = xorWordsPerRow * options.coreHeight * 4;
-      const buffers = this.ensureBuffers(
-        sourceBytes,
-        xorBytes,
-        options.budgetBytes,
-        options.reservedBytes ?? 0,
-      );
-      if (!buffers) return this.unavailableResult("budget-insufficient", false);
-      const resources = this.resources!;
-      const uploadStarted = performance.now();
+      buffers = this.ensureBuffers(sourceBytes, xorBytes, options.budgetBytes);
+    } catch {
+      return this.runtimeFailure("buffer-create");
+    }
+    if (!buffers) return this.unavailableResult("budget-insufficient", null, false);
+    const resources = this.resources!;
+    const uploadStarted = this.now();
+    try {
       resources.device.queue.writeBuffer(buffers.source, 0, options.sourceWords);
       resources.device.queue.writeBuffer(
         buffers.params,
@@ -380,6 +418,11 @@ export class RasterMaskWebGpuProvider {
           0,
         ]),
       );
+    } catch {
+      return this.runtimeFailure("queue-write");
+    }
+    let commandBuffer: GPUCommandBuffer;
+    try {
       const encoder = resources.device.createCommandEncoder({
         label: "Raster Mask square dilate XOR encoder",
       });
@@ -389,33 +432,49 @@ export class RasterMaskWebGpuProvider {
       pass.dispatchWorkgroups(Math.ceil(xorWordsPerRow / 16), Math.ceil(options.coreHeight / 16));
       pass.end();
       encoder.copyBufferToBuffer(buffers.xorTarget, 0, buffers.readback, 0, xorBytes);
-      resources.device.queue.submit([encoder.finish()]);
-      const uploadSubmitMs = performance.now() - uploadStarted;
-      const readbackStarted = performance.now();
-      await buffers.readback.mapAsync(GPUMapMode.READ, 0, xorBytes);
-      let xorWords: Uint32Array;
-      try {
-        xorWords = new Uint32Array(buffers.readback.getMappedRange(0, xorBytes).slice(0));
-      } finally {
-        buffers.readback.unmap();
-      }
-      const readbackMs = performance.now() - readbackStarted;
-      return {
-        ok: true,
-        xorWords,
-        xorWordsPerRow,
-        metrics: {
-          totalMs: performance.now() - totalStarted,
-          uploadSubmitMs,
-          readbackMs,
-          gpuPassMs: null,
-        },
-        snapshot: this.snapshot(),
-      };
+      commandBuffer = encoder.finish();
     } catch {
-      this.invalidate("gpu-runtime-failed", "unavailable");
-      return this.unavailableResult("gpu-runtime-failed", true);
+      return this.runtimeFailure("encode");
     }
+    try {
+      resources.device.queue.submit([commandBuffer]);
+    } catch {
+      return this.runtimeFailure("submit");
+    }
+    const uploadSubmitMs = this.now() - uploadStarted;
+    const readbackStarted = this.now();
+    try {
+      await buffers.readback.mapAsync(GPUMapMode.READ, 0, xorBytes);
+    } catch {
+      return this.runtimeFailure("map");
+    }
+    let xorWords: Uint32Array;
+    try {
+      xorWords = new Uint32Array(buffers.readback.getMappedRange(0, xorBytes).slice(0));
+    } catch {
+      return this.runtimeFailure("readback-validate");
+    } finally {
+      buffers.readback.unmap();
+    }
+    try {
+      this.validateReadbackTail(xorWords, xorWordsPerRow, options.coreWidth, options.coreHeight);
+    } catch {
+      return this.runtimeFailure("readback-validate");
+    }
+    const readbackMs = this.now() - readbackStarted;
+    this.recordSuccess();
+    return {
+      ok: true,
+      xorWords,
+      xorWordsPerRow,
+      metrics: {
+        totalMs: this.now() - totalStarted,
+        uploadSubmitMs,
+        readbackMs,
+        gpuPassMs: null,
+      },
+      snapshot: this.snapshot(),
+    };
   }
 
   dispose(): void {
@@ -426,52 +485,91 @@ export class RasterMaskWebGpuProvider {
     this.state = "closed";
   }
 
+  failAfterReadback(stage: "patch-build"): RasterMaskWebGpuRunResult {
+    return this.runtimeFailure(stage);
+  }
+
   private async initialize(generation: number): Promise<void> {
+    let adapter: GPUAdapter | null;
     try {
-      const adapter = await this.gpu!.requestAdapter({ powerPreference: "high-performance" });
-      if (!this.isGenerationActive(generation)) return;
-      if (!adapter) {
-        this.state = "unavailable";
-        this.lastFailure = "adapter-unavailable";
-        return;
+      adapter = await this.gpu!.requestAdapter({ powerPreference: "high-performance" });
+    } catch {
+      if (this.isGenerationActive(generation)) {
+        this.recordFailure("initialization-failed", "adapter-request", "unavailable");
       }
-      const device = await adapter.requestDevice();
-      if (!this.isGenerationActive(generation)) {
-        device.destroy();
-        return;
+      return;
+    }
+    if (!this.isGenerationActive(generation)) return;
+    if (!adapter) {
+      this.recordFailure("adapter-unavailable", "adapter-request", "unavailable");
+      return;
+    }
+
+    let device: GPUDevice;
+    try {
+      device = await adapter.requestDevice();
+    } catch {
+      if (this.isGenerationActive(generation)) {
+        this.recordFailure("initialization-failed", "device-request", "unavailable");
       }
-      const shader = device.createShaderModule({
+      return;
+    }
+    if (!this.isGenerationActive(generation)) {
+      device.destroy();
+      return;
+    }
+
+    let shader: GPUShaderModule | undefined;
+    try {
+      shader = device.createShaderModule({
         label: "Raster Mask packed square dilate XOR",
         code: SQUARE_DILATE_XOR_SHADER,
       });
       const compilation = await shader.getCompilationInfo();
-      if (compilation.messages.some((message) => message.type === "error")) {
-        device.destroy();
-        this.state = "unavailable";
-        this.lastFailure = "initialization-failed";
-        return;
-      }
-      const pipeline = await device.createComputePipelineAsync({
-        label: "Raster Mask packed square dilate XOR pipeline",
-        layout: "auto",
-        compute: { module: shader, entryPoint: "main" },
-      });
       if (!this.isGenerationActive(generation)) {
         device.destroy();
         return;
       }
-      this.resources = { device, pipeline, buffers: null };
-      this.state = "ready";
-      this.lastFailure = null;
-      void device.lost.then(() => {
-        if (!this.isGenerationActive(generation)) return;
-        this.deviceLost += 1;
-        this.invalidate("device-lost", "lost");
+      if (compilation.messages.some((message) => message.type === "error")) {
+        device.destroy();
+        this.recordFailure("initialization-failed", "shader-compile", "unavailable");
+        return;
+      }
+    } catch {
+      device.destroy();
+      if (this.isGenerationActive(generation)) {
+        this.recordFailure("initialization-failed", "shader-compile", "unavailable");
+      }
+      return;
+    }
+    if (!shader) return;
+
+    let pipeline: GPUComputePipeline;
+    try {
+      pipeline = await device.createComputePipelineAsync({
+        label: "Raster Mask packed square dilate XOR pipeline",
+        layout: "auto",
+        compute: { module: shader, entryPoint: "main" },
       });
     } catch {
-      if (!this.isGenerationActive(generation)) return;
-      this.invalidate("initialization-failed", "unavailable");
+      device.destroy();
+      if (this.isGenerationActive(generation)) {
+        this.recordFailure("initialization-failed", "pipeline-create", "unavailable");
+      }
+      return;
     }
+    if (!this.isGenerationActive(generation)) {
+      device.destroy();
+      return;
+    }
+    this.resources = { device, pipeline, buffers: null };
+    this.state = "ready";
+    this.recordSuccess();
+    void device.lost.then(() => {
+      if (!this.isGenerationActive(generation)) return;
+      this.deviceLost += 1;
+      this.recordFailure("device-lost", null, "lost");
+    });
   }
 
   private isGenerationActive(generation: number): boolean {
@@ -482,7 +580,6 @@ export class RasterMaskWebGpuProvider {
     sourceBytes: number,
     xorBytes: number,
     budgetBytes: number,
-    reservedBytes: number,
   ): RasterMaskWebGpuBuffers | null {
     if (!this.resources) return null;
     const current = this.resources.buffers;
@@ -497,7 +594,7 @@ export class RasterMaskWebGpuProvider {
     );
     const allocatedBytes =
       sourceCapacityBytes + xorCapacityBytes + readbackCapacityBytes + PARAMS_BYTES;
-    if (reservedBytes + allocatedBytes + sourceBytes + xorBytes > budgetBytes) return null;
+    if (allocatedBytes > budgetBytes) return null;
     if (
       current &&
       current.sourceCapacityBytes >= sourceBytes &&
@@ -567,20 +664,82 @@ export class RasterMaskWebGpuProvider {
 
   private unavailableResult(
     reason: RasterMaskWebGpuFallbackReason,
+    failureStage: RasterMaskComputeFailureStage | null,
     attemptedGpu: boolean,
   ): RasterMaskWebGpuRunResult {
-    return { ok: false, reason, attemptedGpu, allocatedBytes: this.snapshot().allocatedBytes };
+    return {
+      ok: false,
+      reason,
+      failureStage,
+      attemptedGpu,
+      allocatedBytes: this.snapshot().allocatedBytes,
+    };
   }
 
-  private invalidate(
+  private runtimeFailure(stage: RasterMaskComputeFailureStage): RasterMaskWebGpuRunResult {
+    this.recordFailure("gpu-runtime-failed", stage, "unavailable");
+    return this.unavailableResult("gpu-runtime-failed", stage, true);
+  }
+
+  private recordFailure(
     reason: RasterMaskWebGpuFallbackReason,
+    failureStage: RasterMaskComputeFailureStage | null,
     nextState: "unavailable" | "lost",
   ): void {
     this.generation += 1;
     this.initPromise = null;
     this.lastFailure = reason;
+    this.lastFailureStage = failureStage;
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= 2) {
+      this.circuitState = "page-fixed";
+      this.cooldownUntilMs = 0;
+    } else {
+      this.circuitState = "cooldown";
+      this.cooldownUntilMs = this.now() + this.cooldownMs;
+    }
     this.destroyResources(true);
     this.state = nextState;
+  }
+
+  private prepareCooldownRetry(): void {
+    if (
+      this.circuitState !== "cooldown" ||
+      this.consecutiveFailures !== 1 ||
+      this.now() < this.cooldownUntilMs
+    ) {
+      return;
+    }
+    this.circuitState = "eligible";
+    this.cooldownUntilMs = 0;
+    this.state = "idle";
+  }
+
+  private recordSuccess(): void {
+    this.lastFailure = null;
+    this.lastFailureStage = null;
+    this.consecutiveFailures = 0;
+    this.circuitState = "eligible";
+    this.cooldownUntilMs = 0;
+  }
+
+  private validateReadbackTail(
+    xorWords: Uint32Array,
+    wordsPerRow: number,
+    width: number,
+    height: number,
+  ): void {
+    if (xorWords.length !== wordsPerRow * height) {
+      throw new Error("WebGPU Raster Mask readback length is invalid");
+    }
+    const remaining = width % 32;
+    if (remaining === 0) return;
+    const validMask = 0xffffffff >>> (32 - remaining);
+    for (let y = 0; y < height; y += 1) {
+      if ((xorWords[y * wordsPerRow + wordsPerRow - 1]! & ~validMask) !== 0) {
+        throw new Error("WebGPU Raster Mask readback contains non-zero tail bits");
+      }
+    }
   }
 
   private destroyBuffers(buffers: RasterMaskWebGpuBuffers | null | undefined): void {

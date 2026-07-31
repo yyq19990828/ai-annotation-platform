@@ -110,7 +110,8 @@ describe("rasterMaskWorkerRuntime", () => {
       operation: { operation: "dilate", kernelShape: "square", radius: 1 },
       dirtyOverrides: [],
       backendPolicy: "cpu",
-      computeBudgetBytes: 0,
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
     });
     const expected = applyMaskMorphology(base, width, height, {
       operation: "dilate",
@@ -157,7 +158,8 @@ describe("rasterMaskWorkerRuntime", () => {
         },
       ],
       backendPolicy: "cpu",
-      computeBudgetBytes: 0,
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
     });
     const expected = applyMaskMorphology(current, width, height, {
       operation: "dilate",
@@ -207,7 +209,8 @@ describe("rasterMaskWorkerRuntime", () => {
         },
       ],
       backendPolicy: "webgpu-candidate" as const,
-      computeBudgetBytes: 128 * 1024 * 1024,
+      cpuComputeBudgetBytes: 128 * 1024 * 1024,
+      gpuBufferBudgetBytes: 128 * 1024 * 1024,
     };
 
     const dense = prepareRasterMaskMorphologyRoi(session, request).source;
@@ -240,7 +243,8 @@ describe("rasterMaskWorkerRuntime", () => {
         operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
         dirtyOverrides: [],
         backendPolicy: "webgpu-candidate" as const,
-        computeBudgetBytes: 128 * 1024 * 1024,
+        cpuComputeBudgetBytes: 128 * 1024 * 1024,
+        gpuBufferBudgetBytes: 128 * 1024 * 1024,
       };
       const packed = preparePackedRasterMaskMorphologyRoi(session, request);
       expect(unpackRows(packed.sourceWords, width, height, packed.wordsPerRow)).toEqual(base);
@@ -267,7 +271,8 @@ describe("rasterMaskWorkerRuntime", () => {
       operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
       dirtyOverrides: [],
       backendPolicy: "webgpu-candidate" as const,
-      computeBudgetBytes: 128 * 1024 * 1024,
+      cpuComputeBudgetBytes: 128 * 1024 * 1024,
+      gpuBufferBudgetBytes: 128 * 1024 * 1024,
     };
     const wordsPerRow = Math.ceil(request.core.width / 32);
     const xorWords = new Uint32Array(wordsPerRow * request.core.height);
@@ -330,7 +335,8 @@ describe("rasterMaskWorkerRuntime", () => {
           operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
           dirtyOverrides: [],
           backendPolicy: "webgpu-candidate" as const,
-          computeBudgetBytes: 128 * 1024 * 1024,
+          cpuComputeBudgetBytes: 128 * 1024 * 1024,
+          gpuBufferBudgetBytes: 128 * 1024 * 1024,
         };
         const wordsPerRow = Math.ceil(coreWidth / 32);
         const xorWords = Uint32Array.from({ length: wordsPerRow * request.core.height }, () =>
@@ -344,24 +350,26 @@ describe("rasterMaskWorkerRuntime", () => {
           }
         }
 
-        const perBit = buildRasterMaskMorphologyPatchesFromXorWords(
-          session,
-          request,
-          xorWords,
-          wordsPerRow,
-          "dense-per-bit",
-        );
         const wordScatter = buildRasterMaskMorphologyPatchesFromXorWords(
           session,
           request,
           xorWords,
           wordsPerRow,
-          "dense-word-scatter",
         );
 
-        expect(wordScatter.patches).toEqual(perBit.patches);
-        expect(wordScatter.changedPixels).toBe(perBit.changedPixels);
-        expect(wordScatter.changedBounds).toEqual(perBit.changedBounds);
+        const expected = new Uint8Array(width * height);
+        let expectedChanged = 0;
+        for (let y = 0; y < request.core.height; y += 1) {
+          for (let x = 0; x < request.core.width; x += 1) {
+            if ((xorWords[y * wordsPerRow + (x >>> 5)] & (1 << (x & 31))) === 0) continue;
+            expected[(request.core.y + y) * width + request.core.x + x] = 255;
+            expectedChanged += 1;
+          }
+        }
+        expect(applyPatches(new Uint8Array(width * height), width, wordScatter.patches)).toEqual(
+          expected,
+        );
+        expect(wordScatter.changedPixels).toBe(expectedChanged);
         expect(wordScatter.xorTotalWords).toBe(xorWords.length);
         expect(wordScatter.xorNonZeroWords).toBe([...xorWords].filter((word) => word !== 0).length);
         expect(wordScatter.xorTouchedTiles).toBe(wordScatter.patches.length);
@@ -394,7 +402,8 @@ describe("rasterMaskWorkerRuntime", () => {
       operation: { operation: "dilate", kernelShape: "square", radius: 1 } as const,
       dirtyOverrides: [],
       backendPolicy: "webgpu-candidate" as const,
-      computeBudgetBytes: 128 * 1024 * 1024,
+      cpuComputeBudgetBytes: 128 * 1024 * 1024,
+      gpuBufferBudgetBytes: 128 * 1024 * 1024,
     };
     const wordsPerRow = 2;
     const xorWords = new Uint32Array(wordsPerRow * request.core.height);
@@ -403,24 +412,26 @@ describe("rasterMaskWorkerRuntime", () => {
       xorWords[y * wordsPerRow + 1] = word & 1;
     }
 
-    const perBit = buildRasterMaskMorphologyPatchesFromXorWords(
-      session,
-      request,
-      xorWords,
-      wordsPerRow,
-      "dense-per-bit",
-    );
     const wordScatter = buildRasterMaskMorphologyPatchesFromXorWords(
       session,
       request,
       xorWords,
       wordsPerRow,
-      "dense-word-scatter",
     );
 
-    expect(wordScatter.patches).toEqual(perBit.patches);
-    expect(wordScatter.changedPixels).toBe(perBit.changedPixels);
-    expect(wordScatter.changedBounds).toEqual(perBit.changedBounds);
+    const expected = new Uint8Array(width * height);
+    let expectedChanged = 0;
+    for (let y = 0; y < request.core.height; y += 1) {
+      for (let x = 0; x < request.core.width; x += 1) {
+        if ((xorWords[y * wordsPerRow + (x >>> 5)] & (1 << (x & 31))) === 0) continue;
+        expected[(request.core.y + y) * width + request.core.x + x] = 255;
+        expectedChanged += 1;
+      }
+    }
+    expect(applyPatches(new Uint8Array(width * height), width, wordScatter.patches)).toEqual(
+      expected,
+    );
+    expect(wordScatter.changedPixels).toBe(expectedChanged);
   });
 
   it("rejects an oversized morphology ROI before allocating its dense source", () => {
@@ -438,7 +449,8 @@ describe("rasterMaskWorkerRuntime", () => {
         operation: { operation: "dilate", kernelShape: "square", radius: 1 },
         dirtyOverrides: [],
         backendPolicy: "cpu",
-        computeBudgetBytes: 0,
+        cpuComputeBudgetBytes: 64 * 1024 * 1024,
+        gpuBufferBudgetBytes: 0,
       }),
     ).toThrow(/pixel budget/);
   });
@@ -469,7 +481,8 @@ describe("rasterMaskWorkerRuntime", () => {
       operation: { operation, kernelShape, radius: 2 },
       dirtyOverrides: [],
       backendPolicy: "cpu",
-      computeBudgetBytes: 0,
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
     });
     const expected = applyMaskMorphology(source, width, height, {
       operation,
