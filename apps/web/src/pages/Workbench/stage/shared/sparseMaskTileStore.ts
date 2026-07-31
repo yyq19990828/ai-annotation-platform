@@ -18,6 +18,11 @@ import type {
   RasterMaskWorkerRunOptions,
 } from "./rasterMaskWorkerPool";
 import type {
+  RasterResourceCoordinator,
+  RasterResourcePriority,
+  RasterResourceReservation,
+} from "./rasterResourceCoordinator";
+import type {
   RasterMaskTileOverride,
   RasterMaskMorphologyBackendPolicy,
   RasterMaskMorphologyRoiResponse,
@@ -110,6 +115,7 @@ interface SparseMaskTile extends SparseMaskRenderableTile {
   historyReferences: number;
   viewportPinned: boolean;
   lastAccess: number;
+  resource?: RasterResourceReservation;
 }
 
 export class SparseMaskTileStoreError extends Error {
@@ -308,6 +314,10 @@ export class SparseMaskTileStore {
   private readonly baseIndex: CocoRleRunIndex;
   private readonly tiles = new Map<string, SparseMaskTile>();
   private readonly inFlight = new Map<string, Promise<SparseMaskTile>>();
+  private readonly pendingResources = new Map<
+    string,
+    { bytes: number; resource?: RasterResourceReservation }
+  >();
   private viewportKeys = new Set<string>();
   private retainedBytes = 0;
   private reservedBytes = 0;
@@ -321,6 +331,9 @@ export class SparseMaskTileStore {
   private readonly morphologyBackendPolicy: RasterMaskMorphologyBackendPolicy;
   private readonly cpuComputeBudgetBytes: number;
   private readonly gpuBufferBudgetBytes: number;
+  private readonly resourceCoordinator?: RasterResourceCoordinator;
+  private readonly resourceOwner: string;
+  private unregisterResourceEvictor: (() => void) | null = null;
 
   constructor(options: {
     sessionId: string;
@@ -332,6 +345,8 @@ export class SparseMaskTileStore {
     morphologyBackendPolicy?: RasterMaskMorphologyBackendPolicy;
     cpuComputeBudgetBytes?: number;
     gpuBufferBudgetBytes?: number;
+    resourceCoordinator?: RasterResourceCoordinator;
+    resourceOwner?: string;
   }) {
     this.sessionId = options.sessionId;
     this.sha256 = options.sha256;
@@ -363,6 +378,33 @@ export class SparseMaskTileStore {
     if (!Number.isSafeInteger(this.gpuBufferBudgetBytes) || this.gpuBufferBudgetBytes < 0) {
       throw new SparseMaskTileStoreError("mask GPU buffer budget must be a non-negative integer");
     }
+    this.resourceCoordinator = options.resourceCoordinator;
+    this.resourceOwner = options.resourceOwner ?? `mask-edit:${this.sessionId}`;
+    this.unregisterResourceEvictor =
+      this.resourceCoordinator?.registerEvictor({
+        owner: this.resourceOwner,
+        evictableBytes: () =>
+          [...this.tiles.values()]
+            .filter((tile) => !tile.dirty && !tile.viewportPinned && tile.historyReferences === 0)
+            .reduce((total, tile) => total + tile.byteSize, 0),
+        evict: (targetBytes, reason) => {
+          let freed = 0;
+          const candidates = [...this.tiles.values()]
+            .filter(
+              (tile) =>
+                !tile.dirty &&
+                tile.historyReferences === 0 &&
+                (reason === "bfcache" || !tile.viewportPinned),
+            )
+            .sort((left, right) => left.lastAccess - right.lastAccess);
+          for (const tile of candidates) {
+            this.evictTile(tile);
+            freed += tile.byteSize;
+            if (freed >= targetBytes) break;
+          }
+          return freed;
+        },
+      }) ?? null;
     this.backend.registerSession(this.sessionId, this.sha256, options.baseRle);
   }
 
@@ -395,15 +437,14 @@ export class SparseMaskTileStore {
         .filter((tile) => !tile.dirty && !tile.viewportPinned && tile.historyReferences === 0)
         .sort((left, right) => left.lastAccess - right.lastAccess)[0];
       if (!candidate) return false;
-      this.tiles.delete(candidate.key);
-      this.retainedBytes -= candidate.byteSize;
-      this.tilesEvicted += 1;
+      this.evictTile(candidate);
     }
     return true;
   }
 
   private evictTile(tile: SparseMaskTile): void {
     if (!this.tiles.delete(tile.key)) return;
+    tile.resource?.release();
     this.retainedBytes -= tile.byteSize;
     this.tilesEvicted += 1;
   }
@@ -428,7 +469,28 @@ export class SparseMaskTileStore {
       this.admissionBlocked = true;
       throw new SparseMaskTileBudgetError(byteSize, this.maxCacheBytes);
     }
+    const resourcePriority: RasterResourcePriority =
+      options.priority === "editing"
+        ? 1
+        : options.priority === "selected"
+          ? 2
+          : options.priority === "prefetch"
+            ? 4
+            : 2;
+    const resource = this.resourceCoordinator?.tryReserve({
+      owner: this.resourceOwner,
+      category: "mask-edit",
+      priority: resourcePriority,
+      bytes: byteSize,
+      reconstructible: true,
+      pinned: options.priority !== "prefetch" || this.viewportKeys.has(key),
+    });
+    if (this.resourceCoordinator && !resource) {
+      this.admissionBlocked = true;
+      throw new SparseMaskTileBudgetError(byteSize, this.resourceCoordinator.hardBudgetBytes);
+    }
     this.reservedBytes += byteSize;
+    this.pendingResources.set(key, { bytes: byteSize, ...(resource ? { resource } : {}) });
     const promise = Promise.resolve()
       .then(() =>
         this.backend.decodeTile(this.sessionId, this.sha256, rect, {
@@ -469,7 +531,12 @@ export class SparseMaskTileStore {
           dirty: false,
           revision: 0,
           lastAccess: ++this.accessCounter,
+          ...(resource ? { resource } : {}),
         };
+        if (resource && !resource.commit(byteSize)) {
+          throw new SparseMaskTileBudgetError(byteSize, this.resourceCoordinator!.hardBudgetBytes);
+        }
+        this.syncTileResource(tile);
         this.tiles.set(key, tile);
         this.retainedBytes += byteSize;
         this.tilesCreated += 1;
@@ -477,7 +544,12 @@ export class SparseMaskTileStore {
         return tile;
       })
       .finally(() => {
-        this.reservedBytes -= byteSize;
+        const pendingResource = this.pendingResources.get(key);
+        if (pendingResource?.resource?.state === "reserved") pendingResource.resource.release();
+        if (pendingResource) {
+          this.pendingResources.delete(key);
+          this.reservedBytes = Math.max(0, this.reservedBytes - pendingResource.bytes);
+        }
         this.inFlight.delete(key);
       });
     this.inFlight.set(key, promise);
@@ -542,9 +614,20 @@ export class SparseMaskTileStore {
 
   private markTileChanged(tile: SparseMaskTile): void {
     tile.dirty = !bitsEqual(tile.currentBits, tile.baseBits);
+    this.syncTileResource(tile);
     tile.revision += 1;
     tile.lastAccess = ++this.accessCounter;
     this.mutationGeneration += 1;
+  }
+
+  private syncTileResource(tile: SparseMaskTile): void {
+    const truthPinned = tile.dirty || tile.historyReferences > 0;
+    tile.resource?.update({
+      category: "mask-edit",
+      priority: truthPinned ? 0 : tile.viewportPinned ? 2 : 3,
+      reconstructible: !truthPinned,
+      pinned: truthPinned || tile.viewportPinned,
+    });
   }
 
   private async materializeCoords(
@@ -865,6 +948,7 @@ export class SparseMaskTileStore {
       const tile = this.tiles.get(keyFor(patch.tileX, patch.tileY));
       if (!tile) throw new SparseMaskTileStoreError("cannot retain history for an evicted tile");
       tile.historyReferences += 1;
+      this.syncTileResource(tile);
     }
   }
 
@@ -873,6 +957,7 @@ export class SparseMaskTileStore {
       const tile = this.tiles.get(keyFor(patch.tileX, patch.tileY));
       if (!tile) continue;
       tile.historyReferences = Math.max(0, tile.historyReferences - 1);
+      this.syncTileResource(tile);
       if (tile.historyReferences === 0 && !tile.dirty && !tile.viewportPinned) this.evictTile(tile);
     }
   }
@@ -940,7 +1025,10 @@ export class SparseMaskTileStore {
       this.overviewOnly = false;
     }
     this.viewportKeys = new Set(coords.map(({ tileX, tileY }) => keyFor(tileX, tileY)));
-    for (const tile of this.tiles.values()) tile.viewportPinned = this.viewportKeys.has(tile.key);
+    for (const tile of this.tiles.values()) {
+      tile.viewportPinned = this.viewportKeys.has(tile.key);
+      this.syncTileResource(tile);
+    }
     return coords.map(({ tileX, tileY }) => this.tileRect(tileX, tileY));
   }
 
@@ -1033,9 +1121,16 @@ export class SparseMaskTileStore {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unregisterResourceEvictor?.();
+    this.unregisterResourceEvictor = null;
     this.backend.releaseSession(this.sessionId);
+    for (const pending of this.pendingResources.values()) pending.resource?.release();
+    this.pendingResources.clear();
+    this.inFlight.clear();
+    for (const tile of this.tiles.values()) tile.resource?.release();
     this.tiles.clear();
     this.viewportKeys.clear();
     this.retainedBytes = 0;
+    this.reservedBytes = 0;
   }
 }

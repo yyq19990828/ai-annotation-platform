@@ -4,6 +4,7 @@ import type { CocoRleMaskRef } from "@/types";
 import { decodeCocoRle, encodeCocoRle, type CocoRle } from "./geometry/maskRle";
 import { analyzeRasterMaskAlpha } from "./rasterMaskRender";
 import { RasterMaskWorkerError } from "./rasterMaskWorkerPool";
+import { RasterResourceCoordinator } from "./rasterResourceCoordinator";
 import {
   estimateCocoRleRetainedBytes,
   rasterMaskDeviceBudget,
@@ -644,5 +645,41 @@ describe("useRasterMaskRecords", () => {
     await flushAsync();
 
     expect(lateBitmap.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("把渲染 reservation 原子提交给任务级账本并在卸载后归零", async () => {
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 1_024,
+        hardBudgetBytes: 2_048,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const item = makeDescriptor("owned", { selected: true });
+    const view = renderHook(() =>
+      useRasterMaskRecords({
+        scopeKey: "task-1",
+        descriptors: [item.descriptor],
+        resourceCoordinator: coordinator,
+        resourceOwner: "mask-render:test",
+      }),
+    );
+
+    await flushAsync();
+    expect(view.result.current.statusById.get("owned")?.state).toBe("ready");
+    expect(coordinator.getSnapshot()).toMatchObject({
+      reservedBytes: 0,
+      invariantOk: true,
+    });
+    expect(coordinator.getSnapshot().owners).toContainEqual(
+      expect.objectContaining({
+        owner: "mask-render:test",
+        pinnedBytes: view.result.current.cacheBytes,
+      }),
+    );
+
+    view.unmount();
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
   });
 });

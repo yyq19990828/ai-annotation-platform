@@ -43,6 +43,27 @@ interface ConversionResponse {
   };
 }
 
+interface RasterResourceSnapshot {
+  generation: number;
+  committedBytes: number;
+  reservedBytes: number;
+  chargedBytes: number;
+  hardBudgetBytes: number;
+  invariantOk: boolean;
+  categories: Array<{ category: string; committedBytes: number; pinnedBytes: number }>;
+}
+
+async function rasterResources(page: Page): Promise<RasterResourceSnapshot | null> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __rasterResourceDiagnostics?: { resources: RasterResourceSnapshot };
+        }
+      ).__rasterResourceDiagnostics?.resources ?? null,
+  );
+}
+
 function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
@@ -596,6 +617,39 @@ test.describe("raster mask native write matrix", () => {
 
     await paintStroke(page, [0.35, 0.35], [0.46, 0.42]);
     await expect(toolbar).toContainText("未保存");
+    await expect.poll(async () => (await rasterResources(page))?.reservedBytes).toBe(0);
+    const beforePageHide = await rasterResources(page);
+    expect(beforePageHide).toMatchObject({ invariantOk: true, reservedBytes: 0 });
+    expect(beforePageHide!.chargedBytes).toBeLessThanOrEqual(beforePageHide!.hardBudgetBytes);
+    expect(beforePageHide!.categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "mask-edit" }),
+        expect.objectContaining({ category: "mask-history" }),
+      ]),
+    );
+
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })),
+    );
+    const bfcache = await rasterResources(page);
+    expect(bfcache).toMatchObject({
+      generation: beforePageHide!.generation + 1,
+      reservedBytes: 0,
+      invariantOk: true,
+    });
+    expect(bfcache!.categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "mask-edit" }),
+        expect.objectContaining({ category: "mask-history" }),
+      ]),
+    );
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })),
+    );
+    await expect(toolbar).toContainText("未保存");
+    await expect(toolbar.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
+    await expect.poll(async () => (await rasterResources(page))?.invariantOk).toBe(true);
+
     const updateResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/v1/tasks/${taskId}/annotations/${fixture.annotation_id}`) &&

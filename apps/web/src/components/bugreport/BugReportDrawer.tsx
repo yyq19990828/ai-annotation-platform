@@ -30,6 +30,11 @@ import {
   getImageTileDiagnosticsSnapshot,
   imageTileDiagnosticsConsoleEntry,
 } from "@/utils/imageTileDiagnostics";
+import {
+  appendRasterResourceDiagnostics,
+  getRasterResourceDiagnosticsSnapshot,
+  rasterResourceDiagnosticsConsoleEntry,
+} from "@/utils/rasterResourceDiagnostics";
 import { readWorkbenchPerfSnapshot } from "@/pages/Workbench/stage/shared/useWorkbenchPerf";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
@@ -221,6 +226,9 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
         rasterMaskComputeDiagnosticsConsoleEntry(rasterMaskDiagnostics);
       const imageTileDiagnostics = getImageTileDiagnosticsSnapshot();
       const imageTileDiagnosticsEntry = imageTileDiagnosticsConsoleEntry(imageTileDiagnostics);
+      const rasterResourceDiagnostics = getRasterResourceDiagnosticsSnapshot();
+      const rasterResourceDiagnosticsEntry =
+        rasterResourceDiagnosticsConsoleEntry(rasterResourceDiagnostics);
       const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({
         msg: e.msg,
         stack: e.stack || "",
@@ -228,6 +236,9 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       if (videoDiagnosticsEntry) recentConsoleErrors.unshift(videoDiagnosticsEntry);
       if (rasterMaskDiagnosticsEntry) recentConsoleErrors.unshift(rasterMaskDiagnosticsEntry);
       if (imageTileDiagnosticsEntry) recentConsoleErrors.unshift(imageTileDiagnosticsEntry);
+      if (rasterResourceDiagnosticsEntry) {
+        recentConsoleErrors.unshift(rasterResourceDiagnosticsEntry);
+      }
       // v0.9.41: 附 workbench longtask 快照，便于 BUG 排查时定位卡顿点。
       const perf = readWorkbenchPerfSnapshot();
       if (perf.longTaskCount > 0) {
@@ -238,12 +249,15 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       }
       await bugReportsApi.create({
         title: title.trim(),
-        description: appendImageTileDiagnostics(
-          appendRasterMaskComputeDiagnostics(
-            appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
-            rasterMaskDiagnostics,
+        description: appendRasterResourceDiagnostics(
+          appendImageTileDiagnostics(
+            appendRasterMaskComputeDiagnostics(
+              appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
+              rasterMaskDiagnostics,
+            ),
+            imageTileDiagnostics,
           ),
-          imageTileDiagnostics,
+          rasterResourceDiagnostics,
         ),
         severity: severity as "low" | "medium" | "high" | "critical",
         route: location.pathname + location.search,

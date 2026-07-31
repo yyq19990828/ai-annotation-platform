@@ -26,6 +26,13 @@ import type {
   RasterMaskWorkerJobRequest,
   RasterMaskWorkerResponse,
 } from "./rasterMaskWorkerProtocol";
+import { estimateRasterMaskDenseCpuBytes } from "./rasterMaskWorkerRuntime";
+import { estimateRasterMaskPackedCpuBytes } from "./rasterMaskPackedMorphology";
+import { estimateRasterMaskWebGpuBytes } from "./rasterMaskWebGpu";
+import type {
+  RasterResourceCoordinator,
+  RasterResourceReservation,
+} from "./rasterResourceCoordinator";
 import {
   activateRasterMaskComputeDiagnostics,
   clearRasterMaskComputeDiagnostics,
@@ -46,6 +53,8 @@ export interface RasterMaskWorkerPoolOptions {
   createWorker?: RasterMaskWorkerFactory;
   clock?: RasterMaskWorkerClock;
   diagnosticsTaskId?: string;
+  resourceCoordinator?: RasterResourceCoordinator;
+  resourceOwner?: string;
 }
 
 export interface RasterMaskWorkerRunOptions {
@@ -318,6 +327,13 @@ export class RasterMaskWorkerPool {
   private cancelled = 0;
   private timedOut = 0;
   private compute = initialComputeResources();
+  private readonly resourceCoordinator?: RasterResourceCoordinator;
+  private readonly resourceOwner: string;
+  private readonly computeResources = new Map<
+    "base" | "scratch" | "gpu",
+    RasterResourceReservation
+  >();
+  private unregisterResourceEvictor: (() => void) | null = null;
 
   constructor(options: RasterMaskWorkerPoolOptions = {}) {
     this.size = normalizedLimit(options.size, defaultRasterMaskWorkerPoolSize());
@@ -325,6 +341,28 @@ export class RasterMaskWorkerPool {
     this.createWorker = options.createWorker ?? createDefaultWorker;
     this.clock = options.clock ?? nativeClock;
     this.diagnosticsTaskId = options.diagnosticsTaskId ?? null;
+    this.resourceCoordinator = options.resourceCoordinator;
+    this.resourceOwner = options.resourceOwner ?? "worker-compute";
+    this.unregisterResourceEvictor =
+      this.resourceCoordinator?.registerEvictor({
+        owner: this.resourceOwner,
+        evictableBytes: () =>
+          this.slots.some((slot) => slot.current)
+            ? 0
+            : [...this.computeResources.values()].reduce(
+                (total, resource) => total + resource.bytes,
+                0,
+              ),
+        evict: () => {
+          if (this.slots.some((slot) => slot.current)) return 0;
+          const freed = [...this.computeResources.values()].reduce(
+            (total, resource) => total + resource.bytes,
+            0,
+          );
+          this.releaseComputeResources(true);
+          return freed;
+        },
+      }) ?? null;
     if (this.diagnosticsTaskId) {
       activateRasterMaskComputeDiagnostics(this.diagnosticsTaskId);
     }
@@ -515,32 +553,90 @@ export class RasterMaskWorkerPool {
     options: RasterMaskWorkerRunOptions = {},
   ): Promise<RasterMaskMorphologyRoiResponse> {
     this.assertSession(request.sessionId, request.sha256);
-    const dirtyOverrides = request.dirtyOverrides.map((tile) => ({
-      ...tile,
-      bits: new Uint8Array(tile.bits),
-    }));
-    const id = ++this.nextId;
-    return this.enqueue({
-      id,
-      kind: "morphology_roi",
-      request: { kind: "morphology_roi", id, ...request, dirtyOverrides },
-      transfer: dirtyOverrides.map((tile) => tile.bits.buffer),
-      timeoutMs: options.timeoutMs ?? TILE_MERGE_TIMEOUT_MS,
-      options,
-      sessionIds: [request.sessionId],
-      affinitySlot: 0,
-      read: (response) => {
-        if (response.kind !== "morphology_roi" || !response.ok) {
-          throw new RasterMaskWorkerError("invalid morphology ROI response");
-        }
-        this.recordMorphologyResponse(
-          response,
-          request.cpuComputeBudgetBytes,
-          request.gpuBufferBudgetBytes,
+    const denseEstimate = estimateRasterMaskDenseCpuBytes(request);
+    const packedEligible =
+      request.operation.operation === "dilate" &&
+      request.operation.kernelShape === "square" &&
+      request.operation.radius <= 31 &&
+      request.input.width * request.input.height >= 4_194_304;
+    const packedEstimate = packedEligible
+      ? estimateRasterMaskPackedCpuBytes({
+          inputWidth: request.input.width,
+          inputHeight: request.input.height,
+          coreWidth: request.core.width,
+          coreHeight: request.core.height,
+        }).requiredBytes
+      : Number.MAX_SAFE_INTEGER;
+    const cpuBytes = Math.min(denseEstimate.requiredBytes, packedEstimate);
+    const transientResources: RasterResourceReservation[] = [];
+    const reserveTransient = (category: "cpu-transient" | "gpu-buffer", bytes: number): boolean => {
+      if (!this.resourceCoordinator) return true;
+      const resource = this.resourceCoordinator.tryReserve({
+        owner: this.resourceOwner,
+        category,
+        priority: 1,
+        bytes,
+        reconstructible: true,
+        pinned: true,
+      });
+      if (!resource || !resource.commit(bytes)) {
+        resource?.release();
+        return false;
+      }
+      transientResources.push(resource);
+      return true;
+    };
+    if (!reserveTransient("cpu-transient", cpuBytes)) {
+      return Promise.reject(new RasterMaskWorkerError("Mask 资源不足，请缩小可见区域或保存后重试"));
+    }
+    if (request.backendPolicy === "webgpu-candidate" && request.gpuBufferBudgetBytes > 0) {
+      const gpuBytes = estimateRasterMaskWebGpuBytes(
+        request.input.width,
+        request.input.height,
+        request.core.width,
+        request.core.height,
+      ).requiredBytes;
+      if (!reserveTransient("gpu-buffer", gpuBytes)) {
+        for (const resource of transientResources) resource.release();
+        return Promise.reject(
+          new RasterMaskWorkerError("Mask 资源不足，请缩小可见区域或保存后重试"),
         );
-        return response;
-      },
-    });
+      }
+    }
+    try {
+      const dirtyOverrides = request.dirtyOverrides.map((tile) => ({
+        ...tile,
+        bits: new Uint8Array(tile.bits),
+      }));
+      const id = ++this.nextId;
+      return this.enqueue({
+        id,
+        kind: "morphology_roi",
+        request: { kind: "morphology_roi", id, ...request, dirtyOverrides },
+        transfer: dirtyOverrides.map((tile) => tile.bits.buffer),
+        timeoutMs: options.timeoutMs ?? TILE_MERGE_TIMEOUT_MS,
+        options,
+        sessionIds: [request.sessionId],
+        affinitySlot: 0,
+        read: (response) => {
+          if (response.kind !== "morphology_roi" || !response.ok) {
+            throw new RasterMaskWorkerError("invalid morphology ROI response");
+          }
+          this.recordMorphologyResponse(
+            response,
+            request.cpuComputeBudgetBytes,
+            request.gpuBufferBudgetBytes,
+            transientResources,
+          );
+          return response;
+        },
+      }).finally(() => {
+        for (const resource of transientResources) resource.release();
+      });
+    } catch (error) {
+      for (const resource of transientResources) resource.release();
+      return Promise.reject(error);
+    }
   }
 
   warmupWebGpu(options: RasterMaskWorkerRunOptions = {}): Promise<RasterMaskWebGpuWorkerSnapshot> {
@@ -567,6 +663,8 @@ export class RasterMaskWorkerPool {
     if (this.disposed || !this.initialized || this.sessions.size > 0) return;
     const slot = this.slots[0];
     if (slot) this.postControl(slot, { kind: "reset_webgpu" }, []);
+    for (const resource of this.computeResources.values()) resource.release();
+    this.computeResources.clear();
     this.compute = initialComputeResources();
   }
 
@@ -637,6 +735,8 @@ export class RasterMaskWorkerPool {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unregisterResourceEvictor?.();
+    this.unregisterResourceEvictor = null;
     const error = new RasterMaskWorkerCancelledError("Raster Mask Worker pool was disposed");
     while (this.queue.length > 0) this.rejectQueued(this.queue.shift()!, error);
     for (const slot of this.slots) {
@@ -644,6 +744,7 @@ export class RasterMaskWorkerPool {
       this.terminateSlotWorker(slot);
     }
     this.sessions.clear();
+    this.releaseComputeResources(false);
     this.compute = initialComputeResources("closed");
     if (this.diagnosticsTaskId) {
       clearRasterMaskComputeDiagnostics(this.diagnosticsTaskId);
@@ -812,15 +913,18 @@ export class RasterMaskWorkerPool {
     const job = slot.current;
     if (!job || response.id !== job.id || response.kind !== job.kind) return;
     this.cleanupJob(job);
-    slot.current = null;
     if (!response.ok) {
+      slot.current = null;
       this.failed += 1;
       job.reject(new RasterMaskWorkerError(response.error));
     } else {
       try {
-        job.resolve(job.read(response));
+        const value = job.read(response);
+        slot.current = null;
+        job.resolve(value);
         this.completed += 1;
       } catch (error) {
+        slot.current = null;
         this.failed += 1;
         job.reject(error);
       }
@@ -869,7 +973,7 @@ export class RasterMaskWorkerPool {
   }
 
   private replaceWorker(slot: WorkerSlot): void {
-    if (slot.index === 0) this.compute = initialComputeResources();
+    if (slot.index === 0) this.releaseComputeResources(false);
     this.terminateSlotWorker(slot);
     this.installWorker(slot, true);
     if (!this.slots.some((candidate) => candidate.worker)) {
@@ -923,12 +1027,14 @@ export class RasterMaskWorkerPool {
     this.compute.webGpuConsecutiveFailures = snapshot.consecutiveFailures;
     this.compute.webGpuDeviceLost = snapshot.deviceLost;
     if (snapshot.lastFailure) this.compute.lastFallbackReason = snapshot.lastFailure;
+    this.syncComputeResources();
   }
 
   private recordMorphologyResponse(
     response: RasterMaskMorphologyRoiResponse,
     cpuBudgetBytes: number,
     gpuBudgetBytes: number,
+    transientResources: readonly RasterResourceReservation[] = [],
   ): void {
     this.compute.lastBackend = response.backend;
     this.compute.lastFallbackReason = response.fallbackReason;
@@ -1019,6 +1125,7 @@ export class RasterMaskWorkerPool {
       this.compute.webGpuState = "disabled";
       this.compute.gpuOwnerWorkers = 0;
     }
+    this.syncComputeResources(transientResources);
     if (this.diagnosticsTaskId) {
       publishRasterMaskComputeDiagnostic(this.diagnosticsTaskId, {
         recordedAt: new Date().toISOString(),
@@ -1066,5 +1173,61 @@ export class RasterMaskWorkerPool {
         },
       });
     }
+  }
+
+  private syncComputeResources(
+    transientResources: readonly RasterResourceReservation[] = [],
+  ): void {
+    if (!this.resourceCoordinator || this.disposed) return;
+    const entries = [
+      {
+        key: "base" as const,
+        category: "worker-base-cache" as const,
+        bytes: this.compute.baseCacheRetainedBytes,
+      },
+      {
+        key: "scratch" as const,
+        category: "worker-scratch" as const,
+        bytes: this.compute.sourceScratchCapacityBytes,
+      },
+      {
+        key: "gpu" as const,
+        category: "gpu-buffer" as const,
+        bytes: this.compute.gpuAllocatedBytes,
+      },
+    ];
+    const desired = entries.filter((entry) => entry.bytes > 0);
+    const current = [
+      ...this.computeResources.values(),
+      ...transientResources.filter((resource) => resource.state === "committed"),
+    ];
+    if (current.length === 0 && desired.length === 0) return;
+    const replacements = this.resourceCoordinator.replaceCommittedResources(
+      current,
+      desired.map((entry) => ({
+        owner: this.resourceOwner,
+        category: entry.category,
+        priority: 3,
+        bytes: entry.bytes,
+        reconstructible: true,
+        pinned: false,
+      })),
+    );
+    if (!replacements) {
+      this.releaseComputeResources(true);
+      return;
+    }
+    this.computeResources.clear();
+    desired.forEach((entry, index) => this.computeResources.set(entry.key, replacements[index]));
+  }
+
+  private releaseComputeResources(notifyWorker: boolean): void {
+    if (notifyWorker && !this.disposed) {
+      const slot = this.slots[0];
+      if (slot?.worker) this.postControl(slot, { kind: "release_compute" }, []);
+    }
+    for (const resource of this.computeResources.values()) resource.release();
+    this.computeResources.clear();
+    this.compute = initialComputeResources();
   }
 }

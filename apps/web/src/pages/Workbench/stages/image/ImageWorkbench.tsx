@@ -18,11 +18,13 @@ import type { RasterMaskRecordStatus } from "../../stage/shared/useRasterMaskRec
 import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileStore";
 import type { WorkbenchImageSource } from "../../stage/imagePyramid";
 import { workbenchImagePreviewUrl } from "../../stage/useWorkbenchImageSource";
+import type { RasterResourceCoordinator } from "../../stage/shared/rasterResourceCoordinator";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  resourceCoordinator?: RasterResourceCoordinator;
   maskCompareStore?: MaskCompareTileStore | null;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
   rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
@@ -152,6 +154,7 @@ export interface ImageWorkbenchProps {
 }
 
 export function ImageWorkbench({
+  resourceCoordinator,
   maskCompareStore,
   rasterMaskRecords,
   rasterMaskStatusById,
@@ -322,6 +325,7 @@ export function ImageWorkbench({
 
   return (
     <ImageStage
+      resourceCoordinator={resourceCoordinator}
       maskCompareStore={maskCompareStore}
       rasterMaskRecords={displayedRasterMaskRecords}
       tiledMaskOverviewRecord={editingRasterMaskRecord}

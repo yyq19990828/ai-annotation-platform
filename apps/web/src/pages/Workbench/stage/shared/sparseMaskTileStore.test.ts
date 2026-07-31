@@ -10,6 +10,7 @@ import {
   type RasterMaskWorkerSession,
 } from "./rasterMaskWorkerRuntime";
 import type { RasterMaskWorkerRunOptions } from "./rasterMaskWorkerPool";
+import { RasterResourceCoordinator } from "./rasterResourceCoordinator";
 import type { RasterMaskTileOverride, RasterMaskTileRect } from "./rasterMaskWorkerProtocol";
 import {
   SparseMaskTileBudgetError,
@@ -120,6 +121,32 @@ class DeferredMorphologyBackend extends RuntimeTileBackend {
   }
 }
 
+class DeferredDecodeBackend extends RuntimeTileBackend {
+  private startedResolve!: () => void;
+  private resumeResolve!: () => void;
+  readonly started = new Promise<void>((resolve) => {
+    this.startedResolve = resolve;
+  });
+  private readonly resumePromise = new Promise<void>((resolve) => {
+    this.resumeResolve = resolve;
+  });
+
+  override async decodeTile(
+    sessionId: string,
+    sha256: string,
+    rect: RasterMaskTileRect,
+    options?: RasterMaskWorkerRunOptions,
+  ) {
+    this.startedResolve();
+    await this.resumePromise;
+    return super.decodeTile(sessionId, sha256, rect, options);
+  }
+
+  resume(): void {
+    this.resumeResolve();
+  }
+}
+
 function blankRle(width: number, height: number): CocoRle {
   return { encoding: "coco_rle", size: [height, width], counts: [width * height] };
 }
@@ -151,6 +178,69 @@ function retain(
 }
 
 describe("SparseMaskTileStore", () => {
+  it("把 dirty tile 固定为 P0，pressure 不淘汰真值且 dispose 后账本归零", async () => {
+    const backend = new RuntimeTileBackend();
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 600_000,
+        hardBudgetBytes: 800_000,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const store = new SparseMaskTileStore({
+      sessionId: "resource-test",
+      sha256: "sha",
+      baseRle: blankRle(512, 512),
+      backend,
+      resourceCoordinator: coordinator,
+    });
+    await store.materializeTile(0, 0, { priority: "editing" });
+    await store.brush({ cx: 10, cy: 10, radius: 2, value: 255, shape: "circle" });
+
+    const before = coordinator.getSnapshot().committedBytes;
+    expect(before).toBeGreaterThan(0);
+    coordinator.requestPressure("manual");
+    expect(store.snapshot()).toMatchObject({ liveTiles: 1, dirtyTiles: 1 });
+    expect(coordinator.getSnapshot().committedBytes).toBe(before);
+
+    store.dispose();
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
+  });
+
+  it("dispose 会立即释放尚未完成的 tile reservation", async () => {
+    const backend = new DeferredDecodeBackend();
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 600_000,
+        hardBudgetBytes: 800_000,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const store = new SparseMaskTileStore({
+      sessionId: "pending-resource-test",
+      sha256: "sha",
+      baseRle: blankRle(512, 512),
+      backend,
+      resourceCoordinator: coordinator,
+    });
+    const pending = store.materializeTile(0, 0);
+    await backend.started;
+    expect(coordinator.getSnapshot().reservedBytes).toBeGreaterThan(0);
+
+    store.dispose();
+    expect(store.snapshot()).toMatchObject({
+      retainedBytes: 0,
+      reservedBytes: 0,
+      decodeInFlight: 0,
+      disposed: true,
+    });
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
+    backend.resume();
+    await expect(pending).rejects.toThrow();
+  });
+
   it("decodes only requested tiles and preserves non-divisible edge dimensions", async () => {
     const { backend, store } = makeStore(1025, 513);
     const edge = await store.materializeTile(2, 1);

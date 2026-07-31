@@ -140,6 +140,25 @@ ImageBitmap/HTML image/ObjectURL 存量、abort、stale commit、签发批次数
 coverage。该快照不包含签名 URL、storage key 或文件名。排查长会话时应确认停止交互后
 retained/live/request 进入平台档位内 plateau，离开任务后 reserved/retained/live 全部归零。
 
+同一份 BUG 反馈还会附带 `Workbench Raster Resource Diagnostics`。它是浏览器页签内、当前 Task 的逻辑
+账本，不是服务端或物理 GPU 指标。按以下顺序排查：
+
+1. `invariantOk=true`，且 `chargedBytes == committedBytes + reservedBytes <= hardBudgetBytes`；
+2. `owners` 与 `categories` 的 committed/reserved 合计分别等于全局值；
+3. `pressureReason=foreground-operation` 时背景 prefetch 应暂停，operation 结束后按当前 generation 恢复；
+4. hidden 达阈值后 `hiddenSheds` 增加、reconstructible bytes 下降，dirty edit/history 仍留在 P0；
+5. BFCache 往返后 generation 增加，旧 promise 只增加 stale/abort 计数，coverage 能恢复；
+6. 真正离开任务后 coordinator、tile、Mask render/edit/history、Worker/GPU owner 全部归零。
+
+低、标准、高档位的全局 hard budget 分别为 192/384/768 MiB，hidden freeze 为 10/15/30 秒。
+档位来自浏览器 `navigator.deviceMemory`，字段缺失时使用标准档；production 没有环境变量可以绕过 hard
+invariant。若持续出现 denial，先核对 owner 是否漏 release、是否把同一 buffer 重复计费，以及视口/Mask
+ROI 是否过大，不要通过无限调高预算掩盖泄漏。
+
+资源 pressure 与 tile 故障的口径不同：前者通常保持 overview/coverage，只短暂显示清晰度恢复；后者会在
+tile diagnostics 增加 error、签名刷新或 decode failure。Mask operation 被总预算拒绝时，用户现有编辑和
+history 不变，可缩小可见区域或先保存再重试。
+
 ## 故障码处理
 
 | 错误码                                  | 含义                                   | 处理                                             |

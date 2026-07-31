@@ -35,6 +35,22 @@
 
 ## [Unreleased]
 
+## [0.23.24] - 2026-07-31
+
+### Added
+
+- **图片工作台获得 task-scoped 栅格资源协调器**. 背景 coverage/detail/prefetch、Raster Mask render/edit/history/compare、Worker cache/scratch、CPU transient 与 WebGPU buffer 统一使用按设备分档的 prospective reservation、原子 handoff、优先级 pressure 和 owner/category 快照；BUG 报告可附带脱敏资源诊断。
+
+### Changed
+
+- **前景 Mask 操作会主动让低优先级背景预取让行**. P0/P1 编辑真值与最低可见覆盖不会被 P4/P5 缓存挤出；超预算时先暂停预取、淘汰可重建 detail/render、释放 idle compute 并按当前 generation 恢复，避免各局部缓存分别合规但联合峰值失控。
+- **页面生命周期统一治理栅格资源**. hidden 标签页延迟释放可重建资源，BFCache 保留 dirty Mask 与 history 并在返回时只恢复当前 generation，真正卸载、切题和销毁后 coordinator、bitmap、Worker 与 GPU 逻辑占用归零。
+
+### Fixed
+
+- **资源压力与异步失败不再留下部分编辑或重复计费**. history admission 拒绝会回滚当前操作并保留既有 undo/redo；Worker crash、GPU reset、decode abort、迟到响应和 reservation 实际值增长失败都会确定性释放，原子资源替换不再出现双份峰值或未计账空窗。
+- **独立浏览器 E2E 数据库现在总是使用自己的迁移连接**. Playwright 启动 API 时会显式把 migration URL 指向隔离数据库，避免本地环境变量让开发库被升级而测试库仍停留在旧 schema。
+
 ## [0.23.23] - 2026-07-31
 
 ### Added

@@ -548,6 +548,11 @@ workerScope.onmessage = async (event) => {
     await resetWebGpuProvider();
     return;
   }
+  if (request.kind === "release_compute") {
+    packedBaseCache.clear();
+    await resetWebGpuProvider();
+    return;
+  }
 
   try {
     if (request.kind === "webgpu_warmup") {

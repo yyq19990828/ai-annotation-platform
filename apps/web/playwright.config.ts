@@ -95,6 +95,7 @@ export default defineConfig({
           cwd: resolve(configDir, "../api"),
           env: {
             DATABASE_URL: e2eDatabaseURL,
+            MIGRATION_DATABASE_URL: e2eDatabaseURL,
             ENVIRONMENT: "development",
             E2E_SEED_ENABLED: "true",
             ...(rasterMaskMatrix

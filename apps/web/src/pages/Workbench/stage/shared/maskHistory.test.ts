@@ -92,7 +92,9 @@ describe("MaskHistoryStore", () => {
     const retained: string[] = [];
     const released: string[] = [];
     const store = new MaskHistoryStore(120, 3, {
-      onRetain: (command) => retained.push(command.name),
+      onRetain: (command) => {
+        retained.push(command.name);
+      },
       onRelease: (command) => released.push(command.name),
     });
     const first = syntheticCommand("first", 60);
@@ -140,13 +142,35 @@ describe("MaskHistoryStore", () => {
     });
   });
 
-  it("drops an oversized discontinuity instead of retaining an invalid undo chain", () => {
+  it("aggregate admission 拒绝时不清 redo，也不改变现有 ownership", () => {
+    const released: string[] = [];
+    const store = new MaskHistoryStore(200, 3, {
+      onRetain: (command) => command.name !== "rejected",
+      onRelease: (command) => released.push(command.name),
+    });
+    const first = syntheticCommand("first", 60);
+    const second = syntheticCommand("second", 60);
+    store.push(first);
+    store.push(second);
+    store.undo(() => {});
+
+    expect(store.push(syntheticCommand("rejected", 60))).toBe(false);
+    expect(store.snapshot()).toMatchObject({
+      retainedBytes: 120,
+      undoCommands: 1,
+      redoCommands: 1,
+      droppedCommands: 1,
+    });
+    expect(released).toEqual([]);
+  });
+
+  it("rejects an oversized command without changing the retained undo chain", () => {
     const store = new MaskHistoryStore(100);
     expect(store.push(syntheticCommand("before", 80))).toBe(true);
     expect(store.push(syntheticCommand("oversized", 101))).toBe(false);
     expect(store.snapshot()).toMatchObject({
-      retainedBytes: 0,
-      undoCommands: 0,
+      retainedBytes: 80,
+      undoCommands: 1,
       redoCommands: 0,
       droppedCommands: 1,
     });

@@ -5,6 +5,7 @@ import {
   type DecodedImageTile,
   type ImageTileResourceSnapshot,
 } from "./imageTileScheduler";
+import { RasterResourceCoordinator } from "./shared/rasterResourceCoordinator";
 
 const manifest: ImagePyramidManifestV1 = {
   schema: "aap-image-pyramid/v1",
@@ -56,12 +57,21 @@ function waitForSnapshot(
 describe("ImageTileScheduler", () => {
   it("signs, decodes, retains, and deterministically releases visible tiles", async () => {
     let released = 0;
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 2 * 1024 * 1024,
+        hardBudgetBytes: 3 * 1024 * 1024,
+        hiddenFreezeMs: 10,
+      },
+    });
     const scheduler = new ImageTileScheduler({
       taskId: "task-1",
       sourceIdentity: "source/g1",
       generation: 1,
       manifest,
       budget: { retainedBytes: 4 * 1024 * 1024, concurrency: 2, overscanTiles: 0 },
+      resourceCoordinator: coordinator,
       sign: async (coordinates) =>
         new Map(coordinates.map((item) => [`${item.level}/${item.x}/${item.y}`, "tile://ready"])),
       fetchBlob: async () => new Blob(["tile"]),
@@ -87,6 +97,11 @@ describe("ImageTileScheduler", () => {
       staleCommits: 0,
     });
     expect(scheduler.getTiles()).toHaveLength(1);
+    expect(coordinator.getSnapshot()).toMatchObject({
+      committedBytes: ready.retainedBytes,
+      reservedBytes: 0,
+      invariantOk: true,
+    });
 
     scheduler.update({ x: 0, y: 0, width: 512, height: 512 }, 1, 1);
     expect(scheduler.getSnapshot().signBatches).toBe(1);
@@ -101,6 +116,7 @@ describe("ImageTileScheduler", () => {
       bitmapsClosed: 1,
     });
     expect(released).toBe(1);
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
   });
 
   it("drops an old viewport response instead of committing a stale tile", async () => {
@@ -191,6 +207,108 @@ describe("ImageTileScheduler", () => {
       targetCoverageRatio: 1,
     });
     expect(fetchCalls).toBe(2);
+    scheduler.dispose();
+  });
+
+  it("BFCache pressure releases even currently visible decoded tiles", async () => {
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 2 * 1024 * 1024,
+        hardBudgetBytes: 3 * 1024 * 1024,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const scheduler = new ImageTileScheduler({
+      taskId: "task-1",
+      sourceIdentity: "source/g1",
+      generation: 1,
+      manifest,
+      budget: { retainedBytes: 4 * 1024 * 1024, concurrency: 1, overscanTiles: 0 },
+      resourceCoordinator: coordinator,
+      sign: async (coordinates) =>
+        new Map(coordinates.map((item) => [`${item.level}/${item.x}/${item.y}`, "tile://ready"])),
+      fetchBlob: async () => new Blob(["tile"]),
+      decodeBlob: async (_blob, geometry) => ({
+        image: {} as HTMLCanvasElement,
+        width: geometry.decodedWidth,
+        height: geometry.decodedHeight,
+        kind: "bitmap",
+        hasObjectUrl: false,
+        release: () => undefined,
+      }),
+    });
+    scheduler.update({ x: 0, y: 0, width: 512, height: 512 }, 1, 1);
+    await waitForSnapshot(scheduler, (snapshot) => snapshot.ready === 1);
+
+    coordinator.handlePageHide(true);
+    expect(scheduler.getSnapshot()).toMatchObject({ ready: 0, retainedBytes: 0 });
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
+    coordinator.handlePageShow(true);
+    await waitForSnapshot(scheduler, (snapshot) => snapshot.ready === 1);
+    expect(coordinator.getSnapshot()).toMatchObject({
+      generation: 2,
+      reservedBytes: 0,
+      invariantOk: true,
+    });
+    scheduler.dispose();
+  });
+
+  it("requeues an in-flight visible tile when BFCache restores before abort settles", async () => {
+    let fetchCalls = 0;
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 2 * 1024 * 1024,
+        hardBudgetBytes: 3 * 1024 * 1024,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const scheduler = new ImageTileScheduler({
+      taskId: "task-1",
+      sourceIdentity: "source/g1",
+      generation: 1,
+      manifest,
+      budget: { retainedBytes: 4 * 1024 * 1024, concurrency: 1, overscanTiles: 0 },
+      resourceCoordinator: coordinator,
+      sign: async (coordinates) =>
+        new Map(coordinates.map((item) => [`${item.level}/${item.x}/${item.y}`, "tile://ready"])),
+      fetchBlob: async (_url, signal) => {
+        fetchCalls += 1;
+        if (fetchCalls > 1) return new Blob(["tile"]);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+      decodeBlob: async (_blob, geometry) => ({
+        image: {} as HTMLCanvasElement,
+        width: geometry.decodedWidth,
+        height: geometry.decodedHeight,
+        kind: "bitmap",
+        hasObjectUrl: false,
+        release: () => undefined,
+      }),
+    });
+    scheduler.update({ x: 0, y: 0, width: 512, height: 512 }, 1, 1);
+    await waitForSnapshot(scheduler, (snapshot) => snapshot.fetching === 1);
+
+    coordinator.handlePageHide(true);
+    coordinator.handlePageShow(true);
+
+    const restored = await waitForSnapshot(
+      scheduler,
+      (snapshot) => snapshot.ready === 1 && snapshot.targetCoverageRatio === 1,
+    );
+    expect(fetchCalls).toBe(2);
+    expect(restored).toMatchObject({ fetching: 0, reservedBytes: 0 });
+    expect(coordinator.getSnapshot()).toMatchObject({
+      generation: 2,
+      invariantOk: true,
+    });
     scheduler.dispose();
   });
 });

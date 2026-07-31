@@ -97,6 +97,10 @@ import { KonvaImageTileLayer } from "./KonvaImageTileLayer";
 import type { WorkbenchImageSource } from "./imagePyramid";
 import { useImageTileScheduler } from "./useImageTileScheduler";
 import { useImageStageFit } from "./useImageStageFit";
+import type {
+  RasterResourceCoordinator,
+  RasterResourceReservation,
+} from "./shared/rasterResourceCoordinator";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -202,6 +206,7 @@ function SamRefineButton({
 }
 
 interface ImageStageProps {
+  resourceCoordinator?: RasterResourceCoordinator;
   maskCompareStore?: MaskCompareTileStore | null;
   rasterMaskRecords?: readonly RasterMaskRenderRecord<"annotation">[];
   tiledMaskOverviewRecord?: RasterMaskRenderRecord<"annotation"> | null;
@@ -497,6 +502,7 @@ function SamCandidateOverlay({
 
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
+  resourceCoordinator,
   maskCompareStore,
   rasterMaskRecords = [],
   rasterMaskStatusById = new Map(),
@@ -670,6 +676,59 @@ export function ImageStage({
   }
   const previewSourceUrl = imageSourceRef.current.url;
   const [image, imageStatus] = useImage(previewSourceUrl ?? "");
+  const overviewResourceRef = useRef<RasterResourceReservation | null>(null);
+  const [overviewAdmitted, setOverviewAdmitted] = useState(() => !resourceCoordinator);
+  const [overviewLifecycleEpoch, setOverviewLifecycleEpoch] = useState(0);
+  useEffect(() => {
+    overviewResourceRef.current?.release();
+    overviewResourceRef.current = null;
+    if (!resourceCoordinator) {
+      setOverviewAdmitted(true);
+      return;
+    }
+    if (!image?.naturalWidth || !image.naturalHeight) {
+      setOverviewAdmitted(false);
+      return;
+    }
+    const reservation = resourceCoordinator.tryReserve({
+      owner: "background",
+      category: "background-coverage",
+      priority: 1,
+      bytes: image.naturalWidth * image.naturalHeight * 4,
+      reconstructible: true,
+      pinned: true,
+    });
+    if (!reservation || !reservation.commit()) {
+      reservation?.release();
+      setOverviewAdmitted(false);
+      return;
+    }
+    overviewResourceRef.current = reservation;
+    setOverviewAdmitted(true);
+    return () => {
+      reservation.release();
+      if (overviewResourceRef.current === reservation) overviewResourceRef.current = null;
+    };
+  }, [image, imageIdentity, overviewLifecycleEpoch, resourceCoordinator]);
+  useEffect(() => {
+    if (!resourceCoordinator || typeof window === "undefined") return;
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      overviewResourceRef.current?.release();
+      overviewResourceRef.current = null;
+      setOverviewAdmitted(false);
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setOverviewLifecycleEpoch((value) => value + 1);
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [resourceCoordinator]);
+  const displayImage = overviewAdmitted ? image : undefined;
   // 已知尺寸 (task 元数据) 优先, 让翻页时无需等 image onload 就能算 fit; 回退到加载后的自然尺寸。
   // 图像与标注都按同一 imgW/imgH 渲染, 故即便已知值与自然值偶有出入也始终对齐 (不产生 jank)。
   const sourceWidth =
@@ -692,7 +751,7 @@ export function ImageStage({
     () => fitAwareScaleRange(vpSize.w, vpSize.h, imgW, imgH),
     [imgH, imgW, vpSize.h, vpSize.w],
   );
-  const imageLoaded = !!image?.naturalWidth;
+  const imageLoaded = !!displayImage?.naturalWidth;
   // 尺寸是否就绪: 已知尺寸成对存在 → 立即就绪 (不等加载); 否则退回「图已加载」。
   // 图加载失败 (404/坏链) 也算就绪: 否则 konvaHost 因 !fitted 永久 visibility:hidden, 吞掉所有
   // 画布交互 (mask 笔刷 / 框选等); 失败时没有"正确位置"需保护, 用回退尺寸 (900×600) 立即揭开即可。
@@ -706,6 +765,7 @@ export function ImageStage({
     source: resolvedImageSource,
     viewport: vp,
     viewportSize: vpSize,
+    resourceCoordinator,
   });
   const maskCursorNodeRef = useRef<Konva.Circle>(null);
   const maskCursorVisibleRef = useRef(false);
@@ -1735,6 +1795,16 @@ export function ImageStage({
         </div>
       )}
 
+      {resolvedImageSource?.kind === "pyramid" &&
+        (!overviewAdmitted ||
+          imageTiles.snapshot?.prefetchPaused ||
+          (imageTiles.snapshot?.targetCoverageRatio ?? 1) < 1) && (
+          <div className={styles.pyramidStatus} role="status">
+            <Icon name="clock" size={14} />
+            正在恢复图像清晰度
+          </div>
+        )}
+
       <div className={fitted ? styles.konvaHost : `${styles.konvaHost} ${styles.konvaHostHidden}`}>
         <Stage
           ref={stageRef}
@@ -1751,7 +1821,7 @@ export function ImageStage({
           {resolvedImageSource?.kind === "pyramid" ? (
             <KonvaImageTileLayer
               key={imageIdentity}
-              overviewImage={image}
+              overviewImage={displayImage}
               imageWidth={imgW}
               imageHeight={imgH}
               tiles={imageTiles.tiles}
@@ -1759,9 +1829,9 @@ export function ImageStage({
             />
           ) : (
             <Layer name="bg" listening={false}>
-              {image && (
+              {displayImage && (
                 <KonvaImage
-                  image={image}
+                  image={displayImage}
                   x={0}
                   y={0}
                   width={imgW}

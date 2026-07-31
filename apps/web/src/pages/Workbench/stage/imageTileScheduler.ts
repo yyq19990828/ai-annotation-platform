@@ -9,6 +9,10 @@ import {
   type ImageTileGeometry,
   type PixelRect,
 } from "./imagePyramid";
+import type {
+  RasterResourceCoordinator,
+  RasterResourceReservation,
+} from "./shared/rasterResourceCoordinator";
 
 export interface LoadedImageTile extends ImageTileGeometry {
   image: CanvasImageSource;
@@ -59,6 +63,7 @@ interface CacheEntry {
   geometry: ImageTileGeometry;
   decoded: DecodedImageTile;
   lastUsed: number;
+  resource?: RasterResourceReservation;
 }
 
 interface QueueEntry {
@@ -80,6 +85,14 @@ export interface ImageTileSchedulerOptions {
     geometry: ImageTileGeometry,
     signal: AbortSignal,
   ) => Promise<DecodedImageTile>;
+  resourceCoordinator?: RasterResourceCoordinator;
+  resourceOwner?: string;
+}
+
+interface ActiveTileLoad {
+  controller: AbortController;
+  priority: number;
+  resource?: RasterResourceReservation;
 }
 
 function tileCoordinateKey(coordinate: ImageTileCoordinate): string {
@@ -191,7 +204,7 @@ export class ImageTileScheduler {
   private readonly options: ImageTileSchedulerOptions;
   private readonly listeners = new Set<() => void>();
   private readonly cache = new Map<string, CacheEntry>();
-  private readonly active = new Map<string, AbortController>();
+  private readonly active = new Map<string, ActiveTileLoad>();
   private readonly failures = new Map<string, { attempts: number; failedAt: number }>();
   private desired = new Map<string, QueueEntry>();
   private visibleKeys = new Set<string>();
@@ -199,9 +212,12 @@ export class ImageTileScheduler {
   private signing = false;
   private signController: AbortController | null = null;
   private disposed = false;
-  private prefetchPaused = false;
+  private readonly prefetchPauseReasons = new Set<string>();
   private currentLevel = 0;
   private currentRect: PixelRect | null = null;
+  private pressureLevelFloor = 0;
+  private lastViewportScale = 1;
+  private lastDevicePixelRatio = 1;
   private clock = 0;
   private reservedBytes = 0;
   private retainedBytes = 0;
@@ -221,9 +237,28 @@ export class ImageTileScheduler {
   private staleCommits = 0;
   private signBatches = 0;
   private urlRefreshes = 0;
+  private readonly resourceOwner: string;
+  private unregisterResourceEvictor: (() => void) | null = null;
 
   constructor(options: ImageTileSchedulerOptions) {
     this.options = options;
+    this.resourceOwner = options.resourceOwner ?? "background";
+    if (options.resourceCoordinator) {
+      this.unregisterResourceEvictor = options.resourceCoordinator.registerEvictor({
+        owner: this.resourceOwner,
+        evictableBytes: () => this.evictableBytes(),
+        evict: (targetBytes, reason) => this.evictForPressure(targetBytes, reason),
+        pausePrefetch: () => this.setPrefetchPaused(true, "coordinator"),
+        resumePrefetch: (generation) => {
+          if (generation !== options.resourceCoordinator?.generation) return;
+          this.pressureLevelFloor = 0;
+          this.setPrefetchPaused(false, "coordinator");
+          if (this.currentRect) {
+            this.update(this.currentRect, this.lastViewportScale, this.lastDevicePixelRatio);
+          }
+        },
+      });
+    }
   }
 
   subscribe(listener: () => void): () => void {
@@ -236,9 +271,11 @@ export class ImageTileScheduler {
     for (const listener of this.listeners) listener();
   }
 
-  setPrefetchPaused(paused: boolean): void {
-    if (this.prefetchPaused === paused) return;
-    this.prefetchPaused = paused;
+  setPrefetchPaused(paused: boolean, reason = "external"): void {
+    const wasPaused = this.prefetchPauseReasons.size > 0;
+    if (paused) this.prefetchPauseReasons.add(reason);
+    else this.prefetchPauseReasons.delete(reason);
+    if (wasPaused === this.prefetchPauseReasons.size > 0) return;
     if (this.currentRect) {
       this.updateViewport(this.currentRect, this.currentLevel, true);
     }
@@ -251,11 +288,16 @@ export class ImageTileScheduler {
       this.replaceDesired(new Map(), new Set());
       return;
     }
-    const level = chooseImagePyramidLevel(
-      this.options.manifest,
-      viewportScale,
-      devicePixelRatio,
-      this.currentLevel,
+    this.lastViewportScale = viewportScale;
+    this.lastDevicePixelRatio = devicePixelRatio;
+    const level = Math.max(
+      this.pressureLevelFloor,
+      chooseImagePyramidLevel(
+        this.options.manifest,
+        viewportScale,
+        devicePixelRatio,
+        this.currentLevel,
+      ),
     );
     this.currentRect = rect;
     this.currentLevel = level;
@@ -265,9 +307,10 @@ export class ImageTileScheduler {
   private updateViewport(rect: PixelRect, level: number, preserveLevel: boolean): void {
     if (!preserveLevel) this.currentLevel = level;
     const visible = imageTilesForRect(this.options.manifest, level, rect, 0);
-    const desiredCoordinates = this.prefetchPaused
-      ? visible
-      : imageTilesForRect(this.options.manifest, level, rect, this.options.budget.overscanTiles);
+    const desiredCoordinates =
+      this.prefetchPauseReasons.size > 0
+        ? visible
+        : imageTilesForRect(this.options.manifest, level, rect, this.options.budget.overscanTiles);
     const visibleCoordinates = new Set(visible.map(tileCoordinateKey));
     const desired = new Map<string, QueueEntry>();
     for (const coordinate of desiredCoordinates) {
@@ -298,6 +341,13 @@ export class ImageTileScheduler {
     }
     for (const [key, item] of desired) {
       if (this.desired.get(key)?.priority !== item.priority) return false;
+      if (
+        !this.cache.has(key) &&
+        !this.active.has(key) &&
+        !this.queue.some((queued) => queued.geometry.key === key)
+      ) {
+        return false;
+      }
     }
     for (const key of visibleKeys) {
       if (!this.visibleKeys.has(key)) return false;
@@ -308,11 +358,19 @@ export class ImageTileScheduler {
   private replaceDesired(desired: Map<string, QueueEntry>, visibleKeys: Set<string>): void {
     this.desired = desired;
     this.visibleKeys = visibleKeys;
-    for (const [key, controller] of this.active) {
+    for (const [key, active] of this.active) {
       if (!desired.has(key)) {
-        controller.abort();
+        active.controller.abort();
         this.aborted += 1;
       }
+    }
+    for (const [key, cached] of this.cache) {
+      if (desired.has(key)) continue;
+      cached.resource?.update({
+        category: "background-detail",
+        priority: 3,
+        pinned: false,
+      });
     }
     this.queue = [];
     const now = Date.now();
@@ -320,10 +378,26 @@ export class ImageTileScheduler {
       const cached = this.cache.get(key);
       if (cached) {
         cached.lastUsed = ++this.clock;
+        const visible = visibleKeys.has(key);
+        cached.resource?.update({
+          category: visible ? "background-detail" : "background-prefetch",
+          priority: visible ? 2 : 4,
+          pinned: visible,
+        });
         this.cacheHits += 1;
         continue;
       }
-      if (this.active.has(key)) continue;
+      const active = this.active.get(key);
+      if (active) {
+        const visible = visibleKeys.has(key);
+        active.priority = item.priority;
+        active.resource?.update({
+          category: visible ? "background-detail" : "background-prefetch",
+          priority: visible ? 2 : 4,
+          pinned: visible,
+        });
+        continue;
+      }
       const failure = this.failures.get(key);
       if (failure && failure.attempts >= 2 && now - failure.failedAt < 5_000) continue;
       this.cacheMisses += 1;
@@ -420,26 +494,38 @@ export class ImageTileScheduler {
       );
       if (index < 0) break;
       const [item] = this.queue.splice(index, 1);
-      if (!this.reserve(item.geometry.decodedBytes)) {
+      const reservation = this.reserve(item);
+      if (!reservation) {
         this.deferred += 1;
         continue;
       }
       const controller = new AbortController();
-      this.active.set(item.geometry.key, controller);
+      const active: ActiveTileLoad = { controller, priority: item.priority, ...reservation };
+      this.active.set(item.geometry.key, active);
       void this.fetchAndDecode(item, controller);
     }
   }
 
-  private reserve(bytes: number): boolean {
+  private reserve(item: QueueEntry): { resource?: RasterResourceReservation } | null {
+    const bytes = item.geometry.decodedBytes;
     this.evictToBudget(bytes);
     if (
       bytes > this.options.budget.retainedBytes ||
       this.retainedBytes + this.reservedBytes + bytes > this.options.budget.retainedBytes
     ) {
-      return false;
+      return null;
     }
+    const resource = this.options.resourceCoordinator?.tryReserve({
+      owner: this.resourceOwner,
+      category: item.priority === 0 ? "background-detail" : "background-prefetch",
+      priority: item.priority === 0 ? 2 : 4,
+      bytes,
+      reconstructible: true,
+      pinned: item.priority === 0,
+    });
+    if (this.options.resourceCoordinator && !resource) return null;
     this.reservedBytes += bytes;
-    return true;
+    return resource ? { resource } : {};
   }
 
   private async fetchAndDecode(item: QueueEntry, controller: AbortController): Promise<void> {
@@ -465,11 +551,20 @@ export class ImageTileScheduler {
         decoded = null;
         return;
       }
+      const active = this.active.get(item.geometry.key);
+      if (active?.resource && !active.resource.commit(item.geometry.decodedBytes)) {
+        this.staleCommits += 1;
+        this.releaseUncommitted(decoded);
+        decoded = null;
+        return;
+      }
       this.cache.set(item.geometry.key, {
         geometry: item.geometry,
         decoded,
         lastUsed: ++this.clock,
+        ...(active?.resource ? { resource: active.resource } : {}),
       });
+      if (active) active.resource = undefined;
       this.retainedBytes += item.geometry.decodedBytes;
       this.decodedBytes += item.geometry.decodedBytes;
       if (decoded.kind === "bitmap") {
@@ -493,8 +588,20 @@ export class ImageTileScheduler {
         }
       }
     } finally {
+      this.active.get(item.geometry.key)?.resource?.release();
       this.reservedBytes = Math.max(0, this.reservedBytes - item.geometry.decodedBytes);
       this.active.delete(item.geometry.key);
+      const desired = this.desired.get(item.geometry.key);
+      if (
+        controller.signal.aborted &&
+        desired &&
+        !this.disposed &&
+        !this.cache.has(item.geometry.key) &&
+        !this.queue.some((queued) => queued.geometry.key === item.geometry.key)
+      ) {
+        this.queue.push(desired);
+        this.queue.sort((left, right) => left.priority - right.priority);
+      }
       this.pump();
       if (this.queue.some((queued) => !queued.url)) void this.signAndPump();
       this.notify();
@@ -542,6 +649,7 @@ export class ImageTileScheduler {
     const entry = this.cache.get(key);
     if (!entry) return;
     this.cache.delete(key);
+    entry.resource?.release();
     entry.decoded.release();
     this.retainedBytes = Math.max(0, this.retainedBytes - entry.geometry.decodedBytes);
     if (entry.decoded.kind === "bitmap") {
@@ -604,8 +712,50 @@ export class ImageTileScheduler {
       staleCommits: this.staleCommits,
       signBatches: this.signBatches,
       urlRefreshes: this.urlRefreshes,
-      prefetchPaused: this.prefetchPaused,
+      prefetchPaused: this.prefetchPauseReasons.size > 0,
     };
+  }
+
+  private evictableBytes(): number {
+    let bytes = 0;
+    for (const [key, entry] of this.cache) {
+      if (!this.visibleKeys.has(key)) bytes += entry.geometry.decodedBytes;
+    }
+    return bytes;
+  }
+
+  private evictForPressure(
+    targetBytes: number,
+    reason:
+      | "soft-budget"
+      | "hard-budget"
+      | "foreground-operation"
+      | "hidden"
+      | "bfcache"
+      | "manual",
+  ): number {
+    let freed = 0;
+    for (const active of this.active.values()) {
+      if (reason !== "bfcache" && active.priority === 0) continue;
+      active.controller.abort();
+      this.aborted += 1;
+    }
+    const candidates = [...this.cache.entries()]
+      .filter(([key]) => reason === "bfcache" || !this.visibleKeys.has(key))
+      .sort((left, right) => left[1].lastUsed - right[1].lastUsed);
+    for (const [key, entry] of candidates) {
+      this.releaseCacheEntry(key);
+      freed += entry.geometry.decodedBytes;
+      if (freed >= targetBytes) break;
+    }
+    if (
+      (reason === "hard-budget" || reason === "hidden" || reason === "bfcache") &&
+      this.currentLevel < this.options.manifest.levels.length - 1
+    ) {
+      this.pressureLevelFloor = Math.max(this.pressureLevelFloor, this.currentLevel + 1);
+    }
+    this.notify();
+    return freed;
   }
 
   dispose(): void {
@@ -613,13 +763,18 @@ export class ImageTileScheduler {
     this.disposed = true;
     this.signController?.abort();
     this.signController = null;
-    for (const controller of this.active.values()) controller.abort();
+    for (const active of this.active.values()) {
+      active.controller.abort();
+      active.resource?.release();
+    }
     this.active.clear();
     for (const key of [...this.cache.keys()]) this.releaseCacheEntry(key);
     this.queue = [];
     this.desired.clear();
     this.visibleKeys.clear();
     this.reservedBytes = 0;
+    this.unregisterResourceEvictor?.();
+    this.unregisterResourceEvictor = null;
     this.listeners.clear();
   }
 }

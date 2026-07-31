@@ -87,6 +87,7 @@ export function createDevSidebar(
             },
             { text: "性能 HUD", link: "/dev/concepts/perfhud" },
             { text: "超大图金字塔派生资产", link: "/dev/concepts/image-pyramid-assets" },
+            { text: "图片工作台栅格资源协调", link: "/dev/concepts/raster-resource-coordination" },
           ],
         },
       ],

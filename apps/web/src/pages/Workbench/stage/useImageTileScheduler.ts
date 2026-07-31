@@ -10,6 +10,7 @@ import {
   clearImageTileDiagnostics,
   publishImageTileDiagnostics,
 } from "@/utils/imageTileDiagnostics";
+import type { RasterResourceCoordinator } from "./shared/rasterResourceCoordinator";
 
 interface UseImageTileSchedulerOptions {
   source: WorkbenchImageSource | null;
@@ -18,6 +19,7 @@ interface UseImageTileSchedulerOptions {
   pausePrefetch?: boolean;
   deviceMemory?: number | null;
   devicePixelRatio?: number;
+  resourceCoordinator?: RasterResourceCoordinator;
 }
 
 interface ImageTileSchedulerState {
@@ -73,6 +75,9 @@ export function useImageTileScheduler(
       generation: source.generation,
       manifest: source.manifest,
       budget,
+      ...(options.resourceCoordinator
+        ? { resourceCoordinator: options.resourceCoordinator, resourceOwner: "background" }
+        : {}),
     });
     schedulerRef.current = { sourceIdentity: source.identity, scheduler };
     const unsubscribe = scheduler.subscribe(() => setRevision((value) => value + 1));
@@ -90,6 +95,7 @@ export function useImageTileScheduler(
     budget.concurrency,
     budget.overscanTiles,
     budget.retainedBytes,
+    options.resourceCoordinator,
     source?.generation,
     source?.identity,
   ]);

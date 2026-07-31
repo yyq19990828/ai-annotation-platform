@@ -26,6 +26,10 @@ import {
   RasterMaskWorkerCancelledError,
 } from "../stage/shared/rasterMaskCompute";
 import type { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
+import type {
+  RasterResourceCoordinator,
+  RasterResourceReservation,
+} from "../stage/shared/rasterResourceCoordinator";
 import {
   createDenseMaskHistoryCommand,
   MaskHistoryCheckpoint,
@@ -62,6 +66,7 @@ export type MaskEditorTool =
 export const MASK_BRUSH_MIN_PX = 1;
 export const MASK_BRUSH_MAX_PX = 200;
 export const MASK_BRUSH_DEFAULT_PX = 16;
+const MASK_RESOURCE_BUDGET_MESSAGE = "Mask 资源不足，请缩小可见区域或保存后重试";
 
 export interface MaskOperationPreview {
   id: number;
@@ -90,6 +95,7 @@ export interface UseMaskEditorOptions {
   deviceMemory?: number | null;
   historyMaxBytes?: number;
   tileMaxBytes?: number;
+  resourceCoordinator?: RasterResourceCoordinator;
 }
 
 export interface UseMaskEditorReturn {
@@ -177,6 +183,18 @@ function brushBounds(x: number, y: number, radius: number, width: number, height
   return { x0, y0, x1: x1 + 1, y1: y1 + 1 };
 }
 
+function applyDenseHistoryBits(buffer: MaskBuffer, command: MaskHistoryCommand): void {
+  for (const patch of command.patches) {
+    buffer.applyXorBits(
+      patch.tileX * MASK_HISTORY_TILE_SIZE,
+      patch.tileY * MASK_HISTORY_TILE_SIZE,
+      patch.width,
+      patch.height,
+      patch.xorBits,
+    );
+  }
+}
+
 export function useMaskEditor({
   width,
   height,
@@ -185,6 +203,7 @@ export function useMaskEditor({
   deviceMemory,
   historyMaxBytes,
   tileMaxBytes,
+  resourceCoordinator,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
   const webGpuCandidateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU !== "false";
   const resolvedHistoryMaxBytes =
@@ -201,7 +220,13 @@ export function useMaskEditor({
   const strokeCheckpointRef = useRef<{
     sourceRevision: number;
     checkpoint: MaskHistoryCheckpoint;
+    wasDirty: boolean;
   } | null>(null);
+  const denseBufferResourceRef = useRef<RasterResourceReservation | null>(null);
+  const previewResourceRef = useRef<RasterResourceReservation | null>(null);
+  const historyResourceReservationsRef = useRef(
+    new WeakMap<MaskHistoryCommand, RasterResourceReservation>(),
+  );
   const [historyRef] = useState(() => ({
     current: new MaskHistoryStore(resolvedHistoryMaxBytes),
   }));
@@ -242,6 +267,8 @@ export function useMaskEditor({
   }, []);
 
   const clearOperationPreview = useCallback(() => {
+    previewResourceRef.current?.release();
+    previewResourceRef.current = null;
     operationPreviewRef.current = null;
     instanceOperationPreviewRef.current = null;
     setOperationPreview(null);
@@ -259,20 +286,40 @@ export function useMaskEditor({
   const resetHistory = useCallback(
     (store: SparseMaskTileStore | null = null) => {
       historyRef.current.clear();
-      historyRef.current = new MaskHistoryStore(
-        resolvedHistoryMaxBytes,
-        undefined,
-        store
-          ? {
-              onRetain: (command) => store.retainHistoryCommand(command),
-              onRelease: (command) => store.releaseHistoryCommand(command),
-            }
-          : {},
-      );
+      historyRef.current = new MaskHistoryStore(resolvedHistoryMaxBytes, undefined, {
+        onRetain: (command) => {
+          const resource = resourceCoordinator?.tryReserve({
+            owner: "mask-history",
+            category: "mask-history",
+            priority: 0,
+            bytes: command.chargedBytes,
+            reconstructible: false,
+            pinned: true,
+          });
+          if (resourceCoordinator && !resource) return false;
+          if (resource && !resource.commit(command.chargedBytes)) {
+            resource.release();
+            return false;
+          }
+          try {
+            store?.retainHistoryCommand(command);
+          } catch (error) {
+            resource?.release();
+            throw error;
+          }
+          if (resource) historyResourceReservationsRef.current.set(command, resource);
+          return true;
+        },
+        onRelease: (command) => {
+          store?.releaseHistoryCommand(command);
+          historyResourceReservationsRef.current.get(command)?.release();
+          historyResourceReservationsRef.current.delete(command);
+        },
+      });
       strokeCheckpointRef.current = null;
       setHistoryRevision((value) => value + 1);
     },
-    [historyRef, resolvedHistoryMaxBytes],
+    [historyRef, resolvedHistoryMaxBytes, resourceCoordinator],
   );
 
   const refreshTiledState = useCallback((store: SparseMaskTileStore) => {
@@ -341,6 +388,26 @@ export function useMaskEditor({
 
   const installBuffer = useCallback(
     (buffer: MaskBuffer, isDirty: boolean) => {
+      const existingResource = denseBufferResourceRef.current;
+      if (existingResource) {
+        if (!existingResource.update({ bytes: buffer.data.byteLength })) {
+          throw new Error(MASK_RESOURCE_BUDGET_MESSAGE);
+        }
+      } else if (resourceCoordinator) {
+        const resource = resourceCoordinator.tryReserve({
+          owner: "mask-edit:dense",
+          category: "mask-edit",
+          priority: 0,
+          bytes: buffer.data.byteLength,
+          reconstructible: false,
+          pinned: true,
+        });
+        if (!resource || !resource.commit(buffer.data.byteLength)) {
+          resource?.release();
+          throw new Error(MASK_RESOURCE_BUDGET_MESSAGE);
+        }
+        denseBufferResourceRef.current = resource;
+      }
       disposeTiledStore();
       bufferRef.current = buffer;
       setBackend("dense");
@@ -350,7 +417,7 @@ export function useMaskEditor({
       cancelActiveOperation();
       bump();
     },
-    [bump, cancelActiveOperation, disposeTiledStore, resetHistory],
+    [bump, cancelActiveOperation, disposeTiledStore, resetHistory, resourceCoordinator],
   );
 
   const installTiledStore = useCallback(
@@ -360,8 +427,6 @@ export function useMaskEditor({
           "large Mask editing requires the Raster Mask Worker pool",
         );
       }
-      disposeTiledStore();
-      bufferRef.current = null;
       const sequence = ++sparseEditorSessionSequence;
       const store = new SparseMaskTileStore({
         sessionId: `mask-editor-${sequence}`,
@@ -381,7 +446,12 @@ export function useMaskEditor({
             }),
         ...(deviceMemory === undefined ? {} : { deviceMemory }),
         ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
+        resourceCoordinator,
       });
+      disposeTiledStore();
+      bufferRef.current = null;
+      denseBufferResourceRef.current?.release();
+      denseBufferResourceRef.current = null;
       tiledStoreRef.current = store;
       resetHistory(store);
       tiledQueueRef.current = Promise.resolve();
@@ -401,6 +471,7 @@ export function useMaskEditor({
       deviceMemory,
       disposeTiledStore,
       resetHistory,
+      resourceCoordinator,
       tileMaxBytes,
       webGpuCandidateEnabled,
       workerPool,
@@ -538,8 +609,9 @@ export function useMaskEditor({
     strokeCheckpointRef.current = {
       sourceRevision: revisionRef.current,
       checkpoint: new MaskHistoryCheckpoint(width, height),
+      wasDirty: dirty,
     };
-  }, [height, tool, width]);
+  }, [dirty, height, tool, width]);
 
   const endStroke = useCallback(() => {
     const stroke = strokeCheckpointRef.current;
@@ -553,7 +625,11 @@ export function useMaskEditor({
           stroke.sourceRevision,
         );
         if (!command) return;
-        historyRef.current.push(command);
+        if (!historyRef.current.push(command)) {
+          tiledStore.applyHistoryCommand(command);
+          setDirty(stroke.wasDirty || tiledStore.snapshot().dirtyTiles > 0);
+          throw new Error(`${MASK_RESOURCE_BUDGET_MESSAGE}；已撤销本次笔划`);
+        }
         setHistoryRevision((value) => value + 1);
       });
       return;
@@ -563,9 +639,16 @@ export function useMaskEditor({
     if (!stroke || !current) return;
     const command = stroke.checkpoint.finishDense("stroke", stroke.sourceRevision, current.data);
     if (!command) return;
-    historyRef.current.push(command);
+    if (!historyRef.current.push(command)) {
+      applyDenseHistoryBits(current, command);
+      setDirty(stroke.wasDirty);
+      setOperationError(new Error(`${MASK_RESOURCE_BUDGET_MESSAGE}；已撤销本次笔划`));
+      setOperationStatus("error");
+      bump();
+      return;
+    }
     setHistoryRevision((value) => value + 1);
-  }, [enqueueTiledAction, historyRef]);
+  }, [bump, enqueueTiledAction, historyRef]);
 
   const applyHistoryCommand = useCallback(
     (command: MaskHistoryCommand) => {
@@ -578,15 +661,7 @@ export function useMaskEditor({
       }
       const current = bufferRef.current;
       if (!current) return;
-      for (const patch of command.patches) {
-        current.applyXorBits(
-          patch.tileX * MASK_HISTORY_TILE_SIZE,
-          patch.tileY * MASK_HISTORY_TILE_SIZE,
-          patch.width,
-          patch.height,
-          patch.xorBits,
-        );
-      }
+      applyDenseHistoryBits(current, command);
       cancelActiveOperation();
       setDirty(true);
       bump();
@@ -637,6 +712,25 @@ export function useMaskEditor({
       if (result.alpha.length !== current.data.length) {
         throw new Error("mask operation preview dimensions do not match the editor buffer");
       }
+      previewResourceRef.current?.release();
+      previewResourceRef.current = null;
+      if (resourceCoordinator) {
+        const resource = resourceCoordinator.tryReserve({
+          owner: "mask-compare",
+          category: "mask-compare",
+          priority: 1,
+          bytes: result.alpha.byteLength,
+          reconstructible: false,
+          pinned: true,
+        });
+        if (!resource || !resource.commit(result.alpha.byteLength)) {
+          resource?.release();
+          setOperationError(new Error(MASK_RESOURCE_BUDGET_MESSAGE));
+          setOperationStatus("error");
+          return false;
+        }
+        previewResourceRef.current = resource;
+      }
       operationIdRef.current += 1;
       const preview: MaskOperationPreview = {
         id: operationIdRef.current,
@@ -651,7 +745,7 @@ export function useMaskEditor({
       setOperationStatus("preview");
       return true;
     },
-    [],
+    [resourceCoordinator],
   );
 
   const runOperation = useCallback(
@@ -669,30 +763,40 @@ export function useMaskEditor({
         setOperationStatus("computing");
         setOperationError(undefined);
         let changedPixels = 0;
-        const succeeded = await enqueueTiledAction(tiledStore, async () => {
-          let command: MaskHistoryCommand | null = null;
-          if (operation.type === "polygon") {
-            const checkpoint = tiledStore.beginHistoryCheckpoint();
-            changedPixels = await tiledStore.lasso(operation.points, operation.value, {
-              checkpoint,
-              signal: controller.signal,
-            });
-            command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
-          } else if (operation.type === "morphology" && viewportRef.current) {
-            command = await tiledStore.morphologyRoi(viewportRef.current, operation, {
-              name,
-              sourceRevision,
-              signal: controller.signal,
-            });
-            changedPixels = command?.changedPixels ?? 0;
-          } else {
-            throw new LargeMaskFullScanRequiredError();
-          }
-          if (!command) return;
-          historyRef.current.push(command);
-          setDirty(true);
-          setHistoryRevision((value) => value + 1);
-        });
+        const endForeground = resourceCoordinator?.beginForegroundOperation();
+        let succeeded = false;
+        try {
+          succeeded = await enqueueTiledAction(tiledStore, async () => {
+            let command: MaskHistoryCommand | null = null;
+            if (operation.type === "polygon") {
+              const checkpoint = tiledStore.beginHistoryCheckpoint();
+              changedPixels = await tiledStore.lasso(operation.points, operation.value, {
+                checkpoint,
+                signal: controller.signal,
+              });
+              command = tiledStore.finishHistoryCheckpoint(checkpoint, name, sourceRevision);
+            } else if (operation.type === "morphology" && viewportRef.current) {
+              command = await tiledStore.morphologyRoi(viewportRef.current, operation, {
+                name,
+                sourceRevision,
+                signal: controller.signal,
+              });
+              changedPixels = command?.changedPixels ?? 0;
+            } else {
+              throw new LargeMaskFullScanRequiredError();
+            }
+            if (!command) return;
+            if (!historyRef.current.push(command)) {
+              tiledStore.applyHistoryCommand(command);
+              changedPixels = 0;
+              throw new Error(`${MASK_RESOURCE_BUDGET_MESSAGE}；已撤销本次操作`);
+            }
+            setDirty(true);
+            setHistoryRevision((value) => value + 1);
+          });
+        } finally {
+          endForeground?.();
+        }
         if (operationAbortRef.current === controller) operationAbortRef.current = null;
         if (succeeded) setOperationStatus("idle");
         return succeeded && changedPixels > 0;
@@ -708,6 +812,7 @@ export function useMaskEditor({
       operationAbortRef.current = controller;
       setOperationStatus("computing");
       setOperationError(undefined);
+      const endForeground = resourceCoordinator?.beginForegroundOperation();
       try {
         const shouldUseWorker =
           width * height > 1_000_000 ||
@@ -743,6 +848,8 @@ export function useMaskEditor({
         setOperationError(error);
         setOperationStatus("error");
         return false;
+      } finally {
+        endForeground?.();
       }
     },
     [
@@ -751,6 +858,7 @@ export function useMaskEditor({
       height,
       historyRef,
       previewOperation,
+      resourceCoordinator,
       width,
       workerPool,
     ],
@@ -768,6 +876,26 @@ export function useMaskEditor({
       if (allAlphas.some((alpha) => alpha.length !== current.data.length)) {
         throw new Error("mask instance preview dimensions do not match the editor buffer");
       }
+      const previewBytes = allAlphas.reduce((total, alpha) => total + alpha.byteLength, 0);
+      previewResourceRef.current?.release();
+      previewResourceRef.current = null;
+      if (resourceCoordinator) {
+        const resource = resourceCoordinator.tryReserve({
+          owner: "mask-compare",
+          category: "mask-compare",
+          priority: 1,
+          bytes: previewBytes,
+          reconstructible: false,
+          pinned: true,
+        });
+        if (!resource || !resource.commit(previewBytes)) {
+          resource?.release();
+          setOperationError(new Error(MASK_RESOURCE_BUDGET_MESSAGE));
+          setOperationStatus("error");
+          return false;
+        }
+        previewResourceRef.current = resource;
+      }
       operationIdRef.current += 1;
       const preview: MaskInstanceOperationPreview = {
         id: operationIdRef.current,
@@ -783,7 +911,7 @@ export function useMaskEditor({
       setOperationStatus("preview");
       return true;
     },
-    [],
+    [resourceCoordinator],
   );
 
   const runInstanceOperation = useCallback(
@@ -809,6 +937,7 @@ export function useMaskEditor({
       operationAbortRef.current = controller;
       setOperationStatus("computing");
       setOperationError(undefined);
+      const endForeground = resourceCoordinator?.beginForegroundOperation();
       try {
         const plan =
           width * height > 1_000_000
@@ -845,9 +974,18 @@ export function useMaskEditor({
         setOperationError(error);
         setOperationStatus("error");
         return false;
+      } finally {
+        endForeground?.();
       }
     },
-    [cancelActiveOperation, height, previewInstanceOperation, width, workerPool],
+    [
+      cancelActiveOperation,
+      height,
+      previewInstanceOperation,
+      resourceCoordinator,
+      width,
+      workerPool,
+    ],
   );
 
   const confirmOperation = useCallback((): boolean => {
@@ -871,13 +1009,18 @@ export function useMaskEditor({
       height,
       preview.report.bounds,
     );
+    if (!command || command.changedPixels !== preview.report.changedPixels) {
+      throw new Error("mask history patch does not match the confirmed operation");
+    }
+    if (!historyRef.current.push(command)) {
+      clearOperationPreview();
+      setOperationError(new Error(`${MASK_RESOURCE_BUDGET_MESSAGE}；本次操作未应用`));
+      setOperationStatus("error");
+      return false;
+    }
     const change = current.replaceAlpha(preview.alpha);
     clearOperationPreview();
     if (change.changedPixels === 0) return false;
-    if (!command || command.changedPixels !== change.changedPixels) {
-      throw new Error("mask history patch does not match the confirmed operation");
-    }
-    historyRef.current.push(command);
     setDirty(true);
     setHistoryRevision((value) => value + 1);
     bump();
@@ -890,6 +1033,8 @@ export function useMaskEditor({
 
   const cancel = useCallback(() => {
     bufferRef.current = null;
+    denseBufferResourceRef.current?.release();
+    denseBufferResourceRef.current = null;
     if (tiledStoreRef.current) disposeTiledStore();
     else resetHistory();
     setBackend("dense");
@@ -907,21 +1052,35 @@ export function useMaskEditor({
   }, []);
 
   const commitToRle = useCallback((): CocoRle | null => {
-    return bufferRef.current?.toRle() ?? null;
-  }, []);
+    const endForeground = resourceCoordinator?.beginForegroundOperation();
+    try {
+      return bufferRef.current?.toRle() ?? null;
+    } finally {
+      endForeground?.();
+    }
+  }, [resourceCoordinator]);
 
   const commitToRleAsync = useCallback((): Promise<CocoRle | null> => {
     const dense = bufferRef.current;
-    if (dense) return Promise.resolve(dense.toRle());
+    if (dense) {
+      const endForeground = resourceCoordinator?.beginForegroundOperation();
+      try {
+        return Promise.resolve(dense.toRle());
+      } finally {
+        endForeground?.();
+      }
+    }
     const store = tiledStoreRef.current;
     if (!store) return Promise.resolve(null);
     if (tiledCommitPromiseRef.current) return tiledCommitPromiseRef.current;
     setCommitInFlight(true);
+    const endForeground = resourceCoordinator?.beginForegroundOperation();
     const promise = (async () => {
       await tiledQueueRef.current;
       if (tiledStoreRef.current !== store) return null;
       return store.merge();
     })().finally(() => {
+      endForeground?.();
       if (tiledCommitPromiseRef.current === promise) {
         tiledCommitPromiseRef.current = null;
         setCommitInFlight(false);
@@ -929,7 +1088,7 @@ export function useMaskEditor({
     });
     tiledCommitPromiseRef.current = promise;
     return promise;
-  }, []);
+  }, [resourceCoordinator]);
 
   const setViewport = useCallback(
     (rect: SparseMaskViewportRect | null) => {
@@ -966,11 +1125,45 @@ export function useMaskEditor({
   useEffect(
     () => () => {
       historyRef.current.clear();
+      denseBufferResourceRef.current?.release();
+      denseBufferResourceRef.current = null;
+      previewResourceRef.current?.release();
+      previewResourceRef.current = null;
       tiledStoreRef.current?.dispose();
       tiledStoreRef.current = null;
     },
     [historyRef],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) cancelActiveOperation();
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      const store = tiledStoreRef.current;
+      if (!store) return;
+      void store
+        .loadViewport()
+        .then(() => {
+          if (tiledStoreRef.current !== store) return;
+          refreshTiledState(store);
+          bump();
+        })
+        .catch((error: unknown) => {
+          if (tiledStoreRef.current !== store) return;
+          setOperationError(error);
+          setOperationStatus("error");
+        });
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [bump, cancelActiveOperation, refreshTiledState]);
 
   const historyResources = historyRef.current.snapshot();
 

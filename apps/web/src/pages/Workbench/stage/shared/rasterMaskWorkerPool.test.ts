@@ -9,6 +9,7 @@ import {
   type RasterMaskWorkerClock,
 } from "./rasterMaskWorkerPool";
 import { getRasterMaskComputeDiagnosticsSnapshot } from "../../../../utils/rasterMaskComputeDiagnostics";
+import { RasterResourceCoordinator } from "./rasterResourceCoordinator";
 
 function zeroRle(width: number, height = 1) {
   return {
@@ -402,10 +403,19 @@ describe("RasterMaskWorkerPool", () => {
 
   it("aggregates packed cache hits, misses, capacities, and peak bytes", async () => {
     const worker = new FakeWorker();
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 500_000,
+        hardBudgetBytes: 1_000_000,
+        hiddenFreezeMs: 10,
+      },
+    });
     const pool = new RasterMaskWorkerPool({
       size: 1,
       createWorker: () => worker as unknown as Worker,
       diagnosticsTaskId: "task-scope",
+      resourceCoordinator: coordinator,
     });
     pool.registerSession("mask", "sha", zeroRle(4, 4));
     const pending = pool.morphologyRoi({
@@ -491,6 +501,19 @@ describe("RasterMaskWorkerPool", () => {
     });
 
     await pending;
+    expect(coordinator.getSnapshot()).toMatchObject({
+      committedBytes: 9_216,
+      reservedBytes: 0,
+      peakChargedBytes: 9_216,
+      invariantOk: true,
+    });
+    expect(coordinator.getSnapshot().categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "worker-base-cache", committedBytes: 4096 }),
+        expect.objectContaining({ category: "worker-scratch", committedBytes: 2048 }),
+        expect.objectContaining({ category: "gpu-buffer", committedBytes: 3072 }),
+      ]),
+    );
     expect(pool.getComputeResources()).toMatchObject({
       baseCacheRetainedBytes: 4096,
       sourceScratchCapacityBytes: 2048,
@@ -517,6 +540,7 @@ describe("RasterMaskWorkerPool", () => {
       bytes: { gpuAllocated: 3072 },
     });
     pool.dispose();
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
   });
 
   it("keeps shared compute alive until the final registered session is released", async () => {
@@ -727,6 +751,50 @@ describe("RasterMaskWorkerPool", () => {
     expect(pool.getSnapshot()).toMatchObject({ workersReplaced: 1, sessions: 1 });
     pool.releaseSession("session-a");
     expect(pool.getSnapshot().sessions).toBe(0);
+    pool.dispose();
+  });
+
+  it("releases admitted morphology transients when the worker crashes", async () => {
+    const workers: FakeWorker[] = [];
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 500_000,
+        hardBudgetBytes: 1_000_000,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+      resourceCoordinator: coordinator,
+    });
+    pool.registerSession("mask", "sha", zeroRle(4, 4));
+    const pending = pool.morphologyRoi({
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 1,
+      core: { x: 0, y: 0, width: 4, height: 4 },
+      input: { x: 0, y: 0, width: 4, height: 4 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "cpu",
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
+    });
+    expect(coordinator.getSnapshot().committedBytes).toBeGreaterThan(0);
+
+    workers[0].crash();
+    await expect(pending).rejects.toBeInstanceOf(RasterMaskWorkerError);
+    expect(coordinator.getSnapshot()).toMatchObject({
+      committedBytes: 0,
+      reservedBytes: 0,
+      invariantOk: true,
+    });
     pool.dispose();
   });
 

@@ -116,8 +116,9 @@ ready pyramid 的 level 由 `viewport scale × scaleFactor × devicePixelRatio` 
 snapshot。overview 与已缓存的粗层级在目标 tile 到达前保持，单 tile 失败不会制造空白棋盘。
 短期 tile URL 过期或首次拉取失败时只重新批签一次；仍失败的区域继续由 overview/粗层级覆盖。
 
-背景路径不读取 `navigator.gpu`。Raster Mask 的 WebGPU/CPU 计算与图片 tile 是独立资源域，只共享
-full-resolution viewport；联合压力协调另有独立边界。
+背景路径不读取 `navigator.gpu`。Raster Mask 的 WebGPU/CPU 计算与图片 tile 保持独立 owner 和释放语义，
+但共同进入当前 Task 的[栅格资源协调账本](./raster-resource-coordination)。前台 Mask 运算会暂停背景预取，
+pressure 先释放非可见 detail，不能淘汰 dirty Mask 或撤销历史。
 
 ## API 边界
 
@@ -158,4 +159,4 @@ lease、非 active 旧代次和孤儿前缀。source 或 owner 删除时同步�
 不使用普通媒体缓存的固定期限 lifecycle。
 
 相关运维步骤见[图片金字塔运行手册](/ops/runbooks/image-pyramid)。
-客户端选择与资源决策见 [ADR-0063](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/0063-konva-viewport-image-tiles.md)。
+客户端背景选择见 [ADR-0063](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/0063-konva-viewport-image-tiles.md)，联合资源决策见 [ADR-0064](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/0064-task-scoped-raster-resource-coordination.md)。

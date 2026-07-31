@@ -59,6 +59,7 @@ import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecord
 import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframeActions";
 import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore";
 import type { WorkbenchImageSource } from "../stage/imagePyramid";
+import type { RasterResourceCoordinator } from "../stage/shared/rasterResourceCoordinator";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -191,6 +192,7 @@ interface WorkbenchStageHostVideoProps {
 }
 
 interface WorkbenchStageHostImageProps {
+  resourceCoordinator?: RasterResourceCoordinator;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
   rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
   onRetryRasterMask: (id: string) => void;
@@ -425,6 +427,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
+      resourceCoordinator,
       rasterMaskRecords,
       rasterMaskStatusById,
       onRetryRasterMask,
@@ -609,6 +612,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           />
         ) : (
           <ImageWorkbench
+            resourceCoordinator={resourceCoordinator}
             maskCompareStore={maskCompareStore}
             rasterMaskRecords={rasterMaskRecords}
             rasterMaskStatusById={rasterMaskStatusById}

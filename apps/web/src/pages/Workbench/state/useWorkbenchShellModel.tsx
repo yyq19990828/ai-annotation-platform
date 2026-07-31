@@ -106,6 +106,7 @@ import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
 import { classColorForCanvas } from "../stage/colors";
 import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
 import { useRasterMaskWorkerPool } from "../stage/shared/useRasterMaskWorkerPool";
+import { useRasterResourceCoordinator } from "../stage/shared/useRasterResourceCoordinator";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -1297,7 +1298,8 @@ export function useWorkbenchShellModel({
     () => new Set(s.selectedIds.length > 0 ? s.selectedIds : s.selectedId ? [s.selectedId] : []),
     [s.selectedId, s.selectedIds],
   );
-  const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId);
+  const rasterResources = useRasterResourceCoordinator({ taskId });
+  const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId, rasterResources);
   const imageRasterMaskDescriptors = useMemo(() => {
     if (isVideoTask || maskCapabilities.data?.read_enabled !== true) return [];
     return visibleAnnotationsData.flatMap((annotation) => {
@@ -1328,6 +1330,8 @@ export function useWorkbenchShellModel({
       !isVideoTask && maskCapabilities.data?.read_enabled === true ? (taskId ?? null) : null,
     descriptors: imageRasterMaskDescriptors,
     workerPool: rasterMaskWorkerPool,
+    resourceCoordinator: rasterResources,
+    resourceOwner: "mask-render:annotation",
   });
 
   const taskAiMeta = useMemo(() => {
@@ -1752,6 +1756,8 @@ export function useWorkbenchShellModel({
     maxCachedRecords: 1,
     maxConcurrent: 1,
     workerPool: rasterMaskWorkerPool,
+    resourceCoordinator: rasterResources,
+    resourceOwner: "mask-render:interactive",
   });
   const samCandidateDisplayGeom = useCallback(
     (candidate: PendingCandidate | undefined) => {
@@ -2284,6 +2290,7 @@ export function useWorkbenchShellModel({
     sessionKey: maskSessionKey,
     onLeaveDirty: handleMaskLeaveDirty,
     workerPool: rasterMaskWorkerPool,
+    resourceCoordinator: rasterResources,
   });
   const maskSessionContextRef = useRef({
     key: maskSessionKey,
@@ -6449,6 +6456,7 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
       },
       image: {
+        resourceCoordinator: rasterResources,
         rasterMaskRecords: imageRasterMasks.records,
         rasterMaskStatusById: imageRasterMasks.statusById,
         onRetryRasterMask: imageRasterMasks.retry,

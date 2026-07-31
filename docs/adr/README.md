@@ -106,3 +106,4 @@
 - [0061](0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) — Raster Mask 大 ROI 使用 packed CPU fallback、双预算与独立 WebGPU 熔断
 - [0062](0062-immutable-image-pyramid-assets.md) — 超大图采用不可变代次金字塔与批量鉴权交付
 - [0063](0063-konva-viewport-image-tiles.md) — 超大图客户端采用视口 LOD Tile 与解码字节 LRU
+- [0064](0064-task-scoped-raster-resource-coordination.md) — 图片工作台采用任务级栅格资源协调器

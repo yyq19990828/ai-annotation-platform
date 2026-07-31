@@ -277,6 +277,7 @@ export type RasterMaskWorkerControlRequest =
       rle: RasterMaskTransferredRle;
     }
   | { kind: "release_session"; sessionId: string }
+  | { kind: "release_compute" }
   | { kind: "reset_webgpu" };
 
 export type RasterMaskWorkerRequest = RasterMaskWorkerJobRequest | RasterMaskWorkerControlRequest;
