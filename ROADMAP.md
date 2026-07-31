@@ -24,14 +24,13 @@
 详见
 [v0.23.21–v0.23.25 超大图 Tile 与 Raster Mask 客户端计算 Epic](docs/plans/2026-07-31-v0.23.21-v0.23.25-large-image-tile-webgpu-epic.md)。
 
-- v0.23.23 接入 viewport LOD、ancestor coverage、有界 ImageBitmap/HTMLImageElement LRU 和
-  Konva 背景 tile，并同步收口邻题预取、Minimap、审核与评论画布的隐藏整图解码。背景 tile
-  不依赖 WebGPU，没有 GPU 的客户端仍可完整使用。
-- v0.23.24 统一协调背景 tile、Mask render/edit/history、Worker cache/scratch 与 GPU buffer
-  的应用逻辑字节预算、foreground priority 和 page lifecycle；背景 tile 与 Mask tile 保持两套真值。
-- v0.23.25 仅在端到端 A/B 过门时保留 WebGPU 横/纵可分离 `square dilate` candidate，并完成
-  macOS Metal、Linux Wayland、Windows D3D12、无 GPU、长会话、故障矩阵、独立回滚和 Epic 封版。
-  WebGPU 始终使用访问页面的客户端资源，不使用 Linux API/Celery 部署机器的 GPU。
+- Epic 已完成：不可变图片金字塔、viewport LOD/Konva tile、隐藏整图消费者收口、task-scoped
+  背景/Mask 资源协调、packed CPU fallback 与 one-pass WebGPU 长会话均已封版。横/纵可分离 WebGPU
+  候选未通过数据分布无关的两轮端到端门，未进入 production；WebGPU 始终使用访问页面的客户端资源，
+  不使用 Linux API/Celery 部署机器的 GPU。
+- 后验资格只保留真实缺口：在无实验 flag 的 Linux Wayland、macOS Metal 与 Windows D3D12 客户端补齐
+  one-pass correctness、长会话、p95 和 fallback rate；Safari/Edge 按实际 WebGPU 能力记录。没有机器时
+  继续标记 `not tested`，不改变 capability-first fallback，也不重新引入 separable 候选。
 - 超大图背景可以超过当前 Raster Mask 原生上限；Raster Mask 仍受单边 8192、总计
   67,108,864 pixels 和 morphology ROI 16,777,216 pixels 约束，扩大协议另立版本。
 

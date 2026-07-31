@@ -152,6 +152,9 @@ overrides 以 masked overwrite 做 exact set / clear，绝不写回 base cache�
 miss、CPU budget 不足或 invariant failure 时可从 immutable RLE 直接构造 packed input。
 
 WebGPU ready 时，shader 对含 halo 的 input 执行 morphology，并只回读 core `after XOR source` words。
+production 保留单个 one-pass shader。横向 intermediate + 纵向 XOR 的两阶段候选虽然 bit-exact，但同包
+资格矩阵只有 9/36 bucket 达到两轮 p95 门，且局部收益不能跨输入图案稳定成立，因此没有进入 Worker、
+协议或普通前端 bundle，也没有 radius/ROI 或 adapter-specific crossover。
 WebGPU gate 关闭、adapter/device 不可用、初始化中、GPU budget 不足，或 submit/map/device lost 等运行时
 失败时，同一 packed source 交给 separable CPU kernel：水平 word expansion 只计算一次，再按纵向窗口 OR。
 因此大 ROI CPU fallback 不重建 input-sized dense alpha。小 ROI、不支持的 operation 或 packed prospective
@@ -201,6 +204,10 @@ evict、XOR word density / touched tiles、scan / allocation / scatter 分段与
 最近 20 次 typed compute event 可附到 BUG 报告；完整 task id、adapter/driver 和浏览器原始错误不进入该
 快照。base cache 上限取 32 MiB 与 CPU budget 四分之一中的较小值；session release 会清理所属 entries，
 dispose 后这些资源与 session 一起归零。
+
+Linux X11 默认 Chrome 当前拿不到 adapter，按正常能力回退处理；强制 unsafe Vulkan 只用于研发资格。
+Linux Wayland、macOS Metal、Windows D3D12 与 Safari/Edge 的项目实机矩阵仍是 `not tested`，不得从
+X11 强制 Vulkan结果外推性能或支持声明。
 
 ### 原子多对象 Mask 操作
 

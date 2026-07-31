@@ -12,6 +12,7 @@ const requireWebGpu = process.env.RASTER_MASK_WEBGPU_REQUIRE === "1";
 const executablePath = process.env.RASTER_MASK_WEBGPU_EXECUTABLE_PATH;
 const enableUnsafeVulkan = process.env.RASTER_MASK_WEBGPU_UNSAFE_VULKAN === "1";
 const outputPath = process.env.RASTER_MASK_WEBGPU_OUTPUT_PATH;
+const compactOutput = process.env.RASTER_MASK_WEBGPU_OPERATION_COMPACT === "1";
 const caseNames = (process.env.RASTER_MASK_WEBGPU_OPERATION_CASES ?? "1024,2048,4k")
   .split(",")
   .map((value) => value.trim().toLowerCase())
@@ -508,6 +509,14 @@ try {
   await browser.close();
 }
 
+const reportResult = compactOutput
+  ? {
+      ...result,
+      rows: result.rows?.map(
+        ({ warmup_samples: _warmupSamples, samples: _samples, ...row }) => row,
+      ),
+    }
+  : result;
 const report = {
   schema: "mask-webgpu-production-operation/v5",
   generated_at: new Date().toISOString(),
@@ -519,8 +528,8 @@ const report = {
     headless,
     unsafe_vulkan: enableUnsafeVulkan,
   },
-  config: { baseUrl, iterations, warmup, radius, candidateBudgetMiB, caseNames },
-  result,
+  config: { baseUrl, iterations, warmup, radius, candidateBudgetMiB, caseNames, compactOutput },
+  result: reportResult,
 };
 const serialized = `${JSON.stringify(report, null, 2)}\n`;
 if (outputPath) {

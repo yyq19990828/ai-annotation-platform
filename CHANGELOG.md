@@ -35,6 +35,17 @@
 
 ## [Unreleased]
 
+## [0.23.25] - 2026-07-31
+
+### Added
+
+- **Raster Mask WebGPU 增加可复现的可分离 kernel 资格工具**. 显式 benchmark runner 在同一浏览器页面交错执行 production one-pass 与水平/纵向两阶段候选，覆盖非对齐、tail、稠密、checker、边缘和确定性随机正确性，以及 radius/ROI/输入图案两轮 p95、intermediate capacity、Long Task 与 dispose 对账；该工具不被 production Worker 导入。
+
+### Changed
+
+- **Raster Mask WebGPU 继续只使用 one-pass production kernel**. 可分离候选的 50 组 XOR correctness 全部 exact，但 2048²/4K/4096²、radius 8/16/31 与四类输入组成的 36 个两轮性能 bucket 只有 9 个通过正向收益门，无法形成数据分布无关的静态 route；生产不增加 intermediate、第二套 pipeline、protocol selector 或 adapter-name 分支，现有 capability gate、packed CPU fallback 与独立回滚保持不变。
+- **超大图 Tile × Raster Mask 客户端计算 Epic 完成封版**. one-pass 在 2048²/4K、radius 31 的百次 production operation 中保持单 owner、稳定 buffer plateau、零 Long Task、save/reload exact 与 dispose 归零；Linux X11 默认 adapter 不可用时继续以零 GPU allocation 精确回退 packed CPU，Wayland、macOS 与 Windows 实机状态明确保留为未测试而不外推。
+
 ## [0.23.24] - 2026-07-31
 
 ### Added

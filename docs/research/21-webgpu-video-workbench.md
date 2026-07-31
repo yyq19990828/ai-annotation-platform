@@ -1,6 +1,6 @@
 # WebGPU 在视频工作台中的适用性调研
 
-> 调研日期：2026-07-25 · 最近 Production A/B：2026-07-31 · 状态：R1.7 完成，按客户端能力默认候选
+> 调研日期：2026-07-25 · 最近 Production A/B：2026-07-31 · 状态：R1.8 完成，one-pass 按客户端能力保留
 >
 > 目标：判断 WebGPU 能否改善视频精确帧、Konva 合成或 Raster Mask 性能，并明确它与 Linux
 > 服务端 GPU、客户端硬件解码之间的边界。
@@ -23,7 +23,8 @@
    RLE 构造 packed ROI；GPU 可用时只回读 core XOR，不可用时使用 packed separable CPU kernel。
    2048²/4K、radius 1/8/31 两轮共 12 个 CPU fallback case 相对 dense baseline 的端到端 p95 改善
    80.1%–91.3%。build gate 缺省开启，但 operation、4 MP crossover、CPU/GPU 独立预算、客户端能力与
-   cooldown/page-fixed circuit 仍共同决定实际 backend；不支持客户端始终精确回退 CPU。
+   cooldown/page-fixed circuit 仍共同决定实际 backend；不支持客户端始终精确回退 CPU。WebGPU 横/纵
+   可分离候选只有 9/36 性能 bucket 过门，未形成稳定 production route，因此 GPU 继续使用 one-pass。
 5. **WebGPU 不是解决 Linux 服务器 WebCodecs 硬解问题的手段。** 如果确实要让服务端 RTX 3090
    承担视频解码，需要另建 FFmpeg/NVDEC、CUDA 或 GStreamer 服务端路径，并承担帧传输、缓存、并发
    和画面一致性成本；这属于另一套架构。
@@ -564,6 +565,44 @@ typed compute event 可进入 BUG 报告，但不含完整 task id、Mask 内容
 [`data/21-mask-packed-cpu-fallback-ab.json`](./data/21-mask-packed-cpu-fallback-ab.json)。R1.7 决策是
 **ship packed separable CPU fallback and independent WebGPU circuit**；WebGPU 可分离 kernel、
 长会话联合资源账本与超大图 tile/pyramid 继续由后续计划单独资格，不在本轮扩张。
+
+#### R1.8 WebGPU separable qualification no-go
+
+R1.8 只在资格页面中加载两阶段候选，production Worker 与协议保持 one-pass。候选先对
+`inputHeight × ceil(coreWidth / 32)` 写水平 expansion intermediate，再在第二个 pass 做纵向 OR、source
+XOR 与 core readback；两个 pass 共用一次 command submission，中间不回读。
+
+M0 在同机 2048²、radius 8/31 观察到 GPU provider total 中 compute/readback 相关阶段约占 48%–51%，
+因此进入实现。正式同页矩阵使用 Linux X11、Chrome 150、RTX 3090、有头强制 Vulkan；每个 bucket
+两轮、每轮 3 次预热 + 10 次记录，门槛为每轮 p95 改善至少 10%、两轮算术平均至少 15%。
+
+| ROI / radius   | 过门图案数 / 4 | 两轮平均改善范围 |
+| -------------- | -------------: | ---------------: |
+| 2048² / 8      |            0/4 |       -7.0%–3.9% |
+| 2048² / 16     |            0/4 |     -18.2%–21.7% |
+| 2048² / 31     |            0/4 |      -10.3%–2.7% |
+| 3840×2160 / 8  |            1/4 |     -18.1%–30.8% |
+| 3840×2160 / 16 |            1/4 |     -59.6%–25.5% |
+| 3840×2160 / 31 |            3/4 |      12.8%–47.6% |
+| 4096² / 8      |            0/4 |      -7.9%–27.2% |
+| 4096² / 16     |            3/4 |     -30.5%–38.9% |
+| 4096² / 31     |            1/4 |     -13.1%–39.1% |
+
+50 组 tail、非对齐、edge、dense、checker 与确定性随机输入均逐 word exact；两条路径 Long Task 为 0，
+dispose 后 buffer 归零。4096² one-pass / separable plateau 分别为 6,291,504 / 8,388,656 bytes，新增
+2 MiB intermediate。性能只有 9/36 bucket 过门，且局部 r31 收益不能跨图案和轮次形成 universal route，
+因此结论是 **production no-go，保留 one-pass**。
+
+现有 one-pass 随后完成 2048²/4K、radius 31、各 100 次 production operation 长会话：GPU capacity
+分别稳定在 1,572,912 / 3,145,776 bytes，单 owner、Long Task 0，save/reload exact，dispose 后归零。
+X11 默认无额外 flag 时 adapter unavailable，20 次请求全部走 packed CPU、GPU allocation 为 0 且保存精确。
+
+原始证据见
+[`data/21-mask-webgpu-separable-qualification.json`](./data/21-mask-webgpu-separable-qualification.json)、
+[`data/21-mask-webgpu-one-pass-long-session.json`](./data/21-mask-webgpu-one-pass-long-session.json) 与
+[`data/21-mask-webgpu-x11-default-fallback.json`](./data/21-mask-webgpu-x11-default-fallback.json)。
+Linux Wayland、macOS、Windows 和 Safari/Edge 没有可用实机，统一记录为 `not tested`；这不改变
+capability-first gate、packed CPU fallback 或 kill switch。
 
 ### R2：视频底图 spike（条件触发）
 

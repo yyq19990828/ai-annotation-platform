@@ -75,9 +75,11 @@ gpuAllocatedBytes=0
 ```bash
 pnpm --filter @anno/web mask:webgpu-operation-bench
 pnpm --filter @anno/web mask:packed-cpu-bench
+pnpm --filter @anno/web mask:webgpu-separable-bench
 ```
 
-强制 Vulkan 只允许用于研发资格实验，不要写入生产 Chrome 启动参数、Docker 配置或默认 Playwright
+第三条只加载 benchmark-only 的横/纵可分离候选，用于复核已记录的 production no-go；它不会改变
+Worker route。强制 Vulkan 只允许用于研发资格实验，不要写入生产 Chrome 启动参数、Docker 配置或默认 Playwright
 项目。结果至少核对 XOR patch checksum、save checksum、Long Task、owner 数、GPU / cache / scratch bytes
 plateau 和 dispose 后资源归零；只记录 shader 时间不能作为开启依据。第二条 runner 比较 direct oracle 与
 production separable CPU kernel，默认不触发 adapter。

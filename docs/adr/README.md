@@ -107,3 +107,4 @@
 - [0062](0062-immutable-image-pyramid-assets.md) — 超大图采用不可变代次金字塔与批量鉴权交付
 - [0063](0063-konva-viewport-image-tiles.md) — 超大图客户端采用视口 LOD Tile 与解码字节 LRU
 - [0064](0064-task-scoped-raster-resource-coordination.md) — 图片工作台采用任务级栅格资源协调器
+- [0065](0065-keep-one-pass-raster-mask-webgpu-kernel.md) — Raster Mask WebGPU 保留 one-pass kernel，不采用可分离候选

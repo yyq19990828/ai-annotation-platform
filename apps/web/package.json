@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.23.24",
+  "version": "0.23.25",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -36,7 +36,8 @@
     "mask:operations-bench": "node scripts/benchmark-mask-operations.mjs",
     "mask:large-canvas-bench": "node scripts/benchmark-mask-large-canvas.mjs",
     "mask:packed-cpu-bench": "node scripts/benchmark-mask-packed-cpu.mjs",
-    "mask:webgpu-operation-bench": "node scripts/benchmark-mask-webgpu-operation.mjs"
+    "mask:webgpu-operation-bench": "node scripts/benchmark-mask-webgpu-operation.mjs",
+    "mask:webgpu-separable-bench": "node scripts/benchmark-mask-webgpu-separable.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
