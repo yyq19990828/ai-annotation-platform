@@ -29,11 +29,11 @@
 ### 暗色工作台重录
 
 - [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode,ai-inspector-panel}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
-- [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
+- [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,smart-scribble-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
 - [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`；OCR 录制时将 AI 面板停靠在主图右侧
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
 - [x] 视频工作台：`workbench/video-real-scene.png`、`video-propagate/ai-tracking-panel.png`、`workbench/{video-track-overview,video-track-trajectory}.gif`、`video-propagate/ai-tracking-panel-interaction.gif`
-- [x] 点云工作台：`workbench/pointcloud-real-scene.png`、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
+- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
 - [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
@@ -272,8 +272,7 @@
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
-- [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [x] `images/workbench/pointcloud-real-scene.png` — 真实 PCL RGB-D 室内扫描点云工作台 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-DEV）
+- [x] `images/workbench/pointcloud-real-scene.png` — nuScenes 激光雷达 + 6 相机环绕布局全景 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-MULTI）
 - [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，P-PC-DEV）
 - [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
@@ -290,6 +289,7 @@
 - [x] `images/sam/exemplar-output-mode.png` — Exemplar 示例交互工具条（输出形态三选一 + 示例能力控件）`[auto]`（scene: `sam/exemplar-output-mode`，P-COCO8 + live backend）
 - [x] `images/sam/smart-point-interaction.gif` — 无侧边栏的真实 SAM3 智能点车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-point`，P-COCO8）
 - [x] `images/sam/smart-box-interaction.gif` — 无侧边栏的真实 SAM3 智能框车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-box`，P-COCO8）
+- [x] `images/sam/smart-scribble-interaction.gif` — 选中已存原生 Mask 后连续绘制正、负笔迹并查看精修候选 `[auto-gif]`（flow: `smart-scribble`，P-COCO8 确定性签名候选）
 - [x] `images/sam/magic-box-interaction.gif` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[auto-gif]`（flow: `sam-interactive`，P-COCO8）
 - [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]

@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.13.4
 status: stable
-last_reviewed: 2026-06-15
+last_reviewed: 2026-08-11
 ---
 
 # 点云跨模态联动
@@ -62,7 +62,9 @@ schema 详情见 [点云 / 多模态数据集导入格式 · 标定 JSON schema]
 
 ## 相机面板贴边
 
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench-pointcloud-projection/camera-panel-layout.png — 6 相机环绕布局全景 [manual] -->
+![六相机环视面板按物理朝向贴边显示](../images/workbench/pointcloud-real-scene.png)
+
+自动化示例固定展开前、前左、前右、后、后左与后右六个相机面板，便于同时核对主点云画布和各方向图像。日常使用时，中等窄屏仍会按可用空间自动折叠面板。
 
 ## 相机面板锚点推导
 

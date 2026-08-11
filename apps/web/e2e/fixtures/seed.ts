@@ -26,7 +26,12 @@ export interface SeedData {
 }
 
 export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
-export type ScreenshotCoreProjectKey = "image_demo" | "video_demo" | "pointcloud_demo" | "ocr_demo";
+export type ScreenshotCoreProjectKey =
+  | "image_demo"
+  | "video_demo"
+  | "pointcloud_demo"
+  | "pointcloud_multicam_demo"
+  | "ocr_demo";
 export type ScreenshotProjectKey = ScreenshotCoreProjectKey | "large_image_demo";
 export type ScreenshotBackendRequirement = "image_interactive" | "video_tracker" | "ocr";
 
@@ -42,6 +47,19 @@ export interface ScreenshotCatalogTask {
   file_name: string;
   file_path: string;
   status: string;
+  recording_anchors?: Record<
+    string,
+    {
+      schema_version: 1;
+      coordinate_space: "normalized_media";
+      label: string;
+      bbox: [number, number, number, number];
+      point: [number, number];
+      positive_stroke: Array<[number, number]>;
+      negative_stroke: Array<[number, number]>;
+      provenance: string;
+    }
+  >;
 }
 
 export interface ScreenshotCatalogBatch {
@@ -97,6 +115,7 @@ export type RasterMaskFixtureVariant =
   | "donut_three"
   | "diagonal_two"
   | "island"
+  | "smart_scribble_source"
   | "corrupt";
 export type RasterMaskFixtureCanvas = "default" | "5k" | "8k";
 
@@ -275,7 +294,7 @@ export class SeedAPI {
   async nativeMaskCandidate(
     taskId: string,
     options?: {
-      variant?: "default" | "negative_scribble" | "multimask_donut";
+      variant?: "default" | "negative_scribble" | "multimask_donut" | "smart_scribble_refined";
       promptFamily?: "point" | "scribble";
       negativeScribbles?: number;
       promptSource?: {

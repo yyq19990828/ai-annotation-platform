@@ -7,6 +7,7 @@ import hashlib
 import uuid
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
+from app.schemas._jsonb_types import SensorCalibration
 from app.services.ml_backend import MLBackendService
 from app.services.screenshot_seed_backends import (
     backend_requirement_issues,
@@ -31,6 +33,8 @@ from app.services.screenshot_seed_spec import (
     SEED_REVISION,
     USER_SPECS,
     ProjectSpec,
+    RecordingAnchorSpec,
+    TaskSpec,
 )
 from app.services.storage import storage_service
 
@@ -52,14 +56,33 @@ class ScreenshotSeedCatalogError(RuntimeError):
         self.issues = issues
 
 
-def _task_payload(task: Task) -> dict[str, Any]:
+def _recording_anchor_payload(anchor: RecordingAnchorSpec) -> dict[str, Any]:
     return {
+        "schema_version": 1,
+        "coordinate_space": "normalized_media",
+        "label": anchor.label,
+        "bbox": list(anchor.bbox),
+        "point": list(anchor.point),
+        "positive_stroke": [list(point) for point in anchor.positive_stroke],
+        "negative_stroke": [list(point) for point in anchor.negative_stroke],
+        "provenance": anchor.provenance,
+    }
+
+
+def _task_payload(task: Task, *, spec: TaskSpec | None = None) -> dict[str, Any]:
+    payload = {
         "id": str(task.id),
         "display_id": task.display_id,
         "file_name": task.file_name,
         "file_path": task.file_path,
         "status": task.status,
     }
+    if spec is not None and spec.recording_anchors:
+        payload["recording_anchors"] = {
+            anchor.key: _recording_anchor_payload(anchor)
+            for anchor in spec.recording_anchors
+        }
+    return payload
 
 
 def _storage_object_digest(file_path: str) -> str:
@@ -175,11 +198,11 @@ async def _resolve_dataset_and_tasks(
             f"{spec.dataset_display_id}: screenshot seed ownership marker is stale"
         )
     if (
-        logical_key == "pointcloud_demo"
-        and (dataset.metadata_ or {}).get("axis_convention") != "opencv_camera"
+        spec.axis_convention
+        and (dataset.metadata_ or {}).get("axis_convention") != spec.axis_convention
     ):
         issues.append(
-            f"{spec.dataset_display_id}: axis_convention must be opencv_camera"
+            f"{spec.dataset_display_id}: axis_convention must be {spec.axis_convention}"
         )
 
     dataset_items = list(
@@ -222,6 +245,17 @@ async def _resolve_dataset_and_tasks(
             issues.append(
                 f"{spec.dataset_display_id}: media {item.file_path} digest is stale"
             )
+        if spec.data_type == "lidar" and item.file_path.startswith(
+            f"{spec.storage_prefix}camera/"
+        ):
+            try:
+                SensorCalibration.model_validate(
+                    (item.metadata_ or {}).get("calibration")
+                )
+            except ValidationError:
+                issues.append(
+                    f"{spec.dataset_display_id}: camera {item.file_path} has no valid calibration"
+                )
 
     tasks: dict[str, Task] = {}
     payload: dict[str, dict[str, Any]] = {}
@@ -258,7 +292,7 @@ async def _resolve_dataset_and_tasks(
             continue
         task = task_rows[0]
         tasks[task_spec.key] = task
-        payload[task_spec.key] = _task_payload(task)
+        payload[task_spec.key] = _task_payload(task, spec=task_spec)
         resolved_task_ids.add(task.id)
         if task.status != task_spec.status:
             issues.append(

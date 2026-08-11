@@ -87,6 +87,7 @@ PROJECT_STATE = {
         },
         "ai_enabled": True,
         "ai_interactive_enabled": True,
+        "raster_mask_native_editing_enabled": True,
         "owner": "project_admin",
     },
     "video_demo": {
@@ -101,6 +102,16 @@ PROJECT_STATE = {
     },
     "pointcloud_demo": {
         "name": "真实室内点云（截图）",
+        "type_label": "点云检测",
+        "type_key": "lidar",
+        "data_type": "lidar",
+        "tool_bindings": SCREENSHOT_POINTCLOUD_TOOL_BINDINGS,
+        "ai_enabled": False,
+        "ai_interactive_enabled": False,
+        "owner": "admin",
+    },
+    "pointcloud_multicam_demo": {
+        "name": "nuScenes 六相机环视（截图）",
         "type_label": "点云检测",
         "type_key": "lidar",
         "data_type": "lidar",
@@ -138,6 +149,12 @@ DATASET_STATE = {
         "data_type": "point_cloud",
         "axis_convention": "opencv_camera",
     },
+    "pointcloud_multicam_demo": {
+        "name": "screenshots-nuscenes-multicamera",
+        "description": "nuScenes 开源六相机环视与激光雷达同步示例夹具",
+        "data_type": "point_cloud",
+        "axis_convention": "apollo",
+    },
     "ocr_demo": {
         "name": "screenshots-ocr",
         "description": "RapidOCR 官方示例图截图夹具",
@@ -161,6 +178,7 @@ LEGACY_PROJECT_NAMES = {
         "合成点云联合标注（截图）",
         PROJECT_STATE["pointcloud_demo"]["name"],
     },
+    "pointcloud_multicam_demo": {PROJECT_STATE["pointcloud_multicam_demo"]["name"]},
     "ocr_demo": {"OCR 文本识别 (dev)", PROJECT_STATE["ocr_demo"]["name"]},
 }
 LEGACY_DATASET_NAMES = {
@@ -178,6 +196,10 @@ LEGACY_DATASET_NAMES = {
         "pc-scene-dev",
         "screenshots-synthetic-pointcloud",
         DATASET_STATE["pointcloud_demo"]["name"],
+    },
+    "pointcloud_multicam_demo": {
+        "pc-multicam-dev",
+        DATASET_STATE["pointcloud_multicam_demo"]["name"],
     },
     "ocr_demo": {"ocr-dev", DATASET_STATE["ocr_demo"]["name"]},
 }
@@ -777,6 +799,10 @@ async def reconcile_screenshot_seed(
             "ai_interactive_enabled",
         ):
             setattr(project, field, project_state[field])
+        if "raster_mask_native_editing_enabled" in project_state:
+            project.raster_mask_native_editing_enabled = project_state[
+                "raster_mask_native_editing_enabled"
+            ]
         project.owner_id = users[project_state["owner"]].id
         project.status = "in_progress"
         project.tool_bindings = copy.deepcopy(project_state["tool_bindings"])

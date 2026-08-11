@@ -17,6 +17,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
+const BROWSER_ENV: Record<string, string> = {};
+for (const [key, value] of Object.entries(process.env)) {
+  if (value !== undefined && (key !== "DISPLAY" || process.env.PWDEBUG)) {
+    BROWSER_ENV[key] = value;
+  }
+}
 
 export default defineConfig({
   testDir: "./e2e/screenshots",
@@ -35,6 +41,18 @@ export default defineConfig({
     trace: "retain-on-failure",
     video: { mode: "retain-on-failure", size: { width: 1280, height: 720 } },
     screenshot: "only-on-failure",
+    // 3D scenes need an explicit software WebGL backend in headless Chromium.
+    launchOptions: {
+      // A stale SSH DISPLAY makes ANGLE choose XCB and prevents SwiftShader startup.
+      // Keep DISPLAY only for explicit PWDEBUG headed sessions.
+      env: BROWSER_ENV,
+      args: [
+        "--use-gl=angle",
+        "--use-angle=swiftshader",
+        "--enable-unsafe-swiftshader",
+        "--ignore-gpu-blocklist",
+      ],
+    },
   },
 
   projects: [

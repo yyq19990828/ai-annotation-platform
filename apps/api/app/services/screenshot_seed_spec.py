@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SEED_REVISION = "screenshots-2026-07-d"
+SEED_REVISION = "screenshots-2026-08-a"
 SEED_MANAGED_BY = "screenshot-seed"
 USER_SPECS = {
     "admin": ("admin", "super_admin"),
@@ -13,6 +13,19 @@ USER_SPECS = {
     "annotator": ("anno", "annotator"),
     "reviewer": ("qa", "reviewer"),
 }
+
+
+@dataclass(frozen=True)
+class RecordingAnchorSpec:
+    """Reviewed, normalized media coordinates consumed by deterministic recordings."""
+
+    key: str
+    label: str
+    bbox: tuple[float, float, float, float]
+    point: tuple[float, float]
+    positive_stroke: tuple[tuple[float, float], ...]
+    negative_stroke: tuple[tuple[float, float], ...]
+    provenance: str = "verified-label-derived"
 
 
 @dataclass(frozen=True)
@@ -24,6 +37,7 @@ class TaskSpec:
     assignee_key: str | None = None
     reviewer_key: str | None = None
     annotation: bool = False
+    recording_anchors: tuple[RecordingAnchorSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,6 +74,7 @@ class ProjectSpec:
     required_backend: str | None = None
     batches: tuple[BatchSpec, ...] = ()
     require_members: bool = False
+    axis_convention: str | None = None
 
 
 BACKEND_REQUIREMENTS = {
@@ -137,6 +152,16 @@ PROJECT_SPECS = {
                 status="in_progress",
                 batch_key="annotating",
                 assignee_key="annotator",
+                recording_anchors=(
+                    RecordingAnchorSpec(
+                        key="primary_vehicle",
+                        label="car",
+                        bbox=(0.42, 0.48, 0.56, 0.75),
+                        point=(0.49, 0.62),
+                        positive_stroke=((0.51, 0.59), (0.58, 0.66)),
+                        negative_stroke=((0.43, 0.54), (0.48, 0.61)),
+                    ),
+                ),
             ),
             TaskSpec(
                 "submitted",
@@ -188,7 +213,45 @@ PROJECT_SPECS = {
             TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
             for index in range(4)
         ),
-        media_paths=(*(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),),
+        media_paths=(
+            *(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),
+            *(f"pc-scene-dev/camera/front/{index:06d}.jpg" for index in range(4)),
+            "pc-scene-dev/calib/camera/front.json",
+        ),
+        axis_convention="opencv_camera",
+    ),
+    "pointcloud_multicam_demo": ProjectSpec(
+        display_id="P-PC-MULTI",
+        dataset_display_id="DS-PC-MULTI",
+        data_type="lidar",
+        storage_prefix="pc-multicam-dev/",
+        tasks=(TaskSpec("frame_000", "pc-multicam-dev/lidar/000000.pcd"),),
+        media_paths=(
+            "pc-multicam-dev/lidar/000000.pcd",
+            *(
+                f"pc-multicam-dev/camera/{role}/000000.jpg"
+                for role in (
+                    "front",
+                    "front_left",
+                    "front_right",
+                    "back",
+                    "back_left",
+                    "back_right",
+                )
+            ),
+            *(
+                f"pc-multicam-dev/calib/camera/{role}.json"
+                for role in (
+                    "front",
+                    "front_left",
+                    "front_right",
+                    "back",
+                    "back_left",
+                    "back_right",
+                )
+            ),
+        ),
+        axis_convention="apollo",
     ),
     "ocr_demo": ProjectSpec(
         display_id="P-OCR",

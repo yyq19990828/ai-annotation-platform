@@ -18,6 +18,7 @@ export interface RecordingWorkbenchOverrides {
   image?: Partial<WorkbenchPreferences["image"]>;
   video?: Partial<WorkbenchPreferences["video"]>;
   pointcloud?: Partial<WorkbenchPreferences["pointcloud"]>;
+  layout?: Partial<WorkbenchLayoutPreferences>;
 }
 
 function embeddedLayout(
@@ -111,6 +112,7 @@ export async function installRecordingWorkbenchLayout(
         image: { ...original.workbench.image, ...(overrides.image ?? {}) },
         video: { ...original.workbench.video, ...(overrides.video ?? {}) },
         pointcloud: { ...original.workbench.pointcloud, ...(overrides.pointcloud ?? {}) },
+        layout: { ...original.workbench.layout, ...(overrides.layout ?? {}) },
       },
     },
     mode,

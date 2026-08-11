@@ -3,14 +3,18 @@ audience: [annotator]
 type: how-to
 since: v0.13.3
 status: stable
-last_reviewed: 2026-06-11
+last_reviewed: 2026-08-11
 ---
 
 # 点云视图与上色
 
 3D 点云项目（`data_type=lidar`）进入 Three.js 3D 舞台后，工作台中心是主 3D 视图，悬浮在四周的相机面板按物理朝向贴边显示标定的相机图。本页讲**怎么看点云**——视角导航、相机面板与上色 / 深度；绘制和编辑 3D 框见 [3D 立体框标注](./3d-box)。
 
-![真实室内 RGB-D 扫描点云任务工作台](../images/workbench/pointcloud-real-scene.png)
+![nuScenes 激光雷达与六相机环视任务工作台](../images/workbench/pointcloud-real-scene.png)
+
+示例画面使用 nuScenes / Motional 的六相机公开样例，经 OpenMMLab MMDetection3D
+版本固定的演示资产接入；仅用于非商业文档演示，并按
+[nuScenes 使用条款](https://www.nuscenes.org/terms-of-use)保留署名。
 
 ## 视图导航
 

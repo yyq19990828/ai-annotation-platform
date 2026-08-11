@@ -349,6 +349,8 @@ seed profile 和只读 catalog，不会随机选取开发库里的项目。`--re
 seed 标记的对象。整套自动化固定使用 `annotation_screenshots_test`，不连接
 开发库 `annotation`。
 
+交互流程的点击与笔迹坐标来自 catalog 中随任务版本化的归一化语义锚点：锚点可由模型候选生成，但进入截图 seed 前必须经过标签或人工复核，录制器不在运行时猜测画布目标。点云静态场景同时包含轻量 PCL RGB-D 夹具与 nuScenes 六相机环视夹具；后者固定携带六路同步图像、内外参与单帧激光雷达，专门覆盖多相机画布状态。
+
 ### 前置条件
 
 ```bash
@@ -421,7 +423,7 @@ pnpm --filter web screenshots:regression:update            # 有意 UI 变化后
 ```
 
 当前完整矩阵有 63 个自动截图目标：60 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
-另有 3 张手工 PNG 和 31 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
+另有 3 张手工 PNG 和 32 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
 人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
 流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
 

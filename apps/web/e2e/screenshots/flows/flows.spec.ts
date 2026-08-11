@@ -31,6 +31,7 @@ import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiTargetSeeds } from "./video-multi-target-seeds";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
+import { runSmartScribble } from "./smart-scribble";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
@@ -325,6 +326,43 @@ test.describe("flow recordings", () => {
       );
     });
   }
+
+  test("smart-scribble — 已存 Mask 正负笔迹精修", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(60_000);
+    const t0 = Date.now();
+    const project = cached.projects.image_demo;
+    const task = project.tasks.annotating;
+    await seed.configureRasterMask(project.id, true);
+    const source = await seed.injectRasterMask({
+      taskId: task.id,
+      userEmail: cached.users.admin.email,
+      variant: "smart_scribble_source",
+      label: "car",
+    });
+    const fixture = await seed.nativeMaskCandidate(task.id, {
+      variant: "smart_scribble_refined",
+      promptFamily: "scribble",
+      negativeScribbles: 1,
+      promptSource: {
+        annotationId: source.annotation_id,
+        sourceVersion: 1,
+        sourceDigest: source.mask.sha256,
+      },
+    });
+
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    const win = await runSmartScribble(page, cached, source.annotation_id, fixture);
+    await finalize(
+      page,
+      "smart-scribble",
+      path.join(DOCS_IMAGES, "sam/smart-scribble-interaction.gif"),
+      { fps: 4, maxWidth: 640, maxColors: 64, ...drawTrim(win, t0) },
+    );
+  });
 
   test("sam-interactive — Magic Box 候选→人工确认", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");

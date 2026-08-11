@@ -137,6 +137,160 @@ public_docs_status = "approved_with_attribution"
 public_docs_notes = "Keep the attribution in screenshot documentation that publishes frames from this clip."
 
 [[assets]]
+id = "nuscenes-demo-lidar"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__LIDAR_TOP__1532402927647951.pcd.bin"]
+sha256 = "5f8f9b1b199ceff7d41cd319021a7a7b02dcd44d41f622a9e65a6a4a6be3cbdb"
+size_bytes = 693760
+max_bytes = 700000
+max_unpacked_bytes = 700000
+archive = "none"
+filename = "lidar.pcd.bin"
+root = "."
+required_files = ["lidar.pcd.bin"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
+id = "nuscenes-demo-cam-front"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__CAM_FRONT__1532402927612460.jpg"]
+sha256 = "b7b7d466207462cf46742297a36afdd65315c05ae33126d5d36412aae70a0b62"
+size_bytes = 131197
+max_bytes = 170000
+max_unpacked_bytes = 170000
+archive = "none"
+filename = "front.jpg"
+root = "."
+required_files = ["front.jpg"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
+id = "nuscenes-demo-cam-front-left"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__CAM_FRONT_LEFT__1532402927604844.jpg"]
+sha256 = "2c8c49149411fa88cd36f9076d19e064be963deaf4e7c0dde4a7c691e83e1e5a"
+size_bytes = 142268
+max_bytes = 170000
+max_unpacked_bytes = 170000
+archive = "none"
+filename = "front_left.jpg"
+root = "."
+required_files = ["front_left.jpg"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
+id = "nuscenes-demo-cam-front-right"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__CAM_FRONT_RIGHT__1532402927620339.jpg"]
+sha256 = "005ce4aff67c8df56233457218363687132fe7f40de758cf030aace578f55497"
+size_bytes = 141131
+max_bytes = 170000
+max_unpacked_bytes = 170000
+archive = "none"
+filename = "front_right.jpg"
+root = "."
+required_files = ["front_right.jpg"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
+id = "nuscenes-demo-cam-back"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__CAM_BACK__1532402927637525.jpg"]
+sha256 = "51fe14c13dc4f2ab0f7f59b6634b98925b767939b3417a9db617bd3c178c9bb4"
+size_bytes = 144554
+max_bytes = 170000
+max_unpacked_bytes = 170000
+archive = "none"
+filename = "back.jpg"
+root = "."
+required_files = ["back.jpg"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
+id = "nuscenes-demo-cam-back-left"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__CAM_BACK_LEFT__1532402927647423.jpg"]
+sha256 = "3ffae8abed7fc7e703cad8f10f92535c5f55314433660f11b1ed6ef02ebd41bf"
+size_bytes = 145308
+max_bytes = 170000
+max_unpacked_bytes = 170000
+archive = "none"
+filename = "back_left.jpg"
+root = "."
+required_files = ["back_left.jpg"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
+id = "nuscenes-demo-cam-back-right"
+profiles = ["screenshots"]
+urls = ["https://raw.githubusercontent.com/open-mmlab/mmdetection3d/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes/n015-2018-07-24-11-22-45%2B0800__CAM_BACK_RIGHT__1532402927627893.jpg"]
+sha256 = "ab220a717b467d4fbed66b1a8a923dc522cc3aaaafa041613bcbfca3dd34ad9b"
+size_bytes = 164772
+max_bytes = 170000
+max_unpacked_bytes = 170000
+archive = "none"
+filename = "back_right.jpg"
+root = "."
+required_files = ["back_right.jpg"]
+source = "https://github.com/open-mmlab/mmdetection3d/tree/35fd83949c72fa1f272221e0e4ec75bbb5b82ca2/demo/data/nuscenes"
+
+[assets.license]
+artifact_spdx = "CC-BY-NC-SA-4.0"
+media_status = "nuScenes sample redistributed by the version-pinned MMDetection3D demo"
+notice_url = "https://www.nuscenes.org/terms-of-use"
+attribution = "nuScenes / Motional; redistributed by OpenMMLab MMDetection3D"
+public_docs_status = "approved_with_attribution"
+public_docs_notes = "Use only for non-commercial public documentation and retain nuScenes attribution."
+
+[[assets]]
 id = "pcl-pairwise-capture-1"
 profiles = ["screenshots"]
 urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0001.pcd"]

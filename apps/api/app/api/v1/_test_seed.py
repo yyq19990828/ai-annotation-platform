@@ -1406,7 +1406,12 @@ class SeedNativeMaskPromptSource(BaseModel):
 
 class SeedNativeMaskCandidateRequest(BaseModel):
     task_id: str
-    variant: Literal["default", "negative_scribble", "multimask_donut"] = "default"
+    variant: Literal[
+        "default",
+        "negative_scribble",
+        "multimask_donut",
+        "smart_scribble_refined",
+    ] = "default"
     prompt_family: Literal["point", "scribble"] = "point"
     negative_scribbles: int = 0
     prompt_source: SeedNativeMaskPromptSource | None = None
@@ -1463,15 +1468,36 @@ async def seed_native_mask_candidate(
         1,
         total // 4 if payload.variant == "negative_scribble" else total // 3,
     )
-    primary_rle = CocoRlePayload(
-        encoding="coco_rle",
-        size=(int(item.height), int(item.width)),
-        counts=(
-            foreground_start,
-            foreground_length,
-            total - foreground_start - foreground_length,
-        ),
-    )
+    if payload.variant == "smart_scribble_refined":
+        width = int(item.width)
+        height = int(item.height)
+        pixels = bytearray(total)
+
+        def rect(x0: float, y0: float, x1: float, y1: float, value: int = 1) -> None:
+            left = max(0, min(width, int(width * x0)))
+            top = max(0, min(height, int(height * y0)))
+            right = max(left, min(width, int(width * x1)))
+            bottom = max(top, min(height, int(height * y1)))
+            for y in range(top, bottom):
+                pixels[y * width + left : y * width + right] = bytes([value]) * (
+                    right - left
+                )
+
+        rect(0.41, 0.46, 0.61, 0.78)
+        rect(0.43, 0.52, 0.47, 0.60, 0)
+        primary_rle = CocoRlePayload.model_validate(
+            encode_coco_rle(pixels, width, height)
+        )
+    else:
+        primary_rle = CocoRlePayload(
+            encoding="coco_rle",
+            size=(int(item.height), int(item.width)),
+            counts=(
+                foreground_start,
+                foreground_length,
+                total - foreground_start - foreground_length,
+            ),
+        )
     rle_models = [primary_rle]
     if payload.variant == "multimask_donut":
         secondary_start = total // 6
@@ -1626,6 +1652,7 @@ RasterMaskFixtureVariant = Literal[
     "donut_three",
     "diagonal_two",
     "island",
+    "smart_scribble_source",
     "corrupt",
 ]
 RasterMaskFixtureCanvas = Literal["default", "5k", "8k"]
@@ -1675,6 +1702,8 @@ def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
         _rect(22, 22, 26, 26)
     elif variant == "island":
         _rect(24, 31, 28, 35)
+    elif variant == "smart_scribble_source":
+        _rect(27, 23, 36, 36)
     else:
         # 损坏 fixture 使用独立形状，并故意不存对象。
         _rect(6, 30, 18, 42)

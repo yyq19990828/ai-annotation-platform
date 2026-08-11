@@ -93,10 +93,14 @@ async def seed_pointcloud(
     owner_id: uuid.UUID,
     fixture: Path | None = None,
     axis_convention: str = "sustechpoints_demo",
+    project_display_id: str = PROJECT_DISPLAY_ID,
+    dataset_display_id: str = DATASET_DISPLAY_ID,
+    dataset_name: str = DATASET_NAME,
+    project_name: str = "点云联合标注 (dev)",
 ) -> dict | None:
     """把点云夹具灌入当前栈,owner 为传入用户。
 
-    幂等:项目 P-PC-DEV 已存在则直接返回 None(不重复造)。
+    幂等:指定 display_id 的项目已存在则直接返回 None(不重复造)。
     调用方负责最终 commit(build_tasks_for_link 内部已 commit 一次)。
     返回 {"project": display_id, "files": n, "tasks": result} 或 None(已存在)。
     """
@@ -108,7 +112,7 @@ async def seed_pointcloud(
     from app.services.storage import storage_service
 
     existing = await db.scalar(
-        select(Project).where(Project.display_id == PROJECT_DISPLAY_ID)
+        select(Project).where(Project.display_id == project_display_id)
     )
     if existing:
         return None
@@ -118,8 +122,8 @@ async def seed_pointcloud(
         raise FileNotFoundError(f"点云夹具缺失: {fixture}")
 
     project = Project(
-        display_id=PROJECT_DISPLAY_ID,
-        name="点云联合标注 (dev)",
+        display_id=project_display_id,
+        name=project_name,
         type_label="点云检测",
         type_key="lidar",
         data_type="lidar",
@@ -129,11 +133,10 @@ async def seed_pointcloud(
     )
     db.add(project)
 
-    # SUSTechPOINTS 默认用其实测轴向;截图 profile 的 PCL RGB-D 扫描则显式传
-    # opencv_camera(+X 右 / +Y 下 / +Z 前),前端统一归一到 ISO 8855。
+    # 不同点云来源显式传自己的轴向约定，前端统一归一到 ISO 8855。
     ds = Dataset(
-        display_id=DATASET_DISPLAY_ID,
-        name=DATASET_NAME,
+        display_id=dataset_display_id,
+        name=dataset_name,
         data_type="point_cloud",
         created_by=owner_id,
         metadata_={"axis_convention": axis_convention},
@@ -145,7 +148,7 @@ async def seed_pointcloud(
 
     def upload(relpath: str, file_type: str):
         local = fixture / relpath
-        key = f"{DATASET_NAME}/{relpath}"
+        key = f"{dataset_name}/{relpath}"
         payload = local.read_bytes()
         storage_service.client.put_object(
             Bucket=bucket,
@@ -187,7 +190,7 @@ async def seed_pointcloud(
     await db.flush()
 
     result = await build_tasks_for_link(db, dataset_id=ds.id, project_id=project.id)
-    return {"project": PROJECT_DISPLAY_ID, "files": n, "tasks": result}
+    return {"project": project_display_id, "files": n, "tasks": result}
 
 
 async def seed_nuscenes_scene(db, *, owner_id: uuid.UUID) -> dict:

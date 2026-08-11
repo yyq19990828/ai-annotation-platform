@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-08-11
 ---
 
 # AI 工具组
@@ -51,6 +51,8 @@ last_reviewed: 2026-07-23
 ![智能框对齐真实车辆并生成轮廓候选](../images/sam/smart-box-interaction.gif)
 
 ### 智能笔迹（Smart Scribble）— 在已存 Mask 上做加减法
+
+![选中已存 Mask 后连续添加正向与负向智能笔迹](../images/sam/smart-scribble-interaction.gif)
 
 先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹补回目标区域；按住
 `Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，可移除误分区域。没有合格的源 Mask、当前

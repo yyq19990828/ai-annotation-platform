@@ -67,7 +67,7 @@ async def _ready_profile(db):
     projects: dict[str, Project] = {}
     tasks_by_project: dict[str, dict[str, Task]] = {}
     for project_index, (logical_key, spec) in enumerate(PROJECT_SPECS.items()):
-        owner = users["admin"] if logical_key == "pointcloud_demo" else users["pm"]
+        owner = users["admin"] if spec.data_type == "lidar" else users["pm"]
         project = Project(
             id=uuid.uuid4(),
             display_id=spec.display_id,
@@ -90,8 +90,8 @@ async def _ready_profile(db):
                 "asset_sha256": "a" * 64,
             }
         }
-        if logical_key == "pointcloud_demo":
-            metadata["axis_convention"] = "opencv_camera"
+        if spec.axis_convention:
+            metadata["axis_convention"] = spec.axis_convention
         media_paths = set(spec.media_paths) or {
             task_spec.file_path for task_spec in spec.tasks
         }
@@ -123,6 +123,33 @@ async def _ready_profile(db):
                     else "other"
                 ),
                 content_hash=hashlib.sha256(file_path.encode()).hexdigest(),
+                metadata_=(
+                    {
+                        "calibration": {
+                            "extrinsic": [
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                            ],
+                            "intrinsic": [525, 0, 319.5, 0, 525, 239.5, 0, 0, 1],
+                        }
+                    }
+                    if "/camera/" in file_path and file_path.endswith(".jpg")
+                    else {}
+                ),
             )
             db.add(item)
             items[file_path] = item
@@ -319,12 +346,19 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert image["display_id"] == "P-COCO8"
     assert image["tasks"]["review"]["file_path"].endswith("screenshot_05.jpg")
     assert image["tasks"]["review"]["status"] == "review"
+    anchor = image["tasks"]["annotating"]["recording_anchors"]["primary_vehicle"]
+    assert anchor["coordinate_space"] == "normalized_media"
+    assert anchor["label"] == "car"
+    assert anchor["point"] == [0.49, 0.62]
+    assert anchor["provenance"] == "verified-label-derived"
     assert body["projects"]["pointcloud_demo"]["tasks"].keys() == {
         "frame_000",
         "frame_001",
         "frame_002",
         "frame_003",
     }
+    assert body["projects"]["pointcloud_multicam_demo"]["display_id"] == ("P-PC-MULTI")
+    assert body["projects"]["pointcloud_multicam_demo"]["tasks"].keys() == {"frame_000"}
     assert body["projects"]["video_demo"]["ml_backend"]["name"] == "screenshot-video"
     assert "large_image_demo" not in body["projects"]
 
@@ -487,6 +521,29 @@ async def test_catalog_fails_closed_when_media_object_is_missing(
     )
 
 
+async def test_catalog_rejects_multicamera_media_without_calibration(
+    httpx_client, db_session
+):
+    await _ready_profile(db_session)
+    camera = await db_session.scalar(
+        select(DatasetItem).where(
+            DatasetItem.file_path == "pc-multicam-dev/camera/back_right/000000.jpg"
+        )
+    )
+    assert camera is not None
+    camera.metadata_ = {}
+    await db_session.flush()
+
+    response = await httpx_client.get("/api/v1/__test/seed/catalog")
+
+    assert response.status_code == 409
+    assert any(
+        "camera pc-multicam-dev/camera/back_right/000000.jpg has no valid calibration"
+        in issue
+        for issue in response.json()["detail"]["issues"]
+    )
+
+
 async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
     db_session,
 ):
@@ -521,7 +578,7 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
         asset_sha256=digests,
     )
 
-    assert first == second == {"projects": 4, "tasks": 14, "batches": 5}
+    assert first == second == {"projects": 5, "tasks": 15, "batches": 5}
     assert {
         logical_key: {key: task.id for key, task in project_tasks.items()}
         for logical_key, project_tasks in tasks.items()
@@ -533,6 +590,7 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
     assert kept.name == "user-owned project"
     assert projects["image_demo"].total_tasks == 8
     assert projects["image_demo"].completed_tasks == 1
+    assert projects["image_demo"].raster_mask_native_editing_enabled is True
 
 
 async def test_repair_refuses_unmarked_fixed_id_collision(db_session):
