@@ -382,6 +382,20 @@ async def test_seed_raster_mask_media_canvas_preserves_item_dimensions(
     assert (item.width, item.height) == (1280, 720)
 
 
+async def test_smart_scribble_masks_use_vehicle_silhouettes():
+    from app.api.v1._test_seed import _make_smart_scribble_mask
+
+    for refined in (False, True):
+        width, height = 64, 48
+        pixels = _make_smart_scribble_mask(width, height, refined=refined)
+        foreground = [index for index, value in enumerate(pixels) if value]
+        xs = [index % width for index in foreground]
+        ys = [index // width for index in foreground]
+        bounding_area = (max(xs) - min(xs) + 1) * (max(ys) - min(ys) + 1)
+
+        assert bounding_area * 0.45 < len(foreground) < bounding_area * 0.85
+
+
 async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
     """v0.8.7+ · D 方案核心断言：reset 不动非 fixture 的开发数据。
 

@@ -1471,20 +1471,7 @@ async def seed_native_mask_candidate(
     if payload.variant == "smart_scribble_refined":
         width = int(item.width)
         height = int(item.height)
-        pixels = bytearray(total)
-
-        def rect(x0: float, y0: float, x1: float, y1: float, value: int = 1) -> None:
-            left = max(0, min(width, int(width * x0)))
-            top = max(0, min(height, int(height * y0)))
-            right = max(left, min(width, int(width * x1)))
-            bottom = max(top, min(height, int(height * y1)))
-            for y in range(top, bottom):
-                pixels[y * width + left : y * width + right] = bytes([value]) * (
-                    right - left
-                )
-
-        rect(0.41, 0.46, 0.61, 0.78)
-        rect(0.43, 0.52, 0.47, 0.60, 0)
+        pixels = _make_smart_scribble_mask(width, height, refined=True)
         primary_rle = CocoRlePayload.model_validate(
             encode_coco_rle(pixels, width, height)
         )
@@ -1678,6 +1665,70 @@ class InjectRasterPredictionResponse(BaseModel):
     mask: dict
 
 
+_SMART_SCRIBBLE_SOURCE_OUTLINE = (
+    (0.527344, 0.494444),
+    (0.438281, 0.498611),
+    (0.421094, 0.540278),
+    (0.404687, 0.545833),
+    (0.415625, 0.5625),
+    (0.410938, 0.602778),
+    (0.421875, 0.738889),
+    (0.434375, 0.7375),
+    (0.439063, 0.711111),
+    (0.490625, 0.701389),
+    (0.5375, 0.705556),
+    (0.545312, 0.730556),
+    (0.560156, 0.727778),
+    (0.560156, 0.620833),
+    (0.546875, 0.559722),
+    (0.558594, 0.536111),
+    (0.539844, 0.530556),
+)
+_SMART_SCRIBBLE_REFINED_OUTLINE = (
+    (0.528906, 0.494444),
+    (0.439063, 0.497222),
+    (0.421094, 0.538889),
+    (0.404687, 0.545833),
+    (0.415625, 0.563889),
+    (0.410156, 0.6),
+    (0.421094, 0.738889),
+    (0.435156, 0.7375),
+    (0.440625, 0.7125),
+    (0.500781, 0.701389),
+    (0.539062, 0.706944),
+    (0.545312, 0.730556),
+    (0.560156, 0.729167),
+    (0.560937, 0.627778),
+    (0.547656, 0.561111),
+    (0.559375, 0.5375),
+    (0.540625, 0.529167),
+)
+
+
+def _make_smart_scribble_mask(
+    width: int, height: int, *, refined: bool = False
+) -> bytearray:
+    """根据 SAM3 对 screenshot_03 的真实候选轮廓生成确定性 Mask fixture。"""
+    outline = (
+        _SMART_SCRIBBLE_REFINED_OUTLINE if refined else _SMART_SCRIBBLE_SOURCE_OUTLINE
+    )
+    pixels = bytearray(width * height)
+    for y in range(height):
+        scan_y = (y + 0.5) / height
+        crossings: list[float] = []
+        for index, (x1, y1) in enumerate(outline):
+            x2, y2 = outline[(index + 1) % len(outline)]
+            if (y1 <= scan_y < y2) or (y2 <= scan_y < y1):
+                crossings.append(x1 + (scan_y - y1) * (x2 - x1) / (y2 - y1))
+        crossings.sort()
+        for index in range(0, len(crossings) - 1, 2):
+            left = max(0, round(crossings[index] * width))
+            right = min(width, round(crossings[index + 1] * width))
+            offset = y * width
+            pixels[offset + left : offset + right] = b"\x01" * (right - left)
+    return pixels
+
+
 def _make_test_raster_mask(
     variant: RasterMaskFixtureVariant, width: int = 64, height: int = 48
 ) -> list[int]:
@@ -1708,7 +1759,7 @@ def _make_test_raster_mask(
     elif variant == "island":
         _rect(24, 31, 28, 35)
     elif variant == "smart_scribble_source":
-        _rect(27, 23, 36, 36)
+        return list(_make_smart_scribble_mask(width, height))
     else:
         # 损坏 fixture 使用独立形状，并故意不存对象。
         _rect(6, 30, 18, 42)
