@@ -72,7 +72,7 @@
 
 ### 时间轴交互（对应 `workbench/video-playback.md`）
 
-- [ ] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → seek/密度条/章节条/关键帧点随可见窗口对齐 → 双击或「适配全部」复位全过程 [manual]
+- [x] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → 普通滚轮平移 → 双击复位全过程 `[auto-gif]`（flows/video-timeline-zoom）
 - [ ] `images/video-timeline/prediction-density-track.png` — 时间轴 AI 预测密度轨（violet 柱）+「跳到上/下一个有预测的帧」导航按钮；红框：密度轨、跳转按钮 [manual]
 - [ ] `images/video-timeline/brush-create-chapter.gif` — 时间轴刷选一段 → 弹出「建章节」气泡 → 一键建章节全过程 [manual]
 - [ ] `images/video-timeline/chapter-resize-hover.gif` — 拖章节条边界改起止（松手 debounce PATCH）+ 章节条 ↔ 侧栏行双向 hover 高亮联动 [manual]
@@ -90,12 +90,12 @@
 ### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
 
 - [ ] `images/workbench/review-two-level-cycle.png` — 两级键盘循环示意（建议矢量示意图）：`Tab`/`Shift+Tab` 同类流转，`` ` ``/``Shift+` `` 跨类跳转（AI 待审 → 人工 → 轨迹）[manual]
-- [ ] `images/workbench/review-auto-advance.gif` — 决策后自动前进：`A`/`D` 采纳/拒绝 AI 候选后选中自动推进到下一待决对象（配合「选中自动聚焦」平移居中）[manual]
+- [x] `images/workbench/review-auto-advance.gif` — 决策后自动前进：`A`/`D` 采纳/拒绝 AI 候选后选中自动推进到下一待决对象 `[auto-gif]`（flows/candidate-keyboard-review 的聚焦裁切版）
 
 ### 两类传播术语（对应 `workbench/video-propagate.md`）
 
 - [ ] `images/video-propagate/track-vs-copy-buttons.png` — 选中卡两类传播按钮对比：「AI 追踪」（bot 图标 · 调 tracker 模型）vs「复制后续」（copy 图标 · 纯几何铺帧）；红框：两按钮 + tooltip [manual]
-- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 [manual]
+- [x] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 `[auto-gif]`（flows/video-tracker-range）
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
 
@@ -122,7 +122,7 @@
 ### 图片候选审阅与数据边界
 
 - [ ] `images/ai/candidate-review-overview.png` — 图片工作台 AI 待审候选总览；同时露出画布 violet 候选、右侧候选列表、接受 / 拒绝按钮与来源信息 **[Tier A]** [manual]
-- [ ] `images/ai/candidate-keyboard-review.gif` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** [manual]
+- [x] `images/ai/candidate-keyboard-review.gif` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** `[auto-gif]`（flows/candidate-keyboard-review）
 - [ ] `images/ai/prediction-to-annotation.png` — 同一对象“候选 Prediction → 接受后 Annotation”的前后对比；红框：颜色 / 来源标记变化、接受后仍可编辑 **[Tier A]** [manual]
 - [ ] `images/ai/candidate-source-badges.png` — 候选列表按来源展示 ML Backend / 外部导入 / 交互式结果；红框：来源徽标、模型版本与置信度 **[Tier B]** [manual]
 
@@ -152,7 +152,7 @@
 
 - [x] `images/getting-started/login.png` — 登录页全屏 [auto]
 - [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast [auto]
-- [ ] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交；旧 1×1 PNG 伪 GIF 已删除，待真实重录
+- [x] `images/getting-started/e2e.gif` — 登录 → Dashboard → 打开项目 → 标 bbox → 提交并看到下一题 `[auto-gif]`（flows/e2e-quickstart）
 - [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮 **[Tier B]** 截图 driver 把所有角色 token 收敛为 super_admin，role=annotator 仍渲染 AdminDashboard，需真实标注员 seed token
 - [x] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
 - [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
@@ -173,6 +173,7 @@
 - [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 [auto]
 - [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
 - [x] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）`[auto]`
+- [x] `images/projects/ai-preannotate-flow.gif` — 选择项目与批次 → 运行 AI 预标 → 查看任务历史 `[auto-gif]`（flows/ai-preannotate）
 - [ ] `images/projects/ai-pre-pipeline-dag-canvas.png` — AI 预标项目详情「批跑预标设置」两列 DAG 编排画布 + 右侧节点参数；红框：节点 +/删除/改父级、兼容性警告、运行计数 [manual]
 - [ ] `images/projects/ai-pre-project-pipeline-save.png` — 「保存为项目编排」成功态；红框：保存按钮、已保存编排阶段数 badge、清除按钮 [manual]
 - [x] `images/projects/ai-pre-variant-selector.gif` — VariantSelector 两轴选项 + 推荐 badge `[auto-gif]`（flows/ai-pre-variant-selector，切 select 看 显存/精度/推荐 pill 联动）
@@ -202,6 +203,7 @@
 
 - [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 [auto]
 - [x] `images/review/reject-form.png` — 退回备注表单 [auto]
+- [x] `images/review/reject-flow.gif` — 定位待审任务 → 选择结构化原因 → 填写补充说明并确认退回 `[auto-gif]`（flows/review-reject）
 - [x] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）`[auto]`
 
 ### 平台管理
@@ -267,7 +269,7 @@
 
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，落库类型由任务 Mask 能力决定）
-- [ ] `images/mask-brush/video-mask-track-edit.gif` — 视频帧按 `M` 从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷 / 橡皮修正 → `Enter` 物化第二个人工关键帧；同时露出 Mask、轨迹卡和时间轴关键帧变化 **[Tier A]** `[auto-gif]`（需新增 flow，结束后恢复 screenshot seed）
+- [x] `images/workbench/video-mask-track-edit.gif` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[auto-gif]`（flows/video-mask-track-edit，结束后恢复 screenshot seed）
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]

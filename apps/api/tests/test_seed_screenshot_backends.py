@@ -10,6 +10,7 @@ from app.db.models.project import Project
 from app.db.models.user import User
 from app.services.ml_backend import MLBackendService
 from app.services.screenshot_seed_backends import (
+    _stub_candidate,
     backend_requirement_issues,
     reconcile_screenshot_backends,
     select_backend_for_requirement,
@@ -86,6 +87,26 @@ async def test_tracker_requirement_uses_declared_priority() -> None:
     )
 
     assert select_backend_for_requirement([sam2, sam3], requirement) is sam3
+
+
+async def test_stub_candidate_creates_singleton_service_pool(
+    db_session, monkeypatch
+) -> None:
+    async def fake_refresh(backends):
+        return backends
+
+    monkeypatch.setattr(
+        "app.services.screenshot_seed_backends._refresh_candidates",
+        fake_refresh,
+    )
+
+    candidates = await _stub_candidate(db_session, "http://stub.test:9100/")
+
+    assert len(candidates) == 1
+    backend = candidates[0]
+    pool = await MLBackendService(db_session)._pool_for_registry(backend.id)
+    assert pool is not None
+    assert pool.legacy_instance_id == backend.id
 
 
 async def test_reconcile_creates_exact_primary_and_enabled_bindings(

@@ -408,7 +408,7 @@ pnpm --filter web screenshots:regression:update            # 有意 UI 变化后
 ```
 
 当前完整矩阵有 63 个自动截图目标：60 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
-另有 3 张手工 PNG 和 18 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
+另有 3 张手工 PNG 和 26 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
 人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
 流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
 

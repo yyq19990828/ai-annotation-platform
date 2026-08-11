@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-08-11
 ---
 
 # Mask 像素编辑器
@@ -181,7 +181,7 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试」�
 
 ## 视频 Mask 轨迹
 
-<!-- TODO IMAGE_CHECKLIST: images/mask-brush/video-mask-track-edit.gif — 视频 Mask 创建、保持帧编辑与关键帧物化全过程 [auto-gif] -->
+![创建视频 Mask 轨迹并在保持帧编辑、物化新关键帧](../images/workbench/video-mask-track-edit.gif)
 
 在视频任务中点击「Mask 轨迹」工具（该工具不占用快捷键）：
 

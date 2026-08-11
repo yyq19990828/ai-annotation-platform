@@ -20,6 +20,9 @@ import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
 import { runVideoTrack } from "./video-track";
+import { runVideoTimelineZoom } from "./video-timeline-zoom";
+import { runVideoTrackerRange } from "./video-tracker-range";
+import { runVideoMaskTrackEdit } from "./video-mask-track-edit";
 import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
@@ -27,6 +30,7 @@ import { runVideoDraw } from "./video-draw";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
+import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif, convertToWebm } from "../_helpers/recorder";
 import { applyScreenshotTheme, installScreenshotEnvironment } from "../environment";
@@ -100,20 +104,24 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
   );
 }
 
-async function finalize(
+type GifOptions = {
+  fps?: number;
+  maxWidth?: number;
+  maxColors?: number;
+  startSec?: number;
+  durationSec?: number;
+};
+
+async function finalizeVariants(
   page: Page,
   gifName: string,
-  // 文档站目标 gif 绝对路径（不填则只产出到 outputs/flows/）
-  docsTarget?: string,
-  // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB；
-  // startSec/durationSec 裁掉录屏开头(准备)与结尾(清理)，只留核心片段。
-  gifOpts?: { fps?: number; maxWidth?: number; startSec?: number; durationSec?: number },
+  variants: Array<{ target: string; options?: GifOptions }>,
 ) {
   if (VALIDATE_ONLY) {
     await page.close();
     return;
   }
-  if (!docsTarget) {
+  if (variants.length === 0) {
     await page.close();
     return;
   }
@@ -131,23 +139,42 @@ async function finalize(
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
   try {
     await video.saveAs(outWebm);
-    await convertToGif(outWebm, outGif, {
-      fps: gifOpts?.fps ?? 10,
-      maxWidth: gifOpts?.maxWidth ?? 1280,
-      startSec: gifOpts?.startSec,
-      durationSec: gifOpts?.durationSec,
-    });
-    if (!fs.existsSync(outGif)) {
-      throw new Error(`[flows] ${gifName}: GIF 未生成，请安装 ffmpeg 或检查 FFMPEG_PATH`);
+    for (const variant of variants) {
+      await convertToGif(outWebm, outGif, {
+        fps: variant.options?.fps ?? 10,
+        maxWidth: variant.options?.maxWidth ?? 1280,
+        maxColors: variant.options?.maxColors,
+        startSec: variant.options?.startSec,
+        durationSec: variant.options?.durationSec,
+      });
+      if (!fs.existsSync(outGif)) {
+        throw new Error(`[flows] ${gifName}: GIF 未生成，请安装 ffmpeg 或检查 FFMPEG_PATH`);
+      }
+      fs.mkdirSync(path.dirname(variant.target), { recursive: true });
+      fs.copyFileSync(outGif, variant.target);
+      console.log(`[flows] ✓ 同步 gif 到文档站：${variant.target}`);
     }
-    fs.mkdirSync(path.dirname(docsTarget), { recursive: true });
-    fs.copyFileSync(outGif, docsTarget);
-    console.log(`[flows] ✓ 同步 gif 到文档站：${docsTarget}`);
   } finally {
     fs.rmSync(outWebm, { force: true });
     fs.rmSync(outGif, { force: true });
     fs.rmSync(outGif.replace(/\.gif$/, ".palette.png"), { force: true });
   }
+}
+
+async function finalize(
+  page: Page,
+  gifName: string,
+  // 文档站目标 gif 绝对路径（不填则只执行流程验证）
+  docsTarget?: string,
+  // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB；
+  // startSec/durationSec 裁掉录屏开头(准备)与结尾(清理)，只留核心片段。
+  gifOpts?: GifOptions,
+) {
+  await finalizeVariants(
+    page,
+    gifName,
+    docsTarget ? [{ target: docsTarget, options: gifOpts }] : [],
+  );
 }
 
 async function finalizeHomepageWebm(
@@ -216,7 +243,11 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     await installScreenshotEnvironment(page);
     await runE2eQuickstart(page, cached);
-    await finalize(page, "e2e-quickstart");
+    await finalize(page, "e2e-quickstart", path.join(DOCS_IMAGES, "getting-started/e2e.gif"), {
+      fps: 4,
+      maxWidth: 640,
+      maxColors: 128,
+    });
   });
 
   test("ai-preannotate — AI 预标注发起流程", async ({ page, seed }) => {
@@ -224,7 +255,12 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await runAiPreannotate(page, cached);
-    await finalize(page, "ai-preannotate");
+    await finalize(
+      page,
+      "ai-preannotate",
+      path.join(DOCS_IMAGES, "projects/ai-preannotate-flow.gif"),
+      { fps: 6, maxWidth: 860 },
+    );
   });
 
   const samToolDemos: Array<{
@@ -293,7 +329,10 @@ test.describe("flow recordings", () => {
     await seed.injectToken(page, cached.users.reviewer.email);
     await installRecordingWorkbenchLayout(page, "both");
     await runReviewReject(page, cached);
-    await finalize(page, "review-reject");
+    await finalize(page, "review-reject", path.join(DOCS_IMAGES, "review/reject-flow.gif"), {
+      fps: 6,
+      maxWidth: 860,
+    });
   });
 
   test("batch-bulk-actions — 批次多选批量操作", async ({ page, seed }) => {
@@ -419,6 +458,74 @@ test.describe("flow recordings", () => {
     });
   });
 
+  test("candidate-keyboard-review — 候选键盘审阅与自动前进", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const project = cached.projects.image_demo;
+    const task = project.tasks.annotating;
+    const predictions = await Promise.all([
+      seed.injectPrediction({
+        taskId: task.id,
+        projectId: project.id,
+        label: "car",
+        polygon: [
+          [0.12, 0.22],
+          [0.34, 0.2],
+          [0.36, 0.48],
+          [0.14, 0.5],
+        ],
+        score: 0.96,
+      }),
+      seed.injectPrediction({
+        taskId: task.id,
+        projectId: project.id,
+        label: "car",
+        polygon: [
+          [0.42, 0.3],
+          [0.62, 0.28],
+          [0.64, 0.55],
+          [0.44, 0.57],
+        ],
+        score: 0.91,
+      }),
+      seed.injectPrediction({
+        taskId: task.id,
+        projectId: project.id,
+        label: "car",
+        polygon: [
+          [0.68, 0.18],
+          [0.86, 0.2],
+          [0.84, 0.43],
+          [0.66, 0.41],
+        ],
+        score: 0.87,
+      }),
+    ]);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    const win = await runCandidateKeyboardReview(
+      page,
+      cached,
+      predictions.map((prediction) => prediction.prediction_id),
+    );
+    await finalizeVariants(page, "candidate-keyboard-review", [
+      {
+        target: path.join(DOCS_IMAGES, "ai/candidate-keyboard-review.gif"),
+        options: { fps: 8, maxWidth: 860, ...drawTrim(win, t0) },
+      },
+      {
+        target: path.join(DOCS_IMAGES, "workbench/review-auto-advance.gif"),
+        options: {
+          fps: 8,
+          maxWidth: 860,
+          ...drawTrim({ drawStartMs: win.autoAdvanceStartMs, drawEndMs: win.drawEndMs }, t0),
+        },
+      },
+    ]);
+  });
+
   test("video-track — 视频时序工作台", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const t0 = Date.now();
@@ -434,6 +541,54 @@ test.describe("flow recordings", () => {
       // 收起边栏后画布变宽、帧间变化更大，maxWidth 再降到 640 才稳压 5MB。
       path.join(DOCS_IMAGES, "workbench/video-track-overview.gif"),
       { fps: 6, maxWidth: 640, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-timeline-zoom — 时间轴锚点缩放与复位", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runVideoTimelineZoom(page, cached);
+    await finalize(
+      page,
+      "video-timeline-zoom",
+      path.join(DOCS_IMAGES, "video-timeline/horizontal-zoom.gif"),
+      { fps: 6, maxWidth: 640, maxColors: 128, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-tracker-range — 时间轴刷选追踪范围", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runVideoTrackerRange(page, cached);
+    await finalize(
+      page,
+      "video-tracker-range",
+      path.join(DOCS_IMAGES, "video-propagate/shift-brush-range.gif"),
+      { fps: 6, maxWidth: 680, maxColors: 128, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-mask-track-edit — Mask 轨迹创建与后续帧编辑", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    const win = await runVideoMaskTrackEdit(page, cached);
+    await finalize(
+      page,
+      "video-mask-track-edit",
+      path.join(DOCS_IMAGES, "workbench/video-mask-track-edit.gif"),
+      { fps: 4, maxWidth: 600, maxColors: 128, ...drawTrim(win, t0) },
     );
   });
 

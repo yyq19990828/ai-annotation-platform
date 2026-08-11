@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-11
 ---
 
 # 视频播放、帧导航与采样
@@ -79,8 +79,9 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
 
 ## 时间轴缩放与 AI 预测导航
 
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/horizontal-zoom.gif — Ctrl 滚动以指针帧为锚点缩放 + 双击复位 [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/video-timeline/prediction-density-track.png — AI 预测密度轨 + 跳预测帧导航 [manual] -->
+
+![以指针帧为锚缩放、平移时间轴并双击复位](../images/video-timeline/horizontal-zoom.gif)
 
 时间轴在紧凑浮层中占据主行，展开后则铺满整段视频；状态行同时显示当前时间与视频总时长。展开面板上方带稀疏的帧号刻度尺（随缩放自动重排，给长视频一个帧位参照）。长视频里帧太密时可以**横向放大**只看一段：
 

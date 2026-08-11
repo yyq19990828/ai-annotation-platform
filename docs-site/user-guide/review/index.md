@@ -3,7 +3,7 @@ audience: [reviewer]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-08-11
 ---
 
 # 审核流程
@@ -48,6 +48,10 @@ last_reviewed: 2026-06-10
 ![退回反馈表单](../images/review/reject-form.png)
 
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 点「退回」弹出的备注表单，含原因下拉 + 富文本备注框。 -->
+
+完整退回流程会先定位待审任务，再选择结构化原因、填写补充说明并确认：
+
+![从待审任务到确认退回的完整流程](../images/review/reject-flow.gif)
 
 ### 退回接口请求体
 

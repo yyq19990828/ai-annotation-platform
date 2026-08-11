@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -229,16 +228,15 @@ async def _live_candidates(db: AsyncSession) -> list[MLBackendRegistry]:
 
 async def _stub_candidate(db: AsyncSession, stub_url: str) -> list[MLBackendRegistry]:
     url = stub_url.rstrip("/")
+    service = MLBackendService(db)
     backend = await db.scalar(
         select(MLBackendRegistry).where(MLBackendRegistry.url == url)
     )
     if backend is None:
-        backend = MLBackendRegistry(
-            id=uuid.uuid4(),
+        backend = await service.create_registry(
             name=STUB_BACKEND_NAME,
             url=url,
             source="seed",
-            state="disconnected",
             extra_params={
                 "seed": {
                     "managed_by": SEED_MANAGED_BY,
@@ -247,8 +245,6 @@ async def _stub_candidate(db: AsyncSession, stub_url: str) -> list[MLBackendRegi
                 }
             },
         )
-        db.add(backend)
-        await db.flush()
     else:
         backend.extra_params = {
             **(backend.extra_params or {}),
@@ -258,6 +254,7 @@ async def _stub_candidate(db: AsyncSession, stub_url: str) -> list[MLBackendRegi
                 "revision": SEED_REVISION,
             },
         }
+        await service._create_singleton_pool(backend)
     candidates = await _refresh_candidates([backend])
     if backend.name != STUB_BACKEND_NAME:
         raise ScreenshotSeedBackendError(

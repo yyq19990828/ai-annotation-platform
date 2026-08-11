@@ -4,7 +4,7 @@ audience: [annotator, project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-08-11
 ---
 
 # 审阅 AI 候选
@@ -26,6 +26,8 @@ AI 预标和外部预测先生成 **Prediction（候选）**，不会直接替�
 4. 接受后，候选成为正式 Annotation，仍可继续编辑、改类或删除；拒绝后，该候选不再作为待审结果出现。
 
 `Tab` / `Shift+Tab` 可在同类对象之间切换；开启“决策后自动前进”后，接受或拒绝会自动选中下一个待审对象。完整的键盘审阅流转见[工作台概览](../workbench/#审阅键盘流转)。
+
+![使用 Tab、A 和 D 连续审阅 AI 候选](../images/ai/candidate-keyboard-review.gif)
 
 ## 数据边界
 

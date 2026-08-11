@@ -24,6 +24,8 @@ export interface RecordOptions {
 export interface ConvertOptions {
   fps?: number;
   maxWidth?: number;
+  /** GIF 调色板颜色数；流程素材需控制提交体积时可适当降低。 */
+  maxColors?: number;
   /** 裁剪起点（秒）：跳过录屏开头的准备动作（加载 / 隐藏预测 / 选工具）。 */
   startSec?: number;
   /** 裁剪时长（秒）：只保留这段（如绘制过程），裁掉结尾的清理动作。 */
@@ -84,6 +86,7 @@ export async function convertToGif(
 
   const fps = opts.fps ?? 10;
   const maxWidth = opts.maxWidth ?? 1280;
+  const maxColors = opts.maxColors ?? 256;
   const palettePath = outputPath.replace(/\.gif$/, ".palette.png");
 
   // 裁剪参数（-ss 起点 / -t 时长，放在 -i 前做快速 seek，两遍一致）
@@ -102,7 +105,7 @@ export async function convertToGif(
       "-i",
       inputPath,
       "-vf",
-      `fps=${fps},scale=${maxWidth}:-1:flags=lanczos,palettegen`,
+      `fps=${fps},scale=${maxWidth}:-1:flags=lanczos,palettegen=max_colors=${maxColors}`,
       palettePath,
     ],
     { encoding: "utf8" },

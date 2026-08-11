@@ -3,7 +3,7 @@ audience: [annotator]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-11
 ---
 
 # 标注工作台 — 界面与快捷键
@@ -84,7 +84,8 @@ Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可
 ## 审阅键盘流转
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/review-two-level-cycle.png — 两级循环示意 [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/workbench/review-auto-advance.gif — 决策后自动前进 [manual] -->
+
+![接受或拒绝后自动推进到下一待决候选](../images/workbench/review-auto-advance.gif)
 
 从 AI 结果接管、逐个采纳 / 拒绝时可全程键盘操作（图片与视频 2D 工作台通用）：
 
