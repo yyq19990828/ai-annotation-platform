@@ -71,21 +71,36 @@ export async function runSmartScribble(
   if (!anchor) {
     throw new Error("[smart-scribble] image_demo.annotating 缺少 primary_vehicle 语义锚点");
   }
+  await page.getByTitle("展开标注详情").click();
   const sourceRow = page.getByTestId(`box-list-item-${sourceAnnotationId}`);
   await sourceRow.waitFor({ state: "visible", timeout: 15_000 });
   await sourceRow.click();
+  const collapseSelection = page.getByLabel("收起浮窗");
+  await collapseSelection.waitFor({ state: "visible", timeout: 5_000 });
+  await collapseSelection.click();
+  await page.getByTitle("收起标注详情").click();
+  await page.getByTitle("展开标注详情").waitFor({ state: "visible", timeout: 10_000 });
 
   const tool = page.getByTestId("tool-btn-smart-scribble");
   await tool.waitFor({ state: "visible", timeout: 10_000 });
+  await page.waitForFunction(
+    () => {
+      const button = document.querySelector<HTMLElement>('[data-testid="tool-btn-smart-scribble"]');
+      return (
+        button &&
+        !button.hasAttribute("disabled") &&
+        button.getAttribute("aria-disabled") !== "true"
+      );
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
   if (!(await tool.isEnabled())) {
     throw new Error("[smart-scribble] 已存 Mask 选中后智能笔迹仍不可用");
   }
 
-  const drawStartMs = Date.now();
-  await tool.click();
-  await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
-  await page.getByTestId("mask-prompt-source").waitFor({ state: "visible" });
-  await page.waitForTimeout(650);
+  await page.getByTitle("适应视口（双击空白）").click();
+  await page.waitForTimeout(800);
 
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
@@ -94,6 +109,12 @@ export async function runSmartScribble(
     x: box.x + box.width * x,
     y: box.y + box.height * y,
   });
+
+  const drawStartMs = Date.now();
+  await tool.click();
+  await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+  await page.getByTestId("mask-prompt-source").waitFor({ state: "visible" });
+  await page.waitForTimeout(650);
 
   const [positiveStartAnchor, positiveEndAnchor] = anchor.positive_stroke;
   if (!positiveStartAnchor || !positiveEndAnchor) {

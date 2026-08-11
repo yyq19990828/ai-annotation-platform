@@ -355,13 +355,13 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
+    await installRecordingWorkbenchLayout(page, "none");
     const win = await runSmartScribble(page, cached, source.annotation_id, fixture);
     await finalize(
       page,
       "smart-scribble",
       path.join(DOCS_IMAGES, "sam/smart-scribble-interaction.gif"),
-      { fps: 4, maxWidth: 640, maxColors: 64, ...drawTrim(win, t0) },
+      { fps: 4, maxWidth: 860, maxColors: 96, ...drawTrim(win, t0) },
     );
   });
 
