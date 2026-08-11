@@ -392,6 +392,19 @@ stub 地址默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100
 point、interactive box 与 exemplar，视频要求交互 tracker，OCR 要求整图输入及文本属性输出。
 任一能力、连接、启用关联或主绑定缺失都会退出非零。
 
+录制超大图渐进细节前，还需要把固定 Cosmic Cliffs 夹具导入同一截图数据库，并让专用
+`image-pyramid` Worker 使用该数据库生成到 ready。只有这个可选项目存在时，catalog 才会返回
+`large_image_demo`；其他截图与流程不依赖它。
+
+```bash
+pnpm --filter @anno/web image:seeds
+cd apps/api
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --id nasa-cosmic-cliffs --enqueue-pyramids --wait-seconds 1800
+```
+
+Worker 与上述命令必须使用同一 `SCREENSHOT_DATABASE_URL`；开发库 Worker 不会为截图库回写生成状态。
+
 ### 触发
 
 ```bash
@@ -408,7 +421,7 @@ pnpm --filter web screenshots:regression:update            # 有意 UI 变化后
 ```
 
 当前完整矩阵有 63 个自动截图目标：60 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
-另有 3 张手工 PNG 和 26 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
+另有 3 张手工 PNG 和 31 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
 人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
 流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
 

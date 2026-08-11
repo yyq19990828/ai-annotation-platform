@@ -26,7 +26,8 @@ export interface SeedData {
 }
 
 export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
-export type ScreenshotProjectKey = "image_demo" | "video_demo" | "pointcloud_demo" | "ocr_demo";
+export type ScreenshotCoreProjectKey = "image_demo" | "video_demo" | "pointcloud_demo" | "ocr_demo";
+export type ScreenshotProjectKey = ScreenshotCoreProjectKey | "large_image_demo";
 export type ScreenshotBackendRequirement = "image_interactive" | "video_tracker" | "ocr";
 
 export interface ScreenshotCatalogUser {
@@ -80,7 +81,8 @@ export interface ScreenshotSeedCatalog {
   schema_version: 1;
   seed_revision: string;
   users: Record<ScreenshotUserKey, ScreenshotCatalogUser>;
-  projects: Record<ScreenshotProjectKey, ScreenshotCatalogProject>;
+  projects: Record<ScreenshotCoreProjectKey, ScreenshotCatalogProject> &
+    Partial<Record<"large_image_demo", ScreenshotCatalogProject>>;
 }
 
 /** v0.16.x · 点云 E2E 基线 fixture：1 个 lidar 项目 + 2 帧(同一最小 .pcd)point_cloud task。

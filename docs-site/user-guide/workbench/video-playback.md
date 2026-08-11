@@ -101,14 +101,16 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
 ## 章节
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/video-playback/chapter-sidebar.png — 章节侧栏含彩色色带 + 章节列表 [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/brush-create-chapter.gif — 时间轴刷选建章节 [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/chapter-resize-hover.gif — 章节条拖边界 resize + 双向 hover [manual] -->
+
+![在时间轴上圈选范围并创建章节](../images/video-timeline/brush-create-chapter.gif)
+
+![章节条与侧栏联动高亮，拖动边界后自动保存](../images/video-timeline/chapter-resize-hover.gif)
 
 长视频可以通过「章节」侧栏（位于轨迹侧栏下方）划分场景：
 
 - 项目负责人 / 超级管理员可以新建、编辑、删除章节。
 - 表单支持「使用当前帧」按钮一键填入起止帧。
-- 除表单外，还能在时间轴上**刷选建章节**：点章节侧栏的**「新建」**进入圈选态，再在时间轴上拖出一段，即以刷选范围为起止建成章节。
+- 除表单外，还能在时间轴上**刷选建章节**：点章节侧栏的**「圈选」**进入圈选态，再在时间轴上拖出一段，填写标题后创建章节。
 - 时间轴上方有彩色色带，点击跳到章节起点；色带段**可拖边界改起止**——拖动某段的左 / 右缘调整范围，松手后自动保存。
 - 章节色带与侧栏章节行**双向 hover 联动**：悬停任一侧，另一侧对应项高亮，便于长列表里对位。
 - `PageDown` / `PageUp` 在章节之间跳转（如果当前帧在某章节内部，`PageUp` 先回到该章节起点）。

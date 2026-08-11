@@ -27,6 +27,10 @@ import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
+import { runVideoChapter } from "./video-chapter";
+import { runVideoMultiTargetSeeds } from "./video-multi-target-seeds";
+import { runVideoTrackCarryover } from "./video-track-carryover";
+import { runLargeImageProgressive } from "./large-image-progressive";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
@@ -50,8 +54,26 @@ let cached: ScreenshotSeedCatalog | null = null;
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 
 test.beforeAll(() => {
+  screenshotDatabaseEnv();
   cached = loadScreenshotCatalog();
 });
+
+function screenshotDatabaseEnv(): NodeJS.ProcessEnv {
+  const databaseUrl = process.env.SCREENSHOT_DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("[flows] 缺少 SCREENSHOT_DATABASE_URL，拒绝在未确认的数据库上录制或清理");
+  }
+  const databaseName = databaseUrl.replace(/\?.*$/, "").split("/").at(-1) ?? "";
+  if (!databaseName.endsWith("_test") && !databaseName.endsWith("_e2e")) {
+    throw new Error("[flows] SCREENSHOT_DATABASE_URL 必须指向名称以 _test 或 _e2e 结尾的隔离库");
+  }
+  return {
+    ...process.env,
+    DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: databaseUrl,
+    PYTHONPATH: ".",
+  };
+}
 
 // flow 会修改任务状态、标注和预标注作业。结束后由 screenshots profile
 // 重建自己管理的固定项目，不再按几何类型猜测并删除数据。
@@ -78,7 +100,7 @@ test.afterAll(() => {
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
-      env: { ...process.env, PYTHONPATH: "." },
+      env: screenshotDatabaseEnv(),
       stdio: "inherit",
     },
   );
@@ -98,7 +120,7 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
-      env: { ...process.env, PYTHONPATH: "." },
+      env: screenshotDatabaseEnv(),
       stdio: "inherit",
     },
   );
@@ -560,6 +582,26 @@ test.describe("flow recordings", () => {
     );
   });
 
+  test("video-chapter — 时间轴圈选与拖柄调整章节", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    const windows = await runVideoChapter(page, cached);
+    await finalizeVariants(page, "video-chapter", [
+      {
+        target: path.join(DOCS_IMAGES, "video-timeline/brush-create-chapter.gif"),
+        options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.create, t0) },
+      },
+      {
+        target: path.join(DOCS_IMAGES, "video-timeline/chapter-resize-hover.gif"),
+        options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.resize, t0) },
+      },
+    ]);
+  });
+
   test("video-tracker-range — 时间轴刷选追踪范围", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const t0 = Date.now();
@@ -573,6 +615,41 @@ test.describe("flow recordings", () => {
       "video-tracker-range",
       path.join(DOCS_IMAGES, "video-propagate/shift-brush-range.gif"),
       { fps: 6, maxWidth: 680, maxColors: 128, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-multi-target-seeds — 多目标跨帧点框种子", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runVideoMultiTargetSeeds(page, cached);
+    await finalize(
+      page,
+      "video-multi-target-seeds",
+      path.join(DOCS_IMAGES, "video-propagate/multi-target-seeds.gif"),
+      { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(60_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both", {
+      video: { trackContinueAutoAdvance: true },
+    });
+    const win = await runVideoTrackCarryover(page, cached);
+    await finalize(
+      page,
+      "video-track-carryover",
+      path.join(DOCS_IMAGES, "workbench/video-track-carryover-ghost.gif"),
+      { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
     );
   });
 
@@ -660,6 +737,23 @@ test.describe("flow recordings", () => {
       // 画框+逐帧插值帧间变化大, 比其它 flow 再降一档(fps5/620)压到 5MB 内。
       path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
       { fps: 5, maxWidth: 620, ...drawTrim(win, t0) },
+    );
+  });
+
+  test("large-image-progressive — 大图渐进式高清切片", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(90_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runLargeImageProgressive(page, cached);
+    await finalize(
+      page,
+      "large-image-progressive",
+      path.join(DOCS_IMAGES, "workbench/large-image-progressive-detail.gif"),
+      { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
     );
   });
 

@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+from app.db.models.image_pyramid import ImagePyramidAsset, ImagePyramidGeneration
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
@@ -325,6 +326,101 @@ async def test_catalog_returns_explicit_stable_logical_resources(
         "frame_003",
     }
     assert body["projects"]["video_demo"]["ml_backend"]["name"] == "screenshot-video"
+    assert "large_image_demo" not in body["projects"]
+
+
+async def test_catalog_includes_ready_optional_large_image_fixture(
+    httpx_client, db_session
+):
+    projects, _ = await _ready_profile(db_session)
+    owner = projects["pointcloud_demo"].owner_id
+    project = Project(
+        id=uuid.uuid4(),
+        display_id="P-LARGE-IMG",
+        name="large image",
+        type_label="image",
+        type_key="image-seg",
+        data_type="image",
+        owner_id=owner,
+    )
+    dataset = Dataset(
+        id=uuid.uuid4(),
+        display_id="DS-LARGE-IMG",
+        name="large-image-dev",
+        data_type="image",
+        file_count=1,
+        created_by=owner,
+        metadata_={"seed": {"managed_by": "large-image-seed", "manifest_version": 1}},
+    )
+    db_session.add_all([project, dataset])
+    await db_session.flush()
+    db_session.add(ProjectDataset(project_id=project.id, dataset_id=dataset.id))
+    item = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset.id,
+        file_name="nasa-cosmic-cliffs-14575x8441.png",
+        file_path="large-image-dev/nasa-cosmic-cliffs-14575x8441.png",
+        file_type="image",
+        file_size=130764157,
+        content_hash="e" * 64,
+        width=14575,
+        height=8441,
+        metadata_={
+            "seed": {
+                "managed_by": "large-image-seed",
+                "fixture_id": "nasa-cosmic-cliffs",
+                "role": "required-happy-path-high-entropy",
+            }
+        },
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id="T-LARGE-1",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="image",
+    )
+    asset = ImagePyramidAsset(
+        id=uuid.uuid4(),
+        dataset_item_id=item.id,
+        profile_version="v1",
+        active_generation=1,
+    )
+    db_session.add_all([task, asset])
+    await db_session.flush()
+    db_session.add(
+        ImagePyramidGeneration(
+            asset_id=asset.id,
+            generation=1,
+            source_identity="etag:test:bytes:130764157",
+            source_fingerprint="f" * 64,
+            status="ready",
+            width=item.width,
+            height=item.height,
+            max_level=15,
+            normalization_version="v1",
+            manifest_key="image-pyramids/a/1/manifest.json",
+            overview_key="image-pyramids/a/1/overview.webp",
+            overview_width=2048,
+            overview_height=1186,
+            tile_count=694,
+            retained_bytes=1234,
+        )
+    )
+    await db_session.flush()
+
+    response = await httpx_client.get(
+        "/api/v1/__test/seed/catalog", params={"profile": "screenshots"}
+    )
+
+    assert response.status_code == 200, response.text
+    large = response.json()["projects"]["large_image_demo"]
+    assert large["display_id"] == "P-LARGE-IMG"
+    assert large["tasks"]["cosmic_cliffs"]["id"] == str(task.id)
 
 
 async def test_catalog_rejects_unexpected_task_in_managed_project(

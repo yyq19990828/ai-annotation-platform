@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+from app.db.models.image_pyramid import ImagePyramidAsset, ImagePyramidGeneration
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -35,6 +36,14 @@ from app.services.storage import storage_service
 
 
 SCHEMA_VERSION = 1
+LARGE_IMAGE_PROJECT_DISPLAY_ID = "P-LARGE-IMG"
+LARGE_IMAGE_DATASET_DISPLAY_ID = "DS-LARGE-IMG"
+LARGE_IMAGE_SEED_MANAGED_BY = "large-image-seed"
+LARGE_IMAGE_TASK_KEYS = {
+    "nasa-cosmic-cliffs": "cosmic_cliffs",
+    "nasa-bmng-december": "blue_marble",
+    "nasa-cosmic-reionization": "cosmic_reionization",
+}
 
 
 class ScreenshotSeedCatalogError(RuntimeError):
@@ -444,6 +453,161 @@ async def _resolve_project(
     }
 
 
+async def _resolve_optional_large_image_project(
+    db: AsyncSession, issues: list[str]
+) -> dict[str, Any] | None:
+    """Expose the separately managed large-image seed when it is fully ready."""
+    projects = list(
+        (
+            await db.execute(
+                select(Project).where(
+                    Project.display_id == LARGE_IMAGE_PROJECT_DISPLAY_ID
+                )
+            )
+        ).scalars()
+    )
+    datasets = list(
+        (
+            await db.execute(
+                select(Dataset).where(
+                    Dataset.display_id == LARGE_IMAGE_DATASET_DISPLAY_ID
+                )
+            )
+        ).scalars()
+    )
+    if not projects and not datasets:
+        return None
+    if len(projects) != 1 or len(datasets) != 1:
+        issues.append(
+            "large_image_demo: expected exactly one P-LARGE-IMG / DS-LARGE-IMG pair"
+        )
+        return None
+
+    project, dataset = projects[0], datasets[0]
+    prefix = LARGE_IMAGE_PROJECT_DISPLAY_ID
+    links = list(
+        (
+            await db.execute(
+                select(ProjectDataset).where(
+                    (ProjectDataset.project_id == project.id)
+                    | (ProjectDataset.dataset_id == dataset.id)
+                )
+            )
+        ).scalars()
+    )
+    if (
+        len(links) != 1
+        or links[0].project_id != project.id
+        or links[0].dataset_id != dataset.id
+    ):
+        issues.append(f"{prefix}: large-image project/dataset link is not exclusive")
+    marker = (dataset.metadata_ or {}).get("seed")
+    if not isinstance(marker, dict) or marker.get("managed_by") != (
+        LARGE_IMAGE_SEED_MANAGED_BY
+    ):
+        issues.append(f"{LARGE_IMAGE_DATASET_DISPLAY_ID}: ownership marker is stale")
+    if project.data_type != "image" or dataset.data_type != "image":
+        issues.append(f"{prefix}: project and dataset must use image data")
+
+    items = list(
+        (
+            await db.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == dataset.id)
+            )
+        ).scalars()
+    )
+    if dataset.file_count != len(items):
+        issues.append(f"{LARGE_IMAGE_DATASET_DISPLAY_ID}: file_count is stale")
+
+    task_payload: dict[str, dict[str, Any]] = {}
+    resolved_task_ids: set[uuid.UUID] = set()
+    for item in items:
+        item_marker = (item.metadata_ or {}).get("seed")
+        fixture_id = (
+            item_marker.get("fixture_id") if isinstance(item_marker, dict) else None
+        )
+        logical_key = LARGE_IMAGE_TASK_KEYS.get(str(fixture_id))
+        if (
+            not isinstance(item_marker, dict)
+            or item_marker.get("managed_by") != LARGE_IMAGE_SEED_MANAGED_BY
+            or logical_key is None
+            or not item.content_hash
+            or not item.width
+            or not item.height
+        ):
+            issues.append(f"{prefix}: item {item.file_name} has invalid seed metadata")
+            continue
+        task_rows = list(
+            (
+                await db.execute(
+                    select(Task).where(
+                        Task.project_id == project.id,
+                        Task.dataset_item_id == item.id,
+                    )
+                )
+            ).scalars()
+        )
+        if len(task_rows) != 1:
+            issues.append(
+                f"{prefix}: fixture {fixture_id} must resolve exactly one task"
+            )
+            continue
+        task = task_rows[0]
+        resolved_task_ids.add(task.id)
+
+        generation = await db.scalar(
+            select(ImagePyramidGeneration)
+            .join(
+                ImagePyramidAsset,
+                ImagePyramidAsset.id == ImagePyramidGeneration.asset_id,
+            )
+            .where(
+                ImagePyramidAsset.dataset_item_id == item.id,
+                ImagePyramidAsset.active_generation
+                == ImagePyramidGeneration.generation,
+            )
+        )
+        if (
+            generation is None
+            or generation.status != "ready"
+            or generation.width != item.width
+            or generation.height != item.height
+            or not generation.manifest_key
+            or not generation.overview_key
+            or not generation.tile_count
+        ):
+            issues.append(f"{prefix}: fixture {fixture_id} pyramid is not ready")
+            continue
+        task_payload[logical_key] = _task_payload(task)
+
+    if "cosmic_cliffs" not in task_payload:
+        issues.append(f"{prefix}: cosmic_cliffs ready fixture is required")
+    actual_task_ids = set(
+        (
+            await db.execute(select(Task.id).where(Task.project_id == project.id))
+        ).scalars()
+    )
+    if actual_task_ids != resolved_task_ids:
+        issues.append(f"{prefix}: contains unexpected or missing tasks")
+
+    return {
+        "id": str(project.id),
+        "display_id": project.display_id,
+        "name": project.name,
+        "data_type": project.data_type,
+        "datasets": {
+            dataset.display_id: {
+                "id": str(dataset.id),
+                "name": dataset.name,
+                "file_count": dataset.file_count,
+            }
+        },
+        "tasks": task_payload,
+        "batches": {},
+        "ml_backend": None,
+    }
+
+
 async def build_screenshot_seed_catalog(db: AsyncSession) -> dict[str, Any]:
     issues: list[str] = []
     users: dict[str, User] = {}
@@ -472,6 +636,10 @@ async def build_screenshot_seed_catalog(db: AsyncSession) -> dict[str, Any]:
         project = await _resolve_project(db, logical_key, spec, users, issues)
         if project is not None:
             project_payload[logical_key] = project
+
+    large_image_project = await _resolve_optional_large_image_project(db, issues)
+    if large_image_project is not None:
+        project_payload["large_image_demo"] = large_image_project
 
     if issues:
         raise ScreenshotSeedCatalogError(issues)

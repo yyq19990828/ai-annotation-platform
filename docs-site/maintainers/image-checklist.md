@@ -68,22 +68,22 @@
 
 ## Batch 2 · 视频/点云 AI 审阅 + 时间轴交互（新增于 2026-07-06） <!-- PR #50 · v0.21.9–17 -->
 
-> 配套 PR #50「视频/点云工作台 AI 审阅体验 + 时间轴交互增强」。这批交互性强（缩放/刷选/续写/键盘流转），基本都 `[manual]` 手工录，动图优先。文档侧对应改写 `video-playback.md` / `video-propagate.md` / `video-track.md` / `3d-box.md` / 新 `projects/pipeline-library.md` 时再嵌图。新增目录 `images/video-timeline/`、`images/pipeline-library/`。
+> 配套视频/点云工作台 AI 审阅体验与时间轴交互。可重现的缩放、刷选、续写与键盘流转已逐步收录到 `[auto-gif]`；需要特殊审阅状态的画面仍保留为手工清单。
 
 ### 时间轴交互（对应 `workbench/video-playback.md`）
 
 - [x] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → 普通滚轮平移 → 双击复位全过程 `[auto-gif]`（flows/video-timeline-zoom）
 - [ ] `images/video-timeline/prediction-density-track.png` — 时间轴 AI 预测密度轨（violet 柱）+「跳到上/下一个有预测的帧」导航按钮；红框：密度轨、跳转按钮 [manual]
-- [ ] `images/video-timeline/brush-create-chapter.gif` — 时间轴刷选一段 → 弹出「建章节」气泡 → 一键建章节全过程 [manual]
-- [ ] `images/video-timeline/chapter-resize-hover.gif` — 拖章节条边界改起止（松手 debounce PATCH）+ 章节条 ↔ 侧栏行双向 hover 高亮联动 [manual]
+- [x] `images/video-timeline/brush-create-chapter.gif` — 时间轴圈选一段 → 填写章节表单 → 创建章节全过程 `[auto-gif]`（flows/video-chapter）
+- [x] `images/video-timeline/chapter-resize-hover.gif` — 章节条 ↔ 侧栏行双向 hover 高亮，并拖边界改起止 `[auto-gif]`（flows/video-chapter 的拖柄裁切版）
 
 ### 视频 AI 审阅（对应 `workbench/video-track.md`）
 
 - [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 单条采纳/拒绝入口 [manual]
 - [ ] `images/video-propagate/tracker-review-bar.png` — 固定一条含至少 2 个目标的 `pending_review` 作业，当前帧同时露出 violet 候选与顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 **[Tier A]** [manual]（需独立场景；现有工作台场景会主动丢弃待审作业）
-- [ ] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 [manual]
+- [x] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 `[auto-gif]`（flows/video-multi-target-seeds）
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
-- [ ] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 / 点选即续写 →「续写后自动前进」自动跳下一条 [manual]
+- [x] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 → 拖动续写 →「续写后自动前进」自动跳下一条 `[auto-gif]`（flows/video-track-carryover）
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
 - [ ] `images/workbench/video-track-multiselect-batch-card.png` — 当前帧同时显示至少 2 条轨迹，`Shift` / `Ctrl` 多选后同时露出画布浮动批量卡、右栏批量工具条和高亮轨迹框；红框：「已选 2 条轨迹」与「批量延展」 **[Tier A]** [manual]（自动化前需补可清理的双轨迹 fixture）
 
@@ -259,11 +259,9 @@
 
 #### 超大图片
 
-> 固定项目/数据集为 `P-LARGE-IMG` / `DS-LARGE-IMG`。服务端 pyramid 夹具已经可生成，但当前工作台
-> 尚未消费 tile；前两项必须等客户端视口 tile、状态提示和 screenshot seed catalog 接入后再拍，不能用
-> 整图加载画面冒充渐进 LOD。
+> 固定项目/数据集为 `P-LARGE-IMG` / `DS-LARGE-IMG`。它在截图数据库中存在时会作为可选项目加入 catalog；录制前必须确认 Cosmic Cliffs 金字塔已 ready，不得用整图加载冒充渐进 LOD。
 
-- [ ] `images/workbench/large-image-progressive-detail.gif` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含快速平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[auto-gif]`
+- [x] `images/workbench/large-image-progressive-detail.gif` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[auto-gif]`（flows/large-image-progressive）
 - [ ] `images/workbench/large-image-pyramid-status.png` — required 超大图的“高清切片生成中”与失败/重试状态；不得自动请求整张原图 **[Tier A]** `[auto]`
 - [ ] `images/mask-brush/large-image-limit.png` — 超大底图仍可浏览并使用矢量工具，同时 Mask 能力明确显示尺寸超限原因 **[Tier A]** `[auto]`（可先用 `P-LARGE-IMG` 建 scene）
 
