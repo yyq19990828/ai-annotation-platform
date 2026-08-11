@@ -12815,6 +12815,7 @@
           "group_name": {
             "anyOf": [
               {
+                "maxLength": 100,
                 "type": "string"
               },
               {

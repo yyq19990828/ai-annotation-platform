@@ -96,7 +96,7 @@ async def update_group(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
-    grp = await db.get(Group, group_id)
+    grp = await db.scalar(select(Group).where(Group.id == group_id).with_for_update())
     if grp is None:
         raise HTTPException(status_code=404, detail="数据组不存在")
 
@@ -164,7 +164,7 @@ async def delete_group(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
-    grp = await db.get(Group, group_id)
+    grp = await db.scalar(select(Group).where(Group.id == group_id).with_for_update())
     if grp is None:
         raise HTTPException(status_code=404, detail="数据组不存在")
     name = grp.name

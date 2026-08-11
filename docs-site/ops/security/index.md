@@ -42,20 +42,20 @@ super_admin  > project_admin > reviewer > annotator > viewer
 
 ### 2.1 全局能力矩阵
 
-| 能力                      | super_admin |    project_admin     | reviewer | annotator | viewer |
-| ------------------------- | :---------: | :------------------: | :------: | :-------: | :----: |
-| 创建项目                  |     ✅      |          ✅          |    ❌    |    ❌     |   ❌   |
-| 删除项目                  |     ✅      |       仅 owner       |    ❌    |    ❌     |   ❌   |
-| 邀请用户                  |     ✅      |   ✅（≤ MAX/day）    |    ❌    |    ❌     |   ❌   |
-| 改他人角色                |     ✅      | annotator ↔ reviewer |    ❌    |    ❌     |   ❌   |
-| 查看审计日志              |    全部     |       项目相关       |    ❌    |    ❌     |   ❌   |
-| 系统设置（`/settings/*`） |    读+写    |         仅读         |    ❌    |    ❌     |   ❌   |
-| 导出数据                  |     ✅      |          ✅          |    ❌    |    ❌     |   ❌   |
-| 标注任务                  | ✅（演示）  |          ✅          |    ✅    |    ✅     |   ❌   |
-| 审核 / 通过-退回          |     ✅      |          ✅          |    ✅    |    ❌     |   ❌   |
-| 看 Dashboard              |   全平台    |       项目相关       | 项目相关 |   自己    | 受邀的 |
+| 能力                      | super_admin |               project_admin                | reviewer | annotator | viewer |
+| ------------------------- | :---------: | :----------------------------------------: | :------: | :-------: | :----: |
+| 创建项目                  |     ✅      |                     ✅                     |    ❌    |    ❌     |   ❌   |
+| 删除项目                  |     ✅      |                  仅 owner                  |    ❌    |    ❌     |   ❌   |
+| 邀请用户                  | ✅（全部）  | reviewer / annotator / viewer（≤ MAX/day） |    ❌    |    ❌     |   ❌   |
+| 改他人角色                |     ✅      |            annotator ↔ reviewer            |    ❌    |    ❌     |   ❌   |
+| 查看审计日志              |    全部     |                  项目相关                  |    ❌    |    ❌     |   ❌   |
+| 系统设置（`/settings/*`） |    读+写    |                    仅读                    |    ❌    |    ❌     |   ❌   |
+| 导出数据                  |     ✅      |                     ✅                     |    ❌    |    ❌     |   ❌   |
+| 标注任务                  | ✅（演示）  |                     ✅                     |    ✅    |    ✅     |   ❌   |
+| 审核 / 通过-退回          |     ✅      |                     ✅                     |    ✅    |    ❌     |   ❌   |
+| 看 Dashboard              |   全平台    |                  项目相关                  | 项目相关 |   自己    | 受邀的 |
 
-> 注：`project_admin` 不能创建 `super_admin` / 不能改对方为 `viewer`（`apps/api/app/api/v1/users.py:27` 的注释）。
+> 注：`project_admin` 不能邀请 `project_admin` / `super_admin`，也不能把现有用户改为 `viewer`；邀请与编辑使用不同的服务端角色白名单。
 >
 > `annotator_id` 单值绑定到 `batch.annotator_id`，同一 batch 内任务都派给该一人；reviewer 通过 `task.reviewer_id` 锁定。
 
@@ -137,10 +137,15 @@ Token claims：
 
 要点：
 
-- `project_admin` 与 `super_admin` 调用 `POST /api/v1/users/invite`。每个发起人的新建邀请按过去 24 小时滚动统计，默认上限 30；已激活邮箱会被拒绝，同邮箱未接受的旧邀请会立即过期。
+- `project_admin` 与 `super_admin` 调用 `POST /api/v1/users/invite`。项目管理员只能邀请 reviewer、annotator 或 viewer，超级管理员可指定全部角色；角色范围由服务端强制执行。每个发起人的新建邀请按过去 24 小时滚动统计，默认上限 30；已激活邮箱会被拒绝。项目管理员新建邀请时只会使自己对同邮箱的未接受旧邀请过期，超级管理员则会使该邮箱的所有未接受邀请过期。
 - TTL 从运行时 `invitation_ttl_days` 系统设置读取，默认 7 天。API 返回 `invite_url / token / expires_at`，管理端复制链接并通过外部安全渠道分享；平台不发送邀请邮件。
-- 被邀请人先调用 `GET /api/v1/auth/invitations/{token}`。不存在的 token 返回 404，已接受或过期返回 410，只有有效 token 才返回 email、角色、数据组、过期时间与邀请人。
-- 接受邀请使用 `POST /api/v1/auth/register {token,name,password}`。用户以邀请角色创建并视为邮箱已验证；邀请行不会删除，而是写入 `accepted_at / accepted_user_id`，同时记录 `user.register` 审计，再返回 access token 与用户。
+- 被邀请人先调用 `GET /api/v1/auth/invitations/{token}`。不存在的 token 返回 404，已接受、已撤销或过期返回 410，只有有效 token 才返回 email、角色、数据组、过期时间与邀请人。
+- 接受邀请使用 `POST /api/v1/auth/register {token,name,password}`。用户以邀请角色创建并视为邮箱已验证；指定数据组时会复用或创建正式 `groups` 记录并写入用户的 `group_id`。邀请行不会删除，而是写入 `accepted_at / accepted_user_id`，同时记录 `user.register` 审计，再返回 access token 与用户。
+- 项目管理员的邀请列表、撤销和重发都限定为自己创建的记录；超级管理员可查看和管理全部邀请。被撤销的邀请只有原创建者或超级管理员重发后才会生成新 token 并重新生效，项目管理员不能重发历史高权限邀请；升级时会撤销由不具备有效超级管理员权限的签发者创建、尚未接受的存量高权限邀请。
+
+::: warning 历史高权限账号复核
+系统不会仅根据签发者的当前角色自动停用已注册账号，以免误伤由后续合法降级的超级管理员签发的邀请。运维人员应在审计日志中复核 `user.invite` 事件：当目标角色为 `project_admin` 或 `super_admin`、且 `actor_role` 不是 `super_admin` 时，确认对应账号合法性并停用未授权账号。
+:::
 
 ::: warning 邀请链接是 bearer credential
 任何持有尚未失效邀请链接的人都能以链接中分配的角色完成注册。明文 token 会存入邀请表并返回给管理端，应只通过受控渠道分享，避免写入公开聊天、工单或日志。
