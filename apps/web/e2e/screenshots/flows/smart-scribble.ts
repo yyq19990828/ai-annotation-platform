@@ -100,6 +100,8 @@ export async function runSmartScribble(
   }
 
   await page.getByTitle("适应视口（双击空白）").click();
+  await page.getByText("分辨率 1280×720", { exact: true }).waitFor({ timeout: 5_000 });
+  await page.getByText("100%", { exact: true }).waitFor({ timeout: 5_000 });
   await page.waitForTimeout(800);
 
   const stage = page.getByTestId("workbench-stage");

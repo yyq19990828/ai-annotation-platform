@@ -340,6 +340,7 @@ test.describe("flow recordings", () => {
       userEmail: cached.users.admin.email,
       variant: "smart_scribble_source",
       label: "car",
+      canvas: "media",
     });
     const fixture = await seed.nativeMaskCandidate(task.id, {
       variant: "smart_scribble_refined",

@@ -348,6 +348,40 @@ async def test_seed_raster_mask_project_opt_in_and_content_fixtures(httpx_client
     assert eight_k.json()["mask"]["runs"] == 129
 
 
+async def test_seed_raster_mask_media_canvas_preserves_item_dimensions(
+    httpx_client, db_session
+):
+    from uuid import UUID
+
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.task import Task
+
+    reset = await httpx_client.post("/api/v1/__test/seed/reset")
+    data = reset.json()
+    task = await db_session.get(Task, UUID(data["task_ids"][0]))
+    assert task is not None and task.dataset_item_id is not None
+    item = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert item is not None
+    item.width = 1280
+    item.height = 720
+    await db_session.commit()
+
+    response = await httpx_client.post(
+        "/api/v1/__test/seed/inject-raster-mask",
+        json={
+            "task_id": str(task.id),
+            "user_email": data["annotator_email"],
+            "variant": "smart_scribble_source",
+            "canvas": "media",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["mask"]["size"] == [720, 1280]
+    await db_session.refresh(item)
+    assert (item.width, item.height) == (1280, 720)
+
+
 async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
     """v0.8.7+ · D 方案核心断言：reset 不动非 fixture 的开发数据。
 

@@ -1655,7 +1655,7 @@ RasterMaskFixtureVariant = Literal[
     "smart_scribble_source",
     "corrupt",
 ]
-RasterMaskFixtureCanvas = Literal["default", "5k", "8k"]
+RasterMaskFixtureCanvas = Literal["default", "media", "5k", "8k"]
 
 
 class InjectRasterMaskRequest(BaseModel):
@@ -1678,15 +1678,20 @@ class InjectRasterPredictionResponse(BaseModel):
     mask: dict
 
 
-def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
-    """生成 64×48 row-major fixture；donut_three = 3 个分量 + 1 个孔洞。"""
-    width, height = 64, 48
+def _make_test_raster_mask(
+    variant: RasterMaskFixtureVariant, width: int = 64, height: int = 48
+) -> list[int]:
+    """生成 row-major fixture；donut_three = 3 个分量 + 1 个孔洞。"""
     pixels = [0] * (width * height)
 
     def _rect(x0: int, y0: int, x1: int, y1: int, value: int = 1) -> None:
-        for y in range(y0, y1):
+        left = round(x0 * width / 64)
+        top = round(y0 * height / 48)
+        right = round(x1 * width / 64)
+        bottom = round(y1 * height / 48)
+        for y in range(top, bottom):
             offset = y * width
-            for x in range(x0, x1):
+            for x in range(left, right):
                 pixels[offset + x] = value
 
     if variant == "single":
@@ -1766,26 +1771,36 @@ async def seed_inject_raster_mask(
     if task is None or user is None:
         raise HTTPException(status_code=404, detail="task or user not found")
 
-    if payload.canvas != "default" and payload.variant != "single":
+    if payload.canvas in {"5k", "8k"} and payload.variant != "single":
         raise HTTPException(
             status_code=422,
             detail="large-canvas raster fixture only supports the single variant",
         )
-    dimensions = {
-        "default": (64, 48),
-        "5k": (5120, 2880),
-        "8k": (8192, 8192),
-    }
-    width, height = dimensions[payload.canvas]
-    if payload.canvas == "default":
-        rle = encode_coco_rle(_make_test_raster_mask(payload.variant), width, height)
+    item = (
+        await db.get(DatasetItem, task.dataset_item_id)
+        if task.dataset_item_id is not None
+        else None
+    )
+    if payload.canvas == "media":
+        if item is None or item.width is None or item.height is None:
+            raise HTTPException(status_code=404, detail="media fixture not found")
+        width, height = int(item.width), int(item.height)
+    else:
+        dimensions = {
+            "default": (64, 48),
+            "5k": (5120, 2880),
+            "8k": (8192, 8192),
+        }
+        width, height = dimensions[payload.canvas]
+    if payload.canvas in {"default", "media"}:
+        rle = encode_coco_rle(
+            _make_test_raster_mask(payload.variant, width, height), width, height
+        )
     else:
         rle = _make_sparse_test_rle(width, height)
-    if task.dataset_item_id is not None:
-        item = await db.get(DatasetItem, task.dataset_item_id)
-        if item is not None:
-            item.width = width
-            item.height = height
+    if item is not None and payload.canvas != "media":
+        item.width = width
+        item.height = height
     if payload.variant == "corrupt":
         reference = build_rle_reference(rle)
         missing_digest = secrets.token_hex(32)

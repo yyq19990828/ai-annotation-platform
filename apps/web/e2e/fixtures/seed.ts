@@ -121,7 +121,7 @@ export type RasterMaskFixtureVariant =
   | "island"
   | "smart_scribble_source"
   | "corrupt";
-export type RasterMaskFixtureCanvas = "default" | "5k" | "8k";
+export type RasterMaskFixtureCanvas = "default" | "media" | "5k" | "8k";
 
 export interface SeedRasterMaskData {
   annotation_id: string;
