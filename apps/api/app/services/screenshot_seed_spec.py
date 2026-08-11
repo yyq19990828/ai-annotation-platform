@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SEED_REVISION = "screenshots-2026-08-a"
+SEED_REVISION = "screenshots-2026-08-b"
 SEED_MANAGED_BY = "screenshot-seed"
 USER_SPECS = {
     "admin": ("admin", "super_admin"),
@@ -23,8 +23,13 @@ class RecordingAnchorSpec:
     label: str
     bbox: tuple[float, float, float, float]
     point: tuple[float, float]
-    positive_stroke: tuple[tuple[float, float], ...]
-    negative_stroke: tuple[tuple[float, float], ...]
+    frame_index: int | None = None
+    polygon: tuple[tuple[float, float], ...] = ()
+    polyline: tuple[tuple[float, float], ...] = ()
+    brush_strokes: tuple[tuple[tuple[float, float], ...], ...] = ()
+    positive_stroke: tuple[tuple[float, float], ...] = ()
+    negative_stroke: tuple[tuple[float, float], ...] = ()
+    negative_point: tuple[float, float] | None = None
     provenance: str = "verified-label-derived"
 
 
@@ -140,7 +145,19 @@ PROJECT_SPECS = {
         data_type="image",
         storage_prefix="coco8-dev/",
         tasks=(
-            TaskSpec("clean", "coco8-dev/train/screenshot_01.jpg", batch_key="draft"),
+            TaskSpec(
+                "clean",
+                "coco8-dev/train/screenshot_01.jpg",
+                batch_key="draft",
+                recording_anchors=(
+                    RecordingAnchorSpec(
+                        key="primary_truck",
+                        label="truck",
+                        bbox=(0.82125, 0.373333, 0.9675, 0.706667),
+                        point=(0.894375, 0.54),
+                    ),
+                ),
+            ),
             TaskSpec(
                 "predicted",
                 "coco8-dev/train/screenshot_02.jpg",
@@ -158,8 +175,77 @@ PROJECT_SPECS = {
                         label="car",
                         bbox=(0.42, 0.48, 0.56, 0.75),
                         point=(0.49, 0.62),
+                        polygon=(
+                            (0.44, 0.49),
+                            (0.515, 0.49),
+                            (0.54, 0.55),
+                            (0.55, 0.64),
+                            (0.535, 0.715),
+                            (0.485, 0.74),
+                            (0.425, 0.715),
+                            (0.4, 0.64),
+                            (0.41, 0.55),
+                        ),
+                        brush_strokes=(
+                            ((0.435, 0.545), (0.515, 0.545)),
+                            ((0.42, 0.585), (0.53, 0.585)),
+                            ((0.415, 0.625), (0.535, 0.625)),
+                            ((0.42, 0.665), (0.53, 0.665)),
+                            ((0.435, 0.705), (0.515, 0.705)),
+                        ),
                         positive_stroke=((0.51, 0.59), (0.58, 0.66)),
                         negative_stroke=((0.43, 0.54), (0.48, 0.61)),
+                    ),
+                    RecordingAnchorSpec(
+                        key="review_vehicle_left",
+                        label="car",
+                        bbox=(0.07875, 0.48, 0.27, 0.72),
+                        point=(0.174375, 0.6),
+                        polygon=(
+                            (0.12, 0.49),
+                            (0.225, 0.49),
+                            (0.255, 0.54),
+                            (0.27, 0.63),
+                            (0.25, 0.705),
+                            (0.175, 0.72),
+                            (0.095, 0.7),
+                            (0.07875, 0.62),
+                            (0.09, 0.54),
+                        ),
+                    ),
+                    RecordingAnchorSpec(
+                        key="review_vehicle_right",
+                        label="car",
+                        bbox=(0.655, 0.315, 0.805, 0.525),
+                        point=(0.73, 0.42),
+                        polygon=(
+                            (0.69, 0.33),
+                            (0.765, 0.33),
+                            (0.792, 0.375),
+                            (0.805, 0.45),
+                            (0.787, 0.51),
+                            (0.735, 0.525),
+                            (0.675, 0.505),
+                            (0.655, 0.445),
+                            (0.665, 0.375),
+                        ),
+                        provenance="reviewed-media-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="lane_marking",
+                        label="lane marking",
+                        bbox=(0.561, 0.321, 0.706, 0.979),
+                        point=(0.626, 0.675),
+                        polyline=(
+                            (0.561, 0.321),
+                            (0.581, 0.454),
+                            (0.599, 0.571),
+                            (0.626, 0.675),
+                            (0.654, 0.774),
+                            (0.683, 0.885),
+                            (0.706, 0.979),
+                        ),
+                        provenance="reviewed-media-derived",
                     ),
                 ),
             ),
@@ -201,7 +287,73 @@ PROJECT_SPECS = {
         dataset_display_id="DS-VIDEO-DEV",
         data_type="video",
         storage_prefix="tracking-car-dev/",
-        tasks=(TaskSpec("tracking", "tracking-car-dev/tracking_scene.mp4"),),
+        tasks=(
+            TaskSpec(
+                "tracking",
+                "tracking-car-dev/tracking_scene.mp4",
+                recording_anchors=(
+                    RecordingAnchorSpec(
+                        key="left_bus_f0",
+                        label="bus",
+                        frame_index=0,
+                        bbox=(0.064, 0.3, 0.322, 0.81),
+                        point=(0.195, 0.55),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="front_truck_f0",
+                        label="truck",
+                        frame_index=0,
+                        bbox=(0.455, 0.322, 0.716, 0.825),
+                        point=(0.59, 0.59),
+                        brush_strokes=(
+                            ((0.515, 0.51), (0.66, 0.51)),
+                            ((0.505, 0.56), (0.672, 0.56)),
+                            ((0.5, 0.61), (0.68, 0.61)),
+                            ((0.505, 0.66), (0.675, 0.66)),
+                            ((0.515, 0.71), (0.665, 0.71)),
+                            ((0.53, 0.76), (0.65, 0.76)),
+                        ),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="left_bus_f1",
+                        label="bus",
+                        frame_index=1,
+                        bbox=(0.064, 0.3, 0.323, 0.812),
+                        point=(0.196, 0.551),
+                        polyline=((0.24, 0.54), (0.26, 0.525)),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="front_truck_f4",
+                        label="truck",
+                        frame_index=4,
+                        bbox=(0.458, 0.32, 0.72, 0.83),
+                        point=(0.592, 0.595),
+                        negative_point=(0.74, 0.55),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="front_truck_f5",
+                        label="truck",
+                        frame_index=5,
+                        bbox=(0.459, 0.32, 0.721, 0.832),
+                        point=(0.594, 0.597),
+                        brush_strokes=(((0.64, 0.53), (0.69, 0.68)),),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="front_truck_f8",
+                        label="truck",
+                        frame_index=8,
+                        bbox=(0.46, 0.32, 0.724, 0.835),
+                        point=(0.596, 0.6),
+                        provenance="reviewed-frame-derived",
+                    ),
+                ),
+            ),
+        ),
         required_backend="video_tracker",
     ),
     "pointcloud_demo": ProjectSpec(

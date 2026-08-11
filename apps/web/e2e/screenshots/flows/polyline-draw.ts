@@ -11,7 +11,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, openImageAnnotate } from "./_canvas";
+import { hidePredictions, mediaPoint, openImageAnnotate, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runPolylineDraw(
@@ -31,27 +31,25 @@ export async function runPolylineDraw(
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
   if (!box) throw new Error("[polyline-draw] workbench-stage 没有可见边界");
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
+  const anchor = recordingAnchor(catalog, "image_demo", "annotating", "lane_marking");
+  if (anchor.polyline.length < 2) {
+    throw new Error("[polyline-draw] lane_marking 缺少折线路径锚点");
+  }
+  const points = anchor.polyline.map((point) => mediaPoint(box, point));
 
   const drawStartMs = Date.now();
 
   // ── 逐点落顶点（折线状），每点之间停顿让录屏看到预览线 ──
-  const pts: Array<[number, number]> = [
-    [cx - 160, cy + 60],
-    [cx - 70, cy - 50],
-    [cx + 20, cy + 40],
-    [cx + 110, cy - 60],
-    [cx + 190, cy + 20],
-  ];
-  for (const [x, y] of pts) {
+  for (const { x, y } of points) {
     await page.mouse.move(x, y);
     await page.waitForTimeout(320);
     await page.mouse.click(x, y);
     await page.waitForTimeout(520);
   }
   // 悬停展示最后一段预览线
-  await page.mouse.move(cx + 240, cy - 30);
+  const last = points.at(-1);
+  if (!last) throw new Error("[polyline-draw] lane_marking 路径为空");
+  await page.mouse.move(last.x + box.width * 0.025, last.y - box.height * 0.03);
   await page.waitForTimeout(800);
   // Enter 结束折线（不闭合）
   await page.keyboard.press("Enter");

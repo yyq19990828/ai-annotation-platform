@@ -36,6 +36,7 @@ import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
 import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
+import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif, convertToWebm } from "../_helpers/recorder";
 import { applyScreenshotTheme, installScreenshotEnvironment } from "../environment";
@@ -452,8 +453,9 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runRotatedBbox(page, cached);
     await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), {
-      fps: 8,
-      maxWidth: 900,
+      fps: 4,
+      maxWidth: 640,
+      maxColors: 96,
       ...drawTrim(win, t0),
     });
   });
@@ -467,8 +469,9 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runBboxDraw(page, cached);
     await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
-      fps: 8,
-      maxWidth: 900,
+      fps: 4,
+      maxWidth: 640,
+      maxColors: 96,
       ...drawTrim(win, t0),
     });
   });
@@ -482,8 +485,9 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolylineDraw(page, cached);
     await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"), {
-      fps: 8,
-      maxWidth: 900,
+      fps: 4,
+      maxWidth: 640,
+      maxColors: 96,
       ...drawTrim(win, t0),
     });
   });
@@ -497,8 +501,9 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPolygonDraw(page, cached);
     await finalize(page, "polygon-draw", path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"), {
-      fps: 8,
-      maxWidth: 900,
+      fps: 4,
+      maxWidth: 640,
+      maxColors: 96,
       ...drawTrim(win, t0),
     });
   });
@@ -512,8 +517,9 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runMaskDraw(page, cached);
     await finalize(page, "mask-draw", path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"), {
-      fps: 8,
-      maxWidth: 900,
+      fps: 4,
+      maxWidth: 640,
+      maxColors: 96,
       ...drawTrim(win, t0),
     });
   });
@@ -522,44 +528,25 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    const predictions = await Promise.all([
-      seed.injectPrediction({
-        taskId: task.id,
-        projectId: project.id,
-        label: "car",
-        polygon: [
-          [0.12, 0.22],
-          [0.34, 0.2],
-          [0.36, 0.48],
-          [0.14, 0.5],
-        ],
-        score: 0.96,
-      }),
-      seed.injectPrediction({
-        taskId: task.id,
-        projectId: project.id,
-        label: "car",
-        polygon: [
-          [0.42, 0.3],
-          [0.62, 0.28],
-          [0.64, 0.55],
-          [0.44, 0.57],
-        ],
-        score: 0.91,
-      }),
-      seed.injectPrediction({
-        taskId: task.id,
-        projectId: project.id,
-        label: "car",
-        polygon: [
-          [0.68, 0.18],
-          [0.86, 0.2],
-          [0.84, 0.43],
-          [0.66, 0.41],
-        ],
-        score: 0.87,
-      }),
-    ]);
+    const candidateAnchors = [
+      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_left"),
+      recordingAnchor(cached, "image_demo", "annotating", "primary_vehicle"),
+      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_right"),
+    ];
+    if (candidateAnchors.some((anchor) => anchor.polygon.length < 3)) {
+      throw new Error("[candidate-keyboard-review] 候选车辆缺少可显示的轮廓锚点");
+    }
+    const predictions = await Promise.all(
+      candidateAnchors.map((anchor, index) =>
+        seed.injectPrediction({
+          taskId: task.id,
+          projectId: project.id,
+          label: anchor.label,
+          polygon: anchor.polygon,
+          score: [0.96, 0.91, 0.87][index],
+        }),
+      ),
+    );
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
@@ -693,6 +680,7 @@ test.describe("flow recordings", () => {
 
   test("video-mask-track-edit — Mask 轨迹创建与后续帧编辑", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(60_000); // 视频解码 + 两次 Mask 提交, 默认 30s 在冷启动时偏紧
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -703,7 +691,7 @@ test.describe("flow recordings", () => {
       page,
       "video-mask-track-edit",
       path.join(DOCS_IMAGES, "workbench/video-mask-track-edit.gif"),
-      { fps: 4, maxWidth: 600, maxColors: 128, ...drawTrim(win, t0) },
+      { fps: 4, maxWidth: 560, maxColors: 96, ...drawTrim(win, t0) },
     );
   });
 
@@ -772,9 +760,9 @@ test.describe("flow recordings", () => {
     await finalize(
       page,
       "video-draw",
-      // 画框+逐帧插值帧间变化大, 比其它 flow 再降一档(fps5/620)压到 5MB 内。
+      // 画框和逐帧插值的帧间变化大，使用低帧率与受限调色板保持可提交体积。
       path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
-      { fps: 5, maxWidth: 620, ...drawTrim(win, t0) },
+      { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
     );
   });
 

@@ -350,6 +350,9 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert anchor["coordinate_space"] == "normalized_media"
     assert anchor["label"] == "car"
     assert anchor["point"] == [0.49, 0.62]
+    assert anchor["polygon"][0] == [0.44, 0.49]
+    assert anchor["brush_strokes"][0] == [[0.435, 0.545], [0.515, 0.545]]
+    assert anchor["negative_point"] is None
     assert anchor["provenance"] == "verified-label-derived"
     assert body["projects"]["pointcloud_demo"]["tasks"].keys() == {
         "frame_000",
@@ -360,6 +363,12 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert body["projects"]["pointcloud_multicam_demo"]["display_id"] == ("P-PC-MULTI")
     assert body["projects"]["pointcloud_multicam_demo"]["tasks"].keys() == {"frame_000"}
     assert body["projects"]["video_demo"]["ml_backend"]["name"] == "screenshot-video"
+    video_anchor = body["projects"]["video_demo"]["tasks"]["tracking"][
+        "recording_anchors"
+    ]["front_truck_f4"]
+    assert video_anchor["frame_index"] == 4
+    assert video_anchor["bbox"] == [0.458, 0.32, 0.72, 0.83]
+    assert video_anchor["negative_point"] == [0.74, 0.55]
     assert "large_image_demo" not in body["projects"]
 
 

@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-08-11T12:34:18.062Z",
+  "generated_at": "2026-08-11T16:21:22.428Z",
   "seed_profile": "screenshots",
-  "seed_revision": "screenshots-2026-08-a",
-  "source_commit": "ecf2a62a2e2a352bf1f2180a7327f8c2dae3f2a7",
+  "seed_revision": "screenshots-2026-08-b",
+  "source_commit": "d6f88173c2c554556425b832ca4a3034af753e6d",
   "projects": [
     "desktop-light",
     "desktop-dark",

@@ -10,6 +10,7 @@ import {
   installRecordingWorkbenchLayout,
   waitForRecordingWorkbenchLayout,
 } from "./_workbench-layout";
+import { mediaBbox, recordingAnchor } from "./_canvas";
 
 export async function runE2eQuickstart(page: Page, catalog: ScreenshotSeedCatalog): Promise<void> {
   // ── Step 1：登录 ─────────────────────────────────────────────
@@ -39,11 +40,11 @@ export async function runE2eQuickstart(page: Page, catalog: ScreenshotSeedCatalo
   const canvas = page.getByTestId("workbench-stage");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("[e2e-quickstart] workbench-stage 没有可见边界");
-  const cx = box.x + box.width * 0.3;
-  const cy = box.y + box.height * 0.3;
-  await page.mouse.move(cx, cy);
+  const anchor = recordingAnchor(catalog, "image_demo", "clean", "primary_truck");
+  const { start, end } = mediaBbox(box, anchor.bbox);
+  await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(cx + box.width * 0.25, cy + box.height * 0.25, { steps: 20 });
+  await page.mouse.move(end.x, end.y, { steps: 20 });
   await page.mouse.up();
   await page.waitForTimeout(800);
 

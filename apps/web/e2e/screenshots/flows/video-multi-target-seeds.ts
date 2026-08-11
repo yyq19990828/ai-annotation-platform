@@ -3,6 +3,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { mediaBbox, mediaPoint, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runVideoMultiTargetSeeds(
@@ -42,18 +43,16 @@ export async function runVideoMultiTargetSeeds(
 
   const box = await stage.boundingBox();
   if (!box) throw new Error("[video-multi-target-seeds] 视频画布不可见");
-  const at = (fx: number, fy: number) => ({
-    x: box.x + box.width * fx,
-    y: box.y + box.height * fy,
-  });
+  const leftBus = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0);
+  const frontTruck = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
 
-  const target1 = at(0.3, 0.48);
+  const target1 = mediaPoint(box, leftBus.point);
   await page.mouse.click(target1.x, target1.y);
   await page.getByTestId("tracker-seed-target-1").waitFor({ timeout: 3_000 });
   await page.waitForTimeout(450);
 
   await page.getByTestId("tracker-seed-new-target").click();
-  const target2 = at(0.62, 0.48);
+  const target2 = mediaPoint(box, frontTruck.point);
   await page.mouse.click(target2.x, target2.y);
   await page.getByTestId("tracker-seed-target-2").waitFor({ timeout: 3_000 });
   await page.waitForTimeout(550);
@@ -62,18 +61,21 @@ export async function runVideoMultiTargetSeeds(
     await page.keyboard.press("ArrowRight");
     await page.waitForTimeout(170);
   }
-  const negative = at(0.67, 0.43);
+  const frameFour = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f4", 4);
+  if (!frameFour.negative_point) {
+    throw new Error("[video-multi-target-seeds] front_truck_f4 缺少负点锚点");
+  }
+  const negative = mediaPoint(box, frameFour.negative_point);
   await page.keyboard.down("Alt");
   await page.mouse.click(negative.x, negative.y);
   await page.keyboard.up("Alt");
   await page.waitForTimeout(550);
 
   await page.getByTestId("tracker-seed-mode-box").click();
-  const boxStart = at(0.54, 0.34);
-  const boxEnd = at(0.71, 0.62);
-  await page.mouse.move(boxStart.x, boxStart.y);
+  const targetBox = mediaBbox(box, frameFour.bbox);
+  await page.mouse.move(targetBox.start.x, targetBox.start.y);
   await page.mouse.down();
-  await page.mouse.move(boxEnd.x, boxEnd.y, { steps: 14 });
+  await page.mouse.move(targetBox.end.x, targetBox.end.y, { steps: 14 });
   await page.mouse.up();
   await page.waitForTimeout(650);
 

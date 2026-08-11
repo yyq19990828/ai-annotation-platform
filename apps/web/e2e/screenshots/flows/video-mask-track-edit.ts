@@ -6,6 +6,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { mediaPoint, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 async function stroke(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
@@ -17,15 +18,17 @@ async function stroke(page: Page, from: { x: number; y: number }, to: { x: numbe
 }
 
 async function confirmMask(page: Page, chooseClass: boolean) {
-  await page.keyboard.press("Enter");
+  const toolbar = page.getByTestId("mask-toolbar");
+  const confirm = toolbar.getByTitle("确认 (Enter)");
+  await confirm.waitFor({ state: "visible", timeout: 10_000 });
+  await confirm.click();
   if (chooseClass) {
     const classPicker = page.getByTestId("class-picker-popover");
     await classPicker.waitFor({ timeout: 10_000 });
-    // Mask 工具的 Enter 在 capture 阶段用于提交像素稿，类别弹层打开后
-    // 直接点选默认类，避免第二个 Enter 再次被 Mask 编辑器拦截。
+    // 直接点选默认类，避免类别弹层的键盘焦点影响 Mask 提交流程。
     await classPicker.getByText("car", { exact: true }).click();
   }
-  await page.getByTestId("mask-toolbar").waitFor({ state: "hidden", timeout: 15_000 });
+  await toolbar.waitFor({ state: "hidden", timeout: 15_000 });
 }
 
 export async function runVideoMaskTrackEdit(
@@ -42,10 +45,11 @@ export async function runVideoMaskTrackEdit(
   const surface = page.getByTestId("video-konva-stage");
   const box = await surface.boundingBox();
   if (!box) throw new Error("[video-mask-track-edit] video-konva-stage 没有可见边界");
-  const at = (fx: number, fy: number) => ({
-    x: box.x + box.width * fx,
-    y: box.y + box.height * fy,
-  });
+  const initialAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
+  const editAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f5", 5);
+  if (initialAnchor.brush_strokes.length === 0 || editAnchor.brush_strokes.length === 0) {
+    throw new Error("[video-mask-track-edit] 车辆关键帧缺少 Mask 笔刷锚点");
+  }
 
   const drawStartMs = Date.now();
 
@@ -53,8 +57,11 @@ export async function runVideoMaskTrackEdit(
   const toolbar = page.getByTestId("mask-toolbar");
   await toolbar.waitFor({ timeout: 10_000 });
 
-  await stroke(page, at(0.35, 0.46), at(0.55, 0.48));
-  await stroke(page, at(0.53, 0.52), at(0.37, 0.55));
+  for (const path of initialAnchor.brush_strokes) {
+    const [from, to] = path;
+    if (!from || !to) throw new Error("[video-mask-track-edit] 初始笔刷轨迹至少需要两个点");
+    await stroke(page, mediaPoint(box, from), mediaPoint(box, to));
+  }
   await page.waitForTimeout(650);
   await confirmMask(page, true);
 
@@ -74,7 +81,12 @@ export async function runVideoMaskTrackEdit(
 
   await page.getByTitle("编辑当前帧 Mask").click();
   await toolbar.waitFor({ timeout: 10_000 });
-  await stroke(page, at(0.46, 0.43), at(0.58, 0.52));
+  await toolbar.getByTitle("橡皮 (E)").click();
+  for (const path of editAnchor.brush_strokes) {
+    const [from, to] = path;
+    if (!from || !to) throw new Error("[video-mask-track-edit] 修正笔刷轨迹至少需要两个点");
+    await stroke(page, mediaPoint(box, from), mediaPoint(box, to));
+  }
   await page.waitForTimeout(650);
   await confirmMask(page, false);
   await page.getByText("当前帧为 Mask 关键帧。").waitFor({ timeout: 10_000 });

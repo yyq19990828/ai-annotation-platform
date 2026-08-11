@@ -47,19 +47,23 @@ export interface ScreenshotCatalogTask {
   file_name: string;
   file_path: string;
   status: string;
-  recording_anchors?: Record<
-    string,
-    {
-      schema_version: 1;
-      coordinate_space: "normalized_media";
-      label: string;
-      bbox: [number, number, number, number];
-      point: [number, number];
-      positive_stroke: Array<[number, number]>;
-      negative_stroke: Array<[number, number]>;
-      provenance: string;
-    }
-  >;
+  recording_anchors?: Record<string, ScreenshotRecordingAnchor>;
+}
+
+export interface ScreenshotRecordingAnchor {
+  schema_version: 1;
+  coordinate_space: "normalized_media";
+  label: string;
+  frame_index?: number;
+  bbox: [number, number, number, number];
+  point: [number, number];
+  polygon: Array<[number, number]>;
+  polyline: Array<[number, number]>;
+  brush_strokes: Array<Array<[number, number]>>;
+  positive_stroke: Array<[number, number]>;
+  negative_stroke: Array<[number, number]>;
+  negative_point: [number, number] | null;
+  provenance: string;
 }
 
 export interface ScreenshotCatalogBatch {

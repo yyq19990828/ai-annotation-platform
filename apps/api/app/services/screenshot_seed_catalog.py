@@ -57,16 +57,27 @@ class ScreenshotSeedCatalogError(RuntimeError):
 
 
 def _recording_anchor_payload(anchor: RecordingAnchorSpec) -> dict[str, Any]:
-    return {
+    payload = {
         "schema_version": 1,
         "coordinate_space": "normalized_media",
         "label": anchor.label,
         "bbox": list(anchor.bbox),
         "point": list(anchor.point),
+        "polygon": [list(point) for point in anchor.polygon],
+        "polyline": [list(point) for point in anchor.polyline],
+        "brush_strokes": [
+            [list(point) for point in stroke] for stroke in anchor.brush_strokes
+        ],
         "positive_stroke": [list(point) for point in anchor.positive_stroke],
         "negative_stroke": [list(point) for point in anchor.negative_stroke],
+        "negative_point": (
+            list(anchor.negative_point) if anchor.negative_point is not None else None
+        ),
         "provenance": anchor.provenance,
     }
+    if anchor.frame_index is not None:
+        payload["frame_index"] = anchor.frame_index
+    return payload
 
 
 def _task_payload(task: Task, *, spec: TaskSpec | None = None) -> dict[str, Any]:

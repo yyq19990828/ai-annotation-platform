@@ -14,7 +14,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, openImageAnnotate } from "./_canvas";
+import { hidePredictions, mediaBbox, openImageAnnotate, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runBboxDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
@@ -31,19 +31,20 @@ export async function runBboxDraw(page: Page, catalog: ScreenshotSeedCatalog): P
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
   if (!box) throw new Error("[bbox-draw] workbench-stage 没有可见边界");
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  const halfW = 130;
-  const halfH = 85;
+  const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
+  const { start, end } = mediaBbox(box, anchor.bbox);
 
   const drawStartMs = Date.now();
 
   // ── 拖出一个矩形（左上 → 右下，分步移动让录屏看到拉框过程）──
-  await page.mouse.move(cx - halfW, cy - halfH);
+  await page.mouse.move(start.x, start.y);
   await page.waitForTimeout(400);
   await page.mouse.down();
   for (let i = 1; i <= 12; i++) {
-    await page.mouse.move(cx - halfW + (2 * halfW * i) / 12, cy - halfH + (2 * halfH * i) / 12);
+    await page.mouse.move(
+      start.x + ((end.x - start.x) * i) / 12,
+      start.y + ((end.y - start.y) * i) / 12,
+    );
     await page.waitForTimeout(55);
   }
   await page.mouse.up();
