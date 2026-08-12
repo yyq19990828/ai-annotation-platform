@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from datetime import timedelta
 
 import pytest
 from PIL import Image
@@ -24,6 +25,7 @@ from app.services.image_pyramid import (
     sha256_digest,
 )
 from app.services.storage import StorageService
+from app.workers import image_pyramid as image_pyramid_worker
 
 
 async def _make_image_task(db_session, owner_id, *, width=8193, height=6145):
@@ -380,6 +382,74 @@ async def test_source_replacement_invalidates_ready_generation(
     await db_session.refresh(generation)
     assert asset.active_generation is None
     assert generation.status == "failed"
+
+
+async def test_reconcile_removes_processed_failed_generation(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    _, item = await _make_image_task(db_session, user.id)
+    asset = ImagePyramidAsset(dataset_item_id=item.id, profile_version="pyramid-v1")
+    db_session.add(asset)
+    await db_session.flush()
+    generation = ImagePyramidGeneration(
+        asset_id=asset.id,
+        generation=1,
+        source_identity="etag:failed:bytes:1234",
+        status="failed",
+        normalization_version="exif-autorotate-srgb-v1",
+        updated_at=image_pyramid_worker.utcnow() - timedelta(days=2),
+    )
+    db_session.add(generation)
+    await db_session.flush()
+
+    class SessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    class Engine:
+        async def dispose(self):
+            pass
+
+    class Client:
+        def list_objects_v2(self, **kwargs):
+            return {"Contents": []}
+
+    class Storage:
+        media_cache_bucket = "cache"
+        client = Client()
+
+    deleted_prefixes: list[str] = []
+    monkeypatch.setattr(
+        image_pyramid_worker,
+        "create_async_engine",
+        lambda *args, **kwargs: Engine(),
+    )
+    monkeypatch.setattr(
+        image_pyramid_worker,
+        "async_sessionmaker",
+        lambda *args, **kwargs: lambda: SessionContext(),
+    )
+    monkeypatch.setattr(image_pyramid_worker, "StorageService", Storage)
+    monkeypatch.setattr(
+        image_pyramid_worker,
+        "_delete_prefix",
+        lambda _storage, prefix: deleted_prefixes.append(prefix),
+    )
+
+    await image_pyramid_worker._reconcile_image_pyramids()
+
+    assert deleted_prefixes == [image_pyramid_worker.generation_prefix(asset.id, 1)]
+    assert (
+        await db_session.get(
+            ImagePyramidGeneration,
+            {"asset_id": asset.id, "generation": 1},
+        )
+        is None
+    )
 
 
 async def test_retry_is_idempotent_while_generation_is_pending(

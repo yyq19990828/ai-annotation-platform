@@ -177,7 +177,8 @@ history 不变，可缩小可见区域或先保存再重试。
 
 ## GC 与回滚
 
-Celery beat 每日触发 reconciliation，分批处理过期 lease、失败/旧 ready generation 和孤儿对象前缀。
+Celery beat 每日触发 reconciliation，分批处理过期 lease、失败/旧 ready generation 和孤儿对象前缀；
+已清理对象前缀的失败 generation 会同步删除数据库记录，使后续批次能够继续推进。
 不要给 `image-pyramids/` 单独配置固定天数 lifecycle，否则会留下 ready 数据库行指向缺失对象。
 
 紧急回滚时：

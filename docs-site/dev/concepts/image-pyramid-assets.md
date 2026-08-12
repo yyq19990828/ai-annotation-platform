@@ -114,7 +114,8 @@ ready pyramid 的 level 由 `viewport scale × scaleFactor × devicePixelRatio` 
 `decodedWidth × decodedHeight × 4` 计算；可见 tile pin，非可见 tile 按 LRU 淘汰。
 `ImageBitmap.close()`、ObjectURL revoke、请求 abort、reservation 和 stale commit 都进入 resource
 snapshot。overview 与已缓存的粗层级在目标 tile 到达前保持，单 tile 失败不会制造空白棋盘。
-短期 tile URL 过期或首次拉取失败时只重新批签一次；仍失败的区域继续由 overview/粗层级覆盖。
+短期 tile URL 过期或首次拉取失败时只重新批签一次；仍失败的可见区域由 overview/粗层级覆盖，
+并在五秒冷却结束后自动重试，无需用户平移或缩放视口。
 
 背景路径不读取 `navigator.gpu`。Raster Mask 的 WebGPU/CPU 计算与图片 tile 保持独立 owner 和释放语义，
 但共同进入当前 Task 的[栅格资源协调账本](./raster-resource-coordination)。前台 Mask 运算会暂停背景预取，

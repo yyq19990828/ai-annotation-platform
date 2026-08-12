@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ImagePyramidManifestV1 } from "./imagePyramid";
 import {
   ImageTileScheduler,
@@ -208,6 +208,48 @@ describe("ImageTileScheduler", () => {
     });
     expect(fetchCalls).toBe(2);
     scheduler.dispose();
+  });
+
+  it("retries a still-visible tile after the failure cooldown", async () => {
+    vi.useFakeTimers();
+    try {
+      let fetchCalls = 0;
+      const scheduler = new ImageTileScheduler({
+        taskId: "task-1",
+        sourceIdentity: "source/g1",
+        generation: 1,
+        manifest,
+        budget: { retainedBytes: 4 * 1024 * 1024, concurrency: 1, overscanTiles: 0 },
+        sign: async (coordinates) =>
+          new Map(coordinates.map((item) => [`${item.level}/${item.x}/${item.y}`, "tile://ready"])),
+        fetchBlob: async () => {
+          fetchCalls += 1;
+          if (fetchCalls <= 2) throw new Error("tile_fetch_503");
+          return new Blob(["tile"]);
+        },
+        decodeBlob: async (_blob, geometry) => ({
+          image: {} as HTMLCanvasElement,
+          width: geometry.decodedWidth,
+          height: geometry.decodedHeight,
+          kind: "bitmap",
+          hasObjectUrl: false,
+          release: () => undefined,
+        }),
+      });
+
+      scheduler.update({ x: 0, y: 0, width: 512, height: 512 }, 1, 1);
+      for (let index = 0; index < 10; index += 1) await Promise.resolve();
+      expect(fetchCalls).toBe(2);
+      expect(scheduler.getSnapshot()).toMatchObject({ ready: 0, queued: 0 });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      for (let index = 0; index < 10; index += 1) await Promise.resolve();
+      expect(fetchCalls).toBe(3);
+      expect(scheduler.getSnapshot()).toMatchObject({ ready: 1, targetCoverageRatio: 1 });
+      scheduler.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("BFCache pressure releases even currently visible decoded tiles", async () => {

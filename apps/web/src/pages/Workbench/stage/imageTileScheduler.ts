@@ -239,6 +239,8 @@ export class ImageTileScheduler {
   private urlRefreshes = 0;
   private readonly resourceOwner: string;
   private unregisterResourceEvictor: (() => void) | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryAt = 0;
 
   constructor(options: ImageTileSchedulerOptions) {
     this.options = options;
@@ -399,7 +401,10 @@ export class ImageTileScheduler {
         continue;
       }
       const failure = this.failures.get(key);
-      if (failure && failure.attempts >= 2 && now - failure.failedAt < 5_000) continue;
+      if (failure && failure.attempts >= 2 && now - failure.failedAt < 5_000) {
+        this.scheduleRetry(failure.failedAt + 5_000);
+        continue;
+      }
       this.cacheMisses += 1;
       this.queue.push(item);
     }
@@ -616,12 +621,29 @@ export class ImageTileScheduler {
   private recordFailure(key: string): number {
     const previous = this.failures.get(key);
     const attempts = (previous?.attempts ?? 0) + 1;
+    const failedAt = Date.now();
     this.failures.set(key, {
       attempts,
-      failedAt: Date.now(),
+      failedAt,
     });
+    if (attempts >= 2) this.scheduleRetry(failedAt + 5_000);
     this.errors += 1;
     return attempts;
+  }
+
+  private scheduleRetry(at: number): void {
+    if (this.disposed || !this.currentRect) return;
+    if (this.retryTimer && at >= this.retryAt) return;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryAt = at;
+    this.retryTimer = setTimeout(
+      () => {
+        this.retryTimer = null;
+        this.retryAt = 0;
+        if (this.currentRect) this.updateViewport(this.currentRect, this.currentLevel, true);
+      },
+      Math.max(0, at - Date.now()),
+    );
   }
 
   private evictToBudget(additionalBytes: number): void {
@@ -772,6 +794,9 @@ export class ImageTileScheduler {
     this.queue = [];
     this.desired.clear();
     this.visibleKeys.clear();
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.retryAt = 0;
     this.reservedBytes = 0;
     this.unregisterResourceEvictor?.();
     this.unregisterResourceEvictor = null;

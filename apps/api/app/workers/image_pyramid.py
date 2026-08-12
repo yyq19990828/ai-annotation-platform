@@ -671,8 +671,7 @@ async def _reconcile_image_pyramids() -> None:
                     storage,
                     generation_prefix(generation.asset_id, generation.generation),
                 )
-                if generation.status == "ready":
-                    await db.delete(generation)
+                await db.delete(generation)
                 IMAGE_PYRAMID_GC_TOTAL.labels(outcome="stale_generation").inc()
             await db.commit()
 

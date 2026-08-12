@@ -113,9 +113,12 @@ describe("macOS WebCodecs decoder evidence", () => {
       send: async () => undefined,
       detach: async () => undefined,
     };
-    const probe = await preciseFrameMath.installVideoDecoderEvidenceProbe({
-      context: () => ({ newCDPSession: async () => session }),
-    });
+    const probe = await preciseFrameMath.installVideoDecoderEvidenceProbe(
+      {
+        context: () => ({ newCDPSession: async () => session }),
+      },
+      host,
+    );
     listeners.get("Media.playerEventsAdded")?.({
       playerId: "webcodecs",
       events: [{ value: JSON.stringify({ event: "kLoad", url: "WebCodecs::VideoDecoder" }) }],

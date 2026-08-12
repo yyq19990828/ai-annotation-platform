@@ -50,6 +50,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install video fixture tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install uv
         run: pip install uv
       - name: Sync deps
@@ -264,6 +266,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install video fixture tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install uv
         run: pip install uv
       - name: Sync API deps

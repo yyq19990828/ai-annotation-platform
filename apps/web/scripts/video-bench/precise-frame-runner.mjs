@@ -148,7 +148,7 @@ function classifyVideoDecoderEvidence(
   };
 }
 
-async function installVideoDecoderEvidenceProbe(page) {
+async function installVideoDecoderEvidenceProbe(page, host = {}) {
   const players = new Map();
   let available = true;
   let session = null;
@@ -190,7 +190,7 @@ async function installVideoDecoderEvidenceProbe(page) {
     available = false;
   }
   return {
-    snapshot: () => classifyVideoDecoderEvidence([...players.values()], { available }),
+    snapshot: () => classifyVideoDecoderEvidence([...players.values()], { ...host, available }),
     close: async () => {
       if (!session) return;
       try {
