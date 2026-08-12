@@ -4,7 +4,7 @@ audience: [annotator, project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-08-11
 ---
 
 # 审阅 AI 候选
@@ -27,6 +27,8 @@ AI 预标和外部预测先生成 **Prediction（候选）**，不会直接替�
 
 `Tab` / `Shift+Tab` 可在同类对象之间切换；开启“决策后自动前进”后，接受或拒绝会自动选中下一个待审对象。完整的键盘审阅流转见[工作台概览](../workbench/#审阅键盘流转)。
 
+![使用 Tab、A 和 D 连续审阅 AI 候选](../images/ai/candidate-keyboard-review.gif)
+
 ## 数据边界
 
 | 操作                | 会发生什么                                                       | 不会发生什么                                          |
@@ -40,6 +42,8 @@ AI 预标和外部预测先生成 **Prediction（候选）**，不会直接替�
 需要按来源批量清理候选时，使用[外部预测导入 / 导出](../datasets/prediction-import-export#清理预测)。选择“ML Backend 预标”或“全部预测”前，先核对范围；这两种操作会清除未接受候选，之后需要重新运行或重新导入才能恢复。
 
 交互式原生 Mask 在接受前只存在于当前工作台会话，不属于可跨页面恢复的批量 Prediction。请求失败时候选仍留在画布，可直接重试；成功后才从候选层移除。切题、切帧、切模型、取消或会话过期会释放尚未接受的候选。
+
+AAP JSON 导入的视频 Prediction 与图片候选一样逐 shape 审阅，不走追踪 job 审阅条。视频工作台只显示当前帧可见的 bbox、polygon、polyline 和真实像素 Mask；关键帧之间按轨迹规则解析，outside 帧隐藏。接受或忽略只处理当前候选，刷新后决定仍保留；接受后生成同类型的正式视频 Annotation，并保留轨迹身份和候选溯源。
 
 ## 视频追踪的不同之处
 

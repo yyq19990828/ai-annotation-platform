@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-29
 ---
 
 # WebSocket 协议
@@ -12,39 +12,28 @@ last_reviewed: 2026-07-17
 >
 > 平台实现：`apps/api/app/api/v1/ws.py`、`apps/api/app/services/notification.py`、`apps/web/src/hooks/{useNotificationSocket,usePreannotation,useReconnectingWebSocket}.ts`。
 
-平台目前公开 6 个 WS 频道，全部通过 Redis Pub/Sub 串接：HTTP 写表的同时 publish 到 Redis 频道，WS 端订阅 Redis 转发到客户端。所有持久化数据另有 REST 端点兜底（断线场景轮询即可），WS 仅是「在线推送」的快速通道。
+平台目前公开 6 个 WS 频道，全部通过 Redis Pub/Sub 串接：publisher 向 Redis 频道发消息，WS 端订阅后转发到客户端。具有持久状态的业务仍以 REST / Postgres 为真值，WS 只是「在线提示」快通道，不承担可靠队列语义。
 
-```mermaid
-sequenceDiagram
-    participant API as FastAPI HTTP
-    participant DB as Postgres
-    participant Pub as Redis Pub/Sub
-    participant WS as FastAPI WS
-    participant Web as 浏览器
-
-    Web->>WS: connect (with JWT in query)
-    WS->>Pub: SUBSCRIBE notify:{user_id}
-    API->>DB: INSERT notifications
-    API->>Pub: PUBLISH notify:{user_id} <json>
-    Pub-->>WS: message
-    WS-->>Web: send_text(<json>)
-    Note over WS,Web: 30s 心跳 ping 防 LB idle 断连<br/>常量 HEARTBEAT_INTERVAL = 30 (ws.py:60)
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/realtime/durable-notification-delivery.svg"
+  alt="用户通知在业务事务中先 flush Postgres 行、再尝试发布 Redis PubSub，调用方之后才 commit 或 rollback；浏览器将 WebSocket 推送当作刷新提示并用 REST 读已提交真值"
+  caption="通知的在线快路径、事务时序与两个失败窗口"
+/>
 
 ---
 
 ## 1. 端点总览
 
-| 频道                    | URL                                           | 鉴权                                                                                                 | Redis 频道                                               | 用途                                                                                                                                       |
-| ----------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| 用户通知                | `/ws/notifications?token=<jwt>`               | JWT (query param)                                                                                    | `notify:{user_id}` (`notification.py:27`)                | 任务分配、AI 进度、导出完成、@提及 等                                                                                                      |
-| 预标注进度（单项目）    | `/ws/projects/{project_id}/preannotate`       | 当前实现不校验 JWT                                                                                   | `project:{project_id}:preannotate` (`ws.py`)             | 工作台单次自动预标注的逐 batch progress                                                                                                    |
-| Batch 状态广播          | `/ws/batches/project/{project_id}`            | 无（项目内非机密）                                                                                   | `project:{project_id}:batch` (`ws.py:112`)               | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步                                                                             |
-| Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>`             | JWT (query, `super_admin` / `project_admin`)                                                         | `global:prediction-jobs` (`ws.py:168`)                   | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条                                                          |
-| 视频 tracker job        | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验                                                                    | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `job_started / job_progress / frame_result / job_completed / job_failed / job_cancelled` 事件                          |
-| ML Backend Stats        | `/ws/ml-backend-stats?token=<jwt 或 ak_key>`  | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；v0.15.12 起 SDK/TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`)                  | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
+| 频道                    | URL                                           | 鉴权                                                                                       | Redis 频道                                               | 用途                                                                                                                                       |
+| ----------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 用户通知                | `/ws/notifications?token=<jwt>`               | JWT (query param)                                                                          | `notify:{user_id}` (`notification.py:27`)                | 任务分配、AI 进度、导出完成、@提及 等                                                                                                      |
+| 预标注进度（单项目）    | `/ws/projects/{project_id}/preannotate`       | 当前实现不校验 JWT                                                                         | `project:{project_id}:preannotate` (`ws.py`)             | 工作台单次自动预标注的逐 batch progress                                                                                                    |
+| Batch 状态广播          | `/ws/batches/project/{project_id}`            | 无（项目内非机密）                                                                         | `project:{project_id}:batch` (`ws.py:112`)               | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步                                                                             |
+| Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>`             | JWT (query, `super_admin` / `project_admin`)                                               | `global:prediction-jobs` (`ws.py:168`)                   | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条                                                          |
+| 视频 tracker job        | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验                                                          | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的运行、候选暂存与人工决策事件                                                                                            |
+| ML Backend Stats        | `/ws/ml-backend-stats?token=<jwt 或 ak_key>`  | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；SDK / TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`)                  | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
 
-base URL：`ws://<api-host>/ws/...` 或 `wss://...`。前端通过 `apps/web/src/hooks/useReconnectingWebSocket.ts` 处理重连。本机 DEV 默认直连 `localhost:8000`；远程 DEV 访问使用页面同源 `/ws` 代理，避免远程浏览器错误连接自己的 localhost。
+base URL：`ws://<api-host>/ws/...` 或 `wss://...`。多数频道复用 `apps/web/src/hooks/useReconnectingWebSocket.ts`；用户通知为了 token refresh 使用 `useNotificationSocket.ts` 内的专用重连循环。本机 DEV 默认直连 `localhost:8000`；远程 DEV 访问使用页面同源 `/ws` 代理，避免远程浏览器错误连接自己的 localhost。
 
 ---
 
@@ -95,12 +84,20 @@ ws://api.example.com/ws/notifications?token=eyJhbGciOi...
 
 ### 2.3 可靠性 — 断线兜底
 
-WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` 表，断线时前端通过 `GET /api/v1/notifications` 轮询补齐：
+WS 不保证 at-least-once，当前也没有 transactional outbox。`NotificationService.notify()` 的实际顺序是：
+
+1. 检查用户的 `in_app` 偏好；被静音时不写表也不 publish。
+2. `db.add()` 并 `flush()` 通知行，但不在 service 内 commit。
+3. 立即尝试 publish Redis；失败只记 warning，不中断调用方事务。
+4. 调用方之后才 commit 或 rollback。
+
+这产生两个非事务窗口：publish 失败而事务提交时，在线提示缺失但 REST 能补齐；publish 已成功而事务后续回滚时，客户端可能短暂收到数据库中不存在的提示。因此客户端应把 push 视为「可以刷新了」，再通过 `GET /api/v1/notifications` 读已提交真值：
 
 - 默认前端 30s 一次轮询（即使 WS 在线）
-- WS 重连成功后立即 `invalidateQueries(["notifications"])` 刷一次
+- 收到业务 push 时 `invalidateQueries(["notifications"])`。
+- 当前通知 socket 重连打开时只重置退避，没有额外的 on-open invalidate；30s REST 轮询仍是断线补齐保障。
 
-业务方写代码：**永远先写表再 publish**，不要把 publish 当主路径。
+如果新业务要求「只在提交后推送」或可重试投递，需引入 after-commit hook / transactional outbox，不能把现有 publish 当作这类保证。
 
 ---
 
@@ -133,7 +130,7 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 ---
 
-## 4. `/ws/batches/project/{project_id}`（v0.9.13+）
+## 4. `/ws/batches/project/{project_id}`
 
 ### 4.1 鉴权
 
@@ -162,7 +159,7 @@ WS 不保证 at-least-once。所有通知行已经 INSERT 到 `notifications` �
 
 ---
 
-## 5. `/ws/prediction-jobs`（v0.9.8+，全局）
+## 5. `/ws/prediction-jobs`（全局）
 
 ### 5.1 鉴权
 
@@ -210,16 +207,19 @@ stateDiagram-v2
         step --> step: frame_result (每帧)
         step --> step: job_progress (窗口结束)
     }
-    processing --> job_completed: 全部窗口处理完，候选待审
+    processing --> job_completed: 候选已暂存，pending_review
     processing --> job_failed: 出错（带 error）
     processing --> job_cancelled: DELETE / cancel_requested_at
-    job_completed --> review
+    job_completed --> review: GET preview
+    job_cancelled --> review: tracking 且有部分 staged_result
+    job_cancelled --> [*]: 无候选 / correction 取消
+    review --> job_partially_reviewed: 决定子集后仍有未决
+    job_partially_reviewed --> review: 重拉 preview + revision
     review --> job_accepted
     review --> job_discarded
     job_accepted --> [*]
     job_discarded --> [*]
     job_failed --> [*]
-    job_cancelled --> [*]
 ```
 
 文字版（事件按时间先后）：
@@ -229,25 +229,28 @@ job_started                            # 一次
   ↓
 (job_progress + frame_result)*         # 多次，frame_result 与 job_progress 并发
   ↓
-job_completed | job_failed | job_cancelled   # 推理阶段终止
-  ↓（completed / 有部分结果的 cancelled）
-job_accepted | job_discarded                  # 人工候选决策
+job_completed | job_failed | job_cancelled       # 推理阶段终止
+  ↓（completed / tracking 且有部分结果的 cancelled）
+job_partially_reviewed*                         # 局部决定后仍有未决
+  ↓
+job_accepted | job_discarded                    # 未决集合清空
 ```
 
 事件类型与触发点：
 
-| 事件            | 来源                      | 含义                                                   |
-| --------------- | ------------------------- | ------------------------------------------------------ |
-| `job_started`   | `video_tracker_runner.py` | tracker 进程已起，开始处理                             |
-| `job_progress`  | `video_tracker_runner.py` | 阶段性进度更新（窗口/帧/检查点）                       |
-| `frame_result`  | `video_tracker_runner.py` | 单帧推理结果，包含框/掩码 payload                      |
-| `job_completed` | `video_tracker_runner.py` | 正常结束，结果已暂存为待审候选，尚未写入 annotation    |
-| `job_failed`    | `video_tracker_runner.py` | 出错终止，带 `error` 字段                              |
-| `job_cancelled` | `video_tracker_runner.py` | 用户取消或外部信号中止；若已有结果，可携带部分待审候选 |
-| `job_accepted`  | `video_tracker_runner.py` | 用户接受候选，结果已写入源轨迹 / 新实例轨迹            |
-| `job_discarded` | `video_tracker_runner.py` | 用户丢弃候选，committed annotation 未改变              |
+| 事件                     | 来源                      | 含义                                                   |
+| ------------------------ | ------------------------- | ------------------------------------------------------ |
+| `job_started`            | `video_tracker_runner.py` | tracker 进程已起，开始处理                             |
+| `job_progress`           | `video_tracker_runner.py` | 阶段性进度更新（窗口/帧/检查点）                       |
+| `frame_result`           | `video_tracker_runner.py` | 单帧推理结果，包含框/掩码 payload                      |
+| `job_completed`          | `video_tracker_runner.py` | 正常结束，结果已暂存为待审候选，尚未写入 annotation    |
+| `job_failed`             | `video_tracker_runner.py` | 出错终止，带 `error` 字段                              |
+| `job_cancelled`          | `video_tracker_runner.py` | 用户取消或外部信号中止；若已有结果，可携带部分待审候选 |
+| `job_partially_reviewed` | `video_tracker_runner.py` | HTTP 局部决策已提交，`staged_result` 仍有未决候选      |
+| `job_accepted`           | `video_tracker_runner.py` | 用户接受候选，结果已写入源轨迹 / 新实例轨迹            |
+| `job_discarded`          | `video_tracker_runner.py` | 用户丢弃候选，committed annotation 未改变              |
 
-`frame_result` 是运行期 live event，实例 id 可能仍是窗口内局部值；最终审阅必须以 `GET /video-tracker-jobs/{job_id}/preview` 返回的 staged result 为准。当前 Web 前端通过 HTTP accept / discard 主动完成决策，不依赖同一页面持续监听 `job_accepted / job_discarded`。
+`frame_result` 是运行期 live event，实例 id 可能仍是窗口内局部值；最终审阅必须以 `GET /video-tracker-jobs/{job_id}/preview` 返回的 staged result 为准。当前 Web 前端通过 HTTP `/decisions` 或整批兼容 accept / discard 主动完成决策，不依赖同一页面持续监听 `job_partially_reviewed / job_accepted / job_discarded`。
 
 > 旧版文档曾列出 `queued / window_progress / window_completed` 等事件，**这些事件在当前实现中不存在**；如有依赖需迁移到上表中的事件名。
 
@@ -257,7 +260,7 @@ job_accepted | job_discarded                  # 人工候选决策
 
 ---
 
-## 7. `/ws/ml-backend-stats`（v0.9.11+，PerfHud）
+## 7. `/ws/ml-backend-stats`（PerfHud）
 
 ### 7.1 鉴权
 
@@ -290,13 +293,13 @@ JWT query param，`role ∈ {super_admin, project_admin}`，否则 close `1008`�
 
 ## 8. 前端重连策略
 
-`apps/web/src/hooks/useReconnectingWebSocket.ts` 是所有 WS 用法的基础：
+`apps/web/src/hooks/useReconnectingWebSocket.ts` 是多数 WS 频道的通用基础：
 
 - 初始重连间隔 **1s**，每次失败 ×2，上限 **30s**（`useReconnectingWebSocket.ts:18,31`）
 - 最多重试 **8 次**，超过后状态为 `failed`；URL 或 `enabled` 变化才会开启新一轮连接。
 - onOpen 回调可用于 `invalidateQueries` 补齐断线期间的状态
 
-接入方实现自定义客户端时，建议遵循同样的 backoff，避免风暴。
+通知频道是例外：`useNotificationSocket.ts` 自己维护无限次重连，间隔同样从 1s 指数增长到 30s，并在鉴权关闭码下先刷新 token；它不受通用 hook 的 8 次上限约束。新增自定义客户端时应按频道的可靠性与鉴权契约选择策略，同时保留有上限的指数退避，避免重连风暴。
 
 ### 8.1 鉴权过期重连
 
@@ -334,12 +337,12 @@ client.ts 已自动 logout()  // 路由层会跳 /login
 新增一个 WS 频道大致 4 步：
 
 1. **定义 Redis 频道命名**：放到对应 service 模块顶部（参考 `notification.py:27` 的 `channel_for(user_id)`）。
-2. **写 publisher**：在 HTTP 端点或 Celery worker 里写表 + `r.publish(channel, json.dumps(payload))`。务必先写持久层，再 publish——否则订阅者拿到推送时 GET 兜底端点还查不到记录。
+2. **写 publisher**：先定义持久化真值与事务边界，再调用 `r.publish(channel, json.dumps(payload))`。当前 `NotificationService.notify()` 是事务内 `flush` 后、调用方 `commit / rollback` 前 best-effort publish，因此客户端必须把推送视作刷新提示；需要可靠投递时应使用 after-commit 或 transactional outbox，不能只靠“先 flush 再 publish”。
 3. **写 WS 端点**：`@router.websocket("/ws/...")`，accept → SUBSCRIBE → 转发循环 → finally UNSUBSCRIBE。复制 `ws.py:notifications_socket` 模板即可，注意：
    - 鉴权写在 `accept` 之前；失败用 `await websocket.close(code=1008)`，不要先 accept 再 close（会被 LB 当成正常关闭）
    - 长生命周期频道补 `_heartbeat_loop` 防 LB idle
    - 用模块级 `_get_redis_pool()`，不要每连接 `aioredis.from_url`（连接数会爆）
-4. **写前端 hook**：基于 `useReconnectingWebSocket`，参考 `useNotificationSocket.ts`。重连后 `invalidateQueries` 拉兜底数据。
+4. **写前端 hook**：多数频道基于 `useReconnectingWebSocket`；只有需要通知式 token refresh 等特殊契约时才单独实现。收到事件后重新读取持久化真值，不要把 Pub/Sub payload 当作唯一数据源。
 
 加到本文档 §1 端点表，并在 PR 描述里附上抓包样本。
 

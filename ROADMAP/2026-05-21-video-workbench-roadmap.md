@@ -26,7 +26,7 @@
 
 > 已于 v0.10.29 落地，详见 [CHANGELOG v0.10.29](../CHANGELOG.md)。软网格语义（绝对网格锚定 0、`←/→` 跳网格、暂停吸附、`Shift+←/→` 逃生口微调 ±1 源帧、`Alt+←/→` 关键帧跳）是后续 Phase 的设计前提，保留于此供参考。
 >
-> **遗留待续**：WebCodecs 精确帧解码当前是**预留骨架**——`useVideoChunkDecoder` 解码核心 + feature flag（默认关闭）已就位，但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入，前端 manifest 也未暴露 chunk 字节获取链路。端到端跑通需补 demux（轻量自写 mp4 box 解析或后端预 demux sample 列表），按真实卡顿数据决定是否推进。
+> **进展**：WebCodecs 精确帧解码链路（mp4 demux、`EncodedVideoChunk` 构造、有状态 GOP 会话、字节预算缓存、Konva 显示与当前帧 JPEG 同源）已接通，默认按客户端能力尝试并安全降级。Apple Silicon 原生有头 Chrome 已完成 key / P / B / GOP / VFR 像素，以及 1080p/30、1080p/60、4K/30 的 VideoToolbox strict、5,000 次稳定操作、60 秒真实播放、资源 plateau 和 fallback 资格；静态 GPU profile 只作诊断。后续只保留 Edge / Safari 实机矩阵。解码发生在运行网页的客户端浏览器，Linux 服务端部署不要求本机具备浏览器硬解能力。
 >
 > **明确不做（D1）**：物理重采样 / 生成低 fps 新 mp4 / 从视频抽成独立图片数据集。
 
@@ -74,10 +74,10 @@
 >
 > **统一映射约定**（已落地于 [exporting/video.py](../apps/api/app/services/exporting/video.py) 顶部，保留供后续格式扩展参考）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
 
-### 4.2 导入端（**标注导入已落地，预测导入延后**）
+### 4.2 导入端（**已落地**）
 
 - AAP JSON 标注导入已能恢复 bbox / polygon / polyline / mask 视频轨迹；mask 内容由 `mask_objects` 携带并在入库时重建内容寻址引用。
-- 外部预测导入仍只消费图片几何，`video_bbox` / 视频轨迹不会通过预测向导入库；若要恢复已确认标注，使用独立的 AAP JSON 标注导入接口。
+- AAP JSON 预测导入能把 `video_bbox` 与 bbox / polygon / polyline / mask 视频轨迹写为外部候选；工作台按当前帧显示并逐 shape 接受或驳回，接受后才形成正式标注。预测与标注导入仍使用各自独立的入口。
 
 ### 4.5 DAVIS mask 序列（原 R22 + C.6 P2，**已落地**）
 
@@ -106,14 +106,14 @@
 
 ## 执行顺序与优先级
 
-| Phase | 主题                  | 原 ROADMAP 对应                                         | 优先级 | 备注                                                                                  |
-| ----- | --------------------- | ------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
-| 1 ✅  | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1  | v0.10.29 落地；WebCodecs demux 接入延后                                               |
-| 2 ✅  | 轨迹工具对齐 CVAT     | R16 / R9 + 新增 2.1/2.6/2.7/2.8                         | P0/P1  | bbox / polygon / polyline / mask 平行轨迹均已落地；polyline AI 明确不做               |
-| 3 ◑   | 真实 tracker backend  | C.6 P0 / R23 / I20.4                                    | P0     | SAM2 / SAM3 video tracker 与动态能力协商已落地；跨窗仍是无状态续追                    |
-| 4 ◑   | 视频导出（D3）        | R22 / C.6 P2 / §A AAP video_track 导入                  | P1     | AAP 标注导入、逐帧 YOLO / COCO、DAVIS 已落地；外部视频预测导入与 4.6 Segment 聚合延后 |
-| 5     | 长视频协同 overlap    | R11 / R21 / C.6 P1 segment                              | P1     | 不做 OT/CRDT                                                                          |
-| 6     | Track 质量评估        | R24 / C.6 P2 worker                                     | P2     | 与 L15 打通                                                                           |
+| Phase | 主题                  | 原 ROADMAP 对应                                         | 优先级 | 备注                                                                      |
+| ----- | --------------------- | ------------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| 1 ✅  | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1  | v0.10.29 落地；WebCodecs demux 接入延后                                   |
+| 2 ✅  | 轨迹工具对齐 CVAT     | R16 / R9 + 新增 2.1/2.6/2.7/2.8                         | P0/P1  | bbox / polygon / polyline / mask 平行轨迹均已落地；polyline AI 明确不做   |
+| 3 ◑   | 真实 tracker backend  | C.6 P0 / R23 / I20.4                                    | P0     | SAM2 / SAM3 video tracker 与动态能力协商已落地；跨窗仍是无状态续追        |
+| 4 ◑   | 视频导出（D3）        | R22 / C.6 P2 / §A AAP video_track 导入                  | P1     | AAP 标注 / 预测导入、逐帧 YOLO / COCO、DAVIS 已落地；4.6 Segment 聚合延后 |
+| 5     | 长视频协同 overlap    | R11 / R21 / C.6 P1 segment                              | P1     | 不做 OT/CRDT                                                              |
+| 6     | Track 质量评估        | R24 / C.6 P2 worker                                     | P2     | 与 L15 打通                                                               |
 
 > **不做清单**（与决策底线一致）：物理重采样新视频（D1）、AAP 拆三格式（D3）、predictor 进 apps/api（ADR-0012）、OT/CRDT 协同、ffmpeg.wasm/Broadway.js、Skeleton 无限嵌套、自维护 25 种格式（新格式走 datumaro 中转）。
 
@@ -133,7 +133,7 @@
 | 视频导出        | `apps/api/app/services/exporting/service.py`                   | `export_video_tracks`（裸 JSON，待并入 zip）               |
 | AAP schema      | `apps/api/app/schemas/aap_json.py:33`                          | `schema_version 1.1`，待加 `media_type`                    |
 | 导入适配        | `apps/api/app/services/predictions_import.py`                  | `internal_geometry_to_ls_shape`（video_track 进 errors[]） |
-| 前端 stage      | `apps/web/src/pages/Workbench/stage/VideoStage.tsx`            | 按帧请求图片                                               |
+| 前端 stage      | `apps/web/src/pages/Workbench/stage/VideoKonvaStage.tsx`       | Konva 画布 + 精确帧 / `<video>` 双源                       |
 | track 类型      | `apps/web/src/pages/Workbench/stage/videoStageTypes.ts`        | `VideoTrackAnnotation`/`VideoTrackPreview`                 |
 | 插值            | `apps/web/src/pages/Workbench/stage/videoStageGeometry.ts:131` | 线性插值 + LRU                                             |
 | 时间轴          | `apps/web/src/pages/Workbench/stage/videoTrackTimeline.ts`     | keyframes/outside/interpolated/density                     |

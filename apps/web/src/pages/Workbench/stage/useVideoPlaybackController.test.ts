@@ -4,6 +4,23 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const videoHookMocks = vi.hoisted(() => ({
+  activeBitmap: null as {
+    frameIndex: number;
+    bitmap: ImageBitmap;
+    width: number;
+    height: number;
+  } | null,
+  preciseBitmap: null as {
+    frameIndex: number;
+    bitmap: ImageBitmap;
+    width: number;
+    height: number;
+  } | null,
+  imageBitmapToJpeg: vi.fn().mockResolvedValue(null),
+  videoElementToJpeg: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("./useFrameClock", () => ({
   useFrameClock: () => ({
     seekToAsync: vi.fn().mockResolvedValue({ ok: true, frame: 0 }),
@@ -12,10 +29,66 @@ vi.mock("./useFrameClock", () => ({
 }));
 vi.mock("./useVideoBitmapCache", () => ({
   useVideoBitmapCache: () => ({
-    activeBitmap: null,
+    activeBitmap: videoHookMocks.activeBitmap,
     cachedRanges: [],
     capture: vi.fn(),
     showFrame: vi.fn(),
+  }),
+}));
+vi.mock("./useVideoPreciseFrame", () => ({
+  useVideoPreciseFrame: () => ({
+    active: false,
+    bitmap: videoHookMocks.preciseBitmap,
+    sourceState: "disabled",
+    fallbackReason: null,
+    diagnostics: {
+      supported: false,
+      webcodecsEnabled: false,
+      decoderActive: false,
+      chunkId: null,
+      datasetItemId: null,
+      chunkSizeFrames: null,
+      decodeRequests: 0,
+      decoderErrors: 0,
+      urlRefreshed: false,
+    },
+    performance: {
+      manifestCacheHits: 0,
+      samplesCacheHits: 0,
+      chunkByteCacheHits: 0,
+      bitmapCacheHits: 0,
+      bytesFetched: 0,
+      bitmapBytes: 0,
+      bitmapBudgetBytes: 0,
+      activeDecoders: 0,
+      liveVideoFrames: 0,
+      chunkBytes: 0,
+      chunkBudgetBytes: 0,
+      sessionCreates: 0,
+      sessionResets: 0,
+      sessionDisposals: 0,
+      encodedChunksSubmitted: 0,
+      staleResults: 0,
+      prefetchRequests: 0,
+      prefetchHits: 0,
+      evictions: 0,
+      lastManifestMs: null,
+      lastSamplesMs: null,
+      lastChunkFetchMs: null,
+      lastDemuxMs: null,
+      lastQueueMs: null,
+      lastCodecMs: null,
+      lastDecodeMs: null,
+      lastBitmapMs: null,
+      lastDecodeMode: null,
+      lastPaintMs: null,
+      lastVisibleMs: null,
+      paintedFrameIndex: null,
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    },
+    markFramePainted: vi.fn(),
   }),
 }));
 vi.mock("./useVideoFramePreview", () => ({
@@ -30,6 +103,10 @@ vi.mock("./useVideoTrackActions", () => ({
     toggleSelectedTrackLocked: vi.fn(),
     propagateSelectedTrack: vi.fn(),
   }),
+}));
+vi.mock("@/utils/imageBitmapToJpeg", () => ({
+  imageBitmapToJpeg: videoHookMocks.imageBitmapToJpeg,
+  videoElementToJpeg: videoHookMocks.videoElementToJpeg,
 }));
 
 import { useVideoPlaybackController } from "./useVideoPlaybackController";
@@ -51,6 +128,7 @@ function mockVideo(readyState = 0) {
     paused: true,
     currentTime: 0,
     duration: 0,
+    playbackRate: 1,
     load: vi.fn(),
     play: vi.fn(),
     pause: vi.fn(),
@@ -80,6 +158,10 @@ function setup(videoRef: { current: unknown } = { current: null }) {
 describe("useVideoPlaybackController", () => {
   beforeEach(() => {
     localStorage.clear();
+    videoHookMocks.activeBitmap = null;
+    videoHookMocks.preciseBitmap = null;
+    videoHookMocks.imageBitmapToJpeg.mockClear();
+    videoHookMocks.videoElementToJpeg.mockClear();
     vi.useFakeTimers();
   });
   afterEach(() => {
@@ -91,6 +173,69 @@ describe("useVideoPlaybackController", () => {
     const { result } = setup();
     expect(result.current.maxFrame).toBe(99);
     expect(result.current.fps).toBe(30);
+  });
+
+  it("暂停态仅显示当前帧 bitmap，不复用上一帧缓存", () => {
+    videoHookMocks.activeBitmap = {
+      frameIndex: 1,
+      bitmap: { close: vi.fn() } as unknown as ImageBitmap,
+      width: 4,
+      height: 4,
+    };
+    const { result } = setup();
+
+    expect(result.current.frameIndex).toBe(0);
+    expect(result.current.displayBitmap).toBeNull();
+    expect(result.current.frameSource).toBe("video-element");
+  });
+
+  it("暂停态 precise bitmap 优先于同帧 native bitmap，并作为 AI 取帧源", async () => {
+    const nativeBitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    const preciseBitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    videoHookMocks.activeBitmap = {
+      frameIndex: 0,
+      bitmap: nativeBitmap,
+      width: 4,
+      height: 4,
+    };
+    videoHookMocks.preciseBitmap = {
+      frameIndex: 0,
+      bitmap: preciseBitmap,
+      width: 4,
+      height: 4,
+    };
+    const { result } = setup();
+
+    expect(result.current.displayBitmap?.bitmap).toBe(preciseBitmap);
+    expect(result.current.frameSource).toBe("webcodecs");
+    await act(async () => {
+      await result.current.controls.captureCurrentFrameJpeg();
+    });
+    expect(videoHookMocks.imageBitmapToJpeg).toHaveBeenCalledWith(preciseBitmap, undefined);
+    expect(videoHookMocks.videoElementToJpeg).not.toHaveBeenCalled();
+  });
+
+  it("播放态强制使用 video 元素，AI 取帧不读取 bitmap", async () => {
+    videoHookMocks.activeBitmap = {
+      frameIndex: 0,
+      bitmap: { close: vi.fn() } as unknown as ImageBitmap,
+      width: 4,
+      height: 4,
+    };
+    const video = mockVideo(HTMLMediaElement.HAVE_METADATA);
+    const { result } = setup({ current: video });
+    expect(result.current.frameSource).toBe("video-bitmap");
+
+    act(() => result.current.controls.togglePlayback());
+    expect(result.current.isPlaybackActive).toBe(true);
+    expect(result.current.displayBitmap).toBeNull();
+    expect(result.current.frameSource).toBe("video-element");
+
+    await act(async () => {
+      await result.current.controls.captureCurrentFrameJpeg();
+    });
+    expect(videoHookMocks.videoElementToJpeg).toHaveBeenCalledWith(video, undefined);
+    expect(videoHookMocks.imageBitmapToJpeg).not.toHaveBeenCalled();
   });
 
   it("播放浮层:默认显示 → schedule 后 2s 自动隐藏 → show 再次唤出并取消隐藏", () => {

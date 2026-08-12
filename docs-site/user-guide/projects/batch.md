@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-07-29
 ---
 
 # 批次与分配
@@ -67,33 +67,19 @@ scene 模式项目在关联数据集时（经新建项目向导）会**自动**�
 
 批次状态机如下：
 
-```mermaid
-stateDiagram-v2
-    [*] --> draft
-    draft --> active: owner 激活
-    active --> pre_annotated: AI 预标完成
-    active --> annotating: 有 task 进入 in_progress
-    pre_annotated --> annotating: 标注员开始接管
-    pre_annotated --> active: owner 丢弃预标结果
-    annotating --> reviewing: 全部任务完成/提交送审
-    reviewing --> approved: reviewer 通过
-    reviewing --> rejected: reviewer 退回
-    approved --> reviewing: owner 重开审核
-    approved --> archived: owner 归档
-    rejected --> active: owner 重新激活
-    rejected --> reviewing: owner 跳过重标直接复审
-    rejected --> archived: owner 归档
-    archived --> active: owner 撤销归档
-    active --> archived: owner 归档
-    pre_annotated --> archived: owner 归档
-    annotating --> archived: owner 归档
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/batch-lifecycle.svg"
+  alt="Batch 从草稿激活，可经 AI 预标或人工标注进入审核，审核后通过、退回或归档，并支持 owner 逆向恢复"
+  caption="Batch 完整状态机：自动推进、人工操作与 owner 恢复路径"
+/>
 
 说明：
 
+- `active → pre_annotated` 由 AI 批量预标成功结束后自动触发
 - `active → annotating`、`pre_annotated → annotating` 有自动路径，不需要管理员手工点状态
 - `annotating → reviewing` 既可能由“全量完成”自动触发，也可能由标注员主动整批送审触发
 - owner 可以对批次执行 admin lock / unlock。admin lock 是软暂停：阻止新派单并冻结自动状态推进，但不会把已有任务变成只读。
+- `reset → draft` 是正常迁移图之外的管理性重置，可以从任意状态触发，并会同步重置 task、锁和 AI 预标产物
 
 ## 状态语义
 
@@ -102,7 +88,7 @@ stateDiagram-v2
 | `draft`         | 批次已建好，但还未正式投入生产                     | 新建批次、`reset → draft`                                                            | owner 激活                                                                         |
 | `active`        | 已准备好，可开始分派或开始标注，但尚未进入“进行中” | `draft → active`、`archived → active`、`rejected → active`、`pre_annotated → active` | 标注员开始后自动转 `annotating`，或 owner 归档，或 AI 预标完成后转 `pre_annotated` |
 | `pre_annotated` | AI 预标已跑完，等待人工接管                        | AI 文本批量预标完成                                                                  | 标注员接管后自动转 `annotating`，owner 也可丢弃预标结果退回 `active`               |
-| `annotating`    | 批次处于标注进行中                                 | 任一 task 进入 `in_progress`                                                         | 全部任务完成后进 `reviewing`，或 owner 归档                                        |
+| `annotating`    | 批次处于标注进行中                                 | 任一 task 进入 `in_progress` 或 `rejected`                                           | 全部任务完成后进 `reviewing`，或 owner 归档                                        |
 | `reviewing`     | 审核员开始整批复核                                 | 标注员送审或系统自动推进                                                             | reviewer 通过到 `approved`，退回到 `rejected`                                      |
 | `approved`      | 审核完成，业务上通过                               | reviewer approve                                                                     | owner 可归档，也可重开审核                                                         |
 | `rejected`      | 审核退回，批次需要返工                             | reviewer reject                                                                      | 标注员重做，或 owner 直接重新激活 / 重开审核 / 归档                                |
@@ -114,10 +100,12 @@ stateDiagram-v2
 
 以下状态变化由系统自动驱动：
 
+- `active → pre_annotated`
+  触发条件：AI 批量预标成功结束且不是全量失败
 - `active → annotating`
-  触发条件：批次内有任务进入 `in_progress`
+  触发条件：批次内有任务进入 `in_progress` 或 `rejected`
 - `pre_annotated → annotating`
-  触发条件：标注员开始接管 AI 预标任务
+  触发条件：人工接管后，批次内有任务进入 `in_progress` 或 `rejected`
 - `annotating → reviewing`
   触发条件：批次内不再存在 `pending / in_progress / rejected` 任务
 
@@ -128,9 +116,10 @@ stateDiagram-v2
 - owner：`draft → active`
 - 标注员：`annotating → reviewing`
 - reviewer：`reviewing → approved`、`reviewing → rejected`
-- owner 兜底逆向迁移：
-  `archived → active`、`approved → reviewing`、`rejected → reviewing`、`rejected → active`、`pre_annotated → active`
-- owner：多数工作态都可以直接归档
+- owner 重新激活返工：`rejected → active`
+- owner 需填写理由的逆向迁移：
+  `archived → active`、`approved → reviewing`、`rejected → reviewing`、`pre_annotated → active`
+- owner 可从 `active / pre_annotated / annotating / approved / rejected` 归档；`draft / reviewing` 不能直接归档
 
 ## 角色分工
 

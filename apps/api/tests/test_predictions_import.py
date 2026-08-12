@@ -32,9 +32,14 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.services.annotation import AnnotationService
 from app.services.exporting.packaging import _rotated_corners_norm
-from app.services.prediction import to_internal_shape
-from app.services.predictions_import import import_coco, internal_geometry_to_ls_shape
+from app.services.prediction import PredictionService, to_internal_shape
+from app.services.predictions_import import (
+    import_aap_json,
+    import_coco,
+    internal_geometry_to_ls_shape,
+)
 from app.services.raster_mask_storage import build_rle_reference
 from app.utils.raster_mask_rle import encode_coco_rle
 
@@ -91,6 +96,67 @@ async def _seed_project_with_tasks(
         tasks.append(t)
     await db.flush()
     return project, tasks
+
+
+async def _seed_video_project_task(
+    db: AsyncSession,
+    owner_id: uuid.UUID,
+    *,
+    frame_count: int | None = 12,
+) -> tuple[Project, Task]:
+    short = uuid.uuid4().hex[:6]
+    project = Project(
+        id=uuid.uuid4(),
+        display_id=f"P-PIV{short}",
+        name=f"Video PredImp {short}",
+        type_key="video-det",
+        type_label="视频测试",
+        data_type="video",
+        owner_id=owner_id,
+        status="in_progress",
+        raster_mask_native_editing_enabled=True,
+        tool_bindings={
+            unit: {"enabled": True, "classes": [{"name": "car"}]}
+            for unit in ("bbox", "region", "polyline")
+        },
+    )
+    dataset = Dataset(
+        id=uuid.uuid4(),
+        display_id=f"D-PIV{short}",
+        name=f"Video PredImp {short}",
+        data_type="video",
+        created_by=owner_id,
+    )
+    db.add_all([project, dataset])
+    await db.flush()
+    video_meta = {"width": 4, "height": 2}
+    if frame_count is not None:
+        video_meta["frame_count"] = frame_count
+    item = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset.id,
+        file_name=f"video-{short}.mp4",
+        file_path=f"datasets/{short}/video.mp4",
+        file_type="video",
+        width=4,
+        height=2,
+        metadata_={"video": video_meta},
+    )
+    db.add(item)
+    await db.flush()
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-PIV{short}",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="video",
+        status="pending",
+    )
+    db.add(task)
+    await db.flush()
+    return project, task
 
 
 def _aap_envelope(tasks_payload: list[dict], schema_version: str = "1.0") -> bytes:
@@ -488,6 +554,373 @@ async def test_import_aap_json_keypoint(
     assert body[0]["tool_unit_id"] == "keypoint"
     assert body[0]["result"][0]["geometry"]["type"] == "keypoint"
     assert body[0]["result"][0]["geometry"]["points"][1]["v"] == 1
+
+
+async def test_import_aap_json_video_predictions_dry_run_and_accept(
+    super_admin,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user, _ = super_admin
+    project, task = await _seed_video_project_task(db_session, user.id)
+    rle = encode_coco_rle([0, 1, 1, 0, 0, 1, 0, 0], 4, 2)
+    reference = build_rle_reference(rle)
+    geometries = {
+        "video_bbox": {
+            "type": "video_bbox",
+            "frame_index": 3,
+            "x": 0.1,
+            "y": 0.2,
+            "w": 0.3,
+            "h": 0.4,
+        },
+        "video_track_bbox": {
+            "type": "video_track_bbox",
+            "track_id": "external-bbox",
+            "keyframes": [
+                {"frame_index": 1, "bbox": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}},
+                {"frame_index": 5, "bbox": {"x": 0.2, "y": 0.2, "w": 0.2, "h": 0.2}},
+            ],
+            "outside": [{"from": 6, "to": 7, "source": "manual"}],
+        },
+        "video_track_polygon": {
+            "type": "video_track_polygon",
+            "track_id": "external-polygon",
+            "keyframes": [
+                {"frame_index": 1, "points": [[0.1, 0.1], [0.4, 0.1], [0.3, 0.4]]},
+                {"frame_index": 5, "points": [[0.2, 0.2], [0.5, 0.2], [0.4, 0.5]]},
+            ],
+        },
+        "video_track_polyline": {
+            "type": "video_track_polyline",
+            "track_id": "external-polyline",
+            "keyframes": [
+                {"frame_index": 1, "points": [[0.1, 0.1], [0.4, 0.4]]},
+                {"frame_index": 5, "points": [[0.2, 0.2], [0.5, 0.5]]},
+            ],
+        },
+        "video_track_mask": {
+            "type": "video_track_mask",
+            "track_id": "external-mask",
+            "keyframes": [{"frame_index": 1, "mask": reference, "source": "manual"}],
+            "outside": [{"from": 8, "to": 9, "source": "manual"}],
+        },
+    }
+    envelope = {
+        "schema_version": "1.3",
+        "mask_objects": {reference["sha256"]: rle},
+        "tasks": [
+            {
+                "task_match": {"display_id": task.display_id},
+                "media_type": "video",
+                "predictions": [
+                    {
+                        "class_name": "car",
+                        "confidence": 0.9,
+                        "shapes": [
+                            geometries["video_bbox"],
+                            geometries["video_track_bbox"],
+                        ],
+                    },
+                    {
+                        "class_name": "car",
+                        "confidence": 0.8,
+                        "shapes": [
+                            geometries["video_track_polygon"],
+                            geometries["video_track_mask"],
+                        ],
+                    },
+                    {
+                        "geometry": geometries["video_track_polyline"],
+                        "class_name": "car",
+                        "confidence": 0.7,
+                    },
+                ],
+            }
+        ],
+    }
+    payload = json.dumps(envelope).encode()
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    store = AsyncMock(return_value=reference)
+    load = AsyncMock(return_value=rle)
+    monkeypatch.setattr("app.services.raster_mask_storage.store_coco_rle", store)
+    monkeypatch.setattr("app.services.raster_mask_storage.load_coco_rle", load)
+
+    dry_run = await import_aap_json(db_session, project.id, payload, dry_run=True)
+    assert dry_run.imported == 3
+    assert dry_run.errors == []
+    assert (
+        not (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == task.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    store.assert_not_awaited()
+
+    imported = await import_aap_json(db_session, project.id, payload)
+    assert imported.imported == 3
+    assert imported.errors == []
+    predictions = list(
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == task.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {prediction.tool_unit_id for prediction in predictions} == {
+        "bbox",
+        "region",
+        "polyline",
+    }
+    imported_shapes = [
+        to_internal_shape(shape) for pred in predictions for shape in pred.result
+    ]
+    assert {shape["geometry"]["type"] for shape in imported_shapes} == set(geometries)
+    for shape in imported_shapes:
+        geometry = shape["geometry"]
+        for keyframe in geometry.get("keyframes", []):
+            assert keyframe["source"] == "prediction"
+        for outside in geometry.get("outside", []):
+            assert outside["source"] == "prediction"
+
+    service = AnnotationService(db_session)
+    accepted = [
+        annotation
+        for prediction in predictions
+        for annotation in (
+            await service.accept_prediction(prediction.id, user.id) or []
+        )
+    ]
+    assert {annotation.annotation_type for annotation in accepted} == set(geometries)
+    assert {annotation.track_id for annotation in accepted if annotation.track_id} == {
+        "external-bbox",
+        "external-polygon",
+        "external-polyline",
+        "external-mask",
+    }
+    assert all(annotation.parent_prediction_id for annotation in accepted)
+    imported_by_type = {shape["geometry"]["type"]: shape for shape in imported_shapes}
+    for annotation in accepted:
+        source = imported_by_type[annotation.annotation_type]
+        assert annotation.geometry == source["geometry"]
+        assert annotation.confidence == source["confidence"]
+
+
+async def test_import_aap_json_video_prediction_contract_errors(
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, _ = super_admin
+    project, task = await _seed_video_project_task(db_session, user.id)
+    payload = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": task.display_id},
+                "media_type": "video",
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "video_bbox",
+                            "frame_index": 12,
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
+                        "class_name": "car",
+                    },
+                    {
+                        "geometry": {
+                            "type": "video_track_bbox",
+                            "track_id": "duplicate",
+                            "keyframes": [
+                                {
+                                    "frame_index": 2,
+                                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                                },
+                                {
+                                    "frame_index": 2,
+                                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                                },
+                            ],
+                        },
+                        "class_name": "car",
+                    },
+                    {
+                        "class_name": "car",
+                        "shapes": [
+                            {
+                                "type": "video_bbox",
+                                "frame_index": 1,
+                                "x": 0,
+                                "y": 0,
+                                "w": 1,
+                                "h": 1,
+                            },
+                            {
+                                "type": "video_track_polyline",
+                                "track_id": "mixed",
+                                "keyframes": [
+                                    {"frame_index": 1, "points": [[0, 0], [1, 1]]}
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            }
+        ],
+        schema_version="1.3",
+    )
+
+    result = await import_aap_json(db_session, project.id, payload, dry_run=True)
+
+    assert result.imported == 0
+    assert result.skipped == 3
+    reasons = [error.reason for error in result.errors]
+    assert any("frame_index must be <" in reason for reason in reasons)
+    assert any("strictly increasing" in reason for reason in reasons)
+    assert any("one tool unit" in reason for reason in reasons)
+
+
+async def test_import_aap_json_video_prediction_requires_video_context(
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, _ = super_admin
+    project, task = await _seed_video_project_task(db_session, user.id)
+    prediction = {
+        "geometry": {
+            "type": "video_bbox",
+            "frame_index": 1,
+            "x": 0.1,
+            "y": 0.1,
+            "w": 0.2,
+            "h": 0.2,
+        },
+        "class_name": "car",
+    }
+
+    missing_media_type = await import_aap_json(
+        db_session,
+        project.id,
+        _aap_envelope(
+            [
+                {
+                    "task_match": {"display_id": task.display_id},
+                    "predictions": [prediction],
+                }
+            ],
+            schema_version="1.3",
+        ),
+        dry_run=True,
+    )
+    assert missing_media_type.imported == 0
+    assert "media_type=video" in missing_media_type.errors[0].reason
+
+    item = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert item is not None
+    item.metadata_ = {"video": {"width": 4, "height": 2}}
+    missing_frame_count = await import_aap_json(
+        db_session,
+        project.id,
+        _aap_envelope(
+            [
+                {
+                    "task_match": {"display_id": task.display_id},
+                    "media_type": "video",
+                    "predictions": [prediction],
+                }
+            ],
+            schema_version="1.3",
+        ),
+        dry_run=True,
+    )
+    assert missing_frame_count.imported == 0
+    assert "frame_count is required" in missing_frame_count.errors[0].reason
+
+    task.file_type = "image"
+    wrong_task_type = await import_aap_json(
+        db_session,
+        project.id,
+        _aap_envelope(
+            [
+                {
+                    "task_match": {"display_id": task.display_id},
+                    "media_type": "video",
+                    "predictions": [prediction],
+                }
+            ],
+            schema_version="1.3",
+        ),
+        dry_run=True,
+    )
+    assert wrong_task_type.imported == 0
+    assert "video task and dataset item" in wrong_task_type.errors[0].reason
+
+
+async def test_prediction_video_mask_content_is_task_scoped_and_frame_resolved(
+    httpx_client_bound: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user, token = super_admin
+    project, task = await _seed_video_project_task(db_session, user.id)
+    rle = encode_coco_rle([0, 1, 1, 0, 0, 1, 0, 0], 4, 2)
+    reference = build_rle_reference(rle)
+    load = AsyncMock(return_value=rle)
+    monkeypatch.setattr("app.services.raster_mask_storage.load_coco_rle", load)
+    prediction = await PredictionService(db_session).create_from_ml_result(
+        task_id=task.id,
+        project_id=project.id,
+        ml_backend_id=None,
+        source="external_import",
+        result=[
+            {
+                "type": "video_track_mask",
+                "class_name": "car",
+                "confidence": 0.9,
+                "tool_unit_id": "region",
+                "attributes": {},
+                "geometry": {
+                    "type": "video_track_mask",
+                    "track_id": "mask-candidate",
+                    "keyframes": [
+                        {"frame_index": 1, "mask": reference, "source": "prediction"}
+                    ],
+                    "outside": [{"from": 8, "to": 9, "source": "prediction"}],
+                },
+            }
+        ],
+    )
+    endpoint_load = AsyncMock(return_value=rle)
+    monkeypatch.setattr("app.api.v1.tasks.predictions.load_coco_rle", endpoint_load)
+    await db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    visible = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/predictions/{prediction.id}/mask-content/0/5",
+        headers=headers,
+    )
+    outside = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/predictions/{prediction.id}/mask-content/0/8",
+        headers=headers,
+    )
+    wrong_task = await httpx_client_bound.get(
+        f"/api/v1/tasks/{uuid.uuid4()}/predictions/{prediction.id}/mask-content/0/5",
+        headers=headers,
+    )
+
+    assert visible.status_code == 200
+    assert visible.json() == rle
+    assert outside.status_code == 404
+    assert wrong_task.status_code == 404
+    endpoint_load.assert_awaited_once_with(reference)
 
 
 async def test_prediction_import_polyline_round_trip():
@@ -1278,8 +1711,11 @@ async def test_import_aap_json_entry_shapes_merge_into_one_prediction(
                                 "h": 0.2,
                             },
                             {
-                                "type": "polyline",
-                                "points": [[0.1, 0.2], [0.4, 0.5]],
+                                "type": "bbox",
+                                "x": 0.4,
+                                "y": 0.5,
+                                "w": 0.2,
+                                "h": 0.1,
                                 "confidence": 0.61,
                             },
                             {"type": "ellipse", "cx": 0.5, "cy": 0.5},
@@ -1319,7 +1755,7 @@ async def test_import_aap_json_entry_shapes_merge_into_one_prediction(
     assert len(pred.result) == 2
     assert [shape["type"] for shape in pred.result] == [
         "rectanglelabels",
-        "polylinelabels",
+        "rectanglelabels",
     ]
     assert pred.result[0]["value"]["x"] == pytest.approx(10.0)
     assert pred.result[1]["score"] == 0.61

@@ -39,5 +39,58 @@
     "_doc": "Soft budgets v0.10.10 — baseline 待 image:bench 首跑产出后回填。",
     "longTaskMaxMs": 200,
     "longTaskCountUpper": 5
-  }
+  },
+  "realLargeImages": [
+    {
+      "id": "nasa-cosmic-cliffs",
+      "label": "NASA Webb Cosmic Cliffs（高熵 RGB PNG）",
+      "role": "required-happy-path-high-entropy",
+      "filename": "nasa-cosmic-cliffs-14575x8441.png",
+      "format": "png",
+      "widthPx": 14575,
+      "heightPx": 8441,
+      "pixelCount": 123027575,
+      "byteSize": 130764157,
+      "sha256": "e89fb6764fa3f176e0abeea3b55d8b055195dca3fc1573753deb4612cb7834a9",
+      "sourcePage": "https://science.nasa.gov/asset/webb/cosmic-cliffs-in-the-carina-nebula-nircam-image/",
+      "sourceUrl": "https://assets.science.nasa.gov/content/dam/science/missions/webb/science/2022/07/STScI-01GA6KKWG229B16K4Q38CH3BXS.png",
+      "credit": "NASA, ESA, CSA, STScI",
+      "usagePolicy": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usageNote": "用于教育、信息与测试用途；保留来源署名，不暗示 NASA 或合作机构背书。"
+    },
+    {
+      "id": "nasa-bmng-december",
+      "label": "NASA Blue Marble Next Generation December（超宽 JPEG）",
+      "role": "required-happy-path-near-hard-limit",
+      "filename": "nasa-bmng-december-21600x10800.jpg",
+      "format": "jpeg",
+      "widthPx": 21600,
+      "heightPx": 10800,
+      "pixelCount": 233280000,
+      "byteSize": 23931114,
+      "sha256": "b0ffc9d12205689aeaec66116bbae2c4c263fcd98a0cbadba8d5488567b53278",
+      "sourcePage": "https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/",
+      "sourceUrl": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-base/december/world.200412.3x21600x10800.jpg",
+      "credit": "NASA Earth Observatory",
+      "usagePolicy": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usageNote": "用于教育、信息与测试用途；保留 NASA 来源署名，不暗示背书。"
+    },
+    {
+      "id": "nasa-cosmic-reionization",
+      "label": "NASA Cosmic Reionization（超高竖图 RGBA PNG）",
+      "role": "optional-boundary-tall-alpha",
+      "filename": "nasa-cosmic-reionization-3314x14250.png",
+      "format": "png",
+      "widthPx": 3314,
+      "heightPx": 14250,
+      "pixelCount": 47224500,
+      "byteSize": 4071350,
+      "sha256": "786aa1ebf167158938e73cd91835eb3c97ee9479177efb999fe1ff07e0bc89dd",
+      "sourcePage": "https://science.nasa.gov/asset/webb/cosmic-reionization/",
+      "sourceUrl": "https://assets.science.nasa.gov/content/dam/science/missions/webb/science/2020/06/STScI-01EVST7M1ZKP4NQYD9PV1NK5SS.png",
+      "credit": "NASA, ESA, CSA, Joyce Kang (STScI)",
+      "usagePolicy": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usageNote": "用于教育、信息与测试用途；保留来源署名，不暗示 NASA 或合作机构背书。"
+    }
+  ]
 }

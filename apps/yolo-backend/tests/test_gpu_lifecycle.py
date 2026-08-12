@@ -29,7 +29,7 @@ class _Model:
     device = "cuda:0"
 
 
-def _domain(*, free_gpu_memory=None):
+def _domain(*, free_gpu_memory=None, evictable_verified: bool = True):
     from gpu_lifecycle import YoloGpuLifecycle
     from model_pool import ModelPool
 
@@ -43,6 +43,7 @@ def _domain(*, free_gpu_memory=None):
     lifecycle = YoloGpuLifecycle(
         pool,
         verify_keyring={"current": private_key.public_key()},
+        evictable_verified=evictable_verified,
         boot_id="boot-1",
     )
     return lifecycle, pool, private_key
@@ -108,6 +109,17 @@ async def test_fresh_boot_reports_trusted_legacy_empty_residency() -> None:
     assert residency.generation is None
     assert residency.identity is None
     assert residency.pools["models"].resident is False
+
+
+@pytest.mark.asyncio
+async def test_unverified_deployment_cannot_enter_enforce() -> None:
+    lifecycle, _pool, key = _domain(evictable_verified=False)
+
+    with pytest.raises(LifecycleHTTPError) as error:
+        await _enforce(lifecycle, key)
+
+    assert error.value.detail["error_code"] == "gpu_transition_conflict"
+    assert (await lifecycle.residency()).lifecycle_gate.value == "legacy"
 
 
 @pytest.mark.asyncio

@@ -34,6 +34,7 @@ from app.api.v1.tasks._shared import (
     _task_with_url,
     _attach_dimensions,
     _attach_dimensions_batch,
+    _attach_image_pyramids_batch,
     _SEQ_NULL_SENTINEL,
     _ANNOTATORS,
 )
@@ -128,6 +129,7 @@ async def list_tasks(
     is_first_page = cursor is None and offset == 0
     total = ((await db.execute(count_q)).scalar() or 0) if is_first_page else None
     dims = await _attach_dimensions_batch(db, tasks)
+    pyramids = await _attach_image_pyramids_batch(db, tasks, dims)
     # v0.7.2 · 一次 IN 查询解析所有 assignee_id / reviewer_id → UserBrief
     user_ids = {t.assignee_id for t in tasks if t.assignee_id} | {
         t.reviewer_id for t in tasks if t.reviewer_id
@@ -145,6 +147,7 @@ async def list_tasks(
             _task_with_url(
                 t,
                 *dims.get(t.id, (None, None, None, None, None)),
+                image_pyramid=pyramids.get(t.id),
                 briefs=briefs,
             )
             for t in tasks
@@ -169,8 +172,19 @@ async def next_task(
         return None
     await db.commit()
     w, h, thumb, bh, video_metadata = await _attach_dimensions(db, task)
+    dimensions = {task.id: (w, h, thumb, bh, video_metadata)}
+    pyramids = await _attach_image_pyramids_batch(db, [task], dimensions)
     briefs = await resolve_briefs(db, [task.assignee_id, task.reviewer_id])
-    return _task_with_url(task, w, h, thumb, bh, video_metadata, briefs=briefs)
+    return _task_with_url(
+        task,
+        w,
+        h,
+        thumb,
+        bh,
+        video_metadata,
+        image_pyramid=pyramids.get(task.id),
+        briefs=briefs,
+    )
 
 
 @router.get("/{task_id}", response_model=TaskOut)
@@ -182,8 +196,19 @@ async def get_task(
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
     w, h, thumb, bh, video_metadata = await _attach_dimensions(db, task)
+    dimensions = {task.id: (w, h, thumb, bh, video_metadata)}
+    pyramids = await _attach_image_pyramids_batch(db, [task], dimensions)
     briefs = await resolve_briefs(db, [task.assignee_id, task.reviewer_id])
-    return _task_with_url(task, w, h, thumb, bh, video_metadata, briefs=briefs)
+    return _task_with_url(
+        task,
+        w,
+        h,
+        thumb,
+        bh,
+        video_metadata,
+        image_pyramid=pyramids.get(task.id),
+        briefs=briefs,
+    )
 
 
 @router.get(

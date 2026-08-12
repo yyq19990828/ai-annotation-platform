@@ -3,7 +3,7 @@ title: 文档产物与真值边界
 audience: [dev]
 type: reference
 status: stable
-last_reviewed: 2026-07-12
+last_reviewed: 2026-07-29
 ---
 
 # 文档产物与真值边界
@@ -28,6 +28,7 @@ last_reviewed: 2026-07-12
 | 构建期公共文件  | `docs-site/public/llms.txt`、`docs-site/public/llms-full.txt`                                                                   | 当前可发布 Markdown 正文                                                                              | `docs-site/scripts/generate-llms.mjs`；文档开发或构建前生成                                                 | 否，已忽略         | `docs-site/**`，以及 ADR、CHANGELOG、Roadmap 的真值源                        |
 | 示例源码        | `docs-site/dev/examples/**`                                                                                                     | 示例目录中的源码和 README                                                                             | 无；作为可复制示例维护，不作为正文页面维护                                                                  | 是                 | `docs-site/**`                                                               |
 | 用户手册图片    | `docs-site/user-guide/images/**`                                                                                                | 自动截图场景、GIF 流程或人工拍摄结果；自动截图登记在 `apps/web/e2e/screenshots/outputs/manifest.json` | `pnpm --filter @anno/web screenshots`、`pnpm --filter @anno/web screenshots:flows` 或人工制作               | 是，审核后提交     | 提交图片时由 `docs-site/**` 触发；仅修改截图脚本不会单独触发 Pages           |
+| 可编辑文档图    | `docs-site/public/diagrams/**`                                                                                                  | 内嵌 Excalidraw scene 与 Virgil 字体的 SVG 文件本身                                                   | 使用 Excalidraw 重新导入和导出；`pnpm --filter @anno/docs-site check:diagrams` 校验合同                     | 是                 | `docs-site/**`                                                               |
 | 维护材料        | `docs-site/maintainers/image-checklist.md`                                                                                      | 文件本身                                                                                              | 人工维护截图缺口                                                                                            | 是，但不发布为页面 | `docs-site/**` 会触发构建，文件本身被排除在发布内容之外                      |
 
 ## 维护规则
@@ -38,6 +39,7 @@ last_reviewed: 2026-07-12
 4. `docs-site/public/openapi.json`、`llms.txt` 和 `llms-full.txt` 是构建输出，不要加入版本控制。
 5. 示例 README、维护清单和其他内部材料不是站点正文；它们保留在 `docs-site/` 只是为了和相关资产就近维护。
 6. 截图清单记录未完成的拍摄任务，manifest 记录已登记的静态截图。图片是否真正进入用户手册，以 Markdown 引用和孤儿图片检查为准。
+7. Excalidraw 图表不属于用户手册截图。使用 `<ExcalidrawDiagram>` 引用，并以内嵌 scene 的单个 SVG 作为唯一真值。
 
 ## 常用同步命令
 
@@ -45,6 +47,7 @@ last_reviewed: 2026-07-12
 pnpm docs:gen
 pnpm docs:gen-env-vars
 pnpm openapi:export
+pnpm --filter @anno/docs-site check:diagrams
 pnpm docs:build
 ```
 

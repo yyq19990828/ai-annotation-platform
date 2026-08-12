@@ -12,10 +12,25 @@
 
 详见[视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
 
-- 接通 MP4 demux、`EncodedVideoChunk` 构造与 Konva 播放链路，让实验性的 WebCodecs 精确解码可实际使用。
-- 支持外部视频预测导入，包括 AAP JSON 的 bbox / polygon / polyline / mask 轨迹预测；标注导入不在此范围。
+- 在可获得的 Windows Edge 与 macOS Safari 客户端补齐 1080p/4K correctness、可见延迟、资源 plateau
+  与 fallback rate；Apple Silicon 原生有头 Chrome 已完成 strict 资格，不再作为遗留项。
 - 按 segment / frame range 聚合导出，并补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
 - 实现视频单帧 keypoint 与 rotated-box 绘制；OBB 还需要旋转手柄。
+
+### 超大图 Tile 与 Raster Mask 客户端计算
+
+详见
+[v0.23.21–v0.23.25 超大图 Tile 与 Raster Mask 客户端计算 Epic](docs/plans/2026-07-31-v0.23.21-v0.23.25-large-image-tile-webgpu-epic.md)。
+
+- Epic 已完成：不可变图片金字塔、viewport LOD/Konva tile、隐藏整图消费者收口、task-scoped
+  背景/Mask 资源协调、packed CPU fallback 与 one-pass WebGPU 长会话均已封版。横/纵可分离 WebGPU
+  候选未通过数据分布无关的两轮端到端门，未进入 production；WebGPU 始终使用访问页面的客户端资源，
+  不使用 Linux API/Celery 部署机器的 GPU。
+- 后验资格只保留真实缺口：在无实验 flag 的 Linux Wayland、macOS Metal 与 Windows D3D12 客户端补齐
+  one-pass correctness、长会话、p95 和 fallback rate；Safari/Edge 按实际 WebGPU 能力记录。没有机器时
+  继续标记 `not tested`，不改变 capability-first fallback，也不重新引入 separable 候选。
+- 超大图背景可以超过当前 Raster Mask 原生上限；Raster Mask 仍受单边 8192、总计
+  67,108,864 pixels 和 morphology ROI 16,777,216 pixels 约束，扩大协议另立版本。
 
 ### 点云与图像联合标注
 
@@ -93,7 +108,6 @@
 
 ## 规模或监控触发
 
-- **大图背景瓦片**：出现大量约 50MP 以上图片或单图内存 / FPS 达到瓶颈时，引入 IIIF 或自定义金字塔、视口 LRU 和 Konva tile 背景；现有 Mask tile 不等同于图片背景切片。
 - **审计 BI 物化视图**：`audit_logs` 达到约 10M 行并出现月度报表查询压力时建设。
 - **学习式动静分割**：邻帧点云中的未标注动态目标确实影响生产时再引入。
 - **模板治理升级**：误改、公共模板数量或跨组织发布达到现有人工流程上限时启动。

@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-08-11
 ---
 
 # AI 预标
@@ -51,6 +51,8 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
    - **覆盖**：先清除这些任务已有的 AI 预测与 AI 标注（保留人工标注），再重新预标；
    - **追加**：不去重，直接在已有预测上再加一份（仅特殊场景）。
 7. 点击运行。勾选多个批次时可以选择串行或并行；并行请求仍会受 backend 的 `max_concurrency` 保护。
+
+![选择项目和批次、运行 AI 预标并查看任务历史](../images/projects/ai-preannotate-flow.gif)
 
 ## 参数与模型变体
 

@@ -106,6 +106,7 @@ import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
 import { classColorForCanvas } from "../stage/colors";
 import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
 import { useRasterMaskWorkerPool } from "../stage/shared/useRasterMaskWorkerPool";
+import { useRasterResourceCoordinator } from "../stage/shared/useRasterResourceCoordinator";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "./samTextOutput";
 import { shouldConfirmAnnotationDelete } from "./deleteConfirmation";
 import { usePreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
@@ -178,6 +179,12 @@ import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapter
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
+import {
+  LARGE_IMAGE_TILES_ENABLED,
+  useWorkbenchImageSource,
+  workbenchImagePreviewUrl,
+} from "../stage/useWorkbenchImageSource";
+import { imageTileDeviceBudget, singleImageFitsDecodedBudget } from "../stage/imagePyramid";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
@@ -676,6 +683,9 @@ export function useWorkbenchShellModel({
   const imageMediaKey = task?.dataset_item_id ?? task?.id ?? null;
   const blurhash = task?.blurhash ?? null;
   const thumbnailUrl = task?.thumbnail_url ?? null;
+  const { source: workbenchImageSource, retry: retryWorkbenchImagePyramid } =
+    useWorkbenchImageSource(task, imageMediaKey);
+  const workbenchImagePreview = workbenchImagePreviewUrl(workbenchImageSource);
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const maskCapabilities = useMaskCapabilities(taskId, !!taskId && !isVideoTask);
@@ -1288,7 +1298,8 @@ export function useWorkbenchShellModel({
     () => new Set(s.selectedIds.length > 0 ? s.selectedIds : s.selectedId ? [s.selectedId] : []),
     [s.selectedId, s.selectedIds],
   );
-  const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId);
+  const rasterResources = useRasterResourceCoordinator({ taskId });
+  const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId, rasterResources);
   const imageRasterMaskDescriptors = useMemo(() => {
     if (isVideoTask || maskCapabilities.data?.read_enabled !== true) return [];
     return visibleAnnotationsData.flatMap((annotation) => {
@@ -1319,6 +1330,8 @@ export function useWorkbenchShellModel({
       !isVideoTask && maskCapabilities.data?.read_enabled === true ? (taskId ?? null) : null,
     descriptors: imageRasterMaskDescriptors,
     workerPool: rasterMaskWorkerPool,
+    resourceCoordinator: rasterResources,
+    resourceOwner: "mask-render:annotation",
   });
 
   const taskAiMeta = useMemo(() => {
@@ -1743,6 +1756,8 @@ export function useWorkbenchShellModel({
     maxCachedRecords: 1,
     maxConcurrent: 1,
     workerPool: rasterMaskWorkerPool,
+    resourceCoordinator: rasterResources,
+    resourceOwner: "mask-render:interactive",
   });
   const samCandidateDisplayGeom = useCallback(
     (candidate: PendingCandidate | undefined) => {
@@ -2014,9 +2029,35 @@ export function useWorkbenchShellModel({
         initialPageParam: 0,
         queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0),
       });
-      if (stageKind === "image" && t.file_url) {
+      if (stageKind === "image" && t.image_pyramid && LARGE_IMAGE_TILES_ENABLED) {
+        void queryClient
+          .fetchQuery({
+            queryKey: ["image-pyramid", t.id, t.image_pyramid.generation],
+            queryFn: ({ signal }) => tasksApi.getImagePyramid(t.id, { signal }),
+            staleTime: 30_000,
+          })
+          .then((pyramid) => {
+            if (!pyramid.overview?.url) return;
+            const img = new Image();
+            img.src = pyramid.overview.url;
+          })
+          .catch(() => {});
+      } else if (stageKind === "image" && t.file_url && !t.image_pyramid?.required) {
+        const deviceMemory = (navigator as Navigator & { deviceMemory?: unknown }).deviceMemory;
+        const budget = imageTileDeviceBudget(
+          typeof deviceMemory === "number" ? deviceMemory : null,
+        ).retainedBytes;
+        const width = t.image_pyramid?.width ?? t.image_width;
+        const height = t.image_pyramid?.height ?? t.image_height;
+        const originalAllowed = t.image_pyramid
+          ? singleImageFitsDecodedBudget(width, height, budget)
+          : width && height
+            ? singleImageFitsDecodedBudget(width, height, budget)
+            : true;
+        const url = t.thumbnail_url ?? (originalAllowed ? t.file_url : null);
+        if (!url) return;
         const img = new Image();
-        img.src = t.file_url;
+        img.src = url;
       }
     };
     prefetch(tasks[idx + 1]);
@@ -2249,6 +2290,7 @@ export function useWorkbenchShellModel({
     sessionKey: maskSessionKey,
     onLeaveDirty: handleMaskLeaveDirty,
     workerPool: rasterMaskWorkerPool,
+    resourceCoordinator: rasterResources,
   });
   const maskSessionContextRef = useRef({
     key: maskSessionKey,
@@ -6414,12 +6456,15 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
       },
       image: {
+        resourceCoordinator: rasterResources,
         rasterMaskRecords: imageRasterMasks.records,
         rasterMaskStatusById: imageRasterMasks.statusById,
         onRetryRasterMask: imageRasterMasks.retry,
         editingRasterMaskId: editingImageRasterMaskId,
         maskReadOnly: imageMaskInteractionBlocked,
         fileUrl,
+        imageSource: workbenchImageSource,
+        onRetryImagePyramid: retryWorkbenchImagePyramid,
         mediaKey: imageMediaKey,
         blurhash,
         imageWidth,
@@ -6823,7 +6868,7 @@ export function useWorkbenchShellModel({
       currentUserId: meUserId ?? null,
       // v0.11.5+ · 评论内画布批注 (live 绘图) + 视频帧锚点 + 点评论跳帧的桥接，
       // 恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的接线。
-      backgroundUrl: task?.file_url ?? null,
+      backgroundUrl: workbenchImagePreview,
       imageWidth,
       imageHeight,
       enableCanvasDrawing: true,

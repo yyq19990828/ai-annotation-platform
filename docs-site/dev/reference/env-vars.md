@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-31
 ---
 
 # 环境变量参考
@@ -17,12 +17,16 @@ last_reviewed: 2026-07-23
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串，格式：postgresql+asyncpg://用户名:密码@主机:端口/数据库名 本地开发可直接使用下方默认值；生产环境请替换为真实凭据 注：驱动必须是 postgresql+asyncpg；托管库走 SSL 时用 ?ssl=require（asyncpg 不认 sslmode=） |
+| `MIGRATION_DATABASE_URL` | `—` | 可选的 Alembic schema-owner 连接；运行角色没有 DDL 权限时必须配置。 未设置或留空时迁移仍回退 DATABASE_URL，保持单角色部署兼容。 |
+| `DATABASE_URL_DOCKER` | `postgresql+asyncpg://user:pass@postgres:5432/annotation` | 仅供开发态 Compose 内的 Celery worker 使用；容器访问 PostgreSQL 应使用 postgres 服务名。 GPU collector 启用前请改成独立、非 owner、非超级用户且无 membership/fence DELETE 的应用角色。 生产叠加文件仍统一读取 DATABASE_URL，不使用此项。 |
+| `MIGRATION_DATABASE_URL_DOCKER` | `—` | 仅供开发态 Compose 的指定迁移入口使用；容器地址通常为 postgres:5432。 |
+| `ALEMBIC_AUTO_UPGRADE` | `true` | API 镜像 entrypoint 是否自动执行 Alembic；生产 API 保持 true，普通 Worker 由 Compose 强制为 false。仅在部署平台已有独立 migration job 时关闭。 |
 
 ## 仅供 docker-compose.yml 里的 postgres 容器初始化用（后端不读这三项）。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `POSTGRES_USER` | `user` | 若沿用 compose 自带的 postgres 容器，生产请在此设强凭据，且必须与上面 DATABASE_URL 的 用户名/密码/库名完全一致；用托管 RDS/Cloud SQL 时这三项可忽略。 |
+| `POSTGRES_USER` | `user` | 若沿用 compose 自带的 postgres 容器，生产请在此设强凭据；分离运行/迁移角色时应与 MIGRATION_DATABASE_URL 的 owner 凭据对应，而 DATABASE_URL 可使用普通应用角色。 用托管 RDS/Cloud SQL 时这三项可忽略。 |
 | `POSTGRES_PASSWORD` | `pass` | — |
 | `POSTGRES_DB` | `annotation` | — |
 
@@ -56,7 +60,36 @@ last_reviewed: 2026-07-23
 | `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
 | `MINIO_IMPORT_BUCKET` | `import` | 导入预标注产物桶（7 天 lifecycle，短生命周期） |
 | `MINIO_EXPORT_BUCKET` | `export` | 导出标注产物桶（7 天 lifecycle，短生命周期） |
-| `MINIO_DATA_DIR` | `/mnt/fast-disk/ai-annotation-platform/minio` | 可选：把 MinIO 数据目录 bind 到宿主机路径，用于测试不同磁盘的对象存储性能。 留空时继续使用 Docker 托管的 miniodata 命名卷。 |
+
+## 超大图 Image Pyramid
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `IMAGE_PYRAMID_AUTO_GENERATE` | `false` | 默认只发布 schema/API，不在上传时自动生成；容量验收后再显式开启。 |
+| `IMAGE_PYRAMID_PROFILE_VERSION` | `pyramid-v1` | — |
+| `IMAGE_PYRAMID_NORMALIZATION_VERSION` | `exif-autorotate-srgb-v1` | — |
+| `IMAGE_PYRAMID_OPTIONAL_PIXELS` | `16777216` | 16MP 起可选生成，50MP 起客户端必须使用（客户端切换在后续版本）。 |
+| `IMAGE_PYRAMID_REQUIRED_PIXELS` | `50000000` | — |
+| `IMAGE_PYRAMID_MAX_PIXELS` | `300000000` | — |
+| `IMAGE_PYRAMID_MAX_DIMENSION` | `32768` | — |
+| `IMAGE_PYRAMID_MAX_TILES` | `20000` | — |
+| `IMAGE_PYRAMID_MAX_SOURCE_BYTES` | `8589934592` | — |
+| `IMAGE_PYRAMID_MAX_DERIVED_BYTES` | `8589934592` | — |
+| `IMAGE_PYRAMID_MAX_TEMP_BYTES` | `12884901888` | — |
+| `IMAGE_PYRAMID_JOB_TIMEOUT_SECONDS` | `1800` | — |
+| `IMAGE_PYRAMID_LEASE_SECONDS` | `2100` | — |
+| `IMAGE_PYRAMID_URL_EXPIRY_SECONDS` | `900` | — |
+| `IMAGE_PYRAMID_ASSET_URL_BATCH_MAX` | `128` | — |
+| `IMAGE_PYRAMID_RETRY_COOLDOWN_SECONDS` | `300` | — |
+| `IMAGE_PYRAMID_GC_GRACE_HOURS` | `24` | — |
+| `IMAGE_PYRAMID_VIPS_CONCURRENCY` | `4` | 独立 worker 内 libvips 的像素流水线线程数；不要跟宿主 100+ 核数线性放大 RSS。 |
+| `IMAGE_PYRAMID_SRGB_PROFILE` | `/usr/share/color/icc/sRGB.icc` | 容器由 icc-profiles-free 提供；宿主开发若路径不同可覆盖。 |
+
+## 可选：把 MinIO 数据目录 bind 到宿主机路径，用于测试不同磁盘的对象存储性能。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MINIO_DATA_DIR` | `/mnt/fast-disk/ai-annotation-platform/minio` | 留空时继续使用 Docker 托管的 miniodata 命名卷。 |
 | `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
 
 ## ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
@@ -106,6 +139,7 @@ last_reviewed: 2026-07-23
 | `YOLO_IDLE_CHECK_INTERVAL` | `60` | — |
 | `STRICT_OFFLINE` | `1: checkpoints/ 缺权重直接返 400, 不去 GH release 下载.` | — |
 | `YOLO_STRICT_OFFLINE` | `0` | — |
+| `YOLO_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 YOLO 多模型池真实 GPU load → full unload → baseline 验收后设为 1。 只接受字面量 0 或 1；其他值拒绝启动。未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 | `YOLO_LOG_LEVEL` | `INFO` | — |
 | `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | `—` | Managed GPU lifecycle Ed25519 public-key ring (kid -> unpadded base64url key). Empty keeps the backend in legacy-compatible mode; a non-empty invalid value fails startup. |
 
@@ -119,7 +153,7 @@ last_reviewed: 2026-07-23
 | `ONNXTOOLS_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
 | `ONNXTOOLS_IDLE_UNLOAD_SECONDS` | `600` | 全池空闲卸载阈值（秒）；非正数关闭。 |
 | `ONNXTOOLS_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
-| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成真实 GPU 四 session warmup → full unload → baseline 验证后设为 1。 |
+| `ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成真实 GPU 四 session warmup → full unload → baseline 验证后设为 1；只接受字面量 0 或 1。 |
 | `ONNXTOOLS_LOG_LEVEL` | `INFO` | ONNXTools 日志级别。 |
 
 ## RapidOCR 动态 composite 引擎池与受管生命周期
@@ -131,7 +165,7 @@ last_reviewed: 2026-07-23
 | `RAPIDOCR_BUILD_TIMEOUT` | `30` | 调用方等待冷启动的秒数；超时后真实 builder 仍受跟踪。 |
 | `RAPIDOCR_IDLE_UNLOAD_SECONDS` | `600` | 整池空闲卸载阈值（秒）；非正数关闭。 |
 | `RAPIDOCR_IDLE_CHECK_INTERVAL` | `60` | 空闲检查周期（秒）。 |
-| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0` | 部署级 opt-in；当前参考制品已完成实卡验证，硬件、镜像或模型不匹配时须重新验证。 |
+| `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前镜像、权重与物理 GPU 的满池实卡验收通过后设为 1；只接受字面量 0 或 1。 |
 | `RAPIDOCR_LOG_LEVEL` | `INFO` | RapidOCR 日志级别。 |
 
 ## Prometheus http_sd 服务发现端点 /api/v1/internal/metrics-targets 的可选 bearer token。
@@ -166,6 +200,18 @@ last_reviewed: 2026-07-23
 |---|---|---|
 | `RASTER_MASK_READ_ENABLED` | `true` | 图片原生 raster_mask reader 默认开启，保证新后端可读取已有 geometry。 |
 | `RASTER_MASK_CREATE_ENABLED` | `true` | 持久化创建与项目原生编辑均默认开启；本项保留为部署紧急总闸，项目仍可单独关闭。 |
+
+## 前端 Raster Mask 实验计算
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `true` | Vite build-time 开关。默认 true，但只在大 ROI morphology 请求时惰性探测浏览器 adapter。 true 只允许符合 ROI、设备档位和字节预算的 square dilate 候选 WebGPU；其余操作及任何 adapter/device 故障都在客户端 Raster Mask Worker 内精确回退 CPU。使用的是访问页面的 用户浏览器 GPU，不是 Linux API、Celery 或部署机器 GPU。设为 false 可紧急回滚；修改后必须重建前端镜像。 |
+
+## 前端超大图 Tile
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VITE_EXPERIMENTAL_LARGE_IMAGE_TILES` | `true` | Vite build-time 开关。默认 true：有 ready pyramid 的图片只请求 overview 与当前视口切片， required 大图在生成中/失败时不会自动下载整张原图。背景继续由浏览器解码 + Konva Canvas2D 绘制，不依赖 WebGPU。设为 false 可紧急停止选择切片路径；修改后必须重建前端镜像。 |
 
 ## 认证 / 安全
 
@@ -270,7 +316,7 @@ last_reviewed: 2026-07-23
 | `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 排队等显存的超时 (秒), 超时 503; video build 比图片慢, 默认 60. |
 | `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存); 超此值的窗口拒绝. |
 | `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭. |
-| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在 Grounded-SAM2 完成实卡 image/video/双池/full-unload 验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
+| `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在 Grounded-SAM2 完成实卡 image/video/双池/full-unload 验收后设为 1。 只接受字面量 0 或 1；其他值拒绝启动。未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## SAM 3 ML Backend
 
@@ -288,7 +334,7 @@ last_reviewed: 2026-07-23
 | `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 开 inst FP16 ~5.8GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
 | `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
 | `SAM3_MODEL_POOL_BUILD_TIMEOUT` | `120` | 三个模型池等待冷构建的超时 (秒); 超时后真实 builder 仍由 backend 跟踪至结束。 |
-| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 image/multiplex/PVS 真实推理与全池显存回落验收后设为 1。 未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
+| `SAM3_MANAGED_LIFECYCLE_VERIFIED` | `0` | 仅在当前部署完成 image/multiplex/PVS 真实推理与全池显存回落验收后设为 1。 只接受字面量 0 或 1；其他值拒绝启动。未验证时 /setup 不发布 managed_lifecycle，且拒绝切入 enforce gate。 |
 
 ## ML Backend GPU 分卡 (多卡机器可选)
 

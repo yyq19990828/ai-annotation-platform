@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-07-29
 ---
 
 # 状态机总览
@@ -18,91 +18,70 @@ last_reviewed: 2026-05-10
 
 ## Project 状态
 
-当前项目状态较轻：
+当前项目状态较轻。下图表达管理视图采用的生命周期约定；后端目前只有模型默认值和枚举，没有像 Batch 一样的受控 transition guard 或自动推进。`ProjectUpdate.status` 仍是未受枚举约束的字符串，owner 可以通过通用 PATCH 直接写入，因此它不是可据此校验请求的状态真值：
 
-```mermaid
-stateDiagram-v2
-    [*] --> in_progress
-    in_progress --> pending_review
-    pending_review --> completed
-    completed --> archived
-    in_progress --> archived
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/project-status-convention.svg"
+  alt="Project status 的 in_progress、pending_review、completed、archived 只按产品约定用虚线相连，通用 PATCH 仍接受任意字符串；运行时实际由 Batch、Task、权限与 Task Lock 决定能否标注审核和派题"
+  caption="Project.status 的管理视图约定与真正的运行时控制边界"
+/>
 
 说明：
 
 - project 状态更多是管理视图，不是工作台派题的唯一真值
+- 四个枚举值是约定集合，不是 PATCH 输入白名单
+- 当前服务端没有自动写入 `pending_review / completed / archived` 的项目状态迁移链
 - 真正影响“能不能标、能不能审”的，主要还是 batch / task
 
 ## Batch 状态
 
-```mermaid
-stateDiagram-v2
-    [*] --> draft
-    draft --> active
-    active --> pre_annotated
-    active --> annotating
-    active --> archived
-    pre_annotated --> annotating
-    pre_annotated --> active
-    pre_annotated --> archived
-    annotating --> reviewing
-    annotating --> archived
-    reviewing --> approved
-    reviewing --> rejected
-    approved --> archived
-    approved --> reviewing
-    rejected --> active
-    rejected --> reviewing
-    rejected --> archived
-    archived --> active
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/batch-lifecycle.svg"
+  alt="Batch 从草稿激活，可经 AI 预标或人工标注进入审核，审核后通过、退回或归档，并支持 owner 逆向恢复"
+  caption="Batch 完整状态机：正常推进、审核结果与 owner 逆向迁移"
+/>
 
 关键点：
 
+- `active → pre_annotated` 由 AI worker 在批量预标成功结束后推进
 - `active | pre_annotated → annotating` 是自动迁移
-- `annotating → reviewing` 也是自动迁移
+- `annotating → reviewing` 可以自动推进，也可以由被分派 annotator 主动送审
 - owner 有多条逆向迁移兜底路径
+- `reset_to_draft` 是绕过正常迁移边的 owner 恢复操作；`admin_lock` 只暂停派题和自动推进，不是一个生命周期状态
 
 ## Task 状态
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending
-    pending --> in_progress
-    in_progress --> review
-    review --> in_progress
-    review --> completed
-    review --> rejected
-    completed --> in_progress
-    rejected --> in_progress
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/task-lifecycle.svg"
+  alt="Task 从待处理进入编辑，也可从待处理或编辑中直接送审；审核可撤回、通过或退回，完成和退回后可重新编辑"
+  caption="Task 完整状态机：编辑、送审、审核与返工"
+/>
 
 关键点：
 
-- annotation 首次写入会触发 `pending → in_progress`
-- `submit` 进入 `review`
+- 首个有效 annotation 触发 `pending → in_progress`，删掉最后一个有效 annotation 会触发 `in_progress → pending`
+- `pending / in_progress` 都可以通过 `submit / skip` 直接进入 `review`
 - `withdraw`、`reopen`、`accept-rejection` 都会回到 `in_progress`
+- 直接上传任务会先经过 `uploading`；普通数据集关联创建的 task 直接从 `pending` 开始
+- 批次驳回会把 `review / completed` task 回退到 `pending`，批次终极重置会把所有非 `pending` task 回退到 `pending`
 - 现仓运行时存在 `rejected` task 状态，虽然枚举定义仍有历史差异
 
 ## 三者怎么联动
 
 最重要的联动链路：
 
-```mermaid
-flowchart LR
-  A["annotation 写入"] --> B["task.pending -> in_progress"]
-  B --> C["batch.active/pre_annotated -> annotating"]
-  C --> D["全部任务完成"]
-  D --> E["batch.annotating -> reviewing"]
-  E --> F["reviewer 审 task / 批次"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/derived-state-propagation.svg"
+  alt="Annotation 和 Prediction 事实分别更新 Task 物化字段，Task 状态变化有条件地触发 Batch 自动迁移与计数重算，Project 计数直接扫描项目 Task，Dashboard、Scheduler 与工作流判断各自读取不同层"
+  caption="事实写入如何有条件地传播到 Task、Batch、Project 与读模型"
+/>
 
 也就是说：
 
-- task 状态会推动 batch
+- annotation 写入只有在引发 `pending ↔ in_progress` 状态翻转时，才从 `_update_task_stats()` 继续推动 batch；批量导入还可以显式关闭这条自动迁移
+- `admin_locked` batch 会跳过自动推进
 - batch 状态会反过来影响 task 可见性和派题
-- project 配置则决定 scheduler 如何在 task 间做选择
+- project 配置决定 scheduler 如何在 task 间做选择，但 Project.status 本身不参与当前候选查询
 
 ## 为什么需要单独一页
 

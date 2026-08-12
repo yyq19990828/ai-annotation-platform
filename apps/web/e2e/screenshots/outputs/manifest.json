@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-20T17:00:46.806Z",
+  "generated_at": "2026-08-11T16:21:22.428Z",
   "seed_profile": "screenshots",
-  "seed_revision": "screenshots-2026-07-d",
-  "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+  "seed_revision": "screenshots-2026-08-b",
+  "source_commit": "d6f88173c2c554556425b832ca4a3034af753e6d",
   "projects": [
     "desktop-light",
     "desktop-dark",
@@ -1863,12 +1863,12 @@
         "kind": "viewport"
       },
       "fixture": {
-        "project": "pointcloud_demo",
+        "project": "pointcloud_multicam_demo",
         "task": "frame_000"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-a",
+      "source_commit": "ecf2a62a2e2a352bf1f2180a7327f8c2dae3f2a7",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1880,9 +1880,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-11T12:34:18.062Z",
       "provenance": "current-run",
-      "sha256": "72774951d4bab8582591db37f934f30db7cdf8eb6d0b4f670abfb7d3e8dcde93",
+      "sha256": "85264840149f2bb03fa610bfb1b517faa8ef8d9c63e6a01dccce764edcc0352a",
       "width": 1440,
       "height": 900
     },

@@ -109,6 +109,7 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 - `seed.py`:dev 账号 + 示例项目；`--profile screenshots` 使用严格素材与截图 catalog 契约
 - `seed_assets.py`:按 `seed-assets.toml` 下载固定版本素材，校验大小/SHA-256、安全解压并缓存
 - `seed_coco8.py`:真实 `third-party/coco8`(8 图)→ 图片检测项目 + 每图 Task + YOLO 框走 `import_yolo` 作**预标注**导入(非人工标注)
+- `seed_large_images.py`:校验 Web 侧现实大图清单，幂等创建 `P-LARGE-IMG` / `DS-LARGE-IMG`，并可入队、等待图片金字塔生成
 - `seed_pointcloud.py`:SUSTechPOINTS 点云 demo + `third-party/nuscenes-mini` scene-0061 → scene 模式项目并按 scene 建包(by_scene split)
 - `seed_scale.py`:大规模压测夹具种子
 - `import_images.py`:批量导入本地图片到 dataset
@@ -152,6 +153,25 @@ PYTHONPATH=. uv run python scripts/seed.py \
 stub 默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100`，可用
 `--ml-backend-url` 覆盖。图片、视频和 OCR 项目都会创建唯一启用关联并设置主 backend；
 切回 live 模式时会移除 screenshot seed 自有的 stub registry。
+
+## 超大图开发夹具
+
+浏览器基准、文档截图与后端 pyramid 共用
+`apps/web/scripts/image-bench/fixtures.json` 中的现实大图清单。先在仓库根下载并校验原图，再从
+`apps/api` 导入当前开发栈：
+
+```bash
+pnpm --filter @anno/web image:seeds
+
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --enqueue-pyramids --wait-seconds 1800
+```
+
+默认导入清单内全部图片；可重复传 `--id <fixture-id>` 只选部分。脚本在任何数据库或对象存储写入前
+复核本地字节数与 SHA-256，上传使用固定对象 key 和摘要 metadata，重复运行不会重复建
+DatasetItem、Task 或 generation。固定项目和数据集被人工改名、改 owner 或接入其它资源时会拒绝覆盖；
+production 环境始终拒绝运行。
 
 截图 API 进程需要指向 `annotation_screenshots_test` 并显式设置
 `E2E_SEED_ENABLED=true`，才会提供只读

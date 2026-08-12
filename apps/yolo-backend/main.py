@@ -25,6 +25,7 @@ from typing import Any
 
 import torch
 from aap_backend_runtime import (
+    deployment_verified_flag,
     effective_device,
     effective_device_value,
     free_gpu_memory,
@@ -123,13 +124,24 @@ STRICT_OFFLINE = os.environ.get("YOLO_STRICT_OFFLINE", "0") not in (
     "False",
 )
 CHECKPOINTS_DIR = Path(os.environ.get("YOLO_CHECKPOINTS_DIR", "/app/checkpoints"))
+# Code support and deployment verification are separate. The backend does not
+# advertise or enter enforce mode until real-card load/unload evidence exists.
+MANAGED_LIFECYCLE_VERIFIED = deployment_verified_flag("YOLO_MANAGED_LIFECYCLE_VERIFIED")
 
 
 def _strict_free_gpu_memory() -> None:
     """Release managed CUDA allocator state without hiding an untrusted outcome."""
 
-    if not torch.cuda.is_available():
+    if not torch.cuda.is_available() or not torch.cuda.is_initialized():
         return
+    torch.cuda.synchronize()
+    clear_cublas_workspaces = getattr(
+        torch._C,  # noqa: SLF001 - PyTorch exposes no public equivalent
+        "_cuda_clearCublasWorkspaces",
+        None,
+    )
+    if callable(clear_cublas_workspaces):
+        clear_cublas_workspaces()
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
 
@@ -237,15 +249,18 @@ async def lifespan(app: FastAPI):
     _gpu_lifecycle = YoloGpuLifecycle(
         _model_pool,
         verify_keyring=verify_keyring,
+        evictable_verified=MANAGED_LIFECYCLE_VERIFIED,
     )
     update_pool_size(0)
     _predictor = YoloPredictor(_model_pool)
     _idle_task = asyncio.create_task(_idle_watcher())
     logger.info(
-        "yolo-backend startup: device=%s pool_cap=%d strict_offline=%s checkpoints=%s",
+        "yolo-backend startup: device=%s pool_cap=%d strict_offline=%s "
+        "managed_lifecycle_verified=%s checkpoints=%s",
         DEVICE,
         MODEL_POOL_CAP,
         STRICT_OFFLINE,
+        MANAGED_LIFECYCLE_VERIFIED,
         CHECKPOINTS_DIR,
     )
     try:
@@ -783,7 +798,7 @@ def _build_tracker_model_entry() -> dict[str, Any]:
 @app.get("/setup")
 def setup() -> dict[str, Any]:
     """协议 v2 多模型目录. 详见 docs-site/dev/reference/ml-backend-protocol.md §4.1.6."""
-    return {
+    payload = {
         "protocol_version": PROTOCOL_VERSION,
         "compat_protocol_versions": COMPAT_PROTOCOL_VERSIONS,
         "name": "yolo-backend",
@@ -802,7 +817,6 @@ def setup() -> dict[str, Any]:
         "supported_variants": [],  # 顶层留空, 由 models[].supported_variants 各自声明.
         "infra": "pytorch",
         "warmup_endpoint": True,  # v0.14.14: 声明本 backend 支持 POST /warmup (协议 §4.4)
-        "managed_lifecycle": ManagedLifecycleCapabilities().model_dump(mode="json"),
         "params": _PARAMS_SCHEMA,
         "models": [
             _build_model_entry(
@@ -865,6 +879,11 @@ def setup() -> dict[str, Any]:
             _build_tracker_model_entry(),
         ],
     }
+    if MANAGED_LIFECYCLE_VERIFIED:
+        payload["managed_lifecycle"] = ManagedLifecycleCapabilities().model_dump(
+            mode="json"
+        )
+    return payload
 
 
 @app.get("/versions")

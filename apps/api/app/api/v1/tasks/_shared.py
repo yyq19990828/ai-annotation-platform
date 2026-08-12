@@ -14,6 +14,7 @@ from app.schemas.task import (
     TaskOut,
     VideoMetadata,
 )
+from app.schemas.image_pyramid import ImagePyramidSummary
 from app.services.scheduler import (
     is_privileged_for_project,
     visible_batch_statuses_for,
@@ -177,6 +178,7 @@ def _task_with_url(
     thumbnail_path: str | None = None,
     blurhash: str | None = None,
     video_metadata: dict | None = None,
+    image_pyramid: ImagePyramidSummary | None = None,
     briefs: dict | None = None,
 ) -> TaskOut:
     """v0.8.8 · 由手写 dict 改为 ``TaskOut.model_validate`` + 动态字段注入。
@@ -223,6 +225,7 @@ def _task_with_url(
     out.video_metadata = (
         VideoMetadata.model_validate(video_metadata) if video_metadata else None
     )
+    out.image_pyramid = image_pyramid
     if briefs is not None:
         if task.assignee_id is not None:
             out.assignee = briefs.get(str(task.assignee_id))
@@ -317,4 +320,28 @@ async def _attach_dimensions_batch(
         if t.id not in result:
             result[t.id] = (None, None, t.thumbnail_path, t.blurhash, None)
 
+    return result
+
+
+async def _attach_image_pyramids_batch(
+    db: AsyncSession,
+    tasks: list[Task],
+    dimensions: dict[
+        uuid.UUID,
+        tuple[int | None, int | None, str | None, str | None, dict | None],
+    ],
+) -> dict[uuid.UUID, ImagePyramidSummary]:
+    from app.services.image_pyramid import pyramid_summary, task_pyramid_assets
+
+    assets = await task_pyramid_assets(db, tasks)
+    result: dict[uuid.UUID, ImagePyramidSummary] = {}
+    for task in tasks:
+        pair = assets.get(task.id)
+        if pair is None:
+            continue
+        _, generation = pair
+        width, height, *_ = dimensions.get(task.id, (None, None, None, None, None))
+        summary = pyramid_summary(generation, width=width, height=height)
+        if summary is not None:
+            result[task.id] = summary
     return result

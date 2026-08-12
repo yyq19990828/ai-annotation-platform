@@ -3,6 +3,8 @@ import type {
   MaskInstanceOperationSpec,
 } from "./geometry/maskInstanceOperations";
 import type { MaskOperationResult, MaskOperationSpec } from "./geometry/maskOperations";
+import type { MaskKernelShape, MaskMorphologyOperation } from "./geometry/maskOperations";
+import type { MaskHistoryPatch } from "./maskHistory";
 import type { RasterMaskAnalysis } from "./rasterMaskRender";
 
 export interface RasterMaskOperationContext {
@@ -27,6 +29,128 @@ export interface RasterMaskTileOverride extends RasterMaskTileRect {
   alpha: Uint8Array;
 }
 
+export interface RasterMaskPackedTileOverride extends RasterMaskTileRect {
+  tileX: number;
+  tileY: number;
+  revision: number;
+  bits: Uint8Array;
+}
+
+export type RasterMaskMorphologyBackendPolicy = "cpu" | "webgpu-candidate";
+export type RasterMaskMorphologyBackend = "cpu" | "webgpu" | "cpu-fallback";
+export type RasterMaskCpuStrategy = "not-run" | "dense" | "packed-separable";
+export type RasterMaskPrepareStrategy = "dense-cpu" | "direct-rle" | "packed-cache";
+export type RasterMaskXorOutputStrategy =
+  | "cpu-dense"
+  | "cpu-after-gpu-failure"
+  | "dense-word-scatter";
+export type RasterMaskWebGpuFallbackReason =
+  | "gate-disabled"
+  | "unsupported-operation"
+  | "below-pixel-threshold"
+  | "budget-insufficient"
+  | "navigator-gpu-unavailable"
+  | "adapter-unavailable"
+  | "initializing"
+  | "initialization-failed"
+  | "device-lost"
+  | "gpu-runtime-failed";
+export type RasterMaskComputeFailureStage =
+  | "adapter-request"
+  | "device-request"
+  | "shader-compile"
+  | "pipeline-create"
+  | "buffer-create"
+  | "queue-write"
+  | "encode"
+  | "submit"
+  | "map"
+  | "readback-validate"
+  | "patch-build";
+export type RasterMaskWebGpuCircuitState = "eligible" | "cooldown" | "page-fixed";
+
+export interface RasterMaskMorphologyMetrics {
+  totalMs: number;
+  cpuStrategy: RasterMaskCpuStrategy;
+  failureStage: RasterMaskComputeFailureStage | null;
+  inputPixels: number;
+  corePixels: number;
+  backendPrepareMs: number;
+  prepareStrategy: RasterMaskPrepareStrategy;
+  directRleScanMs: number;
+  baseCacheFillMs: number;
+  packedAssembleMs: number;
+  dirtyOverlayMs: number;
+  baseCacheHitTiles: number;
+  baseCacheMissTiles: number;
+  baseCacheEvictedTiles: number;
+  baseCacheRetainedBytes: number;
+  sourceScratchCapacityBytes: number;
+  computeMs: number;
+  diffOrPatchMs: number;
+  xorOutputStrategy: RasterMaskXorOutputStrategy;
+  xorTotalWords: number;
+  xorNonZeroWords: number;
+  xorWordDensity: number;
+  xorChangedPixels: number;
+  xorTouchedTiles: number;
+  xorScanMs: number;
+  xorPatchAllocateMs: number;
+  xorPatchScatterMs: number;
+  wordPatchBuildMs: number;
+  gpuUploadSubmitMs: number | null;
+  gpuReadbackMs: number | null;
+  gpuPassMs: number | null;
+  fallbackMaterializeMs: number | null;
+  cpuBudgetBytes: number;
+  gpuBudgetBytes: number;
+  cpuTransientBytes: number;
+  denseTransientBytes: number;
+  packedIntermediateBytes: number;
+  patchUpperBoundBytes: number;
+  inputAlphaBytes: number;
+  packedSourceBytes: number;
+  xorReadbackBytes: number;
+  allocatedGpuBytes: number;
+  gpuSourceCapacityBytes: number;
+  gpuXorCapacityBytes: number;
+  gpuReadbackCapacityBytes: number;
+  webGpuCircuitState: RasterMaskWebGpuCircuitState;
+  webGpuCooldownRemainingMs: number;
+  webGpuConsecutiveFailures: number;
+  webGpuDeviceLost: number;
+}
+
+export interface RasterMaskWebGpuWorkerSnapshot {
+  state: "disabled" | "idle" | "warming" | "ready" | "unavailable" | "lost" | "closed";
+  allocatedBytes: number;
+  sourceCapacityBytes: number;
+  xorCapacityBytes: number;
+  readbackCapacityBytes: number;
+  initAttempts: number;
+  deviceLost: number;
+  lastFailure: RasterMaskWebGpuFallbackReason | null;
+  lastFailureStage: RasterMaskComputeFailureStage | null;
+  circuitState: RasterMaskWebGpuCircuitState;
+  cooldownRemainingMs: number;
+  consecutiveFailures: number;
+}
+
+export interface RasterMaskMorphologyRoiResponse {
+  kind: "morphology_roi";
+  id: number;
+  ok: true;
+  sessionId: string;
+  sha256: string;
+  sourceRevision: number;
+  backend: RasterMaskMorphologyBackend;
+  fallbackReason: RasterMaskWebGpuFallbackReason | null;
+  changedPixels: number;
+  changedBounds: RasterMaskTileRect | null;
+  patches: MaskHistoryPatch[];
+  metrics: RasterMaskMorphologyMetrics;
+}
+
 export type RasterMaskCompareMode = "overlay" | "boundary" | "xor" | "added" | "removed";
 
 export interface RasterMaskCompareSessionRef {
@@ -48,6 +172,8 @@ export type RasterMaskWorkerJobKind =
   | "analyze"
   | "operation"
   | "instance_operation"
+  | "morphology_roi"
+  | "webgpu_warmup"
   | "tile_decode"
   | "tile_merge"
   | "compare_metrics"
@@ -91,6 +217,25 @@ type TileMergeWorkerRequest = {
   tiles: RasterMaskTileOverride[];
 };
 
+export type RasterMaskMorphologyRoiRequest = {
+  kind: "morphology_roi";
+  id: number;
+  sessionId: string;
+  sha256: string;
+  sourceRevision: number;
+  core: RasterMaskTileRect;
+  input: RasterMaskTileRect;
+  operation: {
+    operation: MaskMorphologyOperation;
+    kernelShape: MaskKernelShape;
+    radius: number;
+  };
+  dirtyOverrides: RasterMaskPackedTileOverride[];
+  backendPolicy: RasterMaskMorphologyBackendPolicy;
+  cpuComputeBudgetBytes: number;
+  gpuBufferBudgetBytes: number;
+};
+
 type CompareTileWorkerRequest = {
   kind: "compare_tile";
   id: number;
@@ -108,12 +253,19 @@ type CompareMetricsWorkerRequest = {
   baseline: RasterMaskCompareSessionRef;
 };
 
+type WebGpuWarmupWorkerRequest = {
+  kind: "webgpu_warmup";
+  id: number;
+};
+
 export type RasterMaskWorkerJobRequest =
   | AnalysisWorkerRequest
   | OperationWorkerRequest
   | InstanceOperationWorkerRequest
   | TileDecodeWorkerRequest
   | TileMergeWorkerRequest
+  | RasterMaskMorphologyRoiRequest
+  | WebGpuWarmupWorkerRequest
   | CompareMetricsWorkerRequest
   | CompareTileWorkerRequest;
 
@@ -124,7 +276,9 @@ export type RasterMaskWorkerControlRequest =
       sha256: string;
       rle: RasterMaskTransferredRle;
     }
-  | { kind: "release_session"; sessionId: string };
+  | { kind: "release_session"; sessionId: string }
+  | { kind: "release_compute" }
+  | { kind: "reset_webgpu" };
 
 export type RasterMaskWorkerRequest = RasterMaskWorkerJobRequest | RasterMaskWorkerControlRequest;
 
@@ -160,6 +314,13 @@ export type RasterMaskWorkerResponse =
       sessionId: string;
       sha256: string;
       rle: RasterMaskTransferredRle;
+    }
+  | RasterMaskMorphologyRoiResponse
+  | {
+      kind: "webgpu_warmup";
+      id: number;
+      ok: true;
+      snapshot: RasterMaskWebGpuWorkerSnapshot;
     }
   | {
       kind: "compare_metrics";

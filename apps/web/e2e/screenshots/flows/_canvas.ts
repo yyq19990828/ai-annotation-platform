@@ -2,7 +2,51 @@
  * canvas 流程录制共享工具。
  */
 import type { Page } from "@playwright/test";
-import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import type {
+  ScreenshotProjectKey,
+  ScreenshotRecordingAnchor,
+  ScreenshotSeedCatalog,
+} from "../../fixtures/seed";
+
+export interface MediaBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function recordingAnchor(
+  catalog: ScreenshotSeedCatalog,
+  projectKey: ScreenshotProjectKey,
+  taskKey: string,
+  anchorKey: string,
+  expectedFrameIndex?: number,
+): ScreenshotRecordingAnchor {
+  const anchor = catalog.projects[projectKey]?.tasks[taskKey]?.recording_anchors?.[anchorKey];
+  if (!anchor) {
+    throw new Error(`${projectKey}.${taskKey} 缺少 ${anchorKey} 语义锚点`);
+  }
+  if (expectedFrameIndex !== undefined && anchor.frame_index !== expectedFrameIndex) {
+    throw new Error(
+      `${projectKey}.${taskKey}.${anchorKey} 帧锚点应为 F${expectedFrameIndex}，实际为 F${anchor.frame_index ?? "?"}`,
+    );
+  }
+  return anchor;
+}
+
+export function mediaPoint(bounds: MediaBounds, point: [number, number]) {
+  return {
+    x: bounds.x + bounds.width * point[0],
+    y: bounds.y + bounds.height * point[1],
+  };
+}
+
+export function mediaBbox(bounds: MediaBounds, bbox: [number, number, number, number]) {
+  return {
+    start: mediaPoint(bounds, [bbox[0], bbox[1]]),
+    end: mediaPoint(bounds, [bbox[2], bbox[3]]),
+  };
+}
 
 /**
  * 通过 screenshot catalog 的稳定逻辑键打开图片工作台。

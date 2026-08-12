@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-11
 ---
 
 # 视频播放、帧导航与采样
@@ -79,8 +79,9 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
 
 ## 时间轴缩放与 AI 预测导航
 
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/horizontal-zoom.gif — Ctrl 滚动以指针帧为锚点缩放 + 双击复位 [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/video-timeline/prediction-density-track.png — AI 预测密度轨 + 跳预测帧导航 [manual] -->
+
+![以指针帧为锚缩放、平移时间轴并双击复位](../images/video-timeline/horizontal-zoom.gif)
 
 时间轴在紧凑浮层中占据主行，展开后则铺满整段视频；状态行同时显示当前时间与视频总时长。展开面板上方带稀疏的帧号刻度尺（随缩放自动重排，给长视频一个帧位参照）。长视频里帧太密时可以**横向放大**只看一段：
 
@@ -100,14 +101,16 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
 ## 章节
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/video-playback/chapter-sidebar.png — 章节侧栏含彩色色带 + 章节列表 [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/brush-create-chapter.gif — 时间轴刷选建章节 [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/chapter-resize-hover.gif — 章节条拖边界 resize + 双向 hover [manual] -->
+
+![在时间轴上圈选范围并创建章节](../images/video-timeline/brush-create-chapter.gif)
+
+![章节条与侧栏联动高亮，拖动边界后自动保存](../images/video-timeline/chapter-resize-hover.gif)
 
 长视频可以通过「章节」侧栏（位于轨迹侧栏下方）划分场景：
 
 - 项目负责人 / 超级管理员可以新建、编辑、删除章节。
 - 表单支持「使用当前帧」按钮一键填入起止帧。
-- 除表单外，还能在时间轴上**刷选建章节**：点章节侧栏的**「新建」**进入圈选态，再在时间轴上拖出一段，即以刷选范围为起止建成章节。
+- 除表单外，还能在时间轴上**刷选建章节**：点章节侧栏的**「圈选」**进入圈选态，再在时间轴上拖出一段，填写标题后创建章节。
 - 时间轴上方有彩色色带，点击跳到章节起点；色带段**可拖边界改起止**——拖动某段的左 / 右缘调整范围，松手后自动保存。
 - 章节色带与侧栏章节行**双向 hover 联动**：悬停任一侧，另一侧对应项高亮，便于长列表里对位。
 - `PageDown` / `PageUp` 在章节之间跳转（如果当前帧在某章节内部，`PageUp` 先回到该章节起点）。

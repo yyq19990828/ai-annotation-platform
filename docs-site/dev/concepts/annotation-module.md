@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-29
 ---
 
 # 标注模块
@@ -22,17 +22,13 @@ last_reviewed: 2026-07-22
 
 ## 模块定位
 
-Annotation 是“用户最终提交的结构化标注结果”。它不是工作流状态机本身，但它会驱动状态机变化。
+Annotation 是“用户最终提交的结构化标注结果”。它不是工作流状态机本身；只有改变有效 annotation 数量并引起 task 状态翻转的写入，才会继续触发 batch 自动迁移。经典 Prediction 必须经用户 accept 才创建 Annotation，`parent_prediction_id` 是业务软引用；原生交互 Mask 接受则在独立事务里同时写 provenance 和 Annotation。
 
-```mermaid
-graph TD
-  Task["Task"] --> Annotation["Annotation"]
-  Prediction["Prediction"] --> Annotation
-  Annotation --> TaskStats["task.total_annotations / is_labeled"]
-  TaskStats --> BatchAuto["BatchService.check_auto_transitions()"]
-  AnnotationAPI["api/v1/tasks/annotations.py"] --> AnnotationService["services/annotation.py"]
-  AnnotationService --> Draft["AnnotationDraft"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/annotation-module-map.svg"
+  alt="Annotation 模块关系图，展示当前手工写入主链、经典预测采纳、原生交互 Mask 接受、条件性的 task 与 batch 回写，以及当前未接入路由的 AnnotationDraft"
+  caption="Annotation 模块全景：实线为当前主链，灰色虚线表示未接入的后端草稿模型"
+/>
 
 一句话理解：
 
@@ -89,7 +85,7 @@ graph TD
 
 - 真实删除走 soft delete，`delete()` 只会把 `is_active` 置 `False`
 - “有效标注数量”同时要求 `is_active=True` 且 `was_cancelled=False`
-- `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”
+- `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”；该列是业务软引用，不是数据库外键
 
 #### 父子标注（`parent_annotation_id`）
 
@@ -145,14 +141,40 @@ transferable buffer 返回。分析默认 15 秒、普通操作 30 秒、tile me
 只终止并补充对应 Worker，其他 slot 继续。pool 按 task 创建，切题或卸载时 dispose，队列、session run
 index 与 Worker 一并清空；生产环境没有 Worker 时返回明确错误，不在主线程静默执行大操作。
 
+大 ROI morphology 也复用同一 pool 与持久 base RLE session。store 只发送 core、halo 后的 input、operation
+和相交 dirty tile 的 packed overrides；结果只返回 core 内 non-empty XOR tile patches。core tile 以最多两个
+并发 decode 有界物化，避免大 ROI 一次填满 Worker 等待队列。响应必须先通过 session、内容摘要、
+source / tile revision、尺寸、尾位和 core 边界校验，再一次性应用；取消、过期或畸形响应不会产生部分写入。
+
+对于 input 至少 4 MP、radius `1..31` 的 `square dilate`，Worker 按 session 惰性缓存 immutable base RLE
+的 512² row-aligned packed tiles，再以 word span 组装 ROI scratch；本次请求显式携带的 dirty packed
+overrides 以 masked overwrite 做 exact set / clear，绝不写回 base cache。cache 不是 mutable current truth，
+miss、CPU budget 不足或 invariant failure 时可从 immutable RLE 直接构造 packed input。
+
+WebGPU ready 时，shader 对含 halo 的 input 执行 morphology，并只回读 core `after XOR source` words。
+production 保留单个 one-pass shader。横向 intermediate + 纵向 XOR 的两阶段候选虽然 bit-exact，但同包
+资格矩阵只有 9/36 bucket 达到两轮 p95 门，且局部收益不能跨输入图案稳定成立，因此没有进入 Worker、
+协议或普通前端 bundle，也没有 radius/ROI 或 adapter-specific crossover。
+WebGPU gate 关闭、adapter/device 不可用、初始化中、GPU budget 不足，或 submit/map/device lost 等运行时
+失败时，同一 packed source 交给 separable CPU kernel：水平 word expansion 只计算一次，再按纵向窗口 OR。
+因此大 ROI CPU fallback 不重建 input-sized dense alpha。小 ROI、不支持的 operation 或 packed prospective
+admission 失败时才使用完整 dense CPU morphology。
+
+两种 backend 的 core XOR 都由同一 builder 处理：Worker 以 popcount、首尾 bit 和跨 tile byte spans 把
+non-zero words scatter 成 history patch，不逐 set bit 重算像素与 tile 坐标。production 协议没有 benchmark
+selector；direct packed kernel 只作为 test/benchmark oracle。
+
 Mask 本地撤销历史使用 512 像素 tile 的 1-bit XOR patch。笔画开始后只在首次触及某个 tile
 时捕获临时基线，结束时与当前二值像素生成 XOR 并释放基线；高级操作在确认时按变更边界
-生成同种 patch。undo / redo 对当前真值执行同一次 XOR，不再构造 before / after RLE。历史最多
+由 Worker 直接返回同种 patch，不再在主线程创建 before checkpoint 或扫描 after。undo / redo 对当前
+真值执行同一次 XOR，不再构造 before / after RLE。历史最多
 100 条，并按 Low / Standard / High 档位共享 16 / 32 / 64 MiB 硬预算；新写入会释放 redo，超预算
 时只从最旧 undo 开始淘汰。这是编辑器本地历史，不改变服务端 annotation history 与审计语义。
 
 大画布编辑不创建整图 alpha 或整图 overlay canvas。`SparseMaskTileStore` 以 immutable base RLE 加
-512 像素 materialized override tile 作为真值；base 在 Worker 会话中建 run index，单 tile 按列从
+512 像素 materialized override tile 作为真值；每个 tile 的显示 alpha、immutable `baseBits` 和可写
+`currentBits` 都计入准入预算，dirty 由两份 packed bits 比较。brush / erase / lasso 只同步 touched bits，
+history patch 同时更新 alpha 与 current bits。base 在 Worker 会话中建 run index，单 tile 按列从
 COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中心和 even-odd 栅格化原语，
 命中优先读 override，未物化区域通过主线程 run index 精确查询 base。viewport 仅 pin 可见 tile
 与一圈预取；全图缩放时不解码全部 tile，而是使用不参与写入和精确命中的受限 overview。
@@ -164,6 +186,28 @@ COCO RLE 精确解码。brush / erase / lasso 与 dense editor 共用像素中�
 `ROI + halo` 并只写回 core。flood fill、component / hole、split / join / overlap、整图 morphology
 和 conversion 在分配前以 `large_mask_full_scan_required` 拒绝。如果可见 tile 也无法通过硬预算准入，
 编辑器保持只读 overview；已经 dirty 的 tile 与 history 保留到用户保存、重试或显式丢弃。
+
+WebGPU 只是大 ROI `square dilate` 的客户端候选后端，build-time gate 默认开启，并在首次相关 morphology
+请求时惰性探测 adapter；显式关闭时 Worker 不加载 provider、不请求 adapter。只有 slot 0 可以持有一个
+device，且仅在 input 至少 `2048²`、客户端 adapter ready、operation 和独立 GPU buffer budget 允许时路由。
+CPU compute budget 单独约束 packed/dense scratch、XOR、patch upper bound 与 retained cache；GPU budget
+为零不会清空 CPU budget。
+
+第一次 WebGPU failure 销毁 device/buffers 并进入 30 秒 cooldown；到期后的下一次 eligible foreground
+request 只重试一次，连续第二次失败后当前 page/provider lifecycle 固定 CPU。新 Mask session 不清除
+circuit；最后 session release、Worker replacement 或 dispose 会销毁 provider。该 GPU 属于访问网页的
+浏览器；Linux API、Celery 与 ML backend 主机不会因为此 gate 使用服务端 GPU。
+
+pool snapshot 暴露 provider/circuit 状态、稳定 failure stage、owner、CPU/GPU budgets、source / XOR /
+readback capacity、packed/dense transient、base cache / scratch bytes、prepare strategy、cache hit / miss /
+evict、XOR word density / touched tiles、scan / allocation / scatter 分段与 backend，不包含 Mask 内容。
+最近 20 次 typed compute event 可附到 BUG 报告；完整 task id、adapter/driver 和浏览器原始错误不进入该
+快照。base cache 上限取 32 MiB 与 CPU budget 四分之一中的较小值；session release 会清理所属 entries，
+dispose 后这些资源与 session 一起归零。
+
+Linux X11 默认 Chrome 当前拿不到 adapter，按正常能力回退处理；强制 unsafe Vulkan 只用于研发资格。
+Linux Wayland、macOS Metal、Windows D3D12 与 Safari/Edge 的项目实机矩阵仍是 `not tested`，不得从
+X11 强制 Vulkan结果外推性能或支持声明。
 
 ### 原子多对象 Mask 操作
 
@@ -253,8 +297,7 @@ SAM / Tracker 重跑项只创建候选，不越过候选审阅直接改写 annot
 - `result`
 - `was_postponed`
 
-但要注意：**当前主工作台草稿并不主要依赖后端 draft 表。**
-前端仍大量使用 `sessionStorage["canvas_draft:*"]` 做本地草稿恢复；后端 draft service 已存在，但还不是当前主路径。
+但要注意：后端目前只有 `save_draft()` / `get_draft()` service，没有对应 HTTP 路由或主链调用者，`AnnotationDraft` 仍是未接入能力。前端的 `sessionStorage["canvas_draft:*"]` 只保存讨论区评论画布的红圈 / 涂画，TTL 为 5 分钟；它不是 bbox、polygon、mask 等通用 annotation 草稿存储。
 
 ## 写入路径
 
@@ -452,7 +495,7 @@ annotation 必须携带 `tool_unit_id: String(30)`（枚举 bbox / polyline / re
 - `count == 0` 且 `task.status == "in_progress"`
   `in_progress → pending`
 
-如果 task 挂在 batch 下，还会继续：
+只有当调用方允许 batch transition、上述计数变化实际触发 `pending ↔ in_progress`，且 task 挂在 batch 下时，才会继续：
 
 - `BatchService.check_auto_transitions(batch_id)`
 - `BatchService.recalculate_counters(batch_id)`
@@ -516,7 +559,7 @@ annotation 路径几乎都带两个伴随动作：
 | 文件                                                                     | 为什么要看                                              |
 | ------------------------------------------------------------------------ | ------------------------------------------------------- |
 | `apps/web/src/pages/Workbench/stages/video/VideoWorkbench.tsx`           | 视频 Stage concrete implementation                      |
-| `apps/web/src/pages/Workbench/stage/VideoStage.tsx`                      | 视频播放、关键帧编辑、轨迹列表和插值显示                |
+| `apps/web/src/pages/Workbench/stage/VideoKonvaStage.tsx`                 | 视频播放、关键帧编辑、轨迹列表和插值显示                |
 | `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 annotation payload 与离线兜底                      |
 | `apps/web/src/pages/Workbench/state/transforms.ts`                       | `video_bbox` / `video_track_bbox` 与工作台 shape 的转换 |
 | `apps/api/app/schemas/task.py`                                           | `TaskOut.video_metadata` 和 video manifest response     |

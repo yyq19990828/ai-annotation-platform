@@ -8541,6 +8541,16 @@
             ],
             "title": "Image Height"
           },
+          "image_pyramid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePyramidSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "image_width": {
             "anyOf": [
               {
@@ -11638,6 +11648,556 @@
         "title": "HostInfo",
         "type": "object"
       },
+      "ImagePyramidAssetUrl": {
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "overview",
+              "tile"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "required": [
+          "kind",
+          "generation",
+          "url"
+        ],
+        "title": "ImagePyramidAssetUrl",
+        "type": "object"
+      },
+      "ImagePyramidAssetUrlsRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "overview": "#/components/schemas/ImagePyramidOverviewAssetRequest",
+                  "tile": "#/components/schemas/ImagePyramidTileAssetRequest"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ImagePyramidOverviewAssetRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/ImagePyramidTileAssetRequest"
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ImagePyramidAssetUrlsRequest",
+        "type": "object"
+      },
+      "ImagePyramidAssetUrlsResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePyramidAssetUrl"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "generation",
+          "expires_at",
+          "items"
+        ],
+        "title": "ImagePyramidAssetUrlsResponse",
+        "type": "object"
+      },
+      "ImagePyramidLevel": {
+        "properties": {
+          "columns": {
+            "title": "Columns",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "scaleFactor": {
+            "title": "Scalefactor",
+            "type": "integer"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level",
+          "scaleFactor",
+          "width",
+          "height",
+          "columns",
+          "rows"
+        ],
+        "title": "ImagePyramidLevel",
+        "type": "object"
+      },
+      "ImagePyramidManifest": {
+        "properties": {
+          "format": {
+            "const": "webp",
+            "title": "Format",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePyramidLevel"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "normalizationVersion": {
+            "title": "Normalizationversion",
+            "type": "string"
+          },
+          "overlap": {
+            "title": "Overlap",
+            "type": "integer"
+          },
+          "overview": {
+            "$ref": "#/components/schemas/ImagePyramidOverviewManifest"
+          },
+          "schema": {
+            "const": "aap-image-pyramid/v1",
+            "title": "Schema",
+            "type": "string"
+          },
+          "sourceFingerprint": {
+            "title": "Sourcefingerprint",
+            "type": "string"
+          },
+          "tileSize": {
+            "title": "Tilesize",
+            "type": "integer"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema",
+          "generation",
+          "sourceFingerprint",
+          "normalizationVersion",
+          "width",
+          "height",
+          "tileSize",
+          "overlap",
+          "format",
+          "levels",
+          "overview"
+        ],
+        "title": "ImagePyramidManifest",
+        "type": "object"
+      },
+      "ImagePyramidOverviewAssetRequest": {
+        "properties": {
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "overview",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "generation"
+        ],
+        "title": "ImagePyramidOverviewAssetRequest",
+        "type": "object"
+      },
+      "ImagePyramidOverviewManifest": {
+        "properties": {
+          "contentDigest": {
+            "title": "Contentdigest",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "contentDigest"
+        ],
+        "title": "ImagePyramidOverviewManifest",
+        "type": "object"
+      },
+      "ImagePyramidOverviewUrl": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "ImagePyramidOverviewUrl",
+        "type": "object"
+      },
+      "ImagePyramidResponse": {
+        "properties": {
+          "building_generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Generation"
+          },
+          "building_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "building"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePyramidManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePyramidOverviewUrl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "retry_after_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After Ms"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "not_available",
+              "missing",
+              "pending",
+              "building",
+              "ready",
+              "failed",
+              "stale",
+              "inconsistent"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "status",
+          "required"
+        ],
+        "title": "ImagePyramidResponse",
+        "type": "object"
+      },
+      "ImagePyramidRetryResponse": {
+        "properties": {
+          "celery_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Id"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "pending",
+              "building"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "ImagePyramidRetryResponse",
+        "type": "object"
+      },
+      "ImagePyramidSummary": {
+        "properties": {
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "building",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tile_size": {
+            "default": 512,
+            "title": "Tile Size",
+            "type": "integer"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "status",
+          "generation",
+          "required"
+        ],
+        "title": "ImagePyramidSummary",
+        "type": "object"
+      },
+      "ImagePyramidTileAssetRequest": {
+        "properties": {
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "tile",
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "minimum": 0.0,
+            "title": "Level",
+            "type": "integer"
+          },
+          "x": {
+            "minimum": 0.0,
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "generation",
+          "level",
+          "x",
+          "y"
+        ],
+        "title": "ImagePyramidTileAssetRequest",
+        "type": "object"
+      },
       "InstanceModelItem": {
         "description": "实例级 model 视图 (字段裁剪自协议 v2 ModelCapability, 不暴露 url / params 等运维\n信息; v0.14.12 起补 supported_variants + variant_combinations 让前端能按主轴展开\n「具体模型」行; v0.19.2 WS0 起补 supported_inputs + resource_profile, 与项目级\n/capabilities 对齐, 供全局编排选择器消费投递契约/批量画像).",
         "properties": {
@@ -12255,6 +12815,7 @@
           "group_name": {
             "anyOf": [
               {
+                "maxLength": 100,
                 "type": "string"
               },
               {
@@ -24802,6 +25363,16 @@
             ],
             "title": "Image Height"
           },
+          "image_pyramid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePyramidSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "image_width": {
             "anyOf": [
               {
@@ -30310,7 +30881,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.11"
+    "version": "0.23.25"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -47195,6 +47766,160 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/image-pyramid": {
+      "get": {
+        "operationId": "get_image_pyramid_api_v1_tasks__task_id__image_pyramid_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagePyramidResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Image Pyramid",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/image-pyramid/asset-urls": {
+      "post": {
+        "operationId": "create_image_pyramid_asset_urls_api_v1_tasks__task_id__image_pyramid_asset_urls_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagePyramidAssetUrlsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagePyramidAssetUrlsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Image Pyramid Asset Urls",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/image-pyramid/retry": {
+      "post": {
+        "operationId": "retry_image_pyramid_api_v1_tasks__task_id__image_pyramid_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagePyramidRetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Image Pyramid",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/lock": {
       "delete": {
         "operationId": "release_lock_api_v1_tasks__task_id__lock_delete",
@@ -47893,6 +48618,84 @@
           }
         ],
         "summary": "Accept Prediction",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/predictions/{prediction_id}/mask-content/{shape_index}/{frame_index}": {
+      "get": {
+        "operationId": "get_prediction_mask_content_frame_api_v1_tasks__task_id__predictions__prediction_id__mask_content__shape_index___frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Prediction Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "shape_index",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Shape Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CocoRleContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Prediction Mask Content Frame",
         "tags": [
           "tasks"
         ]

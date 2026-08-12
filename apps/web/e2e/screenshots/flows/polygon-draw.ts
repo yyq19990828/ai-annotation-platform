@@ -12,7 +12,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, openImageAnnotate } from "./_canvas";
+import { hidePredictions, mediaPoint, openImageAnnotate, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runPolygonDraw(
@@ -32,27 +32,23 @@ export async function runPolygonDraw(
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
   if (!box) throw new Error("[polygon-draw] workbench-stage 没有可见边界");
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
+  const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
+  if (anchor.polygon.length < 3) {
+    throw new Error("[polygon-draw] primary_vehicle 缺少可闭合轮廓锚点");
+  }
+  const points = anchor.polygon.map((point) => mediaPoint(box, point));
 
   const drawStartMs = Date.now();
 
-  // ── 逐点落顶点（五边形），点间停顿让录屏看到预览线；末点离首点足够远不触发自动闭合 ──
-  const pts: Array<[number, number]> = [
-    [cx - 150, cy - 70],
-    [cx + 60, cy - 110],
-    [cx + 170, cy + 30],
-    [cx + 40, cy + 130],
-    [cx - 140, cy + 80],
-  ];
-  for (const [x, y] of pts) {
+  // ── 沿复核轮廓逐点落顶点，点间停顿让录屏看到预览线；末点离首点足够远不触发自动闭合 ──
+  for (const { x, y } of points) {
     await page.mouse.move(x, y);
     await page.waitForTimeout(320);
     await page.mouse.click(x, y);
     await page.waitForTimeout(520);
   }
   // 悬停展示回到首点的闭合预览线
-  await page.mouse.move(cx - 150, cy - 70);
+  await page.mouse.move(points[0].x, points[0].y);
   await page.waitForTimeout(800);
   // Enter 闭合多边形并提交
   await page.keyboard.press("Enter");

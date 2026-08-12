@@ -1,0 +1,2522 @@
+{
+  "schema": "mask-webgpu-separable-qualification/v1",
+  "generated_at": "2026-07-31T14:40:37.967Z",
+  "environment": {
+    "platform": "linux",
+    "release": "5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "browser": "150.0.7871.114",
+    "headless": false,
+    "unsafe_vulkan": true
+  },
+  "config": {
+    "baseUrl": "http://localhost:3000",
+    "iterations": 10,
+    "warmup": 3,
+    "rounds": 2,
+    "radii": [
+      8,
+      16,
+      31
+    ],
+    "caseNames": [
+      "2048",
+      "4k",
+      "4096"
+    ],
+    "patterns": [
+      "contour",
+      "dense",
+      "checker",
+      "edge"
+    ],
+    "budgetMiB": 128
+  },
+  "result": {
+    "conclusive": true,
+    "exactness": [
+      {
+        "shape": "tail",
+        "pattern": "contour",
+        "radius": 1,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "contour",
+        "radius": 4,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "contour",
+        "radius": 8,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "contour",
+        "radius": 16,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "contour",
+        "radius": 31,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "dense",
+        "radius": 1,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "dense",
+        "radius": 4,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "dense",
+        "radius": 8,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "dense",
+        "radius": 16,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "dense",
+        "radius": 31,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "checker",
+        "radius": 1,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "checker",
+        "radius": 4,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "checker",
+        "radius": 8,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "checker",
+        "radius": 16,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "checker",
+        "radius": 31,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "edge",
+        "radius": 1,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "edge",
+        "radius": 4,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "edge",
+        "radius": 8,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "edge",
+        "radius": 16,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "edge",
+        "radius": 31,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "random",
+        "radius": 1,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "random",
+        "radius": 4,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "random",
+        "radius": 8,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "random",
+        "radius": 16,
+        "words": 62
+      },
+      {
+        "shape": "tail",
+        "pattern": "random",
+        "radius": 31,
+        "words": 62
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "contour",
+        "radius": 1,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "contour",
+        "radius": 4,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "contour",
+        "radius": 8,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "contour",
+        "radius": 16,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "contour",
+        "radius": 31,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "dense",
+        "radius": 1,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "dense",
+        "radius": 4,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "dense",
+        "radius": 8,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "dense",
+        "radius": 16,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "dense",
+        "radius": 31,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "checker",
+        "radius": 1,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "checker",
+        "radius": 4,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "checker",
+        "radius": 8,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "checker",
+        "radius": 16,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "checker",
+        "radius": 31,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "edge",
+        "radius": 1,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "edge",
+        "radius": 4,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "edge",
+        "radius": 8,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "edge",
+        "radius": 16,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "edge",
+        "radius": 31,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "random",
+        "radius": 1,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "random",
+        "radius": 4,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "random",
+        "radius": 8,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "random",
+        "radius": 16,
+        "words": 1161
+      },
+      {
+        "shape": "unaligned",
+        "pattern": "random",
+        "radius": 31,
+        "words": 1161
+      }
+    ],
+    "rows": [
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "contour",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "p95_improvement_percent": -8.571428912026542
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.299999952316284,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.299999952316284,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "p95_improvement_percent": -5.405406711570014
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -6.9884178117982785,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "contour",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "p95_improvement_percent": 5.263157564517205
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.299999952316284,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.700000047683716,
+              "max_ms": 3.700000047683716
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.299999952316284,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.700000047683716,
+              "max_ms": 3.700000047683716
+            },
+            "p95_improvement_percent": -2.777780123330952
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 1.2426887205931265,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "contour",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.899999976158142,
+              "max_ms": 3.899999976158142
+            },
+            "separable": {
+              "p50_ms": 3.799999952316284,
+              "p95_ms": 4.899999976158142,
+              "max_ms": 4.899999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.899999976158142,
+              "max_ms": 3.899999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 3.799999952316284,
+              "p95_ms": 4.899999976158142,
+              "max_ms": 4.899999976158142
+            },
+            "p95_improvement_percent": -25.641025797776845
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.899999976158142,
+              "max_ms": 3.899999976158142
+            },
+            "separable": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.899999976158142,
+              "max_ms": 3.899999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "p95_improvement_percent": 5.128204853890522
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -10.25641047194316,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "dense",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.799999952316284,
+              "max_ms": 3.799999952316284
+            },
+            "separable": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.799999952316284,
+              "max_ms": 3.799999952316284
+            },
+            "separable_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "p95_improvement_percent": 2.631578039264403
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "p95_improvement_percent": 5.263157564517205
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 3.9473678018908043,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "dense",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "p95_improvement_percent": -8.571428912026542
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.100000023841858,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "separable": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 4.599999964237213,
+              "max_ms": 4.599999964237213
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.100000023841858,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 4.599999964237213,
+              "max_ms": 4.599999964237213
+            },
+            "p95_improvement_percent": -27.777775938128258
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -18.1746024250774,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "dense",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.400000035762787,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.400000035762787,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "p95_improvement_percent": -7.894737131047445
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.700000047683716,
+              "max_ms": 3.700000047683716
+            },
+            "separable": {
+              "p50_ms": 3.599999964237213,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.700000047683716,
+              "max_ms": 3.700000047683716
+            },
+            "separable_wall": {
+              "p50_ms": 3.599999964237213,
+              "p95_ms": 4,
+              "max_ms": 4
+            },
+            "p95_improvement_percent": -5.405405013556029
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -6.650071072301737,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "checker",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "separable": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "separable_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "p95_improvement_percent": -5.555556935292716
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "p95_improvement_percent": 0
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -2.777778467646358,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "checker",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable": {
+              "p50_ms": 3.100000023841858,
+              "p95_ms": 3.700000047683716,
+              "max_ms": 3.700000047683716
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.799999952316284,
+              "max_ms": 3.799999952316284
+            },
+            "separable_wall": {
+              "p50_ms": 3.100000023841858,
+              "p95_ms": 3.700000047683716,
+              "max_ms": 3.700000047683716
+            },
+            "p95_improvement_percent": -0.0000016109363504710596
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.5,
+              "p95_ms": 6.899999976158142,
+              "max_ms": 6.899999976158142
+            },
+            "separable": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.5,
+              "p95_ms": 6.899999976158142,
+              "max_ms": 6.899999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "p95_improvement_percent": 43.47826015596203
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 21.73912927251284,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "checker",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "p95_improvement_percent": 2.6315795665302417
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 3,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "p95_improvement_percent": 2.7027017448486563
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 2.6671406556894492,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "edge",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable": {
+              "p50_ms": 3.099999964237213,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 3.099999964237213,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "p95_improvement_percent": 2.702703355785007
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.699999988079071,
+              "max_ms": 3.699999988079071
+            },
+            "p95_improvement_percent": 0
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 1.3513516778925034,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "edge",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.299999952316284,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.899999976158142,
+              "max_ms": 3.899999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.299999952316284,
+              "p95_ms": 3.600000023841858,
+              "max_ms": 3.600000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.899999976158142,
+              "max_ms": 3.899999976158142
+            },
+            "p95_improvement_percent": -8.333331953596195
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.799999952316284,
+              "max_ms": 3.799999952316284
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.799999952316284,
+              "max_ms": 3.799999952316284
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.800000011920929,
+              "max_ms": 3.800000011920929
+            },
+            "p95_improvement_percent": -0.0000015685433032455357
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -4.16666676106975,
+        "passes_gate": false
+      },
+      {
+        "case": "2048",
+        "width": 2048,
+        "height": 2048,
+        "pattern": "edge",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "separable": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.200000047683716,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "separable_wall": {
+              "p50_ms": 3.300000011920929,
+              "p95_ms": 3.599999964237213,
+              "max_ms": 3.599999964237213
+            },
+            "p95_improvement_percent": 0
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.199999988079071,
+              "p95_ms": 3.5,
+              "max_ms": 3.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.399999976158142,
+              "p95_ms": 3.900000035762787,
+              "max_ms": 3.900000035762787
+            },
+            "p95_improvement_percent": -11.428572450365339
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -5.714286225182669,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "contour",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.699999988079071,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "separable": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.699999988079071,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "p95_improvement_percent": 0
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "separable": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "p95_improvement_percent": -7.317073418936651
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -3.6585367094683257,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "contour",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 4,
+              "p95_ms": 4.199999988079071,
+              "max_ms": 4.199999988079071
+            },
+            "separable": {
+              "p50_ms": 4,
+              "p95_ms": 6.300000011920929,
+              "max_ms": 6.300000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 4,
+              "p95_ms": 4.199999988079071,
+              "max_ms": 4.199999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 4,
+              "p95_ms": 6.300000011920929,
+              "max_ms": 6.300000011920929
+            },
+            "p95_improvement_percent": -50.000000709579105
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 4,
+              "p95_ms": 4.300000011920929,
+              "max_ms": 4.300000011920929
+            },
+            "separable": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 4,
+              "p95_ms": 4.300000011920929,
+              "max_ms": 4.300000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "p95_improvement_percent": -2.3255819433634173
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -26.16279132647126,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "contour",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 7.900000035762787,
+              "max_ms": 7.900000035762787
+            },
+            "separable": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.900000035762787,
+              "max_ms": 4.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 7.900000035762787,
+              "max_ms": 7.900000035762787
+            },
+            "separable_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.900000035762787,
+              "max_ms": 4.900000035762787
+            },
+            "p95_improvement_percent": 37.97468337239487
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 5,
+              "p95_ms": 5.199999988079071,
+              "max_ms": 5.199999988079071
+            },
+            "separable": {
+              "p50_ms": 4,
+              "p95_ms": 4.300000011920929,
+              "max_ms": 4.300000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 5,
+              "p95_ms": 5.199999988079071,
+              "max_ms": 5.199999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 4,
+              "p95_ms": 4.300000011920929,
+              "max_ms": 4.300000011920929
+            },
+            "p95_improvement_percent": 17.307691888872686
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 27.64118763063378,
+        "passes_gate": true
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "dense",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 4,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "separable": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 4,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "p95_improvement_percent": 0
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.299999952316284,
+              "max_ms": 4.299999952316284
+            },
+            "separable": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4,
+              "max_ms": 4
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.299999952316284,
+              "max_ms": 4.299999952316284
+            },
+            "separable_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4,
+              "max_ms": 4
+            },
+            "p95_improvement_percent": 6.976743154489641
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 3.4883715772448207,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "dense",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 4.299999952316284,
+              "max_ms": 4.299999952316284
+            },
+            "separable": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 4.299999952316284,
+              "max_ms": 4.299999952316284
+            },
+            "separable_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "p95_improvement_percent": -2.325583361754122
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "separable": {
+              "p50_ms": 3.700000047683716,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 3.700000047683716,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "p95_improvement_percent": -35.41666633035574
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -18.87112484605493,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "dense",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 6.800000011920929,
+              "max_ms": 6.800000011920929
+            },
+            "separable": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 6.800000011920929,
+              "max_ms": 6.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "p95_improvement_percent": 35.29411811110882
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 6,
+              "p95_ms": 8.199999988079071,
+              "max_ms": 8.199999988079071
+            },
+            "separable": {
+              "p50_ms": 4,
+              "p95_ms": 9,
+              "max_ms": 9
+            },
+            "one_pass_wall": {
+              "p50_ms": 6,
+              "p95_ms": 8.199999988079071,
+              "max_ms": 8.199999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 4,
+              "p95_ms": 9,
+              "max_ms": 9
+            },
+            "p95_improvement_percent": -9.756097720535932
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 12.769010195286445,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "checker",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "separable": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 4,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "p95_improvement_percent": 26.153845970447247
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.799999952316284,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "separable": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.199999988079071,
+              "max_ms": 4.199999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.799999952316284,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.199999988079071,
+              "max_ms": 4.199999988079071
+            },
+            "p95_improvement_percent": 35.3846155680143
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 30.769230769230774,
+        "passes_gate": true
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "checker",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4,
+              "max_ms": 4
+            },
+            "separable": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 10.100000023841858,
+              "max_ms": 10.100000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4,
+              "max_ms": 4
+            },
+            "separable_wall": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 10.100000023841858,
+              "max_ms": 10.100000023841858
+            },
+            "p95_improvement_percent": -152.50000059604645
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 6.600000023841858,
+              "max_ms": 6.600000023841858
+            },
+            "separable": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.900000035762787,
+              "p95_ms": 6.600000023841858,
+              "max_ms": 6.600000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 4.399999976158142,
+              "max_ms": 4.399999976158142
+            },
+            "p95_improvement_percent": 33.33333393540045
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -59.583333330323,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "checker",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 7.5,
+              "max_ms": 7.5
+            },
+            "separable": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.299999952316284,
+              "p95_ms": 7.5,
+              "max_ms": 7.5
+            },
+            "separable_wall": {
+              "p50_ms": 3.800000011920929,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "p95_improvement_percent": 35.99999984105428
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 6.699999988079071,
+              "max_ms": 6.699999988079071
+            },
+            "separable": {
+              "p50_ms": 4,
+              "p95_ms": 4.300000011920929,
+              "max_ms": 4.300000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 6.699999988079071,
+              "max_ms": 6.699999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 4,
+              "p95_ms": 4.400000035762787,
+              "max_ms": 4.400000035762787
+            },
+            "p95_improvement_percent": 35.820895230273514
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 35.9104475356639,
+        "passes_gate": true
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "edge",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 3.699999988079071,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "separable": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "one_pass_wall": {
+              "p50_ms": 3.699999988079071,
+              "p95_ms": 4.100000023841858,
+              "max_ms": 4.100000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 3.899999976158142,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "p95_improvement_percent": -46.34146256364577
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 4.300000011920929,
+              "p95_ms": 5.899999976158142,
+              "max_ms": 5.899999976158142
+            },
+            "separable": {
+              "p50_ms": 4.199999988079071,
+              "p95_ms": 5.300000011920929,
+              "max_ms": 5.300000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 4.399999976158142,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "separable_wall": {
+              "p50_ms": 4.199999988079071,
+              "p95_ms": 5.300000011920929,
+              "max_ms": 5.300000011920929
+            },
+            "p95_improvement_percent": 10.16949096036964
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -18.085985801638067,
+        "passes_gate": false
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "edge",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 4.099999964237213,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "separable": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 4.5,
+              "max_ms": 4.5
+            },
+            "one_pass_wall": {
+              "p50_ms": 4.099999964237213,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "separable_wall": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 4.5,
+              "max_ms": 4.5
+            },
+            "p95_improvement_percent": 30.76923076923077
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 7.399999976158142,
+              "max_ms": 7.399999976158142
+            },
+            "separable": {
+              "p50_ms": 4.300000011920929,
+              "p95_ms": 5.900000035762787,
+              "max_ms": 5.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 4.100000023841858,
+              "p95_ms": 7.399999976158142,
+              "max_ms": 7.399999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 4.300000011920929,
+              "p95_ms": 5.900000035762787,
+              "max_ms": 5.900000035762787
+            },
+            "p95_improvement_percent": 20.270269530110323
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 25.519750149670546,
+        "passes_gate": true
+      },
+      {
+        "case": "4k",
+        "width": 3840,
+        "height": 2160,
+        "pattern": "edge",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.5,
+              "p95_ms": 8,
+              "max_ms": 8
+            },
+            "separable": {
+              "p50_ms": 4,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.5,
+              "p95_ms": 8,
+              "max_ms": 8
+            },
+            "separable_wall": {
+              "p50_ms": 4,
+              "p95_ms": 4.800000011920929,
+              "max_ms": 4.800000011920929
+            },
+            "p95_improvement_percent": 39.99999985098839
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 6.799999952316284,
+              "p95_ms": 10.5,
+              "max_ms": 10.5
+            },
+            "separable": {
+              "p50_ms": 4.300000011920929,
+              "p95_ms": 4.700000047683716,
+              "max_ms": 4.700000047683716
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.899999976158142,
+              "p95_ms": 10.5,
+              "max_ms": 10.5
+            },
+            "separable_wall": {
+              "p50_ms": 4.300000011920929,
+              "p95_ms": 4.700000047683716,
+              "max_ms": 4.700000047683716
+            },
+            "p95_improvement_percent": 55.238094783964605
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 47.6190473174765,
+        "passes_gate": true
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "contour",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 5.400000035762787,
+              "p95_ms": 6.600000023841858,
+              "max_ms": 6.600000023841858
+            },
+            "separable": {
+              "p50_ms": 5.400000035762787,
+              "p95_ms": 7,
+              "max_ms": 7
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.400000035762787,
+              "p95_ms": 6.600000023841858,
+              "max_ms": 6.600000023841858
+            },
+            "separable_wall": {
+              "p50_ms": 5.400000035762787,
+              "p95_ms": 7,
+              "max_ms": 7
+            },
+            "p95_improvement_percent": -6.060605677472441
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 5.399999976158142,
+              "p95_ms": 6.099999964237213,
+              "max_ms": 6.099999964237213
+            },
+            "separable": {
+              "p50_ms": 5.5,
+              "p95_ms": 6.699999988079071,
+              "max_ms": 6.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.399999976158142,
+              "p95_ms": 6.099999964237213,
+              "max_ms": 6.099999964237213
+            },
+            "separable_wall": {
+              "p50_ms": 5.5,
+              "p95_ms": 6.800000011920929,
+              "max_ms": 6.800000011920929
+            },
+            "p95_improvement_percent": -9.836066022287037
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -7.948335849879738,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "contour",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.700000047683716,
+              "p95_ms": 8.5,
+              "max_ms": 8.5
+            },
+            "separable": {
+              "p50_ms": 5.400000035762787,
+              "p95_ms": 5.899999976158142,
+              "max_ms": 5.899999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.700000047683716,
+              "p95_ms": 8.5,
+              "max_ms": 8.5
+            },
+            "separable_wall": {
+              "p50_ms": 5.400000035762787,
+              "p95_ms": 5.899999976158142,
+              "max_ms": 5.899999976158142
+            },
+            "p95_improvement_percent": 30.588235574610096
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 5.899999976158142,
+              "p95_ms": 11.5,
+              "max_ms": 11.5
+            },
+            "separable": {
+              "p50_ms": 5.099999964237213,
+              "p95_ms": 6.699999988079071,
+              "max_ms": 6.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.899999976158142,
+              "p95_ms": 11.5,
+              "max_ms": 11.5
+            },
+            "separable_wall": {
+              "p50_ms": 5.099999964237213,
+              "p95_ms": 6.699999988079071,
+              "max_ms": 6.699999988079071
+            },
+            "p95_improvement_percent": 41.73913053844286
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 36.16368305652648,
+        "passes_gate": true
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "contour",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 9.600000023841858,
+              "p95_ms": 10,
+              "max_ms": 10
+            },
+            "separable": {
+              "p50_ms": 5,
+              "p95_ms": 10.600000023841858,
+              "max_ms": 10.600000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 9.600000023841858,
+              "p95_ms": 10,
+              "max_ms": 10
+            },
+            "separable_wall": {
+              "p50_ms": 5,
+              "p95_ms": 10.600000023841858,
+              "max_ms": 10.600000023841858
+            },
+            "p95_improvement_percent": -6.000000238418579
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 9.199999988079071,
+              "p95_ms": 10.699999988079071,
+              "max_ms": 10.699999988079071
+            },
+            "separable": {
+              "p50_ms": 5.099999964237213,
+              "p95_ms": 5.200000047683716,
+              "max_ms": 5.200000047683716
+            },
+            "one_pass_wall": {
+              "p50_ms": 9.199999988079071,
+              "p95_ms": 10.699999988079071,
+              "max_ms": 10.699999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 5.099999964237213,
+              "p95_ms": 5.200000047683716,
+              "max_ms": 5.200000047683716
+            },
+            "p95_improvement_percent": 51.401868659092855
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 22.700934210337138,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "dense",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 4.799999952316284,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "separable": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 6.600000023841858,
+              "max_ms": 6.600000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 4.799999952316284,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "separable_wall": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 6.600000023841858,
+              "max_ms": 6.600000023841858
+            },
+            "p95_improvement_percent": -10.0000003973643
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 4.700000047683716,
+              "p95_ms": 10.800000011920929,
+              "max_ms": 10.800000011920929
+            },
+            "separable": {
+              "p50_ms": 4.799999952316284,
+              "p95_ms": 6.599999964237213,
+              "max_ms": 6.599999964237213
+            },
+            "one_pass_wall": {
+              "p50_ms": 4.700000047683716,
+              "p95_ms": 10.800000011920929,
+              "max_ms": 10.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 4.799999952316284,
+              "p95_ms": 6.599999964237213,
+              "max_ms": 6.599999964237213
+            },
+            "p95_improvement_percent": 38.88888928747962
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 14.44444444505766,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "dense",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.100000023841858,
+              "p95_ms": 10.200000047683716,
+              "max_ms": 10.200000047683716
+            },
+            "separable": {
+              "p50_ms": 5.099999964237213,
+              "p95_ms": 8.5,
+              "max_ms": 8.5
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.100000023841858,
+              "p95_ms": 10.200000047683716,
+              "max_ms": 10.200000047683716
+            },
+            "separable_wall": {
+              "p50_ms": 5.099999964237213,
+              "p95_ms": 8.5,
+              "max_ms": 8.5
+            },
+            "p95_improvement_percent": 16.666667056239508
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 6,
+              "p95_ms": 6.700000047683716,
+              "max_ms": 6.700000047683716
+            },
+            "separable": {
+              "p50_ms": 4.800000011920929,
+              "p95_ms": 11.899999976158142,
+              "max_ms": 11.899999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 6,
+              "p95_ms": 6.700000047683716,
+              "max_ms": 6.700000047683716
+            },
+            "separable_wall": {
+              "p50_ms": 4.800000011920929,
+              "p95_ms": 11.899999976158142,
+              "max_ms": 11.899999976158142
+            },
+            "p95_improvement_percent": -77.61193867859956
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -30.472635811180027,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "dense",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 8.199999988079071,
+              "p95_ms": 9.5,
+              "max_ms": 9.5
+            },
+            "separable": {
+              "p50_ms": 5,
+              "p95_ms": 10.399999976158142,
+              "max_ms": 10.399999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 8.199999988079071,
+              "p95_ms": 9.5,
+              "max_ms": 9.5
+            },
+            "separable_wall": {
+              "p50_ms": 5,
+              "p95_ms": 10.399999976158142,
+              "max_ms": 10.399999976158142
+            },
+            "p95_improvement_percent": -9.473683959559391
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 8.400000035762787,
+              "p95_ms": 9.599999964237213,
+              "max_ms": 9.599999964237213
+            },
+            "separable": {
+              "p50_ms": 4.800000011920929,
+              "p95_ms": 11.199999988079071,
+              "max_ms": 11.199999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 8.400000035762787,
+              "p95_ms": 9.599999964237213,
+              "max_ms": 9.599999964237213
+            },
+            "separable_wall": {
+              "p50_ms": 4.800000011920929,
+              "p95_ms": 11.199999988079071,
+              "max_ms": 11.199999988079071
+            },
+            "p95_improvement_percent": -16.666666977107525
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": -13.070175468333458,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "checker",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 11.400000035762787,
+              "max_ms": 11.400000035762787
+            },
+            "separable": {
+              "p50_ms": 5.300000011920929,
+              "p95_ms": 5.900000035762787,
+              "max_ms": 5.900000035762787
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 11.400000035762787,
+              "max_ms": 11.400000035762787
+            },
+            "separable_wall": {
+              "p50_ms": 5.300000011920929,
+              "p95_ms": 5.900000035762787,
+              "max_ms": 5.900000035762787
+            },
+            "p95_improvement_percent": 48.24561388373706
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 6.199999988079071,
+              "max_ms": 6.199999988079071
+            },
+            "separable": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 7.599999964237213,
+              "max_ms": 7.599999964237213
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 6.199999988079071,
+              "max_ms": 6.199999988079071
+            },
+            "separable_wall": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 7.599999964237213,
+              "max_ms": 7.599999964237213
+            },
+            "p95_improvement_percent": -22.58064482016072
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 12.832484531788168,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "checker",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.100000023841858,
+              "p95_ms": 10,
+              "max_ms": 10
+            },
+            "separable": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 8.899999976158142,
+              "max_ms": 8.899999976158142
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.100000023841858,
+              "p95_ms": 10,
+              "max_ms": 10
+            },
+            "separable_wall": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 8.899999976158142,
+              "max_ms": 8.899999976158142
+            },
+            "p95_improvement_percent": 11.000000238418579
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 6.599999964237213,
+              "p95_ms": 13.300000011920929,
+              "max_ms": 13.300000011920929
+            },
+            "separable": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 5.699999988079071,
+              "max_ms": 5.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.599999964237213,
+              "p95_ms": 13.300000011920929,
+              "max_ms": 13.300000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 5.699999988079071,
+              "max_ms": 5.699999988079071
+            },
+            "p95_improvement_percent": 57.142857270901494
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 34.07142875466003,
+        "passes_gate": true
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "checker",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 9,
+              "p95_ms": 11.300000011920929,
+              "max_ms": 11.300000011920929
+            },
+            "separable": {
+              "p50_ms": 5.5,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "one_pass_wall": {
+              "p50_ms": 9,
+              "p95_ms": 11.300000011920929,
+              "max_ms": 11.300000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 5.5,
+              "p95_ms": 6.5,
+              "max_ms": 6.5
+            },
+            "p95_improvement_percent": 42.47787616687763
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 8.800000011920929,
+              "p95_ms": 9.5,
+              "max_ms": 9.5
+            },
+            "separable": {
+              "p50_ms": 5.5,
+              "p95_ms": 6.100000023841858,
+              "max_ms": 6.100000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 8.800000011920929,
+              "p95_ms": 9.5,
+              "max_ms": 9.5
+            },
+            "separable_wall": {
+              "p50_ms": 5.5,
+              "p95_ms": 6.100000023841858,
+              "max_ms": 6.100000023841858
+            },
+            "p95_improvement_percent": 35.7894734332436
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 39.13367480006062,
+        "passes_gate": true
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "edge",
+        "radius": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 5.300000011920929,
+              "p95_ms": 11.799999952316284,
+              "max_ms": 11.799999952316284
+            },
+            "separable": {
+              "p50_ms": 5.5,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.300000011920929,
+              "p95_ms": 11.799999952316284,
+              "max_ms": 11.799999952316284
+            },
+            "separable_wall": {
+              "p50_ms": 5.5,
+              "p95_ms": 6,
+              "max_ms": 6
+            },
+            "p95_improvement_percent": 49.15254216740714
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 5.800000011920929,
+              "max_ms": 5.800000011920929
+            },
+            "separable": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 5.5,
+              "max_ms": 5.5
+            },
+            "one_pass_wall": {
+              "p50_ms": 5.100000023841858,
+              "p95_ms": 5.800000011920929,
+              "max_ms": 5.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 5.199999988079071,
+              "p95_ms": 5.5,
+              "max_ms": 5.5
+            },
+            "p95_improvement_percent": 5.172413988005675
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 27.162478077706407,
+        "passes_gate": false
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "edge",
+        "radius": 16,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 9.800000011920929,
+              "max_ms": 9.800000011920929
+            },
+            "separable": {
+              "p50_ms": 5.399999976158142,
+              "p95_ms": 6.099999964237213,
+              "max_ms": 6.099999964237213
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.199999988079071,
+              "p95_ms": 9.800000011920929,
+              "max_ms": 9.800000011920929
+            },
+            "separable_wall": {
+              "p50_ms": 5.399999976158142,
+              "p95_ms": 6.099999964237213,
+              "max_ms": 6.099999964237213
+            },
+            "p95_improvement_percent": 37.75510248145874
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 6.5,
+              "p95_ms": 9.5,
+              "max_ms": 9.5
+            },
+            "separable": {
+              "p50_ms": 5.200000047683716,
+              "p95_ms": 5.699999988079071,
+              "max_ms": 5.699999988079071
+            },
+            "one_pass_wall": {
+              "p50_ms": 6.5,
+              "p95_ms": 9.5,
+              "max_ms": 9.5
+            },
+            "separable_wall": {
+              "p50_ms": 5.300000011920929,
+              "p95_ms": 5.699999988079071,
+              "max_ms": 5.699999988079071
+            },
+            "p95_improvement_percent": 40.00000012548347
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 38.87755130347111,
+        "passes_gate": true
+      },
+      {
+        "case": "4096",
+        "width": 4096,
+        "height": 4096,
+        "pattern": "edge",
+        "radius": 31,
+        "rounds": [
+          {
+            "round": 1,
+            "one_pass": {
+              "p50_ms": 8.600000023841858,
+              "p95_ms": 9.399999976158142,
+              "max_ms": 9.399999976158142
+            },
+            "separable": {
+              "p50_ms": 5.399999976158142,
+              "p95_ms": 12,
+              "max_ms": 12
+            },
+            "one_pass_wall": {
+              "p50_ms": 8.600000023841858,
+              "p95_ms": 9.399999976158142,
+              "max_ms": 9.399999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 5.399999976158142,
+              "p95_ms": 12,
+              "max_ms": 12
+            },
+            "p95_improvement_percent": -27.65957479187675
+          },
+          {
+            "round": 2,
+            "one_pass": {
+              "p50_ms": 8.899999976158142,
+              "p95_ms": 9.399999976158142,
+              "max_ms": 9.399999976158142
+            },
+            "separable": {
+              "p50_ms": 5.600000023841858,
+              "p95_ms": 6.100000023841858,
+              "max_ms": 6.100000023841858
+            },
+            "one_pass_wall": {
+              "p50_ms": 8.899999976158142,
+              "p95_ms": 9.399999976158142,
+              "max_ms": 9.399999976158142
+            },
+            "separable_wall": {
+              "p50_ms": 5.600000023841858,
+              "p95_ms": 6.100000023841858,
+              "max_ms": 6.100000023841858
+            },
+            "p95_improvement_percent": 35.106382560492534
+          }
+        ],
+        "arithmetic_mean_p95_improvement_percent": 3.723403884307892,
+        "passes_gate": false
+      }
+    ],
+    "all_rows_pass": false,
+    "long_tasks": {
+      "count": 0,
+      "total_ms": 0,
+      "max_ms": 0
+    },
+    "resources_before_dispose": {
+      "baseline": {
+        "state": "ready",
+        "allocatedBytes": 6291504,
+        "sourceCapacityBytes": 2097152,
+        "xorCapacityBytes": 2097152,
+        "readbackCapacityBytes": 2097152,
+        "initAttempts": 1,
+        "deviceLost": 0,
+        "lastFailure": null,
+        "lastFailureStage": null,
+        "circuitState": "eligible",
+        "cooldownRemainingMs": 0,
+        "consecutiveFailures": 0
+      },
+      "candidate": {
+        "state": "ready",
+        "allocatedBytes": 8388656,
+        "sourceCapacityBytes": 2097152,
+        "xorCapacityBytes": 2097152,
+        "readbackCapacityBytes": 2097152,
+        "intermediateCapacityBytes": 2097152,
+        "failure": null
+      }
+    },
+    "resources_after_dispose": {
+      "baseline": {
+        "state": "closed",
+        "allocatedBytes": 0,
+        "sourceCapacityBytes": 0,
+        "xorCapacityBytes": 0,
+        "readbackCapacityBytes": 0,
+        "initAttempts": 1,
+        "deviceLost": 0,
+        "lastFailure": null,
+        "lastFailureStage": null,
+        "circuitState": "eligible",
+        "cooldownRemainingMs": 0,
+        "consecutiveFailures": 0
+      },
+      "candidate": {
+        "state": "closed",
+        "allocatedBytes": 0,
+        "sourceCapacityBytes": 0,
+        "xorCapacityBytes": 0,
+        "readbackCapacityBytes": 0,
+        "intermediateCapacityBytes": 0,
+        "failure": null
+      }
+    }
+  }
+}

@@ -127,7 +127,6 @@ ML 后端支持的交互模式，以及其产出几何所属工具单位是否�
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-candidate-render.png — 画布渲染检测式轨迹候选 video_track_bbox [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-keyframe-source-bar.png — 右栏关键帧来源迷你条(紫=AI/灰=人工) [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-carryover-ghost.gif — 跨网格帧续写 ghost + Tab 循环 + 续写后自动前进 [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-multiselect-batch-card.png — 多选 ≥2 轨迹浮卡批量卡 [manual] -->
 
 视频工作台里有两层 AI 候选，不要混淆：
@@ -143,6 +142,8 @@ AI 结果无需先落库就能核对，画布与右栏统一用 **violet** 表�
 ### 跨网格帧续写
 
 开启帧采样后逐个网格帧续写多条轨迹时：上一网格帧有关键帧、当前帧却还没画的轨迹，会在当前帧显示一个**淡色 ghost 参考框**提示「这条还没续」。
+
+![Tab 切换待续写轨迹，拖动 ghost 续写后自动前进](../images/workbench/video-track-carryover-ghost.gif)
 
 - `Tab` / `Shift+Tab` 会把这些待续轨迹一并纳入循环；点选 ghost 框即在当前帧续写该轨迹。
 - 打开设置里的**「续写后自动前进」**（默认关），续完一条会自动选中同帧下一条待续轨迹，连续续写无需逐条 `Tab` / 点选。

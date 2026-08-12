@@ -4,6 +4,7 @@ from app.api.v1.tasks import (
     annotations,
     ai_masks,
     lifecycle,
+    image_pyramid,
     locks,
     mask_capabilities,
     mask_mutations,
@@ -15,6 +16,7 @@ from app.api.v1.tasks import list as task_list
 from app.api.v1.tasks._shared import (
     _assert_task_visible,
     _attach_dimensions_batch,
+    _attach_image_pyramids_batch,
     _task_with_url,
 )
 
@@ -25,6 +27,7 @@ from app.api.v1.tasks._shared import (
 router = APIRouter()
 router.include_router(task_list.router, prefix="/tasks")
 router.include_router(video.router, prefix="/tasks")
+router.include_router(image_pyramid.router, prefix="/tasks")
 router.include_router(mask_capabilities.router, prefix="/tasks")
 router.include_router(mask_mutations.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
@@ -38,5 +41,6 @@ __all__ = [
     "router",
     "_assert_task_visible",
     "_attach_dimensions_batch",
+    "_attach_image_pyramids_batch",
     "_task_with_url",
 ]

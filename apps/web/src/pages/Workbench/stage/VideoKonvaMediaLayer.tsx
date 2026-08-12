@@ -8,6 +8,11 @@ interface VideoKonvaMediaLayerProps {
   videoEl: HTMLVideoElement | null;
   /** 暂停态精确帧(useVideoBitmapCache / WebCodecs 解码产物)。 */
   bitmap: ImageBitmap | null;
+  /** 当前工作台帧号；用于把 media layer 的真实 draw 回执给精确帧诊断。 */
+  frameIndex?: number;
+  /** bitmap 确认来自 WebCodecs 时等于当前帧，否则为 null。 */
+  preciseFrameIndex?: number | null;
+  onPreciseFramePainted?: (frameIndex: number) => void;
   /** 视频固有像素尺寸 = Konva 世界尺寸(Stage scale 负责缩放)。 */
   size: VideoPixelSize;
   /**
@@ -52,6 +57,9 @@ function isDrawableLayer(layer: Konva.Layer | null): layer is Konva.Layer {
 export function VideoKonvaMediaLayer({
   videoEl,
   bitmap,
+  frameIndex,
+  preciseFrameIndex,
+  onPreciseFramePainted,
   size,
   viewport,
   isPlaybackActive,
@@ -85,8 +93,34 @@ export function VideoKonvaMediaLayer({
   useEffect(() => {
     if (isPlaybackActive) return;
     const layer = layerRef.current;
-    if (isDrawableLayer(layer)) layer.batchDraw();
-  }, [isPlaybackActive, bitmap, videoEl, size.w, size.h, viewport.w, viewport.h]);
+    if (!isDrawableLayer(layer)) return;
+    const shouldNotify =
+      !!bitmap &&
+      typeof frameIndex === "number" &&
+      preciseFrameIndex === frameIndex &&
+      !!onPreciseFramePainted;
+    const eventName = "draw.preciseFramePaint";
+    const notify = () => {
+      layer.off(eventName, notify);
+      onPreciseFramePainted?.(frameIndex as number);
+    };
+    if (shouldNotify) layer.on(eventName, notify);
+    layer.batchDraw();
+    return () => {
+      if (shouldNotify) layer.off(eventName, notify);
+    };
+  }, [
+    isPlaybackActive,
+    bitmap,
+    videoEl,
+    frameIndex,
+    preciseFrameIndex,
+    onPreciseFramePainted,
+    size.w,
+    size.h,
+    viewport.w,
+    viewport.h,
+  ]);
 
   const imageSource = pickMediaImageSource(isPlaybackActive, videoEl, bitmap);
 

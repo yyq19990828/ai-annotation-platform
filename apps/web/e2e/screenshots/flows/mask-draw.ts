@@ -13,7 +13,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, openImageAnnotate } from "./_canvas";
+import { hidePredictions, mediaPoint, openImageAnnotate, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 /** 沿水平线从 x0 涂到 x1（分步移动让录屏看到连续笔迹）。 */
@@ -43,16 +43,21 @@ export async function runMaskDraw(page: Page, catalog: ScreenshotSeedCatalog): P
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
   if (!box) throw new Error("[mask-draw] workbench-stage 没有可见边界");
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
+  const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
+  if (anchor.brush_strokes.length === 0) {
+    throw new Error("[mask-draw] primary_vehicle 缺少笔刷轨迹锚点");
+  }
 
   const drawStartMs = Date.now();
 
   // ── 来回几笔填出一块区域（默认笔刷半径），逐行下移 ──
-  await stroke(page, cx - 120, cx + 120, cy - 40);
-  await stroke(page, cx + 120, cx - 120, cy - 10);
-  await stroke(page, cx - 120, cx + 120, cy + 20);
-  await stroke(page, cx + 100, cx - 100, cy + 50);
+  for (const path of anchor.brush_strokes) {
+    const [from, to] = path;
+    if (!from || !to) throw new Error("[mask-draw] primary_vehicle 笔刷轨迹至少需要两个点");
+    const start = mediaPoint(box, from);
+    const end = mediaPoint(box, to);
+    await stroke(page, start.x, end.x, start.y);
+  }
   await page.waitForTimeout(700); // 停留展示涂好的色块
 
   // Enter 提交 Mask（实际落库类型由任务能力决定）

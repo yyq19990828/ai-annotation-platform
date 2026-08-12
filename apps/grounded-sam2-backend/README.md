@@ -109,6 +109,27 @@ curl -X POST http://localhost:8001/predict \
 
 请求可通过 `context.model_variants` 在运行期选择变体。图像池与视频池的容量和 LRU 独立，但共享冷构建串行锁，避免两套重模型同时抢占显存。
 
+受管能力必须用目标镜像、DINO/SAM 权重和物理卡重新验收。暂停同卡其他流量后执行：
+
+```bash
+set -o pipefail
+install -d -m 700 "$EVIDENCE_DIR"
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile gpu run --rm --no-deps --entrypoint python3 \
+  -e VALIDATION_GIT_COMMIT -e VALIDATION_IMAGE_ID -e VALIDATION_GPU_UUID \
+  -e VALIDATION_MODEL_APPROVAL_REF -e VALIDATION_FIXTURE_APPROVAL_REF \
+  -e VALIDATION_WEIGHT_SHA256_JSON \
+  grounded-sam2-backend /app/scripts/validate_managed_lifecycle.py \
+  | tee "$EVIDENCE_DIR/grounded-sam2-managed-lifecycle.json"
+jq -e '.passed == true and .runtime_ephemera_clean == true' \
+  "$EVIDENCE_DIR/grounded-sam2-managed-lifecycle.json"
+```
+
+权重 manifest 必须精确包含 `sam2.1_hiera_tiny.pt` 和 `groundingdino_swint_ogc.pth`。验收器覆盖
+image/video 双池、embedding cache、两轮 full cleanup 和故障矩阵；失败不会改动运行配置，并会清理
+验收器创建的 fixture 与模型池。两轮计量前会先执行一次 image/video 真实推理与全池卸载，以成熟
+CUDA/cuDNN context 为稳定基线；受管卸载同步清理 cuBLAS workspace 与 allocator cache。
+
 ---
 
 ## 端点速查

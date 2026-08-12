@@ -35,14 +35,189 @@
 
 ## [Unreleased]
 
+### Added
+
+- **AAP JSON 外部视频预测可进入逐帧人工审阅闭环**. 导入预检会校验视频任务、帧范围、关键帧顺序、outside 与 portable Mask 内容，正式导入只创建外部候选；视频工作台按当前帧显示 bbox、polygon、polyline 和真实像素 Mask，单条采纳或忽略在刷新后保持，采纳后才生成同类型正式标注。
+- **文档站新增十四段可复现的自动化流程动图**. 快速上手、AI 预标、审核退回、候选快捷审阅、智能笔迹精修、时间轴缩放/范围/章节操作、多目标种子、轨迹续写、视频 Mask 轨迹编辑与超大图渐进细节均可由 Playwright 重录，维护者不再需要手工复现这些操作。
+- **截图 seed 增加经复核的语义录制锚点与 nuScenes 六相机环视夹具**. 智能点、框和笔迹流程可复用与任务绑定的目标坐标；3D 文档场景同时展示激光雷达主画布及前、后、左右六路相机，不再受单相机夹具限制。
+- **WebCodecs strict benchmark 可自动生成三档隔离素材并验证实际 VideoToolbox decoder**. 一条命令可准备 1080p/30、1080p/60、4K/30 长素材、登录态和 ready chunks，在结束或失败时清理；Apple Silicon Chrome 的资格证据来自实际 WebCodecs player，不再依赖可能为空的静态硬解 profile。
+
 ### Changed
 
+- **视频连续播放资格同时检查媒体时间**. precise-on 与 flag-off 都从首帧开始，必须持续前进到目标时长且未提前 ended；页面 rAF 活跃但视频没有播放不再能通过。
+
+### Fixed
+
+- **超大图可见瓦片与失败 generation 会自动收敛**. 可见瓦片连续失败后会在五秒冷却结束时自动重试，无需平移或缩放；reconciliation 清理失败 generation 的对象前缀后同步删除记录，历史失败不再阻塞后续 GC 批次。
+- **预取缓存命中的精确帧会保留 Konva 可见回执时序**. 后续 demux 不再把已经可见帧的 ready 时间重置为空，1080p/4K 快速跨帧不会卡在 `ready` 但 painted frame 未确认的状态。
+- **全新截图数据库可直接创建并绑定 stub 后端**. 截图 seed 新建注册项时会同步建立单例服务池，避免干净数据库在项目能力绑定阶段失败。
+- **流程录制清理只会连接显式声明的隔离截图库**. 录制器现在要求 `SCREENSHOT_DATABASE_URL`，并校验数据库名以 `_test` 或 `_e2e` 结尾；任务、标注和 OCR 中间状态不再因继承通用连接而清理错库。
+- **邀请注册会建立正式的数据组成员关系**. 数据组名称在服务端规范化，接受邀请时复用或创建数据组并同时写入 `group_id`；迁移会回填历史上只有 `group_name` 的用户，组成员统计与管理页面不再漏人。
+
+### Security
+
+- **邀请角色权限改为由服务端强制执行**. 项目管理员只能邀请审核员、标注员和观察者，不能通过直接调用 API 创建项目管理员或超级管理员账号。
+- **邀请撤销与管理范围完成闭环**. 已撤销 token 无法再解析或注册；项目管理员只能管理自己创建的邀请，且只能重发其中的低权限邀请；数据迁移会撤销由不具备有效超级管理员权限的签发者创建、尚未接受的存量高权限邀请。
+
+## [0.23.25] - 2026-07-31
+
+### Added
+
+- **Raster Mask WebGPU 增加可复现的可分离 kernel 资格工具**. 显式 benchmark runner 在同一浏览器页面交错执行 production one-pass 与水平/纵向两阶段候选，覆盖非对齐、tail、稠密、checker、边缘和确定性随机正确性，以及 radius/ROI/输入图案两轮 p95、intermediate capacity、Long Task 与 dispose 对账；该工具不被 production Worker 导入。
+
+### Changed
+
+- **Raster Mask WebGPU 继续只使用 one-pass production kernel**. 可分离候选的 50 组 XOR correctness 全部 exact，但 2048²/4K/4096²、radius 8/16/31 与四类输入组成的 36 个两轮性能 bucket 只有 9 个通过正向收益门，无法形成数据分布无关的静态 route；生产不增加 intermediate、第二套 pipeline、protocol selector 或 adapter-name 分支，现有 capability gate、packed CPU fallback 与独立回滚保持不变。
+- **超大图 Tile × Raster Mask 客户端计算 Epic 完成封版**. one-pass 在 2048²/4K、radius 31 的百次 production operation 中保持单 owner、稳定 buffer plateau、零 Long Task、save/reload exact 与 dispose 归零；Linux X11 默认 adapter 不可用时继续以零 GPU allocation 精确回退 packed CPU，Wayland、macOS 与 Windows 实机状态明确保留为未测试而不外推。
+
+## [0.23.24] - 2026-07-31
+
+### Added
+
+- **图片工作台获得 task-scoped 栅格资源协调器**. 背景 coverage/detail/prefetch、Raster Mask render/edit/history/compare、Worker cache/scratch、CPU transient 与 WebGPU buffer 统一使用按设备分档的 prospective reservation、原子 handoff、优先级 pressure 和 owner/category 快照；BUG 报告可附带脱敏资源诊断。
+
+### Changed
+
+- **前景 Mask 操作会主动让低优先级背景预取让行**. P0/P1 编辑真值与最低可见覆盖不会被 P4/P5 缓存挤出；超预算时先暂停预取、淘汰可重建 detail/render、释放 idle compute 并按当前 generation 恢复，避免各局部缓存分别合规但联合峰值失控。
+- **页面生命周期统一治理栅格资源**. hidden 标签页延迟释放可重建资源，BFCache 保留 dirty Mask 与 history 并在返回时只恢复当前 generation，真正卸载、切题和销毁后 coordinator、bitmap、Worker 与 GPU 逻辑占用归零。
+
+### Fixed
+
+- **资源压力与异步失败不再留下部分编辑或重复计费**. history admission 拒绝会回滚当前操作并保留既有 undo/redo；Worker crash、GPU reset、decode abort、迟到响应和 reservation 实际值增长失败都会确定性释放，原子资源替换不再出现双份峰值或未计账空窗。
+- **独立浏览器 E2E 数据库现在总是使用自己的迁移连接**. Playwright 启动 API 时会显式把 migration URL 指向隔离数据库，避免本地环境变量让开发库被升级而测试库仍停留在旧 schema。
+
+## [0.23.23] - 2026-07-31
+
+### Added
+
+- **超大图工作台改为按视口渐进加载金字塔切片**. 图片与审核工作台会按缩放和设备像素比选择 LOD，只批签、下载和解码可见区域及有限预取环；overview 始终提供安全覆盖，ImageBitmap 不可用时自动使用 HTML 图片解码，无 WebGPU 的客户端也能完整浏览和标注。
+- **超大图客户端资源可诊断并随 BUG 报告取证**. 调度器按设备内存使用 32/64/128 MiB 解码预算和 2/4/6 并发，记录请求、保留、预留、LRU 淘汰、位图关闭、ObjectURL、取消、迟到提交、签名刷新和可见细节覆盖；切题与卸载会确定性释放资源，并为后续背景/Mask 资源协调暴露只读快照和暂停预取入口。
+- **现实超大图可一键进入当前开发栈并生成金字塔**. 固定 SHA-256 的 NASA 高熵、超宽和超高图片可幂等导入专用项目/数据集、创建可打开 Task，并显式入队等待 pyramid 终态，供浏览器回归、性能基准与文档截图共用。
+
+### Changed
+
+- **Minimap、邻题预取、评论画布和审核入口统一遵守图片源合同**. 金字塔图片的辅助消费者只使用 thumbnail、overview 或 manifest，不再从旁路回退并解码完整原图；达到 required 门槛的图片在切片生成中、失败或客户端 gate 关闭时保留安全预览和明确状态，绝不自动请求原图。
+
+### Fixed
+
+- **大图切换与缩放不再出现空白画布、错误适应或中途卡住**. 旧 source 瓦片在释放后不再进入新 Konva 图层，每个媒体 identity 都会按自身尺寸重新适应；放大后可通过滚轮或工具条继续缩回完整适应比例，Minimap 同时避让右下角缩放工具条。
+- **短期 tile URL 过期或首次拉取失败可有界恢复**. 当前可见 tile 会重新批签一次后再试，仍失败则保留 overview；金字塔生成失败状态同时提供受后端冷却和频率限制保护的显式重试入口。
+- **运行角色收紧为无 DDL 权限后仍可正常启动和迁移**. Alembic 支持独立的 schema-owner 数据库连接，API/Celery 继续使用最小权限运行连接；Compose 只让指定迁移入口自动升级，避免每个 Worker 都持有 DDL 凭据。
+- **现实大图下载器不再把夹具写进错误的 `apps/test-results` 目录**. 默认输出现在与文档和 gitignore 一致落在仓库根 `test-results/image-seeds`；同时刷新 NASA 官方已替换字节的竖图摘要，恢复完整清单下载。
+
+## [0.23.22] - 2026-07-31
+
+### Added
+
+- **超大图获得不可变代次金字塔生成与安全交付地基**. DatasetItem 共享或 direct Task 独占的 asset 现在以数据库约束和 generation lease 单飞生成 full-resolution-first、512 core + 1px overlap 的 WebP 金字塔；专用单并发 Worker 使用 pyvips/libvips 流式处理 EXIF、ICC、灰度与 alpha，在完整网格、edge、摘要和远端对象校验后才原子发布 ready。源字节、解码像素、tile、派生/临时字节、分阶段耗时、状态和 GC 均可观测。
+- **Task API 提供轻量金字塔状态、manifest 与批量私有资源签发**. Task 列表/详情只附带 O(1) summary；鉴权 manifest 支持 source/generation fence、private ETag/304 和短期 overview，最多 128 项的 overview/tile batch 只接受逻辑坐标并在验证对象存在后签发，缺失对象会使 generation 自失效而不是返回坏 URL。失败重试具备幂等、冷却和频率限制。
+- **提供有界回填与生命周期对账工具**. 管理脚本可按 cursor、owner 类型和 dry-run 小批量入队；每日 reconciliation 回收过期 lease、旧代次和孤儿前缀，source/DatasetItem 删除同步清理派生对象，金字塔不进入普通媒体缓存的固定期限 lifecycle。
+- **现实大图 seed 可按需校验下载**. 浏览器 E2E、性能基准和文档截图可从 NASA 官方来源顺序获取高熵 RGB PNG、接近硬上限的超宽 JPEG 与 optional 边界 RGBA 竖图；manifest 固定尺寸、字节数、SHA-256、署名和媒体使用政策，原图只进入 gitignored 测试目录。
+
+### Changed
+
+- **普通图片 thumbnail 不再先把整个对象聚合进 Python bytes**. 小图缩略图改为流式下载到临时文件后解码，逻辑尺寸按 EXIF orientation 探测；达到金字塔门槛的图片不会再走 Pillow 整图解码，启用自动生成时转入专用队列。direct Task 缩略图同时统一写入 media-cache bucket，使读取和生命周期路由一致。
+- **API 镜像加入 libvips 与 sRGB ICC profile 运行依赖**. image-pyramid Worker 固定 libvips 并发、缓存和 allocator 回收参数，并以独立队列、单并发、prefetch 1 和子进程内存上限隔离大图资源域；自动生成默认关闭，部署可先发布 schema/API 再分批开启。
+
+### Fixed
+
+- **Alembic 迁移失败不再被 advisory unlock 的二次事务错误掩盖**. PostgreSQL DDL 失败后会先回滚 aborted transaction 再释放 session lock，日志保留原始迁移根因。
+- **金字塔生成期间替换源对象不会发布陈旧像素**. Worker 在生成前和发布前分别校验 ETag、字节数与可用对象版本，API 读取也执行同一 fence；旧 generation 会稳定进入 stale/failed，而不会继续和新标注坐标叠加。
+
+## [0.23.21] - 2026-07-31
+
+### Added
+
+- **Raster Mask WebGPU 提供一次冷却重试与页内熔断诊断**. adapter、device、shader、pipeline、buffer、queue、encode、submit、map、readback 和 patch-build 故障现在记录稳定 stage；首次失败进入 30 秒 cooldown，到期后的新 eligible 请求只重试一次，连续第二次失败后当前页面固定 CPU，避免 adapter/device 重试风暴。任务内最近 20 次 typed compute event 可随 BUG 报告附带，但不包含完整 task id、Mask 内容、adapter/driver 或浏览器原始错误。
+
+### Changed
+
+- **大 ROI 方形膨胀的 CPU 路径改用 packed separable kernel**. 2048² 及以上、radius 1–31 的 `square dilate` 会复用 immutable packed base cache 与 dirty overrides，先做水平 word expansion，再做纵向 OR，并继续使用唯一的 word-scatter history builder；gate 关闭、无 GPU、adapter/device 初始化失败、GPU budget 不足或运行时失败均复用同一 packed source，不再重新 materialize dense alpha。两轮 2048²/4K、radius 1/8/31 的 12 个 production case 相对 dense baseline p95 改善 80.1%–91.3%，patch、save、reload checksum 全部精确一致。
+- **Raster Mask CPU compute 与 GPU buffer 使用独立 hard budget**. 低内存客户端默认保留 32 MiB CPU budget 并将 GPU budget 设为零，常规/高内存档位分别使用 64/128 MiB；关闭 WebGPU 或客户端没有 adapter 不会再把 CPU budget 清零。prospective ledger 分别报告 packed/dense transient、水平 intermediate、patch upper bound、cache/scratch 与 GPU capacity。
+- **production morphology 协议删除 benchmark-only per-bit selector**. Worker 固定使用已胜出的 dense word-scatter builder；direct packed kernel 只保留在纯函数测试与独立内核 runner 中，避免资格赛选择器继续污染产品消息协议和计数器。
+
+### Fixed
+
+- **无 GPU 的默认 Linux 浏览器不再退回数量级更慢的 dense 大 ROI morphology**. X11 默认 Chrome 的真实 `adapter-unavailable` 路径现在稳定使用 packed CPU，仍保留精确 history/save/reload 与零 GPU allocation；本机 RTX 3090 强制 Vulkan 的 WebGPU 成功路径也完成回归，单 owner、资源 plateau、零 Long Task 和 dispose 归零合同不变。
+
+## [0.23.20] - 2026-07-30
+
+### Added
+
+- **五个 GPU ML Backend 提供真实受管生命周期验收器**. YOLO、Grounded-SAM2、SAM3、ONNXTools 和 RapidOCR 都会在目标镜像内执行真实业务推理、两轮全池卸载、GPU provider/device 判定和共享故障矩阵，并用同一严格外壳记录部署与物理 GPU 身份、脱敏制品摘要、显存稳定/工作集回收、最终空池状态和中间产物清理结果；`passed` 由完整证据与 blockers 推导，不能由验收器自行声明。
+
+### Changed
+
+- **五个 ML Backend 统一采用部署级受管生命周期声明门槛**. YOLO 不再仅凭代码实现就无条件发布 `managed_lifecycle`；默认保持 legacy，只有当前镜像、权重和物理 GPU 完成真实加载、全池卸载与显存回落验收后才允许声明能力、进入 enforce 并报告可驱逐，避免 GPU 调度接管未经验证的部署。五个验收开关只接受字面量 `0` 或 `1`，非法值会拒绝启动。
+- **GPU 仲裁已完成双 RTX 3090 的逐卡实机 canary**. 五个第一方 Backend 的声明、registry claim、membership、fence、物理 GPU identity、签名控制和数据库角色隔离均已闭环；卡 0 验证共驻、容量拒绝与空闲驱逐，卡 1 验证独立 promotion/demotion，双卡冷加载可真实并行。发布仍保持 observe 安全默认，生产 enforce 继续按资源逐卡启用。
+- **WebCodecs 精确帧改为按客户端能力默认尝试**. 暂停、逐帧与稳定 seek 缺省使用既有有状态 GOP 解码链路；用户可在工作台设置或以 URL / localStorage 显式关闭，浏览器不支持、codec / chunk 异常和预算不足继续安全回退原生视频路径。硬解与跨浏览器 1080p/4K 矩阵继续作为后验验证，不把软件解码或 GPU 合成误记为硬解。
+- **Raster Mask WebGPU 候选进入默认构建**. 大 ROI `square dilate` 在首次相关操作时才惰性探测客户端 adapter，并继续受操作、尺寸、设备档位与字节预算门禁约束；任何能力或运行错误都精确回退 CPU Worker。生产镜像新增可回滚 build arg，设为 `false` 重建后不会加载 provider 或请求 adapter；macOS、Wayland 与 Windows 的 correctness、长会话、性能和 fallback rate 继续在路线图跟踪。
+
+### Fixed
+
+- **长时间 GPU 加载不会在 admission token 有效期内丢失卡级证明**. 每次成功 admission 现在原子续期 `reconcile_deadline` 到 workload hard deadline 之后，并保留有界健康证明窗口；超长预测配置会在 Backend HTTP 前明确报配置错误，不再让 4K/大模型加载中途因定时 reconcile deadline 过期连续返回 503。
+- **空闲驱逐会冻结且完成唯一的 unload 分支**. victim 从 draining 进入 unloading 时先持久冻结 `eviction_branch=unload`，终态只接受同 owner/generation 的 unloading → unloaded，同一请求在响应丢失后可幂等重试；不再因通用 idle 分支抢先匹配而缺失分支证据，或在真实卸载后报 `branch_conflict` 并保守卡住账本。
+- **GPU 验收器能正确记录被 dispatch 包装的 health timeout**. Resident victim 健康刷新超时即使被转换为结构化容量错误，也会归因到精确 requester action 并保留错误码；最终真值允许该未获 grant 的 requester 不产生 allocation，同时继续要求 victim allocation 完全不变，避免真实故障注入被误报为普通失败。
+- **RapidOCR PP-OCRv6 不再在 RTX 3090 上静默回退 CPU**. 镜像固定含非对称 padding 卷积修复的 cuDNN 9.10.2；部署验收在真实推理后重新检查三引擎九条 ORT session，任一 det/cls/rec provider 链降为 CPU 都会给出具体引擎与组件并拒绝受管声明，并以全池 priming 后的稳定 ORT/CUDA context 计量模型工作集回收。
+- **Grounded-SAM2 双池卸载覆盖进程级 CUDA workspace**. image/video 全池清理会在已有 CUDA context 中同步并释放 cuBLAS workspace 与 allocator cache；实卡验收先执行一次双根真实推理和全卸载，以成熟 CUDA/cuDNN context 作为随后两轮工作集回收基线，避免把一次性 runtime 常驻误判成模型泄漏。
+- **YOLO 全池卸载会释放进程级 cuBLAS workspace**. 受管清理在模型池对象归零后同步 CUDA、清除 PyTorch cuBLAS 工作区并释放 allocator cache，避免仍残留 32 MiB live allocation 而错误宣告显存已回收；验收器先完成一次真实卷积 priming 与全卸载，以成熟 CUDA/cuDNN context 作为两轮回收基线；tracker 的 `lap` 依赖同时烤入镜像，不再在首个视频请求中联网 AutoUpdate。
+- **开发态 GPU collector 可以与普通应用账户形成真实权限隔离**. Compose 内的 Celery worker 新增独立可覆盖的数据库连接串，不再被硬编码的 schema owner 账户锁死；当前部署可以让 API/worker 使用无 membership/fence DELETE 的非特权角色，同时把最小 DELETE 权限只交给 `gpu.control` 的 collector 角色。
+- **RapidOCR 部署验收能够在 3.9.0 镜像中完整输出证据**. 验收器改从标准 distribution metadata 读取版本，避免因上游包不暴露 `__version__` 而在 GPU 加载、卸载全部成功后误报失败。
+- **GPU 部署验收证据保持为可直接校验的单一 JSON 文档**. 五个 Backend 的验收器现将第三方模型加载输出隔离到 stderr，避免进度、权重诊断或 provider 日志污染 stdout 中的严格证据。
+
+## [0.23.19] - 2026-07-30
+
+### Changed
+
+- **Raster Mask WebGPU dense XOR 改用 word-scatter 构造 history patches**. Worker 先按 non-zero words 计算 changed summary，再以有界 byte spans 写入稳定 tile row-major patches，不再为每个 set bit 重算像素与 tile 坐标；benchmark-only selector 可在同一 bundle 单选旧 per-bit builder 做 A/B，生产请求默认只运行 word-scatter。诊断同步暴露 XOR word density、scan、allocation、scatter 与 touched tiles。固定上限 atomic sparse records 虽能把 canonical payload 压到约 32–35 KiB，但联合 readback + patch p95 未达到增量门，因此相关 shader binding、buffers、record protocol 与诊断未进入生产实现。
+
+## [0.23.18] - 2026-07-30
+
+### Changed
+
+- **Raster Mask WebGPU 候选复用有界 immutable packed base cache**. Worker 按 session 惰性缓存 canonical RLE 的 512² packed base tiles，以 word span 组装 ROI scratch，再用 dirty packed overrides 做可 set / clear 的 masked overwrite；cache、scratch 与 GPU buffers 共用 compute budget，预算不足或 cache 异常时继续使用 direct-RLE packed prepare。pool 诊断同步暴露 prepare strategy、RLE scan、cache fill / assemble / overlay、hit / miss / evict 与资源 plateau，release / replacement / dispose 后归零；默认构建仍不包含 provider、shader 或 adapter 请求。
+
+## [0.23.17] - 2026-07-30
+
+### Changed
+
+- **Raster Mask WebGPU 候选改用 packed 输入与 core XOR 回读**. Worker 在 GPU ready 后直接从 immutable base RLE 与 dirty packed overrides 构造 row-aligned source，不再生成整 ROI alpha 或再次逐像素 bit-pack；shader 只回读 core XOR words，Worker 按 non-zero words 生成既有 tile history patches，避免 core-wide before / after diff。GPU 未 ready 或运行失败仍惰性使用完整 CPU morphology，默认构建继续零 adapter 请求；分段指标现在区分 prepare、upload / submit、readback、patch、fallback materialize 与三类 buffer 容量。
+
+### Fixed
+
+- **开启 Raster Mask WebGPU gate 的前端可以生成 production bundle**. Vite 现在按现有 `type: module` 合同输出 ES module Worker，使 Worker 内懒加载的 provider 能安全 code-split；默认关闭构建仍不包含 provider chunk 或 adapter 请求。
+
+## [0.23.16] - 2026-07-30
+
+### Added
+
+- **大画布 Raster Mask morphology 改用持久客户端 Worker 会话，并提供默认关闭的 WebGPU 候选后端**. Sparse tile 现在同时维护受预算约束的 packed 当前真值，方形 / 圆形核的膨胀、腐蚀、开闭运算由 Worker 从 immutable base RLE 与 dirty overrides 精确重建 ROI，只回传可直接应用和撤销的 XOR tile patches；4K core tile 解码采用有界并发，不再填满固定 Worker 队列。实验构建仅在客户端浏览器 adapter ready、ROI 至少 `2048²`、操作为 square dilation 且字节预算允许时使用单 owner WebGPU provider，初始化中、无 adapter、预算不足、device lost、运行错误和不支持操作均在同一 Worker 精确回退 CPU。默认构建不加载 provider、不请求 adapter，切题或卸载会释放 session、Worker、device 与 buffer。
+
+### Changed
+
+- **核心文档图可以下载后继续编辑**. 系统全景、JWT 注销、视频 Chunk、Batch/Task 生命周期、开发与生产基础设施、部署演进、生产网络与持久化边界、审计通知、邀请注册、标注任务主链、AI 预标注与持久化作业、实时通知、视频追踪人机闭环、在线派题与 Task Lock、派生状态传播、Project 状态约定、异步导出交付和反馈双写对账，以及 Project、Batch、Task、Annotation、Review 模块全景改用内嵌 Excalidraw scene 与手写字体的 SVG；重复状态图、预标数据流、生产网络边界、通知可靠性边界、追踪审阅闭环、派题加锁和派生字段传播共享 canonical 资产，文档站仍提供点击放大和可编辑源文件下载入口。迁移验收同时按当前 Compose、API 与前端调用链修正 worker、监控、邀请、任务提交、服务池绑定与物理实例路由、Celery / AsyncJob ID 边界、预标可见性、工作台取题、标注计数回写、审核副作用、生产端口绑定、对象存储的双网络视角、Redis 恢复风险、通知事务窗口与专用重连、视频追踪局部审阅和取消后部分候选、scheduler 候选窗口与 TOCTOU、过期锁复用、自定义 TTL、Project 状态非受控写入、Project 计数直接扫描 Task、导出预检非执行快照、导出提交后派发与工件补偿，以及反馈对账的分组计数差额等文档漂移。全仓验收明确保留频繁随协议变更的 Tracker 事件状态 Mermaid 和 `docs/plans/**` 中的历史决策快照，并修正截图基建、WebCodecs Epic 与模型市场计划的完成状态漂移。
+
+## [0.23.15] - 2026-07-25
+
+### Added
+
+- **视频工作台恢复 WebCodecs 精确帧解码并接入 Konva**. 开启「WebCodecs 精确解码」实验开关(刷新生效)后,暂停、逐帧与稳定 seek 会用浏览器原生 `VideoDecoder` 解码目标帧所属 chunk,按 `VideoFrame.timestamp` 精确命中(B 帧素材不串帧),解出的位图作为画布底图与当前帧 JPEG 的统一显示来源;连续播放仍由隐藏 `<video>` 负责。codec 不支持、chunk 尚未就绪、缺 sample manifest / description、signed URL 过期或字节越界等都会安全回退到原生 `<video>` / 位图路径,不阻断标注。默认关闭,不影响现有行为。
+- **视频 WebCodecs 精确帧改为有状态 GOP 会话与字节预算缓存**. 同一 GOP 内逐帧前进只继续解码尚未提交的帧(不再每次从关键帧重解整段 GOP,长 GOP 逐帧不再产生平方级重复解码),后退、跨 GOP、切任务或 codec 配置变化时确定性重建 decoder;已解码位图与 chunk 字节按内存预算而非对象数量淘汰(轻量 96/32 MiB、标准 256/96 MiB、激进 512/192 MiB),暂停态还会沿最近导航方向同 GOP 预取少量帧(标准 2 / 激进 4,播放态保持零额外请求),并暴露可区分 demux / decode / bitmap / cache 阶段的性能诊断。显示合同与失败回退不变,默认关闭。
+- **视频工作台精确帧诊断接入全局快照与 BUG 反馈**. 暂停态精确帧解码的状态、来源、当前帧、所属 GOP / codec、fallback 原因与资源预算、计数现在写入 `window.__videoWorkbenchDiagnostics`(更新上限 5 Hz,状态与 fallback 转换立即写入,task 切换/卸载有界清理),BUG 报告自动附带经裁剪、不含签名 URL / 字节 / 描述的诊断快照,便于排障;诊断只暴露枚举与数值,不触发界面重渲染。
+- **E2E 确定性 WebCodecs 视频素材与 seed 端点**. 新增仅隔离测试库使用的 seed 端点,用 numpy 生成每帧可机器识别(背景分组亮度 + 四角 bit 编码帧号低位 + 中心场景色)的 H.264 素材,经 ffmpeg 编码成 baseline / 主 profile B 帧 / 短 GOP / 变帧率矩阵,复用生产 ffprobe 与 avcC 管线产出与真实 worker 同结构的 chunk samples 与 codec description;pending→ready 由确定性 test-only 端点切换(不依赖媒体 Celery worker),unsupported / malformed 场景在真实编码上确定性篡改 metadata,全局 cleanup 一并清理 chunk 行与 MinIO 对象。
+- **WebCodecs 精确帧 E2E 与可观察属性**. 视频舞台容器暴露 data-video-frame-source / data-video-precise-state / data-video-frame-index 可观察属性;新增 Playwright spec 用确定性 H.264 fixture 覆盖 flag off 零 precise 请求、flag on 精确解码或安全回退、pending→ready 浏览器轮询，并从 Konva media canvas 采样 key / P / B / GOP / VFR 目标帧像素；普通 headless 环境缺少解码能力时明确记录 capability skip，严格 GPU 资格模式不允许用 skip 或回退代替像素证据。
+- **WebCodecs 精确帧真实性能基准与 Worker 决策门**. video-bench 的 precise-frame 场景现在必须驱动三组真实视频任务，核验分辨率 / fps / codec / chunk / GOP 后采集逐操作延迟、可迁移同步 slice、long task、flag-on/off 逐帧 rAF、播放 rAF 与 decoder / VideoFrame / 字节账本；矩阵缺失、能力降级、fallback、资源越界或样本不足会明确标为 `inconclusive`，严格资格模式会非零退出，不再把静态预算表写成“不引入 Dedicated Worker”的测量证据。
+
+### Changed
+
+- **WebCodecs 精确帧按客户端能力作为默认关闭的实验功能发布**. Linux 服务端继续只提供 demux metadata 与 chunk bytes，实际解码和后续 GPU 处理使用运行网页的客户端资源；没有硬解 profile 的客户端会使用软件解码或安全回退。客户端硬解、跨浏览器 1080p/4K 性能与默认开启仍需独立资格验证，不把服务端 GPU 或浏览器 GPU 合成误记为视频硬解。
 - **Mask 画布反馈与编辑工具条统一到其它标注工具**. 图片和视频 Mask 使用类别色、真实像素轮廓选中态与统一的画布标签，普通、选中和编辑态分别复用通用填充透明度设置，不再保留独立 Mask 覆盖透明度入口；详情卡补充画布尺寸、RLE 编码段和存储信息。视频渲染改用前景裁剪位图以减少空白区域的显存占用，编辑工具条同步采用工作台的紧凑字号、按钮和图标规格；原“淡化透明度”也明确命名为仅作用于重复 AI 候选。
 - **全仓格式化改为可复现双层门禁**. 第一方 Python 统一由固定版 Ruff 检查和格式化，前端、文档与配置文件统一由 Prettier 管理；CI 先执行全仓只读格式与静态检查，再以 manual 阶段复核 pre-commit 全文件行为，不再修改分支并自动提交局部 API 修复。pre-commit 与根命令使用相同边界并明确排除 vendor、生成物和锁文件。
 - **生成物更新补齐本地自动刷新与 CI 只读阻断**. 共享协议 schema 变更现在会触发 OpenAPI 快照重导；API 路由索引与快捷键、工作台设置生成页共用 pre-commit 自动暂存和 `check:codegen` 一致性检查，路由源码也会直接触发文档校验工作流。
 
 ### Fixed
 
+- **WebCodecs B 帧增量解码、总字节预算与 GPU 基准不再产生假结论**. Chromium 需要额外输入才能排空重排队列时，会把 lookahead 已输出的未来帧异步转成 bitmap 交给既有 LRU，后续相邻帧不再因目标已被关闭而反复从关键帧 reset；后台预取不再重置前台 session，快速连续 seek 的旧媒体事件也不会把画面回滚。decoder 优先请求硬件加速并在该偏好不受支持时安全重试；已缓存目标可先于原生 seek 结算绘制。活动、待显示、退休与缓存 bitmap 共同受性能档位总预算约束。精确帧基准改用 manifest 真实末帧、确定性随机目标、时间轴百分比坐标与实际 Konva draw 截断可见延迟，分段记录 queue / codec / bitmap / paint；严格模式核验真实硬解 profile，不再把 GPU 合成当作硬件视频解码。基准同时修正折叠态播放按钮语义、无物理输出 GPU runner 的 1 Hz 帧调度、快速 scrub 的 React 事件时序、播放请求计数边界，并让 warm 延迟门真实参与严格结论。
 - **Mask 原子操作冲突后可以直接恢复，Tracker 人工帧可确认覆盖**. 实例范围变化导致提交冲突时，
   “刷新范围”在错误态仍可使用，不再因编辑权限收紧形成恢复死锁；视频追踪候选包含受保护的人工
   关键帧时会在服务端拒绝后弹出二次确认，并按用户选择重新提交覆盖。

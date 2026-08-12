@@ -88,6 +88,9 @@ jobs:
       - name: User-guide image coverage
         run: node docs-site/scripts/check-image-manifest.mjs --strict && node docs-site/scripts/check-orphan-images.mjs --strict
 
+      - name: Excalidraw diagram integrity
+        run: pnpm --filter @anno/docs-site check:diagrams
+
       - name: Build docs site (catches broken links via VitePress)
         env:
           DOCS_BASE: /ai-annotation-platform/

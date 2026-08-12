@@ -12,6 +12,15 @@ export const rasterMasksApi = {
   /** 获取视频掩码关键帧内容 (video_track_mask)。 */
   annotationVideoMaskContent: (annotationId: string, frameIndex: number) =>
     apiClient.get<CocoRle>(`/annotations/${annotationId}/mask-content/${frameIndex}`),
+  predictionVideoMaskContent: (
+    taskId: string,
+    predictionId: string,
+    shapeIndex: number,
+    frameIndex: number,
+  ) =>
+    apiClient.get<CocoRle>(
+      `/tasks/${taskId}/predictions/${predictionId}/mask-content/${shapeIndex}/${frameIndex}`,
+    ),
   uploadTaskContent: async (taskId: string, rle: CocoRle) => {
     const gzip = await prepareCocoRleGzipUpload(rle);
     if (!gzip) {

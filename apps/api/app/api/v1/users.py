@@ -314,7 +314,7 @@ async def invite_user(
         email=payload.email,
         role=payload.role,
         group_name=payload.group_name,
-        invited_by=actor.id,
+        actor=actor,
     )
     await AuditService.log(
         db,

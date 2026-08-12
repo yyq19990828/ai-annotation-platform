@@ -43,6 +43,7 @@ import httpx
 import torch
 from aap_backend_runtime import (
     DeviceUnavailableError,
+    deployment_verified_flag,
     fetch_image,
     physical_gpu_identity,
     versions_payload,
@@ -134,10 +135,7 @@ EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_EMBEDDING_CACHE_SIZE", "32"))
 IDLE_UNLOAD_SECONDS = float(os.getenv("SAM3_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.getenv("SAM3_IDLE_CHECK_INTERVAL", "60"))
 MODEL_POOL_BUILD_TIMEOUT = float(os.getenv("SAM3_MODEL_POOL_BUILD_TIMEOUT", "120"))
-MANAGED_LIFECYCLE_VERIFIED = os.getenv(
-    "SAM3_MANAGED_LIFECYCLE_VERIFIED",
-    "0",
-).lower() in {"1", "true", "yes"}
+MANAGED_LIFECYCLE_VERIFIED = deployment_verified_flag("SAM3_MANAGED_LIFECYCLE_VERIFIED")
 MAX_PREDICT_REQUEST_BYTES = 6 * 1024 * 1024
 
 app = FastAPI(title="sam3-backend", version=BACKEND_VERSION)

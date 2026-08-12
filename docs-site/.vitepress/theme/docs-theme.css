@@ -322,6 +322,10 @@
   border-radius: 8px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
 }
+.docs-image-lightbox img.docs-image-lightbox-paper {
+  padding: 12px;
+  background: #fff;
+}
 
 /* ————————————————————————————————————————————————
  * 可访问性：focus-visible、高对比、reduced-motion

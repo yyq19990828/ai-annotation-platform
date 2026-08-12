@@ -30,7 +30,7 @@ WorkbenchShell
 
 `WorkbenchShell.tsx` 只负责路由参数、项目与任务数据、React Query mutations、history、离线队列、快捷键注册，以及把这些依赖装配到子模块。
 
-它不直接渲染 `ImageStage` 或 `VideoStage`，也不直接拼装某个 Stage 的 annotation payload。图片和视频的创建、更新、改类、撤销相关语义分别下沉到：
+它不直接渲染 `ImageStage` 或 `VideoKonvaStage`，也不直接拼装某个 Stage 的 annotation payload。图片和视频的创建、更新、改类、撤销相关语义分别下沉到：
 
 - `stages/image/useImageAnnotationActions.ts`
 - `stages/video/useVideoAnnotationActions.ts`
@@ -55,7 +55,7 @@ type StageKind = "image" | "video" | "3d";
 `WorkbenchStageHost` 根据 `stageKind` 选择具体实现：
 
 - `ImageWorkbench`：包装图片 `ImageStage`，持有图片专属的 FloatingDock、CanvasToolbar、Minimap。
-- `VideoWorkbench`：包装视频 `VideoStage`，持有视频时间轴、轨迹与 keyframe 操作。
+- `VideoWorkbench`：包装视频 `VideoKonvaStage`，持有视频时间轴、轨迹与 keyframe 操作。
 - `ThreeDWorkbench`：包装 Three.js 点云工作台，持有 3D 框绘制 / gizmo / 三视图浮窗 / 相机投影浮层。
 
 `stages/types.ts` 里的 `StageCapabilities` 用来描述外围能力，例如是否有 class picker、AI 预标、timeline、viewport、comments。它不是内部编辑协议。

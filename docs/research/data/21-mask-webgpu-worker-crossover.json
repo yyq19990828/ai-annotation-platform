@@ -1,0 +1,164 @@
+{
+  "generated_at": "2026-07-29T13:20:00.000Z",
+  "environment": {
+    "browser": "Google Chrome 150.0.7871.114",
+    "browser_mode": "headed",
+    "os": "linux-5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "adapter": {
+      "vendor": "nvidia",
+      "architecture": "ampere"
+    },
+    "unsafe_vulkan": true,
+    "default_x11_adapter_available": false
+  },
+  "operation": {
+    "type": "dilate",
+    "kernel_shape": "square",
+    "radius": 2,
+    "execution": "Dedicated Worker",
+    "gpu_representation": "row-aligned 1-bit storage buffer"
+  },
+  "method": {
+    "warmup": 2,
+    "iterations": 10,
+    "rounds": 2,
+    "round_trip_includes": [
+      "main-to-worker transfer",
+      "pack",
+      "upload",
+      "dispatch",
+      "readback",
+      "unpack",
+      "worker-to-main transfer"
+    ],
+    "parity": "exact"
+  },
+  "contracts": {
+    "worker_created_before_first_job": false,
+    "gpu_initialized_by_cpu_job": false,
+    "main_thread_long_tasks": 0,
+    "actual_device_destroy_fallback": "cpu-fallback",
+    "actual_device_destroy_reason": "device-lost:destroyed",
+    "abort_terminates_worker": true,
+    "next_job_recreates_worker": true,
+    "dispose_terminates_all_workers": true,
+    "default_x11_fallback": "adapter-unavailable"
+  },
+  "rounds": [
+    {
+      "gpu_init_ms": {
+        "adapter": 4898.7,
+        "device": 135.1,
+        "pipeline": 7.3
+      },
+      "rows": [
+        {
+          "name": "256",
+          "resolution": [256, 256],
+          "cpu_worker_p50_ms": 1.0,
+          "cpu_worker_p95_ms": 2.1,
+          "webgpu_worker_p50_ms": 4.3,
+          "webgpu_worker_p95_ms": 4.7,
+          "p95_improvement_percent": -123.8
+        },
+        {
+          "name": "512",
+          "resolution": [512, 512],
+          "cpu_worker_p50_ms": 3.5,
+          "cpu_worker_p95_ms": 3.7,
+          "webgpu_worker_p50_ms": 5.5,
+          "webgpu_worker_p95_ms": 6.2,
+          "p95_improvement_percent": -67.6
+        },
+        {
+          "name": "1024",
+          "resolution": [1024, 1024],
+          "cpu_worker_p50_ms": 21.1,
+          "cpu_worker_p95_ms": 23.6,
+          "webgpu_worker_p50_ms": 10.2,
+          "webgpu_worker_p95_ms": 11.4,
+          "p95_improvement_percent": 51.7
+        },
+        {
+          "name": "2048",
+          "resolution": [2048, 2048],
+          "cpu_worker_p50_ms": 80.2,
+          "cpu_worker_p95_ms": 85.1,
+          "webgpu_worker_p50_ms": 30.2,
+          "webgpu_worker_p95_ms": 31.6,
+          "p95_improvement_percent": 62.9
+        },
+        {
+          "name": "4k",
+          "resolution": [3840, 2160],
+          "cpu_worker_p50_ms": 159.0,
+          "cpu_worker_p95_ms": 162.8,
+          "webgpu_worker_p50_ms": 53.7,
+          "webgpu_worker_p95_ms": 57.8,
+          "p95_improvement_percent": 64.5
+        }
+      ]
+    },
+    {
+      "gpu_init_ms": {
+        "adapter": 2027.7,
+        "device": 3143.1,
+        "pipeline": 7.5
+      },
+      "rows": [
+        {
+          "name": "256",
+          "resolution": [256, 256],
+          "cpu_worker_p50_ms": 1.1,
+          "cpu_worker_p95_ms": 2.1,
+          "webgpu_worker_p50_ms": 4.3,
+          "webgpu_worker_p95_ms": 4.9,
+          "p95_improvement_percent": -133.3
+        },
+        {
+          "name": "512",
+          "resolution": [512, 512],
+          "cpu_worker_p50_ms": 3.6,
+          "cpu_worker_p95_ms": 4.1,
+          "webgpu_worker_p50_ms": 5.4,
+          "webgpu_worker_p95_ms": 6.0,
+          "p95_improvement_percent": -46.3
+        },
+        {
+          "name": "1024",
+          "resolution": [1024, 1024],
+          "cpu_worker_p50_ms": 20.6,
+          "cpu_worker_p95_ms": 24.1,
+          "webgpu_worker_p50_ms": 10.0,
+          "webgpu_worker_p95_ms": 14.9,
+          "p95_improvement_percent": 38.2
+        },
+        {
+          "name": "2048",
+          "resolution": [2048, 2048],
+          "cpu_worker_p50_ms": 79.9,
+          "cpu_worker_p95_ms": 87.6,
+          "webgpu_worker_p50_ms": 29.7,
+          "webgpu_worker_p95_ms": 33.1,
+          "p95_improvement_percent": 62.2
+        },
+        {
+          "name": "4k",
+          "resolution": [3840, 2160],
+          "cpu_worker_p50_ms": 161.1,
+          "cpu_worker_p95_ms": 164.4,
+          "webgpu_worker_p50_ms": 54.2,
+          "webgpu_worker_p95_ms": 64.1,
+          "p95_improvement_percent": 61.0
+        }
+      ]
+    }
+  ],
+  "stable_crossover": {
+    "pixels": 1048576,
+    "resolution": [1024, 1024],
+    "routing_candidate": "CPU Worker below threshold; WebGPU Worker at or above threshold"
+  }
+}

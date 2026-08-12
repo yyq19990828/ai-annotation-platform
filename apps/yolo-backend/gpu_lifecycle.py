@@ -145,10 +145,12 @@ class YoloGpuLifecycle:
         pool: ModelPool,
         *,
         verify_keyring: Mapping[str, Ed25519PublicKey],
+        evictable_verified: bool = False,
         boot_id: str | None = None,
     ) -> None:
         self._pool = pool
         self._verify_keyring = dict(verify_keyring)
+        self._evictable_verified = evictable_verified
         self._boot_id = boot_id or uuid.uuid4().hex
         self._lock = asyncio.Lock()
 
@@ -344,6 +346,11 @@ class YoloGpuLifecycle:
 
         async with self._lock:
             self._validate_control_claim_locked(claims, AdmissionScope.MODE)
+            if request.gate is LifecycleGate.ENFORCE and not self._evictable_verified:
+                raise LifecycleHTTPError(
+                    LifecycleErrorCode.TRANSITION_CONFLICT,
+                    message="real GPU full-unload verification is required before enforce",
+                )
             self._consume_jti_locked(claims, fingerprint, workload=False)
             incoming = int(request.control_epoch)
             current = (
@@ -811,7 +818,8 @@ class YoloGpuLifecycle:
         else:
             pool_resident = gpu_loaded
         evictable = (
-            self._gate is LifecycleGate.ENFORCE
+            self._evictable_verified
+            and self._gate is LifecycleGate.ENFORCE
             and self._identity is not None
             and self._generation is not None
             and self._generation_open

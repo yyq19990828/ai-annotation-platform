@@ -28,6 +28,55 @@ function trackBox(id: string, frames: number[]): AiBox {
   } as unknown as AiBox;
 }
 
+function pointsTrackBox(id: string, type: "video_track_polygon" | "video_track_polyline"): AiBox {
+  return {
+    id,
+    geometry: {
+      type,
+      track_id: id,
+      keyframes: [
+        {
+          frame_index: 0,
+          points: [[0.1, 0.1], [0.4, 0.1], ...(type === "video_track_polygon" ? [[0.3, 0.4]] : [])],
+          source: "prediction",
+        },
+        {
+          frame_index: 10,
+          points: [[0.2, 0.2], [0.5, 0.2], ...(type === "video_track_polygon" ? [[0.4, 0.5]] : [])],
+          source: "prediction",
+        },
+      ],
+      outside: [],
+    },
+  } as unknown as AiBox;
+}
+
+function maskTrackBox(id: string): AiBox {
+  const digest = "a".repeat(64);
+  return {
+    id,
+    geometry: {
+      type: "video_track_mask",
+      track_id: id,
+      keyframes: [
+        {
+          frame_index: 2,
+          source: "prediction",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [2, 3],
+            object_key: `raster-masks/sha256/aa/aa/${digest}.json`,
+            sha256: digest,
+            runs: 3,
+            bytes: 64,
+          },
+        },
+      ],
+      outside: [{ from: 6, to: 7, source: "prediction" }],
+    },
+  } as unknown as AiBox;
+}
+
 describe("aiBoxFrames", () => {
   it("collects predicted frames from video_bbox frame_index", () => {
     const frames = collectPredictedFrames([bboxBox("pred-1-0", 3), bboxBox("pred-2-0", 1)]);
@@ -80,5 +129,36 @@ describe("aiBoxFrames", () => {
     // 顶层坐标被解出的当前帧框覆盖 (关键帧 0 的 bbox = {0,0,0.2,0.2})
     expect({ x: resolved!.x, y: resolved!.y, w: resolved!.w, h: resolved!.h }).toEqual(bbox);
     expect(resolveAiBoxAtFrame(box, 20)).toBeNull();
+  });
+
+  it("resolves polygon/polyline tracks with current-frame points and outside gaps", () => {
+    const polygon = pointsTrackBox("pred-polygon", "video_track_polygon");
+    const polyline = pointsTrackBox("pred-polyline", "video_track_polyline");
+    const resolvedPolygon = resolveAiBoxAtFrame(polygon, 5);
+    const resolvedPolyline = resolveAiBoxAtFrame(polyline, 5);
+
+    expect(resolvedPolygon?.polygon).toHaveLength(3);
+    expect(resolvedPolygon?.w).toBeGreaterThan(0);
+    expect(resolvedPolyline?.polyline).toHaveLength(2);
+    expect(resolvedPolyline?.w).toBeGreaterThan(0);
+    const outsidePolygon = {
+      ...polygon,
+      geometry: {
+        ...polygon.geometry,
+        outside: [{ from: 6, to: 7, source: "prediction" }],
+      },
+    } as AiBox;
+    expect(resolveAiBoxAtFrame(outsidePolygon, 6)).toBeNull();
+    expect(aiBoxOnFrame(outsidePolygon, 7)).toBe(false);
+  });
+
+  it("includes mask tracks in frame visibility and prediction density", () => {
+    const mask = maskTrackBox("pred-mask");
+    expect(aiBoxOnFrame(mask, 5)).toBe(true);
+    expect(aiBoxOnFrame(mask, 6)).toBe(false);
+    expect(resolveAiBoxAtFrame(mask, 5)).toBe(mask);
+    expect(
+      collectPredictedFrames([mask, pointsTrackBox("pred-polygon", "video_track_polygon")]),
+    ).toEqual([0, 2, 10]);
   });
 });

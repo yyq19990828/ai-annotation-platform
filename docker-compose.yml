@@ -77,7 +77,8 @@ services:
     # ml.cpu 拆到 celery-worker-cpu, 实现设备感知并发隔离。
     command: celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL_DOCKER:-}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -88,6 +89,10 @@ services:
       GPU_ARBITER_ROLLOUT_ENABLED: ${GPU_ARBITER_ROLLOUT_ENABLED:-false}
       GPU_ARBITER_RESOURCES_JSON: ${GPU_ARBITER_RESOURCES_JSON:-{}}
       GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS: ${GPU_ARBITER_RESIDENCY_COOLDOWN_SECONDS:-30}
+      IMAGE_PYRAMID_AUTO_GENERATE: ${IMAGE_PYRAMID_AUTO_GENERATE:-false}
+      IMAGE_PYRAMID_OPTIONAL_PIXELS: ${IMAGE_PYRAMID_OPTIONAL_PIXELS:-16777216}
+      IMAGE_PYRAMID_REQUIRED_PIXELS: ${IMAGE_PYRAMID_REQUIRED_PIXELS:-50000000}
+      IMAGE_PYRAMID_GC_GRACE_HOURS: ${IMAGE_PYRAMID_GC_GRACE_HOURS:-24}
       GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
       GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
       # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
@@ -129,6 +134,57 @@ services:
       minio:
         condition: service_healthy
 
+  # 超大图 pyramid 独立单并发队列：libvips decode/encode 与临时磁盘预算不和普通
+  # thumbnail/video media job 争抢。不可用时只影响可选派生资产，不阻断源图与 API。
+  celery-worker-image-pyramid:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: celery -A app.workers.celery_app worker -l info -Q image-pyramid --concurrency=1 --prefetch-multiplier=1 --max-memory-per-child=1572864
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      IMAGE_PYRAMID_AUTO_GENERATE: ${IMAGE_PYRAMID_AUTO_GENERATE:-false}
+      IMAGE_PYRAMID_PROFILE_VERSION: ${IMAGE_PYRAMID_PROFILE_VERSION:-pyramid-v1}
+      IMAGE_PYRAMID_NORMALIZATION_VERSION: ${IMAGE_PYRAMID_NORMALIZATION_VERSION:-exif-autorotate-srgb-v1}
+      IMAGE_PYRAMID_OPTIONAL_PIXELS: ${IMAGE_PYRAMID_OPTIONAL_PIXELS:-16777216}
+      IMAGE_PYRAMID_REQUIRED_PIXELS: ${IMAGE_PYRAMID_REQUIRED_PIXELS:-50000000}
+      IMAGE_PYRAMID_MAX_PIXELS: ${IMAGE_PYRAMID_MAX_PIXELS:-300000000}
+      IMAGE_PYRAMID_MAX_DIMENSION: ${IMAGE_PYRAMID_MAX_DIMENSION:-32768}
+      IMAGE_PYRAMID_MAX_TILES: ${IMAGE_PYRAMID_MAX_TILES:-20000}
+      IMAGE_PYRAMID_MAX_SOURCE_BYTES: ${IMAGE_PYRAMID_MAX_SOURCE_BYTES:-8589934592}
+      IMAGE_PYRAMID_MAX_DERIVED_BYTES: ${IMAGE_PYRAMID_MAX_DERIVED_BYTES:-8589934592}
+      IMAGE_PYRAMID_MAX_TEMP_BYTES: ${IMAGE_PYRAMID_MAX_TEMP_BYTES:-12884901888}
+      IMAGE_PYRAMID_JOB_TIMEOUT_SECONDS: ${IMAGE_PYRAMID_JOB_TIMEOUT_SECONDS:-1800}
+      IMAGE_PYRAMID_LEASE_SECONDS: ${IMAGE_PYRAMID_LEASE_SECONDS:-2100}
+      IMAGE_PYRAMID_VIPS_CONCURRENCY: ${IMAGE_PYRAMID_VIPS_CONCURRENCY:-4}
+      VIPS_CONCURRENCY: ${IMAGE_PYRAMID_VIPS_CONCURRENCY:-4}
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      IMAGE_PYRAMID_SRGB_PROFILE: ${IMAGE_PYRAMID_SRGB_PROFILE:-/usr/share/color/icc/sRGB.icc}
+    volumes:
+      - ./apps/api:/app
+      - /app/.venv
+    healthcheck:
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   # ADR-0049 · 显存 repair / tombstone GC 控制面。独立队列、单并发，且是唯一持有
   # collector 数据库凭据的应用进程；普通 API/worker 不挂载该文件。
   celery-worker-gpu-control:
@@ -137,7 +193,8 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -187,7 +244,8 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=${CELERY_GPU_CONCURRENCY:-2}
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -238,7 +296,8 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=${CELERY_CPU_CONCURRENCY:-4}
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -278,7 +337,8 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -325,7 +385,8 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     command: celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+asyncpg://user:pass@postgres:5432/annotation}
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin

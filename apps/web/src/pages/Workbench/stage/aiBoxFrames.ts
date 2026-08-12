@@ -3,9 +3,19 @@
 //  - 侧栏 AI 待审计数/列表按当前帧过滤 (v0.21.10 断点 C)
 //  - 画布 AI 层当前帧渲染 (video_bbox + video_track_bbox)
 //  - 时间轴预测密度轨 + 跳到下一/上一预测帧 (v0.21.9 WS1)
-import type { VideoTrackGeometry } from "@/types";
-import type { AiBox } from "../state/transforms";
-import { resolveTrackAtFrame } from "./videoStageGeometry";
+import type {
+  VideoTrackGeometry,
+  VideoTrackMaskGeometry,
+  VideoTrackPolygonGeometry,
+  VideoTrackPolylineGeometry,
+} from "@/types";
+import { polygonBounds, type AiBox } from "../state/transforms";
+import {
+  resolveTrackAtFrame,
+  resolveVideoMaskTrackAtFrame,
+  resolveVideoPolygonTrackAtFrame,
+  resolveVideoPolylineTrackAtFrame,
+} from "./videoStageGeometry";
 
 /**
  * AI 候选在给定帧是否可见:
@@ -19,6 +29,15 @@ export function aiBoxOnFrame(box: AiBox, frameIndex: number): boolean {
   if (g.type === "video_bbox") return g.frame_index === frameIndex;
   if (g.type === "video_track_bbox") {
     return resolveTrackAtFrame(g as VideoTrackGeometry, frameIndex) !== null;
+  }
+  if (g.type === "video_track_polygon") {
+    return resolveVideoPolygonTrackAtFrame(g as VideoTrackPolygonGeometry, frameIndex) !== null;
+  }
+  if (g.type === "video_track_polyline") {
+    return resolveVideoPolylineTrackAtFrame(g as VideoTrackPolylineGeometry, frameIndex) !== null;
+  }
+  if (g.type === "video_track_mask") {
+    return resolveVideoMaskTrackAtFrame(g as VideoTrackMaskGeometry, frameIndex) !== null;
   }
   return true;
 }
@@ -39,6 +58,20 @@ export function resolveAiBoxAtFrame(box: AiBox, frameIndex: number): AiBox | nul
     if (!resolved) return null;
     const { x, y, w, h } = resolved.geom;
     return { ...box, x, y, w, h };
+  }
+  if (g.type === "video_track_polygon" || g.type === "video_track_polyline") {
+    const resolved =
+      g.type === "video_track_polygon"
+        ? resolveVideoPolygonTrackAtFrame(g as VideoTrackPolygonGeometry, frameIndex)
+        : resolveVideoPolylineTrackAtFrame(g as VideoTrackPolylineGeometry, frameIndex);
+    if (!resolved) return null;
+    const bounds = polygonBounds(resolved.points);
+    return g.type === "video_track_polygon"
+      ? { ...box, ...bounds, polygon: resolved.points, polyline: undefined }
+      : { ...box, ...bounds, polyline: resolved.points, polygon: undefined };
+  }
+  if (g.type === "video_track_mask") {
+    return resolveVideoMaskTrackAtFrame(g as VideoTrackMaskGeometry, frameIndex) ? box : null;
   }
   return box;
 }
@@ -69,8 +102,13 @@ export function collectPredictedFrames(boxes: readonly AiBox[]): number[] {
     if (!g) continue;
     if (g.type === "video_bbox") {
       frames.add(g.frame_index);
-    } else if (g.type === "video_track_bbox") {
-      for (const kf of (g as VideoTrackGeometry).keyframes) frames.add(kf.frame_index);
+    } else if (
+      g.type === "video_track_bbox" ||
+      g.type === "video_track_polygon" ||
+      g.type === "video_track_polyline" ||
+      g.type === "video_track_mask"
+    ) {
+      for (const keyframe of g.keyframes) frames.add(keyframe.frame_index);
     }
   }
   return [...frames].sort((a, b) => a - b);

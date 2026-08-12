@@ -3,27 +3,18 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-29
 ---
 
 # 系统全景
 
 ## 物理架构
 
-```mermaid
-graph LR
-  Browser[浏览器<br/>React + Vite] -->|HTTPS / WS| Web[Nginx]
-  Web -->|/api| API[FastAPI<br/>uvicorn]
-  Web -->|/ws| API
-  API -->|asyncpg| PG[(PostgreSQL)]
-  API -->|aioredis| RD[(Redis)]
-  API -->|boto3| S3[(MinIO / OSS)]
-  API -->|broker| RD
-  Worker[Celery Worker] -->|consumer| RD
-  Worker -->|asyncpg| PG
-  Worker -->|boto3| S3
-  Worker -->|HTTP| ML[ML 推理服务<br/>GroundingDINO/SAM]
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/system-overview.svg"
+  alt="浏览器经 Nginx 访问 FastAPI，API 与 Celery Worker 连接 PostgreSQL、Redis、对象存储和 ML 推理服务"
+  caption="平台物理架构与主要通信边界"
+/>
 
 ## 逻辑分层
 

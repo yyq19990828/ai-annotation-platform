@@ -88,7 +88,7 @@ async def revoke_invitation(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
-    inv = await InvitationService.revoke(db, invitation_id)
+    inv = await InvitationService.revoke(db, invitation_id, actor=actor)
     await AuditService.log(
         db,
         actor=actor,
@@ -109,7 +109,7 @@ async def resend_invitation(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
-    inv = await InvitationService.resend(db, invitation_id)
+    inv = await InvitationService.resend(db, invitation_id, actor=actor)
     await AuditService.log(
         db,
         actor=actor,

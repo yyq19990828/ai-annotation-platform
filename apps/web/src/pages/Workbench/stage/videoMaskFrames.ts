@@ -3,6 +3,7 @@ import type { AnnotationResponse, CocoRleMaskRef } from "@/types";
 import type { VideoTrackerPreviewResult } from "@/api/videoTracker";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import { videoTrackerApi } from "@/api/videoTracker";
+import type { AiBox } from "../state/transforms";
 import { decodeCocoRle, type CocoRle } from "./shared/geometry/maskRle";
 import {
   buildTintedMaskRgba,
@@ -23,7 +24,7 @@ export interface VideoMaskCandidate {
 
 export interface VideoMaskRenderRecord {
   id: string;
-  source: "annotation" | "tracker";
+  source: "annotation" | "prediction" | "tracker";
   image: CanvasImageSource;
   alpha: Uint8Array;
   width: number;
@@ -103,11 +104,22 @@ export function useVideoMaskFrames(params: {
   taskId: string | null;
   annotations: readonly AnnotationResponse[];
   candidates: readonly VideoMaskCandidate[];
+  predictions: readonly AiBox[];
   frameIndex: number;
   selectedId: string | null;
   colorForAnnotation: (annotation: AnnotationResponse) => string;
+  colorForPrediction: (prediction: AiBox) => string;
 }): VideoMaskRenderRecord[] {
-  const { taskId, annotations, candidates, frameIndex, selectedId, colorForAnnotation } = params;
+  const {
+    taskId,
+    annotations,
+    candidates,
+    predictions,
+    frameIndex,
+    selectedId,
+    colorForAnnotation,
+    colorForPrediction,
+  } = params;
   const cacheRef = useRef(new Map<string, CachedMask>());
   const generationRef = useRef(0);
   const [records, setRecords] = useState<VideoMaskRenderRecord[]>([]);
@@ -173,8 +185,43 @@ export function useVideoMaskFrames(params: {
         },
       ];
     });
-    return [...committed, ...staged];
-  }, [annotations, candidates, colorForAnnotation, frameIndex, selectedId]);
+    const imported = predictions.flatMap((prediction, index) => {
+      const geometry = prediction.geometry;
+      if (!taskId || geometry?.type !== "video_track_mask") return [];
+      const resolved = resolveVideoMaskTrackAtFrame(geometry, frameIndex);
+      if (!resolved) return [];
+      return [
+        {
+          id: prediction.id,
+          source: "prediction" as const,
+          ref: resolved.mask,
+          color: colorForPrediction(prediction),
+          zOrder: Number.MAX_SAFE_INTEGER - candidates.length - index,
+          selected: prediction.id === selectedId,
+          isTrack: true,
+          cachePrefix: `prediction:${prediction.predictionId}:shape:${prediction.shapeIndex}`,
+          frameKey: resolved.keyframeFrame,
+          load: () =>
+            rasterMasksApi.predictionVideoMaskContent(
+              taskId,
+              prediction.predictionId,
+              prediction.shapeIndex,
+              frameIndex,
+            ),
+        },
+      ];
+    });
+    return [...committed, ...staged, ...imported];
+  }, [
+    annotations,
+    candidates,
+    colorForAnnotation,
+    colorForPrediction,
+    frameIndex,
+    predictions,
+    selectedId,
+    taskId,
+  ]);
 
   useEffect(() => {
     generationRef.current += 1;

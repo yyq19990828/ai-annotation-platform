@@ -2,7 +2,10 @@
 // 共用本数组渲染,杜绝两处 UI 漂移。新增字段流程:后端子树加字段 → auth.ts 类型同步 →
 // 这里加一行 → 消费点读配置。
 import type { LabelContentByType, WorkbenchPreferences } from "@/api/auth";
-import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
+import {
+  WEBCODECS_DEFAULT_ENABLED,
+  WEBCODECS_FLAG_STORAGE_KEY,
+} from "../stage/useVideoChunkDecoder";
 import {
   readVideoReferenceSetting,
   writeVideoReferenceSetting,
@@ -78,13 +81,14 @@ export const WORKBENCH_SETTING_CATEGORY_LABELS: Record<WorkbenchSettingCategory,
   experiment: "实验特性",
 };
 
-function readLocalBoolean(key: string): boolean {
-  if (typeof window === "undefined") return false;
+function readLocalBoolean(key: string, defaultValue = false): boolean {
+  if (typeof window === "undefined") return defaultValue;
   try {
     const raw = window.localStorage.getItem(key);
+    if (raw === null) return defaultValue;
     return raw === "1" || raw === "true";
   } catch {
-    return false;
+    return defaultValue;
   }
 }
 
@@ -559,9 +563,9 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     category: "experiment",
     storage: "local",
     label: "WebCodecs 精确解码",
-    description: "实验性,刷新后生效",
+    description: "默认开启;暂停、逐帧和 seek 优先精确解码,不支持时安全回退,刷新后生效",
     control: { type: "toggle" },
-    read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY),
+    read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, WEBCODECS_DEFAULT_ENABLED),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
   },
   {

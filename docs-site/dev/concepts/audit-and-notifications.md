@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-29
 ---
 
 # 审计与通知
@@ -20,26 +20,23 @@ last_reviewed: 2026-07-22
 
 ## 模块定位
 
-这两个机制不是统一事件总线自动派生出来的，而是**业务路由显式调用**。
+业务语义审计与通知由 route / service 显式调用；除此之外，`AuditMiddleware` 会在大多数 HTTP 写请求响应后旁路记录一条 `http.*` 元数据审计。自动层不含业务 action、target 或 detail，不能替代显式审计。
 
-```mermaid
-flowchart TD
-  A["route / service 发生业务动作"] --> B["AuditService.log() / log_many()"]
-  A --> C["NotificationService.notify() / notify_many()"]
-  B --> D["audit_logs 表"]
-  C --> E["notifications 表"]
-  C --> F["Redis PubSub notify:{user_id}"]
-  F --> G["/ws/notifications"]
-  E --> H["GET /notifications"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/audit-notification-flow.svg"
+  alt="业务审计、自动 HTTP 元数据审计、通知偏好、持久化收件箱与 Redis 在线推送的分支流程"
+  caption="审计与通知的写入、持久化和在线分发边界"
+/>
 
-这意味着改业务功能时，如果你忘了补 audit 或 notification，不会有统一框架替你兜底。
+通知创建不是事务型 outbox：服务会先 `flush` 通知行、再尽力发布 Redis，调用方稍后才提交事务。Redis 失败不会删除持久化行；反过来，调用方最终回滚时，在线端也可能已经收到尚未持久化的消息。
 
 ## 代码入口
 
 | 位置                                        | 作用                                              |
 | ------------------------------------------- | ------------------------------------------------- |
 | `apps/api/app/services/audit.py`            | `AuditAction`、`AuditService.log()`、`log_many()` |
+| `apps/api/app/middleware/audit.py`          | HTTP 写请求响应后的 `http.*` 元数据审计           |
+| `apps/api/app/workers/audit.py`             | 异步持久化 HTTP 审计；投递失败时中间件同步回退    |
 | `apps/api/app/db/models/audit_log.py`       | `AuditLog` 数据模型                               |
 | `apps/api/app/api/v1/audit_logs.py`         | audit 查询与导出                                  |
 | `apps/api/app/services/notification.py`     | 通知写表与 Redis PubSub                           |
@@ -256,11 +253,16 @@ helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在
 当前白名单：
 
 - `batch_predict`
-- `prediction_retry`
 - `video_tracker`
+- `video_correction`
 - `predictions_import`
-- `dataset_import`
 - `audit_archive`
+- `prediction_retry`
+- `dataset_import`
+- `mask_qc`
+- `mask_repair`
+- `mask_repair_rollback`
+- `mask_format_import`
 
 `failed_prediction.retry.succeeded` / `failed_prediction.retry.failed` 保留为历史通知偏好类型；当前失败预测重试的终态由 `prediction_retry` 的 `job.completed` / `job.failed` 承载。
 
@@ -284,7 +286,7 @@ helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在
 
 ### 2. WebSocket 在线推送
 
-- `GET /ws/notifications?token=...`
+- `WS /ws/notifications?token=...`
 
 WS 握手时会校验 JWT，然后订阅：
 
@@ -324,7 +326,7 @@ WS 握手时会校验 JWT，然后订阅：
 
 - 用户角色变更
 - 系统设置更新
-- 导出操作
+- 导出请求阶段（worker 终态另发 `export.ready` / `export.failed`）
 
 ### audit + notification 一起发
 

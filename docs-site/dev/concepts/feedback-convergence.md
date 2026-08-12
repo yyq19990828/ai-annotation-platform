@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.11.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-29
 ---
 
 # 反馈收敛与双写对账
@@ -36,17 +36,11 @@ ADR-0027 立新表 `annotation_feedbacks`，用 `anchor_type`（project / task /
 
 每日定时比对「旧表中应被 mirror 的行」与「新表中实际镜像的行」，统计每个来源的缺失数（drift）。drift 长期为 0 是删旧写路径的前置条件。
 
-```mermaid
-flowchart TD
-  A["celery beat 每日 03:00 UTC 触发"] --> B["reconcile_annotation_feedback (worker)"]
-  B --> C["compute_feedback_drift(db)"]
-  C --> D["逐源比对 expected / actual / missing_ids"]
-  D --> E{"total_missing > 0 ?"}
-  E -->|是| F["AuditService.log(FEEDBACK_RECONCILE_DRIFT)"]
-  E -->|是| G["notify 全部 superadmin: feedback.reconcile_drift"]
-  E -->|是| H["log.warning 打印 drift 详情"]
-  E -->|否| I["log.info 记录零漂移"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/feedback-reconciliation-guard.svg"
+  alt="bug report、标注评论和任务驳回在原业务事务中镜像到 annotation_feedbacks，定时任务逐源按业务键与分组行号定位缺失，并在漂移时审计、通知和告警的迁移门禁"
+  caption="反馈双写对账：检测应镜像旧行的缺失，为切单源提供长期零漂移证据"
+/>
 
 ### 代码入口
 
@@ -55,6 +49,7 @@ flowchart TD
 | `apps/api/app/services/feedback_reconcile.py` | `compute_feedback_drift()` 纯对账逻辑                                     |
 | `apps/api/app/workers/feedback_reconcile.py`  | `reconcile_annotation_feedback()` Celery 任务包装：跑对账 + 落 audit/通知 |
 | `apps/api/app/workers/celery_app.py`          | beat schedule 注册（`reconcile-annotation-feedback`）+ worker include     |
+| `apps/api/app/services/feedback.py`           | `mirror_*` 将三条旧写路径在同一事务中镜像到统一表                         |
 | `apps/api/app/services/audit.py`              | `AuditAction.FEEDBACK_RECONCILE_DRIFT = "feedback.reconcile_drift"`       |
 
 ### 对账逻辑
@@ -62,16 +57,18 @@ flowchart TD
 `compute_feedback_drift()` 对三类 mirror 行逐源比对三个维度：
 
 - `expected`：旧表中「按业务口径应被 mirror 的行数」（例如 `bug_reports.project_id IS NULL` 的登录页 bug 不 mirror，故排除）
-- `actual`：`v_annotation_feedback_unified` 中 `source_table='annotation_feedbacks'` 且 `kind` 对应该来源的行数
+- `actual`：旧表应 mirror 行中，能在 `annotation_feedbacks` 找到对应镜像的覆盖数，即 `expected - missing`；它不是统一表中该 `kind` 的原始总数
 - `missing_ids`：旧表中未在统一表找到镜像的主键列表
 
-匹配是**按业务字段回连而非主键**（用 `NOT EXISTS` + 业务字段等值 / `IS DISTINCT FROM`），因为 mirror 行有独立主键：
+匹配是**按业务字段回连而非主键**，因为 mirror 行有独立主键。实现会对同一业务键下的旧行做 `ROW_NUMBER()`，再与对应 mirror 行的 `COUNT(*)` 比较：如果 N 条内容完全相同的旧行只镜像了 M 条，仍能精确返回 N-M 个缺失 ID，不会因“存在任一镜像”而漏报。
 
 | 旧表                  | mirror `kind` | 回连字段                                           |
 | --------------------- | ------------- | -------------------------------------------------- |
 | `bug_reports`         | `bug`         | `(project_id, title, body=description, author_id)` |
 | `annotation_comments` | `comment`     | 评论业务字段                                       |
 | `tasks`（reject）     | `reject`      | 任务驳回业务字段                                   |
+
+对账查询直接读 `annotation_feedbacks`，不会把 `v_annotation_feedback_unified` 里由 legacy 表组成的读模型分支误当成 mirror。pixel-anchored issue 原生写统一表，没有旧表权威源，因此也不参与这三类 mirror 对账。
 
 ### 调度与配置
 
@@ -98,6 +95,8 @@ Celery 没有 `--reload`，编辑 `apps/api/app/workers/**` 后需 `docker resta
 3. **日志**：`log.warning` 打印 drift 详情，便于排障（配合 ADR-0027 双写日志关键字 `[ADR-0027 double-write]`）
 
 drift=0 时只写 `log.info`，不打扰任何人。
+
+当前门禁只回答“应 mirror 的旧行是否缺失”：它不自动 backfill，也不检测或清理多出的孤立 mirror 行。
 
 ::: warning superadmin 收到该通知意味着什么
 说明某条旧表反馈没成功双写到 `annotation_feedbacks`。这是切单源的阻塞信号：应先按 `missing_by_source` 定位丢行来源、修复双写路径或 backfill，确认漂移归零后再推进删旧写路径。

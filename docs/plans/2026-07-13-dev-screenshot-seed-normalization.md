@@ -1,6 +1,6 @@
 # DEV 浏览器截图与 Seed 项目规范化计划
 
-> Status: in progress · 2026-07-13
+> Status: Completed · 2026-07-29
 
 ## 1. 背景
 

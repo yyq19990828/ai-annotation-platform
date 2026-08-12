@@ -1,4 +1,5 @@
 import type { Viewport } from "../useViewportTransform";
+import { fitToCanvas } from "./fit";
 
 /**
  * 公共 viewport 原语 · 缩放(纯计算)。
@@ -16,6 +17,23 @@ export const SCALE_RANGE = { min: 0.2, max: 8 } as const;
 export interface ScaleRange {
   min: number;
   max: number;
+}
+
+/**
+ * 大图的 contain 适应比例可能低于默认 20% 下限。此时将最小缩放比放宽到
+ * 当前视口的适应比例，使用户放大后仍能原路缩小回完整可见状态。
+ */
+export function fitAwareScaleRange(
+  viewportW: number,
+  viewportH: number,
+  contentW: number,
+  contentH: number,
+): ScaleRange {
+  const fitScale = fitToCanvas(viewportW, viewportH, contentW, contentH)?.scale;
+  return {
+    min: fitScale && fitScale > 0 ? Math.min(SCALE_RANGE.min, fitScale) : SCALE_RANGE.min,
+    max: SCALE_RANGE.max,
+  };
 }
 
 export function clampScale(scale: number, range: ScaleRange = SCALE_RANGE): number {

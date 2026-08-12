@@ -3,6 +3,11 @@ import type { CocoRleMaskRef } from "@/types";
 import type { CocoRle } from "./geometry/maskRle";
 import { analyzeRasterMaskRleAsync, RasterMaskWorkerError } from "./rasterMaskCompute";
 import type { RasterMaskWorkerPool, RasterMaskWorkerPriority } from "./rasterMaskWorkerPool";
+import type {
+  RasterResourceCoordinator,
+  RasterResourcePriority,
+  RasterResourceReservation,
+} from "./rasterResourceCoordinator";
 import {
   closeRasterMaskImage,
   createTintedRasterMaskImage,
@@ -138,6 +143,9 @@ export interface UseRasterMaskRecordsOptions<TSource extends string = string> {
   deviceMemory?: number | null;
   /** Task-scoped shared pool; omitted tests retain the explicit synchronous fallback. */
   workerPool?: RasterMaskWorkerPool;
+  /** Task-scoped aggregate resource admission shared with background, editing, and workers. */
+  resourceCoordinator?: RasterResourceCoordinator;
+  resourceOwner?: string;
 }
 
 export interface RasterMaskResourceCounters {
@@ -177,6 +185,12 @@ interface CachedRasterMask {
   bitmapBytes: number;
   rleBytes: number;
   byteSize: number;
+  resource?: RasterResourceReservation;
+}
+
+interface RasterMaskAdmission {
+  bytes: number;
+  resource?: RasterResourceReservation;
 }
 
 interface RasterMaskLoadJob<TSource extends string> {
@@ -235,6 +249,14 @@ function descriptorWorkerPriority(
   if (descriptor.selected) return "selected";
   if (descriptor.loadPriority === "prefetch") return "prefetch";
   return "current";
+}
+
+function descriptorResourcePriority(
+  descriptor: RasterMaskRecordDescriptor,
+): RasterResourcePriority {
+  if (descriptor.loadPriority === "editing" || descriptor.selected) return 1;
+  if (descriptor.loadPriority === "prefetch") return 4;
+  return 2;
 }
 
 function loadRleSingleFlight(descriptor: RasterMaskRecordDescriptor): Promise<CocoRle> {
@@ -371,7 +393,8 @@ function toRenderRecord<TSource extends string>(
 export function useRasterMaskRecords<TSource extends string = string>(
   options: UseRasterMaskRecordsOptions<TSource>,
 ): UseRasterMaskRecordsResult<TSource> {
-  const { scopeKey, descriptors, workerPool } = options;
+  const { scopeKey, descriptors, workerPool, resourceCoordinator } = options;
+  const resourceOwner = options.resourceOwner ?? "mask-render";
   const deviceBudget = rasterMaskDeviceBudget(
     options.deviceMemory === undefined ? navigatorDeviceMemory() : options.deviceMemory,
   );
@@ -394,7 +417,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
   const descriptorsByIdRef = useRef(new Map<string, RasterMaskRecordDescriptor<TSource>>());
   const requestTokensRef = useRef(new Map<string, number>());
   const queueRef = useRef<RasterMaskLoadJob<TSource>[]>([]);
-  const reservedBytesRef = useRef(new Map<string, number>());
+  const reservationsRef = useRef(new Map<string, RasterMaskAdmission>());
   const inFlightRef = useRef(0);
   const maxConcurrentRef = useRef(maxConcurrent);
   const maxCacheBytesRef = useRef(maxCacheBytes);
@@ -440,6 +463,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
 
   const disposeCached = useCallback(
     (cached: CachedRasterMask) => {
+      cached.resource?.release();
       disposeImage(cached.rendered.image);
     },
     [disposeImage],
@@ -453,8 +477,15 @@ export function useRasterMaskRecords<TSource extends string = string>(
 
   const reservedBytesNow = useCallback(() => {
     let total = 0;
-    for (const bytes of reservedBytesRef.current.values()) total += bytes;
+    for (const reservation of reservationsRef.current.values()) total += reservation.bytes;
     return total;
+  }, []);
+
+  const releaseReservation = useCallback((cacheKey: string) => {
+    const reservation = reservationsRef.current.get(cacheKey);
+    if (!reservation) return;
+    reservationsRef.current.delete(cacheKey);
+    reservation.resource?.release();
   }, []);
 
   const markDeferred = useCallback((cacheKey: string, requiredBytes: number) => {
@@ -500,7 +531,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
       const cache = cacheRef.current;
       const pinned = pinnedCacheKeys();
       const evictKeys: string[] = [];
-      let projectedRecords = cache.size + reservedBytesRef.current.size + 1;
+      let projectedRecords = cache.size + reservationsRef.current.size + 1;
       let projectedBytes = cacheBytesNow() + reservedBytesNow() + byteSize;
       for (const [candidate, cached] of cache) {
         if (
@@ -519,17 +550,37 @@ export function useRasterMaskRecords<TSource extends string = string>(
       )
         return false;
       for (const candidate of evictKeys) removeCached(candidate, true);
-      reservedBytesRef.current.set(cacheKey, byteSize);
+      const descriptor = activeDescriptorsRef.current.get(cacheKey);
+      const resource =
+        descriptor && resourceCoordinator
+          ? resourceCoordinator.tryReserve({
+              owner: resourceOwner,
+              category: "mask-render",
+              priority: descriptorResourcePriority(descriptor),
+              bytes: byteSize,
+              reconstructible: true,
+              pinned: descriptor.selected || descriptor.loadPriority === "editing",
+            })
+          : undefined;
+      if (resourceCoordinator && !resource) return false;
+      reservationsRef.current.set(cacheKey, { bytes: byteSize, ...(resource ? { resource } : {}) });
       return true;
     },
-    [cacheBytesNow, pinnedCacheKeys, removeCached, reservedBytesNow],
+    [
+      cacheBytesNow,
+      pinnedCacheKeys,
+      removeCached,
+      reservedBytesNow,
+      resourceCoordinator,
+      resourceOwner,
+    ],
   );
 
   const enforceBudget = useCallback(() => {
     const cache = cacheRef.current;
     const pinned = pinnedCacheKeys();
     while (
-      cache.size + reservedBytesRef.current.size > maxCachedRecordsRef.current ||
+      cache.size + reservationsRef.current.size > maxCachedRecordsRef.current ||
       cacheBytesNow() + reservedBytesNow() > maxCacheBytesRef.current
     ) {
       const evictKey =
@@ -637,17 +688,6 @@ export function useRasterMaskRecords<TSource extends string = string>(
             rendered = null;
             return;
           }
-          reservedBytesRef.current.delete(job.cacheKey);
-          reservationHeld = false;
-          if (!reserveAdmission(job.cacheKey, retainedBytes)) {
-            disposeImage(rendered.image);
-            rendered = null;
-            errorsRef.current.delete(job.cacheKey);
-            markDeferred(job.cacheKey, retainedBytes);
-            publish();
-            return;
-          }
-          reservationHeld = true;
           const previous = cacheRef.current.get(job.cacheKey);
           if (previous) disposeCached(previous);
           const retainedAnalysis = preview
@@ -670,8 +710,18 @@ export function useRasterMaskRecords<TSource extends string = string>(
             rleBytes,
             byteSize: alphaBytes + bitmapBytes + rleBytes,
           };
+          const admission = reservationsRef.current.get(job.cacheKey);
+          if (admission?.resource && !admission.resource.commit(cached.byteSize)) {
+            releaseReservation(job.cacheKey);
+            disposeImage(rendered.image);
+            rendered = null;
+            markDeferred(job.cacheKey, cached.byteSize);
+            publish();
+            return;
+          }
+          if (admission?.resource) cached.resource = admission.resource;
           rendered = null;
-          reservedBytesRef.current.delete(job.cacheKey);
+          reservationsRef.current.delete(job.cacheKey);
           reservationHeld = false;
           cacheRef.current.delete(job.cacheKey);
           cacheRef.current.set(job.cacheKey, cached);
@@ -702,7 +752,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
             publish();
           }
         } finally {
-          if (reservationHeld) reservedBytesRef.current.delete(job.cacheKey);
+          if (reservationHeld) releaseReservation(job.cacheKey);
           if (requestTokensRef.current.get(job.cacheKey) === job.token) {
             requestTokensRef.current.delete(job.cacheKey);
           }
@@ -721,6 +771,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
       publish,
       reserveAdmission,
       reservedBytesNow,
+      releaseReservation,
       trackImage,
       workerPool,
     ],
@@ -768,7 +819,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
     const errors = errorsRef.current;
     const deferred = deferredRef.current;
     const cache = cacheRef.current;
-    const reservations = reservedBytesRef.current;
+    const reservations = reservationsRef.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -776,6 +827,7 @@ export function useRasterMaskRecords<TSource extends string = string>(
       activeDescriptors.current.clear();
       requestTokens.clear();
       queueRef.current = [];
+      for (const reservation of reservations.values()) reservation.resource?.release();
       reservations.clear();
       errors.clear();
       deferred.clear();
@@ -791,7 +843,8 @@ export function useRasterMaskRecords<TSource extends string = string>(
       scopeGenerationRef.current += 1;
       requestTokensRef.current.clear();
       queueRef.current = [];
-      reservedBytesRef.current.clear();
+      for (const reservation of reservationsRef.current.values()) reservation.resource?.release();
+      reservationsRef.current.clear();
       errorsRef.current.clear();
       deferredRef.current.clear();
       for (const cached of cacheRef.current.values()) disposeCached(cached);
@@ -820,6 +873,13 @@ export function useRasterMaskRecords<TSource extends string = string>(
     for (const [cacheKey] of descriptorEntries) {
       const cached = cacheRef.current.get(cacheKey);
       if (cached?.scopeKey === scopeKey) {
+        const descriptor = activeDescriptors.get(cacheKey);
+        if (descriptor) {
+          cached.resource?.update({
+            priority: descriptorResourcePriority(descriptor),
+            pinned: descriptor.selected || descriptor.loadPriority === "editing",
+          });
+        }
         cacheRef.current.delete(cacheKey);
         cacheRef.current.set(cacheKey, cached);
       }
@@ -855,6 +915,48 @@ export function useRasterMaskRecords<TSource extends string = string>(
     publish,
     scopeKey,
   ]);
+
+  useLayoutEffect(() => {
+    if (!resourceCoordinator) return;
+    return resourceCoordinator.registerEvictor({
+      owner: resourceOwner,
+      evictableBytes: () => {
+        const pinned = pinnedCacheKeys();
+        let bytes = 0;
+        for (const [cacheKey, cached] of cacheRef.current) {
+          if (!pinned.has(cacheKey)) bytes += cached.byteSize;
+        }
+        return bytes;
+      },
+      evict: (targetBytes, reason) => {
+        const pinned = pinnedCacheKeys();
+        let freed = 0;
+        for (const [cacheKey, cached] of [...cacheRef.current]) {
+          if (reason !== "bfcache" && pinned.has(cacheKey)) continue;
+          removeCached(cacheKey, true);
+          freed += cached.byteSize;
+          if (freed >= targetBytes) break;
+        }
+        if (freed > 0) publish();
+        return freed;
+      },
+      resumePrefetch: (generation) => {
+        if (generation !== resourceCoordinator.generation) return;
+        const active = [...activeDescriptorsRef.current.values()].sort(
+          (left, right) => descriptorPriority(left) - descriptorPriority(right),
+        );
+        for (const descriptor of active) {
+          if (descriptor.loadPriority === "prefetch") continue;
+          const cacheKey = rasterMaskRecordCacheKey(descriptor);
+          if (cacheRef.current.has(cacheKey) || requestTokensRef.current.has(cacheKey)) continue;
+          deferredRef.current.delete(cacheKey);
+          if (!errorsRef.current.has(cacheKey)) enqueue(descriptor);
+        }
+        pumpRef.current();
+        publish();
+      },
+    });
+  }, [enqueue, pinnedCacheKeys, publish, removeCached, resourceCoordinator, resourceOwner]);
 
   const retry = useCallback(
     (id: string) => {

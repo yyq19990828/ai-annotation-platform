@@ -16,12 +16,20 @@ def _normalize_email(v: str) -> str:
 class InvitationCreate(BaseModel):
     email: str
     role: str
-    group_name: str | None = None
+    group_name: str | None = Field(default=None, max_length=100)
 
     @field_validator("email")
     @classmethod
     def _email(cls, v: str) -> str:
         return _normalize_email(v)
+
+    @field_validator("group_name", mode="before")
+    @classmethod
+    def _group_name(cls, v: object) -> object:
+        if not isinstance(v, str):
+            return v
+        normalized = v.strip()
+        return normalized or None
 
 
 class InvitationCreated(BaseModel):

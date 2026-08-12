@@ -35,6 +35,23 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_tracker_jobs GROUP BY status;"
 ```
 
+## WebCodecs 精确帧排查
+
+精确帧 pipeline 默认按客户端能力尝试，只在暂停态 + 浏览器支持时工作。BUG 报告附带的 `window.__videoWorkbenchDiagnostics` 快照里 `preciseFrame` 字段会给出 `state` / `source` / `fallbackReason`、当前绘制帧、阶段耗时和资源预算与计数，按以下顺序定位：
+
+这里的 WebCodecs、Canvas 和 WebGPU 能力属于运行网页的客户端机器，不属于 Linux API / worker
+服务器；服务端装有 NVIDIA GPU 不代表用户浏览器能使用同一张卡。
+
+1. **flag / secure context / 浏览器能力**：`data-video-precise-state=disabled` 且诊断 `supported=false` → 浏览器无 `VideoDecoder`（headless Chromium 常见）或非 secure context；`enabled=false` → 实验开关未开。WebCodecs 需 secure context（localhost / https）。
+2. **manifest v2 与 dataset id**：`GET /api/v1/tasks/{id}/video/manifest-v2` 是否 200，`dataset_item_id` / `chunk_size_frames` 是否非空。
+3. **chunk pending / failed**：`video_chunks` 表对应 chunk 的 `status`；`pending` 按 `retry_after` 轮询，`failed` 看 `error`。
+4. **samples / key sample / description**：`GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples` 是否 200；`samples` 非空、至少一个 `is_keyframe`、`codec_string` 与 base64 `description` 存在。缺 `description` 时浏览器按 Annex-B 解析必失败。
+5. **signed URL / CORS / 403 refresh**：chunk bytes 首次 403 会刷新一次 chunk metadata 再重试；第二次 403 进 `chunk_fetch_failed`。CORS / 网络拒绝等价为 fetch rejection。
+6. **config support / decoder error**：decoder 先请求 `prefer-hardware`，浏览器只是不接受该偏好时会去掉偏好重试；两次 `VideoDecoder.isConfigSupported` 都失败才进入 `codec_unsupported`（换 codec 或转码），`decode_failed` 表示实际解码异常。
+7. **阶段定位**：`lastQueueMs` 看前一条 session 命令阻塞，`lastCodecMs` 看 codec / session，`lastBitmapMs` 看 `createImageBitmap`，`lastPaintMs` 看 Konva 提交到真实 draw，`lastVisibleMs` 是请求到目标帧绘制完成的端到端时间；`paintedFrameIndex` 必须等于当前目标帧。不能用 GPU 合成状态推断 WebCodecs 已走硬件视频解码。
+8. **字节预算 / session reset / fallback reason**：诊断 `cache` 与 `counters` 看是否预算淘汰 / session 频繁 reset；后台预取不会触发 reset，前台后退 / 跨 GOP 才允许重建。`fallbackReason` 稳定即回退合同成立。
+9. **关闭精确解码回退**：执行 `localStorage.setItem('video.experimental.webcodecs', '0')` 后刷新，原生 `<video>` / 位图接管；恢复默认可删除该键或在设置抽屉重新开启。
+
 ## Chunk 一直 pending
 
 1. 查看 worker 日志里是否有 `ffmpeg chunk extraction failed`。

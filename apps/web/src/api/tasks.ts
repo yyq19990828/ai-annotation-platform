@@ -7,13 +7,19 @@ import type {
   Geometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
+  VideoManifestV2Response,
   TaskPointCloudManifestResponse,
   NeighborsResponse,
   NeighborAnnotationsResponse,
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
-import type { TaskMaskCapabilitiesResponse } from "./generated";
+import type { ImagePyramidRetryResponse, TaskMaskCapabilitiesResponse } from "./generated";
+import type {
+  ImagePyramidAssetRequest,
+  ImagePyramidAssetUrlsResponse,
+  ImagePyramidResponse,
+} from "@/pages/Workbench/stage/imagePyramid";
 
 /** v0.20.11 · 选中框单框二次推理请求: 在选中框 ROI 上跑一个能力。 */
 export interface SecondaryInferenceRequest {
@@ -175,8 +181,26 @@ export const tasksApi = {
   getMaskCapabilities: (id: string) =>
     apiClient.get<TaskMaskCapabilitiesResponse>(`/tasks/${id}/mask-capabilities`),
 
+  getImagePyramid: (id: string, init?: RequestInit) =>
+    apiClient.silentGet<ImagePyramidResponse>(`/tasks/${id}/image-pyramid`, init),
+
+  getImagePyramidAssetUrls: (id: string, items: ImagePyramidAssetRequest[], init?: RequestInit) =>
+    apiClient.post<ImagePyramidAssetUrlsResponse>(
+      `/tasks/${id}/image-pyramid/asset-urls`,
+      { items },
+      init,
+    ),
+
+  retryImagePyramid: (id: string) =>
+    apiClient.post<ImagePyramidRetryResponse>(`/tasks/${id}/image-pyramid/retry`, {}),
+
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
+
+  // manifest v2:精确帧 pipeline(WebCodecs)激活时增量查询 chunk_size_frames / dataset_item_id。
+  // 实验链路失败会静默回退,不弹全局 toast;signal 让切 task / 卸载能取消旧请求。
+  getVideoManifestV2: (id: string, init?: RequestInit) =>
+    apiClient.silentGet<VideoManifestV2Response>(`/tasks/${id}/video/manifest-v2`, init),
 
   getPointCloudManifest: (id: string) =>
     apiClient.get<TaskPointCloudManifestResponse>(`/tasks/${id}/point-cloud/manifest`),

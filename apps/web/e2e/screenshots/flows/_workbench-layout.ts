@@ -13,6 +13,13 @@ import type {
 } from "../../../src/api/auth";
 
 export type RecordingSidebarMode = "both" | "none";
+export interface RecordingWorkbenchOverrides {
+  common?: Partial<WorkbenchPreferences["common"]>;
+  image?: Partial<WorkbenchPreferences["image"]>;
+  video?: Partial<WorkbenchPreferences["video"]>;
+  pointcloud?: Partial<WorkbenchPreferences["pointcloud"]>;
+  layout?: Partial<WorkbenchLayoutPreferences>;
+}
 
 function embeddedLayout(
   layout: WorkbenchLayoutPreferences,
@@ -81,6 +88,7 @@ function mergePreferences(
 export async function installRecordingWorkbenchLayout(
   page: Page,
   mode: RecordingSidebarMode,
+  overrides: RecordingWorkbenchOverrides = {},
 ): Promise<void> {
   const original = await page.evaluate(async () => {
     const token = localStorage.getItem("token");
@@ -95,7 +103,20 @@ export async function installRecordingWorkbenchLayout(
   });
 
   const screenshotTheme = await page.evaluate(() => localStorage.getItem("anno.theme"));
-  let sandbox = applyRecordingLayout(original, mode);
+  let sandbox = applyRecordingLayout(
+    {
+      ...original,
+      workbench: {
+        ...original.workbench,
+        common: { ...original.workbench.common, ...(overrides.common ?? {}) },
+        image: { ...original.workbench.image, ...(overrides.image ?? {}) },
+        video: { ...original.workbench.video, ...(overrides.video ?? {}) },
+        pointcloud: { ...original.workbench.pointcloud, ...(overrides.pointcloud ?? {}) },
+        layout: { ...original.workbench.layout, ...(overrides.layout ?? {}) },
+      },
+    },
+    mode,
+  );
   if (screenshotTheme === "light" || screenshotTheme === "dark") {
     sandbox = {
       ...sandbox,

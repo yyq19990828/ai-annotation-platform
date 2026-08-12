@@ -15,8 +15,9 @@ E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重
 
 from __future__ import annotations
 
+import asyncio
 import secrets
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -47,6 +48,47 @@ async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None
 
 
 router = APIRouter(dependencies=[Depends(_require_e2e_seed_database)])
+
+
+def _delete_webcodecs_seed_objects(storage: Any) -> None:
+    """分页删除 WebCodecs E2E 对象并复查；任何存储错误都必须传播给 teardown。"""
+    prefix = "e2e/video/webcodecs/"
+    continuation_token: str | None = None
+    keys: list[str] = []
+    while True:
+        list_kwargs = {
+            "Bucket": storage.datasets_bucket,
+            "Prefix": prefix,
+        }
+        if continuation_token:
+            list_kwargs["ContinuationToken"] = continuation_token
+        response = storage.client.list_objects_v2(**list_kwargs)
+        keys.extend(obj["Key"] for obj in response.get("Contents", []))
+        if not response.get("IsTruncated"):
+            break
+        continuation_token = response.get("NextContinuationToken")
+        if not continuation_token:
+            raise RuntimeError("webcodecs cleanup missing MinIO continuation token")
+    for offset in range(0, len(keys), 1000):
+        delete_response = storage.client.delete_objects(
+            Bucket=storage.datasets_bucket,
+            Delete={
+                "Objects": [{"Key": key} for key in keys[offset : offset + 1000]],
+                "Quiet": True,
+            },
+        )
+        errors = delete_response.get("Errors", [])
+        if errors:
+            raise RuntimeError(
+                f"webcodecs cleanup MinIO delete failed for {len(errors)} object(s)"
+            )
+    remaining = storage.client.list_objects_v2(
+        Bucket=storage.datasets_bucket,
+        Prefix=prefix,
+        MaxKeys=1,
+    ).get("Contents", [])
+    if remaining:
+        raise RuntimeError("webcodecs cleanup left MinIO objects")
 
 
 async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
@@ -186,6 +228,14 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
             {"pids": fixture_project_ids},
         )
 
+    # WebCodecs seed 的 video_chunks 随 dataset_item CASCADE,这里显式双保险,
+    # 确保 E2E 反复 seed 不残留旧 chunk 行。
+    await _try_delete(
+        "DELETE FROM video_chunks WHERE dataset_item_id IN ("
+        " SELECT id FROM dataset_items WHERE dataset_id IN ("
+        "   SELECT id FROM datasets WHERE display_id LIKE 'DS-E2E-%'))"
+    )
+
     # reset 中创建的图像 dataset 不由 project_datasets 反向级联删除；
     # 必须在删 E2E 用户前显式清理，避免 datasets.created_by 拦住用户删除。
     await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-%'")
@@ -233,6 +283,12 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     )
 
     await db.flush()
+
+    # WebCodecs seed 的 chunk mp4 对象不随 DB 级联删除,按前缀显式清空并复查。
+    # cleanup 是测试隔离合同的一部分：对象存储失败必须让 teardown 失败，不能只记 warning。
+    from app.services.storage import storage_service
+
+    _delete_webcodecs_seed_objects(storage_service)
 
     residual_row = (
         (
@@ -1014,6 +1070,269 @@ async def seed_video_task(
     return SeedVideoTaskResponse(task_id=task_id)
 
 
+class SeedVideoWebCodecsRequest(BaseModel):
+    project_id: str
+    fixture: str = "h264-baseline-gop12"
+    chunk_status: Literal["ready", "pending"] = "ready"
+
+
+class SeedVideoWebCodecsResponse(BaseModel):
+    task_id: str
+    dataset_item_id: str
+    chunk_id: int
+    chunk_size_frames: int
+    frame_expectations: dict
+
+
+@router.post(
+    "/seed/video-webcodecs",
+    response_model=SeedVideoWebCodecsResponse,
+    include_in_schema=False,
+)
+async def seed_video_webcodecs(
+    payload: SeedVideoWebCodecsRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoWebCodecsResponse:
+    """Seed a deterministic H.264 WebCodecs fixture for precise-frame E2E.
+
+    Generates a small machine-readable H.264 clip (numpy → ffmpeg), probes it with
+    the same ffprobe / avcC pipeline the worker uses, and writes dataset item +
+    task + production-shaped VideoChunk diagnostics. Short correctness fixtures use
+    one chunk; qualification fixtures use ready 60-frame chunks. ``chunk_status``
+    lets specs exercise the pending → ready contract without a media Celery worker.
+    """
+    from tempfile import mkdtemp
+    from uuid import UUID
+    import shutil
+
+    from sqlalchemy import select
+
+    from app.api.v1._test_seed_webcodecs import (
+        FIXTURE_SPECS,
+        QUALIFICATION_CHUNK_SIZE_FRAMES,
+        QUALIFICATION_FIXTURE_SPECS,
+        apply_metadata_mutation,
+        frame_expectations,
+        generate_fixture,
+        generate_qualification_fixture,
+    )
+    from app.db.models.dataset import DatasetItem, VideoChunk
+    from app.db.models.task import Task
+    from app.db.models.task_batch import TaskBatch
+    from app.services.storage import storage_service
+
+    valid_fixtures = (
+        set(FIXTURE_SPECS)
+        | set(QUALIFICATION_FIXTURE_SPECS)
+        | {"unsupported-config", "malformed-samples"}
+    )
+    if payload.fixture not in valid_fixtures:
+        raise HTTPException(status_code=422, detail="unknown_fixture")
+
+    project_id = UUID(payload.project_id)
+    batch = (
+        (
+            await db.execute(
+                select(TaskBatch)
+                .where(TaskBatch.project_id == project_id)
+                .order_by(TaskBatch.created_at)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    ref_task = (
+        (
+            await db.execute(
+                select(Task)
+                .where(Task.project_id == project_id, Task.dataset_item_id.is_not(None))
+                .order_by(Task.created_at)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if batch is None or ref_task is None or ref_task.dataset_item_id is None:
+        raise HTTPException(status_code=404, detail="project fixture not found")
+    ref_item = await db.get(DatasetItem, ref_task.dataset_item_id)
+    if ref_item is None:
+        raise HTTPException(status_code=404, detail="dataset fixture not found")
+
+    fixture = payload.fixture
+    tmp = mkdtemp(prefix="webcodecs-seed-")
+    try:
+        qualification = fixture in QUALIFICATION_FIXTURE_SPECS
+        meta = (
+            await asyncio.to_thread(generate_qualification_fixture, fixture, tmp)
+            if qualification
+            else generate_fixture(fixture, tmp)
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if not qualification:
+        meta = apply_metadata_mutation(fixture, meta)
+
+    mp4_bytes = meta["mp4_bytes"]
+    # 幂等 key:同一 fixture 反复 seed 覆盖同一对象,cleanup 按前缀一次清空。
+    source_key = f"e2e/video/webcodecs/{fixture}/source.mp4"
+    await asyncio.to_thread(
+        storage_service.client.put_object,
+        Bucket=storage_service.datasets_bucket,
+        Key=source_key,
+        Body=mp4_bytes,
+        ContentType="video/mp4",
+    )
+
+    duration_ms = int(meta["duration_ms"])
+    item = DatasetItem(
+        dataset_id=ref_item.dataset_id,
+        file_name=f"{fixture}.mp4",
+        file_path=source_key,
+        file_type="video",
+        file_size=len(mp4_bytes),
+        width=meta["width"],
+        height=meta["height"],
+        metadata_={
+            "video": {
+                "duration_ms": duration_ms,
+                "fps": meta["fps"],
+                "frame_count": meta["frame_count"],
+                "width": meta["width"],
+                "height": meta["height"],
+                "codec": "h264",
+            }
+        },
+    )
+    db.add(item)
+    await db.flush()
+    task = Task(
+        project_id=project_id,
+        batch_id=batch.id,
+        dataset_item_id=item.id,
+        display_id=f"T-E2E-WC-{fixture[:10]}-{secrets.token_hex(3)}",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="video",
+        status="pending",
+    )
+    db.add(task)
+    await db.flush()
+    if qualification:
+        for chunk_meta in meta["chunks"]:
+            chunk_key = (
+                f"e2e/video/webcodecs/{fixture}/chunk-{chunk_meta['chunk_id']:04d}.mp4"
+            )
+            chunk_bytes = chunk_meta["bytes"]
+            await asyncio.to_thread(
+                storage_service.client.put_object,
+                Bucket=storage_service.datasets_bucket,
+                Key=chunk_key,
+                Body=chunk_bytes,
+                ContentType="video/mp4",
+            )
+            db.add(
+                VideoChunk(
+                    dataset_item_id=item.id,
+                    chunk_id=chunk_meta["chunk_id"],
+                    start_frame=chunk_meta["start_frame"],
+                    end_frame=chunk_meta["end_frame"],
+                    start_pts_ms=chunk_meta["start_pts_ms"],
+                    end_pts_ms=chunk_meta["end_pts_ms"],
+                    storage_key=chunk_key,
+                    byte_size=len(chunk_bytes),
+                    generation_mode="smart_copy",
+                    status="ready",
+                    diagnostics={
+                        "samples": chunk_meta["samples"],
+                        "codec_string": chunk_meta["codec_string"],
+                        "description": chunk_meta["description"],
+                        "width": meta["width"],
+                        "height": meta["height"],
+                        "source_codec": "h264",
+                        "output_codec": "h264",
+                    },
+                )
+            )
+    else:
+        db.add(
+            VideoChunk(
+                dataset_item_id=item.id,
+                chunk_id=0,
+                start_frame=0,
+                end_frame=meta["frame_count"] - 1,
+                start_pts_ms=0,
+                end_pts_ms=duration_ms,
+                storage_key=source_key,
+                byte_size=len(mp4_bytes),
+                generation_mode="transcode",
+                status=payload.chunk_status,
+                diagnostics={
+                    "samples": meta["samples"],
+                    "codec_string": meta["codec_string"],
+                    "description": meta["description"],
+                    "width": meta["width"],
+                    "height": meta["height"],
+                    "source_codec": "h264",
+                    "output_codec": "h264",
+                },
+            )
+        )
+    batch.total_tasks = int(batch.total_tasks or 0) + 1
+    await db.flush()
+    await db.commit()
+    return SeedVideoWebCodecsResponse(
+        task_id=str(task.id),
+        dataset_item_id=str(item.id),
+        chunk_id=0,
+        chunk_size_frames=(
+            QUALIFICATION_CHUNK_SIZE_FRAMES if qualification else meta["frame_count"]
+        ),
+        frame_expectations=(
+            {} if qualification else frame_expectations(fixture, meta["samples"])
+        ),
+    )
+
+
+class SeedVideoWebCodecsTransitionRequest(BaseModel):
+    dataset_item_id: str
+    chunk_id: int = 0
+
+
+class SeedVideoWebCodecsTransitionResponse(BaseModel):
+    status: Literal["ready", "pending", "failed"]
+
+
+@router.post(
+    "/seed/video-webcodecs/transition-ready",
+    response_model=SeedVideoWebCodecsTransitionResponse,
+    include_in_schema=False,
+)
+async def seed_video_webcodecs_transition(
+    payload: SeedVideoWebCodecsTransitionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoWebCodecsTransitionResponse:
+    """Deterministically flip a seeded chunk pending → ready (no Celery worker needed)."""
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models.dataset import VideoChunk
+
+    row = (
+        await db.execute(
+            select(VideoChunk).where(
+                VideoChunk.dataset_item_id == UUID(payload.dataset_item_id),
+                VideoChunk.chunk_id == payload.chunk_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="chunk_not_found")
+    row.status = "ready"
+    await db.commit()
+    return SeedVideoWebCodecsTransitionResponse(status=row.status)
+
+
 class SeedTrackerReviewRequest(BaseModel):
     task_id: str
     user_email: str
@@ -1144,7 +1463,12 @@ class SeedNativeMaskPromptSource(BaseModel):
 
 class SeedNativeMaskCandidateRequest(BaseModel):
     task_id: str
-    variant: Literal["default", "negative_scribble", "multimask_donut"] = "default"
+    variant: Literal[
+        "default",
+        "negative_scribble",
+        "multimask_donut",
+        "smart_scribble_refined",
+    ] = "default"
     prompt_family: Literal["point", "scribble"] = "point"
     negative_scribbles: int = 0
     prompt_source: SeedNativeMaskPromptSource | None = None
@@ -1201,15 +1525,23 @@ async def seed_native_mask_candidate(
         1,
         total // 4 if payload.variant == "negative_scribble" else total // 3,
     )
-    primary_rle = CocoRlePayload(
-        encoding="coco_rle",
-        size=(int(item.height), int(item.width)),
-        counts=(
-            foreground_start,
-            foreground_length,
-            total - foreground_start - foreground_length,
-        ),
-    )
+    if payload.variant == "smart_scribble_refined":
+        width = int(item.width)
+        height = int(item.height)
+        pixels = _make_smart_scribble_mask(width, height, refined=True)
+        primary_rle = CocoRlePayload.model_validate(
+            encode_coco_rle(pixels, width, height)
+        )
+    else:
+        primary_rle = CocoRlePayload(
+            encoding="coco_rle",
+            size=(int(item.height), int(item.width)),
+            counts=(
+                foreground_start,
+                foreground_length,
+                total - foreground_start - foreground_length,
+            ),
+        )
     rle_models = [primary_rle]
     if payload.variant == "multimask_donut":
         secondary_start = total // 6
@@ -1364,9 +1696,10 @@ RasterMaskFixtureVariant = Literal[
     "donut_three",
     "diagonal_two",
     "island",
+    "smart_scribble_source",
     "corrupt",
 ]
-RasterMaskFixtureCanvas = Literal["default", "5k", "8k"]
+RasterMaskFixtureCanvas = Literal["default", "media", "5k", "8k"]
 
 
 class InjectRasterMaskRequest(BaseModel):
@@ -1389,15 +1722,84 @@ class InjectRasterPredictionResponse(BaseModel):
     mask: dict
 
 
-def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
-    """生成 64×48 row-major fixture；donut_three = 3 个分量 + 1 个孔洞。"""
-    width, height = 64, 48
+_SMART_SCRIBBLE_SOURCE_OUTLINE = (
+    (0.527344, 0.494444),
+    (0.438281, 0.498611),
+    (0.421094, 0.540278),
+    (0.404687, 0.545833),
+    (0.415625, 0.5625),
+    (0.410938, 0.602778),
+    (0.421875, 0.738889),
+    (0.434375, 0.7375),
+    (0.439063, 0.711111),
+    (0.490625, 0.701389),
+    (0.5375, 0.705556),
+    (0.545312, 0.730556),
+    (0.560156, 0.727778),
+    (0.560156, 0.620833),
+    (0.546875, 0.559722),
+    (0.558594, 0.536111),
+    (0.539844, 0.530556),
+)
+_SMART_SCRIBBLE_REFINED_OUTLINE = (
+    (0.528906, 0.494444),
+    (0.439063, 0.497222),
+    (0.421094, 0.538889),
+    (0.404687, 0.545833),
+    (0.415625, 0.563889),
+    (0.410156, 0.6),
+    (0.421094, 0.738889),
+    (0.435156, 0.7375),
+    (0.440625, 0.7125),
+    (0.500781, 0.701389),
+    (0.539062, 0.706944),
+    (0.545312, 0.730556),
+    (0.560156, 0.729167),
+    (0.560937, 0.627778),
+    (0.547656, 0.561111),
+    (0.559375, 0.5375),
+    (0.540625, 0.529167),
+)
+
+
+def _make_smart_scribble_mask(
+    width: int, height: int, *, refined: bool = False
+) -> bytearray:
+    """根据 SAM3 对 screenshot_03 的真实候选轮廓生成确定性 Mask fixture。"""
+    outline = (
+        _SMART_SCRIBBLE_REFINED_OUTLINE if refined else _SMART_SCRIBBLE_SOURCE_OUTLINE
+    )
+    pixels = bytearray(width * height)
+    for y in range(height):
+        scan_y = (y + 0.5) / height
+        crossings: list[float] = []
+        for index, (x1, y1) in enumerate(outline):
+            x2, y2 = outline[(index + 1) % len(outline)]
+            if (y1 <= scan_y < y2) or (y2 <= scan_y < y1):
+                crossings.append(x1 + (scan_y - y1) * (x2 - x1) / (y2 - y1))
+        crossings.sort()
+        for index in range(0, len(crossings) - 1, 2):
+            left = max(0, round(crossings[index] * width))
+            right = min(width, round(crossings[index + 1] * width))
+            offset = y * width
+            pixels[offset + left : offset + right] = b"\x01" * (right - left)
+    return pixels
+
+
+def _make_test_raster_mask(
+    variant: RasterMaskFixtureVariant, width: int = 64, height: int = 48
+) -> list[int]:
+    """生成 row-major fixture；donut_three = 3 个分量 + 1 个孔洞。"""
     pixels = [0] * (width * height)
 
     def _rect(x0: int, y0: int, x1: int, y1: int, value: int = 1) -> None:
-        for y in range(y0, y1):
+        left = round(x0 * width / 64)
+        top = round(y0 * height / 48)
+        right = round(x1 * width / 64)
+        bottom = round(y1 * height / 48)
+        for y in range(top, bottom):
             offset = y * width
-            for x in range(x0, x1):
+            for x in range(left, right):
                 pixels[offset + x] = value
 
     if variant == "single":
@@ -1413,6 +1815,8 @@ def _make_test_raster_mask(variant: RasterMaskFixtureVariant) -> list[int]:
         _rect(22, 22, 26, 26)
     elif variant == "island":
         _rect(24, 31, 28, 35)
+    elif variant == "smart_scribble_source":
+        return list(_make_smart_scribble_mask(width, height))
     else:
         # 损坏 fixture 使用独立形状，并故意不存对象。
         _rect(6, 30, 18, 42)
@@ -1475,26 +1879,36 @@ async def seed_inject_raster_mask(
     if task is None or user is None:
         raise HTTPException(status_code=404, detail="task or user not found")
 
-    if payload.canvas != "default" and payload.variant != "single":
+    if payload.canvas in {"5k", "8k"} and payload.variant != "single":
         raise HTTPException(
             status_code=422,
             detail="large-canvas raster fixture only supports the single variant",
         )
-    dimensions = {
-        "default": (64, 48),
-        "5k": (5120, 2880),
-        "8k": (8192, 8192),
-    }
-    width, height = dimensions[payload.canvas]
-    if payload.canvas == "default":
-        rle = encode_coco_rle(_make_test_raster_mask(payload.variant), width, height)
+    item = (
+        await db.get(DatasetItem, task.dataset_item_id)
+        if task.dataset_item_id is not None
+        else None
+    )
+    if payload.canvas == "media":
+        if item is None or item.width is None or item.height is None:
+            raise HTTPException(status_code=404, detail="media fixture not found")
+        width, height = int(item.width), int(item.height)
+    else:
+        dimensions = {
+            "default": (64, 48),
+            "5k": (5120, 2880),
+            "8k": (8192, 8192),
+        }
+        width, height = dimensions[payload.canvas]
+    if payload.canvas in {"default", "media"}:
+        rle = encode_coco_rle(
+            _make_test_raster_mask(payload.variant, width, height), width, height
+        )
     else:
         rle = _make_sparse_test_rle(width, height)
-    if task.dataset_item_id is not None:
-        item = await db.get(DatasetItem, task.dataset_item_id)
-        if item is not None:
-            item.width = width
-            item.height = height
+    if item is not None and payload.canvas != "media":
+        item.width = width
+        item.height = height
     if payload.variant == "corrupt":
         reference = build_rle_reference(rle)
         missing_digest = secrets.token_hex(32)

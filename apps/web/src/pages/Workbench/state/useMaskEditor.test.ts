@@ -20,6 +20,7 @@ import { decodeCocoRle, type CocoRle } from "../stage/shared/geometry/maskRle";
 import { applyMaskMorphology } from "../stage/shared/geometry/maskOperations";
 import type { RasterMaskWorkerPool } from "../stage/shared/rasterMaskWorkerPool";
 import type {
+  RasterMaskMorphologyRoiRequest,
   RasterMaskTileOverride,
   RasterMaskTileRect,
 } from "../stage/shared/rasterMaskWorkerProtocol";
@@ -27,6 +28,7 @@ import {
   buildRasterMaskWorkerSession,
   decodeRasterMaskSessionTile,
   mergeRasterMaskSessionTiles,
+  morphologyRasterMaskSessionRoi,
   type RasterMaskWorkerSession,
 } from "../stage/shared/rasterMaskWorkerRuntime";
 
@@ -63,6 +65,19 @@ class HookTileBackend {
     const session = this.sessions.get(sessionId);
     if (!session || session.sha256 !== sha256) throw new Error("missing test session");
     return { sessionId, sha256, rle: mergeRasterMaskSessionTiles(session, tiles) };
+  }
+
+  async morphologyRoi(request: Omit<RasterMaskMorphologyRoiRequest, "kind" | "id">) {
+    const session = this.sessions.get(request.sessionId);
+    if (!session || session.sha256 !== request.sha256) throw new Error("missing test session");
+    return {
+      kind: "morphology_roi" as const,
+      id: 1,
+      ok: true as const,
+      sessionId: request.sessionId,
+      sha256: request.sha256,
+      ...morphologyRasterMaskSessionRoi(session, request),
+    };
   }
 }
 

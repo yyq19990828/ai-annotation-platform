@@ -3,12 +3,12 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-06
+last_reviewed: 2026-07-29
 ---
 
 # Scheduler 与派题
 
-本文讲的是工作台里的 `scheduler`。它不是 Celery 定时调度器，而是“**当前用户现在应该拿到哪一题**”的在线决策层。
+本文讲的是 `GET /tasks/next` 背后的在线 `scheduler`。它不是 Celery 定时调度器，而是“**当前用户现在应该拿到哪一题**”的服务端决策层。当前 React 工作台主路径会先分页读取 `/tasks` 并在客户端选题，再调用显式 lock 端点；`/tasks/next` 仍是可用的调度旁路 API，不应把本页流程误写成唯一前端主链。
 
 代码真值源：
 
@@ -34,25 +34,19 @@ last_reviewed: 2026-06-06
 
 当前派题主流程如下：
 
-```mermaid
-flowchart TD
-  A["GET /tasks/next"] --> B["assert_project_visible"]
-  B --> C["scheduler.get_next_task()"]
-  C --> D{"已有有效 task lock?"}
-  D -->|是| E["直接返回当前锁题"]
-  D -->|否| F["读取 Project 配置"]
-  F --> G["构造候选 Task 集合"]
-  G --> H["叠加 batch 可见性与角色过滤"]
-  H --> I["按 sampling 排序"]
-  I --> J["选 1 题并 acquire task lock"]
-  J --> K["返回 TaskOut"]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/task-dispatch-and-lock.svg"
+  alt="在线派题先复用旧锁或过滤、排序最多二十个候选，再逐个尝试占锁；TaskLockService 在单题 advisory lock 下清理过期行、判断接管并用 upsert 创建或续期锁，同时标出旧锁复用和自定义 TTL 尚未端到端的实现边界"
+  caption="Scheduler 候选选择、Task Lock 占锁决策与受保护写入边界"
+/>
 
 ## `get_next_task()` 的 6 步
 
 ### 1. 先查当前用户是否已有锁题
 
-如果当前用户在该项目下已经有一把有效 `task lock`，且 task 还没标完，就直接返回那题。
+当前实现先查询该用户在项目下的 lock 行，按 `expire_at DESC` 取最近一行；只要对应 task 存在且 `is_labeled == false` 就直接返回。
+
+这条查询没有 `expire_at > now` 条件，也没有先调用 cleanup；返回前不会 renew 或重新 acquire。因此它可能把尚未清理的过期行当作“当前题”。前端随后显式 acquire 能重新建立互斥，但 `/tasks/next` 响应本身不能作为持锁证明。
 
 目的：
 
@@ -74,43 +68,46 @@ flowchart TD
 候选题至少要满足：
 
 - 属于当前 `project_id`
-- `is_labeled == False`
-- 当前用户还没有对它留下有效 annotation
-- 所在 batch 可工作
+- `is_labeled == False`（候选查询不另外按 `Task.status` 过滤）
+- 当前用户还没有对它留下 `is_active=true` 的 annotation
+- 所在 batch 为 `active / annotating`
+- 所在 batch 未被 `admin_locked`
+- 多人重叠项目里 `total_annotations < maximum_annotations`
 
-当前后端真值里，批次可工作状态主要是：
-
-- `active`
-- `annotating`
+项目 owner 与 superadmin 可越过角色 / 分派过滤，但仍受上述基础候选条件约束。
 
 ### 4. 叠加角色与可见性过滤
 
-如果不是 `super_admin` 或项目 owner，还要过 `batch_visibility_clause(user)`。
+如果不是 `super_admin` 或项目 owner，还要叠加 `batch_visibility_clause(user)`。这个 helper 的通用“可见范围”比 scheduler 的基础候选更宽，但在 `/tasks/next` 中会与 `active / annotating` 取交集：
 
 当前规则：
 
-- reviewer：可见 `active / annotating / reviewing`
+- reviewer：helper 可见 `active / annotating / reviewing`，实际可派仍只有 `active / annotating`
 - annotator：
   - `active / annotating` 且 `annotator_id == self` 或 batch 未分派
-  - `rejected` 且 `annotator_id == self`
+  - helper 还允许本人被分派的 `rejected`，但基础候选会把它排除，因此不会由 `/tasks/next` 派出
 
-这意味着 scheduler 并不是只看 task，还会强依赖 batch 的状态和分派关系。
+这意味着“列表里可见”不等于“scheduler 可派”；派题同时依赖 task 投影、batch 状态、管理锁和分派关系。
 
 ### 5. 按项目采样策略排序
 
-调度顺序由 `Project.sampling` 决定。**`TaskBatch.priority` 始终是主排序键**，sampling 策略只决定同 priority 内的二级顺序——这点对"为什么我创建的紧急批次没立即出现"很关键（见 `scheduler.py:133-145`）：
+调度顺序由 `Project.sampling` 决定。**`TaskBatch.priority` 始终是主排序键**，sampling 策略只决定同 priority 内的二级顺序——这点对“为什么我创建的紧急批次没立即出现”很关键：
 
 | sampling      | 排序键（从主到次）                                                                   |
 | ------------- | ------------------------------------------------------------------------------------ |
 | `sequence`    | `TaskBatch.priority DESC` → `Task.sequence_order ASC NULLS LAST` → `Task.created_at` |
 | `uniform`     | `TaskBatch.priority DESC` → `random()`                                               |
-| `uncertainty` | `TaskBatch.priority DESC` → `Prediction.score ASC NULLS LAST`（低分优先）            |
+| `uncertainty` | `TaskBatch.priority DESC` → 每题最低 `Prediction.score ASC NULLS LAST`（低分优先）   |
 
 因此，"下一题为什么是这题"很多时候不是 bug，而是 batch priority + 项目级 sampling 配置共同在起作用：调高某批次的 `priority` 可以让它在所有 sampling 策略下都被优先派出。
 
-### 6. 派出后立即上锁
+### 6. 在候选窗口内逐个尝试上锁
 
-选出一题后会立刻调用 `TaskLockService.acquire()`。
+排序后最多取前 20 个候选，依次调用 `TaskLockService.acquire()`：
+
+- acquire 成功：返回该题。
+- 查询后被另一请求抢先占锁：跳过，继续试下一个。
+- 20 个都失败：本次返回 `None`，由客户端后续重试。
 
 这一步很关键，因为当前实现不是：
 
@@ -123,11 +120,11 @@ flowchart TD
 - 后端同步占坑
 - 再把题返回
 
-这样能把“派题”和“并发保护”串成一个原子体验。
+候选查询与 acquire 之间存在 TOCTOU 窗口，服务用“只返回首个实际占锁成功的候选”收口竞态，而不是假设查询和写入原子完成。外层 `/tasks/next` 在成功后 commit，再构造 `TaskOut`。
 
-## scene 连续派题（v0.14.1）
+## scene 连续派题
 
-对时序数据集（同一 scene 下按 `frame_index` 排序的多帧），逐帧切换 scene 会打断标注节奏。v0.14.1 新增一条**可选**的派题优先级：让同一标注员尽量连续拿到同一 scene 的下一帧。
+对时序数据集（同一 scene 下按 `frame_index` 排序的多帧），逐帧切换 scene 会打断标注节奏。项目可以开启一条**可选**的派题优先级，让同一标注员尽量连续拿到同一 scene 的下一帧。
 
 触发与控制（均为 project 级字段，见 [项目模块](./project-module)）：
 
@@ -140,7 +137,7 @@ flowchart TD
 2. 在同一 scene 内，取 `frame_index` **严格大于**当前帧、按帧升序的第一个**可分配** task（可分配判定复用既有的 batch 状态 / 角色可见性 / 多人重叠等过滤）。
 3. 命中则直接 acquire lock 并返回该题。
 
-回退行为：上述任何一步缺数据——窗口内无最近提交、task 无 `scene_id`、没有后续帧、或后续帧全被他人占用——`_next_same_scene_task` 返回 `None`，scheduler **回退到既有 sampling 策略**，与开关关闭时一致。
+回退行为：上述任何一步缺数据——窗口内无最近 active annotation、task 无 `scene_id`、没有后续帧、或后续帧全被他人占用——`_next_same_scene_task` 返回 `None`，scheduler **回退到既有 sampling 策略**，与开关关闭时一致。
 
 注意：scene 连续**不独占 scene**。它只是优先把下一帧派给同一个人，同 scene 的其它帧仍可正常分配给其他标注员。
 
@@ -153,9 +150,9 @@ flowchart TD
 
 耦合点有 3 个：
 
-1. scheduler 开头会先查 lock
-2. scheduler 末尾会主动 acquire lock
-3. lock TTL 取自 `project.task_lock_ttl_seconds`
+1. scheduler 开头会直接查询本人最近的 lock 行；当前该分支未过滤过期时间。
+2. same-scene 和经典候选路径最终都主动 acquire，竞态失败时不能返回该题。
+3. scheduler 首次 acquire 会传项目 TTL，但显式 acquire / heartbeat 当前仍使用 300s 默认值；详见 [Task Lock](./task-locking#ttl-与-takeover)。
 
 所以可以把 scheduler 看成“派题器”，把 task lock 看成“编辑互斥层”。
 

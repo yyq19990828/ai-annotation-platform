@@ -98,3 +98,13 @@
 - [0053](0053-native-mask-ai-candidate-lifecycle-and-video-correction.md) — 原生 Mask AI 瞬态候选、原子接受、视频局部纠错与可回收生命周期
 - [0054](0054-raster-mask-large-canvas-memory-and-tiles.md) — 图片大画布采用稀疏 tile、XOR history 与固定 Worker pool，视频 / AI 保持 4096 边界
 - [0055](0055-mask-quality-and-format-contracts.md) — Mask 质量闭环采用版本化账本，格式适配使用 preflight、显式损失与真实 consumer 门
+- [0056](0056-raster-mask-persistent-client-compute-session.md) — Raster Mask 大 ROI 使用持久客户端计算会话与可回滚 WebGPU 候选后端
+- [0057](0057-raster-mask-webgpu-packed-xor-contract.md) — Raster Mask WebGPU 使用 packed source 与 core XOR result，保留惰性 CPU fallback
+- [0058](0058-raster-mask-immutable-packed-base-cache.md) — Raster Mask Worker 使用有界 immutable packed base cache 与 word-span ROI assemble
+- [0059](0059-raster-mask-dense-word-scatter-over-sparse-compaction.md) — Raster Mask 保留 dense word-scatter，不采用 atomic sparse compaction
+- [0060](0060-default-enable-capability-gated-client-acceleration.md) — 默认启用按客户端能力安全回退的 WebCodecs 与 Raster Mask WebGPU
+- [0061](0061-raster-mask-packed-cpu-fallback-and-webgpu-circuit.md) — Raster Mask 大 ROI 使用 packed CPU fallback、双预算与独立 WebGPU 熔断
+- [0062](0062-immutable-image-pyramid-assets.md) — 超大图采用不可变代次金字塔与批量鉴权交付
+- [0063](0063-konva-viewport-image-tiles.md) — 超大图客户端采用视口 LOD Tile 与解码字节 LRU
+- [0064](0064-task-scoped-raster-resource-coordination.md) — 图片工作台采用任务级栅格资源协调器
+- [0065](0065-keep-one-pass-raster-mask-webgpu-kernel.md) — Raster Mask WebGPU 保留 one-pass kernel，不采用可分离候选

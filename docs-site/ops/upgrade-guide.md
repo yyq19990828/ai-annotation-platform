@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-29
 ---
 
 # 版本升级指南
@@ -43,7 +43,7 @@ docker exec ai-annotation-platform-api-1 alembic upgrade head
 
 # 5. 验证服务正常
 curl -f http://localhost:8000/api/v1/health
-curl -f http://localhost:5173
+curl -f http://localhost:8088
 ```
 
 ## 迁移相关说明

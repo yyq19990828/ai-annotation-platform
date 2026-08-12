@@ -1,6 +1,6 @@
 import uuid
 from typing import Any
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +8,7 @@ from app.deps import (
     get_db,
     get_current_user,
     require_roles,
+    require_scopes,
 )
 from app.db.models.user import User
 from app.db.models.prediction import (
@@ -17,11 +18,18 @@ from app.db.models.prediction import (
 from app.schemas.annotation import (
     AnnotationOut,
 )
+from app.schemas._jsonb_types import CocoRleContent
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
 from app.services.prediction import PredictionService
-from app.services.raster_mask_storage import RasterMaskContractError
+from app.services.raster_mask_storage import (
+    RasterMaskContractError,
+    classify_raster_mask_content_error,
+    load_coco_rle,
+    validate_mask_geometry_for_task,
+)
 from app.services.task_lock import TaskLockService
+from app.services.video_tracks import resolve_track_at_frame
 
 
 from app.api.v1.tasks._shared import (
@@ -137,6 +145,73 @@ async def get_predictions(
         if idx in grouped:
             result.append(_build_out(p, grouped[idx]))
     return result
+
+
+@router.get(
+    "/{task_id}/predictions/{prediction_id}/mask-content/{shape_index}/{frame_index}",
+    response_model=CocoRleContent,
+    dependencies=[Depends(require_scopes("annotations:read"))],
+)
+async def get_prediction_mask_content_frame(
+    task_id: uuid.UUID,
+    prediction_id: uuid.UUID,
+    shape_index: int = Path(ge=0),
+    frame_index: int = Path(ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    prediction = (
+        await db.execute(select(Prediction).where(Prediction.id == prediction_id))
+    ).scalar_one_or_none()
+    if prediction is None or prediction.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+    if shape_index in set(prediction.rejected_shape_indexes or []):
+        raise HTTPException(status_code=404, detail="Prediction shape not found")
+    raw_shapes = list(prediction.result or [])
+    if not 0 <= shape_index < len(raw_shapes):
+        raise HTTPException(status_code=404, detail="Prediction shape not found")
+
+    from app.services.prediction import to_internal_shape
+
+    geometry = to_internal_shape(raw_shapes[shape_index]).get("geometry") or {}
+    if geometry.get("type") != "video_track_mask":
+        raise HTTPException(
+            status_code=422, detail="Prediction shape is not a video mask track"
+        )
+    try:
+        await validate_mask_geometry_for_task(db, task, geometry)
+    except RasterMaskContractError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "mask_task_context_invalid", "message": str(exc)},
+        ) from exc
+    resolved = resolve_track_at_frame(geometry, frame_index)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="Mask is outside at this frame")
+    try:
+        return await load_coco_rle(resolved["mask"])
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": classify_raster_mask_content_error(exc),
+                "retryable": True,
+                "message": f"mask object is invalid: {exc}",
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason": "mask_storage_unavailable",
+                "retryable": True,
+                "message": "Mask object storage is unavailable",
+            },
+        ) from exc
 
 
 @router.post(

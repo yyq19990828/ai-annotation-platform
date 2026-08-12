@@ -1429,6 +1429,7 @@ export function VideoPlaybackOverlay({
       <Button
         size="sm"
         title="播放 / 暂停 (Space)"
+        aria-label="播放 / 暂停"
         onClick={onTogglePlay}
         className={cn(
           styles.controlButton,

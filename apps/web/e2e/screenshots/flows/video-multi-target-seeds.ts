@@ -1,0 +1,88 @@
+/**
+ * 流程录制：无源视频追踪中为多个目标跨帧添加点/框种子。
+ */
+import type { Page } from "@playwright/test";
+import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { mediaBbox, mediaPoint, recordingAnchor } from "./_canvas";
+import type { DrawWindow } from "./rotated-bbox";
+
+export async function runVideoMultiTargetSeeds(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
+  const project = catalog.projects.video_demo;
+  await page.evaluate(() => {
+    localStorage.removeItem("wb:video-tracker-panel-position");
+    localStorage.removeItem("wb:video-tracker-panel-size");
+  });
+  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
+  const stage = page.getByTestId("video-konva-stage");
+  await page.getByTestId("video-timeline-shell").waitFor({ timeout: 15_000 });
+  await stage.waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(700);
+
+  const drawStartMs = Date.now();
+  await page.getByTestId("workbench-ai-tracker").click();
+  const dialog = page.getByTestId("video-tracker-propagate-dialog");
+  await dialog.waitFor({ timeout: 5_000 });
+
+  const modelSelect = dialog.locator("#tracker-model");
+  const modelValues = await modelSelect
+    .locator("option")
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+  const seedModel = ["sam3_video_interactive", "sam2_video"].find((value) =>
+    modelValues.includes(value),
+  );
+  if (!seedModel) throw new Error("[video-multi-target-seeds] 截图后端没有可用的交互式视频模型");
+  await modelSelect.selectOption(seedModel);
+
+  const toggle = page.getByTestId("tracker-seed-toggle");
+  await toggle.waitFor({ timeout: 3_000 });
+  await toggle.click();
+  await page.waitForTimeout(350);
+
+  const box = await stage.boundingBox();
+  if (!box) throw new Error("[video-multi-target-seeds] 视频画布不可见");
+  const leftBus = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0);
+  const frontTruck = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
+
+  const target1 = mediaPoint(box, leftBus.point);
+  await page.mouse.click(target1.x, target1.y);
+  await page.getByTestId("tracker-seed-target-1").waitFor({ timeout: 3_000 });
+  await page.waitForTimeout(450);
+
+  await page.getByTestId("tracker-seed-new-target").click();
+  const target2 = mediaPoint(box, frontTruck.point);
+  await page.mouse.click(target2.x, target2.y);
+  await page.getByTestId("tracker-seed-target-2").waitFor({ timeout: 3_000 });
+  await page.waitForTimeout(550);
+
+  for (let i = 0; i < 4; i += 1) {
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(170);
+  }
+  const frameFour = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f4", 4);
+  if (!frameFour.negative_point) {
+    throw new Error("[video-multi-target-seeds] front_truck_f4 缺少负点锚点");
+  }
+  const negative = mediaPoint(box, frameFour.negative_point);
+  await page.keyboard.down("Alt");
+  await page.mouse.click(negative.x, negative.y);
+  await page.keyboard.up("Alt");
+  await page.waitForTimeout(550);
+
+  await page.getByTestId("tracker-seed-mode-box").click();
+  const targetBox = mediaBbox(box, frameFour.bbox);
+  await page.mouse.move(targetBox.start.x, targetBox.start.y);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.end.x, targetBox.end.y, { steps: 14 });
+  await page.mouse.up();
+  await page.waitForTimeout(650);
+
+  await toggle.click();
+  await page.getByTestId("tracker-seed-target-2").filter({ hasText: "F4" }).waitFor({
+    timeout: 3_000,
+  });
+  await page.waitForTimeout(1_000);
+  return { drawStartMs, drawEndMs: Date.now() };
+}

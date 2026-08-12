@@ -3327,6 +3327,52 @@ async def test_expired_reconcile_deadline_stops_new_work_and_queueing(
     ).status == "not_ready"
 
 
+@pytest.mark.asyncio
+async def test_admission_extends_reconcile_deadline_past_token_horizon(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-admission-renewal/index:0"
+    await first.reconcile_card(
+        resource_id,
+        100,
+        expected_ledger_revision=None,
+        expected_ledger_incarnation=None,
+        backend_memberships=_TEST_BACKEND_MEMBERSHIPS,
+        allocations=(),
+        lease_cleanup=None,
+        ready=True,
+        reconcile_deadline_ms=_future_reconcile_deadline_ms(1_000),
+        repair_id="admission-renewal",
+    )
+
+    admission = await first.admit(
+        resource_id,
+        **_admission_kwargs("backend-a", "lease-renews-card"),
+        reconcile_deadline_grace_ms=60_000,
+    )
+
+    assert admission.admitted is True
+    assert admission.hard_deadline_ms is not None
+    snapshot = await first.snapshot(resource_id)
+    assert snapshot.ready is True
+    assert snapshot.reconcile_deadline_ms == admission.hard_deadline_ms + 60_000
+
+
+@pytest.mark.asyncio
+async def test_admission_rejects_excessive_reconcile_deadline_grace(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+
+    with pytest.raises(ValueError, match="must be at most 300000"):
+        await first.admit(
+            "node-admission-renewal/index:0",
+            **_admission_kwargs("backend-a", "lease-invalid-grace"),
+            reconcile_deadline_grace_ms=300_001,
+        )
+
+
 @pytest.mark.parametrize("card_queue", (False, True))
 @pytest.mark.asyncio
 async def test_expired_queue_ticket_does_not_block_reconcile(
@@ -5750,6 +5796,77 @@ async def test_begin_idle_eviction_selects_priority_lru_and_replays_exactly(
         ),
     )
     assert late.status == "transition_in_progress"
+
+
+@pytest.mark.asyncio
+async def test_idle_eviction_freezes_unload_branch_before_unloading(
+    redis_stores,
+) -> None:
+    first, _ = redis_stores
+    resource_id = "node-idle-unload-branch/index:0"
+    await _bootstrap_empty_card(first, resource_id, 100)
+    await _admit_resident(
+        first,
+        resource_id,
+        budget_mb=60,
+        eviction_priority=0,
+    )
+    assert (
+        await first.release_lease(
+            resource_id,
+            backend_id="backend-a",
+            lease_id="lease-a",
+            owner_id="owner-a",
+            generation="1",
+        )
+    ).status == "released"
+    assert (
+        await first.begin_idle_eviction(
+            resource_id,
+            requester_backend_id="backend-c",
+            requester_membership_epoch=1,
+            requester_budget_mb=50,
+            requester_eviction_priority=1,
+            victim_backend_id="backend-a",
+            victim_membership_epoch=1,
+            victim_expected_generation="1",
+            victim_next_generation="2",
+            owner_id="idle-unload-owner",
+            ttl_ms=30_000,
+            hard_ttl_ms=60_000,
+        )
+    ).status == "selected"
+
+    unloading = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.DRAINING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNLOADING,
+        transition_owner_id="idle-unload-owner",
+    )
+
+    assert unloading.status == "transitioned"
+    snapshot = await first.snapshot(resource_id)
+    assert snapshot.transition is not None
+    assert snapshot.transition["eviction_branch"] == "unload"
+    assert await first._redis.pttl(first.keys(resource_id).transition) == -1
+
+    unloaded = await first.transition_eviction_allocation(
+        resource_id,
+        backend_id="backend-a",
+        expected_state=GPUAllocationState.UNLOADING,
+        expected_generation="2",
+        target_state=GPUAllocationState.UNLOADED,
+        transition_owner_id="idle-unload-owner",
+    )
+
+    assert (unloaded.status, unloaded.committed_mb) == ("transitioned", 0)
+    terminal = await first.snapshot(resource_id)
+    assert terminal.allocations[0].state is GPUAllocationState.UNLOADED
+    assert terminal.allocations[0].evictable is False
+    assert terminal.transition is not None
+    assert terminal.transition["eviction_branch"] == "unload"
 
 
 @pytest.mark.asyncio

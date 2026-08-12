@@ -2,7 +2,7 @@
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-29
 ---
 
 # 视频 AI 追踪架构
@@ -23,20 +23,13 @@ last_reviewed: 2026-07-22
 
 ## 端到端流程
 
-```mermaid
-flowchart LR
-    A["单轨延展 / 多选延展 / 画布发现"] --> B["选择 tracker、范围与提示"]
-    B --> C["按 supported_trackers 选择 backend"]
-    C --> D["创建 VideoTrackerJob"]
-    D --> E["Celery worker 分窗调用 /predict"]
-    E --> F["跨窗续种或身份关联"]
-    F --> G["staged_result 候选"]
-    G --> H{"选择目标与帧窗口"}
-    H -->|接受所选| I["主实例回填源轨迹(无源则新建)"]
-    I --> J["额外实例创建新轨迹"]
-    H -->|拒绝所选| K["移除选区，annotation 不变"]
-    H -->|仍有未决| G
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/video/video-tracker-human-loop.svg"
+  alt="视频 AI 追踪从单轨、多轨、无源发现或人工纠错入口，经能力路由和固定实例执行分窗推理，把候选暂存后通过预览、局部决定、版本复核与整批兼容入口进入已接受或已丢弃状态"
+  caption="视频追踪的运行事件、持久化候选与人工决策闭环"
+/>
+
+运行期 WebSocket 负责进度与完成提示，持久化 job、preview、revision 和源版本才是审阅真值。tracking 取消时可以保留已产生的部分候选继续审阅；correction 取消会清空候选，失败也不会产生可审结果。局部决定后仍有未决集合时，job 进入 `partially_reviewed`，客户端重新拉 preview 后继续下一轮。
 
 核心入口：
 

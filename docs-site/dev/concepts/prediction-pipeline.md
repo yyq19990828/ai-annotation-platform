@@ -3,12 +3,12 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-29
 ---
 
 # 预标注流水线（Prediction Pipeline）
 
-AI 预标注流水线以 `async_jobs(kind=batch_predict)` 作为用户可见任务真值，以 `predictions` / `failed_predictions` 保存可采纳结果和失败项。本页讲清状态机、写入时点、与下游表的关系。
+AI 预标注流水线在 worker 建档后以 `async_jobs(kind=batch_predict)` 作为用户可见任务真值，以 `predictions` / `failed_predictions` 保存可采纳结果和失败项。本页讲清 Celery 派发边界、持久化五态、写入时点与下游表的关系。
 
 > 决策依据：[ADR 0014 — Prediction Jobs 历史表](../adr/archive/0014-prediction-jobs-table)
 
@@ -16,58 +16,33 @@ AI 预标注流水线以 `async_jobs(kind=batch_predict)` 作为用户可见任�
 
 ## 状态机
 
-```mermaid
-stateDiagram-v2
-  [*] --> pending: API 入队
-  pending --> running: worker 拾取
-  running --> completed: 推理 + 写回成功
-  running --> failed: 异常 / 超时 / ML Backend 5xx
-  running --> cancelled: 用户协作取消
-  failed --> [*]
-  cancelled --> [*]
-  completed --> [*]
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/ai/batch-predict-job-lifecycle.svg"
+  alt="Celery 队列执行边界与 AsyncJob pending、running、completed、failed、cancelled 五态的真实关系"
+  caption="批量预测作业生命周期：队列等待不等于持久化 pending"
+/>
 
-| 状态        | 何时进入                            | 关键字段                                                      |
-| ----------- | ----------------------------------- | ------------------------------------------------------------- |
-| `pending`   | API 入队 Celery 时                  | `created_at`, `payload.prompt`, `payload.ml_backend_id`       |
-| `running`   | worker 在 task body 第一步写入      | `started_at`, `celery_task_id`, `progress_pct`                |
-| `completed` | task 正常返回                       | `completed_at`, `result.success_count`, `result.failed_count` |
-| `failed`    | worker 或 Celery signal 兜底        | `completed_at`, `error_message`                               |
-| `cancelled` | 用户取消或 Celery revoke 被兜底标记 | `completed_at`, `result.cancelled_at_index`                   |
+| 状态        | 何时进入                                                             | 关键字段                                                      |
+| ----------- | -------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `pending`   | worker 调 `create_job()` 时瞬时进入，随后在同次提交前标记 `running`  | `created_at`, `payload.prompt`, `payload.ml_backend_id`       |
+| `running`   | worker 建档并首次提交，通常是第一个可观察持久态                      | `started_at`, `celery_task_id`, `progress_pct`                |
+| `completed` | 无可处理 task，或至少一题成功；可同时有 `failed_count > 0`           | `completed_at`, `result.success_count`, `result.failed_count` |
+| `failed`    | 全部子项失败，或 worker 根任务未捕获异常 / 失败 signal               | `completed_at`, `error_message`                               |
+| `cancelled` | 运行中先记 `payload.cancel_requested`，worker 在下一处理边界协作收敛 | `completed_at`, `result.cancelled_at_index`                   |
+
+`cancel_requested` 是 `running` 上的 payload 标记，不是第六个状态。调用 `revoke(terminate=False)` 也不会让已运行 worker 立即跳到 `cancelled`。单题 backend 5xx / timeout 通常会被记为 `FailedPrediction`；只有全部失败才让根 job 进入 `failed`。
+
+`retry-failed` 不会让原 job 回到 `pending / running`，而是按失败项创建独立 `kind=prediction_retry` 作业。每日清理只删除以 `created_at` 为截止的过期 `completed / failed / cancelled`；`pending / running` 不会因超龄自动收敛。
 
 ## 端到端时序
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Admin
-  participant Web as Web
-  participant API as FastAPI
-  participant DB as Postgres
-  participant Q as Redis (Celery broker)
-  participant W as Celery Worker
-  participant ML as ML Backend
-  participant S3 as MinIO
+<ExcalidrawDiagram
+  src="/diagrams/shared/ai/ai-preannotation-handoff.svg"
+  alt="owner 从 Web 触发预标注，FastAPI 入队，Celery worker 建立持久作业、经服务池选物理实例、写预测与进度，再由 owner 首次人工接管"
+  caption="批量预标端到端主链，共享同一份 canonical 可编辑资产"
+/>
 
-  Admin->>Web: 选项目 + alias + 模式（box/mask/both）
-  Web->>API: POST /api/v1/projects/:id/preannotate
-  API->>Q: enqueue batch_predict
-  API-->>Web: 202 + job_id
-
-  W->>Q: dequeue
-  W->>DB: INSERT async_jobs(kind=batch_predict,status=running)
-  W->>S3: presign URLs for tasks
-  W->>ML: POST /predict (image URLs + prompt)
-  ML-->>W: predictions (LabelStudio shape)
-  W->>DB: INSERT predictions[] (LabelStudio raw)
-  W->>DB: UPDATE async_jobs status=completed, result counts
-  W->>API: WS publish progress / async job polling
-
-  Web->>API: GET /api/v1/async-jobs?kind=batch_predict
-  API->>DB: SELECT async_jobs ORDER BY created_at
-  API-->>Web: cursor page
-```
+触发端点返回 HTTP 200 和 Celery task ID，不是 `async_jobs.id`。worker 后续创建的 AsyncJob UUID 才出现在全局 WS 终端消息与作业列表里。当前 `ProjectDetailPanel` 会把触发返回 ID 交给 `GET /async-jobs/{id}` 轮询，两类 ID 不同会使该详情轮询无法命中；这是当前实现缺口，文档不把它描述成已打通。
 
 ## 与 `predictions` 表的边界
 
@@ -96,17 +71,17 @@ sequenceDiagram
 
 ## WebSocket 通道
 
-| 通道                         | 谁订阅       | 内容                                         |
-| ---------------------------- | ------------ | -------------------------------------------- |
-| `project:{id}:preannotate`   | 该项目工作台 | 单项目进度 / 错误                            |
-| `global:prediction-jobs`     | 任何 admin   | 兼容全局 in-flight 进度推送                  |
-| `/api/v1/async-jobs` polling | 登录用户     | Topbar `JobsBell` 与 `/ai-pre/jobs` 任务历史 |
+| 通道                         | 谁订阅        | 内容                                         |
+| ---------------------------- | ------------- | -------------------------------------------- |
+| `project:{id}:preannotate`   | 项目进度 hook | 单项目高频进度 / 错误；当前 WS 无鉴权        |
+| `global:prediction-jobs`     | 任何 admin    | 兼容全局 in-flight 进度推送                  |
+| `/api/v1/async-jobs` polling | 登录用户      | Topbar `JobsBell` 与 `/ai-pre/jobs` 任务历史 |
 
 `JobsBell` 是当前用户可见任务的主入口；WebSocket 仍用于更快地刷新预标注进度。
 
 ## 失败兜底（B-1 教训）
 
-`_BatchPredictTask.on_failure` 把所有未捕获异常（包括 dispatch 阶段的 `TypeError`）推到 `project:{id}:preannotate`，前端 `progress.error` 分支可见——避免再出现"已排队后无响应"。
+`_BatchPredictTask.on_failure` 会尽力把未捕获异常推到 `project:{id}:preannotate`，并在已建档时通过 `celery_task_id` 反查、置 `async_jobs=failed`。如果异常发生在 worker 创建 AsyncJob 之前，WS 仍可能收到 error，但没有可反查的历史行；进程硬崩或 frame fan-out callback 缺口也可能遗留 `running`，当前没有 stale-job watchdog。
 
 详见 [Docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)。
 
@@ -158,7 +133,7 @@ if params:
 
 即 `params` 的非 None 值覆盖项目级 `box_threshold` / `text_threshold` 兜底值。无 `params` 时使用项目级阈值兜底，状态机本身不变。
 
-## 幂等预标模式（predict_mode，v0.11.24）
+## 幂等预标模式（predict_mode）
 
 `PreannotateRequest.predict_mode`（`apps/api/app/api/v1/projects.py`）是 `Literal["skip_predicted", "overwrite", "append"]`，默认 `skip_predicted`，由 worker（`apps/api/app/workers/tasks.py::batch_predict` / `_run_batch`）透传决定 task 选取与旧预测处理：
 

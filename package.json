@@ -5,7 +5,7 @@
     "prepare": "bash scripts/install-git-hooks.sh",
     "dev:web": "pnpm --filter @anno/web dev",
     "build:web": "pnpm --filter @anno/web build",
-    "dev:api": "cd apps/api && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3",
+    "dev:api": "cd apps/api && uv run alembic upgrade head && MIGRATION_DATABASE_URL= uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3",
     "lint": "pnpm lint:python && pnpm lint:web",
     "lint:python": "uvx --from ruff==0.15.22 ruff check .",
     "lint:python:fix": "uvx --from ruff==0.15.22 ruff check --fix .",

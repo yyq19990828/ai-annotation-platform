@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-06-06
+last_reviewed: 2026-07-29
 ---
 
 # 任务模块
@@ -22,19 +22,13 @@ last_reviewed: 2026-06-06
 
 ## 模块定位
 
-Task 是系统中的最小工作单元，一条数据最终总是落实到一条或多条 task 的状态变化。
+Task 是系统中的最小工作单元，一条数据最终总是落实到一条或多条 task 的状态变化。Project 归属必填，DatasetItem 与 TaskBatch 归属可空；当前 React 工作台通过 `GET /tasks` 拉列表后在客户端选题，再分别读取详情、annotations、predictions 并获取编辑锁。
 
-```mermaid
-graph TD
-  Project["Project"] --> Task["Task"]
-  Batch["TaskBatch"] --> Task
-  Task --> Annotation["Annotation"]
-  Task --> Prediction["Prediction / FailedPrediction"]
-  Task --> Lock["TaskLock"]
-  Scheduler["scheduler.get_next_task()"] --> Task
-  TaskAPI["api/v1/tasks/"] --> Task
-  AnnotationSvc["services/annotation.py"] --> Task
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/task-module-map.svg"
+  alt="Task 模块关系图，展示数据模型归属、当前 React 工作台取题和锁流程、未被当前工作台消费的 tasks next 调度旁路，以及 annotation 计数对 task 和 batch 的条件回写"
+  caption="Task 模块全景：当前工作台主链与 scheduler side API 分开表示"
+/>
 
 一句话理解：
 
@@ -65,7 +59,7 @@ graph TD
 | ----------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `project_id`                              | 所属项目                                                                                     |
 | `batch_id`                                | 所属批次，可空                                                                               |
-| `dataset_item_id`                         | 数据集项引用                                                                                 |
+| `dataset_item_id`                         | 数据集项引用，可空                                                                           |
 | `display_id`                              | 人类可读任务 ID                                                                              |
 | `file_name` / `file_path` / `file_type`   | 原始素材信息                                                                                 |
 | `status`                                  | 任务工作流状态                                                                               |
@@ -101,25 +95,23 @@ review
 
 - 审核退回时，task 路由会把 `status` 写成字符串 `"rejected"`
 
-这意味着现仓里存在“枚举定义”和“运行时业务状态”并不完全对齐的历史现象。开发时不要只看 `TaskStatus` 枚举，还要看 `tasks.py` 的真实分支。
+这意味着现仓里存在“枚举定义”和“运行时业务状态”并不完全对齐的历史现象。开发时不要只看 `TaskStatus` 枚举，还要看 `tasks/lifecycle.py`、`tasks/review.py` 和 `services/annotation.py` 的真实分支。
 
 ### 主要工作流
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending
-    pending --> in_progress: 首次产生 annotation / 拿题后开始编辑
-    in_progress --> review: submit
-    review --> in_progress: withdraw
-    review --> completed: reviewer approve
-    review --> rejected: reviewer reject
-    completed --> in_progress: reopen
-    rejected --> in_progress: accept-rejection
-```
+<ExcalidrawDiagram
+  src="/diagrams/shared/state-machines/task-lifecycle.svg"
+  alt="Task 可由待处理进入编辑，也可从待处理或编辑中送审；审核可撤回、通过或退回，完成和退回后可重新编辑"
+  caption="Task 主工作流（运行时代码包含 rejected 状态）"
+/>
 
 补充：
 
-- `uploading` 主要存在于上传阶段，不是标注主流程的常驻态
+- `uploading` 只用于直接 `/files/upload-init` 上传旁路，普通数据集关联创建的 task 直接进入 `pending`
+- 只有首个有效 annotation 会触发 `pending → in_progress`；拿题、加锁或打开编辑器本身不会改变状态
+- `pending / in_progress` 都可以通过 `submit / skip` 直接进入 `review`
+- 删掉最后一个有效 annotation 会触发 `in_progress → pending`
+- 批次级驳回会把 `review / completed` task 回退到 `pending`；批次终极重置或强制删除则会把所有非 `pending` task 回退到 `pending`
 - `rejected` 虽不在当前 `TaskStatus` 枚举中，但在业务代码中是实际存在状态
 
 ## 可见性与派题
@@ -153,11 +145,11 @@ stateDiagram-v2
 
 ### `/tasks/next`
 
-`scheduler.get_next_task()` 是真实派题入口。它会：
+`scheduler.get_next_task()` 是 `/tasks/next` 的派题入口。当前 React 工作台没有调用这个端点：它通过 `GET /tasks` 获取列表，再按 URL、上次选择或首项在客户端选题。其它客户端调用 `/tasks/next` 时，它会：
 
 1. 先看用户是否已有未完成锁任务
 2. 基于 project 配置、batch 状态、可见性和采样策略构造候选集
-3. 选出一题并加 task lock
+3. 按顺序尝试候选 task 的 lock，只返回成功加锁的一题
 
 关键过滤条件：
 
@@ -181,7 +173,7 @@ stateDiagram-v2
 - 标注全删空时：
   `in_progress → pending`
 
-如果 task 挂在某个 batch 下，还会继续：
+只有当 `_update_task_stats()` 确实触发 `pending ↔ in_progress` 状态翻转、允许 batch transition，且 task 挂在某个 batch 下时，才会继续：
 
 - 调 `BatchService.check_auto_transitions(batch_id)`
 - 调 `BatchService.recalculate_counters(batch_id)`
@@ -202,8 +194,8 @@ stateDiagram-v2
 
 ### 语义要点
 
-- `submit`
-  `in_progress → review`
+- `submit / skip`
+  `pending / in_progress → review`
 - `withdraw`
   标注员在 reviewer 未 claim 前把 `review → in_progress`
 - `review/claim`

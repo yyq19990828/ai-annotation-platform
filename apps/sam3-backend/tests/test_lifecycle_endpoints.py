@@ -29,9 +29,11 @@ def _load_main():
         mask_utils = ModuleType("mask_utils")
         mask_utils.MultiPolygonRing = dict
         mask_utils.PromptAdapterError = ValueError
+        mask_utils.decode_coco_rle = MagicMock(return_value=[])
         mask_utils.encode_coco_rle = MagicMock(return_value={})
         mask_utils.mask_prompt_to_low_res_logits = MagicMock()
         mask_utils.mask_to_multi_polygon = MagicMock(return_value=[])
+        mask_utils.mask_to_preview_polygon = MagicMock(return_value=[])
         mask_utils.scribbles_to_point_prompts = MagicMock(return_value=([], []))
         polygon = ModuleType("mask_utils.polygon")
         polygon.mask_to_polygon = MagicMock(return_value=[])
@@ -385,3 +387,23 @@ def test_cancelled_video_keeps_source_and_borrower_until_thread_finishes(
         await pool.shutdown()
 
     _run(scenario())
+
+
+def test_deployment_gate_controls_declaration_and_rejects_invalid_value(
+    monkeypatch,
+) -> None:
+    try:
+        monkeypatch.setenv("SAM3_MANAGED_LIFECYCLE_VERIFIED", "0")
+        sys.modules.pop("main", None)
+        assert "managed_lifecycle" not in _load_main().setup()
+
+        monkeypatch.setenv("SAM3_MANAGED_LIFECYCLE_VERIFIED", "1")
+        sys.modules.pop("main", None)
+        assert "managed_lifecycle" in _load_main().setup()
+
+        monkeypatch.setenv("SAM3_MANAGED_LIFECYCLE_VERIFIED", "true")
+        sys.modules.pop("main", None)
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            _load_main()
+    finally:
+        sys.modules.pop("main", None)

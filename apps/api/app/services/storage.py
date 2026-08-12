@@ -254,17 +254,21 @@ class StorageService:
         *,
         bucket: str | None = None,
         content_type: str = "application/octet-stream",
+        cache_control: str | None = None,
     ) -> None:
         """从本地文件路径流式上传（boto3 managed multipart，不把整文件读进内存）。
 
         v0.12.1 · 导出落盘式 ZIP 的上传入口：worker 把 ZIP 写到 tempfile 后用本方法
         分段上传，内存与产物大小解耦（对比旧 put_object(Body=bytes) 全量驻留 RAM）。
         """
+        extra_args = {"ContentType": content_type}
+        if cache_control:
+            extra_args["CacheControl"] = cache_control
         self.client.upload_file(
             local_path,
             bucket or self.bucket,
             key,
-            ExtraArgs={"ContentType": content_type},
+            ExtraArgs=extra_args,
         )
 
     def verify_upload(self, key: str, bucket: str | None = None) -> dict | None:
@@ -275,6 +279,32 @@ class StorageService:
 
     def delete_object(self, key: str, bucket: str | None = None) -> None:
         self.client.delete_object(Bucket=bucket or self.bucket, Key=key)
+
+    def delete_prefix(self, prefix: str, bucket: str | None = None) -> int:
+        """Delete one exact derived-asset prefix in bounded S3 batches."""
+        b = bucket or self.bucket
+        normalized = prefix.rstrip("/") + "/"
+        deleted = 0
+        continuation_token = None
+        while True:
+            kwargs: dict = {
+                "Bucket": b,
+                "Prefix": normalized,
+                "MaxKeys": 1000,
+            }
+            if continuation_token:
+                kwargs["ContinuationToken"] = continuation_token
+            response = self.client.list_objects_v2(**kwargs)
+            objects = [{"Key": obj["Key"]} for obj in response.get("Contents", [])]
+            if objects:
+                self.client.delete_objects(
+                    Bucket=b,
+                    Delete={"Objects": objects, "Quiet": True},
+                )
+                deleted += len(objects)
+            if not response.get("IsTruncated"):
+                return deleted
+            continuation_token = response["NextContinuationToken"]
 
     def list_objects(self, prefix: str, bucket: str | None = None) -> list[dict]:
         b = bucket or self.bucket
@@ -347,6 +377,7 @@ class StorageService:
         "thumbnails/",
         "videos/",
         "playback/",
+        "image-pyramids/",
     )
 
     def bucket_for_cache_key(self, key: str, default: str | None = None) -> str:
@@ -368,9 +399,21 @@ class StorageService:
             return None
         try:
             with Image.open(io.BytesIO(data)) as img:
-                return int(img.width), int(img.height)
+                return StorageService._logical_image_dimensions(img)
         except Exception:  # noqa: BLE001
             return None
+
+    @staticmethod
+    def _logical_image_dimensions(img) -> tuple[int, int]:
+        """Return browser/libvips autorotated dimensions without decoding pixels."""
+        width, height = int(img.width), int(img.height)
+        try:
+            orientation = int(img.getexif().get(274, 1))
+        except Exception:  # noqa: BLE001 - malformed EXIF is treated as orientation 1
+            orientation = 1
+        if orientation in {5, 6, 7, 8}:
+            return height, width
+        return width, height
 
     def read_image_dimensions(
         self,
@@ -401,7 +444,7 @@ class StorageService:
 
         try:
             with Image.open(io.BytesIO(data)) as img:
-                return int(img.width), int(img.height)
+                return self._logical_image_dimensions(img)
         except Exception as exc:  # noqa: BLE001 - 任意 PIL / 损坏文件错误
             logger.info("Pillow 解析失败 key=%s err=%s", key, exc)
             return None

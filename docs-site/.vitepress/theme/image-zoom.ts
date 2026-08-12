@@ -33,12 +33,13 @@ export function setupImageZoom(): void {
     return overlay;
   };
 
-  const open = (src: string, alt: string): void => {
+  const open = (src: string, alt: string, paper = false): void => {
     const o = ensureOverlay();
     o.replaceChildren();
     const img = document.createElement("img");
     img.src = src;
     img.alt = alt;
+    if (paper) img.classList.add("docs-image-lightbox-paper");
     o.appendChild(img);
     o.classList.add("open");
     document.documentElement.style.overflow = "hidden";
@@ -52,7 +53,11 @@ export function setupImageZoom(): void {
     if (target.classList.contains("no-zoom")) return;
     if (target.naturalWidth && target.naturalWidth < 80) return; // 跳过图标
     e.preventDefault();
-    open(target.currentSrc || target.src, target.alt || "");
+    open(
+      target.currentSrc || target.src,
+      target.alt || "",
+      Boolean(target.closest(".excalidraw-diagram")),
+    );
   });
 
   document.addEventListener("keydown", (e: KeyboardEvent) => {

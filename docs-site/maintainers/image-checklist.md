@@ -29,11 +29,11 @@
 ### 暗色工作台重录
 
 - [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode,ai-inspector-panel}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
-- [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
+- [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,smart-scribble-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
 - [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`；OCR 录制时将 AI 面板停靠在主图右侧
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
 - [x] 视频工作台：`workbench/video-real-scene.png`、`video-propagate/ai-tracking-panel.png`、`workbench/{video-track-overview,video-track-trajectory}.gif`、`video-propagate/ai-tracking-panel-interaction.gif`
-- [x] 点云工作台：`workbench/pointcloud-real-scene.png`、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
+- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
 - [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
@@ -68,34 +68,34 @@
 
 ## Batch 2 · 视频/点云 AI 审阅 + 时间轴交互（新增于 2026-07-06） <!-- PR #50 · v0.21.9–17 -->
 
-> 配套 PR #50「视频/点云工作台 AI 审阅体验 + 时间轴交互增强」。这批交互性强（缩放/刷选/续写/键盘流转），基本都 `[manual]` 手工录，动图优先。文档侧对应改写 `video-playback.md` / `video-propagate.md` / `video-track.md` / `3d-box.md` / 新 `projects/pipeline-library.md` 时再嵌图。新增目录 `images/video-timeline/`、`images/pipeline-library/`。
+> 配套视频/点云工作台 AI 审阅体验与时间轴交互。可重现的缩放、刷选、续写与键盘流转已逐步收录到 `[auto-gif]`；需要特殊审阅状态的画面仍保留为手工清单。
 
 ### 时间轴交互（对应 `workbench/video-playback.md`）
 
-- [ ] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → seek/密度条/章节条/关键帧点随可见窗口对齐 → 双击或「适配全部」复位全过程 [manual]
+- [x] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → 普通滚轮平移 → 双击复位全过程 `[auto-gif]`（flows/video-timeline-zoom）
 - [ ] `images/video-timeline/prediction-density-track.png` — 时间轴 AI 预测密度轨（violet 柱）+「跳到上/下一个有预测的帧」导航按钮；红框：密度轨、跳转按钮 [manual]
-- [ ] `images/video-timeline/brush-create-chapter.gif` — 时间轴刷选一段 → 弹出「建章节」气泡 → 一键建章节全过程 [manual]
-- [ ] `images/video-timeline/chapter-resize-hover.gif` — 拖章节条边界改起止（松手 debounce PATCH）+ 章节条 ↔ 侧栏行双向 hover 高亮联动 [manual]
+- [x] `images/video-timeline/brush-create-chapter.gif` — 时间轴圈选一段 → 填写章节表单 → 创建章节全过程 `[auto-gif]`（flows/video-chapter）
+- [x] `images/video-timeline/chapter-resize-hover.gif` — 章节条 ↔ 侧栏行双向 hover 高亮，并拖边界改起止 `[auto-gif]`（flows/video-chapter 的拖柄裁切版）
 
 ### 视频 AI 审阅（对应 `workbench/video-track.md`）
 
 - [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 单条采纳/拒绝入口 [manual]
 - [ ] `images/video-propagate/tracker-review-bar.png` — 固定一条含至少 2 个目标的 `pending_review` 作业，当前帧同时露出 violet 候选与顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 **[Tier A]** [manual]（需独立场景；现有工作台场景会主动丢弃待审作业）
-- [ ] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 [manual]
+- [x] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 `[auto-gif]`（flows/video-multi-target-seeds）
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
-- [ ] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 / 点选即续写 →「续写后自动前进」自动跳下一条 [manual]
+- [x] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 → 拖动续写 →「续写后自动前进」自动跳下一条 `[auto-gif]`（flows/video-track-carryover）
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
 - [ ] `images/workbench/video-track-multiselect-batch-card.png` — 当前帧同时显示至少 2 条轨迹，`Shift` / `Ctrl` 多选后同时露出画布浮动批量卡、右栏批量工具条和高亮轨迹框；红框：「已选 2 条轨迹」与「批量延展」 **[Tier A]** [manual]（自动化前需补可清理的双轨迹 fixture）
 
 ### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
 
 - [ ] `images/workbench/review-two-level-cycle.png` — 两级键盘循环示意（建议矢量示意图）：`Tab`/`Shift+Tab` 同类流转，`` ` ``/``Shift+` `` 跨类跳转（AI 待审 → 人工 → 轨迹）[manual]
-- [ ] `images/workbench/review-auto-advance.gif` — 决策后自动前进：`A`/`D` 采纳/拒绝 AI 候选后选中自动推进到下一待决对象（配合「选中自动聚焦」平移居中）[manual]
+- [x] `images/workbench/review-auto-advance.gif` — 决策后自动前进：`A`/`D` 采纳/拒绝 AI 候选后选中自动推进到下一待决对象 `[auto-gif]`（flows/candidate-keyboard-review 的聚焦裁切版）
 
 ### 两类传播术语（对应 `workbench/video-propagate.md`）
 
 - [ ] `images/video-propagate/track-vs-copy-buttons.png` — 选中卡两类传播按钮对比：「AI 追踪」（bot 图标 · 调 tracker 模型）vs「复制后续」（copy 图标 · 纯几何铺帧）；红框：两按钮 + tooltip [manual]
-- [ ] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 [manual]
+- [x] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 `[auto-gif]`（flows/video-tracker-range）
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
 
@@ -122,7 +122,7 @@
 ### 图片候选审阅与数据边界
 
 - [ ] `images/ai/candidate-review-overview.png` — 图片工作台 AI 待审候选总览；同时露出画布 violet 候选、右侧候选列表、接受 / 拒绝按钮与来源信息 **[Tier A]** [manual]
-- [ ] `images/ai/candidate-keyboard-review.gif` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** [manual]
+- [x] `images/ai/candidate-keyboard-review.gif` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** `[auto-gif]`（flows/candidate-keyboard-review）
 - [ ] `images/ai/prediction-to-annotation.png` — 同一对象“候选 Prediction → 接受后 Annotation”的前后对比；红框：颜色 / 来源标记变化、接受后仍可编辑 **[Tier A]** [manual]
 - [ ] `images/ai/candidate-source-badges.png` — 候选列表按来源展示 ML Backend / 外部导入 / 交互式结果；红框：来源徽标、模型版本与置信度 **[Tier B]** [manual]
 
@@ -152,7 +152,7 @@
 
 - [x] `images/getting-started/login.png` — 登录页全屏 [auto]
 - [x] `images/getting-started/forgot-password.png` — 忘记密码页 + 成功 toast [auto]
-- [ ] `images/getting-started/e2e.gif` — 30-60s 录屏：登录 → 打开项目 → 标 bbox → 提交；旧 1×1 PNG 伪 GIF 已删除，待真实重录
+- [x] `images/getting-started/e2e.gif` — 登录 → Dashboard → 打开项目 → 标 bbox → 提交并看到下一题 `[auto-gif]`（flows/e2e-quickstart）
 - [ ] `images/getting-started/annotator-dashboard.png` — 标注员仪表盘全屏，标注红框：产能/质量分区 + 「打开」按钮 **[Tier B]** 截图 driver 把所有角色 token 收敛为 super_admin，role=annotator 仍渲染 AdminDashboard，需真实标注员 seed token
 - [x] `images/getting-started/role-dashboard-overview.png` — 四种角色 Dashboard 拼图 [auto]
 - [x] `images/getting-started/platform-nav-overview.png` — 平台主界面侧边栏各分区 [auto]
@@ -173,6 +173,7 @@
 - [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 [auto]
 - [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
 - [x] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）`[auto]`
+- [x] `images/projects/ai-preannotate-flow.gif` — 选择项目与批次 → 运行 AI 预标 → 查看任务历史 `[auto-gif]`（flows/ai-preannotate）
 - [ ] `images/projects/ai-pre-pipeline-dag-canvas.png` — AI 预标项目详情「批跑预标设置」两列 DAG 编排画布 + 右侧节点参数；红框：节点 +/删除/改父级、兼容性警告、运行计数 [manual]
 - [ ] `images/projects/ai-pre-project-pipeline-save.png` — 「保存为项目编排」成功态；红框：保存按钮、已保存编排阶段数 badge、清除按钮 [manual]
 - [x] `images/projects/ai-pre-variant-selector.gif` — VariantSelector 两轴选项 + 推荐 badge `[auto-gif]`（flows/ai-pre-variant-selector，切 select 看 显存/精度/推荐 pill 联动）
@@ -202,6 +203,7 @@
 
 - [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 [auto]
 - [x] `images/review/reject-form.png` — 退回备注表单 [auto]
+- [x] `images/review/reject-flow.gif` — 定位待审任务 → 选择结构化原因 → 填写补充说明并确认退回 `[auto-gif]`（flows/review-reject）
 - [x] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）`[auto]`
 
 ### 平台管理
@@ -254,15 +256,23 @@
 - [x] `images/workbench/ocr-real-scene.gif` — 真实 RapidOCR 当前题从派发、推理中到生成文本多边形候选 `[auto-gif]`（flows/ocr-inference，P-OCR）
 - [x] `images/workbench/ocr-real-scene.png` — OCR 面板无脚本静态备用图 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
+
+#### 超大图片
+
+> 固定项目/数据集为 `P-LARGE-IMG` / `DS-LARGE-IMG`。它在截图数据库中存在时会作为可选项目加入 catalog；录制前必须确认 Cosmic Cliffs 金字塔已 ready，不得用整图加载冒充渐进 LOD。
+
+- [x] `images/workbench/large-image-progressive-detail.gif` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[auto-gif]`（flows/large-image-progressive）
+- [ ] `images/workbench/large-image-pyramid-status.png` — required 超大图的“高清切片生成中”与失败/重试状态；不得自动请求整张原图 **[Tier A]** `[auto]`
+- [ ] `images/mask-brush/large-image-limit.png` — 超大底图仍可浏览并使用矢量工具，同时 Mask 能力明确显示尺寸超限原因 **[Tier A]** `[auto]`（可先用 `P-LARGE-IMG` 建 scene）
+
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，落库类型由任务 Mask 能力决定）
-- [ ] `images/mask-brush/video-mask-track-edit.gif` — 视频帧按 `M` 从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷 / 橡皮修正 → `Enter` 物化第二个人工关键帧；同时露出 Mask、轨迹卡和时间轴关键帧变化 **[Tier A]** `[auto-gif]`（需新增 flow，结束后恢复 screenshot seed）
+- [x] `images/workbench/video-mask-track-edit.gif` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[auto-gif]`（flows/video-mask-track-edit，结束后恢复 screenshot seed）
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
-- [ ] `images/workbench-pointcloud-projection/camera-panel-layout.png` — 6 相机环绕布局全景 [manual]
-- [x] `images/workbench/pointcloud-real-scene.png` — 真实 PCL RGB-D 室内扫描点云工作台 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-DEV）
+- [x] `images/workbench/pointcloud-real-scene.png` — nuScenes 激光雷达 + 6 相机环绕布局全景 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-MULTI）
 - [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，P-PC-DEV）
 - [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
@@ -279,6 +289,7 @@
 - [x] `images/sam/exemplar-output-mode.png` — Exemplar 示例交互工具条（输出形态三选一 + 示例能力控件）`[auto]`（scene: `sam/exemplar-output-mode`，P-COCO8 + live backend）
 - [x] `images/sam/smart-point-interaction.gif` — 无侧边栏的真实 SAM3 智能点车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-point`，P-COCO8）
 - [x] `images/sam/smart-box-interaction.gif` — 无侧边栏的真实 SAM3 智能框车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-box`，P-COCO8）
+- [x] `images/sam/smart-scribble-interaction.gif` — 选中已存原生 Mask 后连续绘制正、负笔迹并查看精修候选 `[auto-gif]`（flow: `smart-scribble`，P-COCO8 确定性签名候选）
 - [x] `images/sam/magic-box-interaction.gif` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[auto-gif]`（flow: `sam-interactive`，P-COCO8）
 - [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
@@ -310,7 +321,7 @@
 - [x] `dev/reference/video-frame-service.md` § Chunk 状态机：补 ready/pending/failed 三态图，含 smart_copy / transcode 注释
 - [x] `dev/reference/video-frame-service.md` § Tracker job 事件序列：补 sequenceDiagram，含 FE / API / worker / ML / Redis Pub-Sub 五道
 - [x] `dev/reference/ws-protocol.md` § 6.2 事件序列：补 stateDiagram-v2 可视化 tracker 事件流
-- [x] `dev/concepts/state-machines.md` § Task 状态机：已含 rejected 转移（旧版即已补，本轮核验确认）
+- [x] `dev/concepts/state-machines.md` § Task 状态机：共享 Task canonical 已含 `rejected` 与批次级回退路径
 
 ## 新增图片时
 

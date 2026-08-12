@@ -12,6 +12,63 @@ import { VideoKonvaStage } from "./VideoKonvaStage";
 import type { VideoStageControls } from "./videoStageControls";
 import type { TaskVideoManifestResponse } from "@/types";
 
+vi.mock("./useVideoPreciseFrame", () => ({
+  useVideoPreciseFrame: () => ({
+    active: false,
+    bitmap: null,
+    sourceState: "disabled",
+    fallbackReason: null,
+    diagnostics: {
+      supported: false,
+      webcodecsEnabled: false,
+      decoderActive: false,
+      chunkId: null,
+      datasetItemId: null,
+      chunkSizeFrames: null,
+      decodeRequests: 0,
+      decoderErrors: 0,
+      urlRefreshed: false,
+    },
+    performance: {
+      manifestCacheHits: 0,
+      samplesCacheHits: 0,
+      chunkByteCacheHits: 0,
+      bitmapCacheHits: 0,
+      bytesFetched: 0,
+      bitmapBytes: 0,
+      bitmapBudgetBytes: 0,
+      activeDecoders: 0,
+      liveVideoFrames: 0,
+      chunkBytes: 0,
+      chunkBudgetBytes: 0,
+      sessionCreates: 0,
+      sessionResets: 0,
+      sessionDisposals: 0,
+      encodedChunksSubmitted: 0,
+      staleResults: 0,
+      prefetchRequests: 0,
+      prefetchHits: 0,
+      evictions: 0,
+      lastManifestMs: null,
+      lastSamplesMs: null,
+      lastChunkFetchMs: null,
+      lastDemuxMs: null,
+      lastQueueMs: null,
+      lastCodecMs: null,
+      lastDecodeMs: null,
+      lastBitmapMs: null,
+      lastDecodeMode: null,
+      lastPaintMs: null,
+      lastVisibleMs: null,
+      paintedFrameIndex: null,
+      gopStartDecodeIndex: null,
+      targetTimestampUs: null,
+      codec: null,
+    },
+    markFramePainted: vi.fn(),
+  }),
+}));
+
 const playMock = vi.fn();
 const pauseMock = vi.fn();
 
@@ -74,6 +131,11 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(image).not.toBeNull();
     expect(image!.getAttribute("data-width")).toBe("1000");
     expect(image!.getAttribute("data-height")).toBe("500");
+    // data-video-frame-source 暴露当前显示来源(webcodecs / native bitmap / video element),供 E2E 与诊断。
+    const stage = document.querySelector('[data-testid="video-konva-stage"]') as HTMLElement;
+    expect(["webcodecs", "native-bitmap", "video"]).toContain(
+      stage.getAttribute("data-video-frame-source"),
+    );
   });
 
   it("loading 态显示占位,不渲染 Stage", () => {

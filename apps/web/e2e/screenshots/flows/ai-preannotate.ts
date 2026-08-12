@@ -21,8 +21,9 @@ export async function runAiPreannotate(page: Page, catalog: ScreenshotSeedCatalo
   // ── Step 3：选择批次 ─────────────────────────────────────────
   const batchRow = page.locator("li").filter({ hasText: project.batches.active.display_id });
   await batchRow.getByRole("checkbox").click();
-  await page.getByPlaceholder(/例：car, person/).fill("car");
-  await page.waitForTimeout(500);
+  // 类别筛选现在是可选的模型原生类别白名单；截图 stub 不预热时按
+  // “检出全部类别”运行，避免录制流程依赖具体模型的 model.names。
+  await page.waitForTimeout(700);
 
   // ── Step 4：点击发起预标注 ───────────────────────────────────
   const startBtn = page.getByRole("button", { name: /跑预标（1 批）/ });

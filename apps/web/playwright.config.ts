@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
 const rasterMaskCreateEnabled = rasterMaskMatrix === "native";
+const chromiumChannel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL;
 const configDir = dirname(fileURLToPath(import.meta.url));
 const isCI = Boolean(process.env.CI);
 const useIsolatedServers = !isCI || Boolean(rasterMaskMatrix);
@@ -60,7 +61,10 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(chromiumChannel ? { channel: chromiumChannel } : {}),
+      },
       // 3D 点云 spec 交给下方 pointcloud project(需 WebGL 软渲染参数),此处排除。
       testIgnore: ["**/workbench-pointcloud*.spec.ts"],
     },
@@ -91,6 +95,7 @@ export default defineConfig({
           cwd: resolve(configDir, "../api"),
           env: {
             DATABASE_URL: e2eDatabaseURL,
+            MIGRATION_DATABASE_URL: e2eDatabaseURL,
             ENVIRONMENT: "development",
             E2E_SEED_ENABLED: "true",
             ...(rasterMaskMatrix

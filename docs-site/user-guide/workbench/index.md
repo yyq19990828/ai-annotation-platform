@@ -3,7 +3,7 @@ audience: [annotator]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-11
 ---
 
 # 标注工作台 — 界面与快捷键
@@ -22,9 +22,31 @@ last_reviewed: 2026-07-14
 - 视频任务切到视频时间轴视图，支持单帧矩形框 / 多边形 / 折线、跨帧轨迹、关键帧与轨迹操作，交互式 AI 工具也可用于单帧。详见 [视频追踪标注](./video-track)。
 - 3D 点云任务切到 Three.js 工作台：可旋转 / 平移 / 缩放查看点云、按高度上色或经标定的相机图 RGB 上色，在主 3D 视图绘制并编辑 `lidar_box_3d` 框（gizmo W/E/R 平移 / 转 Z / 缩放 + 数值面板补齐三轴朝向），也可用 `point_mask_3d` 分割工具做矩形 / 套索 / 多边形选点并增删编辑点集；三正交视图浮层可在 3D 画布内拖动、调整尺寸、折叠并记住位置，内部支持拖边 / 拖角 / 拖方向线精修；3D 框经标定实时投影到悬浮在主视图四周的相机面板，3D↔2D 双向选中，相机面板也可拖动避让。详见 [3D 立体框标注](./3d-box)。
 
-图片与视频画布右下角提供缩小、当前比例、放大和「适应」浮条，并贴齐画布可用区域的右侧边缘；图片任务还会在同一浮条中显示撤销 / 重做。浮条相对画布定位，展开或收起侧栏后会随画布边界一起移动。
+图片与视频画布右下角提供缩小、当前比例、放大和「适应」浮条，并贴齐画布可用区域的右侧边缘；图片任务还会在同一浮条中显示撤销 / 重做。浮条相对画布定位，展开或收起侧栏后会随画布边界一起移动。切换图片任务时会按新图尺寸重新适应；超大图的最小缩放比例会自动放宽到当前画布的完整适应比例，先放大后仍可使用工具条或 Ctrl / Command + 滚轮缩回全图。放大后出现的 Minimap 位于浮条上方，不会遮挡缩放操作。
 
 图片交互工具、批量预标候选和视频追踪的入口、结果与审阅方式不同。按任务选择说明见 [AI 辅助标注](../ai/)，图片候选的接受 / 拒绝与数据边界见[审阅 AI 候选](../ai/candidate-review)。
+
+## 超大图片的当前行为
+
+<!-- TODO IMAGE_CHECKLIST: images/workbench/large-image-pyramid-status.png — required 超大图生成中与失败/重试状态 [auto] -->
+
+![超大图从 overview 随缩放与平移渐进恢复局部高清细节](../images/workbench/large-image-progressive-detail.gif)
+
+图片背景浏览不要求 WebGPU；没有独立 GPU 的浏览器仍可打开、缩放和平移图片。已生成高清切片的超大图会
+先显示 overview，再按当前视口和缩放级别渐进加载清晰 tile。平移或放大时局部清晰度可能短暂变化，但
+标注、Mask、Issue pin 与 Minimap 始终使用原图坐标，不会随清晰度层级改变。
+
+required 超大图的切片仍在生成时，画布显示“高清切片生成中”和安全预览；生成失败时显示不可用提示和
+“重新生成”按钮，不会自动下载并解码整张原图。重试仍受服务端冷却与频率限制。单个 tile 网络或解码
+失败时会保留 overview，不应出现整块透明背景。若提示长期不消失，请保留任务编号和 BUG 反馈中的
+Large Image Tile Diagnostics 联系管理员，不要在无法辨认目标细节时继续标注。
+
+Minimap、评论画布和邻题预取只使用缩略图或 overview，不会在主画布之外重复加载 required 大图。浏览器不
+支持 `createImageBitmap` 时会自动使用普通图片元素解码，功能保持一致。
+
+背景图片尺寸与 Raster Mask 编辑上限是两条独立边界：能够查看超大底图，不代表能创建同尺寸 Mask。
+Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可使用 bbox、Polygon 等矢量工具，具体限制见
+[Mask 笔刷编辑器的“大画布图片”](./mask-brush#大画布图片)。
 
 顶部 ⚙ 菜单里可以打开“隐藏孤儿标注”。孤儿标注指项目设置中已删除当前类别定义、但历史标注仍保留旧 `class_name` 的数据；开关打开后画布和右侧人工列表会同步隐藏，关闭时列表行会以“已删除”标记提示。
 
@@ -63,7 +85,8 @@ last_reviewed: 2026-07-14
 ## 审阅键盘流转
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/review-two-level-cycle.png — 两级循环示意 [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/workbench/review-auto-advance.gif — 决策后自动前进 [manual] -->
+
+![接受或拒绝后自动推进到下一待决候选](../images/workbench/review-auto-advance.gif)
 
 从 AI 结果接管、逐个采纳 / 拒绝时可全程键盘操作（图片与视频 2D 工作台通用）：
 

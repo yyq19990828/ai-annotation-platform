@@ -8,6 +8,8 @@ import {
   RasterMaskWorkerTimeoutError,
   type RasterMaskWorkerClock,
 } from "./rasterMaskWorkerPool";
+import { getRasterMaskComputeDiagnosticsSnapshot } from "../../../../utils/rasterMaskComputeDiagnostics";
+import { RasterResourceCoordinator } from "./rasterResourceCoordinator";
 
 function zeroRle(width: number, height = 1) {
   return {
@@ -216,6 +218,381 @@ describe("RasterMaskWorkerPool", () => {
     pool.dispose();
   });
 
+  it("pins morphology to slot 0 without blocking ordinary work on slot 1", async () => {
+    const workers: FakeWorker[] = [];
+    const pool = new RasterMaskWorkerPool({
+      size: 2,
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+    });
+    pool.registerSession("mask", "sha", zeroRle(4, 4));
+    const blocking = pool.analyze(zeroRle(1));
+    const morphology = pool.morphologyRoi({
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 3,
+      core: { x: 0, y: 0, width: 4, height: 4 },
+      input: { x: 0, y: 0, width: 4, height: 4 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "cpu",
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
+    });
+    const ordinary = pool.analyze(zeroRle(2));
+
+    const slotOneRequest = workers[1].jobRequests()[0];
+    expect(slotOneRequest?.kind).toBe("analyze");
+    if (!slotOneRequest || slotOneRequest.kind !== "analyze") {
+      throw new Error("missing slot 1 analyze request");
+    }
+    workers[1].respondAnalyze(slotOneRequest.id);
+    const slotZeroBlocking = workers[0].jobRequests()[0];
+    if (!slotZeroBlocking || slotZeroBlocking.kind !== "analyze") {
+      throw new Error("missing slot 0 analyze request");
+    }
+    workers[0].respondAnalyze(slotZeroBlocking.id);
+
+    const morphologyRequest = workers[0].jobRequests()[1];
+    expect(morphologyRequest?.kind).toBe("morphology_roi");
+    expect(workers[1].jobRequests().some((request) => request.kind === "morphology_roi")).toBe(
+      false,
+    );
+    if (!morphologyRequest || morphologyRequest.kind !== "morphology_roi") {
+      throw new Error("missing slot 0 morphology request");
+    }
+    workers[0].respond({
+      kind: "morphology_roi",
+      id: morphologyRequest.id,
+      ok: true,
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 3,
+      backend: "cpu",
+      fallbackReason: "gate-disabled",
+      changedPixels: 0,
+      changedBounds: null,
+      patches: [],
+      metrics: {
+        totalMs: 1,
+        cpuStrategy: "dense",
+        failureStage: null,
+        inputPixels: 16,
+        corePixels: 16,
+        backendPrepareMs: 0.2,
+        prepareStrategy: "dense-cpu",
+        directRleScanMs: 0,
+        baseCacheFillMs: 0,
+        packedAssembleMs: 0,
+        dirtyOverlayMs: 0,
+        baseCacheHitTiles: 0,
+        baseCacheMissTiles: 0,
+        baseCacheEvictedTiles: 0,
+        baseCacheRetainedBytes: 0,
+        sourceScratchCapacityBytes: 0,
+        computeMs: 0.7,
+        diffOrPatchMs: 0.1,
+        xorOutputStrategy: "cpu-dense",
+        xorTotalWords: 0,
+        xorNonZeroWords: 0,
+        xorWordDensity: 0,
+        xorChangedPixels: 0,
+        xorTouchedTiles: 0,
+        xorScanMs: 0,
+        xorPatchAllocateMs: 0,
+        xorPatchScatterMs: 0,
+        wordPatchBuildMs: 0,
+        gpuUploadSubmitMs: null,
+        gpuReadbackMs: null,
+        gpuPassMs: null,
+        fallbackMaterializeMs: null,
+        cpuBudgetBytes: 64 * 1024 * 1024,
+        gpuBudgetBytes: 0,
+        cpuTransientBytes: 64,
+        denseTransientBytes: 64,
+        packedIntermediateBytes: 0,
+        patchUpperBoundBytes: 2,
+        inputAlphaBytes: 16,
+        packedSourceBytes: 0,
+        xorReadbackBytes: 0,
+        allocatedGpuBytes: 0,
+        gpuSourceCapacityBytes: 0,
+        gpuXorCapacityBytes: 0,
+        gpuReadbackCapacityBytes: 0,
+        webGpuCircuitState: "eligible",
+        webGpuCooldownRemainingMs: 0,
+        webGpuConsecutiveFailures: 0,
+        webGpuDeviceLost: 0,
+      },
+    });
+
+    await Promise.all([blocking, morphology, ordinary]);
+    expect(pool.getComputeResources()).toMatchObject({
+      lastMetrics: {
+        inputAlphaBytes: 16,
+        packedSourceBytes: 0,
+        xorReadbackBytes: 0,
+      },
+      counters: {
+        cpuJobs: 1,
+        packedGpuJobs: 0,
+        gpuAlphaMaterializations: 0,
+        gpuRuntimeFallbackMaterializations: 0,
+      },
+    });
+    pool.dispose();
+  });
+
+  it("tracks bounded WebGPU diagnostics and resets only the owner slot", async () => {
+    const workers: FakeWorker[] = [];
+    const pool = new RasterMaskWorkerPool({
+      size: 2,
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+    });
+    const warmup = pool.warmupWebGpu();
+    const request = workers[0].jobRequests()[0];
+    expect(workers[1].jobRequests()).toEqual([]);
+    if (!request || request.kind !== "webgpu_warmup") throw new Error("missing warmup request");
+    workers[0].respond({
+      kind: "webgpu_warmup",
+      id: request.id,
+      ok: true,
+      snapshot: {
+        state: "warming",
+        allocatedBytes: 0,
+        sourceCapacityBytes: 0,
+        xorCapacityBytes: 0,
+        readbackCapacityBytes: 0,
+        initAttempts: 1,
+        deviceLost: 0,
+        lastFailure: null,
+        lastFailureStage: null,
+        circuitState: "eligible",
+        cooldownRemainingMs: 0,
+        consecutiveFailures: 0,
+      },
+    });
+    await warmup;
+    expect(pool.getSnapshot().compute).toMatchObject({
+      webGpuState: "warming",
+      gpuOwnerWorkers: 0,
+      gpuAllocatedBytes: 0,
+      counters: { initAttempts: 1 },
+    });
+
+    pool.releaseCompute();
+    expect(workers[0].messages[workers[0].messages.length - 1]?.request).toEqual({
+      kind: "reset_webgpu",
+    });
+    expect(workers[1].messages.some((entry) => entry.request.kind === "reset_webgpu")).toBe(false);
+    expect(pool.getSnapshot().compute).toMatchObject({
+      webGpuState: "idle",
+      gpuAllocatedBytes: 0,
+      counters: { initAttempts: 0 },
+    });
+    pool.dispose();
+    expect(pool.getSnapshot().compute.webGpuState).toBe("closed");
+  });
+
+  it("aggregates packed cache hits, misses, capacities, and peak bytes", async () => {
+    const worker = new FakeWorker();
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 500_000,
+        hardBudgetBytes: 1_000_000,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => worker as unknown as Worker,
+      diagnosticsTaskId: "task-scope",
+      resourceCoordinator: coordinator,
+    });
+    pool.registerSession("mask", "sha", zeroRle(4, 4));
+    const pending = pool.morphologyRoi({
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 2,
+      core: { x: 0, y: 0, width: 4, height: 4 },
+      input: { x: 0, y: 0, width: 4, height: 4 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "webgpu-candidate",
+      cpuComputeBudgetBytes: 128 * 1024 * 1024,
+      gpuBufferBudgetBytes: 128 * 1024 * 1024,
+    });
+    const request = worker.jobRequests()[0];
+    if (!request || request.kind !== "morphology_roi") {
+      throw new Error("missing morphology request");
+    }
+    expect(request).not.toHaveProperty("benchmarkXorPatchStrategy");
+    worker.respond({
+      kind: "morphology_roi",
+      id: request.id,
+      ok: true,
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 2,
+      backend: "webgpu",
+      fallbackReason: null,
+      changedPixels: 0,
+      changedBounds: null,
+      patches: [],
+      metrics: {
+        totalMs: 4,
+        cpuStrategy: "not-run",
+        failureStage: null,
+        inputPixels: 16,
+        corePixels: 16,
+        backendPrepareMs: 1.5,
+        prepareStrategy: "packed-cache",
+        directRleScanMs: 0,
+        baseCacheFillMs: 0.5,
+        packedAssembleMs: 0.8,
+        dirtyOverlayMs: 0.2,
+        baseCacheHitTiles: 3,
+        baseCacheMissTiles: 1,
+        baseCacheEvictedTiles: 2,
+        baseCacheRetainedBytes: 4096,
+        sourceScratchCapacityBytes: 2048,
+        computeMs: 1,
+        diffOrPatchMs: 1.5,
+        xorOutputStrategy: "dense-word-scatter",
+        xorTotalWords: 128,
+        xorNonZeroWords: 8,
+        xorWordDensity: 0.0625,
+        xorChangedPixels: 16,
+        xorTouchedTiles: 1,
+        xorScanMs: 0.25,
+        xorPatchAllocateMs: 0.25,
+        xorPatchScatterMs: 1,
+        wordPatchBuildMs: 0,
+        gpuUploadSubmitMs: 0.2,
+        gpuReadbackMs: 0.8,
+        gpuPassMs: null,
+        fallbackMaterializeMs: null,
+        cpuBudgetBytes: 128 * 1024 * 1024,
+        gpuBudgetBytes: 128 * 1024 * 1024,
+        cpuTransientBytes: 4096,
+        denseTransientBytes: 0,
+        packedIntermediateBytes: 0,
+        patchUpperBoundBytes: 512,
+        inputAlphaBytes: 0,
+        packedSourceBytes: 1024,
+        xorReadbackBytes: 512,
+        allocatedGpuBytes: 3072,
+        gpuSourceCapacityBytes: 1024,
+        gpuXorCapacityBytes: 1024,
+        gpuReadbackCapacityBytes: 1024,
+        webGpuCircuitState: "eligible",
+        webGpuCooldownRemainingMs: 0,
+        webGpuConsecutiveFailures: 0,
+        webGpuDeviceLost: 0,
+      },
+    });
+
+    await pending;
+    expect(coordinator.getSnapshot()).toMatchObject({
+      committedBytes: 9_216,
+      reservedBytes: 0,
+      peakChargedBytes: 9_216,
+      invariantOk: true,
+    });
+    expect(coordinator.getSnapshot().categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "worker-base-cache", committedBytes: 4096 }),
+        expect.objectContaining({ category: "worker-scratch", committedBytes: 2048 }),
+        expect.objectContaining({ category: "gpu-buffer", committedBytes: 3072 }),
+      ]),
+    );
+    expect(pool.getComputeResources()).toMatchObject({
+      baseCacheRetainedBytes: 4096,
+      sourceScratchCapacityBytes: 2048,
+      peakBaseCacheRetainedBytes: 4096,
+      peakSourceScratchCapacityBytes: 2048,
+      counters: {
+        packedCacheJobs: 1,
+        directRlePackedJobs: 0,
+        baseCacheHitTiles: 3,
+        baseCacheMissTiles: 1,
+        baseCacheEvictedTiles: 2,
+        denseCpuJobs: 0,
+        packedCpuJobs: 0,
+        packedCpuFallbackJobs: 0,
+        denseWordScatterJobs: 1,
+        totalXorWords: 128,
+        totalNonZeroXorWords: 8,
+      },
+    });
+    expect(getRasterMaskComputeDiagnosticsSnapshot()?.events[0]).toMatchObject({
+      backend: "webgpu",
+      cpuStrategy: "not-run",
+      inputPixels: 16,
+      bytes: { gpuAllocated: 3072 },
+    });
+    pool.dispose();
+    expect(coordinator.getSnapshot()).toMatchObject({ committedBytes: 0, reservedBytes: 0 });
+  });
+
+  it("keeps shared compute alive until the final registered session is released", async () => {
+    const worker = new FakeWorker();
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => worker as unknown as Worker,
+    });
+    pool.registerSession("mask-a", "sha-a", zeroRle(2, 2));
+    pool.registerSession("mask-b", "sha-b", zeroRle(2, 2));
+    const warmup = pool.warmupWebGpu();
+    const request = worker.jobRequests()[0];
+    if (!request || request.kind !== "webgpu_warmup") throw new Error("missing warmup request");
+    worker.respond({
+      kind: "webgpu_warmup",
+      id: request.id,
+      ok: true,
+      snapshot: {
+        state: "ready",
+        allocatedBytes: 1024,
+        sourceCapacityBytes: 512,
+        xorCapacityBytes: 256,
+        readbackCapacityBytes: 256,
+        initAttempts: 1,
+        deviceLost: 0,
+        lastFailure: null,
+        lastFailureStage: null,
+        circuitState: "eligible",
+        cooldownRemainingMs: 0,
+        consecutiveFailures: 0,
+      },
+    });
+    await warmup;
+
+    pool.releaseSession("mask-a");
+    expect(worker.messages.some((entry) => entry.request.kind === "reset_webgpu")).toBe(false);
+    expect(pool.getSnapshot().compute).toMatchObject({
+      webGpuState: "ready",
+      gpuAllocatedBytes: 1024,
+    });
+
+    pool.releaseSession("mask-b");
+    expect(worker.messages[worker.messages.length - 1]?.request).toEqual({
+      kind: "reset_webgpu",
+    });
+    expect(pool.getSnapshot()).toMatchObject({
+      sessions: 0,
+      compute: { gpuAllocatedBytes: 0 },
+    });
+    pool.dispose();
+  });
+
   it("routes operation and instance-operation responses through one reusable slot", async () => {
     const worker = new FakeWorker();
     const pool = new RasterMaskWorkerPool({
@@ -374,6 +751,50 @@ describe("RasterMaskWorkerPool", () => {
     expect(pool.getSnapshot()).toMatchObject({ workersReplaced: 1, sessions: 1 });
     pool.releaseSession("session-a");
     expect(pool.getSnapshot().sessions).toBe(0);
+    pool.dispose();
+  });
+
+  it("releases admitted morphology transients when the worker crashes", async () => {
+    const workers: FakeWorker[] = [];
+    const coordinator = new RasterResourceCoordinator({
+      budget: {
+        tier: "standard",
+        softBudgetBytes: 500_000,
+        hardBudgetBytes: 1_000_000,
+        hiddenFreezeMs: 10,
+      },
+    });
+    const pool = new RasterMaskWorkerPool({
+      size: 1,
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker as unknown as Worker;
+      },
+      resourceCoordinator: coordinator,
+    });
+    pool.registerSession("mask", "sha", zeroRle(4, 4));
+    const pending = pool.morphologyRoi({
+      sessionId: "mask",
+      sha256: "sha",
+      sourceRevision: 1,
+      core: { x: 0, y: 0, width: 4, height: 4 },
+      input: { x: 0, y: 0, width: 4, height: 4 },
+      operation: { operation: "dilate", kernelShape: "square", radius: 1 },
+      dirtyOverrides: [],
+      backendPolicy: "cpu",
+      cpuComputeBudgetBytes: 64 * 1024 * 1024,
+      gpuBufferBudgetBytes: 0,
+    });
+    expect(coordinator.getSnapshot().committedBytes).toBeGreaterThan(0);
+
+    workers[0].crash();
+    await expect(pending).rejects.toBeInstanceOf(RasterMaskWorkerError);
+    expect(coordinator.getSnapshot()).toMatchObject({
+      committedBytes: 0,
+      reservedBytes: 0,
+      invariantOk: true,
+    });
     pool.dispose();
   });
 

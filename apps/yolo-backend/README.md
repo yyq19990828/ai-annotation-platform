@@ -38,17 +38,18 @@ ai-annotation-platform 的第三个 ML backend（v0.14.12）—— 基于 [ultra
 
 ## 环境变量
 
-| 名                               | 默认               | 作用                                                  |
-| -------------------------------- | ------------------ | ----------------------------------------------------- |
-| `YOLO_DEVICE`                    | `cuda:0`           | torch device                                          |
-| `YOLO_MODEL_POOL_CAP`            | `2`                | LRU 池容量                                            |
-| `YOLO_BUILD_TIMEOUT`             | `30`               | 单次 build 超时(秒)                                   |
-| `YOLO_IDLE_UNLOAD_SECONDS`       | `600`              | 空闲卸载触发阈值；`<=0` 关闭                          |
-| `YOLO_IDLE_CHECK_INTERVAL`       | `60`               | 空闲检查周期(秒)                                      |
-| `YOLO_STRICT_OFFLINE`            | `0`                | 1 时缺权重报 400, 不去 GH download                    |
-| `YOLO_CHECKPOINTS_DIR`           | `/app/checkpoints` | 权重落盘位置                                          |
-| `GPU_LIFECYCLE_VERIFY_KEYS_JSON` | 空                 | Ed25519 验签公钥 keyring JSON；空值只启用 legacy gate |
-| `LOG_LEVEL`                      | `INFO`             | python logging                                        |
+| 名                                | 默认               | 作用                                                  |
+| --------------------------------- | ------------------ | ----------------------------------------------------- |
+| `YOLO_DEVICE`                     | `cuda:0`           | torch device                                          |
+| `YOLO_MODEL_POOL_CAP`             | `2`                | LRU 池容量                                            |
+| `YOLO_BUILD_TIMEOUT`              | `30`               | 单次 build 超时(秒)                                   |
+| `YOLO_IDLE_UNLOAD_SECONDS`        | `600`              | 空闲卸载触发阈值；`<=0` 关闭                          |
+| `YOLO_IDLE_CHECK_INTERVAL`        | `60`               | 空闲检查周期(秒)                                      |
+| `YOLO_STRICT_OFFLINE`             | `0`                | 1 时缺权重报 400, 不去 GH download                    |
+| `YOLO_CHECKPOINTS_DIR`            | `/app/checkpoints` | 权重落盘位置                                          |
+| `YOLO_MANAGED_LIFECYCLE_VERIFIED` | `0`                | 当前部署通过真实 GPU 全池回落验收后设为 `1`           |
+| `GPU_LIFECYCLE_VERIFY_KEYS_JSON`  | 空                 | Ed25519 验签公钥 keyring JSON；空值只启用 legacy gate |
+| `LOG_LEVEL`                       | `INFO`             | python logging                                        |
 
 ## 部署
 
@@ -65,6 +66,34 @@ curl http://localhost:8003/setup | jq .
 # 离线场景: 先在有网环境预下载
 python scripts/download_weights.py --series yolo11
 ```
+
+受管生命周期的代码实现不等于当前部署已经通过验收。默认
+`YOLO_MANAGED_LIFECYCLE_VERIFIED=0` 时，`/setup` 不发布 `managed_lifecycle`，Backend
+拒绝进入 `enforce` 且不会报告可驱逐；只有当前镜像、权重和 GPU 完成多模型池加载、受管全池卸载与
+显存回落基线验证后，才能把该开关设为 `1`。
+
+独占目标卡并准备好 detect / segment / pose / OBB 四份业务权重后，在目标镜像内执行：
+
+```bash
+set -o pipefail
+install -d -m 700 "$EVIDENCE_DIR"
+docker compose -f docker-compose.yml -f docker-compose.ml.yml \
+  --profile gpu-yolo run --rm --no-deps --entrypoint python3 \
+  -e VALIDATION_GIT_COMMIT -e VALIDATION_IMAGE_ID -e VALIDATION_GPU_UUID \
+  -e VALIDATION_MODEL_APPROVAL_REF -e VALIDATION_FIXTURE_APPROVAL_REF \
+  -e VALIDATION_WEIGHT_SHA256_JSON \
+  yolo-backend /app/scripts/validate_managed_lifecycle.py \
+  | tee "$EVIDENCE_DIR/yolo-managed-lifecycle.json"
+jq -e '.passed == true and .runtime_ephemera_clean == true' \
+  "$EVIDENCE_DIR/yolo-managed-lifecycle.json"
+```
+
+`VALIDATION_WEIGHT_SHA256_JSON` 必须精确列出本次验证的四份权重文件名与小写 SHA-256。
+验收器会跑图像四任务、视频 tracker、两轮整池加载/卸载和共享故障矩阵；只有严格证据中
+`passed=true` 才可以开启声明。完整的隔离、审批引用和回滚要求见 GPU 仲裁验收 runbook。
+镜像已固定安装 tracker 所需的 `lap`，运行时不会联网 AutoUpdate；全池卸载还会清理 PyTorch
+进程级 cuBLAS workspace，再释放 allocator cache，避免池对象已空但显存仍被工作区占用。验收器会先做
+一次真实卷积 priming 与全卸载，以成熟 CUDA/cuDNN context 作为随后两轮 90% 工作集回收的稳定基线。
 
 ## 结果映射
 

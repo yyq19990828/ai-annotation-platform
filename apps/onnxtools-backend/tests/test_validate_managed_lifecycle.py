@@ -75,3 +75,11 @@ def test_memory_gate_requires_ninety_percent_working_set_recovery() -> None:
     }
     with pytest.raises(AssertionError, match="less than 90%"):
         validator._assert_memory_recovery(rejected)
+
+
+def test_failure_path_emits_strict_nonpassing_evidence() -> None:
+    evidence = validator._failed_evidence(RuntimeError("local path must not leak"))
+
+    assert evidence["schema_version"] == "1"
+    assert evidence["passed"] is False
+    assert "local path" not in str(evidence)

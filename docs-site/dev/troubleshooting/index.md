@@ -23,6 +23,7 @@ last_reviewed: 2026-07-23
 | `useState(...)` 报 `Cannot access 'X' before initialization`       | [React useState TDZ 陷阱](./react-tdz-trap)               |
 | 容器内 `parents[3]` 越界 / `.env` 路径报错                         | [环境变量与 config 路径](./env-and-config-paths)          |
 | GitHub Actions `services:` 启动 MinIO 失败 / FastAPI lifespan 卡死 | [CI 服务依赖踩坑](./ci-flaky-services)                    |
+| Raster Mask WebGPU 未命中 / adapter unavailable / 回退 CPU         | [Raster Mask WebGPU 故障排查](./raster-mask-webgpu)       |
 
 ## 写一篇新踩坑文档
 

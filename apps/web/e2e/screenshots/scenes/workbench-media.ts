@@ -1,8 +1,10 @@
 import type { ScreenshotScene } from "./_types";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import type { WorkbenchLayoutPreferences } from "../../../src/api/auth";
 import {
   dockAiPanelAtViewportRight,
   installRecordingWorkbenchLayout,
+  type RecordingWorkbenchOverrides,
   waitForRecordingWorkbenchLayout,
 } from "../flows/_workbench-layout";
 
@@ -11,8 +13,24 @@ const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
   primaryTheme: "dark",
 };
 
-async function reloadWithSidebarLayout(page: Page, mode: "both" | "none"): Promise<void> {
-  await installRecordingWorkbenchLayout(page, mode);
+const MULTI_CAMERA_ROLES = [
+  "front",
+  "front_left",
+  "front_right",
+  "back",
+  "back_left",
+  "back_right",
+] as const;
+const EXPANDED_MULTI_CAMERA_PANELS = Object.fromEntries(
+  MULTI_CAMERA_ROLES.map((role) => [role, { x: null, y: null, collapsed: false }]),
+) as WorkbenchLayoutPreferences["cameraPanels"];
+
+async function reloadWithSidebarLayout(
+  page: Page,
+  mode: "both" | "none",
+  overrides: RecordingWorkbenchOverrides = {},
+): Promise<void> {
+  await installRecordingWorkbenchLayout(page, mode, overrides);
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForRecordingWorkbenchLayout(page, mode);
 }
@@ -90,14 +108,32 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
   {
     name: "workbench/pointcloud-real-scene",
     role: "admin",
-    fixture: { project: "pointcloud_demo", task: "frame_000" },
+    fixture: { project: "pointcloud_multicam_demo", task: "frame_000" },
     route: (catalog) => {
-      const project = catalog.projects.pointcloud_demo;
+      const project = catalog.projects.pointcloud_multicam_demo;
       return `/projects/${project.id}/annotate?task=${project.tasks.frame_000.id}`;
     },
     prepare: async (page) => {
-      await reloadWithSidebarLayout(page, "both");
+      await reloadWithSidebarLayout(page, "none", {
+        layout: { cameraPanels: EXPANDED_MULTI_CAMERA_PANELS },
+      });
       await page.getByTestId("pc-viewport").waitFor({ state: "visible", timeout: 20_000 });
+      await expect(page.getByTitle("收起相机")).toHaveCount(6, { timeout: 10_000 });
+      const cameraImages = page.locator("[data-floating-panel] img");
+      await expect(cameraImages).toHaveCount(6, { timeout: 10_000 });
+      await cameraImages.evaluateAll(async (images: HTMLImageElement[]) => {
+        await Promise.all(
+          images.map((image) => {
+            if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+            return new Promise<void>((resolve, reject) => {
+              image.addEventListener("load", () => resolve(), { once: true });
+              image.addEventListener("error", () => reject(new Error("相机图加载失败")), {
+                once: true,
+              });
+            });
+          }),
+        );
+      });
       await page.waitForTimeout(1800);
     },
     matrix: DARK_WORKBENCH_MATRIX,

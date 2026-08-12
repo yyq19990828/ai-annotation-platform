@@ -26,7 +26,13 @@ export interface SeedData {
 }
 
 export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
-export type ScreenshotProjectKey = "image_demo" | "video_demo" | "pointcloud_demo" | "ocr_demo";
+export type ScreenshotCoreProjectKey =
+  | "image_demo"
+  | "video_demo"
+  | "pointcloud_demo"
+  | "pointcloud_multicam_demo"
+  | "ocr_demo";
+export type ScreenshotProjectKey = ScreenshotCoreProjectKey | "large_image_demo";
 export type ScreenshotBackendRequirement = "image_interactive" | "video_tracker" | "ocr";
 
 export interface ScreenshotCatalogUser {
@@ -41,6 +47,23 @@ export interface ScreenshotCatalogTask {
   file_name: string;
   file_path: string;
   status: string;
+  recording_anchors?: Record<string, ScreenshotRecordingAnchor>;
+}
+
+export interface ScreenshotRecordingAnchor {
+  schema_version: 1;
+  coordinate_space: "normalized_media";
+  label: string;
+  frame_index?: number;
+  bbox: [number, number, number, number];
+  point: [number, number];
+  polygon: Array<[number, number]>;
+  polyline: Array<[number, number]>;
+  brush_strokes: Array<Array<[number, number]>>;
+  positive_stroke: Array<[number, number]>;
+  negative_stroke: Array<[number, number]>;
+  negative_point: [number, number] | null;
+  provenance: string;
 }
 
 export interface ScreenshotCatalogBatch {
@@ -80,7 +103,8 @@ export interface ScreenshotSeedCatalog {
   schema_version: 1;
   seed_revision: string;
   users: Record<ScreenshotUserKey, ScreenshotCatalogUser>;
-  projects: Record<ScreenshotProjectKey, ScreenshotCatalogProject>;
+  projects: Record<ScreenshotCoreProjectKey, ScreenshotCatalogProject> &
+    Partial<Record<"large_image_demo", ScreenshotCatalogProject>>;
 }
 
 /** v0.16.x · 点云 E2E 基线 fixture：1 个 lidar 项目 + 2 帧(同一最小 .pcd)point_cloud task。
@@ -95,8 +119,9 @@ export type RasterMaskFixtureVariant =
   | "donut_three"
   | "diagonal_two"
   | "island"
+  | "smart_scribble_source"
   | "corrupt";
-export type RasterMaskFixtureCanvas = "default" | "5k" | "8k";
+export type RasterMaskFixtureCanvas = "default" | "media" | "5k" | "8k";
 
 export interface SeedRasterMaskData {
   annotation_id: string;
@@ -210,6 +235,56 @@ export class SeedAPI {
     return (await res.json()) as { task_id: string };
   }
 
+  /** v0.23.15 · 造确定性 H.264 WebCodecs fixture 任务 + 单 chunk(precise-frame E2E)。 */
+  async videoWebCodecs(
+    projectId: string,
+    options?: {
+      fixture?: string;
+      chunkStatus?: "ready" | "pending";
+    },
+  ): Promise<{
+    task_id: string;
+    dataset_item_id: string;
+    chunk_id: number;
+    chunk_size_frames: number;
+    frame_expectations: Record<string, unknown>;
+  }> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/video-webcodecs`, {
+      data: {
+        project_id: projectId,
+        fixture: options?.fixture ?? "h264-baseline-gop12",
+        chunk_status: options?.chunkStatus ?? "ready",
+      },
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/video-webcodecs failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as {
+      task_id: string;
+      dataset_item_id: string;
+      chunk_id: number;
+      chunk_size_frames: number;
+      frame_expectations: Record<string, unknown>;
+    };
+  }
+
+  /** v0.23.15 · 确定性把 seed 的 pending chunk 切到 ready(不依赖媒体 worker)。 */
+  async videoWebCodecsTransitionReady(
+    datasetItemId: string,
+    chunkId = 0,
+  ): Promise<{ status: "ready" | "pending" | "failed" }> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/video-webcodecs/transition-ready`,
+      { data: { dataset_item_id: datasetItemId, chunk_id: chunkId } },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/video-webcodecs/transition-ready failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as { status: "ready" | "pending" | "failed" };
+  }
+
   async trackerReview(taskId: string, userEmail: string): Promise<SeedTrackerReviewData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/tracker-review`, {
       data: { task_id: taskId, user_email: userEmail },
@@ -223,7 +298,7 @@ export class SeedAPI {
   async nativeMaskCandidate(
     taskId: string,
     options?: {
-      variant?: "default" | "negative_scribble" | "multimask_donut";
+      variant?: "default" | "negative_scribble" | "multimask_donut" | "smart_scribble_refined";
       promptFamily?: "point" | "scribble";
       negativeScribbles?: number;
       promptSource?: {

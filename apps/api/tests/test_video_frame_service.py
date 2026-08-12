@@ -314,6 +314,127 @@ async def test_video_chunk_api_exposes_generation_diagnostics(
     assert body["diagnostics"]["smart_copy_eligible"] is True
 
 
+async def test_video_chunk_samples_returns_description_and_stored_order(
+    db_session, httpx_client_bound, super_admin
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    # 后端 sample manifest 保持 packet decode order,frame_index 按 PTS presentation rank;
+    # B 帧下 pts 非单调(frame 10 key → frame 12 → frame 11)。前端按 timestamp 解码,不能假设
+    # 数组顺序即展示顺序,故此处断言存储顺序原样回传。
+    samples = [
+        {
+            "frame_index": 10,
+            "pts_ms": 0,
+            "duration_ms": 33,
+            "is_keyframe": True,
+            "size_bytes": 5000,
+            "offset_in_chunk": 48,
+        },
+        {
+            "frame_index": 12,
+            "pts_ms": 67,
+            "duration_ms": 33,
+            "is_keyframe": False,
+            "size_bytes": 1200,
+            "offset_in_chunk": 5048,
+        },
+        {
+            "frame_index": 11,
+            "pts_ms": 33,
+            "duration_ms": 33,
+            "is_keyframe": False,
+            "size_bytes": 800,
+            "offset_in_chunk": 6248,
+        },
+    ]
+    db_session.add(
+        VideoChunk(
+            dataset_item_id=item.id,
+            chunk_id=0,
+            start_frame=10,
+            end_frame=12,
+            start_pts_ms=0,
+            end_pts_ms=100,
+            storage_key=f"videos/{item.id}/chunks/0.mp4",
+            byte_size=7048,
+            generation_mode="smart_copy",
+            diagnostics={
+                "source_codec": "h264",
+                "output_codec": "h264",
+                "codec_string": "avc1.64001f",
+                "description": "AAAA",
+                "width": 1920,
+                "height": 1080,
+                "samples": samples,
+            },
+            status="ready",
+        )
+    )
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/videos/{item.id}/chunks/0/samples",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dataset_item_id"] == str(item.id)
+    assert body["chunk_id"] == 0
+    assert body["codec_string"] == "avc1.64001f"
+    assert body["description"] == "AAAA"
+    assert body["width"] == 1920 and body["height"] == 1080
+    # samples 保持存储(decode)顺序,不按 pts 重排。
+    assert [s["frame_index"] for s in body["samples"]] == [10, 12, 11]
+    assert [s["offset_in_chunk"] for s in body["samples"]] == [48, 5048, 6248]
+    assert [s["pts_ms"] for s in body["samples"]] == [0, 67, 33]
+    assert body["samples"][0]["is_keyframe"] is True
+
+
+async def test_video_chunk_samples_404_when_no_samples(
+    db_session, httpx_client_bound, super_admin
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    db_session.add(
+        VideoChunk(
+            dataset_item_id=item.id,
+            chunk_id=0,
+            start_frame=0,
+            end_frame=9,
+            start_pts_ms=0,
+            end_pts_ms=300,
+            storage_key=f"videos/{item.id}/chunks/0.mp4",
+            byte_size=100,
+            generation_mode="smart_copy",
+            diagnostics={"source_codec": "h264"},  # 无 samples(旧 chunk)
+            status="ready",
+        )
+    )
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/videos/{item.id}/chunks/0/samples",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "samples_not_available"
+
+
+async def test_video_chunk_samples_404_when_item_invisible(
+    db_session, httpx_client_bound, project_admin, annotator
+):
+    owner, _ = project_admin
+    _other_user, token = annotator
+    _task, item = await _make_video_task(db_session, owner.id)
+    # 资源真实存在，但当前用户既不是所有者，也不是项目成员。
+    resp = await httpx_client_bound.get(
+        f"/api/v1/videos/{item.id}/chunks/0/samples",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404
+
+
 async def test_video_frame_ready_returns_cached_url_without_enqueue(
     db_session, httpx_client_bound, super_admin, monkeypatch
 ):

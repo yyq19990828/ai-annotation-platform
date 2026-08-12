@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from aap_backend_runtime import (
+    deployment_verified_flag,
     physical_gpu_identity,
     validate_single_gpu_device_set,
     versions_payload,
@@ -78,9 +79,9 @@ IDLE_UNLOAD_SECONDS = float(os.environ.get("RAPIDOCR_IDLE_UNLOAD_SECONDS", "600"
 IDLE_CHECK_INTERVAL = float(os.environ.get("RAPIDOCR_IDLE_CHECK_INTERVAL", "60"))
 # 受管代码路径与部署物理验证解耦：在满池实卡 load→unload 回落完成前，
 # 不对外声明 managed_lifecycle，也不允许进入 enforce gate。
-MANAGED_LIFECYCLE_VERIFIED = os.environ.get(
-    "RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED", "0"
-).lower() in {"1", "true", "yes"}
+MANAGED_LIFECYCLE_VERIFIED = deployment_verified_flag(
+    "RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED"
+)
 
 _engine_factory: RapidOCREngineFactory | None = None
 _engine_pool: EnginePool | None = None

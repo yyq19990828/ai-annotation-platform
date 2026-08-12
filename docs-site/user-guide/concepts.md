@@ -3,7 +3,7 @@ title: 平台概念与术语
 audience: [annotator, reviewer, project_admin, super_admin]
 type: reference
 status: stable
-last_reviewed: 2026-07-12
+last_reviewed: 2026-07-29
 ---
 
 # 平台概念与术语
@@ -85,7 +85,7 @@ pending（未开始）
 
 > `rejected` 是审核退回任务的真实运行时状态（M1 引入），落库为字符串；它**不在** `TaskStatus` 5 值枚举（`uploading` / `pending` / `in_progress` / `review` / `completed`）内，但可按 `reject_reason_type` 过滤，并在工作台任务队列显示为「待重做」。
 >
-> `uploading` 是大数据集异步建任务期间（超过 `TASK_CREATE_SYNC_THRESHOLD`）的短暂内部态，建完即转 `pending`，标注员通常看不到。
+> `uploading` 只用于直接 `/files/upload-init` 上传创建的任务，并在客户端调用 `upload-complete` 后进入 `pending`。普通数据集关联和超过 `TASK_CREATE_SYNC_THRESHOLD` 的异步建任务都会直接创建为 `pending`，不经过 `uploading`。
 >
 > 各状态在任务队列里的显示标签见 [工作台 · 任务队列里的状态标签](./workbench/#任务队列里的状态标签)。
 
@@ -105,7 +105,7 @@ draft（草稿）→ active（已激活）
 
 > `pre_annotated` 是 Batch 的状态，表示该批次的 AI 预标注已完成、等待分配给标注员；它不是 Task 级别的状态。
 >
-> `approved` / `rejected` / `archived` 的逆向迁移由 owner 手动触发（需填原因）：`rejected → reviewing`（跳过重标直接复审）、`rejected → active`（重激活）、`任意 → archived`。**驳回后「回到标注」是两跳** `rejected →（owner 重激活）→ active →（标注员开始做退回任务，自动）→ annotating`，并非自动单跳。完整状态机（含逆向白名单）见 [批次与分配 · 批次状态机](./projects/batch)。
+> owner 可以执行 `rejected → reviewing`（跳过重标直接复审）、`rejected → active`（重激活）以及多条归档/撤销路径。其中 `rejected → reviewing`、`approved → reviewing`、`archived → active`、`pre_annotated → active` 要求填写原因，`rejected → active` 当前不要求。只有 `active / pre_annotated / annotating / approved / rejected` 能直接归档。**驳回后「回到标注」是两跳** `rejected →（owner 重激活）→ active →（标注员开始做退回任务，自动）→ annotating`，并非自动单跳。完整状态机见 [批次与分配 · 批次状态机](./projects/batch)。
 
 ### Job 状态
 

@@ -51,6 +51,7 @@ def managed_client(monkeypatch, tmp_path):
         {"current": encode_ed25519_public_key(private_key.public_key())}
     )
     monkeypatch.setenv("GPU_LIFECYCLE_VERIFY_KEYS_JSON", keyring)
+    monkeypatch.setenv("YOLO_MANAGED_LIFECYCLE_VERIFIED", "1")
     monkeypatch.setenv("YOLO_CHECKPOINTS_DIR", str(tmp_path))
 
     import main
@@ -146,6 +147,29 @@ def test_setup_and_health_publish_managed_lifecycle(managed_client) -> None:
     assert health["residency"]["state"] == "unloaded"
     assert health["residency"]["gpu_loaded"] is False
     assert health["residency"]["lifecycle_gate"] == "legacy"
+
+
+def test_unverified_deployment_does_not_advertise_managed_lifecycle(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("YOLO_MANAGED_LIFECYCLE_VERIFIED", "0")
+    import main
+
+    main = importlib.reload(main)
+
+    assert "managed_lifecycle" not in main.setup()
+
+
+def test_invalid_deployment_gate_fails_import(monkeypatch) -> None:
+    monkeypatch.setenv("YOLO_MANAGED_LIFECYCLE_VERIFIED", "true")
+    import main
+
+    try:
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            importlib.reload(main)
+    finally:
+        monkeypatch.setenv("YOLO_MANAGED_LIFECYCLE_VERIFIED", "0")
+        importlib.reload(main)
 
 
 def test_legacy_wire_rejects_partial_duplicate_and_bodyless_managed_headers(

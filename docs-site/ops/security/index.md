@@ -3,7 +3,7 @@ audience: [ops]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-07-29
 ---
 
 # 安全模型
@@ -42,20 +42,20 @@ super_admin  > project_admin > reviewer > annotator > viewer
 
 ### 2.1 全局能力矩阵
 
-| 能力                      | super_admin |    project_admin     | reviewer | annotator | viewer |
-| ------------------------- | :---------: | :------------------: | :------: | :-------: | :----: |
-| 创建项目                  |     ✅      |          ✅          |    ❌    |    ❌     |   ❌   |
-| 删除项目                  |     ✅      |       仅 owner       |    ❌    |    ❌     |   ❌   |
-| 邀请用户                  |     ✅      |   ✅（≤ MAX/day）    |    ❌    |    ❌     |   ❌   |
-| 改他人角色                |     ✅      | annotator ↔ reviewer |    ❌    |    ❌     |   ❌   |
-| 查看审计日志              |    全部     |       项目相关       |    ❌    |    ❌     |   ❌   |
-| 系统设置（`/settings/*`） |    读+写    |         仅读         |    ❌    |    ❌     |   ❌   |
-| 导出数据                  |     ✅      |          ✅          |    ❌    |    ❌     |   ❌   |
-| 标注任务                  | ✅（演示）  |          ✅          |    ✅    |    ✅     |   ❌   |
-| 审核 / 通过-退回          |     ✅      |          ✅          |    ✅    |    ❌     |   ❌   |
-| 看 Dashboard              |   全平台    |       项目相关       | 项目相关 |   自己    | 受邀的 |
+| 能力                      | super_admin |               project_admin                | reviewer | annotator | viewer |
+| ------------------------- | :---------: | :----------------------------------------: | :------: | :-------: | :----: |
+| 创建项目                  |     ✅      |                     ✅                     |    ❌    |    ❌     |   ❌   |
+| 删除项目                  |     ✅      |                  仅 owner                  |    ❌    |    ❌     |   ❌   |
+| 邀请用户                  | ✅（全部）  | reviewer / annotator / viewer（≤ MAX/day） |    ❌    |    ❌     |   ❌   |
+| 改他人角色                |     ✅      |            annotator ↔ reviewer            |    ❌    |    ❌     |   ❌   |
+| 查看审计日志              |    全部     |                  项目相关                  |    ❌    |    ❌     |   ❌   |
+| 系统设置（`/settings/*`） |    读+写    |                    仅读                    |    ❌    |    ❌     |   ❌   |
+| 导出数据                  |     ✅      |                     ✅                     |    ❌    |    ❌     |   ❌   |
+| 标注任务                  | ✅（演示）  |                     ✅                     |    ✅    |    ✅     |   ❌   |
+| 审核 / 通过-退回          |     ✅      |                     ✅                     |    ✅    |    ❌     |   ❌   |
+| 看 Dashboard              |   全平台    |                  项目相关                  | 项目相关 |   自己    | 受邀的 |
 
-> 注：`project_admin` 不能创建 `super_admin` / 不能改对方为 `viewer`（`apps/api/app/api/v1/users.py:27` 的注释）。
+> 注：`project_admin` 不能邀请 `project_admin` / `super_admin`，也不能把现有用户改为 `viewer`；邀请与编辑使用不同的服务端角色白名单。
 >
 > `annotator_id` 单值绑定到 `batch.annotator_id`，同一 batch 内任务都派给该一人；reviewer 通过 `task.reviewer_id` 锁定。
 
@@ -95,24 +95,11 @@ Token claims：
 
 ### 3.2 注销机制
 
-```mermaid
-sequenceDiagram
-    participant Web as 浏览器
-    participant API as FastAPI
-    participant Redis
-
-    Note over Web,API: 单设备登出
-    Web->>API: POST /auth/logout (Bearer <token>)
-    API->>Redis: SETEX token_bl:<jti> <ttl> "1"
-    API-->>Web: 204
-    Note over API: 后续带该 jti 的请求被 require_user 拒绝
-
-    Note over Web,API: 全设备登出
-    Web->>API: POST /auth/logout-all
-    API->>Redis: INCR token_gen:<user_id> → new_gen
-    API-->>Web: { access_token: <带 new_gen 的新 token> }
-    Note over API: 旧 token 的 gen != new_gen，全部拒绝
-```
+<ExcalidrawDiagram
+  src="/diagrams/ops/security/logout-lifecycle.svg"
+  alt="单设备登出将 JWT jti 加入 Redis 黑名单，全设备登出递增用户 token generation 使旧 token 失效"
+  caption="JWT 单设备与全设备注销链路"
+/>
 
 实现：
 
@@ -142,42 +129,35 @@ sequenceDiagram
 
 ## 4. 邀请流程
 
-```mermaid
-sequenceDiagram
-    participant Admin as project_admin
-    participant API as FastAPI
-    participant DB
-    participant Email as SMTP / log
-    participant Invitee as 被邀请人
-
-    Admin->>API: POST /invitations { email, role }
-    API->>API: check_daily_limit(actor) ≤ MAX_INVITATIONS_PER_DAY
-    API->>DB: INSERT invitations(token, expires_at = now + 7d)
-    API->>Email: 发送 / 日志 reset_url
-    API->>DB: INSERT audit_logs(action='user.invite')
-
-    Invitee->>API: GET /invitations/{token}
-    API-->>Invitee: { email, role, expired? }
-    Invitee->>API: POST /invitations/{token}/accept { password, name }
-    API->>API: validate_password_strength(password)
-    API->>DB: INSERT users(role=邀请角色), DELETE invitations
-    API->>DB: INSERT audit_logs(action='user.register', detail.method='invitation')
-    API-->>Invitee: { access_token, user }
-```
+<ExcalidrawDiagram
+  src="/diagrams/ops/security/invitation-lifecycle.svg"
+  alt="管理员创建并复制邀请链接、被邀请人公开解析 token、注册后保留邀请接受记录并签发访问令牌的流程"
+  caption="邀请链接的创建、解析与接受生命周期"
+/>
 
 要点：
 
-- `MAX_INVITATIONS_PER_DAY` 默认 30（`config.py:66`）。计数按发起人 + UTC 日期。
-- TTL 默认 7 天（`INVITATION_TTL_DAYS`）。过期后 token 直接拒绝、不返回 email 防枚举。
-- `super_admin` 邀请 super_admin 时 audit detail 含特殊标记，便于复盘。
+- `project_admin` 与 `super_admin` 调用 `POST /api/v1/users/invite`。项目管理员只能邀请 reviewer、annotator 或 viewer，超级管理员可指定全部角色；角色范围由服务端强制执行。每个发起人的新建邀请按过去 24 小时滚动统计，默认上限 30；已激活邮箱会被拒绝。项目管理员新建邀请时只会使自己对同邮箱的未接受旧邀请过期，超级管理员则会使该邮箱的所有未接受邀请过期。
+- TTL 从运行时 `invitation_ttl_days` 系统设置读取，默认 7 天。API 返回 `invite_url / token / expires_at`，管理端复制链接并通过外部安全渠道分享；平台不发送邀请邮件。
+- 被邀请人先调用 `GET /api/v1/auth/invitations/{token}`。不存在的 token 返回 404，已接受、已撤销或过期返回 410，只有有效 token 才返回 email、角色、数据组、过期时间与邀请人。
+- 接受邀请使用 `POST /api/v1/auth/register {token,name,password}`。用户以邀请角色创建并视为邮箱已验证；指定数据组时会复用或创建正式 `groups` 记录并写入用户的 `group_id`。邀请行不会删除，而是写入 `accepted_at / accepted_user_id`，同时记录 `user.register` 审计，再返回 access token 与用户。
+- 项目管理员的邀请列表、撤销和重发都限定为自己创建的记录；超级管理员可查看和管理全部邀请。被撤销的邀请只有原创建者或超级管理员重发后才会生成新 token 并重新生效，项目管理员不能重发历史高权限邀请；升级时会撤销由不具备有效超级管理员权限的签发者创建、尚未接受的存量高权限邀请。
+
+::: warning 历史高权限账号复核
+系统不会仅根据签发者的当前角色自动停用已注册账号，以免误伤由后续合法降级的超级管理员签发的邀请。运维人员应在审计日志中复核 `user.invite` 事件：当目标角色为 `project_admin` 或 `super_admin`、且 `actor_role` 不是 `super_admin` 时，确认对应账号合法性并停用未授权账号。
+:::
+
+::: warning 邀请链接是 bearer credential
+任何持有尚未失效邀请链接的人都能以链接中分配的角色完成注册。明文 token 会存入邀请表并返回给管理端，应只通过受控渠道分享，避免写入公开聊天、工单或日志。
+:::
 
 ### 4.1 开放注册
 
 `POST /auth/register-open`，`ALLOW_OPEN_REGISTRATION=true` 时启用。新用户角色固定 `viewer`（最低权限），3/min 限流。
 
-**邮箱验证（v0.12.0+）**：由 `REQUIRE_EMAIL_VERIFICATION` 控制，留空时按环境派生（production 默认开、dev/staging 默认关）。开关打开时，开放注册后 `email_verified_at` 为空、登录被 `400 {code: "email_not_verified"}` 拦截，须点验证邮件链接（`POST /auth/verify-email`，24h 一次性 token）后方可登录；`POST /auth/send-verification-email` 可重发（防枚举恒 202）。邀请注册与管理员建号恒视为已验证。验证邮件复用 SMTP 配置；SMTP 未配置时仅把验证链接写入日志（dev 友好）。
+**邮箱验证**：由 `REQUIRE_EMAIL_VERIFICATION` 控制，留空时按环境派生（production 默认开、dev/staging 默认关）。开关打开时，开放注册后 `email_verified_at` 为空、登录被 `400 {code: "email_not_verified"}` 拦截，须点验证邮件链接（`POST /auth/verify-email`，24h 一次性 token）后方可登录；`POST /auth/send-verification-email` 可重发（防枚举恒 202）。邀请注册与管理员建号恒视为已验证。验证邮件复用 SMTP 配置；SMTP 未配置时仅把验证链接写入日志（dev 友好）。
 
-CAPTCHA 已在 v0.8.7 落地（Turnstile，见 §3）。
+CAPTCHA 使用 Turnstile（见 §3）。
 
 ---
 
@@ -189,7 +169,7 @@ CAPTCHA 已在 v0.8.7 落地（Turnstile，见 §3）。
 
 | 字段                                  | 类型        | 说明                                                                                |
 | ------------------------------------- | ----------- | ----------------------------------------------------------------------------------- |
-| `id`                                  | uuid        | 主键                                                                                |
+| `id`                                  | bigint      | 主键                                                                                |
 | `actor_id` `actor_email` `actor_role` | —           | 行为发起人三元组（actor 删除后仍保留 email/role 快照）                              |
 | `action`                              | str         | `AuditAction` 枚举值，见 `services/audit.py:14-66`                                  |
 | `target_type` `target_id`             | str         | 受影响实体（`task` / `user` / `project` / `batch` / ...）                           |

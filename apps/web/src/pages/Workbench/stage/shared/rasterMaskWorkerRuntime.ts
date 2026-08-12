@@ -1,10 +1,17 @@
 import type {
   RasterMaskCompareMode,
   RasterMaskCompareMetrics,
+  RasterMaskMorphologyRoiRequest,
+  RasterMaskMorphologyRoiResponse,
+  RasterMaskPackedTileOverride,
   RasterMaskTileOverride,
   RasterMaskTileRect,
   RasterMaskTransferredRle,
 } from "./rasterMaskWorkerProtocol";
+import { applyMaskMorphology } from "./geometry/maskOperations";
+import { MASK_HISTORY_TILE_SIZE, type MaskHistoryPatch } from "./maskHistory";
+
+const MAX_MORPHOLOGY_ROI_PIXELS = 16_777_216;
 
 export interface RasterMaskWorkerSession {
   sha256: string;
@@ -167,6 +174,749 @@ export function decodeRasterMaskSessionTile(
     }
   }
   return alpha;
+}
+
+function runtimeNowMs(): number {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+export function validatePackedTileOverride(
+  session: RasterMaskWorkerSession,
+  tile: RasterMaskPackedTileOverride,
+): void {
+  validateTileRect(session, tile);
+  const [sourceHeight, sourceWidth] = session.size;
+  if (
+    !Number.isSafeInteger(tile.tileX) ||
+    tile.tileX < 0 ||
+    !Number.isSafeInteger(tile.tileY) ||
+    tile.tileY < 0 ||
+    !Number.isSafeInteger(tile.revision) ||
+    tile.revision < 0 ||
+    tile.x !== tile.tileX * MASK_HISTORY_TILE_SIZE ||
+    tile.y !== tile.tileY * MASK_HISTORY_TILE_SIZE ||
+    tile.width !== Math.min(MASK_HISTORY_TILE_SIZE, sourceWidth - tile.x) ||
+    tile.height !== Math.min(MASK_HISTORY_TILE_SIZE, sourceHeight - tile.y) ||
+    !(tile.bits instanceof Uint8Array) ||
+    tile.bits.length !== Math.ceil((tile.width * tile.height) / 8)
+  ) {
+    throw new Error("packed mask tile override does not match the session tile grid");
+  }
+}
+
+function applyPackedOverridesToRoi(
+  session: RasterMaskWorkerSession,
+  input: RasterMaskTileRect,
+  alpha: Uint8Array,
+  overrides: readonly RasterMaskPackedTileOverride[],
+): void {
+  const seen = new Set<string>();
+  for (const tile of overrides) {
+    validatePackedTileOverride(session, tile);
+    const key = `${tile.tileY}:${tile.tileX}`;
+    if (seen.has(key)) throw new Error("packed mask tile overrides contain duplicates");
+    seen.add(key);
+    const x0 = Math.max(input.x, tile.x);
+    const y0 = Math.max(input.y, tile.y);
+    const x1 = Math.min(input.x + input.width, tile.x + tile.width);
+    const y1 = Math.min(input.y + input.height, tile.y + tile.height);
+    if (x1 <= x0 || y1 <= y0) continue;
+    for (let y = y0; y < y1; y += 1) {
+      for (let x = x0; x < x1; x += 1) {
+        const tileIndex = (y - tile.y) * tile.width + x - tile.x;
+        const enabled = (tile.bits[tileIndex >> 3] & (1 << (tileIndex & 7))) !== 0;
+        alpha[(y - input.y) * input.width + x - input.x] = enabled ? 255 : 0;
+      }
+    }
+  }
+}
+
+export type RasterMaskMorphologyRuntimeRequest = Omit<
+  RasterMaskMorphologyRoiRequest,
+  "kind" | "id" | "sessionId" | "sha256" | "dirtyOverrides"
+> & { dirtyOverrides: readonly RasterMaskPackedTileOverride[] };
+
+export interface RasterMaskPreparedMorphologyRoi {
+  source: Uint8Array;
+  materializeMs: number;
+}
+
+export interface RasterMaskPreparedPackedMorphologyRoi {
+  sourceWords: Uint32Array;
+  wordsPerRow: number;
+  packedPrepareMs: number;
+  prepareStrategy: "direct-rle" | "packed-cache";
+  directRleScanMs: number;
+  baseCacheFillMs: number;
+  packedAssembleMs: number;
+  dirtyOverlayMs: number;
+  baseCacheHitTiles: number;
+  baseCacheMissTiles: number;
+  baseCacheEvictedTiles: number;
+  baseCacheRetainedBytes: number;
+  sourceScratchCapacityBytes: number;
+}
+
+export interface RasterMaskDenseCpuByteEstimate {
+  sourceBytes: number;
+  workspaceBytes: number;
+  patchUpperBoundBytes: number;
+  requiredBytes: number;
+}
+
+function checkedCpuBytes(values: readonly number[]): number {
+  let total = 0;
+  for (const value of values) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error("Raster Mask dense CPU byte estimate exceeds the safe limit");
+    }
+    total += value;
+    if (!Number.isSafeInteger(total)) {
+      throw new Error("Raster Mask dense CPU byte estimate exceeds the safe limit");
+    }
+  }
+  return total;
+}
+
+/**
+ * Conservative application-owned peak derived from the current morphology
+ * implementation. It intentionally includes the dense source, operation
+ * workspaces and a worst-case packed history patch plane.
+ */
+export function estimateRasterMaskDenseCpuBytes(
+  request: RasterMaskMorphologyRuntimeRequest,
+): RasterMaskDenseCpuByteEstimate {
+  const sourceBytes = checkedCpuBytes([request.input.width * request.input.height]);
+  const patchUpperBoundBytes = Math.ceil((request.core.width * request.core.height) / 8);
+  const isTwoPass =
+    request.operation.operation === "open" || request.operation.operation === "close";
+  let workspaceBytes: number;
+  if (request.operation.kernelShape === "square") {
+    // source + horizontal + output; two-pass retains the original source while
+    // the second pass owns its intermediate source.
+    workspaceBytes = sourceBytes * (isTwoPass ? 3 : 2);
+  } else if (request.operation.operation === "erode") {
+    const paddedWidth = request.input.width + 2;
+    const paddedHeight = request.input.height + 2;
+    const paddedPixels = paddedWidth * paddedHeight;
+    // padded background + Uint32 vertical + Uint8 result + two Float64 rows.
+    workspaceBytes = checkedCpuBytes([
+      paddedPixels * 6,
+      paddedWidth * Float64Array.BYTES_PER_ELEMENT * 2,
+      isTwoPass ? sourceBytes : 0,
+    ]);
+  } else {
+    // features + Uint32 vertical + Uint8 result + two Float64 rows.
+    workspaceBytes = checkedCpuBytes([
+      sourceBytes * 6,
+      request.input.width * Float64Array.BYTES_PER_ELEMENT * 2,
+      isTwoPass ? sourceBytes : 0,
+    ]);
+  }
+  return {
+    sourceBytes,
+    workspaceBytes,
+    patchUpperBoundBytes,
+    requiredBytes: checkedCpuBytes([sourceBytes, workspaceBytes, patchUpperBoundBytes]),
+  };
+}
+
+export interface RasterMaskPackedBaseTile {
+  tileX: number;
+  tileY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  wordsPerRow: number;
+  words: Uint32Array;
+  byteSize: number;
+}
+
+export interface RasterMaskMorphologyRoiDiff {
+  changedPixels: number;
+  changedBounds: RasterMaskTileRect | null;
+  patches: MaskHistoryPatch[];
+  diffMs: number;
+  xorOutputStrategy?: "dense-word-scatter";
+  xorTotalWords?: number;
+  xorNonZeroWords?: number;
+  xorWordDensity?: number;
+  xorTouchedTiles?: number;
+  xorScanMs?: number;
+  xorPatchAllocateMs?: number;
+  xorPatchScatterMs?: number;
+  wordPatchBuildMs?: number;
+}
+
+export function validateRasterMaskMorphologyRoiRequest(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRuntimeRequest,
+): void {
+  validateTileRect(session, request.core);
+  validateTileRect(session, request.input);
+  if (!Number.isSafeInteger(request.sourceRevision) || request.sourceRevision < 0) {
+    throw new Error("Raster Mask morphology source revision must be a non-negative integer");
+  }
+  if (!Number.isSafeInteger(request.cpuComputeBudgetBytes) || request.cpuComputeBudgetBytes <= 0) {
+    throw new Error("Raster Mask morphology CPU compute budget must be a positive integer");
+  }
+  if (!Number.isSafeInteger(request.gpuBufferBudgetBytes) || request.gpuBufferBudgetBytes < 0) {
+    throw new Error("Raster Mask morphology GPU buffer budget must be non-negative");
+  }
+  if (
+    !["dilate", "erode", "open", "close"].includes(request.operation.operation) ||
+    !["disk", "square"].includes(request.operation.kernelShape) ||
+    !Number.isInteger(request.operation.radius) ||
+    request.operation.radius < 1 ||
+    request.operation.radius > 32
+  ) {
+    throw new Error("Raster Mask morphology operation is invalid");
+  }
+  const [sourceHeight, sourceWidth] = session.size;
+  const passes =
+    request.operation.operation === "open" || request.operation.operation === "close" ? 2 : 1;
+  const halo = request.operation.radius * passes;
+  const expectedInput = {
+    x: Math.max(0, request.core.x - halo),
+    y: Math.max(0, request.core.y - halo),
+    width:
+      Math.min(sourceWidth, request.core.x + request.core.width + halo) -
+      Math.max(0, request.core.x - halo),
+    height:
+      Math.min(sourceHeight, request.core.y + request.core.height + halo) -
+      Math.max(0, request.core.y - halo),
+  };
+  if (
+    request.input.x !== expectedInput.x ||
+    request.input.y !== expectedInput.y ||
+    request.input.width !== expectedInput.width ||
+    request.input.height !== expectedInput.height
+  ) {
+    throw new Error("Raster Mask morphology input does not contain the required clipped halo");
+  }
+  if (request.input.width * request.input.height > MAX_MORPHOLOGY_ROI_PIXELS) {
+    throw new Error("Raster Mask morphology input exceeds the ROI pixel budget");
+  }
+}
+
+export function prepareRasterMaskMorphologyRoi(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRuntimeRequest,
+): RasterMaskPreparedMorphologyRoi {
+  validateRasterMaskMorphologyRoiRequest(session, request);
+
+  const materializeStarted = runtimeNowMs();
+  const source = decodeRasterMaskSessionTile(session, request.input);
+  applyPackedOverridesToRoi(session, request.input, source, request.dirtyOverrides);
+  return { source, materializeMs: runtimeNowMs() - materializeStarted };
+}
+
+function clearUnusedPackedRowBits(
+  words: Uint32Array,
+  width: number,
+  height: number,
+  wordsPerRow: number,
+): void {
+  const remainder = width & 31;
+  if (remainder === 0) return;
+  const validMask = 0xffff_ffff >>> (32 - remainder);
+  for (let y = 0; y < height; y += 1) {
+    words[y * wordsPerRow + wordsPerRow - 1] &= validMask;
+  }
+}
+
+function applyPackedOverridesToPackedRoi(
+  session: RasterMaskWorkerSession,
+  input: RasterMaskTileRect,
+  words: Uint32Array,
+  wordsPerRow: number,
+  overrides: readonly RasterMaskPackedTileOverride[],
+): void {
+  const seen = new Set<string>();
+  for (const tile of overrides) {
+    validatePackedTileOverride(session, tile);
+    const key = `${tile.tileY}:${tile.tileX}`;
+    if (seen.has(key)) throw new Error("packed mask tile overrides contain duplicates");
+    seen.add(key);
+    const x0 = Math.max(input.x, tile.x);
+    const y0 = Math.max(input.y, tile.y);
+    const x1 = Math.min(input.x + input.width, tile.x + tile.width);
+    const y1 = Math.min(input.y + input.height, tile.y + tile.height);
+    if (x1 <= x0 || y1 <= y0) continue;
+    for (let y = y0; y < y1; y += 1) {
+      const targetRow = (y - input.y) * wordsPerRow;
+      const tileRow = (y - tile.y) * tile.width;
+      for (let x = x0; x < x1; x += 1) {
+        const tileIndex = tileRow + x - tile.x;
+        const targetX = x - input.x;
+        const targetIndex = targetRow + (targetX >>> 5);
+        const targetMask = (1 << (targetX & 31)) >>> 0;
+        if ((tile.bits[tileIndex >>> 3] & (1 << (tileIndex & 7))) !== 0) {
+          words[targetIndex] |= targetMask;
+        } else {
+          words[targetIndex] &= ~targetMask;
+        }
+      }
+    }
+  }
+  clearUnusedPackedRowBits(words, input.width, input.height, wordsPerRow);
+}
+
+export function preparePackedRasterMaskMorphologyRoi(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRuntimeRequest,
+): RasterMaskPreparedPackedMorphologyRoi {
+  validateRasterMaskMorphologyRoiRequest(session, request);
+  const started = runtimeNowMs();
+  const wordsPerRow = Math.ceil(request.input.width / 32);
+  const sourceWords = new Uint32Array(wordsPerRow * request.input.height);
+  const [sourceHeight] = session.size;
+  for (let localX = 0; localX < request.input.width; localX += 1) {
+    const columnStart = (request.input.x + localX) * sourceHeight;
+    const inputStart = columnStart + request.input.y;
+    const inputEnd = inputStart + request.input.height;
+    const targetWord = localX >>> 5;
+    const targetMask = (1 << (localX & 31)) >>> 0;
+    let sourceOffset = inputStart;
+    let runIndex = runIndexAt(session.runEnds, sourceOffset);
+    while (sourceOffset < inputEnd) {
+      while (session.runEnds[runIndex] <= sourceOffset) runIndex += 1;
+      const nextOffset = Math.min(inputEnd, session.runEnds[runIndex]);
+      if ((runIndex & 1) === 1) {
+        for (let offset = sourceOffset; offset < nextOffset; offset += 1) {
+          sourceWords[(offset - inputStart) * wordsPerRow + targetWord] |= targetMask;
+        }
+      }
+      sourceOffset = nextOffset;
+    }
+  }
+  const directRleScanMs = runtimeNowMs() - started;
+  const dirtyStarted = runtimeNowMs();
+  applyPackedOverridesToPackedRoi(
+    session,
+    request.input,
+    sourceWords,
+    wordsPerRow,
+    request.dirtyOverrides,
+  );
+  const dirtyOverlayMs = runtimeNowMs() - dirtyStarted;
+  return {
+    sourceWords,
+    wordsPerRow,
+    packedPrepareMs: runtimeNowMs() - started,
+    prepareStrategy: "direct-rle",
+    directRleScanMs,
+    baseCacheFillMs: 0,
+    packedAssembleMs: 0,
+    dirtyOverlayMs,
+    baseCacheHitTiles: 0,
+    baseCacheMissTiles: 0,
+    baseCacheEvictedTiles: 0,
+    baseCacheRetainedBytes: 0,
+    sourceScratchCapacityBytes: 0,
+  };
+}
+
+export function buildRasterMaskPackedBaseTile(
+  session: RasterMaskWorkerSession,
+  tileX: number,
+  tileY: number,
+): RasterMaskPackedBaseTile {
+  const [sourceHeight, sourceWidth] = session.size;
+  if (!Number.isSafeInteger(tileX) || tileX < 0 || !Number.isSafeInteger(tileY) || tileY < 0) {
+    throw new Error("packed base tile coordinates must be non-negative integers");
+  }
+  const x = tileX * MASK_HISTORY_TILE_SIZE;
+  const y = tileY * MASK_HISTORY_TILE_SIZE;
+  if (x >= sourceWidth || y >= sourceHeight) {
+    throw new Error("packed base tile is outside the session bounds");
+  }
+  const width = Math.min(MASK_HISTORY_TILE_SIZE, sourceWidth - x);
+  const height = Math.min(MASK_HISTORY_TILE_SIZE, sourceHeight - y);
+  const wordsPerRow = Math.ceil(width / 32);
+  const words = new Uint32Array(wordsPerRow * height);
+  for (let localX = 0; localX < width; localX += 1) {
+    const columnStart = (x + localX) * sourceHeight;
+    const inputStart = columnStart + y;
+    const inputEnd = inputStart + height;
+    const targetWord = localX >>> 5;
+    const targetMask = (1 << (localX & 31)) >>> 0;
+    let sourceOffset = inputStart;
+    let runIndex = runIndexAt(session.runEnds, sourceOffset);
+    while (sourceOffset < inputEnd) {
+      while (session.runEnds[runIndex] <= sourceOffset) runIndex += 1;
+      const nextOffset = Math.min(inputEnd, session.runEnds[runIndex]);
+      if ((runIndex & 1) === 1) {
+        for (let offset = sourceOffset; offset < nextOffset; offset += 1) {
+          words[(offset - inputStart) * wordsPerRow + targetWord] |= targetMask;
+        }
+      }
+      sourceOffset = nextOffset;
+    }
+  }
+  clearUnusedPackedRowBits(words, width, height, wordsPerRow);
+  return {
+    tileX,
+    tileY,
+    x,
+    y,
+    width,
+    height,
+    wordsPerRow,
+    words,
+    byteSize: words.byteLength,
+  };
+}
+
+export function diffRasterMaskMorphologyRoi(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRuntimeRequest,
+  source: Uint8Array,
+  readAfter: (inputIndex: number, localX: number, localY: number) => boolean,
+): RasterMaskMorphologyRoiDiff {
+  if (source.length !== request.input.width * request.input.height) {
+    throw new Error("Raster Mask morphology source does not match its input rectangle");
+  }
+  const [sourceHeight, sourceWidth] = session.size;
+  const diffStarted = runtimeNowMs();
+  const patchesByTile = new Map<string, MaskHistoryPatch>();
+  let changedPixels = 0;
+  let minX = sourceWidth;
+  let minY = sourceHeight;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = request.core.y; y < request.core.y + request.core.height; y += 1) {
+    for (let x = request.core.x; x < request.core.x + request.core.width; x += 1) {
+      const inputIndex = (y - request.input.y) * request.input.width + x - request.input.x;
+      const afterEnabled = readAfter(inputIndex, x - request.input.x, y - request.input.y);
+      if ((source[inputIndex] !== 0) === afterEnabled) continue;
+      const tileX = Math.floor(x / MASK_HISTORY_TILE_SIZE);
+      const tileY = Math.floor(y / MASK_HISTORY_TILE_SIZE);
+      const key = `${tileY}:${tileX}`;
+      let patch = patchesByTile.get(key);
+      if (!patch) {
+        const tileWidth = Math.min(
+          MASK_HISTORY_TILE_SIZE,
+          sourceWidth - tileX * MASK_HISTORY_TILE_SIZE,
+        );
+        const tileHeight = Math.min(
+          MASK_HISTORY_TILE_SIZE,
+          sourceHeight - tileY * MASK_HISTORY_TILE_SIZE,
+        );
+        patch = {
+          tileX,
+          tileY,
+          width: tileWidth,
+          height: tileHeight,
+          xorBits: new Uint8Array(Math.ceil((tileWidth * tileHeight) / 8)),
+        };
+        patchesByTile.set(key, patch);
+      }
+      const localX = x - tileX * MASK_HISTORY_TILE_SIZE;
+      const localY = y - tileY * MASK_HISTORY_TILE_SIZE;
+      const tileIndex = localY * patch.width + localX;
+      patch.xorBits[tileIndex >> 3] |= 1 << (tileIndex & 7);
+      changedPixels += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  const diffMs = runtimeNowMs() - diffStarted;
+  return {
+    changedPixels,
+    changedBounds:
+      changedPixels === 0
+        ? null
+        : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
+    patches: [...patchesByTile.values()].sort(
+      (left, right) => left.tileY - right.tileY || left.tileX - right.tileX,
+    ),
+    diffMs,
+  };
+}
+
+function lowBitMask(bitCount: number): number {
+  return bitCount >= 32 ? 0xffff_ffff : 0xffff_ffff >>> (32 - bitCount);
+}
+
+function popcount32(value: number): number {
+  let count = value >>> 0;
+  count -= (count >>> 1) & 0x5555_5555;
+  count = (count & 0x3333_3333) + ((count >>> 2) & 0x3333_3333);
+  count = (count + (count >>> 4)) & 0x0f0f_0f0f;
+  return Math.imul(count, 0x0101_0101) >>> 24;
+}
+
+function orPackedBits(
+  target: Uint8Array,
+  targetBitOffset: number,
+  sourceWord: number,
+  bitCount: number,
+): void {
+  let sourceBitOffset = 0;
+  let targetOffset = targetBitOffset;
+  while (sourceBitOffset < bitCount) {
+    const targetByte = targetOffset >>> 3;
+    const targetBit = targetOffset & 7;
+    const chunkBits = Math.min(bitCount - sourceBitOffset, 8 - targetBit);
+    const chunkMask = (1 << chunkBits) - 1;
+    const chunk = (sourceWord >>> sourceBitOffset) & chunkMask;
+    target[targetByte] |= chunk << targetBit;
+    sourceBitOffset += chunkBits;
+    targetOffset += chunkBits;
+  }
+}
+
+export function buildRasterMaskMorphologyPatchesFromXorWords(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRuntimeRequest,
+  xorWords: Uint32Array,
+  xorWordsPerRow: number,
+): RasterMaskMorphologyRoiDiff {
+  validateRasterMaskMorphologyRoiRequest(session, request);
+  const expectedWordsPerRow = Math.ceil(request.core.width / 32);
+  if (
+    !Number.isSafeInteger(xorWordsPerRow) ||
+    xorWordsPerRow !== expectedWordsPerRow ||
+    !(xorWords instanceof Uint32Array) ||
+    xorWords.length !== xorWordsPerRow * request.core.height
+  ) {
+    throw new Error("Raster Mask morphology XOR plane does not match the core rectangle");
+  }
+  const [sourceHeight, sourceWidth] = session.size;
+  const started = runtimeNowMs();
+  let nonZeroWordCount = 0;
+  let changedPixels = 0;
+  let minX = sourceWidth;
+  let minY = sourceHeight;
+  let maxX = -1;
+  let maxY = -1;
+  const remainder = request.core.width & 31;
+  const lastWordMask = remainder === 0 ? 0xffff_ffff : 0xffff_ffff >>> (32 - remainder);
+  const scanStarted = runtimeNowMs();
+  for (let localY = 0; localY < request.core.height; localY += 1) {
+    const rowStart = localY * xorWordsPerRow;
+    for (let wordX = 0; wordX < xorWordsPerRow; wordX += 1) {
+      const wordIndex = rowStart + wordX;
+      let word = xorWords[wordIndex] >>> 0;
+      if (wordX === xorWordsPerRow - 1) {
+        if ((word & ~lastWordMask) !== 0) {
+          throw new Error("Raster Mask morphology XOR plane contains non-zero tail bits");
+        }
+        word &= lastWordMask;
+      }
+      if (word === 0) continue;
+      nonZeroWordCount += 1;
+      changedPixels += popcount32(word);
+      const firstBit = 31 - Math.clz32((word & -word) >>> 0);
+      const lastBit = 31 - Math.clz32(word);
+      minX = Math.min(minX, request.core.x + wordX * 32 + firstBit);
+      minY = Math.min(minY, request.core.y + localY);
+      maxX = Math.max(maxX, request.core.x + wordX * 32 + lastBit);
+      maxY = Math.max(maxY, request.core.y + localY);
+    }
+  }
+  const xorScanMs = runtimeNowMs() - scanStarted;
+  const tilesPerRow = Math.ceil(sourceWidth / MASK_HISTORY_TILE_SIZE);
+  const patchesByTile = new Map<number, MaskHistoryPatch>();
+  const allocationStarted = runtimeNowMs();
+  for (let localY = 0; localY < request.core.height; localY += 1) {
+    const rowStart = localY * xorWordsPerRow;
+    for (let wordX = 0; wordX < xorWordsPerRow; wordX += 1) {
+      const word =
+        (xorWords[rowStart + wordX] &
+          (wordX === xorWordsPerRow - 1 ? lastWordMask : 0xffff_ffff)) >>>
+        0;
+      if (word === 0) continue;
+      const validBits = Math.min(32, request.core.width - wordX * 32);
+      const absoluteWordX = request.core.x + wordX * 32;
+      const absoluteY = request.core.y + localY;
+      let sourceBit = 0;
+      while (sourceBit < validBits) {
+        const absoluteX = absoluteWordX + sourceBit;
+        const tileX = Math.floor(absoluteX / MASK_HISTORY_TILE_SIZE);
+        const tileY = Math.floor(absoluteY / MASK_HISTORY_TILE_SIZE);
+        const segmentBits = Math.min(
+          validBits - sourceBit,
+          (tileX + 1) * MASK_HISTORY_TILE_SIZE - absoluteX,
+        );
+        const segmentWord = (word >>> sourceBit) & lowBitMask(segmentBits);
+        if (segmentWord !== 0) {
+          const key = tileY * tilesPerRow + tileX;
+          if (!patchesByTile.has(key)) {
+            const tileWidth = Math.min(
+              MASK_HISTORY_TILE_SIZE,
+              sourceWidth - tileX * MASK_HISTORY_TILE_SIZE,
+            );
+            const tileHeight = Math.min(
+              MASK_HISTORY_TILE_SIZE,
+              sourceHeight - tileY * MASK_HISTORY_TILE_SIZE,
+            );
+            patchesByTile.set(key, {
+              tileX,
+              tileY,
+              width: tileWidth,
+              height: tileHeight,
+              xorBits: new Uint8Array(Math.ceil((tileWidth * tileHeight) / 8)),
+            });
+          }
+        }
+        sourceBit += segmentBits;
+      }
+    }
+  }
+  const xorPatchAllocateMs = runtimeNowMs() - allocationStarted;
+  const scatterStarted = runtimeNowMs();
+  for (let localY = 0; localY < request.core.height; localY += 1) {
+    const rowStart = localY * xorWordsPerRow;
+    for (let wordX = 0; wordX < xorWordsPerRow; wordX += 1) {
+      const word =
+        (xorWords[rowStart + wordX] &
+          (wordX === xorWordsPerRow - 1 ? lastWordMask : 0xffff_ffff)) >>>
+        0;
+      if (word === 0) continue;
+      const validBits = Math.min(32, request.core.width - wordX * 32);
+      const absoluteWordX = request.core.x + wordX * 32;
+      const absoluteY = request.core.y + localY;
+      let sourceBit = 0;
+      while (sourceBit < validBits) {
+        const absoluteX = absoluteWordX + sourceBit;
+        const tileX = Math.floor(absoluteX / MASK_HISTORY_TILE_SIZE);
+        const tileY = Math.floor(absoluteY / MASK_HISTORY_TILE_SIZE);
+        const segmentBits = Math.min(
+          validBits - sourceBit,
+          (tileX + 1) * MASK_HISTORY_TILE_SIZE - absoluteX,
+        );
+        const segmentWord = (word >>> sourceBit) & lowBitMask(segmentBits);
+        if (segmentWord !== 0) {
+          const patch = patchesByTile.get(tileY * tilesPerRow + tileX);
+          if (!patch) {
+            throw new Error("Raster Mask morphology XOR patch allocation is incomplete");
+          }
+          const tileLocalX = absoluteX - tileX * MASK_HISTORY_TILE_SIZE;
+          const tileLocalY = absoluteY - tileY * MASK_HISTORY_TILE_SIZE;
+          orPackedBits(
+            patch.xorBits,
+            tileLocalY * patch.width + tileLocalX,
+            segmentWord,
+            segmentBits,
+          );
+        }
+        sourceBit += segmentBits;
+      }
+    }
+  }
+  const patches = [...patchesByTile.values()].sort(
+    (left, right) => left.tileY - right.tileY || left.tileX - right.tileX,
+  );
+  const xorPatchScatterMs = runtimeNowMs() - scatterStarted;
+  const diffMs = runtimeNowMs() - started;
+  return {
+    changedPixels,
+    changedBounds:
+      changedPixels === 0
+        ? null
+        : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
+    patches,
+    diffMs,
+    xorOutputStrategy: "dense-word-scatter",
+    xorTotalWords: xorWords.length,
+    xorNonZeroWords: nonZeroWordCount,
+    xorWordDensity: xorWords.length === 0 ? 0 : nonZeroWordCount / xorWords.length,
+    xorTouchedTiles: patches.length,
+    xorScanMs,
+    xorPatchAllocateMs,
+    xorPatchScatterMs,
+    wordPatchBuildMs: xorPatchAllocateMs + xorPatchScatterMs,
+  };
+}
+
+export function morphologyRasterMaskSessionRoi(
+  session: RasterMaskWorkerSession,
+  request: RasterMaskMorphologyRuntimeRequest,
+): Omit<RasterMaskMorphologyRoiResponse, "kind" | "id" | "ok" | "sessionId" | "sha256"> {
+  const totalStarted = runtimeNowMs();
+  const denseBytes = estimateRasterMaskDenseCpuBytes(request);
+  if (denseBytes.requiredBytes > request.cpuComputeBudgetBytes) {
+    throw new Error("Raster Mask CPU compute budget is insufficient");
+  }
+  const prepared = prepareRasterMaskMorphologyRoi(session, request);
+  const computeStarted = runtimeNowMs();
+  const after = applyMaskMorphology(
+    prepared.source,
+    request.input.width,
+    request.input.height,
+    request.operation,
+  ).alpha;
+  const computeMs = runtimeNowMs() - computeStarted;
+  const diff = diffRasterMaskMorphologyRoi(
+    session,
+    request,
+    prepared.source,
+    (inputIndex) => after[inputIndex] !== 0,
+  );
+  return {
+    sourceRevision: request.sourceRevision,
+    backend: "cpu",
+    fallbackReason: request.backendPolicy === "cpu" ? "gate-disabled" : "initializing",
+    changedPixels: diff.changedPixels,
+    changedBounds: diff.changedBounds,
+    patches: diff.patches,
+    metrics: {
+      totalMs: runtimeNowMs() - totalStarted,
+      cpuStrategy: "dense",
+      failureStage: null,
+      inputPixels: request.input.width * request.input.height,
+      corePixels: request.core.width * request.core.height,
+      backendPrepareMs: prepared.materializeMs,
+      prepareStrategy: "dense-cpu",
+      directRleScanMs: 0,
+      baseCacheFillMs: 0,
+      packedAssembleMs: 0,
+      dirtyOverlayMs: 0,
+      baseCacheHitTiles: 0,
+      baseCacheMissTiles: 0,
+      baseCacheEvictedTiles: 0,
+      baseCacheRetainedBytes: 0,
+      sourceScratchCapacityBytes: 0,
+      computeMs,
+      diffOrPatchMs: diff.diffMs,
+      xorOutputStrategy: "cpu-dense",
+      xorTotalWords: 0,
+      xorNonZeroWords: 0,
+      xorWordDensity: 0,
+      xorChangedPixels: diff.changedPixels,
+      xorTouchedTiles: diff.patches.length,
+      xorScanMs: 0,
+      xorPatchAllocateMs: 0,
+      xorPatchScatterMs: 0,
+      wordPatchBuildMs: 0,
+      gpuUploadSubmitMs: null,
+      gpuReadbackMs: null,
+      gpuPassMs: null,
+      fallbackMaterializeMs: null,
+      cpuBudgetBytes: request.cpuComputeBudgetBytes,
+      gpuBudgetBytes: request.gpuBufferBudgetBytes,
+      cpuTransientBytes: denseBytes.requiredBytes,
+      denseTransientBytes: denseBytes.requiredBytes,
+      packedIntermediateBytes: 0,
+      patchUpperBoundBytes: denseBytes.patchUpperBoundBytes,
+      inputAlphaBytes: prepared.source.byteLength,
+      packedSourceBytes: 0,
+      xorReadbackBytes: 0,
+      allocatedGpuBytes: 0,
+      gpuSourceCapacityBytes: 0,
+      gpuXorCapacityBytes: 0,
+      gpuReadbackCapacityBytes: 0,
+      webGpuCircuitState: "eligible",
+      webGpuCooldownRemainingMs: 0,
+      webGpuConsecutiveFailures: 0,
+      webGpuDeviceLost: 0,
+    },
+  };
 }
 
 const CELL_BASELINE_ONLY = 1;

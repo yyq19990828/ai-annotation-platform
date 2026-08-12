@@ -20,6 +20,8 @@
 # worker/beat 共用：覆盖基础文件硬编码的 dev infra 凭据，全部从 .env.production 取（缺失即报错）。
 x-prod-infra-env: &prod-infra-env
   DATABASE_URL: ${DATABASE_URL:?.env.production 必须设置 DATABASE_URL}
+  MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
+  ALEMBIC_AUTO_UPGRADE: "false"
   REDIS_URL: ${REDIS_URL:?.env.production 必须设置 REDIS_URL}
   MINIO_ENDPOINT: ${MINIO_ENDPOINT:?.env.production 必须设置 MINIO_ENDPOINT}
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?.env.production 必须设置 MINIO_ACCESS_KEY}
@@ -85,6 +87,9 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.web
+      args:
+        VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU: ${VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU:-true}
+        VITE_EXPERIMENTAL_LARGE_IMAGE_TILES: ${VITE_EXPERIMENTAL_LARGE_IMAGE_TILES:-true}
     # 容器内 nginx 监听 80：托管静态产物 + 反代 /api/ /ws/ 到 api:8000。
     # 宿主端口 8088 避开 dev 前端 3000 与 grafana 3001；生产由外层反代 (nginx/Caddy) 终结 TLS 指向它。
     # 同 api：默认绑回环，反代异机时用 PROXY_BIND_HOST 覆盖（见上）。
@@ -105,6 +110,12 @@ services:
     environment:
       <<: *prod-infra-env
       DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+
+  celery-worker-image-pyramid:
+    env_file:
+      - .env.production
+    environment:
+      <<: *prod-infra-env
 
   celery-worker-gpu-control:
     env_file:

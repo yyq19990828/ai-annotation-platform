@@ -35,7 +35,8 @@ export interface MaskHistoryResources {
 }
 
 export interface MaskHistoryLifecycle {
-  onRetain?: (command: MaskHistoryCommand) => void;
+  /** Return false when aggregate admission rejects the command; the stacks remain unchanged. */
+  onRetain?: (command: MaskHistoryCommand) => boolean | void;
   onRelease?: (command: MaskHistoryCommand) => void;
 }
 
@@ -145,6 +146,35 @@ export function chargeMaskHistoryPatches(patches: readonly MaskHistoryPatch[]): 
     COMMAND_OVERHEAD_BYTES +
     patches.reduce((total, patch) => total + PATCH_OVERHEAD_BYTES + patch.xorBits.byteLength, 0)
   );
+}
+
+export function countMaskHistoryPatchPixels(patch: MaskHistoryPatch): number {
+  let changedPixels = 0;
+  for (const byte of patch.xorBits) changedPixels += countBits(byte);
+  return changedPixels;
+}
+
+export function createMaskHistoryCommandFromPatches(
+  name: string,
+  sourceRevision: number,
+  patches: readonly MaskHistoryPatch[],
+): MaskHistoryCommand | null {
+  const retained: MaskHistoryPatch[] = [];
+  let changedPixels = 0;
+  for (const patch of patches) {
+    const tileChangedPixels = countMaskHistoryPatchPixels(patch);
+    if (tileChangedPixels === 0) continue;
+    retained.push(patch);
+    changedPixels += tileChangedPixels;
+  }
+  if (retained.length === 0) return null;
+  return {
+    name,
+    sourceRevision,
+    patches: retained,
+    changedPixels,
+    chargedBytes: chargeMaskHistoryPatches(retained),
+  };
 }
 
 /**
@@ -333,22 +363,20 @@ export class MaskHistoryStore {
     if (!Number.isSafeInteger(command.chargedBytes) || command.chargedBytes <= 0) {
       throw new Error("mask history command charge must be a positive safe integer");
     }
+    if (command.chargedBytes > this.maxBytes) {
+      this.droppedCommands += 1;
+      return false;
+    }
+    if (this.lifecycle.onRetain?.(command) === false) {
+      this.droppedCommands += 1;
+      return false;
+    }
     for (const redo of this.redoStack) {
       this.retainedBytes -= redo.chargedBytes;
       this.lifecycle.onRelease?.(redo);
     }
     this.redoStack = [];
-    if (command.chargedBytes > this.maxBytes) {
-      // The current document moved past every retained command. Keeping the previous undo chain
-      // would make its newest command apply to the wrong state.
-      this.droppedCommands += 1;
-      for (const retained of this.undoStack) this.lifecycle.onRelease?.(retained);
-      this.undoStack = [];
-      this.retainedBytes = 0;
-      return false;
-    }
     this.undoStack.push(command);
-    this.lifecycle.onRetain?.(command);
     this.retainedBytes += command.chargedBytes;
     while (this.undoStack.length > this.maxCommands || this.retainedBytes > this.maxBytes) {
       const evicted = this.undoStack.shift();

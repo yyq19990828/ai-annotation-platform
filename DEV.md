@@ -128,7 +128,12 @@ pnpm dev:web
 pnpm dev:api
 ```
 
-等价命令为 `cd apps/api && uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3`；依赖由一次性 setup 中的 `uv sync --extra test` 安装，不要在本地手工拼装依赖列表。
+该命令先执行 `alembic upgrade head`，再启动
+`uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3`。若 `DATABASE_URL`
+使用无 DDL 权限的普通运行角色，在 `.env` 另设 schema owner 的
+`MIGRATION_DATABASE_URL`；FastAPI 仍只使用 `DATABASE_URL`。依赖由一次性 setup 中的
+`uv sync --extra test` 安装，不要在本地手工拼装依赖列表。迁移完成后启动脚本会清空
+owner 连接，运行进程不保留 DDL 凭据。
 
 > `--timeout-graceful-shutdown 3`：代码改动触发 `--reload` 时，若有浏览器标签页还连着
 > WebSocket（工作台 / AI 预标页），uvicorn 默认会无限等待这些连接结束，卡在
@@ -322,6 +327,20 @@ pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物�
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
 
+真实超大图回归使用固定来源、字节数和 SHA-256 的开发夹具。基础服务和专用
+`image-pyramid` Worker 启动后，可下载、入库并等待生成完成：
+
+```bash
+pnpm --filter @anno/web image:seeds
+cd apps/api
+PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --enqueue-pyramids --wait-seconds 1800
+```
+
+命令幂等创建 `P-LARGE-IMG` / `DS-LARGE-IMG`，原图只保存在 gitignored 的
+`test-results/image-seeds/` 与当前开发对象存储；production 环境会拒绝运行。完整门槛、回填与诊断见
+[图片金字塔运行手册](docs-site/ops/runbooks/image-pyramid.md)。
+
 ## 截图自动化
 
 用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，
@@ -329,6 +348,8 @@ pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物�
 seed profile 和只读 catalog，不会随机选取开发库里的项目。`--repair` 只收敛带截图
 seed 标记的对象。整套自动化固定使用 `annotation_screenshots_test`，不连接
 开发库 `annotation`。
+
+交互流程的点击与笔迹坐标来自 catalog 中随任务版本化的归一化语义锚点：锚点可由模型候选生成，但进入截图 seed 前必须经过标签或人工复核，录制器不在运行时猜测画布目标。点云静态场景同时包含轻量 PCL RGB-D 夹具与 nuScenes 六相机环视夹具；后者固定携带六路同步图像、内外参与单帧激光雷达，专门覆盖多相机画布状态。
 
 ### 前置条件
 
@@ -373,6 +394,19 @@ stub 地址默认复用 `ML_BACKEND_STORAGE_HOST` 的主机部分并使用 `9100
 point、interactive box 与 exemplar，视频要求交互 tracker，OCR 要求整图输入及文本属性输出。
 任一能力、连接、启用关联或主绑定缺失都会退出非零。
 
+录制超大图渐进细节前，还需要把固定 Cosmic Cliffs 夹具导入同一截图数据库，并让专用
+`image-pyramid` Worker 使用该数据库生成到 ready。只有这个可选项目存在时，catalog 才会返回
+`large_image_demo`；其他截图与流程不依赖它。
+
+```bash
+pnpm --filter @anno/web image:seeds
+cd apps/api
+DATABASE_URL="$SCREENSHOT_DATABASE_URL" PYTHONPATH=. uv run python scripts/seed_large_images.py \
+  --id nasa-cosmic-cliffs --enqueue-pyramids --wait-seconds 1800
+```
+
+Worker 与上述命令必须使用同一 `SCREENSHOT_DATABASE_URL`；开发库 Worker 不会为截图库回写生成状态。
+
 ### 触发
 
 ```bash
@@ -389,7 +423,7 @@ pnpm --filter web screenshots:regression:update            # 有意 UI 变化后
 ```
 
 当前完整矩阵有 63 个自动截图目标：60 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
-另有 3 张手工 PNG 和 18 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
+另有 3 张手工 PNG 和 32 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
 人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
 流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
 

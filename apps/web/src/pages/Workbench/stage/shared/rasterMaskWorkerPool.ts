@@ -4,20 +4,40 @@ import type {
   MaskInstanceOperationSpec,
 } from "./geometry/maskInstanceOperations";
 import type { MaskOperationResult, MaskOperationSpec } from "./geometry/maskOperations";
+import type { MaskKernelShape, MaskMorphologyOperation } from "./geometry/maskOperations";
 import type { RasterMaskAnalysis } from "./rasterMaskRender";
 import type {
   RasterMaskCompareMode,
   RasterMaskCompareMetrics,
   RasterMaskCompareSessionRef,
+  RasterMaskMorphologyBackendPolicy,
+  RasterMaskMorphologyBackend,
+  RasterMaskMorphologyMetrics,
+  RasterMaskMorphologyRoiResponse,
   RasterMaskOperationContext,
+  RasterMaskPackedTileOverride,
   RasterMaskTileOverride,
   RasterMaskTileRect,
   RasterMaskTransferredRle,
+  RasterMaskWebGpuWorkerSnapshot,
+  RasterMaskWebGpuFallbackReason,
   RasterMaskWorkerControlRequest,
   RasterMaskWorkerJobKind,
   RasterMaskWorkerJobRequest,
   RasterMaskWorkerResponse,
 } from "./rasterMaskWorkerProtocol";
+import { estimateRasterMaskDenseCpuBytes } from "./rasterMaskWorkerRuntime";
+import { estimateRasterMaskPackedCpuBytes } from "./rasterMaskPackedMorphology";
+import { estimateRasterMaskWebGpuBytes } from "./rasterMaskWebGpu";
+import type {
+  RasterResourceCoordinator,
+  RasterResourceReservation,
+} from "./rasterResourceCoordinator";
+import {
+  activateRasterMaskComputeDiagnostics,
+  clearRasterMaskComputeDiagnostics,
+  publishRasterMaskComputeDiagnostic,
+} from "../../../../utils/rasterMaskComputeDiagnostics";
 
 export type RasterMaskWorkerPriority = "editing" | "selected" | "current" | "prefetch";
 export type RasterMaskWorkerFactory = () => Worker;
@@ -32,6 +52,9 @@ export interface RasterMaskWorkerPoolOptions {
   queueLimit?: number;
   createWorker?: RasterMaskWorkerFactory;
   clock?: RasterMaskWorkerClock;
+  diagnosticsTaskId?: string;
+  resourceCoordinator?: RasterResourceCoordinator;
+  resourceOwner?: string;
 }
 
 export interface RasterMaskWorkerRunOptions {
@@ -53,7 +76,57 @@ export interface RasterMaskWorkerPoolSnapshot {
   cancelled: number;
   timedOut: number;
   sessions: number;
+  compute: RasterMaskComputeResources;
   disposed: boolean;
+}
+
+export interface RasterMaskComputeResources {
+  webGpuGateEnabled: boolean;
+  webGpuState: RasterMaskWebGpuWorkerSnapshot["state"];
+  gpuOwnerWorkers: number;
+  gpuAllocatedBytes: number;
+  gpuSourceCapacityBytes: number;
+  gpuXorCapacityBytes: number;
+  gpuReadbackCapacityBytes: number;
+  baseCacheRetainedBytes: number;
+  sourceScratchCapacityBytes: number;
+  cpuBudgetBytes: number;
+  gpuBudgetBytes: number;
+  webGpuFailureStage: RasterMaskMorphologyMetrics["failureStage"];
+  webGpuCircuitState: RasterMaskWebGpuWorkerSnapshot["circuitState"];
+  webGpuCooldownRemainingMs: number;
+  webGpuConsecutiveFailures: number;
+  webGpuDeviceLost: number;
+  lastBackend: RasterMaskMorphologyBackend | null;
+  lastFallbackReason: RasterMaskWebGpuFallbackReason | null;
+  lastTotalMs: number | null;
+  lastMetrics: RasterMaskMorphologyMetrics | null;
+  peakPackedSourceBytes: number;
+  peakXorReadbackBytes: number;
+  peakBaseCacheRetainedBytes: number;
+  peakSourceScratchCapacityBytes: number;
+  counters: {
+    cpuJobs: number;
+    gpuJobs: number;
+    cpuFallbackJobs: number;
+    initAttempts: number;
+    deviceLost: number;
+    budgetRejected: number;
+    packedGpuJobs: number;
+    gpuAlphaMaterializations: number;
+    gpuRuntimeFallbackMaterializations: number;
+    packedCacheJobs: number;
+    directRlePackedJobs: number;
+    baseCacheHitTiles: number;
+    baseCacheMissTiles: number;
+    baseCacheEvictedTiles: number;
+    denseCpuJobs: number;
+    packedCpuJobs: number;
+    packedCpuFallbackJobs: number;
+    denseWordScatterJobs: number;
+    totalXorWords: number;
+    totalNonZeroXorWords: number;
+  };
 }
 
 interface RegisteredSession {
@@ -71,6 +144,7 @@ interface PoolJob {
   timeoutMs: number;
   signal?: AbortSignal;
   sessionIds?: readonly string[];
+  affinitySlot?: number;
   abort?: () => void;
   timer?: unknown;
   resolve: (value: unknown) => void;
@@ -88,6 +162,60 @@ const DEFAULT_QUEUE_LIMIT = 32;
 const ANALYZE_TIMEOUT_MS = 15_000;
 const OPERATION_TIMEOUT_MS = 30_000;
 const TILE_MERGE_TIMEOUT_MS = 60_000;
+const WEBGPU_GATE_ENABLED = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU !== "false";
+
+function initialComputeResources(
+  state: RasterMaskWebGpuWorkerSnapshot["state"] = WEBGPU_GATE_ENABLED ? "idle" : "disabled",
+): RasterMaskComputeResources {
+  return {
+    webGpuGateEnabled: WEBGPU_GATE_ENABLED,
+    webGpuState: state,
+    gpuOwnerWorkers: 0,
+    gpuAllocatedBytes: 0,
+    gpuSourceCapacityBytes: 0,
+    gpuXorCapacityBytes: 0,
+    gpuReadbackCapacityBytes: 0,
+    baseCacheRetainedBytes: 0,
+    sourceScratchCapacityBytes: 0,
+    cpuBudgetBytes: 0,
+    gpuBudgetBytes: 0,
+    webGpuFailureStage: null,
+    webGpuCircuitState: "eligible",
+    webGpuCooldownRemainingMs: 0,
+    webGpuConsecutiveFailures: 0,
+    webGpuDeviceLost: 0,
+    lastBackend: null,
+    lastFallbackReason: null,
+    lastTotalMs: null,
+    lastMetrics: null,
+    peakPackedSourceBytes: 0,
+    peakXorReadbackBytes: 0,
+    peakBaseCacheRetainedBytes: 0,
+    peakSourceScratchCapacityBytes: 0,
+    counters: {
+      cpuJobs: 0,
+      gpuJobs: 0,
+      cpuFallbackJobs: 0,
+      initAttempts: 0,
+      deviceLost: 0,
+      budgetRejected: 0,
+      packedGpuJobs: 0,
+      gpuAlphaMaterializations: 0,
+      gpuRuntimeFallbackMaterializations: 0,
+      packedCacheJobs: 0,
+      directRlePackedJobs: 0,
+      baseCacheHitTiles: 0,
+      baseCacheMissTiles: 0,
+      baseCacheEvictedTiles: 0,
+      denseCpuJobs: 0,
+      packedCpuJobs: 0,
+      packedCpuFallbackJobs: 0,
+      denseWordScatterJobs: 0,
+      totalXorWords: 0,
+      totalNonZeroXorWords: 0,
+    },
+  };
+}
 
 const nativeClock: RasterMaskWorkerClock = {
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
@@ -183,6 +311,7 @@ export class RasterMaskWorkerPool {
   private readonly queueLimit: number;
   private readonly createWorker: RasterMaskWorkerFactory;
   private readonly clock: RasterMaskWorkerClock;
+  private readonly diagnosticsTaskId: string | null;
   private readonly slots: WorkerSlot[] = [];
   private readonly queue: PoolJob[] = [];
   private readonly sessions = new Map<string, RegisteredSession>();
@@ -197,12 +326,46 @@ export class RasterMaskWorkerPool {
   private failed = 0;
   private cancelled = 0;
   private timedOut = 0;
+  private compute = initialComputeResources();
+  private readonly resourceCoordinator?: RasterResourceCoordinator;
+  private readonly resourceOwner: string;
+  private readonly computeResources = new Map<
+    "base" | "scratch" | "gpu",
+    RasterResourceReservation
+  >();
+  private unregisterResourceEvictor: (() => void) | null = null;
 
   constructor(options: RasterMaskWorkerPoolOptions = {}) {
     this.size = normalizedLimit(options.size, defaultRasterMaskWorkerPoolSize());
     this.queueLimit = normalizedLimit(options.queueLimit, DEFAULT_QUEUE_LIMIT);
     this.createWorker = options.createWorker ?? createDefaultWorker;
     this.clock = options.clock ?? nativeClock;
+    this.diagnosticsTaskId = options.diagnosticsTaskId ?? null;
+    this.resourceCoordinator = options.resourceCoordinator;
+    this.resourceOwner = options.resourceOwner ?? "worker-compute";
+    this.unregisterResourceEvictor =
+      this.resourceCoordinator?.registerEvictor({
+        owner: this.resourceOwner,
+        evictableBytes: () =>
+          this.slots.some((slot) => slot.current)
+            ? 0
+            : [...this.computeResources.values()].reduce(
+                (total, resource) => total + resource.bytes,
+                0,
+              ),
+        evict: () => {
+          if (this.slots.some((slot) => slot.current)) return 0;
+          const freed = [...this.computeResources.values()].reduce(
+            (total, resource) => total + resource.bytes,
+            0,
+          );
+          this.releaseComputeResources(true);
+          return freed;
+        },
+      }) ?? null;
+    if (this.diagnosticsTaskId) {
+      activateRasterMaskComputeDiagnostics(this.diagnosticsTaskId);
+    }
   }
 
   getSnapshot(): RasterMaskWorkerPoolSnapshot {
@@ -219,7 +382,20 @@ export class RasterMaskWorkerPool {
       cancelled: this.cancelled,
       timedOut: this.timedOut,
       sessions: this.sessions.size,
+      compute: {
+        ...this.compute,
+        lastMetrics: this.compute.lastMetrics ? { ...this.compute.lastMetrics } : null,
+        counters: { ...this.compute.counters },
+      },
       disposed: this.disposed,
+    };
+  }
+
+  getComputeResources(): RasterMaskComputeResources {
+    return {
+      ...this.compute,
+      lastMetrics: this.compute.lastMetrics ? { ...this.compute.lastMetrics } : null,
+      counters: { ...this.compute.counters },
     };
   }
 
@@ -303,6 +479,7 @@ export class RasterMaskWorkerPool {
     this.cancelSessionJobs(sessionId);
     const request: RasterMaskWorkerControlRequest = { kind: "release_session", sessionId };
     for (const slot of this.slots) this.postControl(slot, request, []);
+    if (this.sessions.size === 0) this.releaseCompute();
   }
 
   decodeTile(
@@ -354,6 +531,141 @@ export class RasterMaskWorkerPool {
         return { sessionId: response.sessionId, sha256: response.sha256, rle: response.rle };
       },
     });
+  }
+
+  morphologyRoi(
+    request: {
+      sessionId: string;
+      sha256: string;
+      sourceRevision: number;
+      core: RasterMaskTileRect;
+      input: RasterMaskTileRect;
+      operation: {
+        operation: MaskMorphologyOperation;
+        kernelShape: MaskKernelShape;
+        radius: number;
+      };
+      dirtyOverrides: readonly RasterMaskPackedTileOverride[];
+      backendPolicy: RasterMaskMorphologyBackendPolicy;
+      cpuComputeBudgetBytes: number;
+      gpuBufferBudgetBytes: number;
+    },
+    options: RasterMaskWorkerRunOptions = {},
+  ): Promise<RasterMaskMorphologyRoiResponse> {
+    this.assertSession(request.sessionId, request.sha256);
+    const denseEstimate = estimateRasterMaskDenseCpuBytes(request);
+    const packedEligible =
+      request.operation.operation === "dilate" &&
+      request.operation.kernelShape === "square" &&
+      request.operation.radius <= 31 &&
+      request.input.width * request.input.height >= 4_194_304;
+    const packedEstimate = packedEligible
+      ? estimateRasterMaskPackedCpuBytes({
+          inputWidth: request.input.width,
+          inputHeight: request.input.height,
+          coreWidth: request.core.width,
+          coreHeight: request.core.height,
+        }).requiredBytes
+      : Number.MAX_SAFE_INTEGER;
+    const cpuBytes = Math.min(denseEstimate.requiredBytes, packedEstimate);
+    const transientResources: RasterResourceReservation[] = [];
+    const reserveTransient = (category: "cpu-transient" | "gpu-buffer", bytes: number): boolean => {
+      if (!this.resourceCoordinator) return true;
+      const resource = this.resourceCoordinator.tryReserve({
+        owner: this.resourceOwner,
+        category,
+        priority: 1,
+        bytes,
+        reconstructible: true,
+        pinned: true,
+      });
+      if (!resource || !resource.commit(bytes)) {
+        resource?.release();
+        return false;
+      }
+      transientResources.push(resource);
+      return true;
+    };
+    if (!reserveTransient("cpu-transient", cpuBytes)) {
+      return Promise.reject(new RasterMaskWorkerError("Mask 资源不足，请缩小可见区域或保存后重试"));
+    }
+    if (request.backendPolicy === "webgpu-candidate" && request.gpuBufferBudgetBytes > 0) {
+      const gpuBytes = estimateRasterMaskWebGpuBytes(
+        request.input.width,
+        request.input.height,
+        request.core.width,
+        request.core.height,
+      ).requiredBytes;
+      if (!reserveTransient("gpu-buffer", gpuBytes)) {
+        for (const resource of transientResources) resource.release();
+        return Promise.reject(
+          new RasterMaskWorkerError("Mask 资源不足，请缩小可见区域或保存后重试"),
+        );
+      }
+    }
+    try {
+      const dirtyOverrides = request.dirtyOverrides.map((tile) => ({
+        ...tile,
+        bits: new Uint8Array(tile.bits),
+      }));
+      const id = ++this.nextId;
+      return this.enqueue({
+        id,
+        kind: "morphology_roi",
+        request: { kind: "morphology_roi", id, ...request, dirtyOverrides },
+        transfer: dirtyOverrides.map((tile) => tile.bits.buffer),
+        timeoutMs: options.timeoutMs ?? TILE_MERGE_TIMEOUT_MS,
+        options,
+        sessionIds: [request.sessionId],
+        affinitySlot: 0,
+        read: (response) => {
+          if (response.kind !== "morphology_roi" || !response.ok) {
+            throw new RasterMaskWorkerError("invalid morphology ROI response");
+          }
+          this.recordMorphologyResponse(
+            response,
+            request.cpuComputeBudgetBytes,
+            request.gpuBufferBudgetBytes,
+            transientResources,
+          );
+          return response;
+        },
+      }).finally(() => {
+        for (const resource of transientResources) resource.release();
+      });
+    } catch (error) {
+      for (const resource of transientResources) resource.release();
+      return Promise.reject(error);
+    }
+  }
+
+  warmupWebGpu(options: RasterMaskWorkerRunOptions = {}): Promise<RasterMaskWebGpuWorkerSnapshot> {
+    const id = ++this.nextId;
+    return this.enqueue({
+      id,
+      kind: "webgpu_warmup",
+      request: { kind: "webgpu_warmup", id },
+      transfer: [],
+      timeoutMs: options.timeoutMs ?? OPERATION_TIMEOUT_MS,
+      options,
+      affinitySlot: 0,
+      read: (response) => {
+        if (response.kind !== "webgpu_warmup" || !response.ok) {
+          throw new RasterMaskWorkerError("invalid WebGPU warmup response");
+        }
+        this.recordWebGpuSnapshot(response.snapshot);
+        return response.snapshot;
+      },
+    });
+  }
+
+  releaseCompute(): void {
+    if (this.disposed || !this.initialized || this.sessions.size > 0) return;
+    const slot = this.slots[0];
+    if (slot) this.postControl(slot, { kind: "reset_webgpu" }, []);
+    for (const resource of this.computeResources.values()) resource.release();
+    this.computeResources.clear();
+    this.compute = initialComputeResources();
   }
 
   compareTile(
@@ -423,6 +735,8 @@ export class RasterMaskWorkerPool {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unregisterResourceEvictor?.();
+    this.unregisterResourceEvictor = null;
     const error = new RasterMaskWorkerCancelledError("Raster Mask Worker pool was disposed");
     while (this.queue.length > 0) this.rejectQueued(this.queue.shift()!, error);
     for (const slot of this.slots) {
@@ -430,6 +744,11 @@ export class RasterMaskWorkerPool {
       this.terminateSlotWorker(slot);
     }
     this.sessions.clear();
+    this.releaseComputeResources(false);
+    this.compute = initialComputeResources("closed");
+    if (this.diagnosticsTaskId) {
+      clearRasterMaskComputeDiagnostics(this.diagnosticsTaskId);
+    }
   }
 
   private enqueue<T>({
@@ -440,6 +759,7 @@ export class RasterMaskWorkerPool {
     timeoutMs,
     options,
     sessionIds,
+    affinitySlot,
     read,
   }: {
     id: number;
@@ -449,12 +769,20 @@ export class RasterMaskWorkerPool {
     timeoutMs: number;
     options: RasterMaskWorkerRunOptions;
     sessionIds?: readonly string[];
+    affinitySlot?: number;
     read: (response: RasterMaskWorkerResponse) => T;
   }): Promise<T> {
     if (this.disposed)
       return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker pool is disposed"));
     if (options.signal?.aborted) return Promise.reject(new RasterMaskWorkerCancelledError());
     this.ensureWorkers();
+    if (affinitySlot != null && !this.slots[affinitySlot]?.worker) {
+      return Promise.reject(
+        new RasterMaskWorkerError(
+          `Raster Mask Worker affinity slot ${affinitySlot} is unavailable`,
+        ),
+      );
+    }
     if (!this.slots.some((slot) => slot.worker)) {
       return Promise.reject(new RasterMaskWorkerError("Raster Mask Worker is unavailable"));
     }
@@ -472,6 +800,7 @@ export class RasterMaskWorkerPool {
         timeoutMs,
         signal: options.signal,
         sessionIds,
+        affinitySlot,
         resolve: (value) => resolve(value as T),
         reject,
         read,
@@ -561,7 +890,11 @@ export class RasterMaskWorkerPool {
     if (this.disposed) return;
     for (const slot of this.slots) {
       if (!slot.worker || slot.current || this.queue.length === 0) continue;
-      const job = this.queue.shift()!;
+      const jobIndex = this.queue.findIndex(
+        (candidate) => candidate.affinitySlot == null || candidate.affinitySlot === slot.index,
+      );
+      if (jobIndex < 0) continue;
+      const job = this.queue.splice(jobIndex, 1)[0];
       slot.current = job;
       job.timer = this.clock.setTimeout(() => {
         if (slot.current?.id !== job.id) return;
@@ -580,15 +913,18 @@ export class RasterMaskWorkerPool {
     const job = slot.current;
     if (!job || response.id !== job.id || response.kind !== job.kind) return;
     this.cleanupJob(job);
-    slot.current = null;
     if (!response.ok) {
+      slot.current = null;
       this.failed += 1;
       job.reject(new RasterMaskWorkerError(response.error));
     } else {
       try {
-        job.resolve(job.read(response));
+        const value = job.read(response);
+        slot.current = null;
+        job.resolve(value);
         this.completed += 1;
       } catch (error) {
+        slot.current = null;
         this.failed += 1;
         job.reject(error);
       }
@@ -637,6 +973,7 @@ export class RasterMaskWorkerPool {
   }
 
   private replaceWorker(slot: WorkerSlot): void {
+    if (slot.index === 0) this.releaseComputeResources(false);
     this.terminateSlotWorker(slot);
     this.installWorker(slot, true);
     if (!this.slots.some((candidate) => candidate.worker)) {
@@ -673,5 +1010,224 @@ export class RasterMaskWorkerPool {
       this.cancelled += 1;
       this.rejectRunning(slot, new RasterMaskWorkerCancelledError(), true);
     }
+  }
+
+  private recordWebGpuSnapshot(snapshot: RasterMaskWebGpuWorkerSnapshot): void {
+    this.compute.webGpuState = snapshot.state;
+    this.compute.gpuOwnerWorkers = snapshot.state === "ready" ? 1 : 0;
+    this.compute.gpuAllocatedBytes = snapshot.allocatedBytes;
+    this.compute.gpuSourceCapacityBytes = snapshot.sourceCapacityBytes;
+    this.compute.gpuXorCapacityBytes = snapshot.xorCapacityBytes;
+    this.compute.gpuReadbackCapacityBytes = snapshot.readbackCapacityBytes;
+    this.compute.counters.initAttempts = snapshot.initAttempts;
+    this.compute.counters.deviceLost = snapshot.deviceLost;
+    this.compute.webGpuFailureStage = snapshot.lastFailureStage;
+    this.compute.webGpuCircuitState = snapshot.circuitState;
+    this.compute.webGpuCooldownRemainingMs = snapshot.cooldownRemainingMs;
+    this.compute.webGpuConsecutiveFailures = snapshot.consecutiveFailures;
+    this.compute.webGpuDeviceLost = snapshot.deviceLost;
+    if (snapshot.lastFailure) this.compute.lastFallbackReason = snapshot.lastFailure;
+    this.syncComputeResources();
+  }
+
+  private recordMorphologyResponse(
+    response: RasterMaskMorphologyRoiResponse,
+    cpuBudgetBytes: number,
+    gpuBudgetBytes: number,
+    transientResources: readonly RasterResourceReservation[] = [],
+  ): void {
+    this.compute.lastBackend = response.backend;
+    this.compute.lastFallbackReason = response.fallbackReason;
+    this.compute.lastTotalMs = response.metrics.totalMs;
+    this.compute.lastMetrics = { ...response.metrics };
+    this.compute.gpuAllocatedBytes = response.metrics.allocatedGpuBytes;
+    this.compute.gpuSourceCapacityBytes = response.metrics.gpuSourceCapacityBytes;
+    this.compute.gpuXorCapacityBytes = response.metrics.gpuXorCapacityBytes;
+    this.compute.gpuReadbackCapacityBytes = response.metrics.gpuReadbackCapacityBytes;
+    this.compute.baseCacheRetainedBytes = response.metrics.baseCacheRetainedBytes;
+    this.compute.sourceScratchCapacityBytes = response.metrics.sourceScratchCapacityBytes;
+    this.compute.cpuBudgetBytes = cpuBudgetBytes;
+    this.compute.gpuBudgetBytes = gpuBudgetBytes;
+    this.compute.webGpuFailureStage = response.metrics.failureStage;
+    this.compute.webGpuCircuitState = response.metrics.webGpuCircuitState;
+    this.compute.webGpuCooldownRemainingMs = response.metrics.webGpuCooldownRemainingMs;
+    this.compute.webGpuConsecutiveFailures = response.metrics.webGpuConsecutiveFailures;
+    this.compute.webGpuDeviceLost = response.metrics.webGpuDeviceLost;
+    this.compute.peakPackedSourceBytes = Math.max(
+      this.compute.peakPackedSourceBytes,
+      response.metrics.packedSourceBytes,
+    );
+    this.compute.peakXorReadbackBytes = Math.max(
+      this.compute.peakXorReadbackBytes,
+      response.metrics.xorReadbackBytes,
+    );
+    this.compute.peakBaseCacheRetainedBytes = Math.max(
+      this.compute.peakBaseCacheRetainedBytes,
+      response.metrics.baseCacheRetainedBytes,
+    );
+    this.compute.peakSourceScratchCapacityBytes = Math.max(
+      this.compute.peakSourceScratchCapacityBytes,
+      response.metrics.sourceScratchCapacityBytes,
+    );
+    if (response.metrics.prepareStrategy === "packed-cache") {
+      this.compute.counters.packedCacheJobs += 1;
+    } else if (response.metrics.prepareStrategy === "direct-rle") {
+      this.compute.counters.directRlePackedJobs += 1;
+    }
+    this.compute.counters.baseCacheHitTiles += response.metrics.baseCacheHitTiles;
+    this.compute.counters.baseCacheMissTiles += response.metrics.baseCacheMissTiles;
+    this.compute.counters.baseCacheEvictedTiles += response.metrics.baseCacheEvictedTiles;
+    if (response.metrics.xorOutputStrategy === "dense-word-scatter") {
+      this.compute.counters.denseWordScatterJobs += 1;
+    }
+    if (response.metrics.cpuStrategy === "dense") {
+      this.compute.counters.denseCpuJobs += 1;
+    } else if (response.metrics.cpuStrategy === "packed-separable") {
+      this.compute.counters.packedCpuJobs += 1;
+      if (response.backend === "cpu-fallback") {
+        this.compute.counters.packedCpuFallbackJobs += 1;
+      }
+    }
+    this.compute.counters.totalXorWords += response.metrics.xorTotalWords;
+    this.compute.counters.totalNonZeroXorWords += response.metrics.xorNonZeroWords;
+    if (response.backend === "webgpu") {
+      this.compute.webGpuState = "ready";
+      this.compute.gpuOwnerWorkers = 1;
+      this.compute.counters.gpuJobs += 1;
+      this.compute.counters.packedGpuJobs += 1;
+      if (response.metrics.inputAlphaBytes > 0) {
+        this.compute.counters.gpuAlphaMaterializations += 1;
+      }
+    } else if (response.backend === "cpu-fallback") {
+      this.compute.counters.cpuFallbackJobs += 1;
+      if (response.metrics.fallbackMaterializeMs != null) {
+        this.compute.counters.gpuRuntimeFallbackMaterializations += 1;
+      }
+    } else {
+      this.compute.counters.cpuJobs += 1;
+    }
+    if (response.fallbackReason === "budget-insufficient") {
+      this.compute.counters.budgetRejected += 1;
+    } else if (response.fallbackReason === "initializing") {
+      this.compute.webGpuState = "warming";
+    } else if (
+      response.fallbackReason === "navigator-gpu-unavailable" ||
+      response.fallbackReason === "adapter-unavailable" ||
+      response.fallbackReason === "initialization-failed" ||
+      response.fallbackReason === "gpu-runtime-failed"
+    ) {
+      this.compute.webGpuState = "unavailable";
+      this.compute.gpuOwnerWorkers = 0;
+    } else if (response.fallbackReason === "device-lost") {
+      this.compute.webGpuState = "lost";
+      this.compute.gpuOwnerWorkers = 0;
+    } else if (response.fallbackReason === "gate-disabled") {
+      this.compute.webGpuState = "disabled";
+      this.compute.gpuOwnerWorkers = 0;
+    }
+    this.syncComputeResources(transientResources);
+    if (this.diagnosticsTaskId) {
+      publishRasterMaskComputeDiagnostic(this.diagnosticsTaskId, {
+        recordedAt: new Date().toISOString(),
+        backend: response.backend,
+        cpuStrategy: response.metrics.cpuStrategy,
+        prepareStrategy: response.metrics.prepareStrategy,
+        fallbackReason: response.fallbackReason,
+        failureStage: response.metrics.failureStage,
+        inputPixels: response.metrics.inputPixels,
+        corePixels: response.metrics.corePixels,
+        timingsMs: {
+          prepare: response.metrics.backendPrepareMs,
+          compute: response.metrics.computeMs,
+          uploadSubmit: response.metrics.gpuUploadSubmitMs,
+          readback: response.metrics.gpuReadbackMs,
+          patch: response.metrics.diffOrPatchMs,
+          total: response.metrics.totalMs,
+        },
+        bytes: {
+          cpuBudget: response.metrics.cpuBudgetBytes,
+          gpuBudget: response.metrics.gpuBudgetBytes,
+          cpuTransient: response.metrics.cpuTransientBytes,
+          denseTransient: response.metrics.denseTransientBytes,
+          packedIntermediate: response.metrics.packedIntermediateBytes,
+          baseCacheRetained: response.metrics.baseCacheRetainedBytes,
+          sourceScratchCapacity: response.metrics.sourceScratchCapacityBytes,
+          gpuAllocated: response.metrics.allocatedGpuBytes,
+        },
+        cache: {
+          hits: response.metrics.baseCacheHitTiles,
+          misses: response.metrics.baseCacheMissTiles,
+          evictions: response.metrics.baseCacheEvictedTiles,
+        },
+        webGpu: {
+          circuitState: response.metrics.webGpuCircuitState,
+          cooldownRemainingMs: response.metrics.webGpuCooldownRemainingMs,
+          consecutiveFailures: response.metrics.webGpuConsecutiveFailures,
+          deviceLost: response.metrics.webGpuDeviceLost,
+        },
+        pool: {
+          queued: this.queue.length,
+          running: this.slots.filter((slot) => slot.current).length,
+          sessions: this.sessions.size,
+          gpuOwnerWorkers: this.compute.gpuOwnerWorkers,
+        },
+      });
+    }
+  }
+
+  private syncComputeResources(
+    transientResources: readonly RasterResourceReservation[] = [],
+  ): void {
+    if (!this.resourceCoordinator || this.disposed) return;
+    const entries = [
+      {
+        key: "base" as const,
+        category: "worker-base-cache" as const,
+        bytes: this.compute.baseCacheRetainedBytes,
+      },
+      {
+        key: "scratch" as const,
+        category: "worker-scratch" as const,
+        bytes: this.compute.sourceScratchCapacityBytes,
+      },
+      {
+        key: "gpu" as const,
+        category: "gpu-buffer" as const,
+        bytes: this.compute.gpuAllocatedBytes,
+      },
+    ];
+    const desired = entries.filter((entry) => entry.bytes > 0);
+    const current = [
+      ...this.computeResources.values(),
+      ...transientResources.filter((resource) => resource.state === "committed"),
+    ];
+    if (current.length === 0 && desired.length === 0) return;
+    const replacements = this.resourceCoordinator.replaceCommittedResources(
+      current,
+      desired.map((entry) => ({
+        owner: this.resourceOwner,
+        category: entry.category,
+        priority: 3,
+        bytes: entry.bytes,
+        reconstructible: true,
+        pinned: false,
+      })),
+    );
+    if (!replacements) {
+      this.releaseComputeResources(true);
+      return;
+    }
+    this.computeResources.clear();
+    desired.forEach((entry, index) => this.computeResources.set(entry.key, replacements[index]));
+  }
+
+  private releaseComputeResources(notifyWorker: boolean): void {
+    if (notifyWorker && !this.disposed) {
+      const slot = this.slots[0];
+      if (slot?.worker) this.postControl(slot, { kind: "release_compute" }, []);
+    }
+    for (const resource of this.computeResources.values()) resource.release();
+    this.computeResources.clear();
+    this.compute = initialComputeResources();
   }
 }

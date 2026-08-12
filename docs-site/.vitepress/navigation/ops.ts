@@ -33,6 +33,7 @@ export const opsSidebar: DefaultTheme.SidebarItem[] = [
       { text: "GPU 显存仲裁验收", link: "/ops/runbooks/gpu-arbitration-acceptance" },
       { text: "ML Backend 不可用", link: "/ops/runbooks/ml-backend-down" },
       { text: "视频帧服务", link: "/ops/runbooks/video-frame-service" },
+      { text: "图片金字塔", link: "/ops/runbooks/image-pyramid" },
       { text: "PG 连接池耗尽", link: "/ops/runbooks/postgres-connection-pool-exhausted" },
     ],
   },

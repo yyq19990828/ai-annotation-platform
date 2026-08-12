@@ -3,7 +3,7 @@ audience: [annotator, project_admin, reviewer, super_admin]
 type: tutorial
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-12
+last_reviewed: 2026-08-11
 ---
 
 # 快速开始
@@ -32,7 +32,7 @@ last_reviewed: 2026-07-12
 
 第一次完整体验可以按下方步骤完成登录、打开项目、标注和提交。
 
-<!-- TODO IMAGE_CHECKLIST: 补录 30-60 秒端到端 GIF，覆盖登录→Dashboard→打开项目→工作台标 1 个 bbox→提交→看到下一题的整段链路。1280×720。 -->
+![从登录到提交第一条 Bbox 的完整流程](./images/getting-started/e2e.gif)
 
 ## 2. 首页一览
 

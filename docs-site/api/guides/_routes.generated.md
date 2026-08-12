@@ -491,6 +491,14 @@
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | DELETE | `/{task_id}/annotations/{annotation_id}` |
 
+## `tasks/image_pyramid.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/image-pyramid` |
+| POST | `/{task_id}/image-pyramid/asset-urls` |
+| POST | `/{task_id}/image-pyramid/retry` |
+
 ## `tasks/lifecycle.py`
 
 | Method | Path |
@@ -534,6 +542,7 @@
 | Method | Path |
 |---|---|
 | GET | `/{task_id}/predictions` |
+| GET | `/{task_id}/predictions/{prediction_id}/mask-content/{shape_index}/{frame_index}` |
 | POST | `/{task_id}/predictions/{prediction_id}/accept` |
 | POST | `/{task_id}/predictions/{prediction_id}/reject` |
 
@@ -615,4 +624,4 @@
 
 ---
 
-_共 57 模块 / 343 路由_
+_共 59 模块 / 347 路由_

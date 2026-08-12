@@ -87,7 +87,7 @@ desktop-light、dark、mobile 和 regression project。运行期间不要 repair
 场景自己的正常读取不会触发跨 project 的第二次全库预检。
 
 当前完整矩阵产出 63 张自动 PNG：60 张 desktop-light、2 张显式声明的
-desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、18 个文档目标 GIF、
+desktop-dark 和 1 张显式声明的 mobile；另有 3 张手工 PNG、26 个文档目标 GIF、
 5 段首页工作台 WebM 与对应静态海报，以及 4 张由文档截图派生的首页 Hero WebP。
 这些数量用于人工审阅交接，发布判断仍以 scene、manifest、磁盘文件和文档引用四方一致为准。
 

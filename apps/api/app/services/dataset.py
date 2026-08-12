@@ -336,6 +336,28 @@ class DatasetService:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
             return False
+        from app.db.models.image_pyramid import ImagePyramidAsset
+        from app.services.image_pyramid import PYRAMID_PREFIX
+
+        asset_ids = list(
+            (
+                await self.db.execute(
+                    select(ImagePyramidAsset.id)
+                    .join(
+                        DatasetItem,
+                        DatasetItem.id == ImagePyramidAsset.dataset_item_id,
+                    )
+                    .where(DatasetItem.dataset_id == dataset_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for asset_id in asset_ids:
+            storage_service.delete_prefix(
+                f"{PYRAMID_PREFIX}/{asset_id}",
+                bucket=storage_service.media_cache_bucket,
+            )
         await self.db.delete(ds)
         await self.db.flush()
         return True
@@ -377,9 +399,13 @@ class DatasetService:
                 d["file_url"] = None
             if item.thumbnail_path:
                 try:
+                    thumbnail_bucket = storage_service.bucket_for_cache_key(
+                        item.thumbnail_path,
+                        default=storage_service.datasets_bucket,
+                    )
                     d["thumbnail_url"] = storage_service.generate_download_url(
                         item.thumbnail_path,
-                        bucket=storage_service.datasets_bucket,
+                        bucket=thumbnail_bucket,
                     )
                 except Exception:
                     d["thumbnail_url"] = None
@@ -434,6 +460,25 @@ class DatasetService:
         ds = await self.db.get(Dataset, item.dataset_id)
         if ds:
             ds.file_count = max((ds.file_count or 0) - 1, 0)
+        from app.db.models.image_pyramid import ImagePyramidAsset
+        from app.services.image_pyramid import PYRAMID_PREFIX
+
+        asset_ids = list(
+            (
+                await self.db.execute(
+                    select(ImagePyramidAsset.id).where(
+                        ImagePyramidAsset.dataset_item_id == item.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for asset_id in asset_ids:
+            storage_service.delete_prefix(
+                f"{PYRAMID_PREFIX}/{asset_id}",
+                bucket=storage_service.media_cache_bucket,
+            )
         await self.db.delete(item)
         await self.db.flush()
         return True

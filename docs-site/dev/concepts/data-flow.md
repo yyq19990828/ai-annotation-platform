@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-29
 ---
 
 # 数据流
@@ -12,118 +12,69 @@ last_reviewed: 2026-07-17
 
 ## 标注一条任务的完整链路
 
-```mermaid
-sequenceDiagram
-  participant U as 标注员浏览器
-  participant W as React App
-  participant A as FastAPI
-  participant DB as Postgres
-  participant R as Redis
-  participant C as Celery Worker
-  participant S as MinIO
+<ExcalidrawDiagram
+  src="/diagrams/dev/concepts/annotation-task-flow.svg"
+  alt="当前 React 工作台加载任务列表、申请与续期锁、分别读取媒体和预测、实时写标注、提交审核及条件 Mask 质检流程"
+  caption="当前工作台完成一条标注任务的主链"
+/>
 
-  U->>W: 进入工作台
-  W->>A: GET /api/v1/tasks/next?project_id=...
-  Note right of A: tasks.py:get_next_task
-  A->>DB: 锁定一条 pending 任务<br/>task_lock TTL=300s
-  Note right of DB: services/task_lock.py:acquire
-  A->>S: 生成图像 presigned URL
-  Note right of S: services/storage.py:presign_get
-  A-->>W: { task, image_url, ai_predictions }
-  W-->>U: 渲染画布 + 已有 AI 候选
+当前 React 工作台先分页读取 `/tasks`，在本地选择记忆项、URL 指定项或首项，再单独申请 task lock；`GET /tasks/next` 是仍可用的调度旁路 API，但不是当前 UI 主链。`TaskOut.file_url`、annotations 与 predictions 分开读取，浏览器用签名 URL 直接访问对象存储。
 
-  U->>W: 标注 + 提交 (E 键)
-  W->>A: POST /api/v1/tasks/{id}/submit
-  Note right of A: tasks.py:submit_task<br/>annotation.py:create_many
-  A->>DB: 写 annotations + task.status='review'<br/>audit_logs(action='task.submit')
-  A->>R: publish notify:{reviewer_id}
-  Note right of R: services/notification.py:notify
-  A-->>W: 200 + 下一条任务
-  C->>R: 取队列项
-  C->>DB: 写 IoU 计算结果
-  Note right of C: workers/tasks.py
-```
+标注在绘制过程中通过 POST / PATCH / DELETE 实时落库，首个有效标注会使 `pending → in_progress`。提交接口只负责 `pending / in_progress → review`、释放锁、批次计数 / 自动流转与 `task.submit` 审计；它不批量创建标注、不通知 reviewer，也不在响应中返回下一题。若项目启用提交时 Mask QC 且任务包含有效 Mask，事务提交后才会异步派发质检。
 
 代码索引：
 
-- 取下一题：`apps/api/app/api/v1/tasks/list.py` (get_next_task / next_smart 端点)
-- 任务锁：`apps/api/app/services/task_lock.py:acquire/heartbeat/release`
+- 当前工作台选题：`apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx`
+- 任务列表与调度旁路：`apps/api/app/api/v1/tasks/list.py:list_tasks / next_task`、`apps/api/app/services/scheduler.py:get_next_task`
+- Task 输出与签名 URL：`apps/api/app/api/v1/tasks/_shared.py:_task_with_url`、`apps/api/app/services/storage.py:generate_download_url`
+- 任务锁：`apps/web/src/hooks/useTaskLock.ts`、`apps/api/app/api/v1/tasks/locks.py`、`apps/api/app/services/task_lock.py`
+- 标注写入：`apps/api/app/api/v1/tasks/annotations.py`、`apps/api/app/services/annotation.py`
 - 提交：`apps/api/app/api/v1/tasks/lifecycle.py:submit_task`
 - 审计：`apps/api/app/services/audit.py:AuditAction.TASK_SUBMIT`
-- 通知：`apps/api/app/services/notification.py:NotificationService.notify`
-- presigned URL：`apps/api/app/services/storage.py`
+- 条件 Mask QC：`apps/api/app/services/mask_qc/service.py`、`apps/api/app/workers/mask_qc.py`
 
 ---
 
 ## AI 预标注
 
-```mermaid
-sequenceDiagram
-  participant Admin as 项目管理员
-  participant A as FastAPI
-  participant R as Redis
-  participant C as Celery Worker
-  participant ML as ML 推理服务
-  participant DB as Postgres
-  participant WS as WS 频道
+<ExcalidrawDiagram
+  src="/diagrams/shared/ai/ai-preannotation-handoff.svg"
+  alt="AI 预标注在 Web、FastAPI、Redis、Celery worker、服务池路由、物理 ML 实例、Postgres 与人工工作台之间的数据流"
+  caption="AI 预标注数据流：派发边界、持久化作业、路由推理与人工接管"
+/>
 
-  Admin->>A: POST /api/v1/projects/{id}/preannotate
-  Note right of A: ml_backends.py / projects.py
-  A->>R: 入队 batch_predict(project_id)
-  Note right of R: workers/tasks.py:batch_predict
-  A-->>Admin: 202 Accepted
+API 成功派发时返回 HTTP 200，`job_id` 是 Celery task ID；worker 后续才创建不同 UUID 的 `AsyncJob(kind=batch_predict)`。worker 不是每 batch 一次把所有媒体交给 ML，而是按 task 处理：根阶段通常每次 `/predict` 一题，成功写 `Prediction + PredictionMeta`，失败写 `FailedPrediction`，然后单题提交。
 
-  loop 每 batch
-    C->>R: 取队列项
-    C->>ML: POST /predict { tasks: [...] }
-    Note right of ML: ml_client.py:predict<br/>schema 见 ml-backend-protocol.md
-    ML-->>C: { results: [...] }
-    C->>DB: 写 predictions / prediction_metas<br/>错误写 failed_predictions
-    C->>R: publish project:{pid}:preannotate<br/>{current, total, status}
-    R->>WS: 通过 ws.py 转发到订阅者
-  end
-  WS-->>Admin: 进度 100%
-```
+请求中的 registry ID 先解析到项目已启用的逻辑 service pool，`RoutedMLBackendClient` 再选物理实例。物理 backend 使用签名 URL 向 MinIO 拉取原媒体；多阶段 crop 才额外由 worker 读取原图、上传 ROI，下游 backend 再拉取 crop。
 
 代码索引：
 
-- 触发端点：`apps/api/app/api/v1/projects.py` 或 `ml_backends.py`
-- ML client：`apps/api/app/services/ml_client.py:predict` (`ml_client.py:41-62`)
+- 触发端点：`apps/api/app/api/v1/projects.py:trigger_preannotation`
+- 服务池路由与 ML client：`apps/api/app/services/ml_routing/client.py:RoutedMLBackendClient`
 - ML 协议契约：[`docs-site/dev/ml-backend-protocol.md`](../reference/ml-backend-protocol)
-- Worker：`apps/api/app/workers/tasks.py:batch_predict`
-- WS 频道：`apps/api/app/api/v1/ws.py:preannotate_progress` (`ws.py:48-67`)
+- Worker：`apps/api/app/workers/tasks.py:batch_predict / _run_batch`
+- 对象存储签名 URL：`apps/api/app/services/storage.py:resolve_task_url`
+- 项目 WS 中继：`apps/api/app/api/v1/ws.py:preannotate_progress`（当前无鉴权）
+- 全局 admin WS：`apps/api/app/api/v1/ws.py:prediction_jobs_socket`
 - WS 协议：[`docs-site/dev/ws-protocol.md`](../reference/ws-protocol)
 
 ---
 
 ## 数据导出
 
-```mermaid
-sequenceDiagram
-  participant Admin
-  participant A as FastAPI
-  participant R as Redis
-  participant C as Celery
-  participant DB
-  participant S as MinIO
+<ExcalidrawDiagram
+  src="/diagrams/shared/workflow/async-export-delivery.svg"
+  alt="项目和批次导出从可选 Mask 预检、持久化派发、Worker 缓存与 Redis single-flight，到临时 ZIP、MinIO 工件、预签名下载和失败补偿的完整边界"
+  caption="异步导出交付链：先提交作业与审计，再派发；缓存未命中时单飞构建可下载工件"
+/>
 
-  Admin->>A: POST /projects/{id}/mask-formats/exports:preflight
-  A->>DB: 统计 task / geometry 并生成 MaskFormatPlan
-  A-->>Admin: loss class + codes + estimates + digest
-  Admin->>A: POST /api/v1/projects/{id}/export?targets=coco
-  Note right of A: projects.py:export_project<br/>audit_logs(action='project.export')
-  A->>DB: 创建 async_jobs(kind='export')
-  A->>R: 派发 app.workers.export.run_export
-  A-->>Admin: 202 + job_id
-  C->>DB: 拉取所有 annotations + tasks
-  C->>C: 按 adapter / manifest / options key 取 single-flight
-  C->>C: 拼装所选格式并生成 ZIP
-  Note right of C: mask_formats registry + exporting/* 打包
-  C->>S: 上传 ZIP 到 export bucket
-  C->>DB: 写 export_artifacts 缓存<br/>完成 async_jobs.result
-  Admin->>A: GET /api/v1/async-jobs/{job_id}
-  A-->>Admin: status + result.download_url
-```
+Mask export preflight 是项目范围的可选、只读计划步骤：adapter 统计对象和文件，返回 loss class、losses / warnings、容量估算与 plan digest。当前导出端点不接收该 digest，因此它帮助用户决策，但不锁定后续执行快照。
+
+项目与批次导出先校验 targets / options。VOC 仅允许单选，在记录审计后同步返回 ZIP；其他目标创建 `AsyncJob(kind=export)` 并写导出审计，两者成功 `commit` 后才调用 `run_export.delay()`，然后返回 HTTP 202 与 `job_id`。因此 broker 不会拿到尚未提交的作业 ID。
+
+Worker 将 active annotation 的 `max(updated_at) + count` 与 scope、targets、options、adapter contract 版本合成 cache key。未过期且 MinIO 对象仍存在时，缓存命中路径会生成新的 7 天预签名 URL，直接完成作业并发 `export.ready`。未命中时，Worker 用 Redis `SET NX EX 6h` 对 cache key 做 single-flight；竞争失败会每 5 秒重试，最多 120 次，持锁后还会重查一次缓存。
+
+真正构建时按块读取任务与标注，ZIP 写磁盘 tempfile，再流式多段上传到 export bucket。`ExportArtifact` 记录提交后，Worker 才生成友好文件名与预签名 URL、写入 `AsyncJob.result` 并发送完成通知；客户端也可轮询 `/async-jobs/{job_id}` 读终态。异常路径会回滚、删除已上传但未记录的孤儿对象、写 `failed` 与 `export.failed`；tempfile 和已获取的 Redis 锁在 `finally` 中清理。
 
 代码索引：
 
@@ -132,6 +83,7 @@ sequenceDiagram
 - 作业状态与下载 URL：`apps/api/app/api/v1/async_jobs.py:get_async_job`
 - 审计：所有导出写 `AuditAction.PROJECT_EXPORT` / `BATCH_EXPORT`
 - Worker：`apps/api/app/workers/export.py`（`app.workers.export.run_export` 任务）
+- 工件缓存：`apps/api/app/services/exporting/cache.py`
 - 格式 registry / plan / archive：`apps/api/app/services/mask_formats/`
 - 导出打包：`apps/api/app/services/exporting/`
 
@@ -152,44 +104,26 @@ consumer 闭环验证前保持关闭；capability 响应不会把未验证 adapt
 
 ## 实时通知
 
-```mermaid
-sequenceDiagram
-  participant Web as 浏览器
-  participant API as FastAPI HTTP
-  participant DB as Postgres
-  participant Pub as Redis Pub/Sub
-  participant WS as FastAPI WS
+<ExcalidrawDiagram
+  src="/diagrams/shared/realtime/durable-notification-delivery.svg"
+  alt="用户通知在业务事务中先 flush Postgres 行、再尝试发布 Redis PubSub，调用方之后才 commit 或 rollback；浏览器将 WebSocket 推送当作刷新提示并用 REST 读已提交真值"
+  caption="通知的在线快路径、事务时序与两个失败窗口"
+/>
 
-  Web->>WS: connect /ws/notifications?token=<jwt>
-  Note right of WS: ws.py:notifications_socket<br/>JWT 校验 → SUBSCRIBE notify:{user_id}
-  WS->>Pub: SUBSCRIBE notify:{user_id}
+通知的持久化真值是 Postgres，Redis Pub/Sub 只是在线刷新提示。`NotificationService.notify()` 在调用方事务中先 `db.add + flush`，随后 best-effort publish，最终由调用方 `commit` 或 `rollback`：发布失败但提交成功时，前端靠 30s REST 轮询补齐；发布成功但事务回滚时，客户端可能收到一次“幽灵提示”，重新读取 REST 后不会看到记录。当前链路没有 outbox，也不提供至少一次投递保证。
 
-  Note over API,Pub: 任意业务路径触发通知
-  API->>DB: INSERT notifications (持久化)
-  API->>Pub: PUBLISH notify:{user_id} <NotificationOut JSON>
-  Pub-->>WS: message
-  WS-->>Web: send_text(<json>)
-
-  loop 每 30s
-    WS-->>Web: { "type": "ping" }
-    Note right of WS: 防 LB idle 断连
-  end
-
-  Note over Web: 断线后<br/>useReconnectingWebSocket 指数退避
-```
+`useNotificationSocket` 为通知频道维护独立的 1s → 30s 无限重连循环，并在 `1008 / 4001` 鉴权关闭码下刷新 token。收到业务消息后它只让查询缓存失效，展示数据仍以 REST 已提交结果为准；连接打开本身不会触发一次补拉。
 
 服务端 push 主要事件：
 
-- 任务被分配 / 被回退（type=`task.assigned` / `task.review_rejected`）
-- AI 预标注完成（type=`ai.preannotate_done`）
-- 导出完成（type=`export.completed`）
-- 评论 @ 提及（type=`comment.mention`）
+- 任务通过、驳回或重开（type=`task.approved` / `task.rejected` / `task.reopened`）
+- 导出完成或失败（type=`export.ready` / `export.failed`）
+- 用户发起的白名单后台作业终态（type=`job.completed` / `job.failed` / `job.cancelled`）
 
 代码索引：
 
-- WS 端点：`apps/api/app/api/v1/ws.py` (`ws.py:70-114`)
-- 通知服务：`apps/api/app/services/notification.py:NotificationService.notify` (`notification.py:51-94`)
+- WS 端点：`apps/api/app/api/v1/ws.py:notifications_socket`
+- 通知服务：`apps/api/app/services/notification.py:NotificationService.notify`
 - 通知模型：`apps/api/app/db/models/notification.py`
 - 前端 hook：`apps/web/src/hooks/useNotificationSocket.ts`
-- 重连基础：`apps/web/src/hooks/useReconnectingWebSocket.ts`
 - WS 协议详细：[`docs-site/dev/ws-protocol.md`](../reference/ws-protocol)

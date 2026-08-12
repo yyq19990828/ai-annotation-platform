@@ -97,6 +97,8 @@ from app.services.gpu_arbitration.ledger.validation import (
     normalize_gpu_backend_max_concurrency,
 )
 
+_MAX_RECONCILE_DEADLINE_GRACE_MS = 300_000
+
 
 class GPUArbiterStore:
     """One event-loop-owned async Redis ledger client."""
@@ -1200,6 +1202,7 @@ class GPUArbiterStore:
         operation: str,
         heartbeat_ttl_ms: int,
         hard_ttl_ms: int,
+        reconcile_deadline_grace_ms: int = 0,
         backend_ticket_id: str | None = None,
         card_ticket_id: str | None = None,
         require_resident: bool = False,
@@ -1226,6 +1229,15 @@ class GPUArbiterStore:
         max_concurrency = normalize_gpu_backend_max_concurrency(max_concurrency)
         heartbeat_ttl_ms = _validate_ttl_ms(heartbeat_ttl_ms, "heartbeat_ttl_ms")
         hard_ttl_ms = _validate_ttl_ms(hard_ttl_ms, "hard_ttl_ms")
+        reconcile_deadline_grace_ms = _validate_nonnegative_redis_safe_int(
+            reconcile_deadline_grace_ms,
+            "reconcile_deadline_grace_ms",
+        )
+        if reconcile_deadline_grace_ms > _MAX_RECONCILE_DEADLINE_GRACE_MS:
+            raise ValueError(
+                "reconcile_deadline_grace_ms must be at most "
+                f"{_MAX_RECONCILE_DEADLINE_GRACE_MS}"
+            )
         if hard_ttl_ms < heartbeat_ttl_ms:
             raise ValueError("hard_ttl_ms must be >= heartbeat_ttl_ms")
 
@@ -1273,6 +1285,7 @@ class GPUArbiterStore:
                     str(membership_epoch),
                     "1" if require_resident else "0",
                     "1" if require_cold_owner else "0",
+                    reconcile_deadline_grace_ms,
                 ],
             )
         )
@@ -2818,13 +2831,22 @@ class GPUArbiterStore:
         branch = value.get("eviction_branch")
         if "eviction_branch" in value and branch not in {"cancel", "unload"}:
             raise GPUArbiterStoreError("GPU eviction branch is invalid")
-        eviction_fields = optional_fields - {"eviction_branch"}
+        eviction_fields = {
+            "requester_backend_id",
+            "requester_membership_epoch",
+            "requester_budget_mb",
+            "requester_eviction_priority",
+            "requester_card_ticket_id",
+            "requester_queue_owner_id",
+            "victim_membership_epoch",
+            "victim_source_generation",
+        }
         present_eviction_fields = eviction_fields.intersection(value)
-        if (present_eviction_fields or "eviction_branch" in value) and (
-            present_eviction_fields != eviction_fields
-        ):
+        if present_eviction_fields and present_eviction_fields != eviction_fields:
             raise GPUArbiterStoreError("GPU eviction transition is incomplete")
-        if present_eviction_fields and value["operation"] != GPU_EVICTION_OPERATION:
+        if (present_eviction_fields or "eviction_branch" in value) and value[
+            "operation"
+        ] != GPU_EVICTION_OPERATION:
             raise GPUArbiterStoreError("GPU eviction transition operation is invalid")
         requester_backend_id = value.get("requester_backend_id")
         if requester_backend_id is not None:

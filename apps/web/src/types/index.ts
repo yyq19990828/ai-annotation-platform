@@ -92,6 +92,7 @@ export interface TaskResponse {
   image_height: number | null;
   thumbnail_url: string | null;
   blurhash: string | null;
+  image_pyramid?: import("@/pages/Workbench/stage/imagePyramid").ImagePyramidSummary | null;
   video_metadata: VideoMetadata | null;
   // v0.6.5 · 状态机锁定相关
   submitted_at: string | null;
@@ -200,12 +201,35 @@ export interface VideoChunkOut {
   error: string | null;
 }
 
-export interface VideoChunksResponse {
-  dataset_item_id: string;
+export interface VideoManifestSegmentOut {
+  id: string;
+  segment_index: number;
+  start_frame: number;
+  end_frame: number;
+  status: "open" | "assigned" | "locked" | "completed";
+  assignee_id: string | null;
+  locked_by: string | null;
+  locked_at: string | null;
+  lock_expires_at: string | null;
+}
+
+// manifest v2 对齐后端 VideoManifestV2Response (apps/api/app/schemas/video_frame_service.py)。
+// 与 v1 TaskVideoManifestResponse 并存:精确帧 pipeline 仅在 WebCodecs decoder 激活时增量查询。
+export interface VideoManifestV2Response {
   task_id: string | null;
+  dataset_item_id: string;
+  video_url: string;
+  poster_url: string | null;
+  fps: number | null;
+  frame_count: number | null;
+  duration_ms: number | null;
+  chunks_manifest_url: string;
+  frame_timetable_url: string;
+  frame_service_base: string;
   chunk_size_frames: number;
-  fallback_video_url: string | null;
-  chunks: VideoChunkOut[];
+  segments: VideoManifestSegmentOut[];
+  frame_cache_formats: Array<"webp" | "jpeg">;
+  expires_in: number;
 }
 
 /** WebCodecs demux 用 sample manifest 条目 (后端 ffprobe -show_packets 提取)。字段对齐 API JSON (snake_case)。 */

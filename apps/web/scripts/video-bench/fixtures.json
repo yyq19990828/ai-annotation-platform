@@ -54,5 +54,63 @@
     "longTaskMs": 50,
     "visibleFirstFrameSeekMs": 200,
     "dragFps": 30
+  },
+  "preciseFrame": {
+    "comment": "v0.23.15 §8 WebCodecs 精确帧性能资格矩阵。指标门(§8.3)与 Dedicated Worker 触发门(§9)在此声明;真实测量需有 VideoDecoder 的有头 Chrome / GPU runner,headless 软解仅记录环境与 capability。",
+    "resolutions": [
+      {
+        "id": "1080p-30",
+        "label": "1080p / 30 fps",
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "taskUrlEnv": "VIDEO_BENCH_TASK_1080P_30_URL"
+      },
+      {
+        "id": "1080p-60",
+        "label": "1080p / 60 fps",
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "taskUrlEnv": "VIDEO_BENCH_TASK_1080P_60_URL"
+      },
+      {
+        "id": "4k-30",
+        "label": "4K / 30 fps",
+        "width": 3840,
+        "height": 2160,
+        "fps": 30,
+        "taskUrlEnv": "VIDEO_BENCH_TASK_4K_30_URL"
+      }
+    ],
+    "scenarios": [
+      "cold-first-frame",
+      "warm-same-gop-seek",
+      "warm-same-chunk-random-seek",
+      "cross-gop-roundtrip",
+      "continuous-playback-60s",
+      "frame-step-stability"
+    ],
+    "budgets": {
+      "warmSameGopSeekP95Ms": 80,
+      "warmSameChunkRandomSeekP95Ms": 200,
+      "flagOffPreciseRequests": 0,
+      "continuousPlaybackPreciseRequests": 0,
+      "staleFrameActivations": 0,
+      "budgetEvictionMemoryGrowth": 0,
+      "activeDecodersMax": 1,
+      "liveVideoFramesAfterOps": 0,
+      "pipelineBlockingP95Ms": 16,
+      "longTaskGte50Ms": 0,
+      "continuousPlaybackRafFpsMin": 45,
+      "interactionRafRatioMin": 0.9
+    },
+    "samples": {
+      "warmSameGop": 30,
+      "warmSameChunkRandom": 30,
+      "crossGopRoundtrip": 20,
+      "continuousPlaybackSeconds": 60,
+      "stabilityOperations": 5000
+    }
   }
 }

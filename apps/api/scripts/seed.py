@@ -285,6 +285,32 @@ async def seed(
                     raise
                 print(f"  WARN  point-cloud 夹具跳过: {e}")
 
+            if strict:
+                try:
+                    info = await seed_pointcloud(
+                        db,
+                        owner_id=admin_id,
+                        fixture=generated_assets.multicamera_pointcloud_root,
+                        axis_convention="apollo",
+                        project_display_id="P-PC-MULTI",
+                        dataset_display_id="DS-PC-MULTI",
+                        dataset_name="pc-multicam-dev",
+                        project_name="nuScenes 六相机环视（截图）",
+                    )
+                    await db.commit()
+                    if info is None:
+                        print("  skip  point-cloud P-PC-MULTI (已存在)")
+                    else:
+                        print(
+                            f"  add   point-cloud {info['project']}  "
+                            f"files={info['files']} tasks={info['tasks']}"
+                        )
+                except Exception as e:  # noqa: BLE001 — strict 分支会继续抛出
+                    await db.rollback()
+                    raise RuntimeError(
+                        f"multi-camera point-cloud fixture failed: {e}"
+                    ) from e
+
             # scene 模式点云项目(owner=admin):nuScenes-mini 取 1 个 scene。依赖 MinIO +
             # third-party/nuscenes-mini 夹具(~5.1G), 缺失则跳过。幂等:同名 scene 跳过。
             if not strict:
@@ -313,6 +339,7 @@ async def seed(
                     "image_demo": generated_assets.content_sha256,
                     "video_demo": generated_assets.content_sha256,
                     "pointcloud_demo": generated_assets.content_sha256,
+                    "pointcloud_multicam_demo": generated_assets.content_sha256,
                     "ocr_demo": assets["rapidocr-image"].asset.sha256,
                 },
             )

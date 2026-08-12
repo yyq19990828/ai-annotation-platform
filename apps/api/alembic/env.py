@@ -18,7 +18,7 @@ config = context.config
 # 但若调用方已通过 cfg.set_main_option(...) 显式设置（例如 conftest 注入 test_db_url），
 # 不要覆盖 — 否则测试 DB 上的迁移会跑到 dev DB 上。
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", settings.database_url)
+    config.set_main_option("sqlalchemy.url", settings.effective_migration_database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -60,6 +60,12 @@ def do_run_migrations(connection: Connection) -> None:
         with context.begin_transaction():
             context.run_migrations()
         connection.commit()
+    except Exception:
+        # PostgreSQL marks the transaction aborted after any failed DDL. Roll it
+        # back before the session-level unlock, otherwise the unlock itself raises
+        # InFailedSQLTransaction and hides the migration's real root cause.
+        connection.rollback()
+        raise
     finally:
         connection.execute(
             text("SELECT pg_advisory_unlock(:k)").bindparams(k=_ALEMBIC_LOCK_ID)

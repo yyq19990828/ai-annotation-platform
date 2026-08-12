@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.25
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-07-29
 ---
 
 # 视频后端帧服务
@@ -52,19 +52,11 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}
 
 ### Chunk 状态机
 
-```mermaid
-stateDiagram-v2
-    [*] --> pending: API 首次请求 / 失败重试
-    pending --> ready: worker 写入 storage_key 成功
-    pending --> failed: ffmpeg 失败 / 超时（写 error 字段）
-    failed --> pending: POST /chunks:retry 重新投递
-    ready --> [*]
-    note right of ready
-        分两种 generation_mode:
-        smart_copy (stream copy, 0 转码) /
-        transcode (H.264 baseline fallback)
-    end note
-```
+<ExcalidrawDiagram
+  src="/diagrams/dev/reference/video-chunk-lifecycle.svg"
+  alt="视频 chunk 从 pending 进入 ready 或 failed，failed 可通过 retry 重新投递，ready 记录 smart_copy 或 transcode 生成模式"
+  caption="Chunk 生成、失败重试与就绪后的生成模式"
+/>
 
 | 状态      | 触发 / 含义                                                                         |
 | --------- | ----------------------------------------------------------------------------------- |
@@ -123,7 +115,16 @@ GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples
 }
 ```
 
-`samples` 数组按解码顺序排列（满足 `VideoDecoder` 喂入要求），`frame_index` 按 pts 展示顺序（presentation rank）+ chunk `start_frame` 推算。前端实验 flag `?webcodecs=1`（或 localStorage `video.experimental.webcodecs`，默认关闭；视频任务的工作台设置抽屉也提供同一本机开关入口）开启时，`VideoStage` 按当前帧定位 chunk → 拉 samples → 从 chunk 字节切出「最近关键帧 → 目标帧」的 GOP → 构造 `EncodedVideoChunk[]` 交给 `useVideoChunkDecoder` 精确解码；找不到帧或解码失败时降级回 `<video>` 位图缓存。
+`samples` 数组按解码顺序排列（满足 `VideoDecoder` 喂入要求），`frame_index` 按 pts 展示顺序（presentation rank）+ chunk `start_frame` 推算。前端默认尝试 WebCodecs 精确解码；`?webcodecs=0` 或 localStorage `video.experimental.webcodecs=0` 可在当前客户端显式关闭，视频任务的工作台设置抽屉也提供同一本机入口。启用时，`VideoKonvaStage` 经 `useVideoPreciseFrame` 按当前帧定位 chunk → 拉 samples → 从 chunk 字节切出「GOP 起点关键帧 → 目标帧」的 GOP plan → 由有状态 GOP decoder session 构造 `EncodedVideoChunk[]` 交 `useVideoChunkDecoder` 精确解码。decoder 优先请求硬件加速，浏览器拒绝该偏好但支持 codec 时会去掉偏好安全重试；同 GOP 逐帧只提交增量，前台后退 / 跨 GOP 可确定性重建，后台预取若需要 reset 则直接跳过，不能反向阻塞当前可见帧。已缓存的目标位图可在原生 `<video>` seek 尚未结算时立即交给 Konva；codec 不支持、chunk pending / failed、缺 samples / description、signed URL 过期或字节越界都安全回退到原生 `<video>` / 位图，不阻断标注。
+
+`VideoDecoder` 与后续 Canvas / WebGPU 都运行在打开工作台的客户端浏览器，使用客户端机器的 CPU /
+GPU；Linux 部署服务器只提供 API、demux metadata、chunk bytes 与对象存储，不会替客户端执行这些
+浏览器 API。客户端没有硬解 profile 时允许软件解码或安全回退，不能从服务端是否有 GPU 推断浏览器
+实际解码路径。
+
+严格资格不能从静态 GPU profile 推断实际 decoder。Apple Silicon Chrome 可通过 CDP Media domain 把
+`WebCodecs::VideoDecoder` player 与隐藏原生 `<video>` 分开，并要求 initialized player 发布
+`VideoToolboxVideoDecoder` 和 platform decoder 标记；缺失或矛盾证据保持 `inconclusive`。
 
 manifest 还带 `description`（base64）：后端直读 chunk mp4 的 `avcC`/`hvcC` box，取出 `AVC/HEVCDecoderConfigurationRecord`（含 SPS/PPS），前端解码后填入 `VideoDecoderConfig.description`；`codec_string` 也由该 record 的字节派生（`avc1.PPCCLL` / `hvc1.…`），不再硬编码。这两项是 AVCC 长度前缀样本能被 `VideoDecoder` 正确解码的前提——缺 `description` 时浏览器按 Annex-B 解析必失败。旧 chunk（`diagnostics` 无 `description`）则降级。
 
@@ -303,70 +304,29 @@ WS /ws/video-tracker-jobs/{job_id}?token=<access-token>
 - `job_completed`
 - `job_failed`
 - `job_cancelled`
+- `job_partially_reviewed`
 - `job_accepted`
 - `job_discarded`
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant FE as 前端 (WS 订阅)
-    participant API as FastAPI
-    participant W as Celery worker (runner)
-    participant ML as ML Backend (/predict)
-    participant Pub as Redis Pub/Sub<br/>(video-tracker-job:{job_id})
+<ExcalidrawDiagram
+  src="/diagrams/shared/video/video-tracker-human-loop.svg"
+  alt="视频 AI 追踪从单轨、多轨、无源发现或人工纠错入口，经能力路由和固定实例执行分窗推理，把候选暂存后通过预览、局部决定、版本复核与整批兼容入口进入已接受或已丢弃状态"
+  caption="视频追踪的运行事件、持久化候选与人工决策闭环"
+/>
 
-    FE->>API: POST /tasks/{task_id}/video/tracks/{annotation_id}:propagate
-    API->>W: enqueue runner
-    API-->>FE: 201 { job_id, event_channel }
-    FE->>API: WS /ws/video-tracker-jobs/{job_id}?token=...
-    W->>Pub: publish job_started
-    Pub-->>FE: job_started
+WebSocket 只承载运行期提示：`frame_result` 中的实例 id 仍可能是窗口局部值，最终 job 状态、候选内容、revision 与源版本必须从 HTTP job / preview 接口读取。正常完成会暂存候选并进入 `pending_review`；tracking 取消时可保留已收集的部分候选，correction 取消会清空候选，失败则没有可审候选。
 
-    loop 长区间分窗
-        W->>ML: /predict (source_geometry + seeds/text)
-        ML-->>W: stream frame_result[]
-        loop 每帧
-            W->>Pub: publish frame_result {idx, geometry, confidence}
-            Pub-->>FE: frame_result
-        end
-        W->>Pub: publish job_progress {current, total}
-        Pub-->>FE: job_progress
-    end
-
-    alt 正常结束
-        W->>W: staged_result 暂存候选
-        W->>Pub: publish job_completed
-        Pub-->>FE: job_completed
-        FE->>API: GET /video-tracker-jobs/{id}/preview
-        API-->>FE: 候选逐帧结果
-        alt 用户接受
-            FE->>API: POST /video-tracker-jobs/{id}/accept
-            API->>API: 主实例回填源轨迹，额外实例新建轨迹
-        else 用户丢弃
-            FE->>API: POST /video-tracker-jobs/{id}/discard
-            API->>API: 清 staged_result，annotation 不变
-        end
-    else 出错
-        W->>Pub: publish job_failed {error}
-        Pub-->>FE: job_failed
-    else 用户取消 (DELETE)
-        FE->>API: DELETE /video-tracker-jobs/{job_id}
-        API->>W: 写 cancel_requested_at
-        W->>W: 若已有结果则暂存部分候选
-        W->>Pub: publish job_cancelled
-        Pub-->>FE: job_cancelled
-    end
-```
+局部 `/decisions` 以 revision、源 annotation version 和稳定 candidate key 做并发复核，决定后仍有候选时进入 `partially_reviewed` 并发布同名事件。`accept / discard` 是普通 tracking job 的整批兼容入口，不替代局部决定契约。
 
 DB 状态机（`VideoTrackerJob.status`，独立于 WS 事件命名）：
 
 ```text
-queued -> running -> pending_review -> accepted | discarded
+queued -> running -> pending_review -> partially_reviewed -> accepted | discarded
                   -> failed
-                  -> cancelled -> accepted | discarded   # 有部分 staged_result 时
+                  -> cancelled --(tracking 有部分 staged_result)--> partially_reviewed | accepted | discarded
 ```
 
-`completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；取消前已收集的结果会暂存为部分候选。待审 / 已接受 / 已丢弃属于终态，不能再取消。
+`completed` 仍保留在 schema 中兼容历史 job，但当前 runner 正常完成后进入 `pending_review`。`DELETE` 对 queued / running job 写 `cancel_requested_at`；tracking 取消前已收集的结果会暂存为部分候选，correction 取消则清空候选并释放租约。`accepted / discarded / failed` 属于终态；有暂存结果的 `cancelled` 仍可审阅。
 
 `video_tracker_jobs.staged_result` 保存 `{results, grid_step, output_geometry}`，其中每条 result 可带 `frame_index / geometry / confidence / outside / instance_id / primary`。`GET .../preview` 只返回当前用户可见 task 的候选；accept / discard 还要求 job 创建者或项目特权角色。局部 decision 允许 job 创建者、已认领任务的审核员或项目特权角色执行，并在行锁后再次复核身份。所有决定都写审计动作。
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { RasterMaskWorkerPool } from "./rasterMaskWorkerPool";
+import type { RasterResourceCoordinator } from "./rasterResourceCoordinator";
 
 /**
  * Keep one lazy Worker pool per task.
@@ -10,10 +11,14 @@ import { RasterMaskWorkerPool } from "./rasterMaskWorkerPool";
  */
 export function useRasterMaskWorkerPool(
   taskId: string | null | undefined,
+  resourceCoordinator?: RasterResourceCoordinator,
 ): RasterMaskWorkerPool | undefined {
   const pool = useMemo(
-    () => (typeof Worker === "undefined" || !taskId ? undefined : new RasterMaskWorkerPool()),
-    [taskId],
+    () =>
+      typeof Worker === "undefined" || !taskId
+        ? undefined
+        : new RasterMaskWorkerPool({ diagnosticsTaskId: taskId, resourceCoordinator }),
+    [resourceCoordinator, taskId],
   );
   const activePoolRef = useRef<RasterMaskWorkerPool | undefined>(pool);
 

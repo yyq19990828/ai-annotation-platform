@@ -22,6 +22,7 @@ const USER_GUIDE_ROOT = path.join(DOCS_ROOT, "user-guide");
 const MANIFEST_PATH = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/manifest.json");
 const SCENES_ROOT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/scenes");
 const SEED_SPEC_PATH = path.join(REPO_ROOT, "apps/api/app/services/screenshot_seed_spec.py");
+const SCREENSHOT_IMAGE_PREFIX = "docs-site/user-guide/images/";
 
 const strict = process.argv.includes("--strict") || process.argv.includes("--release");
 const release = process.argv.includes("--release");
@@ -64,7 +65,11 @@ const allReferences = collectMarkdownImageReferences({
   repoRoot: REPO_ROOT,
   docsRoot: DOCS_ROOT,
 });
-const staticReferences = new Map([...allReferences].filter(([key]) => !/\.gif$/i.test(key)));
+const staticReferences = new Map(
+  [...allReferences].filter(
+    ([key]) => key.startsWith(SCREENSHOT_IMAGE_PREFIX) && !/\.gif$/i.test(key),
+  ),
+);
 
 const failures = [];
 const warnings = [];

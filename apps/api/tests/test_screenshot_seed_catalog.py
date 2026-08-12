@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+from app.db.models.image_pyramid import ImagePyramidAsset, ImagePyramidGeneration
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
@@ -66,7 +67,7 @@ async def _ready_profile(db):
     projects: dict[str, Project] = {}
     tasks_by_project: dict[str, dict[str, Task]] = {}
     for project_index, (logical_key, spec) in enumerate(PROJECT_SPECS.items()):
-        owner = users["admin"] if logical_key == "pointcloud_demo" else users["pm"]
+        owner = users["admin"] if spec.data_type == "lidar" else users["pm"]
         project = Project(
             id=uuid.uuid4(),
             display_id=spec.display_id,
@@ -89,8 +90,8 @@ async def _ready_profile(db):
                 "asset_sha256": "a" * 64,
             }
         }
-        if logical_key == "pointcloud_demo":
-            metadata["axis_convention"] = "opencv_camera"
+        if spec.axis_convention:
+            metadata["axis_convention"] = spec.axis_convention
         media_paths = set(spec.media_paths) or {
             task_spec.file_path for task_spec in spec.tasks
         }
@@ -122,6 +123,33 @@ async def _ready_profile(db):
                     else "other"
                 ),
                 content_hash=hashlib.sha256(file_path.encode()).hexdigest(),
+                metadata_=(
+                    {
+                        "calibration": {
+                            "extrinsic": [
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                            ],
+                            "intrinsic": [525, 0, 319.5, 0, 525, 239.5, 0, 0, 1],
+                        }
+                    }
+                    if "/camera/" in file_path and file_path.endswith(".jpg")
+                    else {}
+                ),
             )
             db.add(item)
             items[file_path] = item
@@ -318,13 +346,124 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert image["display_id"] == "P-COCO8"
     assert image["tasks"]["review"]["file_path"].endswith("screenshot_05.jpg")
     assert image["tasks"]["review"]["status"] == "review"
+    anchor = image["tasks"]["annotating"]["recording_anchors"]["primary_vehicle"]
+    assert anchor["coordinate_space"] == "normalized_media"
+    assert anchor["label"] == "car"
+    assert anchor["point"] == [0.49, 0.62]
+    assert anchor["polygon"][0] == [0.44, 0.49]
+    assert anchor["brush_strokes"][0] == [[0.435, 0.545], [0.515, 0.545]]
+    assert anchor["negative_point"] is None
+    assert anchor["provenance"] == "verified-label-derived"
     assert body["projects"]["pointcloud_demo"]["tasks"].keys() == {
         "frame_000",
         "frame_001",
         "frame_002",
         "frame_003",
     }
+    assert body["projects"]["pointcloud_multicam_demo"]["display_id"] == ("P-PC-MULTI")
+    assert body["projects"]["pointcloud_multicam_demo"]["tasks"].keys() == {"frame_000"}
     assert body["projects"]["video_demo"]["ml_backend"]["name"] == "screenshot-video"
+    video_anchor = body["projects"]["video_demo"]["tasks"]["tracking"][
+        "recording_anchors"
+    ]["front_truck_f4"]
+    assert video_anchor["frame_index"] == 4
+    assert video_anchor["bbox"] == [0.458, 0.32, 0.72, 0.83]
+    assert video_anchor["negative_point"] == [0.74, 0.55]
+    assert "large_image_demo" not in body["projects"]
+
+
+async def test_catalog_includes_ready_optional_large_image_fixture(
+    httpx_client, db_session
+):
+    projects, _ = await _ready_profile(db_session)
+    owner = projects["pointcloud_demo"].owner_id
+    project = Project(
+        id=uuid.uuid4(),
+        display_id="P-LARGE-IMG",
+        name="large image",
+        type_label="image",
+        type_key="image-seg",
+        data_type="image",
+        owner_id=owner,
+    )
+    dataset = Dataset(
+        id=uuid.uuid4(),
+        display_id="DS-LARGE-IMG",
+        name="large-image-dev",
+        data_type="image",
+        file_count=1,
+        created_by=owner,
+        metadata_={"seed": {"managed_by": "large-image-seed", "manifest_version": 1}},
+    )
+    db_session.add_all([project, dataset])
+    await db_session.flush()
+    db_session.add(ProjectDataset(project_id=project.id, dataset_id=dataset.id))
+    item = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=dataset.id,
+        file_name="nasa-cosmic-cliffs-14575x8441.png",
+        file_path="large-image-dev/nasa-cosmic-cliffs-14575x8441.png",
+        file_type="image",
+        file_size=130764157,
+        content_hash="e" * 64,
+        width=14575,
+        height=8441,
+        metadata_={
+            "seed": {
+                "managed_by": "large-image-seed",
+                "fixture_id": "nasa-cosmic-cliffs",
+                "role": "required-happy-path-high-entropy",
+            }
+        },
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id="T-LARGE-1",
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_type="image",
+    )
+    asset = ImagePyramidAsset(
+        id=uuid.uuid4(),
+        dataset_item_id=item.id,
+        profile_version="v1",
+        active_generation=1,
+    )
+    db_session.add_all([task, asset])
+    await db_session.flush()
+    db_session.add(
+        ImagePyramidGeneration(
+            asset_id=asset.id,
+            generation=1,
+            source_identity="etag:test:bytes:130764157",
+            source_fingerprint="f" * 64,
+            status="ready",
+            width=item.width,
+            height=item.height,
+            max_level=15,
+            normalization_version="v1",
+            manifest_key="image-pyramids/a/1/manifest.json",
+            overview_key="image-pyramids/a/1/overview.webp",
+            overview_width=2048,
+            overview_height=1186,
+            tile_count=694,
+            retained_bytes=1234,
+        )
+    )
+    await db_session.flush()
+
+    response = await httpx_client.get(
+        "/api/v1/__test/seed/catalog", params={"profile": "screenshots"}
+    )
+
+    assert response.status_code == 200, response.text
+    large = response.json()["projects"]["large_image_demo"]
+    assert large["display_id"] == "P-LARGE-IMG"
+    assert large["tasks"]["cosmic_cliffs"]["id"] == str(task.id)
 
 
 async def test_catalog_rejects_unexpected_task_in_managed_project(
@@ -391,6 +530,29 @@ async def test_catalog_fails_closed_when_media_object_is_missing(
     )
 
 
+async def test_catalog_rejects_multicamera_media_without_calibration(
+    httpx_client, db_session
+):
+    await _ready_profile(db_session)
+    camera = await db_session.scalar(
+        select(DatasetItem).where(
+            DatasetItem.file_path == "pc-multicam-dev/camera/back_right/000000.jpg"
+        )
+    )
+    assert camera is not None
+    camera.metadata_ = {}
+    await db_session.flush()
+
+    response = await httpx_client.get("/api/v1/__test/seed/catalog")
+
+    assert response.status_code == 409
+    assert any(
+        "camera pc-multicam-dev/camera/back_right/000000.jpg has no valid calibration"
+        in issue
+        for issue in response.json()["detail"]["issues"]
+    )
+
+
 async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
     db_session,
 ):
@@ -425,7 +587,7 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
         asset_sha256=digests,
     )
 
-    assert first == second == {"projects": 4, "tasks": 14, "batches": 5}
+    assert first == second == {"projects": 5, "tasks": 15, "batches": 5}
     assert {
         logical_key: {key: task.id for key, task in project_tasks.items()}
         for logical_key, project_tasks in tasks.items()
@@ -437,6 +599,7 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
     assert kept.name == "user-owned project"
     assert projects["image_demo"].total_tasks == 8
     assert projects["image_demo"].completed_tasks == 1
+    assert projects["image_demo"].raster_mask_native_editing_enabled is True
 
 
 async def test_repair_refuses_unmarked_fixed_id_collision(db_session):

@@ -3,7 +3,7 @@ audience: [ops]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-30
 ---
 
 # 生产部署（Docker Compose）
@@ -20,40 +20,11 @@ last_reviewed: 2026-07-17
 
 ## 1. 拓扑
 
-```mermaid
-graph TB
-  Client[客户端 / 浏览器 / SDK]
-  Proxy[Reverse Proxy<br/>nginx/Caddy · TLS 终结]
-
-  subgraph App[应用容器 docker-compose.prod.yml]
-    Web[web 容器 :8088→80<br/>nginx 静态托管 + 反代]
-    API[api 容器 :8080→8000<br/>uvicorn · WS · 自动迁移]
-    Worker[Celery worker 主<br/>default/media/cleanup/audit]
-    WorkerGpu[Celery worker gpu<br/>ml/gpu · 低并发护显存]
-    WorkerCpu[Celery worker cpu<br/>ml.cpu · 高并发]
-    Export[Celery worker export<br/>导出任务隔离队列]
-    Beat[Celery beat × 1<br/>单实例 · 定时任务]
-  end
-
-  subgraph Infra[基础设施]
-    DB[(Postgres 16)]
-    RD[(Redis 7<br/>broker / 限流 / 黑名单)]
-    S3[(MinIO<br/>或 S3/OSS 兼容)]
-  end
-
-  SAM[ML backend 可选·GPU<br/>sam2:8001 / sam3:8002]
-
-  Client -->|HTTPS 443| Proxy
-  Proxy -->|转发 /*| Web
-  Web -->|/api/* /ws/* 反代| API
-  Proxy -.->|/metrics 仅内网 / 监控网段| API
-
-  API --> DB & RD & S3
-  Worker --> RD & DB & S3
-  Export --> RD & DB & S3
-  Beat --> RD
-  Worker -.->|HTTP 调用| SAM
-```
+<ExcalidrawDiagram
+  src="/diagrams/ops/deploy/production-compose-topology.svg"
+  alt="基础 Compose 与生产叠加文件合并后的公网反代、Web、API、五类 Celery worker、私有数据面、可选 ML 后端和内网监控拓扑"
+  caption="Docker Compose 生产拓扑与网络边界"
+/>
 
 > **Celery beat 必须单实例**：worker 可水平扩多副本，但 beat 多实例会重复触发定时任务（见 §4.2），漏了它则审计归档、PerfHud、ml health 等全部静默失效。
 
@@ -69,12 +40,17 @@ graph TB
 
 ### 2.1 数据库 (PostgreSQL)
 
-| 变量                                                  | 默认                           | 说明                                                                                                                                                                                                                                          |
-| ----------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL` **必填**                               | dev 连本机                     | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。驱动必须 `postgresql+asyncpg`；托管库走 SSL 用 `?ssl=require`（asyncpg **不认** `sslmode=`）。密码含特殊字符要 URL 编码（`@`→`%40`）。生产用托管 RDS / Cloud SQL 优先。 |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用，后端不读。**沿用 compose 自带 postgres 时**生产须设强凭据，且与 `DATABASE_URL` 的用户名/密码/库名一致；用托管库时忽略。                                                                     |
+| 变量                                                  | 默认                           | 说明                                                                                                                                                                             |
+| ----------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` **必填**                               | dev 连本机                     | API/Celery 运行连接。格式为 `postgresql+asyncpg://用户名:密码@主机:端口/库`；托管库走 SSL 用 `?ssl=require`。密码含特殊字符要 URL 编码。可使用无 schema DDL 权限的普通应用角色。 |
+| `MIGRATION_DATABASE_URL`                              | 空 → `DATABASE_URL`            | Alembic 专用 schema-owner 连接。运行角色没有 `public` schema CREATE 权限时必须配置；API/Celery 业务连接不会读取它。                                                              |
+| `DATABASE_URL_DOCKER`                                 | dev 连 `postgres` service      | 仅供开发态 Compose 内的 Celery worker 使用；可独立切换到非 owner、非超级用户的普通应用角色。生产叠加文件继续统一读取 `DATABASE_URL`。                                            |
+| `MIGRATION_DATABASE_URL_DOCKER`                       | 空 → Worker 运行连接           | 仅供开发态 Compose 的指定迁移入口使用，地址通常为 `postgres:5432`。其他 Worker 设置 `ALEMBIC_AUTO_UPGRADE=false`，不接收 DDL 凭据。                                              |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用。分离角色时对应 schema owner / `MIGRATION_DATABASE_URL`，不要求与普通运行连接同角色；用托管 RDS/Cloud SQL 时忽略。              |
 
-容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）在启动时**自动** `alembic upgrade head`，无需手动跑。进程式部署才需手动 `uv run alembic upgrade head`（见 §4.5）。
+容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）使用迁移连接自动执行
+`alembic upgrade head`，随后清除 owner 连接再启动应用；生产 Worker 禁止重复自动迁移。
+进程式部署需在启动 API 前执行同一命令（见 §4.5）。
 
 ### 2.2 缓存 / 消息队列 (Redis)
 
@@ -87,23 +63,23 @@ graph TB
 
 ### 2.3 对象存储 (MinIO / S3 兼容)
 
-| 变量                                | 默认             | 说明                                                                                                                                                                 |
-| ----------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MINIO_ENDPOINT` **必填**           | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。                                                                                                |
-| `MINIO_ACCESS_KEY` **必填**         | `minioadmin`     | 等价 AWS Access Key ID。                                                                                                                                             |
-| `MINIO_SECRET_KEY` **必填**         | `minioadmin`     | 生产**必须**换。                                                                                                                                                     |
-| `MINIO_BUCKET`                      | `annotations`    | 主标注文件桶（图像 / 视频帧）。                                                                                                                                      |
-| `MINIO_DATASETS_BUCKET`             | `datasets`       | 上传 dataset 桶。                                                                                                                                                    |
-| `MINIO_BUG_REPORTS_BUCKET`          | `bug-reports`    | bug 反馈附件桶。                                                                                                                                                     |
-| `MINIO_DATA_DIR`                    | `miniodata`      | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。                        |
-| `MINIO_PUBLIC_URL`                  | 空               | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。                                                                     |
-| `MINIO_USE_SSL`                     | `false`          | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。                                                                                                      |
-| `ML_BACKEND_STORAGE_HOST`           | 空               | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
-| `ML_BACKEND_DEFAULT_URL`            | 空               | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。                                                                                              |
-| `MASK_FORMAT_TEMP_QUOTA_BYTES`      | `8589934592`     | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。                                                                                         |
-| `MASK_FORMAT_MAX_ENTRY_BYTES`       | `536870912`      | 安全 archive 单 entry 的最大展开字节数。                                                                                                                             |
-| `MASK_FORMAT_MAX_ARCHIVE_FILES`     | `200000`         | 单个 Mask 格式包允许的最大文件数。                                                                                                                                   |
-| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100`            | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。                                                                                                       |
+| 变量                                | 默认             | 说明                                                                                                                                                                                            |
+| ----------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MINIO_ENDPOINT` **必填**           | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。                                                                                                                           |
+| `MINIO_ACCESS_KEY` **必填**         | `minioadmin`     | 等价 AWS Access Key ID。                                                                                                                                                                        |
+| `MINIO_SECRET_KEY` **必填**         | `minioadmin`     | 生产**必须**换。                                                                                                                                                                                |
+| `MINIO_BUCKET`                      | `annotations`    | 主标注文件桶（图像 / 视频帧）。                                                                                                                                                                 |
+| `MINIO_DATASETS_BUCKET`             | `datasets`       | 上传 dataset 桶。                                                                                                                                                                               |
+| `MINIO_BUG_REPORTS_BUCKET`          | `bug-reports`    | bug 反馈附件桶。                                                                                                                                                                                |
+| `MINIO_DATA_DIR`                    | `miniodata`      | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。                                                   |
+| `MINIO_PUBLIC_URL`                  | 空               | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。                                                                                                |
+| `MINIO_USE_SSL`                     | `false`          | 决定 API / worker 连 `MINIO_ENDPOINT` 以 HTTP 还是 HTTPS；只有该 endpoint 本身提供 TLS 时才设 `true`。公网预签名 URL 是否 HTTPS 由 `MINIO_PUBLIC_URL` 决定，不要因外层 LB 终结 TLS 而误改本项。 |
+| `ML_BACKEND_STORAGE_HOST`           | 空               | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。                            |
+| `ML_BACKEND_DEFAULT_URL`            | 空               | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。                                                                                                                         |
+| `MASK_FORMAT_TEMP_QUOTA_BYTES`      | `8589934592`     | 单个 Mask 格式导入 / 导出 job 可使用的本地临时字节上限；按实际流式字节复核。                                                                                                                    |
+| `MASK_FORMAT_MAX_ENTRY_BYTES`       | `536870912`      | 安全 archive 单 entry 的最大展开字节数。                                                                                                                                                        |
+| `MASK_FORMAT_MAX_ARCHIVE_FILES`     | `200000`         | 单个 Mask 格式包允许的最大文件数。                                                                                                                                                              |
+| `MASK_FORMAT_MAX_COMPRESSION_RATIO` | `100`            | 单 entry 允许的最大展开 / 压缩字节比；超限按可疑压缩炸弹拒绝。                                                                                                                                  |
 
 Mask 格式 staged object 使用 import bucket，导出产物使用 export bucket，两者均由 API 初始化为 7 天 lifecycle。
 调小配额时应同时观察 `media` / `export` 队列的失败率；只需修改 `.env` 并重建容器，不需要重建镜像。
@@ -124,11 +100,12 @@ Mask 格式 staged object 使用 import bucket，导出产物使用 export bucke
 
 > 前端 API base 是硬编码的同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），**不读 `VITE_API_URL`**——dev 由 vite proxy、生产由 web 容器内 nginx 反代 `/api/`→`api:8000`，故无需构建时注入 API 地址。
 
-| 变量                      | 默认                    | 说明                                                           |
-| ------------------------- | ----------------------- | -------------------------------------------------------------- |
-| `VITE_TURNSTILE_SITE_KEY` | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。    |
-| `VITE_SENTRY_DSN`         | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                        |
-| `FRONTEND_BASE_URL`       | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
+| 变量                                   | 默认                    | 说明                                                                                                                                                                               |
+| -------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_TURNSTILE_SITE_KEY`              | 空                      | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。                                                                                                                        |
+| `VITE_SENTRY_DSN`                      | 空                      | 前端 Sentry DSN；留空禁用前端错误上报。                                                                                                                                            |
+| `VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU` | `true`                  | 前端构建参数；大 ROI Mask 计算按浏览器能力与独立 GPU buffer budget 候选 WebGPU。设为 `false` 后重建只回滚 GPU provider；packed/dense CPU fallback 与 CPU compute budget 继续可用。 |
+| `FRONTEND_BASE_URL`                    | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。                                                                                                                     |
 
 ### 2.6 错误监控 (Sentry)
 
@@ -291,12 +268,18 @@ docker compose --env-file .env.production \
 这一条命令做完整套生产部署：
 
 - **构建并起 api 容器**（`infra/docker/Dockerfile.api`）：entrypoint `apps/api/scripts/entrypoint.sh` 先 `alembic upgrade head`，再 exec uvicorn（`--host 0.0.0.0 --port 8000`，宿主映射 `8080:8000`）。**迁移自动跑，无需手动**。
-- **构建并起 web 容器**（`infra/docker/Dockerfile.web`，多阶段）：`pnpm build` 产物交容器内 nginx 托管，nginx 反代 `/api/` `/ws/`→`api:8000`（`infra/docker/nginx.conf`），宿主映射 `8088:80`。
-- **celery-worker / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
+- **构建并起 web 容器**（`infra/docker/Dockerfile.web`，多阶段）：`pnpm build` 产物交容器内 nginx 托管，nginx 反代 `/api/` `/ws/`→`api:8000`（`infra/docker/nginx.conf`），宿主映射 `8088:80`。Compose 会把 Raster Mask WebGPU 的非敏感 build arg 注入镜像；修改后必须重新构建而非只重启容器。
+- **celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat** 改用生产配置（`env_file: .env.production` + inline 覆盖基础文件硬编码的 dev infra 凭据）。
 
 两个 `-f` 与 `--env-file .env.production` **都不可省**：前者把 prod 叠加文件合进来才会容器化 api/web，后者是 worker 用 `${VAR}` 覆盖 dev 凭据的插值源（原理见[运行环境形态](/dev/concepts/runtime-environments)）。
 
-跑完后栈内共 11 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。GPU backend（profile `gpu` / `gpu-sam3`）与监控（profile `monitoring`）按需单独启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
+Raster Mask WebGPU 使用访问网页的客户端 GPU，不使用 Compose 主机或 Celery GPU。客户端首次失败会
+进入 30 秒 cooldown，下一次 eligible foreground request 只重试一次；连续第二次失败后当前页面固定 CPU。
+这不是服务端容器故障，不应重启 API/Celery。先从 BUG 报告的 Raster Mask compute diagnostics 查看
+`fallbackReason`、`failureStage`、`webGpuCircuitState`、CPU/GPU budgets 与 transient/capacity bytes；
+需要整体停止 adapter 请求时，将 build arg 设为 `false` 后重新构建 web 镜像。
+
+跑完后栈内共 12 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。五个 ML backend 分别使用 `gpu`、`gpu-sam3`、`gpu-yolo`、`gpu-onnxtools`、`gpu-rapidocr` profile，监控使用 `monitoring` profile，均按需启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
 
 > 宿主端口 `8080`（api）/ `8088`（web）只供外层反代转发，**绝不直接暴露公网**。prod 叠加文件默认把它们绑在宿主回环 `127.0.0.1`（`${PROXY_BIND_HOST:-127.0.0.1}`）——外层反代同机时开箱即安全；反代在**别的机器**时于 `.env.production` 设 `PROXY_BIND_HOST=<内网IP>`（勿用 `0.0.0.0`）。详见[端口暴露与网络安全](/ops/deploy/network-security)。
 
@@ -311,13 +294,14 @@ worker/beat 容器已在 `docker-compose.yml` 定义、由 §4.1 一并拉起，
   - `media` — 图像/视频转码、缩略图、视频帧
   - `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
   - `audit` — 审计日志 / task event 批量入库
+- **GPU 控制 worker（`celery-worker-gpu-control`）** 单并发订阅 `gpu.control`，负责显存 repair、tombstone GC 与 collector 账本；它是唯一持有 collector 数据库凭据的应用进程，不与普通 GPU worker 合并。
 - **GPU worker（`celery-worker-gpu`）** 订阅 `ml`（自动预标注 / 模型调用，整条 pipeline 任一阶段 device=gpu 或未自报即落此）+ `gpu`（视频目标追踪）；并发默认 `CELERY_GPU_CONCURRENCY=2`，**低并发护显存**。
 - **CPU worker（`celery-worker-cpu`）** 订阅 `ml.cpu`（整条 pipeline 全部 device=cpu 的预标任务）；并发默认 `CELERY_CPU_CONCURRENCY=4`，可较高。
 - **导出 worker（`celery-worker-export`）** 订阅 `export`（导出大任务资源隔离，不拖累预标 / 媒体）。
 
 队列名经 `PREANNOTATE_GPU_QUEUE`（默认 `ml`）/ `PREANNOTATE_CPU_QUEUE`（默认 `ml.cpu`）配置；改名须同步各 worker 的 `-Q`，否则任务静默积压。device 未自报的老 backend / 混合 device 的 pipeline 一律保守落 `ml`（GPU 队列），与拆分前行为等价、零退化。
 
-**Celery beat（`celery-beat`，必须单实例，v0.9.11）**：定时任务调度（审计 partition 月度归档、PerfHud 推送、ml health 巡检等）。worker 可水平扩多副本（`docker compose up -d --scale celery-worker=N`），但 **beat 多实例会重复触发，绝不能扩副本**。漏了 beat 不报错，但所有定时任务静默不跑。
+**Celery beat（`celery-beat`，必须单实例）**：定时任务调度（审计 partition 月度归档、PerfHud 推送、ml health 巡检等）。worker 可水平扩多副本（`docker compose up -d --scale celery-worker=N`），但 **beat 多实例会重复触发，绝不能扩副本**。漏了 beat 不报错，但所有定时任务静默不跑。
 
 ### 4.3 首个 super_admin（bootstrap_admin）
 
@@ -359,8 +343,9 @@ uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $(($(nproc) * 2 + 1))
 
-# Celery（主 / GPU / CPU / 导出 worker + beat，beat 务必单实例）
+# Celery（主 / GPU 控制 / GPU / CPU / 导出 worker + beat，beat 务必单实例）
 uv run celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
+uv run celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
 uv run celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=2
 uv run celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=4
 uv run celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
@@ -410,18 +395,18 @@ mc mirror anno/datasets    s3-backup/anno/datasets
 
 ### 5.3 Redis
 
-不需要持久备份——Redis 当前只装：
+Redis 当前没有 volume，也不是业务系统真值，但其中运行状态丢失后不能简单当作“无影响重启”：
 
-- Celery 队列（短暂）
-- 限流计数（5 分钟窗口）
-- token 黑名单（≤ token 剩余有效期）
-- 通知 Pub/Sub（瞬时）
+- Celery broker 的排队 / 在途交付状态可能丢失，PostgreSQL 中的作业记录需重试或对账。
+- 任务锁、限流计数、ML 路由 lease / 熔断与 GPU 资源账本会重置。
+- 通知 Pub/Sub 消息是瞬时的；持久化通知可从 PostgreSQL 的 GET 端点补齐。
+- 已撤销 token 的黑名单会丢失，这些 token 在自身过期前可能再次被接受，恢复时需按安全事件评估。
 
-崩溃影响：用户当下需重新登录、断线 30s 内 publish 的通知可能丢失（兜底 GET 端点会补齐）。
+因此 Redis 通常不做业务数据备份，但必须有明确的崩溃恢复、作业对账和 token 处置流程。
 
 ### 5.4 卷存储位置（命名卷 vs 宿主机统一前缀）
 
-`docker-compose.yml` 默认用 **Docker 托管的命名卷**（`pgdata` / `miniodata` / 模型权重 / 监控），数据落在 `/var/lib/docker/volumes/<project>_<vol>`。想把它们集中到宿主机一个统一目录（便于备份、迁移、放到指定磁盘），叠加 `docker-compose.hostvols.yml`：
+`docker-compose.yml` 与 `docker-compose.ml.yml` 默认使用 **Docker 托管的命名卷**（`pgdata` / `miniodata` / 模型权重 / 监控），数据落在 `/var/lib/docker/volumes/<project>_<vol>`。`docker-compose.hostvols.yml` 可把其中明确列出的卷集中到宿主机统一目录，便于备份、迁移或放到指定磁盘：
 
 ```bash
 export DATA_ROOT=/srv/annotation-data   # 绝对路径
@@ -430,7 +415,7 @@ mkdir -p "$DATA_ROOT"/{pgdata,minio,gsam2-checkpoints,gsam2-hf-cache,sam3-checkp
 docker compose -f docker-compose.yml -f docker-compose.hostvols.yml up -d
 ```
 
-不挂这个文件时行为完全不变（仍是命名卷）。想免去每次敲 `-f`，在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.hostvols.yml`。
+当前叠加文件重定向 `pgdata`、`miniodata`、Grounded-SAM-2 / SAM 3 权重与缓存、`prometheus_data` 和 `grafana_data`。`yolo_checkpoints`、`alertmanager_data` 等未列出的卷仍由 Docker 托管；`./data/duckdb` 本来就是 bind mount。不挂该文件时行为不变。想免去每次敲 `-f`，在 `.env` 设 `COMPOSE_FILE=docker-compose.yml:docker-compose.hostvols.yml`。
 
 > 切换不会自动迁移数据：从命名卷转 bind 前，先 `docker compose stop`，把旧卷内容（`docker volume inspect <vol>` 查 `Mountpoint`）`cp` 到 `$DATA_ROOT` 对应子目录，否则容器会以为数据为空。
 
@@ -488,7 +473,13 @@ A: 即使前后端同源也要设。回填 `CORS_ALLOW_ORIGINS=["https://app.exa
 A: 检查 nginx `proxy_read_timeout`。默认 60s 会被 30s 心跳保住，但反代链路上还有别的 LB（云厂商 ALB / WAF）也要 ≥ 60s。
 
 **Q: `uv run alembic upgrade head` 报 `psycopg2 not installed` / 类似错误**
-A: 这个项目用 asyncpg。Alembic 配置在 `apps/api/alembic.ini` 里指向 `app.db.base`，确保 `DATABASE_URL` 走 `postgresql+asyncpg://`。
+A: 这个项目用 asyncpg。Alembic 配置在 `apps/api/alembic.ini` 里指向 `app.db.base`，确保
+`MIGRATION_DATABASE_URL`（未设置时为 `DATABASE_URL`）使用 `postgresql+asyncpg://`。
+
+**Q: 启动时报 `permission denied for schema public`**
+A: 运行连接使用了无 DDL 权限的普通角色，但没有配置迁移连接。保持 `DATABASE_URL` 不变，
+将 schema owner 的 asyncpg URL 写入 `MIGRATION_DATABASE_URL`；不要永久给运行角色授予
+`public` schema CREATE 权限。
 
 **Q: ML Backend 测试连接 504**
 A: 接入方实现的 `/health` 没在 `ml_health_timeout`（10s）内返回。如果你的 backend 冷启动慢，调高 `ML_HEALTH_TIMEOUT`，或在 backend 侧加 warm-up endpoint。详见 [`ml-backend-protocol.md`](/dev/reference/ml-backend-protocol)。
@@ -633,6 +624,7 @@ docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapi
 - nvidia device reservation 已配置；需要 host 装 nvidia-container-toolkit。默认 grounded-sam2 / yolo / onnxtools / rapidocr 用卡 0，sam3 用卡 1；单卡机器设置 `SAM3_GPU_DEVICE_ID=0`。任一 `*_GPU_DEVICE_ID` 都必须是单个索引或 UUID，不接受逗号列表和已暴露 GPU runtime 的 `all`。
 - healthcheck `start_period`：grounded-sam2 `120s`（冷启加载 ~80-100s）、sam3 `180s`（首次启动默认下载图像 + 视频约 6.6GB gated 权重）
 - 显存 / 变体相关 env 见 §2.8（grounded-sam2）与 §2.8.1（sam3）；两者 `IDLE_*` / `MODEL_POOL_*` 前缀解耦，可独立调
+- 五个 Backend 的受管生命周期能力都采用部署级验收开关，且默认关闭。只有当前镜像、权重与物理 GPU 完成对应的真实加载、全池卸载和显存回落验收后，才把 `GROUNDED_SAM2_MANAGED_LIFECYCLE_VERIFIED`、`SAM3_MANAGED_LIFECYCLE_VERIFIED`、`YOLO_MANAGED_LIFECYCLE_VERIFIED`、`ONNXTOOLS_MANAGED_LIFECYCLE_VERIFIED` 或 `RAPIDOCR_MANAGED_LIFECYCLE_VERIFIED` 设为字面量 `1`；值只能是 `0` 或 `1`，非法值会使对应 Backend 拒绝启动。复制其他机器的结论不能替代当前部署证据。
 
 ### dev 跨容器存储访问（`ML_BACKEND_STORAGE_HOST`）
 

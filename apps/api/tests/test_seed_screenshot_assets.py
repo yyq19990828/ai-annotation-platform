@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import struct
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from PIL import Image
 
 from scripts.seed_screenshot_assets import (
     GENERATED_REVISION,
+    NUSCENES_CAMERA_SOURCE_IDS,
+    NUSCENES_LIDAR_SOURCE_ID,
     POINTCLOUD_SOURCE_IDS,
     ROAD_SOURCE_IDS,
     VIDEO_SOURCE_ID,
@@ -57,6 +60,14 @@ def _source_files(root: Path) -> dict[str, Path]:
             encoding="ascii",
         )
         result[asset_id] = path
+
+    lidar = sources / "nuscenes-lidar.pcd.bin"
+    lidar.write_bytes(struct.pack("<fffff", 1.0, 2.0, 3.0, 0.5, 0.0))
+    result[NUSCENES_LIDAR_SOURCE_ID] = lidar
+    for index, (role, asset_id) in enumerate(NUSCENES_CAMERA_SOURCE_IDS.items()):
+        path = sources / f"nuscenes-{role}.jpg"
+        Image.new("RGB", (16, 9), (20 + index * 30, 60, 100)).save(path)
+        result[asset_id] = path
     return result
 
 
@@ -78,8 +89,22 @@ def test_prepared_screenshot_assets_are_complete_deterministic_and_self_healing(
     assert len(list(first.image_root.glob("images/*/*.jpg"))) == 8
     assert len(list(first.image_root.glob("labels/*/*.txt"))) == 8
     assert len(list(first.pointcloud_root.glob("lidar/*.pcd"))) == 4
-    assert not first.pointcloud_root.joinpath("camera").exists()
-    assert not first.pointcloud_root.joinpath("calib").exists()
+    camera_images = sorted(first.pointcloud_root.glob("camera/front/*.jpg"))
+    assert len(camera_images) == 4
+    with Image.open(camera_images[0]) as camera:
+        assert camera.size == (1, 1)
+    calibration = json.loads(
+        first.pointcloud_root.joinpath("calib/camera/front.json").read_text()
+    )
+    assert len(calibration["extrinsic"]) == 16
+    assert len(calibration["intrinsic"]) == 9
+    assert len(list(first.multicamera_pointcloud_root.glob("lidar/*.pcd"))) == 1
+    assert len(list(first.multicamera_pointcloud_root.glob("camera/*/*.jpg"))) == 6
+    calibrations = sorted(first.multicamera_pointcloud_root.glob("calib/camera/*.json"))
+    assert len(calibrations) == 6
+    assert all(
+        len(json.loads(path.read_text())["extrinsic"]) == 16 for path in calibrations
+    )
 
     probe = subprocess.run(
         [

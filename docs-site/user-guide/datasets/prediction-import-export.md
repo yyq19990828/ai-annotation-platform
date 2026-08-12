@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.10.15
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-08-12
 ---
 
 # 外部预测导入 / 导出
@@ -41,8 +41,7 @@ last_reviewed: 2026-07-13
 
 #### AAP JSON（平台无损）
 
-平台原生中间格式。预测导入向导消费 `predictions[]`；独立的标注导入 API 消费 `annotations[]`，并能通过
-`mask_objects` 恢复视频栅格 mask track。最小预测 payload：
+平台原生中间格式。预测导入向导消费 `predictions[]`；独立的标注导入 API 消费 `annotations[]`。两条路径都能通过 `mask_objects` 恢复视频栅格 mask track。最小预测 payload：
 
 ```json
 {
@@ -66,8 +65,9 @@ last_reviewed: 2026-07-13
 
 - **`schema_version` 必填**，且主版本不能超过平台支持的 major（当前 `1`），否则整文件 422 拒绝。
 - **`task_match` 必须给 `display_id` 或 `file_path` 至少一个**，两者全省略则该 task 块的预测全部跳过。`display_id` 全局唯一最稳；`file_path` 在项目内匹配，带子目录时会自动吸收 dataset 名前缀（库内 `task.file_path` 形如 `{dataset}/animals/cat/001.jpg`，外部相对路径 `animals/cat/001.jpg` 也能命中）。
-- 预测向导当前支持的几何类型：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。视频轨迹不走预测向导；需要恢复 `video_track_bbox`、`video_track_polygon`、`video_track_polyline` 或 `video_track_mask` 时，使用 AAP JSON 标注导入 API。
-- 一条 `predictions[i]` 可以用 `shapes[]` 把多个 shape 合并写入同一条预测；`shapes` 与单 `geometry` 同时存在时 `shapes` 优先。
+- 图片预测支持 `bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`；视频预测支持 `video_bbox` / `video_track_bbox` / `video_track_polygon` / `video_track_polyline` / `video_track_mask`。视频 task block 需声明 `media_type: "video"`，任务必须有可校验的源视频帧数；越界帧、重复关键帧或非法 outside 范围会显示在预览错误中。
+- 视频 Mask 正文放在 `mask_objects`，向导会在预览时校验引用、尺寸和内容；`dry_run` 不会写 Prediction 或对象存储。正式导入后，Mask 仍是待审候选，不会直接成为标注。
+- 一条 `predictions[i]` 可以用 `shapes[]` 把多个 shape 合并写入同一条预测；`shapes` 与单 `geometry` 同时存在时 `shapes` 优先。同一 entry 的 shapes 必须同属 bbox、region（polygon / mask）或 polyline 中的一个工具单位，不能混合。
 
 坐标用归一化 `[0, 1]`。完整格式规范（含 `tool_bindings` / `attribute_schema` / `mask_objects` / 各几何字段）见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-13无损)，本页不重复展开。
 

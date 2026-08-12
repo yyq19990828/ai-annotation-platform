@@ -86,6 +86,8 @@ export function createDevSidebar(
               link: "/dev/concepts/runtime-environments",
             },
             { text: "性能 HUD", link: "/dev/concepts/perfhud" },
+            { text: "超大图金字塔派生资产", link: "/dev/concepts/image-pyramid-assets" },
+            { text: "图片工作台栅格资源协调", link: "/dev/concepts/raster-resource-coordination" },
           ],
         },
       ],
@@ -99,6 +101,7 @@ export function createDevSidebar(
         { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
         { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
         { text: "更新截图", link: "/dev/how-to/update-screenshots" },
+        { text: "更新 Excalidraw 图表", link: "/dev/how-to/update-excalidraw-diagrams" },
         {
           text: "迁移内联样式到 CSS Modules",
           link: "/dev/how-to/migrate-inline-style-to-css-modules",

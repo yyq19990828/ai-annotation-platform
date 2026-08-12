@@ -15,6 +15,12 @@ import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from ".
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
+import { useVideoPreciseFrame, type PreciseFrameSourceState } from "./useVideoPreciseFrame";
+import {
+  clearVideoPreciseFrameDiagnostics,
+  publishVideoPreciseFrameDiagnostics,
+  setActiveVideoWorkbenchTask,
+} from "@/utils/videoWorkbenchDiagnostics";
 import { imageBitmapToJpeg, videoElementToJpeg } from "@/utils/imageBitmapToJpeg";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import type { VideoFramePreview } from "./useVideoFramePreview";
@@ -54,8 +60,6 @@ import {
 } from "./videoStageGeometry";
 import type { VideoStageGeom, VideoDragState, VideoTrackAnnotation } from "./videoStageTypes";
 import type { VideoStageControls } from "./videoStageControls";
-
-// TODO(v0.16.x): WebCodecs chunk-decoder 路径暂未迁到 Konva 栈(flag-gated 实验特性)。
 
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
 const DEFAULT_VIDEO_PLAYBACK_RATE: VideoPlaybackRate = 1;
@@ -115,7 +119,11 @@ export interface UseVideoPlaybackControllerResult {
   activeBitmap: CachedVideoBitmap | null;
   cachedRanges: { from: number; to: number }[];
   displayBitmap: CachedVideoBitmap | null;
-  showCachedBitmap: boolean;
+  frameSource: "webcodecs" | "video-bitmap" | "video-element";
+  /** 精确帧 pipeline 的当前状态(供 stage 暴露 data-video-precise-state 给 E2E)。 */
+  preciseSourceState: PreciseFrameSourceState;
+  precisePaintedFrameIndex: number | null;
+  markPreciseFramePainted: (frameIndex: number) => void;
   framePreview: VideoFramePreview | null;
   previewFrame: (frameIndex: number | null) => void;
   samplingStep: number;
@@ -302,12 +310,104 @@ export function useVideoPlaybackController({
     maxItems: performanceConfig.videoBitmapCache,
   });
 
-  // 精确帧: 无 WebCodecs 路径，直接用 <video> 位图缓存。
-  const displayBitmap = activeBitmap;
-  // v0.21.4 · 当前帧位图 ref(读最新值, 避免把 activeBitmap 塞进 controls memo deps → 逐帧重建句柄)。
-  const activeBitmapRef = useRef(activeBitmap);
-  activeBitmapRef.current = activeBitmap;
-  const showCachedBitmap = Boolean(displayBitmap && !isPlaybackActive);
+  // 精确帧:WebCodecs decoder 激活时优先 precise bitmap,回退 native <video> capture bitmap。
+  const precise = useVideoPreciseFrame({
+    taskId: manifest?.task_id,
+    frameIndex,
+    enabled: !isPlaybackActive,
+    decodeEnabled: !frameClock.isSeeking,
+    bitmapBudgetBytes: performanceConfig.videoDecoderBitmapCacheBytes,
+    chunkBudgetBytes: performanceConfig.videoChunkByteCacheBytes,
+    prefetchFrames: performanceConfig.videoDecodePrefetchFrames,
+  });
+  const preciseBitmap =
+    precise.bitmap && precise.bitmap.frameIndex === frameIndex ? precise.bitmap : null;
+  const nativeBitmap = activeBitmap && activeBitmap.frameIndex === frameIndex ? activeBitmap : null;
+  // 播放态的真实显示源始终是 <video>;暂停态只接受与当前 frameIndex 严格匹配的 bitmap。
+  // 这份选择同时供 Konva、Minimap 与 captureCurrentFrameJpeg 使用,避免画面 / 标注 / AI 串帧。
+  const displayBitmap = isPlaybackActive ? null : (preciseBitmap ?? nativeBitmap);
+  // 当前帧位图 ref(读最新值, 避免把 displayBitmap 塞进 controls memo deps → 逐帧重建句柄)。
+  const displayBitmapRef = useRef(displayBitmap);
+  displayBitmapRef.current = displayBitmap;
+  const frameSource: "webcodecs" | "video-bitmap" | "video-element" = isPlaybackActive
+    ? "video-element"
+    : preciseBitmap
+      ? "webcodecs"
+      : nativeBitmap
+        ? "video-bitmap"
+        : "video-element";
+
+  // 全局诊断 producer(v0.23.15):把精确帧状态写入 window.__videoWorkbenchDiagnostics,
+  // 供 BugReportDrawer 附带与排障。写入 window 不触发 React 重渲染;发布频率上限 5 Hz,
+  // state / fallback 转换立即写入,trailing 保证最后一次值落盘。
+  const diagnosticsRoute =
+    typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "";
+  const diagnosticsTaskId = manifest?.task_id ?? null;
+  useEffect(() => {
+    if (!diagnosticsTaskId) return;
+    setActiveVideoWorkbenchTask(diagnosticsTaskId);
+    return () => {
+      clearVideoPreciseFrameDiagnostics(diagnosticsTaskId);
+    };
+  }, [diagnosticsTaskId]);
+  useEffect(() => {
+    if (!diagnosticsTaskId) return;
+    publishVideoPreciseFrameDiagnostics(
+      diagnosticsTaskId,
+      {
+        enabled: precise.diagnostics.webcodecsEnabled,
+        supported: precise.diagnostics.supported,
+        state: precise.sourceState,
+        source:
+          frameSource === "webcodecs"
+            ? "webcodecs"
+            : frameSource === "video-bitmap"
+              ? "native-bitmap"
+              : "video",
+        frameIndex,
+        chunkId: precise.diagnostics.chunkId,
+        gopStartDecodeIndex: precise.performance.gopStartDecodeIndex,
+        targetTimestampUs: precise.performance.targetTimestampUs,
+        codec: precise.performance.codec,
+        fallbackReason: precise.fallbackReason,
+        lastDemuxMs: precise.performance.lastDemuxMs,
+        lastQueueMs: precise.performance.lastQueueMs,
+        lastCodecMs: precise.performance.lastCodecMs,
+        lastDecodeMs: precise.performance.lastDecodeMs,
+        lastBitmapMs: precise.performance.lastBitmapMs,
+        lastDecodeMode: precise.performance.lastDecodeMode,
+        lastPaintMs: precise.performance.lastPaintMs,
+        lastVisibleMs: precise.performance.lastVisibleMs,
+        paintedFrameIndex: precise.performance.paintedFrameIndex,
+        cache: {
+          bitmapBytes: precise.performance.bitmapBytes,
+          bitmapBudgetBytes: precise.performance.bitmapBudgetBytes,
+          chunkBytes: precise.performance.chunkBytes,
+          chunkBudgetBytes: precise.performance.chunkBudgetBytes,
+        },
+        counters: {
+          activeDecoders: precise.performance.activeDecoders,
+          liveVideoFrames: precise.performance.liveVideoFrames,
+          sessionCreates: precise.performance.sessionCreates,
+          sessionResets: precise.performance.sessionResets,
+          encodedChunksSubmitted: precise.performance.encodedChunksSubmitted,
+          staleResults: precise.performance.staleResults,
+          prefetchRequests: precise.performance.prefetchRequests,
+          prefetchHits: precise.performance.prefetchHits,
+        },
+      },
+      diagnosticsRoute,
+    );
+  }, [
+    diagnosticsTaskId,
+    diagnosticsRoute,
+    precise.diagnostics,
+    precise.sourceState,
+    precise.fallbackReason,
+    precise.performance,
+    frameSource,
+    frameIndex,
+  ]);
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
 
@@ -1014,7 +1114,7 @@ export function useVideoPlaybackController({
       deleteSelectedTrackKeyframe,
       // v0.21.4 · 当前帧 → JPEG(视频单题 AI / 交互式 SAM 供图), 经 ref 读最新位图故不入 deps。
       captureCurrentFrameJpeg: async (quality?: number) => {
-        const bmp = activeBitmapRef.current?.bitmap;
+        const bmp = displayBitmapRef.current?.bitmap;
         if (bmp) return imageBitmapToJpeg(bmp, quality);
         // v0.21.23 · 位图缓存未命中时画布画的是 <video> 本身(pickMediaImageSource 的回退),
         // 只认 bitmap 会在画面明明可见时谎报「当前帧尚未就绪」。取帧与渲染取同一源。
@@ -1054,7 +1154,10 @@ export function useVideoPlaybackController({
     activeBitmap,
     cachedRanges,
     displayBitmap,
-    showCachedBitmap,
+    frameSource,
+    preciseSourceState: precise.sourceState,
+    precisePaintedFrameIndex: precise.performance.paintedFrameIndex,
+    markPreciseFramePainted: precise.markFramePainted,
     framePreview,
     previewFrame,
     samplingStep,

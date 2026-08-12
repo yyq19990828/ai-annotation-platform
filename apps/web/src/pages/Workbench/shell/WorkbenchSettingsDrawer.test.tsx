@@ -109,10 +109,11 @@ describe("WorkbenchSettingsDrawer", () => {
     });
 
     const webcodecsLabel = screen.getByTestId("setting-field-experiment.webcodecs");
-    const webcodecs = within(webcodecsLabel).getByRole("switch") as HTMLInputElement;
+    const webcodecs = within(webcodecsLabel).getByRole("switch");
+    expect(webcodecs.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(webcodecs);
 
-    expect(window.localStorage.getItem(WEBCODECS_FLAG_STORAGE_KEY)).toBe("1");
+    expect(window.localStorage.getItem(WEBCODECS_FLAG_STORAGE_KEY)).toBe("0");
     expect(mockSetFields).toHaveBeenCalledTimes(1);
   });
 

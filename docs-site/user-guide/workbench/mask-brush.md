@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-08-11
 ---
 
 # Mask 像素编辑器
@@ -60,6 +60,8 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
 
 ## 大画布图片
 
+<!-- TODO IMAGE_CHECKLIST: images/mask-brush/large-image-limit.png — 超大底图可浏览但 Mask 尺寸超限提示 [auto] -->
+
 图片 Mask 最大支持 8192 像素单边和 67,108,864 总像素。任一边超过 4096 或总像素
 超过 16,777,216 时，工作台自动进入分块模式：
 
@@ -69,6 +71,10 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
   不会偷偷回退到主线程扫描全图。
 - 设备内存无法容纳当前可见分块时，画布保持只读预览并提示放大局部 ROI 或更换设备；
   已产生的脏分块与撤销历史不会因为后续准入失败而丢失。
+- 背景切片、Mask 缓存、编辑分块、撤销历史和浏览器内计算共用当前任务的资源上限。资源紧张时会先暂停
+  背景预取并释放可重建缓存；背景可能短暂显示“正在恢复清晰度”，但当前 Mask、脏分块和撤销记录不变。
+- 如果新的 Mask 运算仍无法准入，工作台会提示缩小可见区域或保存后重试；该提示表示浏览器当前任务的
+  联合资源不足，不等同于“没有 GPU”。
 
 大画布暂不从 polygon 整图栅格化进入精修；可直接新建空白 Mask，或编辑已有 Raster Mask。
 视频 Mask 和交互式 AI 候选仍保持 4096 像素单边与 16,777,216 总像素边界。
@@ -175,7 +181,7 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试」�
 
 ## 视频 Mask 轨迹
 
-<!-- TODO IMAGE_CHECKLIST: images/mask-brush/video-mask-track-edit.gif — 视频 Mask 创建、保持帧编辑与关键帧物化全过程 [auto-gif] -->
+![创建视频 Mask 轨迹并在保持帧编辑、物化新关键帧](../images/workbench/video-mask-track-edit.gif)
 
 在视频任务中点击「Mask 轨迹」工具（该工具不占用快捷键）：
 

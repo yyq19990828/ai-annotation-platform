@@ -348,6 +348,54 @@ async def test_seed_raster_mask_project_opt_in_and_content_fixtures(httpx_client
     assert eight_k.json()["mask"]["runs"] == 129
 
 
+async def test_seed_raster_mask_media_canvas_preserves_item_dimensions(
+    httpx_client, db_session
+):
+    from uuid import UUID
+
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.task import Task
+
+    reset = await httpx_client.post("/api/v1/__test/seed/reset")
+    data = reset.json()
+    task = await db_session.get(Task, UUID(data["task_ids"][0]))
+    assert task is not None and task.dataset_item_id is not None
+    item = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert item is not None
+    item.width = 1280
+    item.height = 720
+    await db_session.commit()
+
+    response = await httpx_client.post(
+        "/api/v1/__test/seed/inject-raster-mask",
+        json={
+            "task_id": str(task.id),
+            "user_email": data["annotator_email"],
+            "variant": "smart_scribble_source",
+            "canvas": "media",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["mask"]["size"] == [720, 1280]
+    await db_session.refresh(item)
+    assert (item.width, item.height) == (1280, 720)
+
+
+async def test_smart_scribble_masks_use_vehicle_silhouettes():
+    from app.api.v1._test_seed import _make_smart_scribble_mask
+
+    for refined in (False, True):
+        width, height = 64, 48
+        pixels = _make_smart_scribble_mask(width, height, refined=refined)
+        foreground = [index for index, value in enumerate(pixels) if value]
+        xs = [index % width for index in foreground]
+        ys = [index // width for index in foreground]
+        bounding_area = (max(xs) - min(xs) + 1) * (max(ys) - min(ys) + 1)
+
+        assert bounding_area * 0.45 < len(foreground) < bounding_area * 0.85
+
+
 async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
     """v0.8.7+ · D 方案核心断言：reset 不动非 fixture 的开发数据。
 
@@ -406,3 +454,99 @@ async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
         await db_session.execute(select(User).where(User.email == "admin@e2e.test"))
     ).scalar_one_or_none()
     assert e2e_admin is not None, "E2E fixture admin 应被重建"
+
+
+async def test_seed_video_webcodecs_rejects_unknown_fixture():
+    """未知 fixture 名在 DB 操作前被拒(422),不触碰数据库。"""
+    from fastapi import HTTPException
+
+    from app.api.v1 import _test_seed
+
+    req = _test_seed.SeedVideoWebCodecsRequest(
+        project_id="11111111-1111-4111-8111-111111111111",
+        fixture="not-a-real-fixture",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await _test_seed.seed_video_webcodecs(req, db=None)
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "unknown_fixture"
+
+
+async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():
+    from types import SimpleNamespace
+
+    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+
+    keys = [f"e2e/video/webcodecs/{index}.mp4" for index in range(1001)]
+
+    class Client:
+        def __init__(self):
+            self.list_calls = 0
+            self.deleted_batches: list[list[str]] = []
+
+        def list_objects_v2(self, **kwargs):
+            self.list_calls += 1
+            if kwargs.get("MaxKeys") == 1:
+                return {"Contents": []}
+            if kwargs.get("ContinuationToken"):
+                return {"Contents": [{"Key": keys[-1]}], "IsTruncated": False}
+            return {
+                "Contents": [{"Key": key} for key in keys[:1000]],
+                "IsTruncated": True,
+                "NextContinuationToken": "page-2",
+            }
+
+        def delete_objects(self, **kwargs):
+            self.deleted_batches.append(
+                [item["Key"] for item in kwargs["Delete"]["Objects"]]
+            )
+            return {}
+
+    client = Client()
+    _delete_webcodecs_seed_objects(
+        SimpleNamespace(client=client, datasets_bucket="datasets")
+    )
+    assert [len(batch) for batch in client.deleted_batches] == [1000, 1]
+    assert client.list_calls == 3
+
+
+async def test_webcodecs_object_cleanup_fails_on_partial_delete():
+    from types import SimpleNamespace
+
+    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+
+    class Client:
+        def list_objects_v2(self, **kwargs):
+            return {
+                "Contents": [{"Key": "e2e/video/webcodecs/a.mp4"}],
+                "IsTruncated": False,
+            }
+
+        def delete_objects(self, **kwargs):
+            return {"Errors": [{"Key": "redacted", "Code": "AccessDenied"}]}
+
+    with pytest.raises(RuntimeError, match="delete failed for 1 object"):
+        _delete_webcodecs_seed_objects(
+            SimpleNamespace(client=Client(), datasets_bucket="datasets")
+        )
+
+
+async def test_webcodecs_object_cleanup_fails_when_verification_finds_residual():
+    from types import SimpleNamespace
+
+    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+
+    class Client:
+        def list_objects_v2(self, **kwargs):
+            return {
+                "Contents": [{"Key": "e2e/video/webcodecs/a.mp4"}],
+                "IsTruncated": False,
+            }
+
+        def delete_objects(self, **kwargs):
+            return {}
+
+    with pytest.raises(RuntimeError, match="left MinIO objects"):
+        _delete_webcodecs_seed_objects(
+            SimpleNamespace(client=Client(), datasets_bucket="datasets")
+        )

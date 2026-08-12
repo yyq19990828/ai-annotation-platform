@@ -88,12 +88,15 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.23.11"
+    app_version: str = "0.23.25"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
     e2e_seed_enabled: bool = False
 
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/annotation"
+    # Alembic may use a schema-owner connection while API/Celery keep a least-privilege
+    # runtime role. Empty/unset preserves the historical single-connection behavior.
+    migration_database_url: str | None = None
     redis_url: str = "redis://localhost:6379/0"
 
     # CORS — dev 默认允许三个常见前端端口 + localhost regex；
@@ -181,6 +184,28 @@ class Settings(BaseSettings):
     # 浏览器可达的签名 URL 根地址：可为绝对 URL，也可为 DEV 同源前缀
     # (/minio，由 Vite 代理到对象存储)。
     minio_public_url: str = ""
+
+    # 超大图不可变 tile pyramid。服务端可先发布 schema/API；自动入队默认关闭，
+    # 待容量验收后再由部署显式打开。所有 byte/pixel/tile 限额均在 worker 实际生成前后复核。
+    image_pyramid_auto_generate: bool = False
+    image_pyramid_profile_version: str = "pyramid-v1"
+    image_pyramid_normalization_version: str = "exif-autorotate-srgb-v1"
+    image_pyramid_optional_pixels: int = 16_777_216
+    image_pyramid_required_pixels: int = 50_000_000
+    image_pyramid_max_pixels: int = 300_000_000
+    image_pyramid_max_dimension: int = 32_768
+    image_pyramid_max_tiles: int = 20_000
+    image_pyramid_max_source_bytes: int = 8 * 1024 * 1024 * 1024
+    image_pyramid_max_derived_bytes: int = 8 * 1024 * 1024 * 1024
+    image_pyramid_max_temp_bytes: int = 12 * 1024 * 1024 * 1024
+    image_pyramid_job_timeout_seconds: int = 1_800
+    image_pyramid_lease_seconds: int = 2_100
+    image_pyramid_url_expiry_seconds: int = 900
+    image_pyramid_asset_url_batch_max: int = 128
+    image_pyramid_retry_cooldown_seconds: int = 300
+    image_pyramid_gc_grace_hours: int = 24
+    image_pyramid_vips_concurrency: int = 4
+    image_pyramid_srgb_profile: str = "/usr/share/color/icc/sRGB.icc"
 
     # v0.9.4 · 当 ML backend 在 docker compose 网内、平台 api 在 host 进程时,
     # SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge gateway
@@ -425,6 +450,10 @@ class Settings(BaseSettings):
     @property
     def effective_celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url
+
+    @property
+    def effective_migration_database_url(self) -> str:
+        return self.migration_database_url or self.database_url
 
     @property
     def smtp_configured(self) -> bool:

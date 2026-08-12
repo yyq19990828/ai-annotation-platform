@@ -9,13 +9,14 @@
  *
  * 落库:geometry.type=video_track_bbox(或单帧 video_bbox)，由 flows.spec afterAll 重建截图 seed 清理。
  *
- * 盲坐标:视频用 Konva 叠加层, 画框落点取 video-konva-stage 的 boundingBox 再按比例算客户端坐标
- * (finishDrag 内部 clientPointToVideoPoint 会把客户端坐标转成归一化 [0,1])。
+ * 两个关键帧使用 screenshot catalog 内经复核的同一车辆时序锚点；录制时再把媒体归一化
+ * 坐标映射为 video-konva-stage 客户端坐标。
  *
  * 返回 { drawStartMs, drawEndMs }:供 finalize 裁掉开头(导航/解析/就绪等待)。
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { mediaBbox, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runVideoDraw(
@@ -38,20 +39,19 @@ export async function runVideoDraw(
   const surface = page.getByTestId("video-konva-stage");
   const box = await surface.boundingBox();
   if (!box) throw new Error("[video-draw] video-konva-stage 没有可见边界");
-  const at = (fx: number, fy: number) => ({
-    x: box.x + box.width * fx,
-    y: box.y + box.height * fy,
-  });
+  const firstAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
+  const secondAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f8", 8);
 
   const drawStartMs = Date.now();
 
   // ── 第 0 帧:画第一个框(新建 track, 关键帧 @0)──
-  const a0 = at(0.34, 0.42);
-  const a1 = at(0.5, 0.66);
-  await page.mouse.move(a0.x, a0.y);
+  const first = mediaBbox(box, firstAnchor.bbox);
+  await page.mouse.move(first.start.x, first.start.y);
   await page.mouse.down();
-  await page.mouse.move((a0.x + a1.x) / 2, (a0.y + a1.y) / 2, { steps: 6 });
-  await page.mouse.move(a1.x, a1.y, { steps: 6 });
+  await page.mouse.move((first.start.x + first.end.x) / 2, (first.start.y + first.end.y) / 2, {
+    steps: 6,
+  });
+  await page.mouse.move(first.end.x, first.end.y, { steps: 6 });
   await page.mouse.up();
   // 画完弹 ClassPickerPopover, Enter 用默认类别提交(否则停在 pending draft 不落库)。
   await page.getByTestId("class-picker-popover").waitFor({ timeout: 3000 });
@@ -66,12 +66,13 @@ export async function runVideoDraw(
   await page.waitForTimeout(500);
 
   // ── 第 8 帧:再画一个框(track 已选中, upsert 关键帧 @8, 位置右移演示运动)──
-  const b0 = at(0.5, 0.36);
-  const b1 = at(0.66, 0.6);
-  await page.mouse.move(b0.x, b0.y);
+  const second = mediaBbox(box, secondAnchor.bbox);
+  await page.mouse.move(second.start.x, second.start.y);
   await page.mouse.down();
-  await page.mouse.move((b0.x + b1.x) / 2, (b0.y + b1.y) / 2, { steps: 6 });
-  await page.mouse.move(b1.x, b1.y, { steps: 6 });
+  await page.mouse.move((second.start.x + second.end.x) / 2, (second.start.y + second.end.y) / 2, {
+    steps: 6,
+  });
+  await page.mouse.move(second.end.x, second.end.y, { steps: 6 });
   await page.mouse.up();
   // track 工具已选中该 track 时, 第二次画框是 upsert 关键帧, 通常不再弹 popover;
   // 若弹(被当作新 pending)仍 Enter 兜底提交。

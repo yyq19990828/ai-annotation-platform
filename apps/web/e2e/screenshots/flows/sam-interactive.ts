@@ -16,6 +16,10 @@ export async function runSamToolRecording(
   toolId: SamRecordingTool,
   options: { accept?: boolean } = {},
 ): Promise<DrawWindow> {
+  const anchor = catalog.projects.image_demo.tasks.annotating.recording_anchors?.primary_vehicle;
+  if (!anchor) {
+    throw new Error("[sam-interactive] image_demo.annotating 缺少 primary_vehicle 语义锚点");
+  }
   await openImageAnnotate(page, catalog);
   // fresh repair 会异步回填媒体；stage 外壳先出现，Konva 背景层稍后才真正绘出图像。
   // 等画布中心像素有内容再派发 prompt，避免在 checkerboard 占位期拖框被静默忽略。
@@ -53,17 +57,25 @@ export async function runSamToolRecording(
 
   const drawStartMs = Date.now();
 
-  // screenshot_03.jpg 中下方完整可见的白色 SUV。点提示落在车身中心；三种框提示
-  // 从车顶到车尾完整包住车身，且不包含左右车道的相邻车辆。
-  // 比例相对 stage 固定，避免依赖具体 UUID 或绝对坐标。
+  // 锚点由媒体归一化坐标表达；可由模型预选、人工复核后写入 screenshot catalog。
+  // 录制阶段只消费已版本化的锚点，避免每次推理漂移导致 GIF 构图不稳定。
   if (toolId === "smart-point") {
-    const point = { x: box.x + box.width * 0.49, y: box.y + box.height * 0.62 };
+    const point = {
+      x: box.x + box.width * anchor.point[0],
+      y: box.y + box.height * anchor.point[1],
+    };
     await page.mouse.move(point.x, point.y, { steps: 10 });
     await page.waitForTimeout(350);
     await page.mouse.click(point.x, point.y);
   } else {
-    const start = { x: box.x + box.width * 0.42, y: box.y + box.height * 0.48 };
-    const end = { x: box.x + box.width * 0.56, y: box.y + box.height * 0.75 };
+    const start = {
+      x: box.x + box.width * anchor.bbox[0],
+      y: box.y + box.height * anchor.bbox[1],
+    };
+    const end = {
+      x: box.x + box.width * anchor.bbox[2],
+      y: box.y + box.height * anchor.bbox[3],
+    };
     await page.mouse.move(start.x, start.y, { steps: 8 });
     await page.waitForTimeout(350);
     await page.mouse.down();

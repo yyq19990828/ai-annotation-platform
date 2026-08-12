@@ -1,0 +1,158 @@
+{
+  "schema": "mask-webgpu-production-provider-ab/v1",
+  "generated_at": "2026-07-30T02:29:31.258Z",
+  "environment": {
+    "platform": "linux",
+    "kernel": "5.15.0-186-generic",
+    "cpu": "Intel(R) Xeon(R) Gold 6238R CPU @ 2.20GHz",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "driver": "595.84",
+    "browser": "Chrome 150.0.7871.114",
+    "headless": false
+  },
+  "production_gpu_rounds": [
+    {
+      "generated_at": "2026-07-30T02:28:13.097Z",
+      "config": {
+        "warmup": 3,
+        "iterations": 10,
+        "radius": 2,
+        "unsafe_vulkan": true
+      },
+      "rows": [
+        {
+          "roi": "2048x2048",
+          "backend": "webgpu",
+          "cpu_p50_ms": 268.8,
+          "cpu_p95_ms": 427.5,
+          "candidate_p50_ms": 144.4,
+          "candidate_p95_ms": 167.2,
+          "p95_improvement_percent": 60.9,
+          "patch_checksum": "14708:3120182536",
+          "save_checksum": "3570:2215193346",
+          "min_gpu_allocated_bytes": 1572880,
+          "max_gpu_allocated_bytes": 1572880,
+          "max_gpu_owner_workers": 1
+        },
+        {
+          "roi": "3840x2160",
+          "backend": "webgpu",
+          "cpu_p50_ms": 509.6,
+          "cpu_p95_ms": 521.5,
+          "candidate_p50_ms": 259,
+          "candidate_p95_ms": 265.2,
+          "p95_improvement_percent": 49.1,
+          "patch_checksum": "21352:1237882875",
+          "save_checksum": "6688:523181966",
+          "min_gpu_allocated_bytes": 3145744,
+          "max_gpu_allocated_bytes": 3145744,
+          "max_gpu_owner_workers": 1
+        }
+      ],
+      "long_tasks": 0,
+      "resources_before_dispose": {
+        "sessions": 4,
+        "gpu_owner_workers": 1,
+        "gpu_allocated_bytes": 3145744,
+        "gpu_jobs": 26,
+        "cpu_jobs": 26
+      },
+      "resources_after_dispose": {
+        "sessions": 0,
+        "live_workers": 0,
+        "gpu_owner_workers": 0,
+        "gpu_allocated_bytes": 0
+      }
+    },
+    {
+      "generated_at": "2026-07-30T02:28:40.793Z",
+      "config": {
+        "warmup": 3,
+        "iterations": 10,
+        "radius": 2,
+        "unsafe_vulkan": true
+      },
+      "rows": [
+        {
+          "roi": "2048x2048",
+          "backend": "webgpu",
+          "cpu_p50_ms": 267.8,
+          "cpu_p95_ms": 420.9,
+          "candidate_p50_ms": 144.9,
+          "candidate_p95_ms": 175,
+          "p95_improvement_percent": 58.4,
+          "patch_checksum": "14708:3120182536",
+          "save_checksum": "3570:2215193346",
+          "min_gpu_allocated_bytes": 1572880,
+          "max_gpu_allocated_bytes": 1572880,
+          "max_gpu_owner_workers": 1
+        },
+        {
+          "roi": "3840x2160",
+          "backend": "webgpu",
+          "cpu_p50_ms": 510.1,
+          "cpu_p95_ms": 528.4,
+          "candidate_p50_ms": 260.2,
+          "candidate_p95_ms": 268.9,
+          "p95_improvement_percent": 49.1,
+          "patch_checksum": "21352:1237882875",
+          "save_checksum": "6688:523181966",
+          "min_gpu_allocated_bytes": 3145744,
+          "max_gpu_allocated_bytes": 3145744,
+          "max_gpu_owner_workers": 1
+        }
+      ],
+      "long_tasks": 0,
+      "resources_before_dispose": {
+        "sessions": 4,
+        "gpu_owner_workers": 1,
+        "gpu_allocated_bytes": 3145744,
+        "gpu_jobs": 26,
+        "cpu_jobs": 26
+      },
+      "resources_after_dispose": {
+        "sessions": 0,
+        "live_workers": 0,
+        "gpu_owner_workers": 0,
+        "gpu_allocated_bytes": 0
+      }
+    }
+  ],
+  "fallback_matrix": [
+    {
+      "name": "gate-on-default-x11",
+      "gate_enabled": true,
+      "unsafe_vulkan": false,
+      "provider_state": "unavailable",
+      "backend": "cpu",
+      "fallback_reason": "adapter-unavailable",
+      "init_attempts": 1,
+      "gpu_allocated_bytes": 0,
+      "gpu_owner_workers": 0,
+      "patch_checksum": "14708:3120182536",
+      "save_checksum": "3570:2215193346",
+      "long_tasks": 0
+    },
+    {
+      "name": "gate-off-unsafe-vulkan-available",
+      "gate_enabled": false,
+      "unsafe_vulkan": true,
+      "provider_state": "disabled",
+      "backend": "cpu",
+      "fallback_reason": "gate-disabled",
+      "init_attempts": 0,
+      "gpu_allocated_bytes": 0,
+      "gpu_owner_workers": 0,
+      "patch_checksum": "14708:3120182536",
+      "save_checksum": "3570:2215193346",
+      "long_tasks": 0
+    }
+  ],
+  "decision": {
+    "production_provider_performance_gate": "pass",
+    "default_enabled": false,
+    "linux_x11_without_flags_supported": false,
+    "macos_without_flags": "not-tested",
+    "cross_platform_default_enablement": "deferred"
+  }
+}
