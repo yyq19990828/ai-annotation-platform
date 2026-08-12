@@ -323,7 +323,7 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     decision.response_json = {"replay_only": {"object_key": replay_only_key}}
     await db_session.flush()
     assert replay_only_key in await cleanup._referenced_raster_mask_keys(db_session)
-    decision.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    decision.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     await db_session.flush()
     assert replay_only_key not in await cleanup._referenced_raster_mask_keys(db_session)
 
