@@ -10,9 +10,11 @@ from __future__ import annotations
 import shutil
 
 from app.api.v1._test_seed_webcodecs import (
+    QUALIFICATION_CHUNK_SIZE_FRAMES,
     apply_metadata_mutation,
     frame_expectations,
     generate_fixture,
+    generate_qualification_fixture,
 )
 
 _SAMPLE_KEYS = {
@@ -50,6 +52,19 @@ def test_baseline_fixture_produces_production_shaped_samples(tmp_path):
         assert s["offset_in_chunk"] >= 0
     # mp4 字节非空,供前端按 offset 切片。
     assert meta["mp4_bytes"]
+
+
+def test_qualification_fixture_produces_full_ready_chunk_contract(tmp_path):
+    meta = generate_qualification_fixture("1080p-30", tmp_path)
+    assert meta["width"] == 1920 and meta["height"] == 1080
+    assert meta["fps"] == 30 and meta["frame_count"] == 1830
+    assert len(meta["chunks"]) == 31
+    assert [len(chunk["samples"]) for chunk in meta["chunks"]] == [
+        *([QUALIFICATION_CHUNK_SIZE_FRAMES] * 30),
+        30,
+    ]
+    assert meta["chunks"][0]["start_frame"] == 0
+    assert meta["chunks"][-1]["end_frame"] == meta["frame_count"] - 1
 
 
 def test_main_bframes_has_decode_presentation_reorder(tmp_path):

@@ -20,6 +20,119 @@ function completedRow(overrides = {}) {
   };
 }
 
+const playback = {
+  requestedSeconds: 1,
+  observedSeconds: 1,
+  mediaTimeDeltaSeconds: 1,
+  mediaEnded: false,
+  preciseRequests: 0,
+  rafFps: 60,
+};
+
+describe("macOS WebCodecs decoder evidence", () => {
+  const host = { platform: "darwin", arch: "arm64" };
+
+  it("允许空静态 profile，由实际 WebCodecs VideoToolbox player 完成资格", () => {
+    expect(
+      preciseFrameMath.classifyVideoDecoderEvidence(
+        [
+          {
+            loadUrls: ["WebCodecs::VideoDecoder"],
+            decoderName: "VideoToolboxVideoDecoder",
+            platformDecoder: true,
+          },
+        ],
+        host,
+      ),
+    ).toMatchObject({
+      status: "verified",
+      matchedPlayerCount: 1,
+      decoderName: "VideoToolboxVideoDecoder",
+      platformDecoder: true,
+    });
+  });
+
+  it("隐藏原生 video 的 VideoToolbox 条目不能冒充 WebCodecs", () => {
+    expect(
+      preciseFrameMath.classifyVideoDecoderEvidence(
+        [
+          {
+            loadUrls: ["http://localhost/video.mp4"],
+            decoderName: "VideoToolboxVideoDecoder",
+            platformDecoder: true,
+          },
+        ],
+        host,
+      ),
+    ).toMatchObject({ status: "unverified", matchedPlayerCount: 0 });
+  });
+
+  it("忽略未初始化的 kLoad-only player，但完整证据仍必须至少一条", () => {
+    expect(
+      preciseFrameMath.classifyVideoDecoderEvidence(
+        [
+          { loadUrls: ["WebCodecs::VideoDecoder"], decoderName: null, platformDecoder: null },
+          {
+            loadUrls: ["WebCodecs::VideoDecoder"],
+            decoderName: "VideoToolboxVideoDecoder",
+            platformDecoder: true,
+          },
+        ],
+        host,
+      ),
+    ).toMatchObject({ status: "verified", matchedPlayerCount: 2, initializedPlayerCount: 1 });
+    expect(
+      preciseFrameMath.classifyVideoDecoderEvidence(
+        [{ loadUrls: ["WebCodecs::VideoDecoder"], decoderName: null, platformDecoder: null }],
+        host,
+      ).status,
+    ).toBe("unverified");
+  });
+
+  it.each([
+    { decoderName: "FFmpegVideoDecoder", platformDecoder: false },
+    { decoderName: "VideoToolboxVideoDecoder", platformDecoder: false },
+    { decoderName: null, platformDecoder: null },
+    {
+      decoderNames: ["FFmpegVideoDecoder", "VideoToolboxVideoDecoder"],
+      platformDecoderValues: [false, true],
+    },
+  ])("decoder 属性不完整或非平台 VideoToolbox 时 fail closed", (properties) => {
+    expect(
+      preciseFrameMath.classifyVideoDecoderEvidence(
+        [{ loadUrls: ["WebCodecs::VideoDecoder"], ...properties }],
+        host,
+      ).status,
+    ).toBe("unverified");
+  });
+
+  it("CDP session 关闭后丢弃已采集证据", async () => {
+    const listeners = new Map();
+    const session = {
+      on: (event, listener) => listeners.set(event, listener),
+      send: async () => undefined,
+      detach: async () => undefined,
+    };
+    const probe = await preciseFrameMath.installVideoDecoderEvidenceProbe({
+      context: () => ({ newCDPSession: async () => session }),
+    });
+    listeners.get("Media.playerEventsAdded")?.({
+      playerId: "webcodecs",
+      events: [{ value: JSON.stringify({ event: "kLoad", url: "WebCodecs::VideoDecoder" }) }],
+    });
+    listeners.get("Media.playerPropertiesChanged")?.({
+      playerId: "webcodecs",
+      properties: [
+        { name: "kVideoDecoderName", value: "VideoToolboxVideoDecoder" },
+        { name: "kIsPlatformVideoDecoder", value: "true" },
+      ],
+    });
+    expect(probe.snapshot().status).toBe("verified");
+    listeners.get("close")?.();
+    expect(probe.snapshot()).toMatchObject({ status: "unverified", platformDecoder: true });
+  });
+});
+
 describe("precise-frame benchmark decision", () => {
   it("矩阵不完整时保持 inconclusive，不输出 false", () => {
     expect(
@@ -114,8 +227,8 @@ describe("precise-frame benchmark decision", () => {
       {
         capability: "ready",
         observations,
-        playback: { requestedSeconds: 1, preciseRequests: 0, rafFps: 60 },
-        nativeBaselinePlayback: { requestedSeconds: 1, rafFps: 60 },
+        playback,
+        nativeBaselinePlayback: playback,
         interactionRaf: { rafFps: 60 },
         nativeBaselineInteractionRaf: { rafFps: 60 },
         flagOffPreciseRequests: 0,
@@ -185,8 +298,8 @@ describe("precise-frame benchmark decision", () => {
           observation("cross-gop-roundtrip", 5, 30),
           observation("frame-step-stability", 5),
         ],
-        playback: { requestedSeconds: 1, preciseRequests: 0, rafFps: 60 },
-        nativeBaselinePlayback: { requestedSeconds: 1, rafFps: 60 },
+        playback,
+        nativeBaselinePlayback: playback,
         interactionRaf: { rafFps: 60 },
         nativeBaselineInteractionRaf: { rafFps: 60 },
         flagOffPreciseRequests: 0,

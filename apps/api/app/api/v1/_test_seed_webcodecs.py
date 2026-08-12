@@ -24,6 +24,7 @@ import numpy as np
 from PIL import Image
 
 from app.workers.media_codec import _extract_decoder_config
+from app.workers.media_chunks import extract_video_chunk_smart_copy
 from app.workers.media_probe import probe_chunk_samples
 
 FRAME_W = 160
@@ -47,6 +48,9 @@ WebCodecsFixture = Literal[
     "h264-vfr",
     "unsupported-config",
     "malformed-samples",
+    "1080p-30",
+    "1080p-60",
+    "4k-30",
 ]
 
 # 每个真实编码 fixture 的 ffmpeg 参数与帧数。frame_count 控制在几秒内保证 E2E 速度。
@@ -83,6 +87,13 @@ FIXTURE_SPECS: dict[str, dict[str, Any]] = {
         "scene": "magenta",
         "vfr": True,
     },
+}
+
+QUALIFICATION_CHUNK_SIZE_FRAMES = 60
+QUALIFICATION_FIXTURE_SPECS: dict[str, dict[str, Any]] = {
+    "1080p-30": {"width": 1920, "height": 1080, "fps": 30, "bitrate": "4M"},
+    "1080p-60": {"width": 1920, "height": 1080, "fps": 60, "bitrate": "6M"},
+    "4k-30": {"width": 3840, "height": 2160, "fps": 30, "bitrate": "8M"},
 }
 
 # 帧身份采样区(归一化坐标,相对视频帧;E2E 据此映射到 Konva canvas)。
@@ -205,6 +216,111 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
         "fps": FRAME_FPS,
         "frame_count": spec["frames"],
         "duration_ms": duration_ms,
+    }
+
+
+def generate_qualification_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
+    """生成 61 秒 benchmark 源视频和 production-sized ready chunks。"""
+    spec = QUALIFICATION_FIXTURE_SPECS[fixture]
+    root = Path(tmpdir)
+    source = root / "source.mp4"
+    frame_count = int(spec["fps"]) * 61
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={spec['width']}x{spec['height']}:rate={spec['fps']}",
+        "-frames:v",
+        str(frame_count),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        "high",
+        "-g",
+        "30",
+        "-keyint_min",
+        "30",
+        "-sc_threshold",
+        "0",
+        "-bf",
+        "0",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "ultrafast",
+        "-b:v",
+        str(spec["bitrate"]),
+        "-maxrate",
+        str(spec["bitrate"]),
+        "-bufsize",
+        str(spec["bitrate"]),
+        "-movflags",
+        "+faststart",
+        str(source),
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"webcodecs qualification fixture {fixture} encode timed out"
+        ) from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            proc.stderr.strip()
+            or f"webcodecs qualification fixture {fixture} encode failed"
+        )
+
+    chunks: list[dict[str, Any]] = []
+    for chunk_id, start_frame in enumerate(
+        range(0, frame_count, QUALIFICATION_CHUNK_SIZE_FRAMES)
+    ):
+        chunk_frames = min(QUALIFICATION_CHUNK_SIZE_FRAMES, frame_count - start_frame)
+        start_ms = round(start_frame / spec["fps"] * 1000)
+        duration_ms = round(chunk_frames / spec["fps"] * 1000)
+        chunk_path = root / f"chunk-{chunk_id:04d}.mp4"
+        extract_video_chunk_smart_copy(source, chunk_path, start_ms, duration_ms)
+        samples = probe_chunk_samples(chunk_path, start_frame)
+        codec, description = _extract_decoder_config(chunk_path)
+        expected_indexes = list(range(start_frame, start_frame + chunk_frames))
+        if (
+            not codec
+            or not description
+            or sorted(int(sample["frame_index"]) for sample in samples)
+            != expected_indexes
+        ):
+            raise RuntimeError(
+                f"webcodecs qualification fixture {fixture} chunk {chunk_id} "
+                "did not preserve the 60-frame contract"
+            )
+        chunks.append(
+            {
+                "chunk_id": chunk_id,
+                "start_frame": start_frame,
+                "end_frame": start_frame + chunk_frames - 1,
+                "start_pts_ms": start_ms,
+                "end_pts_ms": start_ms + duration_ms,
+                "bytes": chunk_path.read_bytes(),
+                "samples": samples,
+                "codec_string": codec,
+                "description": description,
+            }
+        )
+    return {
+        "mp4_bytes": source.read_bytes(),
+        "chunks": chunks,
+        "width": spec["width"],
+        "height": spec["height"],
+        "fps": spec["fps"],
+        "frame_count": frame_count,
+        "duration_ms": 61_000,
     }
 
 

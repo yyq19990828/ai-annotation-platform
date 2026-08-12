@@ -16,6 +16,7 @@ function parseArgs(argv) {
     scenario: null,
     headed: process.env.VIDEO_BENCH_HEADED === "1",
     strict: process.env.VIDEO_BENCH_STRICT === "1",
+    seed: false,
     storageState: process.env.VIDEO_BENCH_STORAGE_STATE ?? null,
     playbackSeconds: Number(process.env.VIDEO_BENCH_PLAYBACK_SECONDS ?? 60),
     stabilityOperations: Number(process.env.VIDEO_BENCH_STABILITY_OPERATIONS ?? 5000),
@@ -39,6 +40,8 @@ function parseArgs(argv) {
       args.headed = true;
     } else if (arg === "--strict") {
       args.strict = true;
+    } else if (arg === "--seed") {
+      args.seed = true;
     } else if (arg === "--storage-state") {
       args.storageState = resolve(argv[i + 1] ?? "");
       i += 1;
@@ -59,6 +62,57 @@ function parseArgs(argv) {
     throw new Error("--stability-operations must be a positive integer");
   }
   return args;
+}
+
+async function seedRequest(baseUrl, path, body) {
+  const response = await fetch(new URL(path, baseUrl), {
+    method: "POST",
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
+  }
+  return response.json();
+}
+
+async function seedPreciseFrameTasks(precise, args) {
+  const data = await seedRequest(args.baseUrl, "/api/v1/__test/seed/reset");
+  const taskUrls = {};
+  for (const resolution of precise.resolutions) {
+    const fixture = await seedRequest(args.baseUrl, "/api/v1/__test/seed/video-webcodecs", {
+      project_id: data.project_id,
+      fixture: resolution.id,
+      chunk_status: "ready",
+    });
+    taskUrls[resolution.taskUrlEnv] =
+      `/projects/${data.project_id}/annotate?task=${fixture.task_id}`;
+  }
+  const login = await seedRequest(args.baseUrl, "/api/v1/__test/seed/login", {
+    email: data.admin_email,
+  });
+  const origin = new URL(args.baseUrl).origin;
+  return {
+    taskUrls,
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin,
+          localStorage: [
+            { name: "token", value: login.access_token },
+            {
+              name: "auth-storage",
+              value: JSON.stringify({
+                state: { token: login.access_token, user: login.user },
+                version: 0,
+              }),
+            },
+          ],
+        },
+      ],
+    },
+  };
 }
 
 function buildMatrix(config) {
@@ -139,8 +193,11 @@ function preciseFrameSummary(manifest) {
       summary.pipelineBlockingP95Ms ?? "—",
       summary.attributedLongTaskGte50Ms ?? "—",
       summary.interactionRafRatio ?? "—",
+      summary.videoDecoderEvidenceStatus ?? "—",
       summary.fallbackCount ?? "—",
       summary.playbackPreciseRequests ?? "—",
+      summary.playbackMediaTimeDeltaSeconds ?? "—",
+      summary.playbackEnded ?? "—",
       summary.flagOffPreciseRequests ?? "—",
       summary.staleFrameActivations ?? "—",
       summary.activeDecodersMax ?? "—",
@@ -167,8 +224,8 @@ function preciseFrameSummary(manifest) {
     "",
     "## 实测结果",
     "",
-    "| 矩阵 | 状态 | same-GOP p95(ms) | same-chunk p95(ms) | blocking p95(ms) | ≥50ms long task | 交互 rAF ratio | fallback | 播放请求 | flag-off 请求 | stale | decoder max | live frame max | 账本增长(B) | 资源合规 |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    "| 矩阵 | 状态 | same-GOP p95(ms) | same-chunk p95(ms) | blocking p95(ms) | ≥50ms long task | 交互 rAF ratio | VT 证据 | fallback | 播放请求 | 媒体时间(s) | ended | flag-off 请求 | stale | decoder max | live frame max | 账本增长(B) | 资源合规 |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |",
     ...resultRows.map((row) => `| ${row.join(" | ")} |`),
     "",
     "## Dedicated Worker 决策 (§9)",
@@ -194,7 +251,29 @@ async function runPreciseFrame(config, args, runId) {
     console.log("dry-run: matrix only; no browser launched, no Worker decision, no files written");
     return;
   }
-  const measurement = await runPreciseFrameMeasurements(precise, args);
+  const providedUrls = precise.resolutions.filter(
+    (resolution) => process.env[resolution.taskUrlEnv],
+  );
+  if (args.seed && providedUrls.length > 0) {
+    throw new Error("--seed cannot be combined with VIDEO_BENCH_TASK_*_URL values");
+  }
+  let measurementArgs = args;
+  if (args.seed) {
+    try {
+      measurementArgs = { ...args, ...(await seedPreciseFrameTasks(precise, args)) };
+    } catch (error) {
+      await seedRequest(args.baseUrl, "/api/v1/__test/seed/cleanup").catch(() => {});
+      throw error;
+    }
+  }
+  let measurement;
+  try {
+    measurement = await runPreciseFrameMeasurements(precise, measurementArgs);
+  } finally {
+    if (args.seed) {
+      await seedRequest(args.baseUrl, "/api/v1/__test/seed/cleanup");
+    }
+  }
   const manifest = buildPreciseFrameManifest(config, args, runId, measurement);
   console.log(
     `worker decision: status=${manifest.workerDecision.status} triggered=${manifest.workerDecision.triggered}`,

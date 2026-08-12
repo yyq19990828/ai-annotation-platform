@@ -133,8 +133,7 @@ async function waitForPreciseTerminal(page: Page): Promise<PreciseSnapshot> {
 async function setWebCodecsFlag(page: Page, enabled: boolean): Promise<void> {
   await page.evaluate(
     ({ key, value }) => {
-      if (value) localStorage.setItem(key, "1");
-      else localStorage.removeItem(key);
+      localStorage.setItem(key, value ? "1" : "0");
     },
     { key: WEBCODECS_FLAG, value: enabled },
   );

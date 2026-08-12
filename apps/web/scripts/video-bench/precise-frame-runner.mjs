@@ -1,8 +1,10 @@
 import { chromium } from "@playwright/test";
 
 const STAGE_SELECTOR = '[data-testid="video-konva-stage"]';
+const VIDEO_SELECTOR = '[data-testid="video-konva-source"]';
 const SLIDER_SELECTOR = 'input[aria-label="视频帧时间轴"]';
 const PLAY_SELECTOR = 'button[aria-label="播放 / 暂停"]';
+const WEBCODECS_PLAYER_URL = "WebCodecs::VideoDecoder";
 
 function percentile(values, quantile) {
   if (values.length === 0) return null;
@@ -68,6 +70,136 @@ async function readBrowserGpuEnvironment(browser) {
       hardwareVideoDecode: null,
     };
   }
+}
+
+function classifyVideoDecoderEvidence(
+  players,
+  { available = true, platform = process.platform, arch = process.arch } = {},
+) {
+  if (platform !== "darwin") {
+    return {
+      status: "not-applicable",
+      matchedPlayerCount: 0,
+      decoderName: null,
+      platformDecoder: null,
+      reason: null,
+    };
+  }
+  if (arch !== "arm64") {
+    return {
+      status: "unsupported-host",
+      matchedPlayerCount: 0,
+      decoderName: null,
+      platformDecoder: null,
+      reason: "Intel macOS VideoToolbox may use a software fallback",
+    };
+  }
+  const matched = players.filter((player) => player.loadUrls?.includes(WEBCODECS_PLAYER_URL));
+  const decoderNamesFor = (player) =>
+    Array.isArray(player.decoderNames)
+      ? player.decoderNames
+      : player.decoderName !== null && player.decoderName !== undefined
+        ? [player.decoderName]
+        : [];
+  const platformValuesFor = (player) =>
+    Array.isArray(player.platformDecoderValues)
+      ? player.platformDecoderValues
+      : typeof player.platformDecoder === "boolean"
+        ? [player.platformDecoder]
+        : [];
+  // Chromium 会为未走到 initialize 的瞬时 VideoDecoder 只发 kLoad；它们没有选择 decoder，
+  // 不能作为正证据或反证据。任何发布过一侧属性的 player 都算 initialized，并必须两侧完整。
+  const initialized = matched.filter(
+    (player) => decoderNamesFor(player).length > 0 || platformValuesFor(player).length > 0,
+  );
+  const decoderNames = [...new Set(initialized.flatMap(decoderNamesFor).filter(Boolean))];
+  const platformValues = initialized.flatMap(platformValuesFor);
+  const verified =
+    available &&
+    matched.length > 0 &&
+    initialized.length > 0 &&
+    initialized.every(
+      (player) =>
+        decoderNamesFor(player).length > 0 &&
+        decoderNamesFor(player).every((name) => name === "VideoToolboxVideoDecoder") &&
+        platformValuesFor(player).length > 0 &&
+        platformValuesFor(player).every((value) => value === true),
+    );
+  let reason = null;
+  if (!available) reason = "CDP Media domain unavailable or detached";
+  else if (matched.length === 0) reason = "WebCodecs VideoDecoder player not observed";
+  else if (!verified) reason = "WebCodecs player did not publish platform VideoToolbox evidence";
+  return {
+    status: verified ? "verified" : "unverified",
+    matchedPlayerCount: matched.length,
+    initializedPlayerCount: initialized.length,
+    decoderName: decoderNames.length === 1 ? decoderNames[0] : null,
+    platformDecoder:
+      initialized.length > 0 &&
+      initialized.every(
+        (player) =>
+          platformValuesFor(player).length > 0 && platformValuesFor(player).every(Boolean),
+      )
+        ? true
+        : platformValues.some((value) => value === false)
+          ? false
+          : null,
+    reason,
+  };
+}
+
+async function installVideoDecoderEvidenceProbe(page) {
+  const players = new Map();
+  let available = true;
+  let session = null;
+  const player = (playerId) => {
+    if (!players.has(playerId)) {
+      players.set(playerId, { loadUrls: [], decoderNames: [], platformDecoderValues: [] });
+    }
+    return players.get(playerId);
+  };
+  try {
+    session = await page.context().newCDPSession(page);
+    session.on("close", () => {
+      available = false;
+    });
+    session.on("Media.playerEventsAdded", ({ playerId, events = [] }) => {
+      const entry = player(playerId);
+      for (const event of events) {
+        try {
+          const value = JSON.parse(event.value);
+          if (value?.event === "kLoad" && typeof value.url === "string") {
+            entry.loadUrls.push(value.url);
+          }
+        } catch {
+          // 非 JSON 的媒体日志不是 decoder 身份证据。
+        }
+      }
+    });
+    session.on("Media.playerPropertiesChanged", ({ playerId, properties = [] }) => {
+      const entry = player(playerId);
+      for (const property of properties) {
+        if (property.name === "kVideoDecoderName") entry.decoderNames.push(property.value);
+        if (property.name === "kIsPlatformVideoDecoder") {
+          entry.platformDecoderValues.push(property.value === true || property.value === "true");
+        }
+      }
+    });
+    await session.send("Media.enable");
+  } catch {
+    available = false;
+  }
+  return {
+    snapshot: () => classifyVideoDecoderEvidence([...players.values()], { available }),
+    close: async () => {
+      if (!session) return;
+      try {
+        await session.detach();
+      } catch {
+        // context 关闭时 session 可能已 detach。
+      }
+    },
+  };
 }
 
 async function seekFrame(page, targetFrame, maxFrame) {
@@ -371,6 +503,10 @@ async function playbackObservation(page, seconds, requestUrls, scenario) {
   // play click 之前，避免把先前操作的尾请求误算成“播放态新增请求”。
   await waitForPreciseRequestsToSettle(requestUrls);
   const beforeRequests = requestUrls.length;
+  const mediaBefore = await page.locator(VIDEO_SELECTOR).evaluate((video) => ({
+    currentTime: video.currentTime,
+    ended: video.ended,
+  }));
   await page.locator(PLAY_SELECTOR).click();
   const raf = await page.evaluate(
     (durationMs) =>
@@ -390,13 +526,20 @@ async function playbackObservation(page, seconds, requestUrls, scenario) {
     seconds * 1000,
   );
   const preciseRequests = requestUrls.length - beforeRequests;
-  await page.locator(PLAY_SELECTOR).click();
+  const mediaAfter = await page.locator(VIDEO_SELECTOR).evaluate((video) => ({
+    currentTime: video.currentTime,
+    ended: video.ended,
+    paused: video.paused,
+  }));
+  if (!mediaAfter.paused) await page.locator(PLAY_SELECTOR).click();
   const snapshot = await readPreciseSnapshot(page);
   return {
     scenario,
     requestedSeconds: seconds,
     observedSeconds: raf.durationMs / 1000,
     rafFps: raf.frames / (raf.durationMs / 1000),
+    mediaTimeDeltaSeconds: Math.max(0, mediaAfter.currentTime - mediaBefore.currentTime),
+    mediaEnded: mediaAfter.ended,
     preciseRequests,
     sourceAfterPause: snapshot.source,
   };
@@ -532,6 +675,13 @@ function summarizeRow(row, config) {
     config.samples.warmSameChunkRandom +
     config.samples.crossGopRoundtrip +
     config.samples.stabilityOperations;
+  const playbackCompleted = (playback) =>
+    playback?.requestedSeconds >= config.samples.continuousPlaybackSeconds &&
+    playback?.observedSeconds >= config.samples.continuousPlaybackSeconds &&
+    playback?.mediaTimeDeltaSeconds >= config.samples.continuousPlaybackSeconds - 1 &&
+    playback?.mediaEnded === false;
+  const decoderEvidenceCompleted =
+    row.videoDecoderEvidence?.required !== true || row.videoDecoderEvidence.status === "verified";
   const completed =
     row.capability === "ready" &&
     fallbackCount === 0 &&
@@ -543,10 +693,11 @@ function summarizeRow(row, config) {
     sameChunk.length >= config.samples.warmSameChunkRandom &&
     sameGopStarts.size === 1 &&
     crossGopStarts.size >= 2 &&
+    decoderEvidenceCompleted &&
     row.playback?.preciseRequests === 0 &&
-    row.playback?.requestedSeconds >= config.samples.continuousPlaybackSeconds &&
+    playbackCompleted(row.playback) &&
     row.playback?.rafFps >= config.budgets.continuousPlaybackRafFpsMin &&
-    row.nativeBaselinePlayback?.requestedSeconds >= config.samples.continuousPlaybackSeconds &&
+    playbackCompleted(row.nativeBaselinePlayback) &&
     typeof row.interactionRaf?.rafFps === "number" &&
     typeof row.nativeBaselineInteractionRaf?.rafFps === "number" &&
     row.flagOffPreciseRequests === config.budgets.flagOffPreciseRequests &&
@@ -582,7 +733,10 @@ function summarizeRow(row, config) {
     resourcesWithinBudget,
     staleFrameActivations: row.rapidScrub?.staleFrameActivations ?? null,
     playbackPreciseRequests: row.playback?.preciseRequests ?? null,
+    playbackMediaTimeDeltaSeconds: row.playback?.mediaTimeDeltaSeconds ?? null,
+    playbackEnded: row.playback?.mediaEnded ?? null,
     flagOffPreciseRequests: row.flagOffPreciseRequests ?? null,
+    videoDecoderEvidenceStatus: row.videoDecoderEvidence?.status ?? null,
     interactionRafRatio,
   };
 }
@@ -626,7 +780,7 @@ function workerDecision(rows, budgets) {
 
 async function measureRow(browser, browserGpuEnvironment, resolution, config, args) {
   console.log(`precise-frame ${resolution.id}: start`);
-  const rawTaskUrl = process.env[resolution.taskUrlEnv];
+  const rawTaskUrl = args.taskUrls?.[resolution.taskUrlEnv] ?? process.env[resolution.taskUrlEnv];
   if (!rawTaskUrl) {
     return {
       resolutionId: resolution.id,
@@ -643,6 +797,7 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
   });
   await installProbe(context);
   const page = await context.newPage();
+  const decoderEvidenceProbe = await installVideoDecoderEvidenceProbe(page);
   const preciseRequestUrls = [];
   const payloads = { manifest: null, samples: null };
   page.on("request", (request) => {
@@ -708,6 +863,10 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
     rapidScrub: null,
     flagOffPreciseRequests: null,
     memoryAfter: null,
+    videoDecoderEvidence: {
+      required: args.strict && process.platform === "darwin",
+      status: "pending",
+    },
   };
   const fpsMatches =
     Number.isFinite(actualFps) &&
@@ -730,7 +889,11 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
   const softwareDiagnosticOverride =
     !args.strict && process.env.VIDEO_BENCH_ALLOW_SOFTWARE_DECODE === "1";
   environment.softwareDiagnosticOverride = softwareDiagnosticOverride;
-  if (environment.hardwareVideoDecode !== true && !softwareDiagnosticOverride) {
+  if (
+    process.platform !== "darwin" &&
+    environment.hardwareVideoDecode !== true &&
+    !softwareDiagnosticOverride
+  ) {
     row.capability = "hardware-video-decode-unavailable";
     row.reason =
       environment.hardwareVideoDecode === false
@@ -824,6 +987,9 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
       console.log(
         `precise-frame ${resolution.id}: ${args.stabilityOperations} operations complete`,
       );
+      await seekFrame(page, 0, maxFrame);
+      await waitForFrameTerminal(page, 0);
+      await waitForFrameResourcesSettled(page);
       row.playback = await playbackObservation(
         page,
         args.playbackSeconds,
@@ -844,6 +1010,13 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
         maxFrame,
         false,
       );
+      await seekFrame(page, 0, maxFrame);
+      await page.waitForFunction(
+        ({ selector }) =>
+          Number(document.querySelector(selector)?.getAttribute("data-video-frame-index")) === 0,
+        { selector: STAGE_SELECTOR },
+        { timeout: 10_000 },
+      );
       row.nativeBaselinePlayback = await playbackObservation(
         page,
         args.playbackSeconds,
@@ -854,6 +1027,10 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
     }
   }
   row.memoryAfter ??= await settleMemory(page);
+  row.videoDecoderEvidence = {
+    required: args.strict && process.platform === "darwin",
+    ...decoderEvidenceProbe.snapshot(),
+  };
   row.summary = summarizeRow(row, {
     ...config,
     samples: {
@@ -862,6 +1039,7 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
       continuousPlaybackSeconds: config.samples.continuousPlaybackSeconds,
     },
   });
+  await decoderEvidenceProbe.close();
   await context.close();
   return row;
 }
@@ -869,7 +1047,7 @@ async function measureRow(browser, browserGpuEnvironment, resolution, config, ar
 export async function runPreciseFrameMeasurements(config, args) {
   const missing = config.resolutions
     .map((resolution) => resolution.taskUrlEnv)
-    .filter((envName) => !process.env[envName]);
+    .filter((envName) => !(args.taskUrls?.[envName] ?? process.env[envName]));
   if (missing.length > 0) {
     throw new Error(
       `precise-frame benchmark requires task URLs: ${missing.join(", ")}. ` +
@@ -899,6 +1077,8 @@ export async function runPreciseFrameMeasurements(config, args) {
         headed: args.headed,
         performanceTier: process.env.VIDEO_BENCH_TIER ?? "standard",
         webcodecsFlag: true,
+        hostPlatform: process.platform,
+        hostArchitecture: process.arch,
         softwareDiagnosticOverride:
           !args.strict && process.env.VIDEO_BENCH_ALLOW_SOFTWARE_DECODE === "1",
         ...browserGpuEnvironment,
@@ -915,6 +1095,8 @@ export const preciseFrameMath = {
   percentile,
   seededSampleTargets,
   sliderValueForFrame,
+  classifyVideoDecoderEvidence,
+  installVideoDecoderEvidenceProbe,
   summarizeRow,
   workerDecision,
 };

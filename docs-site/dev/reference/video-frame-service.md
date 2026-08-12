@@ -122,6 +122,10 @@ GPU；Linux 部署服务器只提供 API、demux metadata、chunk bytes 与对�
 浏览器 API。客户端没有硬解 profile 时允许软件解码或安全回退，不能从服务端是否有 GPU 推断浏览器
 实际解码路径。
 
+严格资格不能从静态 GPU profile 推断实际 decoder。Apple Silicon Chrome 可通过 CDP Media domain 把
+`WebCodecs::VideoDecoder` player 与隐藏原生 `<video>` 分开，并要求 initialized player 发布
+`VideoToolboxVideoDecoder` 和 platform decoder 标记；缺失或矛盾证据保持 `inconclusive`。
+
 manifest 还带 `description`（base64）：后端直读 chunk mp4 的 `avcC`/`hvcC` box，取出 `AVC/HEVCDecoderConfigurationRecord`（含 SPS/PPS），前端解码后填入 `VideoDecoderConfig.description`；`codec_string` 也由该 record 的字节派生（`avc1.PPCCLL` / `hvc1.…`），不再硬编码。这两项是 AVCC 长度前缀样本能被 `VideoDecoder` 正确解码的前提——缺 `description` 时浏览器按 Annex-B 解析必失败。旧 chunk（`diagnostics` 无 `description`）则降级。
 
 MinIO key：

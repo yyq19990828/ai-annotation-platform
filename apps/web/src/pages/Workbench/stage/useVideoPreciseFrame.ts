@@ -504,12 +504,6 @@ export function useVideoPreciseFrame({
       return;
     }
     const demuxStart = typeof performance !== "undefined" ? performance.now() : 0;
-    visibleTimingRef.current = {
-      taskId,
-      frameIndex,
-      startedAt: demuxStart,
-      readyAt: null,
-    };
     const result = buildGopPlan(bytes, samples, frameIndex);
     const demuxMs = typeof performance !== "undefined" ? performance.now() - demuxStart : 0;
     if (!result.ok) {
@@ -539,6 +533,12 @@ export function useVideoPreciseFrame({
     if (decoderRef.current.activeBitmap?.frameIndex === frameIndex || !canDecode) {
       return;
     }
+    visibleTimingRef.current = {
+      taskId,
+      frameIndex,
+      startedAt: demuxStart,
+      readyAt: null,
+    };
     const gopIdentity = {
       taskId: taskId as string,
       datasetItemId,

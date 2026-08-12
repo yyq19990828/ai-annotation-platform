@@ -3,7 +3,7 @@ audience: [dev]
 type: how-to
 since: v0.9.31
 status: stable
-last_reviewed: 2026-05-12
+last_reviewed: 2026-08-12
 ---
 
 # How-to：视频工作台性能回归
@@ -46,6 +46,22 @@ fixture 描述在 `apps/web/scripts/video-bench/fixtures.json`：
 ```bash
 pnpm --filter @anno/web video:bench -- --scenario precise-frame --dry-run
 
+VIDEO_BENCH_CHROMIUM_CHANNEL=chrome \
+pnpm --filter @anno/web video:bench -- \
+  --scenario precise-frame --seed --headed --strict \
+  --base-url http://127.0.0.1:3001
+```
+
+`--seed` 是隔离 E2E 栈的推荐入口。先启动 PostgreSQL、Redis、MinIO，以及使用
+`annotation_e2e`、`E2E_SEED_ENABLED=true` 的 API（8010）和代理该 API 的 Web（3001）。runner 会在
+隔离数据库中创建 1080p/30、1080p/60、4K/30 三个 61 秒 H.264 task，把登录态放进内存
+`storageState`，结束或失败时调用 cleanup；不会写 auth-state 文件，也不会修改开发数据。三个 task URL
+只要有一个显式存在，`--seed` 就会拒绝运行，避免自动素材与外部素材混测。该隔离栈是单写者夹具，
+不要并行运行多个 `--seed` benchmark 或其他会调用全局 reset / cleanup 的 E2E。
+
+已有固定素材时仍可手工传入 URL：
+
+```bash
 VIDEO_BENCH_STORAGE_STATE=/abs/path/auth-state.json \
 VIDEO_BENCH_CHROMIUM_CHANNEL=chrome \
 VIDEO_BENCH_TASK_1080P_30_URL=/projects/.../annotate?task=... \
@@ -54,11 +70,11 @@ VIDEO_BENCH_TASK_4K_30_URL=/projects/.../annotate?task=... \
 pnpm --filter @anno/web video:bench -- --scenario precise-frame --headed --strict
 ```
 
-`--dry-run` 只校验矩阵，不启动浏览器、不写报告，也不产生 Worker 结论。真实运行必须提供
-三条已登录用户可访问的任务 URL，以及 Playwright `storageState`；任务媒体须分别匹配声明的
-分辨率 / fps，并至少覆盖两个 GOP。runner 会读取真实 manifest 与 sample 响应，核对分辨率、
-fps、H.264 codec、chunk size 和关键帧边界后再派生 same-GOP / cross-GOP 目标；缺少任一任务
-或素材合同不匹配时不能得到完成结论。
+`--dry-run` 只校验矩阵，不启动浏览器、不写报告，也不产生 Worker 结论。不使用 `--seed` 时必须提供
+三条已登录用户可访问的任务 URL，以及 Playwright `storageState`。任务媒体须分别匹配声明的分辨率 /
+fps，并至少覆盖两个 GOP。runner 会读取真实 manifest 与 sample 响应，核对分辨率、fps、H.264 codec、
+chunk size 和关键帧边界后再派生 same-GOP / cross-GOP 目标；缺少任一任务或素材合同不匹配时不能得到
+完成结论。
 
 固定 GPU runner 应通过 `VIDEO_BENCH_CHROMIUM_CHANNEL=chrome` 使用系统 Google Chrome，
 并把本地 `DISPLAY` / `XAUTHORITY` 绑定到真实桌面会话。bundled Chromium 与 SSH 转发显示
@@ -66,9 +82,13 @@ fps、H.264 codec、chunk size 和关键帧边界后再派生 same-GOP / cross-G
 
 有 GPU 但没有物理显示输出的 X11 runner 可能把有头页的 BeginFrame 降到约 1 Hz。runner
 在有头模式自动传入 `--disable-gpu-vsync` 恢复 Chrome 的正常帧调度，并把实际参数写入
-`manifest.environment.chromiumArgs`。资格结论还会通过 CDP `SystemInfo.getInfo` 核对
-`video_decode` 状态与非空的硬件解码 profile；`gpuAdapter` 只证明 GPU 合成，不能证明
-WebCodecs 使用硬件视频解码。无法验证硬解时矩阵保持 `inconclusive`。
+`manifest.environment.chromiumArgs`。`gpuAdapter` 只证明 GPU 合成，不能证明 WebCodecs 使用硬件视频
+解码。Apple Silicon macOS strict 使用 CDP Media domain 匹配 `WebCodecs::VideoDecoder` player，并要求
+至少一个 initialized player 同时发布 `kVideoDecoderName=VideoToolboxVideoDecoder` 与
+`kIsPlatformVideoDecoder=true`；只有 `kLoad`、没有走到初始化的瞬时 player 不参与正反判定，任何半属性
+或相反属性仍 fail closed。`SystemInfo.getInfo` 的 `video_decode` 和 profiles 只保留为环境诊断，因为该
+平台可能在实际命中 VideoToolbox 时仍返回空 profile。Intel macOS 不使用相同信号宣称硬解通过；其他
+平台继续按自身可验证的硬解能力门执行。
 
 `--strict` 用于固定 GPU runner 的资格门：报告仍会先落盘，但 `inconclusive` 或 Worker 门触发
 会令命令以非零状态退出。开发机探索可省略该参数，保留三态报告而不把能力不足误当通过。
@@ -85,6 +105,8 @@ WebCodecs 使用硬件视频解码。无法验证硬解时矩阵保持 `inconclu
 - **请求计数**：flag off 与连续播放的 precise 请求必须为 0（`data-video-precise-state=disabled`、播放态 `data-video-frame-source=video`）。
 - **计数边界**：连续播放开始前先等待暂停态 precise 预取请求流静默，再从 play click 计数；
   否则前一次 seek 的尾请求会被误记为播放态新增请求。
+- **播放真实性**：precise-on 与 flag-off 都从 frame 0 开始，除页面 rAF 外还要求媒体 `currentTime`
+  持续前进到目标时长且 `ended=false`；页面在刷新但视频未前进不能通过。
 - **session / 逐帧**：同 GOP 顺序逐帧的 `encodedChunksSubmitted` 只增量增长；后退 / 跨 GOP 触发 `sessionResets`。
 - **long task / 主线程**：以 `buildGopPlan`（sample 校验、GOP 规划、description 解码、
   `EncodedVideoChunk` 构造）的同步耗时作为可迁移 slice，再与操作窗 Long Tasks API
@@ -124,4 +146,4 @@ window.__videoFrameClockDiagnostics;
 3. 把 `test-results/video-bench/<run-id>/` 和 trace 放到 PR 附件或评论。
 4. 若用户通过 BUG 反馈提交问题，直接引用反馈详情中的 `Video Workbench Diagnostics`。
 
-第一版只固定矩阵和诊断契约；真实 fixture 自动 seed 与 Playwright trace capture 留给后续 R7 扩展。
+Playwright trace 仍按问题定位需要手工开启；资格 runner 本身不提交大体积视频或 trace。

@@ -829,6 +829,9 @@ describe("useVideoPreciseFrame", () => {
     expect(decoders.reduce((count, decoder) => count + decoder.decode.mock.calls.length, 0)).toBe(
       decodeCalls,
     );
+    act(() => result.current.markFramePainted(3));
+    expect(result.current.performance.paintedFrameIndex).toBe(3);
+    expect(result.current.performance.lastPaintMs).not.toBeNull();
   });
 
   it("light 档(prefetchFrames=0)与播放态(enabled=false)均不预取", async () => {

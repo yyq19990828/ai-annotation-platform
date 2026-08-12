@@ -12,9 +12,8 @@
 
 详见[视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
 
-- 在 MacBook 本地部署无 ML Backend 完整栈，以原生有头 Chrome 运行 H.264、B-frame 和 4K strict
-  矩阵，记录 VideoToolbox 硬解命中证据；随后补齐 Chrome、Edge、Safari 的 1080p/4K correctness、
-  可见延迟、资源 plateau 与 fallback rate。
+- 在可获得的 Windows Edge 与 macOS Safari 客户端补齐 1080p/4K correctness、可见延迟、资源 plateau
+  与 fallback rate；Apple Silicon 原生有头 Chrome 已完成 strict 资格，不再作为遗留项。
 - 支持外部视频预测导入，包括 AAP JSON 的 bbox / polygon / polyline / mask 轨迹预测；标注导入不在此范围。
 - 按 segment / frame range 聚合导出，并补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
 - 实现视频单帧 keypoint 与 rotated-box 绘制；OBB 还需要旋转手柄。
