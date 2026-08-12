@@ -1,4 +1,4 @@
-import { Layer, Rect, Label, Tag, Text } from "react-konva";
+import { Layer, Rect, Label, Line, Tag, Text } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { classColorForCanvas, colorToHex, displayClassName, hexToRgba } from "./colors";
 import {
@@ -68,6 +68,29 @@ export function VideoKonvaAiLayer({
         const color = classColorForCanvas(b.cls);
         const selected = selectedId === b.id;
         const faded = fadedIds?.has(b.id) ?? false;
+        const points = b.polygon ?? b.polyline;
+        if (points) {
+          return (
+            <Line
+              key={b.id}
+              name="video-ai-candidate"
+              points={points.flatMap(([x, y]) => [x * size.w, y * size.h])}
+              closed={Boolean(b.polygon)}
+              stroke={color}
+              strokeWidth={(selected ? 2.5 : 1.5) / scale}
+              dash={[4 / scale, 3 / scale]}
+              fill={b.polygon ? hexToRgba(color, selected ? 0.12 : 0.05) : undefined}
+              opacity={faded ? 0.35 : 1}
+              lineCap="round"
+              lineJoin="round"
+              onPointerDown={(e: KonvaEventObject<PointerEvent>) => {
+                e.cancelBubble = true;
+                onSelect(b.id);
+              }}
+            />
+          );
+        }
+        if (b.geometry?.type === "video_track_mask") return null;
         return (
           <Rect
             key={b.id}

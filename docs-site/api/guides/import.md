@@ -3,14 +3,14 @@ audience: [dev]
 type: reference
 since: v0.10.15
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-08-12
 ---
 
 # 外部预测导入端点
 
 允许客户把**外部模型**（不通过平台 ML backend 跑的模型）生成的预测灌入平台，进入"AI 预标 → 人工修正 → 导出"工作流。
 
-支持三种输入格式：**COCO Detection**、**YOLO zip** 与平台原生 **AAP JSON v1.0**（无损中间格式）。
+支持三种输入格式：**COCO Detection**、**YOLO zip** 与平台原生 **AAP JSON**（无损中间格式）。
 
 ## 端点
 
@@ -59,7 +59,7 @@ image_height=<optional COCO fallback height>
 
 ## AAP JSON 格式
 
-详见 [用户文档 · AAP JSON](../../user-guide/reference/export-formats#aap-json-13无损) + [ADR-0024](../../dev/adr/archive/0024-aap-json-format)。预测导入消费 `predictions[]`；标注导入接口消费 `annotations[]`。图片 `raster_mask`、视频单帧 `video_mask` 与视频轨迹 `video_track_mask` 都通过 `mask_objects` 恢复内容寻址正文；导入会先校验引用、摘要与尺寸，再写对象并挂载 annotation。
+详见 [用户文档 · AAP JSON](../../user-guide/reference/export-formats#aap-json-13无损) + [ADR-0024](../../dev/adr/archive/0024-aap-json-format)。预测导入消费 `predictions[]`；标注导入接口消费 `annotations[]`。图片 `raster_mask` 和视频 `video_track_mask` 都通过 `mask_objects` 恢复内容寻址正文；导入会先校验引用、摘要与尺寸，再写对象并挂载 Prediction 或 Annotation。
 
 COCO 导入同时识别 bbox、polygon segmentation 与 uncompressed RLE segmentation。RLE 会先写入共享内容层，再形成 `raster_mask` 候选；非法、空前景或尺寸不匹配的 segmentation 作为逐 annotation 错误返回，不会静默降级成 bbox。
 
@@ -94,20 +94,16 @@ COCO 导入同时识别 bbox、polygon segmentation 与 uncompressed RLE segment
   "score": 0.88,
   "shapes": [
     { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
-    {
-      "type": "polyline",
-      "points": [
-        [0.1, 0.2],
-        [0.4, 0.5]
-      ]
-    }
+    { "type": "bbox", "x": 0.5, "y": 0.2, "w": 0.2, "h": 0.3 }
   ]
 }
 ```
 
-`shapes[]` 与 `geometry` 同时存在时，以 `shapes[]` 为准；其中某个 shape 不支持时只记录该 shape 的 errors[]，其余 shape 仍合并入库。
+`shapes[]` 与 `geometry` 同时存在时，以 `shapes[]` 为准；其中某个 shape 不支持时只记录该 shape 的 errors[]，其余 shape 仍合并入库。同一 entry 中通过校验的 shapes 必须属于同一工具单位；bbox、region（polygon / mask）和 polyline 不能混在一条 Prediction 中。
 
-支持的 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。`keypoint` 使用 `{points:[{x,y,v}]}`，`v` 保留 COCO 可见性 0/1/2。其他 kind（`video_bbox` / `video_track_bbox` / 自定义）进 errors[] 不入库。
+支持的图片 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。`keypoint` 使用 `{points:[{x,y,v}]}`，`v` 保留 COCO 可见性 0/1/2。
+
+视频 task block 必须声明 `media_type: "video"`，支持 `video_bbox`、`video_track_bbox`、`video_track_polygon`、`video_track_polyline` 与 `video_track_mask`。导入会按源视频 `frame_count` 校验单帧、关键帧和 outside 范围，要求轨迹关键帧严格递增，并把外部 keyframe / outside 的 `source` 归一为 `prediction`。缺失源帧数、命中非视频任务或越界时，该 entry 进入 `errors[]`。
 
 ## COCO Detection 格式
 

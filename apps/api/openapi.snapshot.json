@@ -48623,6 +48623,84 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/predictions/{prediction_id}/mask-content/{shape_index}/{frame_index}": {
+      "get": {
+        "operationId": "get_prediction_mask_content_frame_api_v1_tasks__task_id__predictions__prediction_id__mask_content__shape_index___frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Prediction Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "shape_index",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Shape Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CocoRleContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Prediction Mask Content Frame",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/predictions/{prediction_id}/reject": {
       "post": {
         "description": "B-37 · 驳回 AI 预测候选 shape, 持久化到 predictions.rejected_shape_indexes.\n\n后续 GET /tasks/{id}/predictions 会跳过这些下标, 刷新页面后 AI 待审框不会重现.\n驳回是软操作: prediction 行仍在库中, 仅在该数组追加被拒下标 (去重).",

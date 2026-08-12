@@ -42,7 +42,7 @@ from app.schemas.aap_json import (
     check_schema_major,
 )
 from app.schemas._jsonb_types import Geometry
-from app.services.prediction import PredictionService
+from app.services.prediction import PredictionService, derive_tool_unit_from_result
 from app.services.mask_formats.image_codecs import normalize_coco_segmentation_rle
 from app.services.project import derive_classes_list
 from app.services.task_matcher import (
@@ -63,6 +63,13 @@ from app.utils.raster_mask_rle import coco_rle_area
 logger = logging.getLogger(__name__)
 
 _GEOMETRY_ADAPTER = TypeAdapter(Geometry)
+_VIDEO_PREDICTION_UNITS = {
+    "video_bbox": "bbox",
+    "video_track_bbox": "bbox",
+    "video_track_polygon": "region",
+    "video_track_polyline": "polyline",
+    "video_track_mask": "region",
+}
 
 
 # ── geometry kind → LabelStudio shape 适配 ─────────────────────────
@@ -248,7 +255,16 @@ def internal_geometry_to_ls_shape(
             "attributes": {},
         }
 
-    # 本期不支持 video_bbox / video_track_bbox / 其他 kind.
+    if kind in _VIDEO_PREDICTION_UNITS:
+        return {
+            "type": kind,
+            "class_name": class_name,
+            "geometry": geometry,
+            "confidence": score,
+            "tool_unit_id": _VIDEO_PREDICTION_UNITS[kind],
+            "attributes": {},
+        }
+
     return None
 
 
@@ -377,10 +393,39 @@ async def import_aap_json(
         # 可把多个 shape 合并进同一 Prediction.result.
         for entry in block.predictions:
             mask_geometries: list[dict[str, Any]] = []
+            prepared_shapes: list[dict[str, Any]] = []
+            preparation_errors: list[str] = []
+            frame_count: int | None = None
+            for raw_shape in _entry_shape_sources(entry):
+                if not isinstance(raw_shape, dict):
+                    prepared_shapes.append(raw_shape)
+                    continue
+                geometry = _shape_geometry(raw_shape)
+                kind = geometry.get("type")
+                if kind not in _VIDEO_PREDICTION_UNITS:
+                    prepared_shapes.append(raw_shape)
+                    continue
+                try:
+                    if block.media_type != "video":
+                        raise ValueError(
+                            "video prediction requires task block media_type=video"
+                        )
+                    if frame_count is None:
+                        frame_count = await _source_video_frame_count(db, task)
+                    normalized = _normalize_video_prediction_geometry(
+                        geometry, frame_count=frame_count
+                    )
+                    prepared_shapes.append({**raw_shape, "geometry": normalized})
+                except (ValidationError, ValueError) as exc:
+                    preparation_errors.append(f"invalid geometry: {exc}")
+
             try:
-                for raw_shape in _entry_shape_sources(entry):
+                for raw_shape in prepared_shapes:
                     geometry = _shape_geometry(raw_shape)
-                    if geometry.get("type") != "raster_mask":
+                    if geometry.get("type") not in {
+                        "raster_mask",
+                        "video_track_mask",
+                    }:
                         continue
                     validated = _GEOMETRY_ADAPTER.validate_python(geometry)
                     normalized = validated.model_dump(
@@ -405,7 +450,12 @@ async def import_aap_json(
                 result.skipped += 1
                 continue
 
-            ls_shapes, errors = _entry_to_ls_shapes(entry)
+            ls_shapes, errors = _entry_to_ls_shapes(entry, prepared_shapes)
+            errors = [*preparation_errors, *errors]
+            units = {derive_tool_unit_from_result([shape]) for shape in ls_shapes}
+            if len(units) > 1:
+                ls_shapes = []
+                errors.append("prediction entry shapes must use one tool unit")
             for reason in errors:
                 result.errors.append(
                     AAPImportErrorEntry(task_match=match_dict, reason=reason)
@@ -500,11 +550,12 @@ def _shape_confidence(shape: dict[str, Any], entry: AAPPredictionEntry) -> float
 
 def _entry_to_ls_shapes(
     entry: AAPPredictionEntry,
+    shapes: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     ls_shapes: list[dict[str, Any]] = []
     errors: list[str] = []
 
-    for raw_shape in _entry_shape_sources(entry):
+    for raw_shape in shapes if shapes is not None else _entry_shape_sources(entry):
         if not isinstance(raw_shape, dict):
             errors.append("unsupported geometry kind: None")
             continue
@@ -528,6 +579,61 @@ def _entry_to_ls_shapes(
         ls_shapes.append(ls_shape)
 
     return ls_shapes, errors
+
+
+async def _source_video_frame_count(db: AsyncSession, task: Any) -> int:
+    if task.file_type != "video" or task.dataset_item_id is None:
+        raise ValueError("video prediction requires a video task and dataset item")
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    if item is None or item.file_type != "video":
+        raise ValueError("video prediction requires a video task and dataset item")
+    video = (item.metadata_ or {}).get("video")
+    raw = video.get("frame_count") if isinstance(video, dict) else None
+    if isinstance(raw, bool):
+        raw = None
+    try:
+        frame_count = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("source video frame_count is required") from exc
+    if frame_count <= 0:
+        raise ValueError("source video frame_count is required")
+    return frame_count
+
+
+def _normalize_video_prediction_geometry(
+    geometry: dict[str, Any], *, frame_count: int
+) -> dict[str, Any]:
+    validated = _GEOMETRY_ADAPTER.validate_python(geometry)
+    normalized = validated.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    kind = normalized.get("type")
+    if kind not in _VIDEO_PREDICTION_UNITS:
+        raise ValueError(f"unsupported video geometry kind: {kind!r}")
+
+    if kind == "video_bbox":
+        frames = [int(normalized["frame_index"])]
+    else:
+        keyframes = list(normalized.get("keyframes") or [])
+        frames = [int(keyframe["frame_index"]) for keyframe in keyframes]
+        if frames != sorted(frames) or len(frames) != len(set(frames)):
+            raise ValueError(
+                "video track keyframes must be strictly increasing and unique"
+            )
+        for keyframe in keyframes:
+            keyframe["source"] = "prediction"
+        for outside in normalized.get("outside") or []:
+            start = int(outside["from"])
+            end = int(outside["to"])
+            if start > end:
+                raise ValueError("outside range must satisfy from <= to")
+            if end >= frame_count:
+                raise ValueError(
+                    f"outside range must be within source frame_count {frame_count}"
+                )
+            outside["source"] = "prediction"
+
+    if any(frame >= frame_count for frame in frames):
+        raise ValueError(f"frame_index must be < source frame_count {frame_count}")
+    return normalized
 
 
 # ── COCO importer ──────────────────────────────────────────────────

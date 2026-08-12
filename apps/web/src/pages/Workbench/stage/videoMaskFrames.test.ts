@@ -1,17 +1,20 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse } from "@/types";
+import type { AiBox } from "../state/transforms";
 import { buildTintedMaskRgba, maskAlphaBounds, useVideoMaskFrames } from "./videoMaskFrames";
 
 const apiMocks = vi.hoisted(() => ({
   annotationRasterMaskContent: vi.fn(),
   annotationVideoMaskContent: vi.fn(),
+  predictionVideoMaskContent: vi.fn(),
 }));
 
 vi.mock("@/api/rasterMasks", () => ({
   rasterMasksApi: {
     annotationRasterMaskContent: apiMocks.annotationRasterMaskContent,
     annotationVideoMaskContent: apiMocks.annotationVideoMaskContent,
+    predictionVideoMaskContent: apiMocks.predictionVideoMaskContent,
   },
 }));
 
@@ -39,6 +42,7 @@ describe("useVideoMaskFrames", () => {
   beforeEach(() => {
     apiMocks.annotationRasterMaskContent.mockReset();
     apiMocks.annotationVideoMaskContent.mockReset();
+    apiMocks.predictionVideoMaskContent.mockReset();
     vi.stubGlobal(
       "createImageBitmap",
       vi.fn(async () => ({ close: vi.fn() })),
@@ -99,9 +103,11 @@ describe("useVideoMaskFrames", () => {
           taskId: "task-1",
           annotations: [annotation],
           candidates: [],
+          predictions: [],
           frameIndex,
           selectedId: annotation.id,
           colorForAnnotation: () => "#ff0000",
+          colorForPrediction: () => "#00ff00",
         }),
       { initialProps: { frameIndex: 4 } },
     );
@@ -119,6 +125,63 @@ describe("useVideoMaskFrames", () => {
     expect(apiMocks.annotationVideoMaskContent).not.toHaveBeenCalled();
 
     rerender({ frameIndex: 5 });
+    await waitFor(() => expect(result.current).toEqual([]));
+  });
+
+  it("外部 video_track_mask 候选复用任务鉴权内容端点并保持 AI 选择 id", async () => {
+    const digest = "b".repeat(64);
+    const reference = {
+      encoding: "coco_rle_ref" as const,
+      size: [2, 3] as [number, number],
+      object_key: `raster-masks/sha256/bb/bb/${digest}.json`,
+      sha256: digest,
+      runs: 3,
+      bytes: 64,
+    };
+    const prediction = {
+      id: "pred-p1-0",
+      predictionId: "p1",
+      shapeIndex: 0,
+      cls: "Car",
+      geometry: {
+        type: "video_track_mask",
+        track_id: "mask-track",
+        keyframes: [{ frame_index: 1, mask: reference, source: "prediction" }],
+        outside: [{ from: 8, to: 9, source: "prediction" }],
+      },
+    } as AiBox;
+    apiMocks.predictionVideoMaskContent.mockResolvedValue({
+      encoding: "coco_rle",
+      size: [2, 3],
+      counts: [1, 2, 3],
+    });
+
+    const { result, rerender } = renderHook(
+      ({ frameIndex }) =>
+        useVideoMaskFrames({
+          taskId: "task-1",
+          annotations: [],
+          candidates: [],
+          predictions: [prediction],
+          frameIndex,
+          selectedId: prediction.id,
+          colorForAnnotation: () => "#ff0000",
+          colorForPrediction: () => "#00ff00",
+        }),
+      { initialProps: { frameIndex: 5 } },
+    );
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    expect(result.current[0]).toMatchObject({
+      id: prediction.id,
+      source: "prediction",
+      selected: true,
+      isTrack: true,
+      color: "#00ff00",
+    });
+    expect(apiMocks.predictionVideoMaskContent).toHaveBeenCalledWith("task-1", "p1", 0, 5);
+
+    rerender({ frameIndex: 8 });
     await waitFor(() => expect(result.current).toEqual([]));
   });
 });

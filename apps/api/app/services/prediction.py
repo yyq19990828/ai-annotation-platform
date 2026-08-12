@@ -81,9 +81,12 @@ def _tool_unit_from_internal_geometry(geometry: Any) -> str | None:
         "multi_polygon",
         "raster_mask",
         "video_mask",
+        "video_track_polygon",
         "video_track_mask",
     }:
         return "region"
+    if kind == "video_track_polyline":
+        return "polyline"
     if kind in {"bbox", "video_bbox", "video_track_bbox"}:
         return "bbox"
     return None

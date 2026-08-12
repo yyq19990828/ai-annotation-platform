@@ -602,6 +602,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       },
       [trackColorOverrides],
     );
+    const maskColorForPrediction = useCallback(
+      (prediction: AiBox) => colorToHex(classColor(prediction.cls)),
+      [],
+    );
     const maskEditorColor = useMemo(
       () =>
         hexToRgb(
@@ -615,12 +619,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       taskId: manifest?.task_id ?? null,
       annotations: visibleMaskAnnotations,
       candidates: maskCandidates,
+      predictions: aiBoxes,
       frameIndex,
       selectedId,
       colorForAnnotation: maskColorForAnnotation,
+      colorForPrediction: maskColorForPrediction,
     });
     const committedMaskRecords = useMemo(
       () => maskRecords.filter((record) => record.source === "annotation"),
+      [maskRecords],
+    );
+    const selectableMaskRecords = useMemo(
+      () => maskRecords.filter((record) => record.source !== "tracker"),
       [maskRecords],
     );
     const maskTrackNumbers = useMemo(
@@ -694,7 +704,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         maskRecords.filter((record) => {
           if (
             !maskCompareCompanionVisible(maskCompareStore?.display, {
-              source: record.source,
+              source: record.source === "prediction" ? "ai" : record.source,
               id: record.id,
             })
           )
@@ -717,13 +727,20 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
     // v0.21.9 WS2 · 检测式轨迹候选(video_track_bbox)也纳入: 用 resolveTrackAtFrame 解出当前帧框,
     //   与逐帧 video_bbox 候选同层渲染(此前只在侧栏可见、画布不画)。
-    const frameAiBoxes = useMemo(
-      () =>
-        aiBoxes
-          .map((b) => resolveAiBoxAtFrame(b, frameIndex))
-          .filter((b): b is (typeof aiBoxes)[number] => b !== null),
-      [aiBoxes, frameIndex],
-    );
+    const frameAiBoxes = useMemo(() => {
+      const maskBounds = new Map(
+        maskRecords
+          .filter((record) => record.source === "prediction")
+          .map((record) => [record.id, record.geom]),
+      );
+      return aiBoxes
+        .map((box) => resolveAiBoxAtFrame(box, frameIndex))
+        .filter((box): box is (typeof aiBoxes)[number] => box !== null)
+        .map((box) => {
+          const bounds = maskBounds.get(box.id);
+          return bounds ? { ...box, ...bounds } : box;
+        });
+    }, [aiBoxes, frameIndex, maskRecords]);
     const selectedAiBox = useMemo(
       () => frameAiBoxes.find((b) => b.id === selectedId) ?? null,
       [frameAiBoxes, selectedId],
@@ -877,7 +894,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       size,
       annotations,
       entries: frameViews.entries,
-      maskEntries: committedMaskRecords,
+      maskEntries: selectableMaskRecords,
       ghost: frameViews.ghost,
       carryOverGhosts: frameViews.carryOverGhosts,
       selectedTrack,
