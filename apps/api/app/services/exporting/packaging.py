@@ -54,7 +54,7 @@ from app.services.exporting.lidar import (
 from app.services.exporting.video import (
     FALLBACK_H,
     FALLBACK_W,
-    VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
     build_coco_frames_seg,
     build_kitti_labels,
@@ -1336,7 +1336,10 @@ async def _build_video_export_zip(
                     geometry_type = (ann.geometry or {}).get("type")
                     if geometry_type in VIDEO_TRACK_GEOMETRY_TYPES:
                         tracks_by_task.setdefault(ann.task_id, []).append(ann)
-                    elif geometry_type in VIDEO_SINGLE_FRAME_GEOMETRY_TYPES:
+                    elif (
+                        geometry_type
+                        in VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES
+                    ):
                         bboxes_by_task.setdefault(ann.task_id, []).append(ann)
             for t in tasks:
                 item = (

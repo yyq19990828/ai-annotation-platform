@@ -12,6 +12,9 @@ import type {
   VideoBboxGeometry,
   VideoPolygonGeometry,
   VideoPolylineGeometry,
+  VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
+  Keypoint,
   VideoTrackGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
@@ -43,6 +46,8 @@ type VideoGeometry =
   | VideoTrackGeometry
   | VideoPolygonGeometry
   | VideoPolylineGeometry
+  | VideoRotatedBboxGeometry
+  | VideoKeypointGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry
   | VideoMaskGeometry
@@ -112,12 +117,28 @@ export interface SavedVideoMaskKeyframe {
 }
 
 export function buildVideoCreatePayload(
-  kind: "video_bbox" | "video_track_bbox",
+  kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
   frameIndex: number,
   geo: Geom,
   cls: string,
 ): AnnotationPayload {
   const className = cls || UNKNOWN_CLASS;
+  if (kind === "video_rotated_bbox") {
+    return {
+      annotation_type: kind,
+      class_name: className,
+      tool_unit_id: "rotated_bbox",
+      geometry: {
+        type: kind,
+        frame_index: frameIndex,
+        cx: geo.x + geo.w / 2,
+        cy: geo.y + geo.h / 2,
+        w: geo.w,
+        h: geo.h,
+        angle: 0,
+      },
+    };
+  }
   if (kind === "video_bbox") {
     return {
       annotation_type: "video_bbox",
@@ -144,6 +165,19 @@ export function buildVideoCreatePayload(
     annotation_type: "video_track_bbox",
     class_name: className,
     geometry,
+  };
+}
+
+export function buildVideoKeypointCreatePayload(
+  frameIndex: number,
+  points: Keypoint[],
+  cls: string,
+): AnnotationPayload {
+  return {
+    annotation_type: "video_keypoint",
+    class_name: cls || UNKNOWN_CLASS,
+    tool_unit_id: "keypoint",
+    geometry: { type: "video_keypoint", frame_index: frameIndex, points },
   };
 }
 
@@ -311,6 +345,8 @@ function isConflictError(err: unknown): boolean {
 function isVideoPending(pending: PendingDrawing): pending is NonNullable<PendingDrawing> & {
   kind:
     | "video_bbox"
+    | "video_rotated_bbox"
+    | "video_keypoint"
     | "video_track_bbox"
     | "video_polygon"
     | "video_polyline"
@@ -402,7 +438,12 @@ export function useVideoAnnotationActions({
   );
 
   const handleVideoCreateWithClass = useCallback(
-    (kind: "video_bbox" | "video_track_bbox", frameIndex: number, geo: Geom, cls: string) => {
+    (
+      kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
+      frameIndex: number,
+      geo: Geom,
+      cls: string,
+    ) => {
       const payload = buildVideoCreatePayload(kind, frameIndex, geo, cls);
       const className = payload.class_name;
       mutations.create.mutate(payload, {
@@ -418,6 +459,43 @@ export function useVideoAnnotationActions({
       });
     },
     [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s],
+  );
+
+  const handleVideoKeypointCreateWithClass = useCallback(
+    (frameIndex: number, points: Keypoint[], cls: string) => {
+      const payload = buildVideoKeypointCreatePayload(frameIndex, points, cls);
+      const className = payload.class_name;
+      mutations.create.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          if (className !== UNKNOWN_CLASS) {
+            s.setActiveClass(className);
+            recordRecentClass(className);
+          }
+          s.setSelectedId(created.id);
+        },
+        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      });
+    },
+    [enqueueOnError, history, mutations.create, optimisticEnqueueCreate, recordRecentClass, s],
+  );
+
+  const handleVideoKeypointCreate = useCallback(
+    (frameIndex: number, points: Keypoint[]) => {
+      if (!activeToolHasOwnClasses) {
+        handleVideoKeypointCreateWithClass(frameIndex, points, UNKNOWN_CLASS);
+        return;
+      }
+      const geom = pointsBounds(points.map((point) => [point.x, point.y] as [number, number]));
+      s.setPendingDrawing({
+        kind: "video_keypoint",
+        frameIndex,
+        geom,
+        anchor: videoClassPickerAnchor(geom),
+        points,
+      });
+    },
+    [activeToolHasOwnClasses, handleVideoKeypointCreateWithClass, s],
   );
 
   const handleVideoCreate = useCallback(
@@ -524,7 +602,7 @@ export function useVideoAnnotationActions({
 
   const handleVideoPendingDraw = useCallback(
     (
-      kind: "video_bbox" | "video_track_bbox",
+      kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
       frameIndex: number,
       geom: Geom,
       anchor: { left: number; top: number },
@@ -546,8 +624,14 @@ export function useVideoAnnotationActions({
       }
       if (!isVideoPending(pending)) return false;
       s.setPendingDrawing(null);
-      if (pending.kind === "video_bbox" || pending.kind === "video_track_bbox") {
+      if (
+        pending.kind === "video_bbox" ||
+        pending.kind === "video_track_bbox" ||
+        pending.kind === "video_rotated_bbox"
+      ) {
         handleVideoCreateWithClass(pending.kind, pending.frameIndex, pending.geom, cls);
+      } else if (pending.kind === "video_keypoint") {
+        handleVideoKeypointCreateWithClass(pending.frameIndex, pending.points, cls);
       } else {
         const points = pending.points;
         if (!points) return false;
@@ -561,6 +645,7 @@ export function useVideoAnnotationActions({
     },
     [
       handleVideoCreateWithClass,
+      handleVideoKeypointCreateWithClass,
       handleVideoPointsCreateWithClass,
       handleVideoPointsTrackCreateWithClass,
       s,
@@ -999,6 +1084,7 @@ export function useVideoAnnotationActions({
     handleVideoPointsTrackCreate,
     handleVideoPointsCreate,
     handleVideoPointsCreateWithClass,
+    handleVideoKeypointCreate,
     handleVideoPendingDraw,
     handlePickVideoPendingClass,
     handleVideoUpdate,

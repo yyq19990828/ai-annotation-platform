@@ -76,7 +76,7 @@
 
 ### 4.2 导入端（**已落地**）
 
-- AAP JSON 标注导入已能恢复 bbox / polygon / polyline / mask 视频轨迹；mask 内容由 `mask_objects` 携带并在入库时重建内容寻址引用。
+- AAP JSON 标注导入已能恢复 bbox / polygon / polyline / OBB / keypoint / mask 视频单帧几何与轨迹；mask 内容由 `mask_objects` 携带并在入库时重建内容寻址引用。
 - AAP JSON 预测导入能把 `video_bbox` 与 bbox / polygon / polyline / mask 视频轨迹写为外部候选；工作台按当前帧显示并逐 shape 接受或驳回，接受后才形成正式标注。预测与标注导入仍使用各自独立的入口。
 
 ### 4.5 DAVIS mask 序列（原 R22 + C.6 P2，**已落地**）

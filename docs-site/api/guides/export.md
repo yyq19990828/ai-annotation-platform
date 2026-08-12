@@ -94,6 +94,8 @@ COCO / YOLO 会按各自能消费的几何映射。COCO 对图片 `raster_mask` 
 
 `include_attributes=false` 时，视频 JSON 不输出 `project.attribute_schema`，也不输出 track / legacy `video_bbox` 的 `attributes`。
 
+单帧 OBB 与关键点同样写入兼容字段 `video_bbox`：OBB 行保留 `type/frame_index/cx/cy/w/h/angle`，关键点行保留 `type/frame_index/points[{x,y,v}]`。AAP JSON 使用原始 geometry。专业视频目标没有这两种单帧几何的表示时，预检返回 `unsupported_geometry`，不会把 OBB 退化成外接框或丢弃关键点。
+
 `targets=yolo-frames-det` 会生成逐帧 YOLO 检测集：
 
 - 帧集来自项目采样网格 `derive_sampled_frames(frame_count, step)`，不是全帧，也不是仅关键帧。

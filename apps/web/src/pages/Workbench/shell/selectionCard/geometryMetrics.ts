@@ -201,12 +201,13 @@ function polylineMetrics(
 function keypointMetrics(points: Keypoint[]): Metric[] {
   const visible = points.filter((p) => p.v === 2).length;
   const occluded = points.filter((p) => p.v === 1).length;
+  const skipped = points.filter((p) => p.v === 0).length;
   return [
     { label: "关键点", value: `${points.length} 个` },
     {
       label: "可见",
       value: `${visible} / ${points.length}`,
-      hint: occluded ? `${occluded} 遮挡` : undefined,
+      hint: `${occluded} 遮挡 · ${skipped} 跳过`,
     },
   ];
 }
@@ -264,6 +265,7 @@ export function geometryMetrics(
     case "video_polyline":
       return polylineMetrics(geometry.points, imgW, imgH);
     case "keypoint":
+    case "video_keypoint":
       return keypointMetrics(geometry.points);
     case "raster_mask":
     case "video_mask":

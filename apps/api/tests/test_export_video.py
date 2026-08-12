@@ -9,6 +9,8 @@ import json
 
 from app.services.mask_formats.image_codecs import normalize_coco_segmentation_rle
 from app.services.exporting.video import (
+    VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES,
     build_coco_frames_seg,
     build_yolo_frame_det_labels,
     build_kitti_labels,
@@ -19,6 +21,7 @@ from app.services.exporting.video import (
     source_to_grid,
     track_grid_rows,
 )
+from app.services.exporting.service import _clean_video_single_frame_geometry
 
 
 def _polygon_track(
@@ -62,6 +65,34 @@ def test_effective_fps_divides_by_step():
 def test_source_to_grid_renumbers_on_grid():
     # frame_count=13, step=6 → 网格源帧 [0,6,12] → 序号 {0:0,6:1,12:2}
     assert source_to_grid(13, 6) == {0: 0, 6: 1, 12: 2}
+
+
+def test_video_json_preserves_obb_and_keypoint_geometry_losslessly():
+    obb = {
+        "type": "video_rotated_bbox",
+        "frame_index": 7,
+        "cx": 0.5,
+        "cy": 0.4,
+        "w": 0.3,
+        "h": 0.2,
+        "angle": 37.5,
+    }
+    keypoint = {
+        "type": "video_keypoint",
+        "frame_index": 8,
+        "points": [
+            {"x": 0.1, "y": 0.2, "v": 2},
+            {"x": 0.3, "y": 0.4, "v": 0},
+        ],
+    }
+    assert _clean_video_single_frame_geometry(obb) == obb
+    assert _clean_video_single_frame_geometry(keypoint) == keypoint
+    assert {"video_rotated_bbox", "video_keypoint"} <= (
+        VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES
+    )
+    assert not {"video_rotated_bbox", "video_keypoint"} & (
+        VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES
+    )
 
 
 def test_track_grid_rows_only_keeps_grid_frames():

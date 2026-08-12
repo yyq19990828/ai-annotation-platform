@@ -171,6 +171,28 @@ describe("deriveVideoFrameViews", () => {
       [0.3, 0.6],
     ]);
     expect(atFrame.entries[0].open).toBeUndefined();
+    expect(atFrame.entries[0].rotatedBbox).toMatchObject({ angle: 0, cx: 0.5, cy: 0.5 });
+    expect(
+      deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 3 }).entries,
+    ).toHaveLength(0);
+  });
+
+  it("单帧关键点只在所属帧显示并保留 v", () => {
+    const points = [
+      { x: 0.2, y: 0.3, v: 2 as const },
+      { x: 0.5, y: 0.6, v: 0 as const },
+    ];
+    const ann = {
+      id: "kp1",
+      class_name: "person",
+      geometry: {
+        type: "video_keypoint",
+        frame_index: 4,
+        points,
+      },
+    } as unknown as AnnotationResponse;
+    const atFrame = deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 4 });
+    expect(atFrame.entries[0].keypoints).toEqual(points);
     expect(
       deriveVideoFrameViews({ ...base, annotations: [ann], frameIndex: 3 }).entries,
     ).toHaveLength(0);

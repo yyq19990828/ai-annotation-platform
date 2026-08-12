@@ -4,6 +4,7 @@ import type {
   VideoPolygonGeometry,
   VideoPolylineGeometry,
   VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
   VideoTrackGeometry,
   VideoTrackKeyframe,
   VideoTrackPolygonGeometry,
@@ -80,6 +81,12 @@ export function isVideoRotatedBbox(
   return ann.geometry.type === "video_rotated_bbox";
 }
 
+export function isVideoKeypoint(
+  ann: AnnotationResponse,
+): ann is AnnotationResponse & { geometry: VideoKeypointGeometry } {
+  return ann.geometry.type === "video_keypoint";
+}
+
 /** v0.21.22 · 旋转矩形四角 (归一化)。cx,cy 中心, w,h 边长, angle 顺时针度。供渲染 <Line closed> / 外接盒。 */
 export function rotatedBboxCorners(g: {
   cx: number;
@@ -141,13 +148,14 @@ export function isVideoMask(
  * 信息 / 操作也覆盖 polygon / polyline / 旋转框及其 track 变体。
  */
 
-/** 任意视频单帧几何 (bbox / polygon / polyline / rotated_bbox / mask), 非 track。 */
+/** 任意视频单帧几何，非 track。 */
 export function isAnyVideoSingleFrame(ann: AnnotationResponse): boolean {
   return (
     isVideoBbox(ann) ||
     isVideoPolygon(ann) ||
     isVideoPolyline(ann) ||
     isVideoRotatedBbox(ann) ||
+    isVideoKeypoint(ann) ||
     isVideoMask(ann)
   );
 }

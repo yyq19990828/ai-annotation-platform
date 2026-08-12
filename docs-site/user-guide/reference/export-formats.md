@@ -49,7 +49,7 @@ last_reviewed: 2026-07-23
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
 
-> **视频几何的导出边界**：AAP JSON 保真保存 bbox、polygon、polyline 与 Mask 轨迹；Video JSON 保留轨迹几何，但媒体引用不具备跨实例可移植性。MOT / KITTI / YOLO 逐帧检测把 polygon / polyline 按顶点外接框、Mask 按非空像素外接框降级；YOLO 逐帧分割只收 polygon；COCO 逐帧分割、DAVIS、YouTube-VOS 与 MOTS 只处理 Mask 轨迹。
+> **视频几何的导出边界**：AAP JSON 与 Video JSON 保真保存单帧 OBB 的 `cx/cy/w/h/angle`、关键点的完整 `{x,y,v}` 数组，以及 bbox、polygon、polyline 与 Mask 轨迹；Video JSON 的媒体引用不具备跨实例可移植性。MOT / KITTI / YOLO / COCO 逐帧、DAVIS、YouTube-VOS 与 MOTS 没有单帧 OBB 或关键点表示，预检会将其列为不支持，不会静默降级。既有 polygon / polyline 和 Mask 的格式映射保持不变。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 

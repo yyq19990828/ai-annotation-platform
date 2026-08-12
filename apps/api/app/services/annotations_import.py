@@ -52,6 +52,10 @@ _GEOMETRY_TO_TOOL_UNIT: dict[str, str] = {
     "raster_mask": "region",
     "video_mask": "region",
     "video_track_mask": "region",
+    "video_polygon": "region",
+    "video_polyline": "polyline",
+    "video_rotated_bbox": "rotated_bbox",
+    "video_keypoint": "keypoint",
 }
 
 _GEOMETRY_ADAPTER = TypeAdapter(Geometry)

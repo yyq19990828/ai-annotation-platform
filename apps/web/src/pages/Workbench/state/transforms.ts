@@ -174,6 +174,12 @@ export function geometryToShape(g: Geometry): {
     );
     return { ...polygonBounds(corners), polygon: corners };
   }
+  if (g.type === "video_keypoint") {
+    const points = g.points
+      .filter((point) => point.v > 0)
+      .map((point) => [point.x, point.y] as [number, number]);
+    return points.length > 0 ? polygonBounds(points) : { x: 0, y: 0, w: 0, h: 0 };
+  }
   if (g.type === "video_track_bbox") {
     const outside = g.outside ?? [];
     const isOutside = (frame: number) => outside.some((r) => frame >= r.from && frame <= r.to);

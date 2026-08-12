@@ -37,8 +37,6 @@ logger = logging.getLogger("app.services.exporting.video")
 # （MOT / KITTI / YOLO-frames-det）降级为顶点外接框，保真格式（video_json / aap_json）
 # 保留 ``points``。真·segmentation 格式（保留多边形的 YOLO-seg 等）另行落地。
 #
-# ``video_rotated_bbox`` / ``video_keypoint`` 是 inert schema（前端不产出、库中无数据），
-# 故不在此列；待其真正落库后再接入导出。
 VIDEO_TRACK_GEOMETRY_TYPES = frozenset(
     {
         "video_track_bbox",
@@ -47,9 +45,20 @@ VIDEO_TRACK_GEOMETRY_TYPES = frozenset(
         "video_track_mask",
     }
 )
-VIDEO_SINGLE_FRAME_GEOMETRY_TYPES = frozenset(
+VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES = frozenset(
+    {
+        "video_bbox",
+        "video_polygon",
+        "video_polyline",
+        "video_rotated_bbox",
+        "video_keypoint",
+    }
+)
+VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES = frozenset(
     {"video_bbox", "video_polygon", "video_polyline"}
 )
+# 兼容旧 facade；新调用方应按“保真”或“bbox-compatible”显式选择集合。
+VIDEO_SINGLE_FRAME_GEOMETRY_TYPES = VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES
 
 # DatasetItem.width/height 缺失时的回退（与 export.py IMG_W/IMG_H 一致）。
 FALLBACK_W, FALLBACK_H = 1920, 1280

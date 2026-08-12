@@ -1,6 +1,9 @@
 import type {
   AnnotationResponse,
   VideoBboxGeometry,
+  VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
+  Keypoint,
   VideoTrackGeometry,
   VideoTrackMaskGeometry,
   VideoTrackKeyframe,
@@ -10,7 +13,11 @@ import type {
 export type VideoStageGeom = { x: number; y: number; w: number; h: number };
 /** 归一化视频坐标点 [0,1]。命中/几何纯函数复用。 */
 export type VideoPoint = { x: number; y: number };
-export type VideoStageGeometry = VideoBboxGeometry | VideoTrackGeometry;
+export type VideoStageGeometry =
+  | VideoBboxGeometry
+  | VideoRotatedBboxGeometry
+  | VideoKeypointGeometry
+  | VideoTrackGeometry;
 export type VideoBboxAnnotation = AnnotationResponse & { geometry: VideoBboxGeometry };
 export type VideoTrackAnnotation = AnnotationResponse & { geometry: VideoTrackGeometry };
 export type VideoManagedTrackAnnotation = AnnotationResponse & {
@@ -60,6 +67,38 @@ export type VideoDragState =
       start: { x: number; y: number };
       origin: VideoStageGeom;
       current: VideoStageGeom;
+    }
+  | {
+      kind: "obbMove";
+      id: string;
+      start: VideoPoint;
+      origin: VideoRotatedBboxGeometry;
+      current: VideoRotatedBboxGeometry;
+      imageSize: { w: number; h: number };
+    }
+  | {
+      kind: "obbResize";
+      id: string;
+      dir: VideoResizeDirection;
+      start: VideoPoint;
+      origin: VideoRotatedBboxGeometry;
+      current: VideoRotatedBboxGeometry;
+      imageSize: { w: number; h: number };
+    }
+  | {
+      kind: "obbRotate";
+      id: string;
+      origin: VideoRotatedBboxGeometry;
+      current: VideoRotatedBboxGeometry;
+      startPointerAngle: number;
+      imageSize: { w: number; h: number };
+    }
+  | {
+      kind: "keypointNode";
+      id: string;
+      nodeIdx: number;
+      origin: Keypoint[];
+      current: Keypoint[];
     }
   // 单帧 polygon/polyline 提交后编辑: 拖单个顶点 / 整体平移。points 归一化 [0,1]。
   | {

@@ -40,7 +40,7 @@ from app.schemas.aap_json import (
     AAPTaskMatch,
 )
 from app.services.exporting.video import (
-    VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
 )
 from app.services.mask_formats.image_codecs import compress_coco_rle
@@ -170,7 +170,13 @@ def _clean_video_single_frame_geometry(geometry: dict) -> dict:
         "type": geometry.get("type"),
         "frame_index": int(geometry.get("frame_index", 0)),
     }
-    if geometry.get("points") is not None:
+    if geometry.get("type") == "video_keypoint":
+        row["points"] = [dict(point) for point in (geometry.get("points") or [])]
+    elif geometry.get("type") == "video_rotated_bbox":
+        row.update(
+            {key: geometry.get(key, 0) for key in ("cx", "cy", "w", "h", "angle")}
+        )
+    elif geometry.get("points") is not None:
         row["points"] = [list(pt) for pt in (geometry.get("points") or [])]
     else:
         row["bbox"] = {
@@ -555,7 +561,7 @@ class ExportService:
                             **kf,
                         }
                     )
-            elif geometry.get("type") in VIDEO_SINGLE_FRAME_GEOMETRY_TYPES:
+            elif geometry.get("type") in VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES:
                 row: dict = {
                     "annotation_id": str(ann.id),
                     "task_id": str(ann.task_id),

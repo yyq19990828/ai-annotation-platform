@@ -25,15 +25,20 @@ describe("buildUnitBindings", () => {
       },
     });
 
-    // 纠偏后视频几何单位集 = bbox / polyline / region (对齐图片, 各自独立类别)。
-    expect(Object.keys(bindings).sort()).toEqual(["bbox", "polyline", "region"]);
+    expect(Object.keys(bindings).sort()).toEqual([
+      "bbox",
+      "keypoint",
+      "polyline",
+      "region",
+      "rotated_bbox",
+    ]);
     expect(bindings.bbox?.enabled).toBe(true);
     expect(bindings.bbox?.classRows).toEqual([{ name: "car", color: "#0ea5e9" }]);
     // region 现属视频单位, 保留其独立类别。
     expect(bindings.region?.enabled).toBe(true);
     expect(bindings.region?.classRows).toEqual([{ name: "person", color: "#22c55e" }]);
-    // 非视频几何单位仍被过滤。
-    expect(bindings.rotated_bbox).toBeUndefined();
+    expect(bindings.rotated_bbox?.enabled).toBe(true);
+    expect(bindings.rotated_bbox?.classRows).toEqual([{ name: "ship", color: "#f97316" }]);
   });
 
   it("legacy 视频类别落入 bbox; 视频几何单位 (bbox/polyline/region) 均种子化, 非几何 image 单位不加", () => {
@@ -50,12 +55,17 @@ describe("buildUnitBindings", () => {
       tool_bindings: {},
     });
 
-    // 纠偏后 polyline/region 对 video 可用 → 一并种子化 (默认 disabled), 供设置里作独立单位启用。
-    expect(Object.keys(bindings).sort()).toEqual(["bbox", "polyline", "region"]);
+    expect(Object.keys(bindings).sort()).toEqual([
+      "bbox",
+      "keypoint",
+      "polyline",
+      "region",
+      "rotated_bbox",
+    ]);
     expect(bindings.polyline?.enabled).toBe(false);
     expect(bindings.region?.enabled).toBe(false);
-    // keypoint / rotated_bbox 仍仅 image, 不进视频。
-    expect(bindings.keypoint).toBeUndefined();
+    expect(bindings.keypoint?.enabled).toBe(false);
+    expect(bindings.rotated_bbox?.enabled).toBe(false);
     // legacy 扁平类别落入 bbox 默认单位。
     expect(bindings.bbox?.enabled).toBe(true);
     expect(bindings.bbox?.classRows).toEqual([

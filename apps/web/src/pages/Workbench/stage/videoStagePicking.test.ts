@@ -29,6 +29,39 @@ describe("videoStagePicking", () => {
       pickTopVideoEntryAt([entry("box", 0.1)], { x: 0.09, y: 0.2 }, { padding: 0.02 })?.id,
     ).toBe("box");
   });
+
+  it("uses true rotated-box hit area instead of its AABB", () => {
+    const rotated = {
+      id: "obb",
+      geom: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
+      rotatedBbox: {
+        type: "video_rotated_bbox" as const,
+        frame_index: 0,
+        cx: 0.5,
+        cy: 0.5,
+        w: 0.5,
+        h: 0.1,
+        angle: 45,
+      },
+    };
+    const size = { w: 1000, h: 1000 };
+    expect(pickTopVideoEntryAt([rotated], { x: 0.5, y: 0.5 }, { size })?.id).toBe("obb");
+    expect(pickTopVideoEntryAt([rotated], { x: 0.3, y: 0.65 }, { size })).toBeNull();
+  });
+
+  it("hits only visible or occluded keypoint nodes", () => {
+    const points = {
+      id: "kp",
+      geom: { x: 0.2, y: 0.2, w: 0.4, h: 0.4 },
+      keypoints: [
+        { x: 0.2, y: 0.2, v: 2 as const },
+        { x: 0.4, y: 0.4, v: 0 as const },
+      ],
+    };
+    const size = { w: 1000, h: 1000 };
+    expect(pickTopVideoEntryAt([points], { x: 0.202, y: 0.2 }, { size })?.id).toBe("kp");
+    expect(pickTopVideoEntryAt([points], { x: 0.4, y: 0.4 }, { size })).toBeNull();
+  });
 });
 
 describe("pickTopVideoMaskAt", () => {

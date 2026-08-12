@@ -131,6 +131,14 @@ export const HOTKEYS: HotkeyDef[] = [
   },
   { keys: ["V"], desc: "视频选择工具", group: "video", actionType: "setVideoTool" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
+  { keys: ["W"], desc: "视频旋转框工具", group: "video", actionType: "setVideoTool" },
+  {
+    keys: ["F"],
+    desc: "视频关键点工具：Alt = 遮挡，右键 = 跳过",
+    group: "video",
+    actionType: "setVideoTool",
+  },
+  { keys: ["Shift", "F"], desc: "视频适应视口", group: "video" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["M"], desc: "视频单帧 Mask 工具", group: "video", actionType: "setVideoTool" },
   {
@@ -390,6 +398,8 @@ export type HotkeyAction =
       tool:
         | "select"
         | "box"
+        | "rotated-box"
+        | "keypoint"
         | "track"
         | "mask"
         | "smart-point"
@@ -558,6 +568,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
     if (e.key === "v" || e.key === "V") return { type: "setVideoTool", tool: "select" };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
+    if (e.key === "w" || e.key === "W") return { type: "setVideoTool", tool: "rotated-box" };
+    if (e.key === "f" || e.key === "F") return { type: "setVideoTool", tool: "keypoint" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
     if (e.key === "m" || e.key === "M") return { type: "setVideoTool", tool: "mask" };
     // v0.21.23 · 视频交互式 SAM。图片侧 S 是「AI 工具循环」, 视频只有两个 AI 工具, 故直接直达。

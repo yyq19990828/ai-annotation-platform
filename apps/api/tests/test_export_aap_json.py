@@ -435,6 +435,45 @@ async def test_export_aap_json_video_project_task_block(
             track_id="mask-1",
         )
     )
+    db_session.add_all(
+        [
+            Annotation(
+                task_id=task.id,
+                project_id=project.id,
+                user_id=user.id,
+                source="manual",
+                annotation_type="video_rotated_bbox",
+                tool_unit_id="rotated_bbox",
+                class_name="car",
+                geometry={
+                    "type": "video_rotated_bbox",
+                    "frame_index": 7,
+                    "cx": 0.5,
+                    "cy": 0.4,
+                    "w": 0.3,
+                    "h": 0.2,
+                    "angle": 37.5,
+                },
+            ),
+            Annotation(
+                task_id=task.id,
+                project_id=project.id,
+                user_id=user.id,
+                source="manual",
+                annotation_type="video_keypoint",
+                tool_unit_id="keypoint",
+                class_name="car",
+                geometry={
+                    "type": "video_keypoint",
+                    "frame_index": 8,
+                    "points": [
+                        {"x": 0.1, "y": 0.2, "v": 2},
+                        {"x": 0.3, "y": 0.4, "v": 0},
+                    ],
+                },
+            ),
+        ]
+    )
     await db_session.flush()
     rle = {"encoding": "coco_rle", "size": [1080, 1920], "counts": [1080 * 1920]}
 
@@ -456,10 +495,29 @@ async def test_export_aap_json_video_project_task_block(
     assert t0["video"]["width"] == 1920
     assert t0["video"]["height"] == 1080
     assert body["mask_objects"] == {digest: rle}
-    assert t0["annotations"][0]["geometry"]["type"] == "video_track_mask"
+    annotations_by_type = {
+        entry["geometry"]["type"]: entry for entry in t0["annotations"]
+    }
+    assert (
+        annotations_by_type["video_track_mask"]["geometry"]["type"]
+        == "video_track_mask"
+    )
+    assert annotations_by_type["video_rotated_bbox"]["geometry"] == {
+        "type": "video_rotated_bbox",
+        "frame_index": 7,
+        "cx": 0.5,
+        "cy": 0.4,
+        "w": 0.3,
+        "h": 0.2,
+        "angle": 37.5,
+    }
+    assert annotations_by_type["video_keypoint"]["geometry"]["points"][1]["v"] == 0
 
     video_doc = json.loads(
         await ExportService(db_session).export_video_tracks(project.id)
     )
     assert video_doc["tracks"][0]["geometry_type"] == "video_track_mask"
     assert video_doc["tracks"][0]["keyframes"][0]["mask"] == mask_ref
+    video_rows = {entry["type"]: entry for entry in video_doc["video_bbox"]}
+    assert video_rows["video_rotated_bbox"]["angle"] == 37.5
+    assert video_rows["video_keypoint"]["points"][1]["v"] == 0

@@ -19,6 +19,7 @@ from app.db.models.task import Task
 from app.schemas.mask_format import MaskFormatPlan
 from app.services.exporting.cache import compute_cache_key
 from app.services.mask_formats import registry
+from app.services.mask_formats.adapters import _ALLOWED_GEOMETRY
 from app.services.mask_formats.contracts import StagedObject
 from app.services.mask_formats.safe_archive import (
     ArchiveLimits,
@@ -53,6 +54,24 @@ def test_registry_is_versioned_and_verified_import_is_visible() -> None:
     assert aap.import_capability.supported is True
     assert aap.import_capability.verified is True
     assert aap.import_capability.enabled_for_ui is True
+
+
+def test_video_obb_and_keypoint_are_only_claimed_by_lossless_formats() -> None:
+    assert _ALLOWED_GEOMETRY["aap_json"] is None
+    assert _ALLOWED_GEOMETRY["video_json"] is None
+    for format_id in (
+        "mot",
+        "yolo-frames-det",
+        "yolo-frames-seg",
+        "coco-frames-seg",
+        "davis",
+        "youtube-vos",
+        "mots",
+    ):
+        allowed = _ALLOWED_GEOMETRY[format_id]
+        assert allowed is not None
+        assert "video_rotated_bbox" not in allowed
+        assert "video_keypoint" not in allowed
     verified_imports = {
         adapter.descriptor.format_id
         for adapter in registry.list(

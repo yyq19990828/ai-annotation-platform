@@ -903,7 +903,7 @@ class KeypointGeometry(BaseModel):
 
 class VideoKeypointGeometry(BaseModel):
     """v0.21.22 · 视频单帧关键点集合。与图片 KeypointGeometry 平行 + frame_index;
-    骨骼拓扑仍走 bbox 工具单位的 keypoint_schema (视频破例挂 bbox 单位)。坐标归一化 [0,1]。
+    骨骼拓扑走 keypoint 工具单位的 keypoint_schema。坐标归一化 [0,1]。
     """
 
     type: Literal["video_keypoint"] = "video_keypoint"
