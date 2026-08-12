@@ -30,6 +30,7 @@ from app.schemas.batch import (
     BulkBatchApprove,
     BulkBatchReject,
 )
+from app.schemas.export import ExportRequestBody
 from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
@@ -851,6 +852,7 @@ async def export_batch(
     request: Request,
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
+    body: ExportRequestBody | None = None,
     targets: list[str] = Query(
         default=["coco"],
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
@@ -893,6 +895,19 @@ async def export_batch(
     batch = await svc_batch.get(batch_id)
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
+
+    from app.services.exporting.video_scope import normalize_video_export_scope
+
+    try:
+        video_scope = await normalize_video_export_scope(
+            db,
+            project=project,
+            request=body.scope if body else None,
+            batch_id=batch_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    video_scope_payload = video_scope.as_dict() if video_scope else None
 
     fname = f"{project.display_id}_{batch.display_id}"
 
@@ -950,6 +965,11 @@ async def export_batch(
             "project_id": str(project_id),
             "project_display_id": project.display_id,
             "batch_display_id": batch.display_id,
+            **(
+                {"video_export_scope": video_scope_payload}
+                if video_scope_payload
+                else {}
+            ),
         },
     )
     await AuditService.log(
@@ -974,6 +994,11 @@ async def export_batch(
                 "axis_frame": axis_frame,
                 "video_overlap_policy": video_overlap_policy,
                 "mots_frame_base": mots_frame_base,
+                **(
+                    {"video_export_scope": video_scope_payload}
+                    if video_scope_payload
+                    else {}
+                ),
             },
         ),
     )
@@ -989,6 +1014,11 @@ async def export_batch(
             "axis_frame": axis_frame,
             "video_overlap_policy": video_overlap_policy,
             "mots_frame_base": mots_frame_base,
+            **(
+                {"video_export_scope": video_scope_payload}
+                if video_scope_payload
+                else {}
+            ),
         },
         async_job_id=str(job.id),
     )

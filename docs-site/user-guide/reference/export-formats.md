@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-08-13
 ---
 
 # Mask 标注导入与数据导出格式
@@ -72,6 +72,8 @@ COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio �
 - **无损**：同一次操作直接入队。
 - **有损**：报告列出稳定损失码和说明；勾选「我已了解以上格式损失」后再次提交。
 - **不支持**：报告指出无法表达的标注类型，必须调整格式或项目内容，不能继续导出。
+
+视频项目还可把「导出范围」切换为「单个视频范围」，选择一个视频任务后按连续 Segment 起止或源帧闭区间导出；默认仍是整个项目。范围两端都包含，Segment 模式会自动聚合起止段之间的所有连续段。切换任务、范围方式或边界会使上一份预检失效。
 
 报告同时显示估算对象数和文件数。修改导出目标、属性选项或视频帧模式会使上一份报告失效并重新预检。
 未知损失码也会按原值显示，不会被忽略。
@@ -392,6 +394,8 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 ## 视频轨迹
 
 `video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`；需要图像序列的目标另带 `fetch_frames.py`，按每个输出目录自己的起始编号、位数与扩展名抽帧。
+
+部分导出会把同一 task 和闭区间应用到所有已选目标：单帧标注只保留范围内帧，轨迹裁剪后保留范围内关键帧与 outside，并补齐可见边界状态。帧格式先按原视频的全局采样网格取帧，再过滤范围，所以不会因范围起点改变采样相位；`manifest.json` 的 `export_scope` 与 `grid_source_frames` 可还原源帧。
 
 **Video JSON**（帧模式二选一）：
 

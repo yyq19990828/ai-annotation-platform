@@ -521,3 +521,29 @@ async def test_export_aap_json_video_project_task_block(
     video_rows = {entry["type"]: entry for entry in video_doc["video_bbox"]}
     assert video_rows["video_rotated_bbox"]["angle"] == 37.5
     assert video_rows["video_keypoint"]["points"][1]["v"] == 0
+
+    from app.services.exporting.video_scope import VideoExportScope
+
+    scope = VideoExportScope(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        selection_kind="frames",
+        from_frame=7,
+        to_frame=7,
+    )
+    scoped = json.loads(
+        await ExportService(db_session).export_aap_json(
+            project.id,
+            video_scope=scope,
+        )
+    )
+    scoped_task = scoped["tasks"][0]
+    assert scoped_task["video"]["export_scope"] == scope.as_dict()
+    scoped_by_type = {
+        entry["geometry"]["type"]: entry for entry in scoped_task["annotations"]
+    }
+    assert set(scoped_by_type) == {"video_track_mask", "video_rotated_bbox"}
+    assert (
+        scoped_by_type["video_track_mask"]["geometry"]["keyframes"][0]["frame_index"]
+        == 7
+    )

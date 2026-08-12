@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
-import { projectsApi, type ExportTarget, type VideoFrameMode } from "@/api/projects";
+import {
+  projectsApi,
+  type ExportOptions,
+  type ExportTarget,
+  type VideoExportScope,
+  type VideoFrameMode,
+} from "@/api/projects";
 import { maskFormatsApi, type MaskFormatExportPreflight } from "@/api/maskFormats";
+import { tasksApi } from "@/api/tasks";
+import { videoTrackerApi, type VideoSegment } from "@/api/videoTracker";
+import type { TaskResponse } from "@/types";
 import { Modal } from "@/components/ui/Modal";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -222,6 +231,18 @@ function ExportForm({
     "error" | "z_order" | "larger_area" | "smaller_area"
   >("error");
   const [motsFrameBase, setMotsFrameBase] = useState<0 | 1>(0);
+  const [scopeMode, setScopeMode] = useState<"project" | "task">("project");
+  const [rangeKind, setRangeKind] = useState<"segments" | "frames">("segments");
+  const [videoTasks, setVideoTasks] = useState<TaskResponse[]>([]);
+  const [taskCursor, setTaskCursor] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [segments, setSegments] = useState<VideoSegment[]>([]);
+  const [startSegmentId, setStartSegmentId] = useState("");
+  const [endSegmentId, setEndSegmentId] = useState("");
+  const [frameFrom, setFrameFrom] = useState("0");
+  const [frameTo, setFrameTo] = useState("");
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const [scopeError, setScopeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<MaskFormatExportPreflight | null>(null);
   const [lossyConfirmed, setLossyConfirmed] = useState(false);
@@ -229,6 +250,100 @@ function ExportForm({
 
   // 帧模式仅对 Video JSON 有意义（MOT/KITTI 走采样网格，AAP 透传源帧）。
   const showFrameMode = isVideoProject && targets.includes("video_json");
+
+  useEffect(() => {
+    if (!isVideoProject || scopeMode !== "task") return;
+    let cancelled = false;
+    setScopeLoading(true);
+    setScopeError(null);
+    tasksApi
+      .listByProject(projectId, { limit: 100 })
+      .then((page) => {
+        if (cancelled) return;
+        setVideoTasks(page.items);
+        setTaskCursor(page.next_cursor ?? null);
+        setSelectedTaskId((current) => current || page.items[0]?.id || "");
+      })
+      .catch((error) => {
+        if (!cancelled) setScopeError(error instanceof Error ? error.message : "视频任务加载失败");
+      })
+      .finally(() => {
+        if (!cancelled) setScopeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isVideoProject, projectId, scopeMode]);
+
+  useEffect(() => {
+    if (!selectedTaskId || scopeMode !== "task") {
+      setSegments([]);
+      return;
+    }
+    let cancelled = false;
+    setScopeLoading(true);
+    setScopeError(null);
+    videoTrackerApi
+      .segments(selectedTaskId)
+      .then((response) => {
+        if (cancelled) return;
+        setSegments(response.segments);
+        const first = response.segments[0];
+        const last = response.segments[response.segments.length - 1];
+        setStartSegmentId(first?.id ?? "");
+        setEndSegmentId(first?.id ?? "");
+        setFrameFrom("0");
+        setFrameTo(last ? String(last.end_frame) : "");
+      })
+      .catch((error) => {
+        if (!cancelled) setScopeError(error instanceof Error ? error.message : "视频分段加载失败");
+      })
+      .finally(() => {
+        if (!cancelled) setScopeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scopeMode, selectedTaskId]);
+
+  const startSegment = segments.find((segment) => segment.id === startSegmentId);
+  const endSegment = segments.find((segment) => segment.id === endSegmentId);
+  const maxFrame = segments.length > 0 ? segments[segments.length - 1].end_frame : -1;
+  const parsedFrom = Number(frameFrom);
+  const parsedTo = Number(frameTo);
+  const frameRangeValid =
+    frameFrom !== "" &&
+    frameTo !== "" &&
+    Number.isInteger(parsedFrom) &&
+    Number.isInteger(parsedTo) &&
+    parsedFrom >= 0 &&
+    parsedFrom <= parsedTo &&
+    parsedTo <= maxFrame;
+  const segmentRangeValid =
+    !!startSegment && !!endSegment && startSegment.segment_index <= endSegment.segment_index;
+  const scopeValid =
+    scopeMode === "project" ||
+    (!!selectedTaskId &&
+      (rangeKind === "segments" ? segmentRangeValid : frameRangeValid) &&
+      !scopeLoading);
+  const videoExportScope: VideoExportScope | undefined =
+    scopeMode !== "task" || !scopeValid
+      ? undefined
+      : {
+          task_id: selectedTaskId,
+          selection:
+            rangeKind === "segments"
+              ? {
+                  kind: "segments",
+                  start_segment_id: startSegmentId,
+                  end_segment_id: endSegmentId,
+                }
+              : {
+                  kind: "frames",
+                  from_frame: parsedFrom,
+                  to_frame: parsedTo,
+                },
+        };
 
   useEffect(() => {
     setPreflight(null);
@@ -240,7 +355,28 @@ function ExportForm({
     targets,
     videoFrameMode,
     videoOverlapPolicy,
+    scopeMode,
+    rangeKind,
+    selectedTaskId,
+    startSegmentId,
+    endSegmentId,
+    frameFrom,
+    frameTo,
   ]);
+
+  const loadMoreTasks = async () => {
+    if (!taskCursor || scopeLoading) return;
+    setScopeLoading(true);
+    try {
+      const page = await tasksApi.listByProject(projectId, { limit: 100, cursor: taskCursor });
+      setVideoTasks((current) => [...current, ...page.items]);
+      setTaskCursor(page.next_cursor ?? null);
+    } catch (error) {
+      setScopeError(error instanceof Error ? error.message : "视频任务加载失败");
+    } finally {
+      setScopeLoading(false);
+    }
+  };
 
   const toggleTarget = (value: ExportTarget) => {
     setTargets((prev) =>
@@ -249,10 +385,10 @@ function ExportForm({
   };
 
   const handleExport = async () => {
-    if (targets.length === 0) return;
+    if (targets.length === 0 || !scopeValid) return;
     setBusy(true);
     try {
-      const options = {
+      const options: ExportOptions = {
         includeAttributes,
         ...(showFrameMode ? { videoFrameMode } : {}),
         ...(targets.includes("indexed-png") ? { indexedOverlapPolicy } : {}),
@@ -260,6 +396,7 @@ function ExportForm({
           ? { videoOverlapPolicy }
           : {}),
         ...(targets.includes("mots") ? { motsFrameBase } : {}),
+        ...(videoExportScope ? { scope: videoExportScope } : {}),
       };
       const checked =
         preflight ?? (await maskFormatsApi.preflightExport(projectId, targets, options));
@@ -366,6 +503,136 @@ function ExportForm({
           )}
         </div>
       </div>
+      {isVideoProject && (
+        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
+          <label htmlFor="video-export-scope" className="text-xs font-semibold text-foreground">
+            导出范围
+          </label>
+          <select
+            id="video-export-scope"
+            value={scopeMode}
+            onChange={(event) => setScopeMode(event.target.value as typeof scopeMode)}
+            className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+          >
+            <option value="project">整个项目</option>
+            <option value="task">单个视频范围</option>
+          </select>
+          {scopeMode === "task" && (
+            <div className="flex flex-col gap-2" data-testid="video-export-range-fields">
+              <label htmlFor="video-export-task" className="text-xs text-muted-foreground">
+                视频任务
+              </label>
+              <select
+                id="video-export-task"
+                value={selectedTaskId}
+                onChange={(event) => {
+                  setSelectedTaskId(event.target.value);
+                  setSegments([]);
+                  setStartSegmentId("");
+                  setEndSegmentId("");
+                  setFrameTo("");
+                }}
+                className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+                disabled={videoTasks.length === 0}
+              >
+                {videoTasks.length === 0 && <option value="">暂无视频任务</option>}
+                {videoTasks.map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.display_id} · {task.file_name}
+                  </option>
+                ))}
+              </select>
+              {taskCursor && (
+                <button
+                  type="button"
+                  onClick={loadMoreTasks}
+                  disabled={scopeLoading}
+                  className="self-start cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs font-semibold text-brand disabled:opacity-60"
+                >
+                  加载更多视频
+                </button>
+              )}
+              <label htmlFor="video-export-range-kind" className="text-xs text-muted-foreground">
+                范围方式
+              </label>
+              <select
+                id="video-export-range-kind"
+                value={rangeKind}
+                onChange={(event) => setRangeKind(event.target.value as typeof rangeKind)}
+                className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+              >
+                <option value="segments">按 Segment</option>
+                <option value="frames">按帧区间</option>
+              </select>
+              {rangeKind === "segments" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    起始 Segment
+                    <select
+                      aria-label="起始 Segment"
+                      value={startSegmentId}
+                      onChange={(event) => setStartSegmentId(event.target.value)}
+                      className="rounded-sm border border-border bg-card px-2 py-2 text-foreground"
+                    >
+                      {segments.map((segment) => (
+                        <option key={segment.id} value={segment.id}>
+                          #{segment.segment_index + 1} · {segment.start_frame}–{segment.end_frame}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    结束 Segment
+                    <select
+                      aria-label="结束 Segment"
+                      value={endSegmentId}
+                      onChange={(event) => setEndSegmentId(event.target.value)}
+                      className="rounded-sm border border-border bg-card px-2 py-2 text-foreground"
+                    >
+                      {segments.map((segment) => (
+                        <option key={segment.id} value={segment.id}>
+                          #{segment.segment_index + 1} · {segment.start_frame}–{segment.end_frame}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    起始帧
+                    <input
+                      aria-label="起始帧"
+                      type="number"
+                      min={0}
+                      max={maxFrame >= 0 ? maxFrame : undefined}
+                      value={frameFrom}
+                      onChange={(event) => setFrameFrom(event.target.value)}
+                      className="rounded-sm border border-border bg-card px-2 py-2 text-foreground"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    结束帧
+                    <input
+                      aria-label="结束帧"
+                      type="number"
+                      min={0}
+                      max={maxFrame >= 0 ? maxFrame : undefined}
+                      value={frameTo}
+                      onChange={(event) => setFrameTo(event.target.value)}
+                      className="rounded-sm border border-border bg-card px-2 py-2 text-foreground"
+                    />
+                  </label>
+                </div>
+              )}
+              {scopeError && <div className="text-xs text-status-danger">{scopeError}</div>}
+              {!scopeLoading && !scopeError && !scopeValid && (
+                <div className="text-xs text-status-caution">请选择有效的连续范围</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {showFrameMode && (
         <div className="flex flex-col gap-2">
           <div className="text-xs font-semibold text-foreground">帧模式（单选）</div>
@@ -542,7 +809,9 @@ function ExportForm({
         </button>
         <button
           type="button"
-          disabled={busy || targets.length === 0 || preflight?.loss_class === "unsupported"}
+          disabled={
+            busy || targets.length === 0 || !scopeValid || preflight?.loss_class === "unsupported"
+          }
           onClick={handleExport}
           className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"
         >

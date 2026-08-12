@@ -24,7 +24,7 @@ import logging
 
 from app.services.mask_formats.image_codecs import compress_coco_rle
 from app.services.video_frame_service import derive_sampled_frames
-from app.services.video_tracks import resolved_track_frames
+from app.services.video_tracks import resolve_track_at_frame
 
 logger = logging.getLogger("app.services.exporting.video")
 
@@ -71,12 +71,18 @@ def effective_fps(source_fps: float | None, step: int) -> float | None:
     return round(float(source_fps) / max(1, int(step)), 3)
 
 
-def source_to_grid(frame_count: int, step: int) -> dict[int, int]:
+def source_to_grid(
+    frame_count: int,
+    step: int,
+    source_frames: list[int] | None = None,
+) -> dict[int, int]:
     """源帧号 → 网格序号(0-based) 映射。网格 = [0, step, 2*step, ...] < frame_count。"""
-    return {
-        frame: index
-        for index, frame in enumerate(derive_sampled_frames(frame_count, step))
-    }
+    frames = (
+        derive_sampled_frames(frame_count, step)
+        if source_frames is None
+        else source_frames
+    )
+    return {frame: index for index, frame in enumerate(frames)}
 
 
 def _bbox_px(bbox: dict, img_w: int, img_h: int) -> tuple[float, float, float, float]:
@@ -132,6 +138,7 @@ def track_grid_rows(
     step: int,
     img_w: int,
     img_h: int,
+    source_frames: list[int] | None = None,
 ) -> list[dict]:
     """单 track 在采样网格上的逐帧行。
 
@@ -139,13 +146,11 @@ def track_grid_rows(
     走 ``resolved_track_frames(all_frames)`` 展开插值 + 跳 outside，再筛网格帧重编号。
     """
     step = max(1, int(step))
-    frames = resolved_track_frames(
-        geometry, frame_mode="all_frames", frame_count=frame_count
-    )
+    grid = source_to_grid(frame_count, step, source_frames)
     rows: list[dict] = []
-    for frame in frames:
-        fi = int(frame.get("frame_index", 0))
-        if fi % step != 0:
+    for frame_index, grid_index in grid.items():
+        frame = resolve_track_at_frame(geometry, frame_index)
+        if frame is None:
             continue
         bbox = _frame_bbox(frame)
         if float(bbox.get("w", 0)) <= 0 or float(bbox.get("h", 0)) <= 0:
@@ -153,7 +158,7 @@ def track_grid_rows(
         left, top, w, h = _bbox_px(bbox, img_w, img_h)
         rows.append(
             {
-                "grid_index": fi // step,
+                "grid_index": grid_index,
                 "left": left,
                 "top": top,
                 "w": w,
@@ -196,6 +201,7 @@ def build_yolo_frame_det_labels(
     step: int,
     frame_start_number: int,
     include_attributes: bool,
+    source_frames: list[int] | None = None,
 ) -> dict[int, tuple[list[str], list[dict]]]:
     """YOLO det labels for sampled video frames.
 
@@ -203,7 +209,7 @@ def build_yolo_frame_det_labels(
     ``(label_lines, attrs_per_line)``. All sampled frames are present, including
     empty labels, so YOLO has a txt file for every extracted image.
     """
-    grid = source_to_grid(frame_count, step)
+    grid = source_to_grid(frame_count, step, source_frames)
     labels: dict[int, tuple[list[str], list[dict]]] = {
         grid_index + frame_start_number: ([], []) for grid_index in grid.values()
     }
@@ -225,11 +231,9 @@ def build_yolo_frame_det_labels(
 
     for class_name, geometry, attributes in tracks:
         class_id = cat_map.get(class_name or "", 0)
-        for frame in resolved_track_frames(
-            geometry, frame_mode="all_frames", frame_count=frame_count
-        ):
-            grid_index = grid.get(int(frame.get("frame_index", 0)))
-            if grid_index is None:
+        for source_frame, grid_index in grid.items():
+            frame = resolve_track_at_frame(geometry, source_frame)
+            if frame is None:
                 continue
             out_frame = grid_index + frame_start_number
             lines, attrs = labels[out_frame]
@@ -255,6 +259,7 @@ def build_yolo_frame_seg_labels(
     step: int,
     frame_start_number: int,
     include_attributes: bool,
+    source_frames: list[int] | None = None,
 ) -> dict[int, tuple[list[str], list[dict]]]:
     """YOLO-seg labels：逐帧多边形（**保留顶点，不降级为外接框**）。
 
@@ -265,7 +270,7 @@ def build_yolo_frame_seg_labels(
     矩形框与折线不产出 seg 行 —— 对齐图片侧 ``yolo-seg``（``_seg_rings_norm`` 亦只认
     polygon / multi_polygon）：折线不是闭合区域，矩形框请用 ``yolo-frames-det``。
     """
-    grid = source_to_grid(frame_count, step)
+    grid = source_to_grid(frame_count, step, source_frames)
     labels: dict[int, tuple[list[str], list[dict]]] = {
         grid_index + frame_start_number: ([], []) for grid_index in grid.values()
     }
@@ -288,14 +293,12 @@ def build_yolo_frame_seg_labels(
         if geometry.get("type") != "video_track_polygon":
             continue
         class_id = cat_map.get(class_name or "", 0)
-        for frame in resolved_track_frames(
-            geometry, frame_mode="all_frames", frame_count=frame_count
-        ):
+        for source_frame, grid_index in grid.items():
+            frame = resolve_track_at_frame(geometry, source_frame)
+            if frame is None:
+                continue
             points = frame.get("points") or []
             if len(points) < 3:
-                continue
-            grid_index = grid.get(int(frame.get("frame_index", 0)))
-            if grid_index is None:
                 continue
             lines, attrs = labels[grid_index + frame_start_number]
             lines.append(yolo_seg_line(class_id, points))
@@ -400,7 +403,12 @@ def build_coco_frames_seg(
         step = max(1, int(record["step"]))
         img_w = int(record["img_w"])
         img_h = int(record["img_h"])
-        sampled = derive_sampled_frames(frame_count, step)
+        record_source_frames = record.get("source_frames")
+        sampled = (
+            derive_sampled_frames(frame_count, step)
+            if record_source_frames is None
+            else record_source_frames
+        )
         grid = {source: idx for idx, source in enumerate(sampled)}
 
         for grid_index, source_frame in enumerate(sampled):
@@ -455,11 +463,9 @@ def build_coco_frames_seg(
                 skipped_unknown_class += 1
                 skipped_class_names.add(class_name or "(empty)")
                 continue
-            for frame in resolved_track_frames(
-                geometry, frame_mode="all_frames", frame_count=frame_count
-            ):
-                grid_index = grid.get(int(frame.get("frame_index", 0)))
-                if grid_index is None:
+            for source_frame, grid_index in grid.items():
+                frame = resolve_track_at_frame(geometry, source_frame)
+                if frame is None:
                     continue
                 image_id = image_id_by_key[(seq, grid_index + frame_start_number)]
                 if geometry.get("type") == "video_track_mask":
@@ -543,6 +549,7 @@ def build_mot_gt(
     step: int,
     img_w: int,
     img_h: int,
+    source_frames: list[int] | None = None,
 ) -> str:
     """gt.txt：``frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z``（conf=1，x/y/z=-1）。
 
@@ -552,7 +559,12 @@ def build_mot_gt(
     lines: list[tuple[int, int, str]] = []
     for track_number, _class_name, geometry in tracks:
         for row in track_grid_rows(
-            geometry, frame_count=frame_count, step=step, img_w=img_w, img_h=img_h
+            geometry,
+            frame_count=frame_count,
+            step=step,
+            img_w=img_w,
+            img_h=img_h,
+            source_frames=source_frames,
         ):
             frame = row["grid_index"] + 1  # MOT 1-based
             lines.append(
@@ -575,9 +587,14 @@ def build_mot_seqinfo(
     frame_count: int,
     img_w: int,
     img_h: int,
+    source_frames: list[int] | None = None,
 ) -> str:
     """seqinfo.ini。frameRate=采样后 fps；seqLength=网格帧数。"""
-    grid_len = len(derive_sampled_frames(frame_count, step))
+    grid_len = len(
+        derive_sampled_frames(frame_count, step)
+        if source_frames is None
+        else source_frames
+    )
     fps = effective_fps(source_fps, step)
     frame_rate = int(round(fps)) if fps else 0
     return (
@@ -602,6 +619,7 @@ def build_kitti_labels(
     step: int,
     img_w: int,
     img_h: int,
+    source_frames: list[int] | None = None,
 ) -> str:
     """KITTI tracking label：每行 17 列。
 
@@ -613,7 +631,12 @@ def build_kitti_labels(
     for track_number, class_name, geometry in tracks:
         kitti_type = class_name or "DontCare"
         for row in track_grid_rows(
-            geometry, frame_count=frame_count, step=step, img_w=img_w, img_h=img_h
+            geometry,
+            frame_count=frame_count,
+            step=step,
+            img_w=img_w,
+            img_h=img_h,
+            source_frames=source_frames,
         ):
             frame = row["grid_index"]  # KITTI 0-based
             x1 = row["left"]

@@ -38,6 +38,7 @@ from app.services.exporting.packaging import (
     PRESIGN_EXPIRES_SECONDS,
     build_export_zip,
 )
+from app.services.exporting.video_scope import VideoExportScope
 from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.contracts import canonical_digest
 from app.services.notification import NotificationService
@@ -229,6 +230,7 @@ async def _run_export(
     include_attributes = bool(opts.get("include_attributes", True))
     video_frame_mode = str(opts.get("video_frame_mode", "keyframes"))
     axis_frame = str(opts.get("axis_frame", "iso"))
+    video_scope = VideoExportScope.from_dict(opts.get("video_export_scope"))
     export_bucket = settings.minio_export_bucket
     lock_client = None
     lock_key: str | None = None
@@ -319,6 +321,7 @@ async def _run_export(
                     video_frame_mode=video_frame_mode,
                     axis_frame=axis_frame,
                     format_options=opts,
+                    video_scope=video_scope,
                 )
                 try:
                     await async_job_svc.update_progress(db, job_uuid, 70)

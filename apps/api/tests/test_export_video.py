@@ -67,6 +67,32 @@ def test_source_to_grid_renumbers_on_grid():
     assert source_to_grid(13, 6) == {0: 0, 6: 1, 12: 2}
 
 
+def test_selected_source_frames_keep_global_sampling_phase_and_dense_output_ids():
+    geometry = _track("a", [(0, 0.0, 0.0, 0.5, 0.5), (12, 0.6, 0.6, 0.5, 0.5)])
+    selected = [6, 12]
+
+    assert source_to_grid(13, 6, selected) == {6: 0, 12: 1}
+    mot = build_mot_gt(
+        [(1, "car", geometry)],
+        frame_count=13,
+        step=6,
+        img_w=100,
+        img_h=100,
+        source_frames=selected,
+    )
+    assert [line.split(",", 1)[0] for line in mot.splitlines()] == ["1", "2"]
+    seqinfo = build_mot_seqinfo(
+        "selected",
+        source_fps=60,
+        step=6,
+        frame_count=13,
+        img_w=100,
+        img_h=100,
+        source_frames=selected,
+    )
+    assert "seqLength=2" in seqinfo
+
+
 def test_video_json_preserves_obb_and_keypoint_geometry_losslessly():
     obb = {
         "type": "video_rotated_bbox",

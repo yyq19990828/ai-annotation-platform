@@ -138,6 +138,7 @@ export const maskFormatsApi = {
         include_attributes: opts?.includeAttributes !== false,
         video_frame_mode: opts?.videoFrameMode ?? "keyframes",
         axis_frame: "iso",
+        ...(opts?.scope ? { scope: opts.scope } : {}),
         options: {
           ...(opts?.indexedOverlapPolicy
             ? { indexed_overlap_policy: opts.indexedOverlapPolicy }

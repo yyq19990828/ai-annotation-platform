@@ -35,6 +35,12 @@
 
 ## [Unreleased]
 
+## [0.23.29] - 2026-08-13
+
+### Added
+
+- **视频导出可限定单个任务的连续 Segment 或源帧闭区间**. 项目与批次 API 会在入队前校验并固定范围，Dashboard 可选择整个项目或单视频范围；同一范围贯穿预检、缓存、Video / AAP JSON、MOT、KITTI、YOLO / COCO Frames、DAVIS、YouTube-VOS、MOTS 与 manifest，轨迹边界状态、outside、全局采样相位和源帧映射均保持一致。
+
 ## [0.23.28] - 2026-08-13
 
 ### Added

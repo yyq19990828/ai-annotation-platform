@@ -5,7 +5,7 @@
 // 导出对任何能看到该行的人可见; 复制 / 导入 / 清理 / 导入标注 仅 canManage 可见。
 // 自管导出 / 导入向导状态与"复制"跳转, 调用方只需传 project / canManage。
 
-import { useState, type Ref } from "react";
+import { lazy, Suspense, useState, type Ref } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,9 +19,12 @@ import {
 } from "@/components/predictions/PredictionImportWizard";
 import { MaskFormatImportWizard } from "@/components/mask-formats/MaskFormatImportWizard";
 import { PredictionPurgeModal } from "@/components/predictions/PredictionPurgeModal";
-import { ExportModal } from "./ExportModal";
 import type { ProjectResponse } from "@/api/projects";
 import { maskFormatsApi } from "@/api/maskFormats";
+
+const ExportModal = lazy(() =>
+  import("./ExportModal").then(({ ExportModal: Component }) => ({ default: Component })),
+);
 
 export function ProjectActionsMenu({
   project,
@@ -124,12 +127,16 @@ export function ProjectActionsMenu({
           </Button>
         )}
       />
-      <ExportModal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        projectId={project.id}
-        projectTypeKey={project.type_key}
-      />
+      {exportOpen && (
+        <Suspense fallback={null}>
+          <ExportModal
+            open
+            onClose={() => setExportOpen(false)}
+            projectId={project.id}
+            projectTypeKey={project.type_key}
+          />
+        </Suspense>
+      )}
       {(importTarget || purgeOpen) && (
         <ProjectActionModals
           projectId={project.id}

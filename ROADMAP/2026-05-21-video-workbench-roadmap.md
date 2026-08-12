@@ -83,17 +83,18 @@
 
 - 导出标准 `Annotations/Full-Resolution/{sequence}/{frame:05d}.png` palette PNG、对应 JPEG 抽帧 manifest 与 `ImageSets/2017/val.txt`；对象 id、255 void、overlap、outside / occluded 和每序列 254 目标上限均有固定合同与回归测试。
 
-### 4.6 Segment 导出聚合（后端，原 C.6 P1）
+### 4.6 Segment / Frame Range 导出聚合（**已落地**，原 C.6 P1）
 
-- `Annotation` 查询 / 导出按 `segment_id` 或 frame range 聚合；跨 segment 合并按 `frame_index` 排序，outside / prediction keyframe 不丢；overlap 区间元数据为 Phase 5 / IAA / IDF1 预留。
-- Video Tracks JSON 作内部稳定格式，MOT/KITTI/DAVIS 从它派生。
+- 项目与批次导出可限定单个视频 task，并按连续 segment 起止或源帧闭区间聚合；同一规范化范围贯穿预检、异步任务、缓存、Video / AAP JSON 与全部专业视频格式。
+- 轨迹在范围边界补齐可解析状态，保留范围内 manual / prediction 关键帧和裁剪后的 outside；帧格式先保持全局采样相位，再密集重排输出帧号并在 manifest 保存源帧映射。
+- Dashboard 导出弹窗可选择整个项目或单视频范围；批次导出提供同形 API 合同。
 
 ---
 
 ## Phase 5 · 长视频协同与 overlap（原 R11 / R21 + C.6 P1 Segment 底座）
 
 - segment 切换 UI、单段单人 lock 只读提示、overlap 区 IAA / IDF1 报告；Presence 可选，**不做 OT / CRDT**。
-- 后端 segment 导出聚合（Phase 4.6）为本 Phase 提供 overlap 元数据底座。
+- Phase 4.6 提供稳定的 segment / frame range 范围合同；overlap 区间元数据与协同语义在本 Phase 补齐。
 
 ---
 
@@ -106,14 +107,14 @@
 
 ## 执行顺序与优先级
 
-| Phase | 主题                  | 原 ROADMAP 对应                                         | 优先级 | 备注                                                                      |
-| ----- | --------------------- | ------------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
-| 1 ✅  | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1  | v0.10.29 落地；WebCodecs demux 接入延后                                   |
-| 2 ✅  | 轨迹工具对齐 CVAT     | R16 / R9 + 新增 2.1/2.6/2.7/2.8                         | P0/P1  | bbox / polygon / polyline / mask 平行轨迹均已落地；polyline AI 明确不做   |
-| 3 ◑   | 真实 tracker backend  | C.6 P0 / R23 / I20.4                                    | P0     | SAM2 / SAM3 video tracker 与动态能力协商已落地；跨窗仍是无状态续追        |
-| 4 ◑   | 视频导出（D3）        | R22 / C.6 P2 / §A AAP video_track 导入                  | P1     | AAP 标注 / 预测导入、逐帧 YOLO / COCO、DAVIS 已落地；4.6 Segment 聚合延后 |
-| 5     | 长视频协同 overlap    | R11 / R21 / C.6 P1 segment                              | P1     | 不做 OT/CRDT                                                              |
-| 6     | Track 质量评估        | R24 / C.6 P2 worker                                     | P2     | 与 L15 打通                                                               |
+| Phase | 主题                  | 原 ROADMAP 对应                                         | 优先级 | 备注                                                                    |
+| ----- | --------------------- | ------------------------------------------------------- | ------ | ----------------------------------------------------------------------- |
+| 1 ✅  | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1  | v0.10.29 落地；WebCodecs demux 接入延后                                 |
+| 2 ✅  | 轨迹工具对齐 CVAT     | R16 / R9 + 新增 2.1/2.6/2.7/2.8                         | P0/P1  | bbox / polygon / polyline / mask 平行轨迹均已落地；polyline AI 明确不做 |
+| 3 ◑   | 真实 tracker backend  | C.6 P0 / R23 / I20.4                                    | P0     | SAM2 / SAM3 video tracker 与动态能力协商已落地；跨窗仍是无状态续追      |
+| 4 ✅  | 视频导出（D3）        | R22 / C.6 P2 / §A AAP video_track 导入                  | P1     | AAP 标注 / 预测导入、专业格式与 Segment / Frame Range 聚合均已落地      |
+| 5     | 长视频协同 overlap    | R11 / R21 / C.6 P1 segment                              | P1     | 不做 OT/CRDT                                                            |
+| 6     | Track 质量评估        | R24 / C.6 P2 worker                                     | P2     | 与 L15 打通                                                             |
 
 > **不做清单**（与决策底线一致）：物理重采样新视频（D1）、AAP 拆三格式（D3）、predictor 进 apps/api（ADR-0012）、OT/CRDT 协同、ffmpeg.wasm/Broadway.js、Skeleton 无限嵌套、自维护 25 种格式（新格式走 datumaro 中转）。
 

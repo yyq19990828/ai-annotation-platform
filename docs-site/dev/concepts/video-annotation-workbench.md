@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-08-12
+last_reviewed: 2026-08-13
 ---
 
 # 视频标注工作台
@@ -357,6 +357,12 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 插值规则与前端显示保持一致：outside 段优先；精确关键帧其次；`occluded=true` 表示目标存在但遮挡，不阻断插值。`video_frame_mode=all_frames` 不输出 outside 范围内的 bbox，也不会把 track → `video_bbox` 转换到 outside 帧上。
 
 `include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。图片侧 `yolo-det` / `yolo-obb` / `yolo-seg` / `voc` 对视频项目返回 400；视频检测训练集要使用 `targets=yolo-frames-det`，它按采样网格抽帧并把 `video_bbox` 与摊平后的 `video_track_bbox` 写成逐帧 YOLO label。
+
+### 部分范围导出
+
+项目和批次导出接受可选的 task-scoped `scope`：按连续 Segment 起止或源帧闭区间选择。API 在入队前把 selection 规范化为确定的 `task_id / dataset_item_id / from_frame / to_frame`，并把同一结果写入 preflight、job payload、worker options 和 manifest；因此 segment 配置随后变化也不会改变已排队任务的范围。
+
+共享的 geometry 裁剪只保留范围内单帧 shape；track 会裁剪 outside、保留范围内原始关键帧，并用现有 resolver 在可见区间边界补齐自包含状态。帧格式从原视频全局采样网格过滤范围，再按各格式现有 base 密集编号，避免从 `from_frame` 重新锚定导致采样相位漂移。
 
 ## 前端 Stage 边界
 
