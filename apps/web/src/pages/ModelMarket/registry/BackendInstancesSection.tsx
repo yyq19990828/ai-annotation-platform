@@ -87,7 +87,7 @@ export function BackendInstancesSection({
   focusedPoolId?: string | null;
   onClearPoolFocus?: () => void;
 }): ReactNode {
-  const { isSuperAdmin, backends, vm } = scope;
+  const { isSuperAdmin, backends } = scope;
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [editTarget, setEditTarget] = useState<GlobalRegistryEditTarget | null>(null);

@@ -19,12 +19,12 @@ import { Input } from "@/components/shadcn/ui/input";
 
 import { EmptyState } from "./registryUi";
 import type { RegistryScope } from "./registryTypes";
-import type { Diagnostic, DiagnosticFilter, Severity } from "../runtimeTopology";
+import type { Diagnostic, DiagnosticFilter } from "../runtimeTopology";
 import { filterDiagnostics, sortDiagnostics } from "../runtimeTopology";
 import { SEVERITY_TOKENS } from "../runtime/StateTokens";
 
 export function IssueCenter({ scope }: { scope: RegistryScope }): ReactNode {
-  const { diagnostics, vm } = scope;
+  const { diagnostics } = scope;
   const [filter, setFilter] = useState<DiagnosticFilter>({});
   const [codeQuery, setCodeQuery] = useState("");
 

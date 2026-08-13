@@ -99,16 +99,11 @@ export function DataManagerCharts({
   isLoading?: boolean;
   onSelect?: (field: string, value: string) => void;
 }) {
-  const { resolved: themeResolved } = useTheme();
+  useTheme();
   const muted = cssVar("--sc-muted-foreground");
   const rankColor = cssVar("--sc-chart-1");
-  const statusColors = useMemo<Record<string, string>>(
-    () =>
-      Object.fromEntries(
-        Object.entries(STATUS_COLOR_VARS).map(([key, varName]) => [key, cssVar(varName)]),
-      ),
-    // 主题切换（themeResolved 变化）触发重渲染时随之重新计算
-    [themeResolved],
+  const statusColors: Record<string, string> = Object.fromEntries(
+    Object.entries(STATUS_COLOR_VARS).map(([key, varName]) => [key, cssVar(varName)]),
   );
   const tooltipStyle = useMemo<CSSProperties>(
     () => ({

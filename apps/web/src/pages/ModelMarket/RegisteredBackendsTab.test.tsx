@@ -25,11 +25,6 @@ async function switchTab(name: RegExp): Promise<void> {
   await userEvent.click(tab);
 }
 
-async function clickTab(name: RegExp): Promise<void> {
-  const tab = screen.getByRole("tab", { name: name as never });
-  await userEvent.click(tab);
-}
-
 // ── Toast mock ───────────────────────────────────────────────────────────────
 const mockPushToast = vi.fn();
 vi.mock("@/components/ui/Toast", async () => {

@@ -171,7 +171,6 @@ export function mergeTopologyAndSnapshot(
   );
 
   const sources: FreshnessViewModel[] = (snapshot?.sources ?? []).map(toFreshness);
-  const anyStale = sources.some((s) => s.stale);
 
   return {
     pools,
