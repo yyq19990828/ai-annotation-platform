@@ -515,8 +515,12 @@ async def manifest_v2(
 ) -> VideoManifestV2Response:
     _metadata_ready(ctx.metadata)
     from app.services.video_segment_service import ensure_segments, segment_out
+    from app.db.models.project import Project
+    from app.services.video_collaboration import collaboration_config
 
     segment_rows = await ensure_segments(db, ctx)
+    project = await db.get(Project, ctx.task.project_id) if ctx.task else None
+    collaboration = collaboration_config(project)
     await db.commit()
     base = base_url.rstrip("/")
     if ctx.task_id:
@@ -543,7 +547,17 @@ async def manifest_v2(
         frame_timetable_url=timetable_url,
         frame_service_base=frame_base,
         chunk_size_frames=settings.video_chunk_size_frames,
-        segments=[segment_out(row) for row in segment_rows],
+        segments=[
+            segment_out(
+                row,
+                frame_count=max(1, int(ctx.metadata.frame_count or 1)),
+                segment_count=len(segment_rows),
+                overlap_frames=(
+                    collaboration.overlap_frames if collaboration.enabled else 0
+                ),
+            )
+            for row in segment_rows
+        ],
     )
 
 

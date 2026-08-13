@@ -157,7 +157,10 @@ class AnnotationService:
             )
 
     async def _validate_parent_annotation(
-        self, task_id: uuid.UUID, parent_annotation_id: uuid.UUID
+        self,
+        task_id: uuid.UUID,
+        parent_annotation_id: uuid.UUID,
+        video_segment_id: uuid.UUID | None = None,
     ) -> None:
         """v0.20.9 · 父子标注仅一层深度约束（应用层校验，不下沉 DB 约束，留后手支持多层）。
 
@@ -176,6 +179,11 @@ class AnnotationService:
             raise HTTPException(
                 status_code=400,
                 detail="parent annotation must belong to the same task (parent-child is frame-internal)",
+            )
+        if parent.video_segment_id != video_segment_id:
+            raise HTTPException(
+                status_code=400,
+                detail="parent annotation must belong to the same video segment",
             )
         if parent.parent_annotation_id is not None:
             raise HTTPException(
@@ -196,6 +204,7 @@ class AnnotationService:
         lead_time: float | None = None,
         attributes: dict | None = None,
         tool_unit_id: str = "bbox",
+        video_segment_id: uuid.UUID | None = None,
     ) -> Annotation:
         task = await self.db.get(Task, task_id)
         source = "prediction_based" if parent_prediction_id else "manual"
@@ -204,7 +213,9 @@ class AnnotationService:
             await self._validate_class_name(task.project_id, tool_unit_id, class_name)
 
         if parent_annotation_id is not None:
-            await self._validate_parent_annotation(task_id, parent_annotation_id)
+            await self._validate_parent_annotation(
+                task_id, parent_annotation_id, video_segment_id
+            )
 
         await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
         geometry, track_id = prepare_compact_track_identity(geometry)
@@ -212,6 +223,7 @@ class AnnotationService:
             id=uuid.uuid4(),
             task_id=task_id,
             project_id=task.project_id if task else None,
+            video_segment_id=video_segment_id,
             user_id=user_id,
             source=source,
             annotation_type=str(geometry.get("type") or annotation_type),
@@ -238,6 +250,7 @@ class AnnotationService:
         shape_index: int | None = None,
         override_class_name: str | None = None,
         attribute_overrides: dict | None = None,
+        video_segment_id: uuid.UUID | None = None,
     ) -> list[Annotation] | None:
         """采纳预测 → 转 annotation。
 
@@ -426,6 +439,7 @@ class AnnotationService:
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
                 project_id=prediction.project_id,
+                video_segment_id=video_segment_id,
                 user_id=user_id,
                 source="prediction_based",
                 annotation_type=shape.get("type", "bbox"),
@@ -448,13 +462,18 @@ class AnnotationService:
         return anns
 
     async def list_by_task(
-        self, task_id: uuid.UUID, include_cancelled: bool = False
+        self,
+        task_id: uuid.UUID,
+        include_cancelled: bool = False,
+        video_segment_id: uuid.UUID | None = None,
     ) -> list[Annotation]:
         q = select(Annotation).where(
             Annotation.task_id == task_id, Annotation.is_active.is_(True)
         )
         if not include_cancelled:
             q = q.where(Annotation.was_cancelled.is_(False))
+        if video_segment_id is not None:
+            q = q.where(Annotation.video_segment_id == video_segment_id)
         q = q.order_by(Annotation.created_at)
         result = await self.db.execute(q)
         return list(result.scalars().all())
@@ -489,6 +508,7 @@ class AnnotationService:
         limit: int = 200,
         cursor: tuple[datetime, uuid.UUID] | None = None,
         include_cancelled: bool = False,
+        video_segment_id: uuid.UUID | None = None,
     ) -> tuple[list[Annotation], tuple[datetime, uuid.UUID] | None]:
         """v0.7.6 · keyset 分页：created_at DESC, id DESC。next_cursor=None 时已末页。
 
@@ -500,6 +520,8 @@ class AnnotationService:
         )
         if not include_cancelled:
             q = q.where(Annotation.was_cancelled.is_(False))
+        if video_segment_id is not None:
+            q = q.where(Annotation.video_segment_id == video_segment_id)
         if cursor is not None:
             cur_ts, cur_id = cursor
             q = q.where(
@@ -853,6 +875,7 @@ class AnnotationService:
             id=uuid.uuid4(),
             task_id=ctx.target_task.id,
             project_id=ctx.target_task.project_id,
+            video_segment_id=src.video_segment_id,
             user_id=user_id,
             source="manual",
             annotation_type=src.annotation_type,
@@ -1289,6 +1312,7 @@ class AnnotationService:
                 id=uuid.uuid4(),
                 task_id=task.id,
                 project_id=task.project_id,
+                video_segment_id=annotation.video_segment_id,
                 user_id=user_id,
                 source=annotation.source,
                 annotation_type="video_bbox",
@@ -1410,6 +1434,7 @@ class AnnotationService:
             id=uuid.uuid4(),
             task_id=task.id,
             project_id=task.project_id,
+            video_segment_id=ordered[0].video_segment_id,
             user_id=user_id,
             source=ordered[0].source,
             annotation_type="video_track_bbox",
@@ -1496,6 +1521,7 @@ class AnnotationService:
             id=uuid.uuid4(),
             task_id=task.id,
             project_id=task.project_id,
+            video_segment_id=source.video_segment_id,
             user_id=user_id,
             source=source.source,
             annotation_type="video_track_bbox",

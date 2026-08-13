@@ -38,6 +38,8 @@ from aap_backend_runtime import (
     physical_gpu_identity,
     versions_payload,
     validate_single_gpu_device_set,
+    TrackerSessionLost,
+    TrackerSessionManager,
 )
 from aap_protocol_v2 import (
     COMPAT_PROTOCOL_VERSIONS,
@@ -50,6 +52,7 @@ from aap_protocol_v2 import (
     decode_low_res_mask,
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
+    TrackerContextControl,
 )
 from aap_protocol_v2.errors import LifecycleErrorCode, LifecycleHTTPError
 from aap_protocol_v2.lifecycle import (
@@ -108,6 +111,9 @@ from schemas import (
 )
 from video_pool import VideoBuildTimeout, VideoPool, VideoPoolBusyError
 from video_predictor import SAM2VideoTracker
+from video_predictor import (
+    DEFAULT_MAX_CONTEXT_FRAMES as VIDEO_TRACKER_MAX_CONTEXT_FRAMES,
+)
 
 logger = logging.getLogger("grounded-sam2-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -333,6 +339,7 @@ def _build_video_tracker(sam_variant: str) -> SAM2VideoTracker:
 
 
 _video_pool: VideoPool | None = None
+_video_sessions = TrackerSessionManager(ttl_seconds=300.0)
 _pool_domain: GroundedSam2Pools | None = None
 _gpu_lifecycle: GroundedSam2GpuLifecycle | None = None
 _video_idle_task: asyncio.Task | None = None
@@ -527,6 +534,7 @@ async def _video_idle_watcher() -> None:
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
+            await _video_sessions.expire()
             if VIDEO_IDLE_UNLOAD_SECONDS <= 0 or _gpu_lifecycle is None:
                 continue
             idle_before = time.monotonic() - VIDEO_IDLE_UNLOAD_SECONDS
@@ -615,6 +623,7 @@ async def _shutdown() -> None:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
             globals()[task_name] = None
+    await _video_sessions.shutdown()
     if _gpu_lifecycle is not None:
         await _gpu_lifecycle.shutdown()
     _gpu_lifecycle = None
@@ -789,6 +798,12 @@ def setup() -> dict:
         "supported_text_outputs": ["box", "mask", "both"],
         # v0.10.35 §B · 平台 video_tracker 协议桥据此判断 backend 是否支持视频跟踪.
         "supported_trackers": ["sam2_video"],
+        "tracker_context_mode": (
+            "session"
+            if VIDEO_TRACKER_MAX_CONTEXT_FRAMES > VIDEO_TRACKER_MAX_WINDOW_FRAMES
+            else "none"
+        ),
+        "max_context_frames": VIDEO_TRACKER_MAX_CONTEXT_FRAMES,
         # v0.10.40 · 富变体元数据: 与 params.*_variant.enum 同源, enum 保留作老前端兼容.
         "supported_variants": _supported_variants(),
         "params": {
@@ -961,6 +976,12 @@ def setup() -> dict:
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam2_video"],
             "max_window_frames": VIDEO_TRACKER_MAX_WINDOW_FRAMES,
+            "tracker_context_mode": (
+                "session"
+                if VIDEO_TRACKER_MAX_CONTEXT_FRAMES > VIDEO_TRACKER_MAX_WINDOW_FRAMES
+                else "none"
+            ),
+            "max_context_frames": VIDEO_TRACKER_MAX_CONTEXT_FRAMES,
             "supported_variants": [_sam_variant_axis()],
             "variants_shared_across_tasks": True,
             "default_variants": {"sam_variant": SAM_VARIANT},
@@ -1941,7 +1962,7 @@ async def _run_video_tracker(
     file_path: str,
     ctx: dict,
     operation: WorkloadOperation | None = None,
-) -> tuple[list[dict], str]:
+) -> tuple[list[dict], str, dict | None]:
     """sam2_video tracker: 取 video pool tracker, 窗内传播 seed bbox。
 
     返回 (result 列表, sam_variant)。OOM / timeout 等不吞, 让 api 落 error_message
@@ -1962,8 +1983,6 @@ async def _run_video_tracker(
             status_code=422,
             detail=f"video_tracker direction must be forward|backward, got {direction!r}",
         )
-    # v0.21.27 阶段 A · 多目标: 优先 seeds[] (逐对象点/框/多帧 prompt), 回退单 seed_bbox。
-    seeds = _seeds_from_ctx(ctx)
     # v0.21.20 · polygon track 回填: 平台按源几何类型下发 output_geometry, "polygon" 时
     # 每帧保留 mask 矢量化为多边形而非降 bbox; 缺省 "bbox" 维持既有 seed-bbox tracker 行为。
     output_geometry = ctx.get("output_geometry") or "bbox"
@@ -1976,6 +1995,67 @@ async def _run_video_tracker(
     if _video_pool is None:
         raise HTTPException(status_code=503, detail="backend not ready")
     started = time.perf_counter()
+    raw_control = ctx.get("tracker_context")
+    if raw_control is not None:
+        control = TrackerContextControl.model_validate(raw_control)
+        binding = (control.job_id, direction, sv)
+        try:
+            if control.action == "close":
+                await _video_sessions.close(control.token or "", binding)
+                return [], sv, {"tracker_context": {"mode": "session", "closed": True}}
+
+            seeds = _seeds_from_ctx(ctx) if control.action == "start" else []
+            if control.action == "start":
+                local_path = _video_local_path(file_path)
+                cleanup = local_path != file_path
+                try:
+                    token = await _video_sessions.start(
+                        binding=binding,
+                        borrow=lambda: _video_pool.borrow(sv),
+                        open_session=lambda lease: _run_executor_to_completion(
+                            functools.partial(
+                                lease.tracker.start_session,
+                                local_path,
+                                control.span_start_frame,
+                                control.span_end_frame,
+                                direction,
+                                seeds,
+                            ),
+                            operation,
+                        ),
+                        close_session=lambda lease, state: _run_executor_to_completion(
+                            functools.partial(lease.tracker.close_session, state), None
+                        ),
+                    )
+                finally:
+                    if cleanup:
+                        os.unlink(local_path)
+            else:
+                token = control.token or ""
+            result = await _video_sessions.call(
+                token,
+                binding,
+                lambda lease, state: _run_executor_to_completion(
+                    functools.partial(
+                        lease.tracker.continue_session,
+                        state,
+                        from_frame,
+                        to_frame,
+                        output_geometry=output_geometry,
+                    ),
+                    operation,
+                ),
+            )
+            record_video_tracker(sv, len(result), time.perf_counter() - started)
+            return result, sv, {"tracker_context": {"mode": "session", "token": token}}
+        except TrackerSessionLost as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "tracker_context_lost"},
+            ) from exc
+
+    # v0.21.27 阶段 A · 多目标: 优先 seeds[] (逐对象点/框/多帧 prompt), 回退单 seed_bbox。
+    seeds = _seeds_from_ctx(ctx)
     try:
         async with _video_pool.borrow(sv) as lease:
             result = await _run_executor_to_completion(
@@ -2007,7 +2087,7 @@ async def _run_video_tracker(
             operation.track_future(_video_pool.builder_for_now(sv))
         raise
     record_video_tracker(sv, len(result), time.perf_counter() - started)
-    return result, sv
+    return result, sv, None
 
 
 @app.post("/predict")
@@ -2025,7 +2105,7 @@ async def predict(request: Request):
             correction = (ctx.get("prompt") or {}).get("correction") or {}
             tracker_started = time.perf_counter()
             try:
-                result, sv = await _run_video_tracker(
+                result, sv, tracker_meta = await _run_video_tracker(
                     task["file_path"],
                     ctx,
                     operation,
@@ -2053,6 +2133,7 @@ async def predict(request: Request):
                 result=result,
                 model_version=f"sam2_video-2.1{sv}",
                 inference_time_ms=elapsed_ms,
+                meta=tracker_meta,
             ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
         (

@@ -908,6 +908,21 @@ async def export_batch(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     video_scope_payload = video_scope.as_dict() if video_scope else None
+    if project.data_type == "video":
+        from app.services.video_canonical import (
+            VideoBoundaryUnreconciledError,
+            assert_export_boundaries_reconciled,
+        )
+
+        try:
+            await assert_export_boundaries_reconciled(
+                db,
+                project=project,
+                batch_id=batch_id,
+                scope=video_scope,
+            )
+        except VideoBoundaryUnreconciledError as exc:
+            raise HTTPException(status_code=409, detail=exc.detail) from exc
 
     fname = f"{project.display_id}_{batch.display_id}"
 

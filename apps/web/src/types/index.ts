@@ -553,6 +553,7 @@ export interface AnnotationResponse {
   id: string;
   task_id: string;
   project_id: string | null;
+  video_segment_id?: string | null;
   user_id: string | null;
   source: string;
   annotation_type: string;

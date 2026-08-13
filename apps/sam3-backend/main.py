@@ -43,6 +43,8 @@ import httpx
 import torch
 from aap_backend_runtime import (
     DeviceUnavailableError,
+    TrackerSessionLost,
+    TrackerSessionManager,
     deployment_verified_flag,
     fetch_image,
     physical_gpu_identity,
@@ -56,6 +58,7 @@ from aap_protocol_v2 import (
     ModelUnavailableError,
     MaskInteractionDiagnostic,
     PlatformRole,
+    TrackerContextControl,
     VariantNotSupportedError,
     decode_low_res_mask,
     log_deprecated_model_variant_fields,
@@ -112,6 +115,7 @@ from video_predictor import (
     SAM3MultiplexVideoTracker,
 )
 from pvs_video_predictor import (
+    DEFAULT_MAX_CONTEXT_FRAMES as PVS_MAX_CONTEXT_FRAMES,
     DEFAULT_MAX_WINDOW_FRAMES as PVS_MAX_WINDOW_FRAMES,
     SAM3PVSVideoTracker,
 )
@@ -218,6 +222,7 @@ _PVS_KEY = "sam3_video_interactive"
 _image_pool: ManagedLruPool[str, SAM3Predictor] | None = None
 _multiplex_pool: ManagedLruPool[str, SAM3MultiplexVideoTracker] | None = None
 _pvs_pool: ManagedLruPool[str, SAM3PVSVideoTracker] | None = None
+_pvs_sessions = TrackerSessionManager(ttl_seconds=300.0)
 _pool_domain: Sam3Pools | None = None
 _gpu_lifecycle: Sam3GpuLifecycle | None = None
 
@@ -401,6 +406,7 @@ async def _idle_watcher() -> None:
     while True:
         try:
             await asyncio.sleep(IDLE_CHECK_INTERVAL)
+            await _pvs_sessions.expire()
             if IDLE_UNLOAD_SECONDS <= 0 or _gpu_lifecycle is None:
                 continue
             idle_before = time.monotonic() - IDLE_UNLOAD_SECONDS
@@ -489,6 +495,7 @@ async def _shutdown() -> None:
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
         _idle_task = None
+    await _pvs_sessions.shutdown()
     if _gpu_lifecycle is not None:
         await _gpu_lifecycle.shutdown()
     _gpu_lifecycle = None
@@ -851,6 +858,10 @@ def setup() -> dict:
             "resource_profile": {"device": "gpu", "batchable": False},
             "supported_trackers": ["sam3_video_interactive"],
             "max_window_frames": PVS_MAX_WINDOW_FRAMES,
+            "tracker_context_mode": (
+                "session" if PVS_MAX_CONTEXT_FRAMES > PVS_MAX_WINDOW_FRAMES else "none"
+            ),
+            "max_context_frames": PVS_MAX_CONTEXT_FRAMES,
             "supported_variants": base["supported_variants"],
             "variants_shared_across_tasks": True,
             "default_variants": _default_variants,
@@ -1767,7 +1778,7 @@ async def _run_pvs_video_tracker(
     file_path: str,
     ctx: dict,
     operation: WorkloadOperation | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], dict | None]:
     """sam3_video_interactive: 点/框 seed + memory 逐对象跨帧追踪, 返回逐帧逐对象几何。"""
     try:
         from_frame = int(ctx["from_frame"])
@@ -1789,20 +1800,82 @@ async def _run_pvs_video_tracker(
             status_code=422,
             detail=f"output_geometry must be bbox|polygon|mask, got {output_geometry!r}",
         )
+    global _last_request_at
+    if _pvs_pool is None:
+        raise HTTPException(status_code=503, detail="backend not ready")
+    raw_control = ctx.get("tracker_context")
+    if raw_control is not None:
+        control = TrackerContextControl.model_validate(raw_control)
+        binding = (control.job_id, direction, _PVS_KEY)
+        try:
+            if control.action == "close":
+                await _pvs_sessions.close(control.token or "", binding)
+                return [], {"tracker_context": {"mode": "session", "closed": True}}
+
+            seeds = _seeds_from_video_ctx(ctx) if control.action == "start" else []
+            if control.action == "start":
+                if not seeds:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="sam3_video_interactive tracker requires a seed",
+                    )
+                local_path = _video_local_path(file_path)
+                cleanup = local_path != file_path
+                try:
+                    token = await _pvs_sessions.start(
+                        binding=binding,
+                        borrow=lambda: _pvs_pool.borrow(_PVS_KEY),
+                        open_session=lambda lease: _run_executor_to_completion(
+                            functools.partial(
+                                lease.resource.start_session,
+                                local_path,
+                                control.span_start_frame,
+                                control.span_end_frame,
+                                direction,
+                                seeds,
+                            ),
+                            operation,
+                        ),
+                        close_session=lambda lease, state: _run_executor_to_completion(
+                            functools.partial(lease.resource.close_session, state), None
+                        ),
+                    )
+                finally:
+                    if cleanup:
+                        os.unlink(local_path)
+            else:
+                token = control.token or ""
+            result = await _pvs_sessions.call(
+                token,
+                binding,
+                lambda lease, state: _run_executor_to_completion(
+                    functools.partial(
+                        lease.resource.continue_session,
+                        state,
+                        from_frame,
+                        to_frame,
+                        output_geometry=output_geometry,
+                    ),
+                    operation,
+                ),
+            )
+            return result, {"tracker_context": {"mode": "session", "token": token}}
+        except TrackerSessionLost as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "tracker_context_lost"},
+            ) from exc
+
     seeds = _seeds_from_video_ctx(ctx)
     if not seeds:
         raise HTTPException(
             status_code=422,
             detail="sam3_video_interactive tracker requires a seed (source_geometry / seeds[])",
         )
-
-    global _last_request_at
-    if _pvs_pool is None:
-        raise HTTPException(status_code=503, detail="backend not ready")
     try:
         async with _pvs_pool.borrow(_PVS_KEY) as lease:
             _last_request_at = time.monotonic()
-            return await _run_executor_to_completion(
+            result = await _run_executor_to_completion(
                 functools.partial(
                     _run_pvs_video_tracker_sync,
                     lease.resource,
@@ -1815,6 +1888,7 @@ async def _run_pvs_video_tracker(
                 ),
                 operation,
             )
+            return result, None
     except ManagedBuildTimeout as exc:
         if operation is not None:
             operation.track_future(exc.builder)
@@ -1849,7 +1923,7 @@ async def predict(request: Request):
             tracker_started = time.perf_counter()
             try:
                 if ctx.get("model_key") == "sam3_video_interactive":
-                    result = await _run_pvs_video_tracker(
+                    result, tracker_meta = await _run_pvs_video_tracker(
                         task["file_path"],
                         ctx,
                         operation,
@@ -1884,6 +1958,9 @@ async def predict(request: Request):
                 score=None,
                 model_version=MODEL_VERSION,
                 inference_time_ms=elapsed_ms,
+                meta=tracker_meta
+                if ctx.get("model_key") == "sam3_video_interactive"
+                else None,
                 cache_hit=False,
                 model_load_ms=None,
             ).model_dump(exclude_none=True)

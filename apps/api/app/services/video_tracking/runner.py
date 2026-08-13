@@ -50,9 +50,11 @@ from app.services.raster_mask_storage import (
 from app.services.mask_qc.topology import rle_and, rle_replace_region, rle_xor
 from app.services.storage import resolve_task_url
 from app.services.video_frame_service import derive_step
+from app.services.video_collaboration import segment_work_bounds_for_task
 from app.services.video_tracking.adapters import (
     TrackerContext,
     TrackerFrameResult,
+    TrackerSession,
     get_tracker_adapter,
 )
 from app.services.video_tracks import is_polygon_track
@@ -237,6 +239,46 @@ def _correction_execution_windows(
     return windows
 
 
+def _tracker_session_capability(
+    backend: object | None, model_key: str
+) -> tuple[str, int]:
+    capabilities = (getattr(backend, "health_meta", None) or {}).get(
+        "capabilities"
+    ) or {}
+    for model in capabilities.get("models") or []:
+        if model_key not in set(model.get("supported_trackers") or []):
+            continue
+        mode = model.get("tracker_context_mode")
+        limit = model.get("max_context_frames")
+        if mode == "session" and type(limit) is int and limit > 0:
+            return mode, limit
+    return "none", 0
+
+
+def _context_spans(
+    windows: list[tuple[int, int, str, bool]], max_frames: int
+) -> dict[int, tuple[int, int]]:
+    spans: dict[int, tuple[int, int]] = {}
+    start_index = 0
+    while start_index < len(windows):
+        direction = windows[start_index][2]
+        indexes = [start_index]
+        lo, hi = windows[start_index][0], windows[start_index][1]
+        for index in range(start_index + 1, len(windows)):
+            if windows[index][2] != direction:
+                break
+            next_lo = min(lo, windows[index][0])
+            next_hi = max(hi, windows[index][1])
+            if next_hi - next_lo + 1 > max_frames:
+                break
+            indexes.append(index)
+            lo, hi = next_lo, next_hi
+        for index in indexes:
+            spans[index] = (lo, hi)
+        start_index = indexes[-1] + 1
+    return spans
+
+
 async def _correction_seed(
     db: AsyncSession, job: VideoTrackerJob, annotation: Annotation
 ) -> list[dict]:
@@ -268,12 +310,18 @@ async def _correction_seed(
         raise ValueError("corrected_mask_digest_mismatch")
     segment_snapshot = correction.get("segment") or {}
     segment = await db.get(VideoSegment, job.segment_id) if job.segment_id else None
+    task = await db.get(Task, job.task_id)
+    work_start, work_end = (
+        await segment_work_bounds_for_task(db, task=task, segment=segment)
+        if task is not None and segment is not None
+        else (-1, -1)
+    )
     lease_enforced = segment_snapshot.get("lease_enforced") is not False
     if (
         segment is None
         or str(segment.id) != str(segment_snapshot.get("id") or "")
-        or job.from_frame < segment.start_frame
-        or job.to_frame > segment.end_frame
+        or job.from_frame < work_start
+        or job.to_frame > work_end
         or (
             lease_enforced
             and (
@@ -688,6 +736,7 @@ class _TrackTarget:
 
     task_id: uuid.UUID
     project_id: uuid.UUID
+    video_segment_id: uuid.UUID | None
     user_id: uuid.UUID | None
     class_name: str
     tool_unit_id: str
@@ -697,6 +746,7 @@ def _target_from_source(source: Annotation) -> _TrackTarget:
     return _TrackTarget(
         task_id=source.task_id,
         project_id=source.project_id,
+        video_segment_id=source.video_segment_id,
         user_id=source.user_id,
         class_name=source.class_name,
         tool_unit_id=source.tool_unit_id,
@@ -708,6 +758,7 @@ def _target_from_job(job: VideoTrackerJob, task: Task) -> _TrackTarget:
     return _TrackTarget(
         task_id=job.task_id,
         project_id=task.project_id,
+        video_segment_id=job.segment_id,
         user_id=job.created_by,
         class_name=job.target_class_name or "",
         tool_unit_id=job.target_tool_unit_id or "bbox",
@@ -752,6 +803,7 @@ def _new_discovered_track(target: _TrackTarget, output_geometry: str) -> Annotat
         id=uuid.uuid4(),
         task_id=target.task_id,
         project_id=target.project_id,
+        video_segment_id=target.video_segment_id,
         user_id=target.user_id,
         source="ai_tracker",
         annotation_type=geom_type,
@@ -1072,11 +1124,16 @@ async def _lock_tracker_review_context(
             )
         ).scalar_one_or_none()
         now = _now()
+        work_start, work_end = (
+            await segment_work_bounds_for_task(db, task=task, segment=segment)
+            if segment is not None
+            else (-1, -1)
+        )
         invalid_scope = (
             segment is None
             or segment.dataset_item_id != job.dataset_item_id
-            or job.from_frame < segment.start_frame
-            or job.to_frame > segment.end_frame
+            or job.from_frame < work_start
+            or job.to_frame > work_end
         )
         active_other_lock = bool(
             segment
@@ -2044,11 +2101,16 @@ async def accept_tracker_job(
             )
         ).scalar_one_or_none()
         now = _now()
+        work_start, work_end = (
+            await segment_work_bounds_for_task(db, task=task, segment=segment)
+            if segment is not None
+            else (-1, -1)
+        )
         if (
             segment is None
             or segment.dataset_item_id != job.dataset_item_id
-            or job.from_frame < segment.start_frame
-            or job.to_frame > segment.end_frame
+            or job.from_frame < work_start
+            or job.to_frame > work_end
             or (
                 not privileged
                 and (
@@ -2232,6 +2294,7 @@ async def run_tracker_job(
     heartbeat_task: asyncio.Task | None = None
     heartbeat_failed = False
     route_succeeded = False
+    tracker_session_cleanup: Callable[[], Awaitable[None]] | None = None
     try:
         # v0.22.1 · B · 源轨迹可选: 无源检测 (job.annotation_id is None) 时不加载 source,
         # 种子来自 prompt (text/seeds), 主实例落库时新建。
@@ -2466,6 +2529,47 @@ async def run_tracker_job(
         # (上一窗末帧框) 续追, 不重发点种子。缺省无 seeds 时行为与 B-pvs 框种子完全一致。
         prompt_seeds = correction_seeds or (job.prompt or {}).get("seeds")
 
+        session_mode, max_context_frames = _tracker_session_capability(
+            backend, tracker_capability
+        )
+        session_spans = (
+            _context_spans(execution_windows, max_context_frames)
+            if session_mode == "session" and not is_combo
+            else {}
+        )
+        active_session: TrackerSession | None = None
+        active_session_span: tuple[int, int, str] | None = None
+        context_boundaries: list[int] = []
+
+        async def close_active_session() -> None:
+            nonlocal active_session, active_session_span
+            if active_session is None or active_session_span is None:
+                return
+            close_ctx = TrackerContext(
+                job_id=job.id,
+                task_id=task.id,
+                project_id=task.project_id,
+                dataset_item_id=job.dataset_item_id,
+                annotation_id=job.annotation_id,
+                from_frame=job.from_frame,
+                to_frame=job.to_frame,
+                direction=active_session_span[2],
+                prompt=job.prompt or {},
+                source_geometry=last_geometry,
+                task_data=task_data,
+                ml_backend=backend,
+                shadow_session_factory=shadow_session_factory,
+                dispatch_context_factory=dispatch_context_factory,
+                sam_variant=(job.prompt or {}).get("sam_variant"),
+                session=replace(active_session, action="close"),
+            )
+            async for _ in adapter.propagate(close_ctx):
+                pass
+            active_session = None
+            active_session_span = None
+
+        tracker_session_cleanup = close_active_session
+
         # v0.22.2 · B-combo · 发现趟 (先于追踪窗循环, 串行 → 中间 idle 可卸载 multiplex 再载
         # PVS, 避两模型同容峰值)。multiplex 在种子帧按 text 检测 → per-obj 框 → 铸成 PVS 种子
         # (无源, 落库全新建)。发现不到目标即失败 (无种子无法追踪)。
@@ -2515,6 +2619,20 @@ async def run_tracker_job(
             window_direction,
             is_seed_window,
         ) in enumerate(execution_windows):
+            span = session_spans.get(win_idx)
+            span_key = (*span, window_direction) if span is not None else None
+            if active_session is not None and span_key != active_session_span:
+                await close_active_session()
+            if span_key is not None and active_session is None:
+                active_session = TrackerSession(
+                    span_start_frame=span[0],
+                    span_end_frame=span[1],
+                )
+                active_session_span = span_key
+                if win_idx:
+                    context_boundaries.append(
+                        from_frame if window_direction == "forward" else to_frame
+                    )
             # 种子窗下发原始点/框种子; 后续窗若多实例则各自续种 (见 _continuation_seeds),
             # 单实例则靠 source_geometry=last_geometry 兜底 (零回归)。
             if is_correction and is_seed_window:
@@ -2566,6 +2684,7 @@ async def run_tracker_job(
                 output_geometry=output_geometry,
                 # v0.21.27 · U-pvs-1 · 种子窗原始种子 / 后续窗多实例续种 (见上)。
                 seeds=window_seeds,
+                session=active_session,
             )
             # v0.21.28 · B-mx · 逐窗缓冲结果; 窗末对 text-multiplex 做跨窗 IoU 关联 (remap
             # 窗内 obj_id → 全局 instance_id) 后再并入 results。非 multiplex 时缓冲即透传。
@@ -2651,6 +2770,8 @@ async def run_tracker_job(
                     if result.instance_id is None or result.primary:
                         last_geometry = result.geometry
 
+        await close_active_session()
+
         await db.refresh(job)
         if heartbeat_failed:
             raise RuntimeError("tracker route lease heartbeat failed")
@@ -2673,6 +2794,8 @@ async def run_tracker_job(
         # v0.21.28 · 候选/接受流: 完成时**暂存**结果 (不落 annotation), 待用户接受/丢弃。
         # PENDING_REVIEW = 追踪完、结果已暂存、committed annotations 未改。
         _stage_tracker_results(job, results, grid_step, output_geometry)
+        if context_boundaries and job.staged_result is not None:
+            job.staged_result["tracker_context_boundaries"] = context_boundaries
         await lock_raster_mask_references(db, job.staged_result)
         job.status = VideoTrackerJobStatus.PENDING_REVIEW.value
         job.completed_at = _now()
@@ -2697,6 +2820,11 @@ async def run_tracker_job(
             gpu_arbiter_error=gpu_arbiter_error,
         )
     finally:
+        if tracker_session_cleanup is not None:
+            try:
+                await tracker_session_cleanup()
+            except Exception:  # noqa: BLE001
+                log.warning("tracker context cleanup failed job_id=%s", job_id)
         if heartbeat_task is not None:
             heartbeat_task.cancel()
             with suppress(asyncio.CancelledError):

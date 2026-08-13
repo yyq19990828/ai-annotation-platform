@@ -211,9 +211,27 @@ describe("ExportModal", () => {
       task_id: "task-1",
       dataset_item_id: "item-1",
       segment_size_frames: 5,
+      collaboration_enabled: false,
+      overlap_frames: 0,
       segments: [
-        { id: "seg-1", start_frame: 0, end_frame: 4, segment_index: 0, status: "open" },
-        { id: "seg-2", start_frame: 5, end_frame: 9, segment_index: 1, status: "open" },
+        {
+          id: "seg-1",
+          start_frame: 0,
+          end_frame: 4,
+          work_start_frame: 0,
+          work_end_frame: 4,
+          segment_index: 0,
+          status: "open",
+        },
+        {
+          id: "seg-2",
+          start_frame: 5,
+          end_frame: 9,
+          work_start_frame: 5,
+          work_end_frame: 9,
+          segment_index: 1,
+          status: "open",
+        },
       ],
     });
     render(<ExportModalHarness projectId="p-range" projectTypeKey="video-track" />);

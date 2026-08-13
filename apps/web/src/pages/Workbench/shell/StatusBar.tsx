@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import type { ReconnectState } from "@/hooks/useReconnectingWebSocket";
 import type { TaskLockConflictDetail } from "@/types";
+import type { VideoSegment } from "@/api/videoTracker";
 import { formatDuration } from "../state/useSessionStats";
 
 interface PreannotationProgress {
@@ -37,6 +39,8 @@ interface StatusBarProps {
   /** M2 · review 模式下的 diff 控制（final/raw/diff）。有值时渲染 segmented control。 */
   diffMode?: DiffMode;
   onSetDiffMode?: (m: DiffMode) => void;
+  activeVideoSegment?: VideoSegment | null;
+  segmentLeaseError?: string | null;
 }
 
 function formatLockTime(ms: number): string {
@@ -75,7 +79,18 @@ export function StatusBar({
   lockConflict,
   diffMode,
   onSetDiffMode,
+  activeVideoSegment,
+  segmentLeaseError,
 }: StatusBarProps) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!activeVideoSegment?.lock_expires_at) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeVideoSegment?.lock_expires_at]);
+  const segmentRemainingMs = activeVideoSegment?.lock_expires_at
+    ? Math.max(0, new Date(activeVideoSegment.lock_expires_at).getTime() - now)
+    : 0;
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
   const cursorText =
     cursor && imageWidth && imageHeight
@@ -94,6 +109,33 @@ export function StatusBar({
   return (
     <div className="flex justify-between border-t border-border bg-card px-4 py-2 text-xs text-muted-foreground">
       <div className="flex items-center gap-3">
+        {activeVideoSegment && (
+          <>
+            <span className={inlineItem}>
+              <Icon name="layers" size={11} /> S{activeVideoSegment.segment_index + 1}
+              <span className="mono font-medium text-foreground">
+                {activeVideoSegment.start_frame}-{activeVideoSegment.end_frame}
+              </span>
+              <span>
+                work {activeVideoSegment.work_start_frame}-{activeVideoSegment.work_end_frame}
+              </span>
+              {segmentRemainingMs > 0 && (
+                <span className="mono text-status-caution">
+                  租约 {formatLockTime(segmentRemainingMs)}
+                </span>
+              )}
+            </span>
+            <Sep />
+          </>
+        )}
+        {segmentLeaseError && (
+          <>
+            <span className={cn(inlineItem, "text-status-danger")}>
+              <Icon name="warning" size={11} /> {segmentLeaseError}
+            </span>
+            <Sep />
+          </>
+        )}
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
           <>
             <span className={cn(inlineItem, lockRemainingMs < 60_000 && "text-status-caution")}>

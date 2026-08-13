@@ -50,6 +50,10 @@ from app.db.models.mask_review_scope import MaskReviewScope
 from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.video_chapter import VideoChapter
+from app.db.models.video_track_quality import (
+    VideoTrackQualityIssue,
+    VideoTrackQualityRun,
+)
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.bug_report import BugReport, BugComment
@@ -122,6 +126,8 @@ __all__ = [
     "MaskRepairBatch",
     "MaskFormatImport",
     "VideoChapter",
+    "VideoTrackQualityIssue",
+    "VideoTrackQualityRun",
     "AuditLog",
     "UserInvitation",
     "BugReport",

@@ -39,6 +39,7 @@ from aap_protocol_v2.mask_interaction import (
 )
 from aap_protocol_v2.predict import (
     LEGACY_CONTEXT_VARIANT_FIELDS,
+    TrackerContextControl,
     log_deprecated_model_variant_fields,
     normalize_context_model_variants,
 )
@@ -105,6 +106,7 @@ __all__ = [
     "PlatformRole",
     "TASK_VALUES",
     "TaskItem",
+    "TrackerContextControl",
     "ScribblePrompt",
     "ScribbleStroke",
     "VariantNotSupportedError",

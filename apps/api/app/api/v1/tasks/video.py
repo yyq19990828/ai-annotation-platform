@@ -35,6 +35,11 @@ from app.schemas.video_frame_service import (
     VideoSegmentOut,
     VideoSegmentsResponse,
 )
+from app.schemas.video_track_quality import (
+    VideoTrackQualityAcceptRequest,
+    VideoTrackQualityRunOut,
+    VideoTrackQualityRunRequest,
+)
 from app.schemas.video_tracker_job import (
     VideoMaskCorrectionRequest,
     VideoMaskKeyframeOperationRequest,
@@ -62,6 +67,17 @@ from app.services.video_segment_service import (
     heartbeat_segment,
     list_segments as list_video_segments,
     release_segment,
+    reopen_segment,
+    submit_segment,
+    unassign_segment,
+)
+from app.services.video_track_quality import (
+    VideoTrackQualityError,
+    accept_quality_run,
+    create_quality_run,
+    dispatch_quality_run,
+    mark_boundary_runs_stale,
+    refresh_staleness,
 )
 from app.services.video_tracking.jobs import (
     create_video_mask_correction_job,
@@ -72,7 +88,7 @@ from app.services.video_tracking.jobs import (
     operate_video_mask_keyframe,
     save_video_mask_keyframe,
 )
-from app.services.task_lock import TaskLockService
+from app.services.video_collaboration import heartbeat_task_lock_for_legacy_video
 from app.observability.metrics import observe_mask_ai_phase, record_mask_ai_operation
 
 
@@ -82,6 +98,7 @@ from app.api.v1.tasks._shared import (
     _assert_task_visible,
     _attach_dimensions,
     _ANNOTATORS,
+    _REVIEWERS,
     VIDEO_MANIFEST_URL_EXPIRES_IN,
     logger,
 )
@@ -589,6 +606,281 @@ async def release_video_segment(
     return body
 
 
+async def _segment_privileged(db: AsyncSession, task: Task, user: User) -> bool:
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    return bool(
+        project
+        and (is_privileged_for_project(user, project) or task.reviewer_id == user.id)
+    )
+
+
+def _raise_quality_error(exc: VideoTrackQualityError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:submit",
+    response_model=VideoSegmentOut,
+)
+async def submit_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await submit_segment(
+        db,
+        ctx,
+        segment_id,
+        current_user,
+        privileged=await _segment_privileged(db, task, current_user),
+    )
+    from app.db.models.dataset import VideoSegment
+
+    neighbors = list(
+        (
+            await db.execute(
+                select(VideoSegment).where(
+                    VideoSegment.dataset_item_id == ctx.item.id,
+                    VideoSegment.segment_index.in_(
+                        [body.segment_index - 1, body.segment_index + 1]
+                    ),
+                    VideoSegment.status == "completed",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    dispatches: list[tuple[uuid.UUID, uuid.UUID]] = []
+    for neighbor in neighbors:
+        left_id, right_id = (
+            (neighbor.id, segment_id)
+            if neighbor.segment_index < body.segment_index
+            else (segment_id, neighbor.id)
+        )
+        try:
+            run, job, created = await create_quality_run(
+                db,
+                task=task,
+                left_segment_id=left_id,
+                right_segment_id=right_id,
+                actor_id=current_user.id,
+            )
+        except VideoTrackQualityError as exc:
+            _raise_quality_error(exc)
+        if created and job is not None:
+            dispatches.append((run.id, job.id))
+    if task.status == "review":
+        from app.services.batch import BatchService
+
+        batch_service = BatchService(db)
+        await batch_service.check_auto_transitions(task.batch_id)
+        if task.batch_id:
+            await batch_service.recalculate_counters(task.batch_id)
+    await db.commit()
+    for run_id, job_id in dispatches:
+        try:
+            await dispatch_quality_run(db, run_id=run_id, async_job_id=job_id)
+        except VideoTrackQualityError as exc:
+            _raise_quality_error(exc)
+    return body
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:reopen",
+    response_model=VideoSegmentOut,
+)
+async def reopen_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if not await _segment_privileged(db, task, current_user):
+        raise HTTPException(status_code=403, detail="reviewer privilege required")
+    ctx = await build_context_from_task(db, task)
+    body = await reopen_segment(db, ctx, segment_id)
+    await mark_boundary_runs_stale(db, segment_id)
+    await db.commit()
+    return body
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:unassign",
+    response_model=VideoSegmentOut,
+)
+async def unassign_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if not await _segment_privileged(db, task, current_user):
+        raise HTTPException(status_code=403, detail="reviewer privilege required")
+    ctx = await build_context_from_task(db, task)
+    body = await unassign_segment(db, ctx, segment_id)
+    await mark_boundary_runs_stale(db, segment_id)
+    await db.commit()
+    return body
+
+
+@router.get(
+    "/{task_id}/video/track-quality",
+    response_model=list[VideoTrackQualityRunOut],
+)
+async def list_video_track_quality(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.db.models.video_track_quality import VideoTrackQualityRun
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    runs = list(
+        (
+            await db.execute(
+                select(VideoTrackQualityRun)
+                .where(VideoTrackQualityRun.task_id == task.id)
+                .order_by(VideoTrackQualityRun.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for run in runs:
+        await refresh_staleness(db, run)
+    await db.commit()
+    return runs
+
+
+@router.post(
+    "/{task_id}/video/track-quality/run",
+    response_model=VideoTrackQualityRunOut,
+)
+async def run_video_track_quality_now(
+    task_id: uuid.UUID,
+    body: VideoTrackQualityRunRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if not await _segment_privileged(db, task, current_user):
+        raise HTTPException(status_code=403, detail="reviewer privilege required")
+    try:
+        run, job, created = await create_quality_run(
+            db,
+            task=task,
+            left_segment_id=body.left_segment_id,
+            right_segment_id=body.right_segment_id,
+            actor_id=current_user.id,
+        )
+    except VideoTrackQualityError as exc:
+        _raise_quality_error(exc)
+    await db.commit()
+    if created and job is not None:
+        try:
+            await dispatch_quality_run(db, run_id=run.id, async_job_id=job.id)
+        except VideoTrackQualityError as exc:
+            _raise_quality_error(exc)
+    return run
+
+
+@router.get(
+    "/{task_id}/video/track-quality/{run_id}",
+    response_model=VideoTrackQualityRunOut,
+)
+async def get_video_track_quality(
+    task_id: uuid.UUID,
+    run_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.db.models.video_track_quality import (
+        VideoTrackQualityIssue,
+        VideoTrackQualityRun,
+    )
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    run = await db.get(VideoTrackQualityRun, run_id)
+    if run is None or run.task_id != task.id:
+        raise HTTPException(status_code=404, detail="Track quality run not found")
+    await refresh_staleness(db, run)
+    issues = list(
+        (
+            await db.execute(
+                select(VideoTrackQualityIssue)
+                .where(VideoTrackQualityIssue.run_id == run.id)
+                .order_by(
+                    VideoTrackQualityIssue.frame_start,
+                    VideoTrackQualityIssue.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    from app.services.video_track_quality import metrics_with_current_chapters
+
+    metrics = await metrics_with_current_chapters(db, task=task, run=run, issues=issues)
+    await db.commit()
+    return VideoTrackQualityRunOut.model_validate(run).model_copy(
+        update={"issues": issues, "metrics": metrics}
+    )
+
+
+@router.post(
+    "/{task_id}/video/track-quality/{run_id}:accept",
+    response_model=VideoTrackQualityRunOut,
+)
+async def accept_video_track_quality(
+    task_id: uuid.UUID,
+    run_id: uuid.UUID,
+    body: VideoTrackQualityAcceptRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    from app.db.models.video_track_quality import VideoTrackQualityRun
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if not await _segment_privileged(db, task, current_user):
+        raise HTTPException(status_code=403, detail="reviewer privilege required")
+    run = (
+        await db.execute(
+            select(VideoTrackQualityRun)
+            .where(VideoTrackQualityRun.id == run_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if run is None or run.task_id != task.id:
+        raise HTTPException(status_code=404, detail="Track quality run not found")
+    try:
+        await accept_quality_run(
+            db,
+            run=run,
+            actor_id=current_user.id,
+            input_digest=body.input_digest,
+            decisions=[pair.model_dump(mode="json") for pair in body.pairs],
+        )
+    except VideoTrackQualityError as exc:
+        _raise_quality_error(exc)
+    await db.commit()
+    return run
+
+
 @router.get("/{task_id}/video/chunks", response_model=VideoChunksResponse)
 async def get_video_chunks(
     task_id: uuid.UUID,
@@ -730,7 +1022,7 @@ async def save_video_mask_correction_keyframe(
         expected_version=expected_version,
         user=current_user,
     )
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -792,7 +1084,7 @@ async def operate_video_mask_correction_keyframe(
         expected_version=expected_version,
         user=current_user,
     )
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     await AuditService.log(
         db,
         actor=current_user,

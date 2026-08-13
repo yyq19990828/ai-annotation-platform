@@ -40,7 +40,13 @@ from app.services.raster_mask_storage import (
     prepare_mask_payload_for_write,
 )
 from app.services.scheduler import is_privileged_for_project
-from app.services.task_lock import TaskLockConflictError, TaskLockService
+from app.services.video_collaboration import (
+    assert_task_lock_for_legacy_video,
+    collaboration_config,
+    heartbeat_task_lock_for_legacy_video,
+    segment_work_bounds,
+)
+from app.services.task_lock import TaskLockConflictError
 from app.services.video_tracks import normalize_outside_ranges, resolve_track_at_frame
 from app.utils.raster_mask_rle import (
     MAX_DENSE_MASK_PIXELS,
@@ -715,21 +721,34 @@ class MaskMutationService:
             return
         frame_index = int(scope.frame_index or 0)
         query = select(VideoSegment).where(
-            VideoSegment.dataset_item_id == task.dataset_item_id,
-            VideoSegment.start_frame <= frame_index,
-            VideoSegment.end_frame >= frame_index,
+            VideoSegment.dataset_item_id == task.dataset_item_id
         )
         if scope.segment_id is not None:
             query = query.where(VideoSegment.id == scope.segment_id)
-        segment = (
+        segments = list(
             (
                 await self.db.execute(
                     query.order_by(VideoSegment.segment_index).with_for_update()
                 )
             )
             .scalars()
-            .first()
+            .all()
         )
+        config = collaboration_config(project)
+        frame_count = max((row.end_frame for row in segments), default=0) + 1
+
+        def contains_frame(row: VideoSegment) -> bool:
+            work_start, work_end = segment_work_bounds(
+                start_frame=row.start_frame,
+                end_frame=row.end_frame,
+                segment_index=row.segment_index,
+                segment_count=max(1, len(segments)),
+                frame_count=frame_count,
+                overlap_frames=config.overlap_frames if config.enabled else 0,
+            )
+            return work_start <= frame_index <= work_end
+
+        segment = next((row for row in segments if contains_frame(row)), None)
         if segment is None:
             raise MaskMutationError(
                 status_code=409,
@@ -1186,7 +1205,7 @@ class MaskMutationService:
         _assert_task_editable(task, actor)
 
         try:
-            await TaskLockService(self.db).assert_write_allowed(task_id, actor.id)
+            await assert_task_lock_for_legacy_video(self.db, task, actor.id)
         except TaskLockConflictError as exc:
             raise MaskMutationError(
                 status_code=409,
@@ -1521,6 +1540,7 @@ class MaskMutationService:
                     id=uuid.uuid4(),
                     task_id=task.id,
                     project_id=task.project_id,
+                    video_segment_id=source.video_segment_id,
                     user_id=actor.id,
                     source="manual",
                     annotation_type=str(geometry.get("type")),
@@ -1552,7 +1572,7 @@ class MaskMutationService:
             algebra_budget,
         )
         await AnnotationService(self.db)._update_task_stats(task_id)
-        await TaskLockService(self.db).heartbeat(task_id, actor.id)
+        await heartbeat_task_lock_for_legacy_video(self.db, task, actor.id)
 
         operation_id = uuid.uuid4()
         result_versions = {

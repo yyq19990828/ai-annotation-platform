@@ -8,6 +8,7 @@ import {
   samCandidateDisplayShapes,
   samCandidateGeom,
   shouldShowInManualAnnotationSection,
+  videoAnnotationQueriesEnabled,
 } from "../useWorkbenchShellModel.helpers";
 
 describe("commitAfterNavigationGuard", () => {
@@ -32,6 +33,16 @@ describe("commitAfterNavigationGuard", () => {
     releaseFirst?.(true);
     await expect(first).resolves.toBe(false);
     expect(commits).toEqual(["second"]);
+  });
+});
+
+describe("videoAnnotationQueriesEnabled", () => {
+  it("等待视频协同配置并在协同模式下要求当前 segment", () => {
+    expect(videoAnnotationQueriesEnabled(true, false, false, null)).toBe(false);
+    expect(videoAnnotationQueriesEnabled(true, true, true, null)).toBe(false);
+    expect(videoAnnotationQueriesEnabled(true, true, true, "segment-1")).toBe(true);
+    expect(videoAnnotationQueriesEnabled(true, true, false, null)).toBe(true);
+    expect(videoAnnotationQueriesEnabled(false, false, false, null)).toBe(true);
   });
 });
 

@@ -53,6 +53,7 @@ import {
 import { ApiError } from "@/api/client";
 import type { AnnotationConversionExecuteResponse } from "@/api/annotationConversions";
 import { videoTrackerApi } from "@/api/videoTracker";
+import { VideoTrackQualitySidebar } from "../sidebar/VideoTrackQualitySidebar";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
@@ -126,6 +127,7 @@ import {
   samCandidateDisplayShapes,
   samCandidateGeom,
   shouldShowInManualAnnotationSection,
+  videoAnnotationQueriesEnabled,
 } from "./useWorkbenchShellModel.helpers";
 import { useHoveredCommentStore, selectEffectiveShapes } from "./useHoveredCommentStore";
 import { annotationToBox, collectOccludedKeys } from "./transforms";
@@ -442,6 +444,7 @@ export function useWorkbenchShellModel({
     [currentPath, location, navigate],
   );
   const pushToast = useToastStore((s) => s.push);
+  const queryClient = useQueryClient();
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
@@ -501,13 +504,13 @@ export function useWorkbenchShellModel({
     }
     const ownerStatuses = ["draft", "active", "pre_annotated", "annotating", "rejected"];
     const memberStatuses = ["active", "pre_annotated", "annotating", "rejected"];
-    if (isOwner || !meUserId) {
+    if (isOwner || !meUserId || currentProject?.video_collaboration?.enabled) {
       return (batchList ?? []).filter((b) => ownerStatuses.includes(b.status));
     }
     return (batchList ?? [])
       .filter((b) => memberStatuses.includes(b.status))
       .filter((b) => b.annotator_id === meUserId);
-  }, [batchList, isOwner, meUserId, mode]);
+  }, [batchList, currentProject?.video_collaboration?.enabled, isOwner, meUserId, mode]);
 
   const taskListParams = useMemo(
     () => ({
@@ -709,6 +712,18 @@ export function useWorkbenchShellModel({
     enabled: isVideoTask && !!taskId,
     staleTime: 30_000,
   });
+  const videoCollaborationEnabled = videoSegmentsQuery.data?.collaboration_enabled === true;
+  const videoCollaborationResolved = !isVideoTask || videoSegmentsQuery.isSuccess;
+  const [activeVideoSegmentId, setActiveVideoSegmentId] = useState<string | null>(null);
+  useEffect(() => {
+    setActiveVideoSegmentId(null);
+  }, [taskId]);
+  const activeVideoSegment = useMemo(
+    () =>
+      videoSegmentsQuery.data?.segments.find((segment) => segment.id === activeVideoSegmentId) ??
+      null,
+    [activeVideoSegmentId, videoSegmentsQuery.data?.segments],
+  );
   const videoFrameTimetable = useVideoFrameTimetable(taskId, isVideoTask && !!videoManifest.data);
   const videoDatasetItemId = videoManifest.data?.dataset_item_id ?? null;
   const videoChaptersQuery = useVideoChapters(isVideoTask ? videoDatasetItemId : null);
@@ -1135,11 +1150,33 @@ export function useWorkbenchShellModel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  const annotationSegmentId = videoCollaborationEnabled ? activeVideoSegmentId : null;
+  const annotationQueryKey = useMemo(
+    () =>
+      annotationSegmentId
+        ? (["annotations", taskId, annotationSegmentId] as const)
+        : (["annotations", taskId] as const),
+    [annotationSegmentId, taskId],
+  );
+  const [qualityPreviewAnnotations, setQualityPreviewAnnotations] = useState<
+    AnnotationResponse[] | null
+  >(null);
+  useEffect(() => setQualityPreviewAnnotations(null), [mode, taskId]);
   const {
-    data: annotationsData,
+    data: scopedAnnotationsData,
     refetch: refetchAnnotations,
     isSuccess: annotationsReady,
-  } = useAnnotations(taskId);
+  } = useAnnotations(
+    taskId,
+    videoCollaborationEnabled ? activeVideoSegmentId : null,
+    videoAnnotationQueriesEnabled(
+      isVideoTask,
+      videoSegmentsQuery.isSuccess,
+      videoCollaborationEnabled,
+      activeVideoSegmentId,
+    ),
+  );
+  const annotationsData = qualityPreviewAnnotations ?? scopedAnnotationsData;
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
   // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
@@ -1354,13 +1391,14 @@ export function useWorkbenchShellModel({
     };
   }, [predictionsData]);
 
-  const createAnnotation = useCreateAnnotation(taskId);
-  const deleteAnnotationMut = useDeleteAnnotation(taskId);
+  const createAnnotation = useCreateAnnotation(taskId, annotationSegmentId);
+  const deleteAnnotationMut = useDeleteAnnotation(taskId, annotationSegmentId);
   const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
   const updateAnnotationMut = useUpdateAnnotation(
     taskId,
     (...args) => conflictCbRef.current(...args),
     clearPendingGeom,
+    annotationSegmentId,
   );
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
@@ -1385,9 +1423,77 @@ export function useWorkbenchShellModel({
     connection: preannotationConn,
     retries: preannotationRetries,
   } = usePreannotationProgress(projectId);
-  const { lockError, lockConflict, remainingMs } = useTaskLock(taskId);
-
-  const queryClient = useQueryClient();
+  const { lockError, lockConflict, remainingMs } = useTaskLock(
+    taskId,
+    videoCollaborationResolved && !videoCollaborationEnabled,
+  );
+  const [segmentLeaseError, setSegmentLeaseError] = useState<string | null>(null);
+  const segmentLeaseRef = useRef<{ taskId: string; segmentId: string } | null>(null);
+  const switchVideoSegment = useCallback(
+    async (segmentId: string | null) => {
+      if (!taskId || segmentId === activeVideoSegmentId) return;
+      if (segmentLeaseRef.current) {
+        await videoTrackerApi
+          .releaseSegment(segmentLeaseRef.current.taskId, segmentLeaseRef.current.segmentId)
+          .catch(() => undefined);
+        segmentLeaseRef.current = null;
+      }
+      if (!segmentId) {
+        setActiveVideoSegmentId(null);
+        return;
+      }
+      try {
+        const claimed = await videoTrackerApi.claimSegment(taskId, segmentId);
+        segmentLeaseRef.current = { taskId, segmentId: claimed.id };
+        setActiveVideoSegmentId(claimed.id);
+        setSegmentLeaseError(null);
+        s.setSelectedId(null);
+        s.setVideoFrameIndex(claimed.start_frame);
+        await videoSegmentsQuery.refetch();
+      } catch (error) {
+        setSegmentLeaseError(error instanceof Error ? error.message : "无法认领分段");
+      }
+    },
+    [activeVideoSegmentId, s, taskId, videoSegmentsQuery],
+  );
+  useEffect(() => {
+    if (!taskId || !videoCollaborationEnabled || !activeVideoSegmentId) return;
+    const heartbeat = window.setInterval(() => {
+      void videoTrackerApi
+        .heartbeatSegment(taskId, activeVideoSegmentId)
+        .then(() => setSegmentLeaseError(null))
+        .catch(() => setSegmentLeaseError("分段租约已失效，请重新认领"));
+    }, 60_000);
+    return () => window.clearInterval(heartbeat);
+  }, [activeVideoSegmentId, taskId, videoCollaborationEnabled]);
+  useEffect(
+    () => () => {
+      const lease = segmentLeaseRef.current;
+      if (lease) {
+        void videoTrackerApi.releaseSegment(lease.taskId, lease.segmentId).catch(() => undefined);
+        segmentLeaseRef.current = null;
+      }
+    },
+    [taskId],
+  );
+  const submitActiveVideoSegment = useCallback(async () => {
+    if (!taskId || !activeVideoSegmentId) return;
+    try {
+      await videoTrackerApi.submitSegment(taskId, activeVideoSegmentId);
+      segmentLeaseRef.current = null;
+      setActiveVideoSegmentId(null);
+      setSegmentLeaseError(null);
+      await videoSegmentsQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      pushToast({ msg: "分段已提交", kind: "success" });
+    } catch (error) {
+      pushToast({
+        msg: "分段提交失败",
+        sub: error instanceof Error ? error.message : undefined,
+        kind: "error",
+      });
+    }
+  }, [activeVideoSegmentId, pushToast, queryClient, taskId, videoSegmentsQuery]);
 
   // 预标 (含工作台单图 AI) 完成后失效本 task 预测缓存, 让新框无需手动刷新即时渲染.
   // 单图 trigger 走 Celery 异步, mutation onSuccess 只代表"已派发"; 真正完成靠预标进度
@@ -2020,10 +2126,12 @@ export function useWorkbenchShellModel({
     const idx = tasks.findIndex((t) => t.id === taskId);
     const prefetch = (t: TaskResponse | undefined) => {
       if (!t) return;
-      queryClient.prefetchQuery({
-        queryKey: ["annotations", t.id],
-        queryFn: () => tasksApi.getAnnotations(t.id),
-      });
+      if (!videoCollaborationEnabled) {
+        queryClient.prefetchQuery({
+          queryKey: ["annotations", t.id],
+          queryFn: () => tasksApi.getAnnotations(t.id),
+        });
+      }
       queryClient.prefetchInfiniteQuery({
         queryKey: ["predictions", t.id, undefined, debouncedConf, 100],
         initialPageParam: 0,
@@ -2062,7 +2170,7 @@ export function useWorkbenchShellModel({
     };
     prefetch(tasks[idx + 1]);
     prefetch(tasks[idx - 1]);
-  }, [taskId, tasks, queryClient, debouncedConf, stageKind]);
+  }, [taskId, tasks, queryClient, debouncedConf, stageKind, videoCollaborationEnabled]);
 
   const aiRunning =
     preannotationProgress?.status === "running" ||
@@ -2078,7 +2186,7 @@ export function useWorkbenchShellModel({
     createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
     deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
     updateAnnotation: (id, payload) => {
-      const cached = queryClient.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
+      const cached = queryClient.getQueryData<AnnotationResponse[]>(annotationQueryKey);
       const current =
         cached?.find((annotation) => annotation.id === id) ??
         annotationsRef.current.find((annotation) => annotation.id === id);
@@ -2100,7 +2208,7 @@ export function useWorkbenchShellModel({
     },
     updateVideoMaskFrame: async (id: string, frameIndex: number, target: VideoMaskFrameState) => {
       if (!taskId) throw new Error("Task is not available");
-      const cached = queryClient.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
+      const cached = queryClient.getQueryData<AnnotationResponse[]>(annotationQueryKey);
       const current =
         cached?.find((annotation) => annotation.id === id) ??
         annotationsRef.current.find((annotation) => annotation.id === id);
@@ -2152,14 +2260,14 @@ export function useWorkbenchShellModel({
           Number(updated.version),
         );
       }
-      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (items) =>
+      queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (items) =>
         (items ?? []).map((item) => (item.id === id ? updated : item)),
       );
       return updated;
     },
     removeLocalCreate: async (id: string) => {
       if (!taskId) return;
-      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) =>
+      queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) =>
         (prev ?? []).filter((a) => a.id !== id),
       );
       const all = await offlineQueueGetAll();
@@ -2196,8 +2304,16 @@ export function useWorkbenchShellModel({
 
   const isLockedForActions =
     mode === "review"
-      ? task?.status === "completed" || !!lockConflict || !!lockError
-      : task?.status === "review" || task?.status === "completed" || !!lockConflict || !!lockError;
+      ? task?.status === "completed" || videoCollaborationEnabled || !!lockConflict || !!lockError
+      : task?.status === "review" ||
+        task?.status === "completed" ||
+        !!lockConflict ||
+        !!lockError ||
+        (videoCollaborationEnabled &&
+          (!activeVideoSegment ||
+            activeVideoSegment.status === "completed" ||
+            activeVideoSegment.locked_by !== meUserId ||
+            !!segmentLeaseError));
   const maskEditorSize = resolveMaskEditorSize(
     isVideoTask,
     stageGeom,
@@ -2855,7 +2971,7 @@ export function useWorkbenchShellModel({
   );
   const completeAnnotationConversion = useCallback(
     async (result: AnnotationConversionExecuteResponse) => {
-      await queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+      await queryClient.invalidateQueries({ queryKey: annotationQueryKey });
       void queryClient.invalidateQueries({ queryKey: ["tasks"] });
       const selected = result.created_annotations[0] ?? result.updated_annotations[0];
       if (selected) s.setSelectedId(selected.id);
@@ -2865,7 +2981,7 @@ export function useWorkbenchShellModel({
         kind: "success",
       });
     },
-    [pushToast, queryClient, s, taskId],
+    [annotationQueryKey, pushToast, queryClient, s],
   );
 
   const cancelVideoMaskEdit = useCallback(() => {
@@ -2905,11 +3021,18 @@ export function useWorkbenchShellModel({
     useState(true);
   const currentVideoSegment = useMemo(
     () =>
-      videoSegmentsQuery.data?.segments.find(
-        (segment) =>
-          segment.start_frame <= s.videoFrameIndex && s.videoFrameIndex <= segment.end_frame,
-      ) ?? null,
-    [s.videoFrameIndex, videoSegmentsQuery.data?.segments],
+      (videoCollaborationEnabled
+        ? activeVideoSegment
+        : videoSegmentsQuery.data?.segments.find(
+            (segment) =>
+              segment.start_frame <= s.videoFrameIndex && s.videoFrameIndex <= segment.end_frame,
+          )) ?? null,
+    [
+      activeVideoSegment,
+      s.videoFrameIndex,
+      videoCollaborationEnabled,
+      videoSegmentsQuery.data?.segments,
+    ],
   );
   const pendingMaskAtomicDraftRef = useRef<PendingMaskAtomicDraft | null>(null);
   const maskAtomicIdempotencyRef = useRef<{
@@ -3286,11 +3409,11 @@ export function useWorkbenchShellModel({
   const setVideoMaskAnnotationCache = useCallback(
     (annotation: AnnotationResponse) => {
       if (!taskId) return;
-      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (items) =>
+      queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (items) =>
         (items ?? []).map((item) => (item.id === annotation.id ? annotation : item)),
       );
     },
-    [queryClient, taskId],
+    [annotationQueryKey, queryClient, taskId],
   );
 
   const copyCurrentVideoMask = useCallback(
@@ -4014,7 +4137,7 @@ export function useWorkbenchShellModel({
         if (isVideoTask) s.setVideoTool("select");
         else s.setTool("box");
         s.setSelectedId(nextSelectedId);
-        await queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+        await queryClient.invalidateQueries({ queryKey: annotationQueryKey });
         void queryClient.invalidateQueries({ queryKey: ["tasks"] });
         pushToast({
           msg: "Mask 实例操作已原子提交",
@@ -4040,6 +4163,7 @@ export function useWorkbenchShellModel({
     setMaskInstanceCommitting(true);
     return tracked;
   }, [
+    annotationQueryKey,
     clearMaskInstanceFailure,
     history,
     isVideoTask,
@@ -4310,8 +4434,8 @@ export function useWorkbenchShellModel({
       return {
         ...current,
         segmentId: segment.id,
-        segmentStart: segment.start_frame,
-        segmentEnd: segment.end_frame,
+        segmentStart: segment.work_start_frame,
+        segmentEnd: segment.work_end_frame,
       };
     });
   }, [videoMaskCorrectionContext, videoMaskCorrectionOpen, videoSegmentsQuery.data?.segments]);
@@ -4325,8 +4449,8 @@ export function useWorkbenchShellModel({
       frameIndex: s.videoFrameIndex,
       sessionId: maskEditor.sessionId,
       segmentId: currentVideoSegment?.id,
-      segmentStart: currentVideoSegment?.start_frame ?? 0,
-      segmentEnd: currentVideoSegment?.end_frame ?? Math.max(0, videoFrameCount - 1),
+      segmentStart: currentVideoSegment?.work_start_frame ?? 0,
+      segmentEnd: currentVideoSegment?.work_end_frame ?? Math.max(0, videoFrameCount - 1),
     });
     setVideoMaskCorrectionOpen(true);
   }, [
@@ -6121,7 +6245,9 @@ export function useWorkbenchShellModel({
       trackerRunning: Boolean(trackingJobId),
       onPrev: () => navigateTask("prev"),
       onNext: () => navigateTask("next"),
-      onSubmit: topbarActions.onSubmit ?? handleSubmitTask,
+      onSubmit: videoCollaborationEnabled
+        ? submitActiveVideoSegment
+        : (topbarActions.onSubmit ?? handleSubmitTask),
       onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
       onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
@@ -6139,13 +6265,23 @@ export function useWorkbenchShellModel({
       isApproving: topbarActions.isApproving,
       isRejecting: topbarActions.isRejecting,
       reviewInfoSlot: topbarActions.reviewInfoSlot,
+      videoSegments:
+        videoCollaborationEnabled && mode === "annotate"
+          ? videoSegmentsQuery.data?.segments
+          : undefined,
+      activeVideoSegmentId,
+      onSelectVideoSegment:
+        videoCollaborationEnabled && mode === "annotate"
+          ? (segmentId) => void switchVideoSegment(segmentId)
+          : undefined,
+      submitLabel: videoCollaborationEnabled ? "提交分段" : undefined,
     },
     stageHost: {
       common: {
         stageKind,
         maskCompareStore: maskQcReview.store,
         taskId: taskId ?? null,
-        readOnly: isLocked || !!lockConflict || !!lockError,
+        readOnly: isLockedForActions,
         activeClass: s.activeClass,
         selectedId: s.selectedId,
         selectedIds: s.selectedIds,
@@ -6387,6 +6523,15 @@ export function useWorkbenchShellModel({
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
         videoTimelineChapterControls,
         videoPropagateRange: propagateHighlight,
+        videoSegmentRange:
+          videoCollaborationEnabled && activeVideoSegment
+            ? {
+                coreStartFrame: activeVideoSegment.start_frame,
+                coreEndFrame: activeVideoSegment.end_frame,
+                workStartFrame: activeVideoSegment.work_start_frame,
+                workEndFrame: activeVideoSegment.work_end_frame,
+              }
+            : null,
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
@@ -6441,7 +6586,15 @@ export function useWorkbenchShellModel({
         hiddenVideoTrackIds: s.hiddenVideoTrackIds,
         lockedVideoTrackIds: s.lockedVideoTrackIds,
         trackColorOverrides: s.trackColorOverrides,
-        onVideoFrameIndexChange: s.setVideoFrameIndex,
+        onVideoFrameIndexChange: (frameIndex) =>
+          s.setVideoFrameIndex(
+            currentVideoSegment
+              ? Math.max(
+                  currentVideoSegment.work_start_frame,
+                  Math.min(currentVideoSegment.work_end_frame, frameIndex),
+                )
+              : frameIndex,
+          ),
         onVideoCreate: handleVideoCreate,
         onVideoCreatePointsTrack: handleVideoPointsTrackCreate,
         onVideoCreatePoints: handleVideoPointsCreate,
@@ -6585,6 +6738,8 @@ export function useWorkbenchShellModel({
       lockRemainingMs: remainingMs,
       lockError,
       lockConflict,
+      activeVideoSegment: videoCollaborationEnabled ? activeVideoSegment : null,
+      segmentLeaseError,
       diffMode: modeState.diffMode,
       onSetDiffMode: modeState.onSetDiffMode,
     },
@@ -6665,6 +6820,26 @@ export function useWorkbenchShellModel({
                 hoveredChapterId={hoveredChapterId}
                 onHoverChapter={setHoveredChapterId}
               />
+              {mode === "review" && videoCollaborationEnabled && taskId && (
+                <VideoTrackQualitySidebar
+                  taskId={taskId}
+                  onSeekFrame={s.setVideoFrameIndex}
+                  onPreviewIssue={(run, issue) => {
+                    void Promise.all([
+                      tasksApi.getAnnotations(taskId, run.left_segment_id),
+                      tasksApi.getAnnotations(taskId, run.right_segment_id),
+                    ]).then(([left, right]) => {
+                      setQualityPreviewAnnotations([...left, ...right]);
+                      s.replaceSelected(
+                        [issue.left_annotation_id, issue.right_annotation_id].filter(
+                          (id): id is string => !!id,
+                        ),
+                      );
+                      s.setVideoFrameIndex(issue.frame_start);
+                    });
+                  }}
+                />
+              )}
             </div>
           )
         : undefined,
@@ -6900,7 +7075,8 @@ export function useWorkbenchShellModel({
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,
-    maxFrame: Math.max(0, videoFrameCount - 1),
+    minFrame: currentVideoSegment?.work_start_frame ?? 0,
+    maxFrame: currentVideoSegment?.work_end_frame ?? Math.max(0, videoFrameCount - 1),
     nextKeyframeAfter: propagateDialogNextKeyframe,
     prevKeyframeBefore: propagateDialogPrevKeyframe,
     userId: meUserId ?? null,

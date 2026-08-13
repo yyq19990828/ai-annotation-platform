@@ -163,8 +163,25 @@ class _FakePropagatePredictor:
         if obj_id not in self._obj_ids:
             self._obj_ids.append(obj_id)
 
-    def propagate_in_video(self, inference_state, start_frame_idx=None, reverse=False):
+    def propagate_in_video(
+        self,
+        inference_state,
+        start_frame_idx=None,
+        max_frame_num_to_track=None,
+        reverse=False,
+    ):
         order = sorted(self._frame_masks, reverse=reverse)
+        if start_frame_idx is not None:
+            end = (
+                start_frame_idx - (max_frame_num_to_track or len(order))
+                if reverse
+                else start_frame_idx + (max_frame_num_to_track or len(order))
+            )
+            order = [
+                frame
+                for frame in order
+                if min(start_frame_idx, end) <= frame <= max(start_frame_idx, end)
+            ]
         obj_ids = self._obj_ids or [1]
         for local_idx in order:
             entry = self._frame_masks[local_idx]
@@ -194,6 +211,7 @@ def _make_tracker(fake_predictor) -> SAM2VideoTracker:
     inst = SAM2VideoTracker.__new__(SAM2VideoTracker)
     inst.sam_variant = "tiny"
     inst.max_window_frames = 300
+    inst.max_context_frames = 1200
     inst.device = "cpu"
     inst.cleanup_uncertain = False
     inst._predictor = fake_predictor
@@ -281,6 +299,42 @@ def test_propagate_forward_maps_local_to_source_frames(monkeypatch):
     assert fake.add_calls[0]["frame_idx"] == 0
     assert fake.reset_called is True
     assert tracker.active_sessions == 0
+
+
+def test_session_initializes_state_once_across_windows(monkeypatch):
+    fg = np.ones((10, 10), dtype=bool)
+    fake = _FakePropagatePredictor({index: fg for index in range(6)})
+    tracker = _make_tracker(fake)
+    init_calls = 0
+    original_init = fake.init_state
+
+    def init_state(**kwargs):
+        nonlocal init_calls
+        init_calls += 1
+        return original_init(**kwargs)
+
+    fake.init_state = init_state
+    monkeypatch.setattr(
+        SAM2VideoTracker,
+        "_extract_window_jpegs",
+        staticmethod(lambda *a, **k: (10, 10, 6)),
+    )
+    session = tracker.start_session(
+        "/tmp/x.mp4",
+        10,
+        15,
+        "forward",
+        [_seed(1, {"x": 0, "y": 0, "w": 1, "h": 1})],
+    )
+    try:
+        first = tracker.continue_session(session, 10, 12)
+        second = tracker.continue_session(session, 13, 15)
+    finally:
+        tracker.close_session(session)
+
+    assert init_calls == 1
+    assert [row["frame_index"] for row in first] == [10, 11, 12]
+    assert [row["frame_index"] for row in second] == [13, 14, 15]
 
 
 def test_propagate_mask_output_preserves_raw_pixels(monkeypatch):

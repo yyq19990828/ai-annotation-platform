@@ -24,7 +24,10 @@ vi.mock("@/components/ui/Toast", async () => {
 import { VideoSamplingSection } from "./VideoSamplingSection";
 import type { ProjectResponse, VideoSamplingConfig } from "@/api/projects";
 
-function makeProject(video_sampling?: VideoSamplingConfig | null): ProjectResponse {
+function makeProject(
+  video_sampling?: VideoSamplingConfig | null,
+  collaboration?: ProjectResponse["video_collaboration"],
+): ProjectResponse {
   return {
     id: "p1",
     display_id: "P-1",
@@ -35,6 +38,7 @@ function makeProject(video_sampling?: VideoSamplingConfig | null): ProjectRespon
     status: "in_progress",
     classes: [],
     video_sampling: video_sampling ?? null,
+    video_collaboration: collaboration ?? null,
   } as unknown as ProjectResponse;
 }
 
@@ -116,6 +120,32 @@ describe("VideoSamplingSection", () => {
     fireEvent.click(screen.getByLabelText("不采样（所有帧）"));
     expect(mockUpdateMutate).toHaveBeenLastCalledWith(
       { video_sampling: { mode: "none" } },
+      expect.any(Object),
+    );
+  });
+
+  it("启用分段协同时提交 overlap 配置", () => {
+    render(<VideoSamplingSection project={makeProject()} />);
+
+    fireEvent.click(screen.getByLabelText("启用 segment overlap 协同"));
+
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_collaboration: { enabled: true, overlap_frames: 1 } },
+      expect.any(Object),
+    );
+  });
+
+  it("修改已启用协同的 overlap 帧数后失焦保存", () => {
+    render(
+      <VideoSamplingSection project={makeProject(null, { enabled: true, overlap_frames: 10 })} />,
+    );
+    const input = screen.getByLabelText("相邻重叠帧数");
+
+    fireEvent.change(input, { target: { value: "24" } });
+    fireEvent.blur(input);
+
+    expect(mockUpdateMutate).toHaveBeenLastCalledWith(
+      { video_collaboration: { enabled: true, overlap_frames: 24 } },
       expect.any(Object),
     );
   });

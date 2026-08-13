@@ -52,6 +52,7 @@ class PredictionResult(BaseModel):
     mask_input_next: str | None = None
     # 原生 Mask 候选的空结果 / 降级诊断；旧 backend 缺失时保持 None。
     diagnostic: MaskInteractionDiagnostic | None = None
+    meta: dict[str, Any] | None = None
 
 
 class BatchPredictResponse(BaseModel):

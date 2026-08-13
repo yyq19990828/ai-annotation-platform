@@ -189,6 +189,8 @@ class ModelCapability(BaseModel):
     # v0.21.19 · text-driven tracker (sam3_video) 子集; propagate 需 text/exemplars。
     text_driven_trackers: list[str] = []
     max_window_frames: int | None = Field(default=None, gt=0)
+    tracker_context_mode: Literal["none", "session"] = "none"
+    max_context_frames: int | None = Field(default=None, gt=0)
     supported_variants: list[dict] = []
     # v0.14.12 · 多轴 variants 非笛卡尔积时显式列举合法组合 (前端目录展开用).
     variant_combinations: list[list[str]] = []

@@ -32,6 +32,7 @@ class AsyncJobKind(str, enum.Enum):
     DATASET_IMPORT = "dataset_import"  # 外部连接器数据集导入
     CREATE_TASKS = "create_tasks"  # dataset link → 建 task
     MASK_QC = "mask_qc"  # Raster / Video Mask 异步质量扫描
+    VIDEO_TRACK_QUALITY = "video_track_quality"  # 相邻视频 segment 轨迹质量
     MASK_REPAIR = "mask_repair"  # 可恢复的 Mask 批量修复
     MASK_REPAIR_ROLLBACK = "mask_repair_rollback"  # 版本保护的批量回滚
     MASK_FORMAT_IMPORT = "mask_format_import"  # staged receipt 驱动的格式导入

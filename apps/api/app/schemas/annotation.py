@@ -18,6 +18,7 @@ logger = logging.getLogger("app.schemas.annotation")
 
 
 class AnnotationCreate(BaseModel):
+    video_segment_id: UUID | None = None
     annotation_type: str = "bbox"
     # v0.10.17 · 工具单位; service 层据此校验 class_name ∈ project.tool_bindings[unit].
     # 旧调用方不传时默认 "bbox" 兼容向后.
@@ -238,6 +239,7 @@ class AnnotationOut(BaseModel):
     id: UUID
     task_id: UUID
     project_id: UUID | None = None
+    video_segment_id: UUID | None = None
     user_id: UUID | None = None
     source: str
     annotation_type: str

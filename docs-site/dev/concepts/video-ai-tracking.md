@@ -100,10 +100,12 @@ runner 根据模型选择窗口大小：SAM3 系使用 `VIDEO_TRACKER_SAM3_WINDO
 分窗有三个不变量：
 
 1. job 的 `from_frame / to_frame` 始终使用绝对源帧。
-2. 首窗接收原始点 / 框种子；后续窗使用上一窗每个实例最后一个非 outside 几何续种。PVS 把它们写入 memory，multiplex 把它们作为与文本组合的正框提示。
+2. backend 声明 `tracker_context_mode=session` 时，同一 context span 的首窗创建不透明 session token，后续窗继续使用同一推理 state；超出 `max_context_frames` 才在 span 边界使用上一窗每个实例最后一个非 outside 几何续种。不支持 session 的 backend 始终使用这条 geometry seed 兼容路径。
 3. 帧采样只影响最终持久化：模型仍逐源帧计算，接受时按 `grid_step` 丢弃非网格帧。
 
 `direction=backward` 时窗口倒序执行，但单个窗口和 prompt 中的 `frame_index` 仍是绝对帧号。窗口之间发布同一个 job 事件流，不为每窗创建子 job。
+runner 在正常结束、取消和失败时都会发送 `close`；token 只保存在 worker 内存且绑定 job、方向、模型和 backend
+实例。backend 重启或 token 丢失返回 `tracker_context_lost`，整次 job 失败并从起点重试，不能静默降级后拼接结果。
 
 ## 候选暂存与状态机
 

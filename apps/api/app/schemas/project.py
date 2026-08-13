@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -32,6 +32,19 @@ class VideoSamplingConfig(BaseModel):
         else:  # mode == "none"
             if self.target_fps is not None or self.frame_step is not None:
                 raise ValueError("mode=none 时 target_fps / frame_step 应为 None")
+        return self
+
+
+class VideoCollaborationConfig(BaseModel):
+    enabled: bool = False
+    overlap_frames: int = Field(default=0, ge=0)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _validate_enabled_overlap(self) -> "VideoCollaborationConfig":
+        if self.enabled and self.overlap_frames < 1:
+            raise ValueError("启用视频协同时 overlap_frames 必须大于 0")
         return self
 
 
@@ -81,6 +94,7 @@ class ProjectCreate(BaseModel):
     raster_mask_native_editing_enabled: bool = True
     # v0.10.29 · 视频帧逻辑采样配置; None / 缺省 = 不采样 (空 dict).
     video_sampling: VideoSamplingConfig | None = None
+    video_collaboration: VideoCollaborationConfig | None = None
     # v0.14.4 · 项目级 scene 模式声明;仅 image/lidar 项目可开启。
     scene_mode: bool = False
 
@@ -142,6 +156,7 @@ class ProjectUpdate(BaseModel):
     guide_assets: list[dict] | None = None
     # v0.10.29 · 视频帧逻辑采样配置; PATCH 用整体替换语义 (与 rendering_config 一致).
     video_sampling: VideoSamplingConfig | None = None
+    video_collaboration: VideoCollaborationConfig | None = None
     # v0.14.1 · scene 连续标注调度开关 + 连续 session 估计窗口(分钟).
     scene_mode: bool | None = None
     prefer_same_scene_continuation: bool | None = None
@@ -197,6 +212,7 @@ class ProjectOut(BaseModel):
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.
     video_sampling: VideoSamplingConfig = VideoSamplingConfig()
+    video_collaboration: VideoCollaborationConfig = VideoCollaborationConfig()
     # v0.14.1 · scene 连续标注调度开关 + 连续 session 估计窗口(分钟).
     scene_mode: bool = False
     prefer_same_scene_continuation: bool = False

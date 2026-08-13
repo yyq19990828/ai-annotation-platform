@@ -25,6 +25,7 @@ import type { AnnotationFeedback } from "@/api/feedbacks";
 import type {
   VideoTimelineChapter,
   VideoTimelineChapterControls,
+  VideoSegmentTimelineRange,
 } from "../../stage/VideoPlaybackOverlay";
 import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../../stage/videoStageTypes";
 import type { VideoMaskCandidate } from "../../stage/videoMaskFrames";
@@ -80,6 +81,7 @@ export interface VideoWorkbenchProps {
   chapters?: VideoTimelineChapter[];
   timelineChapterControls?: VideoTimelineChapterControls;
   propagateRange?: { startFrame: number; endFrame: number } | null;
+  segmentRange?: VideoSegmentTimelineRange | null;
   videoSampling?: VideoSamplingConfig | null;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
@@ -165,6 +167,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       chapters,
       timelineChapterControls,
       propagateRange,
+      segmentRange,
       videoSampling,
       performanceTier,
       onSelect,
@@ -279,6 +282,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         chapters={chapters}
         timelineChapterControls={timelineChapterControls}
         propagateRange={propagateRange}
+        segmentRange={segmentRange}
         videoSampling={videoSampling}
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}
         largeFrameStep={workbenchVideo.largeFrameStep}

@@ -94,6 +94,24 @@ describe("VideoPlaybackOverlay", () => {
     expect(getByTestId("video-playback-rate")).toHaveTextContent("-2x");
   });
 
+  it("renders collaborative work and core ranges as distinct timeline bands", () => {
+    const { getAllByTestId, getByTestId } = renderOverlay({
+      segmentRange: {
+        coreStartFrame: 2,
+        coreEndFrame: 6,
+        workStartFrame: 1,
+        workEndFrame: 7,
+      },
+    });
+
+    expect(getAllByTestId("video-segment-work-range")).toHaveLength(1);
+    expect(getAllByTestId("video-segment-core-range")).toHaveLength(1);
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+    expect(getByTestId("video-timeline-lane-segment")).toBeInTheDocument();
+    expect(getAllByTestId("video-segment-work-range")).toHaveLength(1);
+    expect(getAllByTestId("video-segment-core-range")).toHaveLength(1);
+  });
+
   it("starts with an accessible collapsed summary and hides empty optional lanes when expanded", async () => {
     const user = userEvent.setup();
     const { getByRole, getByTestId, getByText, queryByTestId, queryByText } = renderOverlay({

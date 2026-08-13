@@ -65,6 +65,12 @@ from app.services.raster_mask_storage import (
 )
 from app.services.secondary_inference import run_secondary_inference
 from app.services.task_lock import TaskLockService
+from app.db.models.project import Project
+from app.services.video_collaboration import (
+    assert_video_annotation_write_scope,
+    collaboration_enabled,
+    heartbeat_task_lock_for_legacy_video,
+)
 
 
 from app.api.v1.tasks._shared import (
@@ -236,13 +242,19 @@ async def get_neighbor_annotations(
 )
 async def get_annotations(
     task_id: uuid.UUID,
+    video_segment_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
+    project = await db.get(Project, task.project_id)
+    if collaboration_enabled(project) and video_segment_id is None:
+        raise HTTPException(
+            status_code=422, detail={"reason": "video_segment_required"}
+        )
     svc = AnnotationService(db)
-    return await svc.list_by_task(task_id)
+    return await svc.list_by_task(task_id, video_segment_id=video_segment_id)
 
 
 @router.get(
@@ -254,6 +266,7 @@ async def get_annotations_paged(
     task_id: uuid.UUID,
     limit: int = 200,
     cursor: str | None = None,
+    video_segment_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -265,6 +278,11 @@ async def get_annotations_paged(
 
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
+    project = await db.get(Project, task.project_id)
+    if collaboration_enabled(project) and video_segment_id is None:
+        raise HTTPException(
+            status_code=422, detail={"reason": "video_segment_required"}
+        )
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="limit must be in [1, 1000]")
 
@@ -279,7 +297,10 @@ async def get_annotations_paged(
 
     svc = AnnotationService(db)
     items, next_cursor_tuple = await svc.list_by_task_keyset(
-        task_id, limit=limit, cursor=decoded
+        task_id,
+        limit=limit,
+        cursor=decoded,
+        video_segment_id=video_segment_id,
     )
     next_cursor: str | None = None
     if next_cursor_tuple is not None:
@@ -306,7 +327,15 @@ async def create_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _assert_task_editable(await _load_task_or_404(db, task_id), current_user)
+    task = await _load_task_or_404(db, task_id)
+    _assert_task_editable(task, current_user)
+    await assert_video_annotation_write_scope(
+        db,
+        task=task,
+        user=current_user,
+        segment_id=data.video_segment_id,
+        geometry=data.geometry.model_dump(),
+    )
     svc = AnnotationService(db)
     try:
         annotation = await svc.create(
@@ -321,10 +350,11 @@ async def create_annotation(
             parent_annotation_id=data.parent_annotation_id,
             lead_time=data.lead_time,
             attributes=data.attributes,
+            video_segment_id=data.video_segment_id,
         )
     except RasterMaskContractError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     # v0.7.2 · annotation 编辑历史可追溯
     await AuditService.log(
         db,
@@ -377,6 +407,13 @@ async def secondary_inference(
     annotation = await db.get(Annotation, annotation_id)
     if annotation is None or annotation.task_id != task_id or not annotation.is_active:
         raise HTTPException(status_code=404, detail="annotation not found")
+    await assert_video_annotation_write_scope(
+        db,
+        task=task,
+        user=current_user,
+        segment_id=annotation.video_segment_id,
+        geometry=annotation.geometry,
+    )
 
     # v0.20.9 一层父子约束: 选中框如果已经是子框 (parent 非空), geometry 型二次推理会
     # 建"孙子"框 (子框的子框), 违反一层深度。前置到端点, 不再等 ML predict 跑完 10-30s
@@ -433,7 +470,7 @@ async def secondary_inference(
         shadow_session_factory=shadow_session_factory,
         dispatch_context_factory=dispatch_context_factory,
     )
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -697,6 +734,13 @@ async def update_annotation(
         raise HTTPException(
             status_code=400, detail="Annotation does not belong to this task"
         )
+    await assert_video_annotation_write_scope(
+        db,
+        task=_task,
+        user=current_user,
+        segment_id=existing.video_segment_id,
+        geometry=fields.get("geometry", existing.geometry),
+    )
     if "geometry" in fields and existing.is_locked:
         raise HTTPException(
             status_code=409,
@@ -799,7 +843,7 @@ async def update_annotation(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, _task, current_user.id)
     _audit_action = (
         AuditAction.TASK_REVIEWER_EDIT
         if _task.status == "review" and current_user.role in _REVIEWERS
@@ -882,6 +926,13 @@ async def compose_video_tracks(
                 status_code=400, detail="Annotation does not belong to this task"
             )
         annotations.append(ann)
+        await assert_video_annotation_write_scope(
+            db,
+            task=task,
+            user=current_user,
+            segment_id=ann.video_segment_id,
+            geometry=ann.geometry,
+        )
 
     svc = AnnotationService(db)
     try:
@@ -897,7 +948,7 @@ async def compose_video_tracks(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -954,6 +1005,13 @@ async def convert_video_track_to_bboxes(
         raise HTTPException(
             status_code=400, detail="Annotation does not belong to this task"
         )
+    await assert_video_annotation_write_scope(
+        db,
+        task=task,
+        user=current_user,
+        segment_id=annotation.video_segment_id,
+        geometry=annotation.geometry,
+    )
     if (annotation.geometry or {}).get("type") != "video_track_bbox":
         raise HTTPException(
             status_code=400, detail="Annotation is not a video_track_bbox"
@@ -979,7 +1037,7 @@ async def convert_video_track_to_bboxes(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -1048,12 +1106,19 @@ async def delete_annotation(
             status_code=409,
             detail={"reason": "annotation_locked"},
         )
+    await assert_video_annotation_write_scope(
+        db,
+        task=task,
+        user=current_user,
+        segment_id=pre.video_segment_id,
+        geometry=pre.geometry,
+    )
     pre_class = pre.class_name
     svc = AnnotationService(db)
     ok = await svc.delete(annotation_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Annotation not found")
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     # v0.7.2 · annotation 编辑历史可追溯
     await AuditService.log(
         db,

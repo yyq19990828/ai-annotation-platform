@@ -35,6 +35,25 @@
 
 ## [Unreleased]
 
+## [0.23.30] - 2026-08-13
+
+### Added
+
+- **长视频可按带 overlap 的 Segment 并行协作**. 项目可在空标注、无运行中 tracker job 时启用协同；Annotation 以 segment fragment 隔离保存，工作台提供显式领取、租约续期、切换释放、work/core 时间轴边界带、分段提交与审核返工，多名标注员可同时处理同一视频的相邻分段。
+- **SAM2 与 SAM3 interactive tracker 支持跨窗状态续追**. Backend 通过 capability 声明 session context 和帧数上限，runner 在同一 context span 内复用 predictor state，并在正常结束、取消、失败或超时后释放资源；不支持 session 的 backend 保持末帧 geometry 续种兼容路径。
+- **相邻分段提交后自动生成 Track 边界质量报告**. 固定版本 TrackEval 指标子集提供 HOTA、IDF1、双向 MOTA、Track / segment / chapter 汇总和连续错误帧定位；审核员可调整或补充 identity pair、跳帧并排核对两侧 fragment、重跑失败或过期报告并接受对账。
+
+### Changed
+
+- **协同视频的审核与导出统一使用 canonical 轨迹投影**. 每个 fragment 先裁回自己的 core range，再按已接受的 `same_track` 决策聚合；未接受或 stale 的相关边界会阻止任务通过和跨界导出，单一 core 内的范围导出不等待无关边界。
+- **视频标注写入在协同模式下统一按 active Segment 校验**. 创建、更新、删除、批量操作、AI 接受、Mask mutation / conversion 与 tracker 接受都要求当前 assignee、有效 lease 和 work range；Task 级长锁不再阻止相邻分段并行。
+
+### Fixed
+
+- 避免视频协同配置尚未加载时抢先发起无 segment 的标注读取与旧 Task 锁请求，消除工作台首次进入的 422 竞态。
+- **协同分段切换不再复用上一分段的 Annotation 缓存或发起无 scope 预取**. 查询键、历史写回、转换与 Mask 刷新均绑定当前 segment，避免跨分段短暂显示或刷新错误数据。
+- **Raster Mask 浏览器二进制边界兼容严格 typed-array 类型**. gzip Blob、ImageData 与 Worker transfer 会显式持有可传输的 ArrayBuffer，前端类型检查和发布构建不再被 `ArrayBufferLike` 拒绝。
+
 ## [0.23.29] - 2026-08-13
 
 ### Added

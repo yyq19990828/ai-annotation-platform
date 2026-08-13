@@ -62,6 +62,8 @@ from app.services.project_clone import (
     merge_from_source as _merge_from_source_project_impl,
 )
 from app.services.project_delete import delete_project_records
+from app.schemas.project import VideoCollaborationConfig
+from app.services.video_collaboration import validate_project_collaboration_update
 
 router = APIRouter()
 logger = logging.getLogger("app.api.projects")
@@ -478,6 +480,23 @@ async def create_project(
                 detail="scene_mode 仅支持 image/lidar 项目",
             )
         payload.setdefault("prefer_same_scene_continuation", True)
+    if "video_collaboration" in payload:
+        await validate_project_collaboration_update(
+            db,
+            None,
+            VideoCollaborationConfig.model_validate(payload["video_collaboration"]),
+            data_type=payload["data_type"],
+            requested_video_sampling=payload.get("video_sampling"),
+            requested_tool_bindings=payload.get("tool_bindings"),
+        )
+        if (
+            payload["video_collaboration"]["enabled"]
+            and payload["type_key"] != "video-track"
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="video_collaboration 只能用于 video-track 项目",
+            )
 
     # v0.10.22 · 先把客户端显式传入的旧扁平 classes / classes_config / attribute_schema
     # 反向派生进 tool_bindings (按 type_key 推 unit), 再剔除扁平 key. 必须早于下面的
@@ -692,6 +711,34 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     payload = data.model_dump(exclude_unset=True)
+    if "video_collaboration" in payload or "video_sampling" in payload:
+        requested_collaboration = VideoCollaborationConfig.model_validate(
+            payload.get("video_collaboration", project.video_collaboration or {})
+        )
+        await validate_project_collaboration_update(
+            db,
+            project,
+            requested_collaboration,
+            data_type=payload.get("data_type", project.data_type),
+            video_sampling_changed=(
+                "video_sampling" in payload
+                and payload["video_sampling"] != (project.video_sampling or {})
+            ),
+            requested_video_sampling=payload.get(
+                "video_sampling", project.video_sampling or {}
+            ),
+            requested_tool_bindings=payload.get(
+                "tool_bindings", project.tool_bindings or {}
+            ),
+        )
+        if (
+            requested_collaboration.enabled
+            and payload.get("type_key", project.type_key) != "video-track"
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="video_collaboration 只能用于 video-track 项目",
+            )
     if "mask_qc_config" in payload:
         from app.services.mask_qc.config import load_mask_qc_config
 
@@ -1259,6 +1306,21 @@ async def export_project(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     video_scope_payload = video_scope.as_dict() if video_scope else None
+    if project.data_type == "video":
+        from app.services.video_canonical import (
+            VideoBoundaryUnreconciledError,
+            assert_export_boundaries_reconciled,
+        )
+
+        try:
+            await assert_export_boundaries_reconciled(
+                db,
+                project=project,
+                batch_id=None,
+                scope=video_scope,
+            )
+        except VideoBoundaryUnreconciledError as exc:
+            raise HTTPException(status_code=409, detail=exc.detail) from exc
 
     if "voc" in targets:
         if targets != ["voc"]:

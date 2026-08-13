@@ -30,6 +30,10 @@ from app.services.raster_mask_storage import (
 )
 from app.services.task_lock import TaskLockService
 from app.services.video_tracks import resolve_track_at_frame
+from app.services.video_collaboration import (
+    assert_video_annotation_write_scope,
+    heartbeat_task_lock_for_legacy_video,
+)
 
 
 from app.api.v1.tasks._shared import (
@@ -220,6 +224,7 @@ async def get_prediction_mask_content_frame(
 async def accept_prediction(
     task_id: uuid.UUID,
     prediction_id: uuid.UUID,
+    video_segment_id: uuid.UUID | None = Query(None),
     shape_index: int | None = Query(
         None,
         ge=0,
@@ -243,7 +248,15 @@ async def accept_prediction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _assert_task_editable(await _load_task_or_404(db, task_id))
+    task = await _load_task_or_404(db, task_id)
+    _assert_task_editable(task)
+    await assert_video_annotation_write_scope(
+        db,
+        task=task,
+        user=current_user,
+        segment_id=video_segment_id,
+        geometry=None,
+    )
     svc = AnnotationService(db)
     try:
         anns = await svc.accept_prediction(
@@ -252,6 +265,7 @@ async def accept_prediction(
             shape_index=shape_index,
             override_class_name=override_class_name,
             attribute_overrides=attribute_overrides,
+            video_segment_id=video_segment_id,
         )
     except RasterMaskContractError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -263,7 +277,15 @@ async def accept_prediction(
             status_code=404,
             detail="Prediction not found or shape_index out of range",
         )
-    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    for annotation in anns:
+        await assert_video_annotation_write_scope(
+            db,
+            task=task,
+            user=current_user,
+            segment_id=annotation.video_segment_id,
+            geometry=annotation.geometry,
+        )
+    await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     await db.commit()
     return anns
 

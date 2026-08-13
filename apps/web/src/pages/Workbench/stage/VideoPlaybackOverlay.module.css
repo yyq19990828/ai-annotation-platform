@@ -285,10 +285,32 @@
 .trackSegment,
 .chapterDraftRegion,
 .propagateDraftRegion,
-.propagateRegion {
+.propagateRegion,
+.segmentWorkRegion,
+.segmentCoreRegion {
   position: absolute;
   left: var(--timeline-left);
   width: var(--timeline-width);
+}
+
+.segmentWorkRegion {
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--sc-status-caution) 18%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--sc-status-caution),
+    inset -1px 0 0 var(--sc-status-caution);
+}
+
+.segmentCoreRegion {
+  top: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--sc-brand) 30%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--sc-brand),
+    inset -1px 0 0 var(--sc-brand);
 }
 
 /* v0.21.14 WS3 · AI 传播范围高亮 (对话框打开时): 贯穿轨道的 violet 半透明填充 + 高亮边界,

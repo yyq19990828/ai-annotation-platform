@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 import tempfile
+from dataclasses import dataclass
 from typing import Any
 
 _VENDOR_ROOT = "/app/vendor/sam3"
@@ -53,6 +54,9 @@ _BPE_PATH = os.path.join(_VENDOR_ROOT, "sam3/assets/bpe_simple_vocab_16e6.txt.gz
 # 显存应轻于 multiplex; 但 SAM3 1008² backbone 仍重。默认取 16 与 multiplex 齐, 阶段 B-pvs
 # 用真机 VRAM 画像再调。runner 侧仍按 model_key 分窗。
 DEFAULT_MAX_WINDOW_FRAMES = int(os.getenv("SAM3_PVS_MAX_WINDOW_FRAMES", "16"))
+DEFAULT_MAX_CONTEXT_FRAMES = int(
+    os.getenv("SAM3_PVS_MAX_CONTEXT_FRAMES", str(DEFAULT_MAX_WINDOW_FRAMES))
+)
 
 
 def _sigmoid(x: float) -> float:
@@ -73,6 +77,17 @@ def _to_np_float(x: Any) -> np.ndarray | None:
     return np.asarray(x)
 
 
+@dataclass
+class SAM3PVSSession:
+    lo: int
+    hi: int
+    direction: str
+    tmp_dir: str
+    state: Any
+    local_count: int
+    started: bool = False
+
+
 class SAM3PVSVideoTracker:
     """SAM 3 PVS video predictor 封装(单模型, 无变体维)。
 
@@ -80,8 +95,14 @@ class SAM3PVSVideoTracker:
     session 结束即 reset_state 释放, 模型权重留给下个 job 复用(由 main.py 持有/idle 卸载)。
     """
 
-    def __init__(self, *, max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES) -> None:
+    def __init__(
+        self,
+        *,
+        max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES,
+        max_context_frames: int = DEFAULT_MAX_CONTEXT_FRAMES,
+    ) -> None:
         self.max_window_frames = max_window_frames
+        self.max_context_frames = max_context_frames
         self.device = require_gpu_device("cuda")
         self.active_sessions = 0
         self._predictor = self._load_predictor()
@@ -129,8 +150,6 @@ class SAM3PVSVideoTracker:
         seeds: list[dict[str, Any]],
         output_geometry: str = "bbox",
     ) -> list[dict[str, Any]]:
-        """Run one PVS window under a bounded BF16 autocast scope."""
-
         device_type = self.device.split(":", 1)[0]
         with torch.autocast(
             device_type=device_type,
@@ -155,25 +174,43 @@ class SAM3PVSVideoTracker:
         seeds: list[dict[str, Any]],
         output_geometry: str = "bbox",
     ) -> list[dict[str, Any]]:
-        """在窗内按逐对象 seed(点/框)memory 传播, 返回逐帧逐对象几何。
-
-        seeds 每条:
-          - 单帧: {obj_id, bbox:{x,y,w,h}} | {obj_id, points:[[x,y,label],...]}, 锚在窗种子帧
-            (forward=from_frame, backward=to_frame);
-          - 多帧 (纠偏, v0.21.27 U-pvs-2): {obj_id, prompts:[{frame_index, points?/bbox?}, ...]},
-            frame_index = 绝对源帧, 各 prompt 在其(局部)帧播种; PVS memory 逐帧累积, 后续帧的
-            修正点(含负点)改善该段追踪。仍从窗种子帧传播 (故 runner 须保证种子帧有基准 prompt)。
-        坐标归一化 [0,1]。output_geometry: "polygon"→mask 矢量化多边形; 否则外接框 bbox。
-        """
-        if not seeds:
-            raise ValueError("sam3 PVS tracker requires at least one seed")
-        lo, hi = int(min(from_frame, to_frame)), int(max(from_frame, to_frame))
-        span = hi - lo + 1
+        span = abs(to_frame - from_frame) + 1
         if span > self.max_window_frames:
             raise ValueError(
                 f"video tracker window {span} frames exceeds "
                 f"SAM3_PVS_MAX_WINDOW_FRAMES={self.max_window_frames}"
             )
+        session = self.start_session(video_path, from_frame, to_frame, direction, seeds)
+        try:
+            return self._continue_session(
+                session, from_frame, to_frame, output_geometry=output_geometry
+            )
+        finally:
+            self.close_session(session)
+
+    def start_session(
+        self,
+        video_path: str,
+        span_start_frame: int,
+        span_end_frame: int,
+        direction: str,
+        seeds: list[dict[str, Any]],
+    ) -> SAM3PVSSession:
+        if not seeds:
+            raise ValueError("sam3 PVS tracker requires at least one seed")
+        lo, hi = (
+            min(span_start_frame, span_end_frame),
+            max(span_start_frame, span_end_frame),
+        )
+        span = hi - lo + 1
+        max_context_frames = getattr(self, "max_context_frames", self.max_window_frames)
+        if span > max_context_frames:
+            raise ValueError(
+                f"video tracker context {span} frames exceeds "
+                f"SAM3_PVS_MAX_CONTEXT_FRAMES={max_context_frames}"
+            )
+        if direction not in {"forward", "backward"}:
+            raise ValueError(f"invalid tracker direction: {direction}")
         reverse = direction == "backward"
         seed_src_frame = hi if reverse else lo
 
@@ -185,76 +222,110 @@ class SAM3PVSVideoTracker:
             _fw, _fh, local_count = SAM3MultiplexVideoTracker._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
-            if local_count == 0:
+            if local_count != span:
                 raise ValueError(
-                    f"no frames decoded from {video_path[:80]} for window [{lo},{hi}]"
-                )
-            if seed_src_frame - lo >= local_count:
-                raise ValueError(
-                    f"seed frame {seed_src_frame} not in decodable range "
-                    f"[{lo},{lo + local_count - 1}] (window [{lo},{hi}] decoded only "
-                    f"{local_count} frames)"
+                    f"decoded {local_count}/{span} tracker context frames [{lo},{hi}]"
                 )
             local_seed = max(0, min(seed_src_frame - lo, local_count - 1))
 
-            state = self._predictor.init_state(video_path=tmp_dir)
+            state = self._predictor.init_state(
+                video_path=tmp_dir,
+                offload_video_to_cpu=True,
+                offload_state_to_cpu=True,
+            )
             for seed in seeds:
                 self._add_seed(state, local_seed, seed, lo, local_count)
-
-            results: list[dict[str, Any]] = []
-            for out in self._predictor.propagate_in_video(
-                state,
-                start_frame_idx=local_seed,
-                max_frame_num_to_track=local_count,
-                reverse=reverse,
-                tqdm_disable=True,
-                # 该 sam3 tracker 的 propagate 默认不跑 preflight, 需显式开启把逐对象
-                # 临时 seed(temp_output_dict_per_obj)consolidate 进 cond_frame_outputs,
-                # 否则报 "No points are provided"。
-                propagate_preflight=True,
-            ):
-                frame_idx, obj_ids, _low, video_masks, obj_scores = out
-                local_idx = int(frame_idx)
-                if local_idx < 0 or local_idx >= local_count:
-                    continue
-                src_idx = local_idx + lo
-                masks = _to_np_float(video_masks)  # [num_obj,1,H,W] logits (bf16→f32)
-                scores = _to_np_float(obj_scores)
-                ids = _to_numpy(obj_ids)
-                id_list = ids.tolist() if ids is not None else list(obj_ids)
-                for i, oid in enumerate(id_list):
-                    mask = masks[i, 0] > 0 if masks.ndim == 4 else masks[i] > 0
-                    geometry, outside = SAM3MultiplexVideoTracker._mask_geometry(
-                        mask, output_geometry
-                    )
-                    if outside:
-                        confidence = 0.0
-                    elif scores is not None and i < len(scores):
-                        confidence = _sigmoid(
-                            float(np.asarray(scores[i]).reshape(-1)[0])
-                        )
-                    else:
-                        confidence = 1.0
-                    results.append(
-                        {
-                            "frame_index": src_idx,
-                            "instance_id": str(int(oid)),
-                            "geometry": geometry,
-                            "confidence": confidence,
-                            "outside": outside,
-                        }
-                    )
-            return results
-        finally:
-            # Sam3TrackerPredictor 无 reset_state; init_state 返回的是普通 dict, 丢引用
-            # + empty_cache 即释放其 GPU 张量(会话状态不跨 job 复用)。
+            return SAM3PVSSession(lo, hi, direction, tmp_dir, state, local_count)
+        except BaseException:
             if isinstance(state, dict):
                 state.clear()
-            state = None
             if tmp_dir is not None:
                 SAM3MultiplexVideoTracker._cleanup_tmp(tmp_dir)
             free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
+            raise
+
+    def continue_session(
+        self,
+        session: SAM3PVSSession,
+        from_frame: int,
+        to_frame: int,
+        *,
+        output_geometry: str = "bbox",
+    ) -> list[dict[str, Any]]:
+        device_type = self.device.split(":", 1)[0]
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=device_type == "cuda",
+        ):
+            return self._continue_session(
+                session, from_frame, to_frame, output_geometry=output_geometry
+            )
+
+    def _continue_session(
+        self,
+        session: SAM3PVSSession,
+        from_frame: int,
+        to_frame: int,
+        *,
+        output_geometry: str = "bbox",
+    ) -> list[dict[str, Any]]:
+        lo, hi = min(from_frame, to_frame), max(from_frame, to_frame)
+        if lo < session.lo or hi > session.hi:
+            raise ValueError("tracker window is outside context span")
+        local_start = (hi if session.direction == "backward" else lo) - session.lo
+        results: list[dict[str, Any]] = []
+        for out in self._predictor.propagate_in_video(
+            session.state,
+            start_frame_idx=local_start,
+            max_frame_num_to_track=hi - lo,
+            reverse=session.direction == "backward",
+            tqdm_disable=True,
+            # 该 sam3 tracker 的 propagate 默认不跑 preflight, 需显式开启把逐对象
+            # 临时 seed(temp_output_dict_per_obj)consolidate 进 cond_frame_outputs,
+            # 否则报 "No points are provided"。
+            propagate_preflight=not session.started,
+        ):
+            frame_idx, obj_ids, _low, video_masks, obj_scores = out
+            local_idx = int(frame_idx)
+            src_idx = local_idx + session.lo
+            if not lo <= src_idx <= hi:
+                continue
+            masks = _to_np_float(video_masks)  # [num_obj,1,H,W] logits (bf16→f32)
+            scores = _to_np_float(obj_scores)
+            ids = _to_numpy(obj_ids)
+            id_list = ids.tolist() if ids is not None else list(obj_ids)
+            for i, oid in enumerate(id_list):
+                mask = masks[i, 0] > 0 if masks.ndim == 4 else masks[i] > 0
+                geometry, outside = SAM3MultiplexVideoTracker._mask_geometry(
+                    mask, output_geometry
+                )
+                if outside:
+                    confidence = 0.0
+                elif scores is not None and i < len(scores):
+                    confidence = _sigmoid(float(np.asarray(scores[i]).reshape(-1)[0]))
+                else:
+                    confidence = 1.0
+                results.append(
+                    {
+                        "frame_index": src_idx,
+                        "instance_id": str(int(oid)),
+                        "geometry": geometry,
+                        "confidence": confidence,
+                        "outside": outside,
+                    }
+                )
+        session.started = True
+        return results
+
+    def close_session(self, session: SAM3PVSSession) -> None:
+        if isinstance(session.state, dict):
+            session.state.clear()
+        session.state = None
+        SAM3MultiplexVideoTracker._cleanup_tmp(session.tmp_dir)
+        free_gpu_memory()
+        self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------
 

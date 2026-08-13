@@ -93,6 +93,8 @@ class VideoSegmentOut(BaseModel):
     segment_index: int
     start_frame: int
     end_frame: int
+    work_start_frame: int
+    work_end_frame: int
     status: Literal["open", "assigned", "locked", "completed"]
     assignee_id: UUID | None = None
     locked_by: UUID | None = None
@@ -104,6 +106,8 @@ class VideoSegmentsResponse(BaseModel):
     dataset_item_id: UUID
     task_id: UUID | None = None
     segment_size_frames: int
+    collaboration_enabled: bool = False
+    overlap_frames: int = 0
     segments: list[VideoSegmentOut]
 
 

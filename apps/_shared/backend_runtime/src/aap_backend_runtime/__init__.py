@@ -28,6 +28,10 @@ from aap_backend_runtime.lifecycle_evidence import (
 )
 from aap_backend_runtime.lifecycle_validation import exercise_lifecycle_fault_matrix
 from aap_backend_runtime.versions import versions_payload
+from aap_backend_runtime.tracker_sessions import (
+    TrackerSessionLost,
+    TrackerSessionManager,
+)
 
 __all__ = [
     "DeviceUnavailableError",
@@ -52,4 +56,6 @@ __all__ = [
     "validate_single_gpu_device_set",
     "validate_managed_lifecycle_evidence",
     "versions_payload",
+    "TrackerSessionLost",
+    "TrackerSessionManager",
 ]

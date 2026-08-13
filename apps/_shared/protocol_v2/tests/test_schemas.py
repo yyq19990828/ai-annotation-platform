@@ -25,6 +25,7 @@ from aap_protocol_v2 import (
     PredictionResult,
     ScribblePrompt,
     TaskItem,
+    TrackerContextControl,
     VariantNotSupportedError,
     WarmupResponse,
     canonical_rle_bytes,
@@ -55,6 +56,23 @@ def test_prediction_result_defaults() -> None:
     assert r.result == []
     assert r.score is None
     assert r.diagnostic is None
+
+
+def test_tracker_context_control_contract() -> None:
+    started = TrackerContextControl(
+        action="start",
+        job_id="job-1",
+        span_start_frame=10,
+        span_end_frame=20,
+        direction="forward",
+    )
+    assert started.token is None
+    with pytest.raises(ValueError):
+        TrackerContextControl(
+            action="continue",
+            job_id="job-1",
+            direction="forward",
+        )
 
 
 def test_prediction_result_keeps_empty_mask_diagnostic() -> None:

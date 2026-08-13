@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +33,12 @@ from app.schemas.video_tracker_job import (
     VideoTrackerPropagateRequest,
 )
 from app.services.scheduler import is_privileged_for_project
-from app.services.task_lock import TaskLockConflictError, TaskLockService
+from app.services.video_collaboration import (
+    assert_task_lock_for_legacy_video,
+    collaboration_config,
+    segment_work_bounds,
+)
+from app.services.task_lock import TaskLockConflictError
 from app.services.ml_backend import MLBackendService
 from app.services.raster_mask_storage import (
     RasterMaskContractError,
@@ -126,6 +131,34 @@ async def _assert_segment_lock(
 ) -> uuid.UUID:
     await ensure_segments(db, ctx)
     now = _now()
+    project = await db.get(Project, ctx.task.project_id) if ctx.task else None
+    collaboration = collaboration_config(project)
+
+    if collaboration.enabled and payload.segment_id is None:
+        raise HTTPException(
+            status_code=422, detail={"reason": "video_segment_required"}
+        )
+
+    async def _work_bounds(segment: VideoSegment) -> tuple[int, int]:
+        if not collaboration.enabled:
+            return segment.start_frame, segment.end_frame
+        count = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(VideoSegment)
+                    .where(VideoSegment.dataset_item_id == ctx.item.id)
+                )
+            ).scalar_one()
+        )
+        return segment_work_bounds(
+            start_frame=segment.start_frame,
+            end_frame=segment.end_frame,
+            segment_index=segment.segment_index,
+            segment_count=max(1, count),
+            frame_count=max(1, int(ctx.metadata.frame_count or 1)),
+            overlap_frames=collaboration.overlap_frames,
+        )
 
     if payload.segment_id is not None:
         segment = (
@@ -140,16 +173,20 @@ async def _assert_segment_lock(
         ).scalar_one_or_none()
         if segment is None:
             raise HTTPException(status_code=404, detail="Video segment not found")
-        if (
-            payload.from_frame < segment.start_frame
-            or payload.to_frame > segment.end_frame
-        ):
+        work_start, work_end = await _work_bounds(segment)
+        if payload.from_frame < work_start or payload.to_frame > work_end:
             raise HTTPException(
                 status_code=400, detail="Frame range is outside the video segment"
             )
-        if not privileged and not _lock_valid_for_user(segment, user, now):
+        if (collaboration.enabled or not privileged) and not _lock_valid_for_user(
+            segment, user, now
+        ):
             raise HTTPException(
                 status_code=409, detail="Video segment must be locked by current user"
+            )
+        if collaboration.enabled and segment.assignee_id != user.id:
+            raise HTTPException(
+                status_code=409, detail="Video segment must be assigned to current user"
             )
         return segment.id
 
@@ -190,8 +227,11 @@ def _keyframe_digest(value: dict | None) -> str | None:
 async def _assert_task_write_allowed(
     db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
+    task = await db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     try:
-        await TaskLockService(db).assert_write_allowed(task_id, user_id)
+        await assert_task_lock_for_legacy_video(db, task, user_id)
     except TaskLockConflictError as exc:
         raise HTTPException(
             status_code=409, detail={"reason": "task_lock_conflict"}
@@ -258,7 +298,7 @@ async def save_video_mask_keyframe(
         SimpleNamespace(
             from_frame=frame_index,
             to_frame=frame_index,
-            segment_id=None,
+            segment_id=getattr(annotation, "video_segment_id", None),
         ),
         user,
         privileged=privileged,
@@ -419,7 +459,7 @@ async def operate_video_mask_keyframe(
         SimpleNamespace(
             from_frame=frame_index,
             to_frame=frame_index,
-            segment_id=None,
+            segment_id=getattr(annotation, "video_segment_id", None),
         ),
         user,
         privileged=privileged,

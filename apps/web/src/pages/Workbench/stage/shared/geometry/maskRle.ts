@@ -181,7 +181,9 @@ async function compressWithBrowserStream(input: Uint8Array): Promise<Uint8Array>
   if (typeof CompressionStream === "undefined") {
     throw new Error("CompressionStream is unavailable");
   }
-  const stream = new Blob([input]).stream().pipeThrough(new CompressionStream("gzip"));
+  const stream = new Blob([new Uint8Array(input)])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
@@ -221,7 +223,7 @@ export async function prepareCocoRleGzipUpload(
     return null;
   }
   return {
-    body: new Blob([compressed], { type: "application/json" }),
+    body: new Blob([new Uint8Array(compressed)], { type: "application/json" }),
     compressedBytes: compressed.byteLength,
     uncompressedBytes: raw.byteLength,
   };

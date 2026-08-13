@@ -380,7 +380,7 @@ export async function createTintedRasterMaskImage(
   const { crop } = analysis;
   if (crop.width === 0 || crop.height === 0) return null;
   const rgba = buildTintedMaskRgba(crop.alpha, color);
-  const imageData = new ImageData(rgba, crop.width, crop.height);
+  const imageData = new ImageData(new Uint8ClampedArray(rgba), crop.width, crop.height);
   let image: CanvasImageSource | null = null;
   if (typeof createImageBitmap === "function") {
     try {

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,10 @@ from app.db.models.dataset import VideoSegment
 from app.db.models.user import User
 from app.schemas.video_frame_service import VideoSegmentOut, VideoSegmentsResponse
 from app.services.video_frame_service import VideoContext
+from app.services.video_collaboration import (
+    collaboration_config,
+    segment_work_bounds,
+)
 
 
 def _now() -> datetime:
@@ -108,12 +112,28 @@ async def ensure_segments(db: AsyncSession, ctx: VideoContext) -> list[VideoSegm
         return list(rows)
 
 
-def segment_out(row: VideoSegment) -> VideoSegmentOut:
+def segment_out(
+    row: VideoSegment,
+    *,
+    frame_count: int | None = None,
+    segment_count: int | None = None,
+    overlap_frames: int = 0,
+) -> VideoSegmentOut:
+    work_start, work_end = segment_work_bounds(
+        start_frame=row.start_frame,
+        end_frame=row.end_frame,
+        segment_index=row.segment_index,
+        segment_count=segment_count or 1,
+        frame_count=frame_count or row.end_frame + 1,
+        overlap_frames=overlap_frames,
+    )
     return VideoSegmentOut(
         id=row.id,
         segment_index=row.segment_index,
         start_frame=row.start_frame,
         end_frame=row.end_frame,
+        work_start_frame=work_start,
+        work_end_frame=work_end,
         status=row.status
         if row.status in {"open", "assigned", "locked", "completed"}
         else "open",
@@ -124,14 +144,43 @@ def segment_out(row: VideoSegment) -> VideoSegmentOut:
     )
 
 
+async def _segment_out_for_context(
+    db: AsyncSession, ctx: VideoContext, row: VideoSegment
+) -> VideoSegmentOut:
+    from app.db.models.project import Project
+
+    project = await db.get(Project, ctx.task.project_id) if ctx.task else None
+    config = collaboration_config(project)
+    return segment_out(
+        row,
+        frame_count=max(1, int(ctx.metadata.frame_count or 1)),
+        segment_count=_segment_count(ctx),
+        overlap_frames=config.overlap_frames if config.enabled else 0,
+    )
+
+
 async def list_segments(db: AsyncSession, ctx: VideoContext) -> VideoSegmentsResponse:
     rows = await ensure_segments(db, ctx)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, ctx.task.project_id) if ctx.task else None
+    config = collaboration_config(project)
     await db.commit()
     return VideoSegmentsResponse(
         dataset_item_id=ctx.item.id,
         task_id=ctx.task_id,
         segment_size_frames=max(1, settings.video_segment_size_frames),
-        segments=[segment_out(row) for row in rows],
+        collaboration_enabled=config.enabled,
+        overlap_frames=config.overlap_frames if config.enabled else 0,
+        segments=[
+            segment_out(
+                row,
+                frame_count=max(1, int(ctx.metadata.frame_count or 1)),
+                segment_count=len(rows),
+                overlap_frames=config.overlap_frames if config.enabled else 0,
+            )
+            for row in rows
+        ],
     )
 
 
@@ -184,6 +233,10 @@ async def claim_segment(
     row = await _load_segment_for_update(db, ctx, segment_id)
     now = _now()
     _normalize_lock(row, now)
+    if row.status == "completed":
+        raise HTTPException(
+            status_code=409, detail={"reason": "video_segment_completed"}
+        )
 
     if row.assignee_id and row.assignee_id != user.id and not privileged:
         raise HTTPException(
@@ -202,7 +255,7 @@ async def claim_segment(
     )
     row.status = "locked"
     await db.flush()
-    return segment_out(row)
+    return await _segment_out_for_context(db, ctx, row)
 
 
 async def heartbeat_segment(
@@ -224,7 +277,7 @@ async def heartbeat_segment(
     )
     row.status = "locked"
     await db.flush()
-    return segment_out(row)
+    return await _segment_out_for_context(db, ctx, row)
 
 
 async def release_segment(
@@ -245,4 +298,98 @@ async def release_segment(
     row.lock_expires_at = None
     row.status = "assigned" if row.assignee_id else "open"
     await db.flush()
-    return segment_out(row)
+    return await _segment_out_for_context(db, ctx, row)
+
+
+async def submit_segment(
+    db: AsyncSession,
+    ctx: VideoContext,
+    segment_id: uuid.UUID,
+    user: User,
+    *,
+    privileged: bool,
+) -> VideoSegmentOut:
+    row = await _load_segment_for_update(db, ctx, segment_id)
+    now = _now()
+    _normalize_lock(row, now)
+    if row.status == "completed":
+        return await _segment_out_for_context(db, ctx, row)
+    if not privileged:
+        if row.assignee_id != user.id:
+            raise HTTPException(
+                status_code=403,
+                detail={"reason": "video_segment_not_assigned_to_user"},
+            )
+        if (
+            row.locked_by != user.id
+            or not row.lock_expires_at
+            or row.lock_expires_at <= now
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "video_segment_lease_required"},
+            )
+    row.status = "completed"
+    row.locked_by = None
+    row.locked_at = None
+    row.lock_expires_at = None
+    if ctx.task is not None:
+        remaining = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(VideoSegment)
+                    .where(
+                        VideoSegment.dataset_item_id == ctx.item.id,
+                        VideoSegment.id != row.id,
+                        VideoSegment.status != "completed",
+                    )
+                )
+            ).scalar_one()
+        )
+        if remaining == 0:
+            ctx.task.status = "review"
+            ctx.task.submitted_at = now
+            ctx.task.reviewer_id = None
+            ctx.task.reviewer_claimed_at = None
+            ctx.task.reviewed_at = None
+    await db.flush()
+    return await _segment_out_for_context(db, ctx, row)
+
+
+async def reopen_segment(
+    db: AsyncSession,
+    ctx: VideoContext,
+    segment_id: uuid.UUID,
+) -> VideoSegmentOut:
+    row = await _load_segment_for_update(db, ctx, segment_id)
+    row.status = "assigned" if row.assignee_id else "open"
+    row.locked_by = None
+    row.locked_at = None
+    row.lock_expires_at = None
+    if ctx.task is not None:
+        ctx.task.status = "in_progress"
+        ctx.task.submitted_at = None
+        ctx.task.reviewed_at = None
+    await db.flush()
+    return await _segment_out_for_context(db, ctx, row)
+
+
+async def unassign_segment(
+    db: AsyncSession,
+    ctx: VideoContext,
+    segment_id: uuid.UUID,
+) -> VideoSegmentOut:
+    row = await _load_segment_for_update(db, ctx, segment_id)
+    if row.status == "completed":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "video_segment_reopen_required"},
+        )
+    row.assignee_id = None
+    row.status = "open"
+    row.locked_by = None
+    row.locked_at = None
+    row.lock_expires_at = None
+    await db.flush()
+    return await _segment_out_for_context(db, ctx, row)

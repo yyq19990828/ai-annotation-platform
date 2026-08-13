@@ -83,8 +83,10 @@ function sessionFor(sessionId: string, sha256: string): RasterMaskWorkerSession 
   return session;
 }
 
-function uniqueBuffers(buffers: ArrayBuffer[]): Transferable[] {
-  return [...new Set(buffers)] as Transferable[];
+function uniqueBuffers(buffers: ArrayBufferLike[]): Transferable[] {
+  return [...new Set(buffers)].filter(
+    (buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer,
+  );
 }
 
 function denseCpuMorphologyResult(
@@ -690,7 +692,7 @@ workerScope.onmessage = async (event) => {
     const result = applyMaskOperation(alpha, width, height, request.operation);
     workerScope.postMessage(
       { kind: "operation", id: request.id, ok: true, context: request.context, result },
-      [result.alpha.buffer],
+      result.alpha.buffer instanceof ArrayBuffer ? [result.alpha.buffer] : [],
     );
   } catch (error) {
     workerScope.postMessage({

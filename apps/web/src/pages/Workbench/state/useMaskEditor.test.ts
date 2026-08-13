@@ -673,7 +673,7 @@ describe("useMaskEditor · tiled large canvas", () => {
       result.current.endStroke();
       result.current.setViewport({ x: 90, y: 2, width: 20, height: 12 });
     });
-    let before = new Uint8Array();
+    let before: Uint8Array = new Uint8Array();
     await act(async () => {
       before = decodeCocoRle(await result.current.commitToRleAsync());
       expect(

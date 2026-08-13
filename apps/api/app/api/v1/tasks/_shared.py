@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -21,6 +21,7 @@ from app.services.scheduler import (
 )
 from app.services.storage import storage_service
 from app.db.models.task_batch import TaskBatch
+from app.db.models.project_member import ProjectMember
 
 logger = logging.getLogger(__name__)
 VIDEO_MANIFEST_URL_EXPIRES_IN = 3600
@@ -69,6 +70,19 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         raise HTTPException(status_code=404, detail="Task not found")
     if is_privileged_for_project(user, project):
         return
+    if task.file_type == "video" and bool(
+        (project.video_collaboration or {}).get("enabled")
+    ):
+        membership = await db.scalar(
+            select(func.count())
+            .select_from(ProjectMember)
+            .where(
+                ProjectMember.project_id == project.id,
+                ProjectMember.user_id == user.id,
+            )
+        )
+        if membership:
+            return
     if task.batch_id is None:
         raise HTTPException(status_code=404, detail="Task not found")
     batch = await db.get(TaskBatch, task.batch_id)

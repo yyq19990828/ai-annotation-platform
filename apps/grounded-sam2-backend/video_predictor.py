@@ -36,6 +36,7 @@ import logging
 import os
 import sys
 import tempfile
+from dataclasses import dataclass
 from typing import Any
 
 # 与 predictor.py 一致: 把 vendor 根注入 sys.path 供上游隐式包名解析。
@@ -71,9 +72,24 @@ from predictor import SAM2_CONFIGS  # noqa: E402
 
 # 单次 init_state 安全上限 (帧). 防止超长窗口一次性灌爆显存; main.py 解析 env 注入。
 DEFAULT_MAX_WINDOW_FRAMES = int(os.getenv("VIDEO_TRACKER_MAX_WINDOW_FRAMES", "300"))
+DEFAULT_MAX_CONTEXT_FRAMES = int(
+    os.getenv("VIDEO_TRACKER_MAX_CONTEXT_FRAMES", str(DEFAULT_MAX_WINDOW_FRAMES))
+)
 
 # 该 obj 的固定 id (单目标传播; 平台一次只跟一个 annotation)。
 _OBJ_ID = 1
+
+
+@dataclass
+class SAM2VideoSession:
+    lo: int
+    hi: int
+    direction: str
+    tmp_dir: str
+    state: Any
+    frame_w: int
+    frame_h: int
+    local_count: int
 
 
 class SAM2VideoTracker:
@@ -88,9 +104,11 @@ class SAM2VideoTracker:
         sam_variant: str = "tiny",
         *,
         max_window_frames: int = DEFAULT_MAX_WINDOW_FRAMES,
+        max_context_frames: int = DEFAULT_MAX_CONTEXT_FRAMES,
     ) -> None:
         self.sam_variant = sam_variant
         self.max_window_frames = max_window_frames
+        self.max_context_frames = max_context_frames
         self.device = effective_device("cuda")
         self.cleanup_uncertain = False
         self._predictor = self._load_video_predictor()
@@ -152,118 +170,149 @@ class SAM2VideoTracker:
         返回: [{frame_index(源帧号), instance_id, geometry, confidence, outside}], 含 seed 帧在内。
         空 mask / 退化多边形(顶点<3) → outside=True。
         """
-        if not seeds:
-            raise ValueError("video tracker requires at least one seed")
-        lo, hi = int(min(from_frame, to_frame)), int(max(from_frame, to_frame))
-        span = hi - lo + 1
+        span = abs(to_frame - from_frame) + 1
         if span > self.max_window_frames:
             raise ValueError(
                 f"video tracker window {span} frames exceeds "
                 f"VIDEO_TRACKER_MAX_WINDOW_FRAMES={self.max_window_frames}"
             )
-        reverse = direction == "backward"
-        # 窗首帧 (源帧号): forward 从 lo, backward 从 hi。
-        seed_src_frame = hi if reverse else lo
+        session = self.start_session(video_path, from_frame, to_frame, direction, seeds)
+        try:
+            return self.continue_session(
+                session, from_frame, to_frame, output_geometry=output_geometry
+            )
+        finally:
+            self.close_session(session)
 
-        tmp_dir: str | None = None
-        inference_state = None
+    def start_session(
+        self,
+        video_path: str,
+        span_start_frame: int,
+        span_end_frame: int,
+        direction: str,
+        seeds: list[dict[str, Any]],
+    ) -> SAM2VideoSession:
+        if not seeds:
+            raise ValueError("video tracker requires at least one seed")
+        lo, hi = (
+            min(span_start_frame, span_end_frame),
+            max(span_start_frame, span_end_frame),
+        )
+        span = hi - lo + 1
+        if span > self.max_context_frames:
+            raise ValueError(
+                f"video tracker context {span} frames exceeds "
+                f"VIDEO_TRACKER_MAX_CONTEXT_FRAMES={self.max_context_frames}"
+            )
+        if direction not in {"forward", "backward"}:
+            raise ValueError(f"invalid tracker direction: {direction}")
+
+        tmp_dir = tempfile.mkdtemp(prefix="sam2vid_")
+        state = None
         self.active_sessions += 1
         try:
-            tmp_dir = tempfile.mkdtemp(prefix="sam2vid_")
-            # 1) 只解码窗内帧到临时 JPEG 目录, 窗内重编号 0..span-1。
             frame_w, frame_h, local_count = self._extract_window_jpegs(
                 video_path, lo, hi, tmp_dir
             )
-            if local_count == 0:
+            if local_count != span:
                 raise ValueError(
-                    f"no frames decoded from {video_path[:80]} for window [{lo},{hi}]"
+                    f"decoded {local_count}/{span} tracker context frames [{lo},{hi}]"
                 )
-
-            # 源帧号 → 窗内局部帧号 (0-based)。解码可能因视频实际帧数不足而截断。
-            local_seed = seed_src_frame - lo
-            local_seed = max(0, min(local_seed, local_count - 1))
-
-            # 2) init_state 加载该窗 JPEG 目录。
-            inference_state = self._predictor.init_state(video_path=tmp_dir)
-
-            # 3) 逐对象播种 (点/框, 多帧 prompt); 归一化 → 像素 + normalize_coords=True。
+            state = self._predictor.init_state(
+                video_path=tmp_dir,
+                offload_video_to_cpu=True,
+                offload_state_to_cpu=True,
+            )
+            local_seed = hi - lo if direction == "backward" else 0
             for seed in seeds:
                 self._add_seed(
-                    inference_state, local_seed, seed, lo, local_count, frame_w, frame_h
+                    state, local_seed, seed, lo, local_count, frame_w, frame_h
                 )
-
-            # 4) 逐帧传播: video_res_masks 是 [num_obj,1,H,W] logits, 逐对象各出一条结果
-            #    (instance_id = 该 obj_id, 平台按 instance_id 分组落库)。
-            results: list[dict[str, Any]] = []
-            for (
-                local_idx,
-                obj_ids,
-                video_res_masks,
-            ) in self._predictor.propagate_in_video(
-                inference_state,
-                start_frame_idx=local_seed,
-                reverse=reverse,
-            ):
-                src_idx = int(local_idx) + lo
-                masks = self._masks_to_bool(video_res_masks)  # [num_obj, H, W]
-                id_list = self._obj_ids_to_list(obj_ids)
-                for i, oid in enumerate(id_list):
-                    mask = masks[i] if i < masks.shape[0] else masks[0]
-                    if output_geometry == "mask":
-                        outside = not bool(mask.any())
-                        geometry = {
-                            "type": "mask",
-                            "rle": encode_coco_rle(mask.reshape(-1), frame_w, frame_h),
-                        }
-                    elif output_geometry == "polygon":
-                        geometry, outside = self._mask_to_polygon_geometry(
-                            mask, frame_w, frame_h
-                        )
-                    else:
-                        bbox_norm, outside = self._mask_to_bbox_norm(
-                            mask, frame_w, frame_h
-                        )
-                        geometry = {"type": "bbox", **bbox_norm}
-                    # confidence 用 SAM2 每帧每对象自评的 object score 取代写死 0/1: 平台低置信
-                    # 阈值据此把「有 mask 但模型判为部分遮挡」的帧也标 outside。空 mask 记 0.0;
-                    # vendor 内部结构取不到 (未来 sync 漂移) 时回退 1.0, 不丢结果。
-                    if outside:
-                        confidence = 0.0
-                    else:
-                        score = self._object_score(
-                            inference_state, int(oid), int(local_idx)
-                        )
-                        confidence = score if score is not None else 1.0
-                    results.append(
-                        {
-                            "frame_index": src_idx,
-                            "instance_id": str(int(oid)),
-                            "geometry": geometry,
-                            "confidence": confidence,
-                            "outside": outside,
-                        }
-                    )
-            results.sort(
-                key=lambda r: (r["frame_index"], r["instance_id"]), reverse=reverse
+            return SAM2VideoSession(
+                lo, hi, direction, tmp_dir, state, frame_w, frame_h, local_count
             )
-            return results
         except BaseException:
-            if inference_state is None and self.device != "cpu":
+            if state is None and self.device != "cpu":
                 self.cleanup_uncertain = True
-            raise
-        finally:
-            # 会话状态反向清理 + 释放显存; 模型权重保留供下个 job。
-            if inference_state is not None:
-                try:
-                    self._predictor.reset_state(inference_state)
-                except Exception:  # noqa: BLE001
-                    logger.exception("reset_state failed; dropping inference_state")
-                    self.cleanup_uncertain = True
-                del inference_state
-            if tmp_dir is not None:
-                self._cleanup_tmp(tmp_dir)
+            if state is not None:
+                self._predictor.reset_state(state)
+            self._cleanup_tmp(tmp_dir)
             free_gpu_memory()
             self.active_sessions = max(0, self.active_sessions - 1)
+            raise
+
+    def continue_session(
+        self,
+        session: SAM2VideoSession,
+        from_frame: int,
+        to_frame: int,
+        *,
+        output_geometry: str = "bbox",
+    ) -> list[dict[str, Any]]:
+        lo, hi = min(from_frame, to_frame), max(from_frame, to_frame)
+        if lo < session.lo or hi > session.hi:
+            raise ValueError("tracker window is outside context span")
+        local_start = (hi if session.direction == "backward" else lo) - session.lo
+        results: list[dict[str, Any]] = []
+        for local_idx, obj_ids, video_res_masks in self._predictor.propagate_in_video(
+            session.state,
+            start_frame_idx=local_start,
+            max_frame_num_to_track=hi - lo,
+            reverse=session.direction == "backward",
+        ):
+            src_idx = int(local_idx) + session.lo
+            if not lo <= src_idx <= hi:
+                continue
+            masks = self._masks_to_bool(video_res_masks)
+            for i, oid in enumerate(self._obj_ids_to_list(obj_ids)):
+                mask = masks[i] if i < masks.shape[0] else masks[0]
+                if output_geometry == "mask":
+                    outside = not bool(mask.any())
+                    geometry = {
+                        "type": "mask",
+                        "rle": encode_coco_rle(
+                            mask.reshape(-1), session.frame_w, session.frame_h
+                        ),
+                    }
+                elif output_geometry == "polygon":
+                    geometry, outside = self._mask_to_polygon_geometry(
+                        mask, session.frame_w, session.frame_h
+                    )
+                else:
+                    bbox_norm, outside = self._mask_to_bbox_norm(
+                        mask, session.frame_w, session.frame_h
+                    )
+                    geometry = {"type": "bbox", **bbox_norm}
+                score = self._object_score(session.state, int(oid), int(local_idx))
+                results.append(
+                    {
+                        "frame_index": src_idx,
+                        "instance_id": str(int(oid)),
+                        "geometry": geometry,
+                        "confidence": 0.0
+                        if outside
+                        else score
+                        if score is not None
+                        else 1.0,
+                        "outside": outside,
+                    }
+                )
+        results.sort(
+            key=lambda row: (row["frame_index"], row["instance_id"]),
+            reverse=session.direction == "backward",
+        )
+        return results
+
+    def close_session(self, session: SAM2VideoSession) -> None:
+        try:
+            self._predictor.reset_state(session.state)
+        except Exception:  # noqa: BLE001
+            logger.exception("reset_state failed; dropping inference_state")
+            self.cleanup_uncertain = True
+        session.state = None
+        self._cleanup_tmp(session.tmp_dir)
+        free_gpu_memory()
+        self.active_sessions = max(0, self.active_sessions - 1)
 
     # ---------- 内部工具 ----------
 

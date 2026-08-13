@@ -23,6 +23,7 @@ async def _make_video_task(db_session, owner_id):
         name="Video Frame Service Project",
         type_key="video-track",
         type_label="视频 · 时序追踪",
+        data_type="video",
         owner_id=owner_id,
         classes=["car"],
     )
@@ -174,6 +175,130 @@ async def test_video_segment_claim_heartbeat_release(
     assert release_resp.status_code == 200
     assert release_resp.json()["status"] == "assigned"
     assert release_resp.json()["locked_by"] is None
+
+
+async def test_video_collaboration_derives_overlap_work_ranges(
+    db_session, httpx_client_bound, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, _ = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 10}
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames", 30
+    )
+    await db_session.flush()
+
+    response = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/segments",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["collaboration_enabled"] is True
+    assert body["overlap_frames"] == 10
+    assert [
+        (row["work_start_frame"], row["work_end_frame"]) for row in body["segments"]
+    ] == [(0, 34), (25, 64), (55, 89)]
+
+
+async def test_video_collaboration_scopes_annotation_write_and_read_to_segment(
+    db_session, httpx_client_bound, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, _ = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 10}
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames", 30
+    )
+    await db_session.flush()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    segments = (
+        await httpx_client_bound.get(
+            f"/api/v1/tasks/{task.id}/video/segments", headers=headers
+        )
+    ).json()["segments"]
+    segment = segments[0]
+    claim = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment['id']}:claim",
+        headers=headers,
+    )
+    assert claim.status_code == 200
+
+    create = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations",
+        headers=headers,
+        json={
+            "video_segment_id": segment["id"],
+            "annotation_type": "video_bbox",
+            "tool_unit_id": "bbox",
+            "class_name": "car",
+            "geometry": {
+                "type": "video_bbox",
+                "frame_index": 34,
+                "x": 0.1,
+                "y": 0.1,
+                "w": 0.2,
+                "h": 0.2,
+            },
+        },
+    )
+    assert create.status_code == 201
+    assert create.json()["video_segment_id"] == segment["id"]
+
+    missing_scope = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/annotations", headers=headers
+    )
+    scoped = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/annotations?video_segment_id={segment['id']}",
+        headers=headers,
+    )
+    outside = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations",
+        headers=headers,
+        json={
+            "video_segment_id": segment["id"],
+            "annotation_type": "video_bbox",
+            "tool_unit_id": "bbox",
+            "class_name": "car",
+            "geometry": {
+                "type": "video_bbox",
+                "frame_index": 35,
+                "x": 0.1,
+                "y": 0.1,
+                "w": 0.2,
+                "h": 0.2,
+            },
+        },
+    )
+
+    assert missing_scope.status_code == 422
+    assert scoped.status_code == 200
+    assert [row["id"] for row in scoped.json()] == [create.json()["id"]]
+    assert outside.status_code == 422
+    assert outside.json()["detail"]["reason"] == "video_geometry_outside_segment"
+
+
+async def test_video_collaboration_public_enablement_is_available_for_empty_video_project(
+    db_session, httpx_client_bound, super_admin
+):
+    user, token = super_admin
+    task, _ = await _make_video_task(db_session, user.id)
+
+    response = await httpx_client_bound.patch(
+        f"/api/v1/projects/{task.project_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"video_collaboration": {"enabled": True, "overlap_frames": 10}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["video_collaboration"] == {
+        "enabled": True,
+        "overlap_frames": 10,
+    }
 
 
 async def test_video_segment_non_assignee_cannot_claim_assigned_segment(

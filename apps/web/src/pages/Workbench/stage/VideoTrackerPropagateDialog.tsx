@@ -222,6 +222,7 @@ interface VideoTrackerPropagateDialogProps {
   size?: FloatingPanelSize | null;
   onSizeChange?: (size: FloatingPanelSize) => void;
   frameIndex: number;
+  minFrame?: number;
   maxFrame: number;
   nextKeyframeAfter: number | null;
   /** 向前(backward)传播的「到上一关键帧」目标; 缺省 null 时回退到固定跨度。 */
@@ -293,6 +294,7 @@ export function VideoTrackerPropagateDialog({
   size = null,
   onSizeChange,
   frameIndex,
+  minFrame = 0,
   maxFrame,
   nextKeyframeAfter,
   prevKeyframeBefore = null,
@@ -447,7 +449,7 @@ export function VideoTrackerPropagateDialog({
         if (prevKeyframeBefore !== null && prevKeyframeBefore < frameIndex) {
           return { from: prevKeyframeBefore, to: frameIndex };
         }
-        return { from: Math.max(0, frameIndex - 30), to: frameIndex };
+        return { from: Math.max(minFrame, frameIndex - 30), to: frameIndex };
       }
       if (nextKeyframeAfter !== null && nextKeyframeAfter > frameIndex) {
         return { from: frameIndex, to: nextKeyframeAfter };
@@ -456,25 +458,39 @@ export function VideoTrackerPropagateDialog({
     }
     if (rangePreset === "end") {
       return direction === "backward"
-        ? { from: 0, to: frameIndex }
+        ? { from: minFrame, to: frameIndex }
         : { from: frameIndex, to: maxFrame };
     }
     // 数字预设是网格格子数; 采样开启时换算成源帧跨度 (span * grid)。
     const span = Number(rangePreset) * grid;
     if (direction === "backward") {
-      return { from: Math.max(0, frameIndex - span), to: frameIndex };
+      return { from: Math.max(minFrame, frameIndex - span), to: frameIndex };
     }
     if (direction === "bidirectional") {
       return {
-        from: Math.max(0, frameIndex - span),
+        from: Math.max(minFrame, frameIndex - span),
         to: Math.min(maxFrame, frameIndex + span),
       };
     }
     return { from: frameIndex, to: Math.min(maxFrame, frameIndex + span) };
-  }, [direction, frameIndex, grid, maxFrame, nextKeyframeAfter, prevKeyframeBefore, rangePreset]);
+  }, [
+    direction,
+    frameIndex,
+    grid,
+    maxFrame,
+    minFrame,
+    nextKeyframeAfter,
+    prevKeyframeBefore,
+    rangePreset,
+  ]);
 
   // 自定义范围 (来自时间轴刷选) 优先; 否则用预设/方向派生的范围。
-  const range = customRange ?? derivedRange;
+  const range = customRange
+    ? {
+        from: clamp(customRange.from, minFrame, maxFrame),
+        to: clamp(customRange.to, minFrame, maxFrame),
+      }
+    : derivedRange;
 
   // v0.21.27 · U-pvs-3 · U6: 当前范围粗估窗口数 (>1 时提示大范围将分多窗处理)。
   const estimatedWindows = estimateWindowCount(range.to - range.from, modelKey);

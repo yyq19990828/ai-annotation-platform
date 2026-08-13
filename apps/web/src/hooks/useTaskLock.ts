@@ -13,7 +13,7 @@ function parseLockConflict(err: unknown): TaskLockConflictDetail | null {
   return typed.reason === "task_locked_by_other" ? typed : null;
 }
 
-export function useTaskLock(taskId: string | undefined) {
+export function useTaskLock(taskId: string | undefined, enabled = true) {
   const [lock, setLock] = useState<TaskLockResponse | null>(null);
   const [lockError, setLockError] = useState<string | null>(null);
   const [lockConflict, setLockConflict] = useState<TaskLockConflictDetail | null>(null);
@@ -29,7 +29,9 @@ export function useTaskLock(taskId: string | undefined) {
   }, []);
 
   useEffect(() => {
-    if (!taskId) {
+    if (!taskId || !enabled) {
+      if (currentTaskRef.current) release(currentTaskRef.current);
+      currentTaskRef.current = undefined;
       setLock(null);
       setLockError(null);
       setLockConflict(null);
@@ -116,7 +118,7 @@ export function useTaskLock(taskId: string | undefined) {
       clearInterval(timerRef.current);
       release(taskId);
     };
-  }, [taskId, release]);
+  }, [taskId, enabled, release]);
 
   return { lock, lockError, lockConflict, remainingMs, isLocked: !!lock };
 }

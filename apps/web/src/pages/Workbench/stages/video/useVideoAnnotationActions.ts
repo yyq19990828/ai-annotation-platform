@@ -92,6 +92,7 @@ interface UseVideoAnnotationActionsArgs {
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   mutations: VideoAnnotationMutations;
   activeToolHasOwnClasses?: boolean;
+  annotationQueryKey?: readonly unknown[];
 }
 
 export interface VideoConvertOptions {
@@ -390,6 +391,7 @@ export function useVideoAnnotationActions({
   enqueueOnError,
   mutations,
   activeToolHasOwnClasses = true,
+  annotationQueryKey = ["annotations", taskId],
 }: UseVideoAnnotationActionsArgs) {
   const pendingMaskClassResolverRef = useRef<((className: string | null) => void) | null>(null);
   useEffect(
@@ -430,11 +432,11 @@ export function useVideoAnnotationActions({
   const optimisticUpdateAnnotation = useCallback(
     (annotationId: string, patch: { geometry?: Geometry; class_name?: string }) => {
       if (!taskId) return;
-      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) =>
+      queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) =>
         (prev ?? []).map((a) => (a.id === annotationId ? { ...a, ...patch } : a)),
       );
     },
-    [queryClient, taskId],
+    [annotationQueryKey, queryClient, taskId],
   );
 
   const handleVideoCreateWithClass = useCallback(
@@ -705,7 +707,7 @@ export function useVideoAnnotationActions({
           reference,
           selectedMaskVersion,
         );
-        queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (current) =>
+        queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (current) =>
           (current ?? []).map((item) => (item.id === updated.id ? updated : item)),
         );
         history.push(command);
@@ -732,7 +734,7 @@ export function useVideoAnnotationActions({
           { geometry },
           `W/"${selected.version}"`,
         );
-        queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (current) =>
+        queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (current) =>
           (current ?? []).map((item) => (item.id === updated.id ? updated : item)),
         );
         history.push(command);
@@ -759,7 +761,7 @@ export function useVideoAnnotationActions({
         });
       });
     },
-    [history, mutations.create, queryClient, requestVideoMaskClass, taskId],
+    [annotationQueryKey, history, mutations.create, queryClient, requestVideoMaskClass, taskId],
   );
 
   const handleVideoRename = useCallback(
@@ -903,7 +905,7 @@ export function useVideoAnnotationActions({
           frame_index: options.frameIndex,
           frame_mode: options.frameMode ?? "keyframes",
         });
-        queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
+        queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) => {
           const base = (prev ?? []).filter(
             (item) => !result.created_annotations.some((created) => created.id === item.id),
           );
@@ -949,7 +951,7 @@ export function useVideoAnnotationActions({
         pushToast({ msg: "轨迹转换失败", sub: String(err), kind: "error" });
       }
     },
-    [history, pushToast, queryClient, s, taskId],
+    [annotationQueryKey, history, pushToast, queryClient, s, taskId],
   );
 
   const handleVideoComposeTracks = useCallback(
@@ -964,7 +966,7 @@ export function useVideoAnnotationActions({
           delete_sources: options.deleteSources,
           gap_mode: options.gapMode,
         });
-        queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
+        queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) => {
           const deleted = new Set(result.deleted_annotation_ids);
           const updatedById = new Map(result.updated_annotations.map((ann) => [ann.id, ann]));
           const createdIds = new Set(result.created_annotations.map((ann) => ann.id));
@@ -995,7 +997,7 @@ export function useVideoAnnotationActions({
         pushToast({ msg: "轨迹组合失败", sub: String(err), kind: "error" });
       }
     },
-    [annotationsRef, history, pushToast, queryClient, s, taskId],
+    [annotationQueryKey, annotationsRef, history, pushToast, queryClient, s, taskId],
   );
 
   // v0.10.30 · 2.3 track 级属性默认值: 写入 annotation.attributes (顶层)。复用既有

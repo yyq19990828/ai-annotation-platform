@@ -20,6 +20,7 @@ from app.services.video_tracking import adapters as tracker_impl_module
 from app.services.video_tracking.adapters import (
     MLBackendVideoTrackerAdapter,
     TrackerContext,
+    TrackerSession,
 )
 from app.workers import frame_preannotate
 
@@ -159,6 +160,48 @@ async def test_video_tracker_adapter_forwards_the_exact_authority_factory(
             "dispatch_context_factory": authority_factory,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_video_tracker_adapter_updates_opaque_session_token(monkeypatch) -> None:
+    contexts: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, _backend, **_kwargs) -> None:
+            pass
+
+        async def predict_interactive(self, task_data, context):
+            contexts.append(context)
+            return SimpleNamespace(
+                result=[],
+                meta={"tracker_context": {"mode": "session", "token": "secret"}},
+            )
+
+    monkeypatch.setattr(tracker_impl_module, "MLBackendClient", FakeClient)
+    session = TrackerSession(span_start_frame=0, span_end_frame=9)
+    context = TrackerContext(
+        job_id=uuid.uuid4(),
+        task_id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        dataset_item_id=uuid.uuid4(),
+        annotation_id=uuid.uuid4(),
+        from_frame=0,
+        to_frame=4,
+        direction="forward",
+        prompt={},
+        source_geometry={},
+        task_data={"id": "task"},
+        ml_backend=SimpleNamespace(state="connected"),
+        session=session,
+    )
+
+    assert [
+        item
+        async for item in MLBackendVideoTrackerAdapter("sam2_video").propagate(context)
+    ] == []
+    assert contexts[0]["tracker_context"]["action"] == "start"
+    assert session.action == "continue"
+    assert session.token == "secret"
 
 
 @pytest.mark.asyncio

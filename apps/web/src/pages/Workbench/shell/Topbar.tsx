@@ -7,6 +7,7 @@ import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
 import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import { useTheme } from "@/hooks/useTheme";
 import type { TaskResponse } from "@/types";
+import type { VideoSegment } from "@/api/videoTracker";
 
 interface TopbarProps {
   /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
@@ -59,6 +60,10 @@ interface TopbarProps {
   isRejecting?: boolean;
   /** M2 · review 模式下 Topbar 左侧附加插槽（ReviewerMiniPanel chip） */
   reviewInfoSlot?: React.ReactNode;
+  videoSegments?: VideoSegment[];
+  activeVideoSegmentId?: string | null;
+  onSelectVideoSegment?: (segmentId: string | null) => void;
+  submitLabel?: string;
 }
 
 function cn(...xs: Array<string | false | null | undefined>): string {
@@ -115,6 +120,10 @@ export function Topbar({
   isApproving = false,
   isRejecting = false,
   reviewInfoSlot,
+  videoSegments,
+  activeVideoSegmentId,
+  onSelectVideoSegment,
+  submitLabel = "提交质检",
 }: TopbarProps) {
   const { resolved, setTheme } = useTheme();
   // v0.8.7 F7 · 跳过任务 modal 状态
@@ -221,6 +230,27 @@ export function Topbar({
           {(task?.assignee || task?.reviewer) && <span className="shrink-0 w-px h-4 bg-border" />}
           {task?.assignee && <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />}
           {task?.reviewer && <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />}
+          {videoSegments && onSelectVideoSegment && (
+            <select
+              aria-label="当前视频分段"
+              value={activeVideoSegmentId ?? ""}
+              onChange={(event) => onSelectVideoSegment(event.target.value || null)}
+              className="h-7 min-w-32 rounded border border-border bg-card px-2 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">选择分段</option>
+              {videoSegments.map((segment) => (
+                <option
+                  key={segment.id}
+                  value={segment.id}
+                  disabled={segment.status === "completed"}
+                >
+                  S{segment.segment_index + 1} · {segment.start_frame}-{segment.end_frame} ·{" "}
+                  {segment.status}
+                  {segment.assignee_id ? ` · ${segment.assignee_id.slice(0, 8)}` : " · 未分配"}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <span className="shrink-0 w-px h-4 bg-border" />
         <Button size="sm" onClick={onPrev}>
@@ -284,7 +314,7 @@ export function Topbar({
               data-testid="workbench-submit"
             >
               <Icon name="check" size={13} />
-              提交质检
+              {submitLabel}
             </Button>
             {onSkip && (
               <Button

@@ -88,6 +88,7 @@ export interface TaskListParams {
 }
 
 export interface AnnotationPayload {
+  video_segment_id?: string | null;
   annotation_type?: string;
   /** v0.10.17 · 工具维度绑定; service 层据此校验 class_name 在对应 unit 类别集内. */
   tool_unit_id?: string;
@@ -277,7 +278,10 @@ export const tasksApi = {
       format: params?.format ?? "webp",
     }),
 
-  getAnnotations: (id: string) => apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),
+  getAnnotations: (id: string, videoSegmentId?: string | null) => {
+    const query = videoSegmentId ? `?video_segment_id=${videoSegmentId}` : "";
+    return apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations${query}`);
+  },
 
   createAnnotation: (id: string, payload: AnnotationPayload) =>
     apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),

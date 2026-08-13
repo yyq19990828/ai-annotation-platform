@@ -134,6 +134,12 @@ class UnsupportedExportError(ValueError):
     pass
 
 
+class VideoBoundaryExportError(UnsupportedExportError):
+    def __init__(self, detail: dict):
+        super().__init__(str(detail))
+        self.detail = detail
+
+
 def _assert_image_export_supported(project: Project, export_format: str) -> None:
     # v0.10.28 · 媒体维度判断改用 data_type; video 子类型路由 (video-track vs
     # video-mm) 仍用 type_key.
@@ -327,11 +333,45 @@ class ExportService:
             if ann.class_name not in class_names:
                 continue
             exported = _export_annotation_copy(ann, attribute_keys)
-            if video_scope is not None:
-                exported.geometry = clip_video_geometry(exported.geometry, video_scope)
-                if exported.geometry is None:
-                    continue
             exported_annotations.append(exported)
+
+        if project.data_type == "video":
+            from app.services.video_canonical import (
+                VideoBoundaryUnreconciledError,
+                canonical_task_annotations,
+            )
+
+            by_task: dict[uuid.UUID, list[Annotation]] = {}
+            for annotation in exported_annotations:
+                by_task.setdefault(annotation.task_id, []).append(annotation)
+            projected: list[Annotation] = []
+            try:
+                for task in tasks:
+                    projected.extend(
+                        await canonical_task_annotations(
+                            self.db,
+                            project=project,
+                            task=task,
+                            annotations=by_task.get(task.id, []),
+                            scope=(
+                                video_scope
+                                if video_scope is not None
+                                and video_scope.task_id == task.id
+                                else None
+                            ),
+                        )
+                    )
+            except VideoBoundaryUnreconciledError as exc:
+                raise VideoBoundaryExportError(exc.detail) from exc
+            exported_annotations = projected
+        elif video_scope is not None:
+            scoped_annotations = []
+            for exported in exported_annotations:
+                geometry = clip_video_geometry(exported.geometry, video_scope)
+                if geometry is not None:
+                    exported.geometry = geometry
+                    scoped_annotations.append(exported)
+            exported_annotations = scoped_annotations
 
         return project, tasks, exported_annotations
 
@@ -461,13 +501,41 @@ class ExportService:
                     if ann.class_name not in class_names:
                         continue
                     exported = _export_annotation_copy(ann, attribute_keys)
-                    if video_scope is not None:
-                        exported.geometry = clip_video_geometry(
-                            exported.geometry, video_scope
-                        )
-                        if exported.geometry is None:
-                            continue
                     ann_by_task.setdefault(ann.task_id, []).append(exported)
+
+                if project.data_type == "video":
+                    from app.services.video_canonical import (
+                        VideoBoundaryUnreconciledError,
+                        canonical_task_annotations,
+                    )
+
+                    try:
+                        for task in tasks:
+                            ann_by_task[task.id] = await canonical_task_annotations(
+                                self.db,
+                                project=project,
+                                task=task,
+                                annotations=ann_by_task.get(task.id, []),
+                                scope=(
+                                    video_scope
+                                    if video_scope is not None
+                                    and video_scope.task_id == task.id
+                                    else None
+                                ),
+                            )
+                    except VideoBoundaryUnreconciledError as exc:
+                        raise VideoBoundaryExportError(exc.detail) from exc
+                elif video_scope is not None:
+                    for task_id, rows in list(ann_by_task.items()):
+                        scoped_rows = []
+                        for exported in rows:
+                            geometry = clip_video_geometry(
+                                exported.geometry, video_scope
+                            )
+                            if geometry is not None:
+                                exported.geometry = geometry
+                                scoped_rows.append(exported)
+                        ann_by_task[task_id] = scoped_rows
 
             dataset_items = await self._load_dataset_items(tasks)
             yield tasks, ann_by_task, dataset_items

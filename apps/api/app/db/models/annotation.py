@@ -57,6 +57,16 @@ class Annotation(Base):
             "id",
             postgresql_where=text("is_active = true AND was_cancelled = false"),
         ),
+        Index(
+            "ix_annotations_task_segment_track_active",
+            "task_id",
+            "video_segment_id",
+            "track_id",
+            postgresql_where=text(
+                "is_active = true AND was_cancelled = false "
+                "AND video_segment_id IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -67,6 +77,11 @@ class Annotation(Base):
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id")
+    )
+    video_segment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("video_segments.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")

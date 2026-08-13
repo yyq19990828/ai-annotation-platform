@@ -8,7 +8,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.project import VideoSamplingConfig
+from app.schemas.project import VideoCollaborationConfig, VideoSamplingConfig
+from app.services.video_collaboration import geometry_frame_bounds, segment_work_bounds
 from app.services.video_frame_service import (
     derive_sampled_frames,
     derive_step,
@@ -67,6 +68,75 @@ def test_sampling_config_rejects_non_positive_target_fps():
 def test_sampling_config_rejects_zero_frame_step():
     with pytest.raises(ValidationError):
         VideoSamplingConfig(mode="step", frame_step=0)
+
+
+def test_video_collaboration_requires_overlap_when_enabled():
+    with pytest.raises(ValidationError):
+        VideoCollaborationConfig(enabled=True, overlap_frames=0)
+
+
+def test_video_collaboration_rejects_unknown_fields():
+    with pytest.raises(ValidationError):
+        VideoCollaborationConfig.model_validate(
+            {"enabled": False, "overlap_frames": 0, "future": True}
+        )
+
+
+@pytest.mark.parametrize(
+    ("segment_index", "expected"),
+    [
+        (0, (0, 104)),
+        (1, (95, 204)),
+        (2, (195, 299)),
+    ],
+)
+def test_segment_work_bounds_share_exact_even_overlap(segment_index, expected):
+    assert (
+        segment_work_bounds(
+            start_frame=segment_index * 100,
+            end_frame=segment_index * 100 + 99,
+            segment_index=segment_index,
+            segment_count=3,
+            frame_count=300,
+            overlap_frames=10,
+        )
+        == expected
+    )
+
+
+def test_segment_work_bounds_split_odd_overlap_without_losing_a_frame():
+    left = segment_work_bounds(
+        start_frame=0,
+        end_frame=99,
+        segment_index=0,
+        segment_count=2,
+        frame_count=200,
+        overlap_frames=9,
+    )
+    right = segment_work_bounds(
+        start_frame=100,
+        end_frame=199,
+        segment_index=1,
+        segment_count=2,
+        frame_count=200,
+        overlap_frames=9,
+    )
+    assert left == (0, 104)
+    assert right == (96, 199)
+    assert left[1] - right[0] + 1 == 9
+
+
+def test_geometry_frame_bounds_includes_keyframes_and_outside_ranges():
+    assert geometry_frame_bounds(
+        {
+            "type": "video_track_bbox",
+            "keyframes": [{"frame_index": 10}, {"frame_index": 20}],
+            "outside": [{"from": 5, "to": 25}],
+        }
+    ) == (5, 25)
+    assert geometry_frame_bounds(
+        {"type": "video_keypoint", "frame_index": 7, "x": 0.5, "y": 0.5}
+    ) == (7, 7)
 
 
 # ── derive_step ──────────────────────────────────────────────────────

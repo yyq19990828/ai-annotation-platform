@@ -131,6 +131,15 @@ async def approve_task(
         )
 
     project = await _assert_review_owner(db, task=task, user=current_user)
+    from app.services.video_canonical import (
+        VideoBoundaryUnreconciledError,
+        assert_task_boundaries_reconciled,
+    )
+
+    try:
+        await assert_task_boundaries_reconciled(db, project=project, task=task)
+    except VideoBoundaryUnreconciledError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     from app.services.mask_qc.config import load_mask_qc_config
     from app.services.mask_qc.service import (
         current_completed_task_run,

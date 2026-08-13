@@ -166,6 +166,13 @@ def _normalize_model(model: dict, backend_infra: str) -> dict:
         # 对前端暴露的是平台与 backend 两层限制的交集，与创建作业的
         # fail-closed 校验保持同一个有效窗口。
         "max_window_frames": _effective_max_window_frames(model),
+        "tracker_context_mode": model.get("tracker_context_mode")
+        if model.get("tracker_context_mode") in {"none", "session"}
+        else "none",
+        "max_context_frames": model.get("max_context_frames")
+        if type(model.get("max_context_frames")) is int
+        and model["max_context_frames"] > 0
+        else None,
         "supported_variants": model.get("supported_variants") or [],
         "variant_combinations": list(model.get("variant_combinations") or []),
         "variants_shared_across_tasks": bool(

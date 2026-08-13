@@ -54,6 +54,13 @@ export interface VideoTimelineChapter {
   color?: string | null;
 }
 
+export interface VideoSegmentTimelineRange {
+  coreStartFrame: number;
+  coreEndFrame: number;
+  workStartFrame: number;
+  workEndFrame: number;
+}
+
 /**
  * v0.21.13 · 时间轴区间刷选的用途。决定松手后 {from,to} 交给谁、草稿带用什么样式渲染。
  * - `loop`: 循环播放区间 (原行为, 零回归)。
@@ -109,6 +116,7 @@ interface VideoPlaybackOverlayProps {
   loopRegion?: VideoLoopRegion | null;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮「将影响哪段帧」(受控静态带, 非刷选草稿)。 */
   propagateRange?: VideoLoopRegion | null;
+  segmentRange?: VideoSegmentTimelineRange | null;
   /** v0.21.13 · 时间轴刷选产物的用途 (默认 "loop", 原行为)。非 loop 时松手走 onRangeSelect。 */
   rangeSelectPurpose?: TimelineRangePurpose;
   bookmarks?: VideoBookmark[];
@@ -241,6 +249,7 @@ export function VideoPlaybackOverlay({
   trackColorOverrides,
   loopRegion = null,
   propagateRange = null,
+  segmentRange = null,
   rangeSelectPurpose = "loop",
   bookmarks = [],
   chapters = [],
@@ -711,6 +720,7 @@ export function VideoPlaybackOverlay({
   const hasPredictionDensity = predictionDensity.some((bin) => bin.count > 0);
   const showChapterLane = chapters.length > 0 || rangeDraft?.purpose === "chapter-draft";
   const showPropagationLane = Boolean(propagateRange) || rangeDraft?.purpose === "propagate-range";
+  const showSegmentLane = Boolean(segmentRange);
   const showLoopLane = Boolean(loopRegion) || rangeDraft?.purpose === "loop";
   const toggleTimelineDetails = () => {
     restoreToggleFocusRef.current = true;
@@ -1364,6 +1374,24 @@ export function VideoPlaybackOverlay({
           )}
 
           {/* AI 影响范围 */}
+          {showSegmentLane && segmentRange && (
+            <div data-testid="video-timeline-lane-segment" className={styles.laneRow}>
+              <span className={styles.laneLabel}>协同分段</span>
+              <div className={styles.laneBody}>
+                <TimelineSpan
+                  data-testid="video-segment-work-range"
+                  className={styles.segmentWorkRegion}
+                  vars={rangeStyle(segmentRange.workStartFrame, segmentRange.workEndFrame)}
+                />
+                <TimelineSpan
+                  data-testid="video-segment-core-range"
+                  className={styles.segmentCoreRegion}
+                  vars={rangeStyle(segmentRange.coreStartFrame, segmentRange.coreEndFrame)}
+                />
+              </div>
+            </div>
+          )}
+
           {showPropagationLane && (
             <div data-testid="video-timeline-lane-propagation" className={styles.laneRow}>
               <span className={styles.laneLabel}>AI 影响范围</span>
@@ -1535,6 +1563,20 @@ export function VideoPlaybackOverlay({
               className={styles.propagateRegion}
               vars={rangeStyle(propagateRange.startFrame, propagateRange.endFrame)}
             />
+          )}
+          {segmentRange && (
+            <>
+              <TimelineSpan
+                data-testid="video-segment-work-range"
+                className={styles.segmentWorkRegion}
+                vars={rangeStyle(segmentRange.workStartFrame, segmentRange.workEndFrame)}
+              />
+              <TimelineSpan
+                data-testid="video-segment-core-range"
+                className={styles.segmentCoreRegion}
+                vars={rangeStyle(segmentRange.coreStartFrame, segmentRange.coreEndFrame)}
+              />
+            </>
           )}
           {rangeDraft && (
             <TimelineSpan

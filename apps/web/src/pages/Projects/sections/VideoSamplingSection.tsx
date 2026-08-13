@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import type { ProjectResponse, VideoSamplingConfig } from "@/api/projects";
+import type { VideoCollaborationConfig } from "@/api/generated/types.gen";
 import { LABEL_CLASS } from "./formClasses";
 
 const ROW_CLASS = "flex flex-col gap-1.5 py-2.5";
@@ -70,6 +71,9 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
   const pushToast = useToastStore((s) => s.push);
   const update = useUpdateProject(project.id);
   const [draft, setDraft] = useState<DraftState>(() => initDraft(project.video_sampling));
+  const [collaboration, setCollaboration] = useState<VideoCollaborationConfig>(
+    project.video_collaboration ?? { enabled: false, overlap_frames: 0 },
+  );
 
   const config = buildConfig(draft);
   const valid = config !== null;
@@ -93,6 +97,19 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
     if (mode === "step" && !next.frameStep.trim()) next.frameStep = "1";
     setDraft(next);
     commit(next);
+  };
+
+  const commitCollaboration = (next: VideoCollaborationConfig) => {
+    setCollaboration(next);
+    update.mutate(
+      { video_collaboration: next },
+      {
+        onError: (error) => {
+          setCollaboration(project.video_collaboration ?? { enabled: false, overlap_frames: 0 });
+          pushToast({ msg: "协同配置保存失败", sub: (error as Error).message, kind: "warning" });
+        },
+      },
+    );
   };
 
   return (
@@ -187,6 +204,61 @@ export function VideoSamplingSection({ project }: { project: ProjectResponse }) 
         {!valid && (
           <p className="text-xs text-status-danger">请填写合法的采样参数，填好后自动保存。</p>
         )}
+
+        <div className="mt-4 border-t border-border pt-4">
+          <h4 className="text-sm font-semibold text-foreground">长视频分段协同</h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            开启后，标注员按分段认领并在相邻重叠帧独立标注；已有标注后配置会冻结。
+          </p>
+          <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={collaboration.enabled ?? false}
+              disabled={update.isPending}
+              onChange={(event) =>
+                commitCollaboration({
+                  enabled: event.target.checked,
+                  overlap_frames: event.target.checked
+                    ? Math.max(1, collaboration.overlap_frames ?? 0)
+                    : 0,
+                })
+              }
+            />
+            启用 segment overlap 协同
+          </label>
+          {collaboration.enabled && (
+            <div className={ROW_CLASS}>
+              <label className={LABEL_CLASS} htmlFor="video-overlap-frames">
+                相邻重叠帧数
+              </label>
+              <input
+                id="video-overlap-frames"
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                value={collaboration.overlap_frames ?? 1}
+                disabled={update.isPending}
+                onChange={(event) =>
+                  setCollaboration((current) => ({
+                    ...current,
+                    overlap_frames: Number(event.target.value),
+                  }))
+                }
+                onBlur={() => {
+                  const overlap = collaboration.overlap_frames ?? 0;
+                  if (Number.isInteger(overlap) && overlap > 0) {
+                    commitCollaboration({ enabled: true, overlap_frames: overlap });
+                  }
+                }}
+                className={INPUT_CLASS}
+              />
+              <span className="text-xs text-muted-foreground">
+                重叠区必须包含至少一个当前采样网格帧，且小于服务端 segment 大小。
+              </span>
+            </div>
+          )}
+        </div>
 
         {update.isPending && <div className="mt-3.5 text-xs text-muted-foreground">保存中…</div>}
       </div>

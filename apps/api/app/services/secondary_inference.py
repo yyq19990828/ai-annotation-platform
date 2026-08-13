@@ -69,6 +69,7 @@ async def _create_child_box(
             confidence=confidence,
             parent_annotation_id=parent.id,
             tool_unit_id=parent.tool_unit_id,
+            video_segment_id=parent.video_segment_id,
         )
     except HTTPException as exc:
         # 判据: AnnotationService._assert_class_allowed 的 detail 稳定串「不在工具单位
@@ -89,6 +90,7 @@ async def _create_child_box(
             confidence=confidence,
             parent_annotation_id=parent.id,
             tool_unit_id=parent.tool_unit_id,
+            video_segment_id=parent.video_segment_id,
         )
 
 

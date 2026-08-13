@@ -63,15 +63,69 @@ export interface VideoSegment {
   id: string;
   start_frame: number;
   end_frame: number;
+  work_start_frame: number;
+  work_end_frame: number;
   segment_index: number;
   status: "open" | "assigned" | "locked" | "completed";
+  assignee_id?: string | null;
+  locked_by?: string | null;
+  locked_at?: string | null;
+  lock_expires_at?: string | null;
 }
 
 export interface VideoSegmentsResponse {
   task_id: string | null;
   dataset_item_id: string;
   segment_size_frames: number;
+  collaboration_enabled: boolean;
+  overlap_frames: number;
   segments: VideoSegment[];
+}
+
+export interface VideoTrackQualityIssue {
+  id: string;
+  left_annotation_id: string | null;
+  right_annotation_id: string | null;
+  code: string;
+  frame_start: number;
+  frame_end: number;
+  metric: Record<string, number>;
+}
+
+export interface VideoTrackQualityRun {
+  id: string;
+  task_id: string;
+  left_segment_id: string;
+  right_segment_id: string;
+  async_job_id: string | null;
+  status: string;
+  progress_pct: number;
+  input_digest: string;
+  sampling_digest: string;
+  fragments: Array<{
+    annotation_id: string;
+    segment_id: string;
+    class_name: string;
+    tool_unit_id: string | null;
+    track_id: string | null;
+    geometry_family: string | null;
+  }>;
+  metrics: Record<string, unknown>;
+  pairs: Array<{
+    left_annotation_id: string;
+    right_annotation_id: string;
+    class_name: string;
+    geometry_family: string;
+    matched_frames: number;
+    suggestion: "same_track" | "different_track";
+    decision: "same_track" | "different_track";
+  }>;
+  error_message: string | null;
+  accepted_by_id: string | null;
+  accepted_at: string | null;
+  stale_at: string | null;
+  created_at: string;
+  issues: VideoTrackQualityIssue[];
 }
 
 /** v0.21.19 · text-driven 追踪的视觉示例框 (归一化 xyxy)。复用 sam3 图片侧 Exemplar 形状。 */
@@ -178,6 +232,43 @@ export type VideoTrackerDecisionPayload = VideoTrackerDecisionCommon &
 export const videoTrackerApi = {
   segments: (taskId: string) =>
     apiClient.get<VideoSegmentsResponse>(`/tasks/${taskId}/video/segments`),
+  claimSegment: (taskId: string, segmentId: string) =>
+    apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:claim`, {}),
+  heartbeatSegment: (taskId: string, segmentId: string) =>
+    apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:heartbeat`, {}),
+  releaseSegment: (taskId: string, segmentId: string) =>
+    apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:release`, {}),
+  submitSegment: (taskId: string, segmentId: string) =>
+    apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:submit`, {}),
+  reopenSegment: (taskId: string, segmentId: string) =>
+    apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:reopen`, {}),
+  unassignSegment: (taskId: string, segmentId: string) =>
+    apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:unassign`, {}),
+  trackQuality: (taskId: string) =>
+    apiClient.get<VideoTrackQualityRun[]>(`/tasks/${taskId}/video/track-quality`),
+  trackQualityDetail: (taskId: string, runId: string) =>
+    apiClient.get<VideoTrackQualityRun>(`/tasks/${taskId}/video/track-quality/${runId}`),
+  runTrackQuality: (taskId: string, leftSegmentId: string, rightSegmentId: string) =>
+    apiClient.post<VideoTrackQualityRun>(`/tasks/${taskId}/video/track-quality/run`, {
+      left_segment_id: leftSegmentId,
+      right_segment_id: rightSegmentId,
+    }),
+  acceptTrackQuality: (
+    taskId: string,
+    runId: string,
+    payload: {
+      input_digest: string;
+      pairs: Array<{
+        left_annotation_id: string;
+        right_annotation_id: string;
+        decision: "same_track" | "different_track";
+      }>;
+    },
+  ) =>
+    apiClient.post<VideoTrackQualityRun>(
+      `/tasks/${taskId}/video/track-quality/${runId}:accept`,
+      payload,
+    ),
   saveMaskKeyframe: (
     taskId: string,
     annotationId: string,

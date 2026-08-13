@@ -666,6 +666,46 @@ digest 与精确接受目标；客户端不能自己构造、改成新建目标�
 }
 ```
 
+### 2.2.1 交互式 Tracker Context Session
+
+交互式视频 model 可在 `/setup.models[]` 声明：
+
+```json
+{
+  "supported_trackers": ["sam2_video"],
+  "max_window_frames": 300,
+  "tracker_context_mode": "session",
+  "max_context_frames": 1200
+}
+```
+
+`tracker_context_mode` 只允许 `none` 或 `session`。只有 `max_context_frames` 大于单窗上限、backend 能在
+session 生命周期内保留同一 predictor state 时才声明 `session`；否则声明 `none` 或省略。平台会把长 job 切成
+不超过 context 上限的 span，同一 span 的请求依次携带：
+
+```jsonc
+{
+  "context": {
+    "type": "video_tracker",
+    "tracker_context": {
+      "action": "start", // 后续为 continue，finally 为 close
+      "job_id": "<tracker-job-uuid>",
+      "direction": "forward",
+      "span_start_frame": 0, // 仅 start 必填
+      "span_end_frame": 1199, // 仅 start 必填
+    },
+  },
+}
+```
+
+`start` 不得携带 token；backend 在 `PredictionResult.meta.tracker_context.token` 返回不可解析的不透明 token。
+`continue` 与 `close` 必须原样回传 token，且 token 要绑定 job、方向、模型变体和当前 backend 进程。正常结束、取消、
+失败、空闲 TTL 或进程 shutdown 都必须释放 predictor reservation 与临时帧状态。token 不得写日志或持久化。
+
+token 不存在、绑定不匹配或 state 已释放时返回 `409` 和 `{ "reason": "tracker_context_lost" }`。平台必须使整个
+tracker job 失败并从 job 起点重试，不能在同一个结果中静默回退到逐窗 seed continuation。`none` backend 和 context
+span 边界继续使用上一窗末帧 geometry 续种。
+
 ### 2.3 检测式视频追踪（批量 `/predict`）
 
 **与 §2.2 的 `type=video_tracker` 是两条不同的链**。§2.2 是「人在环、单对象、种子传播」的交互式追踪（SAM2/SAM3，`predict_interactive`，平台分窗续追）；这里的**检测式追踪**（detect-then-track）是「无种子、多对象、全自动、离线批量」：检测器逐帧出框 + 内建关联算法（ByteTrack / BoT-SORT），**时间关联全在 backend 内**，平台只投整段视频、收已聚合的轨迹，自己不做任何时间编排。它走**标准批量 `/predict`**（复数 `tasks` wire），不进交互式那条链。

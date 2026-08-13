@@ -568,6 +568,13 @@
 | POST | `/{task_id}/video/segments/{segment_id}:claim` |
 | POST | `/{task_id}/video/segments/{segment_id}:heartbeat` |
 | POST | `/{task_id}/video/segments/{segment_id}:release` |
+| POST | `/{task_id}/video/segments/{segment_id}:submit` |
+| POST | `/{task_id}/video/segments/{segment_id}:reopen` |
+| POST | `/{task_id}/video/segments/{segment_id}:unassign` |
+| GET | `/{task_id}/video/track-quality` |
+| POST | `/{task_id}/video/track-quality/run` |
+| GET | `/{task_id}/video/track-quality/{run_id}` |
+| POST | `/{task_id}/video/track-quality/{run_id}:accept` |
 | GET | `/{task_id}/video/chunks` |
 | GET | `/{task_id}/video/chunks/{chunk_id}` |
 | GET | `/{task_id}/video/frames/{frame_index}` |
@@ -624,4 +631,4 @@
 
 ---
 
-_共 59 模块 / 347 路由_
+_共 59 模块 / 354 路由_

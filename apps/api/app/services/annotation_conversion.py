@@ -53,7 +53,13 @@ from app.services.raster_mask_storage import (
     store_coco_rle,
 )
 from app.services.scheduler import is_privileged_for_project
-from app.services.task_lock import TaskLockConflictError, TaskLockService
+from app.services.video_collaboration import (
+    assert_task_lock_for_legacy_video,
+    collaboration_config,
+    heartbeat_task_lock_for_legacy_video,
+    segment_work_bounds,
+)
+from app.services.task_lock import TaskLockConflictError
 from app.services.video_tracks import (
     frame_is_outside,
     normalize_outside_ranges,
@@ -846,7 +852,7 @@ class AnnotationConversionService:
         payload: AnnotationConversionDryRunRequest,
     ) -> AnnotationConversionDryRunResponse:
         try:
-            await TaskLockService(self.db).assert_write_allowed(task.id, actor.id)
+            await assert_task_lock_for_legacy_video(self.db, task, actor.id)
         except TaskLockConflictError as exc:
             raise AnnotationConversionError(
                 status_code=409,
@@ -944,11 +950,7 @@ class AnnotationConversionService:
             (
                 await self.db.execute(
                     select(VideoSegment)
-                    .where(
-                        VideoSegment.dataset_item_id == task.dataset_item_id,
-                        VideoSegment.end_frame >= min(frame_indexes),
-                        VideoSegment.start_frame <= max(frame_indexes),
-                    )
+                    .where(VideoSegment.dataset_item_id == task.dataset_item_id)
                     .order_by(VideoSegment.segment_index.asc())
                     .with_for_update()
                 )
@@ -958,11 +960,23 @@ class AnnotationConversionService:
         )
         now = datetime.now(timezone.utc)
         privileged = project is not None and is_privileged_for_project(actor, project)
+        config = collaboration_config(project)
+        frame_count = max((segment.end_frame for segment in segments), default=0) + 1
+
+        def contains_frame(segment: VideoSegment, frame_index: int) -> bool:
+            work_start, work_end = segment_work_bounds(
+                start_frame=segment.start_frame,
+                end_frame=segment.end_frame,
+                segment_index=segment.segment_index,
+                segment_count=max(1, len(segments)),
+                frame_count=frame_count,
+                overlap_frames=config.overlap_frames if config.enabled else 0,
+            )
+            return work_start <= frame_index <= work_end
+
         for frame_index in frame_indexes:
             matching = [
-                segment
-                for segment in segments
-                if segment.start_frame <= frame_index <= segment.end_frame
+                segment for segment in segments if contains_frame(segment, frame_index)
             ]
             if not matching:
                 raise AnnotationConversionError(
@@ -1088,7 +1102,7 @@ class AnnotationConversionService:
                 status=task.status,
             )
         try:
-            await TaskLockService(self.db).assert_write_allowed(task_id, actor.id)
+            await assert_task_lock_for_legacy_video(self.db, task, actor.id)
         except TaskLockConflictError as exc:
             raise AnnotationConversionError(
                 status_code=409,
@@ -1252,6 +1266,7 @@ class AnnotationConversionService:
                     id=uuid.uuid4(),
                     task_id=task.id,
                     project_id=task.project_id,
+                    video_segment_id=source.video_segment_id,
                     user_id=actor.id,
                     source="manual",
                     annotation_type=action["annotation_type"],
@@ -1277,7 +1292,7 @@ class AnnotationConversionService:
 
         await self.db.flush()
         await AnnotationService(self.db)._update_task_stats(task_id)
-        await TaskLockService(self.db).heartbeat(task_id, actor.id)
+        await heartbeat_task_lock_for_legacy_video(self.db, task, actor.id)
 
         operation_id = uuid.uuid4()
         result_versions = {

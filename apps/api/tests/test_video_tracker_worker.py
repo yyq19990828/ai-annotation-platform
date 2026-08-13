@@ -573,6 +573,105 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     ]
 
 
+async def test_tracker_worker_uses_backend_context_session(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    backend, pool = await create_registry_with_pool(
+        db_session,
+        name="SAM2 Session",
+        url="http://sam2-session.test",
+        state="connected",
+        is_interactive=True,
+        enabled_pool=True,
+        extra_params={},
+        health_meta={
+            "capabilities": {
+                "supported_trackers": ["sam2_video"],
+                "models": [
+                    {
+                        "id": "sam2",
+                        "supported_trackers": ["sam2_video"],
+                        "tracker_context_mode": "session",
+                        "max_context_frames": 10,
+                    }
+                ],
+            }
+        },
+    )
+    project.ml_backend_pool_id = pool.id
+    db_session.add(
+        ProjectMLBackendPool(project_id=task.project_id, pool_id=pool.id, enabled=True)
+    )
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+        },
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=4,
+        prompt={"geometry": annotation.geometry},
+        event_channel="video-tracker-job:session",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "video_tracker_window_size_frames", 2)
+    actions: list[str] = []
+
+    async def fake_predict_interactive(self, task_data, context):
+        control = context["tracker_context"]
+        actions.append(control["action"])
+        if control["action"] == "close":
+            return PredictionResult(
+                task_id=task_data["id"],
+                result=[],
+                meta={"tracker_context": {"closed": True}},
+            )
+        return PredictionResult(
+            task_id=task_data["id"],
+            result=[
+                {
+                    "frame_index": frame,
+                    "geometry": {"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1},
+                }
+                for frame in range(context["from_frame"], context["to_frame"] + 1)
+            ],
+            meta={"tracker_context": {"mode": "session", "token": "opaque"}},
+        )
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict_interactive",
+        fake_predict_interactive,
+    )
+    await run_tracker_job(db_session, job.id, publisher=_noop_pub)
+    await db_session.refresh(job)
+    assert job.status == "pending_review"
+    assert actions == ["start", "continue", "continue", "close"]
+    assert "opaque" not in str(job.staged_result)
+
+
 async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     db_session, super_admin, monkeypatch
 ):
@@ -1644,3 +1743,20 @@ async def test_tracker_route_rejection_fails_without_dispatch(
 
 async def _noop_pub(_channel: str, _payload: dict) -> None:
     return None
+
+
+def test_context_spans_group_same_direction_windows() -> None:
+    from app.services.video_tracking.runner import _context_spans
+
+    windows = [
+        (0, 3, "forward", True),
+        (4, 7, "forward", False),
+        (8, 11, "forward", False),
+        (0, 3, "backward", True),
+    ]
+    assert _context_spans(windows, 8) == {
+        0: (0, 7),
+        1: (0, 7),
+        2: (8, 11),
+        3: (0, 3),
+    }

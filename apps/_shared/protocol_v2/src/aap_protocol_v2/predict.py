@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, model_validator
 
 LEGACY_CONTEXT_VARIANT_FIELDS = (
     "variants",
@@ -12,6 +14,28 @@ LEGACY_CONTEXT_VARIANT_FIELDS = (
     "dino_variant",
     "model_variant",
 )
+
+
+class TrackerContextControl(BaseModel):
+    action: Literal["start", "continue", "close"]
+    token: str | None = None
+    job_id: str
+    span_start_frame: int | None = None
+    span_end_frame: int | None = None
+    direction: Literal["forward", "backward"]
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> "TrackerContextControl":
+        if self.action == "start":
+            if self.token is not None:
+                raise ValueError("tracker_context.token is not allowed for start")
+            if self.span_start_frame is None or self.span_end_frame is None:
+                raise ValueError("tracker context start requires span bounds")
+            if self.span_start_frame > self.span_end_frame:
+                raise ValueError("tracker context span is reversed")
+        elif not self.token:
+            raise ValueError(f"tracker context {self.action} requires token")
+        return self
 
 
 def normalize_context_model_variants(

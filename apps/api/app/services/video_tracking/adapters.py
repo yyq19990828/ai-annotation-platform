@@ -32,6 +32,14 @@ class TrackerFrameResult:
     primary: bool = False
 
 
+@dataclass
+class TrackerSession:
+    action: str = "start"
+    token: str | None = None
+    span_start_frame: int | None = None
+    span_end_frame: int | None = None
+
+
 @dataclass(frozen=True)
 class TrackerContext:
     job_id: uuid.UUID
@@ -63,6 +71,7 @@ class TrackerContext:
     # source_geometry 续追。缺省 None → backend 退 source_geometry 单框兜底 (与 sam2_video /
     # 已发 B-pvs 框种子等价, 零回归)。其它 backend 无此键不受影响。
     seeds: list[dict] | None = None
+    session: TrackerSession | None = None
 
 
 class TrackerAdapter(Protocol):
@@ -194,10 +203,32 @@ class MLBackendVideoTrackerAdapter:
         # 优先 seeds[] (含 points) 于 source_geometry 兜底; 其它 backend 无此键不受影响。
         if ctx.seeds:
             context["seeds"] = ctx.seeds
+        if ctx.session is not None:
+            context["tracker_context"] = {
+                "action": ctx.session.action,
+                "job_id": str(ctx.job_id),
+                "direction": ctx.direction,
+            }
+            if ctx.session.token:
+                context["tracker_context"]["token"] = ctx.session.token
+            if ctx.session.action == "start":
+                context["tracker_context"].update(
+                    {
+                        "span_start_frame": ctx.session.span_start_frame,
+                        "span_end_frame": ctx.session.span_end_frame,
+                    }
+                )
         result = await client.predict_interactive(
             task_data=ctx.task_data,
             context=context,
         )
+        if ctx.session is not None:
+            session_meta = (result.meta or {}).get("tracker_context") or {}
+            token = session_meta.get("token")
+            if ctx.session.action != "close" and not isinstance(token, str):
+                raise ValueError("tracker_context_lost")
+            ctx.session.token = token if isinstance(token, str) else None
+            ctx.session.action = "continue"
 
         for item in result.result:
             if isinstance(item, dict):

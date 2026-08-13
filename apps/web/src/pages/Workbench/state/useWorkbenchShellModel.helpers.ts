@@ -32,6 +32,15 @@ export async function commitAfterNavigationGuard(
   return true;
 }
 
+export function videoAnnotationQueriesEnabled(
+  isVideoTask: boolean,
+  segmentsResolved: boolean,
+  collaborationEnabled: boolean,
+  activeSegmentId: string | null,
+): boolean {
+  return (!isVideoTask || segmentsResolved) && (!collaborationEnabled || activeSegmentId !== null);
+}
+
 export function resolveMaskEditorSize(
   isVideoTask: boolean,
   imageSize: { imgW: number; imgH: number },

@@ -85,7 +85,7 @@ async function createMaskImage(
     }
   }
   const rgba = buildTintedMaskRgba(cropped, color);
-  const imageData = new ImageData(rgba, cropWidth, cropHeight);
+  const imageData = new ImageData(new Uint8ClampedArray(rgba), cropWidth, cropHeight);
   if (typeof createImageBitmap === "function") return createImageBitmap(imageData);
   const canvas = document.createElement("canvas");
   canvas.width = cropWidth;

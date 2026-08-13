@@ -261,6 +261,7 @@ interface VideoKonvaStageProps {
   timelineChapterControls?: VideoTimelineChapterControls;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
   propagateRange?: VideoLoopRegion | null;
+  segmentRange?: import("./VideoPlaybackOverlay").VideoSegmentTimelineRange | null;
   /** 采样配置(帧网格步进策略)。 */
   videoSampling?: VideoSamplingConfig | null;
   /** 默认播放速率。 */
@@ -348,6 +349,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       chapters = [],
       timelineChapterControls,
       propagateRange = null,
+      segmentRange = null,
       videoSampling = null,
       defaultPlaybackRate,
       largeFrameStep = 10,
@@ -2425,6 +2427,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           trackColorOverrides={trackColorOverrides}
           loopRegion={loopRegion}
           propagateRange={propagateRange}
+          segmentRange={segmentRange}
           rangeSelectPurpose={timelineChapterControls?.rangeSelectPurpose ?? "loop"}
           bookmarks={bookmarks}
           chapters={chapters}

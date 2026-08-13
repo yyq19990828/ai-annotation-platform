@@ -42,6 +42,7 @@ import type { VideoStageControls } from "../stage/videoStageControls";
 import type {
   VideoTimelineChapter,
   VideoTimelineChapterControls,
+  VideoSegmentTimelineRange,
 } from "../stage/VideoPlaybackOverlay";
 import type { VideoManagedTrackAnnotation, VideoSamPrompt } from "../stage/videoStageTypes";
 import type { VideoMaskCandidate } from "../stage/videoMaskFrames";
@@ -137,6 +138,7 @@ interface WorkbenchStageHostVideoProps {
   videoTimelineChapterControls?: VideoTimelineChapterControls;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
   videoPropagateRange?: { startFrame: number; endFrame: number } | null;
+  videoSegmentRange?: VideoSegmentTimelineRange | null;
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
@@ -391,6 +393,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoChapters,
       videoTimelineChapterControls,
       videoPropagateRange,
+      videoSegmentRange,
       videoSampling,
       videoTool,
       isVideoToolEnabled,
@@ -594,6 +597,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             chapters={videoChapters}
             timelineChapterControls={videoTimelineChapterControls}
             propagateRange={videoPropagateRange}
+            segmentRange={videoSegmentRange}
             videoSampling={videoSampling}
             performanceTier={workbenchCommon.performanceTier}
             onSelect={onSelectBox}

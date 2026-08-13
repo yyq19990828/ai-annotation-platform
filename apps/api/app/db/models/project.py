@@ -123,6 +123,9 @@ class Project(Base):
     video_sampling: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
+    video_collaboration: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     # v0.14.1 · scene 连续标注调度: 打开后 get_next_task 优先返回"用户上一次提交
     # task 的同 scene 下一帧"(默认 OFF, 既有项目零回归); window 为连续 session 估计窗口.
     scene_mode: Mapped[bool] = mapped_column(

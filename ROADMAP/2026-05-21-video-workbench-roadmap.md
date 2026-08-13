@@ -53,9 +53,9 @@
 
 > **gsam2 `sam2_video` 已于 v0.10.35/36 落地**（独立显存池 + `/health.video_pool` 观测 + 模型市场 image/video 模态拆分 + sam_variant 选择）。详见 [CHANGELOG](../CHANGELOG.md)、[v0.10.35 计划](../docs/plans/archive/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md)、[ml-backend-protocol.md](../docs-site/dev/reference/ml-backend-protocol.md) `type=video_tracker`。
 
-**遗留待续**：
-
-- **跨窗有状态续追**：SAM2 / SAM3 当前均用上一窗末帧 geometry 作下一窗 seed 的无状态近似，边界可能轻微漂移；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
+**跨窗有状态续追已落地**：SAM2 与 SAM3 interactive backend 可声明 session capability 和 context 帧上限；
+runner 在同一 context span 内复用不透明 token 与推理 state，并在 span 边界保留末帧 geometry 续种兼容路径。
+session 丢失会使当前 job 明确失败，不会静默混用两种状态语义。
 
 ### 3.2 Tracker 选择 / 展示（原 R23「Tracker Registry UI」）
 
@@ -93,15 +93,18 @@
 
 ## Phase 5 · 长视频协同与 overlap（原 R11 / R21 + C.6 P1 Segment 底座）
 
-- segment 切换 UI、单段单人 lock 只读提示、overlap 区 IAA / IDF1 报告；Presence 可选，**不做 OT / CRDT**。
-- Phase 4.6 提供稳定的 segment / frame range 范围合同；overlap 区间元数据与协同语义在本 Phase 补齐。
+> **已落地**：项目可在空标注、无运行中 tracker job 时启用 overlap 协同。Annotation 按 segment fragment
+> 隔离，工作台提供显式 claim、lease heartbeat、切换释放、work/core 边界带和分段提交；所有标注、Mask、
+> AI accept 与 tracker 写入统一校验 active segment 和有效 lease。任务级长锁在协同模式下不再阻止相邻分段并行。
+> Presence、OT 与 CRDT 不在范围内。
 
 ---
 
 ## Phase 6 · Track 级质量评估（原 R24 + C.6 P2 worker）
 
-- MOTA / IDF1 / HOTA 评估 worker，按 track / segment / chapter 输出错误定位；时间轴错误定位 UI。
-- 与 Phase 5 overlap 和长期规划 L15「标注质量 AI 审计」打通。
+> **已落地**：相邻分段完成后自动运行固定 TrackEval 指标子集，报告 HOTA、IDF1、双向 MOTA、
+> Track / segment / chapter 汇总和连续错误帧范围。审核员可跳帧并排查看两侧 fragment、修改或补充 identity pair、
+> 返工分段并接受对账。未接受或 stale 的边界会阻止跨界审核通过和 canonical 全轨导出。
 
 ---
 
@@ -111,10 +114,10 @@
 | ----- | --------------------- | ------------------------------------------------------- | ------ | ----------------------------------------------------------------------- |
 | 1 ✅  | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1  | v0.10.29 落地；WebCodecs demux 接入延后                                 |
 | 2 ✅  | 轨迹工具对齐 CVAT     | R16 / R9 + 新增 2.1/2.6/2.7/2.8                         | P0/P1  | bbox / polygon / polyline / mask 平行轨迹均已落地；polyline AI 明确不做 |
-| 3 ◑   | 真实 tracker backend  | C.6 P0 / R23 / I20.4                                    | P0     | SAM2 / SAM3 video tracker 与动态能力协商已落地；跨窗仍是无状态续追      |
+| 3 ✅  | 真实 tracker backend  | C.6 P0 / R23 / I20.4                                    | P0     | SAM2 / SAM3 video tracker、动态能力协商与跨窗 session context 已落地    |
 | 4 ✅  | 视频导出（D3）        | R22 / C.6 P2 / §A AAP video_track 导入                  | P1     | AAP 标注 / 预测导入、专业格式与 Segment / Frame Range 聚合均已落地      |
-| 5     | 长视频协同 overlap    | R11 / R21 / C.6 P1 segment                              | P1     | 不做 OT/CRDT                                                            |
-| 6     | Track 质量评估        | R24 / C.6 P2 worker                                     | P2     | 与 L15 打通                                                             |
+| 5 ✅  | 长视频协同 overlap    | R11 / R21 / C.6 P1 segment                              | P1     | segment fragment、overlap work range 与 lease 协同已落地                |
+| 6 ✅  | Track 质量评估        | R24 / C.6 P2 worker                                     | P2     | TrackEval、边界对账、canonical projection 与导出门禁已落地              |
 
 > **不做清单**（与决策底线一致）：物理重采样新视频（D1）、AAP 拆三格式（D3）、predictor 进 apps/api（ADR-0012）、OT/CRDT 协同、ffmpeg.wasm/Broadway.js、Skeleton 无限嵌套、自维护 25 种格式（新格式走 datumaro 中转）。
 
