@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.11.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-08-14
 ---
 
 # 存储连接器（Storage Connections）
@@ -91,7 +91,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 白名单条目支持四种形态：CIDR（`10.0.3.0/24`）、单 IP（`192.168.1.50`）、精确域名（`oss-cn-hangzhou.aliyuncs.com`）、后缀域名（`.aliyuncs.com` 匹配任意子域）。
 
-白名单存储在系统设置 `system_settings.connector_host_allowlist`：部署默认值来自环境变量 `CONNECTOR_HOST_ALLOWLIST`，超管通过 `PUT /storage-connections/allowlist` 写入数据库后覆盖 env。
+白名单存储在系统设置 `system_settings.connector_host_allowlist`：部署默认值来自环境变量 `CONNECTOR_HOST_ALLOWLIST`，超管通过系统设置或 `PUT /storage-connections/allowlist` 写入数据库后覆盖 env，通过 DELETE 删除覆盖并恢复部署默认值。保存时统一规范化 IP、CIDR 和域名；显式空数组是 deny-all 的数据库覆盖。
+
+部署方可通过 `CONNECTOR_DEPLOYMENT_SFTP_HOST` 向超级管理员提供一个非敏感的 SFTP 地址快捷预设。它只复用现有连接器创建流程，不自动探测宿主机、不加入白名单，也不生成凭据。API 与导入 worker 必须能访问同一地址，并共享部署侧维护的只读 `known_hosts`。
 
 ## 导入链路
 

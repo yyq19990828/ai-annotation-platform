@@ -27,6 +27,13 @@
   font-size: 12px;
 }
 
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -221,6 +228,10 @@
   .panelHeader,
   .connectionRow {
     align-items: flex-start;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
   }
 
   .connectionRow {

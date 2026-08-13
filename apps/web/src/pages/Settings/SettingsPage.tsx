@@ -20,6 +20,7 @@ import { notificationsApi, type NotificationPreferenceItem } from "@/api/notific
 import { useWorkbenchConfig } from "@/pages/Workbench/state/useWorkbenchConfig";
 import { SettingsFieldControl } from "@/pages/Workbench/components/SettingsFieldControl";
 import { ApiKeysPanel } from "@/components/users/ApiKeysPanel";
+import { ConnectorAllowlistSettings } from "@/components/connections/ConnectorAllowlistSettings";
 import {
   WORKBENCH_SETTING_CATEGORY_LABELS,
   WORKBENCH_SETTING_FIELDS,
@@ -104,7 +105,12 @@ export function SettingsPage() {
           {section === "apikeys" && <ApiKeysSection />}
           {section === "feedback" && <MyFeedbackSection />}
           {section === "notifications" && <NotificationPreferencesSection />}
-          {section === "system" && isAdmin && <SystemSection />}
+          {section === "system" && isAdmin && (
+            <div className="flex flex-col gap-4">
+              <SystemSection />
+              <ConnectorAllowlistSettings />
+            </div>
+          )}
         </div>
       </div>
     </div>

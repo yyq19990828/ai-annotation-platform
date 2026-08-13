@@ -132,7 +132,7 @@ last_reviewed: 2026-06-10
 }
 ```
 
-`private_key` 把整段 PEM/OpenSSH 私钥文本贴进去（界面是多行文本框）。导入适配器按顺序尝试 **RSA / Ed25519 / ECDSA / DSS** 四种私钥类型解析，任一成功即用。
+`private_key` 把整段 PEM/OpenSSH 私钥文本贴进去（界面是多行文本框）。测试连接与实际导入使用同一解析路径，按顺序尝试 **RSA / Ed25519 / ECDSA** 三种当前支持的私钥类型。
 
 #### SFTP 前置条件（务必先读）
 
@@ -140,7 +140,7 @@ last_reviewed: 2026-06-10
 
 - 平台在 worker / API 进程内调 `load_system_host_keys()` 加载**服务端机器**的系统 known_hosts，并对未知主机一律 `RejectPolicy()`（直接拒绝，**不**自动接受、**不** TOFU）。
 - **因此：目标 SFTP 主机的 host key 必须先出现在平台服务端的 known_hosts 里**，否则连接在握手阶段就被拒（报「Server ... not found in known_hosts」之类）。需要运维在部署平台的机器（API + Celery worker 容器/主机）上预先 `ssh-keyscan <host> >> ~/.ssh/known_hosts`，或挂载已含目标指纹的 known_hosts 文件。
-- **「测试连接」与真正导入用的私钥解析能力不一致**：连通性测试当前只用 `paramiko.RSAKey` 解析私钥，而真正导入支持 RSA / Ed25519 / ECDSA / DSS 四种。所以如果你用的是 **Ed25519 / ECDSA / DSS** 私钥，**测试连接可能失败（或行为不可靠），但导入仍能成功**——反过来「测试通过」也只覆盖了 RSA 路径。**测试通过 ≠ 导入一定成功**，建议建好后直接跑一次小范围导入实测。
+- 连接测试与实际导入共享 RSA / Ed25519 / ECDSA 私钥解析和主机指纹校验。测试成功可确认连接器配置与目录读取能力；正式使用前仍建议跑一次小范围导入，验证文件范围与权限。
 
 ## 测试连通性
 
@@ -151,11 +151,11 @@ last_reviewed: 2026-06-10
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/connector-test-result.png — 连接器列表行测试成功状态；标注红框：绿色「连接成功」提示 + 样本计数 [manual] -->
 
-建议新建后先测试，再用于导入；但对 SFTP 非 RSA 私钥，请结合上面的「测试通过 ≠ 导入成功」一并判断。
+建议新建后先测试，再用于导入。
 
 ## 主机白名单（超级管理员）
 
-出于安全（防 SSRF / 内网越权）考虑，连接器只能访问**白名单内**的主机。白名单存在系统设置里（`connector_host_allowlist`），仅超级管理员可读写（接口 `GET/PUT /storage-connections/allowlist`）。
+出于安全（防 SSRF / 内网越权）考虑，连接器只能访问**白名单内**的主机。超级管理员在 **设置 → 系统设置 → 连接器主机白名单** 中管理条目；来源标记会区分部署默认和数据库覆盖，恢复部署默认只删除数据库覆盖，不修改服务器环境变量。
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/connector-allowlist.png — 超管连接器主机白名单配置面板；标注红框：白名单条目列表 + 添加输入框 [manual] -->
 
@@ -174,6 +174,10 @@ last_reviewed: 2026-06-10
 | 后缀域名（前导点） | `.aliyuncs.com`                | 匹配其所有子域     |
 
 **永久硬拒绝**（即使写进白名单也连不出去）的地址类别共 **5** 类，命中即拒：**loopback（回环，如 127.0.0.1）/ link-local（含云元数据 169.254.169.254）/ multicast（组播）/ unspecified（未指定 0.0.0.0）/ reserved（保留段）**。worker 在容器内，访问宿主机请走 docker 网关 IP，不要也无法靠放行 loopback 绕过。
+
+保存时会规范化并去重条目，URL、带端口地址、路径和 `*` 通配符不能保存。保存空名单前会二次确认，因为它会阻断所有连接器目标。
+
+若运维显式配置了部署主机 SFTP 地址，超级管理员会在数据连接器页看到 **添加部署主机**。点击后只预填 SFTP、host 和端口 22；用户名、私钥或密码、路径仍需手工填写，目标也必须单独加入白名单。应使用只能读取导入 staging 目录的专用账号，不要输入 root 或日常部署账号密码。
 
 ## 从连接器导入数据集
 

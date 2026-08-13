@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -60,7 +60,16 @@ class StorageConnectionTestResult(BaseModel):
 
 class ConnectorAllowlistOut(BaseModel):
     entries: list[str]
+    source: Literal["database", "environment"]
 
 
 class ConnectorAllowlistUpdate(BaseModel):
-    entries: list[str] = Field(default_factory=list)
+    entries: list[Annotated[str, Field(max_length=253)]] = Field(
+        default_factory=list, max_length=256
+    )
+
+
+class ConnectorDeploymentSftpPresetOut(BaseModel):
+    enabled: bool
+    host: str | None = None
+    port: int = 22

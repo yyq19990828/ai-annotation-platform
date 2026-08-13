@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import io
 import uuid
 
 import anyio
@@ -245,16 +244,14 @@ def _test_s3(config: dict, secret: dict) -> int:
 def _test_sftp(config: dict, secret: dict) -> int:
     import paramiko
 
+    from app.services.sources.sftp import load_sftp_private_key
+
     client = paramiko.SSHClient()
     # 不用 AutoAddPolicy（静默接受 = MITM 风险）；首版用 RejectPolicy + 系统 known_hosts。
     # TODO(v0.11.15): 支持超管预置 / TOFU 记录指纹到 system_settings。
     client.load_system_host_keys()
     client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    pkey = None
-    if secret.get("private_key"):
-        pkey = paramiko.RSAKey.from_private_key(
-            io.StringIO(secret["private_key"]), password=secret.get("passphrase")
-        )
+    pkey = load_sftp_private_key(secret)
     try:
         client.connect(
             hostname=config["host"],

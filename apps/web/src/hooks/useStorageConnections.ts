@@ -12,6 +12,41 @@ export function useStorageConnections() {
   });
 }
 
+export function useConnectorAllowlist() {
+  return useQuery({
+    queryKey: ["storage-connections", "allowlist"],
+    queryFn: storageConnectionsApi.getAllowlist,
+  });
+}
+
+export function useUpdateConnectorAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (entries: string[]) => storageConnectionsApi.updateAllowlist(entries),
+    onSuccess: (data) => {
+      qc.setQueryData(["storage-connections", "allowlist"], data);
+    },
+  });
+}
+
+export function useResetConnectorAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: storageConnectionsApi.resetAllowlist,
+    onSuccess: (data) => {
+      qc.setQueryData(["storage-connections", "allowlist"], data);
+    },
+  });
+}
+
+export function useDeploymentSftpPreset(enabled: boolean) {
+  return useQuery({
+    queryKey: ["storage-connections", "deployment-sftp-preset"],
+    queryFn: storageConnectionsApi.getDeploymentSftpPreset,
+    enabled,
+  });
+}
+
 export function useCreateStorageConnection() {
   const qc = useQueryClient();
   return useMutation({

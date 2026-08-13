@@ -14,6 +14,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.crypto import ConnectorCryptoNotConfigured
 from app.db.enums import UserRole
 from app.db.models.user import User
@@ -21,6 +22,7 @@ from app.deps import get_current_user, get_db, require_roles
 from app.schemas.storage_connection import (
     ConnectorAllowlistOut,
     ConnectorAllowlistUpdate,
+    ConnectorDeploymentSftpPresetOut,
     StorageConnectionCreate,
     StorageConnectionOut,
     StorageConnectionTestResult,
@@ -61,7 +63,8 @@ async def get_allowlist(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    return ConnectorAllowlistOut(entries=await connector_guard.get_allowlist(db))
+    entries, source = await connector_guard.get_allowlist_state(db)
+    return ConnectorAllowlistOut(entries=entries, source=source)
 
 
 @router.put("/allowlist", response_model=ConnectorAllowlistOut)
@@ -71,7 +74,10 @@ async def update_allowlist(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    entries = [e.strip() for e in payload.entries if e.strip()]
+    try:
+        entries = connector_guard.normalize_allowlist(payload.entries)
+    except connector_guard.ConnectorAllowlistInvalid as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     await SystemSettingsService.set_many(
         db, {"connector_host_allowlist": entries}, actor.id
     )
@@ -83,10 +89,42 @@ async def update_allowlist(
         target_id="allowlist",
         request=request,
         status_code=200,
-        detail={"count": len(entries)},
+        detail={"mode": "override", "count": len(entries)},
     )
     await db.commit()
-    return ConnectorAllowlistOut(entries=entries)
+    return ConnectorAllowlistOut(entries=entries, source="database")
+
+
+@router.delete("/allowlist", response_model=ConnectorAllowlistOut)
+async def reset_allowlist(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    await SystemSettingsService.reset(db, "connector_host_allowlist")
+    entries = list(settings.connector_host_allowlist)
+    await AuditService.log(
+        db,
+        actor=actor,
+        action=AuditAction.CONNECTOR_ALLOWLIST_UPDATE,
+        target_type="connector",
+        target_id="allowlist",
+        request=request,
+        status_code=200,
+        detail={"mode": "reset", "count": len(entries)},
+    )
+    await db.commit()
+    return ConnectorAllowlistOut(entries=entries, source="environment")
+
+
+@router.get("/deployment-sftp-preset", response_model=ConnectorDeploymentSftpPresetOut)
+async def get_deployment_sftp_preset(
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    host = settings.connector_deployment_sftp_host.strip()
+    return ConnectorDeploymentSftpPresetOut(
+        enabled=bool(host), host=host or None, port=22
+    )
 
 
 # ---- 连接器 CRUD ----

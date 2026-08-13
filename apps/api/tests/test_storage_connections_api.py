@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy import select
 
 from app.config import settings
+from app.db.models.audit_log import AuditLog
 
 
 @pytest.fixture
@@ -53,12 +55,17 @@ async def test_allowlist_super_admin_only(httpx_client, super_admin, project_adm
             json={"entries": ["8.8.8.0/24"]},
         )
     ).status_code == 403
+    assert (
+        await httpx_client.delete(
+            "/api/v1/storage-connections/allowlist", headers=_h(pm_token)
+        )
+    ).status_code == 403
     # 超管可写可读
     await _set_allowlist(httpx_client, super_token, ["8.8.8.0/24"])
     r = await httpx_client.get(
         "/api/v1/storage-connections/allowlist", headers=_h(super_token)
     )
-    assert r.json()["entries"] == ["8.8.8.0/24"]
+    assert r.json() == {"entries": ["8.8.8.0/24"], "source": "database"}
 
 
 async def test_allowlist_uses_env_default_when_db_unset(
@@ -70,7 +77,101 @@ async def test_allowlist_uses_env_default_when_db_unset(
         "/api/v1/storage-connections/allowlist", headers=_h(super_token)
     )
     assert r.status_code == 200
-    assert r.json()["entries"] == ["8.8.8.0/24"]
+    assert r.json() == {"entries": ["8.8.8.0/24"], "source": "environment"}
+
+
+async def test_allowlist_normalizes_rejects_invalid_and_resets_to_env(
+    httpx_client, super_admin, monkeypatch
+):
+    _, super_token = super_admin
+    monkeypatch.setattr(settings, "connector_host_allowlist", ["9.9.9.0/24"])
+
+    updated = await httpx_client.put(
+        "/api/v1/storage-connections/allowlist",
+        headers=_h(super_token),
+        json={
+            "entries": [
+                " 10.0.3.5/24 ",
+                "Example.COM.",
+                ".AliYunCS.com.",
+                "example.com",
+            ]
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json() == {
+        "entries": ["10.0.3.0/24", "example.com", ".aliyuncs.com"],
+        "source": "database",
+    }
+
+    invalid = await httpx_client.put(
+        "/api/v1/storage-connections/allowlist",
+        headers=_h(super_token),
+        json={"entries": ["https://example.com/path"]},
+    )
+    assert invalid.status_code == 422
+
+    current = await httpx_client.get(
+        "/api/v1/storage-connections/allowlist", headers=_h(super_token)
+    )
+    assert current.json()["entries"] == [
+        "10.0.3.0/24",
+        "example.com",
+        ".aliyuncs.com",
+    ]
+
+    reset = await httpx_client.delete(
+        "/api/v1/storage-connections/allowlist", headers=_h(super_token)
+    )
+    assert reset.status_code == 200
+    assert reset.json() == {
+        "entries": ["9.9.9.0/24"],
+        "source": "environment",
+    }
+
+
+async def test_allowlist_update_and_reset_audit_only_mode_and_count(
+    httpx_client, super_admin, db_session
+):
+    _, super_token = super_admin
+    await _set_allowlist(httpx_client, super_token, ["8.8.8.0/24"])
+    reset = await httpx_client.delete(
+        "/api/v1/storage-connections/allowlist", headers=_h(super_token)
+    )
+    assert reset.status_code == 200
+
+    rows = list(
+        (
+            await db_session.scalars(
+                select(AuditLog)
+                .where(AuditLog.action == "connector.allowlist_update")
+                .order_by(AuditLog.id)
+            )
+        ).all()
+    )
+    assert [row.detail_json for row in rows] == [
+        {"mode": "override", "count": 1},
+        {"mode": "reset", "count": len(settings.connector_host_allowlist)},
+    ]
+
+
+async def test_deployment_sftp_preset_is_super_admin_only_and_contains_no_secret(
+    httpx_client, super_admin, project_admin, monkeypatch
+):
+    _, super_token = super_admin
+    _, pm_token = project_admin
+    endpoint = "/api/v1/storage-connections/deployment-sftp-preset"
+
+    assert (await httpx_client.get(endpoint, headers=_h(pm_token))).status_code == 403
+
+    monkeypatch.setattr(settings, "connector_deployment_sftp_host", "")
+    disabled = await httpx_client.get(endpoint, headers=_h(super_token))
+    assert disabled.json() == {"enabled": False, "host": None, "port": 22}
+
+    monkeypatch.setattr(settings, "connector_deployment_sftp_host", "10.0.3.5")
+    enabled = await httpx_client.get(endpoint, headers=_h(super_token))
+    assert enabled.json() == {"enabled": True, "host": "10.0.3.5", "port": 22}
+    assert "password" not in enabled.text and "private_key" not in enabled.text
 
 
 async def test_create_global_connection_redacts_secret(

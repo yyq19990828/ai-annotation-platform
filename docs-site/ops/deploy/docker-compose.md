@@ -3,7 +3,7 @@ audience: [ops]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-14
 ---
 
 # 生产部署（Docker Compose）
@@ -95,6 +95,11 @@ Mask 格式 staged object 使用 import bucket，导出产物使用 export bucke
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 空                | 启用 Turnstile 时配套；secret 绝不暴露给前端。                                                                                                                                                         |
 | `AUDIT_RETENTION_MONTHS`                      | `12`              | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP。                                                                                   |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`                 | `1440`（24h）     | 未列入 `.env.example`；高敏环境调到 `480`（8h）。                                                                                                                                                      |
+| `CONNECTOR_ENCRYPTION_KEY`                    | 空                | 存储连接器凭据的 Fernet key；留空时连接器加解密拒绝。                                                                                                                                                  |
+| `CONNECTOR_HOST_ALLOWLIST`                    | 空                | 连接器主机白名单的部署默认值；数据库覆盖可由超级管理员在系统设置中管理和恢复。                                                                                                                         |
+| `CONNECTOR_DEPLOYMENT_SFTP_HOST`              | 空                | 部署主机 SFTP 快捷项地址；留空时不展示，不包含用户名、凭据、路径或放行规则。                                                                                                                           |
+
+把部署服务器作为连接器目标时，应在 `.env.production` 显式填写 API 与 worker 都可达的 hostname/IP，并将其单独加入白名单。为导入目录创建只读、最好禁用 shell 的专用 SFTP 账号，私钥优先；不要复用 root 或日常部署账号。将目标主机公钥写入 `config/ssh/known_hosts`，生产 Compose 会把该文件只读挂载到 API 与 worker，使测试连接和异步导入使用同一信任源。
 
 ### 2.5 前端
 

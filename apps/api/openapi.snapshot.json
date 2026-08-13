@@ -7397,10 +7397,19 @@
             },
             "title": "Entries",
             "type": "array"
+          },
+          "source": {
+            "enum": [
+              "database",
+              "environment"
+            ],
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
-          "entries"
+          "entries",
+          "source"
         ],
         "title": "ConnectorAllowlistOut",
         "type": "object"
@@ -7409,13 +7418,44 @@
         "properties": {
           "entries": {
             "items": {
+              "maxLength": 253,
               "type": "string"
             },
+            "maxItems": 256,
             "title": "Entries",
             "type": "array"
           }
         },
         "title": "ConnectorAllowlistUpdate",
+        "type": "object"
+      },
+      "ConnectorDeploymentSftpPresetOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "port": {
+            "default": 22,
+            "title": "Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ConnectorDeploymentSftpPresetOut",
         "type": "object"
       },
       "DataManagerAiReviewSummary": {
@@ -31526,7 +31566,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.32"
+    "version": "0.23.33"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -46700,6 +46740,30 @@
       }
     },
     "/api/v1/storage-connections/allowlist": {
+      "delete": {
+        "operationId": "reset_allowlist_api_v1_storage_connections_allowlist_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorAllowlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Allowlist",
+        "tags": [
+          "storage-connections"
+        ]
+      },
       "get": {
         "operationId": "get_allowlist_api_v1_storage_connections_allowlist_get",
         "responses": {
@@ -46764,6 +46828,32 @@
           }
         ],
         "summary": "Update Allowlist",
+        "tags": [
+          "storage-connections"
+        ]
+      }
+    },
+    "/api/v1/storage-connections/deployment-sftp-preset": {
+      "get": {
+        "operationId": "get_deployment_sftp_preset_api_v1_storage_connections_deployment_sftp_preset_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorDeploymentSftpPresetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Deployment Sftp Preset",
         "tags": [
           "storage-connections"
         ]

@@ -63,7 +63,7 @@ def validate_sftp_source_path(config: dict, path: str | None) -> None:
     _join_under_base(str((config or {}).get("base_path") or "."), path)
 
 
-def _load_private_key(secret: dict):
+def load_sftp_private_key(secret: dict):
     private_key = secret.get("private_key")
     if not private_key:
         return None
@@ -75,7 +75,6 @@ def _load_private_key(secret: dict):
         paramiko.RSAKey,
         paramiko.Ed25519Key,
         paramiko.ECDSAKey,
-        paramiko.DSSKey,
     ):
         try:
             return key_cls.from_private_key(io.StringIO(private_key), password=password)
@@ -92,7 +91,7 @@ class SftpSource(SourceAdapter):
         self._client = paramiko.SSHClient()
         self._client.load_system_host_keys()
         self._client.set_missing_host_key_policy(paramiko.RejectPolicy())
-        pkey = _load_private_key(secret)
+        pkey = load_sftp_private_key(secret)
         self._client.connect(
             hostname=str(config["host"]),
             port=int(config.get("port", 22)),

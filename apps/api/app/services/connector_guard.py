@@ -25,16 +25,92 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
+from typing import Literal
 from urllib.parse import urlparse
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.system_setting import SystemSetting
 from app.services.system_settings_service import SystemSettingsService
 
 
 class ConnectorHostDenied(Exception):
     """目标 host 未通过白名单 / SSRF 校验。"""
+
+
+class ConnectorAllowlistInvalid(ValueError):
+    """连接器白名单条目语法无效。"""
+
+
+_DOMAIN_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_MAX_ALLOWLIST_ENTRIES = 256
+_MAX_ALLOWLIST_ENTRY_LENGTH = 253
+
+
+def _normalize_allowlist_entry(entry: str) -> str:
+    value = entry.strip()
+    if not value:
+        return ""
+    if len(value) > _MAX_ALLOWLIST_ENTRY_LENGTH:
+        raise ConnectorAllowlistInvalid(
+            f"白名单条目不能超过 {_MAX_ALLOWLIST_ENTRY_LENGTH} 个字符"
+        )
+    if "://" in value:
+        raise ConnectorAllowlistInvalid("白名单条目不能包含 URL scheme")
+    if "*" in value:
+        raise ConnectorAllowlistInvalid(
+            "白名单条目不支持通配符 *，请使用前导点后缀域名"
+        )
+
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        pass
+
+    if "/" in value:
+        try:
+            return str(ipaddress.ip_network(value, strict=False))
+        except ValueError as exc:
+            raise ConnectorAllowlistInvalid(f"无效 CIDR: {value}") from exc
+
+    if ":" in value:
+        raise ConnectorAllowlistInvalid("域名条目不能包含端口")
+    if "\\" in value:
+        raise ConnectorAllowlistInvalid("域名条目不能包含路径")
+
+    suffix = value.startswith(".")
+    domain = (value[1:] if suffix else value).rstrip(".")
+    if not domain:
+        raise ConnectorAllowlistInvalid("后缀域名不能为空")
+    try:
+        ascii_domain = domain.encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise ConnectorAllowlistInvalid(f"无效域名: {value}") from exc
+    if len(ascii_domain) > _MAX_ALLOWLIST_ENTRY_LENGTH:
+        raise ConnectorAllowlistInvalid(
+            f"域名不能超过 {_MAX_ALLOWLIST_ENTRY_LENGTH} 个字符"
+        )
+    labels = ascii_domain.split(".")
+    if any(not _DOMAIN_LABEL.fullmatch(label) for label in labels):
+        raise ConnectorAllowlistInvalid(f"无效域名: {value}")
+    return f".{ascii_domain}" if suffix else ascii_domain
+
+
+def normalize_allowlist(entries: list[str]) -> list[str]:
+    """校验、规范化并按首次出现顺序去重白名单条目。"""
+    if len(entries) > _MAX_ALLOWLIST_ENTRIES:
+        raise ConnectorAllowlistInvalid(f"白名单最多 {_MAX_ALLOWLIST_ENTRIES} 条")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        value = _normalize_allowlist_entry(entry)
+        if value and value not in seen:
+            seen.add(value)
+            normalized.append(value)
+    return normalized
 
 
 def extract_host(endpoint_or_host: str) -> str:
@@ -150,6 +226,20 @@ async def get_allowlist(db: AsyncSession) -> list[str]:
     if isinstance(raw, list):
         return [str(x) for x in raw]
     return []
+
+
+async def get_allowlist_state(
+    db: AsyncSession,
+) -> tuple[list[str], Literal["database", "environment"]]:
+    """返回当前有效白名单及其来源，显式空数组仍视为 DB override。"""
+    entries = await get_allowlist(db)
+    row = await db.scalar(
+        select(SystemSetting).where(SystemSetting.key == "connector_host_allowlist")
+    )
+    source: Literal["database", "environment"] = (
+        "database" if row is not None and row.value_json is not None else "environment"
+    )
+    return entries, source
 
 
 async def assert_connection_target_allowed(

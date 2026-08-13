@@ -7,6 +7,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import {
   useCreateStorageConnection,
   useDeleteStorageConnection,
+  useDeploymentSftpPreset,
   useStorageConnections,
   useTestStorageConnection,
   useUpdateStorageConnection,
@@ -25,6 +26,13 @@ export interface StorageConnectionFormValues {
   scope: StorageConnectionScope;
   config: Record<string, unknown>;
   secret?: Record<string, unknown>;
+}
+
+interface StorageConnectionFormInitialValues {
+  name: string;
+  kind: StorageConnectionKind;
+  scope: StorageConnectionScope;
+  config: Record<string, unknown>;
 }
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -64,6 +72,7 @@ function roleLabel(scope: StorageConnectionScope) {
 
 export function StorageConnectionForm({
   connection,
+  initialValues,
   isSuper,
   compact = false,
   submitLabel,
@@ -72,6 +81,7 @@ export function StorageConnectionForm({
   onCancel,
 }: {
   connection?: StorageConnection | null;
+  initialValues?: StorageConnectionFormInitialValues | null;
   isSuper: boolean;
   compact?: boolean;
   submitLabel?: string;
@@ -79,16 +89,20 @@ export function StorageConnectionForm({
   onSubmit: (values: StorageConnectionFormValues) => Promise<void> | void;
   onCancel?: () => void;
 }) {
-  const cfg = connection?.config ?? {};
+  const cfg = connection?.config ?? initialValues?.config ?? {};
   const isEditing = !!connection;
-  const [name, setName] = useState(connection?.name ?? "");
-  const [kind, setKind] = useState<StorageConnectionKind>(connection?.kind ?? "s3");
-  const [scope, setScope] = useState<StorageConnectionScope>(connection?.scope ?? "owner");
+  const [name, setName] = useState(connection?.name ?? initialValues?.name ?? "");
+  const [kind, setKind] = useState<StorageConnectionKind>(
+    connection?.kind ?? initialValues?.kind ?? "s3",
+  );
+  const [scope, setScope] = useState<StorageConnectionScope>(
+    connection?.scope ?? initialValues?.scope ?? "owner",
+  );
   const [endpoint, setEndpoint] = useState(asString(cfg.endpoint));
   const [bucket, setBucket] = useState(asString(cfg.bucket));
   const [region, setRegion] = useState(asString(cfg.region));
   const [basePrefix, setBasePrefix] = useState(asString(cfg.base_prefix));
-  const [useSsl, setUseSsl] = useState(Boolean(cfg.use_ssl));
+  const [useSsl, setUseSsl] = useState(isEditing ? Boolean(cfg.use_ssl) : true);
   const [accessKey, setAccessKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [host, setHost] = useState(asString(cfg.host));
@@ -413,6 +427,7 @@ export function StorageConnectionsPanel({
   const canManage = isSuper || role === "project_admin";
   const pushToast = useToastStore((s) => s.push);
   const { data: connections = [], isLoading } = useStorageConnections();
+  const deploymentPreset = useDeploymentSftpPreset(isSuper);
   const createMutation = useCreateStorageConnection();
   const updateMutation = useUpdateStorageConnection();
   const deleteMutation = useDeleteStorageConnection();
@@ -421,32 +436,44 @@ export function StorageConnectionsPanel({
   const showForm = showFormProp ?? showFormLocal;
   const setShowForm = onShowFormChange ?? setShowFormLocal;
   const [editing, setEditing] = useState<StorageConnection | null>(null);
+  const [initialValues, setInitialValues] = useState<StorageConnectionFormInitialValues | null>(
+    null,
+  );
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, StorageConnectionTestResult>>({});
 
   const submitConnection = async (values: StorageConnectionFormValues) => {
-    if (editing) {
-      await updateMutation.mutateAsync({
-        id: editing.id,
-        payload: {
+    try {
+      if (editing) {
+        await updateMutation.mutateAsync({
+          id: editing.id,
+          payload: {
+            name: values.name,
+            config: values.config,
+            ...(values.secret ? { secret: values.secret } : {}),
+          },
+        });
+        pushToast({ msg: "连接器已更新", kind: "success" });
+      } else {
+        await createMutation.mutateAsync({
           name: values.name,
+          kind: values.kind,
+          scope: values.scope,
           config: values.config,
-          ...(values.secret ? { secret: values.secret } : {}),
-        },
+          secret: values.secret ?? {},
+        });
+        pushToast({ msg: "连接器已创建", kind: "success" });
+      }
+      setEditing(null);
+      setInitialValues(null);
+      setShowForm(false);
+    } catch (error) {
+      pushToast({
+        msg: editing ? "连接器更新失败" : "连接器创建失败",
+        sub: (error as Error).message,
+        kind: "warning",
       });
-      pushToast({ msg: "连接器已更新" });
-    } else {
-      await createMutation.mutateAsync({
-        name: values.name,
-        kind: values.kind,
-        scope: values.scope,
-        config: values.config,
-        secret: values.secret ?? {},
-      });
-      pushToast({ msg: "连接器已创建" });
     }
-    setEditing(null);
-    setShowForm(false);
   };
 
   const runTest = (id: string) => {
@@ -460,6 +487,9 @@ export function StorageConnectionsPanel({
           kind: result.ok ? "success" : "warning",
         });
       },
+      onError: (error) => {
+        pushToast({ msg: "连接测试失败", sub: (error as Error).message, kind: "warning" });
+      },
       onSettled: () => setTestingId(null),
     });
   };
@@ -467,8 +497,27 @@ export function StorageConnectionsPanel({
   const removeConnection = (conn: StorageConnection) => {
     if (!window.confirm(`删除连接器 "${conn.name}"？`)) return;
     deleteMutation.mutate(conn.id, {
-      onSuccess: () => pushToast({ msg: "连接器已删除" }),
+      onSuccess: () => pushToast({ msg: "连接器已删除", kind: "success" }),
+      onError: (error) =>
+        pushToast({ msg: "连接器删除失败", sub: (error as Error).message, kind: "warning" }),
     });
+  };
+
+  const openDeploymentPreset = () => {
+    const preset = deploymentPreset.data;
+    if (!preset?.enabled || !preset.host) return;
+    setEditing(null);
+    setInitialValues({
+      name: "部署主机",
+      kind: "sftp",
+      scope: "owner",
+      config: {
+        host: preset.host,
+        port: preset.port,
+        auth_type: "key",
+      },
+    });
+    setShowForm(true);
   };
 
   return (
@@ -478,19 +527,28 @@ export function StorageConnectionsPanel({
           <h3 className={styles.title}>数据源连接器</h3>
           <div className={styles.subtitle}>S3 / OSS / SFTP</div>
         </div>
-        {canManage && !hideHeaderAction && (
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => {
-              setEditing(null);
-              setShowForm(true);
-            }}
-          >
-            <Icon name="plus" size={12} />
-            新建数据源
-          </Button>
-        )}
+        <div className={styles.headerActions}>
+          {isSuper && deploymentPreset.data?.enabled && deploymentPreset.data.host && (
+            <Button size="sm" onClick={openDeploymentPreset}>
+              <Icon name="folderOpen" size={12} />
+              添加部署主机
+            </Button>
+          )}
+          {canManage && !hideHeaderAction && (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                setEditing(null);
+                setInitialValues(null);
+                setShowForm(true);
+              }}
+            >
+              <Icon name="plus" size={12} />
+              新建数据源
+            </Button>
+          )}
+        </div>
       </div>
 
       {canManage && (
@@ -498,20 +556,23 @@ export function StorageConnectionsPanel({
           open={showForm}
           onClose={() => {
             setEditing(null);
+            setInitialValues(null);
             setShowForm(false);
           }}
-          title={editing ? "编辑数据源" : "新建数据源"}
+          title={editing ? "编辑数据源" : initialValues ? "添加部署主机" : "新建数据源"}
           width={640}
         >
           <StorageConnectionForm
-            key={editing?.id ?? "new"}
+            key={editing?.id ?? (initialValues ? "deployment-preset" : "new")}
             connection={editing}
+            initialValues={initialValues}
             isSuper={isSuper}
             submitLabel={editing ? "保存" : "新建数据源"}
             submitting={createMutation.isPending || updateMutation.isPending}
             onSubmit={submitConnection}
             onCancel={() => {
               setEditing(null);
+              setInitialValues(null);
               setShowForm(false);
             }}
           />
@@ -565,6 +626,7 @@ export function StorageConnectionsPanel({
                       size="sm"
                       onClick={() => {
                         setEditing(conn);
+                        setInitialValues(null);
                         setShowForm(true);
                       }}
                     >

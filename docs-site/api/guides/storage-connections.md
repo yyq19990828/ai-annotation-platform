@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.11.14
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-08-14
 ---
 
 # 存储连接器 API
@@ -16,16 +16,18 @@ last_reviewed: 2026-05-27
 
 ## 端点一览
 
-| 方法   | 路径                             | 权限              | 说明                                         |
-| ------ | -------------------------------- | ----------------- | -------------------------------------------- |
-| GET    | `/storage-connections`           | 登录用户          | 列表（超管看全部，普通用户看 global + 自建） |
-| POST   | `/storage-connections`           | 项目管理员 / 超管 | 新建连接器                                   |
-| GET    | `/storage-connections/{id}`      | 可见该连接器者    | 获取单个                                     |
-| PATCH  | `/storage-connections/{id}`      | 创建者 / 超管     | 更新名称 / 配置 / 密钥                       |
-| DELETE | `/storage-connections/{id}`      | 创建者 / 超管     | 删除（`204`）                                |
-| POST   | `/storage-connections/{id}/test` | 可见该连接器者    | 测试连通性                                   |
-| GET    | `/storage-connections/allowlist` | 仅超管            | 读主机白名单                                 |
-| PUT    | `/storage-connections/allowlist` | 仅超管            | 更新主机白名单                               |
+| 方法   | 路径                                          | 权限              | 说明                                         |
+| ------ | --------------------------------------------- | ----------------- | -------------------------------------------- |
+| GET    | `/storage-connections`                        | 登录用户          | 列表（超管看全部，普通用户看 global + 自建） |
+| POST   | `/storage-connections`                        | 项目管理员 / 超管 | 新建连接器                                   |
+| GET    | `/storage-connections/{id}`                   | 可见该连接器者    | 获取单个                                     |
+| PATCH  | `/storage-connections/{id}`                   | 创建者 / 超管     | 更新名称 / 配置 / 密钥                       |
+| DELETE | `/storage-connections/{id}`                   | 创建者 / 超管     | 删除（`204`）                                |
+| POST   | `/storage-connections/{id}/test`              | 可见该连接器者    | 测试连通性                                   |
+| GET    | `/storage-connections/allowlist`              | 仅超管            | 读主机白名单及来源                           |
+| PUT    | `/storage-connections/allowlist`              | 仅超管            | 保存数据库覆盖                               |
+| DELETE | `/storage-connections/allowlist`              | 仅超管            | 删除覆盖并恢复部署默认                       |
+| GET    | `/storage-connections/deployment-sftp-preset` | 仅超管            | 读取部署主机 SFTP 快捷预设                   |
 
 `global` 作用域的连接器仅超管可创建。
 
@@ -100,17 +102,29 @@ SSRF 防护的主机白名单，所有连接器目标必须命中白名单才放
 ```http
 GET /api/v1/storage-connections/allowlist
 PUT /api/v1/storage-connections/allowlist
+DELETE /api/v1/storage-connections/allowlist
 ```
 
 ```jsonc
 // PUT 请求体
 { "entries": ["10.0.3.0/24", "192.168.1.50", ".aliyuncs.com"] }
 
-// 响应
-{ "entries": ["10.0.3.0/24", "192.168.1.50", ".aliyuncs.com"] }
+// 响应；source 为 "database" 或 "environment"
+{
+  "entries": ["10.0.3.0/24", "192.168.1.50", ".aliyuncs.com"],
+  "source": "database",
+}
 ```
 
-条目形态：CIDR、单 IP、精确域名、前导点后缀域名（匹配任意子域）。白名单存入系统设置，覆盖部署 env `CONNECTOR_HOST_ALLOWLIST`。loopback / link-local / 保留地址等**无条件拒绝**，白名单也无法放行。
+条目形态：CIDR、单 IP、精确域名、前导点后缀域名（匹配任意子域）。PUT 会规范化并去重后写入系统设置，覆盖部署 env `CONNECTOR_HOST_ALLOWLIST`；DELETE 删除数据库覆盖。loopback / link-local / 保留地址等**无条件拒绝**，白名单也无法放行。
+
+## 部署主机 SFTP 预设（仅超管）
+
+```http
+GET /api/v1/storage-connections/deployment-sftp-preset
+```
+
+返回 `{ "enabled": true, "host": "deploy-sftp.internal", "port": 22 }`；未配置时 `enabled=false` 且 `host=null`。响应不包含用户名、凭据、路径或白名单规则，且不会绕过普通 SFTP 连接器的创建校验。
 
 ## 从连接器导入数据集
 

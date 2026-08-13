@@ -36,6 +36,17 @@ export interface StorageConnectionTestResult {
   sample_count: number | null;
 }
 
+export interface ConnectorAllowlist {
+  entries: string[];
+  source: "database" | "environment";
+}
+
+export interface DeploymentSftpPreset {
+  enabled: boolean;
+  host: string | null;
+  port: number;
+}
+
 export interface DatasetImportFromConnectionPayload {
   connection_id: string;
   source_path?: string;
@@ -48,6 +59,16 @@ export interface DatasetImportFromConnectionResponse {
 }
 
 export const storageConnectionsApi = {
+  getAllowlist: () => apiClient.get<ConnectorAllowlist>("/storage-connections/allowlist"),
+
+  updateAllowlist: (entries: string[]) =>
+    apiClient.put<ConnectorAllowlist>("/storage-connections/allowlist", { entries }),
+
+  resetAllowlist: () => apiClient.delete<ConnectorAllowlist>("/storage-connections/allowlist"),
+
+  getDeploymentSftpPreset: () =>
+    apiClient.get<DeploymentSftpPreset>("/storage-connections/deployment-sftp-preset"),
+
   list: () => apiClient.get<StorageConnection[]>("/storage-connections"),
 
   create: (payload: StorageConnectionCreatePayload) =>

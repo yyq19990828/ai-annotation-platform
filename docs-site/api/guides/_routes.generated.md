@@ -432,6 +432,8 @@
 |---|---|
 | GET | `/allowlist` |
 | PUT | `/allowlist` |
+| DELETE | `/allowlist` |
+| GET | `/deployment-sftp-preset` |
 | GET | `/{conn_id}` |
 | PATCH | `/{conn_id}` |
 | DELETE | `/{conn_id}` |
@@ -632,4 +634,4 @@
 
 ---
 
-_共 59 模块 / 355 路由_
+_共 59 模块 / 357 路由_

@@ -93,7 +93,6 @@
 - Webhook 订阅、outbox、重试投递和签名校验；复用现有事件信封 schema。
 - Bug Report 的 LLM 聚类、邮件摘要投递和用户邮件通知偏好。
 - AnnotationFeedback 旧表退役并切为单一写入源；视频 Issue 创建时写入当前帧锚点。
-- 连接器主机白名单的超级管理员 UI。
 - 首次进入标注工作台的一次性 onboarding。
 
 ### 标注体验

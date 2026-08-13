@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.23.32"
+    app_version: str = "0.23.33"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
     e2e_seed_enabled: bool = False
@@ -136,6 +136,8 @@ class Settings(BaseSettings):
     # v0.11.16 · 存储连接器主机白名单部署默认值（CSV / JSON list）。
     # system_settings.connector_host_allowlist 若存在则覆盖该 env 默认值。
     connector_host_allowlist: Annotated[list[str], NoDecode] = []
+    # 部署主机 SFTP 快捷项。只存 API 与 worker 共同可达的非敏感 hostname/IP；空值关闭。
+    connector_deployment_sftp_host: str = ""
 
     @field_validator("connector_host_allowlist", mode="before")
     @classmethod

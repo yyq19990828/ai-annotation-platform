@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from app.config import Settings, settings
 from app.core import crypto
 from app.services import connector_guard as cg
+from app.services.sources.sftp import load_sftp_private_key
 
 
 # ── Fernet 加解密 ─────────────────────────────────────────────────────
@@ -62,6 +63,62 @@ def test_connector_host_allowlist_settings_accepts_csv():
 def test_connector_host_allowlist_settings_accepts_json_list():
     cfg = Settings(connector_host_allowlist='["172.17.0.1/32", ".example.com"]')
     assert cfg.connector_host_allowlist == ["172.17.0.1/32", ".example.com"]
+
+
+def test_normalize_allowlist_canonicalizes_and_deduplicates():
+    assert cg.normalize_allowlist(
+        [
+            " 10.0.3.5/24 ",
+            "2001:0db8::1",
+            "Example.COM.",
+            ".AliYunCS.com.",
+            "example.com",
+            "",
+        ]
+    ) == ["10.0.3.0/24", "2001:db8::1", "example.com", ".aliyuncs.com"]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "https://example.com",
+        "example.com:443",
+        "*.example.com",
+        "example.com/path",
+        ".",
+        "bad_label.example.com",
+        "10.0.0.1/999",
+    ],
+)
+def test_normalize_allowlist_rejects_invalid_entries(entry):
+    with pytest.raises(cg.ConnectorAllowlistInvalid):
+        cg.normalize_allowlist([entry])
+
+
+def test_normalize_allowlist_rejects_more_than_256_entries():
+    with pytest.raises(cg.ConnectorAllowlistInvalid, match="最多 256 条"):
+        cg.normalize_allowlist([f"host-{index}.example.com" for index in range(257)])
+
+
+@pytest.mark.parametrize("accepted_name", ["RSAKey", "Ed25519Key", "ECDSAKey"])
+def test_sftp_private_key_parser_supports_all_declared_types(
+    monkeypatch, accepted_name
+):
+    import paramiko
+
+    for name in ("RSAKey", "Ed25519Key", "ECDSAKey"):
+        key_cls = getattr(paramiko, name)
+
+        def loader(_stream, password=None, *, current=name):
+            if current == accepted_name:
+                return (current, password)
+            raise ValueError("not this key type")
+
+        monkeypatch.setattr(key_cls, "from_private_key", staticmethod(loader))
+
+    assert load_sftp_private_key(
+        {"private_key": "key-data", "passphrase": "secret-passphrase"}
+    ) == (accepted_name, "secret-passphrase")
 
 
 # ── host 提取 ─────────────────────────────────────────────────────────

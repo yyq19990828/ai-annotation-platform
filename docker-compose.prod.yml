@@ -54,6 +54,7 @@ services:
       GPU_LIFECYCLE_SIGNING_KEYS_FILE: /run/secrets/gpu_lifecycle_signing_keys
       GPU_LIFECYCLE_ACTIVE_SIGNING_KID: ${GPU_LIFECYCLE_ACTIVE_SIGNING_KID:-}
     volumes:
+      - ./config/ssh/known_hosts:/root/.ssh/known_hosts:ro
       - type: bind
         source: ${GPU_LIFECYCLE_SIGNING_KEYS_FILE:-/dev/null}
         target: /run/secrets/gpu_lifecycle_signing_keys
