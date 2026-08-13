@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-08-13
 ---
 
 # 导出
@@ -16,6 +16,20 @@ last_reviewed: 2026-07-13
 POST /api/v1/projects/{project_id}/export?targets=coco&targets=yolo-det&include_attributes=true
 POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&include_attributes=true
 ```
+
+视频项目可在可选 JSON 请求体中限定单个 task 的连续范围。帧号与 segment 两端都包含：
+
+```json
+{
+  "scope": {
+    "task_id": "...",
+    "selection": { "kind": "frames", "from_frame": 120, "to_frame": 359 }
+  }
+}
+```
+
+Segment 模式把 `selection` 改为
+`{"kind":"segments","start_segment_id":"...","end_segment_id":"..."}`，并自动包含两端之间按索引连续的全部 segment。task 必须属于当前项目；批次导出时还必须属于当前批次。图片或点云项目传 `scope`、范围越界或 segment 不连续均返回 422。省略请求体时保持完整项目 / 批次导出。
 
 参数：
 
@@ -93,6 +107,10 @@ COCO / YOLO 会按各自能消费的几何映射。COCO 对图片 `raster_mask` 
 - `all_frames`：在每条 track 的 `frames[]` 中展开逐帧 bbox。后端按相邻有效关键帧线性插值，`outside` 段阻断跨段插值、不输出 bbox。缺少 `frame_count` 时用最大已标注帧兜底。
 
 `include_attributes=false` 时，视频 JSON 不输出 `project.attribute_schema`，也不输出 track / legacy `video_bbox` 的 `attributes`。
+
+部分导出只读取一个 task：单帧 geometry 按闭区间过滤，track 保留范围内原始关键帧与 outside，并在可见区间边界补齐可解析状态。Video JSON 顶层、AAP task 的 `video` 字段和 ZIP `manifest.json` 都写入规范化后的 `export_scope`。逐帧格式保持项目的全局采样相位，再把选中帧密集编号；`grid_source_frames` 保存输出帧到源帧的映射。
+
+单帧 OBB 与关键点同样写入兼容字段 `video_bbox`：OBB 行保留 `type/frame_index/cx/cy/w/h/angle`，关键点行保留 `type/frame_index/points[{x,y,v}]`。AAP JSON 使用原始 geometry。专业视频目标没有这两种单帧几何的表示时，预检返回 `unsupported_geometry`，不会把 OBB 退化成外接框或丢弃关键点。
 
 `targets=yolo-frames-det` 会生成逐帧 YOLO 检测集：
 

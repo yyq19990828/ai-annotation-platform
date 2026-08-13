@@ -40,14 +40,19 @@ from app.schemas.aap_json import (
     AAPTaskMatch,
 )
 from app.services.exporting.video import (
-    VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
+)
+from app.services.exporting.video_scope import (
+    VideoExportScope,
+    clip_video_geometry,
 )
 from app.services.mask_formats.image_codecs import compress_coco_rle
 from app.services.video_tracks import (
     VIDEO_FRAME_MODES,
     clean_keyframe,
     normalize_outside_ranges,
+    resolve_track_at_frame,
     resolved_track_frames,
     sorted_keyframes,
 )
@@ -170,7 +175,13 @@ def _clean_video_single_frame_geometry(geometry: dict) -> dict:
         "type": geometry.get("type"),
         "frame_index": int(geometry.get("frame_index", 0)),
     }
-    if geometry.get("points") is not None:
+    if geometry.get("type") == "video_keypoint":
+        row["points"] = [dict(point) for point in (geometry.get("points") or [])]
+    elif geometry.get("type") == "video_rotated_bbox":
+        row.update(
+            {key: geometry.get(key, 0) for key in ("cx", "cy", "w", "h", "angle")}
+        )
+    elif geometry.get("points") is not None:
         row["points"] = [list(pt) for pt in (geometry.get("points") or [])]
     else:
         row["bbox"] = {
@@ -277,7 +288,11 @@ class ExportService:
         self.db = db
 
     async def _load_data(
-        self, project_id: uuid.UUID, batch_id: uuid.UUID | None = None
+        self,
+        project_id: uuid.UUID,
+        batch_id: uuid.UUID | None = None,
+        *,
+        video_scope: VideoExportScope | None = None,
     ):
         project = await self.db.get(Project, project_id)
         if not project:
@@ -286,6 +301,8 @@ class ExportService:
         task_q = select(Task).where(Task.project_id == project_id)
         if batch_id:
             task_q = task_q.where(Task.batch_id == batch_id)
+        if video_scope is not None:
+            task_q = task_q.where(Task.id == video_scope.task_id)
         task_q = task_q.order_by(Task.sequence_order, Task.created_at)
         tasks_result = await self.db.execute(task_q)
         tasks = list(tasks_result.scalars().all())
@@ -299,20 +316,24 @@ class ExportService:
             Annotation.is_active.is_(True),
             Annotation.was_cancelled.is_(False),
         )
-        if batch_id:
-            ann_q = ann_q.where(Annotation.task_id.in_(task_ids))
+        ann_q = ann_q.where(Annotation.task_id.in_(task_ids))
         ann_q = ann_q.order_by(Annotation.created_at)
         annotations_result = await self.db.execute(ann_q)
         annotations = list(annotations_result.scalars().all())
         class_names = set(derive_classes_list(project.tool_bindings))
         attribute_keys = derive_attribute_keys(project.tool_bindings)
-        annotations = [
-            _export_annotation_copy(ann, attribute_keys)
-            for ann in annotations
-            if ann.class_name in class_names
-        ]
+        exported_annotations = []
+        for ann in annotations:
+            if ann.class_name not in class_names:
+                continue
+            exported = _export_annotation_copy(ann, attribute_keys)
+            if video_scope is not None:
+                exported.geometry = clip_video_geometry(exported.geometry, video_scope)
+                if exported.geometry is None:
+                    continue
+            exported_annotations.append(exported)
 
-        return project, tasks, annotations
+        return project, tasks, exported_annotations
 
     async def _load_predictions(
         self, project_id: uuid.UUID, task_ids: list[uuid.UUID]
@@ -376,6 +397,7 @@ class ExportService:
         *,
         chunk_size: int = 1000,
         with_annotations: bool = True,
+        video_scope: VideoExportScope | None = None,
     ) -> AsyncIterator[
         tuple[
             list[Task], dict[uuid.UUID, list[Annotation]], dict[uuid.UUID, DatasetItem]
@@ -403,6 +425,8 @@ class ExportService:
         id_q = select(Task.id).where(Task.project_id == project_id)
         if batch_id:
             id_q = id_q.where(Task.batch_id == batch_id)
+        if video_scope is not None:
+            id_q = id_q.where(Task.id == video_scope.task_id)
         id_q = id_q.order_by(Task.sequence_order, Task.created_at)
         all_ids = [row[0] for row in (await self.db.execute(id_q)).all()]
 
@@ -436,9 +460,14 @@ class ExportService:
                 for ann in (await self.db.execute(ann_q)).scalars().all():
                     if ann.class_name not in class_names:
                         continue
-                    ann_by_task.setdefault(ann.task_id, []).append(
-                        _export_annotation_copy(ann, attribute_keys)
-                    )
+                    exported = _export_annotation_copy(ann, attribute_keys)
+                    if video_scope is not None:
+                        exported.geometry = clip_video_geometry(
+                            exported.geometry, video_scope
+                        )
+                        if exported.geometry is None:
+                            continue
+                    ann_by_task.setdefault(ann.task_id, []).append(exported)
 
             dataset_items = await self._load_dataset_items(tasks)
             yield tasks, ann_by_task, dataset_items
@@ -455,13 +484,16 @@ class ExportService:
         batch_id: uuid.UUID | None = None,
         include_attributes: bool = True,
         video_frame_mode: str = "keyframes",
+        video_scope: VideoExportScope | None = None,
     ) -> str:
         if video_frame_mode not in VIDEO_FRAME_MODES:
             raise UnsupportedExportError(
                 "video_frame_mode must be one of: keyframes, all_frames"
             )
 
-        project, tasks, annotations = await self._load_data(project_id, batch_id)
+        project, tasks, annotations = await self._load_data(
+            project_id, batch_id, video_scope=video_scope
+        )
         if not project:
             return json.dumps({})
         if project.type_key != "video-track":
@@ -539,11 +571,24 @@ class ExportService:
                         or max_keyframe + 1
                     )
                     frame_count = max(frame_count, max_keyframe + 1)
-                    track["frames"] = resolved_track_frames(
-                        geometry,
-                        frame_mode="all_frames",
-                        frame_count=frame_count,
-                    )
+                    if video_scope is None:
+                        track["frames"] = resolved_track_frames(
+                            geometry,
+                            frame_mode="all_frames",
+                            frame_count=frame_count,
+                        )
+                    else:
+                        track["frames"] = [
+                            resolved
+                            for frame_index in range(
+                                video_scope.from_frame, video_scope.to_frame + 1
+                            )
+                            if (
+                                resolved := resolve_track_at_frame(
+                                    geometry, frame_index
+                                )
+                            )
+                        ]
                 tracks.append(track)
                 for kf in keyframes:
                     flattened_keyframes.append(
@@ -555,7 +600,7 @@ class ExportService:
                             **kf,
                         }
                     )
-            elif geometry.get("type") in VIDEO_SINGLE_FRAME_GEOMETRY_TYPES:
+            elif geometry.get("type") in VIDEO_LOSSLESS_SINGLE_FRAME_GEOMETRY_TYPES:
                 row: dict = {
                     "annotation_id": str(ann.id),
                     "task_id": str(ann.task_id),
@@ -594,6 +639,8 @@ class ExportService:
                 for task_id, metadata in video_metadata_by_task.items()
             },
         }
+        if video_scope is not None:
+            payload["export_scope"] = video_scope.as_dict()
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
     async def export_coco(
@@ -605,8 +652,11 @@ class ExportService:
         video_frame_mode: str = "keyframes",
         dataset_items: dict[uuid.UUID, DatasetItem] | None = None,
         axis_frame: AxisFrame = "iso",
+        video_scope: VideoExportScope | None = None,
     ) -> str:
-        project, tasks, annotations = await self._load_data(project_id, batch_id)
+        project, tasks, annotations = await self._load_data(
+            project_id, batch_id, video_scope=video_scope
+        )
         if not project:
             return json.dumps({})
         if project.type_key == "video-track":
@@ -615,6 +665,7 @@ class ExportService:
                 batch_id=batch_id,
                 include_attributes=include_attributes,
                 video_frame_mode=video_frame_mode,
+                video_scope=video_scope,
             )
         _assert_image_export_supported(project, "coco")
 
@@ -921,6 +972,7 @@ class ExportService:
         *,
         batch_id: uuid.UUID | None = None,
         axis_frame: AxisFrame = "iso",
+        video_scope: VideoExportScope | None = None,
     ) -> str:
         """v0.10.15 · AAP JSON v1.0 无损中间格式.
 
@@ -928,7 +980,9 @@ class ExportService:
         prediction.confidence、annotation.source、annotation_guide、classes_config.
         双数组 annotations[] / predictions[] 分开 (不混 type 字段).
         """
-        project, tasks, annotations = await self._load_data(project_id, batch_id)
+        project, tasks, annotations = await self._load_data(
+            project_id, batch_id, video_scope=video_scope
+        )
         if not project:
             return json.dumps({})
 
@@ -999,6 +1053,10 @@ class ExportService:
                         dataset_convention=axis_by_task.get(t.id),
                         axis_frame=axis_frame,
                     )
+                    if video_scope is not None:
+                        geometry = clip_video_geometry(geometry, video_scope)
+                        if geometry is None:
+                            continue
                     await _collect_portable_mask_objects(geometry, mask_objects)
                     pred_entries.append(
                         AAPPredictionEntry(
@@ -1030,6 +1088,8 @@ class ExportService:
                     "width": vmeta.get("width"),
                     "height": vmeta.get("height"),
                 }
+                if video_scope is not None:
+                    video_block["export_scope"] = video_scope.as_dict()
 
             task_blocks.append(
                 AAPTaskBlock(

@@ -18,7 +18,7 @@ const FRAME_TIME_CLASS = "text-brand/75";
 export interface VideoFrameBoxCardContentProps {
   /**
    * 视频单帧标注(不属任何轨迹): video_bbox / video_polygon / video_polyline /
-   * video_rotated_bbox / video_mask。
+   * video_rotated_bbox / video_keypoint / video_mask。
    * v0.21.26 起承接全部单帧几何(此前仅 video_bbox);帧定位 + 指标 + 属性 + 改类 / 删除。
    */
   annotation: AnnotationResponse;
@@ -71,6 +71,7 @@ export function VideoFrameBoxCardContent({
     geom.type === "video_polygon" ||
     geom.type === "video_polyline" ||
     geom.type === "video_rotated_bbox" ||
+    geom.type === "video_keypoint" ||
     geom.type === "video_mask"
       ? geom.frame_index
       : null;

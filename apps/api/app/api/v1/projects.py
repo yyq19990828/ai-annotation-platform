@@ -34,6 +34,7 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
+from app.schemas.export import ExportRequestBody
 from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
@@ -1195,6 +1196,7 @@ def _validate_export_targets(
 @router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
+    body: ExportRequestBody | None = None,
     targets: list[str] = Query(
         default=["coco"],
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg"
@@ -1245,6 +1247,18 @@ async def export_project(
     from app.services.audit import AuditService, AuditAction, export_detail
 
     targets = _validate_export_targets(targets, project.data_type)
+
+    from app.services.exporting.video_scope import normalize_video_export_scope
+
+    try:
+        video_scope = await normalize_video_export_scope(
+            db,
+            project=project,
+            request=body.scope if body else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    video_scope_payload = video_scope.as_dict() if video_scope else None
 
     if "voc" in targets:
         if targets != ["voc"]:
@@ -1297,6 +1311,11 @@ async def export_project(
             "video_overlap_policy": video_overlap_policy,
             "mots_frame_base": mots_frame_base,
             "project_display_id": project.display_id,
+            **(
+                {"video_export_scope": video_scope_payload}
+                if video_scope_payload
+                else {}
+            ),
         },
     )
     await AuditService.log(
@@ -1318,6 +1337,11 @@ async def export_project(
                 "indexed_overlap_policy": indexed_overlap_policy,
                 "video_overlap_policy": video_overlap_policy,
                 "mots_frame_base": mots_frame_base,
+                **(
+                    {"video_export_scope": video_scope_payload}
+                    if video_scope_payload
+                    else {}
+                ),
             },
         ),
     )
@@ -1334,6 +1358,11 @@ async def export_project(
             "indexed_overlap_policy": indexed_overlap_policy,
             "video_overlap_policy": video_overlap_policy,
             "mots_frame_base": mots_frame_base,
+            **(
+                {"video_export_scope": video_scope_payload}
+                if video_scope_payload
+                else {}
+            ),
         },
         async_job_id=str(job.id),
     )

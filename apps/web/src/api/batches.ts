@@ -234,6 +234,7 @@ export const batchesApi = {
     }
     return apiClient.post<{ job_id: string }>(
       `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
+      opts?.scope ? { scope: opts.scope } : {},
     );
   },
 };

@@ -6,6 +6,10 @@ import type {
   VideoBboxGeometry,
   VideoPolygonGeometry,
   VideoPolylineGeometry,
+  VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
+  Keypoint,
+  KeypointSchema,
   VideoSamplingConfig,
   VideoTrackGeometry,
   VideoTrackMaskGeometry,
@@ -44,6 +48,8 @@ type VideoGeometry =
   | VideoTrackMaskGeometry
   | VideoPolygonGeometry
   | VideoPolylineGeometry
+  | VideoRotatedBboxGeometry
+  | VideoKeypointGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry;
 
@@ -58,6 +64,7 @@ export interface VideoWorkbenchProps {
   aiBoxes?: AiBox[];
   selectedId: string | null;
   activeClass: string;
+  keypointSchema?: KeypointSchema | null;
   frameIndex: number;
   selectedIds?: string[];
   reviewDisplayMode?: DiffMode;
@@ -105,8 +112,9 @@ export interface VideoWorkbenchProps {
     frameIndex: number,
     points: [number, number][],
   ) => void;
+  onCreateKeypoints?: (frameIndex: number, points: Keypoint[]) => void;
   onPendingDraw: (
-    kind: "video_bbox" | "video_track_bbox",
+    kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
     frameIndex: number,
     geom: Geom,
     anchor: { left: number; top: number },
@@ -141,6 +149,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       aiBoxes,
       selectedId,
       activeClass,
+      keypointSchema,
       frameIndex,
       selectedIds = [],
       reviewDisplayMode,
@@ -163,6 +172,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       onCreate,
       onCreatePointsTrack,
       onCreatePoints,
+      onCreateKeypoints,
       onSamPrompt,
       samCandidates,
       samMaskRecords,
@@ -223,6 +233,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         reviewDisplayMode={reviewDisplayMode}
         trackColorOverrides={trackColorOverrides}
         activeClass={activeClass}
+        keypointSchema={keypointSchema}
         pendingDrawing={pendingDrawing}
         issuePixelFeedbacks={issuePixelFeedbacks}
         issueHighlightId={issueHighlightId}
@@ -253,6 +264,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onMaskCancel={onMaskCancel}
         samPolarity={samPolarity}
         onCreatePoints={onCreatePoints}
+        onCreateKeypoints={onCreateKeypoints}
         onPendingDraw={onPendingDraw}
         onUpdate={onUpdate}
         onChangeUserBoxClass={onChangeUserBoxClass}

@@ -5,13 +5,16 @@ import type {
   VideoBboxGeometry,
   VideoPolygonGeometry,
   VideoPolylineGeometry,
+  VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
+  Keypoint,
   VideoTrackGeometry,
   VideoTrackPolygonGeometry,
   VideoTrackPolylineGeometry,
 } from "@/types";
 import type { Viewport } from "../state/useViewportTransform";
 import type { VideoTool } from "../state/useWorkbenchState";
-import { applyResize } from "./ResizeHandles";
+import { applyResize, applyRotatedResize } from "./ResizeHandles";
 import {
   clamp01,
   clampGeom,
@@ -20,6 +23,8 @@ import {
   isVideoPolygonTrack,
   isVideoPolyline,
   isVideoPolylineTrack,
+  isVideoRotatedBbox,
+  isVideoKeypoint,
   isVideoTrack,
   normalizeGeom,
   resolveVideoPolygonTrackAtFrame,
@@ -77,6 +82,36 @@ export function samProbeMode(t: VideoTool): "point" | "bbox" | "exemplar" {
 
 type DragModifiers = { shiftKey?: boolean; altKey?: boolean };
 
+function clampRotatedPosition(
+  geometry: VideoRotatedBboxGeometry,
+  size: VideoPixelSize,
+): VideoRotatedBboxGeometry {
+  const rad = (geometry.angle * Math.PI) / 180;
+  const extentX =
+    (Math.abs(Math.cos(rad)) * geometry.w * size.w +
+      Math.abs(Math.sin(rad)) * geometry.h * size.h) /
+    (2 * size.w);
+  const extentY =
+    (Math.abs(Math.sin(rad)) * geometry.w * size.w +
+      Math.abs(Math.cos(rad)) * geometry.h * size.h) /
+    (2 * size.h);
+  const minX = Math.min(0.5, extentX);
+  const minY = Math.min(0.5, extentY);
+  return {
+    ...geometry,
+    cx: Math.max(minX, Math.min(1 - minX, geometry.cx)),
+    cy: Math.max(minY, Math.min(1 - minY, geometry.cy)),
+  };
+}
+
+function pointerAngle(
+  point: { x: number; y: number },
+  geometry: VideoRotatedBboxGeometry,
+  size: VideoPixelSize,
+) {
+  return Math.atan2((point.y - geometry.cy) * size.h, (point.x - geometry.cx) * size.w);
+}
+
 /** 拖拽过程推进:给定当前 drag + 新归一化点,返回下一 drag(纯函数,与 onPointerMove 对齐)。 */
 export function advanceDrag(
   drag: VideoDragState,
@@ -101,6 +136,56 @@ export function advanceDrag(
       ),
     };
   }
+  if (drag.kind === "keypointNode") {
+    return {
+      ...drag,
+      current: drag.origin.map((point, index) =>
+        index === drag.nodeIdx ? { ...point, x: clamp01(pt.x), y: clamp01(pt.y) } : point,
+      ),
+    };
+  }
+  if (drag.kind === "obbMove") {
+    return {
+      ...drag,
+      current: clampRotatedPosition(
+        {
+          ...drag.origin,
+          cx: drag.origin.cx + (pt.x - drag.start.x),
+          cy: drag.origin.cy + (pt.y - drag.start.y),
+        },
+        drag.imageSize,
+      ),
+    };
+  }
+  if (drag.kind === "obbResize") {
+    const resized = applyRotatedResize(
+      {
+        type: "rotated_bbox",
+        cx: drag.origin.cx,
+        cy: drag.origin.cy,
+        w: drag.origin.w,
+        h: drag.origin.h,
+        angle: drag.origin.angle,
+      },
+      drag.start,
+      pt,
+      drag.dir,
+      drag.imageSize,
+      modifiers,
+    );
+    return {
+      ...drag,
+      current: clampRotatedPosition(
+        { ...drag.origin, ...resized, type: "video_rotated_bbox" },
+        drag.imageSize,
+      ),
+    };
+  }
+  if (drag.kind === "obbRotate") {
+    const delta = pointerAngle(pt, drag.origin, drag.imageSize) - drag.startPointerAngle;
+    const angle = (drag.origin.angle + (delta * 180) / Math.PI + 360) % 360;
+    return { ...drag, current: clampRotatedPosition({ ...drag.origin, angle }, drag.imageSize) };
+  }
   const next =
     drag.kind === "resize"
       ? applyResize(drag.origin, drag.start, pt, drag.dir, modifiers)
@@ -115,11 +200,17 @@ export function advanceDrag(
 /** 提交动作(纯描述,由 hook 落到回调);不含 DOM/anchor 计算,便于单测。 */
 export type VideoDragCommit =
   | { type: "none" }
-  | { type: "draw"; kind: "video_bbox" | "video_track_bbox"; geom: VideoStageGeom }
+  | {
+      type: "draw";
+      kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox";
+      geom: VideoStageGeom;
+    }
   | { type: "track"; ann: AnnotationResponse; geom: VideoStageGeom }
   | { type: "bbox"; ann: AnnotationResponse; geom: VideoStageGeom }
   // 单帧 polygon/polyline 顶点拖拽 / 整体平移的提交。
   | { type: "poly"; ann: AnnotationResponse; points: [number, number][] }
+  | { type: "rotated"; ann: AnnotationResponse; geometry: VideoRotatedBboxGeometry }
+  | { type: "keypoint"; ann: AnnotationResponse; points: Keypoint[] }
   // v0.21.23 · 交互式 SAM 提示: 不建标注, 交给 onSamPrompt 请求候选 (采纳时才落库)。
   // 坐标归一化 [0,1]; bbox 形如 [x1,y1,x2,y2] (与图片侧 onSamPrompt 同契约)。
   | { type: "samProbe"; mode: "point"; pt: [number, number]; alt: boolean }
@@ -181,7 +272,12 @@ export function resolveDragCommit(
       );
       if (!hasKeyframeAtFrame) return { type: "track", ann: selectedTrack, geom };
     }
-    const kind = videoTool === "track" ? "video_track_bbox" : "video_bbox";
+    const kind =
+      videoTool === "track"
+        ? "video_track_bbox"
+        : videoTool === "rotated-box"
+          ? "video_rotated_bbox"
+          : "video_bbox";
     return { type: "draw", kind, geom };
   }
 
@@ -197,6 +293,20 @@ export function resolveDragCommit(
         isVideoPolylineTrack(polyAnn));
     if (!polyAnn || !isPoly) return { type: "none" };
     return { type: "poly", ann: polyAnn, points: drag.current };
+  }
+
+  if (drag.kind === "obbMove" || drag.kind === "obbResize" || drag.kind === "obbRotate") {
+    const ann = annotations.find((item) => item.id === drag.id);
+    if (drag.current.w < VIDEO_MIN_BOX || drag.current.h < VIDEO_MIN_BOX) return { type: "none" };
+    return ann && isVideoRotatedBbox(ann)
+      ? { type: "rotated", ann, geometry: drag.current }
+      : { type: "none" };
+  }
+  if (drag.kind === "keypointNode") {
+    const ann = annotations.find((item) => item.id === drag.id);
+    return ann && isVideoKeypoint(ann)
+      ? { type: "keypoint", ann, points: drag.current }
+      : { type: "none" };
   }
 
   const ann = annotations.find((a) => a.id === drag.id);
@@ -235,7 +345,12 @@ function pointsAtFrame(
 }
 
 /** 命中候选(轻量视图,仅命中所需的 id + geom)。 */
-export type VideoPickable = { id: string; geom: VideoStageGeom };
+export type VideoPickable = {
+  id: string;
+  geom: VideoStageGeom;
+  rotatedBbox?: VideoRotatedBboxGeometry;
+  keypoints?: Keypoint[];
+};
 
 export interface UseVideoKonvaInteractionParams {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -265,7 +380,7 @@ export interface UseVideoKonvaInteractionParams {
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
   onPendingDraw?: (
-    kind: "video_bbox" | "video_track_bbox",
+    kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
     frameIndex: number,
     geom: VideoStageGeom,
     anchor: { left: number; top: number },
@@ -277,6 +392,8 @@ export interface UseVideoKonvaInteractionParams {
       | VideoTrackGeometry
       | VideoPolygonGeometry
       | VideoPolylineGeometry
+      | VideoRotatedBboxGeometry
+      | VideoKeypointGeometry
       | VideoTrackPolygonGeometry
       | VideoTrackPolylineGeometry,
   ) => void;
@@ -305,6 +422,23 @@ export interface VideoKonvaInteraction {
     entryId: string,
     vidx: number,
     points: [number, number][],
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => void;
+  onObbResizePointerDown: (
+    dir: VideoResizeDirection,
+    entryId: string,
+    geometry: VideoRotatedBboxGeometry,
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => void;
+  onObbRotatePointerDown: (
+    entryId: string,
+    geometry: VideoRotatedBboxGeometry,
+    e: Konva.KonvaEventObject<PointerEvent>,
+  ) => void;
+  onKeypointPointerDown: (
+    entryId: string,
+    nodeIdx: number,
+    points: Keypoint[],
     e: Konva.KonvaEventObject<PointerEvent>,
   ) => void;
 }
@@ -384,6 +518,18 @@ export function useVideoKonvaInteraction(
         setDrag({ kind: "polyMove", id: hit.id, start: pt, origin: pts, current: pts });
         return;
       }
+      if (ann && isVideoRotatedBbox(ann)) {
+        setDrag({
+          kind: "obbMove",
+          id: hit.id,
+          start: pt,
+          origin: ann.geometry,
+          current: ann.geometry,
+          imageSize: p.size,
+        });
+        return;
+      }
+      if (ann && isVideoKeypoint(ann)) return;
       setDrag({ kind: "move", id: hit.id, start: pt, origin: hit.geom, current: hit.geom });
     },
     [pointFromClient],
@@ -439,6 +585,87 @@ export function useVideoKonvaInteraction(
     [pointFromClient],
   );
 
+  const onObbResizePointerDown = useCallback(
+    (
+      dir: VideoResizeDirection,
+      entryId: string,
+      geometry: VideoRotatedBboxGeometry,
+      e: Konva.KonvaEventObject<PointerEvent>,
+    ) => {
+      e.cancelBubble = true;
+      if (e.evt.button !== 0) return;
+      const p = paramsRef.current;
+      p.onSelect(entryId);
+      if (p.readOnly || p.isPlaybackActive) return;
+      const pt = pointFromClient(e.evt.clientX, e.evt.clientY);
+      if (!pt) return;
+      setDrag({
+        kind: "obbResize",
+        id: entryId,
+        dir,
+        start: pt,
+        origin: geometry,
+        current: geometry,
+        imageSize: p.size,
+      });
+    },
+    [pointFromClient],
+  );
+
+  const onObbRotatePointerDown = useCallback(
+    (
+      entryId: string,
+      geometry: VideoRotatedBboxGeometry,
+      e: Konva.KonvaEventObject<PointerEvent>,
+    ) => {
+      e.cancelBubble = true;
+      if (e.evt.button !== 0) return;
+      const p = paramsRef.current;
+      p.onSelect(entryId);
+      if (p.readOnly || p.isPlaybackActive) return;
+      const pt = pointFromClient(e.evt.clientX, e.evt.clientY);
+      if (!pt) return;
+      setDrag({
+        kind: "obbRotate",
+        id: entryId,
+        origin: geometry,
+        current: geometry,
+        startPointerAngle: pointerAngle(pt, geometry, p.size),
+        imageSize: p.size,
+      });
+    },
+    [pointFromClient],
+  );
+
+  const onKeypointPointerDown = useCallback(
+    (
+      entryId: string,
+      nodeIdx: number,
+      points: Keypoint[],
+      e: Konva.KonvaEventObject<PointerEvent>,
+    ) => {
+      e.cancelBubble = true;
+      if (e.evt.button !== 0) return;
+      const p = paramsRef.current;
+      p.onSelect(entryId);
+      if (p.readOnly || p.isPlaybackActive) return;
+      const point = points[nodeIdx];
+      const ann = p.annotations.find((item) => item.id === entryId);
+      if (!point || point.v === 0 || !ann || !isVideoKeypoint(ann)) return;
+      if (e.evt.altKey) {
+        p.onUpdate(ann, {
+          ...ann.geometry,
+          points: points.map((item, index) =>
+            index === nodeIdx ? { ...item, v: (item.v === 1 ? 2 : 1) as Keypoint["v"] } : item,
+          ),
+        });
+        return;
+      }
+      setDrag({ kind: "keypointNode", id: entryId, nodeIdx, origin: points, current: points });
+    },
+    [],
+  );
+
   const onStagePointerDown = useCallback(
     (e: Konva.KonvaEventObject<PointerEvent>) => {
       const native = e.evt;
@@ -463,7 +690,7 @@ export function useVideoKonvaInteraction(
         ...p.entries,
         ...(p.ghost ? [p.ghost] : []),
       ];
-      const hit = pickTopVideoEntryAt(pickables, pt);
+      const hit = pickTopVideoEntryAt(pickables, pt, { size: p.size });
       if (!hit) {
         beginDraw(native);
         return;
@@ -528,6 +755,15 @@ export function useVideoKonvaInteraction(
       }
       return;
     }
+    if (action.type === "rotated") {
+      p.onUpdate(action.ann, action.geometry);
+      return;
+    }
+    if (action.type === "keypoint") {
+      const geometry = action.ann.geometry as VideoKeypointGeometry;
+      p.onUpdate(action.ann, { ...geometry, points: action.points });
+      return;
+    }
     // v0.21.23 · 交互式 SAM 提示: 不建标注, 交给 shell 请求候选 (采纳时才落库)。
     if (action.type === "samProbe") {
       p.onSamPrompt?.(
@@ -569,5 +805,13 @@ export function useVideoKonvaInteraction(
     };
   }, [interacting, pointFromClient, commit]);
 
-  return { drag, onStagePointerDown, onResizeHandlePointerDown, onVertexPointerDown };
+  return {
+    drag,
+    onStagePointerDown,
+    onResizeHandlePointerDown,
+    onVertexPointerDown,
+    onObbResizePointerDown,
+    onObbRotatePointerDown,
+    onKeypointPointerDown,
+  };
 }

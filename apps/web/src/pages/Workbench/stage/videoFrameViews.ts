@@ -1,4 +1,4 @@
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, Keypoint, VideoRotatedBboxGeometry } from "@/types";
 import type { DiffMode } from "../modes/types";
 import { classColor, getTrackColor } from "./colors";
 import {
@@ -10,6 +10,7 @@ import {
   isVideoPolyline,
   isVideoPolylineTrack,
   isVideoRotatedBbox,
+  isVideoKeypoint,
   isVideoTrack,
   nearestPointsTrackKeyframe,
   rotatedBboxCorners,
@@ -49,6 +50,10 @@ export type VideoEntryView = {
   points?: [number, number][];
   /** v0.21.20 · true = polyline (开路径, Line 不闭合); 缺省/false = polygon (闭合)。 */
   open?: boolean;
+  /** OBB 保留原始中心/尺寸/角度，渲染与命中不再退化成外接多边形。 */
+  rotatedBbox?: VideoRotatedBboxGeometry;
+  /** 关键点保留 COCO 可见性。 */
+  keypoints?: Keypoint[];
   /** 原始 CSS 色(轨迹色 / 类别色);Konva 层 render 时转 hex。 */
   color: string;
   selected: boolean;
@@ -239,7 +244,22 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
         trackColorOverrides,
         trackContent,
       );
-      entries.push({ ...entry, points: corners });
+      entries.push({ ...entry, points: corners, rotatedBbox: ann.geometry });
+    } else if (isVideoKeypoint(ann) && ann.geometry.frame_index === frameIndex) {
+      if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
+      const points = ann.geometry.points.map((point) => [point.x, point.y] as [number, number]);
+      const entry = buildEntryView(
+        ann,
+        boundsOfPoints(points),
+        "legacy",
+        false,
+        undefined,
+        selectedSet,
+        trackNumbers,
+        trackColorOverrides,
+        trackContent,
+      );
+      entries.push({ ...entry, keypoints: ann.geometry.points });
     } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
       const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
       if (!resolved || !visibleInReviewMode(resolved.source, reviewDisplayMode)) continue;

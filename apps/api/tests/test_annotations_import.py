@@ -571,7 +571,7 @@ async def test_import_annotations_multi_geometry_kinds(
     super_admin,
     db_session: AsyncSession,
 ):
-    """bbox/polygon/rotated_bbox/keypoint/polyline 几何全部透传，不报错。"""
+    """图片与视频 OBB/keypoint 等几何全部透传，并派生正确工具单位。"""
     user, token = super_admin
     project, tasks = await _seed_project_with_tasks(db_session, user.id)
     headers = {"Authorization": f"Bearer {token}"}
@@ -595,6 +595,23 @@ async def test_import_annotations_multi_geometry_kinds(
             "type": "polyline",
             "points": [[0.1, 0.2], [0.4, 0.5], [0.8, 0.7]],
         },
+        {
+            "type": "video_rotated_bbox",
+            "frame_index": 7,
+            "cx": 0.5,
+            "cy": 0.45,
+            "w": 0.2,
+            "h": 0.12,
+            "angle": 30,
+        },
+        {
+            "type": "video_keypoint",
+            "frame_index": 8,
+            "points": [
+                {"x": 0.1, "y": 0.2, "v": 2},
+                {"x": 0.3, "y": 0.4, "v": 0},
+            ],
+        },
     ]
 
     payload = _aap_envelope(
@@ -615,7 +632,7 @@ async def test_import_annotations_multi_geometry_kinds(
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["imported"] == 5
+    assert body["imported"] == 7
     assert body["skipped"] == 0
 
     rows = (
@@ -627,7 +644,7 @@ async def test_import_annotations_multi_geometry_kinds(
         .scalars()
         .all()
     )
-    assert len(rows) == 5
+    assert len(rows) == 7
 
     # 每条 annotation 的 geometry 应与输入完全一致（透传）
     stored_geoms = {a.geometry["type"]: a.geometry for a in rows}
@@ -636,6 +653,8 @@ async def test_import_annotations_multi_geometry_kinds(
     assert stored_geoms["rotated_bbox"] == geometries[2]
     assert stored_geoms["keypoint"] == geometries[3]
     assert stored_geoms["polyline"] == geometries[4]
+    assert stored_geoms["video_rotated_bbox"] == geometries[5]
+    assert stored_geoms["video_keypoint"] == geometries[6]
 
     # tool_unit_id 派生验证
     by_type = {a.annotation_type: a for a in rows}
@@ -644,6 +663,8 @@ async def test_import_annotations_multi_geometry_kinds(
     assert by_type["keypoint"].tool_unit_id == "keypoint"
     assert by_type["polyline"].tool_unit_id == "polyline"
     assert by_type["bbox"].tool_unit_id == "bbox"
+    assert by_type["video_rotated_bbox"].tool_unit_id == "rotated_bbox"
+    assert by_type["video_keypoint"].tool_unit_id == "keypoint"
 
 
 # ── 缺少 class_name 校验 ─────────────────────────────────────────────

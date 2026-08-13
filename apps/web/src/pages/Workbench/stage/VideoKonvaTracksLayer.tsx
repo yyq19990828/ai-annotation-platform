@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Layer, Line, Circle, Rect, Ellipse } from "react-konva";
+import { Layer, Line, Circle, Rect, Ellipse, Group, Text } from "react-konva";
+import type { KeypointSchema } from "@/types";
 import { useTheme } from "@/hooks/useTheme";
 import { colorToHex, cssVarToHex, hexToRgba } from "./colors";
 import { strokeWidthFor, type AnnotationVisualConfig } from "./annotationVisual";
@@ -7,6 +8,7 @@ import { screenToWorld } from "./shared/viewport/scaleCancel";
 import { VideoKonvaTrackShape } from "./VideoKonvaTrackShape";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
 import type { VideoEntryView, VideoGhostView, VideoTrackPreviewView } from "./videoFrameViews";
+import { keypointColorByIndex } from "./ImageStageShapes";
 
 // 关键帧圆点半径(世界单位,= 旧 SVG viewBox 单位 0.0038/0.0052,随画布缩放;
 // 描边走 /scale 屏幕恒定,与旧 non-scaling-stroke 一致)。
@@ -22,6 +24,7 @@ interface VideoKonvaTracksLayerProps {
   size: VideoPixelSize;
   scale: number;
   visual: AnnotationVisualConfig;
+  keypointSchema?: KeypointSchema | null;
 }
 
 /**
@@ -40,6 +43,7 @@ export function VideoKonvaTracksLayer({
   size,
   scale,
   visual,
+  keypointSchema,
 }: VideoKonvaTracksLayerProps) {
   const { resolved: theme } = useTheme();
   const occludedDotFill = useMemo(() => cssVarToHex("--sc-card", theme), [theme]);
@@ -88,21 +92,104 @@ export function VideoKonvaTracksLayer({
             })
           : [],
       )}
-      {entries.map((entry) => (
-        <VideoKonvaTrackShape
-          key={entry.key}
-          geom={entry.geom}
-          points={entry.points}
-          open={entry.open}
-          color={entry.color}
-          dashed={entry.dashed}
-          predicted={entry.predicted}
-          selected={entry.selected}
-          size={size}
-          scale={scale}
-          visual={visual}
-        />
-      ))}
+      {entries.map((entry) => {
+        if (entry.rotatedBbox) {
+          const geometry = entry.rotatedBbox;
+          const hex = colorToHex(entry.color);
+          return (
+            <Group
+              key={entry.key}
+              name="video-rotated-box"
+              x={geometry.cx * size.w}
+              y={geometry.cy * size.h}
+              rotation={geometry.angle}
+            >
+              <Rect
+                x={-(geometry.w * size.w) / 2}
+                y={-(geometry.h * size.h) / 2}
+                width={geometry.w * size.w}
+                height={geometry.h * size.h}
+                stroke={hex}
+                strokeWidth={screenToWorld(strokeWidthFor(entry.selected, visual), scale)}
+                fill={hexToRgba(
+                  hex,
+                  entry.selected ? visual.fillOpacitySelected : visual.fillOpacity,
+                )}
+                shadowEnabled={entry.selected}
+                shadowColor={hex}
+                shadowBlur={8 / scale}
+                listening={false}
+              />
+            </Group>
+          );
+        }
+        if (entry.keypoints) {
+          const edges = keypointSchema?.edges ?? [];
+          return (
+            <Group key={entry.key} name="video-keypoints" listening={false}>
+              {edges.map(([from, to], index) => {
+                const a = entry.keypoints?.[from];
+                const b = entry.keypoints?.[to];
+                if (!a || !b || a.v === 0 || b.v === 0) return null;
+                return (
+                  <Line
+                    key={`edge-${index}`}
+                    points={[a.x * size.w, a.y * size.h, b.x * size.w, b.y * size.h]}
+                    stroke={colorToHex(entry.color)}
+                    strokeWidth={screenToWorld(strokeWidthFor(entry.selected, visual), scale)}
+                    opacity={a.v === 1 || b.v === 1 ? 0.6 : 1}
+                  />
+                );
+              })}
+              {entry.keypoints.map((point, index) => {
+                const color = keypointColorByIndex(index, keypointSchema);
+                const radius = (entry.selected ? 5 : 4) / scale;
+                return (
+                  <Group key={`point-${index}`}>
+                    <Circle
+                      x={point.x * size.w}
+                      y={point.y * size.h}
+                      radius={point.v === 0 ? radius * 0.6 : radius}
+                      fill={
+                        point.v === 2 ? color : point.v === 1 ? "white" : hexToRgba(color, 0.25)
+                      }
+                      stroke={point.v === 0 ? undefined : color}
+                      strokeWidth={1.5 / scale}
+                      shadowEnabled={entry.selected && point.v > 0}
+                      shadowColor={color}
+                      shadowBlur={6 / scale}
+                    />
+                    {entry.selected && point.v > 0 && keypointSchema?.nodes[index]?.name && (
+                      <Text
+                        x={point.x * size.w + radius + 2 / scale}
+                        y={point.y * size.h - visual.labelFontSize / (2 * scale)}
+                        text={keypointSchema.nodes[index].name}
+                        fill={color}
+                        fontSize={(visual.labelFontSize - 1) / scale}
+                      />
+                    )}
+                  </Group>
+                );
+              })}
+            </Group>
+          );
+        }
+        return (
+          <VideoKonvaTrackShape
+            key={entry.key}
+            geom={entry.geom}
+            points={entry.points}
+            open={entry.open}
+            color={entry.color}
+            dashed={entry.dashed}
+            predicted={entry.predicted}
+            selected={entry.selected}
+            size={size}
+            scale={scale}
+            visual={visual}
+          />
+        );
+      })}
       {ghost && ghost.points && (
         <Line
           name="video-track-ghost"

@@ -118,6 +118,13 @@ function annotationToolMeta(
   if (geometry.type === "video_rotated_bbox") {
     return { label: "旋转框", detail: `F${geometry.frame_index} · ${Math.round(geometry.angle)}°` };
   }
+  if (geometry.type === "video_keypoint") {
+    const visible = geometry.points.filter((point) => point.v === 2).length;
+    return {
+      label: "关键点",
+      detail: `F${geometry.frame_index} · ${visible}/${geometry.points.length} 可见`,
+    };
+  }
   if (geometry.type === "raster_mask") {
     return {
       label: "栅格掩码",

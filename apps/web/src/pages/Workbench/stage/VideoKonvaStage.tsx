@@ -24,6 +24,10 @@ import type {
   VideoBboxGeometry,
   VideoPolygonGeometry,
   VideoPolylineGeometry,
+  VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
+  Keypoint,
+  KeypointSchema,
   VideoSamplingConfig,
   VideoTrackGeometry,
   VideoTrackMaskGeometry,
@@ -55,6 +59,9 @@ import {
   VideoKonvaInteractionLayer,
   type VideoHandleBox,
   type VideoPreviewBox,
+  type VideoHandleObb,
+  type VideoPreviewObb,
+  type VideoHandleKeypoints,
 } from "./VideoKonvaInteractionLayer";
 import {
   VideoPlaybackOverlay,
@@ -121,6 +128,7 @@ import type { VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { VideoSamCandidateOverlay, type VideoSamCandidateShape } from "./VideoSamCandidateOverlay";
 import { SelectionOverlay } from "./SelectionOverlay";
+import { keypointColorByIndex } from "./ImageStageShapes";
 import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
 import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
 import type { AiBox } from "../state/transforms";
@@ -163,6 +171,7 @@ interface VideoKonvaStageProps {
   reviewDisplayMode?: DiffMode;
   trackColorOverrides?: Record<string, string>;
   activeClass?: string;
+  keypointSchema?: KeypointSchema | null;
   pendingDrawing?: PendingDrawing;
   issuePixelFeedbacks?: AnnotationFeedback[];
   issueHighlightId?: string | null;
@@ -194,8 +203,9 @@ interface VideoKonvaStageProps {
     frameIndex: number,
     points: [number, number][],
   ) => void;
+  onCreateKeypoints?: (frameIndex: number, points: Keypoint[]) => void;
   onPendingDraw?: (
-    kind: "video_bbox" | "video_track_bbox",
+    kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
     frameIndex: number,
     geom: { x: number; y: number; w: number; h: number },
     anchor: { left: number; top: number },
@@ -208,6 +218,8 @@ interface VideoKonvaStageProps {
       | VideoTrackMaskGeometry
       | VideoPolygonGeometry
       | VideoPolylineGeometry
+      | VideoRotatedBboxGeometry
+      | VideoKeypointGeometry
       | VideoTrackPolygonGeometry
       | VideoTrackPolylineGeometry,
   ) => void;
@@ -290,6 +302,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       reviewDisplayMode,
       trackColorOverrides,
       activeClass = "",
+      keypointSchema = null,
       pendingDrawing = null,
       issuePixelFeedbacks,
       issueHighlightId,
@@ -307,6 +320,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       onCreate,
       onCreatePointsTrack,
       onCreatePoints,
+      onCreateKeypoints,
       onPendingDraw,
       onUpdate,
       onSamPrompt,
@@ -514,11 +528,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       [selectedManagedTrack, selectedTrackColor, trackColorOverrides],
     );
 
-    // 当前帧的 pending draft(仅本帧的 video_bbox/video_track_bbox 草稿)。
+    // 当前帧的拖框 pending draft；OBB 初建角度为 0，可复用轴对齐预览。
     const pendingDraft = useMemo(() => {
       if (
         !pendingDrawing ||
-        (pendingDrawing.kind !== "video_bbox" && pendingDrawing.kind !== "video_track_bbox") ||
+        (pendingDrawing.kind !== "video_bbox" &&
+          pendingDrawing.kind !== "video_track_bbox" &&
+          pendingDrawing.kind !== "video_rotated_bbox") ||
         pendingDrawing.frameIndex !== frameIndex
       ) {
         return null;
@@ -544,6 +560,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           pendingDrawing.kind === "video_polygon" || pendingDrawing.kind === "video_track_polygon",
       };
     }, [frameIndex, pendingDrawing]);
+
+    const pendingKeypoints = useMemo(
+      () =>
+        pendingDrawing?.kind === "video_keypoint" && pendingDrawing.frameIndex === frameIndex
+          ? pendingDrawing.points
+          : null,
+      [frameIndex, pendingDrawing],
+    );
 
     // 标注渲染派生(纯函数,与 VideoStage 现状对齐)。
     const referenceConfig = useVideoReferenceConfig();
@@ -900,7 +924,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       selectedTrack,
       videoTool,
       creationEnabled:
-        (videoTool === "box" || videoTool === "track") &&
+        (videoTool === "box" || videoTool === "track" || videoTool === "rotated-box") &&
         (!isVideoToolEnabled || isVideoToolEnabled(videoTool)),
       readOnly,
       isPlaybackActive,
@@ -938,6 +962,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       },
       [size, vpRef],
     );
+
+    const [keypointDraft, setKeypointDraft] = useState<Keypoint[]>([]);
+    const keypointDrawEnabled =
+      videoTool === "keypoint" &&
+      !pendingDrawing &&
+      !readOnly &&
+      !isPlaybackActive &&
+      (keypointSchema?.nodes.length ?? 0) > 0 &&
+      (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
+    useEffect(() => {
+      setKeypointDraft([]);
+    }, [frameIndex, keypointSchema?.nodes.length, videoTool]);
 
     const commitPointsDraft = useCallback(() => {
       const pts = pointsDraft.commit();
@@ -1047,6 +1083,25 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           setMaskCursor(point);
           return;
         }
+        if (keypointDrawEnabled) {
+          const native = e.evt;
+          if (native.button !== 0 && native.button !== 2) return;
+          const pt = pointFromClientEvt(native.clientX, native.clientY);
+          if (!pt) return;
+          e.cancelBubble = true;
+          if (keypointDraft.length === 0) onSelect?.(null);
+          const next = [
+            ...keypointDraft,
+            { x: pt.x, y: pt.y, v: native.button === 2 ? 0 : native.altKey ? 1 : 2 } as Keypoint,
+          ];
+          if (next.length >= (keypointSchema?.nodes.length ?? 0)) {
+            onCreateKeypoints?.(frameIndex, next);
+            setKeypointDraft([]);
+          } else {
+            setKeypointDraft(next);
+          }
+          return;
+        }
         if (pointsDrawEnabled) {
           const native = e.evt;
           if (native.button !== 0) return; // 右键/中键平移交容器层
@@ -1068,6 +1123,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       },
       [
         commitPointsDraft,
+        frameIndex,
         interaction,
         isPlaybackActive,
         isPointsClosedTool,
@@ -1075,6 +1131,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         maskCompareActive,
         maskEditor,
         maskToolActive,
+        keypointDraft,
+        keypointDrawEnabled,
+        keypointSchema?.nodes.length,
+        onCreateKeypoints,
+        onSelect,
         onSelectSamMaskCandidate,
         pointFromClientEvt,
         pointsDrawEnabled,
@@ -1214,7 +1275,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       const entry = frameViews.entries.find((e) => e.id === selectedId);
       if (entry) {
         // 点集几何 (polygon/polyline/OBB) 不画 8 向 resize 句柄; 顶点句柄单独渲染。
-        if (entry.points) return null;
+        if (entry.points || entry.rotatedBbox || entry.keypoints) return null;
         const ann = annotations.find((a) => a.id === entry.id);
         const trackId = ann && isVideoTrack(ann) ? ann.geometry.track_id : null;
         if (trackId && lockedTrackIds.has(trackId)) return null;
@@ -1238,6 +1299,28 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       selectedId,
       selectedTrack,
     ]);
+
+    const handleObb = useMemo<VideoHandleObb | null>(() => {
+      if (!interactionEditable || !selectedId) return null;
+      const entry = frameViews.entries.find((item) => item.id === selectedId);
+      if (!entry?.rotatedBbox) return null;
+      const live =
+        drag &&
+        (drag.kind === "obbMove" || drag.kind === "obbResize" || drag.kind === "obbRotate") &&
+        drag.id === selectedId
+          ? drag.current
+          : entry.rotatedBbox;
+      return { id: selectedId, geometry: live, color: entry.color };
+    }, [drag, frameViews.entries, interactionEditable, selectedId]);
+
+    const handleKeypoints = useMemo<VideoHandleKeypoints | null>(() => {
+      if (!interactionEditable || !selectedId) return null;
+      const entry = frameViews.entries.find((item) => item.id === selectedId);
+      if (!entry?.keypoints) return null;
+      const points =
+        drag?.kind === "keypointNode" && drag.id === selectedId ? drag.current : entry.keypoints;
+      return { id: selectedId, points, color: entry.color };
+    }, [drag, frameViews.entries, interactionEditable, selectedId]);
 
     const preview = useMemo<VideoPreviewBox | null>(() => {
       if (!drag) return null;
@@ -1276,6 +1359,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       trackColorOverrides,
       videoTool,
     ]);
+
+    const previewObb = useMemo<VideoPreviewObb | null>(() => {
+      if (
+        !drag ||
+        (drag.kind !== "obbMove" && drag.kind !== "obbResize" && drag.kind !== "obbRotate")
+      )
+        return null;
+      const color =
+        frameViews.entries.find((entry) => entry.id === drag.id)?.color ?? classColor(activeClass);
+      return { geometry: drag.current, color };
+    }, [activeClass, drag, frameViews.entries]);
 
     // v0.16.4 · 右键上下文菜单
     const selectedAnnotation = useMemo(
@@ -1411,6 +1505,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const handleContextMenu = useCallback(
       (evt: ReactMouseEvent<HTMLDivElement>) => {
         evt.preventDefault();
+        if (keypointDrawEnabled) return;
         const down = rightDownRef.current;
         rightDownRef.current = null;
         closeContextMenu();
@@ -1428,7 +1523,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           ? [...frameViews.entries, frameViews.ghost]
           : frameViews.entries;
         const hit =
-          pickTopVideoMaskAt(committedMaskRecords, point) ?? pickTopVideoEntryAt(pickables, point);
+          pickTopVideoMaskAt(committedMaskRecords, point) ??
+          pickTopVideoEntryAt(pickables, point, { size });
         if (!hit) return;
         const hitAnn = annotations.find((a) => a.id === hit.id);
         // v0.21.26 · 命中的不是「可建菜单」的视频几何 → 只选中, 不弹空菜单
@@ -1452,6 +1548,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         contextMenu,
         frameViews.entries,
         frameViews.ghost,
+        keypointDrawEnabled,
         onSelect,
         readOnly,
         selectedIds,
@@ -1540,14 +1637,20 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }, [maskCompareActive, maskEditor, maskToolActive, size, vpRef, zoomAt]);
 
     // 本地视口/导航快捷键(对齐旧 SVG 栈 VideoStage 本地 keydown):
-    // F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧(,/. 跳关键帧由中央 hotkeys 分发器处理)。
+    // Shift+F = fit、0 = 实际尺寸;Home/End = 选中轨迹首/末出现帧。
     useEffect(() => {
       const isInputFocused = (el: EventTarget | null) =>
         el instanceof HTMLElement &&
         (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       const onKeyDown = (e: KeyboardEvent) => {
         if (isInputFocused(e.target)) return;
-        if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (
+          (e.key === "f" || e.key === "F") &&
+          e.shiftKey &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey
+        ) {
           e.preventDefault();
           fitViewport();
           return;
@@ -1681,6 +1784,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
     const beginPan = useCallback(
       (evt: ReactPointerEvent<HTMLDivElement>) => {
+        if (evt.button === 2 && keypointDrawEnabled) return;
         const isSpacePan = evt.button === 0 && spacePan;
         const isPan = evt.button === 2 || isSpacePan;
         if (evt.button === 2) rightDownRef.current = { x: evt.clientX, y: evt.clientY };
@@ -1692,7 +1796,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         pausePlayback();
         setPanning(true);
       },
-      [onSpacePanDragStart, pausePlayback, spacePan],
+      [keypointDrawEnabled, onSpacePanDragStart, pausePlayback, spacePan],
     );
 
     const onPointerMove = useCallback(
@@ -1818,7 +1922,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // 工具模式光标反馈:平移中 grabbing;按住 Space 可抓;创建工具十字,选择工具普通光标。
     // Konva 容器命中 resize 句柄时由交互层覆盖 stage.container() cursor,未命中则继承此处。
     const creationEnabled =
-      (videoTool === "box" || videoTool === "track") &&
+      (videoTool === "box" || videoTool === "track" || videoTool === "rotated-box") &&
       (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
     // v0.21.23 · 交互式 SAM 工具同样用十字光标 (提示落点即分割位置)。
     // v0.21.26 · 复用交互层同一谓词 isSamProbeTool (含 exemplar / magic-box), 修此前漏登记这两个
@@ -1828,7 +1932,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       ? styles.rootPanning
       : spacePan
         ? styles.toolGrab
-        : creationEnabled || pointsDrawEnabled || samProbeTool
+        : creationEnabled || pointsDrawEnabled || keypointDrawEnabled || samProbeTool
           ? styles.toolCrosshair
           : "";
 
@@ -1870,7 +1974,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         onPointerUp={endPan}
         onPointerCancel={endPan}
         onPointerLeave={onPointerLeave}
-        onDoubleClick={isPointsDrawTool ? undefined : fitViewport}
+        onDoubleClick={isPointsDrawTool || keypointDrawEnabled ? undefined : fitViewport}
       >
         <video
           ref={setVideoNode}
@@ -1913,6 +2017,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               size={size}
               scale={vp.scale}
               visual={visual}
+              keypointSchema={keypointSchema}
             />
             <VideoKonvaMaskLayer
               records={displayedMaskRecords}
@@ -2006,7 +2111,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               drag={drag}
               handleBox={handleBox}
               preview={preview}
+              handleObb={handleObb}
+              previewObb={previewObb}
+              handleKeypoints={handleKeypoints}
               onResizeHandlePointerDown={interaction.onResizeHandlePointerDown}
+              onObbResizePointerDown={interaction.onObbResizePointerDown}
+              onObbRotatePointerDown={interaction.onObbRotatePointerDown}
+              onKeypointPointerDown={interaction.onKeypointPointerDown}
             />
             {!maskCompareActive &&
               maskToolActive &&
@@ -2100,6 +2211,49 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                         listening={false}
                       />
                     ))}
+                  </Layer>
+                );
+              })()}
+            {(keypointDraft.length > 0 || pendingKeypoints) &&
+              (() => {
+                const points = pendingKeypoints ?? keypointDraft;
+                const pending = !!pendingKeypoints;
+                return (
+                  <Layer
+                    name={pending ? "pending-keypoint-draft" : "keypoint-draft"}
+                    listening={false}
+                  >
+                    {(keypointSchema?.edges ?? []).map(([from, to], index) => {
+                      const a = points[from];
+                      const b = points[to];
+                      if (!a || !b || a.v === 0 || b.v === 0) return null;
+                      return (
+                        <Line
+                          key={`keypoint-draft-edge-${index}`}
+                          points={[a.x * size.w, a.y * size.h, b.x * size.w, b.y * size.h]}
+                          stroke={colorToHex(classColor(activeClass))}
+                          strokeWidth={1.5 / vp.scale}
+                          dash={pending ? [6 / vp.scale, 4 / vp.scale] : undefined}
+                          opacity={a.v === 1 || b.v === 1 ? 0.6 : 1}
+                        />
+                      );
+                    })}
+                    {points.map((point, index) => {
+                      const color = keypointColorByIndex(index, keypointSchema);
+                      return (
+                        <Circle
+                          key={`keypoint-draft-${index}`}
+                          x={point.x * size.w}
+                          y={point.y * size.h}
+                          radius={(point.v === 0 ? 2.5 : 4) / vp.scale}
+                          fill={
+                            point.v === 2 ? color : point.v === 1 ? "white" : hexToRgba(color, 0.25)
+                          }
+                          stroke={point.v === 0 ? undefined : color}
+                          strokeWidth={1.5 / vp.scale}
+                        />
+                      );
+                    })}
                   </Layer>
                 );
               })()}

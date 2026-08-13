@@ -9,6 +9,9 @@ import type {
   VideoBboxGeometry,
   VideoPolygonGeometry,
   VideoPolylineGeometry,
+  VideoRotatedBboxGeometry,
+  VideoKeypointGeometry,
+  Keypoint,
   VideoSamplingConfig,
   VideoTrackGeometry,
   VideoTrackMaskGeometry,
@@ -69,6 +72,8 @@ type VideoGeometry =
   | VideoTrackMaskGeometry
   | VideoPolygonGeometry
   | VideoPolylineGeometry
+  | VideoRotatedBboxGeometry
+  | VideoKeypointGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry;
 
@@ -172,8 +177,9 @@ interface WorkbenchStageHostVideoProps {
     frameIndex: number,
     points: [number, number][],
   ) => void;
+  onVideoCreateKeypoints?: (frameIndex: number, points: Keypoint[]) => void;
   onVideoPendingDraw: (
-    kind: "video_bbox" | "video_track_bbox",
+    kind: "video_bbox" | "video_track_bbox" | "video_rotated_bbox",
     frameIndex: number,
     geom: Geom,
     anchor: { left: number; top: number },
@@ -413,6 +419,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onVideoCreate,
       onVideoCreatePointsTrack,
       onVideoCreatePoints,
+      onVideoCreateKeypoints,
       onVideoPendingDraw,
       onVideoUpdate,
       onVideoRename,
@@ -558,6 +565,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             aiBoxes={videoAiBoxes}
             selectedId={selectedId}
             activeClass={activeClass}
+            keypointSchema={keypointSchema}
             frameIndex={videoFrameIndex}
             reviewDisplayMode={videoReviewDisplayMode}
             hiddenTrackIds={hiddenVideoTrackIds}
@@ -593,6 +601,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onCreate={onVideoCreate}
             onCreatePointsTrack={onVideoCreatePointsTrack}
             onCreatePoints={onVideoCreatePoints}
+            onCreateKeypoints={onVideoCreateKeypoints}
             onPendingDraw={onVideoPendingDraw}
             onUpdate={onVideoUpdate}
             onRename={onVideoRename}

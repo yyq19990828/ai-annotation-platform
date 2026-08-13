@@ -14,8 +14,7 @@
 
 - 在可获得的 Windows Edge 与 macOS Safari 客户端补齐 1080p/4K correctness、可见延迟、资源 plateau
   与 fallback rate；Apple Silicon 原生有头 Chrome 已完成 strict 资格，不再作为遗留项。
-- 按 segment / frame range 聚合导出，并补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
-- 实现视频单帧 keypoint 与 rotated-box 绘制；OBB 还需要旋转手柄。
+- 补齐长视频 overlap 协同、跨窗 tracker 上下文续追和 Track 级质量指标。
 
 ### 超大图 Tile 与 Raster Mask 客户端计算
 

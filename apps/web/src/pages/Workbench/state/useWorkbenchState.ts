@@ -38,6 +38,8 @@ export type Tool =
 export type VideoTool =
   | "select"
   | "box"
+  | "rotated-box"
+  | "keypoint"
   | "track"
   | "mask"
   | "mask-track"
@@ -107,6 +109,7 @@ export type PendingDrawing =
   | {
       kind:
         | "video_bbox"
+        | "video_rotated_bbox"
         | "video_track_bbox"
         | "video_polygon"
         | "video_polyline"
@@ -116,6 +119,13 @@ export type PendingDrawing =
       geom: Geom;
       anchor: { left: number; top: number };
       points?: [number, number][];
+    }
+  | {
+      kind: "video_keypoint";
+      frameIndex: number;
+      geom: Geom;
+      anchor: { left: number; top: number };
+      points: Keypoint[];
     }
   | {
       kind: "video_mask";

@@ -9786,6 +9786,23 @@
         "title": "DismissResponse",
         "type": "object"
       },
+      "ExportRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoExportScopeRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ExportRequestBody",
+        "type": "object"
+      },
       "FailedPredictionItem": {
         "properties": {
           "backend_name": {
@@ -14488,6 +14505,16 @@
             "additionalProperties": true,
             "title": "Options",
             "type": "object"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoExportScopeRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "targets": {
             "items": {
@@ -27588,6 +27615,94 @@
         "title": "VideoChunksResponse",
         "type": "object"
       },
+      "VideoExportFrameSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "from_frame": {
+            "minimum": 0.0,
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "frames",
+            "default": "frames",
+            "title": "Kind",
+            "type": "string"
+          },
+          "to_frame": {
+            "minimum": 0.0,
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_frame",
+          "to_frame"
+        ],
+        "title": "VideoExportFrameSelection",
+        "type": "object"
+      },
+      "VideoExportScopeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "selection": {
+            "discriminator": {
+              "mapping": {
+                "frames": "#/components/schemas/VideoExportFrameSelection",
+                "segments": "#/components/schemas/VideoExportSegmentSelection"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VideoExportSegmentSelection"
+              },
+              {
+                "$ref": "#/components/schemas/VideoExportFrameSelection"
+              }
+            ],
+            "title": "Selection"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "selection"
+        ],
+        "title": "VideoExportScopeRequest",
+        "type": "object"
+      },
+      "VideoExportSegmentSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "end_segment_id": {
+            "format": "uuid",
+            "title": "End Segment Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "segments",
+            "default": "segments",
+            "title": "Kind",
+            "type": "string"
+          },
+          "start_segment_id": {
+            "format": "uuid",
+            "title": "Start Segment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_segment_id",
+          "end_segment_id"
+        ],
+        "title": "VideoExportSegmentSelection",
+        "type": "object"
+      },
       "VideoFrameOut": {
         "properties": {
           "error": {
@@ -27805,7 +27920,7 @@
       },
       "VideoKeypointGeometry": {
         "additionalProperties": false,
-        "description": "v0.21.22 · 视频单帧关键点集合。与图片 KeypointGeometry 平行 + frame_index;\n骨骼拓扑仍走 bbox 工具单位的 keypoint_schema (视频破例挂 bbox 单位)。坐标归一化 [0,1]。",
+        "description": "v0.21.22 · 视频单帧关键点集合。与图片 KeypointGeometry 平行 + frame_index;\n骨骼拓扑走 keypoint 工具单位的 keypoint_schema。坐标归一化 [0,1]。",
         "properties": {
           "frame_index": {
             "minimum": 0.0,
@@ -30881,7 +30996,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.25"
+    "version": "0.23.29"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -41150,6 +41265,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportRequestBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {
@@ -42121,6 +42253,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportRequestBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {

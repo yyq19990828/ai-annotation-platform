@@ -54,7 +54,7 @@ from app.services.exporting.lidar import (
 from app.services.exporting.video import (
     FALLBACK_H,
     FALLBACK_W,
-    VIDEO_SINGLE_FRAME_GEOMETRY_TYPES,
+    VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES,
     VIDEO_TRACK_GEOMETRY_TYPES,
     build_coco_frames_seg,
     build_kitti_labels,
@@ -64,6 +64,7 @@ from app.services.exporting.video import (
     build_yolo_frame_seg_labels,
     yolo_seg_line,
 )
+from app.services.exporting.video_scope import VideoExportScope
 from app.services.exporting.davis import (
     build_davis_palette_png,
     derive_davis_object_ids,
@@ -494,6 +495,7 @@ async def build_export_zip(
     video_frame_mode: str,
     axis_frame: AxisFrame = "iso",
     format_options: dict | None = None,
+    video_scope: VideoExportScope | None = None,
 ) -> tuple[str, int, int]:
     """生成镜像目录 ZIP 到磁盘临时文件，返回 (zip 路径, label 文件数, size_bytes)。
 
@@ -532,7 +534,10 @@ async def build_export_zip(
                 & set(targets)
             )
             chunks = svc.iter_export_chunks(
-                project_id, batch_id, with_annotations=needs_ann
+                project_id,
+                batch_id,
+                with_annotations=needs_ann,
+                video_scope=video_scope,
             )
             return await _build_video_export_zip(
                 svc,
@@ -544,6 +549,7 @@ async def build_export_zip(
                 include_attributes=include_attributes,
                 video_frame_mode=video_frame_mode,
                 format_options=format_options or {},
+                video_scope=video_scope,
             )
 
         if project.data_type == "lidar":
@@ -1182,7 +1188,13 @@ def main() -> int:
                 output_start = int(spec.get("start_number", start))
                 padding = max(1, int(spec.get("padding", 6)))
                 extension = str(spec.get("extension", "jpg")).lstrip(".") or "jpg"
-                selected_frames = spec.get("source_frames") or frames
+                selected_frames = (
+                    frames
+                    if spec.get("source_frames") is None
+                    else spec["source_frames"]
+                )
+                if not selected_frames:
+                    continue
                 select_expr = "+".join(
                     "eq(n\\\\,%d)" % fr for fr in selected_frames
                 )
@@ -1231,6 +1243,7 @@ async def _build_video_export_zip(
     include_attributes: bool,
     video_frame_mode: str,
     format_options: dict[str, Any] | None = None,
+    video_scope: VideoExportScope | None = None,
 ) -> tuple[str, int, int]:
     """视频项目 zip（v0.10.43 多目标）：单目标落根、>1 目标各落 `{target}/`；
     manifest.json + fetch_videos.py 共享落根（MOT/KITTI 另带 fetch_frames.py）。
@@ -1305,12 +1318,17 @@ async def _build_video_export_zip(
                         batch_id=batch_id,
                         include_attributes=include_attributes,
                         video_frame_mode=video_frame_mode,
+                        video_scope=video_scope,
                     ),
                 )
             elif target == "aap_json":
                 zf.writestr(
                     f"{prefix}annotations.json",
-                    await svc.export_aap_json(project.id, batch_id=batch_id),
+                    await svc.export_aap_json(
+                        project.id,
+                        batch_id=batch_id,
+                        video_scope=video_scope,
+                    ),
                 )
             elif target in ("yolo-frames-det", "yolo-frames-seg"):
                 zf.writestr(f"{prefix}classes.txt", "\n".join(classes_list))
@@ -1336,7 +1354,10 @@ async def _build_video_export_zip(
                     geometry_type = (ann.geometry or {}).get("type")
                     if geometry_type in VIDEO_TRACK_GEOMETRY_TYPES:
                         tracks_by_task.setdefault(ann.task_id, []).append(ann)
-                    elif geometry_type in VIDEO_SINGLE_FRAME_GEOMETRY_TYPES:
+                    elif (
+                        geometry_type
+                        in VIDEO_BBOX_COMPATIBLE_SINGLE_FRAME_GEOMETRY_TYPES
+                    ):
                         bboxes_by_task.setdefault(ann.task_id, []).append(ann)
             for t in tasks:
                 item = (
@@ -1384,6 +1405,11 @@ async def _build_video_export_zip(
                     )
                 frame_count = int(vmeta.get("frame_count") or (max_kf + 1))
                 frame_count = max(frame_count, max_kf + 1)
+                selected_source_frames = derive_sampled_frames(frame_count, step)
+                if video_scope is not None:
+                    selected_source_frames = video_scope.filter_frames(
+                        selected_source_frames
+                    )
 
                 if has_mot or has_kitti:
                     numbers = derive_track_number(
@@ -1403,6 +1429,7 @@ async def _build_video_export_zip(
                                 step=step,
                                 img_w=img_w,
                                 img_h=img_h,
+                                source_frames=selected_source_frames,
                             ),
                         )
                         zf.writestr(
@@ -1414,6 +1441,7 @@ async def _build_video_export_zip(
                                 frame_count=frame_count,
                                 img_w=img_w,
                                 img_h=img_h,
+                                source_frames=selected_source_frames,
                             ),
                         )
                     if has_kitti:
@@ -1426,6 +1454,7 @@ async def _build_video_export_zip(
                                 step=step,
                                 img_w=img_w,
                                 img_h=img_h,
+                                source_frames=selected_source_frames,
                             ),
                         )
 
@@ -1449,6 +1478,7 @@ async def _build_video_export_zip(
                         step=step,
                         frame_start_number=frame_start_number,
                         include_attributes=include_attributes,
+                        source_frames=selected_source_frames,
                     )
                     for frame_no, (lines, attrs_per_line) in sorted(labels.items()):
                         base = f"{yp}labels/{seq}/{frame_no:06d}"
@@ -1478,6 +1508,7 @@ async def _build_video_export_zip(
                         step=step,
                         frame_start_number=frame_start_number,
                         include_attributes=include_attributes,
+                        source_frames=selected_source_frames,
                     )
                     for frame_no, (lines, attrs_per_line) in sorted(seg_labels.items()):
                         base = f"{yp}labels/{seq}/{frame_no:06d}"
@@ -1519,6 +1550,7 @@ async def _build_video_export_zip(
                             "step": step,
                             "img_w": img_w,
                             "img_h": img_h,
+                            "source_frames": selected_source_frames,
                         }
                     )
 
@@ -1531,9 +1563,7 @@ async def _build_video_export_zip(
                     davis_sequence_owners[seq] = t.id
                     davis_prefix = "davis/" if multi else ""
                     object_ids = derive_davis_object_ids(mask_tracks)
-                    for output_index, source_frame in enumerate(
-                        derive_sampled_frames(frame_count, step)
-                    ):
+                    for output_index, source_frame in enumerate(selected_source_frames):
                         zf.writestr(
                             f"{davis_prefix}Annotations/Full-Resolution/{seq}/{output_index:05d}.png",
                             build_davis_palette_png(
@@ -1569,6 +1599,7 @@ async def _build_video_export_zip(
                             frame
                             for _annotation_id, _z_order, geometry in mask_tracks
                             for frame in exact_mask_frames(geometry)
+                            if video_scope is None or video_scope.contains(frame)
                         }
                     )
                     frame_name_by_source = {
@@ -1628,7 +1659,7 @@ async def _build_video_export_zip(
                         class_ids={
                             name: index + 1 for index, name in enumerate(classes_list)
                         },
-                        source_frames=derive_sampled_frames(frame_count, step),
+                        source_frames=selected_source_frames,
                         frame_base=mots_frame_base,
                     )
                     zf.writestr(mots_path, mots_text)
@@ -1715,13 +1746,15 @@ async def _build_video_export_zip(
                         "video_metadata": vmeta,
                         "sampling": sampling,
                         "step": step,
-                        "grid_source_frames": derive_sampled_frames(frame_count, step),
+                        "grid_source_frames": selected_source_frames,
                         # 帧号 base：MOT/YOLO 取 1（1-based），KITTI-only 取 0。
                         "frame_start_number": frame_start_number,
                         "frame_output_dirs": frame_output_dirs,
                         "frame_outputs": frame_outputs,
                     }
                 )
+                if video_scope is not None:
+                    manifest_videos[-1]["export_scope"] = video_scope.as_dict()
 
         if has_coco_frames_seg:
             cp = "coco-frames-seg/" if multi else ""

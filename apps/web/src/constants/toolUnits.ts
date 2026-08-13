@@ -103,7 +103,7 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     hint: "带角度矩形;遥感 / 文本 / 车辆",
     icon: "rect",
     tools: ["rotated-box"],
-    dataTypes: ["image"],
+    dataTypes: ["image", "video"],
     available: true,
   },
   {
@@ -112,7 +112,7 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     hint: "命名节点 + 骨骼连线; COCO 范式姿态 / 部件标注",
     icon: "point",
     tools: ["keypoint"],
-    dataTypes: ["image"],
+    dataTypes: ["image", "video"],
     available: true,
   },
   {

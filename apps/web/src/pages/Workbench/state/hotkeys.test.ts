@@ -371,8 +371,11 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "p" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "polygon" });
     // 视频 L 是播放 jog, 不是折线工具 —— 工具栏角标曾谎称 L 能切折线。
     expect(dispatch({ key: "l" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: 1 });
-    // 图片侧工具键不该漏进视频 (w = 图片 OBB 工具)。
-    expect(dispatch({ key: "w" }, videoCtx)).toBeNull();
+    expect(dispatch({ key: "w" }, videoCtx)).toEqual({
+      type: "setVideoTool",
+      tool: "rotated-box",
+    });
+    expect(dispatch({ key: "f" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "keypoint" });
   });
 
   it("pending popover owns video-mode keys except Esc cancel", () => {

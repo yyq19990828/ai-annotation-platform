@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.16
 status: stable
-last_reviewed: 2026-08-12
+last_reviewed: 2026-08-13
 ---
 
 # 视频标注工作台
@@ -140,13 +140,14 @@ pnpm --filter @anno/web video:bench
 | ---------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ |
 | `video_bbox`                                   | 单帧矩形框                | 选择、移动、缩放、改类、删除，可聚合成轨迹                                                       |
 | `video_polygon` / `video_polyline`             | 单帧点集                  | 绘制、顶点变形、改类、删除                                                                       |
-| `video_rotated_bbox`                           | 单帧旋转框                | 渲染、选择、改类、删除                                                                           |
+| `video_rotated_bbox`                           | 单帧旋转框                | 绘制、真实区域选择、移动、局部轴缩放、旋转、改类、删除                                           |
+| `video_keypoint`                               | 单帧关键点                | 按模板绘制、遮挡 / 跳过、节点移动、可见性切换、改类、删除                                        |
 | `video_mask`                                   | 单帧内容寻址 RLE          | alpha 渲染 / picking、brush / erase、帧级选择、改类、删除                                        |
 | `video_track_bbox`                             | bbox compact 轨迹         | 完整关键帧编辑、outside / occluded、组合、转换、AI 追踪                                          |
 | `video_track_polygon` / `video_track_polyline` | 点集 compact 轨迹         | 渲染 / 插值、指标、首帧定位、显隐、锁定、改类、整条删除                                          |
 | `video_track_mask`                             | 内容寻址 RLE compact 轨迹 | alpha 渲染 / picking、brush / erase、held 关键帧、outside / occluded、AI 追踪、DAVIS / COCO 导出 |
 
-后端 `Geometry` union 还包含 `video_keypoint`，但当前视频工具栏没有对应创建入口。前端通过 `videoTool` 与工具单位的 `video_modes` 决定写单帧 geometry 还是 compact track keyframe。
+前端通过 `videoTool` 与工具单位的 `video_modes` 决定写单帧 geometry 还是 compact track keyframe。rotated_bbox 与 keypoint 当前只提供单帧工具；关键点创建依赖类别级 `keypoint_schema`。
 
 `video_track_bbox` 示例：
 
@@ -200,6 +201,8 @@ pnpm --filter @anno/web video:bench
 - `x/y/w/h` 与图片 bbox 一样使用归一化坐标。
 - `annotation_type` 写 `video_bbox`。
 - `video_bbox` 可由视频矩形框工具直接创建，也可由 track 转换 API 生成。
+- `video_rotated_bbox` 保存 `frame_index/cx/cy/w/h/angle`；画布在像素空间做旋转命中与局部轴缩放。
+- `video_keypoint` 保存 `frame_index/points[]`，每个节点为 `{x,y,v}`，骨骼节点名和连线仍来自 keypoint 工具单位的类别模板。
 
 点集轨迹与 bbox 轨迹使用相同的 `track_id / outside / keyframes[]` 外壳，但关键帧保存 `points` 而非 `bbox`；polygon 闭合，polyline 不闭合。点集插值要求相邻关键帧顶点可对应，当前工作台先开放渲染与管理层，关键帧表和完整逐帧编辑仍只属于 bbox 轨迹。
 
@@ -354,6 +357,12 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 插值规则与前端显示保持一致：outside 段优先；精确关键帧其次；`occluded=true` 表示目标存在但遮挡，不阻断插值。`video_frame_mode=all_frames` 不输出 outside 范围内的 bbox，也不会把 track → `video_bbox` 转换到 outside 帧上。
 
 `include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。图片侧 `yolo-det` / `yolo-obb` / `yolo-seg` / `voc` 对视频项目返回 400；视频检测训练集要使用 `targets=yolo-frames-det`，它按采样网格抽帧并把 `video_bbox` 与摊平后的 `video_track_bbox` 写成逐帧 YOLO label。
+
+### 部分范围导出
+
+项目和批次导出接受可选的 task-scoped `scope`：按连续 Segment 起止或源帧闭区间选择。API 在入队前把 selection 规范化为确定的 `task_id / dataset_item_id / from_frame / to_frame`，并把同一结果写入 preflight、job payload、worker options 和 manifest；因此 segment 配置随后变化也不会改变已排队任务的范围。
+
+共享的 geometry 裁剪只保留范围内单帧 shape；track 会裁剪 outside、保留范围内原始关键帧，并用现有 resolver 在可见区间边界补齐自包含状态。帧格式从原视频全局采样网格过滤范围，再按各格式现有 base 密集编号，避免从 `from_frame` 重新锚定导致采样相位漂移。
 
 ## 前端 Stage 边界
 

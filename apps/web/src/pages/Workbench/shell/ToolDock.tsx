@@ -58,6 +58,8 @@ interface ToolDockProps {
    * undefined = 全部显示 (向后兼容 / 非视频)。
    */
   isVideoToolEnabled?: (t: VideoTool) => boolean;
+  /** 未配置骨骼节点时保留入口但禁用，避免创建无语义的关键点数组。 */
+  videoKeypointNodeCount?: number;
   /** v0.13.3-5 · 点云 3D 台:渲染 select / box 两个 3D 工具(双栈隔离,不走 2D ToolId)。 */
   threeDMode?: boolean;
   threeDTool?: ThreeDTool;
@@ -128,6 +130,22 @@ const VIDEO_TOOLS: Array<{
     icon: "rect",
     desc: "当前帧独立矩形框",
     altDigit: 1,
+    group: "frame",
+  },
+  {
+    id: "rotated-box",
+    hotkey: "W",
+    label: "旋转框",
+    icon: imageToolIcon("rotated-box"),
+    desc: "当前帧旋转框 · 拖框后用顶部手柄旋转",
+    group: "frame",
+  },
+  {
+    id: "keypoint",
+    hotkey: "F",
+    label: "关键点",
+    icon: imageToolIcon("keypoint"),
+    desc: "按骨骼模板依次落点 · Alt 遮挡 · 右键跳过",
     group: "frame",
   },
   // v0.21.21 · 单帧 polygon/polyline (点击落点, Enter/双击闭合, Esc 取消)。
@@ -271,6 +289,7 @@ export function ToolDock({
   enabledToolUnits = null,
   aiInteractiveEnabled,
   isVideoToolEnabled,
+  videoKeypointNodeCount = 0,
   threeDMode = false,
   threeDTool = "select",
   onSetThreeDTool,
@@ -342,9 +361,12 @@ export function ToolDock({
           ? isPromptSupported(t.requiredPrompt)
           : true
         : true;
-      const disabled = t.requiredPrompt ? capabilitiesLoading || !supported : false;
-      const disabledHint =
-        t.requiredPrompt && !capabilitiesLoading && !supported
+      const keypointUnavailable = t.id === "keypoint" && videoKeypointNodeCount <= 0;
+      const disabled =
+        keypointUnavailable || (t.requiredPrompt ? capabilitiesLoading || !supported : false);
+      const disabledHint = keypointUnavailable
+        ? "请先在项目设置中配置关键点骨骼"
+        : t.requiredPrompt && !capabilitiesLoading && !supported
           ? "当前后端不支持此交互模式"
           : capabilitiesLoading && t.requiredPrompt
             ? "正在协商后端能力…"

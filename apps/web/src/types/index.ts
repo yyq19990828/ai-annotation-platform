@@ -288,6 +288,12 @@ export type VideoRotatedBboxGeometry = {
   h: number;
   angle: number;
 };
+/** 视频单帧关键点集合；骨骼拓扑沿用类别级 keypoint_schema。 */
+export type VideoKeypointGeometry = {
+  type: "video_keypoint";
+  frame_index: number;
+  points: Keypoint[];
+};
 export type VideoTrackBbox = { x: number; y: number; w: number; h: number };
 export type VideoTrackKeyframe = {
   frame_index: number;
@@ -452,6 +458,7 @@ export type Geometry =
   | VideoPolygonGeometry
   | VideoPolylineGeometry
   | VideoRotatedBboxGeometry
+  | VideoKeypointGeometry
   | VideoTrackGeometry
   | VideoTrackPolygonGeometry
   | VideoTrackPolylineGeometry

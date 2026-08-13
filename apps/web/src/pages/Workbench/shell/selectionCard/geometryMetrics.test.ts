@@ -196,7 +196,7 @@ describe("geometryMetrics · 其它几何", () => {
     };
     const m = geometryMetrics(g, 1000, 1000);
     expect(byLabel(m, "可见").value).toBe("2 / 4");
-    expect(byLabel(m, "可见").hint).toBe("1 遮挡");
+    expect(byLabel(m, "可见").hint).toBe("1 遮挡 · 1 跳过");
   });
 
   it("rotated_bbox 旋转角 + 占图", () => {

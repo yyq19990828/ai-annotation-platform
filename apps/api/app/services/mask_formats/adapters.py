@@ -28,6 +28,10 @@ from app.services.mask_formats.contracts import (
 from app.services.mask_formats.planning import _code, _plan, _worst_loss
 from app.services.mask_formats.registry import registry
 from app.services.task_matcher import resolve_task
+from app.services.exporting.video_scope import (
+    VideoExportScope,
+    clip_video_geometry,
+)
 
 
 _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
@@ -88,12 +92,15 @@ class LegacyPackagingAdapter:
         scope: dict[str, Any],
         options: dict[str, Any],
     ) -> MaskFormatPlan:
+        video_scope = VideoExportScope.from_dict(scope.get("video_export_scope"))
         task_query = select(Task.id, Task.file_path).where(
             Task.project_id == project.id
         )
         batch_id = scope.get("batch_id")
         if batch_id:
             task_query = task_query.where(Task.batch_id == uuid.UUID(str(batch_id)))
+        if video_scope is not None:
+            task_query = task_query.where(Task.id == video_scope.task_id)
         task_rows = list(
             (await db.execute(task_query.order_by(Task.id).limit(100_001))).all()
         )
@@ -102,7 +109,28 @@ class LegacyPackagingAdapter:
 
         task_ids = [row.id for row in task_rows]
         grouped: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
-        if task_ids:
+        if task_ids and video_scope is not None:
+            annotation_rows = (
+                (
+                    await db.execute(
+                        select(Annotation).where(
+                            Annotation.task_id.in_(task_ids),
+                            Annotation.is_active.is_(True),
+                            Annotation.was_cancelled.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for annotation in annotation_rows:
+                geometry = clip_video_geometry(annotation.geometry, video_scope)
+                if geometry is None:
+                    continue
+                geometry_type = str(geometry.get("type") or "")
+                counts = grouped[annotation.task_id]
+                counts[geometry_type] = counts.get(geometry_type, 0) + 1
+        elif task_ids:
             geometry_type = Annotation.geometry["type"].astext
             annotation_rows = (
                 await db.execute(
@@ -170,7 +198,9 @@ class LegacyPackagingAdapter:
                 "adapter_version": self.descriptor.adapter_version,
                 "manifest_version": self.descriptor.manifest_version,
                 "media_type": project.data_type or "image",
-                "mapping_digest": canonical_digest({}),
+                "mapping_digest": canonical_digest(
+                    video_scope.as_dict() if video_scope else {}
+                ),
                 "options_digest": canonical_digest(options),
                 "items": [item.model_dump(mode="json") for item in items],
                 "loss_class": loss_class,

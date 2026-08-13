@@ -39,6 +39,10 @@ from app.services.project import lookup_classes_for_tool_unit
 from app.services.raster_mask_storage import build_rle_reference, load_coco_rle
 from app.services.task_matcher import resolve_task, resolve_task_by_file_stem
 from app.services.video_tracks import resolve_track_at_frame
+from app.services.exporting.video_scope import (
+    VideoExportScope,
+    clip_video_geometry,
+)
 from app.utils.raster_mask_rle import coco_rle_area, validate_coco_rle
 
 from .planning import _code, _plan, _worst_loss
@@ -1100,6 +1104,7 @@ class VideoMaskFormatAdapter:
         )
         if self.descriptor.format_id not in {"davis", "youtube-vos"}:
             return base
+        video_scope = VideoExportScope.from_dict(scope.get("video_export_scope"))
         overlap_policy = str(options.get("video_overlap_policy") or "error")
         if overlap_policy not in {"error", "z_order", "larger_area", "smaller_area"}:
             raise ValueError("invalid video mask overlap policy")
@@ -1129,7 +1134,9 @@ class VideoMaskFormatAdapter:
         for task_id, task_annotations in grouped.items():
             hydrated: list[tuple[int, dict[str, Any], int]] = []
             for pixel_id, annotation in enumerate(task_annotations, start=1):
-                geometry = json.loads(json.dumps(annotation.geometry or {}))
+                geometry = clip_video_geometry(annotation.geometry, video_scope)
+                if geometry is None:
+                    continue
                 for keyframe in geometry.get("keyframes") or []:
                     keyframe["mask_rle"] = await load_coco_rle(
                         keyframe.get("mask") or {}
@@ -1143,9 +1150,13 @@ class VideoMaskFormatAdapter:
                 ),
                 default=0,
             )
-            if (max_frame + 1) * max(1, len(hydrated)) > 200_000:
+            frames = (
+                range(video_scope.from_frame, video_scope.to_frame + 1)
+                if video_scope is not None
+                else range(max_frame + 1)
+            )
+            if len(frames) * max(1, len(hydrated)) > 200_000:
                 raise ValueError("resource_budget_exceeded:video_overlap_frames")
-            frames = range(max_frame + 1)
             for frame in frames:
                 occupied: set[int] = set()
                 overlaps = 0

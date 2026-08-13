@@ -1203,6 +1203,47 @@ async def test_video_batch_export_filters_tasks_and_annotations(
     assert len(body["video_bbox"]) == 1
 
 
+async def test_video_frame_range_export_clips_task_tracks_and_single_frames(
+    db_session,
+    super_admin,
+):
+    from app.services.exporting.video_scope import VideoExportScope
+
+    user, _ = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track_row = await _video_fixture_task_and_track(db_session, project)
+    track_row.geometry = {**track_row.geometry, "outside": []}
+    await db_session.flush()
+    scope = VideoExportScope(
+        task_id=task.id,
+        dataset_item_id=task.dataset_item_id,
+        selection_kind="frames",
+        from_frame=1,
+        to_frame=3,
+    )
+
+    body = json.loads(
+        await ExportService(db_session).export_coco(
+            project.id,
+            video_frame_mode="all_frames",
+            video_scope=scope,
+        )
+    )
+
+    assert [row["id"] for row in body["tasks"]] == [str(task.id)]
+    assert body["export_scope"] == scope.as_dict()
+    track = body["tracks"][0]
+    assert [row["frame_index"] for row in track["keyframes"]] == [1, 2, 3]
+    assert [row["source"] for row in track["keyframes"]] == [
+        "interpolated",
+        "manual",
+        "interpolated",
+    ]
+    assert [row["frame_index"] for row in track["frames"]] == [1, 2, 3]
+    assert [row["frame_index"] for row in body["keyframes"]] == [1, 2, 3]
+    assert [row["frame_index"] for row in body["video_bbox"]] == [1]
+
+
 async def test_video_export_all_frames_interpolates_and_outside_blocks(
     db_session,
     super_admin,

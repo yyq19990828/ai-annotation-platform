@@ -71,6 +71,37 @@ function polygonTrack(id: string, points: [number, number][], frameIndex = 0): A
   } as unknown as AnnotationResponse;
 }
 
+function obb(id: string): AnnotationResponse {
+  return {
+    id,
+    class_name: "car",
+    geometry: {
+      type: "video_rotated_bbox",
+      frame_index: 0,
+      cx: 0.5,
+      cy: 0.5,
+      w: 0.4,
+      h: 0.2,
+      angle: 0,
+    },
+  } as unknown as AnnotationResponse;
+}
+
+function keypoints(id: string): AnnotationResponse {
+  return {
+    id,
+    class_name: "person",
+    geometry: {
+      type: "video_keypoint",
+      frame_index: 0,
+      points: [
+        { x: 0.2, y: 0.2, v: 2 },
+        { x: 0.4, y: 0.4, v: 1 },
+      ],
+    },
+  } as unknown as AnnotationResponse;
+}
+
 const baseCtx: ResolveDragCommitCtx = {
   annotations: [],
   videoTool: "box",
@@ -170,6 +201,67 @@ describe("advanceDrag", () => {
     }
   });
 
+  it("OBB 按局部轴缩放、移动与旋转", () => {
+    const origin = obb("obb").geometry;
+    if (origin.type !== "video_rotated_bbox") throw new Error("expected obb");
+    const resize = advanceDrag(
+      {
+        kind: "obbResize",
+        id: "obb",
+        dir: "e",
+        start: { x: 0.7, y: 0.5 },
+        origin,
+        current: origin,
+        imageSize: { w: 1000, h: 500 },
+      },
+      { x: 0.8, y: 0.5 },
+    );
+    expect(resize?.kind).toBe("obbResize");
+    if (resize?.kind === "obbResize") expect(resize.current.w).toBeCloseTo(0.5);
+
+    const move = advanceDrag(
+      {
+        kind: "obbMove",
+        id: "obb",
+        start: { x: 0.5, y: 0.5 },
+        origin,
+        current: origin,
+        imageSize: { w: 1000, h: 500 },
+      },
+      { x: 0.6, y: 0.6 },
+    );
+    if (move?.kind !== "obbMove") throw new Error("expected obbMove");
+    expect(move.current.cx).toBeCloseTo(0.6);
+    expect(move.current.cy).toBeCloseTo(0.6);
+
+    const rotate = advanceDrag(
+      {
+        kind: "obbRotate",
+        id: "obb",
+        origin,
+        current: origin,
+        startPointerAngle: -Math.PI / 2,
+        imageSize: { w: 1000, h: 500 },
+      },
+      { x: 0.7, y: 0.5 },
+    );
+    if (rotate?.kind !== "obbRotate") throw new Error("expected obbRotate");
+    expect(rotate.current.angle).toBeCloseTo(90);
+  });
+
+  it("关键点节点拖动保留可见性", () => {
+    const origin = [
+      { x: 0.2, y: 0.2, v: 2 as const },
+      { x: 0.4, y: 0.4, v: 1 as const },
+    ];
+    const next = advanceDrag(
+      { kind: "keypointNode", id: "kp", nodeIdx: 1, origin, current: origin },
+      { x: 0.7, y: 0.8 },
+    );
+    if (next?.kind !== "keypointNode") throw new Error("expected keypointNode");
+    expect(next.current[1]).toEqual({ x: 0.7, y: 0.8, v: 1 });
+  });
+
   it("pan / null → 原样返回", () => {
     const pan: VideoDragState = { kind: "pan", sx: 1, sy: 2 };
     expect(advanceDrag(pan, { x: 0.5, y: 0.5 })).toBe(pan);
@@ -206,6 +298,54 @@ describe("resolveDragCommit", () => {
       expect(out.geom.w).toBeCloseTo(0.3, 5);
       expect(out.geom.h).toBeCloseTo(0.3, 5);
     }
+  });
+
+  it("rotated-box 工具 draw → 新 video_rotated_bbox", () => {
+    const out = resolveDragCommit(
+      draw({ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.4 }),
+      { x: 0.4, y: 0.4 },
+      { ...baseCtx, videoTool: "rotated-box" },
+    );
+    expect(out).toMatchObject({ type: "draw", kind: "video_rotated_bbox" });
+  });
+
+  it("OBB 与关键点编辑提交保留专用几何", () => {
+    const obbAnn = obb("obb");
+    if (obbAnn.geometry.type !== "video_rotated_bbox") throw new Error("expected obb");
+    const moved = { ...obbAnn.geometry, cx: 0.6 };
+    const obbCommitted = resolveDragCommit(
+      {
+        kind: "obbMove",
+        id: "obb",
+        start: { x: 0.5, y: 0.5 },
+        origin: obbAnn.geometry,
+        current: moved,
+        imageSize: { w: 1000, h: 500 },
+      },
+      { x: 0.6, y: 0.5 },
+      { ...baseCtx, annotations: [obbAnn] },
+    );
+    expect(obbCommitted).toMatchObject({ type: "rotated", geometry: { cx: 0.6 } });
+
+    const kpAnn = keypoints("kp");
+    if (kpAnn.geometry.type !== "video_keypoint") throw new Error("expected keypoint");
+    const current = kpAnn.geometry.points.map((point, index) =>
+      index === 0 ? { ...point, x: 0.3 } : point,
+    );
+    const keypointCommitted = resolveDragCommit(
+      {
+        kind: "keypointNode",
+        id: "kp",
+        nodeIdx: 0,
+        origin: kpAnn.geometry.points,
+        current,
+      },
+      { x: 0.3, y: 0.2 },
+      { ...baseCtx, annotations: [kpAnn] },
+    );
+    expect(keypointCommitted.type).toBe("keypoint");
+    if (keypointCommitted.type === "keypoint")
+      expect(keypointCommitted.points[0]).toEqual({ x: 0.3, y: 0.2, v: 2 });
   });
 
   it("select 工具 draw → none", () => {

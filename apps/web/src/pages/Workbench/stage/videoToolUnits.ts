@@ -18,6 +18,8 @@ export const VIDEO_TOOL_TARGET: Partial<
   Record<VideoTool, { unit: ToolUnitId; variant: VideoVariant }>
 > = {
   box: { unit: "bbox", variant: "box" },
+  "rotated-box": { unit: "rotated_bbox", variant: "box" },
+  keypoint: { unit: "keypoint", variant: "box" },
   track: { unit: "bbox", variant: "track" },
   mask: { unit: "region", variant: "box" },
   "mask-track": { unit: "region", variant: "track" },

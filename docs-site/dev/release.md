@@ -29,6 +29,7 @@ last_reviewed: 2026-07-17
 1. 在发布分支同步代码与依赖，运行完整本地门禁：
    ```bash
    pnpm install
+   pnpm codegen
    pnpm format:check
    pnpm test
    pnpm typecheck

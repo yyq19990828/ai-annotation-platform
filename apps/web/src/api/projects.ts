@@ -151,12 +151,27 @@ export type ExportTarget =
   | "mots"
   | "voc";
 export type VideoFrameMode = "keyframes" | "all_frames";
+export type VideoExportScope = {
+  task_id: string;
+  selection:
+    | {
+        kind: "segments";
+        start_segment_id: string;
+        end_segment_id: string;
+      }
+    | {
+        kind: "frames";
+        from_frame: number;
+        to_frame: number;
+      };
+};
 export interface ExportOptions {
   includeAttributes?: boolean;
   videoFrameMode?: VideoFrameMode;
   indexedOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
   videoOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
   motsFrameBase?: 0 | 1;
+  scope?: VideoExportScope;
 }
 
 export interface ProjectClassUsageResponse {
@@ -278,6 +293,9 @@ export const projectsApi = {
     if (opts?.motsFrameBase !== undefined) {
       params.set("mots_frame_base", String(opts.motsFrameBase));
     }
-    return apiClient.post<{ job_id: string }>(`/projects/${id}/export?${params.toString()}`);
+    return apiClient.post<{ job_id: string }>(
+      `/projects/${id}/export?${params.toString()}`,
+      opts?.scope ? { scope: opts.scope } : {},
+    );
   },
 };

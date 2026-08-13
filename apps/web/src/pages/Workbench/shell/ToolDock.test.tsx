@@ -63,6 +63,8 @@ describe("ToolDock · video tools", () => {
 
     expect(toolIds(frameGroup)).toEqual([
       "box",
+      "rotated-box",
+      "keypoint",
       "polygon",
       "polyline",
       "mask",
@@ -75,6 +77,21 @@ describe("ToolDock · video tools", () => {
     expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track", "mask-track"]);
     expect(screen.queryByTestId("video-tool-btn-ai-track")).toBeNull();
     expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
+    expect(screen.getByTestId("video-tool-btn-keypoint")).toBeDisabled();
+  });
+
+  it("配置骨骼节点后启用视频关键点工具", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoKeypointNodeCount={3}
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("video-tool-btn-keypoint")).toBeEnabled();
   });
 
   it("矩形框轨迹使用独立图标，视频 AI 与 Mask 图标和图片工作台一致", () => {

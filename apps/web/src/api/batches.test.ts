@@ -133,12 +133,14 @@ describe("batchesApi · endpoint 契约", () => {
     });
     expect(post).toHaveBeenCalledWith(
       "/projects/p1/batches/b1/export?include_attributes=true&targets=coco&targets=yolo-det&video_frame_mode=keyframes",
+      {},
     );
     batchesApi.exportBatch("p1", "b1", ["coco"] as ExportTarget[], {
       includeAttributes: false,
     });
     expect(post).toHaveBeenCalledWith(
       "/projects/p1/batches/b1/export?include_attributes=false&targets=coco",
+      {},
     );
     batchesApi.exportBatch("p1", "b1", ["davis", "mots"] as ExportTarget[], {
       includeAttributes: true,
@@ -148,6 +150,7 @@ describe("batchesApi · endpoint 契约", () => {
     expect(post).toHaveBeenCalledWith(
       "/projects/p1/batches/b1/export?include_attributes=true&targets=davis&targets=mots" +
         "&video_overlap_policy=z_order&mots_frame_base=1",
+      {},
     );
   });
 });

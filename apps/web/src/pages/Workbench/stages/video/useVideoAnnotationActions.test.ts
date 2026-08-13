@@ -7,6 +7,7 @@ import {
   buildVideoPointsTrackCreatePayload,
   buildVideoMaskCreatePayload,
   buildVideoMaskTrackCreatePayload,
+  buildVideoKeypointCreatePayload,
   upsertVideoMaskKeyframe,
   buildVideoUpdateCommand,
 } from "./useVideoAnnotationActions";
@@ -43,6 +44,34 @@ describe("video annotation actions helpers", () => {
       annotation_type: "video_bbox",
       class_name: "Car",
       geometry: { type: "video_bbox", frame_index: 7, ...box },
+    });
+  });
+
+  it("builds lossless video OBB and keypoint payloads", () => {
+    expect(buildVideoCreatePayload("video_rotated_bbox", 7, box, "Car")).toEqual({
+      annotation_type: "video_rotated_bbox",
+      class_name: "Car",
+      tool_unit_id: "rotated_bbox",
+      geometry: {
+        type: "video_rotated_bbox",
+        frame_index: 7,
+        cx: 0.25,
+        cy: 0.4,
+        w: 0.3,
+        h: 0.4,
+        angle: 0,
+      },
+    });
+    const points = [
+      { x: 0.1, y: 0.2, v: 2 as const },
+      { x: 0.3, y: 0.4, v: 1 as const },
+      { x: 0.5, y: 0.6, v: 0 as const },
+    ];
+    expect(buildVideoKeypointCreatePayload(8, points, "Person")).toEqual({
+      annotation_type: "video_keypoint",
+      class_name: "Person",
+      tool_unit_id: "keypoint",
+      geometry: { type: "video_keypoint", frame_index: 8, points },
     });
   });
 

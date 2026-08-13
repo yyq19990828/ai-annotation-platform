@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.export import VideoExportScopeRequest
+
 
 MaskFormatDirection = Literal["import", "export"]
 MaskFormatLossClass = Literal["lossless", "lossy", "unsupported"]
@@ -91,6 +93,7 @@ class MaskFormatExportPreflightRequest(BaseModel):
     include_attributes: bool = True
     video_frame_mode: Literal["keyframes", "all_frames"] = "keyframes"
     axis_frame: Literal["iso", "source"] = "iso"
+    scope: VideoExportScopeRequest | None = None
     options: dict[str, Any] = Field(default_factory=dict)
 
 

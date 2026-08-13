@@ -22,9 +22,21 @@ vi.mock("@/api/maskFormats", () => ({
     preflightExport: vi.fn(),
   },
 }));
+vi.mock("@/api/tasks", () => ({
+  tasksApi: {
+    listByProject: vi.fn(),
+  },
+}));
+vi.mock("@/api/videoTracker", () => ({
+  videoTrackerApi: {
+    segments: vi.fn(),
+  },
+}));
 
 import { projectsApi } from "@/api/projects";
 import { maskFormatsApi } from "@/api/maskFormats";
+import { tasksApi } from "@/api/tasks";
+import { videoTrackerApi } from "@/api/videoTracker";
 
 function preflight(
   lossClass: "lossless" | "lossy" | "unsupported" = "lossless",
@@ -97,6 +109,8 @@ describe("ExportModal", () => {
     vi.mocked(projectsApi.exportProject).mockClear();
     vi.mocked(maskFormatsApi.preflightExport).mockReset();
     vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight());
+    vi.mocked(tasksApi.listByProject).mockReset();
+    vi.mocked(videoTrackerApi.segments).mockReset();
   });
 
   it("默认 coco + 勾选 → targets=[coco], includeAttributes=true", async () => {
@@ -183,6 +197,48 @@ describe("ExportModal", () => {
       includeAttributes: true,
       videoFrameMode: "all_frames",
     });
+  });
+
+  it("视频帧范围同时进入预检和导出", async () => {
+    vi.mocked(tasksApi.listByProject).mockResolvedValue({
+      items: [{ id: "task-1", display_id: "T-1", file_name: "clip.mp4" }] as never,
+      total: 1,
+      limit: 100,
+      offset: 0,
+      next_cursor: null,
+    });
+    vi.mocked(videoTrackerApi.segments).mockResolvedValue({
+      task_id: "task-1",
+      dataset_item_id: "item-1",
+      segment_size_frames: 5,
+      segments: [
+        { id: "seg-1", start_frame: 0, end_frame: 4, segment_index: 0, status: "open" },
+        { id: "seg-2", start_frame: 5, end_frame: 9, segment_index: 1, status: "open" },
+      ],
+    });
+    render(<ExportModalHarness projectId="p-range" projectTypeKey="video-track" />);
+
+    fireEvent.change(screen.getByLabelText("导出范围"), { target: { value: "task" } });
+    await screen.findByRole("option", { name: "T-1 · clip.mp4" });
+    await waitFor(() =>
+      expect((screen.getByLabelText("结束 Segment") as HTMLSelectElement).options).toHaveLength(2),
+    );
+    fireEvent.change(screen.getByLabelText("范围方式"), { target: { value: "frames" } });
+    fireEvent.change(screen.getByLabelText("起始帧"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("结束帧"), { target: { value: "7" } });
+    submitExport();
+
+    const options = {
+      includeAttributes: true,
+      videoFrameMode: "keyframes" as const,
+      scope: {
+        task_id: "task-1",
+        selection: { kind: "frames" as const, from_frame: 2, to_frame: 7 },
+      },
+    };
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(maskFormatsApi.preflightExport).toHaveBeenCalledWith("p-range", ["video_json"], options);
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p-range", ["video_json"], options);
   });
 
   it("DAVIS / YouTube-VOS overlap 与 MOTS frame base 同时进入预检和导出", async () => {

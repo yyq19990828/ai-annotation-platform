@@ -18,7 +18,9 @@ vi.mock("@/components/predictions/PredictionImportWizard", () => ({
 vi.mock("@/components/predictions/PredictionPurgeModal", () => ({
   PredictionPurgeModal: () => null,
 }));
-vi.mock("./ExportModal", () => ({ ExportModal: () => null }));
+vi.mock("./ExportModal", () => ({
+  ExportModal: ({ open }: { open: boolean }) => (open ? <div data-testid="export-modal" /> : null),
+}));
 
 import { maskFormatsApi } from "@/api/maskFormats";
 
@@ -77,6 +79,17 @@ describe("ProjectActionsMenu", () => {
     expect(maskFormatsApi.list).toHaveBeenCalledWith("project-1");
     fireEvent.click(importItem);
     expect(screen.getByTestId("mask-import-wizard")).toBeInTheDocument();
+  });
+
+  it("只在选择导出后加载导出弹窗", async () => {
+    vi.mocked(maskFormatsApi.list).mockResolvedValue([]);
+    renderMenu();
+
+    expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("更多操作"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "导出标注数据" }));
+
+    expect(await screen.findByTestId("export-modal")).toBeInTheDocument();
   });
 
   it("未验证 adapter 不暴露标注导入", async () => {

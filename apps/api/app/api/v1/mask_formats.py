@@ -78,6 +78,20 @@ async def preflight_mask_format_export(
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
 ) -> MaskFormatExportPreflightResponse:
+    from app.services.exporting.video_scope import normalize_video_export_scope
+
+    try:
+        video_scope = await normalize_video_export_scope(
+            db,
+            project=project,
+            request=body.scope,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    scope = {
+        "project_id": str(project.id),
+        "video_export_scope": video_scope.as_dict() if video_scope else None,
+    }
     plans = []
     options = {
         "include_attributes": body.include_attributes,
@@ -107,7 +121,7 @@ async def preflight_mask_format_export(
                 await adapter.preflight_export(
                     db,
                     project=project,
-                    scope={"project_id": str(project.id)},
+                    scope=scope,
                     options=options,
                 )
             )

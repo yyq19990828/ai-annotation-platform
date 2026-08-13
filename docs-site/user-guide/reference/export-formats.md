@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-08-13
 ---
 
 # Mask 标注导入与数据导出格式
@@ -49,7 +49,7 @@ last_reviewed: 2026-07-23
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
 
-> **视频几何的导出边界**：AAP JSON 保真保存 bbox、polygon、polyline 与 Mask 轨迹；Video JSON 保留轨迹几何，但媒体引用不具备跨实例可移植性。MOT / KITTI / YOLO 逐帧检测把 polygon / polyline 按顶点外接框、Mask 按非空像素外接框降级；YOLO 逐帧分割只收 polygon；COCO 逐帧分割、DAVIS、YouTube-VOS 与 MOTS 只处理 Mask 轨迹。
+> **视频几何的导出边界**：AAP JSON 与 Video JSON 保真保存单帧 OBB 的 `cx/cy/w/h/angle`、关键点的完整 `{x,y,v}` 数组，以及 bbox、polygon、polyline 与 Mask 轨迹；Video JSON 的媒体引用不具备跨实例可移植性。MOT / KITTI / YOLO / COCO 逐帧、DAVIS、YouTube-VOS 与 MOTS 没有单帧 OBB 或关键点表示，预检会将其列为不支持，不会静默降级。既有 polygon / polyline 和 Mask 的格式映射保持不变。
 >
 > **同名 target 跨模态语义不同**：`kitti` 在视频项目里是 **KITTI Tracking 2D**（逐帧 2D 框），在点云项目里是 **KITTI 3D**（label_2 3D 框 + calib），二者不可混淆。
 
@@ -72,6 +72,8 @@ COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio �
 - **无损**：同一次操作直接入队。
 - **有损**：报告列出稳定损失码和说明；勾选「我已了解以上格式损失」后再次提交。
 - **不支持**：报告指出无法表达的标注类型，必须调整格式或项目内容，不能继续导出。
+
+视频项目还可把「导出范围」切换为「单个视频范围」，选择一个视频任务后按连续 Segment 起止或源帧闭区间导出；默认仍是整个项目。范围两端都包含，Segment 模式会自动聚合起止段之间的所有连续段。切换任务、范围方式或边界会使上一份预检失效。
 
 报告同时显示估算对象数和文件数。修改导出目标、属性选项或视频帧模式会使上一份报告失效并重新预检。
 未知损失码也会按原值显示，不会被忽略。
@@ -392,6 +394,8 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 ## 视频轨迹
 
 `video-track` 项目导出统一走异步 zip 管线，可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`；需要图像序列的目标另带 `fetch_frames.py`，按每个输出目录自己的起始编号、位数与扩展名抽帧。
+
+部分导出会把同一 task 和闭区间应用到所有已选目标：单帧标注只保留范围内帧，轨迹裁剪后保留范围内关键帧与 outside，并补齐可见边界状态。帧格式先按原视频的全局采样网格取帧，再过滤范围，所以不会因范围起点改变采样相位；`manifest.json` 的 `export_scope` 与 `grid_source_frames` 可还原源帧。
 
 **Video JSON**（帧模式二选一）：
 
