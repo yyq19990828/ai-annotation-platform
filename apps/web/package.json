@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.23.30",
+  "version": "0.23.31",
   "type": "module",
   "scripts": {
     "dev": "vite",

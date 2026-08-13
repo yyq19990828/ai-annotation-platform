@@ -177,6 +177,44 @@ async def test_video_segment_claim_heartbeat_release(
     assert release_resp.json()["locked_by"] is None
 
 
+async def test_submitted_video_segment_stays_completed_after_refresh_and_release(
+    db_session, httpx_client_bound, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, _ = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 2}
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames",
+        45,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    listed = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/segments", headers=headers
+    )
+    segment_id = listed.json()["segments"][0]["id"]
+    await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment_id}:claim",
+        headers=headers,
+    )
+    submitted = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment_id}:submit",
+        headers=headers,
+    )
+    refreshed = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/segments", headers=headers
+    )
+    released = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment_id}:release",
+        headers=headers,
+    )
+
+    assert submitted.json()["status"] == "completed"
+    assert refreshed.json()["segments"][0]["status"] == "completed"
+    assert released.json()["status"] == "completed"
+
+
 async def test_video_collaboration_derives_overlap_work_ranges(
     db_session, httpx_client_bound, super_admin, monkeypatch
 ):

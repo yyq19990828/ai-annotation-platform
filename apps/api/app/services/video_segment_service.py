@@ -28,6 +28,8 @@ def _is_expired(row: VideoSegment, now: datetime) -> bool:
 
 
 def _normalize_lock(row: VideoSegment, now: datetime) -> None:
+    if row.status == "completed":
+        return
     if _is_expired(row, now):
         row.locked_by = None
         row.locked_at = None
@@ -291,6 +293,8 @@ async def release_segment(
     row = await _load_segment_for_update(db, ctx, segment_id)
     now = _now()
     _normalize_lock(row, now)
+    if row.status == "completed":
+        return await _segment_out_for_context(db, ctx, row)
     if row.locked_by is not None:
         _assert_can_touch_lock(row, user, privileged)
     row.locked_by = None
