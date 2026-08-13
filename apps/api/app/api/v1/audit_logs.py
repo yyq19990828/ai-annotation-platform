@@ -2,27 +2,183 @@ import base64
 import csv
 import io
 import json
-from datetime import datetime
+import re
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, outerjoin, select
+from sqlalchemy import func, outerjoin, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.audit_log import AuditLog
 from app.db.models.user import User
+from app.config import settings
 from app.schemas.audit import (
     AuditArchiveOut,
     AuditArchiveRowsOut,
     AuditLogList,
     AuditLogOut,
+    AuditMonthlySummary,
+    AuditSummaryBucket,
+    AuditSummaryDailyPoint,
+    AuditSummaryTotals,
 )
 from app.services.audit_partition_service import AuditPartitionService
 
 router = APIRouter()
+
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def _month_bounds(month: str) -> tuple[date, date]:
+    if not _MONTH_RE.fullmatch(month):
+        raise HTTPException(status_code=422, detail="month 必须使用 YYYY-MM 格式")
+    start = date(int(month[:4]), int(month[5:]), 1)
+    end = (
+        date(start.year + 1, 1, 1)
+        if start.month == 12
+        else date(start.year, start.month + 1, 1)
+    )
+    return start, end
+
+
+def _shift_month(start: date, delta: int) -> date:
+    month_index = start.year * 12 + start.month - 1 + delta
+    year, zero_month = divmod(month_index, 12)
+    return date(year, zero_month + 1, 1)
+
+
+def _rank_buckets(values: dict[str, int], *, limit: int | None = None):
+    ranked = [
+        AuditSummaryBucket(key=key, event_count=count)
+        for key, count in sorted(values.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    return ranked[:limit] if limit is not None else ranked
+
+
+async def _load_monthly_summary_rows(
+    db: AsyncSession, *, month_start: date, month_end: date, business_only: bool
+) -> tuple[date | None, list[tuple]]:
+    materialized_through = (
+        await db.execute(text("SELECT MAX(day) FROM mv_audit_bi_daily"))
+    ).scalar_one_or_none()
+    mv_end = month_start
+    if materialized_through is not None:
+        mv_end = min(
+            month_end, max(month_start, materialized_through + timedelta(days=1))
+        )
+
+    rows: list[tuple] = []
+    if mv_end > month_start:
+        rows.extend(
+            (
+                await db.execute(
+                    text(
+                        """
+                        SELECT day, action, target_type, actor_role, status_family, event_count
+                        FROM mv_audit_bi_daily
+                        WHERE day >= :month_start AND day < :mv_end
+                          AND (:business_only = false OR action NOT LIKE 'http.%')
+                        """
+                    ),
+                    {
+                        "month_start": month_start,
+                        "mv_end": mv_end,
+                        "business_only": business_only,
+                    },
+                )
+            ).all()
+        )
+
+    raw_start = max(month_start, mv_end)
+    if raw_start < month_end:
+        rows.extend(
+            (
+                await db.execute(
+                    text(
+                        """
+                        SELECT
+                            (created_at AT TIME ZONE 'UTC')::date AS day,
+                            action,
+                            COALESCE(target_type, '') AS target_type,
+                            COALESCE(actor_role, '') AS actor_role,
+                            CASE
+                                WHEN status_code BETWEEN 200 AND 599
+                                    THEN (status_code / 100)::smallint
+                                ELSE 0::smallint
+                            END AS status_family,
+                            COUNT(*)::bigint AS event_count
+                        FROM audit_logs
+                        WHERE created_at >= :raw_start AND created_at < :month_end
+                          AND (:business_only = false OR action NOT LIKE 'http.%')
+                        GROUP BY day, action, target_type, actor_role, status_family
+                        """
+                    ),
+                    {
+                        "raw_start": datetime.combine(
+                            raw_start, time.min, timezone.utc
+                        ),
+                        "month_end": datetime.combine(
+                            month_end, time.min, timezone.utc
+                        ),
+                        "business_only": business_only,
+                    },
+                )
+            ).all()
+        )
+    return materialized_through, rows
+
+
+def _build_monthly_summary(
+    *,
+    month: str,
+    month_start: date,
+    month_end: date,
+    materialized_through: date | None,
+    rows: list[tuple],
+) -> AuditMonthlySummary:
+    daily = {
+        day: {"event_count": 0, "error_count": 0}
+        for day in (
+            month_start + timedelta(days=offset)
+            for offset in range((month_end - month_start).days)
+        )
+    }
+    actions: dict[str, int] = {}
+    target_types: dict[str, int] = {}
+    actor_roles: dict[str, int] = {}
+    event_count = 0
+    error_count = 0
+
+    for row in rows:
+        row_count = int(row.event_count)
+        is_error = int(row.status_family) in (4, 5)
+        event_count += row_count
+        error_count += row_count if is_error else 0
+        daily[row.day]["event_count"] += row_count
+        daily[row.day]["error_count"] += row_count if is_error else 0
+        actions[row.action] = actions.get(row.action, 0) + row_count
+        target_types[row.target_type] = target_types.get(row.target_type, 0) + row_count
+        actor_roles[row.actor_role] = actor_roles.get(row.actor_role, 0) + row_count
+
+    return AuditMonthlySummary(
+        month=month,
+        materialized_through=materialized_through,
+        totals=AuditSummaryTotals(
+            event_count=event_count,
+            error_count=error_count,
+            action_kind_count=len(actions),
+        ),
+        daily=[
+            AuditSummaryDailyPoint(day=day, **counts) for day, counts in daily.items()
+        ],
+        top_actions=_rank_buckets(actions, limit=10),
+        target_types=_rank_buckets(target_types),
+        actor_roles=_rank_buckets(actor_roles),
+    )
 
 
 def _build_base_query(
@@ -161,6 +317,37 @@ async def list_audit_logs(
         page=page,
         page_size=page_size,
         next_cursor=next_cursor,
+    )
+
+
+@router.get("/monthly-summary", response_model=AuditMonthlySummary)
+async def get_monthly_audit_summary(
+    month: str = Query(..., description="UTC 自然月，格式 YYYY-MM"),
+    business_only: bool = Query(True, description="排除 http.* 中间件元数据行"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    month_start, month_end = _month_bounds(month)
+    current_month = datetime.now(timezone.utc).date().replace(day=1)
+    retention_start = _shift_month(current_month, -settings.audit_retention_months)
+    if month_start < retention_start:
+        raise HTTPException(
+            status_code=422,
+            detail="该月份已超出在线审计保留期，请使用归档查询",
+        )
+
+    materialized_through, rows = await _load_monthly_summary_rows(
+        db,
+        month_start=month_start,
+        month_end=month_end,
+        business_only=business_only,
+    )
+    return _build_monthly_summary(
+        month=month,
+        month_start=month_start,
+        month_end=month_end,
+        materialized_through=materialized_through,
+        rows=rows,
     )
 
 

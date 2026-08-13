@@ -6,13 +6,16 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const mockUseAuditLogs = vi.fn();
+const mockUseAuditMonthlySummary = vi.fn();
 const mockUseUsers = vi.fn();
 const mockExport = vi.fn();
 const mockPushToast = vi.fn();
 const mockRefetch = vi.fn();
+const mockSummaryRefetch = vi.fn();
 
 vi.mock("@/hooks/useAudit", () => ({
   useAuditLogs: (...args: unknown[]) => mockUseAuditLogs(...args),
+  useAuditMonthlySummary: (...args: unknown[]) => mockUseAuditMonthlySummary(...args),
 }));
 vi.mock("@/hooks/useUsers", () => ({
   useUsers: () => mockUseUsers(),
@@ -45,12 +48,28 @@ describe("AuditPage", () => {
     mockExport.mockReset().mockResolvedValue(undefined);
     mockPushToast.mockReset();
     mockRefetch.mockReset();
+    mockSummaryRefetch.mockReset();
     mockUseUsers.mockReturnValue({ data: [] });
     mockUseAuditLogs.mockReturnValue({
       data: { items: [], total: 0 },
       isLoading: false,
       isFetching: false,
       refetch: mockRefetch,
+    });
+    mockUseAuditMonthlySummary.mockReturnValue({
+      data: {
+        month: "2026-08",
+        timezone: "UTC",
+        materialized_through: "2026-08-12",
+        totals: { event_count: 0, error_count: 0, action_kind_count: 0 },
+        daily: [],
+        top_actions: [],
+        target_types: [],
+        actor_roles: [],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: mockSummaryRefetch,
     });
   });
 
@@ -65,6 +84,55 @@ describe("AuditPage", () => {
     const calls = mockUseAuditLogs.mock.calls;
     const lastCall = calls[calls.length - 1][0];
     expect(lastCall.business_only).toBe(true);
+    const summaryCalls = mockUseAuditMonthlySummary.mock.calls;
+    expect(summaryCalls[summaryCalls.length - 1]?.[1]).toBe(true);
+  });
+
+  it("月度概览显示 KPI 与物化覆盖日期", () => {
+    mockUseAuditMonthlySummary.mockReturnValue({
+      data: {
+        month: "2026-08",
+        timezone: "UTC",
+        materialized_through: "2026-08-12",
+        totals: { event_count: 1243, error_count: 17, action_kind_count: 26 },
+        daily: [{ day: "2026-08-01", event_count: 1243, error_count: 17 }],
+        top_actions: [{ key: "task.approve", event_count: 418 }],
+        target_types: [{ key: "task", event_count: 900 }],
+        actor_roles: [{ key: "reviewer", event_count: 640 }],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: mockSummaryRefetch,
+    });
+    renderUI();
+    expect(screen.getByText("1,243")).toBeInTheDocument();
+    expect(screen.getByText(/历史聚合至 2026-08-12/)).toBeInTheDocument();
+    expect(screen.getByText("质检员")).toBeInTheDocument();
+  });
+
+  it("Top action 按钮下钻到现有明细过滤", async () => {
+    mockUseAuditMonthlySummary.mockReturnValue({
+      data: {
+        month: "2026-08",
+        timezone: "UTC",
+        materialized_through: null,
+        totals: { event_count: 4, error_count: 0, action_kind_count: 1 },
+        daily: [{ day: "2026-08-01", event_count: 4, error_count: 0 }],
+        top_actions: [{ key: "task.approve", event_count: 4 }],
+        target_types: [],
+        actor_roles: [],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: mockSummaryRefetch,
+    });
+    renderUI();
+    fireEvent.click(screen.getByRole("button", { name: /task\.approve.*4/ }));
+    await waitFor(() => {
+      const calls = mockUseAuditLogs.mock.calls;
+      const lastCall = calls[calls.length - 1]?.[0];
+      expect(lastCall.action).toBe("task.approve");
+    });
   });
 
   it("有数据 → 总数显示 1 条", () => {
@@ -124,6 +192,8 @@ describe("AuditPage", () => {
       const calls = mockUseAuditLogs.mock.calls;
       const lastCall = calls[calls.length - 1][0];
       expect(lastCall.business_only).toBeUndefined();
+      const summaryCalls = mockUseAuditMonthlySummary.mock.calls;
+      expect(summaryCalls[summaryCalls.length - 1]?.[1]).toBe(false);
     });
   });
 

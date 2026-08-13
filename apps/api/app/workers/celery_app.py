@@ -104,6 +104,7 @@ celery_app.conf.update(
         "app.workers.task_events.persist_task_events_batch": {"queue": "audit"},
         # v0.8.4 · 物化视图 hourly refresh
         "app.workers.cleanup.refresh_user_perf_mv": {"queue": "cleanup"},
+        "app.workers.cleanup.refresh_audit_bi_mv": {"queue": "cleanup"},
         # v0.9.11 PerfHud · 1s 推送任务走 default queue (worker 默认订阅 default,ml,media)
         "app.workers.ml_health.publish_ml_backend_stats": {"queue": "default"},
         # v0.8.6 · check_ml_backends_health 历史也漏在路由表外, 同步补上避免 stale celery 队列堆积
@@ -151,6 +152,11 @@ celery_app.conf.update(
         "refresh-user-perf-mv": {
             "task": "app.workers.cleanup.refresh_user_perf_mv",
             "schedule": crontab(minute=5),
+        },
+        # 审计月报只物化已经结束的 UTC 日；每日刷新一次即可。
+        "refresh-audit-bi-mv": {
+            "task": "app.workers.cleanup.refresh_audit_bi_mv",
+            "schedule": crontab(hour=0, minute=10),
         },
         # v0.8.3 · 在线状态心跳：每 2 分钟扫描，把超 OFFLINE_THRESHOLD_MINUTES 未活跃的 online 用户置 offline
         "mark-inactive-offline": {

@@ -4097,6 +4097,138 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "AuditMonthlySummary": {
+        "properties": {
+          "actor_roles": {
+            "items": {
+              "$ref": "#/components/schemas/AuditSummaryBucket"
+            },
+            "title": "Actor Roles",
+            "type": "array"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/AuditSummaryDailyPoint"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "materialized_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Materialized Through"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "target_types": {
+            "items": {
+              "$ref": "#/components/schemas/AuditSummaryBucket"
+            },
+            "title": "Target Types",
+            "type": "array"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "top_actions": {
+            "items": {
+              "$ref": "#/components/schemas/AuditSummaryBucket"
+            },
+            "title": "Top Actions",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AuditSummaryTotals"
+          }
+        },
+        "required": [
+          "month",
+          "materialized_through",
+          "totals",
+          "daily",
+          "top_actions",
+          "target_types",
+          "actor_roles"
+        ],
+        "title": "AuditMonthlySummary",
+        "type": "object"
+      },
+      "AuditSummaryBucket": {
+        "properties": {
+          "event_count": {
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "event_count"
+        ],
+        "title": "AuditSummaryBucket",
+        "type": "object"
+      },
+      "AuditSummaryDailyPoint": {
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "event_count": {
+            "title": "Event Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "event_count",
+          "error_count"
+        ],
+        "title": "AuditSummaryDailyPoint",
+        "type": "object"
+      },
+      "AuditSummaryTotals": {
+        "properties": {
+          "action_kind_count": {
+            "title": "Action Kind Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "event_count": {
+            "title": "Event Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event_count",
+          "error_count",
+          "action_kind_count"
+        ],
+        "title": "AuditSummaryTotals",
+        "type": "object"
+      },
       "BackendCapabilities": {
         "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.\n\nv0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);\n其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。",
         "properties": {
@@ -31394,7 +31526,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.23.31"
+    "version": "0.23.32"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -34599,6 +34731,67 @@
           }
         ],
         "summary": "Export Audit Logs",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit-logs/monthly-summary": {
+      "get": {
+        "operationId": "get_monthly_audit_summary_api_v1_audit_logs_monthly_summary_get",
+        "parameters": [
+          {
+            "description": "UTC 自然月，格式 YYYY-MM",
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "description": "UTC 自然月，格式 YYYY-MM",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "description": "排除 http.* 中间件元数据行",
+            "in": "query",
+            "name": "business_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "排除 http.* 中间件元数据行",
+              "title": "Business Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditMonthlySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Monthly Audit Summary",
         "tags": [
           "audit"
         ]

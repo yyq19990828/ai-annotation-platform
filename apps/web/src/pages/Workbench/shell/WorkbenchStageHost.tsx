@@ -142,6 +142,7 @@ interface WorkbenchStageHostVideoProps {
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
+  keypointSchema?: import("@/types").KeypointSchema | null;
   isVideoToolEnabled?: (t: VideoTool) => boolean;
   /** v0.21.23 · 视频交互式 SAM: 提示派发 + 瞬态候选 / 点会话。 */
   onVideoSamPrompt?: (prompt: VideoSamPrompt) => void;
@@ -396,6 +397,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoSegmentRange,
       videoSampling,
       videoTool,
+      keypointSchema: videoKeypointSchema,
       isVideoToolEnabled,
       onVideoSamPrompt,
       // 别名: image 分支已有同名 samCandidates/samActiveIdx/samSessionPoints。
@@ -568,7 +570,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             aiBoxes={videoAiBoxes}
             selectedId={selectedId}
             activeClass={activeClass}
-            keypointSchema={keypointSchema}
+            keypointSchema={videoKeypointSchema}
             frameIndex={videoFrameIndex}
             reviewDisplayMode={videoReviewDisplayMode}
             hiddenTrackIds={hiddenVideoTrackIds}

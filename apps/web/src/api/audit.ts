@@ -19,6 +19,34 @@ export interface AuditQuery {
   detail_value?: string;
 }
 
+export interface AuditSummaryTotals {
+  event_count: number;
+  error_count: number;
+  action_kind_count: number;
+}
+
+export interface AuditSummaryDailyPoint {
+  day: string;
+  event_count: number;
+  error_count: number;
+}
+
+export interface AuditSummaryBucket {
+  key: string;
+  event_count: number;
+}
+
+export interface AuditMonthlySummary {
+  month: string;
+  timezone: "UTC";
+  materialized_through: string | null;
+  totals: AuditSummaryTotals;
+  daily: AuditSummaryDailyPoint[];
+  top_actions: AuditSummaryBucket[];
+  target_types: AuditSummaryBucket[];
+  actor_roles: AuditSummaryBucket[];
+}
+
 function toQuery(params?: AuditQuery): string {
   if (!params) return "";
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
@@ -29,6 +57,13 @@ function toQuery(params?: AuditQuery): string {
 
 export const auditApi = {
   list: (params?: AuditQuery) => apiClient.get<AuditLogList>(`/audit-logs${toQuery(params)}`),
+
+  monthlySummary: (month: string, businessOnly = true) =>
+    apiClient.get<AuditMonthlySummary>(
+      `/audit-logs/monthly-summary${toQuery({ month, business_only: businessOnly } as AuditQuery & {
+        month: string;
+      })}`,
+    ),
 
   export: async (params?: AuditQuery, format: "csv" | "json" = "csv"): Promise<void> => {
     const token = localStorage.getItem("token");

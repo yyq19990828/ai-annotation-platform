@@ -445,3 +445,27 @@ async def _refresh_mv_async() -> dict:
             return {"refreshed": False, "error": str(exc)}
     log.info("refresh_user_perf_mv done")
     return {"refreshed": True}
+
+
+@celery_app.task(name="app.workers.cleanup.refresh_audit_bi_mv")
+def refresh_audit_bi_mv() -> dict:
+    """Refresh completed UTC audit days without blocking BI readers."""
+    return asyncio.run(_refresh_audit_bi_mv_async())
+
+
+async def _refresh_audit_bi_mv_async() -> dict:
+    from sqlalchemy import text
+
+    async with task_session() as db:
+        try:
+            await db.execute(
+                text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_audit_bi_daily")
+            )
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            error_type = type(exc).__name__
+            log.warning("refresh_audit_bi_mv failed; error_type=%s", error_type)
+            return {"refreshed": False, "error_type": error_type}
+    log.info("refresh_audit_bi_mv done")
+    return {"refreshed": True}

@@ -101,6 +101,25 @@ last_reviewed: 2026-07-23
 - `detail_key` + `detail_value`：`detail_json` JSONB 字段级过滤（走 GIN 索引），例如 `?detail_key=role&detail_value=super_admin`
 - 行内点击展开 `detail_json`
 
+### 月度概览
+
+审计页在明细列表上方提供 UTC 月度概览。选择月份后可查看事件总数、错误事件数、动作类型数、每日趋势、
+Top action、目标类型和操作人角色分布。“仅业务事件”会排除 `http.*` 中间件元数据；切换到“全部”时，
+概览和下方明细使用同一口径。
+
+点击 Top action 的条形或动作名称，会把同一个 action 精确过滤应用到明细列表并写入 URL，便于从异常
+峰值继续追查原始操作、请求 ID 和 detail。
+
+历史完整日从日聚合物化视图读取，物化覆盖日期之后的数据由在线审计分区实时补齐。概览会显示最后物化
+日期；刷新任务延迟时，查询自动扩大实时补齐范围，因此不会静默漏数。概览只覆盖在线保留期，超期月份
+仍通过审计归档接口回源。
+
+月报接口仅允许 super admin：
+
+```text
+GET /api/v1/audit-logs/monthly-summary?month=2026-08&business_only=true
+```
+
 支持导出 CSV 或 JSON（同步 `StreamingResponse`，最大 50,000 行；超限时需缩小过滤范围）：
 
 ```

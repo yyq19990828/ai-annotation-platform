@@ -109,3 +109,4 @@
 - [0064](0064-task-scoped-raster-resource-coordination.md) — 图片工作台采用任务级栅格资源协调器
 - [0065](0065-keep-one-pass-raster-mask-webgpu-kernel.md) — Raster Mask WebGPU 保留 one-pass kernel，不采用可分离候选
 - [0066](archive/0066-video-segment-fragments-and-canonical-tracks.md) — 视频协同以 Segment Fragment 为写入真相，完整轨迹按边界决策派生
+- [0067](archive/0067-audit-bi-daily-materialized-view.md) — 审计 BI 采用日粒度物化与热数据补尾

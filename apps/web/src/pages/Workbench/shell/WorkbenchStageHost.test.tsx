@@ -7,12 +7,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createRef, forwardRef } from "react";
 
 const threeDWorkbenchMock = vi.hoisted(() => vi.fn());
+const videoWorkbenchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../stages/image/ImageWorkbench", () => ({
   ImageWorkbench: () => <div data-testid="image-workbench" />,
 }));
 vi.mock("../stages/video/VideoWorkbench", () => ({
-  VideoWorkbench: forwardRef(function VideoWorkbench() {
+  VideoWorkbench: forwardRef(function VideoWorkbench(props, _ref) {
+    videoWorkbenchMock(props);
     return <div data-testid="video-workbench" />;
   }),
 }));
@@ -167,13 +169,21 @@ describe("WorkbenchStageHost", () => {
   });
 
   it("stageKind=video: renders VideoWorkbench + overlays rendered outside (image owns overlays inline)", () => {
-    render(<WorkbenchStageHost ref={createRef()} {...propsFor("video")} />);
+    const props = propsFor("video");
+    props.video!.keypointSchema = {
+      nodes: [{ name: "nose", color: "#fff", x: 0.5, y: 0.5 }],
+      edges: [],
+    };
+    render(<WorkbenchStageHost ref={createRef()} {...props} />);
 
     expect(screen.getByTestId("video-workbench")).toBeTruthy();
     expect(screen.queryByTestId("image-workbench")).toBeNull();
     expect(screen.queryByTestId("three-d-workbench")).toBeNull();
     // Image 模式时 overlays 被传给 ImageWorkbench 自渲染; non-image 模式 host 在子组件后兜底渲染
     expect(screen.getByTestId("overlays-content")).toBeTruthy();
+    expect(videoWorkbenchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ keypointSchema: props.video!.keypointSchema }),
+    );
   });
 
   it("stageKind=3d: renders ThreeDWorkbench only (lazy)", async () => {

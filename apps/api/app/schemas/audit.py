@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
@@ -37,6 +37,34 @@ class AuditLogList(BaseModel):
     page: int
     page_size: int
     next_cursor: str | None = None
+
+
+class AuditSummaryTotals(BaseModel):
+    event_count: int
+    error_count: int
+    action_kind_count: int
+
+
+class AuditSummaryDailyPoint(BaseModel):
+    day: date
+    event_count: int
+    error_count: int
+
+
+class AuditSummaryBucket(BaseModel):
+    key: str
+    event_count: int
+
+
+class AuditMonthlySummary(BaseModel):
+    month: str
+    timezone: str = "UTC"
+    materialized_through: date | None
+    totals: AuditSummaryTotals
+    daily: list[AuditSummaryDailyPoint]
+    top_actions: list[AuditSummaryBucket]
+    target_types: list[AuditSummaryBucket]
+    actor_roles: list[AuditSummaryBucket]
 
 
 class AuditArchiveOut(BaseModel):

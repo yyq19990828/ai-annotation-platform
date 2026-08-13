@@ -6535,6 +6535,7 @@ export function useWorkbenchShellModel({
         videoSampling,
         videoManifestError: videoManifest.error,
         videoTool: s.videoTool,
+        keypointSchema: toolView.keypointSchema,
         isVideoToolEnabled,
         // v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选/点会话渲染 (仅视频 task 有值)。
         onVideoSamPrompt,

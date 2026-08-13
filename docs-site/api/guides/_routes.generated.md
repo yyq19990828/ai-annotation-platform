@@ -116,6 +116,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/monthly-summary` |
 | GET | `/archives` |
 | GET | `/archives/{year}/{month}` |
 | GET | `/export` |
@@ -631,4 +632,4 @@
 
 ---
 
-_共 59 模块 / 354 路由_
+_共 59 模块 / 355 路由_

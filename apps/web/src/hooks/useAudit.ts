@@ -12,3 +12,11 @@ export function useAuditLogs(
     refetchInterval: options?.refetchInterval,
   });
 }
+
+export function useAuditMonthlySummary(month: string, businessOnly: boolean) {
+  return useQuery({
+    queryKey: ["audit-monthly-summary", month, businessOnly],
+    queryFn: () => auditApi.monthlySummary(month, businessOnly),
+    enabled: /^\d{4}-\d{2}$/.test(month),
+  });
+}

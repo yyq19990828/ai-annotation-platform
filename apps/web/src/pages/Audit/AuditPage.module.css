@@ -102,6 +102,224 @@
   font-size: 12px;
 }
 
+.summarySection {
+  padding: 18px 20px 20px;
+  border-bottom: 1px solid var(--sc-border);
+}
+
+.summaryHeader,
+.summaryTitleRow,
+.monthPicker,
+.summaryState,
+.chartHeading,
+.actionLink,
+.rankingRow {
+  display: flex;
+}
+
+.summaryHeader {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.summaryTitleRow {
+  align-items: center;
+  gap: 8px;
+}
+
+.summaryTitle,
+.chartHeading h3,
+.rankingPanel h3 {
+  margin: 0;
+}
+
+.summaryTitle {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.utcBadge {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--sc-muted);
+  color: var(--sc-muted-foreground);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.summaryHint {
+  margin: 4px 0 0;
+  color: var(--sc-muted-foreground);
+  font-size: 11.5px;
+}
+
+.monthPicker {
+  align-items: center;
+  gap: 8px;
+  color: var(--sc-muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.summaryState {
+  min-height: 72px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--sc-muted-foreground);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.kpiStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 18px;
+  padding: 12px 0;
+  border-top: 1px solid var(--sc-border);
+  border-bottom: 1px solid var(--sc-border);
+}
+
+.kpiItem {
+  min-width: 0;
+  padding: 0 18px;
+}
+
+.kpiItem + .kpiItem {
+  border-left: 1px solid var(--sc-border);
+}
+
+.kpiItem dt {
+  color: var(--sc-muted-foreground);
+  font-size: 11.5px;
+}
+
+.kpiItem dd {
+  margin: 3px 0 0;
+  color: var(--sc-foreground);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+.kpiItem .kpiDanger {
+  color: var(--sc-destructive);
+}
+
+.summaryCharts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr);
+  gap: 28px;
+}
+
+.chartPanel {
+  min-width: 0;
+}
+
+.chartHeading {
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.chartHeading h3,
+.rankingPanel h3 {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.chartHeading span {
+  color: var(--sc-muted-foreground);
+  font-size: 10.5px;
+}
+
+.chartCanvas {
+  min-width: 0;
+}
+
+.actionChart :global(.recharts-bar-rectangle) {
+  cursor: pointer;
+}
+
+.actionLinks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+  margin-top: 4px;
+}
+
+.actionLink {
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--sc-border);
+  background: transparent;
+  color: var(--sc-foreground);
+  cursor: pointer;
+  font-size: 11.5px;
+  text-align: left;
+  transition: transform 120ms ease-out;
+}
+
+.actionLink:active {
+  transform: scale(0.98);
+}
+
+.actionLink span {
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.actionLink strong,
+.rankingRow strong {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.dimensionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sc-border);
+}
+
+.rankingRows {
+  margin-top: 7px;
+}
+
+.rankingRow {
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--sc-border);
+  color: var(--sc-muted-foreground);
+  font-size: 11.5px;
+}
+
+.rankingRow strong {
+  color: var(--sc-foreground);
+}
+
+@media (hover: hover) {
+  .actionLink:hover {
+    color: var(--sc-brand);
+  }
+}
+
 .focusBar {
   align-items: center;
   justify-content: space-between;
@@ -306,4 +524,43 @@
 .kvValue {
   flex: 1;
   word-break: break-all;
+}
+
+@media (max-width: 960px) {
+  .summaryCharts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 16px 14px 32px;
+  }
+
+  .header,
+  .summaryHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .summarySection {
+    padding: 16px;
+  }
+
+  .monthPicker {
+    justify-content: space-between;
+  }
+
+  .kpiItem {
+    padding: 0 10px;
+  }
+
+  .kpiItem dd {
+    font-size: 20px;
+  }
+
+  .actionLinks,
+  .dimensionGrid {
+    grid-template-columns: 1fr;
+  }
 }

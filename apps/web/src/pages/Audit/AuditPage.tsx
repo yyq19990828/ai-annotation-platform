@@ -10,23 +10,39 @@ import {
 } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
-import { useAuditLogs } from "@/hooks/useAudit";
+import { useAuditLogs, useAuditMonthlySummary } from "@/hooks/useAudit";
 import { useUsers } from "@/hooks/useUsers";
 import { auditApi } from "@/api/audit";
 import { AUDIT_BUSINESS_ACTIONS, AUDIT_TARGET_TYPES, auditActionLabel } from "@/utils/auditLabels";
 import { ROLE_LABELS } from "@/constants/roles";
-import type { AuditLogResponse } from "@/api/audit";
+import type { AuditLogResponse, AuditSummaryBucket } from "@/api/audit";
 import type { UserRole } from "@/types";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import styles from "./AuditPage.module.css";
 
 const PAGE_SIZE = 20;
+
+function cssVar(name: string): string {
+  if (typeof window === "undefined") return "";
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
 
 export function AuditPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,6 +84,14 @@ export function AuditPage() {
     setActorId("");
     setDetailKey("");
     setDetailValue("");
+    setPage(1);
+  };
+
+  const drillDownAction = (action: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("action", action);
+    setSearchParams(next, { replace: true });
+    setActionFilter(action);
     setPage(1);
   };
 
@@ -320,6 +344,11 @@ export function AuditPage() {
           </span>
         </div>
 
+        <AuditMonthlySummaryPanel
+          businessOnly={scope === "business"}
+          onActionDrillDown={drillDownAction}
+        />
+
         {focused && (
           <div className={styles.focusBar}>
             <div className={styles.focusTags}>
@@ -547,6 +576,262 @@ export function AuditPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function AuditMonthlySummaryPanel({
+  businessOnly,
+  onActionDrillDown,
+}: {
+  businessOnly: boolean;
+  onActionDrillDown: (action: string) => void;
+}) {
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const summaryQ = useAuditMonthlySummary(month, businessOnly);
+  const data = summaryQ.data;
+
+  const trendData = useMemo(
+    () =>
+      (data?.daily ?? []).map((point) => ({
+        day: point.day.slice(8),
+        事件: point.event_count,
+        错误: point.error_count,
+      })),
+    [data?.daily],
+  );
+  const actionData = useMemo(
+    () =>
+      (data?.top_actions ?? []).map((item) => ({
+        action: item.key,
+        label: auditActionLabel(item.key).slice(0, 18),
+        event_count: item.event_count,
+      })),
+    [data?.top_actions],
+  );
+
+  const brand = cssVar("--sc-brand");
+  const danger = cssVar("--sc-destructive");
+  const muted = cssVar("--sc-muted-foreground");
+  const grid = cssVar("--sc-border");
+  const tick = useMemo(() => ({ fill: muted, fontSize: 11 }), [muted]);
+  const tooltipStyle = useMemo<CSSProperties>(
+    () => ({
+      background: "var(--sc-card)",
+      border: "1px solid var(--sc-border)",
+      borderRadius: "var(--radius-md)",
+      color: "var(--sc-foreground)",
+    }),
+    [],
+  );
+
+  const handleChartClick = (state: unknown) => {
+    const action = (state as { activePayload?: Array<{ payload?: { action?: string } }> } | null)
+      ?.activePayload?.[0]?.payload?.action;
+    if (action) onActionDrillDown(action);
+  };
+
+  return (
+    <section className={styles.summarySection} aria-labelledby="audit-summary-title">
+      <div className={styles.summaryHeader}>
+        <div>
+          <div className={styles.summaryTitleRow}>
+            <h2 id="audit-summary-title" className={styles.summaryTitle}>
+              月度概览
+            </h2>
+            <span className={styles.utcBadge}>UTC</span>
+          </div>
+          <p className={styles.summaryHint}>
+            {data?.materialized_through
+              ? `历史聚合至 ${data.materialized_through}，后续日期实时补齐`
+              : "物化尚未覆盖，所选月份由在线审计分区实时计算"}
+          </p>
+        </div>
+        <label className={styles.monthPicker}>
+          <span>月份</span>
+          <input
+            type="month"
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
+            className={styles.control}
+            aria-label="审计概览月份"
+          />
+        </label>
+      </div>
+
+      {summaryQ.isLoading && <div className={styles.summaryState}>加载月度概览...</div>}
+      {summaryQ.isError && (
+        <div className={styles.summaryState} role="alert">
+          <span>无法加载月度概览，审计明细仍可继续使用。</span>
+          <Button size="sm" variant="ghost" onClick={() => summaryQ.refetch()}>
+            重试
+          </Button>
+        </div>
+      )}
+
+      {data && (
+        <>
+          <dl className={styles.kpiStrip}>
+            <SummaryKpi label="事件总数" value={data.totals.event_count} />
+            <SummaryKpi label="错误事件" value={data.totals.error_count} tone="danger" />
+            <SummaryKpi label="动作类型" value={data.totals.action_kind_count} />
+          </dl>
+
+          {data.totals.event_count === 0 ? (
+            <div className={styles.summaryState}>所选月份暂无审计事件</div>
+          ) : (
+            <>
+              <div className={styles.summaryCharts}>
+                <section className={styles.chartPanel} aria-labelledby="audit-trend-title">
+                  <div className={styles.chartHeading}>
+                    <h3 id="audit-trend-title">每日事件趋势</h3>
+                    <span>错误包含 4xx 与 5xx</span>
+                  </div>
+                  <div className={styles.chartCanvas}>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <LineChart
+                        data={trendData}
+                        margin={{ top: 12, right: 12, bottom: 4, left: -12 }}
+                      >
+                        <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="day"
+                          tick={tick}
+                          axisLine={{ stroke: grid }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          tick={tick}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Line
+                          type="linear"
+                          dataKey="事件"
+                          stroke={brand}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 3 }}
+                        />
+                        <Line
+                          type="linear"
+                          dataKey="错误"
+                          stroke={danger}
+                          strokeWidth={1.5}
+                          dot={false}
+                          activeDot={{ r: 3 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+
+                <section className={styles.chartPanel} aria-labelledby="audit-actions-title">
+                  <div className={styles.chartHeading}>
+                    <h3 id="audit-actions-title">Top actions</h3>
+                    <span>点击条形或下方动作进入明细</span>
+                  </div>
+                  <div className={`${styles.chartCanvas} ${styles.actionChart}`}>
+                    <ResponsiveContainer width="100%" height={230}>
+                      <BarChart
+                        layout="vertical"
+                        data={actionData}
+                        margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+                        onClick={handleChartClick}
+                      >
+                        <CartesianGrid stroke={grid} strokeDasharray="3 3" horizontal={false} />
+                        <XAxis
+                          type="number"
+                          allowDecimals={false}
+                          tick={tick}
+                          axisLine={{ stroke: grid }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="label"
+                          width={118}
+                          tick={tick}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Bar
+                          dataKey="event_count"
+                          name="事件数"
+                          fill={brand}
+                          radius={[0, 3, 3, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className={styles.actionLinks} aria-label="Top action 明细下钻">
+                    {data.top_actions.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className={styles.actionLink}
+                        onClick={() => onActionDrillDown(item.key)}
+                      >
+                        <span>{auditActionLabel(item.key)}</span>
+                        <strong>{item.event_count.toLocaleString("zh-CN")}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              <div className={styles.dimensionGrid}>
+                <SummaryRanking title="目标类型" items={data.target_types} />
+                <SummaryRanking title="操作人角色" items={data.actor_roles} roleLabels />
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function SummaryKpi({ label, value, tone }: { label: string; value: number; tone?: "danger" }) {
+  return (
+    <div className={styles.kpiItem}>
+      <dt>{label}</dt>
+      <dd className={tone === "danger" ? styles.kpiDanger : undefined}>
+        {value.toLocaleString("zh-CN")}
+      </dd>
+    </div>
+  );
+}
+
+function SummaryRanking({
+  title,
+  items,
+  roleLabels = false,
+}: {
+  title: string;
+  items: AuditSummaryBucket[];
+  roleLabels?: boolean;
+}) {
+  return (
+    <section className={styles.rankingPanel}>
+      <h3>{title}</h3>
+      <div className={styles.rankingRows}>
+        {items.map((item) => (
+          <div key={item.key || "__system"} className={styles.rankingRow}>
+            <span>
+              {item.key
+                ? roleLabels
+                  ? (ROLE_LABELS[item.key as UserRole] ?? item.key)
+                  : item.key
+                : "系统/未知"}
+            </span>
+            <strong>{item.event_count.toLocaleString("zh-CN")}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
