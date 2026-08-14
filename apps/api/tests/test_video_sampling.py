@@ -8,7 +8,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.project import VideoCollaborationConfig, VideoSamplingConfig
+from app.schemas.project import (
+    ProjectCreate,
+    ProjectUpdate,
+    VideoCollaborationConfig,
+    VideoSamplingConfig,
+)
 from app.services.video_collaboration import geometry_frame_bounds, segment_work_bounds
 from app.services.video_frame_service import (
     derive_sampled_frames,
@@ -80,6 +85,17 @@ def test_video_collaboration_rejects_unknown_fields():
         VideoCollaborationConfig.model_validate(
             {"enabled": False, "overlap_frames": 0, "future": True}
         )
+
+
+def test_project_schemas_reject_null_video_collaboration():
+    with pytest.raises(ValidationError):
+        ProjectCreate(
+            name="video",
+            type_label="video",
+            video_collaboration=None,
+        )
+    with pytest.raises(ValidationError):
+        ProjectUpdate(video_collaboration=None)
 
 
 @pytest.mark.parametrize(

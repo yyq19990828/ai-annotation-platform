@@ -1,10 +1,13 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from app.db.models.dataset import VideoSegment
 from app.services.exporting.video_scope import VideoExportScope
 from app.services.video_canonical import (
     _required_boundaries,
+    accepted_boundary_runs,
     merge_canonical_annotations,
 )
 
@@ -85,3 +88,46 @@ def test_canonical_merge_uses_stable_track_id_and_sorted_keyframes():
         100,
         150,
     ]
+
+
+@pytest.mark.asyncio
+async def test_canonical_uses_older_accepted_run_when_newer_run_is_stale(monkeypatch):
+    left, right = _segment(0), _segment(1)
+    task = SimpleNamespace(id=uuid4())
+    newest = SimpleNamespace(
+        id=uuid4(),
+        task_id=task.id,
+        left_segment_id=left.id,
+        right_segment_id=right.id,
+        status="completed",
+    )
+    accepted = SimpleNamespace(
+        id=uuid4(),
+        task_id=task.id,
+        left_segment_id=left.id,
+        right_segment_id=right.id,
+        status="accepted",
+    )
+
+    class Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return [newest, accepted]
+
+    class Db:
+        async def execute(self, _statement):
+            return Result()
+
+    async def refresh(_db, run):
+        if run is newest:
+            run.status = "stale"
+            return True
+        return False
+
+    monkeypatch.setattr("app.services.video_canonical.refresh_staleness", refresh)
+
+    assert await accepted_boundary_runs(
+        Db(), task=task, segments=[left, right], scope=None
+    ) == [accepted]

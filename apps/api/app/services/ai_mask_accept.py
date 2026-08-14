@@ -322,6 +322,12 @@ async def _load_source_for_update(
             reason="source_annotation_not_found",
             message="source annotation was not found",
         )
+    if source.video_segment_id != data.video_segment_id:
+        raise AiMaskAcceptError(
+            status_code=422,
+            reason="video_segment_mismatch",
+            message="source annotation belongs to another video segment",
+        )
     if source.is_locked:
         raise AiMaskAcceptError(
             status_code=409,
@@ -612,6 +618,7 @@ async def accept_ai_mask_candidate(
             geometry=annotation_geometry,
             confidence=score,
             parent_prediction_id=prediction.id,
+            video_segment_id=data.video_segment_id,
         )
     else:
         geometry, track_id = prepare_compact_track_identity(

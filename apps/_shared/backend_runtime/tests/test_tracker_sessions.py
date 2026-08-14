@@ -78,6 +78,40 @@ def test_tracker_session_expires_and_shutdown_releases_resources() -> None:
     asyncio.run(run())
 
 
+def test_tracker_session_does_not_expire_during_command() -> None:
+    async def run() -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        @asynccontextmanager
+        async def borrow():
+            yield "resource"
+
+        async def slow_command(_resource, _state):
+            started.set()
+            await release.wait()
+            return "done"
+
+        manager = TrackerSessionManager[str, dict](ttl_seconds=0)
+        token = await manager.start(
+            binding=("job-1", "forward"),
+            borrow=borrow,
+            open_session=lambda _resource: _value({}),
+            close_session=lambda _resource, _state: _value(None),
+        )
+        pending = asyncio.create_task(
+            manager.call(token, ("job-1", "forward"), slow_command)
+        )
+        await started.wait()
+
+        assert await manager.expire() == 0
+        release.set()
+        assert await pending == "done"
+        assert await manager.expire() == 1
+
+    asyncio.run(run())
+
+
 async def _value(value):
     return value
 

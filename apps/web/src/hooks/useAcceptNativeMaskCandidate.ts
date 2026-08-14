@@ -38,10 +38,12 @@ export interface AcceptNativeMaskCandidateInput {
  */
 export function useAcceptNativeMaskCandidate(args: {
   taskId: string | undefined;
+  videoSegmentId?: string | null;
+  annotationQueryKey?: readonly unknown[];
   queryClient: QueryClient;
   history: AnnotationHistoryWriter;
 }) {
-  const { taskId, queryClient, history } = args;
+  const { taskId, videoSegmentId, annotationQueryKey, queryClient, history } = args;
   const inFlightRef = useRef(new Set<string>());
 
   return useCallback(
@@ -56,7 +58,7 @@ export function useAcceptNativeMaskCandidate(args: {
         const sourceBefore =
           target.mode === "refine"
             ? queryClient
-                .getQueryData<AnnotationResponse[]>(["annotations", taskId])
+                .getQueryData<AnnotationResponse[]>(annotationQueryKey ?? ["annotations", taskId])
                 ?.find((annotation) => annotation.id === target.source_annotation_id)
             : undefined;
         const accepted = await aiMasksApi.accept(taskId, {
@@ -73,19 +75,23 @@ export function useAcceptNativeMaskCandidate(args: {
             receipt: candidate.receipt,
           },
           class_name: className,
+          video_segment_id: videoSegmentId ?? null,
           target,
           prompt_summary: candidate.promptSummary,
           routing: candidate.routing,
           inference: candidate.inference,
         });
-        queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (current) => {
-          const existing = current ?? [];
-          return existing.some((annotation) => annotation.id === accepted.annotation.id)
-            ? existing.map((annotation) =>
-                annotation.id === accepted.annotation.id ? accepted.annotation : annotation,
-              )
-            : [...existing, accepted.annotation];
-        });
+        queryClient.setQueryData<AnnotationResponse[]>(
+          annotationQueryKey ?? ["annotations", taskId],
+          (current) => {
+            const existing = current ?? [];
+            return existing.some((annotation) => annotation.id === accepted.annotation.id)
+              ? existing.map((annotation) =>
+                  annotation.id === accepted.annotation.id ? accepted.annotation : annotation,
+                )
+              : [...existing, accepted.annotation];
+          },
+        );
         if (target.mode === "refine" && sourceBefore) {
           history.push({
             kind: "update",
@@ -111,6 +117,6 @@ export function useAcceptNativeMaskCandidate(args: {
         inFlightRef.current.delete(candidate.idempotencyKey);
       }
     },
-    [history, queryClient, taskId],
+    [annotationQueryKey, history, queryClient, taskId, videoSegmentId],
   );
 }

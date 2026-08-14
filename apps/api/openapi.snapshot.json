@@ -533,6 +533,18 @@
           },
           "target": {
             "$ref": "#/components/schemas/AiMaskAcceptTarget"
+          },
+          "video_segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Segment Id"
           }
         },
         "required": [

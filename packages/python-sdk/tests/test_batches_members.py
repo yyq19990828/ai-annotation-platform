@@ -238,6 +238,15 @@ def test_export_batch(client, respx_mock):
     assert params["axis_frame"] == "iso"
 
 
+def test_export_batch_rejects_synchronous_voc(client, respx_mock):
+    route = respx_mock.post(f"{API}/projects/{PID}/batches/{BID}/export")
+
+    with pytest.raises(ValueError, match="VOC batch export returns ZIP bytes"):
+        client.batches.export(PID, BID, targets=["voc"])
+
+    assert not route.called
+
+
 @pytest.mark.parametrize(
     ("path", "call"),
     [

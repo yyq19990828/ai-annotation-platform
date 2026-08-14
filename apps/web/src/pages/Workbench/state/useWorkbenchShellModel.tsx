@@ -2280,6 +2280,8 @@ export function useWorkbenchShellModel({
   });
   const acceptNativeMaskCandidate = useAcceptNativeMaskCandidate({
     taskId,
+    videoSegmentId: annotationSegmentId,
+    annotationQueryKey,
     queryClient,
     history,
   });
@@ -2447,6 +2449,7 @@ export function useWorkbenchShellModel({
 
   const imageActions = useImageAnnotationActions({
     taskId,
+    videoSegmentId: annotationSegmentId,
     projectId,
     meUserId,
     queryClient,
@@ -2713,6 +2716,7 @@ export function useWorkbenchShellModel({
     handlePropagateKeyframe,
   } = useVideoAnnotationActions({
     taskId,
+    annotationQueryKey,
     queryClient,
     history,
     s,

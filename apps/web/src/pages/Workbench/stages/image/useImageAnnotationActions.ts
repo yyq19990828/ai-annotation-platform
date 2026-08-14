@@ -86,6 +86,7 @@ interface ToastInput {
 
 interface UseImageAnnotationActionsArgs {
   taskId: string | undefined;
+  videoSegmentId?: string | null;
   projectId: string | undefined;
   meUserId: string | null | undefined;
   queryClient: QueryClient;
@@ -207,6 +208,7 @@ export function promptEmptyRasterMaskChoice(
 
 export function useImageAnnotationActions({
   taskId,
+  videoSegmentId,
   projectId,
   meUserId,
   queryClient,
@@ -254,7 +256,7 @@ export function useImageAnnotationActions({
     markPendingGeom,
   });
   const { createBboxWithClass, submitPolygon } = annotationActions;
-  const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
+  const acceptPredictionMut = useAcceptPrediction(taskId ?? "", videoSegmentId);
   const rejectPredictionMut = useRejectPrediction(taskId ?? "");
   const [batchChanging, setBatchChanging] = useState(false);
   // 视频几何无 image 定位,批量改类弹窗用固定屏幕锚点(锚到首个选中框,与单改类同源)。

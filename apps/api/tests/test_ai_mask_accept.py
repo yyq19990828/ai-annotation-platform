@@ -13,7 +13,7 @@ from app.config import settings
 from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.dataset import Dataset, DatasetItem, VideoSegment
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.ml_backend_pool import MLBackendPoolMember
 from app.db.models.project import Project
@@ -573,6 +573,42 @@ async def test_video_accept_create_builds_one_current_frame_keyframe(
     assert keyframe["mask"]["sha256"] == build_rle_reference(RLE)["sha256"]
     assert keyframe["source"] == "prediction"
     assert keyframe["occluded"] is False
+
+
+async def test_video_accept_persists_claimed_collaboration_segment(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+    accept_storage_mocks,
+):
+    user, token = super_admin
+    task, backend, pool = await _seed(db_session, owner_id=user.id, media_type="video")
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 2}
+    segment = VideoSegment(
+        dataset_item_id=task.dataset_item_id,
+        segment_index=0,
+        start_frame=0,
+        end_frame=11,
+        assignee_id=user.id,
+        status="in_progress",
+        locked_by=user.id,
+        locked_at=datetime.now(timezone.utc),
+        lock_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db_session.add(segment)
+    await db_session.flush()
+    body = _body(task, backend, pool, frame_index=7)
+    body["video_segment_id"] = str(segment.id)
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
+        json=body,
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["annotation"]["video_segment_id"] == str(segment.id)
 
 
 async def test_video_candidate_receipt_is_bound_to_the_requested_frame(

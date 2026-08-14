@@ -858,10 +858,15 @@ class Batches:
         targets: Sequence[str] | None = None,
         **options: Any,
     ) -> str:
+        selected_targets = list(targets or ["coco"])
+        if "voc" in selected_targets:
+            raise ValueError(
+                "VOC batch export returns ZIP bytes synchronously and is not supported by this job helper"
+            )
         resp = self._http.request(
             "POST",
             f"/projects/{project_id}/batches/{batch_id}/export",
-            params={"targets": list(targets or ["coco"]), **options},
+            params={"targets": selected_targets, **options},
         )
         return resp.json()["job_id"]
 

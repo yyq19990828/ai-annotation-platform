@@ -75,9 +75,10 @@ def _dataset() -> Dataset:
 
 
 def _job(status: str, **extra) -> Job:
+    kind = extra.pop("kind", "export")
     return Job(
         id=JOB_ID,
-        kind="export",
+        kind=kind,
         status=status,
         progress_pct=40,
         created_at=datetime(2026, 6, 11, tzinfo=timezone.utc),
@@ -316,8 +317,13 @@ class _StubClient:
         pass
 
 
-def _make_app(job_statuses=("running",), with_ml=False, role="annotator") -> AapTuiApp:
-    pages = [JobPage(items=[_job(s)], total=1) for s in job_statuses]
+def _make_app(
+    job_statuses=("running",),
+    with_ml=False,
+    role="annotator",
+    job_kind="export",
+) -> AapTuiApp:
+    pages = [JobPage(items=[_job(s, kind=job_kind)], total=1) for s in job_statuses]
     project = _project()
     ml_by_project = {project.id: [_ml_backend(project.id)]} if with_ml else {}
     client = _StubClient([project], [_dataset()], pages, ml_by_project, role=role)
@@ -680,7 +686,7 @@ async def test_batch_detail_and_project_pool_tab():
 
 
 async def test_failed_job_detail_retry_confirm():
-    app = _make_app(job_statuses=("failed",))
+    app = _make_app(job_statuses=("failed",), job_kind="batch_predict")
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
         app.query_one("#tabs", TabbedContent).active = "tab-jobs"
@@ -694,6 +700,17 @@ async def test_failed_job_detail_retry_confirm():
         await _settle(app, pilot)
         assert app._client.jobs.retried == [JOB_ID]
         assert "queued=2" in str(app.query_one("#status-bar", Static).render())
+
+
+async def test_failed_non_prediction_job_has_no_retry_action():
+    app = _make_app(job_statuses=("failed",))
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-jobs"
+        app.query_one("#jobs-table", DataTable).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not app.screen.query("#retry")
 
 
 async def test_job_detail_cancel_button_triggers_cancel():

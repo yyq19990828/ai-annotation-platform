@@ -1232,8 +1232,8 @@ class ProjectDetailScreen(Screen[None]):
                         [
                             ("全部类型", ""),
                             ("export", "export"),
-                            ("link_dataset", "link_dataset"),
-                            ("prediction_import", "prediction_import"),
+                            ("create_tasks", "create_tasks"),
+                            ("predictions_import", "predictions_import"),
                         ],
                         value="",
                         allow_blank=False,
@@ -2655,7 +2655,7 @@ class AapTuiApp(App[None]):
         actions: list[tuple[str, str, str]] = []
         if job.status in _CANCELLABLE_STATUS:
             actions = [("cancel", "✖ 取消", "error")]
-        elif job.status == "failed":
+        elif job.status == "failed" and job.kind == "batch_predict":
             actions = [("retry", "↻ 重试失败项", "warning")]
         elif _is_downloadable_export(job):
             actions = [("download", "⬇ 下载到本地", "success")]

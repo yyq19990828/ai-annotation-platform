@@ -339,6 +339,36 @@ async def test_video_collaboration_public_enablement_is_available_for_empty_vide
     }
 
 
+async def test_video_collaboration_revalidates_tool_binding_updates(
+    db_session, httpx_client_bound, super_admin
+):
+    user, token = super_admin
+    task, _ = await _make_video_task(db_session, user.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 10}
+    await db_session.flush()
+
+    response = await httpx_client_bound.patch(
+        f"/api/v1/projects/{task.project_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "tool_bindings": {
+                "lidar_box_3d": {
+                    "enabled": True,
+                    "classes": [{"name": "car"}],
+                    "attribute_schema": {"fields": []},
+                }
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "reason": "video_collaboration_invalid_tools",
+        "tool_units": ["lidar_box_3d"],
+    }
+
+
 async def test_video_segment_non_assignee_cannot_claim_assigned_segment(
     db_session, httpx_client_bound, annotator, reviewer
 ):

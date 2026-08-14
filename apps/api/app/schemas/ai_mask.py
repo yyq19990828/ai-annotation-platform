@@ -99,6 +99,7 @@ class AiMaskAcceptRequest(BaseModel):
     )
     candidate: AiMaskCandidateInput
     class_name: str = Field(min_length=1, max_length=100)
+    video_segment_id: UUID | None = None
     target: AiMaskAcceptTarget = Field(default_factory=AiMaskAcceptTarget)
     prompt_summary: AiMaskPromptSummary
     routing: AiMaskRoutingLineage

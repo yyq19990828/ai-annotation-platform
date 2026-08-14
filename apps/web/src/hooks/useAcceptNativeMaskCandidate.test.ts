@@ -81,6 +81,8 @@ describe("useAcceptNativeMaskCandidate", () => {
     const view = renderHook(() =>
       useAcceptNativeMaskCandidate({
         taskId: "task-1",
+        videoSegmentId: "segment-1",
+        annotationQueryKey: ["annotations", "task-1", "segment-1"],
         queryClient,
         history: { push },
       }),
@@ -101,10 +103,13 @@ describe("useAcceptNativeMaskCandidate", () => {
       expect.objectContaining({
         idempotency_key: "mask:stable-idempotency-key",
         class_name: "car",
+        video_segment_id: "segment-1",
         target: { mode: "create" },
       }),
     );
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toEqual([accepted.annotation]);
+    expect(queryClient.getQueryData(["annotations", "task-1", "segment-1"])).toEqual([
+      accepted.annotation,
+    ]);
     expect(push).toHaveBeenCalledWith({
       kind: "acceptPrediction",
       predictionId: "prediction-1",

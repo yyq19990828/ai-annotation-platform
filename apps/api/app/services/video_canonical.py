@@ -78,15 +78,21 @@ async def accepted_boundary_runs(
         .scalars()
         .all()
     )
-    by_boundary: dict[tuple[uuid.UUID, uuid.UUID], VideoTrackQualityRun] = {}
+    by_boundary: dict[tuple[uuid.UUID, uuid.UUID], list[VideoTrackQualityRun]] = {}
     for run in rows:
-        by_boundary.setdefault((run.left_segment_id, run.right_segment_id), run)
+        by_boundary.setdefault((run.left_segment_id, run.right_segment_id), []).append(
+            run
+        )
     accepted: list[VideoTrackQualityRun] = []
     missing: list[dict[str, Any]] = []
     for left, right in boundaries:
-        run = by_boundary.get((left.id, right.id))
-        if run is not None:
-            await refresh_staleness(db, run)
+        candidates = by_boundary.get((left.id, right.id), [])
+        run = candidates[0] if candidates else None
+        for candidate in candidates:
+            await refresh_staleness(db, candidate)
+            if candidate.status in {"accepted", "empty_overlap"}:
+                run = candidate
+                break
         if run is None or run.status not in {"accepted", "empty_overlap"}:
             missing.append(
                 {

@@ -113,13 +113,14 @@ async def _boundary(
 
 
 async def _annotations(
-    db: AsyncSession, segment_ids: list[uuid.UUID]
+    db: AsyncSession, task_id: uuid.UUID, segment_ids: list[uuid.UUID]
 ) -> list[Annotation]:
     return list(
         (
             await db.execute(
                 select(Annotation)
                 .where(
+                    Annotation.task_id == task_id,
                     Annotation.video_segment_id.in_(segment_ids),
                     Annotation.is_active.is_(True),
                     Annotation.was_cancelled.is_(False),
@@ -162,7 +163,7 @@ async def create_quality_run(
         left_segment_id=left_segment_id,
         right_segment_id=right_segment_id,
     )
-    annotations = await _annotations(db, [left.id, right.id])
+    annotations = await _annotations(db, task.id, [left.id, right.id])
     snapshot = _snapshot(annotations)
     sampling_digest = canonical_digest(frames)
     input_digest = canonical_digest(
@@ -212,7 +213,9 @@ async def create_quality_run(
 
 
 async def current_input_digest(db: AsyncSession, run: VideoTrackQualityRun) -> str:
-    annotations = await _annotations(db, [run.left_segment_id, run.right_segment_id])
+    annotations = await _annotations(
+        db, run.task_id, [run.left_segment_id, run.right_segment_id]
+    )
     frames = list((run.metrics or {}).get("sampling_frames") or [])
     return canonical_digest(
         {
@@ -497,7 +500,9 @@ async def evaluate_run(
         raise VideoTrackQualityError(404, "task_not_found")
     if await current_input_digest(db, run) != run.input_digest:
         raise VideoTrackQualityError(409, "video_track_quality_stale")
-    annotations = await _annotations(db, [run.left_segment_id, run.right_segment_id])
+    annotations = await _annotations(
+        db, run.task_id, [run.left_segment_id, run.right_segment_id]
+    )
     left = [row for row in annotations if row.video_segment_id == run.left_segment_id]
     right = [row for row in annotations if row.video_segment_id == run.right_segment_id]
     unsupported = [
@@ -783,7 +788,9 @@ async def accept_quality_run(
         raise VideoTrackQualityError(409, "video_track_quality_stale")
     annotations = {
         row.id: row
-        for row in await _annotations(db, [run.left_segment_id, run.right_segment_id])
+        for row in await _annotations(
+            db, run.task_id, [run.left_segment_id, run.right_segment_id]
+        )
     }
     required_pairs = {
         (

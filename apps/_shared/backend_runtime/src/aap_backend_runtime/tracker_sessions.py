@@ -29,6 +29,7 @@ class _Session(Generic[ResourceT, StateT]):
     queue: asyncio.Queue[_Command[ResourceT, StateT]]
     task: asyncio.Task[None]
     last_used_at: float
+    in_flight: int = 0
 
 
 class TrackerSessionManager(Generic[ResourceT, StateT]):
@@ -71,13 +72,17 @@ class TrackerSessionManager(Generic[ResourceT, StateT]):
         session = self._get(token, binding)
         future: asyncio.Future[object] = asyncio.get_running_loop().create_future()
         session.last_used_at = time.monotonic()
-        await session.queue.put(_Command(run=run, future=future))
+        session.in_flight += 1
         try:
+            await session.queue.put(_Command(run=run, future=future))
             return await future  # type: ignore[return-value]
         except BaseException:
             if session.task.done():
                 self._sessions.pop(token, None)
             raise
+        finally:
+            session.in_flight -= 1
+            session.last_used_at = time.monotonic()
 
     async def close(self, token: str, binding: tuple[str, ...]) -> None:
         session = self._get(token, binding)
@@ -91,7 +96,7 @@ class TrackerSessionManager(Generic[ResourceT, StateT]):
         expired = [
             token
             for token, session in self._sessions.items()
-            if session.last_used_at <= cutoff
+            if session.in_flight == 0 and session.last_used_at <= cutoff
         ]
         closing: list[_Session[ResourceT, StateT]] = []
         for token in expired:

@@ -46,6 +46,7 @@ export interface AiMaskAcceptRequest {
   idempotency_key: string;
   candidate: AiMaskAcceptCandidate;
   class_name: string;
+  video_segment_id?: string | null;
   target: AiMaskAcceptTarget;
   prompt_summary: AiMaskPromptSummary;
   routing: AiMaskRoutingLineage;

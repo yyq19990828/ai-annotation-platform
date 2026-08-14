@@ -711,7 +711,11 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     payload = data.model_dump(exclude_unset=True)
-    if "video_collaboration" in payload or "video_sampling" in payload:
+    if (
+        "video_collaboration" in payload
+        or "video_sampling" in payload
+        or "tool_bindings" in payload
+    ):
         requested_collaboration = VideoCollaborationConfig.model_validate(
             payload.get("video_collaboration", project.video_collaboration or {})
         )

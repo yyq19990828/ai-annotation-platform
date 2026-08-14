@@ -15,6 +15,7 @@ from app.deps import get_db, require_roles, require_scopes
 from app.schemas.ai_mask import AiMaskAcceptRequest, AiMaskAcceptResponse
 from app.services.ai_mask_accept import AiMaskAcceptError, accept_ai_mask_candidate
 from app.services.raster_mask_storage import RasterMaskContractError
+from app.services.video_collaboration import assert_video_annotation_write_scope
 from app.observability.metrics import observe_mask_ai_phase, record_mask_ai_operation
 
 router = APIRouter()
@@ -63,6 +64,13 @@ async def accept_native_ai_mask_candidate(
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
     _assert_task_editable(task, current_user)
+    await assert_video_annotation_write_scope(
+        db,
+        task=task,
+        user=current_user,
+        segment_id=data.video_segment_id,
+        geometry=None,
+    )
     expected_version = _parse_if_match(request)
     operation = data.target.mode if data.target.mode == "refine" else "single_frame"
     prompt_family = (

@@ -40,7 +40,7 @@ export function usePredictions(
   });
 }
 
-export function useAcceptPrediction(taskId: string) {
+export function useAcceptPrediction(taskId: string, videoSegmentId?: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (
@@ -54,7 +54,9 @@ export function useAcceptPrediction(taskId: string) {
         | string,
     ) => {
       // 兼容旧调用 (传 string predictionId 直接采纳整条).
-      if (typeof vars === "string") return predictionsApi.accept(taskId, vars);
+      if (typeof vars === "string") {
+        return predictionsApi.accept(taskId, vars, undefined, undefined, undefined, videoSegmentId);
+      }
       return predictionsApi.accept(
         taskId,
         vars.predictionId,
@@ -63,11 +65,16 @@ export function useAcceptPrediction(taskId: string) {
         vars.overrideClassName,
         // v0.18.3 · 采纳前审阅改过的候选属性值.
         vars.attributeOverrides,
+        videoSegmentId,
       );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["predictions", taskId] });
-      qc.invalidateQueries({ queryKey: ["annotations", taskId] });
+      qc.invalidateQueries({
+        queryKey: videoSegmentId
+          ? ["annotations", taskId, videoSegmentId]
+          : ["annotations", taskId],
+      });
     },
   });
 }
