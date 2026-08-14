@@ -13,6 +13,12 @@ export interface HotkeyDef {
   actionType?: string;
 }
 
+export function hotkeyIgnoreToken(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">,
+): string | null {
+  return event.ctrlKey || event.metaKey ? `Mod+${event.key.toLowerCase()}` : null;
+}
+
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
   {

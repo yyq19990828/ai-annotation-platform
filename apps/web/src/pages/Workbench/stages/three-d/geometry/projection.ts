@@ -88,6 +88,57 @@ function matVec(m: ArrayLike<number>, v: ArrayLike<number>, n: number): number[]
   return out;
 }
 
+const INVERSE_EPSILON = 1e-12;
+
+function invertRowMajor3(values: ArrayLike<number>): THREE.Matrix3 | null {
+  if (values.length !== 9 || Array.from(values).some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+  const matrix = new THREE.Matrix3().set(
+    values[0],
+    values[1],
+    values[2],
+    values[3],
+    values[4],
+    values[5],
+    values[6],
+    values[7],
+    values[8],
+  );
+  const determinant = matrix.determinant();
+  return Number.isFinite(determinant) && Math.abs(determinant) > INVERSE_EPSILON
+    ? matrix.invert()
+    : null;
+}
+
+function invertRowMajor4(values: ArrayLike<number>): THREE.Matrix4 | null {
+  if (values.length !== 16 || Array.from(values).some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+  const matrix = new THREE.Matrix4().set(
+    values[0],
+    values[1],
+    values[2],
+    values[3],
+    values[4],
+    values[5],
+    values[6],
+    values[7],
+    values[8],
+    values[9],
+    values[10],
+    values[11],
+    values[12],
+    values[13],
+    values[14],
+    values[15],
+  );
+  const determinant = matrix.determinant();
+  return Number.isFinite(determinant) && Math.abs(determinant) > INVERSE_EPSILON
+    ? matrix.invert()
+    : null;
+}
+
 /** 把世界/lidar 系点投影到相机像素。接受 THREE.Vector3[] 或 [x,y,z][]。 */
 export function projectPoints(
   points: ReadonlyArray<THREE.Vector3 | readonly [number, number, number]>,
@@ -132,4 +183,40 @@ export function projectPoints(
   }
 
   return { pixels, visible, depths };
+}
+
+/**
+ * 把原图像素按固定投影深度反投影回世界/lidar 坐标。
+ *
+ * `depth` 与 `projectPoints().depths` 同义，即内参投影后的齐次 w。矩阵输入仍按
+ * SensorCalibration 的 row-major 合同读取；不可逆矩阵、非有限值和非正深度返回 null。
+ */
+export function unprojectPixelAtDepth(
+  pixel: readonly [number, number],
+  depth: number,
+  calibration: SensorCalibration,
+): [number, number, number] | null {
+  const [u, v] = pixel;
+  if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(depth) || depth <= 0) {
+    return null;
+  }
+
+  const inverseIntrinsic = invertRowMajor3(calibration.intrinsic);
+  const inverseExtrinsic = invertRowMajor4(calibration.extrinsic);
+  if (!inverseIntrinsic || !inverseExtrinsic) return null;
+
+  const camera = new THREE.Vector3(u * depth, v * depth, depth).applyMatrix3(inverseIntrinsic);
+  if (![camera.x, camera.y, camera.z].every(Number.isFinite)) return null;
+
+  const point = new THREE.Vector4(camera.x, camera.y, camera.z, 1);
+  if (calibration.rect) {
+    const inverseRect = invertRowMajor4(calibration.rect);
+    if (!inverseRect) return null;
+    point.applyMatrix4(inverseRect);
+  }
+  point.applyMatrix4(inverseExtrinsic);
+
+  if (![point.x, point.y, point.z, point.w].every(Number.isFinite)) return null;
+  if (Math.abs(point.w) <= INVERSE_EPSILON) return null;
+  return [point.x / point.w, point.y / point.w, point.z / point.w];
 }

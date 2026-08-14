@@ -5153,7 +5153,26 @@ export function useWorkbenchShellModel({
   // 改由 3D 工作台显式监听删选中框,口径与 W/E/R / B/V 一致。
   const threeDOwnedKeys = useMemo(
     () =>
-      new Set(["b", "B", "p", "P", "v", "V", "w", "W", "e", "E", "r", "R", "Delete", "Backspace"]),
+      new Set([
+        "b",
+        "B",
+        "p",
+        "P",
+        "v",
+        "V",
+        "w",
+        "W",
+        "e",
+        "E",
+        "r",
+        "R",
+        "Mod+c",
+        "Mod+d",
+        "Mod+y",
+        "Mod+z",
+        "Delete",
+        "Backspace",
+      ]),
     [],
   );
 

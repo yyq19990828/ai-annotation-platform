@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SensorCalibration } from "@/types";
 import { psrToCorners } from "./box3d";
-import { projectPoints, BOX_EDGES } from "./projection";
+import { projectPoints, unprojectPixelAtDepth, BOX_EDGES } from "./projection";
 
 /* ──────────────────────────────────────────────────────────────────────
  * 参考 oracle: 逐字移植 SUSTechPOINTS 的投影算术作为独立对拍基准。
@@ -174,6 +174,65 @@ describe("projectPoints — rect 处理", () => {
       expect(got.pixels[i][1]).toBeCloseTo(ref.pixel[1], 5);
       expect(got.visible[i]).toBe(ref.visible);
     });
+  });
+});
+
+describe("unprojectPixelAtDepth", () => {
+  const SIMPLE_CALIB: SensorCalibration = {
+    extrinsic: [
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+    ] as unknown as SensorCalibration["extrinsic"],
+    intrinsic: [1000, 0, 500, 0, 1000, 500, 0, 0, 1] as unknown as SensorCalibration["intrinsic"],
+  };
+
+  function expectPointClose(
+    actual: [number, number, number] | null,
+    expected: readonly [number, number, number],
+  ) {
+    expect(actual).not.toBeNull();
+    expected.forEach((value, index) => expect(actual![index]).toBeCloseTo(value, 8));
+  }
+
+  it("identity 外参按给定深度恢复世界点", () => {
+    expectPointClose(unprojectPixelAtDepth([700, 900], 5, SIMPLE_CALIB), [1, 2, 5]);
+  });
+
+  it("真实外参与非平凡 rect 均可完成投影 round-trip", () => {
+    const rect = [
+      0.999, -0.01, 0.005, 0.02, 0.01, 0.9998, -0.002, -0.01, -0.005, 0.002, 1.0, 0.03, 0, 0, 0, 1,
+    ] as unknown as SensorCalibration["rect"];
+    const calibration: SensorCalibration = { ...FRONT_CALIB, rect };
+    const point = [36.66, -34.4, 0.8] as const;
+    const projected = projectPoints([point], calibration);
+
+    expect(projected.visible[0]).toBe(true);
+    expectPointClose(
+      unprojectPixelAtDepth(projected.pixels[0], projected.depths[0], calibration),
+      point,
+    );
+  });
+
+  it("拒绝非正深度、非有限像素和不可逆矩阵", () => {
+    expect(unprojectPixelAtDepth([700, 900], 0, SIMPLE_CALIB)).toBeNull();
+    expect(unprojectPixelAtDepth([NaN, 900], 5, SIMPLE_CALIB)).toBeNull();
+
+    const singularIntrinsic: SensorCalibration = {
+      ...SIMPLE_CALIB,
+      intrinsic: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    expect(unprojectPixelAtDepth([700, 900], 5, singularIntrinsic)).toBeNull();
+
+    const singularExtrinsic: SensorCalibration = {
+      ...SIMPLE_CALIB,
+      extrinsic: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    expect(unprojectPixelAtDepth([700, 900], 5, singularExtrinsic)).toBeNull();
+
+    const singularRect: SensorCalibration = {
+      ...SIMPLE_CALIB,
+      rect: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    expect(unprojectPixelAtDepth([700, 900], 5, singularRect)).toBeNull();
   });
 });
 

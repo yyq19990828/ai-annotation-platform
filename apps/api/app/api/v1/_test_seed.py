@@ -536,10 +536,8 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
 class SeedLidar(BaseModel):
     """v0.16.x · 点云 E2E 基线 fixture（拆 3D 整簇前的 Playwright 守护网用)。
 
-    造 1 个 lidar 项目 + 2 帧(同一 .pcd)point_cloud task。最小版:走 manifest 的
-    task.file_path 回退路径(无 DatasetItem link / 无相机 / 无 scene),足够冒烟
-    (headless 加载点云 + 渲染 + 零 console error)与多数交互断言(选/改/gizmo/点掩膜)。
-    相机投影面板 + 跨帧 scene 待后续按 P2 需要补 link 图。
+    造 1 个 lidar 项目 + 2 帧(同一 .pcd)point_cloud task，每帧关联两张带标定的
+    camera_front / camera_side 图。覆盖点云冒烟、PSR / gizmo / 点掩膜和相机投影编辑。
     """
 
     lidar_project_id: str
@@ -589,12 +587,14 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     from sqlalchemy import select
 
     from app.db.models.annotation import Annotation
+    from app.db.models.dataset import Dataset, DatasetItem
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
     from app.db.models.user import User
     from app.services.storage import storage_service
+    from app.services.task_dataset_link import link_items
     from tests.factory import create_user
 
     await db.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
@@ -663,6 +663,20 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         Key=pcd_key,
         Body=_make_test_pcd_bytes(),
     )
+    camera_key = f"e2e/lidar/{suffix}-camera-front.svg"
+    camera_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" '
+        'viewBox="0 0 640 480">'
+        '<rect width="640" height="480" fill="#25313a"/>'
+        '<path d="M0 240h640M320 0v480" stroke="#51616d" stroke-width="2"/>'
+        "</svg>"
+    ).encode()
+    storage_service.client.put_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=camera_key,
+        Body=camera_svg,
+        ContentType="image/svg+xml",
+    )
 
     # 建 lidar 项目(data_type 默认 image,必须显式 lidar;manifest 据此放行点云端点)。
     # tool_bindings 必须把类别落在 lidar_box_3d unit(前端 LIDAR_TOOL_UNIT 据此取 boxClasses /
@@ -714,11 +728,54 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     db.add(batch)
     await db.flush()
 
+    dataset = Dataset(
+        display_id=f"DS-E2E-LDR-{suffix}",
+        name=f"E2E Lidar Dataset {suffix}",
+        data_type="point_cloud",
+        file_count=6,
+        created_by=admin.id,
+        metadata_={"axis_convention": "iso_8855"},
+    )
+    db.add(dataset)
+    await db.flush()
+
+    calibration = {
+        "extrinsic": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        "intrinsic": [100, 0, 320, 0, 100, 240, 0, 0, 1],
+    }
     tasks = []
     for idx in range(2):
+        lidar_item = DatasetItem(
+            dataset_id=dataset.id,
+            file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
+            file_path=pcd_key,
+            file_type="point_cloud",
+        )
+        camera_item = DatasetItem(
+            dataset_id=dataset.id,
+            file_name=f"e2e-lidar-{suffix}-{idx}-front.svg",
+            file_path=camera_key,
+            file_type="image",
+            width=640,
+            height=480,
+            metadata_={"calibration": calibration},
+        )
+        camera_side_item = DatasetItem(
+            dataset_id=dataset.id,
+            file_name=f"e2e-lidar-{suffix}-{idx}-side.svg",
+            file_path=camera_key,
+            file_type="image",
+            width=640,
+            height=480,
+            metadata_={"calibration": calibration},
+        )
+        db.add_all([lidar_item, camera_item, camera_side_item])
+        await db.flush()
+
         t = Task(
             display_id=f"T-E2E-LIDAR-{suffix}-{idx}",
             project_id=project.id,
+            dataset_item_id=lidar_item.id,
             status="pending",
             file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
             file_path=pcd_key,
@@ -727,7 +784,16 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         )
         db.add(t)
         tasks.append(t)
-    await db.flush()
+        await db.flush()
+        await link_items(
+            db,
+            t.id,
+            [
+                (lidar_item.id, "primary_lidar", None),
+                (camera_item.id, "camera_front", "front"),
+                (camera_side_item.id, "camera_side", "side"),
+            ],
+        )
     batch.total_tasks = len(tasks)
 
     # 每帧注入 1 个 box_3d 标注(落在点阵范围内),供 P2 选中 / 改 PSR / gizmo 断言。

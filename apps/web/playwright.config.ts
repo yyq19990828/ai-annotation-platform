@@ -75,6 +75,7 @@ export default defineConfig({
       testMatch: ["**/workbench-pointcloud*.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
+        ...(chromiumChannel ? { channel: chromiumChannel } : {}),
         launchOptions: {
           args: [
             "--use-gl=angle",

@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.13.3
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-08-14
 ---
 
 # 3D 立体框标注
@@ -30,6 +30,7 @@ last_reviewed: 2026-06-10
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/3d-box/psr-panel.png — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual] -->
 - PSR 数值面板：直接输入中心 `cx/cy/cz`、尺寸 `l/w/h`（长宽高，米）、朝向 `yaw/pitch/roll`（°）；「朝向归零」一键复位三轴
 - 三正交视图（俯 / 侧 / 正）：浮窗顶栏可在 3D 画布内拖动，右下角可调整尺寸，顶栏可折叠；位置、尺寸和折叠态会跟随账号偏好保存。视图内部拖边 / 拖角改尺寸、拖方向线转三轴朝向；主视图 gizmo / 数值面板 / 相机投影 overlay 四方实时同步，松手后防抖落 PATCH
+- 放大带标定的相机面板后，选择工具下单选且未锁定的 3D 框会显示中心手柄。拖动手柄可直接在图像中微调框中心，主视图、三正交视图和其他相机投影会实时同步；松手只保存一次，按 `Esc` 或拖出画布可取消。一次拖动保持相机深度、尺寸和旋转不变，深度仍通过主视图、三正交视图或 PSR 数值面板调整
 - 按 `V` / `Esc` 回选择工具，`Backspace` / `Delete` 删除选中框
 
 ## 属性、批量与撤销

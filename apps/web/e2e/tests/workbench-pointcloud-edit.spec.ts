@@ -7,8 +7,8 @@
  *   ⑥ 点选框 → 选中高亮 + PSR 数值面板出现(选择链 + 面板渲染)
  *   ① 选中框 → 改数值字段 → 250ms 防抖后 PATCH 几何落库(usePsrEditor 核心)
  *
- * 由 `pointcloud` project 跑(WebGL 软渲染);跨帧(⑦)/ 相机面板(⑧)待 seed 补
- * scene / 相机 link 后续追加。
+ * 由 `pointcloud` project 跑(WebGL 软渲染);seed 已含单路标定相机，覆盖相机内中心拖动。
+ * 跨帧 scene 仍由对应邻帧 spec 单独覆盖。
  */
 import { test, expect } from "../fixtures/seed";
 
@@ -63,6 +63,101 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       (e) => !/favicon|net::ERR_|Download the React DevTools/i.test(e),
     );
     expect(fatal, `console errors:\n${fatal.join("\n")}`).toEqual([]);
+  });
+
+  test("放大相机拖动中心手柄 → 共享草稿预览 → 松手单次 PATCH，可撤销与取消", async ({
+    page,
+    seed,
+  }) => {
+    test.setTimeout(60_000);
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.click({ position: { x: 12, y: 16 } });
+    await page.getByLabel("展开详情").click();
+    const cx = page.getByLabel("cx", { exact: true });
+    await expect(cx).toHaveValue("1");
+
+    const collapsedCamera = page.getByTitle("展开相机").first();
+    await expect(collapsedCamera).toBeVisible({ timeout: 10_000 });
+    await collapsedCamera.click();
+    await page.getByTitle("放大相机").click();
+    const canvas = page.getByLabel(/相机投影，拖动中心手柄微调 3D 框/);
+    await expect(canvas).toBeVisible({ timeout: 10_000 });
+    await expect
+      .poll(() => canvas.evaluate((el) => (el as HTMLCanvasElement).width))
+      .toBeGreaterThan(0);
+
+    const patches: Array<{
+      geometry?: { type?: string; center?: number[]; size?: number[]; rotation?: number[] };
+    }> = [];
+    page.on("request", (request) => {
+      if (request.method() === "PATCH" && /\/annotations\/[0-9a-f-]+/.test(request.url())) {
+        patches.push(request.postDataJSON());
+      }
+    });
+
+    const bounds = await canvas.boundingBox();
+    if (!bounds) throw new Error("放大相机 canvas boundingBox 不可用");
+    // fixture: 640×480, K=[fx=100,fy=100,cx=320,cy=240], box center=[1,0,1]
+    // → 投影中心=[420,240]，即显示画布的 65.625% / 50%。
+    const handleX = bounds.x + bounds.width * (420 / 640);
+    const handleY = bounds.y + bounds.height * 0.5;
+
+    await page.mouse.move(handleX, handleY);
+    await page.mouse.down();
+    await page.mouse.move(handleX + 64, handleY, { steps: 8 });
+
+    expect(patches, "pointerup 前不得提交 PATCH").toHaveLength(0);
+    await expect.poll(async () => Number(await cx.inputValue())).toBeGreaterThan(1.2);
+
+    await page.mouse.up();
+    await expect.poll(() => patches.length).toBe(1);
+    expect(patches[0].geometry?.type).toBe("box_3d");
+    expect(patches[0].geometry?.center?.[0]).toBeGreaterThan(1.2);
+    expect(patches[0].geometry?.center?.[1]).toBeCloseTo(0, 5);
+    expect(patches[0].geometry?.center?.[2]).toBeCloseTo(1, 5);
+    expect(patches[0].geometry?.size).toEqual([4, 2, 1.5]);
+    expect(patches[0].geometry?.rotation).toEqual([0, 0, 0]);
+
+    await page.keyboard.press("Control+z");
+    await expect.poll(() => patches.length).toBe(2);
+    expect(patches[1].geometry?.center).toEqual([1, 0, 1]);
+    await expect(cx).toHaveValue("1");
+
+    await page.mouse.move(handleX, handleY);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width + 24, handleY, { steps: 6 });
+    await expect(cx).toHaveValue("1");
+    await page.mouse.up();
+    expect(patches, "拖出画布取消不得新增 PATCH").toHaveLength(2);
+
+    await page.mouse.move(handleX, handleY);
+    await page.mouse.down();
+    await page.mouse.move(handleX + 32, handleY, { steps: 4 });
+    await page.keyboard.press("ArrowRight");
+    await expect(cx).toHaveValue("1");
+    await page.mouse.up();
+    expect(patches, "拖动中切换相机不得新增 PATCH").toHaveLength(2);
+
+    await page.mouse.move(handleX, handleY);
+    await page.mouse.down();
+    await page.mouse.move(handleX - 48, handleY, { steps: 6 });
+    await expect.poll(async () => Number(await cx.inputValue())).toBeLessThan(0.9);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /关闭/ })).toBeVisible();
+    await expect(cx).toHaveValue("1");
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    expect(patches, "Escape 取消不得新增 PATCH").toHaveLength(2);
   });
 
   // 一键贴合(Q 键):applyFit 写 setForm + 立即(非防抖)PATCH 落库 —— 守护 usePsrEditor

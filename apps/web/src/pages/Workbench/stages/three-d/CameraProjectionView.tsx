@@ -15,15 +15,16 @@ import { hexToRgba } from "@/pages/Workbench/stage/colors";
 import type { SensorCalibration } from "@/types";
 
 import { psrToCorners } from "./geometry/box3d";
-import { BOX_EDGES, projectPoints } from "./geometry/projection";
+import { BOX_EDGES, projectPoints, unprojectPixelAtDepth } from "./geometry/projection";
 import { normalizeRect, type SeedRect } from "./geometry/frustum";
 import { buildDepthRaster, sampleDepth, type DepthRaster } from "./geometry/depthmap";
+import type { Psr } from "./geometry/triview";
 import type { SceneBox } from "./PointCloudScene";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
 const CAMERA_ITEM = "m-0 shrink-0";
 const CAMERA_VIEW = "relative inline-block leading-none";
-const CAMERA_CANVAS = "absolute inset-0 cursor-pointer";
+const CAMERA_CANVAS = "absolute inset-0 cursor-pointer touch-none";
 const CAMERA_CANVAS_SEED = "cursor-crosshair";
 const CAMERA_IMG = "block w-[190px] h-auto object-cover";
 const CAMERA_FIGCAPTION = "mt-1 text-xs text-muted-foreground text-center";
@@ -51,6 +52,14 @@ interface CameraProjectionViewProps {
   seedMode?: boolean;
   /** v0.15.24 · 种框完成回调:rect 为 natural 像素系,calibration 为本相机标定(必非空)。 */
   onSeedBox?: (rect: SeedRect, calibration: SensorCalibration) => void;
+  /** 放大相机视图中允许直接移动中心的单个 3D 框；缩略视图与不可编辑态传 null。 */
+  editableBox?: SceneBox | null;
+  /** 拖动中 commit=false 更新共享草稿，pointerup 时 commit=true 只提交一次。 */
+  onEditPsr?: (psr: Psr, commit: boolean) => void;
+  /** Escape、pointer cancel 或拖出画布时恢复原 PSR，不提交。 */
+  onCancelEditPsr?: (boxId: string, original: Psr) => void;
+  /** 标定不可逆等异常只提示，不改变当前草稿。 */
+  onEditError?: () => void;
 }
 
 // 一个框至少有这么多可见角点才参与命中测试(避免擦边框误选)。
@@ -58,6 +67,24 @@ const MIN_VISIBLE_FOR_HIT = 3;
 
 // v0.15.24 · 种框拖拽最小位移(显示像素);低于此视为误点,不种框。
 const MIN_SEED_DRAG_PX = 5;
+
+const EDIT_HANDLE_RADIUS_PX = 7;
+const EDIT_HANDLE_HIT_RADIUS_PX = 20;
+const EDIT_DRAG_THRESHOLD_PX = 0.5;
+
+interface CameraEditDrag {
+  pointerId: number;
+  boxId: string;
+  cameraName: string;
+  calibration: SensorCalibration;
+  depth: number;
+  pixelOffset: readonly [number, number];
+  start: { x: number; y: number };
+  original: Psr;
+  latest: Psr;
+  moved: boolean;
+  errorShown: boolean;
+}
 
 export function CameraProjectionView({
   name,
@@ -71,12 +98,19 @@ export function CameraProjectionView({
   showDepth = false,
   seedMode = false,
   onSeedBox,
+  editableBox = null,
+  onEditPsr,
+  onCancelEditPsr,
+  onEditError,
 }: CameraProjectionViewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // v0.15.24 · 种框拖拽:起点(显示坐标)+ 当前矩形(显示坐标),用 ref 即时重绘不进 state。
   const seedStartRef = useRef<{ x: number; y: number } | null>(null);
   const seedRectRef = useRef<SeedRect | null>(null);
+  const editHandleRef = useRef<{ x: number; y: number } | null>(null);
+  const editDragRef = useRef<CameraEditDrag | null>(null);
+  const suppressClickRef = useRef(false);
   // 命中测试用:每框可见投影角点的显示坐标包围盒(id + 矩形 + 面积),draw 时同步。
   const hitBoxesRef = useRef<
     { id: string; x0: number; y0: number; x1: number; y1: number; area: number }[]
@@ -107,6 +141,7 @@ export function CameraProjectionView({
     const natW = img.naturalWidth;
     const natH = img.naturalHeight;
     hitBoxesRef.current = [];
+    editHandleRef.current = null;
     if (!cssW || !cssH || !natW || !natH) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -134,6 +169,44 @@ export function CameraProjectionView({
         const t = (d - raster.minDepth) / span;
         ctx.fillStyle = `hsl(${240 * t}, 90%, 55%)`;
         ctx.fillRect(raster.u[c] * sx - 1, raster.v[c] * sy - 1, 2, 2);
+      }
+    }
+
+    if (editableBox && onEditPsr && onCancelEditPsr && !seedMode) {
+      const projected = projectPoints([editableBox.center], calibration);
+      const [u, v] = projected.pixels[0];
+      const x = u * sx;
+      const y = v * sy;
+      if (
+        projected.visible[0] &&
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        x >= 0 &&
+        x <= cssW &&
+        y >= 0 &&
+        y <= cssH
+      ) {
+        editHandleRef.current = { x, y };
+        const styles = getComputedStyle(canvas);
+        const accent = styles.getPropertyValue("--sc-brand").trim() || "#3b82f6";
+        const surface = styles.getPropertyValue("--sc-card").trim() || "#ffffff";
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, EDIT_HANDLE_RADIUS_PX + 2, 0, Math.PI * 2);
+        ctx.fillStyle = surface;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, EDIT_HANDLE_RADIUS_PX, 0, Math.PI * 2);
+        ctx.fillStyle = accent;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = surface;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 1.75, 0, Math.PI * 2);
+        ctx.fillStyle = surface;
+        ctx.fill();
+        ctx.restore();
       }
     }
 
@@ -208,7 +281,17 @@ export function CameraProjectionView({
       ctx.strokeRect(seed.x0, seed.y0, w, h);
       ctx.restore();
     }
-  }, [boxes, calibration, highlightedIds, showDepth, raster, seedMode]);
+  }, [
+    boxes,
+    calibration,
+    editableBox,
+    highlightedIds,
+    onCancelEditPsr,
+    onEditPsr,
+    showDepth,
+    raster,
+    seedMode,
+  ]);
 
   // 数据 / 标定变化重绘。
   useEffect(() => {
@@ -237,9 +320,61 @@ export function CameraProjectionView({
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }, []);
 
+  const naturalPixel = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>): [number, number] | null => {
+      const img = imgRef.current;
+      if (!img?.naturalWidth || !img.naturalHeight || !img.clientWidth || !img.clientHeight) {
+        return null;
+      }
+      const { x, y } = localXY(e);
+      return [(x / img.clientWidth) * img.naturalWidth, (y / img.clientHeight) * img.naturalHeight];
+    },
+    [localXY],
+  );
+
+  const releasePointer = useCallback((canvas: HTMLCanvasElement, pointerId: number) => {
+    if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture(pointerId);
+    canvas.style.removeProperty("cursor");
+  }, []);
+
+  const cancelCameraEdit = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      const drag = editDragRef.current;
+      if (!drag) return;
+      editDragRef.current = null;
+      suppressClickRef.current = false;
+      if (canvas) releasePointer(canvas, drag.pointerId);
+      onCancelEditPsr?.(drag.boxId, drag.original);
+    },
+    [onCancelEditPsr, releasePointer],
+  );
+
+  useEffect(() => {
+    const drag = editDragRef.current;
+    if (
+      drag &&
+      (drag.boxId !== editableBox?.id ||
+        drag.cameraName !== name ||
+        drag.calibration !== calibration)
+    ) {
+      cancelCameraEdit(canvasRef.current);
+    }
+  }, [calibration, cancelCameraEdit, editableBox?.id, name]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !editDragRef.current) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      cancelCameraEdit(canvasRef.current);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [cancelCameraEdit]);
+
   // v0.13.6 / v0.15.24 · mousemove:种框模式下更新橡皮筋矩形(ref + 直接重绘);否则深度 hover。
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (seedMode) {
         if (!seedStartRef.current) return;
         const { x, y } = localXY(e);
@@ -248,27 +383,144 @@ export function CameraProjectionView({
         draw();
         return;
       }
+      const drag = editDragRef.current;
+      if (drag && drag.pointerId === e.pointerId && calibration && onEditPsr) {
+        const bounds = e.currentTarget.getBoundingClientRect();
+        if (
+          e.clientX < bounds.left ||
+          e.clientX > bounds.right ||
+          e.clientY < bounds.top ||
+          e.clientY > bounds.bottom
+        ) {
+          cancelCameraEdit(e.currentTarget);
+          return;
+        }
+        const pixel = naturalPixel(e);
+        if (!pixel) return;
+        const center = unprojectPixelAtDepth(
+          [pixel[0] + drag.pixelOffset[0], pixel[1] + drag.pixelOffset[1]],
+          drag.depth,
+          calibration,
+        );
+        if (!center) {
+          if (!drag.errorShown) {
+            drag.errorShown = true;
+            onEditError?.();
+          }
+          return;
+        }
+        const { x, y } = localXY(e);
+        const next: Psr = {
+          center,
+          size: [...drag.original.size],
+          rotation: [...drag.original.rotation],
+        };
+        drag.latest = next;
+        drag.moved ||= Math.hypot(x - drag.start.x, y - drag.start.y) >= EDIT_DRAG_THRESHOLD_PX;
+        if (drag.moved) onEditPsr(next, false);
+        return;
+      }
+
+      const handle = editHandleRef.current;
+      if (handle) {
+        const { x, y } = localXY(e);
+        e.currentTarget.style.cursor =
+          Math.hypot(x - handle.x, y - handle.y) <= EDIT_HANDLE_HIT_RADIUS_PX ? "grab" : "pointer";
+      }
       if (!showDepth || !raster) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const u = ((e.clientX - rect.left) / rect.width) * raster.width;
       const v = ((e.clientY - rect.top) / rect.height) * raster.height;
       setHover(sampleDepth(raster, u, v));
     },
-    [seedMode, localXY, draw, showDepth, raster],
+    [
+      seedMode,
+      calibration,
+      onEditPsr,
+      cancelCameraEdit,
+      naturalPixel,
+      localXY,
+      onEditError,
+      draw,
+      showDepth,
+      raster,
+    ],
   );
 
   // v0.15.24 · 种框:按下记起点(需有标定);松手换算回 natural 像素发 onSeedBox;微小位移视为误点。
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!seedMode || !calibration) return;
-      seedStartRef.current = localXY(e);
-      seedRectRef.current = null;
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (e.button !== 0 || editDragRef.current) return;
+      if (seedMode) {
+        if (!calibration) return;
+        seedStartRef.current = localXY(e);
+        seedRectRef.current = null;
+        return;
+      }
+      if (!editableBox || !calibration || !onEditPsr || !onCancelEditPsr) return;
+      const handle = editHandleRef.current;
+      if (!handle) return;
+      const local = localXY(e);
+      if (Math.hypot(local.x - handle.x, local.y - handle.y) > EDIT_HANDLE_HIT_RADIUS_PX) return;
+
+      const projected = projectPoints([editableBox.center], calibration);
+      const depth = projected.depths[0];
+      const pixel = naturalPixel(e);
+      if (
+        !projected.visible[0] ||
+        !pixel ||
+        !unprojectPixelAtDepth(projected.pixels[0], depth, calibration)
+      ) {
+        onEditError?.();
+        return;
+      }
+
+      const original: Psr = {
+        center: [...editableBox.center],
+        size: [...editableBox.size],
+        rotation: [...editableBox.rotation],
+      };
+      editDragRef.current = {
+        pointerId: e.pointerId,
+        boxId: editableBox.id,
+        cameraName: name,
+        calibration,
+        depth,
+        pixelOffset: [projected.pixels[0][0] - pixel[0], projected.pixels[0][1] - pixel[1]],
+        start: local,
+        original,
+        latest: original,
+        moved: false,
+        errorShown: false,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.currentTarget.style.cursor = "grabbing";
+      e.preventDefault();
     },
-    [seedMode, calibration, localXY],
+    [
+      seedMode,
+      calibration,
+      editableBox,
+      onEditPsr,
+      onCancelEditPsr,
+      localXY,
+      naturalPixel,
+      onEditError,
+      name,
+    ],
   );
 
-  const handleMouseUp = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const drag = editDragRef.current;
+      if (!seedMode && drag && drag.pointerId === e.pointerId) {
+        editDragRef.current = null;
+        releasePointer(e.currentTarget, e.pointerId);
+        suppressClickRef.current = drag.moved;
+        if (drag.moved) onEditPsr?.(drag.latest, true);
+        return;
+      }
+
       const start = seedStartRef.current;
       seedStartRef.current = null;
       seedRectRef.current = null;
@@ -291,20 +543,29 @@ export function CameraProjectionView({
       const rect = normalizeRect(start.x / sx, start.y / sy, x / sx, y / sy);
       onSeedBox(rect, calibration);
     },
-    [seedMode, calibration, onSeedBox, localXY, draw],
+    [seedMode, calibration, onSeedBox, onEditPsr, releasePointer, localXY, draw],
   );
 
-  const handleMouseLeave = useCallback(() => {
+  const handlePointerLeave = useCallback(() => {
     setHover(null);
+    if (editDragRef.current) {
+      cancelCameraEdit(canvasRef.current);
+      return;
+    }
+    canvasRef.current?.style.removeProperty("cursor");
     if (seedStartRef.current || seedRectRef.current) {
       seedStartRef.current = null;
       seedRectRef.current = null;
       draw(); // 拖出画布外 → 取消种框
     }
-  }, [draw]);
+  }, [cancelCameraEdit, draw]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
       if (seedMode) return; // 种框模式禁用反选
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -339,11 +600,14 @@ export function CameraProjectionView({
         <canvas
           ref={canvasRef}
           className={seedMode ? `${CAMERA_CANVAS} ${CAMERA_CANVAS_SEED}` : CAMERA_CANVAS}
+          aria-label={`${name} 相机投影${editableBox ? "，拖动中心手柄微调 3D 框" : ""}`}
           onClick={handleClick}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerLeave}
+          onPointerLeave={handlePointerLeave}
+          onLostPointerCapture={() => cancelCameraEdit(canvasRef.current)}
         />
       </div>
       <figcaption className={CAMERA_FIGCAPTION}>

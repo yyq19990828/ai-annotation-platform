@@ -49,8 +49,8 @@ export function useCameraPanels({
     (role: string, collapsed: boolean) => {
       const prev = cameraPanelsRef.current[role];
       const next = { ...cameraPanelsRef.current };
-      // 折叠态独立于位置;回到默认(展开)且无自定义位置时整键删除,保持 Record 干净。
-      if (!collapsed && prev?.x == null && prev?.y == null) {
+      // 折叠态独立于位置；宽屏回到默认展开且无自定义位置时整键删除。
+      if (!collapsed && !autoCollapseCameras && prev?.x == null && prev?.y == null) {
         delete next[role];
       } else {
         next[role] = { x: prev?.x ?? null, y: prev?.y ?? null, collapsed };
@@ -58,7 +58,7 @@ export function useCameraPanels({
       cameraPanelsRef.current = next;
       onWorkbenchLayoutChange({ cameraPanels: next });
     },
-    [onWorkbenchLayoutChange],
+    [autoCollapseCameras, onWorkbenchLayoutChange],
   );
   const handleResetCameraPanels = useCallback(() => {
     cameraPanelsRef.current = {};

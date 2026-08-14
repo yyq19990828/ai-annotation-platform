@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
+import { dispatchKey, ARROW_KEY_SET, hotkeyIgnoreToken } from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
@@ -461,7 +461,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (ignoredKeys?.has(e.key)) return;
+      const modifiedToken = hotkeyIgnoreToken(e);
+      if (ignoredKeys?.has(e.key) || (modifiedToken && ignoredKeys?.has(modifiedToken))) return;
       const attributeHotkey = (digit: string) => {
         const sel = s.selectedId;
         if (!sel) return null;

@@ -775,6 +775,12 @@ export function ThreeDWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
+  // undo / redo 的乐观缓存更新也要回写面板；普通字段编辑仍不受服务端回写打断。
+  useEffect(() => {
+    if (!history.busy || draftPsr) return;
+    setForm(selectedBox ? psrToForm(selectedBox) : null);
+  }, [draftPsr, history.busy, selectedBox]);
+
   // v0.16.x 第 3 批 · PSR 数值字段防抖落库管线抽到 usePsrPatchPipeline(单一职责、
   // 单消费者 handleField、不碰共享 form/setForm);完整 usePsrEditor 因 form 被多处共享
   // 无法干净切分(见计划 §5/§7),此处仅"缩小范围"抽这条管线。
@@ -1240,25 +1246,23 @@ export function ThreeDWorkbench({
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const key = e.key.toLowerCase();
+      if (!["z", "y", "c", "v", "d"].includes(key)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
       if (key === "z" && !e.shiftKey) {
-        e.preventDefault();
         void history.undo();
       } else if (key === "y" || (key === "z" && e.shiftKey)) {
-        e.preventDefault();
         void history.redo();
       } else if (key === "c") {
-        e.preventDefault();
         copySelected();
       } else if (key === "v") {
-        e.preventDefault();
         pasteClipboard();
       } else if (key === "d") {
-        e.preventDefault();
         duplicateSelected();
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [history, copySelected, pasteClipboard, duplicateSelected]);
 
   // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
@@ -1982,6 +1986,18 @@ export function ThreeDWorkbench({
     [selectedId, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory],
   );
 
+  const handleCancelCameraEdit = useCallback(
+    (boxId: string, original: Psr) => {
+      setDraftPsr(null);
+      if (selectedId === boxId) setForm(psrToForm(original));
+    },
+    [selectedId],
+  );
+
+  const handleCameraEditError = useCallback(() => {
+    pushToast({ msg: "相机标定不可逆，无法在图像中调整 3D 框", kind: "" });
+  }, [pushToast]);
+
   const handleReprojectSelectedToCurrentConvention = useCallback(() => {
     if (!selectedId || !selectedBox || !selectedConventionMismatch || !selectedEditable) return;
     const src = unapplyConventionToPsr(
@@ -2597,6 +2613,12 @@ export function ThreeDWorkbench({
                 showDepth={depthOn}
                 seedMode={seedMode}
                 onSeedBox={handleSeedBox}
+                editableBox={
+                  threeDTool === "select" && selectedPsrEditable && !seedMode ? selectedBox : null
+                }
+                onEditPsr={handleEditPsr}
+                onCancelEditPsr={handleCancelCameraEdit}
+                onEditError={handleCameraEditError}
               />
             </div>
           </div>

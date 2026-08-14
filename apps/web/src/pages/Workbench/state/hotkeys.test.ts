@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dispatchKey, type DispatchCtx, type HotkeyAction } from "./hotkeys";
+import { dispatchKey, hotkeyIgnoreToken, type DispatchCtx, type HotkeyAction } from "./hotkeys";
 
 const baseCtx: DispatchCtx = {
   isInputFocused: false,
@@ -19,6 +19,10 @@ function dispatch(e: FakeEvent, ctx: Partial<DispatchCtx> = {}): HotkeyAction | 
 }
 
 describe("dispatchKey · 修饰键", () => {
+  it("只给 Ctrl / Meta 组合键生成忽略 token", () => {
+    expect(hotkeyIgnoreToken({ key: "C", ctrlKey: false, metaKey: false })).toBeNull();
+    expect(hotkeyIgnoreToken({ key: "C", ctrlKey: true, metaKey: false })).toBe("Mod+c");
+  });
   it("Ctrl+Z → undo", () => {
     expect(dispatch({ key: "z", ctrlKey: true })).toEqual({ type: "undo" });
   });
