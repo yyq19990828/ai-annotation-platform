@@ -1,4 +1,4 @@
-snapshot = "0.23.33"
+snapshot = "0.24.0"
 watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "async-jobs", "ml-backends", "admin-ml-integrations"]
 
 [operations]
