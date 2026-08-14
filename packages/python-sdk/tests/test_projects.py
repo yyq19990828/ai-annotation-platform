@@ -2,7 +2,9 @@ import json
 from uuid import uuid4
 
 import httpx
+import pytest
 
+from ai_annotation.errors import PermissionDeniedError
 from ai_annotation.models import Project
 
 from .conftest import API
@@ -56,6 +58,36 @@ def test_get_project(client, respx_mock):
     )
     p = client.projects.get(pid)
     assert str(p.id) == pid
+
+
+def test_update_project_sends_only_explicit_fields(client, respx_mock):
+    route = respx_mock.patch(f"{API}/projects/{PROJECT['id']}").mock(
+        return_value=httpx.Response(200, json={**PROJECT, "name": "renamed"})
+    )
+    project = client.projects.update(PROJECT["id"], name="renamed")
+    assert json.loads(route.calls.last.request.content) == {"name": "renamed"}
+    assert project.name == "renamed"
+
+
+def test_delete_project(client, respx_mock):
+    route = respx_mock.delete(f"{API}/projects/{PROJECT['id']}").mock(
+        return_value=httpx.Response(204)
+    )
+    assert client.projects.delete(PROJECT["id"]) is None
+    assert route.called
+
+
+@pytest.mark.parametrize("method", ["update", "delete"])
+def test_project_writes_map_permission_error(client, respx_mock, method):
+    route = getattr(respx_mock, "patch" if method == "update" else "delete")(
+        f"{API}/projects/{PROJECT['id']}"
+    )
+    route.mock(return_value=httpx.Response(403, json={"detail": "forbidden"}))
+    with pytest.raises(PermissionDeniedError):
+        if method == "update":
+            client.projects.update(PROJECT["id"], name="blocked")
+        else:
+            client.projects.delete(PROJECT["id"])
 
 
 def test_extra_fields_tolerated(client, respx_mock):

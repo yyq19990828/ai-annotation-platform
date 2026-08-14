@@ -50,6 +50,36 @@ class Dataset(_AAPModel):
     created_at: datetime | None = None
 
 
+class DatasetItem(_AAPModel):
+    id: UUID
+    dataset_id: UUID
+    file_name: str
+    file_path: str
+    file_type: str
+    file_size: int | None = None
+    content_hash: str | None = None
+    width: int | None = None
+    height: int | None = None
+    metadata: Any = Field(default_factory=dict)
+    file_url: str | None = None
+    thumbnail_url: str | None = None
+    blurhash: str | None = None
+    created_at: datetime | None = None
+
+
+class DatasetUnlinkPreview(_AAPModel):
+    will_delete_tasks: int = 0
+    will_delete_annotations: int = 0
+    will_delete_batches: int = 0
+
+
+class DatasetUnlinkResult(_AAPModel):
+    deleted_tasks: int = 0
+    deleted_annotations: int = 0
+    deleted_batches: int = 0
+    deleted_batch_ids: list[UUID] = Field(default_factory=list)
+
+
 class UploadedItem(_AAPModel):
     """upload_files 单文件三步流的结果 (file_name 由 SDK 补充)。"""
 
@@ -202,6 +232,89 @@ class MLBackend(_AAPModel):
     updated_at: datetime | None = None
 
 
+class MLBackendHealth(_AAPModel):
+    status: str
+    backend_id: UUID
+    backend_name: str
+
+
+class MLBackendUnloadResult(_AAPModel):
+    ok: bool | None = None
+    unloaded: bool | int | None = None
+    residency: Any = None
+
+
+class ProjectMLBackend(_AAPModel):
+    backend: MLBackend
+    enabled: bool = False
+    default_variants: dict[str, Any] | None = None
+
+
+class ServicePoolSummary(_AAPModel):
+    id: UUID
+    name: str
+    enabled: bool = False
+    legacy_instance_id: UUID | None = None
+    member_count: int = 0
+    routing_generation: int = 1
+
+
+class ProjectServicePool(_AAPModel):
+    pool: ServicePoolSummary
+    enabled: bool = False
+    default_variants: dict[str, Any] | None = None
+
+
+class ServicePoolMember(_AAPModel):
+    registry_id: UUID
+    registry_name: str
+    traffic_state: str
+    weight: int = 1
+
+
+class ServicePool(_AAPModel):
+    id: UUID
+    name: str
+    enabled: bool
+    routing_policy: str
+    legacy_instance_id: UUID | None = None
+    routing_generation: int
+    capability_fingerprint: str | None = None
+    members: list[ServicePoolMember] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class CapabilityDrift(_AAPModel):
+    pool_id: UUID
+    registry_id: UUID
+    member_state: str
+    pool_enabled: bool
+    pool_fingerprint: str | None = None
+    candidate_fingerprint: str | None = None
+    differing_fields: list[str] = Field(default_factory=list)
+    has_drift: bool
+    can_accept: bool
+    blocking_members: list[UUID] = Field(default_factory=list)
+
+
+class ServicePoolTopology(_AAPModel):
+    schema_version: str
+    generated_at: datetime
+    router_mode: str
+    pools: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ServicePoolRuntimeSnapshot(_AAPModel):
+    schema_version: str
+    observed_at: datetime
+    router_mode: str
+    partial: bool = False
+    partial_reason: str | None = None
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    pools: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class MLBackendStatsSnapshot(_AAPModel):
     """v0.15.12 · `/ws/ml-backend-stats` 每 1s 推送的单个 backend 实时快照。
 
@@ -237,7 +350,7 @@ class UserBrief(_AAPModel):
 
 
 class Batch(_AAPModel):
-    """项目批次 (只读)。progress_pct 为 0-100 浮点; annotator/reviewer 为责任人摘要。"""
+    """项目批次。progress_pct 为 0-100 浮点; annotator/reviewer 为责任人摘要。"""
 
     id: UUID
     project_id: UUID
@@ -255,8 +368,25 @@ class Batch(_AAPModel):
     created_at: datetime | None = None
 
 
+class BatchDistributeResult(_AAPModel):
+    distributed_batches: int
+    annotator_per_batch: dict[str, str | None] = Field(default_factory=dict)
+    reviewer_per_batch: dict[str, str | None] = Field(default_factory=dict)
+
+
+class BulkBatchActionItem(_AAPModel):
+    batch_id: UUID
+    reason: str
+
+
+class BulkBatchActionResult(_AAPModel):
+    succeeded: list[UUID] = Field(default_factory=list)
+    skipped: list[BulkBatchActionItem] = Field(default_factory=list)
+    failed: list[BulkBatchActionItem] = Field(default_factory=list)
+
+
 class Member(_AAPModel):
-    """项目成员 (只读)。"""
+    """项目成员。"""
 
     id: UUID
     user_id: UUID
@@ -273,6 +403,30 @@ class Me(_AAPModel):
     email: str
     name: str
     role: str
+
+
+class TaskActionResult(_AAPModel):
+    status: str
+    task_id: UUID
+
+
+class ReviewClaim(_AAPModel):
+    task_id: UUID
+    reviewer_id: UUID
+    reviewer_claimed_at: datetime
+    is_self: bool
+
+
+class AnnotationBulkUpdateResult(_AAPModel):
+    updated_ids: list[UUID] = Field(default_factory=list)
+    updated_count: int = 0
+
+
+class JobRetryResult(_AAPModel):
+    status: str
+    job_id: UUID
+    queued: int
+    skipped: int
 
 
 class ProjectStats(_AAPModel):

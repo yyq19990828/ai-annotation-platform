@@ -80,6 +80,34 @@ def _noop(*args, **kwargs):
 # ──────────────────────────── test cases ─────────────────────────────────────
 
 
+async def test_delete_item_rejects_mismatched_dataset(
+    httpx_client, db_session, super_admin
+):
+    _, token = super_admin
+    ds_a = await _create_dataset(
+        httpx_client, token, f"delete-a-{uuid.uuid4().hex[:6]}"
+    )
+    ds_b = await _create_dataset(
+        httpx_client, token, f"delete-b-{uuid.uuid4().hex[:6]}"
+    )
+    item = DatasetItem(
+        dataset_id=uuid.UUID(ds_b["id"]),
+        file_name="keep.jpg",
+        file_path="keep.jpg",
+        file_type="image",
+    )
+    db_session.add(item)
+    await db_session.flush()
+
+    response = await httpx_client.delete(
+        f"/api/v1/datasets/{ds_a['id']}/items/{item.id}",
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 404
+    assert await db_session.get(DatasetItem, item.id) is item
+
+
 async def test_upload_zip_preserves_subdirectories(
     httpx_client, db_session, super_admin, monkeypatch
 ):

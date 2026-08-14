@@ -13,8 +13,11 @@ last_reviewed: 2026-06-11
 
 ```bash
 pip install 'ai-annotation-sdk[cli]'
-aap --version        # 输出 SDK 版本号
+aap --version        # aap <sdk-version>@AAP<aap-target-version>
 ```
+
+CLI 与 SDK/TUI 共用同一 SemVer。`AAP...` 部分是该 release 完成测试与 OpenAPI 对账的平台 target，
+不是未经验证的兼容版本区间。
 
 ## 配置
 
@@ -27,7 +30,7 @@ CLI 凭据按以下优先级解析:
 
 ## 帮助系统
 
-所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `me` / `tui`)、**资源管理**(`projects` / `datasets` / `batches` / `members`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控**(`ml-backends` / `stats` / `dashboard`);每个子命令的帮助末尾带可复制的示例(epilog)。
+所有命令都支持 `-h` / `--help`(二者等价)查看用法。顶层 `aap -h` 按用途把命令分四组展示:**配置与交互**(`login` / `me` / `tui`)、**资源管理**(`projects` / `datasets` / `batches` / `members`)、**标注流水线**(`predictions` / `jobs` / `export`)、**监控与 ML 运维**(`ml-backends` / `ml-registry` / `service-pools` / `stats` / `dashboard`);每个子命令的帮助末尾带可复制的示例(epilog)。
 
 ```bash
 aap -h                       # 顶层: 分组命令 + 快速上手 + env 说明
@@ -53,6 +56,8 @@ aap login --url http://localhost:8000 --api-key ak_...
 ```text
 aap projects list [--json]
 aap projects create --name <名称> --type <image|video|lidar> [--json]
+aap projects update <project-id> [--name ...] [--status ...] [--json]
+aap projects delete <project-id> [--yes] [--json]
 ```
 
 ```bash
@@ -64,27 +69,50 @@ aap projects create --name demo --type image
 
 ```text
 aap datasets create --name <名称> [--data-type <类型>] [--json]
+aap datasets update <dataset-id> [--name ...] [--description ...] [--axis-convention ...|--clear-axis-convention] [--json]
+aap datasets items <dataset-id> [--limit <n>] [--offset <n>] [--json]
+aap datasets delete-item <dataset-id> <item-id> [--yes] [--json]
+aap datasets projects <dataset-id> [--json]
 aap datasets upload <dataset-id> <路径> [--zip] [--json]
 aap datasets link <dataset-id> <project-id> [--json]
+aap datasets preview-unlink <dataset-id> <project-id> [--json]
+aap datasets unlink <dataset-id> <project-id> [--yes] [--json]
+aap datasets delete <dataset-id> [--yes] [--json]
 ```
 
 - `upload`:路径为目录时递归收集全部文件逐个上传(三步流,带进度条);为单文件时只传该文件;加 `--zip` 则按 ZIP 整包上传、后端解压入库(此时路径必须是 ZIP 文件)。
 - `link`:关联数据集到项目;后端异步建任务时自动跟随 job 进度直到完成。
+- `preview-unlink`:只查询将删除的 task / annotation / batch 计数。`unlink` 的交互模式会先显示同一预览再确认。
 
 ```bash
 aap datasets create --name demo-ds
 aap datasets upload 0199aa... ./imgs
 aap datasets upload 0199aa... ./data.zip --zip
 aap datasets link 0199aa... 0199bb...
+aap datasets preview-unlink 0199aa... 0199bb...
+aap datasets unlink 0199aa... 0199bb... --yes
 ```
 
 ### aap batches
 
 ```text
 aap batches list <project-id> [--status <批次状态>] [--json]
+aap batches create <project-id> --name <名称> [--dataset-id <id>] [--priority <0-100>] [--json]
+aap batches update <project-id> <batch-id> [--name ...] [--priority ...] [--json]
+aap batches delete <project-id> <batch-id> [--force] [--yes] [--json]
+aap batches transition <project-id> <batch-id> --status <status> [--reason ...] [--json]
+aap batches reject <project-id> <batch-id> --feedback <text> [--json]
+aap batches reset <project-id> <batch-id> --reason <text> [--yes] [--json]
+aap batches distribute <project-id> [--annotator-id ...] [--reviewer-id ...] [--only-unassigned|--all] [--json]
+aap batches bulk-activate|bulk-approve <project-id> --id <batch-id> [--id ...] [--json]
+aap batches bulk-reject <project-id> --id <batch-id> [--id ...] --feedback <text> [--json]
+aap batches bulk-reassign <project-id> --id <batch-id> [--id ...] [--annotator-id ...|--clear-annotator] [--reviewer-id ...|--clear-reviewer] [--json]
+aap batches export <project-id> <batch-id> [--target <format>] [--json]
 ```
 
-列出项目下的批次(只读):进度(完成/总数)、审核中 / 退回任务数、标注员 / 审核员。`--status` 按批次状态过滤(如 `active` / `reviewing` / `approved`)。
+列出和管理项目下的批次。`--status` 按批次状态过滤(如 `active` / `reviewing` / `approved`)。删除已有完成、审核或退回结果的批次必须同时显式传 `--force` 和 `--yes`;重置批次也必须交互确认或传 `--yes`。服务端仍会执行权限和 409 冲突校验。
+
+批量命令的 JSON 结果保留 `succeeded` / `skipped` / `failed`。`failed` 非空时仍先输出完整 JSON，再以退出码 1 结束；脚本只应重试 `failed` ID。
 
 ```bash
 aap batches list P-1
@@ -95,9 +123,11 @@ aap batches list P-1 --status reviewing --json
 
 ```text
 aap members list <project-id> [--json]
+aap members add <project-id> --user-id <user-id> --role <annotator|reviewer> [--json]
+aap members remove <project-id> <member-id> [--yes] [--json]
 ```
 
-列出项目成员(只读):用户 / 邮箱 / 角色 / 加入时间。
+列出、添加或移除项目成员。添加时的用户角色一致性和管理权限由服务端校验。
 
 ```bash
 aap members list P-1
@@ -114,6 +144,28 @@ aap me [--json]
 ```bash
 aap me
 ```
+
+### aap tasks
+
+```text
+aap tasks submit|withdraw|reopen|accept-rejection <task-id> [--json]
+aap tasks skip <task-id> --reason <image_corrupt|no_target|unclear|other> [--note ...] [--json]
+aap tasks review-claim <task-id> [--json]
+aap tasks review-approve <task-id> [--expected-qc-digest ...] [--warning-issue-id ...] [--note ...] [--json]
+aap tasks review-reject <task-id> --reason-type <missing|extra|wrong_label|wrong_geometry> --reason <text> [--json]
+```
+
+任务状态和审核认领归属由服务端以 403 / 409 校验；CLI 不在本地猜测当前用户能否执行操作。
+
+### aap annotations
+
+```text
+aap annotations bulk-update --id <annotation-id> [--id ...]
+    [--class-name ...] [--attributes-json '{...}'] [--z-order <n>]
+    [--locked|--unlocked] [--hidden|--visible] [--json]
+```
+
+批量修改只支持类别、属性、层级、锁定和隐藏状态，不接受 geometry。
 
 ### aap predictions
 
@@ -133,10 +185,12 @@ aap predictions import 0199bb... preds.json --format aap_json
 ```text
 aap jobs wait <job-id> [--json]
 aap jobs cancel <job-id> [--json]
+aap jobs retry-failed <job-id> [--yes] [--json]
 ```
 
 - `wait`:轮询异步任务直到终态,rich 进度条跟随 `progress_pct`。job 以 failed / cancelled 结束时输出错误并以退出码 1 结束。
 - `cancel`:请求**软取消**一个 job(协作式——后端写取消标记,worker 在下一条任务边界落 `cancelled`)。仅可取消的 kind 且处于 pending/running 时有效,否则后端返回 400/409、命令以退出码 1 结束。终态由后续 `jobs wait` / `tui` 反映。
+- `retry-failed`:只对服务端允许重试的 job kind 和管理角色开放；执行前必须交互确认或传 `--yes`，返回实际入队与跳过数。
 
 ```bash
 aap jobs wait 0199cc...
@@ -148,13 +202,67 @@ aap jobs cancel 0199cc...
 ```text
 aap ml-backends list --project <project-id> [--json]
 aap ml-backends get <backend-id> --project <project-id> [--json]
+aap ml-backends available --project <project-id> [--json]
+aap ml-backends enable|disable <backend-id> --project <project-id> [--json]
+aap ml-backends health <backend-id> --project <project-id> [--json]
+aap ml-backends pools --project <project-id> [--json]
+aap ml-backends pool-enable|pool-disable <pool-id> --project <project-id> [--json]
 ```
 
-只读查看某项目挂载的 ML Backend 及健康状态。`list` 输出 rich 表格(名称 / 状态 / model_version / GPU 利用率 / url),`state` 为 `connected` / `error`;`get` 输出含 `health_meta`(GPU / cache / capabilities)的完整对象。
+项目管理员可查看本项目已经挂载的 Backend、全局可用 Backend 和可用服务池，并控制项目启用态。
+`MLBackend.id` 始终是全局 registry instance ID；service pool 使用独立的逻辑 pool ID，二者不可互换。
+`list` 输出 rich 表格(名称 / 状态 / model_version / GPU 利用率 / url)，`get` 输出含 `health_meta`
+(GPU / cache / capabilities)的完整对象。
 
 ```bash
 aap ml-backends list --project 0199bb...
 aap ml-backends get 0199dd... --project 0199bb... --json
+aap ml-backends available --project 0199bb...
+aap ml-backends pool-enable 0199ee... --project 0199bb...
+```
+
+### aap ml-registry
+
+```text
+aap ml-registry list [--json]
+aap ml-registry create --name <名称> --url <backend-url> [--prompt-auth-token|--auth-token-env <VAR>] [选项] [--json]
+aap ml-registry update <registry-id> [--prompt-auth-token|--auth-token-env <VAR>] [选项] [--json]
+aap ml-registry delete <registry-id> [--yes] [--json]
+aap ml-registry health <registry-id> [--json]
+aap ml-registry unload <registry-id> [--yes] [--json]
+```
+
+全局物理 Backend 注册表仅供 super-admin 运维。删除和卸载均需确认；服务端静默守卫未通过时返回
+409/503，CLI 不自动轮询、强制卸载或绕过保护。
+
+```bash
+aap ml-registry create --name detector-a --url http://ml-a:9090
+aap ml-registry health 0199dd...
+aap ml-registry unload 0199dd... --yes
+```
+
+Backend token 不接受命令行明文值，避免进入 shell history 或进程参数。交互使用 `--prompt-auth-token` 隐藏输入；自动化场景先把 token 写入受保护的环境变量，再用 `--auth-token-env <变量名>` 读取。
+
+### aap service-pools
+
+```text
+aap service-pools list|get|create|update|delete ...
+aap service-pools member-add|member-remove|member-drain|member-resume <pool-id> --registry-id <registry-id> ...
+aap service-pools drift-preview <pool-id> --registry-id <registry-id> [--json]
+aap service-pools drift-accept <pool-id> --registry-id <registry-id>
+    --expected-fingerprint <fingerprint> [--enable-pool] [--yes] [--json]
+aap service-pools topology|runtime [--json]
+```
+
+service pool 是逻辑路由身份，member 指向物理 registry instance。删除池、移除或 drain 成员以及接受
+能力漂移均需确认。`drift-accept` 不会自动采用服务端最新指纹：必须显式传入预览得到的
+`--expected-fingerprint`；人类模式会再次打印 preview，JSON 模式则必须传 `--yes`。
+
+```bash
+aap service-pools create --name detector-pool
+aap service-pools member-add 0199ee... --registry-id 0199dd... --weight 2
+aap service-pools drift-preview 0199ee... --registry-id 0199dd... --json
+aap service-pools topology --json
 ```
 
 ### aap stats
@@ -213,37 +321,68 @@ aap tui
 
 ## --json 可脚本化契约
 
-所有业务命令支持 `--json`。**CI / 脚本只应依赖此模式**,人类可读的 rich 输出(表格、颜色、进度条)不是稳定契约,随时可能调整。
+所有业务命令支持 `--json`。**CI / 脚本只应依赖此模式**,人类可读的 rich 输出(表格、颜色、进度条)不是稳定契约,随时可能调整。破坏性命令在 `--json` 模式下从不弹出 prompt，缺少 `--yes` 时以 usage error 退出码 `2` 失败。
 
 `--json` 模式下:
 
 - **stdout 只输出裸 JSON**(单行,无 rich 装饰、无进度条),可直接 `| jq` 处理;
 - **错误走 stderr 纯文本**(一行),不污染 stdout;
-- **退出码语义**:0 = 成功;非 0(当前统一为 1)= 失败。脚本判断成败看退出码,不要解析错误文本。
+- **退出码语义**:0 = 成功;1 = SDK / HTTP / 网络失败;2 = 命令用法错误(包括破坏性 JSON 命令缺少 `--yes`)。脚本判断成败看退出码,不要解析错误文本。
 
 各命令的 JSON 输出形状:
 
-| 命令                      | stdout JSON                                                                                                      |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `login`                   | `{"config_path": "...", "base_url": "..."}`                                                                      |
-| `projects list`           | Project 对象数组                                                                                                 |
-| `projects create`         | Project 对象                                                                                                     |
-| `batches list`            | Batch 对象数组                                                                                                   |
-| `members list`            | Member 对象数组                                                                                                  |
-| `me`                      | Me 对象(`id` / `email` / `name` / `role` …)                                                                      |
-| `datasets create`         | Dataset 对象                                                                                                     |
-| `datasets upload`(逐文件) | UploadedItem 对象数组                                                                                            |
-| `datasets upload --zip`   | ZipUploadResult 对象                                                                                             |
-| `datasets link`           | `{"link": LinkResult, "job": Job \| null}`                                                                       |
-| `predictions import`      | ImportResult 对象                                                                                                |
-| `jobs wait`               | 终态 Job 对象                                                                                                    |
-| `jobs cancel`             | `{"job_id": "...", "cancel_requested": true}`                                                                    |
-| `ml-backends list`        | MLBackend 对象数组                                                                                               |
-| `ml-backends get`         | MLBackend 对象                                                                                                   |
-| `stats`                   | ProjectStats 对象(标量 + 4 条 12 周序列)                                                                         |
-| `dashboard people`        | PersonStat 对象数组                                                                                              |
-| `dashboard me`            | MyPerformance 对象                                                                                               |
-| `export project`          | `--wait`: `{"job_id": "...", "status": "...", "out": "..."}` · `--no-wait`: `{"job_id": "...", "waited": false}` |
+| 命令                              | stdout JSON                                                                                                      |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `login`                           | `{"config_path": "...", "base_url": "..."}`                                                                      |
+| `projects list`                   | Project 对象数组                                                                                                 |
+| `projects create`                 | Project 对象                                                                                                     |
+| `projects update`                 | Project 对象                                                                                                     |
+| `projects delete`                 | `{"deleted": true, "project_id": "..."}`                                                                         |
+| `batches list`                    | Batch 对象数组                                                                                                   |
+| `batches create/update`           | Batch 对象                                                                                                       |
+| `batches delete`                  | `{"deleted": true, "project_id": "...", "batch_id": "...", "forced": bool}`                                      |
+| `batches transition/reject/reset` | Batch 对象                                                                                                       |
+| `batches distribute`              | BatchDistributeResult 对象                                                                                       |
+| `batches bulk-*`                  | BulkBatchActionResult 对象                                                                                       |
+| `batches export`                  | `{"job_id": "..."}`                                                                                              |
+| `members list`                    | Member 对象数组                                                                                                  |
+| `members add`                     | Member 对象                                                                                                      |
+| `members remove`                  | `{"removed": true, "project_id": "...", "member_id": "..."}`                                                     |
+| `me`                              | Me 对象(`id` / `email` / `name` / `role` …)                                                                      |
+| `datasets create`                 | Dataset 对象                                                                                                     |
+| `datasets update`                 | Dataset 对象                                                                                                     |
+| `datasets items`                  | `Page[DatasetItem]` 对象                                                                                         |
+| `datasets projects`               | Project 对象数组                                                                                                 |
+| `datasets preview-unlink`         | DatasetUnlinkPreview 对象                                                                                        |
+| `datasets unlink`                 | DatasetUnlinkResult 对象                                                                                         |
+| `datasets delete/delete-item`     | 含 `deleted: true` 和对象 ID 的结果对象                                                                          |
+| `datasets upload`(逐文件)         | UploadedItem 对象数组                                                                                            |
+| `datasets upload --zip`           | ZipUploadResult 对象                                                                                             |
+| `datasets link`                   | `{"link": LinkResult, "job": Job \| null}`                                                                       |
+| `predictions import`              | ImportResult 对象                                                                                                |
+| `jobs wait`                       | 终态 Job 对象                                                                                                    |
+| `jobs cancel`                     | `{"job_id": "...", "cancel_requested": true}`                                                                    |
+| `jobs retry-failed`               | JobRetryResult 对象                                                                                              |
+| `tasks submit/skip/...`           | TaskActionResult 对象；`review-claim` 为 ReviewClaim                                                             |
+| `annotations bulk-update`         | AnnotationBulkUpdateResult 对象                                                                                  |
+| `ml-backends list`                | MLBackend 对象数组                                                                                               |
+| `ml-backends get`                 | MLBackend 对象                                                                                                   |
+| `ml-backends available/pools`     | ProjectMLBackend / ProjectServicePool 对象数组                                                                   |
+| `ml-backends enable/disable`      | ProjectMLBackend 对象                                                                                            |
+| `ml-backends pool-enable/disable` | ProjectServicePool 对象                                                                                          |
+| `ml-backends health`              | MLBackendHealth 对象                                                                                             |
+| `ml-registry list`                | MLBackend 对象数组                                                                                               |
+| `ml-registry create/update`       | MLBackend 对象                                                                                                   |
+| `ml-registry delete`              | `{"deleted": true, "registry_id": "..."}`                                                                        |
+| `ml-registry health/unload`       | MLBackendHealth / MLBackendUnloadResult 对象                                                                     |
+| `service-pools list`              | ServicePool 对象数组                                                                                             |
+| `service-pools get/create/...`    | ServicePool 对象；`delete` 返回 `{"deleted": true, "pool_id": "..."}`                                            |
+| `service-pools drift-preview`     | CapabilityDrift 对象                                                                                             |
+| `service-pools topology/runtime`  | ServicePoolTopology / ServicePoolRuntimeSnapshot 对象                                                            |
+| `stats`                           | ProjectStats 对象(标量 + 4 条 12 周序列)                                                                         |
+| `dashboard people`                | PersonStat 对象数组                                                                                              |
+| `dashboard me`                    | MyPerformance 对象                                                                                               |
+| `export project`                  | `--wait`: `{"job_id": "...", "status": "...", "out": "..."}` · `--no-wait`: `{"job_id": "...", "waited": false}` |
 
 对象字段与 [SDK 响应模型](./python-client#响应模型与前向兼容)一致(`model_dump(mode="json")` 序列化);服务端新增字段会原样透传,脚本应容忍未知字段。
 

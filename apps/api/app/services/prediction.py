@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -20,6 +21,42 @@ logger = logging.getLogger("app.services.prediction")
 # point_mask_3d 而漂移)。'ai_interactive' 已退役: result item 若显式带该值, 不在白名单内,
 # derive_tool_unit_from_result 会绕过它、改按几何类型派生并记 warning。
 TOOL_UNIT_IDS = frozenset(_SCHEMA_TOOL_UNIT_IDS)
+
+
+async def claim_failed_prediction_retry(
+    db: AsyncSession, failed_id: uuid.UUID, max_retries: int
+) -> FailedPrediction | None:
+    """Lock and reserve one failed prediction for a single queued retry."""
+    row = (
+        await db.execute(
+            select(FailedPrediction)
+            .where(FailedPrediction.id == failed_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if (
+        row is None
+        or row.dismissed_at is not None
+        or (row.retry_count or 0) >= max_retries
+        or bool((row.extra or {}).get("retry_pending"))
+    ):
+        return None
+    row.extra = {**(row.extra or {}), "retry_pending": True}
+    row.last_retry_at = datetime.now(timezone.utc)
+    await db.flush()
+    return row
+
+
+async def release_failed_prediction_retry_claim(
+    db: AsyncSession, failed_id: uuid.UUID
+) -> None:
+    row = await db.get(FailedPrediction, failed_id)
+    if row and (row.extra or {}).get("retry_pending"):
+        extra = dict(row.extra or {})
+        extra.pop("retry_pending", None)
+        row.extra = extra
+        await db.flush()
 
 
 def derive_tool_unit_from_ls_type(

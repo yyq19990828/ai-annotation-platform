@@ -3,8 +3,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from ai_annotation.errors import JobFailedError, JobTimeoutError
-from ai_annotation.models import JobPage
+from ai_annotation.errors import ConflictError, JobFailedError, JobTimeoutError
+from ai_annotation.models import JobPage, JobRetryResult
 
 from .conftest import API
 
@@ -47,6 +47,27 @@ def test_get_job(client, respx_mock):
     )
     job = client.jobs.get(JOB_ID)
     assert job.status == "running"
+
+
+def test_retry_failed_job_items(client, respx_mock):
+    route = respx_mock.post(f"{API}/async-jobs/{JOB_ID}/retry-failed").mock(
+        return_value=httpx.Response(
+            202,
+            json={"status": "queued", "job_id": JOB_ID, "queued": 3, "skipped": 1},
+        )
+    )
+    result = client.jobs.retry_failed(JOB_ID)
+    assert route.called
+    assert isinstance(result, JobRetryResult)
+    assert result.queued == 3
+
+
+def test_retry_failed_job_items_maps_conflict(client, respx_mock):
+    respx_mock.post(f"{API}/async-jobs/{JOB_ID}/retry-failed").mock(
+        return_value=httpx.Response(409, json={"detail": "nothing retryable"})
+    )
+    with pytest.raises(ConflictError):
+        client.jobs.retry_failed(JOB_ID)
 
 
 def test_wait_polls_until_completed(client, respx_mock):

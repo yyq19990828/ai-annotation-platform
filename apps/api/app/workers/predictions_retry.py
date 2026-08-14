@@ -98,6 +98,9 @@ async def _do_retry_with_factory(
             if job is not None:
                 await notify_job_terminal(db, job_id=job.id)
                 await db.commit()
+            async with session_factory() as retry_db:
+                await _bump_retry_counter(retry_db, fid)
+                await retry_db.commit()
             raise
 
         if job is not None:
@@ -284,9 +287,9 @@ async def _bump_retry_counter(
     if fp:
         fp.retry_count = (fp.retry_count or 0) + 1
         fp.last_retry_at = datetime.now(timezone.utc)
+        extra = dict(fp.extra or {})
+        extra.pop("retry_pending", None)
         if gpu_arbiter_error is not None:
-            fp.extra = {
-                **(fp.extra or {}),
-                "last_gpu_arbiter_error": gpu_arbiter_error,
-            }
+            extra["last_gpu_arbiter_error"] = gpu_arbiter_error
+        fp.extra = extra
         await db.flush()

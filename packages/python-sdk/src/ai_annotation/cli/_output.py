@@ -54,6 +54,15 @@ def print_error(message: str, json_mode: bool = False) -> None:
         err_console.print(f"[red]{message}[/red]")
 
 
+def confirm_destructive(message: str, yes: bool, json_mode: bool) -> None:
+    """破坏性操作确认; JSON 模式禁止 prompt。"""
+    if yes:
+        return
+    if json_mode:
+        raise typer.BadParameter("--json 模式执行破坏性操作时必须传 --yes")
+    typer.confirm(message, abort=True)
+
+
 @contextmanager
 def cli_errors(json_mode: bool = False) -> Iterator[None]:
     """把 SDK / 网络异常转为一行错误 + exit 1, 不向用户喷 traceback。"""

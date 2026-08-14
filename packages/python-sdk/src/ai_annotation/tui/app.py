@@ -1,11 +1,11 @@
 """aap tui 监控面板 (Textual)。
 
-监控四视图: Projects / Datasets / Jobs / ML Backends; jobs 默认 3s 轮询。
+监控六视图: Projects / Datasets / Jobs / ML Backends / 看板 / 绩效; jobs 默认 3s 轮询。
 轻量动作 (v0.15.8): Projects tab `e` 发起导出, Jobs tab `c` 软取消 job, 均经二次确认弹窗。
 下钻子路由 (v0.15.10): 行选中 / `o` / 「打开」按钮 push 专属详情 Screen (面包屑 + 返回);
 项目详情屏内嵌 概览 / 本项目任务 / 本项目 Backend 三个 scoped 子 tab。每个主 tab 顶部有动作按钮栏。
 SDK Client 是同步 httpx —— 所有网络调用放 thread worker, 经 call_from_thread 回 UI 线程。
-TUI 是 Client 公开 API 的纯消费方, 不碰 _http / 内部实现; 任务列表对全局 jobs 客户端按 project_id 过滤。
+TUI 是 Client 公开 API 的纯消费方, 不碰 _http / 内部实现。
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from textual.widgets import (
     Input,
     RadioButton,
     RadioSet,
+    Select,
     SelectionList,
     Static,
     Switch,
@@ -46,8 +47,10 @@ from ai_annotation.models import (
     MLBackend,
     MLBackendStatsSnapshot,
     Member,
+    MyPerformance,
     PersonStat,
     Project,
+    ProjectServicePool,
     ProjectStats,
 )
 
@@ -68,6 +71,7 @@ _ML_STATE_STYLE = {"connected": "green", "error": "red"}
 
 # 仅 pending/running 的 job 可在 TUI 发起取消 (其余终态后端必拒, 不发请求)
 _CANCELLABLE_STATUS = frozenset({"pending", "running"})
+_PAGE_SIZE = 50
 
 # 导出格式目录: data_type → [(target_id, 中文标签)]; 与 web ExportModal / 后端 export_packaging 对齐。
 # voc 走后端同步返回 (非 job), TUI 不暴露; 裸 "yolo" 后端接受但 web/TUI 用细分变体。
@@ -232,10 +236,11 @@ class AxisChart(Widget):
     set_data() 更新数据并重绘; 宽高随容器自适应。
     """
 
-    # 宽高固定, 保证各图尺寸一致 (不随容器伸缩); 窄终端会出现横向裁切, 取常见终端可容纳的 64x8
     DEFAULT_CSS = """
     AxisChart {
-        width: 64;
+        width: 1fr;
+        max-width: 64;
+        min-width: 24;
         height: 8;
         margin-bottom: 1;
     }
@@ -337,7 +342,8 @@ ConfirmModal, ExportConfigModal, PathInputModal {
     background: $background 60%;
 }
 #modal-box {
-    width: 64;
+    width: 90%;
+    max-width: 72;
     height: auto;
     max-height: 90%;
     padding: 1 2;
@@ -471,7 +477,6 @@ class ExportConfigModal(_ConfirmCancelModal):
     CSS = (
         _MODAL_CSS
         + """
-    ExportConfigModal #modal-box { width: 72; }
     ExportConfigModal SelectionList { height: auto; max-height: 8; margin-top: 1; }
     ExportConfigModal RadioSet { height: auto; }
     """
@@ -711,6 +716,270 @@ class DetailScreen(Screen[None]):
             self._on_action(event.button.id)
 
 
+def _batch_overview(batch: Batch) -> str:
+    annotator = batch.annotator.name if batch.annotator else "-"
+    reviewer = batch.reviewer.name if batch.reviewer else "-"
+    return "\n".join(
+        [
+            f"display_id: {batch.display_id}",
+            f"name: {batch.name}",
+            f"status: {batch.status}",
+            f"progress: {_progress_cell(int(batch.progress_pct))}",
+            f"tasks: {batch.completed_tasks}/{batch.total_tasks}",
+            f"review: {batch.review_tasks} · approved: {batch.approved_tasks} · rejected: {batch.rejected_tasks}",
+            f"priority: {getattr(batch, 'priority', '-')}",
+            f"deadline: {getattr(batch, 'deadline', '-')}",
+            f"annotator: {annotator}",
+            f"reviewer: {reviewer}",
+        ]
+    )
+
+
+class BatchDetailScreen(Screen[None]):
+    """只读批次详情；刷新走公开 batches.get。"""
+
+    BINDINGS = [
+        Binding("escape", "back", "返回"),
+        Binding("q", "back", "返回"),
+        Binding("r", "refresh", "刷新"),
+    ]
+    CSS = _DETAIL_CSS
+
+    def __init__(self, client: Any, batch: Batch):
+        super().__init__()
+        self._client = client
+        self._batch = batch
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"aap tui ▸ 批次 {self._batch.display_id} · {self._batch.name}",
+            classes="breadcrumb",
+        )
+        with VerticalScroll(classes="detail-body") as box:
+            box.border_title = "批次概览"
+            yield Static(_batch_overview(self._batch), id="batch-detail-body")
+        with Vertical(classes="screen-bottom"):
+            with Horizontal(classes="action-bar"):
+                yield Button("◀ 返回", id="back", variant="primary")
+                yield Button("🔄 刷新", id="refresh", variant="default")
+            yield Footer()
+
+    def action_back(self) -> None:
+        self.dismiss()
+
+    def action_refresh(self) -> None:
+        self.run_worker(self._load, thread=True, exclusive=True, group="batch-detail")
+
+    def _load(self) -> None:
+        try:
+            batch = self._client.batches.get(self._batch.project_id, self._batch.id)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self.app._set_status, f"批次刷新失败: {exc}")
+            return
+        self.app.call_from_thread(self._apply_batch, batch)
+
+    def _apply_batch(self, batch: Batch) -> None:
+        self._batch = batch
+        self.query_one("#batch-detail-body", Static).update(_batch_overview(batch))
+        self.app._set_status("批次详情已刷新")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.dismiss()
+        elif event.button.id == "refresh":
+            self.action_refresh()
+
+
+class DatasetDetailScreen(Screen[None]):
+    """数据集 Overview / Items / Linked Projects 只读详情。"""
+
+    BINDINGS = [
+        Binding("escape", "back", "返回"),
+        Binding("q", "back", "返回"),
+        Binding("r", "refresh", "刷新"),
+        Binding("p", "previous_page", "上一页"),
+        Binding("n", "next_page", "下一页"),
+    ]
+    CSS = (
+        _DETAIL_CSS
+        + """
+    DatasetDetailScreen DataTable {
+        height: 1fr;
+        border: round $accent 30%;
+        padding: 0 1;
+    }
+    DatasetDetailScreen .page-bar { height: 1; padding: 0 1; }
+    DatasetDetailScreen .page-bar Button { height: 1; min-width: 0; border: none; padding: 0 1; }
+    DatasetDetailScreen .page-note { width: 1fr; padding: 0 1; color: $text-muted; }
+    """
+    )
+
+    def __init__(self, client: Any, dataset: Dataset):
+        super().__init__()
+        self._client = client
+        self._dataset = dataset
+        self._offset = 0
+        self._total = 0
+
+    def compose(self) -> ComposeResult:
+        d = self._dataset
+        yield Static(
+            f"aap tui ▸ 数据集 {d.display_id} · {d.name}", classes="breadcrumb"
+        )
+        with TabbedContent(id="dd-tabs"):
+            with TabPane("📋 Overview", id="dd-overview"):
+                yield Static(_format_fields(d), classes="detail-body")
+            with TabPane("🗂 Items", id="dd-items"):
+                with Horizontal(classes="page-bar"):
+                    yield Button("‹ 上一页", id="dd-prev")
+                    yield Button("下一页 ›", id="dd-next")
+                    yield Static("第 0 条 / 0", id="dd-page", classes="page-note")
+                yield DataTable(
+                    id="dd-items-table", cursor_type="row", zebra_stripes=True
+                )
+            with TabPane("🔗 Linked Projects", id="dd-projects"):
+                yield DataTable(
+                    id="dd-projects-table", cursor_type="row", zebra_stripes=True
+                )
+        with Vertical(classes="screen-bottom"):
+            with Horizontal(classes="action-bar"):
+                yield Button("◀ 返回", id="back", variant="primary")
+                yield Button("🔄 刷新", id="refresh", variant="default")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        items = self.query_one("#dd-items-table", DataTable)
+        items.add_columns("file_name", "type", "size", "dimensions", "created_at")
+        items.fixed_columns = 1
+        items.border_title = "数据项"
+        projects = self.query_one("#dd-projects-table", DataTable)
+        projects.add_columns("display_id", "name", "status", "data_type")
+        projects.fixed_columns = 1
+        projects.border_title = "关联项目"
+        self._refresh_items()
+        self.run_worker(
+            self._load_projects, thread=True, exclusive=True, group="dataset-projects"
+        )
+
+    def _refresh_items(self) -> None:
+        offset = self._offset
+        self.query_one("#dd-items-table", DataTable).loading = True
+        self.run_worker(
+            lambda: self._load_items(offset),
+            thread=True,
+            exclusive=True,
+            group="dataset-items",
+        )
+
+    def _load_items(self, offset: int) -> None:
+        try:
+            page = self._client.datasets.list_items(
+                self._dataset.id, limit=_PAGE_SIZE, offset=offset
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._items_error, exc)
+            return
+        self.app.call_from_thread(self._render_items, page, offset)
+
+    def _load_projects(self) -> None:
+        try:
+            projects = self._client.datasets.list_projects(self._dataset.id)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._projects_error, exc)
+            return
+        self.app.call_from_thread(self._render_projects, projects)
+
+    def _render_items(self, page: Any, offset: int) -> None:
+        if offset != self._offset:
+            return
+        table = self.query_one("#dd-items-table", DataTable)
+        table.clear()
+        for item in page.items:
+            dims = f"{item.width}×{item.height}" if item.width and item.height else "-"
+            table.add_row(
+                item.file_name,
+                item.file_type,
+                _fmt_size(item.file_size or 0),
+                dims,
+                _fmt_dt(item.created_at),
+                key=str(item.id),
+            )
+        table.loading = False
+        table.border_title = f"数据项 · {len(page.items)}"
+        self._total = page.total
+        self._update_page()
+
+    def _render_projects(self, projects: list[Project]) -> None:
+        table = self.query_one("#dd-projects-table", DataTable)
+        table.clear()
+        for project in projects:
+            table.add_row(
+                project.display_id,
+                project.name,
+                project.status,
+                project.data_type,
+                key=str(project.id),
+            )
+        table.loading = False
+        table.border_title = f"关联项目 · {len(projects)}"
+
+    def _items_error(self, exc: Exception) -> None:
+        table = self.query_one("#dd-items-table", DataTable)
+        table.loading = False
+        table.border_title = f"数据项 · ⚠ {exc}"
+
+    def _projects_error(self, exc: Exception) -> None:
+        table = self.query_one("#dd-projects-table", DataTable)
+        table.loading = False
+        table.border_title = f"关联项目 · ⚠ {exc}"
+
+    def _update_page(self) -> None:
+        start = self._offset + 1 if self._total else 0
+        end = min(self._offset + _PAGE_SIZE, self._total)
+        self.query_one("#dd-page", Static).update(
+            f"第 {start}–{end} 条 / {self._total}"
+        )
+        self.query_one("#dd-prev", Button).disabled = self._offset == 0
+        self.query_one("#dd-next", Button).disabled = (
+            self._offset + _PAGE_SIZE >= self._total
+        )
+
+    def action_previous_page(self) -> None:
+        if self._offset:
+            self._offset = max(0, self._offset - _PAGE_SIZE)
+            self._refresh_items()
+
+    def action_next_page(self) -> None:
+        if self._offset + _PAGE_SIZE < self._total:
+            self._offset += _PAGE_SIZE
+            self._refresh_items()
+
+    def action_refresh(self) -> None:
+        active = self.query_one("#dd-tabs", TabbedContent).active
+        if active == "dd-items":
+            self._refresh_items()
+        elif active == "dd-projects":
+            self.run_worker(
+                self._load_projects,
+                thread=True,
+                exclusive=True,
+                group="dataset-projects",
+            )
+
+    def action_back(self) -> None:
+        self.dismiss()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.dismiss()
+        elif event.button.id == "refresh":
+            self.action_refresh()
+        elif event.button.id == "dd-prev":
+            self.action_previous_page()
+        elif event.button.id == "dd-next":
+            self.action_next_page()
+
+
 def _fmt_secs(v: float | None) -> str:
     return f"{v:.0f}s" if v is not None else "-"
 
@@ -887,16 +1156,15 @@ class MlBackendDetailScreen(Screen[None]):
 
 
 class ProjectDetailScreen(Screen[None]):
-    """项目下钻子路由: 概览 / 本项目任务 / 本项目 Backend 三个 scoped 子 tab。
-
-    任务列表对全局 jobs.list() 客户端按 project_id 过滤; backend 走 project-scoped 接口。
-    导出动作复用宿主 App 的确认 + 导出路径。
-    """
+    """项目 scoped 详情；各 pane 独立加载、独立保留错误与最近成功数据。"""
 
     BINDINGS = [
         Binding("escape", "back", "返回"),
         Binding("r", "refresh", "刷新"),
         Binding("e", "export", "导出"),
+        Binding("o", "open", "打开"),
+        Binding("p", "previous_page", "上一页"),
+        Binding("n", "next_page", "下一页"),
     ]
     CSS = (
         _DETAIL_CSS
@@ -908,6 +1176,10 @@ class ProjectDetailScreen(Screen[None]):
         border-title-align: left;
         padding: 0 1;
     }
+    ProjectDetailScreen .filter-bar { height: 3; padding: 0 1; }
+    ProjectDetailScreen .filter-bar Select { width: 20; margin-right: 1; }
+    ProjectDetailScreen .page-note { width: 1fr; padding: 1; color: $text-muted; }
+    ProjectDetailScreen .filter-bar Button { min-width: 0; width: auto; }
     """
     )
 
@@ -916,8 +1188,13 @@ class ProjectDetailScreen(Screen[None]):
         self._client = client
         self._project = project
         self._jobs: dict[str, Job] = {}
+        self._batches: dict[str, Batch] = {}
         self._backends: dict[str, MLBackend] = {}
         self._cursor: dict[str, str] = {}
+        self._job_offset = 0
+        self._job_total = 0
+        self._job_filter = ("", "")
+        self._job_request = 0
 
     def compose(self) -> ComposeResult:
         p = self._project
@@ -936,12 +1213,46 @@ class ProjectDetailScreen(Screen[None]):
                     id="pd-members-table", cursor_type="row", zebra_stripes=True
                 )
             with TabPane("⚙ 任务", id="pd-jobs"):
+                with Horizontal(classes="filter-bar"):
+                    yield Select(
+                        [
+                            ("全部状态", ""),
+                            ("pending", "pending"),
+                            ("running", "running"),
+                            ("completed", "completed"),
+                            ("failed", "failed"),
+                            ("cancelled", "cancelled"),
+                        ],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="pd-job-status",
+                    )
+                    yield Select(
+                        [
+                            ("全部类型", ""),
+                            ("export", "export"),
+                            ("link_dataset", "link_dataset"),
+                            ("prediction_import", "prediction_import"),
+                        ],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="pd-job-kind",
+                    )
+                    yield Button("‹", id="pd-jobs-prev")
+                    yield Button("›", id="pd-jobs-next")
+                    yield Static("第 0 条 / 0", id="pd-jobs-page", classes="page-note")
                 yield DataTable(
                     id="pd-jobs-table", cursor_type="row", zebra_stripes=True
                 )
             with TabPane("🖥 Backends", id="pd-backends"):
                 yield DataTable(
                     id="pd-backends-table", cursor_type="row", zebra_stripes=True
+                )
+            with TabPane("🧭 Pools", id="pd-pools"):
+                yield DataTable(
+                    id="pd-pools-table", cursor_type="row", zebra_stripes=True
                 )
         with Vertical(classes="screen-bottom"):
             with Horizontal(classes="action-bar"):
@@ -953,53 +1264,133 @@ class ProjectDetailScreen(Screen[None]):
     def on_mount(self) -> None:
         bat = self.query_one("#pd-batches-table", DataTable)
         bat.add_columns("批次", "状态", "进度", "审核", "退回", "标注员", "审核员")
+        bat.fixed_columns = 1
         bat.border_title = "本项目批次"
         mt = self.query_one("#pd-members-table", DataTable)
         mt.add_columns("用户", "邮箱", "角色", "加入时间")
+        mt.fixed_columns = 1
         mt.border_title = "本项目成员"
         jt = self.query_one("#pd-jobs-table", DataTable)
         jt.add_columns("kind", "status", "progress", "created_at")
+        jt.fixed_columns = 1
         jt.border_title = "本项目任务"
         bt = self.query_one("#pd-backends-table", DataTable)
         bt.add_columns("name", "state", "model_version", "GPU", "显存", "last_checked")
+        bt.fixed_columns = 1
         bt.border_title = "本项目 Backend"
+        pools = self.query_one("#pd-pools-table", DataTable)
+        pools.add_columns(
+            "name",
+            "pool enabled",
+            "项目 enabled",
+            "members",
+            "generation",
+            "default variants",
+        )
+        pools.fixed_columns = 1
+        pools.border_title = "本项目可用 Pool"
         self.query_one("#pd-overview-body", Static).border_title = "概览"
         self._load()
 
     def _load(self) -> None:
-        self.run_worker(self._load_worker, thread=True, exclusive=True, group="pd-load")
+        self._refresh_jobs()
+        loaders = (
+            ("pd-backends", self._load_backends, "pd-backends"),
+            ("pd-batches", self._load_batches, "pd-batches"),
+            ("pd-members", self._load_members, "pd-members"),
+            ("pd-pools", self._load_pools, "pd-pools"),
+        )
+        for pane, loader, group in loaders:
+            self.query_one(f"#{pane}", TabPane).loading = True
+            self.run_worker(loader, thread=True, exclusive=True, group=group)
 
-    @staticmethod
-    def _safe_list(fn: Any, *args: Any) -> list:
-        """批次/成员端点不可用 (旧后端 / 无权限) 时降级空列表, 不拖垮整个详情。"""
-        try:
-            return list(fn(*args))
-        except Exception:  # noqa: BLE001
-            return []
+    def _refresh_jobs(self) -> None:
+        offset = self._job_offset
+        raw_status = str(self.query_one("#pd-job-status", Select).value or "")
+        raw_kind = str(self.query_one("#pd-job-kind", Select).value or "")
+        self._job_filter = (raw_status, raw_kind)
+        status = raw_status or None
+        kind = raw_kind or None
+        self._job_request += 1
+        request = self._job_request
+        self.query_one("#pd-jobs", TabPane).loading = True
+        self.run_worker(
+            lambda: self._load_jobs(status, kind, offset, request),
+            thread=True,
+            exclusive=True,
+            group="pd-jobs",
+        )
 
-    def _load_worker(self) -> None:
-        pid = str(self._project.id)
-        try:
-            jobs = [
-                j
-                for j in self._client.jobs.list(limit=100).items
-                if str(j.project_id) == pid
-            ]
-            backends = list(self._client.ml_backends.list(self._project.id))
-        except Exception as exc:  # noqa: BLE001 — 错误回主屏状态栏
-            self.app.call_from_thread(self.app._set_status, f"项目详情加载失败: {exc}")
-            return
-        batches = self._safe_list(self._client.batches.list, self._project.id)
-        members = self._safe_list(self._client.members.list, self._project.id)
-        self.app.call_from_thread(self._populate, jobs, backends, batches, members)
-
-    def _populate(
-        self,
-        jobs: list[Job],
-        backends: list[MLBackend],
-        batches: list[Batch],
-        members: list[Member],
+    def _load_jobs(
+        self, status: str | None, kind: str | None, offset: int, request: int
     ) -> None:
+        try:
+            page = self._client.jobs.list(
+                project_id=self._project.id,
+                status=status,
+                kind=kind,
+                limit=_PAGE_SIZE,
+                offset=offset,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._job_error, exc, request)
+            return
+        self.app.call_from_thread(self._render_jobs, page, offset, request)
+
+    def _job_error(self, exc: Exception, request: int) -> None:
+        if request == self._job_request:
+            self._pane_error("pd-jobs-table", "本项目任务", exc)
+
+    def _load_backends(self) -> None:
+        try:
+            rows = list(self._client.ml_backends.list(self._project.id))
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(
+                self._pane_error, "pd-backends-table", "本项目 Backend", exc
+            )
+            return
+        self.app.call_from_thread(self._render_backends, rows)
+
+    def _load_batches(self) -> None:
+        try:
+            rows = list(self._client.batches.list(self._project.id))
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(
+                self._pane_error, "pd-batches-table", "本项目批次", exc
+            )
+            return
+        self.app.call_from_thread(self._render_batches, rows)
+
+    def _load_members(self) -> None:
+        try:
+            rows = list(self._client.members.list(self._project.id))
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(
+                self._pane_error, "pd-members-table", "本项目成员", exc
+            )
+            return
+        self.app.call_from_thread(self._render_members, rows)
+
+    def _load_pools(self) -> None:
+        try:
+            rows = list(self._client.ml_backends.list_available_pools(self._project.id))
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(
+                self._pane_error, "pd-pools-table", "本项目可用 Pool", exc
+            )
+            return
+        self.app.call_from_thread(self._render_pools, rows)
+
+    def _pane_error(self, table_id: str, label: str, exc: Exception) -> None:
+        table = self.query_one(f"#{table_id}", DataTable)
+        table.loading = False
+        self.query_one(f"#{table_id.removesuffix('-table')}", TabPane).loading = False
+        table.border_title = f"{label} · ⚠ {exc}"
+
+    def _render_jobs(self, page: Any, offset: int, request: int) -> None:
+        if offset != self._job_offset or request != self._job_request:
+            return
+        jobs = page.items
         self._jobs = {str(j.id): j for j in jobs}
         jt = self.query_one("#pd-jobs-table", DataTable)
         jt.clear()
@@ -1013,6 +1404,19 @@ class ProjectDetailScreen(Screen[None]):
                 key=str(j.id),
             )
         jt.border_title = f"本项目任务 · {len(jobs)}"
+        if jt.row_count:
+            key = self._cursor.get("pd-jobs-table")
+            try:
+                row = jt.get_row_index(key) if key else 0
+            except Exception:  # noqa: BLE001
+                row = 0
+            jt.move_cursor(row=row, animate=False)
+        jt.loading = False
+        self.query_one("#pd-jobs", TabPane).loading = False
+        self._job_total = page.total
+        self._update_job_page()
+
+    def _render_backends(self, backends: list[MLBackend]) -> None:
         self._backends = {str(b.id): b for b in backends}
         bt = self.query_one("#pd-backends-table", DataTable)
         bt.clear()
@@ -1031,6 +1435,11 @@ class ProjectDetailScreen(Screen[None]):
                 key=str(b.id),
             )
         bt.border_title = f"本项目 Backend · {len(backends)}"
+        bt.loading = False
+        self.query_one("#pd-backends", TabPane).loading = False
+
+    def _render_batches(self, batches: list[Batch]) -> None:
+        self._batches = {str(batch.id): batch for batch in batches}
         bat = self.query_one("#pd-batches-table", DataTable)
         bat.clear()
         for b in batches:
@@ -1047,6 +1456,10 @@ class ProjectDetailScreen(Screen[None]):
                 key=str(b.id),
             )
         bat.border_title = f"本项目批次 · {len(batches)}"
+        bat.loading = False
+        self.query_one("#pd-batches", TabPane).loading = False
+
+    def _render_members(self, members: list[Member]) -> None:
         mt = self.query_one("#pd-members-table", DataTable)
         mt.clear()
         for m in members:
@@ -1058,12 +1471,68 @@ class ProjectDetailScreen(Screen[None]):
                 key=str(m.id),
             )
         mt.border_title = f"本项目成员 · {len(members)}"
+        mt.loading = False
+        self.query_one("#pd-members", TabPane).loading = False
+
+    def _render_pools(self, pools: list[ProjectServicePool]) -> None:
+        table = self.query_one("#pd-pools-table", DataTable)
+        table.clear()
+        for item in pools:
+            table.add_row(
+                item.pool.name,
+                "yes" if item.pool.enabled else "no",
+                "yes" if item.enabled else "no",
+                str(item.pool.member_count),
+                str(item.pool.routing_generation),
+                str(item.default_variants or {}),
+                key=str(item.pool.id),
+            )
+        table.border_title = f"本项目可用 Pool · {len(pools)}"
+        table.loading = False
+        self.query_one("#pd-pools", TabPane).loading = False
+
+    def _update_job_page(self) -> None:
+        start = self._job_offset + 1 if self._job_total else 0
+        end = min(self._job_offset + _PAGE_SIZE, self._job_total)
+        self.query_one("#pd-jobs-page", Static).update(
+            f"第 {start}–{end} 条 / {self._job_total}"
+        )
+        self.query_one("#pd-jobs-prev", Button).disabled = self._job_offset == 0
+        self.query_one("#pd-jobs-next", Button).disabled = (
+            self._job_offset + _PAGE_SIZE >= self._job_total
+        )
 
     def action_back(self) -> None:
         self.dismiss()
 
     def action_refresh(self) -> None:
         self._load()
+
+    def action_open(self) -> None:
+        active = self.query_one("#pd-tabs", TabbedContent).active
+        table_id = {
+            "pd-batches": "pd-batches-table",
+            "pd-jobs": "pd-jobs-table",
+            "pd-backends": "pd-backends-table",
+        }.get(active)
+        if table_id and (key := self._cursor.get(table_id)):
+            self._open_row(table_id, key)
+
+    def action_previous_page(self) -> None:
+        if (
+            self.query_one("#pd-tabs", TabbedContent).active == "pd-jobs"
+            and self._job_offset
+        ):
+            self._job_offset = max(0, self._job_offset - _PAGE_SIZE)
+            self._refresh_jobs()
+
+    def action_next_page(self) -> None:
+        if (
+            self.query_one("#pd-tabs", TabbedContent).active == "pd-jobs"
+            and self._job_offset + _PAGE_SIZE < self._job_total
+        ):
+            self._job_offset += _PAGE_SIZE
+            self._refresh_jobs()
 
     def action_export(self) -> None:
         self.app._confirm_and_export(self._project)
@@ -1076,6 +1545,21 @@ class ProjectDetailScreen(Screen[None]):
             self.app._confirm_and_export(self._project)
         elif bid == "refresh":
             self._load()
+        elif bid == "pd-jobs-prev":
+            self.action_previous_page()
+        elif bid == "pd-jobs-next":
+            self.action_next_page()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id in {"pd-job-status", "pd-job-kind"}:
+            current = (
+                str(self.query_one("#pd-job-status", Select).value or ""),
+                str(self.query_one("#pd-job-kind", Select).value or ""),
+            )
+            if current == self._job_filter:
+                return
+            self._job_offset = 0
+            self._refresh_jobs()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.control.id is not None and event.row_key.value is not None:
@@ -1085,11 +1569,18 @@ class ProjectDetailScreen(Screen[None]):
         key = event.row_key.value
         if key is None:
             return
-        if event.control.id == "pd-jobs-table":
+        self._open_row(event.control.id or "", key)
+
+    def _open_row(self, table_id: str, key: str) -> None:
+        if table_id == "pd-batches-table":
+            batch = self._batches.get(key)
+            if batch is not None:
+                self.app.push_screen(BatchDetailScreen(self._client, batch))
+        elif table_id == "pd-jobs-table":
             job = self._jobs.get(key)
             if job is not None:
                 self.app.push_job_detail(job)
-        elif event.control.id == "pd-backends-table":
+        elif table_id == "pd-backends-table":
             backend = self._backends.get(key)
             if backend is not None:
                 self.app.push_screen(
@@ -1124,6 +1615,7 @@ class AapTuiApp(App[None]):
 
     TITLE = "aap tui"
     SUB_TITLE = "标注平台监控面板"
+    HORIZONTAL_BREAKPOINTS = [(0, "-compact"), (100, "-wide")]
     # 内置 nord 主题做基线配色, 不自造调色板; 全程走主题变量 ($accent/$panel/$text-muted)
     theme = "nord"
     CSS = """
@@ -1149,6 +1641,15 @@ class AapTuiApp(App[None]):
         padding: 0 1;
         margin-right: 1;
     }
+    .filter-bar {
+        height: 3;
+        padding: 0 1;
+    }
+    .filter-bar Input { width: 1fr; min-width: 16; }
+    .filter-bar Select { width: 20; margin-left: 1; }
+    .filter-bar Button { width: auto; min-width: 0; margin-left: 1; }
+    .page-note { width: 1fr; padding: 1; color: $text-muted; }
+    Screen.-compact .secondary-action { display: none; }
     #bottom-bar {
         dock: bottom;
         height: 2;
@@ -1177,6 +1678,10 @@ class AapTuiApp(App[None]):
     BINDINGS = [
         Binding("r", "refresh", "刷新", tooltip="刷新当前 tab"),
         Binding("o", "open", "打开", tooltip="下钻选中行详情"),
+        Binding("/", "focus_filter", "筛选", tooltip="聚焦当前筛选条件"),
+        Binding("escape", "clear_filter", "清空筛选"),
+        Binding("p", "previous_page", "上一页"),
+        Binding("n", "next_page", "下一页"),
         Binding("e", "export", "导出", tooltip="导出选中项目 (仅 Projects)"),
         Binding("c", "cancel_job", "取消", tooltip="取消选中 job (仅 Jobs)"),
         Binding("q", "quit", "退出"),
@@ -1208,35 +1713,163 @@ class AapTuiApp(App[None]):
         self._cursor: dict[str, str] = {}
         # 当前主体角色 (me() 解析), 用于绩效 tab 门控; None = 未知/降级
         self._role: str | None = None
+        self._loaded_tabs: set[str] = set()
+        self._last_success: dict[str, datetime] = {}
+        self._view_errors: dict[str, str] = {}
+        self._dataset_offset = 0
+        self._dataset_total = 0
+        self._jobs_offset = 0
+        self._jobs_total = 0
+        self._ml_rows: list[tuple[MLBackend, list[Project]]] = []
+        self._filter_timer: Any = None
+        self._dataset_filter = ("", "")
+        self._job_filter = ("", "")
+        self._project_request = 0
+        self._dataset_request = 0
+        self._jobs_request = 0
+        self._jobs_refreshing = False
+        self._jobs_refresh_pending = False
+        self._after_jobs_refresh: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with TabbedContent(id="tabs"):
             with TabPane("📁 Projects", id="tab-projects"):
                 with Horizontal(classes="action-bar"):
-                    yield Button("🔄 刷新", id="proj-refresh", variant="default")
-                    yield Button("↳ 打开", id="proj-open", variant="primary")
+                    yield Button(
+                        "🔄 刷新",
+                        id="proj-refresh",
+                        variant="default",
+                        classes="secondary-action",
+                    )
+                    yield Button(
+                        "↳ 打开",
+                        id="proj-open",
+                        variant="primary",
+                        classes="secondary-action",
+                    )
                     yield Button("⬇ 导出", id="proj-export", variant="success")
+                with Horizontal(classes="filter-bar"):
+                    yield Input(
+                        placeholder="搜索 name / display_id", id="projects-search"
+                    )
                 yield DataTable(
                     id="projects-table", cursor_type="row", zebra_stripes=True
                 )
             with TabPane("🗂 Datasets", id="tab-datasets"):
                 with Horizontal(classes="action-bar"):
-                    yield Button("🔄 刷新", id="ds-refresh", variant="default")
-                    yield Button("↳ 打开", id="ds-open", variant="primary")
+                    yield Button(
+                        "🔄 刷新",
+                        id="ds-refresh",
+                        variant="default",
+                        classes="secondary-action",
+                    )
+                    yield Button(
+                        "↳ 打开",
+                        id="ds-open",
+                        variant="primary",
+                        classes="secondary-action",
+                    )
+                with Horizontal(classes="filter-bar"):
+                    yield Input(placeholder="搜索数据集", id="datasets-search")
+                    yield Select(
+                        [
+                            ("全部类型", ""),
+                            ("image", "image"),
+                            ("video", "video"),
+                            ("lidar", "lidar"),
+                        ],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="datasets-type",
+                    )
+                    yield Button("‹", id="datasets-prev")
+                    yield Button("›", id="datasets-next")
+                    yield Static("第 0 条 / 0", id="datasets-page", classes="page-note")
                 yield DataTable(
                     id="datasets-table", cursor_type="row", zebra_stripes=True
                 )
             with TabPane("⚙ Jobs", id="tab-jobs"):
                 with Horizontal(classes="action-bar"):
-                    yield Button("🔄 刷新", id="jobs-refresh", variant="default")
-                    yield Button("↳ 打开", id="jobs-open", variant="primary")
+                    yield Button(
+                        "🔄 刷新",
+                        id="jobs-refresh",
+                        variant="default",
+                        classes="secondary-action",
+                    )
+                    yield Button(
+                        "↳ 打开",
+                        id="jobs-open",
+                        variant="primary",
+                        classes="secondary-action",
+                    )
                     yield Button("✖ 取消", id="jobs-cancel", variant="error")
+                with Horizontal(classes="filter-bar"):
+                    yield Select(
+                        [
+                            ("全部状态", ""),
+                            ("pending", "pending"),
+                            ("running", "running"),
+                            ("completed", "completed"),
+                            ("failed", "failed"),
+                            ("cancelled", "cancelled"),
+                        ],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="jobs-status",
+                    )
+                    yield Select(
+                        [
+                            ("全部类型", ""),
+                            ("export", "export"),
+                            ("link_dataset", "link_dataset"),
+                            ("prediction_import", "prediction_import"),
+                        ],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="jobs-kind",
+                    )
+                    yield Button("‹", id="jobs-prev")
+                    yield Button("›", id="jobs-next")
+                    yield Static("第 0 条 / 0", id="jobs-page", classes="page-note")
                 yield DataTable(id="jobs-table", cursor_type="row", zebra_stripes=True)
             with TabPane("🖥 ML Backends", id="tab-ml-backends"):
                 with Horizontal(classes="action-bar"):
-                    yield Button("🔄 刷新", id="ml-refresh", variant="default")
-                    yield Button("↳ 打开", id="ml-open", variant="primary")
+                    yield Button(
+                        "🔄 刷新",
+                        id="ml-refresh",
+                        variant="default",
+                        classes="secondary-action",
+                    )
+                    yield Button(
+                        "↳ 打开",
+                        id="ml-open",
+                        variant="primary",
+                        classes="secondary-action",
+                    )
+                with Horizontal(classes="filter-bar"):
+                    yield Input(placeholder="搜索 Backend 名称", id="ml-search")
+                    yield Select(
+                        [("全部项目", "")],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="ml-project",
+                    )
+                    yield Select(
+                        [
+                            ("全部状态", ""),
+                            ("connected", "connected"),
+                            ("error", "error"),
+                        ],
+                        value="",
+                        allow_blank=False,
+                        compact=True,
+                        id="ml-state",
+                    )
                 yield DataTable(
                     id="ml-backends-table", cursor_type="row", zebra_stripes=True
                 )
@@ -1256,6 +1889,7 @@ class AapTuiApp(App[None]):
                     yield Static("待审 (12 周)", classes="spark-label")
                     yield AxisChart(x_left="-12w", color="#e3b341", id="spark-review")
             with TabPane("🏆 绩效", id="tab-people"):
+                yield Static("尚未加载个人绩效", id="people-self")
                 yield Static("", id="people-note")
                 yield DataTable(
                     id="people-table", cursor_type="row", zebra_stripes=True
@@ -1268,35 +1902,37 @@ class AapTuiApp(App[None]):
     def on_mount(self) -> None:
         projects_table = self.query_one("#projects-table", DataTable)
         projects_table.add_columns("display_id", "name", "status", "进度(完成/总数)")
+        projects_table.fixed_columns = 1
         projects_table.border_title = "项目"
         datasets_table = self.query_one("#datasets-table", DataTable)
         datasets_table.add_columns(
             "display_id", "name", "data_type", "条目数", "大小", "created_at"
         )
+        datasets_table.fixed_columns = 1
         datasets_table.border_title = "数据集"
         jobs_table = self.query_one("#jobs-table", DataTable)
         jobs_table.add_columns("kind", "status", "progress", "created_at")
+        jobs_table.fixed_columns = 1
         jobs_table.border_title = "异步任务"
         ml_table = self.query_one("#ml-backends-table", DataTable)
         ml_table.add_columns(
             "name", "项目", "state", "model_version", "GPU", "显存", "last_checked"
         )
+        ml_table.fixed_columns = 1
         ml_table.border_title = "ML Backend"
         people_table = self.query_one("#people-table", DataTable)
         people_table.add_columns(
             "姓名", "角色", "产出分", "质量分", "退回率", "7日趋势"
         )
+        people_table.fixed_columns = 1
         people_table.border_title = "全员绩效"
-        self._refresh_projects()
-        self._refresh_datasets()
-        self._refresh_jobs()
-        self._refresh_ml_backends()
-        self._refresh_stats()
+        if not self.query_one("#tab-projects", TabPane).loading:
+            self._refresh_projects()
+        if not self.query_one("#tab-jobs", TabPane).loading:
+            self._refresh_jobs()
         # 解析角色 → 决定绩效 tab 是否拉数 (网络调用须在 thread worker, 不可在 UI 线程直跑)
         self.run_worker(self._load_principal, thread=True, exclusive=True, group="me")
         self.set_interval(self._poll_interval, self._refresh_jobs)
-        # ML Backends N+1 聚合较重, 仅在该 tab 激活时按 5s 轮询 (见 _tick_ml_backends)
-        self.set_interval(5.0, self._tick_ml_backends)
 
     # ---- 上下文感知按键: e 仅 Projects / c 仅 Jobs, 否则 Footer 灰掉 ----
 
@@ -1308,6 +1944,10 @@ class AapTuiApp(App[None]):
             "open",
             "export",
             "cancel_job",
+            "focus_filter",
+            "clear_filter",
+            "previous_page",
+            "next_page",
         ):
             return False
         try:
@@ -1318,11 +1958,35 @@ class AapTuiApp(App[None]):
             return active == "tab-projects"
         if action == "cancel_job":
             return active == "tab-jobs"
+        if action in {"previous_page", "next_page"}:
+            return active in {"tab-datasets", "tab-jobs"}
+        if action in {"focus_filter", "clear_filter"}:
+            return active in {
+                "tab-projects",
+                "tab-datasets",
+                "tab-jobs",
+                "tab-ml-backends",
+            }
         return True
 
     def on_tabbed_content_tab_activated(self) -> None:
-        # 切 tab 后让 Footer 重算 e/c 的可用性
+        # 首次激活才加载；之后展示缓存，r 明确刷新。
         self.refresh_bindings()
+        active = self.query_one("#tabs", TabbedContent).active
+        if (
+            active not in self._loaded_tabs
+            and not self.query_one(f"#{active}", TabPane).loading
+        ):
+            {
+                "tab-projects": self._refresh_projects,
+                "tab-datasets": self._refresh_datasets,
+                "tab-jobs": self._refresh_jobs,
+                "tab-ml-backends": self._refresh_ml_backends,
+                "tab-stats": self._refresh_stats,
+                "tab-people": self._refresh_people,
+            }[active]()
+        else:
+            self._set_status("")
 
     # ---- 刷新调度 (UI 线程发起, 网络调用在 thread worker) ----
 
@@ -1342,64 +2006,254 @@ class AapTuiApp(App[None]):
         else:
             self._refresh_jobs()
 
+    def action_focus_filter(self) -> None:
+        active = self.query_one("#tabs", TabbedContent).active
+        target = {
+            "tab-projects": "#projects-search",
+            "tab-datasets": "#datasets-search",
+            "tab-jobs": "#jobs-status",
+            "tab-ml-backends": "#ml-search",
+        }.get(active)
+        if target:
+            self.query_one(target).focus()
+
+    def action_clear_filter(self) -> None:
+        active = self.query_one("#tabs", TabbedContent).active
+        if active == "tab-projects":
+            self.query_one("#projects-search", Input).value = ""
+        elif active == "tab-datasets":
+            self.query_one("#datasets-search", Input).value = ""
+            self.query_one("#datasets-type", Select).value = ""
+            self._dataset_offset = 0
+        elif active == "tab-jobs":
+            self.query_one("#jobs-status", Select).value = ""
+            self.query_one("#jobs-kind", Select).value = ""
+            self._jobs_offset = 0
+        elif active == "tab-ml-backends":
+            self.query_one("#ml-search", Input).value = ""
+            self.query_one("#ml-project", Select).value = ""
+            self.query_one("#ml-state", Select).value = ""
+        table_id = {
+            "tab-projects": "#projects-table",
+            "tab-datasets": "#datasets-table",
+            "tab-jobs": "#jobs-table",
+            "tab-ml-backends": "#ml-backends-table",
+        }.get(active)
+        if table_id:
+            self.query_one(table_id, DataTable).focus()
+
+    def action_previous_page(self) -> None:
+        active = self.query_one("#tabs", TabbedContent).active
+        if active == "tab-datasets" and self._dataset_offset:
+            self._dataset_offset = max(0, self._dataset_offset - _PAGE_SIZE)
+            self._refresh_datasets()
+        elif active == "tab-jobs" and self._jobs_offset:
+            self._jobs_offset = max(0, self._jobs_offset - _PAGE_SIZE)
+            self._refresh_jobs()
+
+    def action_next_page(self) -> None:
+        active = self.query_one("#tabs", TabbedContent).active
+        if (
+            active == "tab-datasets"
+            and self._dataset_offset + _PAGE_SIZE < self._dataset_total
+        ):
+            self._dataset_offset += _PAGE_SIZE
+            self._refresh_datasets()
+        elif active == "tab-jobs" and self._jobs_offset + _PAGE_SIZE < self._jobs_total:
+            self._jobs_offset += _PAGE_SIZE
+            self._refresh_jobs()
+
+    def _debounce(self, callback: Any) -> None:
+        if self._filter_timer is not None:
+            self._filter_timer.stop()
+        self._filter_timer = self.set_timer(0.3, callback)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "projects-search":
+            self._debounce(self._refresh_projects)
+        elif event.input.id == "datasets-search":
+            self._dataset_offset = 0
+            self._debounce(self._refresh_datasets)
+        elif event.input.id == "ml-search":
+            self._debounce(self._apply_ml_filters)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        sid = event.select.id
+        if sid == "datasets-type":
+            current = (
+                self.query_one("#datasets-search", Input).value.strip(),
+                str(self.query_one("#datasets-type", Select).value or ""),
+            )
+            if current == self._dataset_filter:
+                return
+            self._dataset_offset = 0
+            self._refresh_datasets()
+        elif sid in {"jobs-status", "jobs-kind"}:
+            current = (
+                str(self.query_one("#jobs-status", Select).value or ""),
+                str(self.query_one("#jobs-kind", Select).value or ""),
+            )
+            if current == self._job_filter:
+                return
+            self._jobs_offset = 0
+            self._refresh_jobs()
+        elif sid in {"ml-project", "ml-state"}:
+            self._apply_ml_filters()
+
     def _refresh_projects(self) -> None:
+        search = self.query_one("#projects-search", Input).value.strip() or None
+        self._project_request += 1
+        request = self._project_request
+        self._begin_view("tab-projects")
         self.run_worker(
-            self._load_projects, thread=True, exclusive=True, group="projects"
+            lambda: self._load_projects(search, request),
+            thread=True,
+            exclusive=True,
+            group="projects",
         )
 
     def _refresh_stats(self) -> None:
+        self._begin_view("tab-stats")
         self.run_worker(self._load_stats, thread=True, exclusive=True, group="stats")
 
     def _refresh_people(self) -> None:
-        """绩效仅 super_admin 全局可见; 其余角色不发请求 (避免 403)。"""
+        """所有角色加载本人；super_admin 再加载全员排行。"""
+        self._begin_view("tab-people")
+        self.run_worker(
+            self._load_my_performance,
+            thread=True,
+            exclusive=True,
+            group="my-performance",
+        )
         if self._role == _PEOPLE_ROLE:
             self.run_worker(
                 self._load_people, thread=True, exclusive=True, group="people"
             )
 
     def _refresh_datasets(self) -> None:
+        search = self.query_one("#datasets-search", Input).value.strip() or None
+        raw_type = self.query_one("#datasets-type", Select).value
+        data_type = str(raw_type) if raw_type else None
+        self._dataset_filter = (search or "", data_type or "")
+        offset = self._dataset_offset
+        self._dataset_request += 1
+        request = self._dataset_request
+        self._begin_view("tab-datasets")
         self.run_worker(
-            self._load_datasets, thread=True, exclusive=True, group="datasets"
+            lambda: self._load_datasets(search, data_type, offset, request),
+            thread=True,
+            exclusive=True,
+            group="datasets",
         )
 
     def _refresh_jobs(self) -> None:
-        self.run_worker(self._load_jobs, thread=True, exclusive=True, group="jobs")
+        if self._jobs_refreshing:
+            self._jobs_refresh_pending = True
+            return
+        self._jobs_refreshing = True
+        raw_status = self.query_one("#jobs-status", Select).value
+        raw_kind = self.query_one("#jobs-kind", Select).value
+        status = str(raw_status) if raw_status else None
+        kind = str(raw_kind) if raw_kind else None
+        self._job_filter = (status or "", kind or "")
+        offset = self._jobs_offset
+        self._jobs_request += 1
+        request = self._jobs_request
+        self._begin_view("tab-jobs")
+        self.run_worker(
+            lambda: self._load_jobs(status, kind, offset, request),
+            thread=True,
+            exclusive=True,
+            group="jobs",
+        )
 
     def _refresh_ml_backends(self) -> None:
+        self._begin_view("tab-ml-backends")
         self.run_worker(
             self._load_ml_backends, thread=True, exclusive=True, group="ml-backends"
         )
 
-    def _tick_ml_backends(self) -> None:
-        """定时器: 仅当 ML Backends tab 激活时才发起 N+1 聚合刷新。"""
-        if self.query_one("#tabs", TabbedContent).active == "tab-ml-backends":
-            self._refresh_ml_backends()
-
     # ---- thread workers: 阻塞网络调用, 结果经 call_from_thread 回 UI ----
 
-    def _load_projects(self) -> None:
+    def _load_projects(self, search: str | None, request: int) -> None:
         try:
-            projects = self._client.projects.list()
+            projects = self._client.projects.list(search=search)
         except Exception as exc:  # noqa: BLE001 — 网络/认证错误统一进状态栏
-            self.call_from_thread(self._set_status, f"projects 加载失败: {exc}")
+            self.call_from_thread(
+                self._view_failed_if_current,
+                "tab-projects",
+                "projects",
+                exc,
+                "_project_request",
+                request,
+            )
             return
-        self.call_from_thread(self._render_projects, projects)
+        self.call_from_thread(self._render_projects, projects, request)
 
-    def _load_datasets(self) -> None:
+    def _load_datasets(
+        self,
+        search: str | None,
+        data_type: str | None,
+        offset: int,
+        request: int,
+    ) -> None:
         try:
-            page = self._client.datasets.list(limit=100)
+            page = self._client.datasets.list(
+                search=search,
+                data_type=data_type,
+                limit=_PAGE_SIZE,
+                offset=offset,
+            )
         except Exception as exc:  # noqa: BLE001
-            self.call_from_thread(self._set_status, f"datasets 加载失败: {exc}")
+            self.call_from_thread(
+                self._view_failed_if_current,
+                "tab-datasets",
+                "datasets",
+                exc,
+                "_dataset_request",
+                request,
+            )
             return
-        self.call_from_thread(self._render_datasets, page.items)
+        self.call_from_thread(self._render_datasets, page, offset, request)
 
-    def _load_jobs(self) -> None:
+    def _load_jobs(
+        self, status: str | None, kind: str | None, offset: int, request: int
+    ) -> None:
         try:
-            page = self._client.jobs.list(limit=50)
+            page = self._client.jobs.list(
+                status=status,
+                kind=kind,
+                limit=_PAGE_SIZE,
+                offset=offset,
+            )
         except Exception as exc:  # noqa: BLE001
-            self.call_from_thread(self._set_status, f"jobs 加载失败: {exc}")
+            self.call_from_thread(
+                self._jobs_failed,
+                "tab-jobs",
+                "jobs",
+                exc,
+                "_jobs_request",
+                request,
+            )
             return
-        self.call_from_thread(self._render_jobs, page.items)
+        self.call_from_thread(self._render_jobs, page, offset, request)
+
+    def _finish_jobs_refresh(self) -> None:
+        self._jobs_refreshing = False
+        if self._jobs_refresh_pending:
+            self._jobs_refresh_pending = False
+            self._refresh_jobs()
+
+    def _jobs_failed(
+        self,
+        tab: str,
+        label: str,
+        exc: Exception,
+        request_attr: str,
+        request: int,
+    ) -> None:
+        self._view_failed_if_current(tab, label, exc, request_attr, request)
+        self._finish_jobs_refresh()
 
     def _load_ml_backends(self) -> None:
         """ml-backends 列表是 project-scoped: 遍历项目逐个聚合 (N+1, 单 worker 内串行)。
@@ -1419,7 +2273,9 @@ class AapTuiApp(App[None]):
                     else:
                         merged[key] = (b, [p])
         except Exception as exc:  # noqa: BLE001
-            self.call_from_thread(self._set_status, f"ml-backends 加载失败: {exc}")
+            self.call_from_thread(
+                self._view_failed, "tab-ml-backends", "ml-backends", exc
+            )
             return
         self.call_from_thread(self._render_ml_backends, list(merged.values()))
 
@@ -1427,7 +2283,7 @@ class AapTuiApp(App[None]):
         try:
             stats = self._client.projects.stats()
         except Exception as exc:  # noqa: BLE001
-            self.call_from_thread(self._set_status, f"看板加载失败: {exc}")
+            self.call_from_thread(self._view_failed, "tab-stats", "看板", exc)
             return
         self.call_from_thread(self._render_stats, stats)
 
@@ -1443,34 +2299,97 @@ class AapTuiApp(App[None]):
         try:
             people = self._client.dashboard.people()
         except Exception as exc:  # noqa: BLE001
-            self.call_from_thread(self._set_status, f"绩效加载失败: {exc}")
+            self.call_from_thread(self._view_failed, "tab-people", "全员绩效", exc)
             return
         self.call_from_thread(self._render_people, people)
+
+    def _load_my_performance(self) -> None:
+        try:
+            mine = self._client.dashboard.me_performance()
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._view_failed, "tab-people", "个人绩效", exc)
+            return
+        self.call_from_thread(self._render_my_performance, mine)
 
     # ---- 渲染 (UI 线程) ----
 
     def _hint_line(self) -> str:
-        return (
-            f"{self._hint} · 刷新 {self._last_refresh}"
-            if self._last_refresh
-            else self._hint
-        )
+        try:
+            active = self.query_one("#tabs", TabbedContent).active
+        except Exception:  # noqa: BLE001
+            active = ""
+        stamp = self._last_success.get(active)
+        return f"{self._hint} · 刷新 {stamp:%H:%M:%S}" if stamp else self._hint
 
     def _set_status(self, msg: str) -> None:
         bar = self.query_one("#status-bar", Static)
+        if not msg:
+            try:
+                active = self.query_one("#tabs", TabbedContent).active
+            except Exception:  # noqa: BLE001
+                active = ""
+            msg = self._view_errors.get(active, "")
         hint = self._hint_line()
         bar.update(f"{msg} · {hint}" if msg else hint)
 
-    def _mark_refreshed(self) -> None:
-        """记录刷新时刻并重绘状态栏默认行 (瞬态消息由其后的 _set_status 覆盖)。"""
+    def _begin_view(self, tab: str) -> None:
+        self.query_one(f"#{tab}", TabPane).loading = True
+
+    def _view_failed(self, tab: str, label: str, exc: Exception) -> None:
+        self.query_one(f"#{tab}", TabPane).loading = False
+        self._view_errors[tab] = f"{label} 加载失败: {exc}"
+        table_id = {
+            "tab-projects": "projects-table",
+            "tab-datasets": "datasets-table",
+            "tab-jobs": "jobs-table",
+            "tab-ml-backends": "ml-backends-table",
+            "tab-people": "people-table",
+        }.get(tab)
+        if table_id:
+            self.query_one(
+                f"#{table_id}", DataTable
+            ).border_title = f"{label} · ⚠ {exc}"
+        if self.query_one("#tabs", TabbedContent).active == tab:
+            self._set_status("")
+
+    def _view_failed_if_current(
+        self,
+        tab: str,
+        label: str,
+        exc: Exception,
+        request_attr: str,
+        request: int,
+    ) -> None:
+        if getattr(self, request_attr) == request:
+            self._view_failed(tab, label, exc)
+
+    def _mark_refreshed(self, tab: str) -> None:
+        """只清除本视图错误；后台 Jobs 成功不会抹掉当前 tab 的错误。"""
         self._last_refresh = datetime.now().strftime("%H:%M:%S")
-        self._set_status("")
+        self._last_success[tab] = datetime.now()
+        self._loaded_tabs.add(tab)
+        self._view_errors.pop(tab, None)
+        self.query_one(f"#{tab}", TabPane).loading = False
+        if self.query_one("#tabs", TabbedContent).active == tab:
+            self._set_status("")
 
     @staticmethod
     def _count_title(label: str, n: int) -> str:
         return f"{label} · {n}"
 
-    def _render_projects(self, projects: list[Project]) -> None:
+    def _restore_cursor(self, table: DataTable, table_id: str) -> None:
+        if not table.row_count:
+            return
+        key = self._cursor.get(table_id)
+        try:
+            row = table.get_row_index(key) if key else 0
+        except Exception:  # noqa: BLE001 — row 已不在新结果中
+            row = 0
+        table.move_cursor(row=row, animate=False)
+
+    def _render_projects(self, projects: list[Project], request: int) -> None:
+        if request != self._project_request:
+            return
         table = self.query_one("#projects-table", DataTable)
         self._projects = {str(p.id): p for p in projects}
         table.clear()
@@ -1480,10 +2399,23 @@ class AapTuiApp(App[None]):
             done = getattr(p, "completed_tasks", None)
             progress = f"{done}/{total}" if total is not None else "-"
             table.add_row(p.display_id, p.name, p.status, progress, key=str(p.id))
+        self._restore_cursor(table, "projects-table")
         table.border_title = self._count_title("项目", len(projects))
-        self._mark_refreshed()
+        project_filter = self.query_one("#ml-project", Select)
+        current = project_filter.value
+        project_filter.set_options(
+            [
+                ("全部项目", ""),
+                *[(f"{p.display_id} · {p.name}", str(p.id)) for p in projects],
+            ]
+        )
+        project_filter.value = current if current in {"", *self._projects} else ""
+        self._mark_refreshed("tab-projects")
 
-    def _render_datasets(self, datasets: list[Dataset]) -> None:
+    def _render_datasets(self, page: Any, offset: int, request: int) -> None:
+        if offset != self._dataset_offset or request != self._dataset_request:
+            return
+        datasets = page.items
         table = self.query_one("#datasets-table", DataTable)
         self._datasets = {str(d.id): d for d in datasets}
         table.clear()
@@ -1497,10 +2429,17 @@ class AapTuiApp(App[None]):
                 _fmt_dt(d.created_at),
                 key=str(d.id),
             )
+        self._restore_cursor(table, "datasets-table")
         table.border_title = self._count_title("数据集", len(datasets))
-        self._mark_refreshed()
+        self._dataset_total = page.total
+        self._update_page("datasets", self._dataset_offset, self._dataset_total)
+        self._mark_refreshed("tab-datasets")
 
-    def _render_jobs(self, jobs: list[Job]) -> None:
+    def _render_jobs(self, page: Any, offset: int, request: int) -> None:
+        if offset != self._jobs_offset or request != self._jobs_request:
+            self._finish_jobs_refresh()
+            return
+        jobs = page.items
         table = self.query_one("#jobs-table", DataTable)
         # running/pending → completed 翻转的行整行高亮
         flipped = {
@@ -1512,8 +2451,6 @@ class AapTuiApp(App[None]):
         self._job_prev = {str(j.id): j.status for j in jobs}
         self._jobs = {str(j.id): j for j in jobs}
         # 轮询重建前存光标/滚动, 重建后还原 —— 否则每 3s clear() 把视图弹回顶部
-        prev_cursor = table.cursor_coordinate
-        prev_scroll_y = table.scroll_offset.y
         table.clear()
         for j in jobs:
             key = str(j.id)
@@ -1532,20 +2469,37 @@ class AapTuiApp(App[None]):
                 key=key,
             )
         table.border_title = self._count_title("异步任务", len(jobs))
-        if table.row_count:
-            table.move_cursor(
-                row=min(prev_cursor.row, table.row_count - 1),
-                column=prev_cursor.column,
-                animate=False,
-                scroll=False,
-            )
-            table.scroll_to(y=prev_scroll_y, animate=False)
-        self._mark_refreshed()
+        self._restore_cursor(table, "jobs-table")
+        self._jobs_total = page.total
+        self._update_page("jobs", self._jobs_offset, self._jobs_total)
+        self._mark_refreshed("tab-jobs")
+        if self._after_jobs_refresh:
+            self._set_status(self._after_jobs_refresh)
+            self._after_jobs_refresh = None
         if flipped:
             self._set_status(f"{len(flipped)} 个 job 刚完成")
             self.notify(f"{len(flipped)} 个 job 刚完成", severity="information")
+        self._finish_jobs_refresh()
 
     def _render_ml_backends(self, rows: list[tuple[MLBackend, list[Project]]]) -> None:
+        self._ml_rows = rows
+        self._apply_ml_filters()
+        self._mark_refreshed("tab-ml-backends")
+
+    def _apply_ml_filters(self) -> None:
+        search = self.query_one("#ml-search", Input).value.strip().casefold()
+        project_id = str(self.query_one("#ml-project", Select).value or "")
+        state = str(self.query_one("#ml-state", Select).value or "")
+        rows = [
+            (backend, projects)
+            for backend, projects in self._ml_rows
+            if (not search or search in backend.name.casefold())
+            and (not state or backend.state == state)
+            and (
+                not project_id
+                or any(str(project.id) == project_id for project in projects)
+            )
+        ]
         table = self.query_one("#ml-backends-table", DataTable)
         self._ml_backends = {str(b.id): b for b, _ in rows}
         table.clear()
@@ -1569,8 +2523,8 @@ class AapTuiApp(App[None]):
                 _fmt_dt(b.last_checked_at),
                 key=str(b.id),
             )
-        table.border_title = self._count_title("ML Backend", len(rows))
-        self._mark_refreshed()
+        self._restore_cursor(table, "ml-backends-table")
+        table.border_title = f"ML Backend · {len(rows)}/{len(self._ml_rows)}"
 
     def _render_stats(self, stats: ProjectStats) -> None:
         rate = stats.ai_rate * 100 if stats.ai_rate <= 1 else stats.ai_rate
@@ -1590,14 +2544,20 @@ class AapTuiApp(App[None]):
         self.query_one("#spark-review", AxisChart).set_data(
             [float(v) for v in stats.pending_review_series]
         )
-        self._mark_refreshed()
+        self._mark_refreshed("tab-stats")
 
     def _apply_role(self, role: str | None) -> None:
         self._role = role
         note = self.query_one("#people-note", Static)
         if role == _PEOPLE_ROLE:
             note.update(f"全员绩效 · 当前角色 {role}")
-            self._refresh_people()
+            if self.query_one("#tabs", TabbedContent).active == "tab-people":
+                self.run_worker(
+                    self._load_people,
+                    thread=True,
+                    exclusive=True,
+                    group="people",
+                )
         elif role == "project_admin":
             note.update(
                 "全员绩效需 super_admin；project_admin 请用 CLI "
@@ -1625,7 +2585,30 @@ class AapTuiApp(App[None]):
                 key=p.user_id,
             )
         table.border_title = self._count_title("全员绩效", len(people))
-        self._mark_refreshed()
+        self._mark_refreshed("tab-people")
+
+    def _render_my_performance(self, mine: MyPerformance) -> None:
+        first_pass = (
+            f"{mine.first_pass_yield * 100:.0f}%"
+            if mine.first_pass_yield is not None
+            else "-"
+        )
+        self.query_one("#people-self", Static).update(
+            f"本人 {mine.name} · 产出 {mine.throughput} · 质量 {mine.quality_score}"
+            f" · 一次通过率 {first_pass}"
+        )
+        self._mark_refreshed("tab-people")
+
+    def _update_page(self, prefix: str, offset: int, total: int) -> None:
+        start = offset + 1 if total else 0
+        end = min(offset + _PAGE_SIZE, total)
+        self.query_one(f"#{prefix}-page", Static).update(
+            f"第 {start}–{end} 条 / {total}"
+        )
+        self.query_one(f"#{prefix}-prev", Button).disabled = offset == 0
+        self.query_one(f"#{prefix}-next", Button).disabled = (
+            offset + _PAGE_SIZE >= total
+        )
 
     # ---- 下钻: 打开选中行的详情子路由 (回车 / o / 「打开」按钮) ----
 
@@ -1655,13 +2638,7 @@ class AapTuiApp(App[None]):
         elif table_id == "datasets-table":
             dataset = self._datasets.get(key)
             if dataset is not None:
-                self.push_screen(
-                    DetailScreen(
-                        f"数据集 {dataset.display_id} · {dataset.name}",
-                        _format_fields(dataset),
-                        title="数据集详情",
-                    )
-                )
+                self.push_screen(DatasetDetailScreen(self._client, dataset))
         elif table_id == "jobs-table":
             job = self._jobs.get(key)
             if job is not None:
@@ -1678,6 +2655,8 @@ class AapTuiApp(App[None]):
         actions: list[tuple[str, str, str]] = []
         if job.status in _CANCELLABLE_STATUS:
             actions = [("cancel", "✖ 取消", "error")]
+        elif job.status == "failed":
+            actions = [("retry", "↻ 重试失败项", "warning")]
         elif _is_downloadable_export(job):
             actions = [("download", "⬇ 下载到本地", "success")]
         self.push_screen(
@@ -1693,6 +2672,8 @@ class AapTuiApp(App[None]):
     def _on_job_action(self, bid: str, job: Job) -> None:
         if bid == "cancel":
             self._confirm_and_cancel(job)
+        elif bid == "retry":
+            self._confirm_and_retry(job)
         elif bid == "download":
             self._prompt_download(job)
 
@@ -1726,6 +2707,10 @@ class AapTuiApp(App[None]):
             self.action_export()
         elif bid == "jobs-cancel":
             self.action_cancel_job()
+        elif bid in {"datasets-prev", "jobs-prev"}:
+            self.action_previous_page()
+        elif bid in {"datasets-next", "jobs-next"}:
+            self.action_next_page()
 
     # ---- 动作: 导出 (Projects) / 取消 (Jobs), 均经二次确认 ----
 
@@ -1788,6 +2773,22 @@ class AapTuiApp(App[None]):
             _on_confirm,
         )
 
+    def _confirm_and_retry(self, job: Job) -> None:
+        def _on_confirm(ok: bool | None) -> None:
+            if ok:
+                self.run_worker(
+                    lambda: self._do_retry(job), thread=True, group="action"
+                )
+
+        self.push_screen(
+            ConfirmModal(
+                f"重试 job {job.kind} 的失败项?",
+                confirm_label="↻ 确认重试",
+                confirm_variant="warning",
+            ),
+            _on_confirm,
+        )
+
     def _do_export(self, project: Project, cfg: dict) -> None:
         extra = {k: cfg[k] for k in ("video_frame_mode", "axis_frame") if k in cfg}
         try:
@@ -1824,6 +2825,21 @@ class AapTuiApp(App[None]):
             return
         self.call_from_thread(self._set_status, f"已请求取消 job {job.id}")
         self.call_from_thread(self._refresh_jobs)
+
+    def _do_retry(self, job: Job) -> None:
+        try:
+            result = self._client.jobs.retry_failed(job.id)
+        except Exception as exc:  # noqa: BLE001
+            self.call_from_thread(self._set_status, f"重试失败: {exc}")
+            return
+        self.call_from_thread(
+            self._refresh_jobs_with_status,
+            f"失败项已重试: queued={result.queued}, skipped={result.skipped}",
+        )
+
+    def _refresh_jobs_with_status(self, message: str) -> None:
+        self._after_jobs_refresh = message
+        self._refresh_jobs()
 
     # ---- 行高亮跟踪 (供动作键定位) + 行选中 (回车/点击) → 下钻详情 ----
 

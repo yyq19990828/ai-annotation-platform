@@ -811,7 +811,7 @@ async def delete_item(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = DatasetService(db)
-    ok = await svc.delete_item(item_id)
+    ok = await svc.delete_item(item_id, dataset_id=dataset_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Item not found")
     await db.commit()

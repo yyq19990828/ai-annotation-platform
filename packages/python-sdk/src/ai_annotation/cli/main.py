@@ -1,4 +1,4 @@
-"""aap CLI 入口: 命令组装 (v0.15.2)。
+"""aap CLI 入口: 命令组装。
 
 需要 cli extras: pip install 'ai-annotation-sdk[cli]'。
 """
@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import typer
 
-from ai_annotation import __version__
+from ai_annotation import __aap_target_version__, __version__
 from ai_annotation.cli import (
+    annotations,
     batches,
     dashboard,
     datasets,
@@ -17,8 +18,11 @@ from ai_annotation.cli import (
     login,
     members,
     ml_backends,
+    ml_registry,
     predictions,
     projects,
+    service_pools,
+    tasks,
 )
 from ai_annotation.cli._output import (
     cli_errors,
@@ -65,10 +69,14 @@ app.add_typer(projects.app, name="projects", rich_help_panel=PANEL_RESOURCE)
 app.add_typer(datasets.app, name="datasets", rich_help_panel=PANEL_RESOURCE)
 app.add_typer(batches.app, name="batches", rich_help_panel=PANEL_RESOURCE)
 app.add_typer(members.app, name="members", rich_help_panel=PANEL_RESOURCE)
+app.add_typer(tasks.app, name="tasks", rich_help_panel=PANEL_PIPELINE)
+app.add_typer(annotations.app, name="annotations", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(predictions.app, name="predictions", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(jobs.app, name="jobs", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(export.app, name="export", rich_help_panel=PANEL_PIPELINE)
 app.add_typer(ml_backends.app, name="ml-backends", rich_help_panel=PANEL_MONITOR)
+app.add_typer(ml_registry.app, name="ml-registry", rich_help_panel=PANEL_MONITOR)
+app.add_typer(service_pools.app, name="service-pools", rich_help_panel=PANEL_MONITOR)
 app.add_typer(dashboard.app, name="dashboard", rich_help_panel=PANEL_MONITOR)
 
 
@@ -112,7 +120,7 @@ def stats(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(__version__)
+        typer.echo(f"aap {__version__}@AAP{__aap_target_version__}")
         raise typer.Exit()
 
 

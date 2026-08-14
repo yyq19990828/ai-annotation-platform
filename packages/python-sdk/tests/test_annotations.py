@@ -4,8 +4,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from ai_annotation.errors import NotFoundError
-from ai_annotation.models import Annotation
+from ai_annotation.errors import NotFoundError, ValidationError
+from ai_annotation.models import Annotation, AnnotationBulkUpdateResult
 
 from .conftest import API
 
@@ -78,3 +78,37 @@ def test_delete_missing_maps_404(client, respx_mock):
         client.annotations.delete(TASK_ID, ANN_ID)
     assert ei.value.status_code == 404
     assert ei.value.detail == "Annotation not found"
+
+
+def test_bulk_update_annotations(client, respx_mock):
+    second_id = uuid4()
+    route = respx_mock.post(f"{API}/annotations/bulk-update").mock(
+        return_value=httpx.Response(
+            200,
+            json={"updated_ids": [ANN_ID, str(second_id)], "updated_count": 2},
+        )
+    )
+    result = client.annotations.bulk_update(
+        [ANN_ID, second_id], class_name="truck", is_locked=True
+    )
+    assert json.loads(route.calls.last.request.content) == {
+        "ids": [ANN_ID, str(second_id)],
+        "patch": {"class_name": "truck", "is_locked": True},
+    }
+    assert isinstance(result, AnnotationBulkUpdateResult)
+    assert result.updated_count == 2
+
+
+def test_bulk_update_annotations_validates_patch(client):
+    with pytest.raises(ValueError, match="must not be empty"):
+        client.annotations.bulk_update([ANN_ID])
+    with pytest.raises(ValueError, match="unsupported"):
+        client.annotations.bulk_update([ANN_ID], geometry={"type": "bbox"})
+
+
+def test_bulk_update_annotations_maps_validation_error(client, respx_mock):
+    respx_mock.post(f"{API}/annotations/bulk-update").mock(
+        return_value=httpx.Response(422, json={"detail": "invalid patch"})
+    )
+    with pytest.raises(ValidationError):
+        client.annotations.bulk_update([ANN_ID], class_name="bad")

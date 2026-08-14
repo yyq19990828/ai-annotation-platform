@@ -6,9 +6,11 @@ from pathlib import Path
 
 import typer
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 from ai_annotation.cli._output import (
     cli_errors,
+    confirm_destructive,
     console,
     get_client,
     print_error,
@@ -18,7 +20,7 @@ from ai_annotation.cli._output import (
 from ai_annotation.cli.jobs import wait_job
 
 app = typer.Typer(
-    help="数据集管理: 创建数据集、上传文件 (目录 / ZIP)、关联到项目建任务。",
+    help="数据集管理: 维护数据集/文件并管理项目关联。",
     no_args_is_help=True,
     rich_markup_mode="rich",
     epilog=(
@@ -46,6 +48,178 @@ def create(
         console.print(
             f"[green]数据集已创建[/green] id={dataset.id} display_id={dataset.display_id}"
         )
+
+
+@app.command("update")
+def update(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    name: str | None = typer.Option(None, "--name", help="数据集名称"),
+    description: str | None = typer.Option(None, "--description", help="描述"),
+    axis_convention: str | None = typer.Option(
+        None, "--axis-convention", help="点云坐标系约定"
+    ),
+    clear_axis_convention: bool = typer.Option(
+        False, "--clear-axis-convention", help="清除坐标系约定"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """更新数据集的显式指定字段。"""
+    if axis_convention is not None and clear_axis_convention:
+        raise typer.BadParameter(
+            "--axis-convention 与 --clear-axis-convention 不能同时使用"
+        )
+    fields = {
+        key: value
+        for key, value in {"name": name, "description": description}.items()
+        if value is not None
+    }
+    if axis_convention is not None or clear_axis_convention:
+        fields["axis_convention"] = axis_convention
+    if not fields:
+        raise typer.BadParameter("至少提供一个更新选项")
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            dataset = client.datasets.update(dataset_id, **fields)
+    if json_output:
+        print_json(dataset.model_dump(mode="json"))
+    else:
+        console.print(f"[green]数据集已更新[/green] id={dataset.id}")
+
+
+@app.command("items")
+def items(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    limit: int = typer.Option(50, "--limit", min=1, max=200, help="返回条数"),
+    offset: int = typer.Option(0, "--offset", min=0, help="起始偏移"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """列出数据集文件。"""
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            page = client.datasets.list_items(dataset_id, limit=limit, offset=offset)
+    if json_output:
+        print_json(page.model_dump(mode="json"))
+        return
+    table = Table()
+    table.add_column("ID")
+    table.add_column("文件名")
+    table.add_column("类型")
+    table.add_column("大小")
+    for item in page.items:
+        table.add_row(
+            str(item.id), item.file_name, item.file_type, str(item.file_size or 0)
+        )
+    console.print(table)
+
+
+@app.command("delete-item")
+def delete_item(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    item_id: str = typer.Argument(..., help="文件 ID"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过确认"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """删除数据集文件。"""
+    confirm_destructive(f"确认删除文件 {item_id}?", yes, json_output)
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            client.datasets.delete_item(dataset_id, item_id)
+    if json_output:
+        print_json({"deleted": True, "dataset_id": dataset_id, "item_id": item_id})
+    else:
+        console.print(f"[green]文件已删除[/green] {item_id}")
+
+
+@app.command("projects")
+def projects(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """列出数据集已关联的项目。"""
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            linked = client.datasets.list_projects(dataset_id)
+    if json_output:
+        print_json([project.model_dump(mode="json") for project in linked])
+        return
+    table = Table()
+    table.add_column("ID")
+    table.add_column("名称")
+    table.add_column("状态")
+    for project in linked:
+        table.add_row(project.display_id, project.name, project.status)
+    console.print(table)
+
+
+@app.command("preview-unlink")
+def preview_unlink(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    project_id: str = typer.Argument(..., help="项目 ID"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """预览取消关联将删除的数据。"""
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            preview = client.datasets.preview_unlink(dataset_id, project_id)
+    if json_output:
+        print_json(preview.model_dump(mode="json"))
+    else:
+        console.print(
+            "将删除: "
+            f"tasks={preview.will_delete_tasks} "
+            f"annotations={preview.will_delete_annotations} "
+            f"batches={preview.will_delete_batches}"
+        )
+
+
+@app.command("unlink")
+def unlink(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    project_id: str = typer.Argument(..., help="项目 ID"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过确认"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """取消数据集与项目的关联。"""
+    if json_output:
+        confirm_destructive("确认取消关联?", yes, json_output)
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            if not json_output:
+                preview = client.datasets.preview_unlink(dataset_id, project_id)
+                console.print(
+                    "将删除: "
+                    f"tasks={preview.will_delete_tasks} "
+                    f"annotations={preview.will_delete_annotations} "
+                    f"batches={preview.will_delete_batches}"
+                )
+                confirm_destructive("确认取消关联?", yes, json_output)
+            result = client.datasets.unlink_project(dataset_id, project_id)
+    if json_output:
+        print_json(result.model_dump(mode="json"))
+    else:
+        console.print(
+            "[green]已取消关联[/green]: "
+            f"tasks={result.deleted_tasks} "
+            f"annotations={result.deleted_annotations} "
+            f"batches={result.deleted_batches}"
+        )
+
+
+@app.command("delete")
+def delete(
+    dataset_id: str = typer.Argument(..., help="数据集 ID"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过确认"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """删除数据集。"""
+    confirm_destructive(f"确认删除数据集 {dataset_id}?", yes, json_output)
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            client.datasets.delete(dataset_id)
+    if json_output:
+        print_json({"deleted": True, "dataset_id": dataset_id})
+    else:
+        console.print(f"[green]数据集已删除[/green] {dataset_id}")
 
 
 @app.command("upload")

@@ -13,6 +13,21 @@ last_reviewed: 2026-06-11
 
 > **兼容承诺范围**:公开 API 仅限本页所列(`Client` + 资源命名空间方法 + `ai_annotation` 顶层导出的模型与异常)。内部传输层 `ai_annotation._http` 不在兼容承诺内,外部代码不要直接依赖。
 
+## 版本与 AAP target
+
+SDK、CLI 与 TUI 共用一个独立于 AAP 的 SemVer。运行时同时暴露 SDK 版本和该 release 完成测试与
+OpenAPI 对账的 AAP target：
+
+```python
+from ai_annotation import __aap_target_version__, __version__
+
+print(__version__)
+print(__aap_target_version__)
+```
+
+AAP target 是验证基线，不表示对所有更早或更晚平台版本的兼容范围。安装元数据版本与
+`__version__` 来自同一个静态来源。
+
 ## Client 构造
 
 ```python
@@ -57,6 +72,8 @@ with Client() as client:
 | `list`   | `list(status: str \| None = None, search: str \| None = None)`                             | `list[Project]` |
 | `create` | `create(name: str, type_key: str \| None = None, data_type: str \| None = None, **kwargs)` | `Project`       |
 | `get`    | `get(project_id)`                                                                          | `Project`       |
+| `update` | `update(project_id, **fields)`                                                             | `Project`       |
+| `delete` | `delete(project_id)`                                                                       | `None`          |
 | `stats`  | `stats()`                                                                                  | `ProjectStats`  |
 
 `create` 说明:后端 `type_label` 必填,未通过 `kwargs` 显式给出时 SDK 按 `type_key` → `data_type` → `name` 顺序兜底填充。
@@ -65,38 +82,58 @@ with Client() as client:
 
 ### client.datasets
 
-| 方法           | 签名                                                                                                                  | 返回                 |
-| -------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `list`         | `list(search: str \| None = None, data_type: str \| None = None, limit: int = 50, offset: int = 0)`                   | `Page[Dataset]`      |
-| `create`       | `create(name: str, data_type: str = "image", **kwargs)`                                                               | `Dataset`            |
-| `get`          | `get(dataset_id)`                                                                                                     | `Dataset`            |
-| `upload_files` | `upload_files(dataset_id, paths: Sequence[str \| Path], on_progress: Callable[[int, int, str], None] \| None = None)` | `list[UploadedItem]` |
-| `upload_zip`   | `upload_zip(dataset_id, zip_path: str \| Path)`                                                                       | `ZipUploadResult`    |
-| `link_project` | `link_project(dataset_id, project_id)`                                                                                | `LinkResult`         |
+| 方法             | 签名                                                                                                                  | 返回                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `list`           | `list(search: str \| None = None, data_type: str \| None = None, limit: int = 50, offset: int = 0)`                   | `Page[Dataset]`        |
+| `create`         | `create(name: str, data_type: str = "image", **kwargs)`                                                               | `Dataset`              |
+| `get`            | `get(dataset_id)`                                                                                                     | `Dataset`              |
+| `update`         | `update(dataset_id, **fields)`                                                                                        | `Dataset`              |
+| `delete`         | `delete(dataset_id)`                                                                                                  | `None`                 |
+| `list_items`     | `list_items(dataset_id, limit: int = 50, offset: int = 0)`                                                            | `Page[DatasetItem]`    |
+| `delete_item`    | `delete_item(dataset_id, item_id)`                                                                                    | `None`                 |
+| `list_projects`  | `list_projects(dataset_id)`                                                                                           | `list[Project]`        |
+| `upload_files`   | `upload_files(dataset_id, paths: Sequence[str \| Path], on_progress: Callable[[int, int, str], None] \| None = None)` | `list[UploadedItem]`   |
+| `upload_zip`     | `upload_zip(dataset_id, zip_path: str \| Path)`                                                                       | `ZipUploadResult`      |
+| `link_project`   | `link_project(dataset_id, project_id)`                                                                                | `LinkResult`           |
+| `preview_unlink` | `preview_unlink(dataset_id, project_id)`                                                                              | `DatasetUnlinkPreview` |
+| `unlink_project` | `unlink_project(dataset_id, project_id)`                                                                              | `DatasetUnlinkResult`  |
 
 - `upload_files`:逐文件三步流(upload-init → PUT 预签名 URL → upload-complete)。`on_progress(done, total, file_name)` 在每个文件完成后回调。
 - `upload_zip`:multipart 上传单个 ZIP 包,后端解压入库(≤200MB / ≤5000 文件)。
 - `link_project`:返回的 `LinkResult.status == "linking"` 时建任务走异步,用 `async_job_id` 配合 `client.jobs.wait` 等待。
+- `update`: `**fields` 保留“未提供”与“显式传 `None`”的区别，因此可以用 `axis_convention=None` 清除坐标系约定。
+- `preview_unlink` 返回将删除的 task / annotation / batch 计数；`unlink_project` 返回实际删除计数。
 
 ### client.tasks
 
-| 方法   | 签名                                                                                                         | 返回           |
-| ------ | ------------------------------------------------------------------------------------------------------------ | -------------- |
-| `list` | `list(project_id, status: str \| None = None, limit: int = 50, offset: int = 0, cursor: str \| None = None)` | `TaskPage`     |
-| `get`  | `get(task_id)`                                                                                               | `Task`         |
-| `next` | `next(project_id, batch_id=None)`                                                                            | `Task \| None` |
+| 方法               | 签名                                                                                                         | 返回               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `list`             | `list(project_id, status: str \| None = None, limit: int = 50, offset: int = 0, cursor: str \| None = None)` | `TaskPage`         |
+| `get`              | `get(task_id)`                                                                                               | `Task`             |
+| `next`             | `next(project_id, batch_id=None)`                                                                            | `Task \| None`     |
+| `submit`           | `submit(task_id)`                                                                                            | `TaskActionResult` |
+| `skip`             | `skip(task_id, reason, note=None)`                                                                           | `TaskActionResult` |
+| `withdraw`         | `withdraw(task_id)`                                                                                          | `TaskActionResult` |
+| `reopen`           | `reopen(task_id)`                                                                                            | `TaskActionResult` |
+| `accept_rejection` | `accept_rejection(task_id)`                                                                                  | `TaskActionResult` |
+| `claim_review`     | `claim_review(task_id)`                                                                                      | `ReviewClaim`      |
+| `approve_review`   | `approve_review(task_id, **fields)`                                                                          | `TaskActionResult` |
+| `reject_review`    | `reject_review(task_id, reason_type, reason)`                                                                | `TaskActionResult` |
 
 - `list`:cursor 翻页时响应 `total` 为 `None`(复用首页值),下一页游标在 `TaskPage.next_cursor`。
 - `next`:领取下一个可标注 task;**无可领任务时返回 `None`**(不抛异常)。
 
 ### client.annotations
 
-| 方法     | 签名                                                                                              | 返回               |
-| -------- | ------------------------------------------------------------------------------------------------- | ------------------ |
-| `list`   | `list(task_id)`                                                                                   | `list[Annotation]` |
-| `create` | `create(task_id, annotation_type: str, geometry: dict, class_name: str \| None = None, **kwargs)` | `Annotation`       |
-| `update` | `update(task_id, annotation_id, **fields)`                                                        | `Annotation`       |
-| `delete` | `delete(task_id, annotation_id)`                                                                  | `None`             |
+| 方法          | 签名                                                                                              | 返回                         |
+| ------------- | ------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `list`        | `list(task_id)`                                                                                   | `list[Annotation]`           |
+| `create`      | `create(task_id, annotation_type: str, geometry: dict, class_name: str \| None = None, **kwargs)` | `Annotation`                 |
+| `update`      | `update(task_id, annotation_id, **fields)`                                                        | `Annotation`                 |
+| `delete`      | `delete(task_id, annotation_id)`                                                                  | `None`                       |
+| `bulk_update` | `bulk_update(annotation_ids, **patch)`                                                            | `AnnotationBulkUpdateResult` |
+
+`bulk_update` 只接受 `class_name` / `attributes` / `z_order` / `is_locked` / `is_hidden`；不包装 geometry 批量修改。
 
 ### client.predictions
 
@@ -110,12 +147,13 @@ with Client() as client:
 
 ### client.jobs
 
-| 方法     | 签名                                                                                                                                              | 返回      |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `list`   | `list(status: str \| Sequence[str] \| None = None, kind: str \| Sequence[str] \| None = None, project_id=None, limit: int = 50, offset: int = 0)` | `JobPage` |
-| `get`    | `get(job_id)`                                                                                                                                     | `Job`     |
-| `cancel` | `cancel(job_id)`                                                                                                                                  | `None`    |
-| `wait`   | `wait(job_id, timeout: float = 600.0, poll_interval: float = 2.0, on_progress: Callable[[Job], None] \| None = None)`                             | `Job`     |
+| 方法           | 签名                                                                                                                                              | 返回             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `list`         | `list(status: str \| Sequence[str] \| None = None, kind: str \| Sequence[str] \| None = None, project_id=None, limit: int = 50, offset: int = 0)` | `JobPage`        |
+| `get`          | `get(job_id)`                                                                                                                                     | `Job`            |
+| `cancel`       | `cancel(job_id)`                                                                                                                                  | `None`           |
+| `retry_failed` | `retry_failed(job_id)`                                                                                                                            | `JobRetryResult` |
+| `wait`         | `wait(job_id, timeout: float = 600.0, poll_interval: float = 2.0, on_progress: Callable[[Job], None] \| None = None)`                             | `Job`            |
 
 `cancel` 请求**软取消**:协作式——后端写取消标记,worker 在下一条任务边界落 `cancelled` 终态,返回不代表已终止。仅可取消的 kind 且 `status ∈ {pending, running}` 时有效,否则抛 `APIStatusError`(400/409)。
 
@@ -138,31 +176,85 @@ with Client() as client:
 
 ### client.ml_backends
 
-只读监控某项目挂载的 ML Backend(健康状态 + GPU / cache 指标)。
+项目作用域的 registry backend / service pool 启用与健康监控。
 
-| 方法   | 签名                          | 返回              |
-| ------ | ----------------------------- | ----------------- |
-| `list` | `list(project_id)`            | `list[MLBackend]` |
-| `get`  | `get(project_id, backend_id)` | `MLBackend`       |
+| 方法                   | 签名                                                | 返回                       |
+| ---------------------- | --------------------------------------------------- | -------------------------- |
+| `list`                 | `list(project_id)`                                  | `list[MLBackend]`          |
+| `get`                  | `get(project_id, backend_id)`                       | `MLBackend`                |
+| `list_available`       | `list_available(project_id)`                        | `list[ProjectMLBackend]`   |
+| `set_enablement`       | `set_enablement(project_id, backend_id, enabled)`   | `ProjectMLBackend`         |
+| `check_health`         | `check_health(project_id, backend_id)`              | `MLBackendHealth`          |
+| `list_available_pools` | `list_available_pools(project_id)`                  | `list[ProjectServicePool]` |
+| `set_pool_enablement`  | `set_pool_enablement(project_id, pool_id, enabled)` | `ProjectServicePool`       |
 
 `MLBackend.state` 为 `connected` / `error`;`health_meta`(`HealthMeta`)含 `gpu_info` / `host` / `cache` / `model_version`,由后端 `/health` 缓存,`last_checked_at` 反映最近探测时间。
 
+### client.ml_registry
+
+全局物理 backend registry，所有写操作和 unload 均需 super-admin。
+
+| 方法           | 签名                            | 返回                    |
+| -------------- | ------------------------------- | ----------------------- |
+| `list`         | `list()`                        | `list[MLBackend]`       |
+| `create`       | `create(**fields)`              | `MLBackend`             |
+| `update`       | `update(registry_id, **fields)` | `MLBackend`             |
+| `delete`       | `delete(registry_id)`           | `None`                  |
+| `check_health` | `check_health(registry_id)`     | `MLBackendHealth`       |
+| `unload`       | `unload(registry_id)`           | `MLBackendUnloadResult` |
+
+`delete` / `unload` 不会在 SDK 内轮询、强制或降级服务端的静默证明；409 / 503 原样映射为 SDK 异常。
+
+### client.service_pools
+
+逻辑服务池、物理成员路由状态与观测快照，不接受项目 backend ID 替代 pool / registry ID。
+
+| 方法                             | 签名                                                                                     | 返回                                |
+| -------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- |
+| `list` / `get`                   | `list()` / `get(pool_id)`                                                                | `list[ServicePool]` / `ServicePool` |
+| `create`                         | `create(name, legacy_instance_id=None)`                                                  | `ServicePool`                       |
+| `update` / `delete`              | `update(pool_id, **fields)` / `delete(pool_id)`                                          | `ServicePool` / `None`              |
+| `add_member` / `remove_member`   | `add_member(pool_id, registry_id, weight=1)` / `remove_member(pool_id, registry_id)`     | `ServicePool`                       |
+| `drain_member` / `resume_member` | `drain_member(pool_id, registry_id)` / `resume_member(pool_id, registry_id)`             | `ServicePool`                       |
+| `preview_capability_drift`       | `preview_capability_drift(pool_id, registry_id)`                                         | `CapabilityDrift`                   |
+| `accept_capability_drift`        | `accept_capability_drift(pool_id, registry_id, expected_fingerprint, enable_pool=False)` | `ServicePool`                       |
+| `topology`                       | `topology()`                                                                             | `ServicePoolTopology`               |
+| `runtime_snapshot`               | `runtime_snapshot()`                                                                     | `ServicePoolRuntimeSnapshot`        |
+
+接受能力漂移必须传入预览返回的 candidate fingerprint；SDK 不自动接受最新指纹。
+
 ### client.batches
 
-只读查询某项目的批次(进度 / 责任人 / 退回数)。
+查询与管理某项目的批次。
 
-| 方法   | 签名                                           | 返回          |
-| ------ | ---------------------------------------------- | ------------- |
-| `list` | `list(project_id, status: str \| None = None)` | `list[Batch]` |
-| `get`  | `get(project_id, batch_id)`                    | `Batch`       |
+| 方法            | 签名                                                           | 返回                    |
+| --------------- | -------------------------------------------------------------- | ----------------------- |
+| `list`          | `list(project_id, status: str \| None = None)`                 | `list[Batch]`           |
+| `get`           | `get(project_id, batch_id)`                                    | `Batch`                 |
+| `create`        | `create(project_id, name, **fields)`                           | `Batch`                 |
+| `update`        | `update(project_id, batch_id, **fields)`                       | `Batch`                 |
+| `delete`        | `delete(project_id, batch_id, force=False)`                    | `None`                  |
+| `transition`    | `transition(project_id, batch_id, target_status, reason=None)` | `Batch`                 |
+| `reject`        | `reject(project_id, batch_id, feedback)`                       | `Batch`                 |
+| `reset`         | `reset(project_id, batch_id, reason)`                          | `Batch`                 |
+| `distribute`    | `distribute(project_id, **options)`                            | `BatchDistributeResult` |
+| `bulk_activate` | `bulk_activate(project_id, batch_ids)`                         | `BulkBatchActionResult` |
+| `bulk_approve`  | `bulk_approve(project_id, batch_ids)`                          | `BulkBatchActionResult` |
+| `bulk_reject`   | `bulk_reject(project_id, batch_ids, feedback)`                 | `BulkBatchActionResult` |
+| `bulk_reassign` | `bulk_reassign(project_id, batch_ids, **assignment)`           | `BulkBatchActionResult` |
+| `export`        | `export(project_id, batch_id, targets=None, **options)`        | `str` (job_id)          |
 
 `Batch.progress_pct` 为 0–100 浮点;`annotator` / `reviewer` 为 `UserBrief \| None`(责任人摘要)。端点对项目可见者开放。
 
+批量方法不自动拆分超过服务端上限的 ID，也不重试部分失败；返回值保留 `succeeded` / `skipped` / `failed`。`bulk_reassign` 仅接受 `annotator_id` / `reviewer_id`，显式传 `None` 表示清除分配。
+
 ### client.members
 
-| 方法   | 签名               | 返回           |
-| ------ | ------------------ | -------------- |
-| `list` | `list(project_id)` | `list[Member]` |
+| 方法     | 签名                             | 返回           |
+| -------- | -------------------------------- | -------------- |
+| `list`   | `list(project_id)`               | `list[Member]` |
+| `add`    | `add(project_id, user_id, role)` | `Member`       |
+| `remove` | `remove(project_id, member_id)`  | `None`         |
 
 `Member` 含 `user_name` / `user_email` / `role` / `assigned_at`。端点对项目可见者开放。
 
@@ -224,6 +316,6 @@ with Client() as client:
 
 ## 响应模型与前向兼容
 
-顶层导出的 pydantic 模型:`Project` / `Dataset` / `Task` / `TaskPage` / `Annotation` / `Job` / `JobPage` / `Page` / `UploadedItem` / `ZipUploadResult` / `LinkResult` / `ImportResult` / `ApiKey` / `ApiKeyCreated` / `Batch` / `Member` / `Me` / `UserBrief` / `ProjectStats` / `PersonStat` / `MyPerformance` / `DashboardStats`。
+顶层导出的 pydantic 模型包括资源模型(`Project` / `Dataset` / `Task` / `Annotation` / `Batch` 等)、工作流结果(`TaskActionResult` / `BulkBatchActionResult` / `JobRetryResult` 等)与模型服务运维模型(`MLBackend` / `ServicePool` / `CapabilityDrift` / topology / runtime snapshot)。
 
 所有模型 `extra="allow"`:只声明 SDK 用户关心的稳定字段,**容忍服务端新增字段**——未声明字段不会导致校验失败,且仍可通过属性访问(如 `project.total_tasks`,服务端附加字段,可能缺失,建议 `getattr(p, "total_tasks", None)` 取用)。

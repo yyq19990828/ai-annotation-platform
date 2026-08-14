@@ -453,9 +453,11 @@ class DatasetService:
         await self.db.flush()
         return item
 
-    async def delete_item(self, item_id: uuid.UUID) -> bool:
+    async def delete_item(
+        self, item_id: uuid.UUID, *, dataset_id: uuid.UUID | None = None
+    ) -> bool:
         item = await self.db.get(DatasetItem, item_id)
-        if not item:
+        if not item or (dataset_id is not None and item.dataset_id != dataset_id):
             return False
         ds = await self.db.get(Dataset, item.dataset_id)
         if ds:

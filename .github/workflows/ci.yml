@@ -133,6 +133,9 @@ jobs:
       - name: SDK / CLI / TUI tests
         working-directory: packages/python-sdk
         run: uv run --extra test pytest -q
+      - name: Build SDK distribution
+        working-directory: packages/python-sdk
+        run: uv build
 
   vitest:
     name: Frontend vitest + tsc + build

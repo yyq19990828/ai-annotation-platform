@@ -55,6 +55,10 @@ from app.schemas.prediction import (
 from app.config import settings
 from app.services.audit import AuditAction, AuditService
 from app.services.pipeline_validation import resolve_preannotate_queue
+from app.services.prediction import (
+    claim_failed_prediction_retry,
+    release_failed_prediction_retry_claim,
+)
 
 
 router = APIRouter()
@@ -178,6 +182,9 @@ async def retry_failed_prediction(
             status_code=409,
             detail=f"Max retries ({MAX_RETRY_COUNT}) exceeded",
         )
+    fp = await claim_failed_prediction_retry(db, failed_id, MAX_RETRY_COUNT)
+    if fp is None:
+        raise HTTPException(status_code=409, detail="Retry already queued")
 
     # 投递 Celery task，前端通过 ws 推送获得进度
     from app.workers.predictions_retry import retry_failed_prediction as task_fn
@@ -197,7 +204,13 @@ async def retry_failed_prediction(
         gpu_queue=settings.preannotate_gpu_queue,
         cpu_queue=settings.preannotate_cpu_queue,
     )
-    task_fn.apply_async(args=[str(failed_id), str(current_user.id)], queue=queue)
+    await db.commit()
+    try:
+        task_fn.apply_async(args=[str(failed_id), str(current_user.id)], queue=queue)
+    except Exception:
+        await release_failed_prediction_retry_claim(db, failed_id)
+        await db.commit()
+        raise
     return RetryResponse(status="queued", failed_id=failed_id)
 
 

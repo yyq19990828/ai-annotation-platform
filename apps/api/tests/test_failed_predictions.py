@@ -175,6 +175,12 @@ async def test_retry_failed_prediction_queues_celery_and_returns_202(
     # 未自报 device 的 backend 保守落 gpu(ml)队列。
     assert call_kwargs["queue"] == "ml"
 
+    repeated = await httpx_client_bound.post(
+        f"/api/v1/admin/failed-predictions/{fp.id}/retry", headers=headers
+    )
+    assert repeated.status_code == 409
+    mock_apply.assert_called_once()
+
 
 async def test_retry_blocked_when_max_exceeded(
     httpx_client_bound, super_admin, db_session

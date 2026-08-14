@@ -1,0 +1,184 @@
+snapshot = "0.23.33"
+watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "async-jobs", "ml-backends", "admin-ml-integrations"]
+
+[operations]
+"DELETE /api/v1/admin/ml-integrations/registry/{registry_id}" = { status = "covered" }
+"DELETE /api/v1/admin/ml-integrations/service-pools/{pool_id}" = { status = "covered" }
+"DELETE /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}" = { status = "covered" }
+"DELETE /api/v1/datasets/{dataset_id}" = { status = "covered" }
+"DELETE /api/v1/datasets/{dataset_id}/items/{item_id}" = { status = "covered" }
+"DELETE /api/v1/datasets/{dataset_id}/link/{project_id}" = { status = "covered" }
+"DELETE /api/v1/projects/{project_id}" = { status = "covered" }
+"DELETE /api/v1/projects/{project_id}/batches/{batch_id}" = { status = "covered" }
+"DELETE /api/v1/projects/{project_id}/members/{member_id}" = { status = "covered" }
+"DELETE /api/v1/projects/{project_id}/ml-backends/{backend_id}" = { status = "excluded", reason = "no-external-demand" }
+"DELETE /api/v1/tasks/{task_id}/annotations/{annotation_id}" = { status = "covered" }
+"DELETE /api/v1/tasks/{task_id}/lock" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/admin/ml-integrations/all" = { status = "covered" }
+"GET /api/v1/admin/ml-integrations/gpu-resources" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/admin/ml-integrations/observe" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/admin/ml-integrations/overview" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/admin/ml-integrations/runtime-hints" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/admin/ml-integrations/runtime-snapshot" = { status = "covered" }
+"GET /api/v1/admin/ml-integrations/service-pools" = { status = "covered" }
+"GET /api/v1/admin/ml-integrations/service-pools/{pool_id}" = { status = "covered" }
+"GET /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/capability-drift" = { status = "covered" }
+"GET /api/v1/admin/ml-integrations/topology" = { status = "covered" }
+"GET /api/v1/annotations/{annotation_id}/mask-content" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/annotations/{annotation_id}/mask-content/{frame_index}" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/async-jobs" = { status = "covered" }
+"GET /api/v1/async-jobs/{job_id}" = { status = "covered" }
+"GET /api/v1/datasets" = { status = "covered" }
+"GET /api/v1/datasets/{dataset_id}" = { status = "covered" }
+"GET /api/v1/datasets/{dataset_id}/items" = { status = "covered" }
+"GET /api/v1/datasets/{dataset_id}/link/{project_id}/preview-unlink" = { status = "covered" }
+"GET /api/v1/datasets/{dataset_id}/projects" = { status = "covered" }
+"GET /api/v1/projects" = { status = "covered" }
+"GET /api/v1/projects/stats" = { status = "covered" }
+"GET /api/v1/projects/{project_id}" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/batches" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/batches/unclassified-count" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/projects/{project_id}/batches/{batch_id}" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/batches/{batch_id}/audit-logs" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/projects/{project_id}/class-usage" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/projects/{project_id}/datasets" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/projects/{project_id}/members" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/ml-backends" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/ml-backends/available" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/ml-backends/pools/available" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/ml-backends/{backend_id}" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/ml-backends/{backend_id}/capabilities" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/projects/{project_id}/ml-backends/{backend_id}/setup" = { status = "excluded", reason = "no-external-demand" }
+"GET /api/v1/projects/{project_id}/orphan-tasks/preview" = { status = "excluded", reason = "maintenance-risk" }
+"GET /api/v1/tasks" = { status = "covered" }
+"GET /api/v1/tasks/next" = { status = "covered" }
+"GET /api/v1/tasks/{task_id}" = { status = "covered" }
+"GET /api/v1/tasks/{task_id}/annotations" = { status = "covered" }
+"GET /api/v1/tasks/{task_id}/annotations/page" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/image-pyramid" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/mask-capabilities" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/neighbor-annotations" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/neighbors" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/point-cloud/manifest" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/predictions" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/predictions/{prediction_id}/mask-content/{shape_index}/{frame_index}" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/chunks" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/chunks/{chunk_id}" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/frame-timetable" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/frames/{frame_index}" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/manifest" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/manifest-v2" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/segments" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/track-quality" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/track-quality/{run_id}" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/tracker-jobs/active" = { status = "excluded", reason = "workbench-internal" }
+"GET /api/v1/tasks/{task_id}/video/tracker-jobs/reviewable" = { status = "excluded", reason = "workbench-internal" }
+"PATCH /api/v1/admin/ml-integrations/service-pools/{pool_id}" = { status = "covered" }
+"PATCH /api/v1/projects/{project_id}" = { status = "covered" }
+"PATCH /api/v1/projects/{project_id}/batches/{batch_id}" = { status = "covered" }
+"PATCH /api/v1/tasks/{task_id}/annotations/{annotation_id}" = { status = "covered" }
+"PATCH /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/admin/ml-integrations/observe/smoke-test" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/admin/ml-integrations/probe" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/admin/ml-integrations/registry" = { status = "covered" }
+"POST /api/v1/admin/ml-integrations/registry/{registry_id}/health" = { status = "covered" }
+"POST /api/v1/admin/ml-integrations/registry/{registry_id}/unload" = { status = "covered" }
+"POST /api/v1/admin/ml-integrations/service-pools" = { status = "covered" }
+"POST /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/capability-drift/accept" = { status = "covered" }
+"POST /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/drain" = { status = "covered" }
+"POST /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}/resume" = { status = "covered" }
+"POST /api/v1/annotations/bulk-update" = { status = "covered" }
+"POST /api/v1/async-jobs/{job_id}/cancel" = { status = "covered" }
+"POST /api/v1/async-jobs/{job_id}/retry-failed" = { status = "covered" }
+"POST /api/v1/datasets" = { status = "covered" }
+"POST /api/v1/datasets/{dataset_id}/backfill-dimensions" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/datasets/{dataset_id}/backfill-media" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/datasets/{dataset_id}/import-from-connection" = { status = "excluded", reason = "separate-connector-epic" }
+"POST /api/v1/datasets/{dataset_id}/items/scan" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/datasets/{dataset_id}/items/upload-complete/{item_id}" = { status = "covered" }
+"POST /api/v1/datasets/{dataset_id}/items/upload-init" = { status = "covered" }
+"POST /api/v1/datasets/{dataset_id}/items/upload-zip" = { status = "covered" }
+"POST /api/v1/datasets/{dataset_id}/link" = { status = "covered" }
+"POST /api/v1/datasets/{dataset_id}/scenes/backfill" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/datasets/{dataset_id}/sniff-axis-convention" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/annotations/import" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/batches" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/bulk-activate" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/bulk-approve" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/bulk-archive" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/batches/bulk-delete" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/batches/bulk-reassign" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/bulk-reject" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/distribute-batches" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/split" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/admin-lock" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/admin-unlock" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/export" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/reject" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/reset" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/transition" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/classes/rename" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/cleanup-orphans" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/export" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/members" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/ml-backends" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/capabilities/refresh" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/health" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/interactive-annotating" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/interactive-annotating-frame" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/predict-frame" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/predict-test" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/reload" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/unload" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/ml-backends/{backend_id}/warmup" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/orphan-tasks/cleanup" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/pipelines/apply" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/preannotate" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/transfer" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/tasks/{task_id}/accept-rejection" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/ai-mask-candidates/accept" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotation-conversions:dry-run" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotation-conversions:execute" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/annotations/interpolate-range" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/mask-mutations:commit" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/propagate-batch" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/video/track-compositions" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/secondary-inference" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/image-pyramid/asset-urls" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/image-pyramid/retry" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/lock" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/lock/heartbeat" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/mask-content" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/predictions/{prediction_id}/accept" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/predictions/{prediction_id}/reject" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/reopen" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/review/approve" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/review/claim" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/review/reject" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/skip" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/submit" = { status = "covered" }
+"POST /api/v1/tasks/{task_id}/video/frames:prefetch" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/frames:retry" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:claim" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:heartbeat" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:release" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:reopen" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:submit" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/segments/{segment_id}:unassign" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/track-quality/run" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/track-quality/{run_id}:accept" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/correction-jobs" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/video:track" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/withdraw" = { status = "covered" }
+"PUT /api/v1/admin/ml-integrations/registry/{registry_id}" = { status = "covered" }
+"PUT /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}" = { status = "covered" }
+"PUT /api/v1/datasets/{dataset_id}" = { status = "covered" }
+"PUT /api/v1/projects/{project_id}/ml-backends/pools/{pool_id}/enablement" = { status = "covered" }
+"PUT /api/v1/projects/{project_id}/ml-backends/{backend_id}" = { status = "excluded", reason = "no-external-demand" }
+"PUT /api/v1/projects/{project_id}/ml-backends/{backend_id}/enablement" = { status = "covered" }
+"PUT /api/v1/tasks/{task_id}/video/tracks/{annotation_id}/mask-keyframes/{frame_index}" = { status = "excluded", reason = "workbench-internal" }

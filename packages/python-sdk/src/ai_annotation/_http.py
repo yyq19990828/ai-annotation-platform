@@ -22,40 +22,6 @@ from ai_annotation.errors import (
 
 API_PREFIX = "/api/v1"
 
-# SDK 实际使用的端点清单 (method, OpenAPI path-template)。
-# tests/test_openapi_contract.py 用它对 apps/api/openapi.snapshot.json 做防漂移断言。
-USED_ENDPOINTS: tuple[tuple[str, str], ...] = (
-    ("GET", "/api/v1/projects"),
-    ("POST", "/api/v1/projects"),
-    ("GET", "/api/v1/projects/{project_id}"),
-    ("GET", "/api/v1/datasets"),
-    ("POST", "/api/v1/datasets"),
-    ("GET", "/api/v1/datasets/{dataset_id}"),
-    ("POST", "/api/v1/datasets/{dataset_id}/items/upload-init"),
-    ("POST", "/api/v1/datasets/{dataset_id}/items/upload-complete/{item_id}"),
-    ("POST", "/api/v1/datasets/{dataset_id}/items/upload-zip"),
-    ("POST", "/api/v1/datasets/{dataset_id}/link"),
-    ("GET", "/api/v1/tasks"),
-    ("GET", "/api/v1/tasks/next"),
-    ("GET", "/api/v1/tasks/{task_id}"),
-    ("GET", "/api/v1/tasks/{task_id}/annotations"),
-    ("POST", "/api/v1/tasks/{task_id}/annotations"),
-    ("PATCH", "/api/v1/tasks/{task_id}/annotations/{annotation_id}"),
-    ("DELETE", "/api/v1/tasks/{task_id}/annotations/{annotation_id}"),
-    ("POST", "/api/v1/projects/{project_id}/predictions/import"),
-    ("GET", "/api/v1/async-jobs"),
-    ("GET", "/api/v1/async-jobs/{job_id}"),
-    ("POST", "/api/v1/async-jobs/{job_id}/cancel"),
-    ("POST", "/api/v1/projects/{project_id}/export"),
-    ("GET", "/api/v1/projects/{project_id}/ml-backends"),
-    ("GET", "/api/v1/projects/{project_id}/ml-backends/{backend_id}"),
-    ("GET", "/api/v1/me/api-keys"),
-    ("POST", "/api/v1/me/api-keys"),
-    ("PATCH", "/api/v1/me/api-keys/{key_id}"),
-    ("POST", "/api/v1/me/api-keys/{key_id}/rotate"),
-    ("DELETE", "/api/v1/me/api-keys/{key_id}"),
-)
-
 _STATUS_ERROR_MAP: dict[int, type[APIStatusError]] = {
     401: AuthenticationError,
     403: PermissionDeniedError,

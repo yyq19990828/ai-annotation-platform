@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
+from time import sleep
 from uuid import uuid4
 
 import pytest
@@ -12,20 +14,27 @@ from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from ai_annotation.models import (
     Batch,
     Dataset,
+    DatasetItem,
     HealthMeta,
     Job,
     JobPage,
+    JobRetryResult,
     Me,
     MLBackend,
     Member,
+    MyPerformance,
     Page,
     PersonStat,
     Project,
+    ProjectServicePool,
     ProjectStats,
+    ServicePoolSummary,
     UserBrief,
 )
 from ai_annotation.tui.app import (
     AapTuiApp,
+    BatchDetailScreen,
+    DatasetDetailScreen,
     DetailScreen,
     ExportConfigModal,
     MlBackendDetailScreen,
@@ -135,8 +144,25 @@ class _StubDatasets:
 
     def list(self, **kw):
         return Page[Dataset](
-            items=self._items, total=len(self._items), limit=50, offset=0
+            items=self._items,
+            total=len(self._items),
+            limit=kw.get("limit", 50),
+            offset=kw.get("offset", 0),
         )
+
+    def list_items(self, dataset_id, limit=50, offset=0):
+        item = DatasetItem(
+            id=uuid4(),
+            dataset_id=dataset_id,
+            file_name="a.jpg",
+            file_path="a.jpg",
+            file_type="image/jpeg",
+            file_size=2048,
+        )
+        return Page[DatasetItem](items=[item], total=1, limit=limit, offset=offset)
+
+    def list_projects(self, dataset_id):
+        return []
 
 
 class _StubJobs:
@@ -145,14 +171,46 @@ class _StubJobs:
     def __init__(self, pages):
         self._pages = list(pages)
         self.cancelled: list = []
+        self.retried: list = []
+        self.calls: list[dict] = []
 
     def list(self, **kw):
+        self.calls.append(kw)
         if len(self._pages) > 1:
-            return self._pages.pop(0)
-        return self._pages[0]
+            page = self._pages.pop(0)
+        else:
+            page = self._pages[0]
+        project_id = kw.get("project_id")
+        if project_id is None:
+            return page
+        items = [j for j in page.items if str(j.project_id) == str(project_id)]
+        return JobPage(items=items, total=len(items))
 
     def cancel(self, job_id):
         self.cancelled.append(job_id)
+
+    def retry_failed(self, job_id):
+        self.retried.append(job_id)
+        return JobRetryResult(status="queued", job_id=job_id, queued=2, skipped=1)
+
+
+class _SlowStubJobs(_StubJobs):
+    def __init__(self, pages):
+        super().__init__(pages)
+        self.active = 0
+        self.peak = 0
+        self._lock = Lock()
+
+    def list(self, **kw):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            sleep(0.1)
+            return super().list(**kw)
+        finally:
+            with self._lock:
+                self.active -= 1
 
 
 class _StubExports:
@@ -176,11 +234,15 @@ class _StubExports:
 class _StubMLBackends:
     """按 project 返回 backend (聚合时逐项目调用)。"""
 
-    def __init__(self, by_project):
+    def __init__(self, by_project, pools_by_project=None):
         self._by_project = by_project
+        self._pools_by_project = pools_by_project or {}
 
     def list(self, project_id):
         return self._by_project.get(project_id, [])
+
+    def list_available_pools(self, project_id):
+        return self._pools_by_project.get(project_id, [])
 
 
 class _StubBatches:
@@ -189,6 +251,9 @@ class _StubBatches:
 
     def list(self, project_id, status=None):
         return self._by_project.get(project_id, [])
+
+    def get(self, project_id, batch_id):
+        return next(b for b in self._by_project.get(project_id, []) if b.id == batch_id)
 
 
 class _StubMembers:
@@ -206,6 +271,15 @@ class _StubDashboard:
     def people(self, **kw):
         return self._people
 
+    def me_performance(self, **kw):
+        return MyPerformance(
+            user_id=str(uuid4()),
+            name="Me",
+            throughput=12,
+            quality_score=90,
+            first_pass_yield=0.8,
+        )
+
 
 class _StubClient:
     def __init__(
@@ -214,6 +288,7 @@ class _StubClient:
         datasets,
         job_pages,
         ml_by_project=None,
+        pools_by_project=None,
         batches_by_project=None,
         members_by_project=None,
         role="annotator",
@@ -224,7 +299,9 @@ class _StubClient:
         self.datasets = _StubDatasets(datasets)
         self.jobs = _StubJobs(job_pages)
         self.exports = _StubExports()
-        self.ml_backends = _StubMLBackends(ml_by_project or {})
+        self.ml_backends = _StubMLBackends(
+            ml_by_project or {}, pools_by_project=pools_by_project
+        )
         self.batches = _StubBatches(batches_by_project)
         self.members = _StubMembers(members_by_project)
         self.dashboard = _StubDashboard(people)
@@ -276,6 +353,8 @@ async def test_tables_show_stub_rows():
         projects = app.query_one("#projects-table", DataTable)
         assert projects.row_count == 1
         assert projects.get_row_at(0)[:4] == ["P-1", "demo-project", "active", "3/10"]
+        app.query_one("#tabs", TabbedContent).active = "tab-datasets"
+        await _settle(app, pilot)
         datasets = app.query_one("#datasets-table", DataTable)
         assert datasets.get_row_at(0)[1] == "demo-dataset"
         jobs = app.query_one("#jobs-table", DataTable)
@@ -304,9 +383,23 @@ async def test_refresh_reflects_status_flip():
         assert "完成" in str(bar.render())
 
 
+async def test_jobs_refresh_does_not_overlap_slow_requests():
+    app = _make_app()
+    slow_jobs = _SlowStubJobs([JobPage(items=[_job("running")], total=1)])
+    app._client.jobs = slow_jobs
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause(0.01)
+        for _ in range(5):
+            app._refresh_jobs()
+        await pilot.pause(0.3)
+    assert slow_jobs.peak == 1
+
+
 async def test_ml_backends_tab_renders_and_colors():
     app = _make_app(with_ml=True)
     async with app.run_test(size=(120, 30)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-ml-backends"
         await _settle(app, pilot)
         table = app.query_one("#ml-backends-table", DataTable)
         assert table.row_count == 1
@@ -342,6 +435,8 @@ async def test_ml_backends_dedup_shared_backend_merges_one_row():
     )
     app = AapTuiApp(client, base_url=BASE)
     async with app.run_test(size=(120, 30)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-ml-backends"
         await _settle(app, pilot)
         table = app.query_one("#ml-backends-table", DataTable)
         assert table.row_count == 1
@@ -485,13 +580,14 @@ async def test_open_project_pushes_detail_with_subtabs():
         await pilot.press("o")  # 打开 Projects 高亮首行
         await _settle_screen(app, pilot)
         assert isinstance(app.screen, ProjectDetailScreen)
-        # 五个 scoped 子 tab (v0.15.14 加批次 / 成员)
+        # 六个 scoped 子 tab（含项目可用 Pool）
         assert [t.id for t in app.screen.query(TabPane)] == [
             "pd-overview",
             "pd-batches",
             "pd-members",
             "pd-jobs",
             "pd-backends",
+            "pd-pools",
         ]
         # 任务表按 project_id 过滤后命中 1 条; backend 表 project-scoped 1 条
         assert app.screen.query_one("#pd-jobs-table", DataTable).row_count == 1
@@ -534,6 +630,70 @@ async def test_action_bar_open_button_pushes_project_detail():
         await pilot.click("#proj-open")  # 点击「打开」按钮
         await _settle_screen(app, pilot)
         assert isinstance(app.screen, ProjectDetailScreen)
+
+
+async def test_dataset_detail_loads_items_and_linked_projects():
+    app = _make_app()
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-datasets"
+        await _settle(app, pilot)
+        app.query_one("#datasets-table", DataTable).focus()
+        await pilot.press("enter")
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, DatasetDetailScreen)
+        assert app.screen.query_one("#dd-items-table", DataTable).row_count == 1
+        assert app.screen.query_one("#dd-projects-table", DataTable).row_count == 0
+
+
+async def test_batch_detail_and_project_pool_tab():
+    project = _project()
+    batch = _batch(project.id)
+    pool = ProjectServicePool(
+        pool=ServicePoolSummary(
+            id=uuid4(), name="detector-pool", enabled=True, member_count=2
+        ),
+        enabled=True,
+        default_variants={"image": "sam2"},
+    )
+    client = _StubClient(
+        [project],
+        [_dataset()],
+        [JobPage(items=[], total=0)],
+        pools_by_project={project.id: [pool]},
+        batches_by_project={project.id: [batch]},
+    )
+    app = AapTuiApp(client, base_url=BASE)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        await pilot.press("o")
+        await _settle_screen(app, pilot)
+        assert isinstance(app.screen, ProjectDetailScreen)
+        assert app.screen.query_one("#pd-pools-table", DataTable).row_count == 1
+        app.screen.query_one("#pd-tabs", TabbedContent).active = "pd-batches"
+        app.screen.query_one("#pd-batches-table", DataTable).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, BatchDetailScreen)
+        body = str(app.screen.query_one("#batch-detail-body", Static).render())
+        assert "batch-alpha" in body
+
+
+async def test_failed_job_detail_retry_confirm():
+    app = _make_app(job_statuses=("failed",))
+    async with app.run_test(size=(120, 32)) as pilot:
+        await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-jobs"
+        app.query_one("#jobs-table", DataTable).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen.query("#retry")
+        await pilot.click("#retry")
+        await pilot.pause()
+        await pilot.press("y")
+        await _settle(app, pilot)
+        assert app._client.jobs.retried == [JOB_ID]
+        assert "queued=2" in str(app.query_one("#status-bar", Static).render())
 
 
 async def test_job_detail_cancel_button_triggers_cancel():
@@ -726,6 +886,8 @@ async def test_stats_tab_renders_sparklines():
     app = _make_app()
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-stats"
+        await _settle(app, pilot)
         headline = str(app.query_one("#stats-headline", Static).render())
         assert "总量 100" in headline
         assert "AI率 40%" in headline
@@ -788,6 +950,8 @@ async def test_people_tab_loads_for_super_admin():
     app = AapTuiApp(client, base_url=BASE)
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-people"
+        await _settle(app, pilot)
         table = app.query_one("#people-table", DataTable)
         assert table.row_count == 1
         row = table.get_row_at(0)
@@ -797,11 +961,14 @@ async def test_people_tab_loads_for_super_admin():
 
 
 async def test_people_tab_gated_for_annotator():
-    # 非 super_admin → 不拉 people (避免 403), note 提示, 表为空
+    # 非 super_admin 仍加载本人摘要，但不拉全员 people。
     app = _make_app(role="annotator")
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-people"
+        await _settle(app, pilot)
         assert app.query_one("#people-table", DataTable).row_count == 0
+        assert "本人 Me" in str(app.query_one("#people-self", Static).render())
         note = str(app.query_one("#people-note", Static).render())
         assert "super_admin" in note
 
@@ -811,6 +978,8 @@ async def test_me_failure_degrades_people_tab():
     app = _make_app(role=None)
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
+        app.query_one("#tabs", TabbedContent).active = "tab-people"
+        await _settle(app, pilot)
         assert app.query_one("#people-table", DataTable).row_count == 0
-        # 看板 tab 仍正常 (stats 与 me 独立)
-        assert app.query_one("#stats-headline", Static)
+        assert "本人 Me" in str(app.query_one("#people-self", Static).render())
+        assert "角色未知" in str(app.query_one("#people-note", Static).render())

@@ -2,9 +2,14 @@ import json
 from uuid import uuid4
 
 import httpx
+import pytest
 
+from ai_annotation.errors import PermissionDeniedError
 from ai_annotation.models import (
     Dataset,
+    DatasetItem,
+    DatasetUnlinkPreview,
+    DatasetUnlinkResult,
     LinkResult,
     Page,
     UploadedItem,
@@ -54,6 +59,150 @@ def test_create_and_get_dataset(client, respx_mock):
         return_value=httpx.Response(200, json=DATASET)
     )
     assert client.datasets.get(DS_ID).name == "ds"
+
+
+def test_update_dataset_preserves_explicit_none(client, respx_mock):
+    route = respx_mock.put(f"{API}/datasets/{DS_ID}").mock(
+        return_value=httpx.Response(200, json=DATASET)
+    )
+    dataset = client.datasets.update(DS_ID, axis_convention=None)
+    assert json.loads(route.calls.last.request.content) == {"axis_convention": None}
+    assert isinstance(dataset, Dataset)
+
+
+def test_delete_dataset(client, respx_mock):
+    route = respx_mock.delete(f"{API}/datasets/{DS_ID}").mock(
+        return_value=httpx.Response(204)
+    )
+    assert client.datasets.delete(DS_ID) is None
+    assert route.called
+
+
+def test_list_and_delete_dataset_items(client, respx_mock):
+    item_id = str(uuid4())
+    list_route = respx_mock.get(f"{API}/datasets/{DS_ID}/items").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "id": item_id,
+                        "dataset_id": DS_ID,
+                        "file_name": "a.jpg",
+                        "file_path": "datasets/a.jpg",
+                        "file_type": "image/jpeg",
+                    }
+                ],
+                "total": 1,
+                "limit": 10,
+                "offset": 20,
+            },
+        )
+    )
+    page = client.datasets.list_items(DS_ID, limit=10, offset=20)
+    params = list_route.calls.last.request.url.params
+    assert params["limit"] == "10"
+    assert params["offset"] == "20"
+    assert isinstance(page.items[0], DatasetItem)
+
+    delete_route = respx_mock.delete(f"{API}/datasets/{DS_ID}/items/{item_id}").mock(
+        return_value=httpx.Response(204)
+    )
+    assert client.datasets.delete_item(DS_ID, item_id) is None
+    assert delete_route.called
+
+
+def test_list_projects_and_unlink(client, respx_mock):
+    project_id = str(uuid4())
+    project = {
+        "id": project_id,
+        "display_id": "P-2",
+        "name": "linked",
+        "type_key": "object_detection",
+        "data_type": "image",
+        "status": "active",
+    }
+    respx_mock.get(f"{API}/datasets/{DS_ID}/projects").mock(
+        return_value=httpx.Response(200, json=[project])
+    )
+    assert client.datasets.list_projects(DS_ID)[0].display_id == "P-2"
+
+    preview_route = respx_mock.get(
+        f"{API}/datasets/{DS_ID}/link/{project_id}/preview-unlink"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "will_delete_tasks": 4,
+                "will_delete_annotations": 8,
+                "will_delete_batches": 1,
+            },
+        )
+    )
+    preview = client.datasets.preview_unlink(DS_ID, project_id)
+    assert preview_route.called
+    assert isinstance(preview, DatasetUnlinkPreview)
+    assert preview.will_delete_annotations == 8
+
+    batch_id = str(uuid4())
+    unlink_route = respx_mock.delete(f"{API}/datasets/{DS_ID}/link/{project_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "deleted_tasks": 4,
+                "deleted_annotations": 8,
+                "deleted_batches": 1,
+                "deleted_batch_ids": [batch_id],
+            },
+        )
+    )
+    result = client.datasets.unlink_project(DS_ID, project_id)
+    assert unlink_route.called
+    assert isinstance(result, DatasetUnlinkResult)
+    assert result.deleted_batches == 1
+    assert str(result.deleted_batch_ids[0]) == batch_id
+
+
+@pytest.mark.parametrize(
+    ("http_method", "path", "call"),
+    [
+        ("put", f"/datasets/{DS_ID}", lambda c: c.datasets.update(DS_ID, name="x")),
+        ("delete", f"/datasets/{DS_ID}", lambda c: c.datasets.delete(DS_ID)),
+        (
+            "get",
+            f"/datasets/{DS_ID}/items",
+            lambda c: c.datasets.list_items(DS_ID),
+        ),
+        (
+            "delete",
+            f"/datasets/{DS_ID}/items/item",
+            lambda c: c.datasets.delete_item(DS_ID, "item"),
+        ),
+        (
+            "get",
+            f"/datasets/{DS_ID}/projects",
+            lambda c: c.datasets.list_projects(DS_ID),
+        ),
+        (
+            "get",
+            f"/datasets/{DS_ID}/link/project/preview-unlink",
+            lambda c: c.datasets.preview_unlink(DS_ID, "project"),
+        ),
+        (
+            "delete",
+            f"/datasets/{DS_ID}/link/project",
+            lambda c: c.datasets.unlink_project(DS_ID, "project"),
+        ),
+    ],
+)
+def test_dataset_management_maps_permission_error(
+    client, respx_mock, http_method, path, call
+):
+    getattr(respx_mock, http_method)(f"{API}{path}").mock(
+        return_value=httpx.Response(403, json={"detail": "forbidden"})
+    )
+    with pytest.raises(PermissionDeniedError):
+        call(client)
 
 
 def test_upload_files_three_step_flow(client, respx_mock, tmp_path):

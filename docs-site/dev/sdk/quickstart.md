@@ -11,7 +11,9 @@ last_reviewed: 2026-06-11
 
 10 分钟跑通一条完整链路:创建数据集 → 上传数据 → 创建项目并关联 → 触发导出并下载。CLI 与 Python 两条路径任选其一。
 
-> **版本与稳定性**:SDK 首版为 **beta**,版本号跟随平台 minor(当前 `0.15.2`)。公开 API 面只覆盖 8 个稳定工作流(projects / datasets / tasks / annotations / predictions / jobs / exports / api_keys),不包含 admin、dashboard 等内部 API。
+> **版本与稳定性**：SDK、CLI 与 TUI 使用独立于平台的 SemVer。`aap --version` 同时显示 SDK 版本与
+> 完成测试/OpenAPI 对账的 AAP target；target 是已验证基线，不是对其他平台版本的兼容承诺。公开 API
+> 以 [Python SDK 参考](./python-client)列出的命名空间、模型和异常为准。
 
 ## 安装
 
@@ -28,6 +30,19 @@ pip install 'ai-annotation-sdk[tui]'     # + aap tui 终端面板 (textual, 隐�
 ## 准备凭据
 
 SDK / CLI 用 `Authorization: Bearer <api_key>` 认证,接受 `ak_` 开头的平台 API key 或 JWT(SDK 不区分)。API key 可在平台 Web 端创建,也可以用已有凭据通过 SDK 的 `client.api_keys.create(...)` 创建。
+
+可分别读取 SDK 版本和已验证的平台基线：
+
+```python
+from ai_annotation import __aap_target_version__, __version__
+
+print(__version__)
+print(__aap_target_version__)
+```
+
+```bash
+aap --version  # aap <sdk-version>@AAP<aap-target-version>
+```
 
 ## 路径 A:CLI
 
@@ -49,11 +64,15 @@ aap datasets upload <dataset-id> ./imgs
 aap projects create --name demo --type image     # image|video|lidar
 aap datasets link <dataset-id> <project-id>
 
-# 3. 触发导出 → 等待完成 → 下载,一条命令全流程
+# 3. 创建批次并添加成员
+aap batches create <project-id> --name round-1 --dataset-id <dataset-id>
+aap members add <project-id> --user-id <user-id> --role annotator
+
+# 4. 触发导出 → 等待完成 → 下载,一条命令全流程
 aap export project <project-id> --target aap_json --out ./export.zip
 ```
 
-所有命令支持 `--json`(输出裸 JSON、退出码非 0 表示失败),供 CI / 脚本使用 —— 详见 [CLI 参考](./cli)。
+所有命令支持 `--json`(输出裸 JSON、退出码非 0 表示失败),供 CI / 脚本使用。删除、解绑和移除成员等破坏性命令在 JSON 模式下必须显式传 `--yes`。详见 [CLI 参考](./cli)。
 
 ## 路径 B:Python
 
@@ -73,7 +92,10 @@ with Client(base_url="http://localhost:8000", api_key="ak_...") as client:
     if link.async_job_id is not None:        # 大数据集走异步建任务
         client.jobs.wait(link.async_job_id)
 
-    # 3. 异步导出:创建 → 等待 → 下载
+    # 3. 创建批次
+    client.batches.create(project.id, "round-1", dataset_id=dataset.id)
+
+    # 4. 异步导出:创建 → 等待 → 下载
     job_id = client.exports.create(project.id, targets=["aap_json"])
     job = client.exports.wait(job_id, timeout=600)
     client.exports.download(job, "./export.zip")
@@ -83,7 +105,7 @@ with Client(base_url="http://localhost:8000", api_key="ak_...") as client:
 
 ## 下一步
 
-- [Python SDK 参考](./python-client) — Client 构造、8 个资源命名空间全部方法、异常层级
+- [Python SDK 参考](./python-client) — Client 构造、公开资源命名空间、模型与异常层级
 - [CLI 参考](./cli) — 全部命令、`--json` 可脚本化契约
-- [TUI 监控面板](./tui) — `aap tui` 三视图只读监控
+- [TUI 监控面板](./tui) — `aap tui` 项目、数据集、任务、模型与绩效监控
 - [Cookbook](./cookbook) — 可直接拷贝的完整脚本片段

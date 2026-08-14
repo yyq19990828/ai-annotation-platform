@@ -105,6 +105,54 @@ with Client() as client:
     print(f"导出包已下载 → {dest}")
 ```
 
-## 4. 从 echo 示例改出一个 OCR backend
+## 4. 批次分配、提交、审核与导出
+
+下面的 Python 和 CLI 使用同一组 project / dataset / user / task ID，依次完成创建批次 → 分配 → 提交 → 审核 → 导出 → 等待 job。
+
+```python
+from ai_annotation import Client
+
+PROJECT_ID = "<project-id>"
+DATASET_ID = "<dataset-id>"
+ANNOTATOR_ID = "<annotator-user-id>"
+REVIEWER_ID = "<reviewer-user-id>"
+TASK_ID = "<task-id>"
+
+with Client() as client:
+    batch = client.batches.create(PROJECT_ID, "round-1", dataset_id=DATASET_ID)
+    client.batches.distribute(
+        PROJECT_ID,
+        annotator_ids=[ANNOTATOR_ID],
+        reviewer_ids=[REVIEWER_ID],
+        only_unassigned=True,
+    )
+
+    client.tasks.submit(TASK_ID)
+    client.tasks.claim_review(TASK_ID)
+    client.tasks.approve_review(TASK_ID)
+
+    job_id = client.batches.export(
+        PROJECT_ID, batch.id, targets=["aap_json"]
+    )
+    job = client.jobs.wait(job_id)
+    client.exports.download(job, "./batch-export.zip")
+```
+
+```bash
+batch_id=$(aap batches create "$PROJECT_ID" --name round-1 \
+  --dataset-id "$DATASET_ID" --json | jq -r '.id')
+aap batches distribute "$PROJECT_ID" \
+  --annotator-id "$ANNOTATOR_ID" --reviewer-id "$REVIEWER_ID" --json
+
+aap tasks submit "$TASK_ID" --json
+aap tasks review-claim "$TASK_ID" --json
+aap tasks review-approve "$TASK_ID" --json
+
+job_id=$(aap batches export "$PROJECT_ID" "$batch_id" \
+  --target aap_json --json | jq -r '.job_id')
+aap jobs wait "$job_id" --json
+```
+
+## 5. 从 echo 示例改出一个 OCR backend
 
 接入自定义模型推理服务属于 ML Backend 范畴,完整教程(echo 示例 → OCR backend → 注册到平台)见 [ML Backend 接入教程](/dev/ml-backend/starter)。

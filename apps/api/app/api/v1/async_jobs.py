@@ -363,44 +363,40 @@ async def retry_failed_async_job_items(
         )
 
     from app.api.v1.predictions import MAX_RETRY_COUNT
-    from app.db.models.prediction import FailedPrediction
+    from app.services.prediction import (
+        claim_failed_prediction_retry,
+        release_failed_prediction_retry_claim,
+    )
     from app.workers.predictions_retry import retry_failed_prediction as task_fn
 
-    rows = (
-        (
-            await db.execute(
-                select(FailedPrediction).where(FailedPrediction.id.in_(failed_ids))
-            )
-        )
-        .scalars()
-        .all()
-    )
-    by_id = {row.id: row for row in rows}
-    queued = 0
-    skipped = 0
+    claimed_ids: list[uuid.UUID] = []
     for failed_id in failed_ids:
-        row = by_id.get(failed_id)
-        if (
-            row is None
-            or row.dismissed_at is not None
-            or (row.retry_count or 0) >= MAX_RETRY_COUNT
-        ):
-            skipped += 1
-            continue
-        task_fn.delay(str(failed_id), str(current_user.id))
-        queued += 1
+        if await claim_failed_prediction_retry(db, failed_id, MAX_RETRY_COUNT):
+            claimed_ids.append(failed_id)
 
-    if queued == 0:
+    if not claimed_ids:
         raise HTTPException(
             status_code=409,
             detail="no retryable failed predictions remain for this job",
         )
+    await db.commit()
+
+    queued = 0
+    try:
+        for failed_id in claimed_ids:
+            task_fn.delay(str(failed_id), str(current_user.id))
+            queued += 1
+    except Exception:
+        for failed_id in claimed_ids[queued:]:
+            await release_failed_prediction_retry_claim(db, failed_id)
+        await db.commit()
+        raise
 
     return AsyncJobRetryFailedResponse(
         status="queued",
         job_id=job_id,
         queued=queued,
-        skipped=skipped,
+        skipped=len(failed_ids) - queued,
     )
 
 

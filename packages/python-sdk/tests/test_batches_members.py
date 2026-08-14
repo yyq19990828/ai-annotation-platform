@@ -1,10 +1,18 @@
+import json
+import uuid
 from uuid import uuid4
 
 import httpx
 import pytest
 
-from ai_annotation.errors import PermissionDeniedError
-from ai_annotation.models import Batch, Me, Member
+from ai_annotation.errors import ConflictError, PermissionDeniedError
+from ai_annotation.models import (
+    Batch,
+    BatchDistributeResult,
+    BulkBatchActionResult,
+    Me,
+    Member,
+)
 
 from .conftest import API
 
@@ -69,6 +77,192 @@ def test_get_batch(client, respx_mock):
     assert b.status == "approved"
 
 
+def test_create_update_delete_batch(client, respx_mock):
+    create_route = respx_mock.post(f"{API}/projects/{PID}/batches").mock(
+        return_value=httpx.Response(201, json=_batch())
+    )
+    batch = client.batches.create(PID, "batch-alpha", priority=70)
+    assert json.loads(create_route.calls.last.request.content) == {
+        "name": "batch-alpha",
+        "priority": 70,
+    }
+    assert isinstance(batch, Batch)
+
+    update_route = respx_mock.patch(f"{API}/projects/{PID}/batches/{BID}").mock(
+        return_value=httpx.Response(200, json=_batch(name="renamed"))
+    )
+    batch = client.batches.update(PID, BID, name="renamed")
+    assert json.loads(update_route.calls.last.request.content) == {"name": "renamed"}
+    assert batch.name == "renamed"
+
+    delete_route = respx_mock.delete(f"{API}/projects/{PID}/batches/{BID}").mock(
+        return_value=httpx.Response(204)
+    )
+    assert client.batches.delete(PID, BID, force=True) is None
+    assert delete_route.calls.last.request.url.params["force"] == "true"
+
+
+@pytest.mark.parametrize("method", ["create", "update"])
+def test_batch_writes_map_permission_error(client, respx_mock, method):
+    path = f"{API}/projects/{PID}/batches"
+    if method == "update":
+        path += f"/{BID}"
+    getattr(respx_mock, "post" if method == "create" else "patch")(path).mock(
+        return_value=httpx.Response(403, json={"detail": "forbidden"})
+    )
+    with pytest.raises(PermissionDeniedError):
+        if method == "create":
+            client.batches.create(PID, "blocked")
+        else:
+            client.batches.update(PID, BID, name="blocked")
+
+
+def test_delete_batch_maps_conflict(client, respx_mock):
+    respx_mock.delete(f"{API}/projects/{PID}/batches/{BID}").mock(
+        return_value=httpx.Response(409, json={"detail": "requires_force"})
+    )
+    with pytest.raises(ConflictError):
+        client.batches.delete(PID, BID)
+
+
+def test_batch_workflow_actions(client, respx_mock):
+    transition = respx_mock.post(f"{API}/projects/{PID}/batches/{BID}/transition").mock(
+        return_value=httpx.Response(200, json=_batch(status="reviewing"))
+    )
+    assert client.batches.transition(PID, BID, "reviewing").status == "reviewing"
+    assert json.loads(transition.calls.last.request.content) == {
+        "target_status": "reviewing"
+    }
+
+    reject = respx_mock.post(f"{API}/projects/{PID}/batches/{BID}/reject").mock(
+        return_value=httpx.Response(200, json=_batch(status="rejected"))
+    )
+    assert client.batches.reject(PID, BID, "fix labels").status == "rejected"
+    assert json.loads(reject.calls.last.request.content) == {"feedback": "fix labels"}
+
+    reset = respx_mock.post(f"{API}/projects/{PID}/batches/{BID}/reset").mock(
+        return_value=httpx.Response(200, json=_batch(status="draft"))
+    )
+    assert client.batches.reset(PID, BID, "reset for correction").status == "draft"
+    assert json.loads(reset.calls.last.request.content) == {
+        "reason": "reset for correction"
+    }
+
+
+def test_distribute_batches(client, respx_mock):
+    annotator_id, reviewer_id = uuid4(), uuid4()
+    route = respx_mock.post(f"{API}/projects/{PID}/batches/distribute-batches").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "distributed_batches": 2,
+                "annotator_per_batch": {BID: str(annotator_id)},
+                "reviewer_per_batch": {BID: str(reviewer_id)},
+            },
+        )
+    )
+    result = client.batches.distribute(
+        PID,
+        annotator_ids=[annotator_id],
+        reviewer_ids=[reviewer_id],
+        only_unassigned=True,
+    )
+    assert json.loads(route.calls.last.request.content) == {
+        "annotator_ids": [str(annotator_id)],
+        "reviewer_ids": [str(reviewer_id)],
+        "only_unassigned": True,
+    }
+    assert isinstance(result, BatchDistributeResult)
+    assert result.distributed_batches == 2
+
+
+@pytest.mark.parametrize(
+    ("action", "call", "extra"),
+    [
+        ("bulk-activate", lambda c, ids: c.batches.bulk_activate(PID, ids), {}),
+        ("bulk-approve", lambda c, ids: c.batches.bulk_approve(PID, ids), {}),
+        (
+            "bulk-reject",
+            lambda c, ids: c.batches.bulk_reject(PID, ids, "needs work"),
+            {"feedback": "needs work"},
+        ),
+        (
+            "bulk-reassign",
+            lambda c, ids: c.batches.bulk_reassign(
+                PID, ids, annotator_id=None, reviewer_id=uuid4()
+            ),
+            None,
+        ),
+    ],
+)
+def test_bulk_batch_actions(client, respx_mock, action, call, extra):
+    ids = [uuid4(), uuid4()]
+    route = respx_mock.post(f"{API}/projects/{PID}/batches/{action}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "succeeded": [str(ids[0])],
+                "skipped": [{"batch_id": str(ids[1]), "reason": "wrong_status"}],
+                "failed": [],
+            },
+        )
+    )
+    result = call(client, ids)
+    body = json.loads(route.calls.last.request.content)
+    assert body["batch_ids"] == [str(value) for value in ids]
+    if extra:
+        assert body | extra == body
+    assert isinstance(result, BulkBatchActionResult)
+    assert result.succeeded == [ids[0]]
+    assert result.skipped[0].reason == "wrong_status"
+
+
+def test_bulk_reassign_validates_assignment(client):
+    with pytest.raises(ValueError, match="at least one"):
+        client.batches.bulk_reassign(PID, [BID])
+    with pytest.raises(ValueError, match="unsupported"):
+        client.batches.bulk_reassign(PID, [BID], assignee_id=uuid4())
+
+
+def test_export_batch(client, respx_mock):
+    job_id = str(uuid4())
+    route = respx_mock.post(f"{API}/projects/{PID}/batches/{BID}/export").mock(
+        return_value=httpx.Response(202, json={"job_id": job_id})
+    )
+    assert (
+        client.batches.export(PID, BID, targets=["coco", "aap_json"], axis_frame="iso")
+        == job_id
+    )
+    params = route.calls.last.request.url.params
+    assert params.get_list("targets") == ["coco", "aap_json"]
+    assert params["axis_frame"] == "iso"
+
+
+@pytest.mark.parametrize(
+    ("path", "call"),
+    [
+        (f"{BID}/transition", lambda c: c.batches.transition(PID, BID, "active")),
+        (f"{BID}/reject", lambda c: c.batches.reject(PID, BID, "bad")),
+        (f"{BID}/reset", lambda c: c.batches.reset(PID, BID, "long reason")),
+        ("distribute-batches", lambda c: c.batches.distribute(PID)),
+        ("bulk-activate", lambda c: c.batches.bulk_activate(PID, [BID])),
+        ("bulk-approve", lambda c: c.batches.bulk_approve(PID, [BID])),
+        ("bulk-reject", lambda c: c.batches.bulk_reject(PID, [BID], "bad")),
+        (
+            "bulk-reassign",
+            lambda c: c.batches.bulk_reassign(PID, [BID], annotator_id=None),
+        ),
+        (f"{BID}/export", lambda c: c.batches.export(PID, BID)),
+    ],
+)
+def test_batch_workflow_maps_permission_error(client, respx_mock, path, call):
+    respx_mock.post(f"{API}/projects/{PID}/batches/{path}").mock(
+        return_value=httpx.Response(403, json={"detail": "forbidden"})
+    )
+    with pytest.raises(PermissionDeniedError):
+        call(client)
+
+
 def test_list_members(client, respx_mock):
     route = respx_mock.get(f"{API}/projects/{PID}/members").mock(
         return_value=httpx.Response(
@@ -91,6 +285,50 @@ def test_list_members(client, respx_mock):
     assert isinstance(members[0], Member)
     assert members[0].user_name == "张三"
     assert members[0].role == "annotator"
+
+
+def test_add_and_remove_member(client, respx_mock):
+    member_id = str(uuid4())
+    user_id = str(uuid4())
+    payload = {
+        "id": member_id,
+        "user_id": user_id,
+        "user_name": "李四",
+        "user_email": "li@example.com",
+        "role": "reviewer",
+        "assigned_at": "2026-06-10T00:00:00Z",
+    }
+    add_route = respx_mock.post(f"{API}/projects/{PID}/members").mock(
+        return_value=httpx.Response(201, json=payload)
+    )
+    member = client.members.add(PID, user_id, "reviewer")
+    assert json.loads(add_route.calls.last.request.content) == {
+        "user_id": user_id,
+        "role": "reviewer",
+    }
+    assert member.id == uuid.UUID(member_id)
+
+    remove_route = respx_mock.delete(f"{API}/projects/{PID}/members/{member_id}").mock(
+        return_value=httpx.Response(204)
+    )
+    assert client.members.remove(PID, member_id) is None
+    assert remove_route.called
+
+
+@pytest.mark.parametrize("method", ["add", "remove"])
+def test_member_writes_map_permission_error(client, respx_mock, method):
+    member_id = str(uuid4())
+    path = f"{API}/projects/{PID}/members"
+    if method == "remove":
+        path += f"/{member_id}"
+    getattr(respx_mock, "post" if method == "add" else "delete")(path).mock(
+        return_value=httpx.Response(403, json={"detail": "forbidden"})
+    )
+    with pytest.raises(PermissionDeniedError):
+        if method == "add":
+            client.members.add(PID, uuid4(), "annotator")
+        else:
+            client.members.remove(PID, member_id)
 
 
 def test_me(client, respx_mock):

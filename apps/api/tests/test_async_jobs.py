@@ -412,6 +412,12 @@ class TestAsyncJobsAPI:
         assert r.json()["skipped"] == 1
         assert queued == [(str(retryable.id), str(user.id))]
 
+        repeated = await httpx_client_bound.post(
+            f"/api/v1/async-jobs/{aj.id}/retry-failed", headers=_bearer(token)
+        )
+        assert repeated.status_code == 409
+        assert queued == [(str(retryable.id), str(user.id))]
+
     async def test_retry_failed_batch_predict_items_requires_recorded_ids(
         self, httpx_client_bound, db_session, project_admin
     ):

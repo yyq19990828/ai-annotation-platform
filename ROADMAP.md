@@ -66,7 +66,6 @@
 - **模型变体实验**：按稳定实验分组路由非等价变体、记录实验标签，并在工作台并排比较同输入结果。
 - **受保护的运行时观测**：让 env-only backend 的 observe 探测支持认证 token。
 - **预测导入延伸**：仅在跨实例匹配不再能依赖 `display_id` / `file_path` 时增加 Task `external_id`；按审计需求补 `predictions_import` 取证明细。
-- **SDK / CLI 写能力**：封装服务池与实例管理、健康检查，以及项目 service-pool available / enablement 端点。
 - **批量推理**：吞吐压测证明瓶颈后，将 `batchable` 分块派发与 backend 真 GPU batch 一起设计，避免只摊销 HTTP 开销。
 - **编排新数据源**：支持既有矩形标注作为 crops 源；scene 跨帧聚合作为独立执行单位。
 - **生产存储地址策略**：首个复杂部署出现时扩展 `ML_BACKEND_STORAGE_HOST` 的 endpoint 选择规则。

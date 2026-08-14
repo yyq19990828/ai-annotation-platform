@@ -14,6 +14,7 @@ from rich.progress import (
 from ai_annotation import Client
 from ai_annotation.cli._output import (
     cli_errors,
+    confirm_destructive,
     console,
     get_client,
     print_json,
@@ -22,7 +23,7 @@ from ai_annotation.cli._output import (
 from ai_annotation.models import Job
 
 app = typer.Typer(
-    help="异步任务: 等待任务到终态 (跟随进度)、请求软取消。",
+    help="异步任务: 等待、软取消或重试失败项。",
     no_args_is_help=True,
     rich_markup_mode="rich",
     epilog="示例: [dim]aap jobs wait <job_id>[/] · [dim]aap jobs cancel <job_id>[/]",
@@ -84,3 +85,22 @@ def cancel(
         print_json({"job_id": job_id, "cancel_requested": True})
     else:
         console.print(f"[green]已请求取消 job {job_id}[/green] (终态稍后由后端落定)")
+
+
+@app.command("retry-failed")
+def retry_failed(
+    job_id: str = typer.Argument(..., help="async job ID"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过确认"),
+    json_output: bool = typer.Option(False, "--json", help="输出裸 JSON"),
+) -> None:
+    """重试 job 中已记录的可重试失败项。"""
+    confirm_destructive(f"确认重试 job {job_id} 的失败项?", yes, json_output)
+    with cli_errors(json_output):
+        with get_client(json_output) as client:
+            result = client.jobs.retry_failed(job_id)
+    if json_output:
+        print_json(result.model_dump(mode="json"))
+    else:
+        console.print(
+            f"[green]已入队 {result.queued} 项[/green] skipped={result.skipped}"
+        )
