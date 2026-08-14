@@ -171,7 +171,21 @@ export interface ExportOptions {
   indexedOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
   videoOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
   motsFrameBase?: 0 | 1;
+  lidarCameraRole?: string;
   scope?: VideoExportScope;
+}
+
+export interface LidarCameraRole {
+  role: string;
+  frame_count: number;
+  calibrated_frame_count: number;
+  sized_frame_count: number;
+  complete: boolean;
+}
+
+export interface LidarCameraRolesResponse {
+  roles: LidarCameraRole[];
+  default_role: string | null;
 }
 
 export interface ProjectClassUsageResponse {
@@ -293,9 +307,16 @@ export const projectsApi = {
     if (opts?.motsFrameBase !== undefined) {
       params.set("mots_frame_base", String(opts.motsFrameBase));
     }
+    if (opts?.lidarCameraRole) {
+      params.set("lidar_camera_role", opts.lidarCameraRole);
+    }
     return apiClient.post<{ job_id: string }>(
       `/projects/${id}/export?${params.toString()}`,
       opts?.scope ? { scope: opts.scope } : {},
     );
+  },
+  lidarCameraRoles: (id: string, batchId?: string) => {
+    const query = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : "";
+    return apiClient.get<LidarCameraRolesResponse>(`/projects/${id}/lidar-camera-roles${query}`);
   },
 };

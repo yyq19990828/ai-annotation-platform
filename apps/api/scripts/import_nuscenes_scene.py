@@ -452,6 +452,8 @@ async def import_nuscenes(
                     file_path=cam_key,
                     file_type="image",
                     file_size=len(jpg_bytes),
+                    width=int(sd.get("width") or 0) or None,
+                    height=int(sd.get("height") or 0) or None,
                 )
                 db.add(cam_item)
                 await db.flush()  # 拿 id 以填 shared_frame_items

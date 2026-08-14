@@ -63,10 +63,10 @@ def _raise_format_error(exc: MaskFormatError) -> None:
 async def list_mask_formats(
     project: Project = Depends(require_project_visible),
 ) -> list[MaskFormatDescriptorOut]:
-    return [
-        adapter.descriptor.to_out()
-        for adapter in registry.list(media_type=project.data_type or "image")
-    ]
+    adapters = registry.list(media_type=project.data_type or "image")
+    if project.data_type == "lidar":
+        adapters.append(registry.get("coco"))
+    return [adapter.descriptor.to_out() for adapter in adapters]
 
 
 @router.post(
@@ -105,9 +105,9 @@ async def preflight_mask_format_export(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         descriptor = adapter.descriptor
-        if (
-            not descriptor.export_capability.supported
-            or (project.data_type or "image") not in descriptor.media_types
+        if not descriptor.export_capability.supported or (
+            (project.data_type or "image") not in descriptor.media_types
+            and not (project.data_type == "lidar" and format_id == "coco")
         ):
             raise HTTPException(
                 status_code=422,

@@ -152,5 +152,13 @@ describe("batchesApi · endpoint 契约", () => {
         "&video_overlap_policy=z_order&mots_frame_base=1",
       {},
     );
+    batchesApi.exportBatch("p1", "b1", ["kitti"] as ExportTarget[], {
+      lidarCameraRole: "camera_front",
+    });
+    expect(post).toHaveBeenCalledWith(
+      "/projects/p1/batches/b1/export?include_attributes=true&targets=kitti" +
+        "&lidar_camera_role=camera_front",
+      {},
+    );
   });
 });

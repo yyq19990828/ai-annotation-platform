@@ -145,6 +145,7 @@ export const maskFormatsApi = {
             : {}),
           ...(opts?.videoOverlapPolicy ? { video_overlap_policy: opts.videoOverlapPolicy } : {}),
           ...(opts?.motsFrameBase !== undefined ? { mots_frame_base: opts.motsFrameBase } : {}),
+          ...(opts?.lidarCameraRole ? { lidar_camera_role: opts.lidarCameraRole } : {}),
         },
       },
     ),

@@ -35,6 +35,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **点云导出使用真实多相机投影与时序语义**. KITTI 可按完整相机角色输出真实 camera 坐标、bottom-center、yaw 与 2D bbox；COCO 可按所有有效相机即时派生 2D 框且不写数据库；nuScenes 子集改用真实 scene、时间戳、ego pose、sample 和 track 前后链。
+
 ## [0.24.0] - 2026-08-14
 
 ### Added

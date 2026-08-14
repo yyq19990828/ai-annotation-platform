@@ -34,7 +34,7 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
-from app.schemas.export import ExportRequestBody
+from app.schemas.export import ExportRequestBody, LidarCameraRolesResponse
 from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
@@ -1244,6 +1244,33 @@ def _validate_export_targets(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get(
+    "/{project_id}/lidar-camera-roles",
+    response_model=LidarCameraRolesResponse,
+)
+async def lidar_camera_roles(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID | None = Query(default=None),
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+):
+    if project.data_type != "lidar":
+        raise HTTPException(status_code=400, detail="project is not a LiDAR project")
+    if batch_id is not None:
+        from app.db.models.batch import Batch
+
+        batch = await db.get(Batch, batch_id)
+        if batch is None or batch.project_id != project.id:
+            raise HTTPException(status_code=404, detail="Batch not found")
+    from app.services.exporting.packaging import get_lidar_camera_roles
+
+    return await get_lidar_camera_roles(
+        db,
+        project_id=project.id,
+        batch_id=batch_id,
+    )
+
+
 @router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
@@ -1270,6 +1297,13 @@ async def export_project(
         "iso",
         pattern="^(iso|source)$",
         description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
+    ),
+    lidar_camera_role: str | None = Query(
+        default=None,
+        min_length=8,
+        max_length=50,
+        pattern=r"^camera_[A-Za-z0-9_.-]+$",
+        description="LiDAR KITTI camera role; required when more than one complete role exists",
     ),
     indexed_overlap_policy: str = Query(
         "error",
@@ -1298,6 +1332,11 @@ async def export_project(
     from app.services.audit import AuditService, AuditAction, export_detail
 
     targets = _validate_export_targets(targets, project.data_type)
+    selected_lidar_role = (
+        lidar_camera_role
+        if project.data_type == "lidar" and "kitti" in targets
+        else None
+    )
 
     from app.services.exporting.video_scope import normalize_video_export_scope
 
@@ -1378,6 +1417,11 @@ async def export_project(
             "mots_frame_base": mots_frame_base,
             "project_display_id": project.display_id,
             **(
+                {"lidar_camera_role": selected_lidar_role}
+                if selected_lidar_role
+                else {}
+            ),
+            **(
                 {"video_export_scope": video_scope_payload}
                 if video_scope_payload
                 else {}
@@ -1404,6 +1448,11 @@ async def export_project(
                 "video_overlap_policy": video_overlap_policy,
                 "mots_frame_base": mots_frame_base,
                 **(
+                    {"lidar_camera_role": selected_lidar_role}
+                    if selected_lidar_role
+                    else {}
+                ),
+                **(
                     {"video_export_scope": video_scope_payload}
                     if video_scope_payload
                     else {}
@@ -1424,6 +1473,11 @@ async def export_project(
             "indexed_overlap_policy": indexed_overlap_policy,
             "video_overlap_policy": video_overlap_policy,
             "mots_frame_base": mots_frame_base,
+            **(
+                {"lidar_camera_role": selected_lidar_role}
+                if selected_lidar_role
+                else {}
+            ),
             **(
                 {"video_export_scope": video_scope_payload}
                 if video_scope_payload

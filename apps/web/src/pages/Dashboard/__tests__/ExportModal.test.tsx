@@ -15,6 +15,18 @@ import { ExportModal } from "../ExportModal";
 vi.mock("@/api/projects", () => ({
   projectsApi: {
     exportProject: vi.fn(async () => ({ job_id: "j1" })),
+    lidarCameraRoles: vi.fn(async () => ({
+      roles: [
+        {
+          role: "camera_front",
+          frame_count: 3,
+          calibrated_frame_count: 3,
+          sized_frame_count: 3,
+          complete: true,
+        },
+      ],
+      default_role: "camera_front",
+    })),
   },
 }));
 vi.mock("@/api/maskFormats", () => ({
@@ -107,6 +119,7 @@ function submitExport() {
 describe("ExportModal", () => {
   beforeEach(() => {
     vi.mocked(projectsApi.exportProject).mockClear();
+    vi.mocked(projectsApi.lidarCameraRoles).mockClear();
     vi.mocked(maskFormatsApi.preflightExport).mockReset();
     vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight());
     vi.mocked(tasksApi.listByProject).mockReset();
@@ -365,20 +378,59 @@ describe("ExportModal", () => {
     render(<ExportModalHarness projectId="p5" projectTypeKey="lidar" />);
 
     expect(screen.getByText("KITTI 3D")).toBeInTheDocument();
+    expect(screen.getByText("COCO 2D")).toBeInTheDocument();
     expect(screen.getByText("nuScenes JSON")).toBeInTheDocument();
     expect(screen.getByText("Point Mask")).toBeInTheDocument();
-    expect(screen.queryByText("COCO")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByText("COCO 2D"));
     fireEvent.click(screen.getByText("KITTI 3D"));
     fireEvent.click(screen.getByText("nuScenes JSON"));
     fireEvent.click(screen.getByText("Point Mask"));
+    await waitFor(() => expect(projectsApi.lidarCameraRoles).toHaveBeenCalledWith("p5"));
+    expect(screen.getByLabelText("KITTI 相机角色")).toHaveValue("camera_front");
     submitExport();
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
     expect(projectsApi.exportProject).toHaveBeenCalledWith(
       "p5",
-      ["aap_json", "kitti", "nuscenes", "pointmask"],
-      { includeAttributes: true },
+      ["aap_json", "coco", "kitti", "nuscenes", "pointmask"],
+      { includeAttributes: true, lidarCameraRole: "camera_front" },
     );
+  });
+
+  it("多个完整相机角色不预猜，选择后才允许 KITTI 导出", async () => {
+    vi.mocked(projectsApi.lidarCameraRoles).mockResolvedValueOnce({
+      roles: [
+        {
+          role: "camera_front",
+          frame_count: 3,
+          calibrated_frame_count: 3,
+          sized_frame_count: 3,
+          complete: true,
+        },
+        {
+          role: "camera_left",
+          frame_count: 3,
+          calibrated_frame_count: 3,
+          sized_frame_count: 3,
+          complete: true,
+        },
+      ],
+      default_role: null,
+    });
+    render(<ExportModalHarness projectId="p-lidar-multi" projectTypeKey="lidar" />);
+    fireEvent.click(screen.getByText("KITTI 3D"));
+
+    const select = await screen.findByLabelText("KITTI 相机角色");
+    await waitFor(() => expect(select).toHaveValue(""));
+    expect(screen.getByRole("button", { name: "开始导出" })).toBeDisabled();
+    fireEvent.change(select, { target: { value: "camera_left" } });
+    submitExport();
+
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p-lidar-multi", ["aap_json", "kitti"], {
+      includeAttributes: true,
+      lidarCameraRole: "camera_left",
+    });
   });
 
   it("有损预检显示稳定 code，确认前不入队", async () => {

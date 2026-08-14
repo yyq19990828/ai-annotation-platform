@@ -37,7 +37,15 @@ from app.services.exporting.video_scope import (
 _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
     "aap_json": None,
     "coco": frozenset(
-        {"bbox", "rotated_bbox", "polygon", "multi_polygon", "keypoint", "raster_mask"}
+        {
+            "bbox",
+            "box_3d",
+            "rotated_bbox",
+            "polygon",
+            "multi_polygon",
+            "keypoint",
+            "raster_mask",
+        }
     ),
     "yolo": frozenset({"bbox"}),
     "yolo-det": frozenset({"bbox"}),
@@ -155,6 +163,8 @@ class LegacyPackagingAdapter:
         items: list[MaskFormatPlanItem] = []
         for task_id, file_path in task_rows:
             geometry_counts = grouped.get(task_id, {})
+            if project.data_type == "lidar" and self.descriptor.format_id == "coco":
+                geometry_counts = {"box_3d": geometry_counts.get("box_3d", 0)}
             unsupported = sorted(
                 geometry_type
                 for geometry_type, count in geometry_counts.items()

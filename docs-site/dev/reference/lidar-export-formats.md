@@ -8,14 +8,15 @@ last_reviewed: 2026-06-07
 
 # LiDAR Export Formats
 
-LiDAR projects can export four targets:
+LiDAR projects can export five targets:
 
-| Target      | Purpose                            | Coordinate frame        |
-| ----------- | ---------------------------------- | ----------------------- |
-| `aap_json`  | Platform-native lossless JSON      | API `axis_frame` option |
-| `kitti`     | KITTI 3D detection labels          | KITTI camera            |
-| `nuscenes`  | nuScenes-style single-frame tables | AAP ego/ISO             |
-| `pointmask` | Per-point semantic labels          | Point index order       |
+| Target      | Purpose                                   | Coordinate frame        |
+| ----------- | ----------------------------------------- | ----------------------- |
+| `aap_json`  | Platform-native lossless JSON             | API `axis_frame` option |
+| `coco`      | Per-camera 2D boxes derived from `box_3d` | Image pixels            |
+| `kitti`     | KITTI 3D detection labels                 | Selected KITTI camera   |
+| `nuscenes`  | nuScenes-style temporal training tables   | Global                  |
+| `pointmask` | Per-point semantic labels                 | Point index order       |
 
 These targets are pure serializers. They do not add database tables, columns, or
 migrations. Existing AAP JSON export remains unchanged.
@@ -56,19 +57,34 @@ type truncated occluded alpha x1 y1 x2 y2 h w l x y z ry
 ```
 
 AAP stores `box_3d` PSR in ISO coordinates: +X forward, +Y left, +Z up. KITTI
-labels always need camera coordinates: +X right, +Y down, +Z forward. The
-serializer therefore maps each box through
-`unapply_to_psr(psr, "kitti_camera")` regardless of the export API
-`axis_frame` value.
+labels always use the explicitly selected camera. The serializer normalizes the
+dataset axis convention, applies that role's persisted extrinsic and optional
+rectification, then derives the camera-frame bottom center, dimensions,
+`rotation_y`, `alpha`, and image-clipped bbox. The API `axis_frame` option does
+not change KITTI camera coordinates.
 
 `truncated` and `occluded` are read from `annotation.attributes`. Missing values
 default to `0.0` and `0`.
 
-When a frame has no persisted calibration, the calib file is written as
-`calib/<frame>.unverified.txt` (instead of `calib/<frame>.txt`) and its content
-is prefixed with a `# AAP WARNING:` comment. The matrices are identity
-placeholders and must not be used for 3D→2D projection — the distinct filename
-keeps downstream pipelines from silently consuming them as real calibration.
+`GET /projects/{project_id}/lidar-camera-roles?batch_id=` reports frame,
+calibration, and image-size coverage by exact `TaskDatasetItemLink.role`. One
+complete role is selected automatically. Multiple complete roles require the
+caller to pass `lidar_camera_role` to project or batch export. Missing role,
+calibration, dimensions, or visible projection fails the export at the first
+affected frame; placeholder matrices and bboxes are never written.
+
+## COCO 2D
+
+COCO export visits every camera role with valid calibration and image size. It
+creates one `images[]` row per frame-camera pair and derives bbox/area directly
+from each visible `box_3d`. The generated attributes preserve user attributes
+and add `__source_box_3d_id`, `__track_id`, and `__camera_role` provenance.
+
+`images[].file_name` is
+`{camera_role}/{frame_key}/{source_name}`. `info.skipped_annotations` counts
+boxes behind the camera or clipped to zero area; `info.skipped_cameras` counts
+camera frames without valid calibration or dimensions. This serializer never
+inserts 2D annotations into the database.
 
 ## nuScenes JSON
 
@@ -77,23 +93,27 @@ nuScenes export writes lightweight table files:
 ```text
 sample.json
 sample_annotation.json
+scene.json
 category.json
 attribute.json
 visibility.json
 instance.json
+sensor.json
 calibrated_sensor.json
 sample_data.json
 ego_pose.json
 ```
 
-Important limitation: this is a single-frame, ego-coordinate subset. The current
-platform does not persist true ego pose or global trajectories, so
-`sample_annotation.translation` is in AAP ego/ISO coordinates, and each
-`ego_pose` row is an identity placeholder with an `_aap_note`.
+`Scene`, `DatasetItem.frame_index`, and `SceneFramePose` are required truth.
+Samples and camera sample data carry persisted timestamps and per-scene
+`prev`/`next` chains. Ego poses are exported unchanged, while box centers and
+orientations are transformed from ego/ISO into global coordinates. Instances
+are scoped by scene and track id, with first/last/count plus annotation
+`prev`/`next` links. Missing scene, frame index, timestamp, or ego pose fails
+closed instead of emitting a placeholder.
 
-This package can feed single-frame 3D detection preprocessing. It is not a full
-nuScenes devkit tracking or multi-frame global evaluation export. Full global
-trajectory export depends on the v0.15.0 ego-pose data model.
+This is an AAP nuScenes-style training subset. It does not claim map, log, or
+other nuScenes tables that the platform does not store.
 
 `visible` or `visibility` attributes map to visibility tokens when present.
 Missing visibility exports as an empty token.
@@ -119,7 +139,7 @@ guaranteed for the point cloud referenced by `pointclouds_manifest.json`.
 `clean_export_targets(..., data_type="lidar")` accepts only:
 
 ```text
-aap_json, kitti, nuscenes, pointmask
+aap_json, coco, kitti, nuscenes, pointmask
 ```
 
 The name `kitti` is shared with video projects, but the serializers are separate:

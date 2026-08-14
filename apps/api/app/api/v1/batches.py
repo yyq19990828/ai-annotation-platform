@@ -872,6 +872,13 @@ async def export_batch(
         pattern="^(iso|source)$",
         description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
     ),
+    lidar_camera_role: str | None = Query(
+        default=None,
+        min_length=8,
+        max_length=50,
+        pattern=r"^camera_[A-Za-z0-9_.-]+$",
+        description="LiDAR KITTI camera role; required when more than one complete role exists",
+    ),
     video_overlap_policy: str = Query(
         "error",
         pattern="^(error|z_order|larger_area|smaller_area)$",
@@ -890,6 +897,11 @@ async def export_batch(
         targets = clean_export_targets(targets, project.data_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    selected_lidar_role = (
+        lidar_camera_role
+        if project.data_type == "lidar" and "kitti" in targets
+        else None
+    )
 
     svc_batch = BatchService(db)
     batch = await svc_batch.get(batch_id)
@@ -981,6 +993,11 @@ async def export_batch(
             "project_display_id": project.display_id,
             "batch_display_id": batch.display_id,
             **(
+                {"lidar_camera_role": selected_lidar_role}
+                if selected_lidar_role
+                else {}
+            ),
+            **(
                 {"video_export_scope": video_scope_payload}
                 if video_scope_payload
                 else {}
@@ -1010,6 +1027,11 @@ async def export_batch(
                 "video_overlap_policy": video_overlap_policy,
                 "mots_frame_base": mots_frame_base,
                 **(
+                    {"lidar_camera_role": selected_lidar_role}
+                    if selected_lidar_role
+                    else {}
+                ),
+                **(
                     {"video_export_scope": video_scope_payload}
                     if video_scope_payload
                     else {}
@@ -1029,6 +1051,11 @@ async def export_batch(
             "axis_frame": axis_frame,
             "video_overlap_policy": video_overlap_policy,
             "mots_frame_base": mots_frame_base,
+            **(
+                {"lidar_camera_role": selected_lidar_role}
+                if selected_lidar_role
+                else {}
+            ),
             **(
                 {"video_export_scope": video_scope_payload}
                 if video_scope_payload

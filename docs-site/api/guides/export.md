@@ -39,6 +39,7 @@ Segment 模式把 `selection` 改为
 | `include_attributes`   | `true` / `false`                                     | 是否携带 `annotation.attributes` 与 `project.attribute_schema`                                                                                                                   |
 | `video_frame_mode`     | `keyframes` / `all_frames`                           | 仅 `video-track` 生效；默认 `keyframes`                                                                                                                                          |
 | `axis_frame`           | `iso` / `source`                                     | 仅影响导出中的 `box_3d` 几何；默认 `iso`（平台归一化 ISO 8855 PSR），`source` 反向映射回数据集 `axis_convention` 源系                                                            |
+| `lidar_camera_role`    | `camera_<name>`                                      | LiDAR KITTI 使用的精确相机角色；多个完整角色时必填，非 LiDAR KITTI 目标忽略                                                                                                      |
 | `video_overlap_policy` | `error` / `z_order` / `larger_area` / `smaller_area` | DAVIS / YouTube-VOS palette PNG 的实例重叠策略；默认阻止                                                                                                                         |
 | `mots_frame_base`      | `0` / `1`                                            | MOTS 输出帧号基准；默认 0-based                                                                                                                                                  |
 
@@ -50,7 +51,7 @@ Segment 模式把 `selection` 改为
 
 | 目标                  | 适用                                                                                               |
 | --------------------- | -------------------------------------------------------------------------------------------------- |
-| **coco**              | COCO `annotations.json`：bbox + segmentation(polygon/mask) + keypoints(skeleton) + group_id        |
+| **coco**              | 图片项目导出 bbox / segmentation / keypoints；点云项目按每路有效相机从 `box_3d` 派生 2D bbox       |
 | **yolo-det**          | YOLO 检测 txt（矩形框）+ classes.txt，每图一文件                                                   |
 | **yolo-obb**          | YOLO 旋转框 txt（rotated_bbox 四角）                                                               |
 | **yolo-seg**          | YOLO 分割 txt（polygon / mask 归一化多边形）                                                       |
@@ -67,6 +68,8 @@ Segment 模式把 `selection` 改为
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标）                                                       |
 
 COCO / YOLO 会按各自能消费的几何映射。COCO 对图片 `raster_mask` 输出标准 RLE segmentation，并从像素内容计算 bbox 与 area；polygon / multi_polygon 继续输出多边形 segmentation。其余不匹配几何会跳过，COCO 跳过数记在 `info.skipped_annotations`。
+
+LiDAR KITTI 可先调用 `GET /projects/{project_id}/lidar-camera-roles?batch_id=` 获取每个角色的帧数、合法标定数、图片尺寸数与完整状态。选定角色后，`label_2` 的 bottom-center、`rotation_y`、`alpha` 和 bbox 都来自真实标定；缺任一必要数据时任务失败。LiDAR COCO 只在 ZIP 派生 2D 框，不创建数据库标注。nuScenes 目标要求每帧已有 scene、frame index、时间戳和 ego pose，并输出真实 sample / sample_data / track 前后链。
 
 ## 视频轨迹导出
 

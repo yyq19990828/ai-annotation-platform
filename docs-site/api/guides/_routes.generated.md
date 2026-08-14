@@ -412,6 +412,7 @@
 | GET | `/{project_id}/members` |
 | POST | `/{project_id}/members` |
 | DELETE | `/{project_id}/members/{member_id}` |
+| GET | `/{project_id}/lidar-camera-roles` |
 | POST | `/{project_id}/export` |
 | POST | `/{project_id}/preannotate` |
 | GET | `/{project_id}/orphan-tasks/preview` |
@@ -634,4 +635,4 @@
 
 ---
 
-_共 59 模块 / 357 路由_
+_共 59 模块 / 358 路由_

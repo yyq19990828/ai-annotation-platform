@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
+import zipfile
 
 import numpy as np
 import pytest
@@ -20,8 +22,11 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.db.models.dataset import Dataset, DatasetItem, Scene
+from app.db.models.annotation import Annotation
 from app.db.models.project import Project
+from app.db.models.task import Task
 from app.services import scene as scene_svc
+from app.services.exporting.packaging import build_export_zip
 from app.services.storage import storage_service
 from scripts.import_nuscenes_scene import _derived_display_id, import_nuscenes
 
@@ -219,6 +224,11 @@ async def test_import_nuscenes_two_scenes(
     _write_fake_nuscenes(root, scenes=2, samples_per=3)
 
     monkeypatch.setattr(storage_service, "client", _FakeS3Client())
+    monkeypatch.setattr(
+        storage_service,
+        "generate_download_url",
+        lambda key, **_kwargs: f"signed://{key}",
+    )
 
     result = await import_nuscenes(
         db_session,
@@ -263,6 +273,18 @@ async def test_import_nuscenes_two_scenes(
         )
         assert [r.frame_index for r in lidar_rows] == [0, 1, 2]
         assert all(r.scene_id == scene.id for r in lidar_rows)
+        camera_rows = (
+            (
+                await db_session.execute(
+                    select(DatasetItem)
+                    .where(DatasetItem.scene_id == scene.id)
+                    .where(DatasetItem.file_type == "image")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert {(row.width, row.height) for row in camera_rows} == {(1, 1)}
 
     # 3.5 v0.15.0 · 每 scene 落 3 行 ego pose:frame_index 对齐、timestamp 单调、
     # translation 差分 = 设定步长(2m/帧)
@@ -279,8 +301,6 @@ async def test_import_nuscenes_two_scenes(
         assert all(p.ego_rotation == [1.0, 0.0, 0.0, 0.0] for p in traj)
 
     # 4. 跨 scene neighbors 不串:scene A 末帧 task 的 next 为空
-    from app.db.models.task import Task
-
     scene_a = scenes[0]
     last_lidar = (
         await db_session.execute(
@@ -305,6 +325,84 @@ async def test_import_nuscenes_two_scenes(
     assert neighbors.next == []  # 不串到 scene B 首帧
     assert len(neighbors.prev) == 1
     assert neighbors.prev[0].frame_index == 1
+
+    task_rows = (
+        await db_session.execute(
+            select(Task, DatasetItem)
+            .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+            .where(Task.project_id == result["project_id"])
+            .order_by(DatasetItem.scene_id, DatasetItem.frame_index)
+        )
+    ).all()
+    project = await db_session.get(Project, result["project_id"])
+    project.tool_bindings = {
+        "lidar_box_3d": {
+            "enabled": True,
+            "classes": [{"name": "car", "order": 0}],
+            "attribute_schema": {"fields": []},
+        }
+    }
+    for task, _item in task_rows:
+        db_session.add(
+            Annotation(
+                task_id=task.id,
+                project_id=result["project_id"],
+                user_id=user.id,
+                annotation_type="box_3d",
+                tool_unit_id="lidar_box_3d",
+                class_name="car",
+                geometry={
+                    "type": "box_3d",
+                    "center": [1.0, 0.0, 10.0],
+                    "size": [4.0, 2.0, 2.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                },
+                track_id="trk_shared",
+            )
+        )
+    await db_session.flush()
+
+    zip_path, _file_count, _size = await build_export_zip(
+        db_session,
+        result["project_id"],
+        batch_id=None,
+        targets=["nuscenes"],
+        include_attributes=True,
+        video_frame_mode="keyframes",
+    )
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            exported_scenes = json.loads(archive.read("scene.json"))
+            samples = json.loads(archive.read("sample.json"))
+            sample_data = json.loads(archive.read("sample_data.json"))
+            instances = json.loads(archive.read("instance.json"))
+            sample_annotations = json.loads(archive.read("sample_annotation.json"))
+            ego_poses = json.loads(archive.read("ego_pose.json"))
+        assert len(exported_scenes) == 2
+        assert {row["nbr_samples"] for row in exported_scenes} == {3}
+        assert len(samples) == len(sample_data) == len(sample_annotations) == 6
+        assert sorted(row["timestamp"] for row in samples) == [
+            0,
+            500000,
+            1000000,
+            50000000,
+            50500000,
+            51000000,
+        ]
+        assert len(instances) == 2
+        assert {row["nbr_annotations"] for row in instances} == {3}
+        assert sum(not row["prev"] for row in sample_annotations) == 2
+        assert sum(not row["next"] for row in sample_annotations) == 2
+        assert {tuple(row["translation"]) for row in ego_poses} == {
+            (0.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (4.0, 0.0, 0.0),
+            (200.0, 0.0, 0.0),
+            (202.0, 0.0, 0.0),
+            (204.0, 0.0, 0.0),
+        }
+    finally:
+        os.unlink(zip_path)
 
 
 async def test_backfill_frame_poses_restores_deleted_rows(

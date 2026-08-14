@@ -126,6 +126,11 @@ const VIDEO_OPTIONS: TargetOption[] = [
 const LIDAR_OPTIONS: TargetOption[] = [
   { value: "aap_json", label: "AAP JSON", description: "平台原生无损，保留 3D 几何与项目配置。" },
   {
+    value: "coco",
+    label: "COCO 2D",
+    description: "按每路有效相机即时派生 2D 框，不写入数据库。",
+  },
+  {
     value: "kitti",
     label: "KITTI 3D",
     description: "逐帧 label_2 + calib，输出 KITTI camera 坐标。",
@@ -133,7 +138,7 @@ const LIDAR_OPTIONS: TargetOption[] = [
   {
     value: "nuscenes",
     label: "nuScenes JSON",
-    description: "单帧 sample 风格，ego 坐标 + 占位 ego_pose。",
+    description: "导出真实 scene、时间戳、ego pose 与 track 前后链。",
   },
   {
     value: "pointmask",
@@ -246,10 +251,46 @@ function ExportForm({
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<MaskFormatExportPreflight | null>(null);
   const [lossyConfirmed, setLossyConfirmed] = useState(false);
+  const [lidarCameraRoles, setLidarCameraRoles] = useState<
+    Awaited<ReturnType<typeof projectsApi.lidarCameraRoles>>["roles"]
+  >([]);
+  const [lidarCameraRole, setLidarCameraRole] = useState("");
+  const [lidarRolesLoading, setLidarRolesLoading] = useState(false);
+  const [lidarRolesError, setLidarRolesError] = useState<string | null>(null);
   const pushToast = useToastStore((s) => s.push);
 
   // 帧模式仅对 Video JSON 有意义（MOT/KITTI 走采样网格，AAP 透传源帧）。
   const showFrameMode = isVideoProject && targets.includes("video_json");
+
+  useEffect(() => {
+    if (!isLidarProject || !targets.includes("kitti")) {
+      setLidarCameraRoles([]);
+      setLidarCameraRole("");
+      setLidarRolesError(null);
+      return;
+    }
+    let cancelled = false;
+    setLidarRolesLoading(true);
+    setLidarRolesError(null);
+    projectsApi
+      .lidarCameraRoles(projectId)
+      .then((response) => {
+        if (cancelled) return;
+        setLidarCameraRoles(response.roles);
+        setLidarCameraRole(response.default_role ?? "");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLidarRolesError(error instanceof Error ? error.message : "相机角色加载失败");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLidarRolesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLidarProject, projectId, targets]);
 
   useEffect(() => {
     if (!isVideoProject || scopeMode !== "task") return;
@@ -326,6 +367,7 @@ function ExportForm({
     (!!selectedTaskId &&
       (rangeKind === "segments" ? segmentRangeValid : frameRangeValid) &&
       !scopeLoading);
+  const lidarRoleReady = !isLidarProject || !targets.includes("kitti") || !!lidarCameraRole;
   const videoExportScope: VideoExportScope | undefined =
     scopeMode !== "task" || !scopeValid
       ? undefined
@@ -362,6 +404,7 @@ function ExportForm({
     endSegmentId,
     frameFrom,
     frameTo,
+    lidarCameraRole,
   ]);
 
   const loadMoreTasks = async () => {
@@ -385,7 +428,7 @@ function ExportForm({
   };
 
   const handleExport = async () => {
-    if (targets.length === 0 || !scopeValid) return;
+    if (targets.length === 0 || !scopeValid || !lidarRoleReady) return;
     setBusy(true);
     try {
       const options: ExportOptions = {
@@ -396,6 +439,7 @@ function ExportForm({
           ? { videoOverlapPolicy }
           : {}),
         ...(targets.includes("mots") ? { motsFrameBase } : {}),
+        ...(lidarCameraRole ? { lidarCameraRole } : {}),
         ...(videoExportScope ? { scope: videoExportScope } : {}),
       };
       const checked =
@@ -503,6 +547,37 @@ function ExportForm({
           )}
         </div>
       </div>
+      {isLidarProject && targets.includes("kitti") && (
+        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
+          <label
+            htmlFor="lidar-kitti-camera-role"
+            className="text-xs font-semibold text-foreground"
+          >
+            KITTI 相机角色
+          </label>
+          <select
+            id="lidar-kitti-camera-role"
+            value={lidarCameraRole}
+            onChange={(event) => setLidarCameraRole(event.target.value)}
+            disabled={lidarRolesLoading}
+            className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+          >
+            <option value="">
+              {lidarRolesLoading ? "正在加载相机角色…" : "请选择完整标定的相机角色"}
+            </option>
+            {lidarCameraRoles.map((role) => (
+              <option key={role.role} value={role.role} disabled={!role.complete}>
+                {role.role} · {role.calibrated_frame_count}/{role.frame_count} 帧标定
+                {role.complete ? "" : "（不完整）"}
+              </option>
+            ))}
+          </select>
+          {lidarRolesError && <div className="text-xs text-status-danger">{lidarRolesError}</div>}
+          {!lidarRolesLoading && !lidarRolesError && lidarCameraRoles.length === 0 && (
+            <div className="text-xs text-status-caution">当前范围没有可用相机角色。</div>
+          )}
+        </div>
+      )}
       {isVideoProject && (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
           <label htmlFor="video-export-scope" className="text-xs font-semibold text-foreground">
@@ -810,7 +885,11 @@ function ExportForm({
         <button
           type="button"
           disabled={
-            busy || targets.length === 0 || !scopeValid || preflight?.loss_class === "unsupported"
+            busy ||
+            targets.length === 0 ||
+            !scopeValid ||
+            !lidarRoleReady ||
+            preflight?.loss_class === "unsupported"
           }
           onClick={handleExport}
           className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"

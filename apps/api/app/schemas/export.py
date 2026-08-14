@@ -45,3 +45,16 @@ class ExportRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     scope: VideoExportScopeRequest | None = None
+
+
+class LidarCameraRoleOut(BaseModel):
+    role: str
+    frame_count: int
+    calibrated_frame_count: int
+    sized_frame_count: int
+    complete: bool
+
+
+class LidarCameraRolesResponse(BaseModel):
+    roles: list[LidarCameraRoleOut]
+    default_role: str | None = None

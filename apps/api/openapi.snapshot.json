@@ -13434,6 +13434,66 @@
         "title": "LabelContentByType",
         "type": "object"
       },
+      "LidarCameraRoleOut": {
+        "properties": {
+          "calibrated_frame_count": {
+            "title": "Calibrated Frame Count",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sized_frame_count": {
+            "title": "Sized Frame Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "role",
+          "frame_count",
+          "calibrated_frame_count",
+          "sized_frame_count",
+          "complete"
+        ],
+        "title": "LidarCameraRoleOut",
+        "type": "object"
+      },
+      "LidarCameraRolesResponse": {
+        "properties": {
+          "default_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Role"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/LidarCameraRoleOut"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roles"
+        ],
+        "title": "LidarCameraRolesResponse",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "captcha_token": {
@@ -41885,6 +41945,27 @@
             }
           },
           {
+            "description": "LiDAR KITTI camera role; required when more than one complete role exists",
+            "in": "query",
+            "name": "lidar_camera_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "minLength": 8,
+                  "pattern": "^camera_[A-Za-z0-9_.-]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "LiDAR KITTI camera role; required when more than one complete role exists",
+              "title": "Lidar Camera Role"
+            }
+          },
+          {
             "in": "query",
             "name": "video_overlap_policy",
             "required": false,
@@ -42856,6 +42937,27 @@
             }
           },
           {
+            "description": "LiDAR KITTI camera role; required when more than one complete role exists",
+            "in": "query",
+            "name": "lidar_camera_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "minLength": 8,
+                  "pattern": "^camera_[A-Za-z0-9_.-]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "LiDAR KITTI camera role; required when more than one complete role exists",
+              "title": "Lidar Camera Role"
+            }
+          },
+          {
             "description": "Indexed PNG 的实例重叠策略；默认拒绝重叠",
             "in": "query",
             "name": "indexed_overlap_policy",
@@ -43171,6 +43273,71 @@
         "summary": "Guide Asset Upload Init",
         "tags": [
           "guide-assets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/lidar-camera-roles": {
+      "get": {
+        "operationId": "lidar_camera_roles_api_v1_projects__project_id__lidar_camera_roles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "batch_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LidarCameraRolesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Lidar Camera Roles",
+        "tags": [
+          "projects"
         ]
       }
     },
