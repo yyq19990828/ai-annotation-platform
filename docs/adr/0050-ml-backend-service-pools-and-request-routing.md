@@ -186,7 +186,7 @@ Super Admin：`GET/POST/GET/PATCH/DELETE /admin/ml-integrations/service-pools[/:
 
 ## Notes
 
-- 目标版本：**v0.23.3**，计划详见 [`docs/plans/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md`](../plans/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md)。本文是 P0 交付物；ADR 被接受之前可以完成 inventory / fixture / 实验脚本，但不得合并生产 schema 或请求切换（计划 §4）。
+- 目标版本：**v0.23.3**，计划详见 [`docs/plans/archive/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md`](../plans/archive/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md)。本文是 P0 交付物；ADR 被接受之前可以完成 inventory / fixture / 实验脚本，但不得合并生产 schema 或请求切换（计划 §4）。
 - 涉及代码（当前状态，待迁移）：
   - 数据模型：`apps/api/app/db/models/ml_backend_registry.py:18`（`MLBackendRegistry`）、`:84`（`ProjectMLBackend`）、`apps/api/app/db/models/project.py:43`（`Project.ml_backend_id`）、`apps/api/app/db/models/prediction.py:18`（`Prediction.ml_backend_id`，按月分区）、`:101`（`FailedPrediction.ml_backend_id`）、`apps/api/app/db/models/async_job.py:49`（`AsyncJob.payload / result`）、`apps/api/app/db/models/user.py:60`（`User.preferences`）。
   - 请求选择：`apps/api/app/services/ml_backend.py:131`（`get`）、`:582`（`get_interactive_backend`）、`:601`（`get_project_backend`）、`:618`（`get_tracker_backend_for_capabilities`）；`apps/api/app/services/ml_client.py:140`（`MLBackendClient`，被 12 个 prediction 站点 + 多个 lifecycle 站点构造）。

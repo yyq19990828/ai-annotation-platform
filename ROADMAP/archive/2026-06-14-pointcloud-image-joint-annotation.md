@@ -1,6 +1,8 @@
 # 点云 + 图像联合标注总路线图(2D⇄3D 互标)
 
-> 从 [ROADMAP.md](../ROADMAP.md) §A「3D 延伸项①」与 §C.8 旁支抽离的**3D 旗舰独立 epic**。性质:长程 epic,按 Phase 顺序推进,每 Phase 收尾配套精简本文 + 回写 CHANGELOG。
+> Status: superseded by [v0.24.x 3D 标注工作台优化 Epic](../../docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
+>
+> 从 [ROADMAP.md](../../ROADMAP.md) §A「3D 延伸项①」与 §C.8 旁支抽离的**3D 旗舰独立 epic**。性质:长程 epic,按 Phase 顺序推进,每 Phase 收尾配套精简本文 + 回写 CHANGELOG。
 >
 > 规划日期 2026-06-14 · 核心命题:让相机图像与点云**互为标注通道**——3D 框投影到相机图(读,**已完成**),以及在相机图上画/拖驱动 3D 框(写,本 epic)。对标 CVAT 3D / SUSTechPOINTS 的「2D 辅助 3D」杀手锏,是与纯点云工具拉开差距的护城河。
 
@@ -30,9 +32,9 @@
 
 ### Phase 1 · 2D 框种 3D 框(frustum fit)— v0.15.24 ✅ **已落地**
 
-在相机图上拖一个 2D 矩形 → 该相机标定反算视锥 → 框住落在锥内的点云 → `psrFromPoints` 拟合出 3D box 初值 → 切主视图微调。详细计划:[`docs/plans/archive/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md`](../docs/plans/archive/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md)。
+在相机图上拖一个 2D 矩形 → 该相机标定反算视锥 → 框住落在锥内的点云 → `psrFromPoints` 拟合出 3D box 初值 → 切主视图微调。详细计划:[`docs/plans/archive/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md`](../../docs/plans/archive/2026-06-14-v0.15.24-camera-2d-box-to-3d-frustum.md)。
 
-**已落地(v0.15.24)**:`geometry/frustum.ts`(视锥选点 + 深度门控 + 中央射线)+ `CameraProjectionView` 种框拖框交互 + 放大模态「种框」toggle 编排(选点→拟合→落 box_3d→选中)。MVP 收窄为**仅放大相机视图**启用(小浮动面板太小画不准)。详见 [CHANGELOG](../CHANGELOG.md)。
+**已落地(v0.15.24)**:`geometry/frustum.ts`(视锥选点 + 深度门控 + 中央射线)+ `CameraProjectionView` 种框拖框交互 + 放大模态「种框」toggle 编排(选点→拟合→落 box_3d→选中)。MVP 收窄为**仅放大相机视图**启用(小浮动面板太小画不准)。详见 [CHANGELOG](../../CHANGELOG.md)。
 
 **价值**:远处/稀疏目标在点云里难直接框,但在相机图上一眼可见、一框即生 3D 框。这是 2D 辅助 3D 的最高杠杆。
 

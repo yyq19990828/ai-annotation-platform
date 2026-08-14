@@ -170,7 +170,7 @@
 ## Notes
 
 - 研究与 fixture 合同：[`docs/research/20-mask-qc-format-contracts.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/research/20-mask-qc-format-contracts.md)。
-- 实施计划：[`docs/plans/2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/plans/2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md)。
+- 实施计划：[`docs/plans/archive/2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/plans/archive/2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md)。
 - 现有原子写入：`apps/api/app/services/mask_mutation.py`；现有 Tracker staged review：
   `apps/api/app/services/video_tracking/runner.py`。
 - 现有格式基线：`apps/api/app/services/exporting/`、`apps/api/app/services/annotations_import.py`、

@@ -18,7 +18,7 @@
 ### 超大图 Tile 与 Raster Mask 客户端计算
 
 详见
-[v0.23.21–v0.23.25 超大图 Tile 与 Raster Mask 客户端计算 Epic](docs/plans/2026-07-31-v0.23.21-v0.23.25-large-image-tile-webgpu-epic.md)。
+[v0.23.21–v0.23.25 超大图 Tile 与 Raster Mask 客户端计算 Epic](docs/plans/archive/2026-07-31-v0.23.21-v0.23.25-large-image-tile-webgpu-epic.md)。
 
 - Epic 已完成：不可变图片金字塔、viewport LOD/Konva tile、隐藏整图消费者收口、task-scoped
   背景/Mask 资源协调、packed CPU fallback 与 one-pass WebGPU 长会话均已封版。横/纵可分离 WebGPU
@@ -30,12 +30,13 @@
 - 超大图背景可以超过当前 Raster Mask 原生上限；Raster Mask 仍受单边 8192、总计
   67,108,864 pixels 和 morphology ROI 16,777,216 pixels 约束，扩大协议另立版本。
 
-### 点云与图像联合标注
+### 3D 标注工作台 0.24.x
 
-详见[点云 + 图像联合标注路线](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)。
+详见[v0.24.x 3D 标注工作台优化 Epic](docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)。
 
-- 在相机投影视图中拖拽手柄微调 3D 框。
-- 处理多相机一致性约束与 2D 派生导出。
+- 在放大相机投影视图中直接移动选中的 3D 框，保持所有相机、三视图和点云主视图同步。
+- 删除 KITTI 与 nuScenes 导出中的占位几何、时间和位姿，并提供多相机 COCO 派生 2D 导出。
+- 增加 scene 级 4D 时间轴与轨迹、标定、位姿质检摘要。
 
 ## 独立 Epic
 
@@ -118,7 +119,7 @@
 - [长期规划（12 个月以外）](ROADMAP/2026-05-12-long-term-strategy.md)
 - [CVAT / Label Studio 取经合集](ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)
 - [视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)
-- [点云 + 图像联合标注路线](ROADMAP/2026-06-14-pointcloud-image-joint-annotation.md)
+- [v0.24.x 3D 标注工作台优化 Epic](docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
 
 架构反模式与决策底线统一维护在
 [取经合集 §6](ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#6-避坑清单保持当前选择不要走回头路)，

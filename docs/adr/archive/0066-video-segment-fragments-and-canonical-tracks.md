@@ -59,6 +59,6 @@ overlap 两侧没有独立版本，不能作为 IAA 或 TrackEval 输入。
 
 ## Notes
 
-- 实施计划：`docs/plans/2026-08-13-v0.23.30-video-overlap-tracker-context-track-quality.md`
+- 实施计划：`docs/plans/archive/2026-08-13-v0.23.30-video-overlap-tracker-context-track-quality.md`
 - 相关 ADR：ADR-0018、ADR-0045、ADR-0047
 - 相关迁移：`apps/api/alembic/versions/0153_video_segment_fragments.py`

@@ -37,16 +37,16 @@ ADR-0022 的过渡决策，会丢失 hole、多连通区域和原始像素边界
 
 ## 2. 版本路线
 
-| 版本                                                                       | 主题                     | 必须交付的结果                                                                       | 依赖     |
-| -------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------ | -------- |
-| [v0.23.5](2026-07-21-v0.23.5-mask-reliability-security-foundation.md)      | 可靠性与安全地基         | 防丢稿、异步隔离、锁与 Delete 语义、安全解压、accept 并发、polygon hole / multi 止血 | v0.23.4  |
-| [v0.23.6](2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)              | 共享 RLE 与图片 geometry | ADR-0052、`raster_mask`、静态内容 API、AAP / COCO 后端闭环                           | v0.23.5  |
-| [v0.23.7](2026-07-21-v0.23.7-image-mask-workbench-native-editing.md)       | 图片原生 Mask 工作台     | 对象级安全渲染、alpha picking、项目 opt-in、创建 / 重载 / 再编辑、单对象双向显式转换 | v0.23.6  |
-| [v0.23.8](2026-07-21-v0.23.8-mask-ai-interaction-video-correction.md)      | AI 原生 Mask 与视频修正  | 单帧 SAM 原生 RLE、mask-as-prompt、scribble、局部视频纠错再传播                      | v0.23.7  |
-| [v0.23.9](2026-07-21-v0.23.9-mask-advanced-editing-instance-operations.md) | 高级编辑与实例操作       | 套索增减、连通域、填洞、形态学、非重叠绘制、批量 / 视频 / 派生几何转换               | v0.23.8  |
-| [v0.23.10](2026-07-21-v0.23.10-mask-performance-large-canvas.md)           | 性能与大画布             | 字节预算缓存、AABB 裁剪、Worker、tile editor、5K / 8K 可用性                         | v0.23.9  |
-| [v0.23.11](2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md)    | 质检、审阅与格式生态     | Mask QC、跨帧稳定性、局部接受、Label Studio / PNG / MOTS 等格式                      | v0.23.10 |
-| [v0.24.0](2026-07-21-v0.24.0-semantic-panoptic-mask-workflows.md)          | 语义 / 全景分割          | class-map、instance + semantic 合成、冲突策略、16-bit 输出与专用工作流               | v0.23.11 |
+| 版本                                                                               | 主题                     | 必须交付的结果                                                                       | 依赖     |
+| ---------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------ | -------- |
+| [v0.23.5](archive/2026-07-21-v0.23.5-mask-reliability-security-foundation.md)      | 可靠性与安全地基         | 防丢稿、异步隔离、锁与 Delete 语义、安全解压、accept 并发、polygon hole / multi 止血 | v0.23.4  |
+| [v0.23.6](archive/2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)              | 共享 RLE 与图片 geometry | ADR-0052、`raster_mask`、静态内容 API、AAP / COCO 后端闭环                           | v0.23.5  |
+| [v0.23.7](archive/2026-07-21-v0.23.7-image-mask-workbench-native-editing.md)       | 图片原生 Mask 工作台     | 对象级安全渲染、alpha picking、项目 opt-in、创建 / 重载 / 再编辑、单对象双向显式转换 | v0.23.6  |
+| [v0.23.8](archive/2026-07-21-v0.23.8-mask-ai-interaction-video-correction.md)      | AI 原生 Mask 与视频修正  | 单帧 SAM 原生 RLE、mask-as-prompt、scribble、局部视频纠错再传播                      | v0.23.7  |
+| [v0.23.9](archive/2026-07-21-v0.23.9-mask-advanced-editing-instance-operations.md) | 高级编辑与实例操作       | 套索增减、连通域、填洞、形态学、非重叠绘制、批量 / 视频 / 派生几何转换               | v0.23.8  |
+| [v0.23.10](archive/2026-07-21-v0.23.10-mask-performance-large-canvas.md)           | 性能与大画布             | 字节预算缓存、AABB 裁剪、Worker、tile editor、5K / 8K 可用性                         | v0.23.9  |
+| [v0.23.11](archive/2026-07-21-v0.23.11-mask-quality-review-format-ecosystem.md)    | 质检、审阅与格式生态     | Mask QC、跨帧稳定性、局部接受、Label Studio / PNG / MOTS 等格式                      | v0.23.10 |
+| [待排期](2026-07-21-semantic-panoptic-mask-workflows.md)                           | 语义 / 全景分割          | class-map、instance + semantic 合成、冲突策略、16-bit 输出与专用工作流               | v0.23.11 |
 
 顺延规则：任何版本未满足退出门，后续版本保持 blocked。不能在后续 UI 中临时补写前置数据合同，也不能为了赶版本绕过
 鉴权、乐观锁、对象校验或无损 round-trip。
@@ -137,7 +137,7 @@ Epic 完成前必须保留以下跨切片场景，并在相关版本逐步变绿
 - JSONB union 是加法扩展，但旧后端不认识新类型；一旦创建新类型，应用回滚采用 forward-fix，不直接切回旧镜像。
 - 内容对象格式保持兼容，关闭图片创建不能影响既有视频 Mask 或 GC。
 - 每个版本只在自身退出门满足后切换默认行为；保留上一个稳定路径至少一个顺延版本。
-- `v0.24.0` 的 semantic / panoptic schema 单独决策，不修改 `raster_mask` / `video_track_mask` 的 instance 语义。
+- semantic / panoptic schema 在延期计划中单独决策，不修改 `raster_mask` / `video_track_mask` 的 instance 语义。
 
 ## 8. Outcome 回填模板
 

@@ -86,7 +86,7 @@
 
 ## Evidence
 
-- 计划：[`docs/plans/2026-07-31-v0.23.22-large-image-pyramid-delivery-foundation.md`](../plans/2026-07-31-v0.23.22-large-image-pyramid-delivery-foundation.md)
+- 计划：[`docs/plans/archive/2026-07-31-v0.23.22-large-image-pyramid-delivery-foundation.md`](../plans/archive/2026-07-31-v0.23.22-large-image-pyramid-delivery-foundation.md)
 - 实现：`apps/api/app/workers/image_pyramid.py`
 - API：`apps/api/app/api/v1/tasks/image_pyramid.py`
 - 数据模型：`apps/api/app/db/models/image_pyramid.py`

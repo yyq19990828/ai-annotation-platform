@@ -90,4 +90,4 @@ stale、generation 和 lifecycle 计数，并与背景 tile、Mask compute 诊�
 - 背景 tile 决策见 [ADR-0063](0063-konva-viewport-image-tiles.md)。
 - Raster Mask 大画布真值边界见 [ADR-0054](0054-raster-mask-large-canvas-memory-and-tiles.md)。
 - 实施计划见
-  [`docs/plans/2026-07-31-v0.23.24-raster-tile-resource-coordination.md`](../plans/2026-07-31-v0.23.24-raster-tile-resource-coordination.md)。
+  [`docs/plans/archive/2026-07-31-v0.23.24-raster-tile-resource-coordination.md`](../plans/archive/2026-07-31-v0.23.24-raster-tile-resource-coordination.md)。

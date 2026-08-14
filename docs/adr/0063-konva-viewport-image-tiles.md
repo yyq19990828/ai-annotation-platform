@@ -94,6 +94,6 @@ Konva node。这样保留整数 crop/world 映射，同时避免连续平移时�
 
 - 服务端资产决策见 [ADR-0062](0062-immutable-image-pyramid-assets.md)。
 - 实施计划见
-  [`docs/plans/2026-07-31-v0.23.23-large-image-konva-viewport-tiles.md`](../plans/2026-07-31-v0.23.23-large-image-konva-viewport-tiles.md)。
+  [`docs/plans/archive/2026-07-31-v0.23.23-large-image-konva-viewport-tiles.md`](../plans/archive/2026-07-31-v0.23.23-large-image-konva-viewport-tiles.md)。
 - 客户端合同实现位于 `apps/web/src/pages/Workbench/stage/imagePyramid.ts` 与
   `imageTileScheduler.ts`。

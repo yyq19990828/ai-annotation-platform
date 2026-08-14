@@ -99,4 +99,4 @@ admission 在插入前完成；只有当前编辑和 selected 对象可 pin。�
 - 实施后两轮复测通过 4K pointer / pointer-up、8K sparse 交互 / merge、16 MiB GC heap 增量和全部显式资源归零退出门；聚合数据为 `docs/research/data/19-mask-large-canvas-performance-final.json`。
 - 当前显示缓存：`apps/web/src/pages/Workbench/stage/shared/useRasterMaskRecords.ts`。
 - 当前 dense editor：`apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts`、`apps/web/src/pages/Workbench/stage/MaskOverlayLayer.tsx`。
-- 实施计划：`docs/plans/2026-07-21-v0.23.10-mask-performance-large-canvas.md`。
+- 实施计划：`docs/plans/archive/2026-07-21-v0.23.10-mask-performance-large-canvas.md`。

@@ -11,6 +11,12 @@
 - `2026-05-08-docs-deep-optimization.md`
 - `2026-05-08-v0.9.10-admin-feedback.md`
 
+## 活跃计划与归档
+
+`docs/plans/` 根目录只保留当前 minor 版本及尚未被替代的无版本 Epic / 草案。开始下一个 minor 版本时，把此前 minor 及更早的版本计划移入 `docs/plans/archive/`，并同步修正所有 Markdown 引用。
+
+当前归档线包含 v0.23.x 及以前的版本计划。无版本号文件不能只按日期归档：仍约束后续版本的 Epic 留在根目录，已完成、废弃或被新计划替代后再移动。
+
 ## 完成后必须执行
 
 每个 plan 实施完成后，必须做 3 件事：
@@ -36,6 +42,4 @@
 
 `docs.yml` 中的 `validate` job 会扫描超过 30 天未补 `## Outcome` 段的 plan，输出 warning（不阻断合并）。如果某个 plan 注定无 outcome（探索性废案），请在文件顶部加 `> Status: abandoned` 说明。
 
-## 索引页
-
-`docs-site/dev/plans-index.md` 由 `docs-site/scripts/extract-completed-plans.mjs` 从本目录自动生成（每次 `pnpm docs:build` 触发），列出所有已完成 plan 的标题、日期与 outcome 摘要。
+`docs-site/scripts/check-plans-freshness.mjs` 只扫描根目录中的活跃计划，归档文件不再参与陈旧计划提醒。
