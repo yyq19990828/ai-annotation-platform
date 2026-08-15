@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.10.15
 status: stable
-last_reviewed: 2026-08-12
+last_reviewed: 2026-08-15
 ---
 
 # 外部预测导入 / 导出
@@ -154,5 +154,12 @@ Dashboard 项目卡片右下角 `⋮` → **「清理预测」**。
 - 入口在 Dashboard 项目卡片 / 列表行右下角 `⋮` → **「导出标注数据」**，打开导出弹窗，可选导出范围（整个项目 / 单个批次）与一个或多个目标格式。
 - 点击「开始导出」后任务进入后台队列；可在顶栏「后台任务」查看进度。完成行会列出项目、目标格式、ZIP 文件数与大小，并提供「下载」入口。
 - AAP JSON 是无损中间格式，能把 `predictions[]` 连同 `confidence` / `model_version` 带出，也能用 `annotations[]` + `mask_objects` 迁移视频栅格 mask track，常用于跨实例迁移与离线回填闭环。
+
+<DocsVideo
+  src="/media/datasets/background-export-download.mp4"
+  poster="/media/datasets/background-export-download-poster.webp"
+  alt="同时配置 COCO 与 AAP JSON 导出，在后台任务中查看进度并下载完成的 ZIP 产物"
+  caption="导出在后台执行；完成后可核对格式、文件数和大小，再下载 ZIP 产物。"
+/>
 
 各格式的字段映射、目录结构、回源脚本等细节见 [导出格式参考](../reference/export-formats)。导出后按 task / scene 维度核对任务时，可用 [Data Manager](../projects/data-manager) 的「AI 待审」视图快速定位尚未处理的检测 shape 或视频追踪候选。
