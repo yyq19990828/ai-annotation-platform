@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T16:38:41.202Z",
+  "updated_at": "2026-08-15T16:45:25.293Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1452,8 +1452,8 @@
     "docs-site/public/media/pointcloud/crossframe-track-poster.webp": {
       "asset_id": "pointcloud-crossframe-track",
       "role": "poster",
-      "generated_at": "2026-08-15T16:38:41.202Z",
-      "captured_commit": "6a55e1b3fcea7723a0b01875003041047fcefc60",
+      "generated_at": "2026-08-15T16:45:25.293Z",
+      "captured_commit": "c9860dd87a13212662f70abbfb3470e8ae6a5390",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
@@ -1464,8 +1464,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "b13cafc19f3e4c4eeb774ae3fd60a14bbe9788d368d5f3ac2ebdefe6a27b0473",
-      "bytes": 37238,
+      "sha256": "3c61d86af3a38ad12aa7234401ce31b3d12a1c991ddc93ddf1222e0cbf500e23",
+      "bytes": 37316,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1475,16 +1475,16 @@
         "duration_seconds": null
       },
       "source_asset": {
-        "runId": "20260815T163539Z-6a55e1b3fcea",
+        "runId": "20260815T164247Z-c9860dd87a13",
         "assetId": "pointcloud-crossframe-track",
-        "sha256": "a26cacb6ea9b140e7fff8738273a64d8f2faa509043a412f4834f4c81825fe9f"
+        "sha256": "bddec2e09941a12a64826687ea3022d1a3cd6eb14ea54e22fe423eaad9c3b063"
       }
     },
     "docs-site/public/media/pointcloud/crossframe-track.mp4": {
       "asset_id": "pointcloud-crossframe-track",
       "role": "docs-video",
-      "generated_at": "2026-08-15T16:38:41.131Z",
-      "captured_commit": "6a55e1b3fcea7723a0b01875003041047fcefc60",
+      "generated_at": "2026-08-15T16:45:25.221Z",
+      "captured_commit": "c9860dd87a13212662f70abbfb3470e8ae6a5390",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
@@ -1495,20 +1495,20 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "251e2aec83bbdb980f94556ed485b24817dd7f3d1f54e521a262a9cbf349698d",
-      "bytes": 431367,
+      "sha256": "b0c40b85e832bc206a627e650eab7362b1e536eeb70102eb9525cfa719a53a8b",
+      "bytes": 440201,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 22.2
+        "duration_seconds": 22.167
       },
       "source_asset": {
-        "runId": "20260815T163539Z-6a55e1b3fcea",
+        "runId": "20260815T164247Z-c9860dd87a13",
         "assetId": "pointcloud-crossframe-track",
-        "sha256": "a26cacb6ea9b140e7fff8738273a64d8f2faa509043a412f4834f4c81825fe9f"
+        "sha256": "bddec2e09941a12a64826687ea3022d1a3cd6eb14ea54e22fe423eaad9c3b063"
       }
     },
     "docs-site/public/media/pointcloud/orbit-poster.webp": {
