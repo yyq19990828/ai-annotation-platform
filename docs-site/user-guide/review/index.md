@@ -3,7 +3,7 @@ audience: [reviewer]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-15
 ---
 
 # 审核流程
@@ -49,7 +49,12 @@ last_reviewed: 2026-08-11
 
 完整退回流程会先定位待审任务，再选择结构化原因、填写补充说明并确认：
 
-![从待审任务到确认退回的完整流程](../images/review/reject-flow.gif)
+<DocsVideo
+  src="/media/review/reject-flow.mp4"
+  poster="/media/review/reject-flow-poster.webp"
+  alt="从质检批次卡片进入审核工作台，核对错误车辆框并填写结构化原因退回任务"
+  caption="退回前批次有 2 条待审；确认“位置或尺寸不准”并填写明确返工要求后，任务离开待审队列，批次卡片同步变为 1/2。"
+/>
 
 ### 退回接口请求体
 

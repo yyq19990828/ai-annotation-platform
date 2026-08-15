@@ -139,7 +139,7 @@
 - [ ] `images/datasets/list-filters-and-repair.png` — 数据集页类型筛选 + 数据集卡操作；红框：图像 / 视频 / 3D / 多模态筛选、缺失视频元数据补生成入口 **[Tier B]** [manual]
 - [ ] `images/datasets/prediction-match-preview.png` — 导入预测预览校验：匹配成功、未匹配、同名歧义三类结果；红框：实际匹配键与确认导入按钮 **[Tier B]** [manual]
 - [x] `public/media/projects/ml-routing.mp4` — 项目启用 YOLO、即时设为主后端，并在工作台核对当前题 YOLO 与 Smart Point → SAM3 的能力分流 **[Tier A]** `[derived-mp4]`
-- [ ] `images/review/batch-card-grid.png` — 质检审核 landing 的批次卡片网格新布局；替换旧批次树截图，红框：待审数、进度条、进入批次按钮 **[Tier A]** `[auto]`
+- [x] `public/media/review/reject-flow.mp4` — 质检审核 landing 的批次卡片（待审 2/2）→ 进入任务列表与审核画布 → 结构化退回 → 返回卡片确认待审降为 1/2 `[derived-mp4]` **[Tier A]**
 - [ ] `images/review/bulk-review-toolbar.png` — 选中多条待审任务后的批量操作栏；红框：已选数量、批量通过 / 退回、跨页选择边界 **[Tier B]** [manual]
 - [ ] `images/superadmin/platform-overview.png` — 超级管理员「平台概览」全屏；红框：系统健康、近期活动、平台统计，并与「项目管理」入口区分 **[Tier A]** `[auto]`
 
@@ -202,7 +202,7 @@
 
 - [x] `images/review/workbench.png` — 审核三栏全图 + 操作面板 [auto]
 - [x] `images/review/reject-form.png` — 退回备注表单 [auto]
-- [x] `images/review/reject-flow.gif` — 定位待审任务 → 选择结构化原因 → 填写补充说明并确认退回 `[auto-gif]`（flows/review-reject）
+- [x] `public/media/review/reject-flow.mp4` — 批次进度 → 审核画布最终 / diff 核对 → 选择结构化原因 → 填写补充说明 → 真实退回与计数更新 `[derived-mp4]`
 - [x] `images/review/review-list-page.png` — ReviewPage 左侧批次树 + 任务列表（缩略图 + 批量操作按钮）`[auto]`
 
 ### 平台管理
