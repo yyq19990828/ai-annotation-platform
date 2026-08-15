@@ -723,6 +723,36 @@
         "docs-site/user-guide/workbench/video-playback.md"
       ]
     },
+    "docs-site/public/media/video/propagate-track-vs-copy-poster.webp": {
+      "last_verified_commit": "57e64245a4bfcf0371f50686d559bb79adba5e0d",
+      "verified_at": "2026-08-15T22:28:19.694Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "2aad994eabc21a6c83c02a5083a8e06fd300065e17e81da6d3c2c1503ee2f903",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/propagate-track-vs-copy-poster.webp",
+        "docs-site/user-guide/workbench/video-propagate.md"
+      ]
+    },
+    "docs-site/public/media/video/propagate-track-vs-copy.mp4": {
+      "last_verified_commit": "57e64245a4bfcf0371f50686d559bb79adba5e0d",
+      "verified_at": "2026-08-15T22:28:19.694Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "7dca9a11070bb3f3075b830230f53bb00db0e111a1b612466b029f400d6d39b6",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/propagate-track-vs-copy.mp4",
+        "docs-site/user-guide/workbench/video-propagate.md"
+      ]
+    },
     "docs-site/public/media/video/track-batch-propagate-poster.webp": {
       "last_verified_commit": "d6c269b436a0a28077a33b83d440960bb9172779",
       "verified_at": "2026-08-15T17:57:56.085Z",
