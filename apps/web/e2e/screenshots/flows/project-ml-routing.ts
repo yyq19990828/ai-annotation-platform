@@ -7,9 +7,13 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { installScreenshotEnvironment } from "../environment";
 import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
-import { waitForRecordingWorkbenchLayout } from "./_workbench-layout";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingWorkbenchLayout,
+} from "./_workbench-layout";
 
 const BATCH_BACKEND_NAME = "yolo-backend";
 const pointerByPage = new WeakMap<Page, { x: number; y: number }>();
@@ -48,7 +52,20 @@ export async function runProjectMlRouting(
     throw new Error("[project-ml-routing] image_demo 主后端必须声明 point 交互能力");
   }
 
+  // 同一浏览器窗口内后台预载工作台。设置完成后只在后台刷新一次项目路由，
+  // 点击「打开工作台」时切到已就绪 tab，避免把路由切换期的空白画面录进母版。
+  const workbenchPage = await page.context().newPage();
+  await installScreenshotEnvironment(workbenchPage);
+  await workbenchPage.goto(`/projects/${project.id}/annotate?task=${project.tasks.annotating.id}`);
+  await installRecordingWorkbenchLayout(workbenchPage, "none");
+  await workbenchPage.reload({ waitUntil: "domcontentloaded" });
+  const stage = workbenchPage.getByTestId("workbench-stage");
+  await stage.waitFor({ state: "visible", timeout: 15_000 });
+  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
+  await waitForRecordingWorkbenchLayout(workbenchPage, "none");
+
   await page.goto(`/projects/${project.id}/settings?section=ml-backends`);
+  await page.bringToFront();
   await expect(page.getByRole("heading", { name: project.name, exact: true })).toBeVisible({
     timeout: 10_000,
   });
@@ -119,45 +136,49 @@ export async function runProjectMlRouting(
   const mainBackendSelect = page.locator("select").first();
   await expect(mainBackendSelect).toHaveValue(batchBackendId);
   await expect(batchRow.getByText("主后端", { exact: true })).toBeVisible();
+
+  // 刷新发生在后台 tab；用户看到的前台仍是已完成设置的双后端清单。
+  await workbenchPage.reload({ waitUntil: "domcontentloaded" });
+  await stage.waitFor({ state: "visible", timeout: 15_000 });
+  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
+  await waitForRecordingWorkbenchLayout(workbenchPage, "none");
+  await page.bringToFront();
   await page.waitForTimeout(3_000);
 
   const openWorkbench = page.getByRole("button", { name: "打开工作台", exact: true });
   await moveTo(page, openWorkbench);
   await openWorkbench.click();
-  const stage = page.getByTestId("workbench-stage");
-  await stage.waitFor({ state: "visible", timeout: 15_000 });
-  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
-  await waitForRecordingWorkbenchLayout(page, "none");
-  await page.waitForTimeout(2_300);
+  await workbenchPage.bringToFront();
+  await workbenchPage.waitForTimeout(2_300);
 
-  const singleTaskAi = page.getByTestId("workbench-ai-single");
-  await moveTo(page, singleTaskAi);
+  const singleTaskAi = workbenchPage.getByTestId("workbench-ai-single");
+  await moveTo(workbenchPage, singleTaskAi);
   await singleTaskAi.click();
-  const aiPanel = page.getByTestId("ai-prediction-popover");
+  const aiPanel = workbenchPage.getByTestId("ai-prediction-popover");
   await expect(aiPanel).toBeVisible();
   const batchSelector = aiPanel.getByLabel("本次 backend");
   await expect(batchSelector).toHaveValue(batchBackendId);
   await expect(batchSelector.locator("option:checked")).toHaveText(
     `${BATCH_BACKEND_NAME}（项目主后端）`,
   );
-  await page.waitForTimeout(3_000);
+  await workbenchPage.waitForTimeout(3_000);
 
   const closeAiPanel = aiPanel.getByTitle("关闭当前题 AI");
-  await moveTo(page, closeAiPanel);
+  await moveTo(workbenchPage, closeAiPanel);
   await closeAiPanel.click();
   await expect(aiPanel).toBeHidden();
 
-  const smartPoint = page.getByTestId("tool-btn-smart-point");
+  const smartPoint = workbenchPage.getByTestId("tool-btn-smart-point");
   await expect(smartPoint).toBeEnabled();
-  await moveTo(page, smartPoint);
+  await moveTo(workbenchPage, smartPoint);
   await smartPoint.click();
-  const interactiveToolbar = page.getByTestId("interactive-toolbar");
+  const interactiveToolbar = workbenchPage.getByTestId("interactive-toolbar");
   await expect(interactiveToolbar).toBeVisible();
   const interactiveSelector = interactiveToolbar.getByTestId("ai-tool-backend-select");
   await expect(interactiveSelector).toBeDisabled();
   await expect(interactiveSelector).toHaveValue(interactiveBackend.name);
   await expect(interactiveSelector.locator("option:checked")).toHaveText(interactiveBackend.name);
-  await page.waitForTimeout(4_200);
+  await workbenchPage.waitForTimeout(4_200);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }
