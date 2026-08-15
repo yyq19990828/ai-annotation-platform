@@ -31,6 +31,7 @@ import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
+import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -103,6 +104,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-cross-frame-points": "video-multi-seed-tracking.ts",
   "video-tracker-positive-negative": "video-multi-seed-tracking.ts",
   "video-tracker-box-seed": "video-multi-seed-tracking.ts",
+  "video-tracker-text-discovery": "video-tracker-text-discovery.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1121,6 +1123,23 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoMultiSeedTracking(page, cached, "box-seed");
     await finalize(page, "video-tracker-box-seed", undefined, drawTrim(win, t0));
+  });
+
+  test("video-tracker-text-discovery — 文本发现双目标并采纳轨迹", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
+    const t0 = Date.now();
+    await seed.enableMLBackendByName(
+      cached.projects.video_demo.id,
+      cached.users.project_admin.email,
+      "sam3-backend",
+    );
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runVideoTrackerTextDiscovery(page, cached);
+    await finalize(page, "video-tracker-text-discovery", undefined, drawTrim(win, t0));
   });
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {
