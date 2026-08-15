@@ -114,17 +114,15 @@
 ### AI 入口与当前题执行
 
 - [ ] `images/ai/task-entry-map.png` — AI 五类入口关系图：图片交互式 AI / 当前题 AI / 二次推理 / 批量预标 / 视频 AI 追踪；用箭头标出工作台、`/ai-pre`、模型市场三类页面边界，建议矢量图而非真截图 **[Tier A]** [manual]
-- [ ] `images/ai/current-task-image-panel.png` — 图片工作台顶部「当前题 AI」面板展开态；红框：模型选择、参数区、「运行当前题」、候选结果入口 **[Tier A]** [manual]
-- [ ] `images/ai/current-task-video-frame.png` — 视频工作台当前帧 AI：顶部 AI 面板 + 画布 violet `video_bbox` 候选 + 时间轴当前帧；强调“只处理当前帧” **[Tier A]** [manual]
-- [ ] `images/ai/secondary-inference-panel.png` — 已确认父 bbox / polygon 选中后打开「✦ 二次推理」；红框：父对象、可用模型、阈值 / 文本参数、运行按钮 **[Tier A]** [manual]
-- [ ] `images/ai/secondary-inference-result.png` — 二次推理完成后的父属性补写 + 子框结果；红框：属性旁 `✦ AI` 溯源徽标、父子关系、人工修改后徽标消失前后对比 **[Tier B]** [manual]
+- [x] `public/media/ai/current-task-image-inference.mp4` — 图片工作台展开当前题 AI 面板 → 运行项目编排 → 同时核对画布与候选列表 → 采纳为正式标注 `[derived-mp4]` **[Tier A]**
+- [x] `public/media/ai/current-frame-video-inference.mp4` — 视频工作台定位清晰帧 → 运行当前帧 AI → 核对 violet 候选与置信度 → 采纳后切换相邻帧确认单帧作用域 `[derived-mp4]` **[Tier A]**
+- [x] `public/media/ai/secondary-inference-attribute.mp4` — 选中已确认父框 → 展开二次推理面板 → 写回带 AI 溯源的属性 → 人工修正文案并保留其余属性来源 `[derived-mp4]` **[Tier A]**
 - [ ] `images/ai/current-task-model-availability.png` — 当前题模型选择器的可用 / 置灰项对照；红框：能力不匹配原因、项目未启用提示、跳转 ML 模型设置入口 **[Tier B]** [manual]
 
 ### 图片候选审阅与数据边界
 
-- [ ] `images/ai/candidate-review-overview.png` — 图片工作台 AI 待审候选总览；同时露出画布 violet 候选、右侧候选列表、接受 / 拒绝按钮与来源信息 **[Tier A]** [manual]
+- [x] `public/media/ai/candidate-review-lifecycle.mp4` — 三个 violet 候选与右侧审阅入口同时可见 → 跳过、采纳、驳回 → 焦点自动前进 → 正式 Annotation 与最终候选计数可核对 `[derived-mp4]` **[Tier A]**
 - [x] `public/media/ai/candidate-keyboard-review.mp4` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** `[derived-mp4]`
-- [ ] `images/ai/prediction-to-annotation.png` — 同一对象“候选 Prediction → 接受后 Annotation”的前后对比；红框：颜色 / 来源标记变化、接受后仍可编辑 **[Tier A]** [manual]
 - [ ] `images/ai/candidate-source-badges.png` — 候选列表按来源展示 ML Backend / 外部导入 / 交互式结果；红框：来源徽标、模型版本与置信度 **[Tier B]** [manual]
 
 ### 后台任务与失败恢复
