@@ -37,6 +37,7 @@ import { runSmartScribble } from "./smart-scribble";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
+import { runCurrentTaskImageInference } from "./current-task-image-inference";
 import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
@@ -99,6 +100,7 @@ function flowWatchPaths(assetId: string): string[] {
     "apps/web/e2e/screenshots/_helpers/recorder.ts",
     "apps/web/e2e/fixtures/seed.ts",
     "apps/api/app/services/screenshot_seed_spec.py",
+    "apps/api/app/services/screenshot_seed_backends.py",
   ].filter((candidate, index, all) => all.indexOf(candidate) === index);
 }
 
@@ -197,6 +199,7 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
       record.taskId,
       "--celery-task-id",
       record.celeryTaskId,
+      ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
@@ -681,6 +684,25 @@ test.describe("flow recordings", () => {
     if (!cleanupRecord) throw new Error("[ocr-inference] 未记录无痕清理标识");
     cleanupOcrRecording(cleanupRecord);
     await finalizeMarketingBackedHomepageAsset(page, "ocr-real-scene", drawTrim(win, t0));
+  });
+
+  test("current-task-image-inference — 项目编排推理到人工采纳", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000);
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    let cleanupRecord: OcrCleanupRecord | null = null;
+    const win = await runCurrentTaskImageInference(page, cached, (record) => {
+      cleanupRecord = record;
+      ocrCleanupRecords.push(record);
+    });
+    if (!cleanupRecord) {
+      throw new Error("[current-task-image-inference] 未记录无痕清理标识");
+    }
+    cleanupOcrRecording(cleanupRecord);
+    await finalize(page, "current-task-image-inference", undefined, drawTrim(win, t0));
   });
 
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {

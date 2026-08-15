@@ -2,9 +2,9 @@
 """Precisely remove persistent data created by one screenshot OCR recording.
 
 This helper is intentionally limited to the screenshot-managed OCR project. It
-cleans the exact task, Celery job, and Celery result named by the recorder; it
-never scans or mutates user-owned projects. Audit rows are immutable by design
-and are deliberately not bypassed here.
+cleans the exact task, accepted annotations, Celery job, and Celery result named
+by the recorder; it never scans or mutates user-owned projects. Audit rows are
+immutable by design and are deliberately not bypassed here.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ if str(_API_ROOT) not in sys.path:
 
 from app.config import settings  # noqa: E402
 from app.db.models.async_job import AsyncJob  # noqa: E402
+from app.db.models.annotation import Annotation  # noqa: E402
 from app.db.models.dataset import Dataset, ProjectDataset  # noqa: E402
 from app.db.models.project import Project  # noqa: E402
 from app.db.models.task import Task  # noqa: E402
@@ -41,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-id", type=uuid.UUID, required=True)
     parser.add_argument("--task-id", type=uuid.UUID, required=True)
     parser.add_argument("--celery-task-id", required=True)
+    parser.add_argument("--annotation-id", type=uuid.UUID, action="append", default=[])
     return parser.parse_args()
 
 
@@ -104,6 +106,12 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                 project_id=args.project_id,
                 task_id=args.task_id,
             )
+            annotation_result = await db.execute(
+                delete(Annotation).where(
+                    Annotation.id.in_(args.annotation_id),
+                    Annotation.task_id == args.task_id,
+                )
+            )
             prediction_counts = await BatchService(db).clean_task_predictions(
                 [args.task_id]
             )
@@ -128,6 +136,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
 
     return {
         **prediction_counts,
+        "annotations": annotation_result.rowcount or 0,
         "async_jobs": job_result.rowcount or 0,
     }
 

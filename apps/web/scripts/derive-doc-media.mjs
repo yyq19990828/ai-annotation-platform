@@ -17,6 +17,7 @@ const TARGETS = new Map(
     ["ai-assisted-annotation", "ai/assisted-annotation"],
     ["candidate-keyboard-review", "ai/candidate-keyboard-review"],
     ["ocr-real-scene", "ai/ocr-current-task"],
+    ["current-task-image-inference", "ai/current-task-image-inference"],
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
     ["video-mask-track-edit", "video/mask-track-edit"],

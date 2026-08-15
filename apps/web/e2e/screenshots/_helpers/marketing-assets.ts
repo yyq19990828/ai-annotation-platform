@@ -143,6 +143,23 @@ const assetSpecs = [
     editingNotes: ["可压缩推理等待时间，但需保留明确的运行中状态。"],
   }),
   defineAsset({
+    assetId: "current-task-image-inference",
+    title: "当前题图片编排推理",
+    theme: "项目编排驱动的单题推理与人工采纳",
+    objective: "展示运行已保存的项目编排、检查候选几何与置信度，并把一个候选采纳为正式标注。",
+    duration: { minSeconds: 15, targetSeconds: 19, maxSeconds: 90 },
+    shots: [
+      "从已完成加载的真实 OCR 图片开始，打开当前题 AI。",
+      "运行项目已保存的 OCR 编排，并保留明确的推理中状态。",
+      "展示文字多边形候选、识别文本、待审计数和置信度。",
+      "选中一个有意义的候选并采纳，展示候选减少且正式标注增加。",
+    ],
+    editingNotes: [
+      "该母版不包含登录、首屏空白或项目编排编辑；只展示当前题的执行与人工接管。",
+      "不得批量采纳全部候选，保留其余待审项才能清楚呈现候选到正式标注的状态变化。",
+    ],
+  }),
+  defineAsset({
     assetId: "rotated-bbox",
     title: "旋转框绘制",
     theme: "有方向目标的框选与角度调整",

@@ -14,6 +14,7 @@ export interface OcrCleanupRecord {
   projectId: string;
   taskId: string;
   celeryTaskId: string;
+  annotationIds: string[];
 }
 
 export interface OcrInferenceRecording extends DrawWindow, OcrCleanupRecord {}
@@ -83,6 +84,7 @@ export async function runOcrInference(
     projectId: project.id,
     taskId: task.id,
     celeryTaskId: body.job_id,
+    annotationIds: [],
   };
   onDispatched?.(cleanupRecord);
 

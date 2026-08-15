@@ -78,6 +78,7 @@ class ProjectSpec:
     tasks: tuple[TaskSpec, ...]
     media_paths: tuple[str, ...] = ()
     required_backend: str | None = None
+    default_pipeline_model_id: str | None = None
     batches: tuple[BatchSpec, ...] = ()
     require_members: bool = False
     axis_convention: str | None = None
@@ -441,5 +442,6 @@ PROJECT_SPECS = {
         storage_prefix="ocr-dev/",
         tasks=(TaskSpec("ocr", "ocr-dev/ch_en_num.jpg"),),
         required_backend="ocr",
+        default_pipeline_model_id="ocr-e2e",
     ),
 }
