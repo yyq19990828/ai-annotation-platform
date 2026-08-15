@@ -141,6 +141,15 @@ export async function runPointcloudCameraSeed3dBox(
   await page.mouse.up();
   await page.waitForTimeout(2_500);
 
+  // 回到同步相机图完成因果闭环：初始 2D 提示已生成真实 3D 框，
+  // 核对空间包围后，最后再展示该框稳定重投影到原目标。
+  await page.getByTitle("放大相机").first().click();
+  await expect(page.getByRole("button", { name: "关闭 ✕" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "种框 ⊹" })).toBeVisible();
+  await page.waitForTimeout(2_800);
+  await page.getByRole("button", { name: "关闭 ✕" }).click();
+  await page.waitForTimeout(1_200);
+
   return {
     drawStartMs,
     drawEndMs: Date.now(),
