@@ -4,8 +4,8 @@
   "review_profile": "visual-content-v1",
   "entries": {
     "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp": {
-      "last_verified_commit": "5070bb26fde23c1611a64afabe877b58cbc115bc",
-      "verified_at": "2026-08-15T09:57:09.286Z",
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "65db92e835a2f604fe718ed184496ec961851ac491cb44aa016250789816cb79",
@@ -19,8 +19,8 @@
       ]
     },
     "docs-site/public/media/ai/candidate-review-lifecycle.mp4": {
-      "last_verified_commit": "5070bb26fde23c1611a64afabe877b58cbc115bc",
-      "verified_at": "2026-08-15T09:57:09.286Z",
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "0fb5fecadbe65bed180c27f8bb247024aa89b9a0565060fb170d7c7a2fbf4162",
@@ -33,9 +33,39 @@
         "docs-site/user-guide/ai/candidate-review.md"
       ]
     },
+    "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "760ebcd5163f2f18c131370b15f205cf683d8e3eb2c68977b88b82f79ecb9f77",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/mask-correction-propagate-poster.webp",
+        "docs-site/user-guide/workbench/mask-brush.md"
+      ]
+    },
+    "docs-site/public/media/video/mask-correction-propagate.mp4": {
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "21f79a27f2b497d116a4b0f7507c225f10ced3bdcae084177f59e867eb967d0b",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/mask-correction-propagate.mp4",
+        "docs-site/user-guide/workbench/mask-brush.md"
+      ]
+    },
     "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
-      "last_verified_commit": "f131d6933d13290a256b9dc9679a5698a782d7f0",
-      "verified_at": "2026-08-15T10:10:56.705Z",
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "6944c2653f7d54d19ccd59518508c6c4b20e51ca2a5aa1fb1f9c3d96a27bbbdc",
@@ -49,8 +79,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery.mp4": {
-      "last_verified_commit": "f131d6933d13290a256b9dc9679a5698a782d7f0",
-      "verified_at": "2026-08-15T10:10:56.705Z",
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "02612037abddeffe0a30853c8daa0b7c296bb371f6dab56d29a245961b190004",
@@ -64,8 +94,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery-poster.webp": {
-      "last_verified_commit": "3cb26a3ff3030b7a6d40512f015f6242d4905566",
-      "verified_at": "2026-08-15T09:56:33.855Z",
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "1256dc27eb155abbe96b485c54ac7481f3d7201e53b2c4e2cb5322d2a780a1c0",
@@ -79,8 +109,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery.mp4": {
-      "last_verified_commit": "3cb26a3ff3030b7a6d40512f015f6242d4905566",
-      "verified_at": "2026-08-15T09:56:33.855Z",
+      "last_verified_commit": "6e6a72bceb33c8bbb96c862c21d0e272f9f3fd2b",
+      "verified_at": "2026-08-15T11:11:34.411Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "61f420cbc20d794b78e51f88ef73f941381374facb3574df339f94290ed2490d",
