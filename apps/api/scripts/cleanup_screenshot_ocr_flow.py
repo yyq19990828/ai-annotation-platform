@@ -161,6 +161,10 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                     for seed in seeds
                     if isinstance(seed, dict) and seed.get("source_annotation_id")
                 }
+                # 单轨迹传播把源标注存在 job.annotation_id；批量传播
+                # 才把各源写入 prompt.seeds[].source_annotation_id。
+                if job.annotation_id is not None:
+                    source_ids.add(job.annotation_id)
                 if source_ids != expected_source_ids:
                     raise RuntimeError(
                         "cleanup video tracker sources do not match supplied annotations"

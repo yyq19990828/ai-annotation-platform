@@ -170,7 +170,7 @@ export async function runVideoPropagateTrackVsCopy(
     const aiDialog = page.getByTestId("video-tracker-propagate-dialog");
     await aiDialog.waitFor({ state: "visible", timeout: 5_000 });
     const impact = await aiDialog.getByTestId("tracker-impact-summary").textContent();
-    if (impact?.trim() !== "延展当前轨迹 · 「bus」") {
+    if (impact?.trim() !== "延展当前轨迹「bus」") {
       throw new Error(
         `[video-propagate-track-vs-copy] AI 作用范围摘要错误：${impact ?? "missing"}`,
       );
@@ -191,7 +191,7 @@ export async function runVideoPropagateTrackVsCopy(
     const created = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
-        response.url().endsWith(`/tasks/${task.id}/video:track`) &&
+        response.url().endsWith(`/tasks/${task.id}/video/tracks/${sourceAnnotationId}:propagate`) &&
         response.status() === 202,
       { timeout: 20_000 },
     );
