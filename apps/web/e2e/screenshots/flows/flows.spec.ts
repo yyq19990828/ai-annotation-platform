@@ -36,6 +36,10 @@ import { runPointcloudView } from "./pointcloud-view";
 import { runPointcloudCameraSeed3dBox } from "./pointcloud-camera-seed-3d-box";
 import { runPointcloudCrossframeTrack } from "./pointcloud-crossframe-track";
 import { runPointcloudBillboardLabel } from "./pointcloud-billboard-label";
+import {
+  runStorageConnectorCreateTest,
+  STORAGE_CONNECTOR_RECORDING_NAME,
+} from "./storage-connector-create-test";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
@@ -185,6 +189,14 @@ function flowWatchPaths(assetId: string): string[] {
   }
   if (assetId === "background-export-download") {
     paths.push("apps/api/scripts/screenshot_background_export_fixture.py");
+  }
+  if (assetId === "storage-connector-create-test") {
+    paths.push(
+      "apps/web/src/components/connections/StorageConnectionsPanel.tsx",
+      "apps/api/app/api/v1/storage_connections.py",
+      "apps/api/app/services/storage_connection.py",
+      "apps/api/app/services/connector_guard.py",
+    );
   }
   return paths.filter((candidate, index, all) => all.indexOf(candidate) === index);
 }
@@ -1966,6 +1978,26 @@ test.describe("flow recordings", () => {
       await finalize(page, "pointcloud-billboard-label", undefined, drawTrim(win, t0));
     } finally {
       if (annotationId) await seed.deleteTaskAnnotation(task.id, annotationId, userEmail);
+    }
+  });
+
+  test("storage-connector-create-test — 创建 S3 连接器并测试样本数", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(90_000);
+    const userEmail = cached.users.admin.email;
+    let connectionId: string | null = null;
+    const t0 = Date.now();
+    try {
+      await seed.deleteStorageConnectionsByExactName(STORAGE_CONNECTOR_RECORDING_NAME, userEmail);
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      const win = await runStorageConnectorCreateTest(page, (createdId) => {
+        connectionId = createdId;
+      });
+      await finalize(page, "storage-connector-create-test", undefined, drawTrim(win, t0));
+    } finally {
+      if (connectionId) await seed.deleteStorageConnection(connectionId, userEmail);
     }
   });
 

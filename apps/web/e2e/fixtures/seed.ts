@@ -276,6 +276,37 @@ export class SeedAPI {
     }
   }
 
+  /** 通过正式 API 精确删除录制流创建的单个存储连接器。 */
+  async deleteStorageConnection(connectionId: string, userEmail: string): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(
+      `${API_BASE}/api/v1/storage-connections/${connectionId}`,
+      { headers: { Authorization: `Bearer ${token}`, Connection: "close" } },
+    );
+    if (!res.ok() && res.status() !== 404) {
+      throw new Error(`storage-connections/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /** 只在隔离录制库内清理与指定名称完全一致的连接器残留。 */
+  async deleteStorageConnectionsByExactName(name: string, userEmail: string): Promise<string[]> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.get(`${API_BASE}/api/v1/storage-connections`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+    });
+    if (!res.ok()) {
+      throw new Error(`storage-connections/list failed: ${res.status()} ${await res.text()}`);
+    }
+    const connections = (await res.json()) as Array<{ id: string; name: string }>;
+    const exactIds = connections
+      .filter((connection) => connection.name === name)
+      .map((connection) => connection.id);
+    for (const connectionId of exactIds) {
+      await this.deleteStorageConnection(connectionId, userEmail);
+    }
+    return exactIds;
+  }
+
   /** 通过正式级联删除端点精确清理录制流创建的临时项目。 */
   async deleteProject(projectId: string, userEmail: string): Promise<void> {
     const token = await this.accessToken(userEmail);

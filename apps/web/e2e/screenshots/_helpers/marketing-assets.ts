@@ -861,6 +861,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "storage-connector-create-test",
+    title: "S3 / OSS 连接器创建与测试",
+    theme: "安全保存外部存储凭据并真实探测素材目录",
+    objective: "展示创建一个脱敏 S3 / OSS 数据源，确认密钥已加密且正式连接测试返回有意义的样本数。",
+    duration: { minSeconds: 14, targetSeconds: 20, maxSeconds: 28 },
+    shots: [
+      "从数据集页切换到数据连接器，确认初始列表已加载。",
+      "打开新建数据源对话框，填写演示 Endpoint、Bucket、前缀和凭据。",
+      "关闭 HTTPS 以匹配本地演示存储，提交并确认列表显示密钥已加密。",
+      "对新建行发起真实连接测试，经历测试中状态后显示连接成功。",
+      "停留在绿色成功结果，同时保留样本 4、S3 类型、个人范围和已加密状态。",
+    ],
+    editingNotes: [
+      "母版只表达连接器创建与测试，不混入数据集导入向导或主机白名单管理。",
+      "凭据必须是隔离 MinIO 的演示值；密钥不得出现在 API 响应或录制文档中。",
+      "连接成功和样本数必须来自正式测试端点；流程结束后按连接器 ID 精确清理。",
+    ],
+  }),
+  defineAsset({
     assetId: "video-draw",
     title: "视频轨迹画框",
     theme: "关键帧标注与中间帧插值",
