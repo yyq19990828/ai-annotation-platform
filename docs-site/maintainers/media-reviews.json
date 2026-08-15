@@ -4,8 +4,8 @@
   "review_profile": "visual-content-v1",
   "entries": {
     "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "65db92e835a2f604fe718ed184496ec961851ac491cb44aa016250789816cb79",
@@ -19,8 +19,8 @@
       ]
     },
     "docs-site/public/media/ai/candidate-review-lifecycle.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "0fb5fecadbe65bed180c27f8bb247024aa89b9a0565060fb170d7c7a2fbf4162",
@@ -33,9 +33,39 @@
         "docs-site/user-guide/ai/candidate-review.md"
       ]
     },
+    "docs-site/public/media/datasets/background-export-download-poster.webp": {
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "908a10556f372f23761b5660627e4c8e9a24778c688e4a5a3816d6da0fcbddff",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/datasets/background-export-download-poster.webp",
+        "docs-site/user-guide/datasets/prediction-import-export.md"
+      ]
+    },
+    "docs-site/public/media/datasets/background-export-download.mp4": {
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "bd3f955b28b87a18faa186130f0e45f371531ab4757889020107e7909755152d",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/datasets/background-export-download.mp4",
+        "docs-site/user-guide/datasets/prediction-import-export.md"
+      ]
+    },
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "38cd79f46a547279d114e1eeea258a391f93b1d6906bc81eddd8929f700b80a6",
@@ -49,8 +79,8 @@
       ]
     },
     "docs-site/public/media/pipeline/apply-project.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "74df131421e0feb561830d830048fd1fc09cad510a7eefcec571cb6447e717c3",
@@ -64,8 +94,8 @@
       ]
     },
     "docs-site/public/media/pipeline/template-create-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "6878a6d1c9ea567b38273f307cec0beff5da8a4b36cc2f5a10edb28c090a0fc1",
@@ -79,8 +109,8 @@
       ]
     },
     "docs-site/public/media/pipeline/template-create.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "18fd3eeff7d2a72a8e9f133c5b0c0b685f10297f7a9f38b792a3edb4a99e7e3c",
@@ -94,8 +124,8 @@
       ]
     },
     "docs-site/public/media/projects/ml-routing-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "d488ebcca65efb9c4f7cac59fdf80032b2e57cbe268b1bc5864506738ebf5e24",
@@ -109,8 +139,8 @@
       ]
     },
     "docs-site/public/media/projects/ml-routing.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "cdc9cb24570824d23ab5bcd0b57cf8b2188844e2d5d7d02a5db04a50cbaec048",
@@ -124,8 +154,8 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "21f71619b1e60da24afd3458640984025c2919ce0b5dc09ff848eac01987653d",
@@ -139,8 +169,8 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "5d8a4fd34d3813c1f299d82e98996040bd6e068a43cf18e2486eda5b8b390aa7",
@@ -154,8 +184,8 @@
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "760ebcd5163f2f18c131370b15f205cf683d8e3eb2c68977b88b82f79ecb9f77",
@@ -169,8 +199,8 @@
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "21f79a27f2b497d116a4b0f7507c225f10ced3bdcae084177f59e867eb967d0b",
@@ -184,8 +214,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "6944c2653f7d54d19ccd59518508c6c4b20e51ca2a5aa1fb1f9c3d96a27bbbdc",
@@ -199,8 +229,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "02612037abddeffe0a30853c8daa0b7c296bb371f6dab56d29a245961b190004",
@@ -214,8 +244,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "1256dc27eb155abbe96b485c54ac7481f3d7201e53b2c4e2cb5322d2a780a1c0",
@@ -229,8 +259,8 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "61f420cbc20d794b78e51f88ef73f941381374facb3574df339f94290ed2490d",
@@ -244,8 +274,8 @@
       ]
     },
     "docs-site/public/media/workflows/jobs-retry-recovery-poster.webp": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "4dd753026acab021785049ddf7b75453e9e8f379d8e98eeb5f9f5d866445a621",
@@ -259,8 +289,8 @@
       ]
     },
     "docs-site/public/media/workflows/jobs-retry-recovery.mp4": {
-      "last_verified_commit": "7fd92d1dd906c840a3cae0105e0008f1b891d643",
-      "verified_at": "2026-08-15T14:03:28.798Z",
+      "last_verified_commit": "16065db98c58dfaba32085393542072972126969",
+      "verified_at": "2026-08-15T14:36:15.254Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "fbb4b97a331e4b1164ee68a479cbc9eb92c0938bea25e4e534d05d813e334874",
