@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-15
 ---
 
 # 视频追踪标注
@@ -147,12 +147,18 @@ ML 后端支持的交互模式，以及其产出几何所属工具单位是否�
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-candidate-render.png — 画布渲染检测式轨迹候选 video_track_bbox [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-keyframe-source-bar.png — 右栏关键帧来源迷你条(紫=AI/灰=人工) [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-multiselect-batch-card.png — 多选 ≥2 轨迹浮卡批量卡 [manual] -->
 
 视频工作台里有两层 AI 候选，不要混淆：
 
 - **单帧 / 批量预标 Prediction**：当前题 AI 在视频中只为当前帧生成 `video_bbox` 候选；`/ai-pre` 的视频编排则按选择的执行单位生成逐帧框或跨帧轨迹候选。它们都按单条候选采纳 / 忽略。
 - **视频追踪 Job 候选**：AI 追踪完成或取消后先暂存在 job 中，通过顶部审阅条按目标与帧窗口接受 / 拒绝；接受后才写入轨迹。完整流程见[视频关键帧传播与 AI 追踪](./video-propagate#运行取消与候选审阅)。
+
+<DocsVideo
+  src="/media/video/track-batch-propagate.mp4"
+  poster="/media/video/track-batch-propagate-poster.webp"
+  alt="双轨迹多选后同时显示画布批量浮卡、右栏工具条和高亮轨迹框"
+  caption="两条 bus 轨迹进入多选态后，可从画布浮卡或右栏发起同一次批量延展；候选审阅与双轨迹回填也在同一段完整链路中展示。"
+/>
 
 AI 结果无需先落库就能核对，画布与右栏统一用 **violet** 表示「来自 AI」：
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T17:05:28.865Z",
+  "updated_at": "2026-08-15T17:51:58.789Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1875,6 +1875,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "video-mask-track-edit",
         "sha256": "5aaafff31c9f69e5e955a8c76fd0c7850d355b4f357de0295d0ec4fd168a21f6"
+      }
+    },
+    "docs-site/public/media/video/track-batch-propagate-poster.webp": {
+      "asset_id": "video-track-batch-propagate",
+      "role": "poster",
+      "generated_at": "2026-08-15T17:51:58.789Z",
+      "captured_commit": "1ed3efa29b0699e534b0d273348a62309504e0f6",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-track-batch-propagate",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "c948f2ec97cb5aa5d00a7f5cb1c79b87e71a95f550acf0f01cc08a0d29719b3e",
+      "bytes": 84660,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T174919Z-1ed3efa29b06",
+        "assetId": "video-track-batch-propagate",
+        "sha256": "e26c3387c9eaeec0ce35668404d12c81b3c5d9b84afd14aaf674174d1553db05"
+      }
+    },
+    "docs-site/public/media/video/track-batch-propagate.mp4": {
+      "asset_id": "video-track-batch-propagate",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T17:51:58.701Z",
+      "captured_commit": "1ed3efa29b0699e534b0d273348a62309504e0f6",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-track-batch-propagate",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "469ec7abb3145f57c9423ff5eeaf81292531e9aa02b3ba7d2ebfe38b33398e35",
+      "bytes": 702611,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 20.167
+      },
+      "source_asset": {
+        "runId": "20260815T174919Z-1ed3efa29b06",
+        "assetId": "video-track-batch-propagate",
+        "sha256": "e26c3387c9eaeec0ce35668404d12c81b3c5d9b84afd14aaf674174d1553db05"
       }
     },
     "docs-site/public/media/video/tracker-box-seed-poster.webp": {

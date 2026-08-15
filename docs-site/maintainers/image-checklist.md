@@ -80,14 +80,13 @@
 ### 视频 AI 审阅（对应 `workbench/video-track.md`）
 
 - [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 单条采纳/拒绝入口 [manual]
-- [ ] `images/video-propagate/tracker-review-bar.png` — 固定一条含至少 2 个目标的 `pending_review` 作业，当前帧同时露出 violet 候选与顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 **[Tier A]** [manual]（需独立场景；现有工作台场景会主动丢弃待审作业）
+- [x] `public/media/video/track-batch-propagate.mp4` — 两条真实 bus 轨迹多选后同时显示画布浮动批量卡、右栏工具条和高亮轨迹框 → 一个真实 SAM3 作业生成双目标候选 → 将审阅窗口设为 F1–F10 保留人工 F0 → 跨帧核对并一次回填两条原轨迹 `[derived-mp4]` **[Tier A]**
 - [x] `public/media/video/tracker-cross-frame-points.mp4` — 两个公交车目标分别设置 F0/F4 正点 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
 - [x] `public/media/video/tracker-positive-negative.mp4` — 两个公交车目标分别设置跨帧正负点 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
 - [x] `public/media/video/tracker-box-seed.mp4` — 两个公交车目标分别绘制完整车身框 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
 - [x] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 → 拖动续写 →「续写后自动前进」自动跳下一条 `[auto-gif]`（flows/video-track-carryover）
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
-- [ ] `images/workbench/video-track-multiselect-batch-card.png` — 当前帧同时显示至少 2 条轨迹，`Shift` / `Ctrl` 多选后同时露出画布浮动批量卡、右栏批量工具条和高亮轨迹框；红框：「已选 2 条轨迹」与「批量延展」 **[Tier A]** [manual]（自动化前需补可清理的双轨迹 fixture）
 
 ### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
 
