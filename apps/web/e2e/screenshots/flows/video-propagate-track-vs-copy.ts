@@ -1,5 +1,5 @@
 /**
- * 流程录制：在同一条真实公交车轨迹上对比纯几何复制与 SAM3 AI 延展。
+ * 流程录制：在同一条真实中间卡车轨迹上对比纯几何复制与 SAM3 AI 延展。
  */
 import { expect, type Locator, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
@@ -96,9 +96,9 @@ export async function runVideoPropagateTrackVsCopy(
 ): Promise<DrawWindow> {
   const project = catalog.projects.video_demo;
   const task = project.tasks.tracking;
-  const source = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0);
-  if (source.label !== "bus") {
-    throw new Error("[video-propagate-track-vs-copy] 对比源必须是 F0 左侧完整公交车");
+  const source = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
+  if (source.label !== "truck") {
+    throw new Error("[video-propagate-track-vs-copy] 对比源必须是 F0 中间完整卡车");
   }
 
   await page.goto(`/projects/${project.id}/annotate?task=${task.id}`);
@@ -130,7 +130,8 @@ export async function runVideoPropagateTrackVsCopy(
   page.on("response", collectServerError);
   const drawStartMs = Date.now();
   try {
-    // 第一段：纯几何复制。用 F30 的真实车辆位移展示原框不会跟随目标。
+    // 第一段：纯几何复制。中间卡车在 F30 的位置和尺寸变化足够大，
+    // 可以直观展示原框不会跟随目标。
     await page.waitForTimeout(1_200);
     await copyButton.hover();
     await copyButton.click();
@@ -170,7 +171,7 @@ export async function runVideoPropagateTrackVsCopy(
     const aiDialog = page.getByTestId("video-tracker-propagate-dialog");
     await aiDialog.waitFor({ state: "visible", timeout: 5_000 });
     const impact = await aiDialog.getByTestId("tracker-impact-summary").textContent();
-    if (impact?.trim() !== "延展当前轨迹「bus」") {
+    if (impact?.trim() !== `延展当前轨迹「${source.label}」`) {
       throw new Error(
         `[video-propagate-track-vs-copy] AI 作用范围摘要错误：${impact ?? "missing"}`,
       );
@@ -253,6 +254,17 @@ export async function runVideoPropagateTrackVsCopy(
       h: source.bbox[3] - source.bbox[1],
     };
     assertSourceFramePreserved(aiKeyframes, expectedF0);
+    const frameThirty = aiKeyframes.find((keyframe) => keyframe.frame_index === TARGET_FRAME);
+    const frameThirtyBbox = frameThirty?.bbox as NormalizedBbox | undefined;
+    if (
+      !frameThirtyBbox ||
+      frameThirtyBbox.w < expectedF0.w * 0.85 ||
+      frameThirtyBbox.h < expectedF0.h * 1.2
+    ) {
+      throw new Error(
+        "[video-propagate-track-vs-copy] F30 AI 结果未保持完整卡车框，拒绝把雨刮器或局部零件冒充卡车",
+      );
+    }
 
     await review.getByText("已审 30/31，当前选区 1 个候选", { exact: false }).waitFor({
       timeout: 5_000,

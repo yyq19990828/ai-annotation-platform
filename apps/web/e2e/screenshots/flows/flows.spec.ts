@@ -1416,7 +1416,7 @@ test.describe("flow recordings", () => {
     const project = cached.projects.video_demo;
     const task = project.tasks.tracking;
     const userEmail = cached.users.project_admin.email;
-    const anchor = recordingAnchor(cached, "video_demo", "tracking", "left_bus_f0", 0);
+    const anchor = recordingAnchor(cached, "video_demo", "tracking", "front_truck_f0", 0);
     const cleanupRecord: VideoTrackBatchPropagateCleanupRecord = {
       projectId: project.id,
       taskId: task.id,
@@ -1434,7 +1434,7 @@ test.describe("flow recordings", () => {
         class_name: anchor.label,
         geometry: {
           type: "video_track_bbox",
-          track_id: "trk_marketing_propagate_compare",
+          track_id: "trk_marketing_propagate_compare_truck",
           keyframes: [
             {
               frame_index: 0,
