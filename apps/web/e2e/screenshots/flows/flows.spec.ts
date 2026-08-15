@@ -37,6 +37,7 @@ import { runPointcloudCrossframeTrack } from "./pointcloud-crossframe-track";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
+import { runVideoTimelinePredictionNavigation } from "./video-timeline-prediction-navigation";
 import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
 import { runVideoTrackerComboDiscovery } from "./video-tracker-combo-discovery";
 import { runVideoMaskCorrectionPropagate } from "./video-mask-correction-propagate";
@@ -140,6 +141,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-cross-frame-points": "video-multi-seed-tracking.ts",
   "video-tracker-positive-negative": "video-multi-seed-tracking.ts",
   "video-tracker-box-seed": "video-multi-seed-tracking.ts",
+  "video-timeline-prediction-navigation": "video-timeline-prediction-navigation.ts",
   "video-tracker-text-discovery": "video-tracker-text-discovery.ts",
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
@@ -1263,6 +1265,31 @@ test.describe("flow recordings", () => {
       path.join(DOCS_IMAGES, "video-timeline/horizontal-zoom.gif"),
       { fps: 6, maxWidth: 640, maxColors: 128, ...drawTrim(win, t0) },
     );
+  });
+
+  test("video-timeline-prediction-navigation — AI 预测密度与帧导航", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 真实双目标视频推理 + 4K H.264 归档转码
+    const t0 = Date.now();
+    await seed.enableMLBackendByName(
+      cached.projects.video_demo.id,
+      cached.users.project_admin.email,
+      "yolo-backend",
+    );
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    let cleanupRecord: VideoFrameInferenceCleanupRecord | null = null;
+    const win = await runVideoTimelinePredictionNavigation(page, cached, (record) => {
+      cleanupRecord = record;
+      videoFrameInferenceCleanupRecords.push(record);
+    });
+    if (!cleanupRecord) {
+      throw new Error("[video-timeline-prediction-navigation] 未记录无痕清理标识");
+    }
+    cleanupVideoFrameInference(cleanupRecord);
+    await finalize(page, "video-timeline-prediction-navigation", undefined, drawTrim(win, t0));
   });
 
   test("video-chapter — 时间轴圈选与拖柄调整章节", async ({ page, seed }) => {

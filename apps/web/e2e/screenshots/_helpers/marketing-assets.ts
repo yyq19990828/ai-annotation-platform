@@ -264,6 +264,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "video-timeline-prediction-navigation",
+    title: "AI 预测密度与帧导航",
+    theme: "沿时间轴定位并逐帧核对视频车辆候选",
+    objective:
+      "展示真实 YOLO 多帧车辆候选在时间轴上的预测密度分布，并使用上一帧 / 下一帧导航连续核对画布中的公交车与卡车候选框。",
+    duration: { minSeconds: 12, targetSeconds: 17, maxSeconds: 24 },
+    shots: [
+      "从已完成多帧推理的候选审阅态开始，同时展示画布车辆候选、当前帧与折叠时间轴摘要。",
+      "展开时间轴详情，完整呈现 violet AI 预测密度轨及其在整段视频中的分布。",
+      "连续点击下一个有预测的帧，核对帧号推进与公交车 / 卡车候选框同步变化。",
+      "再使用上一个有预测的帧回看，证明导航只落在实际存在预测的帧。",
+    ],
+    editingNotes: [
+      "真实 YOLO 多帧候选在录制窗口前生成；成片只表达预测密度与帧导航，不混入模型配置或推理发起。",
+      "必须保留 AI 待审计数、violet 密度轨、前后导航按钮、帧号和画布车辆候选，不能只裁时间轴局部。",
+      "录制结束后在裁切区间外精确清理候选；不把本素材的导航演示误写成采纳结果。",
+    ],
+  }),
+  defineAsset({
     assetId: "model-market-runtime-partial-failure",
     title: "运行时数据源部分失败",
     theme: "单一观测来源退化时保留其它可信状态",
