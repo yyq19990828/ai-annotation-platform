@@ -73,6 +73,7 @@ describe("AdminDashboard", () => {
   it("有 stats → 渲染主要 KPI 卡片", () => {
     mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false });
     renderUI();
+    expect(screen.getByRole("heading", { name: "平台概览" })).toBeInTheDocument();
     expect(screen.getByText("25")).toBeInTheDocument(); // total_users
     expect(screen.getByText("8 在线")).toBeInTheDocument();
     expect(screen.getByText("10")).toBeInTheDocument(); // total_projects

@@ -141,7 +141,7 @@
 - [x] `public/media/projects/ml-routing.mp4` — 项目启用 YOLO、即时设为主后端，并在工作台核对当前题 YOLO 与 Smart Point → SAM3 的能力分流 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/review/reject-flow.mp4` — 质检审核 landing 的批次卡片（待审 2/2）→ 进入任务列表与审核画布 → 结构化退回 → 返回卡片确认待审降为 1/2 `[derived-mp4]` **[Tier A]**
 - [ ] `images/review/bulk-review-toolbar.png` — 选中多条待审任务后的批量操作栏；红框：已选数量、批量通过 / 退回、跨页选择边界 **[Tier B]** [manual]
-- [ ] `images/superadmin/platform-overview.png` — 超级管理员「平台概览」全屏；红框：系统健康、近期活动、平台统计，并与「项目管理」入口区分 **[Tier A]** `[auto]`
+- [ ] `public/media/superadmin/platform-overview.mp4` — 超级管理员「平台概览」：平台统计与项目 / 角色分布 → 注册来源 → ML 成本 → 近期审计活动 → 全平台项目；系统健康保留为独立页面 **[Tier A]** `[derived-mp4]`
 
 ## 综合截图清单（按区域维护）
 

@@ -73,6 +73,7 @@ Chromium 内容区的真实 X11 边界；只有边界恰好为 2592×1458、没�
 | `model-market-runtime-pool`            | 核对运行时摘要与数据来源 → 展开车辆检测服务池 → 比较双实例路由状态/并发/GPU → 切换详情 Sheet           | 15 / 22 / 30 秒            | 模型服务池运行时观测               |
 | `model-market-runtime-partial-failure` | 4/5 来源新鲜 → 展开部分失败告警 → 悬停 fresh 拓扑 → 悬停 stale 路由账本核对超时、更新时间与退避        | 9 / 12 / 20 秒             | 运行时数据可信度与部分失败         |
 | `model-market-gpu-resource-overview`   | 切换 GPU 资源 → 核对 runtime ready / 全局 enforce → 对比静态预算与 committed → 展开 blocker 卡反查实例 | 10 / 14 / 22 秒            | GPU 资源就绪性、预算与阻断影响     |
+| `platform-overview`                    | 平台 KPI / 分布 → 30 天注册来源 → ML 后端与成本 → 近期审计 → 图片 / 视频 / 点云项目                    | 16 / 22 / 30 秒            | 超级管理员全局运营概览             |
 | `project-ml-routing`                   | 启用 YOLO → 设为批量主后端 → 工作台当前题 AI 命中 YOLO → Smart Point 自动命中 SAM3                     | 18 / 25 / 32 秒            | 项目多后端启用与能力自动分流       |
 | `background-export-download`           | 选择 COCO + AAP JSON → 导出入队 → 任务铃展示运行状态 → 核对 ZIP 产物并下载                             | 16 / 24 / 32 秒            | 异步多格式导出与真实产物校验       |
 | `project-create-existing-resources`    | 新建图片项目 → 添加 `car` 类别 → 关联已有道路数据集 → 选择现有标注员和审核员 → 核对创建摘要            | 14 / 19 / 32 秒            | 项目创建、数据与团队资源复用       |
