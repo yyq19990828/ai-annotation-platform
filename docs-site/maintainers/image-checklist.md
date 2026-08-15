@@ -141,7 +141,7 @@
 - [ ] `images/projects/wizard-data-members-steps.png` — 创建项目向导 Step 5「关联已有数据集」与 Step 6「选择已有成员」并排拼图；强调这两步可跳过、不是现场上传 / 邀请 **[Tier A]** [manual]
 - [ ] `images/datasets/list-filters-and-repair.png` — 数据集页类型筛选 + 数据集卡操作；红框：图像 / 视频 / 3D / 多模态筛选、缺失视频元数据补生成入口 **[Tier B]** [manual]
 - [ ] `images/datasets/prediction-match-preview.png` — 导入预测预览校验：匹配成功、未匹配、同名歧义三类结果；红框：实际匹配键与确认导入按钮 **[Tier B]** [manual]
-- [ ] `images/projects/ml-backends/project-routing.png` — 项目设置「ML 模型」中的 backend 启用 / 停用与能力路由；红框：主 backend、交互式 AI 开关、置灰原因 **[Tier A]** [manual]
+- [x] `public/media/projects/ml-routing.mp4` — 项目启用 YOLO、即时设为主后端，并在工作台核对当前题 YOLO 与 Smart Point → SAM3 的能力分流 **[Tier A]** `[derived-mp4]`
 - [ ] `images/review/batch-card-grid.png` — 质检审核 landing 的批次卡片网格新布局；替换旧批次树截图，红框：待审数、进度条、进入批次按钮 **[Tier A]** `[auto]`
 - [ ] `images/review/bulk-review-toolbar.png` — 选中多条待审任务后的批量操作栏；红框：已选数量、批量通过 / 退回、跨页选择边界 **[Tier B]** [manual]
 - [ ] `images/superadmin/platform-overview.png` — 超级管理员「平台概览」全屏；红框：系统健康、近期活动、平台统计，并与「项目管理」入口区分 **[Tier A]** `[auto]`

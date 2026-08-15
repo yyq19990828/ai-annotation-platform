@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T13:20:16.351Z",
+  "updated_at": "2026-08-15T14:01:48.012Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1321,6 +1321,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "pointcloud-view",
         "sha256": "c1b7957d196caff7530ba042c9674a4cbd1b90218d70978b07fe10b3cec71d85"
+      }
+    },
+    "docs-site/public/media/projects/ml-routing-poster.webp": {
+      "asset_id": "project-ml-routing",
+      "role": "poster",
+      "generated_at": "2026-08-15T14:01:48.012Z",
+      "captured_commit": "cbd6f5d9bc0a076281b79d0eacc5c87713249695",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › project-ml-routing",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "d488ebcca65efb9c4f7cac59fdf80032b2e57cbe268b1bc5864506738ebf5e24",
+      "bytes": 54766,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T135835Z-cbd6f5d9bc0a",
+        "assetId": "project-ml-routing",
+        "sha256": "eef0b45ac324ecfa3f6b19aa341dfee8cebcfdc19dc96cef9e2433b589a3dfdd"
+      }
+    },
+    "docs-site/public/media/projects/ml-routing.mp4": {
+      "asset_id": "project-ml-routing",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T14:01:47.936Z",
+      "captured_commit": "cbd6f5d9bc0a076281b79d0eacc5c87713249695",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › project-ml-routing",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "cdc9cb24570824d23ab5bcd0b57cf8b2188844e2d5d7d02a5db04a50cbaec048",
+      "bytes": 621250,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 27.767
+      },
+      "source_asset": {
+        "runId": "20260815T135835Z-cbd6f5d9bc0a",
+        "assetId": "project-ml-routing",
+        "sha256": "eef0b45ac324ecfa3f6b19aa341dfee8cebcfdc19dc96cef9e2433b589a3dfdd"
       }
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools-poster.webp": {

@@ -13,6 +13,7 @@ const OUTPUT_ROOT = path.join(REPO_ROOT, "docs-site/public/media");
 const POSTER_AT_SECONDS = new Map([
   ["jobs-retry-recovery", 11],
   ["model-market-runtime-pool", 10],
+  ["project-ml-routing", 14],
 ]);
 
 const TARGETS = new Map(
@@ -30,6 +31,7 @@ const TARGETS = new Map(
     ["pipeline-apply-project", "pipeline/apply-project"],
     ["jobs-retry-recovery", "workflows/jobs-retry-recovery"],
     ["model-market-runtime-pool", "superadmin/model-market/runtime-pools"],
+    ["project-ml-routing", "projects/ml-routing"],
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
     ["video-mask-track-edit", "video/mask-track-edit"],

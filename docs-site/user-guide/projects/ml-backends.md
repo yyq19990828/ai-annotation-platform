@@ -16,6 +16,13 @@ last_reviewed: 2026-07-20
 
 > **交互线 / 批量线分流**：启用多个后端时，工作台 AI 按角色 + 能力路由——交互工具(point/interactive_box/exemplar)自动路由到支持该 prompt 的交互后端，批量预标走批量后端，两条线**同时就绪**。例如 yolo 设为项目主后端（批量几何）+ gsam2 启用：批量运行走 yolo，工具栏 point/interactive_box 自动命中 gsam2。文本「找全图」属批量线（不在工具栏）。详见 [AI 工具组 § 交互后端选择](../workbench/sam-tool.md#交互后端选择多后端)。
 
+<DocsVideo
+  src="/media/projects/ml-routing.mp4"
+  poster="/media/projects/ml-routing-poster.webp"
+  alt="项目启用 YOLO 并设为主后端后，工作台当前题 AI 使用 YOLO，而 Smart Point 自动选择 SAM3"
+  caption="同一项目的两条 AI 路由：YOLO 作为当前题批量主后端，Smart Point 按 point 能力自动命中 SAM3。"
+/>
+
 ## 启用一个全局 backend
 
 ![ML 模型 tab：全局 backend 启用清单](../images/projects/ml-backends/register-form.png)
@@ -39,7 +46,7 @@ last_reviewed: 2026-07-20
 - 在 **项目主后端** 下拉中选择——下拉只列**本项目已启用**的 backend。**设了项目主后端即视为启用 AI 预标注；留空 = 不启用**（无需单独的启用开关）。
 - 可设置 **AI 框去重阈值**。
 - **交互式 AI 工具** 总开关：控制标注员能否在工作台使用交互式 AI 工具（智能点 / 智能框 / Exemplar / Magic Box）。**默认开启**，关闭后工作台不再显示这些工具（不影响批量预标注）。底层字段 `ai_interactive_enabled`。
-- 点 **保存 AI 设置**。
+- 主后端、去重阈值和交互式工具开关均**即时生效**；页面没有额外的保存按钮。
 
 这些字段统一收口到 **ML 模型** 页。
 
