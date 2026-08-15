@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T19:24:10.189Z",
+  "updated_at": "2026-08-15T19:43:11.312Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1817,6 +1817,68 @@
         "runId": "20260815T181855Z-ffdfbb994137",
         "assetId": "review-reject",
         "sha256": "fcea29db274520c991036aa7878021ebe216320f9ae89a8514bb4fcc520ff70f"
+      }
+    },
+    "docs-site/public/media/superadmin/model-market/gpu-resources-poster.webp": {
+      "asset_id": "model-market-gpu-resource-overview",
+      "role": "poster",
+      "generated_at": "2026-08-15T19:43:11.312Z",
+      "captured_commit": "ad529d3a60e468f731f40ed5cfa4af7536e956d1",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › model-market-gpu-resource-overview",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "f083921db116db9b869702134b99e43c9e4f848fc9307a1527276c9f22e61e99",
+      "bytes": 45314,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T194108Z-ad529d3a60e4",
+        "assetId": "model-market-gpu-resource-overview",
+        "sha256": "4d2b7fb874396213388100565070ea17299427bf7dcdc14ec9d5e9ae9811718f"
+      }
+    },
+    "docs-site/public/media/superadmin/model-market/gpu-resources.mp4": {
+      "asset_id": "model-market-gpu-resource-overview",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T19:43:11.240Z",
+      "captured_commit": "ad529d3a60e468f731f40ed5cfa4af7536e956d1",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › model-market-gpu-resource-overview",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "def240a6863bdb03b8db6129b8392f8e04ccc3cdec3c2ddc5ea156dee0cc657a",
+      "bytes": 156314,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 11.567
+      },
+      "source_asset": {
+        "runId": "20260815T194108Z-ad529d3a60e4",
+        "assetId": "model-market-gpu-resource-overview",
+        "sha256": "4d2b7fb874396213388100565070ea17299427bf7dcdc14ec9d5e9ae9811718f"
       }
     },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources-poster.webp": {

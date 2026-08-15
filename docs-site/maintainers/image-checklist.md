@@ -223,7 +223,7 @@
 - [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） **[Tier B]** 带 status 时客户端筛选清空 mock，不带又混入真实成功 job，需真实 failed 种子数据；失败列表已由 `images/workflows/failed-prediction-recovery-jobs-list.png` 覆盖
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
 - [x] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 GPU 物理资源、显存预算、驱逐优先级、当前预算、desired → effective、max_concurrency 与 extra_params **[Tier A]** `[auto]`
-- [ ] `public/media/superadmin/model-market/gpu-resources.mp4` — 切换 GPU 资源 → 核对 runtime ready / 全局期望模式 → 对比静态预算与运行时 committed → 展开 blocker 卡查看受影响实例 **[Tier A]** `[derived-mp4]`
+- [x] `public/media/superadmin/model-market/gpu-resources.mp4` — 切换 GPU 资源 → 核对 runtime ready / 全局期望模式 → 对比静态预算与运行时 committed → 展开 blocker 卡查看受影响实例 **[Tier A]** `[derived-mp4]`
 - [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
 - [x] `images/superadmin/model-market/list.png` — 模型市场 3 个 tab 全图

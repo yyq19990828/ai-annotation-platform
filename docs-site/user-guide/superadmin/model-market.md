@@ -124,7 +124,14 @@ last_reviewed: 2026-08-16
 
 **实例**（super_admin + project_admin）：实例名称、所属服务池、URL、来源、接流状态、权重（超管）、最大并发、GPU claim（超管）、最近检查、操作（健康检查 / 编辑 / drain / resume / 审核能力变更 / unload / 删除，**仅超管**，按风险排序）。当能力指纹变化导致成员被自动禁用时，「审核能力变更」会展示服务池基线与实例当前合同的差异；确认动作重新探活并复核候选指纹，只有池内其余接流成员仍然等价时才原子恢复成员和服务池。原始错误全文、能力快照、模型池、GPU generation 和诊断进入详情 Sheet。
 
-**GPU 资源**（**仅超管**）：资源名称、节点、静态预算 / 可分配容量、已声明预算、运行时 committed、Backend / card queue、lease、desired → effective 和最高诊断。静态声明超售与运行时实际占用是两根独立 Progress 条。资源行展开后列出受影响实例。
+**GPU 资源**（**仅超管**）：顶部汇总运行时就绪状态、全局期望模式、Observe / Enforce 就绪性和 Rollout 状态；资源表展示资源名称、节点、configured mode、静态预算 / 可分配容量、已声明预算与 backend 数、运行时 committed、Backend / card queue、lease、desired → effective 和最高诊断。静态声明超售与运行时实际占用是两根独立 Progress 条。资源行展开后列出受影响实例。
+
+<DocsVideo
+  src="/media/superadmin/model-market/gpu-resources.mp4"
+  poster="/media/superadmin/model-market/gpu-resources-poster.webp"
+  alt="模型市场 GPU 资源页展示运行时就绪状态、两张卡的静态与运行时预算，并展开阻断卡查看受影响实例"
+  caption="从全局就绪性下钻到单卡：区分静态声明与运行时 committed，核对 desired → effective，并从 blocker 资源反查受影响的 L4 实例。"
+/>
 
 **项目绑定**（**仅超管**）：默认按项目显示所绑定服务池、主服务池、可用实例数和风险；支持切换为按服务池反查项目。本页只读，修改入口跳项目设置。项目已启用但池内无可路由实例时单独告警。
 
