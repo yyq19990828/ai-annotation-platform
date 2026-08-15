@@ -160,6 +160,24 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "current-frame-video-inference",
+    title: "视频当前帧车辆推理",
+    theme: "单帧车辆检测、人工采纳与帧作用域确认",
+    objective:
+      "展示在视频目标帧运行真实车辆检测，采纳一个正确候选，并通过相邻帧确认结果只属于发起推理的当前帧。",
+    duration: { minSeconds: 16, targetSeconds: 22, maxSeconds: 90 },
+    shots: [
+      "从已完成解码的行车视频定位到车辆清晰的目标帧。",
+      "打开当前题 AI，选择专用车辆检测模型并运行当前帧推理。",
+      "展示与真实车辆对齐的帧级候选、类别、置信度和帧号。",
+      "采纳中间卡车候选，切换到相邻帧确认候选与人工框均不跨帧，再返回来源帧核对已落库结果。",
+    ],
+    editingNotes: [
+      "该母版只展示单帧推理，不混入整段追踪、项目编排或人工画框。",
+      "时间轴、帧号和右侧当前帧计数必须同屏可读，否则无法证明帧作用域。",
+    ],
+  }),
+  defineAsset({
     assetId: "rotated-bbox",
     title: "旋转框绘制",
     theme: "有方向目标的框选与角度调整",

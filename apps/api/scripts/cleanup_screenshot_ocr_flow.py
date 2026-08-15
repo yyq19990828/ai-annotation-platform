@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Precisely remove persistent data created by one screenshot OCR recording.
+"""Precisely remove persistent data created by one screenshot inference recording.
 
-This helper is intentionally limited to the screenshot-managed OCR project. It
-cleans the exact task, accepted annotations, Celery job, and Celery result named
-by the recorder; it never scans or mutates user-owned projects. Audit rows are
-immutable by design and are deliberately not bypassed here.
+This helper is intentionally limited to screenshot-managed inference projects.
+It cleans the exact task, accepted annotations, optional Celery jobs, and their
+results named by the recorder; it never scans or mutates user-owned projects.
+Audit rows are immutable by design and are deliberately not bypassed here.
 """
 
 from __future__ import annotations
@@ -39,30 +39,36 @@ from app.workers.celery_app import celery_app  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--project-key",
+        choices=("ocr_demo", "video_demo"),
+        default="ocr_demo",
+    )
     parser.add_argument("--project-id", type=uuid.UUID, required=True)
     parser.add_argument("--task-id", type=uuid.UUID, required=True)
-    parser.add_argument("--celery-task-id", required=True)
+    parser.add_argument("--celery-task-id", action="append", default=[])
     parser.add_argument("--annotation-id", type=uuid.UUID, action="append", default=[])
     return parser.parse_args()
 
 
-async def assert_screenshot_ocr_scope(
+async def assert_screenshot_scope(
     db: AsyncSession,
     *,
+    project_key: str,
     project_id: uuid.UUID,
     task_id: uuid.UUID,
 ) -> None:
     project = await db.get(Project, project_id)
-    expected_display_id = PROJECT_SPECS["ocr_demo"].display_id
+    expected_display_id = PROJECT_SPECS[project_key].display_id
     if project is None or project.display_id != expected_display_id:
         raise RuntimeError(
-            f"cleanup scope is not screenshot OCR project {expected_display_id}: {project_id}"
+            f"cleanup scope is not screenshot project {expected_display_id}: {project_id}"
         )
 
     task = await db.get(Task, task_id)
     if task is None or task.project_id != project_id:
         raise RuntimeError(
-            f"cleanup task does not belong to screenshot OCR project: {task_id}"
+            f"cleanup task does not belong to screenshot project: {task_id}"
         )
 
     datasets = (
@@ -83,13 +89,11 @@ async def assert_screenshot_ocr_scope(
         isinstance(dataset.metadata_, dict)
         and isinstance(dataset.metadata_.get("seed"), dict)
         and dataset.metadata_["seed"].get("managed_by") == SEED_MANAGED_BY
-        and dataset.metadata_["seed"].get("logical_key") == "ocr_demo"
+        and dataset.metadata_["seed"].get("logical_key") == project_key
         for dataset in datasets
     )
     if not managed:
-        raise RuntimeError(
-            "cleanup refused: OCR project is not screenshot-seed managed"
-        )
+        raise RuntimeError("cleanup refused: project is not screenshot-seed managed")
 
 
 async def cleanup(args: argparse.Namespace) -> dict[str, int]:
@@ -101,8 +105,9 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
     )
     try:
         async with session_factory() as db:
-            await assert_screenshot_ocr_scope(
+            await assert_screenshot_scope(
                 db,
+                project_key=args.project_key,
                 project_id=args.project_id,
                 task_id=args.task_id,
             )
@@ -115,39 +120,47 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
             prediction_counts = await BatchService(db).clean_task_predictions(
                 [args.task_id]
             )
-            job_result = await db.execute(
-                delete(AsyncJob).where(
-                    AsyncJob.celery_task_id == args.celery_task_id,
+            if args.celery_task_id:
+                job_result = await db.execute(
+                    delete(AsyncJob).where(
+                        AsyncJob.celery_task_id.in_(args.celery_task_id),
+                    )
                 )
-            )
+                async_jobs = job_result.rowcount or 0
+            else:
+                async_jobs = 0
             await db.commit()
     finally:
         await engine.dispose()
 
     # Celery result backend is outside PostgreSQL. Forgetting an already-expired
     # result is harmless and keeps the recorder idempotent for the afterAll retry.
-    try:
-        celery_app.AsyncResult(args.celery_task_id).forget()
-    except Exception as exc:  # noqa: BLE001 - DB cleanup remains authoritative
-        print(
-            f"[cleanup-screenshot-ocr] WARN celery forget failed: {exc}",
-            file=sys.stderr,
-        )
+    for celery_task_id in args.celery_task_id:
+        try:
+            celery_app.AsyncResult(celery_task_id).forget()
+        except Exception as exc:  # noqa: BLE001 - DB cleanup remains authoritative
+            print(
+                f"[cleanup-screenshot-inference] WARN celery forget failed: {exc}",
+                file=sys.stderr,
+            )
 
     return {
         **prediction_counts,
         "annotations": annotation_result.rowcount or 0,
-        "async_jobs": job_result.rowcount or 0,
+        "async_jobs": async_jobs,
     }
 
 
 def main() -> int:
     if settings.environment == "production":
-        print("[cleanup-screenshot-ocr] refusing to run in production", file=sys.stderr)
+        print(
+            "[cleanup-screenshot-inference] refusing to run in production",
+            file=sys.stderr,
+        )
         return 2
     args = parse_args()
     counts = asyncio.run(cleanup(args))
-    print(f"[cleanup-screenshot-ocr] {json.dumps(counts, sort_keys=True)}")
+    print(f"[cleanup-screenshot-inference] {json.dumps(counts, sort_keys=True)}")
     return 0
 
 

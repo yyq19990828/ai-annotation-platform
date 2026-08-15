@@ -38,6 +38,10 @@ import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
 import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
 import { runCurrentTaskImageInference } from "./current-task-image-inference";
+import {
+  runCurrentFrameVideoInference,
+  type VideoFrameInferenceCleanupRecord,
+} from "./current-frame-video-inference";
 import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
@@ -79,6 +83,7 @@ const FLOW_SOURCE_WORKTREE_DIRTY =
 
 let cached: ScreenshotSeedCatalog | null = null;
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
+const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
@@ -180,6 +185,7 @@ test.afterAll(({}, testInfo) => {
   // 推理完成时已清一次；整组结束再幂等清理一次可变业务痕迹，
   // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
   for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
+  for (const record of videoFrameInferenceCleanupRecords) cleanupVideoFrameInference(record);
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -199,6 +205,27 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
       record.taskId,
       "--celery-task-id",
       record.celeryTaskId,
+      ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      stdio: "inherit",
+    },
+  );
+}
+
+function cleanupVideoFrameInference(record: VideoFrameInferenceCleanupRecord): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/cleanup_screenshot_ocr_flow.py",
+      "--project-key",
+      "video_demo",
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
       ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
     ],
     {
@@ -446,6 +473,9 @@ test.describe("flow recordings", () => {
     // 每条营销母版拥有独立的固定数据状态。绘图、审核和视频轨迹流程都会写库；
     // 若沿用同一任务，前一条素材会改变后一条素材的画布、状态与命中目标。
     for (const record of ocrCleanupRecords.splice(0)) cleanupOcrRecording(record);
+    for (const record of videoFrameInferenceCleanupRecords.splice(0)) {
+      cleanupVideoFrameInference(record);
+    }
     repairScreenshotProfile(screenshotBackendMode(cached), true);
     cached = await seed.screenshotCatalog();
 
@@ -703,6 +733,30 @@ test.describe("flow recordings", () => {
     }
     cleanupOcrRecording(cleanupRecord);
     await finalize(page, "current-task-image-inference", undefined, drawTrim(win, t0));
+  });
+
+  test("current-frame-video-inference — 当前帧车辆推理与作用域核对", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000);
+    const t0 = Date.now();
+    await seed.enableMLBackendByName(
+      cached.projects.video_demo.id,
+      cached.users.project_admin.email,
+      "yolo-backend",
+    );
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    let cleanupRecord: VideoFrameInferenceCleanupRecord | null = null;
+    const win = await runCurrentFrameVideoInference(page, cached, (record) => {
+      cleanupRecord = record;
+      videoFrameInferenceCleanupRecords.push(record);
+    });
+    if (!cleanupRecord) {
+      throw new Error("[current-frame-video-inference] 未记录无痕清理标识");
+    }
+    cleanupVideoFrameInference(cleanupRecord);
+    await finalize(page, "current-frame-video-inference", undefined, drawTrim(win, t0));
   });
 
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
