@@ -42,6 +42,10 @@ import {
   runCurrentFrameVideoInference,
   type VideoFrameInferenceCleanupRecord,
 } from "./current-frame-video-inference";
+import {
+  runSecondaryInferenceAttribute,
+  type SecondaryInferenceCleanupRecord,
+} from "./secondary-inference-attribute";
 import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
@@ -84,6 +88,7 @@ const FLOW_SOURCE_WORKTREE_DIRTY =
 let cached: ScreenshotSeedCatalog | null = null;
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
+const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
@@ -186,6 +191,7 @@ test.afterAll(({}, testInfo) => {
   // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
   for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
   for (const record of videoFrameInferenceCleanupRecords) cleanupVideoFrameInference(record);
+  for (const record of secondaryInferenceCleanupRecords) cleanupSecondaryInference(record);
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -222,6 +228,25 @@ function cleanupVideoFrameInference(record: VideoFrameInferenceCleanupRecord): v
       "scripts/cleanup_screenshot_ocr_flow.py",
       "--project-key",
       "video_demo",
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      stdio: "inherit",
+    },
+  );
+}
+
+function cleanupSecondaryInference(record: SecondaryInferenceCleanupRecord): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/cleanup_screenshot_ocr_flow.py",
       "--project-id",
       record.projectId,
       "--task-id",
@@ -757,6 +782,33 @@ test.describe("flow recordings", () => {
     }
     cleanupVideoFrameInference(cleanupRecord);
     await finalize(page, "current-frame-video-inference", undefined, drawTrim(win, t0));
+  });
+
+  test("secondary-inference-attribute — 裁剪 OCR 属性写回与人工校正", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000);
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both", {
+      layout: {
+        attrPanelCollapsed: false,
+        aiSectionCollapsed: true,
+        manualSectionCollapsed: false,
+        floatingSelection: { collapsed: true, x: null, y: null, w: null, h: null },
+      },
+      ui: { secondary_bar_hidden: false },
+    });
+    let cleanupRecord: SecondaryInferenceCleanupRecord | null = null;
+    const win = await runSecondaryInferenceAttribute(page, cached, (record) => {
+      cleanupRecord = record;
+      secondaryInferenceCleanupRecords.push(record);
+    });
+    if (!cleanupRecord) {
+      throw new Error("[secondary-inference-attribute] 未记录无痕清理标识");
+    }
+    cleanupSecondaryInference(cleanupRecord);
+    await finalize(page, "secondary-inference-attribute", undefined, drawTrim(win, t0));
   });
 
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {

@@ -19,6 +19,7 @@ const TARGETS = new Map(
     ["ocr-real-scene", "ai/ocr-current-task"],
     ["current-task-image-inference", "ai/current-task-image-inference"],
     ["current-frame-video-inference", "ai/current-frame-video-inference"],
+    ["secondary-inference-attribute", "ai/secondary-inference-attribute"],
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
     ["video-mask-track-edit", "video/mask-track-edit"],

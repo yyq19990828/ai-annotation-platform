@@ -178,6 +178,24 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "secondary-inference-attribute",
+    title: "已确认文字区域二次推理",
+    theme: "对已有文字标注补写 OCR 属性并人工校正",
+    objective:
+      "展示选中已落库文字区域，运行真实裁剪 OCR，把识别文本、方向和语言写回同一标注，再人工修正文案并确认属性来源变化。",
+    duration: { minSeconds: 14, targetSeconds: 20, maxSeconds: 90 },
+    shots: [
+      "从已完整加载的 OCR 图片开始，选中准确覆盖‘强力去污 符合国标’的已确认文字区域。",
+      "在二次推理面板选择 RapidOCR 文本识别原子模型并发起真实裁剪推理。",
+      "展示识别文本、方向和语言写回同一标注，三个属性均带有 AI 来源标记。",
+      "将识别文本人工修正为‘强力去污，符合国标’并保存，展示文本来源标记消失而其它 AI 属性仍保留。",
+    ],
+    editingNotes: [
+      "该母版只展示已确认标注的属性二次推理，不混入整图候选、子框检测或人工绘制父区域。",
+      "父区域、二次推理工具条和右侧属性面板必须同屏；人工修改后至少保留一个 AI 来源标记，以清楚表达字段级混合溯源。",
+    ],
+  }),
+  defineAsset({
     assetId: "rotated-bbox",
     title: "旋转框绘制",
     theme: "有方向目标的框选与角度调整",
