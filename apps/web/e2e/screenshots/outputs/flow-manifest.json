@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T16:45:25.293Z",
+  "updated_at": "2026-08-15T17:05:28.865Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -654,10 +654,10 @@
     "docs-site/public/media/ai/current-frame-video-inference-poster.webp": {
       "asset_id": "current-frame-video-inference",
       "role": "poster",
-      "generated_at": "2026-08-15T08:34:00.138Z",
-      "captured_commit": "970b57fcf740d987b216b71c99f446e062688cd9",
+      "generated_at": "2026-08-15T17:05:04.455Z",
+      "captured_commit": "0de336ba262b0da6a5601ceb690efc6d141c8906",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › current-frame-video-inference",
       "watch_paths": [
@@ -666,8 +666,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "9d14a6b41bcf3e0b49fb5e43c0fb1619f742bf28fa7ec42bf619c31b8aff3c12",
-      "bytes": 103114,
+      "sha256": "fa04e2865e8eb5497e33b7622ee220112e800ee58ae7c067cfd3fc28c700a570",
+      "bytes": 103432,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -677,18 +677,18 @@
         "duration_seconds": null
       },
       "source_asset": {
-        "runId": "20260815T083133Z-970b57fcf740",
+        "runId": "20260815T164903Z-0de336ba262b",
         "assetId": "current-frame-video-inference",
-        "sha256": "90a63cf83aa4f9dca34885816b4d6b9e6eb9a92212dac7eaaff1bb21619d8693"
+        "sha256": "c038e9c0bd994b9f339f18d808c250fea89c3907127c4ea8e91b27a07c5b4e33"
       }
     },
     "docs-site/public/media/ai/current-frame-video-inference.mp4": {
       "asset_id": "current-frame-video-inference",
       "role": "docs-video",
-      "generated_at": "2026-08-15T08:34:00.052Z",
-      "captured_commit": "970b57fcf740d987b216b71c99f446e062688cd9",
+      "generated_at": "2026-08-15T17:05:04.374Z",
+      "captured_commit": "0de336ba262b0da6a5601ceb690efc6d141c8906",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › current-frame-video-inference",
       "watch_paths": [
@@ -697,29 +697,29 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "68e52d6933c3b791c572d3c83ea65b6b7332864566c8796588a200606e482024",
-      "bytes": 881874,
+      "sha256": "fd17df838e9592d58fdecf907d039a4b83e63df37dff3d71a54cd41a70e71f0b",
+      "bytes": 832009,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 24.567
+        "duration_seconds": 23.434
       },
       "source_asset": {
-        "runId": "20260815T083133Z-970b57fcf740",
+        "runId": "20260815T164903Z-0de336ba262b",
         "assetId": "current-frame-video-inference",
-        "sha256": "90a63cf83aa4f9dca34885816b4d6b9e6eb9a92212dac7eaaff1bb21619d8693"
+        "sha256": "c038e9c0bd994b9f339f18d808c250fea89c3907127c4ea8e91b27a07c5b4e33"
       }
     },
     "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
       "asset_id": "current-task-image-inference",
       "role": "poster",
-      "generated_at": "2026-08-15T07:52:08.569Z",
-      "captured_commit": "53d46097385222eda1a2724278f9d8b5f4ef98e9",
+      "generated_at": "2026-08-15T17:05:28.865Z",
+      "captured_commit": "c7ff6b5c02fe25ec2105c487836386145affe73b",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › current-task-image-inference",
       "watch_paths": [
@@ -728,8 +728,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "fa8a7ec458d4610c8cf324206eed246dc1b7def5c37965875ce7265726b72cd3",
-      "bytes": 102858,
+      "sha256": "f895fc4c95884279274218f849d6605233f54a5f493c8ae953fd933e1bcf85e4",
+      "bytes": 102562,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -739,18 +739,18 @@
         "duration_seconds": null
       },
       "source_asset": {
-        "runId": "20260815T074833Z-53d460973852",
+        "runId": "20260815T170232Z-c7ff6b5c02fe",
         "assetId": "current-task-image-inference",
-        "sha256": "f6ad114f4af46e6db67994b04229403da3de6e1dc39cfecd6f792548e2189953"
+        "sha256": "3fae9df811b58c6931ffcc16a6524557c9ad90673ae7f22aaefb78676eab062b"
       }
     },
     "docs-site/public/media/ai/current-task-image-inference.mp4": {
       "asset_id": "current-task-image-inference",
       "role": "docs-video",
-      "generated_at": "2026-08-15T07:52:08.489Z",
-      "captured_commit": "53d46097385222eda1a2724278f9d8b5f4ef98e9",
+      "generated_at": "2026-08-15T17:05:28.779Z",
+      "captured_commit": "c7ff6b5c02fe25ec2105c487836386145affe73b",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › current-task-image-inference",
       "watch_paths": [
@@ -759,8 +759,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "d3229e32b7c914dd4f338ceace0c6205ea99e7355a6f4e12d2d265b2ab5f4a94",
-      "bytes": 642826,
+      "sha256": "6474aa85b3d7df4f9da222d7b315b0269b6f92e40b3d27bbaacf63a5e9faa0a8",
+      "bytes": 636028,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
@@ -770,9 +770,9 @@
         "duration_seconds": 19.467
       },
       "source_asset": {
-        "runId": "20260815T074833Z-53d460973852",
+        "runId": "20260815T170232Z-c7ff6b5c02fe",
         "assetId": "current-task-image-inference",
-        "sha256": "f6ad114f4af46e6db67994b04229403da3de6e1dc39cfecd6f792548e2189953"
+        "sha256": "3fae9df811b58c6931ffcc16a6524557c9ad90673ae7f22aaefb78676eab062b"
       }
     },
     "docs-site/public/media/ai/ocr-current-task-poster.webp": {
@@ -960,10 +960,10 @@
     "docs-site/public/media/ai/secondary-inference-attribute-poster.webp": {
       "asset_id": "secondary-inference-attribute",
       "role": "poster",
-      "generated_at": "2026-08-15T09:03:33.554Z",
-      "captured_commit": "9158cf577920c0811cd3841b729e4863ad29eeb6",
+      "generated_at": "2026-08-15T17:05:16.270Z",
+      "captured_commit": "0de336ba262b0da6a5601ceb690efc6d141c8906",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › secondary-inference-attribute",
       "watch_paths": [
@@ -972,8 +972,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "8923100d8de6204219ded54727774925d81f0ca2fc76e43008c12c9d346cd444",
-      "bytes": 89958,
+      "sha256": "c4f445305076deff1ab742704c8afafec119fa9eb3bc88edd7aff625e7f7e6a5",
+      "bytes": 89578,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -983,18 +983,18 @@
         "duration_seconds": null
       },
       "source_asset": {
-        "runId": "20260815T090108Z-9158cf577920",
+        "runId": "20260815T164903Z-0de336ba262b",
         "assetId": "secondary-inference-attribute",
-        "sha256": "b4e9d981854527b5089a6fd69fdbd1e8ef7e3b5e4fedb4e8123b511525d9888e"
+        "sha256": "2d5ce2d6a07950221f2c4e404971d14e0c3beb64a59d67dd19b1a967116974e9"
       }
     },
     "docs-site/public/media/ai/secondary-inference-attribute.mp4": {
       "asset_id": "secondary-inference-attribute",
       "role": "docs-video",
-      "generated_at": "2026-08-15T09:03:33.482Z",
-      "captured_commit": "9158cf577920c0811cd3841b729e4863ad29eeb6",
+      "generated_at": "2026-08-15T17:05:16.200Z",
+      "captured_commit": "0de336ba262b0da6a5601ceb690efc6d141c8906",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › secondary-inference-attribute",
       "watch_paths": [
@@ -1003,20 +1003,20 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "9ce23694ffe3ad455c8858c8155f8849ece2cb44f3d2561d185883ea99b39ab7",
-      "bytes": 325887,
+      "sha256": "8fb47a24d974ae2be166c5cb67479b6c05491209a80741f012628b702f033738",
+      "bytes": 326123,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 16.634
+        "duration_seconds": 16.567
       },
       "source_asset": {
-        "runId": "20260815T090108Z-9158cf577920",
+        "runId": "20260815T164903Z-0de336ba262b",
         "assetId": "secondary-inference-attribute",
-        "sha256": "b4e9d981854527b5089a6fd69fdbd1e8ef7e3b5e4fedb4e8123b511525d9888e"
+        "sha256": "2d5ce2d6a07950221f2c4e404971d14e0c3beb64a59d67dd19b1a967116974e9"
       }
     },
     "docs-site/public/media/datasets/background-export-download-poster.webp": {
