@@ -39,6 +39,33 @@ function isEnablementRequest(url: string, projectId: string): boolean {
   );
 }
 
+async function installSanitizedAvailableBackends(page: Page, projectId: string): Promise<void> {
+  await page.route(`**/api/v1/projects/${projectId}/ml-backends/available`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    const upstream = await route.fetch();
+    if (!upstream.ok()) {
+      await route.fulfill({ response: upstream });
+      return;
+    }
+    const body = (await upstream.json()) as {
+      items?: Array<{ backend?: { name?: string; url?: string } }>;
+    };
+    for (const item of body.items ?? []) {
+      const name = item.backend?.name;
+      if (!item.backend || !name) continue;
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+      item.backend.url = `https://ml.example.invalid/${slug || "backend"}`;
+    }
+    await route.fulfill({ response: upstream, json: body });
+  });
+}
+
 export async function runProjectMlRouting(
   page: Page,
   catalog: ScreenshotSeedCatalog,
@@ -64,6 +91,7 @@ export async function runProjectMlRouting(
   await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
   await waitForRecordingWorkbenchLayout(workbenchPage, "none");
 
+  await installSanitizedAvailableBackends(page, project.id);
   await page.goto(`/projects/${project.id}/settings?section=ml-backends`);
   await page.bringToFront();
   await expect(page.getByRole("heading", { name: project.name, exact: true })).toBeVisible({
