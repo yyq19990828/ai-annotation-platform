@@ -380,6 +380,39 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert "large_image_demo" not in body["projects"]
 
 
+async def test_catalog_ignores_soft_deleted_annotations(httpx_client, db_session):
+    projects, tasks = await _ready_profile(db_session)
+    project = projects["pointcloud_demo"]
+    task = tasks["pointcloud_demo"]["frame_000"]
+    db_session.add(
+        Annotation(
+            id=uuid.uuid4(),
+            task_id=task.id,
+            project_id=project.id,
+            user_id=project.owner_id,
+            source="manual",
+            annotation_type="box_3d",
+            tool_unit_id="lidar_box_3d",
+            class_name="object",
+            geometry={
+                "type": "box_3d",
+                "center": [2.0, 0.0, 0.0],
+                "size": [1.0, 1.0, 1.0],
+                "rotation": [0.0, 0.0, 0.0],
+            },
+            is_active=False,
+            was_cancelled=False,
+        )
+    )
+    await db_session.flush()
+
+    response = await httpx_client.get(
+        "/api/v1/__test/seed/catalog", params={"profile": "screenshots"}
+    )
+
+    assert response.status_code == 200, response.text
+
+
 async def test_catalog_includes_ready_optional_large_image_fixture(
     httpx_client, db_session
 ):

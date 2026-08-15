@@ -349,7 +349,11 @@ async def _resolve_dataset_and_tasks(
             await db.scalar(
                 select(func.count())
                 .select_from(Annotation)
-                .where(Annotation.task_id == task.id)
+                .where(
+                    Annotation.task_id == task.id,
+                    Annotation.is_active.is_(True),
+                    Annotation.was_cancelled.is_(False),
+                )
             )
             or 0
         )
