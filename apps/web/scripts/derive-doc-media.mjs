@@ -22,6 +22,7 @@ const TARGETS = new Map(
     ["current-frame-video-inference", "ai/current-frame-video-inference"],
     ["secondary-inference-attribute", "ai/secondary-inference-attribute"],
     ["pipeline-template-create", "pipeline/template-create"],
+    ["pipeline-apply-project", "pipeline/apply-project"],
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
     ["video-mask-track-edit", "video/mask-track-edit"],

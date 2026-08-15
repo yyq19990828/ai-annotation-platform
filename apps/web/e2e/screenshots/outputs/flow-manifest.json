@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T11:39:53.287Z",
+  "updated_at": "2026-08-15T12:16:30.425Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -592,7 +592,7 @@
     "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp": {
       "asset_id": "candidate-review-lifecycle",
       "role": "poster",
-      "generated_at": "2026-08-15T11:39:05.148Z",
+      "generated_at": "2026-08-15T12:15:30.368Z",
       "captured_commit": "17c272245e9f8d47df1a33c5f44c1a845a8bb5a6",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -623,7 +623,7 @@
     "docs-site/public/media/ai/candidate-review-lifecycle.mp4": {
       "asset_id": "candidate-review-lifecycle",
       "role": "docs-video",
-      "generated_at": "2026-08-15T11:39:05.067Z",
+      "generated_at": "2026-08-15T12:15:30.284Z",
       "captured_commit": "17c272245e9f8d47df1a33c5f44c1a845a8bb5a6",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1079,10 +1079,72 @@
         "sha256": "8e7a2425a98a4f7ebf1dc36ca65df0a118a740120b34fbd349aef6d33b55b213"
       }
     },
+    "docs-site/public/media/pipeline/apply-project-poster.webp": {
+      "asset_id": "pipeline-apply-project",
+      "role": "poster",
+      "generated_at": "2026-08-15T12:13:27.293Z",
+      "captured_commit": "f52446b499fc5b25bd548aea157c16362bf4b3e5",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › pipeline-apply-project",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "38cd79f46a547279d114e1eeea258a391f93b1d6906bc81eddd8929f700b80a6",
+      "bytes": 110218,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T120814Z-f52446b499fc",
+        "assetId": "pipeline-apply-project",
+        "sha256": "73259d27dde1f7d80e055c075a259ddd8d45660fb36cccf7852dd9ab42978424"
+      }
+    },
+    "docs-site/public/media/pipeline/apply-project.mp4": {
+      "asset_id": "pipeline-apply-project",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T12:13:27.224Z",
+      "captured_commit": "f52446b499fc5b25bd548aea157c16362bf4b3e5",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › pipeline-apply-project",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "74df131421e0feb561830d830048fd1fc09cad510a7eefcec571cb6447e717c3",
+      "bytes": 986971,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 29.334
+      },
+      "source_asset": {
+        "runId": "20260815T120814Z-f52446b499fc",
+        "assetId": "pipeline-apply-project",
+        "sha256": "73259d27dde1f7d80e055c075a259ddd8d45660fb36cccf7852dd9ab42978424"
+      }
+    },
     "docs-site/public/media/pipeline/template-create-poster.webp": {
       "asset_id": "pipeline-template-create",
       "role": "poster",
-      "generated_at": "2026-08-15T11:36:13.939Z",
+      "generated_at": "2026-08-15T12:15:43.289Z",
       "captured_commit": "e7bdc50047fee20f88e13bfbddf7d08d9c1078f6",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1113,7 +1175,7 @@
     "docs-site/public/media/pipeline/template-create.mp4": {
       "asset_id": "pipeline-template-create",
       "role": "docs-video",
-      "generated_at": "2026-08-15T11:36:13.858Z",
+      "generated_at": "2026-08-15T12:15:43.208Z",
       "captured_commit": "e7bdc50047fee20f88e13bfbddf7d08d9c1078f6",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1324,7 +1386,7 @@
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
       "asset_id": "video-mask-correction-propagate",
       "role": "poster",
-      "generated_at": "2026-08-15T11:39:20.026Z",
+      "generated_at": "2026-08-15T12:15:57.966Z",
       "captured_commit": "13ad5149e29aa78af8081ef08bd6a587ccdd3bcf",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1355,7 +1417,7 @@
     "docs-site/public/media/video/mask-correction-propagate.mp4": {
       "asset_id": "video-mask-correction-propagate",
       "role": "docs-video",
-      "generated_at": "2026-08-15T11:39:19.944Z",
+      "generated_at": "2026-08-15T12:15:57.882Z",
       "captured_commit": "13ad5149e29aa78af8081ef08bd6a587ccdd3bcf",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1506,7 +1568,7 @@
     "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
       "asset_id": "video-tracker-combo-discovery",
       "role": "poster",
-      "generated_at": "2026-08-15T11:39:38.167Z",
+      "generated_at": "2026-08-15T12:16:15.664Z",
       "captured_commit": "392d1cfc9aacb926331fc857eb3948638a8adcb4",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1537,7 +1599,7 @@
     "docs-site/public/media/video/tracker-combo-discovery.mp4": {
       "asset_id": "video-tracker-combo-discovery",
       "role": "docs-video",
-      "generated_at": "2026-08-15T11:39:38.084Z",
+      "generated_at": "2026-08-15T12:16:15.577Z",
       "captured_commit": "392d1cfc9aacb926331fc857eb3948638a8adcb4",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1748,7 +1810,7 @@
     "docs-site/public/media/video/tracker-text-discovery-poster.webp": {
       "asset_id": "video-tracker-text-discovery",
       "role": "poster",
-      "generated_at": "2026-08-15T11:39:53.287Z",
+      "generated_at": "2026-08-15T12:16:30.425Z",
       "captured_commit": "c41be77fc41dddf153c47ec27bcadd06e531a8d4",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -1779,7 +1841,7 @@
     "docs-site/public/media/video/tracker-text-discovery.mp4": {
       "asset_id": "video-tracker-text-discovery",
       "role": "docs-video",
-      "generated_at": "2026-08-15T11:39:53.208Z",
+      "generated_at": "2026-08-15T12:16:30.344Z",
       "captured_commit": "c41be77fc41dddf153c47ec27bcadd06e531a8d4",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
