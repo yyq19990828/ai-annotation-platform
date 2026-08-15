@@ -37,6 +37,7 @@ import { runVideoMaskCorrectionPropagate } from "./video-mask-correction-propaga
 import { runPipelineTemplateCreate } from "./pipeline-template-create";
 import { runPipelineApplyProject, type PipelineApplyCleanupRecord } from "./pipeline-apply-project";
 import { runJobsRetryRecovery } from "./jobs-retry-recovery";
+import { runModelMarketRuntimePool } from "./model-market-runtime-pool";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -117,6 +118,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "pipeline-template-create": "pipeline-template-create.ts",
   "pipeline-apply-project": "pipeline-apply-project.ts",
   "jobs-retry-recovery": "jobs-retry-recovery.ts",
+  "model-market-runtime-pool": "model-market-runtime-pool.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1370,6 +1372,17 @@ test.describe("flow recordings", () => {
     } finally {
       manageJobsRetryFixture("cleanup", record);
     }
+  });
+
+  test("model-market-runtime-pool — 服务池运行时观测与实例下钻", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    const win = await runModelMarketRuntimePool(page, cached);
+    await finalize(page, "model-market-runtime-pool", undefined, drawTrim(win, t0));
   });
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {

@@ -193,6 +193,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "model-market-runtime-pool",
+    title: "模型服务池运行时观测",
+    theme: "从服务池摘要下钻到多实例路由、资源指标与详情",
+    objective:
+      "展示超级管理员核对强制路由模式、数据新鲜度和两个服务池，展开车辆检测池比较两台实例的权重、流量、并发与 GPU 驻留，并切换实例详情查看完整运行指标。",
+    duration: { minSeconds: 15, targetSeconds: 22, maxSeconds: 30 },
+    shots: [
+      "从已加载的运行时观测页开始，展示强制路由、3/3 可路由实例、无异常池和完整数据来源摘要。",
+      "展开数据来源，确认拓扑、路由账本、健康、GPU 和模型驻留均为新鲜状态。",
+      "展开车辆检测多实例池，同时展示 70/30 权重、窗口选择/拒绝、P95、错误率、并发和 GPU 驻留。",
+      "依次打开车辆检测 A 与 B 的详情 Sheet，比较路由容量、GPU claim、模型版本、显存和 cache 指标。",
+    ],
+    editingNotes: [
+      "该母版只表达运行时观测，不混入注册实例、项目绑定修改、停流或卸载等管理动作。",
+      "观测数据来自录制专用确定性快照；内部 URL、真实 GPU UUID 和实例 ID 必须使用脱敏演示值。",
+      "摘要、展开后的两台实例和两个详情 Sheet 都必须完整可读，不能只录卡片点击动作。",
+    ],
+  }),
+  defineAsset({
     assetId: "ocr-real-scene",
     title: "真实场景 OCR 推理",
     theme: "当前任务的文字检测与识别",
