@@ -33,6 +33,96 @@
         "docs-site/user-guide/ai/candidate-review.md"
       ]
     },
+    "docs-site/public/media/ai/current-frame-video-inference-poster.webp": {
+      "last_verified_commit": "6d70021c500a054188e911ed3ec9eb38cbab0073",
+      "verified_at": "2026-08-15T17:08:06.036Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "fa04e2865e8eb5497e33b7622ee220112e800ee58ae7c067cfd3fc28c700a570",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/current-frame-video-inference-poster.webp",
+        "docs-site/user-guide/ai/current-task-inference.md"
+      ]
+    },
+    "docs-site/public/media/ai/current-frame-video-inference.mp4": {
+      "last_verified_commit": "6d70021c500a054188e911ed3ec9eb38cbab0073",
+      "verified_at": "2026-08-15T17:08:06.036Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "fd17df838e9592d58fdecf907d039a4b83e63df37dff3d71a54cd41a70e71f0b",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/current-frame-video-inference.mp4",
+        "docs-site/user-guide/ai/current-task-inference.md"
+      ]
+    },
+    "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
+      "last_verified_commit": "6d70021c500a054188e911ed3ec9eb38cbab0073",
+      "verified_at": "2026-08-15T17:08:06.036Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "f895fc4c95884279274218f849d6605233f54a5f493c8ae953fd933e1bcf85e4",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/current-task-image-inference-poster.webp",
+        "docs-site/user-guide/ai/current-task-inference.md"
+      ]
+    },
+    "docs-site/public/media/ai/current-task-image-inference.mp4": {
+      "last_verified_commit": "6d70021c500a054188e911ed3ec9eb38cbab0073",
+      "verified_at": "2026-08-15T17:08:06.036Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "6474aa85b3d7df4f9da222d7b315b0269b6f92e40b3d27bbaacf63a5e9faa0a8",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/current-task-image-inference.mp4",
+        "docs-site/user-guide/ai/current-task-inference.md"
+      ]
+    },
+    "docs-site/public/media/ai/secondary-inference-attribute-poster.webp": {
+      "last_verified_commit": "6d70021c500a054188e911ed3ec9eb38cbab0073",
+      "verified_at": "2026-08-15T17:08:06.036Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "c4f445305076deff1ab742704c8afafec119fa9eb3bc88edd7aff625e7f7e6a5",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/secondary-inference-attribute-poster.webp",
+        "docs-site/user-guide/ai/current-task-inference.md"
+      ]
+    },
+    "docs-site/public/media/ai/secondary-inference-attribute.mp4": {
+      "last_verified_commit": "6d70021c500a054188e911ed3ec9eb38cbab0073",
+      "verified_at": "2026-08-15T17:08:06.036Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "8fb47a24d974ae2be166c5cb67479b6c05491209a80741f012628b702f033738",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/secondary-inference-attribute.mp4",
+        "docs-site/user-guide/ai/current-task-inference.md"
+      ]
+    },
     "docs-site/public/media/datasets/background-export-download-poster.webp": {
       "last_verified_commit": "12aad94cc0718ead8c2983d50e78350737833d2f",
       "verified_at": "2026-08-15T16:47:05.215Z",
