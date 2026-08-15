@@ -48,8 +48,7 @@
 
 ### 数据集 · 存储连接器
 
-- [ ] `images/datasets/connector-create-form.png` — 新建数据源对话框（S3/OSS 模式）；红框：Endpoint / Bucket / Access key + HTTPS 复选框
-- [ ] `images/datasets/connector-test-result.png` — 连接器列表行测试成功状态；红框：绿色「连接成功」+ 样本计数
+- [x] `public/media/datasets/storage-connector-create-test.mp4` — 数据连接器空列表 → 新建脱敏 S3 / OSS 数据源 → 密钥已加密 → 真实测试返回「连接成功 · 样本 4」，覆盖新建表单与测试结果 `[derived-mp4]`
 - [ ] `images/datasets/connector-import-step.png` — 导入向导「连接器导入」子面板；红框：source_path / 递归开关 / include_globs
 - [ ] `images/datasets/connector-allowlist.png` — 超管连接器主机白名单配置面板 ⚠️ **前端 UI 尚未实现（仅超管 API），待 UI 就绪再拍**
 

@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.11.16
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-08-16
 ---
 
 # 存储连接器
@@ -21,6 +21,13 @@ last_reviewed: 2026-06-10
 
 入口：左侧导航 **数据集** → 顶部 **数据连接器** 标签页。
 
+<DocsVideo
+  src="/media/datasets/storage-connector-create-test.mp4"
+  poster="/media/datasets/storage-connector-create-test-poster.webp"
+  alt="创建脱敏 S3 数据源，核对密钥已加密并通过真实连接测试返回样本数"
+  caption="新建 S3 / OSS 连接器后，列表只显示“已加密”，不回显凭据；测试连接会真实列取目标前缀并显示抽样数。"
+/>
+
 ## 新建连接器
 
 1. 进入 **数据集 → 数据连接器**，点击右上角 **新建数据源**。
@@ -32,8 +39,6 @@ last_reviewed: 2026-06-10
      - **全局（global）**：所有用户可用，**仅超级管理员可创建**。
    - **连接参数与密钥**：按类型不同，见下面两个子节。
 3. 点击 **新建连接器** 保存。
-
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/connector-create-form.png — 新建数据源对话框（S3/OSS 模式）；标注红框：Endpoint / Bucket / Access key 输入框 + HTTPS 复选框 [manual] -->
 
 > **密钥安全**：Access/Secret key、密码、私钥、私钥口令均**加密落库**，列表、详情、任何接口都**不会回显明文**（`secret_set` 只表达「是否已配密钥」）。编辑时密钥字段**留空即保持原密钥不变**；填入新值则整体轮换。
 >
@@ -148,8 +153,6 @@ last_reviewed: 2026-06-10
 
 - **连接成功**：提示「连接成功」，并显示探测到的样本文件数（采样上限 20 条，仅用于确认能列目录，不是总文件数）。
 - **连接失败**：提示原因，常见为凭据错误、地址不可达、SFTP 主机指纹不在 known_hosts、**目标不在白名单内**，或**白名单未配置**（见下）。
-
-<!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/datasets/connector-test-result.png — 连接器列表行测试成功状态；标注红框：绿色「连接成功」提示 + 样本计数 [manual] -->
 
 建议新建后先测试，再用于导入。
 
