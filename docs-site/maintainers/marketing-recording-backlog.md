@@ -20,7 +20,7 @@
 
 | 优先级 | 资产 ID                           | 完整链路与验收重点                                                              | 建议时长 | 文档落点                    | 状态 |
 | ------ | --------------------------------- | ------------------------------------------------------------------------------- | -------- | --------------------------- | ---- |
-| P0     | `video-tracker-text-discovery`    | 输入明确目标文本 → 发起无源发现 → 跨帧查看候选 → 采纳为新轨迹                   | 18–30 秒 | `workbench/video-propagate` | 待录 |
+| P0     | `video-tracker-text-discovery`    | 输入明确目标文本 → 发起无源发现 → 跨帧查看候选 → 采纳为新轨迹                   | 18–30 秒 | `workbench/video-propagate` | 已录 |
 | P0     | `video-tracker-combo-discovery`   | 输入文本并补充点/框示例 → 运行组合模型 → 对比约束后的候选 → 跨帧核对并采纳      | 20–34 秒 | `workbench/video-propagate` | 待录 |
 | P0     | `video-mask-correction-propagate` | 查看错误边界 → 在后续帧添加正负笔迹修正 → 从修正帧重新传播 → 核对并保存更新轨迹 | 20–36 秒 | `workbench/mask-brush`      | 待录 |
 
