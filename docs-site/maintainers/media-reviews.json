@@ -693,6 +693,36 @@
         "docs-site/user-guide/workbench/mask-brush.md"
       ]
     },
+    "docs-site/public/media/video/prediction-density-navigation-poster.webp": {
+      "last_verified_commit": "951002fd040c70cfafe446a7df78299c979f2c1f",
+      "verified_at": "2026-08-15T21:42:52.072Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "397c4ee156bcd20b11faa5521acb19d14f9e15efc99121fb086ef34ad142ede7",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/prediction-density-navigation-poster.webp",
+        "docs-site/user-guide/workbench/video-playback.md"
+      ]
+    },
+    "docs-site/public/media/video/prediction-density-navigation.mp4": {
+      "last_verified_commit": "951002fd040c70cfafe446a7df78299c979f2c1f",
+      "verified_at": "2026-08-15T21:42:52.072Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "cb9f6a7f36b8d8f25e8fed356672ad5cf54a88a4d611608bd12333cbbf0bc73b",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/prediction-density-navigation.mp4",
+        "docs-site/user-guide/workbench/video-playback.md"
+      ]
+    },
     "docs-site/public/media/video/track-batch-propagate-poster.webp": {
       "last_verified_commit": "d6c269b436a0a28077a33b83d440960bb9172779",
       "verified_at": "2026-08-15T17:57:56.085Z",
