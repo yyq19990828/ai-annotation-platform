@@ -24,6 +24,7 @@ type ProofScene = ProofSceneBase &
     | {
         kind: "video";
         src: string;
+        fallbackSrc: string;
         poster: string;
         meta: string;
         alt: string;
@@ -37,6 +38,7 @@ type ToolPreview = {
   desc: string;
   meta: string;
   src: string;
+  fallbackSrc: string;
   poster: string;
   alt: string;
 };
@@ -49,6 +51,7 @@ const toolPreviews: ToolPreview[] = [
     desc: "在目标上点一下，SAM3 返回贴合车辆轮廓的多个候选。",
     meta: "SMART POINT · ONE CLICK · CANDIDATE MASKS",
     src: withBase("/home/sam-tools/smart-point.webm"),
+    fallbackSrc: withBase("/home/sam-tools/smart-point.mp4"),
     poster: withBase("/home/sam-tools/smart-point-poster.webp"),
     alt: "在真实道路图中点击白色车辆，使用 SAM3 生成轮廓候选",
   },
@@ -59,6 +62,7 @@ const toolPreviews: ToolPreview[] = [
     desc: "拖框限定目标范围，让 SAM3 在框内提取完整车辆边界。",
     meta: "SMART BOX · BOX PROMPT · POLYGON RESULT",
     src: withBase("/home/sam-tools/smart-box.webm"),
+    fallbackSrc: withBase("/home/sam-tools/smart-box.mp4"),
     poster: withBase("/home/sam-tools/smart-box-poster.webp"),
     alt: "在真实道路图中框选白色车辆，使用 SAM3 提取车辆边界",
   },
@@ -69,6 +73,7 @@ const toolPreviews: ToolPreview[] = [
     desc: "只需粗框目标，SAM3 自动收紧为贴合车辆的矩形框，再确认类别。",
     meta: "MAGIC BOX · AUTO TIGHTEN · HUMAN ACCEPT",
     src: withBase("/home/ai-assisted-annotation.webm"),
+    fallbackSrc: withBase("/home/ai-assisted-annotation.mp4"),
     poster: withBase("/home/ai-assisted-annotation-poster.webp"),
     alt: "在真实道路图中粗框白色车辆，使用 SAM3 收紧框并确认类别",
   },
@@ -79,6 +84,7 @@ const toolPreviews: ToolPreview[] = [
     desc: "框一辆车作为视觉示例，一次找出全图中外观相似的目标。",
     meta: "EXEMPLAR · VISUAL QUERY · FIND SIMILAR",
     src: withBase("/home/sam-tools/exemplar.webm"),
+    fallbackSrc: withBase("/home/sam-tools/exemplar.mp4"),
     poster: withBase("/home/sam-tools/exemplar-poster.webp"),
     alt: "在真实道路图中框选白色车辆作为视觉示例，找出全图相似车辆",
   },
@@ -102,6 +108,7 @@ const scenes: ProofScene[] = [
     href: withBase("/user-guide/projects/ai-preannotate"),
     kind: "video",
     src: withBase("/home/ocr-real-scene.webm"),
+    fallbackSrc: withBase("/home/ocr-real-scene.mp4"),
     poster: withBase("/home/ocr-real-scene-poster.webp"),
     alt: "真实 OCR 当前题从启动推理到生成文本多边形候选",
   },
@@ -325,6 +332,7 @@ watch([activeIndex, activeToolIndex], () => {
                   @pause="videoPlaying = false"
                 >
                   <source :src="activeTool.src" type="video/webm" />
+                  <source :src="activeTool.fallbackSrc" type="video/mp4" />
                 </video>
               </Transition>
               <button
@@ -379,6 +387,7 @@ watch([activeIndex, activeToolIndex], () => {
             @pause="videoPlaying = false"
           >
             <source :src="activeScene.src" type="video/webm" />
+            <source :src="activeScene.fallbackSrc" type="video/mp4" />
           </video>
           <img
             v-else

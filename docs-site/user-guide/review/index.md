@@ -14,8 +14,6 @@ last_reviewed: 2026-08-11
 
 ![ReviewPage：未选批次时的批次卡片网格；选中批次后为任务列表（缩略图 + 批量操作按钮）](../images/review/review-list-page.png)
 
-<!-- TODO IMAGE_CHECKLIST: review-list-page.png 需重拍 — landing 已从批次树升级为批次卡片网格 -->
-
 ![审核工作台](../images/review/workbench.png)
 
 平台提供两个独立的审核入口：

@@ -42,7 +42,12 @@ last_reviewed: 2026-08-11
 
 面板默认停在中间画布右上角。拖动头部可在画布内移动，拖右下角可调整尺寸；关闭重开或刷新后会恢复上次位置和尺寸，窗口变小时会自动夹回可见区域。**AI 追踪**与 **AI 单题**互斥：打开其中一个会收起另一个，避免同时遮挡画布。
 
-![AI 追踪面板拖动、缩放、重开恢复与 AI 单题互斥](../images/video-propagate/ai-tracking-panel-interaction.gif)
+<DocsVideo
+  src="/media/video/ai-tracker-panel.mp4"
+  poster="/media/video/ai-tracker-panel-poster.webp"
+  alt="AI 追踪面板拖动、缩放、重开恢复与 AI 单题互斥"
+  caption="追踪面板可在画布内移动和缩放，并与当前题 AI 面板保持互斥。"
+/>
 
 方向使用时间轴语义，避免“向前 / 向后”歧义：
 
@@ -76,9 +81,34 @@ SAM 尺寸档位只在 **SAM2 · 框追踪**时显示，因为 `tiny / small / b
 
 ## 点 / 框种子、多目标与中途纠偏
 
-SAM2 和 SAM3 点框交互追踪支持在发起前采集种子：
+SAM2 和 SAM3 点框交互追踪支持在发起前采集种子。三种种子分别录制，避免把点、负点和框的操作混成一段：
 
-![为多个目标添加点与框种子，并在后续帧追加纠偏](../images/video-propagate/multi-target-seeds.gif)
+### 跨帧多正点
+
+<DocsVideo
+  src="/media/video/tracker-cross-frame-points.mp4"
+  poster="/media/video/tracker-cross-frame-points-poster.webp"
+  alt="为左右两辆公交车分别添加跨帧正点，追踪后拖动时间轴核对两个候选"
+  caption="两个目标分别在 F0 与 F4 添加正点，发起一次多目标追踪，并在接受前跨帧复核。"
+/>
+
+### 正负点修正
+
+<DocsVideo
+  src="/media/video/tracker-positive-negative.mp4"
+  poster="/media/video/tracker-positive-negative-poster.webp"
+  alt="为两辆公交车添加正点和红色负点，追踪后跨帧核对候选"
+  caption="Alt + 单击加入负点，用于排除紧邻目标的背景或相邻物体；面板会分别统计正负提示。"
+/>
+
+### 整车框种子
+
+<DocsVideo
+  src="/media/video/tracker-box-seed.mp4"
+  poster="/media/video/tracker-box-seed-poster.webp"
+  alt="沿左右两辆公交车完整车身绘制框种子并同时追踪"
+  caption="每个框覆盖完整车身；生成两个候选后拖动时间轴检查跨帧位置，再整批接受。"
+/>
 
 1. 在追踪面板的「种子」区选择**点**或**框**，进入采集状态。
 2. 点模式下，单击目标添加正点；`Alt + 单击` 添加负点，表示“这块不要”。框模式下，在目标上拖出提示框。

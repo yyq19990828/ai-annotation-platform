@@ -13,20 +13,26 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, mediaPoint, openImageAnnotate, recordingAnchor } from "./_canvas";
+import {
+  commitPendingAnnotationClass,
+  hidePredictions,
+  mediaPoint,
+  movePointerPathAtRefreshRate,
+  openImageAnnotate,
+  recordingAnchor,
+  renderedMediaBounds,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-/** 沿水平线从 x0 涂到 x1（分步移动让录屏看到连续笔迹）。 */
-async function stroke(page: Page, x0: number, x1: number, y: number) {
-  await page.mouse.move(x0, y);
+/** 沿折线连续涂抹，每个浏览器刷新帧推进一次。 */
+async function stroke(page: Page, points: Array<{ x: number; y: number }>) {
+  const first = points[0];
+  if (!first || points.length < 2) throw new Error("[mask-draw] 笔刷路径至少需要两个点");
+  await page.mouse.move(first.x, first.y);
   await page.mouse.down();
-  const steps = 14;
-  for (let i = 1; i <= steps; i++) {
-    await page.mouse.move(x0 + ((x1 - x0) * i) / steps, y);
-    await page.waitForTimeout(40);
-  }
+  await movePointerPathAtRefreshRate(page, points, 1_000);
   await page.mouse.up();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(300);
 }
 
 export async function runMaskDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
@@ -41,28 +47,37 @@ export async function runMaskDraw(page: Page, catalog: ScreenshotSeedCatalog): P
   await page.waitForTimeout(900);
 
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[mask-draw] workbench-stage 没有可见边界");
+  const box = await renderedMediaBounds(stage);
   const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
   if (anchor.brush_strokes.length === 0) {
     throw new Error("[mask-draw] primary_vehicle 缺少笔刷轨迹锚点");
   }
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_000);
 
-  // ── 来回几笔填出一块区域（默认笔刷半径），逐行下移 ──
-  for (const path of anchor.brush_strokes) {
-    const [from, to] = path;
-    if (!from || !to) throw new Error("[mask-draw] primary_vehicle 笔刷轨迹至少需要两个点");
-    const start = mediaPoint(box, from);
-    const end = mediaPoint(box, to);
-    await stroke(page, start.x, end.x, start.y);
+  // ── 两组往返笔迹逐行填出目标，保留“多笔累积”的视觉语义 ──
+  const splitAt = Math.ceil(anchor.brush_strokes.length / 2);
+  for (const group of [
+    anchor.brush_strokes.slice(0, splitAt),
+    anchor.brush_strokes.slice(splitAt),
+  ]) {
+    if (group.length === 0) continue;
+    const points = group.flatMap((path, index) => {
+      const mapped = path.map((point) => mediaPoint(box, point));
+      return index % 2 === 0 ? mapped : mapped.reverse();
+    });
+    await stroke(page, points);
   }
   await page.waitForTimeout(700); // 停留展示涂好的色块
 
   // Enter 提交 Mask（实际落库类型由任务能力决定）
   await page.keyboard.press("Enter");
-  await page.waitForTimeout(1100);
+  await commitPendingAnnotationClass(page, {
+    label: anchor.label,
+    taskId: catalog.projects.image_demo.tasks.annotating.id,
+  });
+  await page.waitForTimeout(2_000);
 
   const drawEndMs = Date.now();
 

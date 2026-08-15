@@ -27,7 +27,11 @@ AI 预标和外部预测先生成 **Prediction（候选）**，不会直接替�
 
 `Tab` / `Shift+Tab` 可在同类对象之间切换；开启“决策后自动前进”后，接受或拒绝会自动选中下一个待审对象。完整的键盘审阅流转见[工作台概览](../workbench/#审阅键盘流转)。
 
-![使用 Tab、A 和 D 连续审阅 AI 候选](../images/ai/candidate-keyboard-review.gif)
+<DocsVideo
+  src="/media/ai/candidate-keyboard-review.mp4"
+  poster="/media/ai/candidate-keyboard-review-poster.webp"
+  alt="使用 Tab、A 和 D 连续审阅多个 AI 候选并自动前进"
+/>
 
 ## 数据边界
 

@@ -26,22 +26,34 @@ export async function runVideoTimelineZoom(
   await page.mouse.move(anchorX, anchorY);
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_300);
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, -420);
   await page.keyboard.up("Control");
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_100);
 
   await page.mouse.wheel(0, 260);
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_100);
 
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, -300);
   await page.keyboard.up("Control");
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_100);
+
+  // 换一个指针锚点再放大，展示缩放中心跟随光标。
+  await page.mouse.move(box.x + box.width * 0.36, anchorY);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -260);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(1_100);
+
+  // 无修饰键滚轮横向平移时间窗，便于和锚点缩放区分。
+  await page.mouse.wheel(0, 300);
+  await page.waitForTimeout(1_100);
 
   // 折叠态不渲染展开控制条的“适配全部”按钮；双击时间轴是等价的
   // 常驻复位入口，也是用户指南要展示的手势。
   await timeline.dblclick({ position: { x: box.width * 0.64, y: box.height * 0.55 } });
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_300);
   return { drawStartMs, drawEndMs: Date.now() };
 }

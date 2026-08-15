@@ -325,6 +325,7 @@ export function ImageWorkbench({
 
   return (
     <ImageStage
+      key={mediaKey ?? fileUrl ?? "image-stage"}
       resourceCoordinator={resourceCoordinator}
       maskCompareStore={maskCompareStore}
       rasterMaskRecords={displayedRasterMaskRecords}

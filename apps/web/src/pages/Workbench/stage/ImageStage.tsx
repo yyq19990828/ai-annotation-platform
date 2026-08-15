@@ -954,6 +954,7 @@ export function ImageStage({
     fitTick,
     autoFitOnResize: workbenchConfig.image.autoFitOnResize,
   });
+  const imageReady = imageStatus === "loaded" && imageLoaded && fitted;
 
   // 揭开 konvaHost 前强制同步重绘一次: react-konva 的 batchDraw 是 rAF 异步, 否则 fitted 翻 true、
   // konvaHost 转可见的那一帧 canvas 像素还停在旧 vp (上一张) → 残留「左上角小比例闪一下」。
@@ -1031,7 +1032,7 @@ export function ImageStage({
       });
     };
 
-    const onMove = (e: PointerEvent) => {
+    const onMove = (e: PointerEvent | MouseEvent) => {
       const d = dragRef.current;
       if (!d) return;
       if (d.kind === "pan") {
@@ -1345,14 +1346,16 @@ export function ImageStage({
       setDrag(null);
       setSnapIndicator(null);
     };
-    window.addEventListener("pointermove", onMove);
-    // Konva/canvas 在部分浏览器路径会消费 bubble 阶段的 pointerup；捕获阶段收口，
-    // 同时保留 mouseup 兜底，避免画布笔迹停在预览态而永不派发 prompt。
+    // Konva/canvas 会在部分输入路径消费 bubble 阶段的 move / up；在捕获阶段统一收口。
+    // 同时保留 mouse 事件兜底，覆盖只产生鼠标事件的远程桌面与自动化输入。
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("mousemove", onMove, true);
     window.addEventListener("pointerup", onUp, true);
     window.addEventListener("mouseup", onUp, true);
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("mousemove", onMove, true);
       window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("mouseup", onUp, true);
     };
@@ -1737,6 +1740,21 @@ export function ImageStage({
     <div
       ref={setContainerNode}
       data-testid="workbench-stage"
+      data-image-identity={imageIdentity}
+      data-image-ready={imageReady ? "true" : "false"}
+      data-media-x={vp.tx}
+      data-media-y={vp.ty}
+      data-media-width={imgW * vp.scale}
+      data-media-height={imgH * vp.scale}
+      data-active-class={activeClass}
+      data-user-box-count={userBoxes.length}
+      data-ai-box-count={aiBoxes.length}
+      data-sam-candidate-count={samCandidates?.length ?? 0}
+      data-pending-drawing={pendingDrawing ? "true" : "false"}
+      data-drag-kind={drag?.kind ?? "none"}
+      data-drag-changed={
+        drag?.kind === "draw" && (drag.cx !== drag.sx || drag.cy !== drag.sy) ? "true" : "false"
+      }
       className={styles.root}
       onMouseLeave={() => {
         onCursorMove(null);

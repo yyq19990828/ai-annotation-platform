@@ -140,6 +140,7 @@ export function createDevSidebar(
         { text: "连接器安全", link: "/dev/reference/connector-security" },
         { text: "内部 API 端点", link: "/dev/reference/internal-api-endpoints" },
         { text: "生成物归属", link: "/dev/reference/generated-artifacts" },
+        { text: "高清营销资产", link: "/dev/reference/marketing-asset-catalog" },
       ],
     },
     {

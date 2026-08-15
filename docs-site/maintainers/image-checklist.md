@@ -1,22 +1,22 @@
-# 截图清单（用户手册）
+# 媒体清单（用户手册）
 
 > 这个文件位于 `docs-site/maintainers/image-checklist.md`，不参与文档站发布，仅作为 maintainer 的工作清单。
 >
 > 标 `[auto]` 的图由 `pnpm --filter @anno/web screenshots` 自动生成（脚本：`apps/web/e2e/screenshots/`），输出到 `docs-site/user-guide/images/`。
 >
-> 标 `[auto-gif]` 的动图由 `pnpm --filter @anno/web screenshots:flows` 录制（流程脚本：`apps/web/e2e/screenshots/flows/`），webm→GIF（需 ffmpeg），多步交互用，直接落到 `docs-site/user-guide/images/<page>/<name>.gif`。
+> 简短动图由 `screenshots:flows` 生成 GIF；较长、强调 AI 链路、视频或 3D 平滑度的流程由 4K60 母版运行 `pnpm docs:media:derive`，派生为 `docs-site/public/media/**/*.mp4` 与 WebP 封面，并同步生成首页 VP9 WebM、H.264 MP4 fallback 与 WebP 封面。
 > 更新流程：
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
 > 2. 修复截图 seed 并按能力绑定 live backend；无 GPU 时显式使用协议 stub
-> 3. `pnpm --filter @anno/web screenshots:matrix` 和 `pnpm --filter @anno/web screenshots:flows`；首页 Hero 源图有变化时再运行 `pnpm --filter @anno/docs-site media:home-hero`
-> 4. `git diff docs-site/user-guide/images/` 人眼审阅全部 PNG 和 GIF 正文帧
-> 5. 运行 manifest release gate 和 orphan strict gate 后再提交
+> 3. `pnpm --filter @anno/web screenshots:matrix`、`pnpm --filter @anno/web screenshots:flows` 和 `pnpm docs:media:derive`；首页 Hero 源图有变化时再运行 `pnpm --filter @anno/docs-site media:home-hero`
+> 4. 人眼审阅全部 PNG，并检查 MP4/GIF 的起点、核心动作、结果落地和终点
+> 5. 运行 `pnpm docs:media:audit -- --release`、manifest release gate 和 orphan strict gate 后再提交
 
 ## 拍摄约定
 
-- **分辨率**：desktop 1440×900、mobile 390×664；流程录屏与首页 WebM 1440×810，文档 GIF 从同一源录屏缩放生成
-- **格式**：截图 PNG，GIF 用于流程录屏
+- **分辨率**：desktop 1440×900、mobile 390×664；高清母版 3840×2160 / 60fps；文档 MP4 1280×720 / 30fps
+- **格式**：截图 PNG；不超过约 6 秒的简单动作可用 GIF；AI、视频、3D 和长链路使用 H.264 MP4 + WebP 封面
 - **浏览器**：Playwright 固定版本 Chromium；时区、语言、DPR、时钟和动画由 driver 统一固定
 - **数据来源**：只使用 `screenshots` seed catalog 的固定逻辑键；不从开发库随机选择项目或任务
 - **动态信息**：账号、时间和通知数等不稳定区域由统一 mask 规则处理
@@ -29,11 +29,11 @@
 ### 暗色工作台重录
 
 - [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode,ai-inspector-panel}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
-- [x] 图片工作台动图：`sam/{smart-point-interaction,smart-box-interaction,smart-scribble-interaction,magic-box-interaction,exemplar-interaction}.gif`、`workbench/{ocr-real-scene,rotated-bbox,hotkey-cheatsheet}.gif`、`{bbox,polyline,polygon,mask-brush}/draw-in-progress.gif`
-- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`；OCR 录制时将 AI 面板停靠在主图右侧
+- [x] 图片工作台流程：短交互保留 GIF；Magic Box、OCR、AI 预标与候选审阅已迁移到 `public/media/**/*.mp4`
+- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，均由对应 4K60 母版派生 VP9 WebM、H.264 MP4 fallback 和 WebP 封面；OCR 母版中的 AI 面板停靠在主图右侧
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
-- [x] 视频工作台：`workbench/video-real-scene.png`、`video-propagate/ai-tracking-panel.png`、`workbench/{video-track-overview,video-track-trajectory}.gif`、`video-propagate/ai-tracking-panel-interaction.gif`
-- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）、`workbench/{pointcloud-controls-bar,pointcloud-view-orbit}.gif`
+- [x] 视频工作台：静态总览保留 PNG；工作台播放、AI 面板、多目标种子和 Mask 轨迹编辑已迁移到 `public/media/video/*.mp4`
+- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）+ `public/media/pointcloud/{controls,orbit}.mp4`
 - [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
@@ -81,7 +81,9 @@
 
 - [ ] `images/workbench/video-track-candidate-render.png` — 画布渲染检测式轨迹候选 `video_track_bbox`（violet，采纳前逐帧核对态）；红框：候选框 + 单条采纳/拒绝入口 [manual]
 - [ ] `images/video-propagate/tracker-review-bar.png` — 固定一条含至少 2 个目标的 `pending_review` 作业，当前帧同时露出 violet 候选与顶部「接受 / 丢弃」审阅条；红框：候选目标数、覆盖帧数、整批决策按钮 **[Tier A]** [manual]（需独立场景；现有工作台场景会主动丢弃待审作业）
-- [x] `images/video-propagate/multi-target-seeds.gif` — AI 追踪面板切点/框种子 → `+ 新目标` → 跳到后续帧加负点/修正框；突出目标编号与多帧纠偏 `[auto-gif]`（flows/video-multi-target-seeds）
+- [x] `public/media/video/tracker-cross-frame-points.mp4` — 两个公交车目标分别设置 F0/F4 正点 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
+- [x] `public/media/video/tracker-positive-negative.mp4` — 两个公交车目标分别设置跨帧正负点 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
+- [x] `public/media/video/tracker-box-seed.mp4` — 两个公交车目标分别绘制完整车身框 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
 - [x] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 → 拖动续写 →「续写后自动前进」自动跳下一条 `[auto-gif]`（flows/video-track-carryover）
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
@@ -122,7 +124,7 @@
 ### 图片候选审阅与数据边界
 
 - [ ] `images/ai/candidate-review-overview.png` — 图片工作台 AI 待审候选总览；同时露出画布 violet 候选、右侧候选列表、接受 / 拒绝按钮与来源信息 **[Tier A]** [manual]
-- [x] `images/ai/candidate-keyboard-review.gif` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** `[auto-gif]`（flows/candidate-keyboard-review）
+- [x] `public/media/ai/candidate-keyboard-review.mp4` — `Tab` 选中候选 → `A` 接受 / `D` 拒绝 → “决策后自动前进”切到下一项的完整键盘流 **[Tier A]** `[derived-mp4]`
 - [ ] `images/ai/prediction-to-annotation.png` — 同一对象“候选 Prediction → 接受后 Annotation”的前后对比；红框：颜色 / 来源标记变化、接受后仍可编辑 **[Tier A]** [manual]
 - [ ] `images/ai/candidate-source-badges.png` — 候选列表按来源展示 ML Backend / 外部导入 / 交互式结果；红框：来源徽标、模型版本与置信度 **[Tier B]** [manual]
 
@@ -173,7 +175,7 @@
 - [x] `images/projects/ai-pre-history-search.png` — 预标注历史搜索 [auto]
 - [~] ~~`images/projects/ai-pre-empty-alias.png` — 预标注 alias 为空提示~~ — **已废弃**：PromptComposer（alias 警告所在）在 ai-pre 重构中删除，无对应 UI
 - [x] `images/projects/ai-pre-config-panel.png` — 项目详情面板（批次列表 + 配置区 + 跑预标按钮 + 导入预测按钮）`[auto]`
-- [x] `images/projects/ai-preannotate-flow.gif` — 选择项目与批次 → 运行 AI 预标 → 查看任务历史 `[auto-gif]`（flows/ai-preannotate）
+- [x] `public/media/ai/preannotate.mp4` — 选择项目与批次 → 运行 AI 预标 → 查看任务历史 → 返回工作台核对候选 `[derived-mp4]`
 - [ ] `images/projects/ai-pre-pipeline-dag-canvas.png` — AI 预标项目详情「批跑预标设置」两列 DAG 编排画布 + 右侧节点参数；红框：节点 +/删除/改父级、兼容性警告、运行计数 [manual]
 - [ ] `images/projects/ai-pre-project-pipeline-save.png` — 「保存为项目编排」成功态；红框：保存按钮、已保存编排阶段数 badge、清除按钮 [manual]
 - [x] `images/projects/ai-pre-variant-selector.gif` — VariantSelector 两轴选项 + 推荐 badge `[auto-gif]`（flows/ai-pre-variant-selector，切 select 看 显存/精度/推荐 pill 联动）
@@ -223,7 +225,7 @@
 - [x] `images/superadmin/audit-logs/filter-bar.png` — 筛选栏（scope 切换 + detail 键名/键值输入框）
 - [ ] `images/superadmin/failed-predictions/list.png` — /ai-pre/jobs?status=failed 列表（状态筛选 + 重试/放弃/显示已放弃 toggle） **[Tier B]** 带 status 时客户端筛选清空 mock，不带又混入真实成功 job，需真实 failed 种子数据；失败列表已由 `images/workflows/failed-prediction-recovery-jobs-list.png` 覆盖
 - [ ] `images/superadmin/failed-predictions/dismiss-restore.png` — 显示已放弃后含「已放弃」badge + 恢复按钮 [manual]
-- [ ] `images/superadmin/ml-backend/register-form.png` — **重拍现有路径**：注册表单全貌含 GPU 物理资源、显存预算、驱逐优先级、当前预算、desired → effective、max_concurrency 与 extra_params **[Tier A]** `[auto]`（旧图早于 GPU 字段组）
+- [x] `images/superadmin/ml-backend/register-form.png` — 注册表单全貌含 GPU 物理资源、显存预算、驱逐优先级、当前预算、desired → effective、max_concurrency 与 extra_params **[Tier A]** `[auto]`
 - [ ] `images/superadmin/ml-backend/gpu-resource-overview.png` — 注册管理 tab 的 GPU 资源总览；红框：runtime ready、全局期望模式、资源 ID、节点 / 物理设备、可分配显存、backend 数、configured / desired / effective 与 blocker **[Tier A]** `[auto]`（需固定 `GPU_ARBITER_RESOURCES_JSON` 或接口 fixture，不能拍空配置）
 - [ ] `images/superadmin/ml-backend/health-card.png` — 实时 `/health` 卡片（GPU / video_pool meta）
 - [ ] `images/superadmin/ml-backend/health-state-badges.png` — connected/error/disconnected 三状态徽章对比 [manual]
@@ -253,7 +255,7 @@
 - [ ] `images/3d-box/psr-panel.png` — PSR 面板近景，标注红框：l/w/h 尺寸字段 [manual]
 - [ ] `images/3d-box/autofit-buttons.png` — 贴合/收尺寸/贴地/朝向按钮组 [manual]
 - [x] `images/workbench/layout-overview.png` — 四区布局全图（顶栏/左工具栏/画布/右抽屉） [auto]
-- [x] `images/workbench/ocr-real-scene.gif` — 真实 RapidOCR 当前题从派发、推理中到生成文本多边形候选 `[auto-gif]`（flows/ocr-inference，P-OCR）
+- [x] `public/media/ai/ocr-current-task.mp4` — 真实 RapidOCR 当前题从派发、推理中到生成文本多边形候选 `[derived-mp4]`（P-OCR）
 - [x] `images/workbench/ocr-real-scene.png` — OCR 面板无脚本静态备用图 `[auto]`（scene: `workbench/ocr-real-scene`，P-OCR）
 - [ ] `images/workbench/task-status-labels.png` — 六种状态标签竖列
 
@@ -261,21 +263,21 @@
 
 > 固定项目/数据集为 `P-LARGE-IMG` / `DS-LARGE-IMG`。它在截图数据库中存在时会作为可选项目加入 catalog；录制前必须确认 Cosmic Cliffs 金字塔已 ready，不得用整图加载冒充渐进 LOD。
 
-- [x] `images/workbench/large-image-progressive-detail.gif` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[auto-gif]`（flows/large-image-progressive）
+- [x] `public/media/large-image/progressive.mp4` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[derived-mp4]`
 - [ ] `images/workbench/large-image-pyramid-status.png` — required 超大图的“高清切片生成中”与失败/重试状态；不得自动请求整张原图 **[Tier A]** `[auto]`
 - [ ] `images/mask-brush/large-image-limit.png` — 超大底图仍可浏览并使用矢量工具，同时 Mask 能力明确显示尺寸超限原因 **[Tier A]** `[auto]`（可先用 `P-LARGE-IMG` 建 scene）
 
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
 - [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，落库类型由任务 Mask 能力决定）
-- [x] `images/workbench/video-mask-track-edit.gif` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[auto-gif]`（flows/video-mask-track-edit，结束后恢复 screenshot seed）
+- [x] `public/media/video/mask-track-edit.mp4` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[derived-mp4]`
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
 - [ ] `images/pointcloud-crossframe/overlay-k3-triview.png` — K=3 时主视图 + 三视图半透明虚线参考框 [manual]
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [x] `images/workbench/pointcloud-real-scene.png` — nuScenes 激光雷达 + 6 相机环绕布局全景 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-MULTI）
-- [x] `images/workbench/pointcloud-view-orbit.gif` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[auto-gif]`（flows/pointcloud-view，P-PC-DEV）
-- [x] `images/workbench/pointcloud-controls-bar.gif` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[auto-gif]`（flows/pointcloud-controls，P-PC-DEV）
-- [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `pointcloud-controls-bar.gif` 内含青蓝高度色→相机 RGB 的切换）`[auto-gif]`
+- [x] `public/media/pointcloud/orbit.mp4` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/controls.mp4` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[derived-mp4]`（P-PC-DEV）
+- [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `public/media/pointcloud/controls.mp4` 内含青蓝高度色→相机 RGB 的切换）`[derived-mp4]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [x] `images/polygon/draw-in-progress.gif` — 多边形逐点绘制全过程（落点 + 预览线，Enter 闭合提交）`[auto-gif]`（flows/polygon-draw，P-COCO8）
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间
@@ -290,7 +292,7 @@
 - [x] `images/sam/smart-point-interaction.gif` — 无侧边栏的真实 SAM3 智能点车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-point`，P-COCO8）
 - [x] `images/sam/smart-box-interaction.gif` — 无侧边栏的真实 SAM3 智能框车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-box`，P-COCO8）
 - [x] `images/sam/smart-scribble-interaction.gif` — 选中已存原生 Mask 后连续绘制正、负笔迹并查看精修候选 `[auto-gif]`（flow: `smart-scribble`，P-COCO8 确定性签名候选）
-- [x] `images/sam/magic-box-interaction.gif` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[auto-gif]`（flow: `sam-interactive`，P-COCO8）
+- [x] `public/media/ai/assisted-annotation.mp4` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[derived-mp4]`（P-COCO8）
 - [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
 - [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
@@ -298,9 +300,9 @@
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
 - [x] `images/video-propagate/ai-tracking-panel.png` — 画布右上追踪面板展示新版作用范围、真实 backend 提供方、方向、范围与种子摘要 `[auto]`（scene: `workbench/video-ai-tracking-panel`）
-- [x] `images/video-propagate/ai-tracking-panel-interaction.gif` — 顶部打开 → 切换作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 `[auto-gif]`（flow: `ai-tracker-panel`）
+- [x] `public/media/video/ai-tracker-panel.mp4` — 顶部打开 → 切换作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 `[derived-mp4]`
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
-- [x] `images/workbench/video-track-overview.gif` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[auto-gif]`（flows/video-track，开源 P-VIDEO-DEV，seed_video.py）
+- [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
 - [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）
 - [x] `images/workbench/video-real-scene.png` — 真实城市交通视频任务工作台 `[auto]`（scene: `workbench/video-real-scene`，P-VIDEO-DEV）
 - [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`

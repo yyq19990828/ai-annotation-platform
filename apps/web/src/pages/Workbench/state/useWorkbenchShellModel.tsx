@@ -243,6 +243,7 @@ import {
 } from "../stage/shared/geometry/maskMutationDraft";
 import {
   buildPipelineRunPayload,
+  annotationsForTask,
   commitAfterNavigationGuard,
   missingBackendIdsForStages,
   selectProjectPipelineStages,
@@ -1176,7 +1177,11 @@ export function useWorkbenchShellModel({
       activeVideoSegmentId,
     ),
   );
-  const annotationsData = qualityPreviewAnnotations ?? scopedAnnotationsData;
+  const unscopedAnnotationsData = qualityPreviewAnnotations ?? scopedAnnotationsData;
+  const annotationsData = useMemo(
+    () => annotationsForTask(unscopedAnnotationsData, taskId),
+    [taskId, unscopedAnnotationsData],
+  );
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
   // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存

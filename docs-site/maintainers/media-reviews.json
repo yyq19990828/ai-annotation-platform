@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "default_max_age_days": 30,
+  "review_profile": "visual-content-v1",
+  "entries": {}
+}

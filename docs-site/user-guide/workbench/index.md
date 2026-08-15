@@ -30,7 +30,11 @@ last_reviewed: 2026-08-11
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/large-image-pyramid-status.png — required 超大图生成中与失败/重试状态 [auto] -->
 
-![超大图从 overview 随缩放与平移渐进恢复局部高清细节](../images/workbench/large-image-progressive-detail.gif)
+<DocsVideo
+  src="/media/large-image/progressive.mp4"
+  poster="/media/large-image/progressive-poster.webp"
+  alt="超大图从概览随缩放与平移渐进恢复局部高清切片"
+/>
 
 图片背景浏览不要求 WebGPU；没有独立 GPU 的浏览器仍可打开、缩放和平移图片。已生成高清切片的超大图会
 先显示 overview，再按当前视口和缩放级别渐进加载清晰 tile。平移或放大时局部清晰度可能短暂变化，但

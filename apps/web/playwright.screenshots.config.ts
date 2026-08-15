@@ -6,6 +6,7 @@
  *   pnpm screenshots:dark             # desktop-dark 单跑
  *   pnpm screenshots:matrix           # 三个截图 project 全跑
  *   pnpm screenshots:flows            # 流程录制 → GIF（video:on）
+ *   pnpm screenshots:marketing        # 流程录制 → 4K60 MKV 采集源 + MP4 通用母版
  *   pnpm screenshots:regression       # 视觉回归子集（M4）
  *
  * 调试：
@@ -14,6 +15,7 @@
  * 不进 CI 默认；CI 只跑 regression 子集（见 M4 / .github/workflows）。
  */
 import { defineConfig, devices } from "@playwright/test";
+import { MARKETING_PROJECT_NAME } from "./e2e/screenshots/_helpers/marketing-recorder";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
@@ -23,6 +25,12 @@ for (const [key, value] of Object.entries(process.env)) {
     BROWSER_ENV[key] = value;
   }
 }
+const MARKETING_BROWSER_ENV = {
+  ...BROWSER_ENV,
+  ...(process.env.MARKETING_CAPTURE_DISPLAY
+    ? { DISPLAY: process.env.MARKETING_CAPTURE_DISPLAY }
+    : {}),
+};
 
 export default defineConfig({
   testDir: "./e2e/screenshots",
@@ -96,6 +104,39 @@ export default defineConfig({
         deviceScaleFactor: 1,
         video: VALIDATE_ONLY ? "off" : { mode: "on", size: { width: 1440, height: 810 } },
         trace: "on",
+      },
+    },
+    // ── 营销母版（1440×810 逻辑构图 × 1.8 DPR = 2.6K60 → 4K60）──────
+    {
+      name: MARKETING_PROJECT_NAME,
+      testMatch: ["**/flows/flows.spec.ts"],
+      timeout: 120_000,
+      use: {
+        browserName: "chromium",
+        headless: false,
+        viewport: null,
+        video: "off",
+        trace: "retain-on-failure",
+        launchOptions: {
+          env: MARKETING_BROWSER_ENV,
+          args: [
+            "--window-position=0,0",
+            "--window-size=1440,900",
+            "--force-device-scale-factor=1.8",
+            "--hide-scrollbars",
+            "--use-gl=angle",
+            "--use-angle=gl",
+            "--ignore-gpu-blocklist",
+            "--enable-gpu-rasterization",
+            "--disable-frame-rate-limit",
+            "--disable-gpu-vsync",
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-features=CalculateNativeWinOcclusion",
+            "--run-all-compositor-stages-before-draw",
+          ],
+        },
       },
     },
     // ── 视觉回归（同一 screenshot catalog + protocol stub）─────────────

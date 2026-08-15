@@ -13,16 +13,15 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-/** 在 pc-viewport 内做一次左键拖拽(orbit), from→to 之间分 steps 步平滑移动。 */
+/** 在 pc-viewport 内做一次左键拖拽(orbit)。 */
 async function dragOrbit(
   page: Page,
   box: { x: number; y: number; width: number; height: number },
   from: { dx: number; dy: number },
   to: { dx: number; dy: number },
-  // 点云每帧重渲染让单次 mouse.move 较慢, 步数不宜多, 否则单段拖拽就拖到数秒、GIF 过长。
-  steps = 14,
 ): Promise<void> {
   const sx = box.x + box.width * from.dx;
   const sy = box.y + box.height * from.dy;
@@ -30,11 +29,7 @@ async function dragOrbit(
   const ey = box.y + box.height * to.dy;
   await page.mouse.move(sx, sy);
   await page.mouse.down();
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    await page.mouse.move(sx + (ex - sx) * t, sy + (ey - sy) * t);
-    await page.waitForTimeout(18);
-  }
+  await movePointerAtRefreshRate(page, { x: sx, y: sy }, { x: ex, y: ey }, 900);
   await page.mouse.up();
   await page.waitForTimeout(350);
 }
@@ -57,12 +52,16 @@ export async function runPointcloudView(
   if (!box) throw new Error("[pointcloud-view] pc-viewport 没有可见边界");
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_500);
 
   // ── 左键拖拽 orbit：默认模式下 OrbitControls LEFT=ROTATE, 拖拽即沿轨道环绕点云 ──
   // 第一段：水平向右拖(绕竖直轴转), 视角横扫。
   await dragOrbit(page, box, { dx: 0.32, dy: 0.5 }, { dx: 0.7, dy: 0.42 });
   // 第二段：反向 + 略带俯仰, 让点云换个角度。
   await dragOrbit(page, box, { dx: 0.68, dy: 0.45 }, { dx: 0.35, dy: 0.62 });
+  // 第三、四段分别强调仰视和水平回看，形成完整的多角度检查链路。
+  await dragOrbit(page, box, { dx: 0.46, dy: 0.62 }, { dx: 0.55, dy: 0.28 });
+  await dragOrbit(page, box, { dx: 0.56, dy: 0.34 }, { dx: 0.28, dy: 0.48 });
 
   // ── 滚轮拉近一档(dolly), 展示缩放查看 ──
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
@@ -70,7 +69,14 @@ export async function runPointcloudView(
     await page.mouse.wheel(0, -120);
     await page.waitForTimeout(150);
   }
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(1_000);
+
+  // 拉远一档核对整体结构，再停在新视角展示空间关系。
+  for (let i = 0; i < 2; i++) {
+    await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(180);
+  }
+  await page.waitForTimeout(1_400);
 
   const drawEndMs = Date.now();
   return { drawStartMs, drawEndMs };

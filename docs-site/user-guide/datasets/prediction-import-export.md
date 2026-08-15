@@ -25,6 +25,13 @@ last_reviewed: 2026-08-12
 
 ![导入预测弹窗（AAP JSON / COCO / YOLO 格式选择 + 文件上传 + 替换开关）](../images/projects/prediction-import-wizard.png)
 
+<DocsVideo
+  src="/media/ai/prediction-import.mp4"
+  poster="/media/ai/prediction-import-poster.webp"
+  alt="导入与真实车辆对齐的预测结果，在工作台检查候选并采纳为正式标注"
+  caption="导入预测不会直接覆盖人工标注；候选需在工作台复核并采纳后才成为 Annotation。"
+/>
+
 ### 向导流程
 
 向导分三步：

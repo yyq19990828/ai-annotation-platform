@@ -25,6 +25,16 @@ def _candidate(frame_index: int) -> dict:
     }
 
 
+def _outside_candidate(frame_index: int, instance_id: str) -> dict:
+    return {
+        **_candidate(frame_index),
+        "geometry": {"type": "bbox", "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0},
+        "confidence": 0.0,
+        "outside": True,
+        "instance_id": instance_id,
+    }
+
+
 async def _seed_review(db, owner_id, *, manual_frame: int | None = None):
     task, item = await _make_video_task(db, owner_id)
     keyframes = []
@@ -338,6 +348,65 @@ async def test_discovered_instance_reuses_one_annotation_across_windows(
         1,
         2,
     ]
+
+
+async def test_sourceless_decision_skips_instance_with_only_outside_candidates(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=None,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=1,
+        target_class_name="bus",
+        target_tool_unit_id="bbox",
+        prompt={"expected_source_versions": {}},
+        staged_result={
+            "results": [
+                {**_candidate(0), "instance_id": "visible"},
+                {**_candidate(1), "instance_id": "visible"},
+                _outside_candidate(0, "missing"),
+                _outside_candidate(1, "missing"),
+            ],
+            "grid_step": 1,
+            "output_geometry": "bbox",
+        },
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    accepted = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/decisions",
+        json={
+            "instance_ids": ["visible", "missing"],
+            "from_frame": 0,
+            "to_frame": 1,
+            "decision": "accept",
+            "expected_source_versions": {},
+            "job_revision": 1,
+        },
+        headers=_bearer(token),
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["prompt"]["review_state"]["instance_annotations"].keys() == {
+        "visible"
+    }
+
+    annotations = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/annotations", headers=_bearer(token)
+    )
+    assert annotations.status_code == 200, annotations.text
+    ai_tracks = [row for row in annotations.json() if row["source"] == "ai_tracker"]
+    assert len(ai_tracks) == 1
+    assert ai_tracks[0]["geometry"]["keyframes"]
 
 
 async def test_selector_overlapping_opposite_decision_is_rejected(

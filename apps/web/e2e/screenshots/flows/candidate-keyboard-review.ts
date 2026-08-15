@@ -1,7 +1,7 @@
 /**
  * 流程录制：Tab 进入 AI 待审候选，A/D 决策后自动推进到下一项。
  */
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
 
@@ -51,7 +51,9 @@ export async function runCandidateKeyboardReview(
   const rows = predictionIds.map((id) => page.getByTestId(`box-list-item-pred-${id}-0`));
 
   await page.goto(`/projects/${project.id}/annotate?task=${task.id}`);
-  await page.getByTestId("workbench-stage").waitFor({ state: "visible", timeout: 10_000 });
+  const stage = page.getByTestId("workbench-stage");
+  await stage.waitFor({ state: "visible", timeout: 10_000 });
+  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 10_000 });
   await rows[0].waitFor({ state: "visible", timeout: 10_000 });
   const section = page.getByTestId("section-header-ai");
   if ((await section.getAttribute("aria-expanded")) === "false") {
@@ -62,12 +64,13 @@ export async function runCandidateKeyboardReview(
   await rows[0].click();
   await waitForSelectedCandidate(page, [predictionIds[0]]);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_000);
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_500);
   await page.keyboard.press("Tab");
   const firstDecisionId = await waitForSelectedCandidate(page, predictionIds, predictionIds[0]);
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_300);
 
   const autoAdvanceStartMs = Date.now();
   await page.keyboard.press("A");
@@ -76,16 +79,28 @@ export async function runCandidateKeyboardReview(
     .waitFor({ state: "hidden", timeout: 10_000 });
   const remainingAfterAccept = predictionIds.filter((id) => id !== firstDecisionId);
   const secondDecisionId = await waitForSelectedCandidate(page, remainingAfterAccept);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(1_500);
 
   await page.keyboard.press("D");
   await page
     .getByTestId(`box-list-item-pred-${secondDecisionId}-0`)
     .waitFor({ state: "hidden", timeout: 10_000 });
-  await waitForSelectedCandidate(
+  const finalDecisionId = await waitForSelectedCandidate(
     page,
     remainingAfterAccept.filter((id) => id !== secondDecisionId),
   );
-  await page.waitForTimeout(1200);
+  await page.getByTestId(`box-list-item-pred-${finalDecisionId}-0`).waitFor({ state: "visible" });
+  await page.waitForTimeout(1_500);
+  await page.keyboard.press("A");
+  await page
+    .getByTestId(`box-list-item-pred-${finalDecisionId}-0`)
+    .waitFor({ state: "hidden", timeout: 10_000 });
+  const manualHeader = page.getByTestId("section-header-manual");
+  await manualHeader.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-testid="section-header-manual"]')?.textContent ?? "";
+    return /[1-9]\d*/.test(text);
+  });
+  await page.waitForTimeout(3_200);
   return { drawStartMs, autoAdvanceStartMs, drawEndMs: Date.now() };
 }

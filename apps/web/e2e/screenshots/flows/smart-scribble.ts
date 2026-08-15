@@ -6,7 +6,13 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog, SeedNativeMaskCandidateData } from "../../fixtures/seed";
-import { openImageAnnotate } from "./_canvas";
+import {
+  commitPendingAnnotationClass,
+  mediaPoint,
+  movePointerAtRefreshRate,
+  openImageAnnotate,
+  renderedMediaBounds,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 const SMART_SCRIBBLE_SETUP = {
@@ -101,16 +107,14 @@ export async function runSmartScribble(
 
   await page.getByTitle("适应视口（双击空白）").click();
   await page.getByText("分辨率 1280×720", { exact: true }).waitFor({ timeout: 5_000 });
-  await page.getByText("100%", { exact: true }).waitFor({ timeout: 5_000 });
+  // “适应视口”取决于工作台可用尺寸；4K 营销录制保持 1440×810 逻辑视口，
+  // 因而正确的 fit zoom 是 136% 而非固定 100%。这里只验证缩放状态已稳定显示。
+  await page.getByText(/^\d+%$/).waitFor({ timeout: 5_000 });
   await page.waitForTimeout(800);
 
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[smart-scribble] workbench-stage 没有可见边界");
-  const point = (x: number, y: number) => ({
-    x: box.x + box.width * x,
-    y: box.y + box.height * y,
-  });
+  const box = await renderedMediaBounds(stage);
+  const point = (x: number, y: number) => mediaPoint(box, [x, y]);
 
   const drawStartMs = Date.now();
   await tool.click();
@@ -129,7 +133,7 @@ export async function runSmartScribble(
   );
   await page.mouse.move(positiveStart.x, positiveStart.y);
   await page.mouse.down();
-  await page.mouse.move(positiveEnd.x, positiveEnd.y, { steps: 18 });
+  await movePointerAtRefreshRate(page, positiveStart, positiveEnd, 700);
   await page.mouse.up();
   if ((await positiveResponse).status() !== 200) {
     throw new Error("[smart-scribble] 正向笔迹推理失败");
@@ -160,7 +164,7 @@ export async function runSmartScribble(
   );
   await page.mouse.move(negativeStart.x, negativeStart.y);
   await page.mouse.down();
-  await page.mouse.move(negativeEnd.x, negativeEnd.y, { steps: 18 });
+  await movePointerAtRefreshRate(page, negativeStart, negativeEnd, 700);
   await page.mouse.up();
   if ((await negativeResponse).status() !== 200) {
     throw new Error("[smart-scribble] 负向笔迹推理失败");
@@ -182,6 +186,15 @@ export async function runSmartScribble(
   if (polarities[0]?.at(-1) !== 1 || polarities[1]?.at(-1) !== 0) {
     throw new Error(`[smart-scribble] 正负笔迹顺序异常：${JSON.stringify(polarities)}`);
   }
+
+  await page.getByText("候选待处理", { exact: true }).waitFor({ timeout: 5_000 });
+  await page.waitForTimeout(1_000);
+  await page.keyboard.press("Enter");
+  await commitPendingAnnotationClass(page, {
+    label: anchor.label,
+    taskId: catalog.projects.image_demo.tasks.annotating.id,
+  });
+  await page.waitForTimeout(2_000);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }

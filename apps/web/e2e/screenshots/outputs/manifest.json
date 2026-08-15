@@ -1,9 +1,10 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-08-11T16:21:22.428Z",
+  "generated_at": "2026-08-15T06:33:19.854Z",
   "seed_profile": "screenshots",
-  "seed_revision": "screenshots-2026-08-b",
-  "source_commit": "d6f88173c2c554556425b832ca4a3034af753e6d",
+  "seed_revision": "screenshots-2026-08-e",
+  "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+  "source_worktree_dirty": true,
   "projects": [
     "desktop-light",
     "desktop-dark",
@@ -23,8 +24,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -36,9 +37,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "7222175ae4559be03ecb9b287dc32c5d0f188270117492edf251d7873773b4d3",
+      "sha256": "8182b1b1856564c52ef4a9b152a4ddfcdcaf2f0eab417388be79dc2d51982102",
       "width": 640,
       "height": 361
     },
@@ -54,8 +55,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -67,11 +68,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "0425b326bf569ba96285d1c93cf1da978ddc7383e1ae555050fc45dd0fba1828",
+      "sha256": "6807b87219bdba490b23a3d6c455ad2c4d15239b0a24ce53838cc9b392ae9983",
       "width": 520,
-      "height": 852
+      "height": 660
     },
     "docs-site/user-guide/images/getting-started/forgot-password.png": {
       "auto": true,
@@ -83,8 +84,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -96,9 +97,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "12bfaf7d554518e979e0a14c6ff45718f0249df4c2951feb4a3f02617ff9b349",
+      "sha256": "61fc3eb07e33df40c44c6ef826f016960b63ed3b7d8e0ab8dc1ceecfc62edeff",
       "width": 1440,
       "height": 900
     },
@@ -112,8 +113,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -125,9 +126,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "e3308be724b970c14f00e8a6f9ab31a0be300f3fb58e713b122bb6bb34e056a0",
+      "sha256": "c52527db488431571bb2dc397f52363dd1b2bd6f3a950dd5885282fa103505f7",
       "width": 1440,
       "height": 900
     },
@@ -141,8 +142,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -154,9 +155,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "bb9fee9f4247a6a36203046680d2cef8ee8bdde8c0977f63d17ace50414e91fc",
+      "sha256": "f88ec8f8c989965ef807bc4a9561a4f328add83bb8fd4d36eb18837b1ecd9113",
       "width": 390,
       "height": 664
     },
@@ -170,8 +171,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -183,9 +184,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "65107dd617f6c77df99f377974e823be42b5e008569b71bfb6bf790d6f52bfc8",
+      "sha256": "2b52eac462cc0fd44213e8a6ed076cf8550f6221b6ed8a08a9df9547a074c9cc",
       "width": 1440,
       "height": 900
     },
@@ -201,8 +202,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -214,9 +215,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b94710ce31b0171048e5397a44c51bcee75971d2ffea1539b6bb3920b5bae9d8",
+      "sha256": "658a973bcf392302ffb7e42baa77e460d7fffa92fd7c6ceb0b2099621924b6c4",
       "width": 220,
       "height": 852
     },
@@ -230,8 +231,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -243,9 +244,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "1488d5b6ce7a248b42b58421817326b4af6651d6df9fe189dbf484080df6a649",
+      "sha256": "145a7b1fb410b951fbe09a8bd46ecdf833be4868076dcf03330af59e2dd694f4",
       "width": 1440,
       "height": 900
     },
@@ -264,8 +265,8 @@
         "task": "annotating"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -277,11 +278,11 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "840fcbc0b9dea7bd198e4d56f9fb0f6853ce2136325f4613eb9fa5417e3f3bac",
-      "width": 525,
-      "height": 97
+      "sha256": "876cd40137c3486e26c07e2d9870aa696642d189e0b38ba890875f0ebbc2a824",
+      "width": 504,
+      "height": 92
     },
     "docs-site/user-guide/images/notifications/panel-overview.png": {
       "auto": true,
@@ -295,8 +296,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -308,11 +309,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "a290aa6d4f86e39b36be5d0ae5eb813f1b6e859e8710704b50f6a245d7deb5ca",
+      "sha256": "14173504f3a247a18f133b180b640497cf05e34ce7b1cd174ca9d3aaae9f53e1",
       "width": 520,
-      "height": 653
+      "height": 709
     },
     "docs-site/user-guide/images/projects/ai-pre-config-panel.png": {
       "auto": true,
@@ -328,8 +329,8 @@
         "backend": "image_interactive"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -341,9 +342,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "e3e773612d5a3bf95710ef9d9a61b070194a759c3235cb45b12cade151d7946c",
+      "sha256": "f5d8c57c5e4c078f6a50315023dba01a20b2e3581ffed7cf5f7d1ae177bb18f8",
       "width": 1440,
       "height": 900
     },
@@ -357,8 +358,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -370,9 +371,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "1b9283f54009e3aaec8b92bae9287edf03552b65ee6ac1dc82966c25cbc8e3a6",
+      "sha256": "7b5f8c2b3121d4d215bd5744905ec552c2432dd11076af2a41c9d4c624343071",
       "width": 1440,
       "height": 900
     },
@@ -386,8 +387,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -399,9 +400,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "4bcbaf7cc1ff4fbc77bf9a452f8ead4d8fdaf79dbd45dc8d0d6b510bff2645eb",
+      "sha256": "61c44953dd1e76af44461203412de048a9f5cedfea55e5d6d8459b1709a94b52",
       "width": 1440,
       "height": 900
     },
@@ -418,8 +419,8 @@
         "batch": "review"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -431,9 +432,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "c614df4132ee4410138255491067a7e6b78d1247633b01ad38fec3e16de4043c",
+      "sha256": "f3cd2e543c0563f688cab57ed2fad81e833e735102da130a4dd0f095d4d495cf",
       "width": 1440,
       "height": 900
     },
@@ -447,8 +448,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -460,9 +461,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "128f7bbb76d01d7b01f8762eb16a3530f7b0a4c1414ada36f294c21a9965c1a4",
+      "sha256": "9b18d60d8081fec721b0276d273857344e513c89353b5cfce27c90ffc70f189f",
       "width": 1440,
       "height": 900
     },
@@ -476,8 +477,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -489,9 +490,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "ef74cfa4a39797f2b2248b9ebfb22196b0abd242d25cecc768f6579204fe748c",
+      "sha256": "41073ba0813e5b435d3c96173462f525fb7c8dbc15c597309f159a055fd66986",
       "width": 1440,
       "height": 900
     },
@@ -508,8 +509,8 @@
         "task": "predicted"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -521,9 +522,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "957aa2d28c617d6b960a686ad06f9baefc8dabb689b05526333864f165993987",
+      "sha256": "5ee1ea224ad801377c24e89edba7e7d2ee532dcbda6c577ffaae4e4c815f1412",
       "width": 1440,
       "height": 900
     },
@@ -540,8 +541,8 @@
         "task": "predicted"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -553,9 +554,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "5466cb0d9daab645742cbefbeaf16311a6ac1b227358895e2672c50ca8701452",
+      "sha256": "972e4dd36710cc89f8cc7ce128cc44365cf2c0f01c996797eadb5d0fb3665258",
       "width": 1440,
       "height": 900
     },
@@ -569,8 +570,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -582,9 +583,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "f1df4aef143d0a4ac4981e04d8b975f779c7c66b45883bcf1c2065858687f908",
+      "sha256": "104dc3704c707cb942a50d546d889155b6959de4a60a9c05023557f0877de876",
       "width": 1440,
       "height": 900
     },
@@ -598,8 +599,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -611,9 +612,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "0d7ca01b60d700790a679b858b2af586e9de2e580844836c93c61a4cd2702ab8",
+      "sha256": "03190787703066e58cf441130cb3ea13ab8f997d12736f5c16817325f580e7b8",
       "width": 1440,
       "height": 900
     },
@@ -632,8 +633,8 @@
         "backend": "image_interactive"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -645,11 +646,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "d81359680183795031fbd66b3d912188f4e00fcc3fe4b8ed12e0af1fbb8adc3f",
+      "sha256": "46e6ed61917941e3fae77f169278aedc6a60ccc24b0c74c546cf54e4320b3227",
       "width": 720,
-      "height": 401
+      "height": 476
     },
     "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
       "auto": true,
@@ -667,8 +668,8 @@
         "backend": "image_interactive"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -680,9 +681,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "28a7c1bcc9aa8bfa5b157b8e9debf08b508bc6b0cbc86eee6996f4bf9459e7d4",
+      "sha256": "53c7c128d74c55a74578472f20f354ab52e0aa54d9e849feb9bda704a49a8970",
       "width": 560,
       "height": 455
     },
@@ -701,8 +702,8 @@
         "task": "predicted"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -714,9 +715,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b170a66fb030380e1f7780e4181197c82d8b3e075b2a5ab82c95a0066d5c2c9d",
+      "sha256": "78687cfe5252a3a1468e47cc496b27337a93b9ded7c31932e9f3c8760fd647c9",
       "width": 520,
       "height": 318
     },
@@ -730,8 +731,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -743,9 +744,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "f9ed76d99fd4f6cd5286011e7d76dca26e72959f99bc06d86bed3f27d30dddc5",
+      "sha256": "864470b3eb4069dbf4a1dacf3bb9e3fea1e777b45fae85c70264d111c4dbb680",
       "width": 1440,
       "height": 900
     },
@@ -761,8 +762,8 @@
         "project": "image_demo"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -774,9 +775,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "7f53588fc151d4bbfdd0947d82fe10e5e14d1b2d0b64b28aad9535fa422822c9",
+      "sha256": "0146df28cb3f7872a38a371254fc626127acaebf1d775d4854f6b363fab5938e",
       "width": 1440,
       "height": 900
     },
@@ -792,8 +793,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -805,9 +806,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "e305b9f0ee499f7dff4f5de201e2ae6af6a458e282c92ed9d35383b2c5727e6b",
+      "sha256": "469e5f354d3c57bb83d2106f8dccbf6b25ffbed5c94f637e7e4f2fa009aae662",
       "width": 586,
       "height": 175
     },
@@ -823,8 +824,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -836,9 +837,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "a5952a75100bae8f3f52912826a7a5aacbae17aac1e9754e474894bf0fd7ba2a",
+      "sha256": "768a82a0b46f42056ecec83d07b9437784a31d509f0d226a2750c4f370e6d066",
       "width": 586,
       "height": 752
     },
@@ -858,8 +859,8 @@
         "batch": "review"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -871,9 +872,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "2a426ee0ef1ec737aa86cd2dc9b1ca7c3ac81e1acb1a3a2a0e225f66f1696972",
+      "sha256": "86ff3a4339e4a9085b942c2e82cfe50026dd7d9b44169b1e385f305e11e245d4",
       "width": 460,
       "height": 405
     },
@@ -890,8 +891,8 @@
         "batch": "review"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -903,9 +904,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "0f81e979ed79fe8946be5f54a15e68526c7ac15638d70d449cfe22a2de9f0772",
+      "sha256": "2e131cbba1b1e0874f43db4f7849b57e1d991f402d7479f95ddc729bb63abded",
       "width": 1440,
       "height": 900
     },
@@ -923,8 +924,8 @@
         "batch": "review"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -936,9 +937,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b9ffb700d4cfb6b6dad66c194eb0b45d497328b66723460a237ed3dbd12f8841",
+      "sha256": "2c426163314750cab09911eb6b1d82c719aed3752ca300c44cf9cd6315bc5b12",
       "width": 1440,
       "height": 900
     },
@@ -961,8 +962,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -974,9 +975,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b8b2bcf72a2c57eede9711bc6e7e4b6e553b7bbe92f41a578a16d3401c2a6dcd",
+      "sha256": "072d45f4ed46b8ea258e675360469f2373b619434088f32a03f441f1021852cb",
       "width": 376,
       "height": 824
     },
@@ -1000,8 +1001,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1013,10 +1014,10 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "f195fb2d00b080133a0a12b00bcf41b9d2f6be4ca165efcc863234f4d973b926",
-      "width": 928,
+      "sha256": "14637735dfa584ae7fea4d9901129452052fff3cb7ee9cf4d8e0f99ba19b1249",
+      "width": 952,
       "height": 60
     },
     "docs-site/user-guide/images/sam/interactive-toolbar.png": {
@@ -1039,8 +1040,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1052,11 +1053,11 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "98663968cc2b776d7b2d3e886fc49d783216a4671dd0bff1664098b887ba2765",
-      "width": 422,
-      "height": 56
+      "sha256": "90706edfa31a806c25b8337c326c5492666080e0c75a5dc7994634d0bc48f33e",
+      "width": 507,
+      "height": 60
     },
     "docs-site/user-guide/images/sam/magic-box-toolbar.png": {
       "auto": true,
@@ -1078,8 +1079,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1091,9 +1092,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "3835f978ea0922b7de39a2788275eeea5c3f504509bafc0a1e1f2d4fe5b477e8",
+      "sha256": "d0164d62edc02afa8e00ef7d659b3dbd5ef620705439fc6d1e5f40d92dad705c",
       "width": 433,
       "height": 56
     },
@@ -1117,8 +1118,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1130,11 +1131,11 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "414eade80e7a2acdea0a17ec1b88eb5e40adf43dcd99b4b0db2abf68547b08bb",
-      "width": 493,
-      "height": 56
+      "sha256": "057b36cb1ca114cc0b48350eeb74b307922ff95ce9fbafde2eecc564331c15a4",
+      "width": 578,
+      "height": 60
     },
     "docs-site/user-guide/images/settings/my-feedback.png": {
       "auto": true,
@@ -1146,8 +1147,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1159,9 +1160,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "a13dd8843fd00bcd2997b6f9b4b3426849cbce6bd290aa581583eaa232ecca4c",
+      "sha256": "f4ace023bbeab6b3f722f2cee48aa2afa5689ab764b9f126e137faa62957bba7",
       "width": 1440,
       "height": 900
     },
@@ -1175,8 +1176,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1188,9 +1189,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "90b720586bd95d02036873b8c2c80f0f2d3d5a05e127a1e35e80b8f59dd405a3",
+      "sha256": "aa5dabf6e1c4da72bd2944e752e8f79091e022d312ce9e3835eef9274b6a97d1",
       "width": 1440,
       "height": 900
     },
@@ -1204,8 +1205,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1217,9 +1218,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "09f6fc23bce3c4b2fd890f4a57c7cd885174a96d05480ee785dd44c982db6146",
+      "sha256": "1697443a2f748eb1578a3b4b1322c8b48ffc7249a8cc36c60b1acb6e543d3929",
       "width": 1440,
       "height": 900
     },
@@ -1233,8 +1234,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1246,9 +1247,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "a0903ffe9ffd1d4b6008c4f10e13d07893705ad4bc8ed3452fbdfbbb63d9d0f0",
+      "sha256": "aba908710eab1b3c7ef0cc0ff9426c19b173c641d53fa802c7c447bfce1cba9d",
       "width": 1440,
       "height": 900
     },
@@ -1262,8 +1263,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1275,9 +1276,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b04ca2a3364ff059cbb307b6cb1198f65041c96cb41fe0b744d21fe5ccd94329",
+      "sha256": "09bbf0ab192ca8006f22e50491fa0decf89ea82b9a96e6ebbe4625e16a5c0e36",
       "width": 1440,
       "height": 900
     },
@@ -1293,8 +1294,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1306,11 +1307,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "0aaee819d5e9b109f1c47bfe04db5026fce7fd1604fc2427aa277658efd4624e",
+      "sha256": "7056be35e856e4d4aec2e72af4c6b759992010b9afa07a5a4a10bdd309e7f66f",
       "width": 1172,
-      "height": 122
+      "height": 250
     },
     "docs-site/user-guide/images/superadmin/analytics/overview.png": {
       "auto": true,
@@ -1322,8 +1323,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1335,9 +1336,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "45945268224784b69bcda9af8447f399bbbfb5c05afebc6f0a81c892a6b706e0",
+      "sha256": "3c7b65fe784e30b9eec81aeed31bf0dcd2e90cc35f7fd88022bf48d0fbf4b0dc",
       "width": 1440,
       "height": 900
     },
@@ -1353,8 +1354,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1366,11 +1367,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "57ca9a4ed13b900ec9476392b2b2dac49061137bc8d897c156551ee768916949",
+      "sha256": "6f20197ceaaadbb13cb91fa6bfb3ac3bd2bc7ec90f3e16223d4502d9a11dea8b",
       "width": 620,
-      "height": 561
+      "height": 675
     },
     "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
       "auto": true,
@@ -1382,8 +1383,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1395,9 +1396,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "0639745fac9d3985eb974765b509561fa03463f80bc8d5f1a81471f42189e8de",
+      "sha256": "887a79fb5909a5f465cae39f40378e431913a6ea726bb1581e87c40c931584b4",
       "width": 1440,
       "height": 900
     },
@@ -1421,8 +1422,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1434,9 +1435,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "dde18648fdf1da42d2c78c464a2976ab657f39899b875f286de687091117b899",
+      "sha256": "73e7ba3d3358d1420cf269c1749fcabde4194bfcf06eec324ad06edfa8fb31ec",
       "width": 1440,
       "height": 900
     },
@@ -1462,8 +1463,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1475,11 +1476,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "096a5bffdca49b2de99fefefff7fa8e5e59496dcdc08a58164f7315fee72fa8a",
+      "sha256": "ba49806db7f399af5584b8b66a9bf02de5f823b5ffa7a647865d6644bec54c1c",
       "width": 560,
-      "height": 798
+      "height": 829
     },
     "docs-site/user-guide/images/superadmin/model-market/list.png": {
       "auto": true,
@@ -1491,8 +1492,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1504,9 +1505,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "71d3b0a99d937d36f9da84602adeb567a3ce5a14e66bf1549316f8c92695883e",
+      "sha256": "566f79c6d65bc98d1dc390fafeec2e20816c52661e172adfbe9f3e43de0d7bfc",
       "width": 1440,
       "height": 900
     },
@@ -1520,8 +1521,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1533,9 +1534,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "5d4638dd3b14800f804d0d71a8641261c35a2b05d520c5bc2c939b5417fcee84",
+      "sha256": "05f0e672b17c5e5e62ae7bfd00b37713f5eaf2d5ccf827698f83e6c5153c99a4",
       "width": 1440,
       "height": 900
     },
@@ -1549,8 +1550,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1562,9 +1563,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "17b5c2274ae222c2c60ccc6e3be378e0ea0d43f192523e9067295096aa57184d",
+      "sha256": "ee20035d93e77a75e2f54fe139cc69fb633c167e1e518dae1bb73fe31a83194f",
       "width": 1440,
       "height": 900
     },
@@ -1580,8 +1581,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1593,11 +1594,11 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "eeb17e5a430ec8a9e41f735ddceec5b6b32db8f38cad80be5b5e455e0a32c443",
+      "sha256": "0577bc0f172dcd62a4c7a16dae4cb128fca1b0c03803ab96f987c1c15441d095",
       "width": 644,
-      "height": 206
+      "height": 285
     },
     "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
       "auto": true,
@@ -1611,8 +1612,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1624,9 +1625,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "02019a8d04af1d1c57ba942e8c9abf9983e301303f7febce54b7aa3a6f80940e",
+      "sha256": "b47ae349d78dd7841bcc7f1b6252c60b5f8dc5c60d4933ebc5f1f599c9dbfd14",
       "width": 520,
       "height": 345
     },
@@ -1640,8 +1641,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1653,9 +1654,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "d5f8bee3a485b34402855b2e9428024ce18055f63a694b547d24febe2eada768",
+      "sha256": "1ea3eb276cf5cc700c725ee2d49168ea34c29e1e513252357d61e5e748c8acdc",
       "width": 1440,
       "height": 900
     },
@@ -1671,8 +1672,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1684,9 +1685,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "01756c23d40a6d7245666e4e28a2020aabf19805d41cd006443216133b1ad73e",
+      "sha256": "c7b8b44650cd0a1fa75d6f3e635c40260b39f7fe4363b1166fda95821ff41099",
       "width": 520,
       "height": 348
     },
@@ -1700,8 +1701,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1713,9 +1714,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "148cfface330f507f9ec0ec8887a63f8b86424e0b7e8e570221b2b0760003137",
+      "sha256": "4ae4fab16ad2c22676780eef92b71667f50a69242bbb3d2e0d415a854ce89c18",
       "width": 1440,
       "height": 900
     },
@@ -1729,8 +1730,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1742,9 +1743,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b1e5807ce4dea33b32f84ab43936ada03ccc50114abd3e3592828fc7536f63c0",
+      "sha256": "05b2dcf578c691b3611d71f7f97e4ed6e9140d7d65d343ebf5dd0e2012efe194",
       "width": 1440,
       "height": 900
     },
@@ -1765,8 +1766,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1778,9 +1779,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "39d6a1f2bdec4893478a116f281e89f7944be5e11ce365ab7165863b6ea29bec",
+      "sha256": "f8d307851e6daf07d382fb9f51ff8283d30f09d9f50774a397a176356ba865ef",
       "width": 1440,
       "height": 900
     },
@@ -1797,8 +1798,8 @@
         "task": "annotating"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1810,9 +1811,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "b812ba0122cca520f28eadb82aa48c05a5666022dc7bd9a38c785f75c37e1c1f",
+      "sha256": "6218ce470273e5bd4c173f674e69ac59d2c38e4eab595c8fb8efecfe4e8b6631",
       "width": 1440,
       "height": 900
     },
@@ -1835,8 +1836,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1848,9 +1849,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "0fbd824badcfabd3c241e5a807bf538b06f19180f643797c4b6dc3b29ee04f90",
+      "sha256": "724dba4bec2099791b3dc9fc25c9d5a629ea30cf55bd55011b3d4b73a6a62762",
       "width": 1440,
       "height": 900
     },
@@ -1867,8 +1868,8 @@
         "task": "frame_000"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-a",
-      "source_commit": "ecf2a62a2e2a352bf1f2180a7327f8c2dae3f2a7",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1880,9 +1881,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-11T12:34:18.062Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "85264840149f2bb03fa610bfb1b517faa8ef8d9c63e6a01dccce764edcc0352a",
+      "sha256": "9c9a8795036868af2118d88ea18b8ff883544baad410134bbb476790e2e09409",
       "width": 1440,
       "height": 900
     },
@@ -1903,8 +1904,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "e09faf88e73ef132751fa1ae194712f15d5de895",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1916,9 +1917,9 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-07-20T17:00:46.806Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "122999fb9b722fb35fc5a3fa28481bbcfc0c315d8c48f2d0686cb74ad6ba09dc",
+      "sha256": "bb4ce66d00b6f0102292509b161620e6adc567d5c4878ee68d39c7df0818901b",
       "width": 1440,
       "height": 900
     },
@@ -1932,8 +1933,8 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-07-d",
-      "source_commit": "8a4476608212884922555429204ee452d0e3fe2f",
+      "seed_revision": "screenshots-2026-08-e",
+      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1945,9 +1946,9 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-07-13T11:03:25.854Z",
+      "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
-      "sha256": "bc83de6ca8bcbc5388653fd1e9c821310b42c0e28b12169aded6b04ef3c7996f",
+      "sha256": "713faaefa2723873ef096ca108a6da49883cd2eaac6ed64b8cdef8f9f10c8613",
       "width": 1440,
       "height": 900
     }

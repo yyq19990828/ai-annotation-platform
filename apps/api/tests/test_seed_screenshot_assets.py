@@ -14,10 +14,27 @@ from scripts.seed_screenshot_assets import (
     NUSCENES_CAMERA_SOURCE_IDS,
     NUSCENES_LIDAR_SOURCE_ID,
     POINTCLOUD_SOURCE_IDS,
+    ROAD_BOXES,
     ROAD_SOURCE_IDS,
     VIDEO_SOURCE_ID,
+    _crop_box,
     ensure_screenshot_assets,
 )
+from scripts.seed_coco8 import EXTRA_TOOL_BINDINGS
+from scripts.seed_video import VIDEO_TOOL_BINDINGS
+
+
+def test_screenshot_tool_classes_cover_reviewed_recording_anchors():
+    assert [item["name"] for item in EXTRA_TOOL_BINDINGS["rotated_bbox"]["classes"]][
+        0
+    ] == "car"
+    assert "car" in {item["name"] for item in EXTRA_TOOL_BINDINGS["region"]["classes"]}
+    assert "lane marking" in {
+        item["name"] for item in EXTRA_TOOL_BINDINGS["polyline"]["classes"]
+    }
+    for unit in ("bbox", "region"):
+        video_classes = {item["name"] for item in VIDEO_TOOL_BINDINGS[unit]["classes"]}
+        assert {"bus", "truck"} <= video_classes
 
 
 def _source_files(root: Path) -> dict[str, Path]:
@@ -69,6 +86,29 @@ def _source_files(root: Path) -> dict[str, Path]:
         Image.new("RGB", (16, 9), (20 + index * 30, 60, 100)).save(path)
         result[asset_id] = path
     return result
+
+
+def test_auckland_primary_crop_boxes_match_reviewed_vehicle_boundaries():
+    crop = (576, 0, 5184, 2592)
+    actual = [
+        (class_id, cropped)
+        for class_id, box in ROAD_BOXES["auckland-traffic-1"]
+        if (cropped := _crop_box(box, crop=crop, source_size=(5184, 3456))) is not None
+    ]
+
+    expected = [
+        (2, (0.0, 0.812, 0.110125, 1.0)),
+        (2, (0.27775, 0.82, 0.4375, 1.0)),
+        (2, (0.537625, 0.654667, 0.67375, 0.841333)),
+        (7, (0.726625, 0.304, 0.877375, 0.569333)),
+        (7, (0.294625, 0.609333, 0.4285, 0.842667)),
+        (7, (0.049375, 0.502667, 0.155125, 0.666667)),
+    ]
+    assert [class_id for class_id, _ in actual] == [
+        class_id for class_id, _ in expected
+    ]
+    for (_, actual_box), (_, expected_box) in zip(actual, expected, strict=True):
+        assert actual_box == pytest.approx(expected_box, abs=1e-6)
 
 
 def test_prepared_screenshot_assets_are_complete_deterministic_and_self_healing(

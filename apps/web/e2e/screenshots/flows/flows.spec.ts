@@ -4,12 +4,14 @@
  * 执行：`pnpm screenshots:flows`（单独 project，video:on 全程录制）
  *
  * 前置条件同 screenshots.spec.ts。
- * 只有声明文档 target 的 flow 会转码；outputs/flows 仅作为转码临时目录。
+ * flows project 只转码声明的文档 target；marketing-master project 归档所有成功流程。
+ * outputs/flows 仅作为转码临时目录。
  */
 import { test } from "../../fixtures/seed";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { runE2eQuickstart } from "./e2e-quickstart";
+import { runAiPredictionImport } from "./ai-prediction-import";
 import { runAiPreannotate } from "./ai-preannotate";
 import { runReviewReject } from "./review-reject";
 import { runBatchBulkActions } from "./batch-bulk-actions";
@@ -28,7 +30,7 @@ import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
-import { runVideoMultiTargetSeeds } from "./video-multi-target-seeds";
+import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -38,7 +40,20 @@ import { runOcrInference, type OcrCleanupRecord } from "./ocr-inference";
 import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
-import { convertToGif, convertToWebm } from "../_helpers/recorder";
+import { convertToGif } from "../_helpers/recorder";
+import { recordFlowArtifact } from "../_helpers/flow-manifest";
+import {
+  archiveMarketingMaster,
+  clipFromEpochWindow,
+  getMarketingRunContext,
+  MARKETING_PROJECT_NAME,
+} from "../_helpers/marketing-recorder";
+import { marketingAssetSpec } from "../_helpers/marketing-assets";
+import {
+  discardExternalMarketingRecording,
+  startExternalMarketingRecording,
+  stopExternalMarketingRecording,
+} from "../_helpers/marketing-external-recorder";
 import { applyScreenshotTheme, installScreenshotEnvironment } from "../environment";
 import { loadScreenshotCatalog } from "../catalog-runtime";
 import { execFileSync } from "child_process";
@@ -49,11 +64,59 @@ const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/flows\/?$/, "");
 const FLOWS_OUT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/flows");
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
-const HOME_MEDIA = path.join(REPO_ROOT, "docs-site/public/home");
+const MARKETING_ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
+const FLOW_CAPTURE_COMMIT = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: REPO_ROOT,
+  encoding: "utf8",
+}).trim();
+const FLOW_SOURCE_WORKTREE_DIRTY =
+  execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  }).trim().length > 0;
 
 let cached: ScreenshotSeedCatalog | null = null;
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
+
+const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
+  "ai-assisted-annotation": "sam-interactive.ts",
+  "sam-tools/smart-point": "sam-interactive.ts",
+  "sam-tools/smart-box": "sam-interactive.ts",
+  "sam-tools/exemplar": "sam-interactive.ts",
+  "video-tracker-cross-frame-points": "video-multi-seed-tracking.ts",
+  "video-tracker-positive-negative": "video-multi-seed-tracking.ts",
+  "video-tracker-box-seed": "video-multi-seed-tracking.ts",
+};
+
+function flowWatchPaths(assetId: string): string[] {
+  const inferred = `${assetId.replace(/^sam-tools\//, "sam-")}.ts`;
+  const sourceFile = FLOW_SOURCE_BY_ASSET[assetId] ?? inferred;
+  return [
+    `apps/web/e2e/screenshots/flows/${sourceFile}`,
+    "apps/web/e2e/screenshots/flows/_canvas.ts",
+    "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+    "apps/web/e2e/screenshots/_helpers/recorder.ts",
+    "apps/web/e2e/fixtures/seed.ts",
+    "apps/api/app/services/screenshot_seed_spec.py",
+  ].filter((candidate, index, all) => all.indexOf(candidate) === index);
+}
+
+function recordGeneratedArtifact(targetPath: string, assetId: string, role: "docs-gif"): void {
+  const info = test.info();
+  recordFlowArtifact({
+    repoRoot: REPO_ROOT,
+    targetPath,
+    assetId,
+    role,
+    source: path.relative(REPO_ROOT, info.file).replaceAll("\\", "/"),
+    testTitle: info.titlePath.join(" › "),
+    seedRevision: cached?.seed_revision ?? null,
+    capturedCommit: FLOW_CAPTURE_COMMIT,
+    sourceWorktreeDirty: FLOW_SOURCE_WORKTREE_DIRTY,
+    watchPaths: flowWatchPaths(assetId),
+  });
+}
 
 test.beforeAll(() => {
   screenshotDatabaseEnv();
@@ -77,18 +140,16 @@ function screenshotDatabaseEnv(): NodeJS.ProcessEnv {
   };
 }
 
-// flow 会修改任务状态、标注和预标注作业。结束后由 screenshots profile
-// 重建自己管理的固定项目，不再按几何类型猜测并删除数据。
-test.afterAll(() => {
-  if (!cached) return;
-  // 推理完成时已清一次；整组结束再幂等清理一次可变业务痕迹，
-  // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
-  for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
-  const backends = Object.values(cached.projects)
+function screenshotBackendMode(catalog: ScreenshotSeedCatalog): "stub" | "live" {
+  const backends = Object.values(catalog.projects)
     .map((project) => project.ml_backend?.name)
     .filter((name): name is string => Boolean(name));
-  const mode =
-    backends.length > 0 && backends.every((name) => name === "mock-v2-backend") ? "stub" : "live";
+  return backends.length > 0 && backends.every((name) => name === "mock-v2-backend")
+    ? "stub"
+    : "live";
+}
+
+function repairScreenshotProfile(mode: "stub" | "live", silent = false): void {
   execFileSync(
     path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
     [
@@ -103,9 +164,26 @@ test.afterAll(() => {
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
       env: screenshotDatabaseEnv(),
-      stdio: "inherit",
+      stdio: silent ? "pipe" : "inherit",
     },
   );
+}
+
+// flow 会修改任务状态、标注和预标注作业。结束后由 screenshots profile
+// 重建自己管理的固定项目，不再按几何类型猜测并删除数据。
+// Playwright 要求 hook 的 fixture 参数使用对象解构；此处确实不消费任何 fixture。
+// eslint-disable-next-line no-empty-pattern
+test.afterAll(({}, testInfo) => {
+  if (!cached) return;
+  // 推理完成时已清一次；整组结束再幂等清理一次可变业务痕迹，
+  // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
+  for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
+  // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
+  // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
+  // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
+  // 营销录制使用隔离库，由外层录制流程在整批开始前准备、结束后统一恢复。
+  if (testInfo.project.name === MARKETING_PROJECT_NAME) return;
+  repairScreenshotProfile(screenshotBackendMode(cached));
 });
 
 function cleanupOcrRecording(record: OcrCleanupRecord): void {
@@ -134,17 +212,101 @@ type GifOptions = {
   maxColors?: number;
   startSec?: number;
   durationSec?: number;
+  captureWindow?: { startEpochMs: number; endEpochMs: number };
 };
+
+type MarketingClip =
+  | { startSeconds: number; durationSeconds: number }
+  | { tailSeconds: number }
+  | { startEpochMs: number; endEpochMs: number };
+
+function marketingClipFromVariants(
+  assetId: string,
+  variants: Array<{ options?: GifOptions }>,
+): MarketingClip | undefined {
+  marketingAssetSpec(assetId);
+  const captureWindows = variants.flatMap(({ options }) =>
+    options?.captureWindow ? [options.captureWindow] : [],
+  );
+  if (captureWindows.length > 0) {
+    return {
+      startEpochMs: Math.min(...captureWindows.map((window) => window.startEpochMs)),
+      endEpochMs: Math.max(...captureWindows.map((window) => window.endEpochMs)),
+    };
+  }
+  const windows = variants.flatMap(({ options }) =>
+    options?.startSec !== undefined && options.durationSec !== undefined
+      ? [{ start: options.startSec, end: options.startSec + options.durationSec }]
+      : [],
+  );
+  if (windows.length === 0) return undefined;
+
+  const contentStart = Math.min(...windows.map((window) => window.start));
+  const contentEnd = Math.max(...windows.map((window) => window.end));
+  return {
+    startSeconds: contentStart,
+    durationSeconds: contentEnd - contentStart,
+  };
+}
+
+async function archiveMarketingRecording(
+  page: Page,
+  assetId: string,
+  universalClip?: MarketingClip,
+): Promise<boolean> {
+  const info = test.info();
+  if (info.project.name !== MARKETING_PROJECT_NAME) return false;
+  const capture = await stopExternalMarketingRecording(page);
+  const resolvedClip =
+    universalClip && "startEpochMs" in universalClip
+      ? clipFromEpochWindow(capture.startedAtEpochMs, universalClip)
+      : universalClip;
+  const browser = {
+    name: page.context().browser()?.browserType().name() ?? "chromium",
+    version: page.context().browser()?.version() ?? "unknown",
+  };
+  await page.close();
+  try {
+    const archived = await archiveMarketingMaster({
+      archiveRoot: MARKETING_ARCHIVE_ROOT,
+      run: getMarketingRunContext(REPO_ROOT),
+      video: capture,
+      captureExtension: capture.extension,
+      captureDriver: capture.driver,
+      deviceScaleFactor: capture.deviceScaleFactor,
+      sourcePhysicalSize: capture.sourcePhysicalSize,
+      captureCadence: capture.cadence,
+      assetId,
+      assetSpec: marketingAssetSpec(assetId),
+      source: path.relative(REPO_ROOT, info.file),
+      testTitle: info.titlePath.join(" › "),
+      projectName: info.project.name,
+      seedRevision: cached?.seed_revision ?? null,
+      viewport: capture.logicalViewport,
+      browser,
+      universalClip: resolvedClip,
+    });
+    console.log(`[marketing] ✓ 4K60 采集源：${archived.capturePath}`);
+    console.log(`[marketing] ✓ 4K60 MP4 母版：${archived.masterPath}`);
+    console.log(`[marketing] ✓ manifest：${archived.manifestPath}`);
+    return true;
+  } finally {
+    capture.cleanup();
+  }
+}
 
 async function finalizeVariants(
   page: Page,
   gifName: string,
   variants: Array<{ target: string; options?: GifOptions }>,
+  marketingClip?: MarketingClip,
 ) {
   if (VALIDATE_ONLY) {
     await page.close();
     return;
   }
+  const resolvedMarketingClip = marketingClip ?? marketingClipFromVariants(gifName, variants);
+  if (await archiveMarketingRecording(page, gifName, resolvedMarketingClip)) return;
   if (variants.length === 0) {
     await page.close();
     return;
@@ -176,6 +338,7 @@ async function finalizeVariants(
       }
       fs.mkdirSync(path.dirname(variant.target), { recursive: true });
       fs.copyFileSync(outGif, variant.target);
+      recordGeneratedArtifact(variant.target, gifName, "docs-gif");
       console.log(`[flows] ✓ 同步 gif 到文档站：${variant.target}`);
     }
   } finally {
@@ -193,15 +356,20 @@ async function finalize(
   // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB；
   // startSec/durationSec 裁掉录屏开头(准备)与结尾(清理)，只留核心片段。
   gifOpts?: GifOptions,
+  marketingClip?: MarketingClip,
 ) {
+  const resolvedMarketingClip =
+    marketingClip ??
+    (gifOpts ? marketingClipFromVariants(gifName, [{ options: gifOpts }]) : undefined);
   await finalizeVariants(
     page,
     gifName,
     docsTarget ? [{ target: docsTarget, options: gifOpts }] : [],
+    resolvedMarketingClip,
   );
 }
 
-async function finalizeHomepageWebm(
+async function finalizeMarketingBackedHomepageAsset(
   page: Page,
   name: string,
   trim: { startSec?: number; durationSec?: number },
@@ -212,37 +380,37 @@ async function finalizeHomepageWebm(
     await page.close();
     return;
   }
+  if (
+    await archiveMarketingRecording(
+      page,
+      name,
+      marketingClipFromVariants(name, [{ options: trim }]),
+    )
+  )
+    return;
+  if (!docsGifTarget) {
+    await page.close();
+    return;
+  }
   const video = page.video();
-  if (!video) throw new Error("[flows] video 未开启，无法生成首页 AI 媒体");
+  if (!video) throw new Error("[flows] video 未开启，无法生成文档 GIF");
 
   const tempName = name.replaceAll("/", "-");
   const source = path.join(FLOWS_OUT, `${tempName}.source.webm`);
   const gif = path.join(FLOWS_OUT, `${tempName}.gif`);
-  const homepageWebm = path.join(HOME_MEDIA, `${name}.webm`);
-  const homepagePoster = path.join(HOME_MEDIA, `${name}-poster.webp`);
   await page.close();
   fs.mkdirSync(FLOWS_OUT, { recursive: true });
-  fs.mkdirSync(path.dirname(homepageWebm), { recursive: true });
   try {
     await video.saveAs(source);
-    const posterAtSec = Math.max(1, (trim.durationSec ?? 4) - 2.8);
-    await convertToWebm(source, homepageWebm, {
+    await convertToGif(source, gif, {
       ...trim,
-      fps: 12,
-      maxWidth: 1440,
-      posterAtSec,
-      posterPath: homepagePoster,
+      fps: docsGifOptions?.fps ?? 8,
+      maxWidth: docsGifOptions?.maxWidth ?? 860,
     });
-    if (docsGifTarget) {
-      await convertToGif(source, gif, {
-        ...trim,
-        fps: docsGifOptions?.fps ?? 8,
-        maxWidth: docsGifOptions?.maxWidth ?? 860,
-      });
-      fs.mkdirSync(path.dirname(docsGifTarget), { recursive: true });
-      fs.copyFileSync(gif, docsGifTarget);
-      console.log(`[flows] ✓ 同步 gif 到文档站：${docsGifTarget}`);
-    }
+    fs.mkdirSync(path.dirname(docsGifTarget), { recursive: true });
+    fs.copyFileSync(gif, docsGifTarget);
+    recordGeneratedArtifact(docsGifTarget, name, "docs-gif");
+    console.log(`[flows] ✓ 同步 gif 到文档站：${docsGifTarget}`);
   } finally {
     fs.rmSync(source, { force: true });
     fs.rmSync(gif, { force: true });
@@ -263,28 +431,103 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 }
 
 test.describe("flow recordings", () => {
-  test("e2e-quickstart — 登录→标注→提交", async ({ page }) => {
+  test.beforeEach(async ({ page, seed }, testInfo) => {
+    if (
+      testInfo.project.name !== MARKETING_PROJECT_NAME ||
+      testInfo.title.includes("e2e-quickstart")
+    ) {
+      return;
+    }
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+
+    // 每条营销母版拥有独立的固定数据状态。绘图、审核和视频轨迹流程都会写库；
+    // 若沿用同一任务，前一条素材会改变后一条素材的画布、状态与命中目标。
+    for (const record of ocrCleanupRecords.splice(0)) cleanupOcrRecording(record);
+    repairScreenshotProfile(screenshotBackendMode(cached), true);
+    cached = await seed.screenshotCatalog();
+
+    // image_demo 主后端保留 SAM3 供交互工具使用；批量预标单项另启用 batchable YOLO。
+    if (
+      testInfo.title.startsWith("ai-preannotate —") ||
+      testInfo.title.startsWith("ai-pre-variant-selector —")
+    ) {
+      await seed.enableMLBackendByName(
+        cached.projects.image_demo.id,
+        cached.users.admin.email,
+        "yolo-backend",
+      );
+    }
+
+    if (!VALIDATE_ONLY) await startExternalMarketingRecording(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.project.name === MARKETING_PROJECT_NAME) {
+      await discardExternalMarketingRecording(page);
+    }
+  });
+
+  test("e2e-quickstart — 登录→标注→提交", async ({ page, seed }) => {
+    test.skip(
+      test.info().project.name === MARKETING_PROJECT_NAME,
+      "组合教程包含多个目标，不归档为单项营销母版",
+    );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     await installScreenshotEnvironment(page);
-    await runE2eQuickstart(page, cached);
-    await finalize(page, "e2e-quickstart", path.join(DOCS_IMAGES, "getting-started/e2e.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 128,
+    let recordingPage = page;
+    if (test.info().project.name === MARKETING_PROJECT_NAME) {
+      const context = page.context();
+      const project = cached.projects.image_demo;
+      await seed.injectToken(page, cached.users.admin.email);
+      await installRecordingWorkbenchLayout(page, "none");
+      await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.clean.id}`);
+      await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+        "data-image-ready",
+        "true",
+        { timeout: 10_000 },
+      );
+      await page.evaluate(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      });
+      await page.close();
+      recordingPage = await context.newPage();
+      await installScreenshotEnvironment(recordingPage);
+    }
+    await runE2eQuickstart(recordingPage, cached, {
+      marketing: test.info().project.name === MARKETING_PROJECT_NAME,
     });
+    await finalize(
+      recordingPage,
+      "e2e-quickstart",
+      path.join(DOCS_IMAGES, "getting-started/e2e.gif"),
+      {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 128,
+      },
+    );
   });
 
   test("ai-preannotate — AI 预标注发起流程", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
-    await runAiPreannotate(page, cached);
-    await finalize(
-      page,
-      "ai-preannotate",
-      path.join(DOCS_IMAGES, "projects/ai-preannotate-flow.gif"),
-      { fps: 6, maxWidth: 860 },
-    );
+    const win = await runAiPreannotate(page, cached);
+    await finalize(page, "ai-preannotate", undefined, drawTrim(win, t0));
+  });
+
+  test("ai-prediction-import — 导入预标注结果", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await installRecordingWorkbenchLayout(page, "both");
+    const win = await runAiPredictionImport(page, cached, {
+      marketing: test.info().project.name === MARKETING_PROJECT_NAME,
+    });
+    await finalize(page, "ai-prediction-import", undefined, drawTrim(win, t0));
   });
 
   const samToolDemos: Array<{
@@ -314,8 +557,8 @@ test.describe("flow recordings", () => {
       await seed.injectToken(page, cached.users.admin.email);
       await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "none");
-      const win = await runSamToolRecording(page, cached, demo.tool);
-      await finalizeHomepageWebm(
+      const win = await runSamToolRecording(page, cached, demo.tool, { accept: true });
+      await finalizeMarketingBackedHomepageAsset(
         page,
         `sam-tools/${demo.tool}`,
         drawTrim(win, t0),
@@ -330,7 +573,7 @@ test.describe("flow recordings", () => {
 
   test("smart-scribble — 已存 Mask 正负笔迹精修", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(60_000);
+    test.setTimeout(180_000); // 正负笔迹 + 4K H.264 归档转码需覆盖完整营销母版链路
     const t0 = Date.now();
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
@@ -377,47 +620,48 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runSamInteractive(page, cached);
-    await finalizeHomepageWebm(
-      page,
-      "ai-assisted-annotation",
-      drawTrim(win, t0),
-      path.join(DOCS_IMAGES, "sam/magic-box-interaction.gif"),
-    );
+    await finalizeMarketingBackedHomepageAsset(page, "ai-assisted-annotation", drawTrim(win, t0));
   });
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.reviewer.email);
     await installRecordingWorkbenchLayout(page, "both");
-    await runReviewReject(page, cached);
+    const win = await runReviewReject(page, cached);
     await finalize(page, "review-reject", path.join(DOCS_IMAGES, "review/reject-flow.gif"), {
       fps: 6,
       maxWidth: 860,
+      ...drawTrim(win, t0),
     });
   });
 
   test("batch-bulk-actions — 批次多选批量操作", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
-    await runBatchBulkActions(page, cached);
+    const win = await runBatchBulkActions(page, cached);
     await finalize(
       page,
       "batch-bulk-actions",
       path.join(DOCS_IMAGES, "projects/batch-bulk-actions.gif"),
+      { ...drawTrim(win, t0) },
     );
   });
 
   test("ai-pre-variant-selector — 变体两轴联动", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
-    await runAiPreVariantSelector(page, cached);
+    const win = await runAiPreVariantSelector(page, cached);
     await finalize(
       page,
       "ai-pre-variant-selector",
       path.join(DOCS_IMAGES, "projects/ai-pre-variant-selector.gif"),
+      { ...drawTrim(win, t0) },
     );
   });
 
@@ -436,13 +680,7 @@ test.describe("flow recordings", () => {
     });
     if (!cleanupRecord) throw new Error("[ocr-inference] 未记录无痕清理标识");
     cleanupOcrRecording(cleanupRecord);
-    await finalizeHomepageWebm(
-      page,
-      "ocr-real-scene",
-      drawTrim(win, t0),
-      path.join(DOCS_IMAGES, "workbench/ocr-real-scene.gif"),
-      { fps: 6, maxWidth: 860 },
-    );
+    await finalizeMarketingBackedHomepageAsset(page, "ocr-real-scene", drawTrim(win, t0));
   });
 
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
@@ -467,8 +705,13 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runBboxDraw(page, cached);
+    await installRecordingWorkbenchLayout(page, "none", {
+      image: { afterBoxCreate: "pick_class" },
+      ui: { secondary_bar_hidden: true },
+    });
+    const win = await runBboxDraw(page, cached, {
+      marketing: test.info().project.name === MARKETING_PROJECT_NAME,
+    });
     await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
       fps: 4,
       maxWidth: 640,
@@ -511,6 +754,7 @@ test.describe("flow recordings", () => {
 
   test("mask-draw — Mask 笔刷涂抹", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 多笔 Mask + 4K H.264 归档转码
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
@@ -560,10 +804,6 @@ test.describe("flow recordings", () => {
     );
     await finalizeVariants(page, "candidate-keyboard-review", [
       {
-        target: path.join(DOCS_IMAGES, "ai/candidate-keyboard-review.gif"),
-        options: { fps: 8, maxWidth: 860, ...drawTrim(win, t0) },
-      },
-      {
         target: path.join(DOCS_IMAGES, "workbench/review-auto-advance.gif"),
         options: {
           fps: 8,
@@ -582,14 +822,7 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoTrack(page, cached);
-    await finalize(
-      page,
-      "video-track",
-      // 视频运动多、调色板帧间变化大，fps/宽度比画布 flow 再降一档以压到 5MB 内。
-      // 收起边栏后画布变宽、帧间变化更大，maxWidth 再降到 640 才稳压 5MB。
-      path.join(DOCS_IMAGES, "workbench/video-track-overview.gif"),
-      { fps: 6, maxWidth: 640, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "video-track", undefined, drawTrim(win, t0));
   });
 
   test("video-timeline-zoom — 时间轴锚点缩放与复位", async ({ page, seed }) => {
@@ -610,6 +843,7 @@ test.describe("flow recordings", () => {
 
   test("video-chapter — 时间轴圈选与拖柄调整章节", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -644,25 +878,45 @@ test.describe("flow recordings", () => {
     );
   });
 
-  test("video-multi-target-seeds — 多目标跨帧点框种子", async ({ page, seed }) => {
+  test("video-tracker-cross-frame-points — 双目标跨帧多正点", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiTargetSeeds(page, cached);
-    await finalize(
-      page,
-      "video-multi-target-seeds",
-      path.join(DOCS_IMAGES, "video-propagate/multi-target-seeds.gif"),
-      { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
-    );
+    const win = await runVideoMultiSeedTracking(page, cached, "cross-frame-points");
+    await finalize(page, "video-tracker-cross-frame-points", undefined, drawTrim(win, t0));
+  });
+
+  test("video-tracker-positive-negative — 双目标正负点修正", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runVideoMultiSeedTracking(page, cached, "positive-negative");
+    await finalize(page, "video-tracker-positive-negative", undefined, drawTrim(win, t0));
+  });
+
+  test("video-tracker-box-seed — 双目标整车框种子", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runVideoMultiSeedTracking(page, cached, "box-seed");
+    await finalize(page, "video-tracker-box-seed", undefined, drawTrim(win, t0));
   });
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(60_000);
+    test.setTimeout(120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -681,19 +935,14 @@ test.describe("flow recordings", () => {
 
   test("video-mask-track-edit — Mask 轨迹创建与后续帧编辑", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(60_000); // 视频解码 + 两次 Mask 提交, 默认 30s 在冷启动时偏紧
+    test.setTimeout(180_000); // 视频解码 + 两次 Mask 提交 + 4K H.264 归档
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both");
     const win = await runVideoMaskTrackEdit(page, cached);
-    await finalize(
-      page,
-      "video-mask-track-edit",
-      path.join(DOCS_IMAGES, "workbench/video-mask-track-edit.gif"),
-      { fps: 4, maxWidth: 560, maxColors: 96, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "video-mask-track-edit", undefined, drawTrim(win, t0));
   });
 
   test("ai-tracker-panel — AI 追踪面板拖动缩放与互斥", async ({ page, seed }) => {
@@ -704,54 +953,36 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runAiTrackerPanel(page, cached);
-    await finalize(
-      page,
-      "ai-tracker-panel",
-      path.join(DOCS_IMAGES, "video-propagate/ai-tracking-panel-interaction.gif"),
-      { fps: 8, maxWidth: 760, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "ai-tracker-panel", undefined, drawTrim(win, t0));
   });
 
   test("pointcloud-controls — 点云控件(上色/点大小/深度)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(60000); // 点云 PCD 加载 + SwiftShader 渲染重, 默认 30s 不够
+    test.setTimeout(180_000); // 点云加载与 4K H.264 归档都较重
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudControls(page, cached);
-    await finalize(
-      page,
-      "pointcloud-controls",
-      // 3D 点云画面细节密、调色板帧间变化大，沿用视频档 fps6/720 压到 5MB 内。
-      path.join(DOCS_IMAGES, "workbench/pointcloud-controls-bar.gif"),
-      { fps: 6, maxWidth: 720, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "pointcloud-controls", undefined, drawTrim(win, t0));
   });
 
   test("pointcloud-view — 点云视图导航(拖动旋转)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(60000); // 点云 PCD 加载 + SwiftShader 渲染重, 默认 30s 不够
+    test.setTimeout(180_000); // 点云加载与 4K H.264 归档都较重
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudView(page, cached);
-    await finalize(
-      page,
-      "pointcloud-view",
-      // 整片点云随 orbit 旋转、帧间变化比逐项切控件大得多，调色板更新猛，
-      // 比控件档再降一档到 fps5/620(同 video-draw)才稳压 5MB 内。
-      path.join(DOCS_IMAGES, "workbench/pointcloud-view-orbit.gif"),
-      { fps: 5, maxWidth: 620, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "pointcloud-view", undefined, drawTrim(win, t0));
   });
 
   test("video-draw — 视频画框轨迹(track 关键帧插值)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(60000); // 视频解码 + 两次画框 + 来回逐帧, 默认 30s 不够
+    test.setTimeout(120_000); // 视频解码 + 两次画框 + 来回逐帧, 冷启动时给 worker 留足余量
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -776,12 +1007,7 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runLargeImageProgressive(page, cached);
-    await finalize(
-      page,
-      "large-image-progressive",
-      path.join(DOCS_IMAGES, "workbench/large-image-progressive-detail.gif"),
-      { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
-    );
+    await finalize(page, "large-image-progressive", undefined, drawTrim(win, t0));
   });
 
   test("hotkey-cheatsheet — 键盘快捷键面板(? 打开)", async ({ page, seed }) => {
@@ -811,5 +1037,12 @@ function drawTrim(
   if (!win) return {};
   const startSec = Math.max(0, (win.drawStartMs - t0) / 1000 - 0.4);
   const durationSec = (win.drawEndMs - win.drawStartMs) / 1000 + 0.8;
-  return { startSec, durationSec };
+  return {
+    startSec,
+    durationSec,
+    captureWindow: {
+      startEpochMs: win.drawStartMs - 400,
+      endEpochMs: win.drawEndMs + 400,
+    },
+  };
 }

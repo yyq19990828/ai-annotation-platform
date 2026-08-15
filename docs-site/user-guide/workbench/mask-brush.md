@@ -181,7 +181,11 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试」�
 
 ## 视频 Mask 轨迹
 
-![创建视频 Mask 轨迹并在保持帧编辑、物化新关键帧](../images/workbench/video-mask-track-edit.gif)
+<DocsVideo
+  src="/media/video/mask-track-edit.mp4"
+  poster="/media/video/mask-track-edit-poster.webp"
+  alt="创建视频 Mask 轨迹并在后续保持帧编辑、物化新关键帧"
+/>
 
 在视频任务中点击「Mask 轨迹」工具（该工具不占用快捷键）：
 

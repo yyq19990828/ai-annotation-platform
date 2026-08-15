@@ -63,6 +63,7 @@ def _recording_anchor_payload(anchor: RecordingAnchorSpec) -> dict[str, Any]:
         "label": anchor.label,
         "bbox": list(anchor.bbox),
         "point": list(anchor.point),
+        "additional_points": [list(point) for point in anchor.additional_points],
         "polygon": [list(point) for point in anchor.polygon],
         "polyline": [list(point) for point in anchor.polyline],
         "brush_strokes": [

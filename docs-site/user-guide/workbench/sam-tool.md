@@ -80,7 +80,11 @@ last_reviewed: 2026-08-11
 
 **注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。候选确认时会按目标工具单位重新校验默认类别，不会沿用其他单位中同名或过期的活动类别。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
-![Magic Box 粗框后由真实 SAM3 收紧并确认类别](../images/sam/magic-box-interaction.gif)
+<DocsVideo
+  src="/media/ai/assisted-annotation.mp4"
+  poster="/media/ai/assisted-annotation-poster.webp"
+  alt="Magic Box 粗框真实车辆后由 SAM3 收紧，人工确认正确类别并保存"
+/>
 
 ### Exemplar 示例（视觉示例）
 

@@ -200,7 +200,18 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
       await page.waitForTimeout(400);
       const reg = page.getByRole("button", { name: "注册实例", exact: true });
       await reg.click({ timeout: 3000 });
-      await page.getByRole("dialog").waitFor({ timeout: 3000 });
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor({ timeout: 3000 });
+      const gpuResource = dialog.locator("#global-backend-gpu-resource");
+      const resourceValues = await gpuResource
+        .locator("option")
+        .evaluateAll((options) =>
+          options.map((option) => (option as HTMLOptionElement).value).filter(Boolean),
+        );
+      if (resourceValues[0]) {
+        await gpuResource.selectOption(resourceValues[0]);
+        await dialog.locator("#global-backend-vram-budget").fill("1024");
+      }
     },
     capture: { kind: "locator", selector: '[role="dialog"]', padding: 0 },
     target: "docs-site/user-guide/images/superadmin/ml-backend/register-form.png",

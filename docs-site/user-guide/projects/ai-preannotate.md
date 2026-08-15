@@ -52,7 +52,11 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
    - **追加**：不去重，直接在已有预测上再加一份（仅特殊场景）。
 7. 点击运行。勾选多个批次时可以选择串行或并行；并行请求仍会受 backend 的 `max_concurrency` 保护。
 
-![选择项目和批次、运行 AI 预标并查看任务历史](../images/projects/ai-preannotate-flow.gif)
+<DocsVideo
+  src="/media/ai/preannotate.mp4"
+  poster="/media/ai/preannotate-poster.webp"
+  alt="选择项目和批次、运行 AI 预标、查看任务历史并返回工作台核对候选"
+/>
 
 ## 参数与模型变体
 
@@ -102,7 +106,11 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 OCR 与文档版面预标走和几何检测（YOLO）、文本检测（gsam2/sam3）**完全相同的 model-first 配置**：「模型任务」下拉列出 backend 自报的所有可批量预标的模型，OCR 端到端 / 检测模型与几何检测器并列出现，按选中模型自动决定要不要文本 prompt、要不要变体面板。
 
-![真实 OCR 图片在工作台运行当前题推理并生成文本候选](../images/workbench/ocr-real-scene.gif)
+<DocsVideo
+  src="/media/ai/ocr-current-task.mp4"
+  poster="/media/ai/ocr-current-task-poster.webp"
+  alt="真实 OCR 图片在工作台运行当前题推理并生成文本候选"
+/>
 
 <noscript><img src="../images/workbench/ocr-real-scene.png" alt="OCR 当前题 AI 面板静态备用图" /></noscript>
 

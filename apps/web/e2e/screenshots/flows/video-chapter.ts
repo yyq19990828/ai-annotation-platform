@@ -3,6 +3,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export interface VideoChapterRecordingWindows {
@@ -27,6 +28,7 @@ export async function runVideoChapter(
   await page.waitForTimeout(700);
 
   const createStartMs = Date.now();
+  await page.waitForTimeout(1_500);
   await sidebar.getByRole("button", { name: "圈选" }).click();
   await page.getByTestId("video-chapter-draft-hint").waitFor({ timeout: 3_000 });
 
@@ -37,13 +39,13 @@ export async function runVideoChapter(
   const y = timelineBox.y + timelineBox.height * 0.55;
   await page.mouse.move(startX, y);
   await page.mouse.down();
-  await page.mouse.move(endX, y, { steps: 18 });
+  await movePointerAtRefreshRate(page, { x: startX, y }, { x: endX, y }, 700);
   await page.mouse.up();
 
   const form = page.getByTestId("video-chapter-form");
   await form.waitFor({ timeout: 3_000 });
-  await form.getByPlaceholder("章节标题").fill("车辆驶入");
-  await page.waitForTimeout(450);
+  await form.getByPlaceholder("章节标题").pressSequentially("车辆驶入", { delay: 120 });
+  await page.waitForTimeout(600);
   await Promise.all([
     page.waitForResponse(
       (response) => response.request().method() === "POST" && response.url().includes("/chapters"),
@@ -54,12 +56,13 @@ export async function runVideoChapter(
   const chapterRow = page.getByTestId("video-chapter-row").filter({ hasText: "车辆驶入" });
   await chapterRow.waitFor({ timeout: 5_000 });
   await page.getByTestId("video-timeline-chapter").waitFor({ timeout: 5_000 });
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(1_500);
   const createEndMs = Date.now();
 
   const resizeStartMs = Date.now();
   await page.getByTestId("video-timeline-toggle").click();
   await page.getByTestId("video-timeline-lane-chapters").waitFor({ timeout: 3_000 });
+  await page.waitForTimeout(900);
 
   const chapter = page.getByTestId("video-timeline-chapter").first();
   await chapterRow.hover();
@@ -81,14 +84,41 @@ export async function runVideoChapter(
   const handleY = handleBox.y + handleBox.height / 2;
   const patched = page.waitForResponse(
     (response) => response.request().method() === "PATCH" && response.url().includes("/chapters/"),
-    { timeout: 5_000 },
+    { timeout: 20_000 },
   );
   await page.mouse.move(handleX, handleY);
   await page.mouse.down();
-  await page.mouse.move(handleX + Math.min(140, timelineBox.width * 0.12), handleY, { steps: 18 });
+  await movePointerAtRefreshRate(
+    page,
+    { x: handleX, y: handleY },
+    { x: handleX + Math.min(140, timelineBox.width * 0.12), y: handleY },
+    700,
+  );
   await page.mouse.up();
   await patched;
-  await page.waitForTimeout(1_100);
+  await page.waitForTimeout(1_000);
+
+  // 继续调整起点，完整表达“修改章节起止范围”，而不只是拉长结尾。
+  const startHandle = page.getByTestId("video-chapter-resize-start").first();
+  const startHandleBox = await startHandle.boundingBox();
+  if (!startHandleBox) throw new Error("[video-chapter] 章节起始拖柄不可见");
+  const startHandleX = startHandleBox.x + startHandleBox.width / 2;
+  const startHandleY = startHandleBox.y + startHandleBox.height / 2;
+  const startPatched = page.waitForResponse(
+    (response) => response.request().method() === "PATCH" && response.url().includes("/chapters/"),
+    { timeout: 20_000 },
+  );
+  await page.mouse.move(startHandleX, startHandleY);
+  await page.mouse.down();
+  await movePointerAtRefreshRate(
+    page,
+    { x: startHandleX, y: startHandleY },
+    { x: startHandleX + Math.min(90, timelineBox.width * 0.08), y: startHandleY },
+    700,
+  );
+  await page.mouse.up();
+  await startPatched;
+  await page.waitForTimeout(1_600);
 
   return {
     create: { drawStartMs: createStartMs, drawEndMs: createEndMs },

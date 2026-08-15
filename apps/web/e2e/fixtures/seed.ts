@@ -13,7 +13,13 @@
  *     await seed.loginViaUI(page, data.admin_email, "Test1234");
  *   });
  */
-import { test as base, expect, type Page, type APIRequestContext } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type Page,
+  type APIRequestContext,
+  type APIResponse,
+} from "@playwright/test";
 
 export interface SeedData {
   admin_email: string;
@@ -57,6 +63,7 @@ export interface ScreenshotRecordingAnchor {
   frame_index?: number;
   bbox: [number, number, number, number];
   point: [number, number];
+  additional_points: Array<[number, number]>;
   polygon: Array<[number, number]>;
   polyline: Array<[number, number]>;
   brush_strokes: Array<Array<[number, number]>>;
@@ -173,10 +180,27 @@ const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 export class SeedAPI {
   constructor(private request: APIRequestContext) {}
 
+  /**
+   * 录制时 4K 转码会让测试 API 连接空闲数十秒，Uvicorn 已关闭的 keep-alive socket
+   * 偶尔会被客户端复用并报 socket hang up。登录是幂等操作，遇到连接复位后用新连接重试。
+   */
+  private async seedLogin(email: string): Promise<APIResponse> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+          headers: { Connection: "close" },
+          data: { email },
+        });
+      } catch (error) {
+        if (attempt > 0 || !/socket hang up|ECONNRESET/i.test(String(error))) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+    throw new Error("seed/login transient retry exhausted");
+  }
+
   async accessToken(email: string): Promise<string> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
-      data: { email },
-    });
+    const res = await this.seedLogin(email);
     if (!res.ok()) {
       throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
     }
@@ -204,6 +228,39 @@ export class SeedAPI {
       );
     }
     return (await res.json()) as ScreenshotSeedCatalog;
+  }
+
+  /** 为隔离录制项目启用一个已注册的真实 backend。 */
+  async enableMLBackendByName(
+    projectId: string,
+    userEmail: string,
+    backendName: string,
+  ): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const headers = { Authorization: `Bearer ${token}` };
+    const available = await this.request.get(
+      `${API_BASE}/api/v1/projects/${projectId}/ml-backends/available`,
+      { headers },
+    );
+    if (!available.ok()) {
+      throw new Error(
+        `ml-backends/available failed: ${available.status()} ${await available.text()}`,
+      );
+    }
+    const body = (await available.json()) as {
+      items: Array<{ backend: { id: string; name: string }; enabled: boolean }>;
+    };
+    const item = body.items.find((candidate) => candidate.backend.name === backendName);
+    if (!item) throw new Error(`未找到 ML backend: ${backendName}`);
+    if (item.enabled) return;
+
+    const enabled = await this.request.put(
+      `${API_BASE}/api/v1/projects/${projectId}/ml-backends/${item.backend.id}/enablement`,
+      { headers, data: { enabled: true } },
+    );
+    if (!enabled.ok()) {
+      throw new Error(`ml-backends/enablement failed: ${enabled.status()} ${await enabled.text()}`);
+    }
   }
 
   /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */
@@ -385,9 +442,7 @@ export class SeedAPI {
 
   /** 直接拿 JWT 注入 localStorage（跳过 UI 登录，加快非 auth spec）。 */
   async injectToken(page: Page, email: string, baseURL?: string): Promise<void> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
-      data: { email },
-    });
+    const res = await this.seedLogin(email);
     if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
     const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
@@ -428,6 +483,7 @@ export class SeedAPI {
     score?: number;
   }): Promise<{ prediction_id: string }> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-prediction`, {
+      headers: { Connection: "close" },
       data: {
         task_id: opts.taskId,
         project_id: opts.projectId,
