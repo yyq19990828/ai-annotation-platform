@@ -26,6 +26,17 @@ last_reviewed: 2026-08-16
 
 ![项目列表错误状态](../images/projects/error-state.png)
 
+## 项目高频操作入口
+
+项目行或卡片的 `⋮` 菜单集中放置不需要常驻在主操作区的数据流入口：**导出标注数据**、**复制项目配置**和**导入预测**。菜单还会按权限展示预测清理或标注导入；「打开」与「设置」保留为行内直接按钮。
+
+<DocsVideo
+  src="/media/projects/project-actions-menu.mp4"
+  poster="/media/projects/project-actions-menu-poster.webp"
+  alt="项目列表打开更多操作菜单并依次定位导出标注数据、复制项目配置和导入预测"
+  caption="三个入口共享项目语境，但进入不同链路：导出生成可下载产物，复制只复用项目配置，导入预测写入待审 AI 候选。"
+/>
+
 ## 步骤
 
 向导共 6 步（类型 → 类别 → 属性 → AI 接入 → 数据 → 成员），提交后项目即创建完成。

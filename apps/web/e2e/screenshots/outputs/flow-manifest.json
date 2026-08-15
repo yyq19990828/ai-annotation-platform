@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T20:01:00.598Z",
+  "updated_at": "2026-08-15T20:08:49.106Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1755,6 +1755,68 @@
         "runId": "20260815T135835Z-cbd6f5d9bc0a",
         "assetId": "project-ml-routing",
         "sha256": "eef0b45ac324ecfa3f6b19aa341dfee8cebcfdc19dc96cef9e2433b589a3dfdd"
+      }
+    },
+    "docs-site/public/media/projects/project-actions-menu-poster.webp": {
+      "asset_id": "project-actions-menu",
+      "role": "poster",
+      "generated_at": "2026-08-15T20:08:49.106Z",
+      "captured_commit": "ebae1dbcaf809e4341be524377057012b3a013c1",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › project-actions-menu",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "ada1194799adff2f7c26ad0a99697d8e577cdd494e55d9b346f5f1a0ab438d05",
+      "bytes": 51704,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T200721Z-ebae1dbcaf80",
+        "assetId": "project-actions-menu",
+        "sha256": "ecb4816d2da9e38832a8afb8fe386e1068473c2e338db75e39c5b13594227a9a"
+      }
+    },
+    "docs-site/public/media/projects/project-actions-menu.mp4": {
+      "asset_id": "project-actions-menu",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T20:08:49.030Z",
+      "captured_commit": "ebae1dbcaf809e4341be524377057012b3a013c1",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › project-actions-menu",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "448f9de8fa45b87d0fcf8fc825050341dc4392fdef53c57309299d17851aecff",
+      "bytes": 166304,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 11.734
+      },
+      "source_asset": {
+        "runId": "20260815T200721Z-ebae1dbcaf80",
+        "assetId": "project-actions-menu",
+        "sha256": "ecb4816d2da9e38832a8afb8fe386e1068473c2e338db75e39c5b13594227a9a"
       }
     },
     "docs-site/public/media/review/reject-flow-poster.webp": {
