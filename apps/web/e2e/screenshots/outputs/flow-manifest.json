@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T21:09:18.588Z",
+  "updated_at": "2026-08-15T21:40:12.766Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -2495,6 +2495,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "video-mask-track-edit",
         "sha256": "5aaafff31c9f69e5e955a8c76fd0c7850d355b4f357de0295d0ec4fd168a21f6"
+      }
+    },
+    "docs-site/public/media/video/prediction-density-navigation-poster.webp": {
+      "asset_id": "video-timeline-prediction-navigation",
+      "role": "poster",
+      "generated_at": "2026-08-15T21:40:12.766Z",
+      "captured_commit": "c5f193d7b3e79f81488142b77ff1f48cd4ab662d",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-timeline-prediction-navigation",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "397c4ee156bcd20b11faa5521acb19d14f9e15efc99121fb086ef34ad142ede7",
+      "bytes": 115192,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T213518Z-c5f193d7b3e7",
+        "assetId": "video-timeline-prediction-navigation",
+        "sha256": "467b5c5e6bb6beee3eb1c2949400f9b62838d7396af1773f56b0888e9c6e5c85"
+      }
+    },
+    "docs-site/public/media/video/prediction-density-navigation.mp4": {
+      "asset_id": "video-timeline-prediction-navigation",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T21:40:12.684Z",
+      "captured_commit": "c5f193d7b3e79f81488142b77ff1f48cd4ab662d",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-timeline-prediction-navigation",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "cb9f6a7f36b8d8f25e8fed356672ad5cf54a88a4d611608bd12333cbbf0bc73b",
+      "bytes": 806796,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 15.3
+      },
+      "source_asset": {
+        "runId": "20260815T213518Z-c5f193d7b3e7",
+        "assetId": "video-timeline-prediction-navigation",
+        "sha256": "467b5c5e6bb6beee3eb1c2949400f9b62838d7396af1773f56b0888e9c6e5c85"
       }
     },
     "docs-site/public/media/video/track-batch-propagate-poster.webp": {

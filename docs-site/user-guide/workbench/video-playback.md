@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-16
 ---
 
 # 视频播放、帧导航与采样
@@ -79,7 +79,12 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
 
 ## 时间轴缩放与 AI 预测导航
 
-<!-- TODO IMAGE_CHECKLIST: images/video-timeline/prediction-density-track.png — AI 预测密度轨 + 跳预测帧导航 [manual] -->
+<DocsVideo
+  src="/media/video/prediction-density-navigation.mp4"
+  poster="/media/video/prediction-density-navigation-poster.webp"
+  alt="视频工作台展开 AI 预测密度轨，并在五个真实车辆预测帧之间前后跳转"
+  caption="先看五个预测位置在全片的分布，再用紫色前后按钮只跳到有候选的帧；画布中的公交车和卡车框会随 F0、F6、F12、F18、F24 同步更新。"
+/>
 
 ![以指针帧为锚缩放、平移时间轴并双击复位](../images/video-timeline/horizontal-zoom.gif)
 

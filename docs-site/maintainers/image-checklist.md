@@ -73,7 +73,7 @@
 ### 时间轴交互（对应 `workbench/video-playback.md`）
 
 - [x] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → 普通滚轮平移 → 双击复位全过程 `[auto-gif]`（flows/video-timeline-zoom）
-- [ ] `images/video-timeline/prediction-density-track.png` — 时间轴 AI 预测密度轨（violet 柱）+「跳到上/下一个有预测的帧」导航按钮；红框：密度轨、跳转按钮 [manual]
+- [x] `public/media/video/prediction-density-navigation.mp4` — 五帧真实 YOLO 车辆候选 → 展开 violet AI 预测密度轨 → 连续前后跳预测帧 → 核对帧号与画布候选 `[derived-mp4]`
 - [x] `images/video-timeline/brush-create-chapter.gif` — 时间轴圈选一段 → 填写章节表单 → 创建章节全过程 `[auto-gif]`（flows/video-chapter）
 - [x] `images/video-timeline/chapter-resize-hover.gif` — 章节条 ↔ 侧栏行双向 hover 高亮，并拖边界改起止 `[auto-gif]`（flows/video-chapter 的拖柄裁切版）
 
