@@ -100,7 +100,7 @@
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
 
-- [ ] `images/3d-box/billboard-label.png` — 3D 框顶部 billboard 文字标签（始终朝向相机，随视角旋转保持正对）；红框：标签、「标签内容」设置入口 [manual]
+- [x] `public/media/pointcloud/billboard-label.mp4` — 标签内容切到“轨迹”段并启用属性 → 标签显示 `object · 车辆 · 清晰可见` → 环绕侧视、俯仰与低角度核对文字持续正对相机 `[derived-mp4]`
 
 ### 全局 Pipeline 库（对应新建 `projects/pipeline-library.md` 或 `projects/ai-preannotate.md`）
 

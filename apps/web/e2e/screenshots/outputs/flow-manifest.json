@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T22:26:19.688Z",
+  "updated_at": "2026-08-15T22:45:45.541Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1511,6 +1511,68 @@
         "runId": "20260815T113327Z-e7bdc50047fe",
         "assetId": "pipeline-template-create",
         "sha256": "0e09cb3231a55b294be453c7082c6514f14a8173de940049aa5722ecc1851fd0"
+      }
+    },
+    "docs-site/public/media/pointcloud/billboard-label-poster.webp": {
+      "asset_id": "pointcloud-billboard-label",
+      "role": "poster",
+      "generated_at": "2026-08-15T22:45:45.541Z",
+      "captured_commit": "20808f2edfb49d0009ab0eaef037789618427bda",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › pointcloud-billboard-label",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "318e60fab48d9c8ddbda7b478c0385e92dc5417bddff8ebb485623b2af35a74b",
+      "bytes": 21626,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T224252Z-20808f2edfb4",
+        "assetId": "pointcloud-billboard-label",
+        "sha256": "ec65c999793aeb5e433f3f7f0322b5beed5d1dd7325423a900717855b85465f1"
+      }
+    },
+    "docs-site/public/media/pointcloud/billboard-label.mp4": {
+      "asset_id": "pointcloud-billboard-label",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T22:45:45.466Z",
+      "captured_commit": "20808f2edfb49d0009ab0eaef037789618427bda",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › pointcloud-billboard-label",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "8b055c6d477625aee689bea71076fe5f223f42133dd23c016b5636e08e344844",
+      "bytes": 1163801,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 17.034
+      },
+      "source_asset": {
+        "runId": "20260815T224252Z-20808f2edfb4",
+        "assetId": "pointcloud-billboard-label",
+        "sha256": "ec65c999793aeb5e433f3f7f0322b5beed5d1dd7325423a900717855b85465f1"
       }
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
