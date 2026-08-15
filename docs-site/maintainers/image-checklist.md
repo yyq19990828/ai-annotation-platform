@@ -134,7 +134,7 @@
 
 ### 项目、数据与审核入口
 
-- [ ] `images/projects/project-actions-menu.png` — 项目行 / 卡片 `⋮` 菜单展开态；红框：「导入预测」「导出标注数据」「复制项目配置」三个高频入口 **[Tier A]** `[auto]`
+- [ ] `public/media/projects/project-actions-menu.mp4` — 项目行 `⋮` 菜单：依次定位「导出标注数据」「复制项目配置」「导入预测」三个高频入口，并保留项目语境 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/projects/create-existing-resources.mp4` — 新建图片项目 → 配置 `car` 类别 → Step 5 关联已有道路数据集 → Step 6 选择现有标注员与审核员 → 成功页核对摘要 **[Tier A]** `[derived-mp4]`
 - [ ] `images/datasets/list-filters-and-repair.png` — 数据集页类型筛选 + 数据集卡操作；红框：图像 / 视频 / 3D / 多模态筛选、缺失视频元数据补生成入口 **[Tier B]** [manual]
 - [ ] `images/datasets/prediction-match-preview.png` — 导入预测预览校验：匹配成功、未匹配、同名歧义三类结果；红框：实际匹配键与确认导入按钮 **[Tier B]** [manual]

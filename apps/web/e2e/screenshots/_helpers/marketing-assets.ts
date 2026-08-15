@@ -302,6 +302,23 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "project-actions-menu",
+    title: "项目高频操作菜单",
+    theme: "从项目列表进入预测导入、标注导出和配置复用",
+    objective:
+      "展示项目管理员在保留项目上下文的情况下，从同一个更多操作菜单找到导出标注数据、复制项目配置和导入预测三个高频入口。",
+    duration: { minSeconds: 9, targetSeconds: 12, maxSeconds: 20 },
+    shots: [
+      "从已加载的项目列表开始，明确当前道路图像项目。",
+      "打开该项目的更多操作菜单，同时展示三个高频入口及其分组关系。",
+      "依次悬停导出标注数据、复制项目配置和导入预测，保留指针焦点。",
+    ],
+    editingNotes: [
+      "该母版只表达入口发现，不打开向导或执行写操作；预测导入、后台导出和复制创建均由各自独立素材说明。",
+      "必须保留项目行、项目编号和数据类型语境，不能只裁一个失去来源的浮动菜单。",
+    ],
+  }),
+  defineAsset({
     assetId: "background-export-download",
     title: "后台多格式导出与下载",
     theme: "从导出配置到可校验 ZIP 产物的异步闭环",
