@@ -153,6 +153,36 @@
         "docs-site/user-guide/datasets/prediction-import-export.md"
       ]
     },
+    "docs-site/public/media/jobs/jobs-bell-active-poster.webp": {
+      "last_verified_commit": "2bac20c338721c4802b5862d1886ed67b8b0754b",
+      "verified_at": "2026-08-15T20:23:42.348Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "46c2333f9b4c6b87118fe324d8c421cce7d4c959b94f365bbf1250177ecd87f2",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/jobs/jobs-bell-active-poster.webp",
+        "docs-site/user-guide/projects/ai-preannotate.md"
+      ]
+    },
+    "docs-site/public/media/jobs/jobs-bell-active.mp4": {
+      "last_verified_commit": "2bac20c338721c4802b5862d1886ed67b8b0754b",
+      "verified_at": "2026-08-15T20:23:42.348Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "f6137241e30f461ac6cbfabe7534c79b3260658023c85dd24d08b26b772eadb9",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/jobs/jobs-bell-active.mp4",
+        "docs-site/user-guide/projects/ai-preannotate.md"
+      ]
+    },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
       "last_verified_commit": "0fb3cdd524afefe0fc86c74d6039d16a4482a88d",
       "verified_at": "2026-08-15T19:27:13.569Z",
