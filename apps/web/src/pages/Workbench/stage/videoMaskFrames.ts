@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnnotationResponse, CocoRleMaskRef } from "@/types";
 import type { VideoTrackerPreviewResult } from "@/api/videoTracker";
 import { rasterMasksApi } from "@/api/rasterMasks";
@@ -121,8 +121,34 @@ export function useVideoMaskFrames(params: {
     colorForPrediction,
   } = params;
   const cacheRef = useRef(new Map<string, CachedMask>());
+  const retiredImagesRef = useRef(new Set<CanvasImageSource>());
   const generationRef = useRef(0);
   const [records, setRecords] = useState<VideoMaskRenderRecord[]>([]);
+  const retireImage = useCallback((image: CanvasImageSource) => {
+    retiredImagesRef.current.add(image);
+  }, []);
+
+  // react-konva 在 commit 后通过 requestAnimationFrame 批量重画 Layer。旧 ImageBitmap 若在
+  // records 切换前同步 close，下一次 video-mask-layer draw 会读到 width=0 的已释放位图；
+  // 该帧绘制中断后，同一 Konva 队列里的标签/AI/交互层也会一直保持 waitingForDraw。
+  // 因此先提交新 records，再把释放排到其后的动画帧。
+  useEffect(() => {
+    if (retiredImagesRef.current.size === 0) return;
+    const closeRetired = () => {
+      const activeImages = new Set(records.map((record) => record.image));
+      for (const image of retiredImagesRef.current) {
+        if (activeImages.has(image)) continue;
+        closeImage(image);
+        retiredImagesRef.current.delete(image);
+      }
+    };
+    if (typeof requestAnimationFrame === "function") {
+      const frame = requestAnimationFrame(closeRetired);
+      return () => cancelAnimationFrame(frame);
+    }
+    const timer = window.setTimeout(closeRetired, 0);
+    return () => window.clearTimeout(timer);
+  }, [records]);
 
   const descriptors = useMemo<MaskDescriptor[]>(() => {
     const committed = annotations.flatMap((annotation) => {
@@ -225,10 +251,10 @@ export function useVideoMaskFrames(params: {
 
   useEffect(() => {
     generationRef.current += 1;
-    for (const cached of cacheRef.current.values()) closeImage(cached.image);
+    for (const cached of cacheRef.current.values()) retireImage(cached.image);
     cacheRef.current.clear();
     setRecords((current) => (current.length > 0 ? [] : current));
-  }, [taskId]);
+  }, [retireImage, taskId]);
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -257,7 +283,7 @@ export function useVideoMaskFrames(params: {
         );
       });
       if (superseded) {
-        closeImage(cached.image);
+        retireImage(cached.image);
         cacheRef.current.delete(key);
       }
     }
@@ -307,7 +333,7 @@ export function useVideoMaskFrames(params: {
         const evictKey = [...cacheRef.current.keys()].find((key) => !activeKeys.has(key));
         if (!evictKey) break;
         const evicted = cacheRef.current.get(evictKey);
-        if (evicted) closeImage(evicted.image);
+        if (evicted) retireImage(evicted.image);
         cacheRef.current.delete(evictKey);
       }
       setRecords(next.filter((record): record is VideoMaskRenderRecord => record !== null));
@@ -321,13 +347,15 @@ export function useVideoMaskFrames(params: {
     return () => {
       cancelled = true;
     };
-  }, [descriptors]);
+  }, [descriptors, retireImage]);
 
   useEffect(
     () => () => {
       generationRef.current += 1;
       for (const cached of cacheRef.current.values()) closeImage(cached.image);
       cacheRef.current.clear();
+      for (const image of retiredImagesRef.current) closeImage(image);
+      retiredImagesRef.current.clear();
     },
     [],
   );

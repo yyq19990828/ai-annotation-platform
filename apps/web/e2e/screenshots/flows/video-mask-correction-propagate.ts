@@ -275,7 +275,49 @@ export async function runVideoMaskCorrectionPropagate(
     const [, annotationsResponse] = await Promise.all([accepted, annotationsRefreshed]);
     assertUpdatedMaskTrack(await annotationsResponse.json(), annotationId);
     await review.waitFor({ state: "hidden", timeout: 8_000 });
-    await page.waitForTimeout(2_000);
+    // 采纳后切一帧再返回，展示正式轨迹 Mask；等待 Konva 的 Mask 与标签层都完成重绘，
+    // 防止旧 ImageBitmap 阻塞同帧队列后把“保持 F0”残影录进母版。
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(450);
+    await page.keyboard.press("ArrowLeft");
+    const canvasSettled = await page.waitForFunction(
+      () => {
+        const runtime = (
+          window as typeof window & {
+            Konva?: {
+              stages?: Array<{
+                getLayers: () => Array<{ name: () => string; _waitingForDraw?: boolean }>;
+                find: (selector: string) => Array<{
+                  text?: () => string;
+                  image?: () => { width?: number; height?: number };
+                  getLayer: () => { name: () => string } | null;
+                }>;
+              }>;
+            };
+          }
+        ).Konva;
+        const stage = runtime?.stages?.[0];
+        if (!stage) return false;
+        const currentLabelVisible = stage
+          .find("Text")
+          .some((node) => node.getLayer()?.name() === "overlay" && node.text?.() === "#1 · truck");
+        const canvasLayersSettled = stage
+          .getLayers()
+          .filter((layer) =>
+            ["video-mask-layer", "overlay", "ai", "interaction"].includes(layer.name()),
+          )
+          .every((layer) => !layer._waitingForDraw);
+        const maskVisible = stage.find(".raster-mask-fill").some((node) => {
+          const image = node.image?.();
+          return (image?.width ?? 0) > 0 && (image?.height ?? 0) > 0;
+        });
+        return currentLabelVisible && canvasLayersSettled && maskVisible;
+      },
+      null,
+      { timeout: 10_000 },
+    );
+    await canvasSettled.dispose();
+    await page.waitForTimeout(900);
   } finally {
     page.off("response", collectServerError);
   }
