@@ -72,6 +72,7 @@ Chromium 内容区的真实 X11 边界；只有边界恰好为 2592×1458、没�
 | `jobs-retry-recovery`              | 打开 RapidOCR 失败作业 → 核对错误摘要 → 真实重试 → 确认新作业完成 → 进入工作台审阅候选         | 16 / 24 / 45 秒            | AI 作业失败恢复与结果审阅          |
 | `model-market-runtime-pool`        | 核对运行时摘要与数据来源 → 展开车辆检测服务池 → 比较双实例路由状态/并发/GPU → 切换详情 Sheet   | 15 / 22 / 30 秒            | 模型服务池运行时观测               |
 | `project-ml-routing`               | 启用 YOLO → 设为批量主后端 → 工作台当前题 AI 命中 YOLO → Smart Point 自动命中 SAM3             | 18 / 25 / 32 秒            | 项目多后端启用与能力自动分流       |
+| `background-export-download`       | 选择 COCO + AAP JSON → 导出入队 → 任务铃展示运行状态 → 核对 ZIP 产物并下载                     | 16 / 24 / 32 秒            | 异步多格式导出与真实产物校验       |
 | `video-track-carryover`            | 展示当前框 → 切帧后出现虚影 → 续写新框 → Tab 前进                                              | 9 / 13 / 28 秒             | 视频标注效率技巧                   |
 | `video-mask-track-edit`            | 首帧创建 Mask 轨迹 → 切换后续帧 → 修正同一轨迹                                                 | 10 / 16 / 35 秒            | 视频分割与轨迹编辑                 |
 | `ai-tracker-panel`                 | 打开 AI 追踪面板 → 拖动 → 缩放 → 展示与画布的互斥                                              | 8 / 12 / 25 秒             | AI 追踪操作面板                    |

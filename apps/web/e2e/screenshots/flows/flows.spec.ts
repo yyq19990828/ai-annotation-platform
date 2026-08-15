@@ -39,6 +39,7 @@ import { runPipelineApplyProject, type PipelineApplyCleanupRecord } from "./pipe
 import { runJobsRetryRecovery } from "./jobs-retry-recovery";
 import { runModelMarketRuntimePool } from "./model-market-runtime-pool";
 import { runProjectMlRouting } from "./project-ml-routing";
+import { runBackgroundExportDownload } from "./background-export-download";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -104,6 +105,11 @@ const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
 const candidateReviewCleanupRecords: CandidateReviewCleanupRecord[] = [];
 const pipelineApplyCleanupRecords: PipelineApplyCleanupRecord[] = [];
 const jobsRetryCleanupRecords: Array<{ projectId: string; taskId: string }> = [];
+const backgroundExportCleanupRecords: Array<{
+  projectId: string;
+  taskId: string;
+  jobId?: string;
+}> = [];
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
@@ -121,6 +127,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "jobs-retry-recovery": "jobs-retry-recovery.ts",
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
   "project-ml-routing": "project-ml-routing.ts",
+  "background-export-download": "background-export-download.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -137,6 +144,9 @@ function flowWatchPaths(assetId: string): string[] {
   ];
   if (assetId === "jobs-retry-recovery") {
     paths.push("apps/api/scripts/screenshot_job_recovery_fixture.py");
+  }
+  if (assetId === "background-export-download") {
+    paths.push("apps/api/scripts/screenshot_background_export_fixture.py");
   }
   return paths.filter((candidate, index, all) => all.indexOf(candidate) === index);
 }
@@ -222,6 +232,9 @@ test.afterAll(({}, testInfo) => {
   for (const record of candidateReviewCleanupRecords) cleanupCandidateReview(record);
   for (const record of pipelineApplyCleanupRecords) cleanupPipelineApply(record);
   for (const record of jobsRetryCleanupRecords) manageJobsRetryFixture("cleanup", record);
+  for (const record of backgroundExportCleanupRecords) {
+    manageBackgroundExportFixture("cleanup", record);
+  }
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -360,6 +373,33 @@ function manageJobsRetryFixture(
   const lastLine = output.trim().split("\n").at(-1);
   if (!lastLine) throw new Error(`[jobs-retry-recovery] ${action} 未返回夹具结果`);
   return JSON.parse(lastLine) as { backend_id?: string };
+}
+
+function manageBackgroundExportFixture(
+  action: "run" | "cleanup",
+  record: { projectId: string; taskId: string; jobId?: string },
+): Record<string, unknown> {
+  const output = execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/screenshot_background_export_fixture.py",
+      action,
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      ...(record.jobId ? ["--job-id", record.jobId] : []),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  const lastLine = output.trim().split("\n").at(-1);
+  if (!lastLine) throw new Error(`[background-export-download] ${action} 未返回夹具结果`);
+  return JSON.parse(lastLine) as Record<string, unknown>;
 }
 
 type GifOptions = {
@@ -1401,6 +1441,37 @@ test.describe("flow recordings", () => {
     } finally {
       repairScreenshotProfile(screenshotBackendMode(cached), true);
       cached = await seed.screenshotCatalog();
+    }
+  });
+
+  test("background-export-download — 后台多格式导出与 ZIP 下载", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(150_000);
+    const project = cached.projects.image_demo;
+    const task = project.tasks.clean;
+    const record: { projectId: string; taskId: string; jobId?: string } = {
+      projectId: project.id,
+      taskId: task.id,
+    };
+    const t0 = Date.now();
+    backgroundExportCleanupRecords.push(record);
+
+    try {
+      manageBackgroundExportFixture("cleanup", record);
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.admin.email);
+      await applyScreenshotTheme(page, "dark");
+      const win = await runBackgroundExportDownload(
+        page,
+        cached,
+        (jobId) => manageBackgroundExportFixture("run", { ...record, jobId }),
+        (jobId) => {
+          record.jobId = jobId;
+        },
+      );
+      await finalize(page, "background-export-download", undefined, drawTrim(win, t0));
+    } finally {
+      manageBackgroundExportFixture("cleanup", record);
     }
   });
 

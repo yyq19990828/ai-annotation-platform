@@ -234,6 +234,27 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "background-export-download",
+    title: "后台多格式导出与下载",
+    theme: "从导出配置到可校验 ZIP 产物的异步闭环",
+    objective:
+      "展示为真实图像项目同时选择 COCO 和 AAP JSON，发起后台导出，在任务铃中查看等待、运行与完成状态，核对文件数和大小后下载并验证 ZIP 内容。",
+    duration: { minSeconds: 16, targetSeconds: 24, maxSeconds: 32 },
+    shots: [
+      "从已加载的项目列表打开“导出标注数据”，保留项目语境。",
+      "同时选择 COCO 和 AAP JSON，展示双格式打入同一 ZIP 的配置摘要。",
+      "开始导出后打开后台任务，展示等待和运行中进度。",
+      "任务完成后核对项目、两种格式、ZIP 文件数与产物大小。",
+      "点击下载，并由录制验收校验 ZIP 同时包含 coco/ 与 aap_json/ 目录。",
+    ],
+    editingNotes: [
+      "该母版只表达异步导出与产物下载，不混入预测导入、清理预测或其他项目管理操作。",
+      "导出作业、进度、MinIO 产物和预签名下载链接均由正式后端产生；录制器不伪造成功状态。",
+      "录制使用指向隔离截图库的专用导出执行器，保留短暂运行态供任务铃轮询捕获；这是后台真实状态，不是视频慢放。",
+      "下载后必须解析真实 ZIP 目录；流程结束后精确删除录制作业、通知、缓存行与对象存储产物。",
+    ],
+  }),
+  defineAsset({
     assetId: "ocr-real-scene",
     title: "真实场景 OCR 推理",
     theme: "当前任务的文字检测与识别",
