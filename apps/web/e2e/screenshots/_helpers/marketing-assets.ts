@@ -319,6 +319,24 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "jobs-bell-active",
+    title: "后台任务混排与关键动作",
+    theme: "在一个顶栏面板中核对预标、导入和导出的不同状态与下一步动作",
+    objective:
+      "展示批量预标与预测导入的实时进度和取消入口，同时展示已完成双格式导出的 ZIP 摘要与下载入口。",
+    duration: { minSeconds: 10, targetSeconds: 14, maxSeconds: 22 },
+    shots: [
+      "从已加载的项目页开始，顶栏后台任务角标显示两个进行中作业。",
+      "展开后台任务面板，同时展示批量预标、预测导入和已完成数据导出。",
+      "核对两条进行中进度与批量预标的取消入口。",
+      "定位已完成导出的目标格式、ZIP 文件数、大小和下载入口。",
+    ],
+    editingNotes: [
+      "作业列表使用录制专用脱敏只读快照；面板、筛选、进度、取消和下载控件均走真实产品实现。",
+      "该母版只表达全局任务铃，不进入完整 Jobs 页面，也不实际取消作业或下载伪造链接。",
+    ],
+  }),
+  defineAsset({
     assetId: "background-export-download",
     title: "后台多格式导出与下载",
     theme: "从导出配置到可校验 ZIP 产物的异步闭环",

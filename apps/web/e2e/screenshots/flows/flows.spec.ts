@@ -60,6 +60,7 @@ import { runLargeImagePyramidRecovery } from "./large-image-pyramid-recovery";
 import { runLargeImageMaskLimit } from "./large-image-mask-limit";
 import { runPlatformOverview } from "./platform-overview";
 import { runProjectActionsMenu } from "./project-actions-menu";
+import { runJobsBellActive } from "./jobs-bell-active";
 import { runSmartScribble } from "./smart-scribble";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
@@ -152,6 +153,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "large-image-mask-limit": "large-image-mask-limit.ts",
   "platform-overview": "platform-overview.ts",
   "project-actions-menu": "project-actions-menu.ts",
+  "jobs-bell-active": "jobs-bell-active.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1650,6 +1652,17 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     const win = await runProjectActionsMenu(page, cached);
     await finalize(page, "project-actions-menu", undefined, drawTrim(win, t0));
+  });
+
+  test("jobs-bell-active — 进度、取消与完成产物下载", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    const win = await runJobsBellActive(page);
+    await finalize(page, "jobs-bell-active", undefined, drawTrim(win, t0));
   });
 
   test("project-ml-routing — 批量主后端与交互能力自动分流", async ({ page, seed }) => {

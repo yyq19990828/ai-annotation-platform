@@ -9,10 +9,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
-import { asyncJobsApi, type AsyncJob, type AsyncJobStatus } from "@/api/asyncJobs";
+import { useToastStore } from "@/components/ui/Toast";
+import {
+  asyncJobsApi,
+  CANCELLABLE_ASYNC_JOB_KINDS,
+  type AsyncJob,
+  type AsyncJobStatus,
+} from "@/api/asyncJobs";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -182,7 +188,17 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
   );
 }
 
-function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) => void }) {
+function JobRow({
+  job,
+  onDismiss,
+  onCancel,
+  cancelPending = false,
+}: {
+  job: AsyncJob;
+  onDismiss?: (id: string) => void;
+  onCancel?: (id: string) => void;
+  cancelPending?: boolean;
+}) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
   // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
@@ -192,6 +208,9 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
   const resultDetail = job.kind === "export" ? exportResultDetail(job.result) : null;
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
+  const cancelRequested = job.payload?.cancel_requested === true;
+  const canCancel =
+    onCancel && !isTerminal(job.status) && CANCELLABLE_ASYNC_JOB_KINDS.has(job.kind);
   return (
     <div
       className="flex w-full flex-col gap-1 rounded-sm px-2.5 py-2 text-left"
@@ -229,6 +248,18 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
       {resultDetail && (
         <div className="text-xs tabular-nums text-muted-foreground">ZIP · {resultDetail}</div>
       )}
+      {canCancel && (
+        <button
+          type="button"
+          onClick={() => onCancel(job.id)}
+          disabled={cancelPending || cancelRequested}
+          className="mt-0.5 inline-flex cursor-pointer items-center gap-1 self-start rounded-sm border border-border bg-transparent px-2 py-1 text-xs font-semibold text-status-caution transition-colors duration-200 hover:border-status-caution hover:bg-status-caution-soft disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid={`job-cancel-${job.id}`}
+        >
+          <Icon name="x" size={12} />
+          {cancelPending || cancelRequested ? "取消中…" : "取消"}
+        </button>
+      )}
       {downloadUrl && (
         <a
           href={downloadUrl}
@@ -247,6 +278,8 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
 export function JobsBell() {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const queryClient = useQueryClient();
+  const pushToast = useToastStore((state) => state.push);
 
   const { data } = useQuery({
     queryKey: ["async-jobs", "recent"],
@@ -263,6 +296,19 @@ export function JobsBell() {
 
   const [filter, setFilter] = useState<JobFilter>(readFilter);
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
+  const cancelMut = useMutation({
+    mutationFn: (jobId: string) => asyncJobsApi.cancel(jobId),
+    onSuccess: (result) => {
+      pushToast({
+        msg: result.status === "cancel_requested" ? "已请求取消后台任务" : "后台任务已取消",
+        kind: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: ["async-jobs"] });
+    },
+    onError: (error) => {
+      pushToast({ msg: "取消后台任务失败", sub: (error as Error).message, kind: "error" });
+    },
+  });
 
   const changeFilter = (next: JobFilter) => {
     setFilter(next);
@@ -407,7 +453,15 @@ export function JobsBell() {
                   {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
                 </div>
               ) : (
-                visibleJobs.map((j) => <JobRow key={j.id} job={j} onDismiss={dismissOne} />)
+                visibleJobs.map((j) => (
+                  <JobRow
+                    key={j.id}
+                    job={j}
+                    onDismiss={dismissOne}
+                    onCancel={(jobId) => cancelMut.mutate(jobId)}
+                    cancelPending={cancelMut.isPending && cancelMut.variables === j.id}
+                  />
+                ))
               )}
             </div>
           </div>

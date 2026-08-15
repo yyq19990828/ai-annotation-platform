@@ -127,7 +127,7 @@
 
 ### 后台任务与失败恢复
 
-- [ ] `images/jobs/jobs-bell-active.png` — 顶栏「后台任务」展开态：进行中预标、导出、导入任务混排；红框：进度、取消、完成后下载入口 **[Tier A]** [manual]
+- [ ] `public/media/jobs/jobs-bell-active.mp4` — 顶栏「后台任务」：进行中预标与预测导入进度 / 取消入口 + 已完成双格式导出 ZIP 摘要 / 下载入口 **[Tier A]** `[derived-mp4]`
 - [ ] `images/jobs/video-tab-pending-review.png` — `/ai-pre/jobs?tab=video` 视频标签：`running / pending_review / accepted / discarded` 状态对比；红框：项目筛选、状态徽标、返回视频工作台入口 **[Tier A]** [manual]
 - [x] `public/media/workflows/jobs-retry-recovery.mp4` — 失败任务详情、错误摘要、真实重试、新 retry 作业完成与进入工作台审阅 OCR 候选的完整闭环 **[Tier A]** `[derived-mp4]`
 - [ ] `images/jobs/notifications-vs-jobs.png` — 「通知中心」与「后台任务」双面板对照图；标注前者负责业务提醒，后者负责长任务进度 / 取消 / 下载，建议拼图 **[Tier B]** [manual]

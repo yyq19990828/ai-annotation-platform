@@ -6,8 +6,21 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const mockList = vi.fn();
+const mockCancel = vi.fn();
 vi.mock("@/api/asyncJobs", () => ({
-  asyncJobsApi: { list: (params: unknown) => mockList(params) },
+  CANCELLABLE_ASYNC_JOB_KINDS: new Set([
+    "batch_predict",
+    "predictions_import",
+    "audit_archive",
+    "dataset_import",
+    "mask_qc",
+    "mask_repair",
+    "mask_format_import",
+  ]),
+  asyncJobsApi: {
+    list: (params: unknown) => mockList(params),
+    cancel: (id: string) => mockCancel(id),
+  },
 }));
 
 import { JobsBell } from "./JobsBell";
@@ -44,6 +57,8 @@ describe("JobsBell", () => {
   beforeEach(() => {
     localStorage.clear();
     mockList.mockReset();
+    mockCancel.mockReset();
+    mockCancel.mockResolvedValue({ status: "cancel_requested", id: "j1" });
   });
 
   it("空列表 → 不显示 badge，drawer 打开显示空态", async () => {
@@ -108,6 +123,29 @@ describe("JobsBell", () => {
       "href",
       "https://download.example/export.zip",
     );
+  });
+
+  it("仅为运行中的可取消 kind 展示取消入口并调用统一取消 API", async () => {
+    mockList.mockResolvedValue({
+      items: [
+        baseRow,
+        { ...baseRow, id: "j2", kind: "export" },
+        {
+          ...baseRow,
+          id: "j3",
+          kind: "predictions_import",
+          status: "completed" as const,
+          progress_pct: 100,
+        },
+      ],
+      total: 3,
+    });
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    fireEvent.click(await screen.findByTestId("job-cancel-j1"));
+    await waitFor(() => expect(mockCancel).toHaveBeenCalledWith("j1"));
+    expect(screen.queryByTestId("job-cancel-j2")).toBeNull();
+    expect(screen.queryByTestId("job-cancel-j3")).toBeNull();
   });
 
   // v0.11.17 · 筛选 + 终态 dismiss

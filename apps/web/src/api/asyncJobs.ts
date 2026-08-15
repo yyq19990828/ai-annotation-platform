@@ -15,6 +15,17 @@ export type AsyncJobKind =
   | "create_tasks"
   | string;
 
+/** 与后端 async_jobs.CANCELLABLE_KINDS 保持一致。 */
+export const CANCELLABLE_ASYNC_JOB_KINDS = new Set<AsyncJobKind>([
+  "batch_predict",
+  "predictions_import",
+  "audit_archive",
+  "dataset_import",
+  "mask_qc",
+  "mask_repair",
+  "mask_format_import",
+]);
+
 export interface AsyncJob {
   id: string;
   kind: AsyncJobKind;
