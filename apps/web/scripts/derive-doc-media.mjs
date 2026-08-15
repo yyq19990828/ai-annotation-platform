@@ -16,6 +16,7 @@ const TARGETS = new Map(
     ["ai-preannotate", "ai/preannotate"],
     ["ai-assisted-annotation", "ai/assisted-annotation"],
     ["candidate-keyboard-review", "ai/candidate-keyboard-review"],
+    ["candidate-review-lifecycle", "ai/candidate-review-lifecycle"],
     ["ocr-real-scene", "ai/ocr-current-task"],
     ["current-task-image-inference", "ai/current-task-image-inference"],
     ["current-frame-video-inference", "ai/current-frame-video-inference"],

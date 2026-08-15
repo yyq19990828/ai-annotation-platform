@@ -47,6 +47,10 @@ import {
   type SecondaryInferenceCleanupRecord,
 } from "./secondary-inference-attribute";
 import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
+import {
+  runCandidateReviewLifecycle,
+  type CandidateReviewCleanupRecord,
+} from "./candidate-review-lifecycle";
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import { convertToGif } from "../_helpers/recorder";
@@ -89,6 +93,7 @@ let cached: ScreenshotSeedCatalog | null = null;
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
 const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
+const candidateReviewCleanupRecords: CandidateReviewCleanupRecord[] = [];
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
@@ -192,6 +197,7 @@ test.afterAll(({}, testInfo) => {
   for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
   for (const record of videoFrameInferenceCleanupRecords) cleanupVideoFrameInference(record);
   for (const record of secondaryInferenceCleanupRecords) cleanupSecondaryInference(record);
+  for (const record of candidateReviewCleanupRecords) cleanupCandidateReview(record);
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -251,6 +257,28 @@ function cleanupSecondaryInference(record: SecondaryInferenceCleanupRecord): voi
       record.projectId,
       "--task-id",
       record.taskId,
+      ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      stdio: "inherit",
+    },
+  );
+}
+
+function cleanupCandidateReview(record: CandidateReviewCleanupRecord): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/cleanup_screenshot_ocr_flow.py",
+      "--project-key",
+      "image_demo",
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      ...record.predictionIds.flatMap((predictionId) => ["--prediction-id", predictionId]),
       ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
     ],
     {
@@ -942,6 +970,57 @@ test.describe("flow recordings", () => {
         },
       },
     ]);
+  });
+
+  test("candidate-review-lifecycle — 跳过、采纳、驳回与最终计数", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000);
+    const project = cached.projects.image_demo;
+    const task = project.tasks.annotating;
+    const candidateAnchors = [
+      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_left"),
+      recordingAnchor(cached, "image_demo", "annotating", "primary_vehicle"),
+      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_right"),
+    ];
+    if (candidateAnchors.some((anchor) => anchor.polygon.length < 3)) {
+      throw new Error("[candidate-review-lifecycle] 候选车辆缺少可显示的轮廓锚点");
+    }
+    const predictionIds: string[] = [];
+    for (const [index, anchor] of candidateAnchors.entries()) {
+      const prediction = await seed.injectPrediction({
+        taskId: task.id,
+        projectId: project.id,
+        label: anchor.label,
+        polygon: anchor.polygon,
+        score: [0.96, 0.91, 0.87][index],
+      });
+      predictionIds.push(prediction.prediction_id);
+    }
+    const cleanupRecord: CandidateReviewCleanupRecord = {
+      projectId: project.id,
+      taskId: task.id,
+      predictionIds,
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanupRecord);
+
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.annotator.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both", {
+      common: { petEnabled: false, autoAdvanceOnDecide: true },
+      layout: {
+        aiSectionCollapsed: false,
+        manualSectionCollapsed: false,
+        discussionCollapsed: true,
+        attrPanelCollapsed: true,
+        floatingSelection: { collapsed: true, x: 310, y: 690, w: 320, h: 300 },
+      },
+    });
+    const win = await runCandidateReviewLifecycle(page, cached, cleanupRecord);
+    await finalize(page, "candidate-review-lifecycle", undefined, drawTrim(win, t0));
+    cleanupCandidateReview(cleanupRecord);
   });
 
   test("video-track — 视频时序工作台", async ({ page, seed }) => {

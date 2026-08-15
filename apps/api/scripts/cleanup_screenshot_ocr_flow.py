@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Precisely remove persistent data created by one screenshot inference recording.
+"""Precisely remove persistent data created by one screenshot recording.
 
 This helper is intentionally limited to screenshot-managed inference projects.
 It cleans the exact task, accepted annotations, optional Celery jobs, and their
@@ -16,7 +16,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 _API_ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +28,7 @@ from app.db.models.async_job import AsyncJob  # noqa: E402
 from app.db.models.annotation import Annotation  # noqa: E402
 from app.db.models.dataset import Dataset, ProjectDataset  # noqa: E402
 from app.db.models.project import Project  # noqa: E402
+from app.db.models.prediction import Prediction, PredictionMeta  # noqa: E402
 from app.db.models.task import Task  # noqa: E402
 from app.services.batch import BatchService  # noqa: E402
 from app.services.screenshot_seed_spec import (  # noqa: E402
@@ -41,13 +42,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--project-key",
-        choices=("ocr_demo", "video_demo"),
+        choices=("image_demo", "ocr_demo", "video_demo"),
         default="ocr_demo",
     )
     parser.add_argument("--project-id", type=uuid.UUID, required=True)
     parser.add_argument("--task-id", type=uuid.UUID, required=True)
     parser.add_argument("--celery-task-id", action="append", default=[])
     parser.add_argument("--annotation-id", type=uuid.UUID, action="append", default=[])
+    parser.add_argument("--prediction-id", type=uuid.UUID, action="append", default=[])
     return parser.parse_args()
 
 
@@ -129,12 +131,73 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                     Annotation.task_id == args.task_id,
                 )
             )
-            prediction_counts = await BatchService(db).clean_task_predictions(
-                [args.task_id]
-            )
             task = await db.get(Task, args.task_id)
             if task is None:  # scope assertion above already guarantees this
                 raise RuntimeError(f"cleanup task disappeared: {args.task_id}")
+            if args.prediction_id:
+                prediction_ids = set(args.prediction_id)
+                predictions = (
+                    (
+                        await db.execute(
+                            select(Prediction).where(Prediction.id.in_(prediction_ids))
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                found_prediction_ids = {prediction.id for prediction in predictions}
+                if found_prediction_ids and found_prediction_ids != prediction_ids:
+                    raise RuntimeError("cleanup prediction set is incomplete")
+                if any(
+                    prediction.task_id != args.task_id
+                    or prediction.project_id != args.project_id
+                    for prediction in predictions
+                ):
+                    raise RuntimeError(
+                        "cleanup prediction is outside the screenshot task"
+                    )
+                await db.execute(
+                    update(Annotation)
+                    .where(Annotation.parent_prediction_id.in_(prediction_ids))
+                    .values(parent_prediction_id=None)
+                )
+                await db.execute(
+                    delete(PredictionMeta).where(
+                        PredictionMeta.prediction_id.in_(prediction_ids)
+                    )
+                )
+                prediction_result = await db.execute(
+                    delete(Prediction).where(
+                        Prediction.id.in_(prediction_ids),
+                        Prediction.task_id == args.task_id,
+                    )
+                )
+                remaining_predictions = await db.scalar(
+                    select(func.count())
+                    .select_from(Prediction)
+                    .where(Prediction.task_id == args.task_id)
+                )
+                remaining_annotations = await db.scalar(
+                    select(func.count())
+                    .select_from(Annotation)
+                    .where(
+                        Annotation.task_id == args.task_id,
+                        Annotation.is_active.is_(True),
+                        Annotation.was_cancelled.is_(False),
+                    )
+                )
+                task.total_predictions = remaining_predictions or 0
+                task.total_annotations = remaining_annotations or 0
+                task.is_labeled = bool(remaining_annotations)
+                prediction_counts = {
+                    "predictions": prediction_result.rowcount or 0,
+                    "failed_predictions": 0,
+                    "ai_annotations_deactivated": 0,
+                }
+            else:
+                prediction_counts = await BatchService(db).clean_task_predictions(
+                    [args.task_id]
+                )
             task.status = expected_task_status
             if args.celery_task_id:
                 job_result = await db.execute(
