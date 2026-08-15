@@ -603,6 +603,36 @@
         "docs-site/user-guide/superadmin/model-market.md"
       ]
     },
+    "docs-site/public/media/superadmin/model-market/video-pool-poster.webp": {
+      "last_verified_commit": "1a951d4206ad88aa5a60e315ebb477873e1766df",
+      "verified_at": "2026-08-15T21:12:28.292Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "6913449e914f2ca28b582359945da02578904d2e45e94a82cdc4882d4200f7d3",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/superadmin/model-market/video-pool-poster.webp",
+        "docs-site/user-guide/superadmin/model-market.md"
+      ]
+    },
+    "docs-site/public/media/superadmin/model-market/video-pool.mp4": {
+      "last_verified_commit": "1a951d4206ad88aa5a60e315ebb477873e1766df",
+      "verified_at": "2026-08-15T21:12:28.292Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "3c0d2c3a063e28838355ad178e039e53fa16affd935f541629194fa2c3270181",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/superadmin/model-market/video-pool.mp4",
+        "docs-site/user-guide/superadmin/model-market.md"
+      ]
+    },
     "docs-site/public/media/superadmin/platform-overview-poster.webp": {
       "last_verified_commit": "3cc64a28d0d7775732d0d61f01bfbe064f2a063a",
       "verified_at": "2026-08-15T20:03:06.114Z",
