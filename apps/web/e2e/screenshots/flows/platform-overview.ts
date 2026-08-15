@@ -182,12 +182,14 @@ async function installPlatformOverviewFixture(page: Page): Promise<void> {
 async function smoothScrollTo(page: Page, text: string): Promise<void> {
   const target = page.getByRole("heading", { name: text, exact: true });
   await expect(target).toBeAttached();
-  const top = await target.evaluate(
-    (element) => element.getBoundingClientRect().top + window.scrollY - 28,
+  await target.evaluate((element) =>
+    element.scrollIntoView({ behavior: "smooth", block: "start" }),
   );
-  await page.evaluate((scrollTop) => window.scrollTo({ top: scrollTop, behavior: "smooth" }), top);
   await page.waitForTimeout(900);
-  await expect(target).toBeVisible();
+  const box = await target.boundingBox();
+  if (!box || box.y < 0 || box.y > 690) {
+    throw new Error(`[platform-overview] “${text}”未进入录制视口`);
+  }
 }
 
 export async function runPlatformOverview(page: Page): Promise<DrawWindow> {
