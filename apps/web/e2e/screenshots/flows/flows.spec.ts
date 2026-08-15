@@ -61,6 +61,7 @@ import { runLargeImageMaskLimit } from "./large-image-mask-limit";
 import { runPlatformOverview } from "./platform-overview";
 import { runProjectActionsMenu } from "./project-actions-menu";
 import { runJobsBellActive } from "./jobs-bell-active";
+import { runVideoTrackerJobStates } from "./video-tracker-job-states";
 import { runSmartScribble } from "./smart-scribble";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
@@ -154,6 +155,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "platform-overview": "platform-overview.ts",
   "project-actions-menu": "project-actions-menu.ts",
   "jobs-bell-active": "jobs-bell-active.ts",
+  "video-tracker-job-states": "video-tracker-job-states.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1663,6 +1665,17 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     const win = await runJobsBellActive(page);
     await finalize(page, "jobs-bell-active", undefined, drawTrim(win, t0));
+  });
+
+  test("video-tracker-job-states — 四状态、筛选与返回视频工作台", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    const win = await runVideoTrackerJobStates(page, cached);
+    await finalize(page, "video-tracker-job-states", undefined, drawTrim(win, t0));
   });
 
   test("project-ml-routing — 批量主后端与交互能力自动分流", async ({ page, seed }) => {
