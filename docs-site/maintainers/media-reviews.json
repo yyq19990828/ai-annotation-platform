@@ -153,6 +153,36 @@
         "docs-site/user-guide/datasets/prediction-import-export.md"
       ]
     },
+    "docs-site/public/media/large-image/mask-limit-poster.webp": {
+      "last_verified_commit": "0fb3cdd524afefe0fc86c74d6039d16a4482a88d",
+      "verified_at": "2026-08-15T19:27:13.569Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "5e0e8ed2c30ae1691b2a16ad1df40ecc8481b2acca6028cd1a855da7cc085995",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/large-image/mask-limit-poster.webp",
+        "docs-site/user-guide/workbench/mask-brush.md"
+      ]
+    },
+    "docs-site/public/media/large-image/mask-limit.mp4": {
+      "last_verified_commit": "0fb3cdd524afefe0fc86c74d6039d16a4482a88d",
+      "verified_at": "2026-08-15T19:27:13.569Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "b8f90ab8f94d0fafc87dff138e25edde768e9262f91938369c0354366a96b006",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/large-image/mask-limit.mp4",
+        "docs-site/user-guide/workbench/mask-brush.md"
+      ]
+    },
     "docs-site/public/media/large-image/pyramid-recovery-poster.webp": {
       "last_verified_commit": "12aad94cc0718ead8c2983d50e78350737833d2f",
       "verified_at": "2026-08-15T16:47:05.215Z",
