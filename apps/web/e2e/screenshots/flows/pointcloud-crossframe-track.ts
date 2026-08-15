@@ -64,6 +64,16 @@ export async function runPointcloudCrossframeTrack(
   const frame2 = project.tasks.frame_002;
   const created: PointcloudCrossframeTrackResult["created"] = [];
 
+  // 录制窗口外预热后续两帧的 manifest 与 PCD：跨帧操作依然发生真实导航，
+  // 但不把首次资源解析的骨架屏、短暂旧 manifest 绘制录进宣传母版。
+  for (const task of [frame2, frame1]) {
+    await page.goto(`/projects/${project.id}/annotate?task=${task.id}`);
+    await page.waitForLoadState("domcontentloaded");
+    await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(500);
+  }
+
   await page.goto(`/projects/${project.id}/annotate?task=${frame0.id}`);
   await page.waitForLoadState("domcontentloaded");
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
