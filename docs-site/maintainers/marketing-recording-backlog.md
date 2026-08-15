@@ -41,16 +41,16 @@
 
 ## 第四批：项目管理与团队配置
 
-| 优先级 | 资产 ID                                | 完整链路与验收重点                                                           | 建议时长 | 文档落点                    | 状态   |
-| ------ | -------------------------------------- | ---------------------------------------------------------------------------- | -------- | --------------------------- | ------ |
-| P1     | `project-create-existing-resources`    | 新建图片项目 → 配置车辆类别 → 关联已有数据集 → 选择标注员和审核员 → 核对摘要 | 14–32 秒 | `projects/index`            | 已录   |
-| P1     | `model-market-runtime-partial-failure` | 4/5 来源新鲜 → 展开部分失败告警 → 比较 fresh / stale 来源 → 核对超时与退避   | 9–20 秒  | `superadmin/model-market`   | 已录   |
-| P1     | `large-image-mask-limit`               | 缩放 Cosmic Cliffs → 落库矢量框 → 悬停 Mask 入口核对尺寸上限                 | 10–24 秒 | `workbench/mask-brush`      | 已录   |
-| P1     | `model-market-gpu-resource-overview`   | 切换 GPU 资源 → 对比静态 / 运行时预算 → 展开 blocker 卡与受影响实例          | 10–22 秒 | `superadmin/model-market`   | 已录   |
-| P1     | `platform-overview`                    | 平台 KPI / 分布 → 注册趋势 → ML 成本 → 审计活动 → 全平台项目                 | 16–30 秒 | `superadmin/index`          | 已录   |
-| P1     | `project-actions-menu`                 | 项目行 → 更多操作 → 导出标注 / 复制配置 / 导入预测三个入口                   | 9–20 秒  | `projects/index`            | 已录   |
-| P1     | `jobs-bell-active`                     | 顶栏角标 → 预标 / 导入进度与取消 → 已完成导出摘要与下载                      | 10–22 秒 | `projects/ai-preannotate`   | 已录   |
-| P1     | `video-tracker-job-states`             | 四状态同屏 → 项目 / 待审筛选 → 核对帧范围与方向 → 返回视频工作台             | 12–26 秒 | `workbench/video-propagate` | 录制中 |
+| 优先级 | 资产 ID                                | 完整链路与验收重点                                                           | 建议时长 | 文档落点                    | 状态 |
+| ------ | -------------------------------------- | ---------------------------------------------------------------------------- | -------- | --------------------------- | ---- |
+| P1     | `project-create-existing-resources`    | 新建图片项目 → 配置车辆类别 → 关联已有数据集 → 选择标注员和审核员 → 核对摘要 | 14–32 秒 | `projects/index`            | 已录 |
+| P1     | `model-market-runtime-partial-failure` | 4/5 来源新鲜 → 展开部分失败告警 → 比较 fresh / stale 来源 → 核对超时与退避   | 9–20 秒  | `superadmin/model-market`   | 已录 |
+| P1     | `large-image-mask-limit`               | 缩放 Cosmic Cliffs → 落库矢量框 → 悬停 Mask 入口核对尺寸上限                 | 10–24 秒 | `workbench/mask-brush`      | 已录 |
+| P1     | `model-market-gpu-resource-overview`   | 切换 GPU 资源 → 对比静态 / 运行时预算 → 展开 blocker 卡与受影响实例          | 10–22 秒 | `superadmin/model-market`   | 已录 |
+| P1     | `platform-overview`                    | 平台 KPI / 分布 → 注册趋势 → ML 成本 → 审计活动 → 全平台项目                 | 16–30 秒 | `superadmin/index`          | 已录 |
+| P1     | `project-actions-menu`                 | 项目行 → 更多操作 → 导出标注 / 复制配置 / 导入预测三个入口                   | 9–20 秒  | `projects/index`            | 已录 |
+| P1     | `jobs-bell-active`                     | 顶栏角标 → 预标 / 导入进度与取消 → 已完成导出摘要与下载                      | 10–22 秒 | `projects/ai-preannotate`   | 已录 |
+| P1     | `video-tracker-job-states`             | 四状态同屏 → 项目 / 待审筛选 → 核对帧范围与方向 → 返回视频工作台             | 12–26 秒 | `workbench/video-propagate` | 已录 |
 
 ## 版本与复核
 
