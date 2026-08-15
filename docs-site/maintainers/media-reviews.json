@@ -393,6 +393,36 @@
         "docs-site/user-guide/projects/ml-backends.md"
       ]
     },
+    "docs-site/public/media/projects/project-actions-menu-poster.webp": {
+      "last_verified_commit": "b171a65517987e46ecda270d60cc4a9d69c53de1",
+      "verified_at": "2026-08-15T20:11:05.209Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "ada1194799adff2f7c26ad0a99697d8e577cdd494e55d9b346f5f1a0ab438d05",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/projects/project-actions-menu-poster.webp",
+        "docs-site/user-guide/projects/index.md"
+      ]
+    },
+    "docs-site/public/media/projects/project-actions-menu.mp4": {
+      "last_verified_commit": "b171a65517987e46ecda270d60cc4a9d69c53de1",
+      "verified_at": "2026-08-15T20:11:05.209Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "448f9de8fa45b87d0fcf8fc825050341dc4392fdef53c57309299d17851aecff",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/projects/project-actions-menu.mp4",
+        "docs-site/user-guide/projects/index.md"
+      ]
+    },
     "docs-site/public/media/review/reject-flow-poster.webp": {
       "last_verified_commit": "02320696ee5010363d42e1ab2c4bcdb7aa75162a",
       "verified_at": "2026-08-15T18:24:52.023Z",
