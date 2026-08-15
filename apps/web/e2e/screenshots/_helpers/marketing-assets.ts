@@ -377,6 +377,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "video-tracker-combo-discovery",
+    title: "SAM3 发现追踪组合链路",
+    theme: "从文本发现到逐对象视频记忆追踪",
+    objective:
+      "展示 combo 模型先按 bus 文本发现目标，再以发现框为内部种子跨两个窗口保持身份，人工筛选并采纳左右两辆公交车。",
+    duration: { minSeconds: 30, targetSeconds: 42, maxSeconds: 50 },
+    shots: [
+      "在画布级入口选择 SAM3 发现追踪 combo、bus 类别与矩形框输出，并输入 bus。",
+      "运行真实的文本发现 → 逐对象 PVS memory 两趟编排，展示 7 个身份覆盖 31 帧的 217 个候选。",
+      "取消远处目标，只保留实例 2、4 对应的左右两辆完整公交车，共 62 个候选。",
+      "将时间轴拖到第二窗口的后段再回到第一窗口，核对身份稳定后采纳两条轨迹并拒绝剩余候选。",
+    ],
+    editingNotes: [
+      "combo 的点框种子由文本发现结果在内部铸造，当前产品不要求用户补画种子；母版不得伪造不存在的交互。",
+      "保留模型下拉中的 combo 名称、31 帧范围、7 个稳定身份、跨窗口核对和最终双轨迹。",
+      "可与纯文本发现母版并列剪辑，突出 combo 不会在第二窗口新增漂移身份。",
+    ],
+  }),
+  defineAsset({
     assetId: "video-track-carryover",
     title: "跨帧虚影续写",
     theme: "使用上一帧虚影快速续写轨迹",
