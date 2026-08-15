@@ -213,6 +213,26 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "project-ml-routing",
+    title: "项目多后端能力路由",
+    theme: "批量主后端与交互工具按能力自动分流",
+    objective:
+      "展示项目启用 YOLO 批量后端并即时设为主后端，随后进入工作台确认当前题批量 AI 使用 YOLO，而 Smart Point 自动路由到支持 point 的 SAM3 交互后端。",
+    duration: { minSeconds: 18, targetSeconds: 25, maxSeconds: 32 },
+    shots: [
+      "从项目 ML 模型页打开管理面板，确认 SAM3 已启用并勾选 yolo-backend。",
+      "返回双后端清单，把 yolo-backend 即时设为项目主后端并核对主后端标识。",
+      "进入工作台打开当前题 AI，确认批量线默认选择 yolo-backend（项目主后端）。",
+      "切换到 Smart Point，确认交互工具的引擎自动解析为支持 point 的 SAM3 后端。",
+    ],
+    editingNotes: [
+      "当前产品没有独立的“能力路由保存”表单；启用和主后端变更均即时生效，素材不得伪造保存按钮。",
+      "该母版只表达项目多后端启用与能力分流，不混入模型注册、实际分割或批量作业执行。",
+      "必须同时保留 YOLO 批量主后端与 SAM3 交互引擎两个结果画面，避免把主后端误解为唯一后端。",
+      "流程结束后重建 screenshots profile，恢复主后端与项目启用关系。",
+    ],
+  }),
+  defineAsset({
     assetId: "ocr-real-scene",
     title: "真实场景 OCR 推理",
     theme: "当前任务的文字检测与识别",

@@ -38,6 +38,7 @@ import { runPipelineTemplateCreate } from "./pipeline-template-create";
 import { runPipelineApplyProject, type PipelineApplyCleanupRecord } from "./pipeline-apply-project";
 import { runJobsRetryRecovery } from "./jobs-retry-recovery";
 import { runModelMarketRuntimePool } from "./model-market-runtime-pool";
+import { runProjectMlRouting } from "./project-ml-routing";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -119,6 +120,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "pipeline-apply-project": "pipeline-apply-project.ts",
   "jobs-retry-recovery": "jobs-retry-recovery.ts",
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
+  "project-ml-routing": "project-ml-routing.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1383,6 +1385,23 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     const win = await runModelMarketRuntimePool(page, cached);
     await finalize(page, "model-market-runtime-pool", undefined, drawTrim(win, t0));
+  });
+
+  test("project-ml-routing — 批量主后端与交互能力自动分流", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    try {
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.admin.email);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "none");
+      const win = await runProjectMlRouting(page, cached);
+      await finalize(page, "project-ml-routing", undefined, drawTrim(win, t0));
+    } finally {
+      repairScreenshotProfile(screenshotBackendMode(cached), true);
+      cached = await seed.screenshotCatalog();
+    }
   });
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {
