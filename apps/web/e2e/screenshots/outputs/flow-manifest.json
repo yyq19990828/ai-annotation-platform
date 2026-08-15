@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T18:22:01.858Z",
+  "updated_at": "2026-08-15T18:48:08.365Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1569,6 +1569,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "pointcloud-view",
         "sha256": "c1b7957d196caff7530ba042c9674a4cbd1b90218d70978b07fe10b3cec71d85"
+      }
+    },
+    "docs-site/public/media/projects/create-existing-resources-poster.webp": {
+      "asset_id": "project-create-existing-resources",
+      "role": "poster",
+      "generated_at": "2026-08-15T18:48:08.365Z",
+      "captured_commit": "3dc5e7237b8ef74075f0af00c0b493fe4dedec5a",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › project-create-existing-resources",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "41946041e8b749e6d86c8fbde5802421a2fb898e7e01c05c714e6e988bc62f3a",
+      "bytes": 19812,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T184557Z-3dc5e7237b8e",
+        "assetId": "project-create-existing-resources",
+        "sha256": "e939012e03c830c276aa203ba0bdf58737076366edef08bd3ff24d2cda18661e"
+      }
+    },
+    "docs-site/public/media/projects/create-existing-resources.mp4": {
+      "asset_id": "project-create-existing-resources",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T18:48:08.293Z",
+      "captured_commit": "3dc5e7237b8ef74075f0af00c0b493fe4dedec5a",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › project-create-existing-resources",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "9498e4f57004cca1529ee8dd0e55c306d6abc8ab41c2a67c26f14c71a6249860",
+      "bytes": 302117,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 14.434
+      },
+      "source_asset": {
+        "runId": "20260815T184557Z-3dc5e7237b8e",
+        "assetId": "project-create-existing-resources",
+        "sha256": "e939012e03c830c276aa203ba0bdf58737076366edef08bd3ff24d2cda18661e"
       }
     },
     "docs-site/public/media/projects/ml-routing-poster.webp": {

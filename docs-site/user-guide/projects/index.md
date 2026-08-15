@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-16
 ---
 
 # 创建项目
@@ -48,6 +48,15 @@ last_reviewed: 2026-07-14
 7. **Step 6 成员**：从已有的标注员 / 审核员账号中选择项目成员；该步也可跳过，之后可在项目设置的「成员管理」补充。
 
 > 审核相关设置不在向导内配置，需创建后进入 **项目设置页** 继续调整。
+
+下面的完整流程使用平台内已有资源：第 5 步关联已导入的道路数据集，第 6 步选择现有标注员和审核员，不在向导内上传数据或邀请账号。
+
+<DocsVideo
+  src="/media/projects/create-existing-resources.mp4"
+  poster="/media/projects/create-existing-resources-poster.webp"
+  alt="创建图片项目，关联现有道路数据集，并选择已有标注员与审核员"
+  caption="创建完成后，成功页同时核对项目编号、1 个已关联数据集和 2 位已添加成员。"
+/>
 
 ## 工具维度类别 / 属性
 

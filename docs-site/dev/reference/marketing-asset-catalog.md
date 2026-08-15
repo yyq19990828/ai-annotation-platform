@@ -4,7 +4,7 @@ description: 营销录屏的主题、分镜、时长规格与 Agent 后期制作
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-08-15
+last_reviewed: 2026-08-16
 ---
 
 # 高清营销资产目录
