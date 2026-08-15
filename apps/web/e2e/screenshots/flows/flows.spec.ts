@@ -795,6 +795,7 @@ test.describe("flow recordings", () => {
         attrPanelCollapsed: false,
         aiSectionCollapsed: true,
         manualSectionCollapsed: false,
+        discussionCollapsed: true,
         floatingSelection: { collapsed: true, x: null, y: null, w: null, h: null },
       },
       ui: { secondary_bar_hidden: false },
