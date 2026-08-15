@@ -233,7 +233,7 @@
 - [x] `public/media/superadmin/model-market/runtime-data-sources.mp4` — 4/5 来源新鲜 → 展开「数据来源」部分失败态 → 对比 fresh 拓扑与 stale/error 路由账本的更新时间、超时和退避 **[Tier A]** `[derived-mp4]`
 - [ ] `images/superadmin/model-market/runtime-instance-detail.png` — 打开实例详情 Sheet；红框：路由状态、并发/延迟未知语义、health/compute、GPU claim、驻留与原始诊断 **[Tier B]** [manual]
 - [ ] `images/superadmin/model-market/registry-issue-center.png` — 注册管理「问题中心」；展示按稳定键去重后的主问题、严重度、受影响对象计数与筛选 **[Tier B]** [manual]
-- [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
+- [x] `public/media/superadmin/model-market/video-pool.mp4` — 运行时服务池 → SAM 3 视频追踪实例 → 独立 `_video_pool` 容量 / 活跃会话 / GPU 驻留 → 视频权重与预热入口 `[derived-mp4]`
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
 - [x] `images/superadmin/public-templates/templates-list.png` — 模板库四 tab + scope chip + usage_count `[auto]`（本地无模板呈空态）
 - [x] `images/superadmin/system-monitoring/health-panel.png` — 4 组件卡 + Celery 队列表 + Workers 心跳表
