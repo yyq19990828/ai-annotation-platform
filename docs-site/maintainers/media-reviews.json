@@ -183,6 +183,36 @@
         "docs-site/user-guide/workbench/pointcloud-projection.md"
       ]
     },
+    "docs-site/public/media/pointcloud/crossframe-track-poster.webp": {
+      "last_verified_commit": "4a8dd46ca0eb84580fd969e43995b29d3ad7a119",
+      "verified_at": "2026-08-15T16:45:59.984Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "3c61d86af3a38ad12aa7234401ce31b3d12a1c991ddc93ddf1222e0cbf500e23",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/pointcloud/crossframe-track-poster.webp",
+        "docs-site/user-guide/workbench/pointcloud-crossframe.md"
+      ]
+    },
+    "docs-site/public/media/pointcloud/crossframe-track.mp4": {
+      "last_verified_commit": "4a8dd46ca0eb84580fd969e43995b29d3ad7a119",
+      "verified_at": "2026-08-15T16:45:59.984Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "b0c40b85e832bc206a627e650eab7362b1e536eeb70102eb9525cfa719a53a8b",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/pointcloud/crossframe-track.mp4",
+        "docs-site/user-guide/workbench/pointcloud-crossframe.md"
+      ]
+    },
     "docs-site/public/media/projects/ml-routing-poster.webp": {
       "last_verified_commit": "ebb190a5b4d28983fa3bd24c02bd8abd618e14a8",
       "verified_at": "2026-08-15T16:19:38.114Z",
