@@ -81,6 +81,35 @@ describe("JobsBell", () => {
     expect(screen.queryByTestId("jobs-bell-badge")).toBeNull();
   });
 
+  it("导出作业显示多目标格式和产物摘要", async () => {
+    mockList.mockResolvedValue({
+      items: [
+        {
+          ...baseRow,
+          kind: "export",
+          status: "completed" as const,
+          progress_pct: 100,
+          payload: { project_display_id: "P-DEMO", targets: ["coco", "yolo-det"] },
+          result: {
+            download_url: "https://download.example/export.zip",
+            file_count: 3,
+            size_bytes: 1536,
+          },
+        },
+      ],
+      total: 1,
+    });
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    const row = await screen.findByTestId("job-row-j1");
+    expect(row).toHaveTextContent("P-DEMO · COCO + YOLO DET");
+    expect(row).toHaveTextContent("ZIP · 3 个文件 · 1.5 KB");
+    expect(screen.getByTestId("job-download-j1")).toHaveAttribute(
+      "href",
+      "https://download.example/export.zip",
+    );
+  });
+
   // v0.11.17 · 筛选 + 终态 dismiss
   const mixedRows = {
     items: [

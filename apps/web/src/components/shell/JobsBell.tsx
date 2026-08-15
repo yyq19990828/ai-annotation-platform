@@ -84,13 +84,53 @@ function exportDownloadUrl(result: Record<string, unknown>): string | null {
   return typeof url === "string" && url ? url : null;
 }
 
-/** 从 payload 取一段副标题（导出 job 显示「项目 display_id · 格式」）。 */
+const EXPORT_TARGET_LABELS: Record<string, string> = {
+  aap_json: "AAP JSON",
+  "yolo-det": "YOLO DET",
+  "yolo-obb": "YOLO OBB",
+  "yolo-seg": "YOLO SEG",
+  "binary-png": "BINARY PNG",
+  "indexed-png": "INDEXED PNG",
+  "label-studio-brush": "LABEL STUDIO",
+};
+
+function exportTargetLabel(target: string): string {
+  return EXPORT_TARGET_LABELS[target] ?? target.replace(/_/g, " ").toUpperCase();
+}
+
+/** 从 payload 取一段副标题（导出 job 显示「项目 display_id · 目标格式」）。 */
 function jobDetail(job: AsyncJob): string | null {
   const p = job.payload || {};
   const display = typeof p.project_display_id === "string" ? p.project_display_id : null;
-  const fmt = typeof p.format === "string" ? p.format.toUpperCase() : null;
+  const targets = Array.isArray(p.targets)
+    ? p.targets.filter((target): target is string => typeof target === "string")
+    : [];
+  const fmt =
+    targets.length > 0
+      ? targets.map(exportTargetLabel).join(" + ")
+      : typeof p.format === "string"
+        ? exportTargetLabel(p.format)
+        : null;
   const parts = [display, fmt].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
+}
+
+function exportResultDetail(result: Record<string, unknown>): string | null {
+  const fileCount = typeof result.file_count === "number" ? result.file_count : null;
+  const sizeBytes = typeof result.size_bytes === "number" ? result.size_bytes : null;
+  if (fileCount === null && sizeBytes === null) return null;
+  const parts = [fileCount === null ? null : `${fileCount} 个文件`];
+  if (sizeBytes !== null) {
+    const units = ["B", "KB", "MB", "GB"];
+    let value = Math.max(0, sizeBytes);
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    parts.push(`${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`);
+  }
+  return parts.filter(Boolean).join(" · ");
 }
 
 const STATUS_LABEL: Record<AsyncJobStatus, string> = {
@@ -149,6 +189,7 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
   const downloadUrl =
     job.kind === "export" && job.status === "completed" ? exportDownloadUrl(job.result) : null;
   const detail = jobDetail(job);
+  const resultDetail = job.kind === "export" ? exportResultDetail(job.result) : null;
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
   return (
@@ -185,6 +226,9 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
             ? (job.error_message ?? "失败").slice(0, 80)
             : new Date(job.completed_at ?? job.updated_at).toLocaleString("zh-CN")}
       </div>
+      {resultDetail && (
+        <div className="text-xs tabular-nums text-muted-foreground">ZIP · {resultDetail}</div>
+      )}
       {downloadUrl && (
         <a
           href={downloadUrl}

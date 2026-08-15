@@ -1370,6 +1370,7 @@ async def export_project(
         project_id=project.id,
         payload={
             "targets": targets,
+            "format": ",".join(targets),
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "axis_frame": axis_frame,
