@@ -153,6 +153,36 @@
         "docs-site/user-guide/datasets/prediction-import-export.md"
       ]
     },
+    "docs-site/public/media/datasets/storage-connector-create-test-poster.webp": {
+      "last_verified_commit": "b0f858a13cf52408677bbf5da9c7bb8633ce531d",
+      "verified_at": "2026-08-15T23:08:22.120Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "1d622a5df01999291943c26fde3b1f3c9928b46d00ea20042b905123d2d5815f",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/datasets/storage-connector-create-test-poster.webp",
+        "docs-site/user-guide/datasets/storage-connections.md"
+      ]
+    },
+    "docs-site/public/media/datasets/storage-connector-create-test.mp4": {
+      "last_verified_commit": "b0f858a13cf52408677bbf5da9c7bb8633ce531d",
+      "verified_at": "2026-08-15T23:08:22.120Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "f5bd7f98b35b22a727753ea049c0f5e15f912a90c9fb98b2d28978ed8e73dbea",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/datasets/storage-connector-create-test.mp4",
+        "docs-site/user-guide/datasets/storage-connections.md"
+      ]
+    },
     "docs-site/public/media/jobs/jobs-bell-active-poster.webp": {
       "last_verified_commit": "2bac20c338721c4802b5862d1886ed67b8b0754b",
       "verified_at": "2026-08-15T20:23:42.348Z",
