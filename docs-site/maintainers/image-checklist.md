@@ -105,7 +105,7 @@
 
 ### 全局 Pipeline 库（对应新建 `projects/pipeline-library.md` 或 `projects/ai-preannotate.md`）
 
-- [ ] `images/pipeline-library/library-list.png` — `/ai-pre/pipelines` 全局 Pipeline 库：公共/组织作用域、DAG 编辑器与命名模板列表；红框：作用域、阶段节点和保存按钮 [manual]
+- [x] `public/media/pipeline/template-create.mp4` — `/ai-pre/pipelines` 命名公共模板 → YOLO 车辆检测 → 车辆属性分类 → 车型/颜色写回 → 保存后进入编排库 **[Tier A]** `[derived-mp4]`
 - [ ] `images/pipeline-library/apply-to-project.png` — 从库「应用到项目」copy-on-write 落地为项目「当前编排」；红框：应用按钮、落地后「已保存编排 · N 阶段」badge [manual]
 
 ## Batch 3 · AI 任务入口 / 候选生命周期 / 运营恢复（新增于 2026-07-11）
