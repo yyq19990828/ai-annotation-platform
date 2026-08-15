@@ -423,6 +423,21 @@
         "docs-site/user-guide/review/index.md"
       ]
     },
+    "docs-site/public/media/superadmin/model-market/gpu-resources.mp4": {
+      "last_verified_commit": "14c4d130539d43bcf61525ed28450caa1a383599",
+      "verified_at": "2026-08-15T19:45:41.317Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "def240a6863bdb03b8db6129b8392f8e04ccc3cdec3c2ddc5ea156dee0cc657a",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/superadmin/model-market/gpu-resources.mp4",
+        "docs-site/user-guide/superadmin/model-market.md"
+      ]
+    },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources-poster.webp": {
       "last_verified_commit": "3f533bbac728c91c202fe077b33b2dbfa2b9dada",
       "verified_at": "2026-08-15T19:08:42.544Z",
