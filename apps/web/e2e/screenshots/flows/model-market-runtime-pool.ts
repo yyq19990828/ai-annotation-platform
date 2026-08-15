@@ -354,14 +354,14 @@ export async function runModelMarketRuntimePool(
   await expect(page.getByText("OCR 文档识别池", { exact: true })).toBeVisible();
   await expect(page.getByText("3 / 3", { exact: true }).first()).toBeVisible();
   const drawStartMs = Date.now();
-  await page.waitForTimeout(1_600);
+  await page.waitForTimeout(2_600);
 
   const dataSourceToggle = page.getByRole("button", { name: /数据来源/ });
   await moveTo(page, dataSourceToggle);
   await dataSourceToggle.click();
   await expect(page.getByText("路由账本", { exact: true })).toBeVisible();
   await expect(page.getByText("模型驻留", { exact: true })).toBeVisible();
-  await page.waitForTimeout(1_900);
+  await page.waitForTimeout(3_000);
   await moveTo(page, dataSourceToggle);
   await dataSourceToggle.click();
 
@@ -373,7 +373,7 @@ export async function runModelMarketRuntimePool(
   await expect(vehiclePool.getByText("车辆检测 A · RTX 4090", { exact: true })).toBeVisible();
   await expect(vehiclePool.getByText("车辆检测 B · L4", { exact: true })).toBeVisible();
   await expect(vehiclePool.getByText("184", { exact: true })).toBeVisible();
-  await page.waitForTimeout(2_400);
+  await page.waitForTimeout(3_800);
 
   const firstInstance = vehiclePool
     .locator('article:has(h5:text-is("车辆检测 A · RTX 4090"))')
@@ -385,7 +385,7 @@ export async function runModelMarketRuntimePool(
   await expect(firstSheet.getByRole("heading", { name: "车辆检测 A · RTX 4090" })).toBeVisible();
   await expect(firstSheet.getByText("路由与容量", { exact: true })).toBeVisible();
   await expect(firstSheet.getByText("yolo11m-vehicle", { exact: true })).toBeVisible();
-  await page.waitForTimeout(3_000);
+  await page.waitForTimeout(4_500);
 
   const closeFirstDetail = firstSheet.getByRole("button", { name: "Close", exact: true });
   await moveTo(page, closeFirstDetail);
@@ -399,7 +399,7 @@ export async function runModelMarketRuntimePool(
   await expect(secondSheet.getByRole("heading", { name: "车辆检测 B · L4" })).toBeVisible();
   await expect(secondSheet.getByText("demo-node-b/GPU-0", { exact: true }).first()).toBeVisible();
   await expect(secondSheet.getByText(/cache 89\.0%/)).toBeVisible();
-  await page.waitForTimeout(3_400);
+  await page.waitForTimeout(4_700);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }
