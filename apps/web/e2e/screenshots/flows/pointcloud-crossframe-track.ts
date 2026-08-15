@@ -68,9 +68,8 @@ export async function runPointcloudCrossframeTrack(
   await page.waitForLoadState("domcontentloaded");
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
   await selectBox(page, source.id);
-  await page.waitForTimeout(3_000);
-
   const drawStartMs = Date.now();
+  await page.waitForTimeout(3_000);
   await page.waitForTimeout(1_200);
 
   const firstResponsePromise = propagateResponse(page, frame0.id, source.id);
@@ -125,6 +124,12 @@ export async function runPointcloudCrossframeTrack(
   await page.keyboard.press("Control+ArrowLeft");
   await expect(page).toHaveURL(new RegExp(`task=${frame1.id}`), { timeout: 15_000 });
   await selectBox(page, first.annotation.id);
+  await page.waitForTimeout(3_200);
+
+  // 继续回到首帧，核对源框也已获得同一轨迹身份，并参照下一帧虚线框。
+  await page.keyboard.press("Control+ArrowLeft");
+  await expect(page).toHaveURL(new RegExp(`task=${frame0.id}`), { timeout: 15_000 });
+  await selectBox(page, source.id);
   await page.waitForTimeout(3_200);
 
   return {
