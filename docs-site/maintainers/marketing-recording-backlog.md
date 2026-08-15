@@ -33,7 +33,7 @@
 | P1     | `jobs-retry-recovery`           | 打开失败作业 → 查看错误摘要 → 重试 → 新作业完成 → 进入工作台审阅结果         | 16–45 秒 | 工作流失败恢复                      | 已录       |
 | P1     | `pointcloud-camera-seed-3d-box` | 在相机视图给出二维提示 → 联动点云 → 生成 3D 框候选 → 三视图核对并采纳        | 20–36 秒 | `workbench/pointcloud-view`         | 待后端能力 |
 | P1     | `pointcloud-crossframe-track`   | 首帧建立 3D 框 → 跨帧传播 → 检查运动轨迹 → 修正关键帧并保存                  | 22–40 秒 | 3D 时序标注                         | 待后端能力 |
-| P1     | `large-image-pyramid-recovery`  | 缩放至高清切片 → 模拟单切片失败 → 自动重试恢复 → 继续平移并保持细节          | 16–28 秒 | `workbench/index`                   | 待录制钩子 |
+| P1     | `large-image-pyramid-recovery`  | 缩放至高清切片 → 模拟单切片失败 → 自动重试恢复 → 继续平移并保持细节          | 16–28 秒 | `workbench/index`                   | 已录       |
 | P1     | `model-market-runtime-pool`     | 打开服务池 → 展开实例 → 查看路由状态、并发与资源观测 → 切换实例详情          | 15–26 秒 | 超级管理员模型市场                  | 已录       |
 | P1     | `project-ml-routing`            | 启用 YOLO 并设为批量主后端 → 当前题 AI 命中 YOLO → Smart Point 自动命中 SAM3 | 18–32 秒 | 项目后端配置、当前题 AI             | 已录       |
 | P1     | `background-export-download`    | 发起大批量导出 → 查看后台任务进度 → 完成后下载 → 展示导出格式与文件          | 16–30 秒 | `datasets/prediction-import-export` | 已录       |

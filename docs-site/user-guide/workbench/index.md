@@ -45,6 +45,12 @@ required 超大图的切片仍在生成时，画布显示“高清切片生成�
 失败时会保留 overview，并显示“高清切片请求失败，正在自动重试”；恢复完成后提示自动消失，不应出现整块透明背景。若提示长期不消失，请保留任务编号和 BUG 反馈中的
 Large Image Tile Diagnostics 联系管理员，不要在无法辨认目标细节时继续标注。
 
+<DocsVideo
+  src="/media/large-image/pyramid-recovery.mp4"
+  poster="/media/large-image/pyramid-recovery-poster.webp"
+  alt="超大图的一个可见高清切片请求失败后保留概览、自动重试并恢复清晰"
+/>
+
 Minimap、评论画布和邻题预取只使用缩略图或 overview，不会在主画布之外重复加载 required 大图。浏览器不
 支持 `createImageBitmap` 时会自动使用普通图片元素解码，功能保持一致。
 

@@ -264,6 +264,7 @@
 > 固定项目/数据集为 `P-LARGE-IMG` / `DS-LARGE-IMG`。它在截图数据库中存在时会作为可选项目加入 catalog；录制前必须确认 Cosmic Cliffs 金字塔已 ready，不得用整图加载冒充渐进 LOD。
 
 - [x] `public/media/large-image/progressive.mp4` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[derived-mp4]`
+- [x] `public/media/large-image/pyramid-recovery.mp4` — 一个当前视口高清切片真实返回 503 后保留 overview、自动重签恢复，并继续缩放和平移 **[Tier A]** `[derived-mp4]`
 - [ ] `images/workbench/large-image-pyramid-status.png` — required 超大图的“高清切片生成中”与失败/重试状态；不得自动请求整张原图 **[Tier A]** `[auto]`
 - [ ] `images/mask-brush/large-image-limit.png` — 超大底图仍可浏览并使用矢量工具，同时 Mask 能力明确显示尺寸超限原因 **[Tier A]** `[auto]`（可先用 `P-LARGE-IMG` 建 scene）
 

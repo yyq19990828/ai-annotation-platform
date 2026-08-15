@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T14:32:33.997Z",
+  "updated_at": "2026-08-15T15:00:23.537Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1139,6 +1139,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "large-image-progressive",
         "sha256": "8e7a2425a98a4f7ebf1dc36ca65df0a118a740120b34fbd349aef6d33b55b213"
+      }
+    },
+    "docs-site/public/media/large-image/pyramid-recovery-poster.webp": {
+      "asset_id": "large-image-pyramid-recovery",
+      "role": "poster",
+      "generated_at": "2026-08-15T15:00:23.537Z",
+      "captured_commit": "8fb78474d9ed7eabb6f41ef91667a56c29840d04",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › large-image-pyramid-recovery",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "c71dd47f10ba4f420c8945dcf8bace52dda95efa0cd2be5a3eb035c2983e797b",
+      "bytes": 96392,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T145656Z-8fb78474d9ed",
+        "assetId": "large-image-pyramid-recovery",
+        "sha256": "b0e5df77ab0a0b29a2ea5c76c911ac866373c5aa9dbc99e178ebf32520a50203"
+      }
+    },
+    "docs-site/public/media/large-image/pyramid-recovery.mp4": {
+      "asset_id": "large-image-pyramid-recovery",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T15:00:23.465Z",
+      "captured_commit": "8fb78474d9ed7eabb6f41ef91667a56c29840d04",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › large-image-pyramid-recovery",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "be853a408ca4af448ff84b49a8a37596dd7f449c2b9fe81d6b1ad555b67951e7",
+      "bytes": 1599109,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 18.334
+      },
+      "source_asset": {
+        "runId": "20260815T145656Z-8fb78474d9ed",
+        "assetId": "large-image-pyramid-recovery",
+        "sha256": "b0e5df77ab0a0b29a2ea5c76c911ac866373c5aa9dbc99e178ebf32520a50203"
       }
     },
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
