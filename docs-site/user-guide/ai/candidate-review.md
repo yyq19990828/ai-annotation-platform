@@ -4,7 +4,7 @@ audience: [annotator, project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-15
 ---
 
 # 审阅 AI 候选
@@ -25,12 +25,13 @@ AI 预标和外部预测先生成 **Prediction（候选）**，不会直接替�
 3. 按 `A` 接受，或按 `D` 拒绝当前选中的候选。也可以使用右侧 AI 面板的对应操作。
 4. 接受后，候选成为正式 Annotation，仍可继续编辑、改类或删除；拒绝后，该候选不再作为待审结果出现。
 
-`Tab` / `Shift+Tab` 可在同类对象之间切换；开启“决策后自动前进”后，接受或拒绝会自动选中下一个待审对象。完整的键盘审阅流转见[工作台概览](../workbench/#审阅键盘流转)。
+`Tab` / `Shift+Tab` 可在同类对象之间切换；需要暂时跳过当前候选时，只切换焦点而不执行接受或拒绝，该候选会继续留在待审列表。开启“决策后自动前进”后，接受或拒绝会自动选中下一个待审对象。完整的键盘审阅流转见[工作台概览](../workbench/#审阅键盘流转)。
 
 <DocsVideo
-  src="/media/ai/candidate-keyboard-review.mp4"
-  poster="/media/ai/candidate-keyboard-review-poster.webp"
-  alt="使用 Tab、A 和 D 连续审阅多个 AI 候选并自动前进"
+  src="/media/ai/candidate-review-lifecycle.mp4"
+  poster="/media/ai/candidate-review-lifecycle-poster.webp"
+  alt="三个车辆候选依次经历跳过、采纳和驳回，焦点自动前进并展示最终计数"
+  caption="跳过不会改变待审数；采纳后生成正式标注，驳回后候选消失，焦点会回到仍未决的候选。"
 />
 
 ## 数据边界
