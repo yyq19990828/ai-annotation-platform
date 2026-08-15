@@ -333,6 +333,36 @@
         "docs-site/user-guide/projects/pipeline-library.md"
       ]
     },
+    "docs-site/public/media/pointcloud/billboard-label-poster.webp": {
+      "last_verified_commit": "d830d5e18425137a4f974399eced2516b6d244f8",
+      "verified_at": "2026-08-15T22:47:36.071Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "318e60fab48d9c8ddbda7b478c0385e92dc5417bddff8ebb485623b2af35a74b",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/pointcloud/billboard-label-poster.webp",
+        "docs-site/user-guide/workbench/3d-box.md"
+      ]
+    },
+    "docs-site/public/media/pointcloud/billboard-label.mp4": {
+      "last_verified_commit": "d830d5e18425137a4f974399eced2516b6d244f8",
+      "verified_at": "2026-08-15T22:47:36.071Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "8b055c6d477625aee689bea71076fe5f223f42133dd23c016b5636e08e344844",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/pointcloud/billboard-label.mp4",
+        "docs-site/user-guide/workbench/3d-box.md"
+      ]
+    },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
       "last_verified_commit": "12aad94cc0718ead8c2983d50e78350737833d2f",
       "verified_at": "2026-08-15T16:47:05.215Z",
