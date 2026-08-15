@@ -393,6 +393,38 @@
         "docs-site/user-guide/workbench/mask-brush.md"
       ]
     },
+    "docs-site/public/media/video/track-batch-propagate-poster.webp": {
+      "last_verified_commit": "d6c269b436a0a28077a33b83d440960bb9172779",
+      "verified_at": "2026-08-15T17:57:56.085Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "c948f2ec97cb5aa5d00a7f5cb1c79b87e71a95f550acf0f01cc08a0d29719b3e",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/track-batch-propagate-poster.webp",
+        "docs-site/user-guide/workbench/video-propagate.md",
+        "docs-site/user-guide/workbench/video-track.md"
+      ]
+    },
+    "docs-site/public/media/video/track-batch-propagate.mp4": {
+      "last_verified_commit": "d6c269b436a0a28077a33b83d440960bb9172779",
+      "verified_at": "2026-08-15T17:57:56.085Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "469ec7abb3145f57c9423ff5eeaf81292531e9aa02b3ba7d2ebfe38b33398e35",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/track-batch-propagate.mp4",
+        "docs-site/user-guide/workbench/video-propagate.md",
+        "docs-site/user-guide/workbench/video-track.md"
+      ]
+    },
     "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
       "last_verified_commit": "12aad94cc0718ead8c2983d50e78350737833d2f",
       "verified_at": "2026-08-15T16:47:05.215Z",
