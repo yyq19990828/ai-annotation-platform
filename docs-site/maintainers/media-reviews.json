@@ -2,5 +2,36 @@
   "schema_version": 1,
   "default_max_age_days": 30,
   "review_profile": "visual-content-v1",
-  "entries": {}
+  "entries": {
+    "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp": {
+      "last_verified_commit": "70b937c22545b55213f19966a707312eec9b7ff5",
+      "verified_at": "2026-08-15T09:27:09.774Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "65db92e835a2f604fe718ed184496ec961851ac491cb44aa016250789816cb79",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp",
+        "docs-site/user-guide/ai/candidate-review.md"
+      ]
+    },
+    "docs-site/public/media/ai/candidate-review-lifecycle.mp4": {
+      "last_verified_commit": "70b937c22545b55213f19966a707312eec9b7ff5",
+      "verified_at": "2026-08-15T09:27:09.774Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "0fb5fecadbe65bed180c27f8bb247024aa89b9a0565060fb170d7c7a2fbf4162",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/ai/candidate-review-lifecycle.mp4",
+        "docs-site/user-guide/ai/candidate-review.md"
+      ]
+    }
+  }
 }
