@@ -1277,6 +1277,7 @@ test.describe("flow recordings", () => {
       await seed.injectToken(page, userEmail);
       await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "both", {
+        common: { petEnabled: false },
         layout: {
           floatingSelection: {
             collapsed: false,
