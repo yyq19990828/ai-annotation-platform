@@ -20,10 +20,7 @@ interface DemoInstance {
   gpu: string;
   weight: number;
   inflight: number;
-  selections: number;
-  rejections: number;
-  p95: number;
-  errorRate: number;
+  latency: number;
   modelVersion: string;
   memoryUsed: number;
   processMemory: number;
@@ -38,10 +35,7 @@ const VEHICLE_INSTANCES: DemoInstance[] = [
     gpu: "demo-node-a/GPU-0",
     weight: 70,
     inflight: 2,
-    selections: 184,
-    rejections: 6,
-    p95: 42,
-    errorRate: 0.006,
+    latency: 21,
     modelVersion: "yolo11m-vehicle",
     memoryUsed: 11_840,
     processMemory: 6_420,
@@ -54,10 +48,7 @@ const VEHICLE_INSTANCES: DemoInstance[] = [
     gpu: "demo-node-b/GPU-0",
     weight: 30,
     inflight: 1,
-    selections: 76,
-    rejections: 2,
-    p95: 55,
-    errorRate: 0.009,
+    latency: 27,
     modelVersion: "yolo11m-vehicle",
     memoryUsed: 9_260,
     processMemory: 5_180,
@@ -72,10 +63,7 @@ const OCR_INSTANCE: DemoInstance = {
   gpu: "demo-node-c/GPU-0",
   weight: 100,
   inflight: 0,
-  selections: 41,
-  rejections: 1,
-  p95: 88,
-  errorRate: 0.002,
+  latency: 44,
   modelVersion: "rapidocr-v4",
   memoryUsed: 4_320,
   processMemory: 2_240,
@@ -103,11 +91,11 @@ function runtimeMember(instance: DemoInstance) {
     route_inflight: instance.inflight,
     circuit_open: false,
     registry_state: "connected",
-    last_selected_at: "2026-07-13T01:59:52.000Z",
-    selection_count_window: instance.selections,
-    rejection_count_window: instance.rejections,
-    p95_ms: instance.p95,
-    error_rate: instance.errorRate,
+    last_selected_at: null,
+    selection_count_window: null,
+    rejection_count_window: null,
+    p95_ms: null,
+    error_rate: null,
   };
 }
 
@@ -133,7 +121,7 @@ function observeTarget(instance: DemoInstance) {
   return {
     url: instance.url,
     ok: true,
-    latency_ms: instance.p95 / 2,
+    latency_ms: instance.latency,
     status_code: 200,
     model_version: instance.modelVersion,
     gpu_info: {
@@ -157,8 +145,8 @@ function observeTarget(instance: DemoInstance) {
       cap: 3,
       current_size: 2,
       loaded_keys: [
-        { key: instance.modelVersion, loaded_at: CHECKED_AT, hit_count: instance.selections },
-        { key: `${instance.modelVersion}:fp16`, loaded_at: CHECKED_AT, hit_count: 28 },
+        { key: instance.modelVersion, loaded_at: CHECKED_AT },
+        { key: `${instance.modelVersion}:fp16`, loaded_at: CHECKED_AT },
       ],
     },
     video_pool: null,
@@ -372,7 +360,7 @@ export async function runModelMarketRuntimePool(
   await expand.click();
   await expect(vehiclePool.getByText("车辆检测 A · RTX 4090", { exact: true })).toBeVisible();
   await expect(vehiclePool.getByText("车辆检测 B · L4", { exact: true })).toBeVisible();
-  await expect(vehiclePool.getByText("184", { exact: true })).toBeVisible();
+  await expect(vehiclePool.getByText("暂无路由指标", { exact: true }).first()).toBeVisible();
   await page.waitForTimeout(3_800);
 
   const firstInstance = vehiclePool
@@ -384,6 +372,7 @@ export async function runModelMarketRuntimePool(
   const firstSheet = page.locator('[data-slot="sheet-content"]');
   await expect(firstSheet.getByRole("heading", { name: "车辆检测 A · RTX 4090" })).toBeVisible();
   await expect(firstSheet.getByText("路由与容量", { exact: true })).toBeVisible();
+  await expect(firstSheet.getByText("暂无路由指标", { exact: true }).first()).toBeVisible();
   await expect(firstSheet.getByText("yolo11m-vehicle", { exact: true })).toBeVisible();
   await page.waitForTimeout(4_500);
 
