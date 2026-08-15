@@ -113,7 +113,7 @@
 
 ### AI 入口与当前题执行
 
-- [ ] `images/ai/task-entry-map.png` — AI 五类入口关系图：图片交互式 AI / 当前题 AI / 二次推理 / 批量预标 / 视频 AI 追踪；用箭头标出工作台、`/ai-pre`、模型市场三类页面边界，建议矢量图而非真截图 **[Tier A]** [manual]
+- [x] `public/diagrams/shared/ai/task-entry-map.svg` — AI 五类入口关系图：图片交互式 AI / 当前题 AI / 二次推理 / 批量预标 / 视频 AI 追踪；用箭头标出工作台、`/ai-pre`、模型市场三类页面边界 **[Tier A]** `[excalidraw]`
 - [x] `public/media/ai/current-task-image-inference.mp4` — 图片工作台展开当前题 AI 面板 → 运行项目编排 → 同时核对画布与候选列表 → 采纳为正式标注 `[derived-mp4]` **[Tier A]**
 - [x] `public/media/ai/current-frame-video-inference.mp4` — 视频工作台定位清晰帧 → 运行当前帧 AI → 核对 violet 候选与置信度 → 采纳后切换相邻帧确认单帧作用域 `[derived-mp4]` **[Tier A]**
 - [x] `public/media/ai/secondary-inference-attribute.mp4` — 选中已确认父框 → 展开二次推理面板 → 写回带 AI 溯源的属性 → 人工修正文案并保留其余属性来源 `[derived-mp4]` **[Tier A]**
