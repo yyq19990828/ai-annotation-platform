@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T07:52:08.569Z",
+  "updated_at": "2026-08-15T08:34:00.138Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -587,6 +587,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "candidate-keyboard-review",
         "sha256": "f579affbbca299945d95c34ead89f8fb62c5d9f2e7cac5401d1b9d9c64ffa9e5"
+      }
+    },
+    "docs-site/public/media/ai/current-frame-video-inference-poster.webp": {
+      "asset_id": "current-frame-video-inference",
+      "role": "poster",
+      "generated_at": "2026-08-15T08:34:00.138Z",
+      "captured_commit": "970b57fcf740d987b216b71c99f446e062688cd9",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › current-frame-video-inference",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "9d14a6b41bcf3e0b49fb5e43c0fb1619f742bf28fa7ec42bf619c31b8aff3c12",
+      "bytes": 103114,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T083133Z-970b57fcf740",
+        "assetId": "current-frame-video-inference",
+        "sha256": "90a63cf83aa4f9dca34885816b4d6b9e6eb9a92212dac7eaaff1bb21619d8693"
+      }
+    },
+    "docs-site/public/media/ai/current-frame-video-inference.mp4": {
+      "asset_id": "current-frame-video-inference",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T08:34:00.052Z",
+      "captured_commit": "970b57fcf740d987b216b71c99f446e062688cd9",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › current-frame-video-inference",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "68e52d6933c3b791c572d3c83ea65b6b7332864566c8796588a200606e482024",
+      "bytes": 881874,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 24.567
+      },
+      "source_asset": {
+        "runId": "20260815T083133Z-970b57fcf740",
+        "assetId": "current-frame-video-inference",
+        "sha256": "90a63cf83aa4f9dca34885816b4d6b9e6eb9a92212dac7eaaff1bb21619d8693"
       }
     },
     "docs-site/public/media/ai/current-task-image-inference-poster.webp": {

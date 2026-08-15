@@ -12,7 +12,7 @@
 | 优先级 | 资产 ID                         | 完整链路与验收重点                                                            | 建议时长 | 文档落点                                | 状态     |
 | ------ | ------------------------------- | ----------------------------------------------------------------------------- | -------- | --------------------------------------- | -------- |
 | P0     | `current-task-image-inference`  | 打开当前题 AI → 选择项目编排 → 运行 → 查看候选几何与置信度 → 采纳 → 标注落库  | 15–24 秒 | `ai/current-task-inference`             | 已录     |
-| P0     | `current-frame-video-inference` | 定位有目标帧 → 运行当前帧推理 → 查看帧级候选 → 采纳 → 切换相邻帧确认作用范围  | 16–26 秒 | `ai/current-task-inference`、视频工作台 | 待录     |
+| P0     | `current-frame-video-inference` | 定位有目标帧 → 运行当前帧推理 → 查看帧级候选 → 采纳 → 切换相邻帧确认作用范围  | 16–26 秒 | `ai/current-task-inference`、视频工作台 | 已录     |
 | P0     | `secondary-inference-attribute` | 选中已有目标 → 发起二次推理 → 返回属性/文本 → 人工修正 → 保存到同一标注       | 14–24 秒 | `ai/current-task-inference`             | 待录     |
 | P0     | `candidate-review-lifecycle`    | 连续审阅至少三个候选 → 分别采纳、驳回和跳过 → 焦点自动前进 → 展示最终候选计数 | 16–28 秒 | `ai/candidate-review`                   | 部分覆盖 |
 

@@ -4,7 +4,7 @@ audience: [annotator, project_admin]
 type: how-to
 since: v0.18.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-15
 ---
 
 # 当前题 AI 与二次推理
@@ -29,6 +29,13 @@ last_reviewed: 2026-07-14
 当前题 AI 面板可拖动头部移动，也可拖右下角调整尺寸；位置和尺寸在关闭重开、刷新后保留。视频任务中，顶部还会在它左侧显示 **追踪**入口；打开 AI 单题会收起 AI 追踪面板，反向也一样。
 
 如果项目管理员已在[AI 预标](../projects/ai-preannotate)中保存了项目编排，图片任务的面板会显示 **运行当前题（按项目编排 · N 阶段）**。它会按保存的阶段顺序执行检测、分类和属性写入，仍然把结果作为候选交给标注员审阅。视频任务不会显示这个入口：当前题 AI 只能分析当前帧；要批量跑视频编排请到 [AI 预标](../projects/ai-preannotate)，要追踪一条轨迹请用[视频 AI 追踪](../workbench/video-propagate)。
+
+<DocsVideo
+  src="/media/ai/current-frame-video-inference.mp4"
+  poster="/media/ai/current-frame-video-inference-poster.webp"
+  alt="在视频 F5 运行车辆检测，采纳中间 truck 候选，切换 F6 确认单帧作用域后返回 F5"
+  caption="视频当前题 AI 只生成单帧候选；采纳后可用相邻帧的待审与人工计数核对作用域。"
+/>
 
 当前题 AI 与批量预标的区别是范围：图片只作用于当前任务，视频只作用于当前帧；它不改变批次状态，也不会替代批量任务历史。批量运行、并发和幂等模式见[AI 预标](../projects/ai-preannotate)。
 
