@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-16
 ---
 
 # 模型市场（/model-market）
@@ -70,7 +70,12 @@ last_reviewed: 2026-07-20
 
 页面提供单一「刷新」动作 + 自动刷新开关，并展开「数据来源」区域显示各来源（拓扑 / 路由账本 / 健康探活 / GPU 仲裁 / 模型驻留）的 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据——例如路由账本不可用时，拓扑与最近健康配置仍然展示，数据来源区域显示部分可用告警。
 
-<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-data-sources.png — 展开的数据来源部分失败态（stale/error + 更新时间） [manual] -->
+<DocsVideo
+  src="/media/superadmin/model-market/runtime-data-sources.mp4"
+  poster="/media/superadmin/model-market/runtime-data-sources-poster.webp"
+  alt="模型市场运行时观测页展开数据来源，对比新鲜的拓扑与连接超时的路由账本"
+  caption="局部观测源退化不等于全局中断：页面保留 4/5 个可信来源与两个服务池，并在陈旧来源上明确呈现超时原因、上次更新时间和退避状态。"
+/>
 
 **服务池摘要卡**分组展示独立状态轴，不合成单一「在线」徽标：
 
