@@ -35,6 +35,7 @@ import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
 import { runVideoTrackerComboDiscovery } from "./video-tracker-combo-discovery";
 import { runVideoMaskCorrectionPropagate } from "./video-mask-correction-propagate";
 import { runPipelineTemplateCreate } from "./pipeline-template-create";
+import { runPipelineApplyProject, type PipelineApplyCleanupRecord } from "./pipeline-apply-project";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -98,6 +99,7 @@ const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
 const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
 const candidateReviewCleanupRecords: CandidateReviewCleanupRecord[] = [];
+const pipelineApplyCleanupRecords: PipelineApplyCleanupRecord[] = [];
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
@@ -111,6 +113,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
   "pipeline-template-create": "pipeline-template-create.ts",
+  "pipeline-apply-project": "pipeline-apply-project.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -206,6 +209,7 @@ test.afterAll(({}, testInfo) => {
   for (const record of videoFrameInferenceCleanupRecords) cleanupVideoFrameInference(record);
   for (const record of secondaryInferenceCleanupRecords) cleanupSecondaryInference(record);
   for (const record of candidateReviewCleanupRecords) cleanupCandidateReview(record);
+  for (const record of pipelineApplyCleanupRecords) cleanupPipelineApply(record);
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -288,6 +292,27 @@ function cleanupCandidateReview(record: CandidateReviewCleanupRecord): void {
       record.taskId,
       ...record.predictionIds.flatMap((predictionId) => ["--prediction-id", predictionId]),
       ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      stdio: "inherit",
+    },
+  );
+}
+
+function cleanupPipelineApply(record: PipelineApplyCleanupRecord): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/cleanup_screenshot_ocr_flow.py",
+      "--project-key",
+      "image_demo",
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      ...(record.celeryTaskId ? ["--celery-task-id", record.celeryTaskId] : []),
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
@@ -1199,6 +1224,87 @@ test.describe("flow recordings", () => {
       if (pipelineId) {
         await seed.deleteProjectPipeline(pipelineId, cached.users.admin.email);
       }
+    }
+  });
+
+  test("pipeline-apply-project — 套用公共模板并运行项目默认编排", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(240_000);
+    const project = cached.projects.image_demo;
+    const task = project.tasks.clean;
+    const userEmail = cached.users.admin.email;
+    const t0 = Date.now();
+    let sourcePipelineId: string | null = null;
+    let appliedPipelineId: string | null = null;
+    let cleanupRecord: PipelineApplyCleanupRecord | null = null;
+
+    try {
+      cleanupPipelineApply({ projectId: project.id, taskId: task.id });
+      const yoloBackendId = await seed.enableMLBackendByName(project.id, userEmail, "yolo-backend");
+      const attributeBackendId = await seed.enableMLBackendByName(
+        project.id,
+        userEmail,
+        "onnxtools-backend",
+      );
+      const sourcePipeline = await seed.createProjectPipeline(userEmail, {
+        name: "车辆检测 → 车型与颜色",
+        scope: "public",
+        project_id: null,
+        organization_id: null,
+        stages: [
+          {
+            stage: 0,
+            ml_backend_id: yoloBackendId,
+            source: { kind: "dataset", data_type: "image" },
+            model_id: "detect",
+            model_variants: { series: "yolo11", size: "s" },
+            class_filter: [2, 5, 7],
+          },
+          {
+            stage: 1,
+            ml_backend_id: attributeBackendId,
+            model_id: "vehicle-attr-classify",
+            task_type: "classification",
+            parent_stage: 0,
+            parent_class_filter: ["car", "bus", "truck"],
+            roi: { mode: "crop", pad: 0.05 },
+            input: { mode: "crop" },
+            write: { target: "attributes", keys: ["vehicle_type", "color"] },
+            on_failure: "keep_parent",
+          },
+        ],
+        is_default: false,
+      });
+      sourcePipelineId = sourcePipeline.id;
+
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both");
+      const win = await runPipelineApplyProject(
+        page,
+        cached,
+        sourcePipeline.id,
+        (createdId) => {
+          appliedPipelineId = createdId;
+        },
+        (record) => {
+          cleanupRecord = record;
+          pipelineApplyCleanupRecords.push(record);
+        },
+      );
+      if (!appliedPipelineId) {
+        throw new Error("[pipeline-apply-project] 未记录套用后的私有编排 ID");
+      }
+      if (!cleanupRecord) {
+        throw new Error("[pipeline-apply-project] 未记录真实推理清理标识");
+      }
+      cleanupPipelineApply(cleanupRecord);
+      await finalize(page, "pipeline-apply-project", undefined, drawTrim(win, t0));
+    } finally {
+      if (cleanupRecord) cleanupPipelineApply(cleanupRecord);
+      if (appliedPipelineId) await seed.deleteProjectPipeline(appliedPipelineId, userEmail);
+      if (sourcePipelineId) await seed.deleteProjectPipeline(sourcePipelineId, userEmail);
     }
   });
 

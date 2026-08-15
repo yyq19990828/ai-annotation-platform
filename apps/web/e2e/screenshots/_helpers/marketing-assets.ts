@@ -153,6 +153,26 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "pipeline-apply-project",
+    title: "套用并执行公共 AI 编排",
+    theme: "把公共两阶段模板复制为项目默认编排并运行真实车辆推理",
+    objective:
+      "展示从项目预标页选择车辆检测与属性分类公共模板，copy-on-write 套用为项目默认，再进入工作台执行同一两阶段编排并查看带车型、颜色属性的车辆候选。",
+    duration: { minSeconds: 18, targetSeconds: 28, maxSeconds: 90 },
+    shots: [
+      "从已加载的 AI 预标项目列表进入真实道路场景项目。",
+      "在命名编排库选择“车辆检测 → 车型与颜色”公共两阶段模板，并套用为项目默认。",
+      "展示套用成功反馈与项目内“车辆检测 → 车型与颜色 · 2 阶段”默认编排标识。",
+      "进入已预热的图片工作台，从当前题 AI 运行项目默认两阶段编排。",
+      "等待真实 YOLO 检测与车辆属性分类完成，选中同时带车型和颜色的车辆候选。",
+    ],
+    editingNotes: [
+      "该母版不混入模板创建、批次勾选或候选采纳；模板创建和候选审阅已有独立资产。",
+      "套用只是 copy-on-write 绑定，实际执行必须通过工作台“按项目编排 · 2 阶段”入口完成，不能伪装成套用后自动批跑。",
+      "候选必须来自真实 YOLO 与 onnxtools 后端，并同时携带 vehicle_type、color；录制结束后精确清理预测、作业和两条临时编排。",
+    ],
+  }),
+  defineAsset({
     assetId: "ocr-real-scene",
     title: "真实场景 OCR 推理",
     theme: "当前任务的文字检测与识别",

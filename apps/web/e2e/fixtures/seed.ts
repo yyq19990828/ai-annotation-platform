@@ -167,6 +167,15 @@ export interface SeedTrackerReviewData {
   source_annotation_ids: string[];
 }
 
+export interface SeedProjectPipeline {
+  id: string;
+  name: string;
+  scope: string;
+  project_id: string | null;
+  is_default: boolean;
+  stages: Array<Record<string, unknown>>;
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -218,6 +227,32 @@ export class SeedAPI {
     }
   }
 
+  /** 通过正式 API 准备录制所需模板；调用方必须在 finally 精确删除返回的 id。 */
+  async createProjectPipeline(
+    userEmail: string,
+    payload: {
+      name: string;
+      scope: "private" | "organization" | "public";
+      project_id: string | null;
+      organization_id?: string | null;
+      stages: Array<Record<string, unknown>>;
+      is_default: boolean;
+    },
+  ): Promise<SeedProjectPipeline> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.post(`${API_BASE}/api/v1/project-pipelines`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Connection: "close",
+      },
+      data: payload,
+    });
+    if (!res.ok()) {
+      throw new Error(`project-pipelines/create failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedProjectPipeline;
+  }
+
   async reset(): Promise<SeedData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`);
     if (!res.ok()) {
@@ -246,7 +281,7 @@ export class SeedAPI {
     projectId: string,
     userEmail: string,
     backendName: string,
-  ): Promise<void> {
+  ): Promise<string> {
     const token = await this.accessToken(userEmail);
     const headers = { Authorization: `Bearer ${token}` };
     const available = await this.request.get(
@@ -263,7 +298,7 @@ export class SeedAPI {
     };
     const item = body.items.find((candidate) => candidate.backend.name === backendName);
     if (!item) throw new Error(`未找到 ML backend: ${backendName}`);
-    if (item.enabled) return;
+    if (item.enabled) return item.backend.id;
 
     const enabled = await this.request.put(
       `${API_BASE}/api/v1/projects/${projectId}/ml-backends/${item.backend.id}/enablement`,
@@ -272,6 +307,7 @@ export class SeedAPI {
     if (!enabled.ok()) {
       throw new Error(`ml-backends/enablement failed: ${enabled.status()} ${await enabled.text()}`);
     }
+    return item.backend.id;
   }
 
   /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */
