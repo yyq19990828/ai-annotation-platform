@@ -59,9 +59,14 @@ last_reviewed: 2026-07-20
 
 ### 2. 运行时观测
 
-<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-pools.png — 运行时观测摘要带 + 两列服务池摘要卡 + 展开实例 [manual] -->
-
 运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**服务池**为默认比较层，先用摘要带汇总路由模式、可路由实例、异常池和数据新鲜度，再按服务池摘要卡 → 实例面板 → 详情 Sheet 逐级下钻。宽屏下服务池以两列排布，展开的卡片自动跨列；窄屏回落为单列。数据来自 `topology` + `runtime-snapshot` 两个权威读模型，按稳定 ID 关联（不再按 URL join）。
+
+<DocsVideo
+  src="/media/superadmin/model-market/runtime-pools.mp4"
+  poster="/media/superadmin/model-market/runtime-pools-poster.webp"
+  alt="模型市场运行时观测页依次展示服务池摘要、数据来源、车辆检测双实例及两台实例的详情面板"
+  caption="从服务池下钻到实例：核对路由模式、数据新鲜度、权重、当前并发与 GPU 驻留；尚未接入的共享路由指标保持未知语义。"
+/>
 
 页面提供单一「刷新」动作 + 自动刷新开关，并展开「数据来源」区域显示各来源（拓扑 / 路由账本 / 健康探活 / GPU 仲裁 / 模型驻留）的 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据——例如路由账本不可用时，拓扑与最近健康配置仍然展示，数据来源区域显示部分可用告警。
 
