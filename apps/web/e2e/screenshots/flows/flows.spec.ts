@@ -42,6 +42,7 @@ import { runProjectMlRouting } from "./project-ml-routing";
 import { runBackgroundExportDownload } from "./background-export-download";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
+import { runLargeImagePyramidRecovery } from "./large-image-pyramid-recovery";
 import { runSmartScribble } from "./smart-scribble";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
@@ -1569,6 +1570,18 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runLargeImageProgressive(page, cached);
     await finalize(page, "large-image-progressive", undefined, drawTrim(win, t0));
+  });
+
+  test("large-image-pyramid-recovery — 单切片失败后自动恢复", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(90_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runLargeImagePyramidRecovery(page, cached);
+    await finalize(page, "large-image-pyramid-recovery", undefined, drawTrim(win, t0));
   });
 
   test("hotkey-cheatsheet — 键盘快捷键面板(? 打开)", async ({ page, seed }) => {

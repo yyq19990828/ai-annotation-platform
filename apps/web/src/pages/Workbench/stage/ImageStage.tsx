@@ -1742,6 +1742,9 @@ export function ImageStage({
       data-testid="workbench-stage"
       data-image-identity={imageIdentity}
       data-image-ready={imageReady ? "true" : "false"}
+      data-image-tile-retrying={
+        (imageTiles.snapshot?.retryingVisibleTiles ?? 0) > 0 ? "true" : "false"
+      }
       data-media-x={vp.tx}
       data-media-y={vp.ty}
       data-media-width={imgW * vp.scale}
@@ -1819,7 +1822,9 @@ export function ImageStage({
           (imageTiles.snapshot?.targetCoverageRatio ?? 1) < 1) && (
           <div className={styles.pyramidStatus} role="status">
             <Icon name="clock" size={14} />
-            正在恢复图像清晰度
+            {(imageTiles.snapshot?.retryingVisibleTiles ?? 0) > 0
+              ? "高清切片请求失败，正在自动重试"
+              : "正在恢复图像清晰度"}
           </div>
         )}
 

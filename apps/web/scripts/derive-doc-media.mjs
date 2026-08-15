@@ -15,6 +15,7 @@ const POSTER_AT_SECONDS = new Map([
   ["model-market-runtime-pool", 10],
   ["project-ml-routing", 14],
   ["background-export-download", 16],
+  ["large-image-pyramid-recovery", 9],
 ]);
 
 const TARGETS = new Map(
@@ -47,6 +48,7 @@ const TARGETS = new Map(
     ["pointcloud-controls", "pointcloud/controls"],
     ["pointcloud-view", "pointcloud/orbit"],
     ["large-image-progressive", "large-image/progressive"],
+    ["large-image-pyramid-recovery", "large-image/pyramid-recovery"],
   ].map(([assetId, target]) => [assetId, target]),
 );
 

@@ -599,6 +599,22 @@ const assetSpecs = [
     editingNotes: ["不要删掉清晰度逐步提升的过程，它是该能力的主体。"],
   }),
   defineAsset({
+    assetId: "large-image-pyramid-recovery",
+    title: "大图高清切片自动恢复",
+    theme: "单个高清切片请求失败后的无损降级与自动重试",
+    objective: "展示局部高清切片短暂失败时保留概览、自动重试，并在恢复后继续流畅缩放平移。",
+    duration: { minSeconds: 16, targetSeconds: 22, maxSeconds: 28 },
+    shots: [
+      "从完整大图进入局部高清视图。",
+      "让一个真实切片请求返回 503，并展示自动重试状态与 overview 兜底。",
+      "等待同一切片重新签名并恢复清晰。",
+      "继续缩放和平移，确认相邻视口维持高清细节。",
+    ],
+    editingNotes: [
+      "保留失败提示出现、自动消失与恢复后继续浏览的完整因果链；不得把故障画面伪造成产品结果。",
+    ],
+  }),
+  defineAsset({
     assetId: "hotkey-cheatsheet",
     title: "快捷键速查面板",
     theme: "打开、搜索和关闭工作台快捷键帮助",
