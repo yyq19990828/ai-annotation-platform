@@ -152,6 +152,9 @@ function flowWatchPaths(assetId: string): string[] {
   if (assetId === "jobs-retry-recovery") {
     paths.push("apps/api/scripts/screenshot_job_recovery_fixture.py");
   }
+  if (assetId === "review-reject") {
+    paths.push("apps/api/scripts/screenshot_review_reject_fixture.py");
+  }
   if (assetId === "background-export-download") {
     paths.push("apps/api/scripts/screenshot_background_export_fixture.py");
   }
@@ -402,6 +405,31 @@ function manageJobsRetryFixture(
   const lastLine = output.trim().split("\n").at(-1);
   if (!lastLine) throw new Error(`[jobs-retry-recovery] ${action} 未返回夹具结果`);
   return JSON.parse(lastLine) as { backend_id?: string };
+}
+
+function manageReviewRejectFixture(
+  action: "prepare" | "cleanup",
+  record: { projectId: string; taskId: string },
+  reviewerEmail: string,
+): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/screenshot_review_reject_fixture.py",
+      action,
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      "--reviewer-email",
+      reviewerEmail,
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      stdio: "inherit",
+    },
+  );
 }
 
 function manageBackgroundExportFixture(
@@ -853,16 +881,38 @@ test.describe("flow recordings", () => {
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(150_000);
+    const project = cached.projects.image_demo;
+    const task = project.tasks.review;
+    const reviewerEmail = cached.users.reviewer.email;
     const t0 = Date.now();
-    await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.reviewer.email);
-    await installRecordingWorkbenchLayout(page, "both");
-    const win = await runReviewReject(page, cached);
-    await finalize(page, "review-reject", path.join(DOCS_IMAGES, "review/reject-flow.gif"), {
-      fps: 6,
-      maxWidth: 860,
-      ...drawTrim(win, t0),
-    });
+    const cleanupRecord = { projectId: project.id, taskId: task.id };
+    manageReviewRejectFixture("prepare", cleanupRecord, reviewerEmail);
+    try {
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, reviewerEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        common: { petEnabled: false },
+        layout: {
+          floatingSelection: {
+            collapsed: true,
+            x: 1050,
+            y: 110,
+            w: 300,
+            h: 260,
+          },
+        },
+      });
+      const win = await runReviewReject(page, cached);
+      await finalize(page, "review-reject", path.join(DOCS_IMAGES, "review/reject-flow.gif"), {
+        fps: 6,
+        maxWidth: 860,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      manageReviewRejectFixture("cleanup", cleanupRecord, reviewerEmail);
+    }
   });
 
   test("batch-bulk-actions — 批次多选批量操作", async ({ page, seed }) => {

@@ -11,6 +11,7 @@ const ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const OUTPUT_ROOT = path.join(REPO_ROOT, "docs-site/public/media");
 
 const POSTER_AT_SECONDS = new Map([
+  ["review-reject", 2],
   ["jobs-retry-recovery", 11],
   ["model-market-runtime-pool", 10],
   ["project-ml-routing", 14],
@@ -28,6 +29,7 @@ const TARGETS = new Map(
     ["ai-assisted-annotation", "ai/assisted-annotation"],
     ["candidate-keyboard-review", "ai/candidate-keyboard-review"],
     ["candidate-review-lifecycle", "ai/candidate-review-lifecycle"],
+    ["review-reject", "review/reject-flow"],
     ["ocr-real-scene", "ai/ocr-current-task"],
     ["current-task-image-inference", "ai/current-task-image-inference"],
     ["current-frame-video-inference", "ai/current-frame-video-inference"],

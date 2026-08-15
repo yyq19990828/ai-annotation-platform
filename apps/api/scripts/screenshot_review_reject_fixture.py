@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Prepare and precisely clean the review-reject marketing recording state.
+
+The helper is fail-closed to the screenshot-managed image project. It restores
+the declared review task after the real reject API runs, and removes only the
+feedback and notification rows carrying this recording's exact reason text.
+Audit rows remain immutable by design.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+import uuid
+from pathlib import Path
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+_API_ROOT = Path(__file__).resolve().parent.parent
+if str(_API_ROOT) not in sys.path:
+    sys.path.insert(0, str(_API_ROOT))
+
+from app.config import settings  # noqa: E402
+from app.db.models.annotation_feedback import AnnotationFeedback  # noqa: E402
+from app.db.models.notification import Notification  # noqa: E402
+from app.db.models.task import Task  # noqa: E402
+from app.db.models.user import User  # noqa: E402
+from app.services.batch import BatchService  # noqa: E402
+from scripts.cleanup_screenshot_ocr_flow import assert_screenshot_scope  # noqa: E402
+
+
+REASON_TEXT = "车辆边界存在偏移，请重新贴合目标外沿。"
+LEGACY_REASON_TEXT = "标注框偏移，请重新对齐目标边缘（演示）"
+OWNED_REASONS = (REASON_TEXT, LEGACY_REASON_TEXT)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("prepare", "cleanup"))
+    parser.add_argument("--project-id", type=uuid.UUID, required=True)
+    parser.add_argument("--task-id", type=uuid.UUID, required=True)
+    parser.add_argument("--reviewer-email", required=True)
+    return parser.parse_args()
+
+
+async def restore(args: argparse.Namespace) -> dict[str, int | str]:
+    engine = create_async_engine(settings.database_url, echo=False)
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    try:
+        async with session_factory() as db:
+            expected_status = await assert_screenshot_scope(
+                db,
+                project_key="image_demo",
+                project_id=args.project_id,
+                task_id=args.task_id,
+            )
+            if expected_status != "review":
+                raise RuntimeError(
+                    f"review-reject task must be declared as review, got {expected_status}"
+                )
+
+            task = await db.get(Task, args.task_id)
+            reviewer = await db.scalar(
+                select(User).where(User.email == args.reviewer_email)
+            )
+            if task is None or task.project_id != args.project_id:
+                raise RuntimeError("review-reject task escaped screenshot project")
+            if reviewer is None or task.reviewer_id != reviewer.id:
+                raise RuntimeError(
+                    "review-reject task is not assigned to the recording reviewer"
+                )
+
+            feedback_result = await db.execute(
+                delete(AnnotationFeedback).where(
+                    AnnotationFeedback.task_id == task.id,
+                    AnnotationFeedback.kind == "reject",
+                    AnnotationFeedback.author_id == reviewer.id,
+                    AnnotationFeedback.body.in_(OWNED_REASONS),
+                )
+            )
+            notification_result = await db.execute(
+                delete(Notification).where(
+                    Notification.type == "task.rejected",
+                    Notification.target_type == "task",
+                    Notification.target_id == task.id,
+                    Notification.payload["reject_reason"].astext.in_(OWNED_REASONS),
+                )
+            )
+
+            task.status = expected_status
+            task.reviewed_at = None
+            task.reject_reason_type = None
+            task.reject_reason = None
+            task.reviewer_claimed_at = None
+            if task.batch_id is not None:
+                await BatchService(db).recalculate_counters(task.batch_id)
+            await db.commit()
+            return {
+                "status": expected_status,
+                "feedbacks": feedback_result.rowcount or 0,
+                "notifications": notification_result.rowcount or 0,
+            }
+    finally:
+        await engine.dispose()
+
+
+def main() -> int:
+    if settings.environment == "production":
+        print("[review-reject-fixture] refusing to run in production", file=sys.stderr)
+        return 2
+    args = parse_args()
+    result = asyncio.run(restore(args))
+    print(f"[review-reject-fixture] {args.action} {json.dumps(result, sort_keys=True)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
