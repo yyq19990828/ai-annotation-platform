@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-16
 ---
 
 # Mask 像素编辑器
@@ -60,9 +60,14 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
 
 ## 大画布图片
 
-<!-- TODO IMAGE_CHECKLIST: images/mask-brush/large-image-limit.png — 超大底图可浏览但 Mask 尺寸超限提示 [auto] -->
+<DocsVideo
+  src="/media/large-image/mask-limit.mp4"
+  poster="/media/large-image/mask-limit-poster.webp"
+  alt="Cosmic Cliffs 超大图在工作台中放大后完成矩形标注，然后展示 Mask 尺寸超限提示"
+  caption="超过 Mask 编辑上限时，分块浏览和矢量标注仍然可用；Mask 入口会直接标出实际图像尺寸、单边上限和总像素上限。"
+/>
 
-图片 Mask 最大支持 8192 像素单边和 67,108,864 总像素。任一边超过 4096 或总像素
+图片 Mask 最大支持 8192 像素单边和 67,108,864 总像素。超过其中任一上限时，工作台保留大图浏览和矢量工具，但会置灰 Mask 工具并在悬停提示中列出实际尺寸与上限。仍在支持范围内时，任一边超过 4096 或总像素
 超过 16,777,216 时，工作台自动进入分块模式：
 
 - 笔刷、橡皮与套索加减只加载笔迹相交的区域，撤销、重做、保存和刷新后回读保持逐像素一致。

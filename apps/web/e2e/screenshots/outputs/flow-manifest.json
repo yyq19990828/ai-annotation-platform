@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T19:06:17.503Z",
+  "updated_at": "2026-08-15T19:24:10.189Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1079,6 +1079,68 @@
         "runId": "20260815T142733Z-440dc800b985",
         "assetId": "background-export-download",
         "sha256": "f44df6a72f65945f3156f0d7fc25da56666af461f32892476a0080076da6871f"
+      }
+    },
+    "docs-site/public/media/large-image/mask-limit-poster.webp": {
+      "asset_id": "large-image-mask-limit",
+      "role": "poster",
+      "generated_at": "2026-08-15T19:24:10.189Z",
+      "captured_commit": "b8ce1389a1352c164bdfa7325e6b5184cc9ded36",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › large-image-mask-limit",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "5e0e8ed2c30ae1691b2a16ad1df40ecc8481b2acca6028cd1a855da7cc085995",
+      "bytes": 130678,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T192214Z-b8ce1389a135",
+        "assetId": "large-image-mask-limit",
+        "sha256": "80e2171f81fe5f05f8df7d12ab4ffc70c79877056877a0afaf72e5d357da54f4"
+      }
+    },
+    "docs-site/public/media/large-image/mask-limit.mp4": {
+      "asset_id": "large-image-mask-limit",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T19:24:10.126Z",
+      "captured_commit": "b8ce1389a1352c164bdfa7325e6b5184cc9ded36",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › large-image-mask-limit",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "b8f90ab8f94d0fafc87dff138e25edde768e9262f91938369c0354366a96b006",
+      "bytes": 856790,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 12.667
+      },
+      "source_asset": {
+        "runId": "20260815T192214Z-b8ce1389a135",
+        "assetId": "large-image-mask-limit",
+        "sha256": "80e2171f81fe5f05f8df7d12ab4ffc70c79877056877a0afaf72e5d357da54f4"
       }
     },
     "docs-site/public/media/large-image/progressive-poster.webp": {
