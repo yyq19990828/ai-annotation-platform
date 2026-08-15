@@ -3,12 +3,20 @@ audience: [annotator]
 type: how-to
 since: v0.14.1
 status: stable
-last_reviewed: 2026-06-14
+last_reviewed: 2026-08-15
 ---
 
 # 点云与序列跨帧标注
 
 scene 模式的项目里，同一物体会在一段录像里连续出现多帧。跨帧能力让你不必每帧从零画框，并能叠加邻帧参考检查时序连续性。本功能同时适用于 **3D 点云框**和 **2D 图像序列框**（bbox / polygon / rotated_bbox / polyline / keypoint 等）。scene 与 `frame_index` 的概念见 [Scene + frame_index 跨 task 帧序列地基](/dev/concepts/scene-and-frame-index)。
+
+<DocsVideo
+  src="/media/pointcloud/crossframe-track.mp4"
+  poster="/media/pointcloud/crossframe-track-poster.webp"
+  alt="将已复核的 3D 框延续到两个后续帧，在中间帧修正位置，再逐帧回看同轨迹邻帧参考框"
+/>
+
+上面的完整流程从已复核的 3D 框开始，连续延续到第 1、2 帧，在中间帧修正框中心，再回到首帧核对同一轨迹。演示 scene 不含 ego 轨迹，因此界面如实提示“原样复制”；它不是 AI 追踪，目标身份由 `track_id` 保持，几何位置由标注员逐帧修正。
 
 ## 跨帧目标延续
 
