@@ -44,6 +44,7 @@ import { runPipelineTemplateCreate } from "./pipeline-template-create";
 import { runPipelineApplyProject, type PipelineApplyCleanupRecord } from "./pipeline-apply-project";
 import { runJobsRetryRecovery } from "./jobs-retry-recovery";
 import {
+  runModelMarketGpuResourceOverview,
   runModelMarketRuntimePartialFailure,
   runModelMarketRuntimePool,
 } from "./model-market-runtime-pool";
@@ -142,6 +143,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "jobs-retry-recovery": "jobs-retry-recovery.ts",
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
   "model-market-runtime-partial-failure": "model-market-runtime-pool.ts",
+  "model-market-gpu-resource-overview": "model-market-runtime-pool.ts",
   "project-ml-routing": "project-ml-routing.ts",
   "background-export-download": "background-export-download.ts",
   "project-create-existing-resources": "project-create-existing-resources.ts",
@@ -1608,6 +1610,20 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     const win = await runModelMarketRuntimePartialFailure(page, cached);
     await finalize(page, "model-market-runtime-partial-failure", undefined, drawTrim(win, t0));
+  });
+
+  test("model-market-gpu-resource-overview — GPU 资源就绪性、预算与阻断实例", async ({
+    page,
+    seed,
+  }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    const win = await runModelMarketGpuResourceOverview(page, cached);
+    await finalize(page, "model-market-gpu-resource-overview", undefined, drawTrim(win, t0));
   });
 
   test("project-ml-routing — 批量主后端与交互能力自动分流", async ({ page, seed }) => {

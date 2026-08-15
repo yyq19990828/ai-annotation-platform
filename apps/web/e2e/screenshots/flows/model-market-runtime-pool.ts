@@ -192,6 +192,111 @@ function globalBackend(instance: DemoInstance, projectId: string) {
   };
 }
 
+function gpuResourcesFixture() {
+  return {
+    global_desired_mode: "enforce",
+    rollout_enabled: true,
+    runtime_ready: false,
+    observe_runtime_ready: true,
+    enforce_runtime_ready: false,
+    resources: [
+      {
+        gpu_resource_id: "demo-node-a/GPU-0",
+        node_id: "demo-node-a",
+        physical_device_token: "GPU-0",
+        allocatable_mb: 22_528,
+        configured_mode: "enforce",
+        desired_mode: "enforce",
+        effective_mode: "enforce",
+        claimed_budget_mb: 8_192,
+        claimed_backend_count: 1,
+        status: "ok",
+        diagnostics: [],
+        rollout: {
+          enabled: true,
+          state: "enforcing",
+          effective_mode: "enforce",
+          target_mode: "enforce",
+          dispatch_blocked: false,
+          blocked_reason: null,
+          transition_id: null,
+          last_transition_id: "demo-transition-a",
+          revision: 12,
+        },
+        runtime: {
+          ready: true,
+          reason: "ledger_ready",
+          status: "ready",
+          active_backend_count: 1,
+          backend_count: 1,
+          allocation_state_counts: { active: 1 },
+          membership_state_counts: { active: 1 },
+          backend_queue_count: 0,
+          card_queue_count: 0,
+          committed_mb: 11_840,
+          lease_count: 2,
+          transition_present: false,
+          durable_domain_matches: true,
+        },
+      },
+      {
+        gpu_resource_id: "demo-node-b/GPU-0",
+        node_id: "demo-node-b",
+        physical_device_token: "GPU-0",
+        allocatable_mb: 22_528,
+        configured_mode: "enforce",
+        desired_mode: "enforce",
+        effective_mode: "observe",
+        claimed_budget_mb: 12_288,
+        claimed_backend_count: 1,
+        status: "blocker",
+        diagnostics: [
+          {
+            code: "gpu_arbiter_runtime_not_ready",
+            level: "blocker",
+            message: "持久 Rollout 已 enforcing，但 Redis 账本尚未 ready",
+            resource_id: "demo-node-b/GPU-0",
+          },
+        ],
+        rollout: {
+          enabled: true,
+          state: "blocked",
+          effective_mode: "observe",
+          target_mode: "enforce",
+          dispatch_blocked: true,
+          blocked_reason: "Redis 账本尚未 ready",
+          transition_id: "demo-transition-b",
+          last_transition_id: "demo-transition-b",
+          revision: 9,
+        },
+        runtime: {
+          ready: false,
+          reason: "ledger_not_ready",
+          status: "not_ready",
+          active_backend_count: 1,
+          backend_count: 1,
+          allocation_state_counts: { active: 1 },
+          membership_state_counts: { active: 1 },
+          backend_queue_count: 2,
+          card_queue_count: 1,
+          committed_mb: 9_260,
+          lease_count: 1,
+          transition_present: true,
+          durable_domain_matches: true,
+        },
+      },
+    ],
+    diagnostics: [
+      {
+        code: "gpu_arbiter_runtime_not_ready",
+        level: "blocker",
+        message: "持久 Rollout 已 enforcing，但 Redis 账本尚未 ready",
+        resource_id: "demo-node-b/GPU-0",
+      },
+    ],
+  };
+}
+
 async function installRuntimeFixture(
   page: Page,
   catalog: ScreenshotSeedCatalog,
@@ -296,6 +401,7 @@ async function installRuntimeFixture(
       total_backends: ALL_INSTANCES.length,
       connected_backends: ALL_INSTANCES.length,
     },
+    "/api/v1/admin/ml-integrations/gpu-resources": gpuResourcesFixture(),
   };
 
   await page.route("**/api/v1/admin/ml-integrations/**", async (route) => {
@@ -441,6 +547,48 @@ export async function runModelMarketRuntimePartialFailure(
   await staleSource.locator("..").hover();
   await expect(page.getByText(/路由账本：Redis 连接超时，进入 30 秒退避/)).toBeVisible();
   await page.waitForTimeout(2_800);
+
+  return { drawStartMs, drawEndMs: Date.now() };
+}
+
+export async function runModelMarketGpuResourceOverview(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
+  await installRuntimeFixture(page, catalog);
+  await page.goto("/model-market?tab=registry");
+  await expect(page.getByRole("heading", { name: "模型市场" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("tab", { name: "服务池", exact: true })).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const drawStartMs = Date.now();
+  await page.waitForTimeout(2_200);
+
+  const gpuTab = page.getByRole("tab", { name: "GPU 资源", exact: true });
+  await moveTo(page, gpuTab);
+  await gpuTab.click();
+  const summary = page.getByTestId("gpu-resource-summary");
+  await expect(summary).toContainText("运行时未就绪");
+  await expect(summary).toContainText("全局期望模式");
+  await expect(summary).toContainText("enforce");
+  await expect(summary).toContainText("Observe 就绪");
+  await expect(summary).toContainText("Enforce 未就绪");
+  await expect(page.getByText("demo-node-a/GPU-0", { exact: true })).toBeVisible();
+  const blockedRow = page.locator("tr").filter({ hasText: "demo-node-b/GPU-0" }).first();
+  await expect(blockedRow).toContainText("阻断");
+  await expect(blockedRow).toContainText("配置 · enforce");
+  await expect(blockedRow).toContainText("1 个 backend");
+  await expect(blockedRow).toContainText("→ observe");
+  await page.waitForTimeout(3_800);
+
+  const expand = blockedRow.getByRole("button", { name: "展开受影响实例" });
+  await moveTo(page, expand);
+  await expand.click();
+  await expect(page.getByText("受影响实例（1）", { exact: true })).toBeVisible();
+  await expect(page.getByText("车辆检测 B · L4", { exact: true })).toBeVisible();
+  await expect(page.getByText("服务池 · 车辆检测多实例池", { exact: true })).toBeVisible();
+  await page.waitForTimeout(4_200);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }

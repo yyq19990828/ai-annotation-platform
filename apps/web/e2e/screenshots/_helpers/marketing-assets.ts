@@ -264,6 +264,24 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "model-market-gpu-resource-overview",
+    title: "GPU 资源就绪性与阻断实例",
+    theme: "从全局期望模式下钻到单卡预算、运行时账本和受影响实例",
+    objective:
+      "展示 GPU 仲裁全局期望为 enforce 时，正常卡与账本未就绪卡仍能分别呈现静态声明、运行时 committed、队列、Lease、desired → effective 和受影响实例。",
+    duration: { minSeconds: 10, targetSeconds: 14, maxSeconds: 22 },
+    shots: [
+      "从已加载的注册管理服务池页开始，保留整体统计。",
+      "切换到 GPU 资源，核对运行时未就绪、全局 enforce、Observe 就绪与 Enforce 未就绪。",
+      "对比正常卡与 blocker 卡的可分配显存、声明预算、committed、队列、Lease 和模式。",
+      "展开 blocker 卡，查看受影响的车辆检测 L4 实例与所属服务池。",
+    ],
+    editingNotes: [
+      "观测数据使用录制专用脱敏固定快照；资源表、两根预算进度条、诊断聚合和实例反查均走真实产品实现。",
+      "该母版只表达 GPU 资源治理，不混入后端注册、服务池编辑或实例详情。",
+    ],
+  }),
+  defineAsset({
     assetId: "background-export-download",
     title: "后台多格式导出与下载",
     theme: "从导出配置到可校验 ZIP 产物的异步闭环",
