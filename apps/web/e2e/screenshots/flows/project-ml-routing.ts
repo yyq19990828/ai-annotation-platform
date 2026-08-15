@@ -72,6 +72,8 @@ export async function runProjectMlRouting(
   const quota = page.getByTestId("ml-backend-quota");
   await expect(quota).toContainText("已启用 1 /", { timeout: 10_000 });
 
+  // drawTrim 会保留动作前 0.4 秒；先让刚挂载的设置页稳定，避免预卷带入骨架屏。
+  await page.waitForTimeout(800);
   const drawStartMs = Date.now();
   await page.waitForTimeout(2_200);
 
