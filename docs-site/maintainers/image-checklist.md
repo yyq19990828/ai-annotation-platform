@@ -232,7 +232,6 @@
 - [x] `public/media/superadmin/model-market/runtime-pools.mp4` — 运行时摘要、完整数据来源、两列服务池、双实例展开与详情 Sheet；使用固定脱敏快照，并保留“暂无路由指标”的真实未知语义 **[Tier A]** `[derived-mp4]`
 - [ ] `images/superadmin/model-market/runtime-data-sources.png` — 展开「数据来源」后的部分失败态；至少包含一个 stale/error 来源及更新时间，说明单源失败不抹掉其它可信数据 **[Tier A]** [manual]
 - [ ] `images/superadmin/model-market/runtime-instance-detail.png` — 打开实例详情 Sheet；红框：路由状态、并发/延迟未知语义、health/compute、GPU claim、驻留与原始诊断 **[Tier B]** [manual]
-- [ ] `images/superadmin/model-market/registry-service-pools.png` — 注册管理「服务池」主视图；展开一个池显示成员、权重、接流状态和维护操作，并保留五个结构化视图的 tab **[Tier A]** `[auto]`
 - [ ] `images/superadmin/model-market/registry-issue-center.png` — 注册管理「问题中心」；展示按稳定键去重后的主问题、严重度、受影响对象计数与筛选 **[Tier B]** [manual]
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
 - [ ] `images/superadmin/public-templates/scope-selector.png` — 可见范围下拉「公共」选项 disabled（非超管视角） [manual]
@@ -262,7 +261,6 @@
 
 - [x] `public/media/large-image/progressive.mp4` — NASA Cosmic Cliffs 从 overview 到目标 LOD 的渐进清晰过程，包含平移、连续缩放和 edge 区域且无白缝/闪烁 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/large-image/pyramid-recovery.mp4` — 一个当前视口高清切片真实返回 503 后保留 overview、自动重签恢复，并继续缩放和平移 **[Tier A]** `[derived-mp4]`
-- [ ] `images/workbench/large-image-pyramid-status.png` — required 超大图的“高清切片生成中”与失败/重试状态；不得自动请求整张原图 **[Tier A]** `[auto]`
 - [ ] `images/mask-brush/large-image-limit.png` — 超大底图仍可浏览并使用矢量工具，同时 Mask 能力明确显示尺寸超限原因 **[Tier A]** `[auto]`（可先用 `P-LARGE-IMG` 建 scene）
 
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
