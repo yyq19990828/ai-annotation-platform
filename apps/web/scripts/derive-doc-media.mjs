@@ -30,6 +30,7 @@ const POSTER_AT_SECONDS = new Map([
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
   ["video-track-batch-propagate", 2.5],
+  ["video-propagate-track-vs-copy", 14],
 ]);
 
 const TARGETS = new Map(
@@ -61,6 +62,7 @@ const TARGETS = new Map(
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
     ["video-track-batch-propagate", "video/track-batch-propagate"],
+    ["video-propagate-track-vs-copy", "video/propagate-track-vs-copy"],
     ["video-timeline-prediction-navigation", "video/prediction-density-navigation"],
     ["video-mask-track-edit", "video/mask-track-edit"],
     ["video-tracker-range", "video/tracker-range"],

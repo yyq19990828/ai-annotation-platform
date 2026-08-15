@@ -28,6 +28,7 @@ import {
   runVideoTrackBatchPropagate,
   type VideoTrackBatchPropagateCleanupRecord,
 } from "./video-track-batch-propagate";
+import { runVideoPropagateTrackVsCopy } from "./video-propagate-track-vs-copy";
 import { runVideoMaskTrackEdit } from "./video-mask-track-edit";
 import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
@@ -142,6 +143,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-positive-negative": "video-multi-seed-tracking.ts",
   "video-tracker-box-seed": "video-multi-seed-tracking.ts",
   "video-timeline-prediction-navigation": "video-timeline-prediction-navigation.ts",
+  "video-propagate-track-vs-copy": "video-propagate-track-vs-copy.ts",
   "video-tracker-text-discovery": "video-tracker-text-discovery.ts",
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
@@ -1398,6 +1400,76 @@ test.describe("flow recordings", () => {
         throw new Error("[video-track-batch-propagate] 批量延展必须只产生一个追踪作业");
       }
       await finalize(page, "video-track-batch-propagate", undefined, drawTrim(win, t0));
+    } finally {
+      if (
+        cleanupRecord.sourceAnnotationIds.length > 0 ||
+        cleanupRecord.videoTrackerJobIds.length > 0
+      ) {
+        cleanupVideoTrackBatchPropagate(cleanupRecord);
+      }
+    }
+  });
+
+  test("video-propagate-track-vs-copy — 几何复制与 AI 延展对比", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 真实 30 帧 SAM3 追踪 + 候选审阅 + 4K H.264 归档
+    const project = cached.projects.video_demo;
+    const task = project.tasks.tracking;
+    const userEmail = cached.users.project_admin.email;
+    const anchor = recordingAnchor(cached, "video_demo", "tracking", "left_bus_f0", 0);
+    const cleanupRecord: VideoTrackBatchPropagateCleanupRecord = {
+      projectId: project.id,
+      taskId: task.id,
+      sourceAnnotationIds: [],
+      videoTrackerJobIds: [],
+    };
+    const t0 = Date.now();
+
+    try {
+      await seed.enableMLBackendByName(project.id, userEmail, "sam3-backend");
+      const [x1, y1, x2, y2] = anchor.bbox;
+      const source = await seed.createTaskAnnotation(task.id, userEmail, {
+        annotation_type: "video_track_bbox",
+        tool_unit_id: "bbox",
+        class_name: anchor.label,
+        geometry: {
+          type: "video_track_bbox",
+          track_id: "trk_marketing_propagate_compare",
+          keyframes: [
+            {
+              frame_index: 0,
+              bbox: { x: x1, y: y1, w: x2 - x1, h: y2 - y1 },
+              source: "manual",
+              occluded: false,
+            },
+          ],
+          outside: [],
+        },
+      });
+      cleanupRecord.sourceAnnotationIds.push(source.id);
+
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        common: { petEnabled: false },
+        layout: {
+          floatingSelection: {
+            collapsed: false,
+            x: 770,
+            y: 115,
+            w: 310,
+            h: 350,
+          },
+        },
+      });
+      const win = await runVideoPropagateTrackVsCopy(page, cached, source.id, (jobId) =>
+        cleanupRecord.videoTrackerJobIds.push(jobId),
+      );
+      if (cleanupRecord.videoTrackerJobIds.length !== 1) {
+        throw new Error("[video-propagate-track-vs-copy] AI 对比必须只产生一个追踪作业");
+      }
+      await finalize(page, "video-propagate-track-vs-copy", undefined, drawTrim(win, t0));
     } finally {
       if (
         cleanupRecord.sourceAnnotationIds.length > 0 ||
