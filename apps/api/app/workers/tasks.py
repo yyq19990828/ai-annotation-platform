@@ -976,6 +976,11 @@ async def _run_batch(
                 gpu_arbiter_error = gpu_arbiter_failure_record(exc)
                 if gpu_arbiter_error is not None:
                     gpu_arbiter_failures.append(gpu_arbiter_error)
+                failure_extra: dict = {}
+                if stage_contexts[0] is not None:
+                    failure_extra["request_context"] = stage_contexts[0]
+                if gpu_arbiter_error is not None:
+                    failure_extra["gpu_arbiter_error"] = gpu_arbiter_error
                 failed = await pred_svc.create_failed(
                     task_id=task.id,
                     project_id=uuid.UUID(project_id),
@@ -990,11 +995,7 @@ async def _run_batch(
                         if gpu_arbiter_error is not None
                         else str(exc)
                     ),
-                    extra=(
-                        {"gpu_arbiter_error": gpu_arbiter_error}
-                        if gpu_arbiter_error is not None
-                        else None
-                    ),
+                    extra=failure_extra or None,
                     ml_backend_pool_id=stage_clients[0].pool_id or source_pool_id,
                 )
                 failed_prediction_ids.append(str(failed.id))

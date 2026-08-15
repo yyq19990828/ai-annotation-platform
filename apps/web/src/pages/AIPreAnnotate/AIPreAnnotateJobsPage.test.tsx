@@ -12,6 +12,7 @@ const mockAsyncJobsList = vi.fn();
 const mockAsyncJobsCancel = vi.fn();
 const mockAsyncJobsGet = vi.fn();
 const mockAsyncJobsRetryFailed = vi.fn();
+const mockBuildWorkbenchUrl = vi.fn((projectId: string) => `/workbench/${projectId}`);
 vi.mock("@/api/asyncJobs", () => ({
   asyncJobsApi: {
     list: (...args: unknown[]) => mockAsyncJobsList(...args),
@@ -30,7 +31,7 @@ vi.mock("@/pages/ModelMarket/VideoTrackerJobsPage", () => ({
 
 // ── mock workbench navigation utils ─────────────────────────────────────────
 vi.mock("@/utils/workbenchNavigation", () => ({
-  buildWorkbenchUrl: (projectId: string) => `/workbench/${projectId}`,
+  buildWorkbenchUrl: (...args: unknown[]) => mockBuildWorkbenchUrl(...(args as [string])),
   currentWorkbenchReturnTo: () => "/ai-pre/jobs",
 }));
 
@@ -83,6 +84,7 @@ describe("AIPreAnnotateJobsPage", () => {
     mockAsyncJobsCancel.mockReset();
     mockAsyncJobsGet.mockReset();
     mockAsyncJobsRetryFailed.mockReset();
+    mockBuildWorkbenchUrl.mockClear();
     // 默认: 返回空列表
     mockAsyncJobsList.mockResolvedValue({ items: [], total: 0 });
     mockAsyncJobsCancel.mockResolvedValue({ status: "cancel_requested", id: "job-1" });
@@ -150,6 +152,31 @@ describe("AIPreAnnotateJobsPage", () => {
     await screen.findByText("TASK-9");
     expect(screen.getByText("TIMEOUT")).toBeInTheDocument();
     expect(screen.getByText("retry")).toBeInTheDocument();
+  });
+
+  it("prediction_retry 没有批次但记录了任务时可进入工作台", async () => {
+    mockAsyncJobsList.mockResolvedValue({
+      items: [
+        makeJob({
+          kind: "prediction_retry",
+          payload: {
+            task_id: "task-9",
+            task_display_id: "TASK-9",
+            failed_prediction_id: "fp-12345678",
+          },
+        }),
+      ],
+      total: 1,
+    });
+    renderUI();
+
+    const workbenchButton = await screen.findByTitle("去工作台");
+    expect(workbenchButton).toBeEnabled();
+    fireEvent.click(workbenchButton);
+    expect(mockBuildWorkbenchUrl).toHaveBeenCalledWith(
+      "p1",
+      expect.objectContaining({ batchId: null, taskId: "task-9" }),
+    );
   });
 
   it("点击「视频」tab → 渲染 VideoTrackerPanel", async () => {

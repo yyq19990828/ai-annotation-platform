@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend_registry import MLBackendRegistry
 from app.db.models.notification import Notification
+from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 
 
@@ -313,6 +314,21 @@ async def test_run_batch_all_failed_marks_job_failed(
     assert len(job.result["failed_prediction_ids"]) == 2
     assert "gpu_arbiter_failures" not in job.result
     assert job.error_message
+    failed_rows = (
+        (
+            await db_session.execute(
+                select(FailedPrediction).where(FailedPrediction.project_id == proj.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(failed_rows) == 2
+    for row in failed_rows:
+        request_context = row.extra["request_context"]
+        assert request_context["type"] == "text"
+        assert request_context["text"] == "x"
+        assert request_context["output"] == "mask"
 
 
 @pytest.mark.asyncio
