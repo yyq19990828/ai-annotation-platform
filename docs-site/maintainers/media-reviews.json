@@ -33,6 +33,36 @@
         "docs-site/user-guide/ai/candidate-review.md"
       ]
     },
+    "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
+      "last_verified_commit": "f131d6933d13290a256b9dc9679a5698a782d7f0",
+      "verified_at": "2026-08-15T10:10:56.705Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "6944c2653f7d54d19ccd59518508c6c4b20e51ca2a5aa1fb1f9c3d96a27bbbdc",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/tracker-combo-discovery-poster.webp",
+        "docs-site/user-guide/workbench/video-propagate.md"
+      ]
+    },
+    "docs-site/public/media/video/tracker-combo-discovery.mp4": {
+      "last_verified_commit": "f131d6933d13290a256b9dc9679a5698a782d7f0",
+      "verified_at": "2026-08-15T10:10:56.705Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "02612037abddeffe0a30853c8daa0b7c296bb371f6dab56d29a245961b190004",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/video/tracker-combo-discovery.mp4",
+        "docs-site/user-guide/workbench/video-propagate.md"
+      ]
+    },
     "docs-site/public/media/video/tracker-text-discovery-poster.webp": {
       "last_verified_commit": "3cb26a3ff3030b7a6d40512f015f6242d4905566",
       "verified_at": "2026-08-15T09:56:33.855Z",
