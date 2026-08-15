@@ -166,6 +166,10 @@ export async function installRecordingWorkbenchLayout(
       `workbench.${user.id}.rightOpen`,
       preferences.workbench.layout.rightOpen ? "1" : "0",
     );
+    localStorage.setItem(
+      `workbench.${user.id}.floatingSelection`,
+      JSON.stringify(preferences.workbench.layout.floatingSelection),
+    );
   }, sandbox);
 }
 
