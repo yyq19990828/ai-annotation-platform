@@ -60,6 +60,7 @@ export async function runStorageConnectorCreateTest(
   await page.waitForTimeout(900);
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_400);
   const createEntry = page.getByRole("button", { name: "新建数据源", exact: true }).first();
   await moveTo(page, createEntry);
   await createEntry.click();
