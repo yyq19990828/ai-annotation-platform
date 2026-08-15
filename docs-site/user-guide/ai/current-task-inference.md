@@ -59,6 +59,13 @@ last_reviewed: 2026-08-15
 
 二次推理直接更新已确认标注的属性或子标注，不走“AI 待审”候选列表。因此开始前应确认选中的父框与模型输出类型；要对整图重新生成候选，请使用当前题 AI 或批量预标。
 
+<DocsVideo
+  src="/media/ai/secondary-inference-attribute.mp4"
+  poster="/media/ai/secondary-inference-attribute-poster.webp"
+  alt="选中已确认文字区域，运行 RapidOCR 二次推理写回文本、语言和方向，再人工校正识别文本"
+  caption="二次推理直接补写同一标注的属性；人工修改单个属性后，该项 AI 来源消失，其余属性仍保留溯源。"
+/>
+
 ## 控制面板显示
 
 二次推理面板默认常显。若不常使用，可在顶部设置抽屉的“二次推理面板”开关、标注详情浮卡的 ✦ 图标，或标注右键菜单中关闭它。该偏好会跟随账号保存，重新开启后无需刷新页面。
