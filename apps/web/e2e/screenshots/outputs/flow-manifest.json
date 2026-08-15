@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T20:08:49.106Z",
+  "updated_at": "2026-08-15T20:21:06.455Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1079,6 +1079,68 @@
         "runId": "20260815T142733Z-440dc800b985",
         "assetId": "background-export-download",
         "sha256": "f44df6a72f65945f3156f0d7fc25da56666af461f32892476a0080076da6871f"
+      }
+    },
+    "docs-site/public/media/jobs/jobs-bell-active-poster.webp": {
+      "asset_id": "jobs-bell-active",
+      "role": "poster",
+      "generated_at": "2026-08-15T20:21:06.455Z",
+      "captured_commit": "34217c9c66a85a81a7e1ba354ce27ad7fd5f468b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › jobs-bell-active",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "46c2333f9b4c6b87118fe324d8c421cce7d4c959b94f365bbf1250177ecd87f2",
+      "bytes": 58026,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T201823Z-34217c9c66a8",
+        "assetId": "jobs-bell-active",
+        "sha256": "46edc9baf7addd16eafa06c7a3d951b7b9a3d13cb361241b171fd0de98c98350"
+      }
+    },
+    "docs-site/public/media/jobs/jobs-bell-active.mp4": {
+      "asset_id": "jobs-bell-active",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T20:21:06.379Z",
+      "captured_commit": "34217c9c66a85a81a7e1ba354ce27ad7fd5f468b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › jobs-bell-active",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "f6137241e30f461ac6cbfabe7534c79b3260658023c85dd24d08b26b772eadb9",
+      "bytes": 191260,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 12.534
+      },
+      "source_asset": {
+        "runId": "20260815T201823Z-34217c9c66a8",
+        "assetId": "jobs-bell-active",
+        "sha256": "46edc9baf7addd16eafa06c7a3d951b7b9a3d13cb361241b171fd0de98c98350"
       }
     },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {

@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-16
 ---
 
 # AI 预标
@@ -134,7 +134,15 @@ OCR 识别原子（`task=ocr`、`composition=atom`、吃 `crop` 输入,如 rapid
 
 ## 进度与取消
 
-批量预标会创建后台任务，并在 `/ai-pre/jobs`、右上角后台任务铃和通知中心中显示进度。取消、部分结果、失败项重试与升级给运维的边界统一见[AI 任务与失败恢复](../workflows/failed-prediction-recovery)；任务铃的本地隐藏不影响 Jobs 页面中的完整历史。
+批量预标会创建后台任务，并在 `/ai-pre/jobs`、右上角后台任务铃和通知中心中显示进度。任务铃会把预标、预测导入和导出放在同一个面板中：运行中的预标与导入可直接取消，已完成导出会显示格式、ZIP 文件数与大小，并提供下载入口。不支持取消的任务类型不会显示取消按钮；任务铃的本地隐藏不影响 Jobs 页面中的完整历史。
+
+<DocsVideo
+  src="/media/jobs/jobs-bell-active.mp4"
+  poster="/media/jobs/jobs-bell-active-poster.webp"
+  alt="后台任务铃同时展示进行中的批量预标和预测导入，以及已完成双格式导出的 ZIP 摘要与下载入口"
+/>
+
+取消、部分结果、失败项重试与升级给运维的边界统一见[AI 任务与失败恢复](../workflows/failed-prediction-recovery)。
 
 ![预标注历史搜索](../images/projects/ai-pre-history-search.png)
 
