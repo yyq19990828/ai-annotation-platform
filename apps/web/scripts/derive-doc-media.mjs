@@ -30,6 +30,7 @@ const TARGETS = new Map(
     ["video-tracker-box-seed", "video/tracker-box-seed"],
     ["video-tracker-text-discovery", "video/tracker-text-discovery"],
     ["video-tracker-combo-discovery", "video/tracker-combo-discovery"],
+    ["video-mask-correction-propagate", "video/mask-correction-propagate"],
     ["pointcloud-controls", "pointcloud/controls"],
     ["pointcloud-view", "pointcloud/orbit"],
     ["large-image-progressive", "large-image/progressive"],

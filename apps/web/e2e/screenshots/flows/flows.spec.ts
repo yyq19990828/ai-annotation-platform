@@ -33,6 +33,7 @@ import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
 import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
 import { runVideoTrackerComboDiscovery } from "./video-tracker-combo-discovery";
+import { runVideoMaskCorrectionPropagate } from "./video-mask-correction-propagate";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -107,6 +108,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-box-seed": "video-multi-seed-tracking.ts",
   "video-tracker-text-discovery": "video-tracker-text-discovery.ts",
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
+  "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1159,6 +1161,23 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runVideoTrackerComboDiscovery(page, cached);
     await finalize(page, "video-tracker-combo-discovery", undefined, drawTrim(win, t0));
+  });
+
+  test("video-mask-correction-propagate — 错帧加减笔迹后重传播", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(240_000); // 两次 Mask 提交 + 真实视频重传播 + 4K H.264 归档
+    const t0 = Date.now();
+    await seed.enableMLBackendByName(
+      cached.projects.video_demo.id,
+      cached.users.project_admin.email,
+      "sam3-backend",
+    );
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.project_admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both");
+    const win = await runVideoMaskCorrectionPropagate(page, cached);
+    await finalize(page, "video-mask-correction-propagate", undefined, drawTrim(win, t0));
   });
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {

@@ -396,6 +396,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "video-mask-correction-propagate",
+    title: "视频 Mask 错帧纠正与重传播",
+    theme: "用加减笔迹修正漂移边界并更新后续轨迹",
+    objective:
+      "展示已有卡车 Mask 在 F5 发生边界漂移后，用笔刷补入漏分区域、用橡皮扣除外溢区域，再以人工纠错帧为原生 Mask seed 向后续帧重传播并采纳更新。",
+    duration: { minSeconds: 20, targetSeconds: 28, maxSeconds: 36 },
+    shots: [
+      "从已加载的 F5 错误边界开始，保留 F0 Mask 被保持到后续帧而产生漂移的证据。",
+      "进入当前帧 Mask 编辑，先用笔刷补入卡车上沿漏分区域，再切换橡皮扣除右侧外溢区域。",
+      "选择“更晚帧”并确认 SAM3 PVS 使用原生 Mask seed，从 F5 向后生成纠错候选。",
+      "拖动时间轴到后段再回看中段，核对 Mask 候选随车辆运动后采纳，保存到原轨迹。",
+    ],
+    editingNotes: [
+      "初始 Mask 轨迹在录制窗口前创建；母版只表达纠错，不混入从零创建 Mask。",
+      "笔刷添加与橡皮扣除都必须完整可见，且路径基于 F5 卡车的已复核框，不在无关车辆或背景上瞎画。",
+      "必须保留人工纠错帧、原生 Mask seed、向更晚帧、候选审阅、跨帧拖动和原轨迹更新的完整闭环。",
+    ],
+  }),
+  defineAsset({
     assetId: "video-track-carryover",
     title: "跨帧虚影续写",
     theme: "使用上一帧虚影快速续写轨迹",
