@@ -91,6 +91,7 @@ export async function runCurrentTaskImageInference(
 
   await panel.getByTitle("关闭当前题 AI").click();
   await panel.waitFor({ state: "hidden", timeout: 5_000 });
+  const inspectorList = page.getByTestId("section-header-ai").locator("xpath=../../..");
   const candidate = page.locator('[data-testid^="box-list-item-pred-"]').first();
   await candidate.waitFor({ state: "visible", timeout: 10_000 });
   await candidate.scrollIntoViewIfNeeded();
@@ -122,7 +123,12 @@ export async function runCurrentTaskImageInference(
   await expect(stage).toHaveAttribute("data-ai-box-count", String(candidateCount - 1), {
     timeout: 10_000,
   });
-  await page.getByTestId("section-header-manual").scrollIntoViewIfNeeded();
+  await inspectorList.evaluate((element) =>
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" }),
+  );
+  const manualSection = page.getByTestId("section-header-manual");
+  await manualSection.waitFor({ state: "visible", timeout: 10_000 });
+  await expect(manualSection).toContainText("1");
   await page.waitForTimeout(4_000);
 
   return { drawStartMs, drawEndMs: Date.now() };
