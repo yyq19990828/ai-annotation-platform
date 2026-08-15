@@ -71,7 +71,7 @@ function currentScreenSize() {
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-function preflight() {
+async function preflight() {
   if (captureDriver !== "gpu-screen-recorder" && captureDriver !== "x11grab") {
     throw new Error(`[marketing] 不支持的 MARKETING_CAPTURE_DRIVER：${captureDriver}`);
   }
@@ -90,6 +90,28 @@ function preflight() {
     if (!captureOptions.split("\n").includes("window")) {
       throw new Error("[marketing] GPU Screen Recorder 当前不支持 X11 窗口采集");
     }
+  }
+
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
+  let health;
+  try {
+    const response = await fetch(new URL("/health", apiBase));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    health = await response.json();
+  } catch (error) {
+    throw new Error(`[marketing] 无法检查截图 API 健康状态：${error.message}`);
+  }
+  const workers = health?.checks?.celery?.workers ?? [];
+  if (!workers.some((worker) => worker.name?.startsWith("screenshots@"))) {
+    throw new Error(
+      "[marketing] 截图 API 未发现 screenshots@ 专用 Celery worker；异步 AI 流程会落入错误数据库",
+    );
+  }
+  const sharedWorkers = workers.filter((worker) => !worker.name?.startsWith("screenshots@"));
+  if (sharedWorkers.length > 0) {
+    throw new Error(
+      `[marketing] 截图 API 与日常 worker 共用 Redis：${sharedWorkers.map((worker) => worker.name).join(", ")}`,
+    );
   }
 }
 
@@ -119,7 +141,7 @@ async function runPlaywright() {
   if (exitCode !== 0) process.exitCode = exitCode;
 }
 
-preflight();
+await preflight();
 const original = currentScreenSize();
 const needsResize = original.width < TARGET.width || original.height < TARGET.height;
 if (needsResize && !resizeDisplay) {

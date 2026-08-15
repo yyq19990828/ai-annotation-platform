@@ -34,24 +34,37 @@ DATABASE_URL="$SCREENSHOT_DATABASE_URL" PYTHONPATH=. uv run python scripts/seed.
 目标。无 GPU 时先启动 `screenshot-ml-stub`，再把 seed 命令的模式改为
 `stub`。
 
-### 2. 启动专用 API 和 Web
+### 2. 启动专用 API、Worker 和 Web
 
-在两个窗口分别运行：
+在三个窗口分别运行。API 与 Worker 必须连接同一个截图数据库和独立 Redis DB；
+不要让截图作业与日常开发 worker 竞争同一条队列。
 
 ```bash
-# 窗口 A：数据库必须与建库、迁移、seed 完全一致
+# 窗口 A：数据库必须与建库、迁移、seed 完全一致；Redis DB 15 只供截图自动化使用
 cd apps/api
 DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test \
+  REDIS_URL=redis://localhost:6379/15 \
   E2E_SEED_ENABLED=true ENVIRONMENT=development \
   uv run uvicorn app.main:app --host 127.0.0.1 --port 8010
 
-# 窗口 B：Web 只代理到上面的专用 API
+# 窗口 B：异步 AI 流程必须由连接同一截图数据库的专用 worker 执行
+cd apps/api
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test \
+  REDIS_URL=redis://localhost:6379/15 \
+  E2E_SEED_ENABLED=true ENVIRONMENT=development \
+  uv run celery -A app.workers.celery_app worker -l info \
+    -Q ml,ml.cpu,gpu,default,media --concurrency=2 --hostname='screenshots@%h'
+
+# 窗口 C：Web 只代理到上面的专用 API
 cd apps/web
 API_PROXY_TARGET=http://127.0.0.1:8010 PORT=3001 pnpm dev --host 127.0.0.1
 ```
 
 `E2E_SEED_ENABLED` 仅对这个专用 API 进程临时开启。路由还会在数据库会话中
 验证 `_test` 后缀，不要将 API 命令的 `DATABASE_URL` 改为开发库。
+营销录制启动器还会检查 `/health`：只有截图 API 能看见 `screenshots@…` worker，
+且看不见任何日常 worker 时才会开始录制。这个门禁可以在录制前发现数据库或 Redis
+隔离错误，避免项目预标注被错误 worker 取走后一直停留在“运行中”。
 
 ### 3. 运行截图矩阵
 
