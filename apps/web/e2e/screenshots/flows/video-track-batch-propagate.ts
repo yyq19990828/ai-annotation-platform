@@ -151,6 +151,23 @@ export async function runVideoTrackBatchPropagate(
   if ((await selectionSummaries.count()) < 2) {
     throw new Error("[video-track-batch-propagate] 没有同时显示画布浮卡和右栏批量工具条");
   }
+  const batchCard = page.locator("[data-floating-panel]").filter({ hasText: "已选 2 条轨迹" });
+  await batchCard.waitFor({ state: "visible", timeout: 5_000 });
+  const [batchCardBox, batchToolbarBox] = await Promise.all([
+    batchCard.boundingBox(),
+    batchToolbar.boundingBox(),
+  ]);
+  if (!batchCardBox || !batchToolbarBox) {
+    throw new Error("[video-track-batch-propagate] 无法验证批量浮卡与右栏工具条的构图");
+  }
+  const overlapsToolbar =
+    batchCardBox.x < batchToolbarBox.x + batchToolbarBox.width &&
+    batchCardBox.x + batchCardBox.width > batchToolbarBox.x &&
+    batchCardBox.y < batchToolbarBox.y + batchToolbarBox.height &&
+    batchCardBox.y + batchCardBox.height > batchToolbarBox.y;
+  if (overlapsToolbar) {
+    throw new Error("[video-track-batch-propagate] 画布批量浮卡遮住了右栏批量工具条");
+  }
   await page.waitForTimeout(1_800);
 
   await batchToolbar.getByRole("button", { name: "批量延展轨迹" }).click();

@@ -18,7 +18,7 @@ const POSTER_AT_SECONDS = new Map([
   ["large-image-pyramid-recovery", 9],
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
-  ["video-track-batch-propagate", 4],
+  ["video-track-batch-propagate", 2.5],
 ]);
 
 const TARGETS = new Map(

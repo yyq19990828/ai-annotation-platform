@@ -1280,10 +1280,10 @@ test.describe("flow recordings", () => {
         layout: {
           floatingSelection: {
             collapsed: false,
-            x: null,
-            y: null,
-            w: null,
-            h: null,
+            x: 600,
+            y: 150,
+            w: 300,
+            h: 300,
           },
         },
       });
