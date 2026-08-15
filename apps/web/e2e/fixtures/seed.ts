@@ -310,6 +310,30 @@ export class SeedAPI {
     return item.backend.id;
   }
 
+  /** 通过正式端点跑一次真实单题推理，用于录制前验证输入可达并预热模型。 */
+  async predictTestMLBackend(
+    projectId: string,
+    backendId: string,
+    taskId: string,
+    userEmail: string,
+  ): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/projects/${projectId}/ml-backends/${backendId}/predict-test`,
+      {
+        headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+        params: { task_id: taskId },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(`ml-backends/predict-test failed: ${res.status()} ${await res.text()}`);
+    }
+    const body = (await res.json()) as { results?: unknown[] };
+    if (!Array.isArray(body.results) || body.results.length === 0) {
+      throw new Error("ml-backends/predict-test returned no real result");
+    }
+  }
+
   /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */
   async seedLidar(): Promise<SeedLidarData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/lidar`);

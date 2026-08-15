@@ -36,6 +36,7 @@ import { runVideoTrackerComboDiscovery } from "./video-tracker-combo-discovery";
 import { runVideoMaskCorrectionPropagate } from "./video-mask-correction-propagate";
 import { runPipelineTemplateCreate } from "./pipeline-template-create";
 import { runPipelineApplyProject, type PipelineApplyCleanupRecord } from "./pipeline-apply-project";
+import { runJobsRetryRecovery } from "./jobs-retry-recovery";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -100,6 +101,7 @@ const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = []
 const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
 const candidateReviewCleanupRecords: CandidateReviewCleanupRecord[] = [];
 const pipelineApplyCleanupRecords: PipelineApplyCleanupRecord[] = [];
+const jobsRetryCleanupRecords: Array<{ projectId: string; taskId: string }> = [];
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
@@ -114,12 +116,13 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
   "pipeline-template-create": "pipeline-template-create.ts",
   "pipeline-apply-project": "pipeline-apply-project.ts",
+  "jobs-retry-recovery": "jobs-retry-recovery.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
   const inferred = `${assetId.replace(/^sam-tools\//, "sam-")}.ts`;
   const sourceFile = FLOW_SOURCE_BY_ASSET[assetId] ?? inferred;
-  return [
+  const paths = [
     `apps/web/e2e/screenshots/flows/${sourceFile}`,
     "apps/web/e2e/screenshots/flows/_canvas.ts",
     "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
@@ -127,7 +130,11 @@ function flowWatchPaths(assetId: string): string[] {
     "apps/web/e2e/fixtures/seed.ts",
     "apps/api/app/services/screenshot_seed_spec.py",
     "apps/api/app/services/screenshot_seed_backends.py",
-  ].filter((candidate, index, all) => all.indexOf(candidate) === index);
+  ];
+  if (assetId === "jobs-retry-recovery") {
+    paths.push("apps/api/scripts/screenshot_job_recovery_fixture.py");
+  }
+  return paths.filter((candidate, index, all) => all.indexOf(candidate) === index);
 }
 
 function recordGeneratedArtifact(targetPath: string, assetId: string, role: "docs-gif"): void {
@@ -210,6 +217,7 @@ test.afterAll(({}, testInfo) => {
   for (const record of secondaryInferenceCleanupRecords) cleanupSecondaryInference(record);
   for (const record of candidateReviewCleanupRecords) cleanupCandidateReview(record);
   for (const record of pipelineApplyCleanupRecords) cleanupPipelineApply(record);
+  for (const record of jobsRetryCleanupRecords) manageJobsRetryFixture("cleanup", record);
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -320,6 +328,34 @@ function cleanupPipelineApply(record: PipelineApplyCleanupRecord): void {
       stdio: "inherit",
     },
   );
+}
+
+function manageJobsRetryFixture(
+  action: "seed" | "cleanup",
+  record: { projectId: string; taskId: string },
+  userEmail?: string,
+): { backend_id?: string } {
+  const output = execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/screenshot_job_recovery_fixture.py",
+      action,
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      ...(userEmail ? ["--user-email", userEmail] : []),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  const lastLine = output.trim().split("\n").at(-1);
+  if (!lastLine) throw new Error(`[jobs-retry-recovery] ${action} 未返回夹具结果`);
+  return JSON.parse(lastLine) as { backend_id?: string };
 }
 
 type GifOptions = {
@@ -1305,6 +1341,34 @@ test.describe("flow recordings", () => {
       if (cleanupRecord) cleanupPipelineApply(cleanupRecord);
       if (appliedPipelineId) await seed.deleteProjectPipeline(appliedPipelineId, userEmail);
       if (sourcePipelineId) await seed.deleteProjectPipeline(sourcePipelineId, userEmail);
+    }
+  });
+
+  test("jobs-retry-recovery — 失败预测重试后进入结果", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(150_000);
+    const project = cached.projects.ocr_demo;
+    const task = project.tasks.ocr;
+    const userEmail = cached.users.admin.email;
+    const record = { projectId: project.id, taskId: task.id };
+    const t0 = Date.now();
+    jobsRetryCleanupRecords.push(record);
+
+    try {
+      manageJobsRetryFixture("cleanup", record);
+      const fixture = manageJobsRetryFixture("seed", record, userEmail);
+      if (!fixture.backend_id) {
+        throw new Error("[jobs-retry-recovery] 夹具未返回 RapidOCR backend id");
+      }
+      await seed.predictTestMLBackend(project.id, fixture.backend_id, task.id, userEmail);
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both");
+      const win = await runJobsRetryRecovery(page, cached);
+      await finalize(page, "jobs-retry-recovery", undefined, drawTrim(win, t0));
+    } finally {
+      manageJobsRetryFixture("cleanup", record);
     }
   });
 

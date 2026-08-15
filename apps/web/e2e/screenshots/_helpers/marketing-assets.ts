@@ -173,6 +173,26 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "jobs-retry-recovery",
+    title: "AI 失败作业恢复",
+    theme: "从失败摘要到真实重试结果的完整闭环",
+    objective:
+      "展示项目管理员打开失败的 RapidOCR 作业，核对错误和可重试项，沿用原模型配置重新推理，确认新作业已完成后进入工作台审阅 OCR 候选。",
+    duration: { minSeconds: 16, targetSeconds: 24, maxSeconds: 45 },
+    shots: [
+      "从已加载的失败 Jobs 列表定位 OCR 作业。",
+      "打开详情，展示错误摘要、1 条失败项和可重试入口。",
+      "点击重试，保留排队反馈与真实 RapidOCR 执行窗口。",
+      "切换到全部状态，展示新的 prediction_retry 作业已完成且失败数为 0。",
+      "从完成的重试行进入工作台，选中一个真实 OCR 候选展示结果。",
+    ],
+    editingNotes: [
+      "原批量作业保留失败终态作为历史快照；恢复成功以新增的已完成 prediction_retry 行表达，不得伪造原行翻转。",
+      "重试必须命中真实 RapidOCR 后端并产生可审阅文字候选，不使用前端 stub 或预写成功数据。",
+      "失败夹具、重试作业、预测和通知均按录制标记精确清理。",
+    ],
+  }),
+  defineAsset({
     assetId: "ocr-real-scene",
     title: "真实场景 OCR 推理",
     theme: "当前任务的文字检测与识别",
