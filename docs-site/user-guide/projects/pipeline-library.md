@@ -10,10 +10,10 @@ last_reviewed: 2026-07-11
 
 > 适用角色：项目管理员 / 超级管理员
 
-<!-- TODO IMAGE_CHECKLIST: images/pipeline-library/library-list.png — /pipelines 编排库列表 + 三档作用域 chip [manual] -->
+<!-- TODO IMAGE_CHECKLIST: images/pipeline-library/library-list.png — /ai-pre/pipelines 编排库列表 + 公共/组织作用域 [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/pipeline-library/apply-to-project.png — 从库套用到项目 copy-on-write [manual] -->
 
-AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这类编排）此前只能一项目一条、无名、不可复用：同构的项目要重搭一遍同样的编排。**全局编排库**把编排升级为**可命名、可复用、带作用域**的模板——在 `/pipelines` 页从全局 backend/model 池搭一条编排存下来，任意项目一键套用。
+AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这类编排）此前只能一项目一条、无名、不可复用：同构的项目要重搭一遍同样的编排。**全局编排库**把编排升级为**可命名、可复用、带作用域**的模板——在 `/ai-pre/pipelines` 页从全局 backend/model 池搭一条编排存下来，任意项目一键套用。
 
 编排的阶段结构与项目里「批跑预标设置」的 DAG 完全同构，库只负责「存下来 / 分作用域 / 拷进项目」，不改执行路径。搭 DAG 本身的操作见 [AI 预标注](./ai-preannotate)。
 
@@ -31,7 +31,7 @@ AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这�
 
 ## 在编排库里建模板
 
-`/pipelines` 页（标题「编排库」）专门维护**公共 / 组织**命名模板：
+`/ai-pre/pipelines` 页（标题「编排库」）专门维护**公共 / 组织**命名模板：
 
 1. 从全局 backend/model 池在画布上搭一条多层 DAG。
 2. 给它起个名字（如 `detect → 车辆属性`）。

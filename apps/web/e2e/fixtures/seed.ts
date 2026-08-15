@@ -207,6 +207,17 @@ export class SeedAPI {
     return ((await res.json()) as { access_token: string }).access_token;
   }
 
+  /** 精确删除录制流创建的命名编排，避免在隔离截图库留下可变业务数据。 */
+  async deleteProjectPipeline(pipelineId: string, userEmail: string): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(`${API_BASE}/api/v1/project-pipelines/${pipelineId}`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+    });
+    if (!res.ok()) {
+      throw new Error(`project-pipelines/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
   async reset(): Promise<SeedData> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`);
     if (!res.ok()) {

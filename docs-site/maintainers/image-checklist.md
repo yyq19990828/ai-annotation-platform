@@ -105,7 +105,7 @@
 
 ### 全局 Pipeline 库（对应新建 `projects/pipeline-library.md` 或 `projects/ai-preannotate.md`）
 
-- [ ] `images/pipeline-library/library-list.png` — `/pipelines` 全局 Pipeline 库列表：命名编排模板卡 + 私有/组织/公开三档作用域 chip；红框：作用域 chip、新建按钮 [manual]
+- [ ] `images/pipeline-library/library-list.png` — `/ai-pre/pipelines` 全局 Pipeline 库：公共/组织作用域、DAG 编辑器与命名模板列表；红框：作用域、阶段节点和保存按钮 [manual]
 - [ ] `images/pipeline-library/apply-to-project.png` — 从库「应用到项目」copy-on-write 落地为项目「当前编排」；红框：应用按钮、落地后「已保存编排 · N 阶段」badge [manual]
 
 ## Batch 3 · AI 任务入口 / 候选生命周期 / 运营恢复（新增于 2026-07-11）

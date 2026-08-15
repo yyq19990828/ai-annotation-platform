@@ -134,6 +134,25 @@ const assetSpecs = [
     editingNotes: ["画面需同时包含两个选择器，不要裁成局部特写。"],
   }),
   defineAsset({
+    assetId: "pipeline-template-create",
+    title: "创建公共 AI 编排模板",
+    theme: "把车辆检测与属性分类组织成可复用的两阶段 DAG",
+    objective:
+      "展示为图像数据源配置 YOLO 车辆检测、限定车辆类别，再添加车辆属性分类阶段并将车型与颜色写回父框，最终保存为公共模板。",
+    duration: { minSeconds: 18, targetSeconds: 24, maxSeconds: 30 },
+    shots: [
+      "从已加载的编排库开始，填写“车辆检测 → 车型与颜色”并确认公共可见范围。",
+      "选择 YOLO 目标检测作为源模型，并限定 car、bus、truck 三类车辆。",
+      "从源模型添加子阶段，选择专用车辆属性分类，并限定父框类别与车型、颜色写回键。",
+      "保存后展示成功反馈，以及命名编排库中新出现的公共两阶段模板。",
+    ],
+    editingNotes: [
+      "该母版只表达模板创建，不混入套用项目、运行预标或作业历史；这些能力各自独立录制。",
+      "必须让数据源、源模型、下游分类节点及“公共 · 2 阶段”结果可读，不能只录表单局部。",
+      "录制结束后精确删除本次创建的模板，避免后续素材出现重复记录。",
+    ],
+  }),
+  defineAsset({
     assetId: "ocr-real-scene",
     title: "真实场景 OCR 推理",
     theme: "当前任务的文字检测与识别",

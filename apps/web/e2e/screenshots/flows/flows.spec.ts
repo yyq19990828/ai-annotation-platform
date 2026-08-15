@@ -34,6 +34,7 @@ import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
 import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
 import { runVideoTrackerComboDiscovery } from "./video-tracker-combo-discovery";
 import { runVideoMaskCorrectionPropagate } from "./video-mask-correction-propagate";
+import { runPipelineTemplateCreate } from "./pipeline-template-create";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runSmartScribble } from "./smart-scribble";
@@ -109,6 +110,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-text-discovery": "video-tracker-text-discovery.ts",
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
+  "pipeline-template-create": "pipeline-template-create.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1178,6 +1180,26 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "both");
     const win = await runVideoMaskCorrectionPropagate(page, cached);
     await finalize(page, "video-mask-correction-propagate", undefined, drawTrim(win, t0));
+  });
+
+  test("pipeline-template-create — 创建车辆检测到属性分类公共模板", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(150_000);
+    const t0 = Date.now();
+    let pipelineId: string | null = null;
+    try {
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.admin.email);
+      await applyScreenshotTheme(page, "dark");
+      const win = await runPipelineTemplateCreate(page, (createdId) => {
+        pipelineId = createdId;
+      });
+      await finalize(page, "pipeline-template-create", undefined, drawTrim(win, t0));
+    } finally {
+      if (pipelineId) {
+        await seed.deleteProjectPipeline(pipelineId, cached.users.admin.email);
+      }
+    }
   });
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {

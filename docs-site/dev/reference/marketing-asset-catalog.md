@@ -67,6 +67,7 @@ Chromium 内容区的真实 X11 边界；只有边界恰好为 2592×1458、没�
 | `video-tracker-text-discovery`     | 输入 `bus` → 筛选左右两辆完整公交车 → 跨帧核对 → 采纳两条轨迹并拒绝剩余噪声候选                | 18 / 24 / 30 秒            | 文本驱动多目标发现追踪             |
 | `video-tracker-combo-discovery`    | 输入 `bus` → 文本发现铸造内部种子 → 逐对象记忆追踪 → 跨窗口核对 → 采纳两条稳定轨迹             | 30 / 42 / 50 秒            | 文本发现与 PVS 组合追踪            |
 | `video-mask-correction-propagate`  | 查看 F5 漂移边界 → 笔刷补入、橡皮扣除 → 原生 Mask seed 向后重传播 → 跨帧核对并更新原轨迹       | 20 / 28 / 36 秒            | 视频 Mask 错帧纠正与重传播         |
+| `pipeline-template-create`         | 命名公共模板 → YOLO 车辆检测 → 添加车辆属性分类 → 选择车型/颜色写回键 → 保存并进入编排库       | 18 / 24 / 30 秒            | 创建公共 AI 编排模板               |
 | `video-track-carryover`            | 展示当前框 → 切帧后出现虚影 → 续写新框 → Tab 前进                                              | 9 / 13 / 28 秒             | 视频标注效率技巧                   |
 | `video-mask-track-edit`            | 首帧创建 Mask 轨迹 → 切换后续帧 → 修正同一轨迹                                                 | 10 / 16 / 35 秒            | 视频分割与轨迹编辑                 |
 | `ai-tracker-panel`                 | 打开 AI 追踪面板 → 拖动 → 缩放 → 展示与画布的互斥                                              | 8 / 12 / 25 秒             | AI 追踪操作面板                    |
