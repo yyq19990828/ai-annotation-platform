@@ -723,6 +723,24 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "large-image-mask-limit",
+    title: "超大图 Mask 能力边界",
+    theme: "大图仍可浏览和矢量标注，Mask 超限原因明确可查",
+    objective:
+      "展示 Cosmic Cliffs 超大图的分块浏览和矩形标注不受影响，同时在 Mask 工具入口准确告知 14575×8441 图像超过单边与总像素上限。",
+    duration: { minSeconds: 10, targetSeconds: 14, maxSeconds: 24 },
+    shots: [
+      "从已加载的 Cosmic Cliffs 全景开始，放大到清晰局部。",
+      "选择矩形工具，在明确的星云结构上完整绘制并落库一个“目标”矢量框。",
+      "悬停置灰的 Mask 工具，完整展示实际尺寸、单边上限和总像素上限。",
+    ],
+    editingNotes: [
+      "该母版只表达超大图上的能力边界；不混入切片故障恢复或 AI 推理。",
+      "矢量框使用正式标注接口落库，录制窗口结束后按精确 annotation id 清理。",
+      "Mask 必须保持置灰，Tooltip 必须完整可读，不得把尺寸超限伪装成模型或权限错误。",
+    ],
+  }),
+  defineAsset({
     assetId: "hotkey-cheatsheet",
     title: "快捷键速查面板",
     theme: "打开、搜索和关闭工作台快捷键帮助",

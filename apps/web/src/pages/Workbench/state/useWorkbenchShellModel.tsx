@@ -699,6 +699,10 @@ export function useWorkbenchShellModel({
       : imageWidth <= maskCapabilities.data.max_dimension &&
         imageHeight <= maskCapabilities.data.max_dimension &&
         imageWidth * imageHeight <= maskCapabilities.data.max_pixels;
+  const imageMaskSizeDisabledReason =
+    imageWidth && imageHeight && maskCapabilities.data && !imageMaskSizeSupported
+      ? `当前图片 ${imageWidth}×${imageHeight} 超过 Mask 上限（单边 ${maskCapabilities.data.max_dimension}、总像素 ${maskCapabilities.data.max_pixels.toLocaleString("zh-CN")}）`
+      : undefined;
   const imageMaskPersistenceMode: "native" | "legacy" | "blocked" = !imageMaskSizeSupported
     ? "blocked"
     : maskCapabilities.data?.write_enabled === true
@@ -1692,11 +1696,13 @@ export function useWorkbenchShellModel({
     mlCapabilities.capability?.supported_geometric_outputs ??
     [];
   const activeModelSupportsNativeMask = activeGeometricOutputs.includes("mask");
-  const nativeMaskOutputDisabledReason = !activeModelSupportsNativeMask
-    ? "当前模型未声明原生 Mask 输出能力"
-    : !isVideoTask && imageMaskPersistenceMode !== "native"
-      ? "当前图片项目尚未开启原生 Raster Mask 编辑"
-      : undefined;
+  const nativeMaskOutputDisabledReason =
+    imageMaskSizeDisabledReason ??
+    (!activeModelSupportsNativeMask
+      ? "当前模型未声明原生 Mask 输出能力"
+      : !isVideoTask && imageMaskPersistenceMode !== "native"
+        ? "当前图片项目尚未开启原生 Raster Mask 编辑"
+        : undefined);
   const activeModelSupportsPromptInput =
     activePromptInput != null && mlCapabilities.isInputSupported(activePromptInput);
   const activeModelSupportsMaskPrompt = mlCapabilities.isInputSupported("mask_prompt");
@@ -6211,6 +6217,7 @@ export function useWorkbenchShellModel({
       onSetVideoTool: s.setVideoTool,
       isPromptSupported: routing.isPromptSupported,
       toolDisabledReasons: {
+        mask: imageMaskSizeDisabledReason,
         "smart-point":
           selectedMaskPromptSource != null ? maskRefinementToolDisabledReason("point") : undefined,
         "smart-box":

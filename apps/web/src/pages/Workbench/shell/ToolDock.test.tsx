@@ -215,6 +215,21 @@ describe("ToolDock · AI 工具三层门控", () => {
     expect(screen.getByTestId("tool-btn-smart-scribble")).toBeDisabled();
   });
 
+  it("超限大图保留 Mask 入口并附带明确尺寸原因", () => {
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        enabledToolUnits={new Set(["bbox", "region"])}
+        toolDisabledReasons={{
+          mask: "当前图片 14575×8441 超过 Mask 上限（单边 8192、总像素 67,108,864）",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("tool-btn-mask")).toBeDisabled();
+  });
+
   it("层 1 优先于层 3 · 总开关关闭时, 即使单位已启用 AI 工具仍隐藏", () => {
     render(
       <ToolDock

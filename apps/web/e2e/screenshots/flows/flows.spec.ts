@@ -56,6 +56,7 @@ import {
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runLargeImagePyramidRecovery } from "./large-image-pyramid-recovery";
+import { runLargeImageMaskLimit } from "./large-image-mask-limit";
 import { runSmartScribble } from "./smart-scribble";
 import { runHotkeyCheatSheet } from "./hotkey-cheatsheet";
 import { runSamInteractive, runSamToolRecording, type SamRecordingTool } from "./sam-interactive";
@@ -144,6 +145,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "project-ml-routing": "project-ml-routing.ts",
   "background-export-download": "background-export-download.ts",
   "project-create-existing-resources": "project-create-existing-resources.ts",
+  "large-image-mask-limit": "large-image-mask-limit.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1783,6 +1785,18 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runLargeImagePyramidRecovery(page, cached);
     await finalize(page, "large-image-pyramid-recovery", undefined, drawTrim(win, t0));
+  });
+
+  test("large-image-mask-limit — 超大图矢量标注与 Mask 尺寸门禁", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(90_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "none");
+    const win = await runLargeImageMaskLimit(page, cached);
+    await finalize(page, "large-image-mask-limit", undefined, drawTrim(win, t0));
   });
 
   test("pointcloud-camera-seed-3d-box — 相机图辅助生成并核对 3D 框", async ({ page, seed }) => {

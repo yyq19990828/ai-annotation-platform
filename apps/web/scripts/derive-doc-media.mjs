@@ -19,6 +19,7 @@ const POSTER_AT_SECONDS = new Map([
   ["background-export-download", 16],
   ["project-create-existing-resources", 14],
   ["large-image-pyramid-recovery", 9],
+  ["large-image-mask-limit", 11],
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
   ["video-track-batch-propagate", 2.5],
@@ -61,6 +62,7 @@ const TARGETS = new Map(
     ["pointcloud-crossframe-track", "pointcloud/crossframe-track"],
     ["large-image-progressive", "large-image/progressive"],
     ["large-image-pyramid-recovery", "large-image/pyramid-recovery"],
+    ["large-image-mask-limit", "large-image/mask-limit"],
   ].map(([assetId, target]) => [assetId, target]),
 );
 
