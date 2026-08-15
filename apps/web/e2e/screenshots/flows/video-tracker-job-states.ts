@@ -152,6 +152,16 @@ export async function runVideoTrackerJobStates(
   catalog: ScreenshotSeedCatalog,
 ): Promise<DrawWindow> {
   await installVideoJobFixture(page, catalog);
+  const project = catalog.projects.video_demo;
+  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
+  await page.getByTestId("video-timeline-shell").waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByTestId("video-konva-stage").waitFor({ state: "visible", timeout: 10_000 });
+  await page.waitForFunction(() => {
+    const video = document.querySelector("video");
+    return video instanceof HTMLVideoElement && video.readyState >= 2 && video.videoWidth > 0;
+  });
+  await page.waitForTimeout(1_200);
+
   await page.goto("/ai-pre/jobs?tab=video");
   await expect(page.getByRole("heading", { name: "AI 任务历史" })).toBeVisible({
     timeout: 10_000,
