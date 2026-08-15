@@ -57,7 +57,7 @@ async def assert_screenshot_scope(
     project_key: str,
     project_id: uuid.UUID,
     task_id: uuid.UUID,
-) -> None:
+) -> str:
     project = await db.get(Project, project_id)
     expected_display_id = PROJECT_SPECS[project_key].display_id
     if project is None or project.display_id != expected_display_id:
@@ -95,6 +95,18 @@ async def assert_screenshot_scope(
     if not managed:
         raise RuntimeError("cleanup refused: project is not screenshot-seed managed")
 
+    task_spec = next(
+        (
+            candidate
+            for candidate in PROJECT_SPECS[project_key].tasks
+            if candidate.file_path == task.file_path
+        ),
+        None,
+    )
+    if task_spec is None:
+        raise RuntimeError("cleanup refused: task is not declared by screenshot seed")
+    return task_spec.status
+
 
 async def cleanup(args: argparse.Namespace) -> dict[str, int]:
     engine = create_async_engine(settings.database_url, echo=False)
@@ -105,7 +117,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
     )
     try:
         async with session_factory() as db:
-            await assert_screenshot_scope(
+            expected_task_status = await assert_screenshot_scope(
                 db,
                 project_key=args.project_key,
                 project_id=args.project_id,
@@ -120,6 +132,10 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
             prediction_counts = await BatchService(db).clean_task_predictions(
                 [args.task_id]
             )
+            task = await db.get(Task, args.task_id)
+            if task is None:  # scope assertion above already guarantees this
+                raise RuntimeError(f"cleanup task disappeared: {args.task_id}")
+            task.status = expected_task_status
             if args.celery_task_id:
                 job_result = await db.execute(
                     delete(AsyncJob).where(

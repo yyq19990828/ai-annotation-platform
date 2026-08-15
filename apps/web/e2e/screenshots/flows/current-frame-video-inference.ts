@@ -174,6 +174,8 @@ export async function runCurrentFrameVideoInference(
   const manualSection = page.getByTestId("section-header-manual");
   await expect(aiSection).toContainText(String(expectedAiCount), { timeout: 10_000 });
   await expect(manualSection).toContainText("1", { timeout: 10_000 });
+  const inspectorList = aiSection.locator("xpath=../../..");
+  await inspectorList.evaluate((element) => element.scrollTo({ top: 0, behavior: "smooth" }));
   await page.waitForTimeout(2_500);
 
   await page.keyboard.press("ArrowRight");
