@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T12:16:30.425Z",
+  "updated_at": "2026-08-15T12:50:13.934Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1927,6 +1927,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "video-track",
         "sha256": "5cbb4d6c6e287b3975bb79c93966cd4c05d0ea8e1d16dc53a54abafd6423ca34"
+      }
+    },
+    "docs-site/public/media/workflows/jobs-retry-recovery-poster.webp": {
+      "asset_id": "jobs-retry-recovery",
+      "role": "poster",
+      "generated_at": "2026-08-15T12:50:13.934Z",
+      "captured_commit": "2bfe97c6ec6ccf5e096615529bcf18667bbaa979",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › jobs-retry-recovery",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "4dd753026acab021785049ddf7b75453e9e8f379d8e98eeb5f9f5d866445a621",
+      "bytes": 27488,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T124249Z-2bfe97c6ec6c",
+        "assetId": "jobs-retry-recovery",
+        "sha256": "b1c973b55c06c464a5e22f95b7564ca126e3fd98e642218d6fb177bc4a533f08"
+      }
+    },
+    "docs-site/public/media/workflows/jobs-retry-recovery.mp4": {
+      "asset_id": "jobs-retry-recovery",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T12:50:13.858Z",
+      "captured_commit": "2bfe97c6ec6ccf5e096615529bcf18667bbaa979",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › jobs-retry-recovery",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "fbb4b97a331e4b1164ee68a479cbc9eb92c0938bea25e4e534d05d813e334874",
+      "bytes": 367864,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 19.767
+      },
+      "source_asset": {
+        "runId": "20260815T124249Z-2bfe97c6ec6c",
+        "assetId": "jobs-retry-recovery",
+        "sha256": "b1c973b55c06c464a5e22f95b7564ca126e3fd98e642218d6fb177bc4a533f08"
       }
     }
   }

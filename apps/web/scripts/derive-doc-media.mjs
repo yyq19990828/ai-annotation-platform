@@ -10,6 +10,8 @@ const REPO_ROOT = path.resolve(HERE, "../../..");
 const ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const OUTPUT_ROOT = path.join(REPO_ROOT, "docs-site/public/media");
 
+const POSTER_AT_SECONDS = new Map([["jobs-retry-recovery", 11]]);
+
 const TARGETS = new Map(
   [
     ["ai-prediction-import", "ai/prediction-import"],
@@ -23,6 +25,7 @@ const TARGETS = new Map(
     ["secondary-inference-attribute", "ai/secondary-inference-attribute"],
     ["pipeline-template-create", "pipeline/template-create"],
     ["pipeline-apply-project", "pipeline/apply-project"],
+    ["jobs-retry-recovery", "workflows/jobs-retry-recovery"],
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
     ["video-mask-track-edit", "video/mask-track-edit"],
@@ -147,7 +150,9 @@ for (const assetId of selected) {
     },
   };
   const durationSeconds = Number(sourceInfo.media?.duration_ms ?? 0) / 1000;
-  const posterAt = Math.max(1, Math.min(durationSeconds * 0.72, durationSeconds - 0.4));
+  const posterAt =
+    POSTER_AT_SECONDS.get(assetId) ??
+    Math.max(1, Math.min(durationSeconds * 0.72, durationSeconds - 0.4));
 
   const docsTarget = TARGETS.get(assetId);
   if (docsTarget) {
