@@ -333,6 +333,36 @@
         "docs-site/user-guide/projects/ml-backends.md"
       ]
     },
+    "docs-site/public/media/review/reject-flow-poster.webp": {
+      "last_verified_commit": "02320696ee5010363d42e1ab2c4bcdb7aa75162a",
+      "verified_at": "2026-08-15T18:24:52.023Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "b9db95db1c7c8fb9b1004cecca9330fcadcbdda430c47bfa4a20e1721f076bed",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/review/reject-flow-poster.webp",
+        "docs-site/user-guide/review/index.md"
+      ]
+    },
+    "docs-site/public/media/review/reject-flow.mp4": {
+      "last_verified_commit": "02320696ee5010363d42e1ab2c4bcdb7aa75162a",
+      "verified_at": "2026-08-15T18:24:52.023Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "65195d64f45488098706824aa44b8731b86b5289f6fb052a6e08bcd333e136a4",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/review/reject-flow.mp4",
+        "docs-site/user-guide/review/index.md"
+      ]
+    },
     "docs-site/public/media/superadmin/model-market/runtime-pools-poster.webp": {
       "last_verified_commit": "12aad94cc0718ead8c2983d50e78350737833d2f",
       "verified_at": "2026-08-15T16:47:05.215Z",
