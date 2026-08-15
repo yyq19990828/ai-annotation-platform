@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T07:11:30.188Z",
+  "updated_at": "2026-08-15T07:52:08.569Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -587,6 +587,68 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "candidate-keyboard-review",
         "sha256": "f579affbbca299945d95c34ead89f8fb62c5d9f2e7cac5401d1b9d9c64ffa9e5"
+      }
+    },
+    "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
+      "asset_id": "current-task-image-inference",
+      "role": "poster",
+      "generated_at": "2026-08-15T07:52:08.569Z",
+      "captured_commit": "53d46097385222eda1a2724278f9d8b5f4ef98e9",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › current-task-image-inference",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "fa8a7ec458d4610c8cf324206eed246dc1b7def5c37965875ce7265726b72cd3",
+      "bytes": 102858,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T074833Z-53d460973852",
+        "assetId": "current-task-image-inference",
+        "sha256": "f6ad114f4af46e6db67994b04229403da3de6e1dc39cfecd6f792548e2189953"
+      }
+    },
+    "docs-site/public/media/ai/current-task-image-inference.mp4": {
+      "asset_id": "current-task-image-inference",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T07:52:08.489Z",
+      "captured_commit": "53d46097385222eda1a2724278f9d8b5f4ef98e9",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › current-task-image-inference",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "d3229e32b7c914dd4f338ceace0c6205ea99e7355a6f4e12d2d265b2ab5f4a94",
+      "bytes": 642826,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 19.467
+      },
+      "source_asset": {
+        "runId": "20260815T074833Z-53d460973852",
+        "assetId": "current-task-image-inference",
+        "sha256": "f6ad114f4af46e6db67994b04229403da3de6e1dc39cfecd6f792548e2189953"
       }
     },
     "docs-site/public/media/ai/ocr-current-task-poster.webp": {

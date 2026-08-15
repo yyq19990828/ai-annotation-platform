@@ -20,10 +20,10 @@ last_reviewed: 2026-07-14
 3. 图片结果会出现在“AI 待审”列表和画布候选层中；视频结果只作用于当前帧，生成单帧 `video_bbox` 候选。两者都需要检查后接受、拒绝或编辑。
 
 <DocsVideo
-  src="/media/ai/ocr-current-task.mp4"
-  poster="/media/ai/ocr-current-task-poster.webp"
-  alt="在当前题 AI 面板运行 OCR，等待推理并检查生成的文字候选"
-  caption="当前题推理需要保留运行、候选结果和人工检查的完整链路。"
+  src="/media/ai/current-task-image-inference.mp4"
+  poster="/media/ai/current-task-image-inference-poster.webp"
+  alt="运行项目已保存的 OCR 编排，检查文字候选的几何、识别文本和置信度，再采纳其中一条"
+  caption="当前题推理从项目编排开始，完整保留运行、候选审查和人工采纳的状态变化。"
 />
 
 当前题 AI 面板可拖动头部移动，也可拖右下角调整尺寸；位置和尺寸在关闭重开、刷新后保留。视频任务中，顶部还会在它左侧显示 **追踪**入口；打开 AI 单题会收起 AI 追踪面板，反向也一样。
