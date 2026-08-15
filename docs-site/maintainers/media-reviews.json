@@ -183,6 +183,36 @@
         "docs-site/user-guide/projects/ai-preannotate.md"
       ]
     },
+    "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
+      "last_verified_commit": "7509c541b8fa468956adb8d6f260580cc83f9852",
+      "verified_at": "2026-08-15T20:44:47.123Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "22fb3f8954e8ac8830034166a3831b8e682696cf1a4c4365b19e42b81d635c93",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/jobs/video-tracker-job-states-poster.webp",
+        "docs-site/user-guide/workbench/video-propagate.md"
+      ]
+    },
+    "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
+      "last_verified_commit": "7509c541b8fa468956adb8d6f260580cc83f9852",
+      "verified_at": "2026-08-15T20:44:47.123Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "1a8242f681870aa8a01ca20dbaf91b09e881082126eb51e5f4d7408f942a9064",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/jobs/video-tracker-job-states.mp4",
+        "docs-site/user-guide/workbench/video-propagate.md"
+      ]
+    },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
       "last_verified_commit": "0fb3cdd524afefe0fc86c74d6039d16a4482a88d",
       "verified_at": "2026-08-15T19:27:13.569Z",
