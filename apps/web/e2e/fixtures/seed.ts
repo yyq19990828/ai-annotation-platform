@@ -183,6 +183,7 @@ export interface SeedTaskAnnotation {
   class_name: string;
   geometry: Record<string, unknown>;
   track_id?: string | null;
+  attributes?: Record<string, unknown> | null;
 }
 
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
@@ -234,6 +235,7 @@ export class SeedAPI {
       tool_unit_id: string;
       class_name: string;
       geometry: Record<string, unknown>;
+      attributes?: Record<string, unknown>;
     },
   ): Promise<SeedTaskAnnotation> {
     const token = await this.accessToken(userEmail);

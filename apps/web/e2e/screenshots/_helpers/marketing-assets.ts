@@ -841,6 +841,26 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "pointcloud-billboard-label",
+    title: "3D 框 Billboard 标签",
+    theme: "配置点云标签内容并在多角度保持文字正对相机",
+    objective:
+      "展示为同一个已复核 3D 框启用属性标签，确认类别与属性进入 billboard 后，环绕点云从多个角度持续核对文字可读性。",
+    duration: { minSeconds: 14, targetSeconds: 20, maxSeconds: 26 },
+    shots: [
+      "从已加载的点云和单个前景 3D 框开始，先展示仅含类别名的顶部标签。",
+      "打开工作台设置的标签内容，切到轨迹段并启用属性。",
+      "关闭设置后核对标签已显示 object、车辆与清晰可见三个信息片段。",
+      "拉近目标并连续环绕多个方位，展示标签始终正对相机且文字不随框平面倾斜。",
+      "停在最终斜视角，同时保留完整 3D 框、点云空间结构与可读标签。",
+    ],
+    editingNotes: [
+      "该母版只表达 billboard 标签配置与视角适配，不混入种框、跨帧延续、相机投影或几何编辑。",
+      "属性开关必须真正触发 CanvasTexture 绘制完整文本，不能只录设置抽屉点击动作。",
+      "源 3D 框在录制前通过正式 API 准备，结束后按 annotation ID 精确清理。",
+    ],
+  }),
+  defineAsset({
     assetId: "video-draw",
     title: "视频轨迹画框",
     theme: "关键帧标注与中间帧插值",

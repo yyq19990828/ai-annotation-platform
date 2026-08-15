@@ -35,6 +35,7 @@ import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runPointcloudCameraSeed3dBox } from "./pointcloud-camera-seed-3d-box";
 import { runPointcloudCrossframeTrack } from "./pointcloud-crossframe-track";
+import { runPointcloudBillboardLabel } from "./pointcloud-billboard-label";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
@@ -1923,6 +1924,49 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudView(page, cached);
     await finalize(page, "pointcloud-view", undefined, drawTrim(win, t0));
+  });
+
+  test("pointcloud-billboard-label — 3D 框标签内容与多角度正对", async ({ page, seed }) => {
+    test.skip(
+      test.info().project.name !== MARKETING_PROJECT_NAME,
+      "billboard 多角度核对需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
+    );
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const userEmail = cached.users.admin.email;
+    const task = cached.projects.pointcloud_demo.tasks.frame_000;
+    let annotationId: string | null = null;
+    const t0 = Date.now();
+    try {
+      const source = await seed.createTaskAnnotation(task.id, userEmail, {
+        annotation_type: "box_3d",
+        tool_unit_id: "lidar_box_3d",
+        class_name: "object",
+        geometry: {
+          type: "box_3d",
+          center: [2.0934999585151672, -0.2625943124294281, -0.3888123378157616],
+          size: [0.940999960899353, 0.7639772057533264, 0.7222056895494461],
+          rotation: [0, 0, 1.7316441821747883],
+          convention_at_create: "opencv_camera",
+        },
+        attributes: { kind: "车辆", visibility: "清晰可见" },
+      });
+      annotationId = source.id;
+
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "none", {
+        common: {
+          labelVisibility: "always",
+          labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
+        },
+      });
+      const win = await runPointcloudBillboardLabel(page, cached);
+      await finalize(page, "pointcloud-billboard-label", undefined, drawTrim(win, t0));
+    } finally {
+      if (annotationId) await seed.deleteTaskAnnotation(task.id, annotationId, userEmail);
+    }
   });
 
   test("video-draw — 视频画框轨迹(track 关键帧插值)", async ({ page, seed }) => {

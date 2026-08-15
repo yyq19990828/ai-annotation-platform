@@ -29,6 +29,7 @@ const POSTER_AT_SECONDS = new Map([
   ["large-image-mask-limit", 11],
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
+  ["pointcloud-billboard-label", 10],
   ["video-track-batch-propagate", 2.5],
   ["video-propagate-track-vs-copy", 14],
 ]);
@@ -76,6 +77,7 @@ const TARGETS = new Map(
     ["pointcloud-view", "pointcloud/orbit"],
     ["pointcloud-camera-seed-3d-box", "pointcloud/camera-seed-3d-box"],
     ["pointcloud-crossframe-track", "pointcloud/crossframe-track"],
+    ["pointcloud-billboard-label", "pointcloud/billboard-label"],
     ["large-image-progressive", "large-image/progressive"],
     ["large-image-pyramid-recovery", "large-image/pyramid-recovery"],
     ["large-image-mask-limit", "large-image/mask-limit"],
