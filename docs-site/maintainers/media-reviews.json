@@ -513,6 +513,36 @@
         "docs-site/user-guide/superadmin/model-market.md"
       ]
     },
+    "docs-site/public/media/superadmin/platform-overview-poster.webp": {
+      "last_verified_commit": "3cc64a28d0d7775732d0d61f01bfbe064f2a063a",
+      "verified_at": "2026-08-15T20:03:06.114Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "14c0d72e88c1a8c66f624a38d30c6a4c3864fbf4ae6b831f0f8fdedf1498f0a4",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/superadmin/platform-overview-poster.webp",
+        "docs-site/user-guide/superadmin/index.md"
+      ]
+    },
+    "docs-site/public/media/superadmin/platform-overview.mp4": {
+      "last_verified_commit": "3cc64a28d0d7775732d0d61f01bfbe064f2a063a",
+      "verified_at": "2026-08-15T20:03:06.114Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "5548c3979563eb3935496eaa64125a2c730dfe0cb27f33b99b978d7b008a2bfa",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "docs-site/public/media/superadmin/platform-overview.mp4",
+        "docs-site/user-guide/superadmin/index.md"
+      ]
+    },
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
       "last_verified_commit": "12aad94cc0718ead8c2983d50e78350737833d2f",
       "verified_at": "2026-08-15T16:47:05.215Z",
