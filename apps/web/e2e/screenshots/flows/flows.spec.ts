@@ -46,6 +46,10 @@ import { runJobsRetryRecovery } from "./jobs-retry-recovery";
 import { runModelMarketRuntimePool } from "./model-market-runtime-pool";
 import { runProjectMlRouting } from "./project-ml-routing";
 import { runBackgroundExportDownload } from "./background-export-download";
+import {
+  PROJECT_CREATE_RECORDING_NAME,
+  runProjectCreateExistingResources,
+} from "./project-create-existing-resources";
 import { runVideoTrackCarryover } from "./video-track-carryover";
 import { runLargeImageProgressive } from "./large-image-progressive";
 import { runLargeImagePyramidRecovery } from "./large-image-pyramid-recovery";
@@ -135,6 +139,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
   "project-ml-routing": "project-ml-routing.ts",
   "background-export-download": "background-export-download.ts",
+  "project-create-existing-resources": "project-create-existing-resources.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1630,6 +1635,27 @@ test.describe("flow recordings", () => {
       await finalize(page, "background-export-download", undefined, drawTrim(win, t0));
     } finally {
       manageBackgroundExportFixture("cleanup", record);
+    }
+  });
+
+  test("project-create-existing-resources — 创建项目并复用已有资源", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const userEmail = cached.users.admin.email;
+    let createdProjectId: string | undefined;
+    const t0 = Date.now();
+
+    try {
+      await seed.deleteProjectsByExactName(PROJECT_CREATE_RECORDING_NAME, userEmail);
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      const win = await runProjectCreateExistingResources(page, cached, (projectId) => {
+        createdProjectId = projectId;
+      });
+      await finalize(page, "project-create-existing-resources", undefined, drawTrim(win, t0));
+    } finally {
+      if (createdProjectId) await seed.deleteProject(createdProjectId, userEmail);
     }
   });
 

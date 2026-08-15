@@ -274,6 +274,35 @@ export class SeedAPI {
     }
   }
 
+  /** 通过正式级联删除端点精确清理录制流创建的临时项目。 */
+  async deleteProject(projectId: string, userEmail: string): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(`${API_BASE}/api/v1/projects/${projectId}`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+    });
+    if (!res.ok() && res.status() !== 404) {
+      throw new Error(`projects/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /** 只在隔离录制库内删除与指定名称完全一致的残留项目。 */
+  async deleteProjectsByExactName(name: string, userEmail: string): Promise<string[]> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.get(`${API_BASE}/api/v1/projects`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+      params: { search: name },
+    });
+    if (!res.ok()) {
+      throw new Error(`projects/list failed: ${res.status()} ${await res.text()}`);
+    }
+    const projects = (await res.json()) as Array<{ id: string; name: string }>;
+    const exactIds = projects
+      .filter((project) => project.name === name)
+      .map((project) => project.id);
+    for (const projectId of exactIds) await this.deleteProject(projectId, userEmail);
+    return exactIds;
+  }
+
   /** 通过正式 API 准备录制所需模板；调用方必须在 finally 精确删除返回的 id。 */
   async createProjectPipeline(
     userEmail: string,
