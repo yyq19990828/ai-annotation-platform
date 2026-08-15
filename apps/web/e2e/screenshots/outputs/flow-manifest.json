@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T19:43:11.312Z",
+  "updated_at": "2026-08-15T20:01:00.598Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -2003,6 +2003,68 @@
         "runId": "20260815T131746Z-39a690ed0857",
         "assetId": "model-market-runtime-pool",
         "sha256": "f280c0e91f8cab82f2770a2a13d08045c0981da8e1294066b3ca3a9841952d5a"
+      }
+    },
+    "docs-site/public/media/superadmin/platform-overview-poster.webp": {
+      "asset_id": "platform-overview",
+      "role": "poster",
+      "generated_at": "2026-08-15T20:01:00.598Z",
+      "captured_commit": "c4efd2b8994807663a3af420af976608c86f706d",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › platform-overview",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "14c0d72e88c1a8c66f624a38d30c6a4c3864fbf4ae6b831f0f8fdedf1498f0a4",
+      "bytes": 39434,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T195828Z-c4efd2b89948",
+        "assetId": "platform-overview",
+        "sha256": "deaa0571e5dda2e0809857bce2de9dc0dcb313fa9e6472a1e86e25a73d3fd44b"
+      }
+    },
+    "docs-site/public/media/superadmin/platform-overview.mp4": {
+      "asset_id": "platform-overview",
+      "role": "docs-video",
+      "generated_at": "2026-08-15T20:01:00.526Z",
+      "captured_commit": "c4efd2b8994807663a3af420af976608c86f706d",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › platform-overview",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "5548c3979563eb3935496eaa64125a2c730dfe0cb27f33b99b978d7b008a2bfa",
+      "bytes": 482377,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 20.634
+      },
+      "source_asset": {
+        "runId": "20260815T195828Z-c4efd2b89948",
+        "assetId": "platform-overview",
+        "sha256": "deaa0571e5dda2e0809857bce2de9dc0dcb313fa9e6472a1e86e25a73d3fd44b"
       }
     },
     "docs-site/public/media/video/ai-tracker-panel-poster.webp": {
