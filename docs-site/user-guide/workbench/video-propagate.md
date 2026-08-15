@@ -20,6 +20,13 @@ last_reviewed: 2026-08-16
 | 结果落库    | 操作完成即写入，可整体撤销       | 先显示候选预览，可按目标与帧窗口接受后写入 |
 | 放弃结果    | 撤销复制操作                     | 在候选审阅条拒绝所选范围，标注零改动       |
 
+<DocsVideo
+  src="/media/video/propagate-track-vs-copy.mp4"
+  poster="/media/video/propagate-track-vs-copy-poster.webp"
+  alt="同一辆中间卡车从 F0 到 F30 的几何复制与 AI 延展结果对比"
+  caption="同一条卡车轨迹复制到 F30 后仍保留 F0 的框尺寸，已经偏离变大后的车身；撤销复制并运行 AI 延展后，候选框会随目标的位置和尺度变化，复核 F1–F30 后再回填原轨迹。"
+/>
+
 ## 复制后续（关键帧传播）
 
 选中轨迹后，点击选中卡上的**复制后续**（copy 图标），选择方向、帧数和是否覆盖已有关键帧。系统会把当前帧的框原样铺到目标帧，不调用模型，整个传播可作为一次操作撤销。
@@ -27,8 +34,6 @@ last_reviewed: 2026-08-16
 开启帧采样后，弹窗里的数量按采样网格格子计算，与 `←` / `→` 的导航单位一致。
 
 ## 先选择正确的作用范围
-
-<!-- TODO IMAGE_CHECKLIST: images/video-propagate/track-vs-copy-buttons.png — 选中卡「AI 追踪」vs「复制后续」两按钮对比 [manual] -->
 
 <AutoImage src="video-propagate/ai-tracking-panel.png" alt="视频工作台右上的 AI 追踪检查器，顶部入口位于 AI 单题按钮左侧" />
 

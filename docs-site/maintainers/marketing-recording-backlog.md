@@ -58,7 +58,7 @@
 | ------ | -------------------------------------- | ----------------------------------------------------------------------- | -------- | --------------------------- | ---- |
 | P1     | `model-market-video-pool`              | 视频服务池 → SAM 3 实例 → 独立池容量 / 会话 / GPU → 视频权重与预热入口  | 12–28 秒 | `superadmin/model-market`   | 已录 |
 | P1     | `video-timeline-prediction-navigation` | 展开预测密度轨 → 连续跳转预测帧 → 核对画布候选与时间轴位置              | 12–24 秒 | `workbench/video-playback`  | 已录 |
-| P1     | `video-propagate-track-vs-copy`        | 同一真实轨迹分别展示 AI 延展与纯几何复制 → 对比作业、结果与适用边界     | 18–36 秒 | `workbench/video-propagate` | 待录 |
+| P1     | `video-propagate-track-vs-copy`        | 同一真实轨迹分别展示 AI 延展与纯几何复制 → 对比作业、结果与适用边界     | 18–36 秒 | `workbench/video-propagate` | 已录 |
 | P1     | `pointcloud-billboard-label`           | 启用 3D 标签内容 → 绕框旋转视角 → 核对文字持续正对相机并保留类别 / 属性 | 14–26 秒 | `workbench/3d-box`          | 待录 |
 | P1     | `storage-connector-create-test`        | 新建脱敏 S3 / OSS 连接器 → 测试连接 → 展示成功状态与样本计数 → 精确清理 | 14–28 秒 | `datasets/index`            | 待录 |
 

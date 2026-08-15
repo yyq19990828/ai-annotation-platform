@@ -95,7 +95,7 @@
 
 ### 两类传播术语（对应 `workbench/video-propagate.md`）
 
-- [ ] `images/video-propagate/track-vs-copy-buttons.png` — 选中卡两类传播按钮对比：「AI 追踪」（bot 图标 · 调 tracker 模型）vs「复制后续」（copy 图标 · 纯几何铺帧）；红框：两按钮 + tooltip [manual]
+- [x] `public/media/video/propagate-track-vs-copy.mp4` — 同一条中间卡车轨迹先纯几何复制 F0→F30，展示固定框与变大车身的偏离；撤销后运行真实 SAM3 延展，跨帧复核随目标变化的候选并回填 F1–F30 `[derived-mp4]`
 - [x] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 `[auto-gif]`（flows/video-tracker-range）
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
