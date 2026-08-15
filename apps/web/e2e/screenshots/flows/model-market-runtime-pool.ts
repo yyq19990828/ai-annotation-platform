@@ -192,8 +192,13 @@ function globalBackend(instance: DemoInstance, projectId: string) {
   };
 }
 
-async function installRuntimeFixture(page: Page, catalog: ScreenshotSeedCatalog): Promise<void> {
+async function installRuntimeFixture(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+  options: { partialSourceFailure?: boolean } = {},
+): Promise<void> {
   const projectId = catalog.projects.image_demo.id;
+  const partialSourceFailure = options.partialSourceFailure === true;
   const projectBackends = ALL_INSTANCES.map((instance) => ({
     ...globalBackend(instance, projectId),
     project_id: projectId,
@@ -236,8 +241,8 @@ async function installRuntimeFixture(page: Page, catalog: ScreenshotSeedCatalog)
     },
     "/api/v1/admin/ml-integrations/runtime-snapshot": {
       observed_at: OBSERVED_AT,
-      partial: false,
-      partial_reason: null,
+      partial: partialSourceFailure,
+      partial_reason: partialSourceFailure ? "路由账本连接超时，已进入 30 秒退避" : null,
       router_mode: "enforce",
       schema_version: "runtime_snapshot.v1",
       pools: [
@@ -256,12 +261,21 @@ async function installRuntimeFixture(page: Page, catalog: ScreenshotSeedCatalog)
           members: [runtimeMember(OCR_INSTANCE)],
         },
       ],
-      sources: ["topology", "router_ledger", "health", "gpu", "residency"].map((name) => ({
-        name,
-        stale: false,
-        error: null,
-        updated_at: OBSERVED_AT,
-      })),
+      sources: ["topology", "router_ledger", "health", "gpu", "residency"].map((name) =>
+        partialSourceFailure && name === "router_ledger"
+          ? {
+              name,
+              stale: true,
+              error: "Redis 连接超时，进入 30 秒退避",
+              updated_at: CHECKED_AT,
+            }
+          : {
+              name,
+              stale: false,
+              error: null,
+              updated_at: OBSERVED_AT,
+            },
+      ),
     },
     "/api/v1/admin/ml-integrations/observe": {
       targets: ALL_INSTANCES.map(observeTarget),
@@ -389,6 +403,44 @@ export async function runModelMarketRuntimePool(
   await expect(secondSheet.getByText("demo-node-b/GPU-0", { exact: true }).first()).toBeVisible();
   await expect(secondSheet.getByText(/cache 89\.0%/)).toBeVisible();
   await page.waitForTimeout(4_700);
+
+  return { drawStartMs, drawEndMs: Date.now() };
+}
+
+export async function runModelMarketRuntimePartialFailure(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
+  await installRuntimeFixture(page, catalog, { partialSourceFailure: true });
+  await page.goto("/model-market?tab=runtime");
+  await expect(page.getByRole("heading", { name: "模型市场" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("车辆检测多实例池", { exact: true })).toBeVisible();
+  await expect(page.getByText("OCR 文档识别池", { exact: true })).toBeVisible();
+  await expect(page.getByText("4 / 5", { exact: true }).first()).toBeVisible();
+
+  const drawStartMs = Date.now();
+  await page.waitForTimeout(2_200);
+
+  const dataSourceToggle = page.getByRole("button", { name: /数据来源/ });
+  await moveTo(page, dataSourceToggle);
+  await dataSourceToggle.click();
+  await expect(page.getByText("部分数据来源失败", { exact: true })).toBeVisible();
+  await expect(page.getByText(/路由账本连接超时，已进入 30 秒退避/)).toBeVisible();
+  await expect(page.getByText("拓扑", { exact: true })).toBeVisible();
+  const staleSource = page.getByText("路由账本", { exact: true });
+  await expect(staleSource).toBeVisible();
+  await page.waitForTimeout(2_600);
+
+  const freshSource = page.getByText("拓扑", { exact: true });
+  await moveTo(page, freshSource);
+  await freshSource.locator("..").hover();
+  await expect(page.getByText(/拓扑：新鲜（更新于/)).toBeVisible();
+  await page.waitForTimeout(1_500);
+
+  await moveTo(page, staleSource);
+  await staleSource.locator("..").hover();
+  await expect(page.getByText(/路由账本：Redis 连接超时，进入 30 秒退避/)).toBeVisible();
+  await page.waitForTimeout(2_800);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }

@@ -245,6 +245,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "model-market-runtime-partial-failure",
+    title: "运行时数据源部分失败",
+    theme: "单一观测来源退化时保留其它可信状态",
+    objective:
+      "展示路由账本连接超时后，模型市场仍保留服务池与其它四个新鲜数据源，并通过部分可用告警、上次更新时间、失败原因和退避信息保留真实的不确定性。",
+    duration: { minSeconds: 9, targetSeconds: 12, maxSeconds: 20 },
+    shots: [
+      "从已加载的运行时观测页开始，同时展示 4/5 数据新鲜与两个仍可读服务池。",
+      "展开数据来源，展示“部分数据来源失败”及路由账本超时 / 30 秒退避原因。",
+      "悬停新鲜的拓扑来源，核对最新更新时间。",
+      "悬停陈旧的路由账本来源，核对错误、上次成功时间与退避信息。",
+    ],
+    editingNotes: [
+      "该母版只表达运行时数据可信度，不混入实例注册、服务池编辑、GPU 管理或实例详情。",
+      "必须保留一个 stale/error 来源与至少一个 fresh 来源，不得把部分失败演示成全局中断。",
+      "观测快照使用录制专用脱敏固定值；页面、视图模型、部分失败告警与 Tooltip 均走真实产品实现。",
+    ],
+  }),
+  defineAsset({
     assetId: "background-export-download",
     title: "后台多格式导出与下载",
     theme: "从导出配置到可校验 ZIP 产物的异步闭环",

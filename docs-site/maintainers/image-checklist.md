@@ -230,7 +230,7 @@
 - [ ] `images/superadmin/model-market/protocol-card-details.png` — 能力目录协议卡复用 ModelCard 的详情态；红框：可接受输入、输出属性/几何、资源/变体、`⚠ 协议` 诊断 badge [manual]
 - [~] ~~`images/superadmin/model-market-runtime-card.png` — backend 运行时大卡~~ — **已废弃**：运行时观测已改为服务池摘要卡 → 实例面板 → 详情 Sheet，不再按单 backend 展示大卡
 - [x] `public/media/superadmin/model-market/runtime-pools.mp4` — 运行时摘要、完整数据来源、两列服务池、双实例展开与详情 Sheet；使用固定脱敏快照，并保留“暂无路由指标”的真实未知语义 **[Tier A]** `[derived-mp4]`
-- [ ] `images/superadmin/model-market/runtime-data-sources.png` — 展开「数据来源」后的部分失败态；至少包含一个 stale/error 来源及更新时间，说明单源失败不抹掉其它可信数据 **[Tier A]** [manual]
+- [ ] `public/media/superadmin/model-market/runtime-data-sources.mp4` — 4/5 来源新鲜 → 展开「数据来源」部分失败态 → 对比 fresh 拓扑与 stale/error 路由账本的更新时间、超时和退避 **[Tier A]** `[derived-mp4]`
 - [ ] `images/superadmin/model-market/runtime-instance-detail.png` — 打开实例详情 Sheet；红框：路由状态、并发/延迟未知语义、health/compute、GPU claim、驻留与原始诊断 **[Tier B]** [manual]
 - [ ] `images/superadmin/model-market/registry-issue-center.png` — 注册管理「问题中心」；展示按稳定键去重后的主问题、严重度、受影响对象计数与筛选 **[Tier B]** [manual]
 - [ ] `images/superadmin/model-market/video-pool.png` — `_video_pool` 视频模态独立池 UI
