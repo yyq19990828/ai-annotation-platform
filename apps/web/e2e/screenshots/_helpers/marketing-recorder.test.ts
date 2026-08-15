@@ -85,7 +85,7 @@ test("registers and documents every independent marketing asset", () => {
     path.join(REPO_ROOT, "docs-site/dev/reference/marketing-asset-catalog.md"),
     "utf8",
   );
-  assert.equal(MARKETING_ASSET_SPECS.size, 46);
+  assert.equal(MARKETING_ASSET_SPECS.size, 47);
   for (const spec of MARKETING_ASSET_SPECS.values()) {
     assert.ok(spec.title.length > 0, `${spec.assetId} missing title`);
     assert.ok(spec.theme.length > 0, `${spec.assetId} missing theme`);
@@ -183,6 +183,23 @@ test("advances the trusted Playwright pointer to the drag endpoint", async () =>
   await movePointerAtRefreshRate(page as never, { x: 10, y: 20 }, { x: 110, y: 220 }, 1);
 
   assert.deepEqual(moves, [{ x: 110, y: 220 }]);
+});
+
+test("drops stale pointer samples when the page cannot consume 60Hz events", async () => {
+  const moves: Array<{ x: number; y: number }> = [];
+  const page = {
+    mouse: {
+      move: async (x: number, y: number) => {
+        moves.push({ x, y });
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      },
+    },
+  };
+
+  await movePointerAtRefreshRate(page as never, { x: 0, y: 0 }, { x: 100, y: 100 }, 100);
+
+  assert.ok(moves.length < 6, `expected stale samples to be dropped, got ${moves.length}`);
+  assert.deepEqual(moves.at(-1), { x: 100, y: 100 });
 });
 
 test("accepts the product AI panel safe-area gap without forcing an impossible edge position", () => {

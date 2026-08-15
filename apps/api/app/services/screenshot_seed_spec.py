@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SEED_REVISION = "screenshots-2026-08-e"
+SEED_REVISION = "screenshots-2026-08-f"
 SEED_MANAGED_BY = "screenshot-seed"
 USER_SPECS = {
     "admin": ("admin", "super_admin"),
@@ -391,9 +391,24 @@ PROJECT_SPECS = {
         dataset_display_id="DS-PC-DEV",
         data_type="lidar",
         storage_prefix="pc-scene-dev/",
-        tasks=tuple(
-            TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
-            for index in range(4)
+        tasks=(
+            TaskSpec(
+                "frame_000",
+                "pc-scene-dev/lidar/000000.pcd",
+                recording_anchors=(
+                    RecordingAnchorSpec(
+                        key="foreground_object",
+                        label="object",
+                        bbox=(0.472, 0.566, 0.704, 0.982),
+                        point=(0.588, 0.774),
+                        provenance="reviewed-depth-frame-derived",
+                    ),
+                ),
+            ),
+            *(
+                TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
+                for index in range(1, 4)
+            ),
         ),
         media_paths=(
             *(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),

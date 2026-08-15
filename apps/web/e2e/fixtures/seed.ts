@@ -216,6 +216,22 @@ export class SeedAPI {
     return ((await res.json()) as { access_token: string }).access_token;
   }
 
+  /** 精确删除录制夹具或流程创建的单条标注。 */
+  async deleteTaskAnnotation(
+    taskId: string,
+    annotationId: string,
+    userEmail: string,
+  ): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(
+      `${API_BASE}/api/v1/tasks/${taskId}/annotations/${annotationId}`,
+      { headers: { Authorization: `Bearer ${token}`, Connection: "close" } },
+    );
+    if (!res.ok() && res.status() !== 404) {
+      throw new Error(`annotations/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
   /** 精确删除录制流创建的命名编排，避免在隔离截图库留下可变业务数据。 */
   async deleteProjectPipeline(pipelineId: string, userEmail: string): Promise<void> {
     const token = await this.accessToken(userEmail);

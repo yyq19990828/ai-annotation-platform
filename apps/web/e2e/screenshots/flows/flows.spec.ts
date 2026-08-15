@@ -28,6 +28,7 @@ import { runVideoMaskTrackEdit } from "./video-mask-track-edit";
 import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
+import { runPointcloudCameraSeed3dBox } from "./pointcloud-camera-seed-3d-box";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
@@ -1582,6 +1583,33 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "none");
     const win = await runLargeImagePyramidRecovery(page, cached);
     await finalize(page, "large-image-pyramid-recovery", undefined, drawTrim(win, t0));
+  });
+
+  test("pointcloud-camera-seed-3d-box — 相机图辅助生成并核对 3D 框", async ({ page, seed }) => {
+    test.skip(
+      test.info().project.name !== MARKETING_PROJECT_NAME,
+      "真实点云种框需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
+    );
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    const userEmail = cached.users.admin.email;
+    let created: { taskId: string; annotationId: string } | null = null;
+    try {
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        layout: { triViewFloat: { x: 24, y: 24, w: 320, h: 540, collapsed: true } },
+      });
+      const win = await runPointcloudCameraSeed3dBox(page, cached);
+      created = win.created;
+      await finalize(page, "pointcloud-camera-seed-3d-box", undefined, drawTrim(win, t0));
+    } finally {
+      if (created) {
+        await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
+      }
+    }
   });
 
   test("hotkey-cheatsheet — 键盘快捷键面板(? 打开)", async ({ page, seed }) => {

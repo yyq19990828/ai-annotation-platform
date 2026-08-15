@@ -16,6 +16,7 @@ const POSTER_AT_SECONDS = new Map([
   ["project-ml-routing", 14],
   ["background-export-download", 16],
   ["large-image-pyramid-recovery", 9],
+  ["pointcloud-camera-seed-3d-box", 10],
 ]);
 
 const TARGETS = new Map(
@@ -47,6 +48,7 @@ const TARGETS = new Map(
     ["video-mask-correction-propagate", "video/mask-correction-propagate"],
     ["pointcloud-controls", "pointcloud/controls"],
     ["pointcloud-view", "pointcloud/orbit"],
+    ["pointcloud-camera-seed-3d-box", "pointcloud/camera-seed-3d-box"],
     ["large-image-progressive", "large-image/progressive"],
     ["large-image-pyramid-recovery", "large-image/pyramid-recovery"],
   ].map(([assetId, target]) => [assetId, target]),

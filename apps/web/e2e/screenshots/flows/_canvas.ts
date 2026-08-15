@@ -207,7 +207,12 @@ export async function movePointerPathAtRefreshRate(
   const frameIntervalMs = 1000 / 60;
   const frameCount = Math.max(1, Math.round(durationMs / frameIntervalMs));
   const startedAt = performance.now();
-  for (let frame = 1; frame <= frameCount; frame += 1) {
+  let emittedFrame = 0;
+  while (emittedFrame < frameCount) {
+    // 忙碌画布可能让一次 CDP mouse.move 超过一帧。按真实墙钟跳过已经错过的采样点，
+    // 避免仍补发全部 60Hz 事件而把 1 秒手势拖成十几秒慢动作。
+    const elapsedFrames = Math.floor((performance.now() - startedAt) / frameIntervalMs);
+    const frame = Math.min(frameCount, Math.max(emittedFrame + 1, elapsedFrames + 1));
     const targetAt = startedAt + frame * frameIntervalMs;
     const remaining = targetAt - performance.now();
     if (remaining > 1) await new Promise((resolve) => setTimeout(resolve, remaining));
@@ -221,6 +226,7 @@ export async function movePointerPathAtRefreshRate(
       from.x + (to.x - from.x) * segmentProgress,
       from.y + (to.y - from.y) * segmentProgress,
     );
+    emittedFrame = frame;
   }
 }
 

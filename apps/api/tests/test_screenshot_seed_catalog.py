@@ -354,12 +354,20 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert anchor["brush_strokes"][0] == [[0.435, 0.545], [0.515, 0.545]]
     assert anchor["negative_point"] is None
     assert anchor["provenance"] == "verified-label-derived"
-    assert body["projects"]["pointcloud_demo"]["tasks"].keys() == {
+    pointcloud = body["projects"]["pointcloud_demo"]
+    assert pointcloud["tasks"].keys() == {
         "frame_000",
         "frame_001",
         "frame_002",
         "frame_003",
     }
+    pointcloud_anchor = pointcloud["tasks"]["frame_000"]["recording_anchors"][
+        "foreground_object"
+    ]
+    assert pointcloud_anchor["label"] == "object"
+    assert pointcloud_anchor["bbox"] == [0.472, 0.566, 0.704, 0.982]
+    assert pointcloud_anchor["point"] == [0.588, 0.774]
+    assert pointcloud_anchor["provenance"] == "reviewed-depth-frame-derived"
     assert body["projects"]["pointcloud_multicam_demo"]["display_id"] == ("P-PC-MULTI")
     assert body["projects"]["pointcloud_multicam_demo"]["tasks"].keys() == {"frame_000"}
     assert body["projects"]["video_demo"]["ml_backend"]["name"] == "screenshot-video"
@@ -367,8 +375,8 @@ async def test_catalog_returns_explicit_stable_logical_resources(
         "recording_anchors"
     ]["front_truck_f4"]
     assert video_anchor["frame_index"] == 4
-    assert video_anchor["bbox"] == [0.458, 0.32, 0.72, 0.83]
-    assert video_anchor["negative_point"] == [0.74, 0.55]
+    assert video_anchor["bbox"] == [0.492, 0.455, 0.722, 0.825]
+    assert video_anchor["negative_point"] == [0.755, 0.755]
     assert "large_image_demo" not in body["projects"]
 
 

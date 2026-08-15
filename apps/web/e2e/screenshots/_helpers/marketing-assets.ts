@@ -581,6 +581,22 @@ const assetSpecs = [
     editingNotes: ["避免高倍加速，三维旋转需保持方向感。"],
   }),
   defineAsset({
+    assetId: "pointcloud-camera-seed-3d-box",
+    title: "相机图辅助 3D 种框",
+    theme: "从二维相机提示反投影到点云中的真实 3D 框",
+    objective: "展示在经标定的相机图圈定目标，经视锥选点拟合 3D 框，并在主点云与三视图核对。",
+    duration: { minSeconds: 16, targetSeconds: 24, maxSeconds: 36 },
+    shots: [
+      "展示同步相机图与点云场景。",
+      "放大相机图并沿经复核的前景物体拖出二维提示框。",
+      "确认真实 box_3d 标注落库并投影回相机图。",
+      "关闭大图，在主点云与俯、侧、正三视图核对空间包围关系。",
+    ],
+    editingNotes: [
+      "准确称为几何辅助种框，不宣称 ML 推理；必须保留二维提示、3D 框生成和三视图核对的完整因果链。",
+    ],
+  }),
+  defineAsset({
     assetId: "video-draw",
     title: "视频轨迹画框",
     theme: "关键帧标注与中间帧插值",
