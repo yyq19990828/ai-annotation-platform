@@ -24,6 +24,10 @@ import { runMaskDraw } from "./mask-draw";
 import { runVideoTrack } from "./video-track";
 import { runVideoTimelineZoom } from "./video-timeline-zoom";
 import { runVideoTrackerRange } from "./video-tracker-range";
+import {
+  runVideoTrackBatchPropagate,
+  type VideoTrackBatchPropagateCleanupRecord,
+} from "./video-track-batch-propagate";
 import { runVideoMaskTrackEdit } from "./video-mask-track-edit";
 import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
@@ -279,6 +283,28 @@ function cleanupVideoFrameInference(record: VideoFrameInferenceCleanupRecord): v
       "--task-id",
       record.taskId,
       ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
+    ],
+    {
+      cwd: path.join(REPO_ROOT, "apps/api"),
+      env: screenshotDatabaseEnv(),
+      stdio: "inherit",
+    },
+  );
+}
+
+function cleanupVideoTrackBatchPropagate(record: VideoTrackBatchPropagateCleanupRecord): void {
+  execFileSync(
+    path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
+    [
+      "scripts/cleanup_screenshot_ocr_flow.py",
+      "--project-key",
+      "video_demo",
+      "--project-id",
+      record.projectId,
+      "--task-id",
+      record.taskId,
+      ...record.videoTrackerJobIds.flatMap((jobId) => ["--video-tracker-job-id", jobId]),
+      ...record.sourceAnnotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
@@ -1201,6 +1227,84 @@ test.describe("flow recordings", () => {
       path.join(DOCS_IMAGES, "video-propagate/shift-brush-range.gif"),
       { fps: 6, maxWidth: 680, maxColors: 128, ...drawTrim(win, t0) },
     );
+  });
+
+  test("video-track-batch-propagate — 双轨迹批量延展并复核", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(180_000); // 双轨迹真实视频推理 + 候选审阅 + 4K H.264 归档
+    const project = cached.projects.video_demo;
+    const task = project.tasks.tracking;
+    const userEmail = cached.users.project_admin.email;
+    const anchors = [
+      recordingAnchor(cached, "video_demo", "tracking", "left_bus_f0", 0),
+      recordingAnchor(cached, "video_demo", "tracking", "right_bus_f0", 0),
+    ];
+    const cleanupRecord: VideoTrackBatchPropagateCleanupRecord = {
+      projectId: project.id,
+      taskId: task.id,
+      sourceAnnotationIds: [],
+      videoTrackerJobIds: [],
+    };
+    const t0 = Date.now();
+
+    try {
+      await seed.enableMLBackendByName(project.id, userEmail, "sam3-backend");
+      for (const [index, anchor] of anchors.entries()) {
+        const [x1, y1, x2, y2] = anchor.bbox;
+        const trackId = `trk_marketing_batch_${index === 0 ? "left" : "right"}`;
+        const source = await seed.createTaskAnnotation(task.id, userEmail, {
+          annotation_type: "video_track_bbox",
+          tool_unit_id: "bbox",
+          class_name: anchor.label,
+          geometry: {
+            type: "video_track_bbox",
+            track_id: trackId,
+            keyframes: [
+              {
+                frame_index: 0,
+                bbox: { x: x1, y: y1, w: x2 - x1, h: y2 - y1 },
+                source: "manual",
+                occluded: false,
+              },
+            ],
+            outside: [],
+          },
+        });
+        cleanupRecord.sourceAnnotationIds.push(source.id);
+      }
+
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        layout: {
+          floatingSelection: {
+            collapsed: false,
+            x: null,
+            y: null,
+            w: null,
+            h: null,
+          },
+        },
+      });
+      const win = await runVideoTrackBatchPropagate(
+        page,
+        cached,
+        cleanupRecord.sourceAnnotationIds,
+        (jobId) => cleanupRecord.videoTrackerJobIds.push(jobId),
+      );
+      if (cleanupRecord.videoTrackerJobIds.length !== 1) {
+        throw new Error("[video-track-batch-propagate] 批量延展必须只产生一个追踪作业");
+      }
+      await finalize(page, "video-track-batch-propagate", undefined, drawTrim(win, t0));
+    } finally {
+      if (
+        cleanupRecord.sourceAnnotationIds.length > 0 ||
+        cleanupRecord.videoTrackerJobIds.length > 0
+      ) {
+        cleanupVideoTrackBatchPropagate(cleanupRecord);
+      }
+    }
   });
 
   test("video-tracker-cross-frame-points — 双目标跨帧多正点", async ({ page, seed }) => {

@@ -18,6 +18,7 @@ const POSTER_AT_SECONDS = new Map([
   ["large-image-pyramid-recovery", 9],
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
+  ["video-track-batch-propagate", 4],
 ]);
 
 const TARGETS = new Map(
@@ -39,6 +40,7 @@ const TARGETS = new Map(
     ["background-export-download", "datasets/background-export-download"],
     ["ai-tracker-panel", "video/ai-tracker-panel"],
     ["video-track", "video/workbench-overview"],
+    ["video-track-batch-propagate", "video/track-batch-propagate"],
     ["video-mask-track-edit", "video/mask-track-edit"],
     ["video-tracker-range", "video/tracker-range"],
     ["video-tracker-cross-frame-points", "video/tracker-cross-frame-points"],

@@ -30,6 +30,7 @@ from app.db.models.dataset import Dataset, ProjectDataset  # noqa: E402
 from app.db.models.project import Project  # noqa: E402
 from app.db.models.prediction import Prediction, PredictionMeta  # noqa: E402
 from app.db.models.task import Task  # noqa: E402
+from app.db.models.video_tracker_job import VideoTrackerJob  # noqa: E402
 from app.services.batch import BatchService  # noqa: E402
 from app.services.screenshot_seed_spec import (  # noqa: E402
     PROJECT_SPECS,
@@ -48,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-id", type=uuid.UUID, required=True)
     parser.add_argument("--task-id", type=uuid.UUID, required=True)
     parser.add_argument("--celery-task-id", action="append", default=[])
+    parser.add_argument(
+        "--video-tracker-job-id", type=uuid.UUID, action="append", default=[]
+    )
     parser.add_argument("--annotation-id", type=uuid.UUID, action="append", default=[])
     parser.add_argument("--prediction-id", type=uuid.UUID, action="append", default=[])
     return parser.parse_args()
@@ -125,6 +129,77 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                 project_id=args.project_id,
                 task_id=args.task_id,
             )
+            tracker_job_ids = set(args.video_tracker_job_id)
+            tracker_jobs = (
+                (
+                    await db.execute(
+                        select(VideoTrackerJob).where(
+                            VideoTrackerJob.id.in_(tracker_job_ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+                if tracker_job_ids
+                else []
+            )
+            found_tracker_job_ids = {job.id for job in tracker_jobs}
+            if found_tracker_job_ids and found_tracker_job_ids != tracker_job_ids:
+                raise RuntimeError("cleanup video tracker job set is incomplete")
+            if any(job.task_id != args.task_id for job in tracker_jobs):
+                raise RuntimeError(
+                    "cleanup video tracker job is outside the screenshot task"
+                )
+
+            expected_source_ids = set(args.annotation_id)
+            for job in tracker_jobs:
+                seeds = (
+                    job.prompt.get("seeds", []) if isinstance(job.prompt, dict) else []
+                )
+                source_ids = {
+                    uuid.UUID(str(seed["source_annotation_id"]))
+                    for seed in seeds
+                    if isinstance(seed, dict) and seed.get("source_annotation_id")
+                }
+                if source_ids != expected_source_ids:
+                    raise RuntimeError(
+                        "cleanup video tracker sources do not match supplied annotations"
+                    )
+
+            celery_task_ids = list(
+                dict.fromkeys(
+                    [
+                        *args.celery_task_id,
+                        *[
+                            job.celery_task_id
+                            for job in tracker_jobs
+                            if job.celery_task_id
+                        ],
+                    ]
+                )
+            )
+            # Successful recordings are terminal already. On an interrupted flow,
+            # revoke any still-queued work before removing its isolated test row;
+            # terminate=False keeps the dedicated screenshot worker alive.
+            for celery_task_id in celery_task_ids:
+                try:
+                    celery_app.AsyncResult(celery_task_id).revoke(terminate=False)
+                except Exception as exc:  # noqa: BLE001 - scope checks remain authoritative
+                    print(
+                        f"[cleanup-screenshot-inference] WARN celery revoke failed: {exc}",
+                        file=sys.stderr,
+                    )
+
+            if tracker_job_ids:
+                tracker_job_result = await db.execute(
+                    delete(VideoTrackerJob).where(
+                        VideoTrackerJob.id.in_(tracker_job_ids),
+                        VideoTrackerJob.task_id == args.task_id,
+                    )
+                )
+                video_tracker_jobs = tracker_job_result.rowcount or 0
+            else:
+                video_tracker_jobs = 0
             annotation_result = await db.execute(
                 delete(Annotation).where(
                     Annotation.id.in_(args.annotation_id),
@@ -177,18 +252,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                     .select_from(Prediction)
                     .where(Prediction.task_id == args.task_id)
                 )
-                remaining_annotations = await db.scalar(
-                    select(func.count())
-                    .select_from(Annotation)
-                    .where(
-                        Annotation.task_id == args.task_id,
-                        Annotation.is_active.is_(True),
-                        Annotation.was_cancelled.is_(False),
-                    )
-                )
                 task.total_predictions = remaining_predictions or 0
-                task.total_annotations = remaining_annotations or 0
-                task.is_labeled = bool(remaining_annotations)
                 prediction_counts = {
                     "predictions": prediction_result.rowcount or 0,
                     "failed_predictions": 0,
@@ -198,11 +262,22 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                 prediction_counts = await BatchService(db).clean_task_predictions(
                     [args.task_id]
                 )
+            remaining_annotations = await db.scalar(
+                select(func.count())
+                .select_from(Annotation)
+                .where(
+                    Annotation.task_id == args.task_id,
+                    Annotation.is_active.is_(True),
+                    Annotation.was_cancelled.is_(False),
+                )
+            )
+            task.total_annotations = remaining_annotations or 0
+            task.is_labeled = bool(remaining_annotations)
             task.status = expected_task_status
-            if args.celery_task_id:
+            if celery_task_ids:
                 job_result = await db.execute(
                     delete(AsyncJob).where(
-                        AsyncJob.celery_task_id.in_(args.celery_task_id),
+                        AsyncJob.celery_task_id.in_(celery_task_ids),
                     )
                 )
                 async_jobs = job_result.rowcount or 0
@@ -214,7 +289,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
 
     # Celery result backend is outside PostgreSQL. Forgetting an already-expired
     # result is harmless and keeps the recorder idempotent for the afterAll retry.
-    for celery_task_id in args.celery_task_id:
+    for celery_task_id in celery_task_ids:
         try:
             celery_app.AsyncResult(celery_task_id).forget()
         except Exception as exc:  # noqa: BLE001 - DB cleanup remains authoritative
@@ -227,6 +302,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
         **prediction_counts,
         "annotations": annotation_result.rowcount or 0,
         "async_jobs": async_jobs,
+        "video_tracker_jobs": video_tracker_jobs,
     }
 
 
