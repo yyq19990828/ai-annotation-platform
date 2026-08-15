@@ -58,6 +58,7 @@ Chromium 内容区的真实 X11 边界；只有边界恰好为 2592×1458、没�
 | `candidate-keyboard-review`            | 展示多个 AI 候选 → 键盘采纳/驳回 → 焦点自动前进                                                        | 10 / 14 / 30 秒            | 高速 AI 候选审阅                   |
 | `candidate-review-lifecycle`           | 三个车辆候选 → 跳过一项 → 采纳一项 → 自动前进并驳回一项 → 最终计数                                     | 16 / 22 / 28 秒            | AI 候选完整审阅生命周期            |
 | `video-track`                          | 视频画布与时间轴 → 播放/逐帧移动 → 展示轨迹跨帧延续                                                    | 10 / 15 / 30 秒            | 视频标注工作台概览                 |
+| `video-track-batch-propagate`          | 多选两条真实公交车轨迹 → 一次批量 AI 延展 → 跨帧复核双目标候选 → 整批回填原轨迹                        | 18 / 28 / 45 秒            | 多目标批量追踪与候选审阅           |
 | `video-timeline-zoom`                  | 展示初始范围 → 以指针为锨点缩放 → 复位全局                                                             | 8 / 12 / 25 秒             | 长视频时间轴导航                   |
 | `video-chapter`                        | 拖出章节 → 悬停显示手柄 → 调整起止边界                                                                 | 10 / 15 / 30 秒            | 章节创建与范围修改；可派生两条短片 |
 | `video-tracker-range`                  | 为真实公交车设置 `bus` 和点种子 → Shift 刷选范围 → 发起追踪 → 审阅并采纳候选                           | 12 / 18 / 90 秒            | AI 追踪范围设置                    |
@@ -71,6 +72,7 @@ Chromium 内容区的真实 X11 边界；只有边界恰好为 2592×1458、没�
 | `pipeline-apply-project`               | 选择公共两阶段模板 → 套用为项目默认 → 工作台按项目编排运行 → 查看车型与颜色候选                        | 18 / 28 / 90 秒            | 套用并执行公共 AI 编排             |
 | `jobs-retry-recovery`                  | 打开 RapidOCR 失败作业 → 核对错误摘要 → 真实重试 → 确认新作业完成 → 进入工作台审阅候选                 | 16 / 24 / 45 秒            | AI 作业失败恢复与结果审阅          |
 | `model-market-runtime-pool`            | 核对运行时摘要与数据来源 → 展开车辆检测服务池 → 比较双实例路由状态/并发/GPU → 切换详情 Sheet           | 15 / 22 / 30 秒            | 模型服务池运行时观测               |
+| `model-market-video-pool`              | 定位视频追踪服务池 → 展开 SAM 3 实例 → 核对独立视频池容量/会话/GPU → 展开视频权重与预热入口            | 12 / 18 / 28 秒            | 视频 tracker 独立显存池观测        |
 | `model-market-runtime-partial-failure` | 4/5 来源新鲜 → 展开部分失败告警 → 悬停 fresh 拓扑 → 悬停 stale 路由账本核对超时、更新时间与退避        | 9 / 12 / 20 秒             | 运行时数据可信度与部分失败         |
 | `model-market-gpu-resource-overview`   | 切换 GPU 资源 → 核对 runtime ready / 全局 enforce → 对比静态预算与 committed → 展开 blocker 卡反查实例 | 10 / 14 / 22 秒            | GPU 资源就绪性、预算与阻断影响     |
 | `platform-overview`                    | 平台 KPI / 分布 → 30 天注册来源 → ML 后端与成本 → 近期审计 → 图片 / 视频 / 点云项目                    | 16 / 22 / 30 秒            | 超级管理员全局运营概览             |

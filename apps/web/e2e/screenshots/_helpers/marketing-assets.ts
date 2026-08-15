@@ -245,6 +245,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "model-market-video-pool",
+    title: "视频追踪独立模型池",
+    theme: "区分视频 tracker 的独立显存池与普通图片推理池",
+    objective:
+      "展示超级管理员从运行时服务池进入 SAM 3 视频追踪实例，核对视频池容量、常驻权重、活跃会话与 GPU 驻留，并展开视频变体区确认独立预热入口。",
+    duration: { minSeconds: 12, targetSeconds: 18, maxSeconds: 28 },
+    shots: [
+      "从已加载的运行时观测页定位视频追踪独立服务池，并与车辆检测、OCR 图片池并列对比。",
+      "展开视频服务池，核对 SAM 3 视频追踪实例的接流状态、当前并发与 GPU 驻留。",
+      "打开实例详情，展示视频池 1/3、2 个活跃会话、SAM 3.1 权重和独立 residency 证据。",
+      "展开模型预热与变体区域，确认视频追踪权重已在显存，且预热入口明确属于视频池。",
+    ],
+    editingNotes: [
+      "该母版只表达视频模型池观测与预热入口，不混入视频任务发起或候选审阅；任务历史已有独立素材。",
+      "视频池与图片池必须同时可辨，不能把图片 pool 的 loaded key 冒充 tracker 驻留状态。",
+      "观测数据使用录制专用脱敏快照；内部 URL、真实 GPU UUID 和实例 ID 不进入素材。",
+    ],
+  }),
+  defineAsset({
     assetId: "model-market-runtime-partial-failure",
     title: "运行时数据源部分失败",
     theme: "单一观测来源退化时保留其它可信状态",

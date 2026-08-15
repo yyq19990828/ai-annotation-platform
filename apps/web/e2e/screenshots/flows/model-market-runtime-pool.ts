@@ -70,7 +70,25 @@ const OCR_INSTANCE: DemoInstance = {
   cacheHitRate: 0.97,
 };
 
+const VIDEO_INSTANCE: DemoInstance = {
+  id: "demo-video-primary",
+  name: "SAM 3 视频追踪 · RTX 4090",
+  url: "https://ml.example.invalid/video-primary",
+  gpu: "demo-node-d/GPU-0",
+  weight: 100,
+  inflight: 2,
+  latency: 32,
+  modelVersion: "sam3-video-3.1",
+  memoryUsed: 15_360,
+  processMemory: 9_740,
+  cacheHitRate: 0.92,
+};
+
 const ALL_INSTANCES = [...VEHICLE_INSTANCES, OCR_INSTANCE];
+
+function isVideoInstance(instance: DemoInstance): boolean {
+  return instance.id === VIDEO_INSTANCE.id;
+}
 
 function topologyMember(instance: DemoInstance) {
   return {
@@ -111,9 +129,18 @@ function residency(instance: DemoInstance) {
     lifecycle_gate: "enforce",
     generation: "demo-generation-7",
     identity: { gpu_resource_id: instance.gpu },
-    pools: {
-      image: { resident: true, device: "cuda:0", provider: "CUDAExecutionProvider" },
-    },
+    pools: isVideoInstance(instance)
+      ? {
+          video: {
+            resident: true,
+            device: "cuda:0",
+            provider: "CUDAExecutionProvider",
+            active_sessions: 2,
+          },
+        }
+      : {
+          image: { resident: true, device: "cuda:0", provider: "CUDAExecutionProvider" },
+        },
   };
 }
 
@@ -141,15 +168,33 @@ function observeTarget(instance: DemoInstance) {
       cpu_fallback_supported: true,
     },
     residency: residency(instance),
-    pool: {
-      cap: 3,
-      current_size: 2,
-      loaded_keys: [
-        { key: instance.modelVersion, loaded_at: CHECKED_AT },
-        { key: `${instance.modelVersion}:fp16`, loaded_at: CHECKED_AT },
-      ],
-    },
-    video_pool: null,
+    pool: isVideoInstance(instance)
+      ? { cap: 3, current_size: 0, loaded_keys: [] }
+      : {
+          cap: 3,
+          current_size: 2,
+          loaded_keys: [
+            { key: instance.modelVersion, loaded_at: CHECKED_AT },
+            { key: `${instance.modelVersion}:fp16`, loaded_at: CHECKED_AT },
+          ],
+        },
+    video_pool: isVideoInstance(instance)
+      ? {
+          cap: 3,
+          current_size: 1,
+          loaded_keys: [
+            {
+              key: "SAM 3.1",
+              loaded_at: CHECKED_AT,
+              last_used_at: OBSERVED_AT,
+              hit_count: 28,
+            },
+          ],
+          loaded_variants: ["SAM 3.1"],
+          active_sessions: 2,
+          idle_seconds: 0,
+        }
+      : null,
     supports_variants: false,
     registered: true,
     registered_label: instance.name,
@@ -185,6 +230,13 @@ function globalBackend(instance: DemoInstance, projectId: string) {
       compute: observeTarget(instance).compute,
       residency: residency(instance),
       pool: observeTarget(instance).pool,
+      video_pool: observeTarget(instance).video_pool,
+      capabilities: isVideoInstance(instance)
+        ? {
+            modalities: ["video"],
+            supported_trackers: ["sam3_video_interactive"],
+          }
+        : { modalities: ["image"] },
     },
     source_project_id: projectId,
     source_project_name: "高速车辆标注演示",
@@ -300,11 +352,12 @@ function gpuResourcesFixture() {
 async function installRuntimeFixture(
   page: Page,
   catalog: ScreenshotSeedCatalog,
-  options: { partialSourceFailure?: boolean } = {},
+  options: { partialSourceFailure?: boolean; includeVideoPool?: boolean } = {},
 ): Promise<void> {
   const projectId = catalog.projects.image_demo.id;
   const partialSourceFailure = options.partialSourceFailure === true;
-  const projectBackends = ALL_INSTANCES.map((instance) => ({
+  const instances = options.includeVideoPool ? [...ALL_INSTANCES, VIDEO_INSTANCE] : ALL_INSTANCES;
+  const projectBackends = instances.map((instance) => ({
     ...globalBackend(instance, projectId),
     project_id: projectId,
   }));
@@ -342,6 +395,24 @@ async function installRuntimeFixture(
           status_reason_codes: [],
           members: [topologyMember(OCR_INSTANCE)],
         },
+        ...(options.includeVideoPool
+          ? [
+              {
+                id: "demo-pool-video",
+                name: "视频追踪独立池",
+                enabled: true,
+                routing_policy: "least_inflight",
+                legacy_instance_id: null,
+                capability_fingerprint: "demo-fp-video",
+                routing_generation: 3,
+                member_count: 1,
+                routable_instances: 1,
+                status: "healthy",
+                status_reason_codes: [],
+                members: [topologyMember(VIDEO_INSTANCE)],
+              },
+            ]
+          : []),
       ],
     },
     "/api/v1/admin/ml-integrations/runtime-snapshot": {
@@ -365,6 +436,17 @@ async function installRuntimeFixture(
           routing_generation: 4,
           members: [runtimeMember(OCR_INSTANCE)],
         },
+        ...(options.includeVideoPool
+          ? [
+              {
+                id: "demo-pool-video",
+                name: "视频追踪独立池",
+                enabled: true,
+                routing_generation: 3,
+                members: [runtimeMember(VIDEO_INSTANCE)],
+              },
+            ]
+          : []),
       ],
       sources: ["topology", "router_ledger", "health", "gpu", "residency"].map((name) =>
         partialSourceFailure && name === "router_ledger"
@@ -383,11 +465,11 @@ async function installRuntimeFixture(
       ),
     },
     "/api/v1/admin/ml-integrations/observe": {
-      targets: ALL_INSTANCES.map(observeTarget),
-      configured_count: ALL_INSTANCES.length,
+      targets: instances.map(observeTarget),
+      configured_count: instances.length,
     },
     "/api/v1/admin/ml-integrations/all": {
-      items: ALL_INSTANCES.map((instance) => globalBackend(instance, projectId)),
+      items: instances.map((instance) => globalBackend(instance, projectId)),
     },
     "/api/v1/admin/ml-integrations/overview": {
       storage: { items: [], total_object_count: 0, total_size_bytes: 0 },
@@ -398,8 +480,8 @@ async function installRuntimeFixture(
           backends: projectBackends,
         },
       ],
-      total_backends: ALL_INSTANCES.length,
-      connected_backends: ALL_INSTANCES.length,
+      total_backends: instances.length,
+      connected_backends: instances.length,
     },
     "/api/v1/admin/ml-integrations/gpu-resources": gpuResourcesFixture(),
   };
@@ -422,14 +504,18 @@ async function installRuntimeFixture(
       await route.continue();
       return;
     }
+    const isVideoSetup =
+      options.includeVideoPool &&
+      new URL(route.request().url()).pathname.includes(VIDEO_INSTANCE.id);
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         params: { type: "object", properties: {} },
         models: [],
-        supported_trackers: [],
+        supported_trackers: isVideoSetup ? ["sam3_video_interactive"] : [],
         supported_variants: [],
+        ...(isVideoSetup ? { video_model_version: "SAM 3.1" } : {}),
         warmup_endpoint: false,
       }),
     });
@@ -509,6 +595,55 @@ export async function runModelMarketRuntimePool(
   await expect(secondSheet.getByText("demo-node-b/GPU-0", { exact: true }).first()).toBeVisible();
   await expect(secondSheet.getByText(/cache 89\.0%/)).toBeVisible();
   await page.waitForTimeout(4_700);
+
+  return { drawStartMs, drawEndMs: Date.now() };
+}
+
+export async function runModelMarketVideoPool(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+): Promise<DrawWindow> {
+  await installRuntimeFixture(page, catalog, { includeVideoPool: true });
+  await page.goto("/model-market?tab=runtime");
+  await expect(page.getByRole("heading", { name: "模型市场" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("视频追踪独立池", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("4 / 4", { exact: true }).first()).toBeVisible();
+
+  const drawStartMs = Date.now();
+  await page.waitForTimeout(2_600);
+
+  const videoPool = page.locator('article:has(h4:text-is("视频追踪独立池"))').first();
+  await videoPool.scrollIntoViewIfNeeded();
+  const expand = videoPool.getByRole("button", { name: "展开服务池成员" });
+  await moveTo(page, expand);
+  await expand.click();
+  const videoInstance = videoPool
+    .locator('article:has(h5:text-is("SAM 3 视频追踪 · RTX 4090"))')
+    .first();
+  await expect(videoInstance).toBeVisible();
+  await expect(videoInstance).toContainText("当前 inflight2");
+  await expect(videoInstance).toContainText("实时探活正常");
+  await expect(videoInstance).toContainText("demo-node-d/GPU-0");
+  await page.waitForTimeout(3_600);
+
+  const detail = videoInstance.getByRole("button", { name: "详情", exact: true });
+  await moveTo(page, detail);
+  await detail.click();
+  const sheet = page.locator('[data-slot="sheet-content"]');
+  await expect(sheet.getByRole("heading", { name: "SAM 3 视频追踪 · RTX 4090" })).toBeVisible();
+  await expect(sheet).toContainText("视频池 1/3 · 2 会话");
+  await expect(sheet).toContainText("demo-node-d/GPU-0");
+  await expect(sheet).toContainText("sam3-video-3.1");
+  await page.waitForTimeout(4_000);
+
+  const variants = sheet.getByRole("button", { name: /模型预热 · 变体/ });
+  await moveTo(page, variants);
+  await variants.click();
+  await expect(sheet.getByText("视频追踪变体 · 已加载（视频池）", { exact: false })).toBeVisible();
+  await expect(sheet.getByText("SAM 3.1", { exact: true }).first()).toBeVisible();
+  await expect(sheet.getByText("已在显存", { exact: true })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "预热", exact: true })).toBeVisible();
+  await page.waitForTimeout(4_200);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }

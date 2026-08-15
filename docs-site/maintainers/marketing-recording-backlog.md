@@ -52,6 +52,16 @@
 | P1     | `jobs-bell-active`                     | 顶栏角标 → 预标 / 导入进度与取消 → 已完成导出摘要与下载                      | 10–22 秒 | `projects/ai-preannotate`   | 已录 |
 | P1     | `video-tracker-job-states`             | 四状态同屏 → 项目 / 待审筛选 → 核对帧范围与方向 → 返回视频工作台             | 12–26 秒 | `workbench/video-propagate` | 已录 |
 
+## 第五批：现有文档动态能力补录
+
+| 优先级 | 资产 ID                                | 完整链路与验收重点                                                      | 建议时长 | 文档落点                    | 状态 |
+| ------ | -------------------------------------- | ----------------------------------------------------------------------- | -------- | --------------------------- | ---- |
+| P1     | `model-market-video-pool`              | 视频服务池 → SAM 3 实例 → 独立池容量 / 会话 / GPU → 视频权重与预热入口  | 12–28 秒 | `superadmin/model-market`   | 待录 |
+| P1     | `video-timeline-prediction-navigation` | 展开预测密度轨 → 连续跳转预测帧 → 核对画布候选与时间轴位置              | 12–24 秒 | `workbench/video-playback`  | 待录 |
+| P1     | `video-propagate-track-vs-copy`        | 同一真实轨迹分别展示 AI 延展与纯几何复制 → 对比作业、结果与适用边界     | 18–36 秒 | `workbench/video-propagate` | 待录 |
+| P1     | `pointcloud-billboard-label`           | 启用 3D 标签内容 → 绕框旋转视角 → 核对文字持续正对相机并保留类别 / 属性 | 14–26 秒 | `workbench/3d-box`          | 待录 |
+| P1     | `storage-connector-create-test`        | 新建脱敏 S3 / OSS 连接器 → 测试连接 → 展示成功状态与样本计数 → 精确清理 | 14–28 秒 | `datasets/index`            | 待录 |
+
 ## 版本与复核
 
 - 录制来源版本、dirty 状态、种子修订和媒体哈希由 manifest 自动记录，不在表格中手填。

@@ -47,6 +47,7 @@ import {
   runModelMarketGpuResourceOverview,
   runModelMarketRuntimePartialFailure,
   runModelMarketRuntimePool,
+  runModelMarketVideoPool,
 } from "./model-market-runtime-pool";
 import { runProjectMlRouting } from "./project-ml-routing";
 import { runBackgroundExportDownload } from "./background-export-download";
@@ -146,6 +147,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "pipeline-apply-project": "pipeline-apply-project.ts",
   "jobs-retry-recovery": "jobs-retry-recovery.ts",
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
+  "model-market-video-pool": "model-market-runtime-pool.ts",
   "model-market-runtime-partial-failure": "model-market-runtime-pool.ts",
   "model-market-gpu-resource-overview": "model-market-runtime-pool.ts",
   "project-ml-routing": "project-ml-routing.ts",
@@ -1604,6 +1606,17 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     const win = await runModelMarketRuntimePool(page, cached);
     await finalize(page, "model-market-runtime-pool", undefined, drawTrim(win, t0));
+  });
+
+  test("model-market-video-pool — 视频追踪独立显存池与预热入口", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const t0 = Date.now();
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
+    const win = await runModelMarketVideoPool(page, cached);
+    await finalize(page, "model-market-video-pool", undefined, drawTrim(win, t0));
   });
 
   test("model-market-runtime-partial-failure — 单数据源失败与可信状态保留", async ({
