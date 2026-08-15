@@ -176,6 +176,15 @@ export interface SeedProjectPipeline {
   stages: Array<Record<string, unknown>>;
 }
 
+export interface SeedTaskAnnotation {
+  id: string;
+  task_id: string;
+  annotation_type: string;
+  class_name: string;
+  geometry: Record<string, unknown>;
+  track_id?: string | null;
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -214,6 +223,28 @@ export class SeedAPI {
       throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
     }
     return ((await res.json()) as { access_token: string }).access_token;
+  }
+
+  /** 通过正式 API 准备单条录制夹具；调用方必须在 finally 精确删除。 */
+  async createTaskAnnotation(
+    taskId: string,
+    userEmail: string,
+    payload: {
+      annotation_type: string;
+      tool_unit_id: string;
+      class_name: string;
+      geometry: Record<string, unknown>;
+    },
+  ): Promise<SeedTaskAnnotation> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.post(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+      data: payload,
+    });
+    if (!res.ok()) {
+      throw new Error(`annotations/create failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedTaskAnnotation;
   }
 
   /** 精确删除录制夹具或流程创建的单条标注。 */

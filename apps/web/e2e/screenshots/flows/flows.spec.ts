@@ -29,6 +29,7 @@ import { runAiTrackerPanel } from "./ai-tracker-panel";
 import { runPointcloudControls } from "./pointcloud-controls";
 import { runPointcloudView } from "./pointcloud-view";
 import { runPointcloudCameraSeed3dBox } from "./pointcloud-camera-seed-3d-box";
+import { runPointcloudCrossframeTrack } from "./pointcloud-crossframe-track";
 import { runVideoDraw } from "./video-draw";
 import { runVideoChapter } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
@@ -1608,6 +1609,53 @@ test.describe("flow recordings", () => {
     } finally {
       if (created) {
         await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
+      }
+    }
+  });
+
+  test("pointcloud-crossframe-track — 3D 目标跨帧延续、修正与邻帧核对", async ({ page, seed }) => {
+    test.skip(
+      test.info().project.name !== MARKETING_PROJECT_NAME,
+      "真实点云跨帧链需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
+    );
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(120_000);
+    const userEmail = cached.users.admin.email;
+    const frame0 = cached.projects.pointcloud_demo.tasks.frame_000;
+    const cleanup: Array<{ taskId: string; annotationId: string }> = [];
+    try {
+      const source = await seed.createTaskAnnotation(frame0.id, userEmail, {
+        annotation_type: "box_3d",
+        tool_unit_id: "lidar_box_3d",
+        class_name: "object",
+        geometry: {
+          type: "box_3d",
+          center: [2.0934999585151672, -0.2625943124294281, -0.3888123378157616],
+          size: [0.940999960899353, 0.7639772057533264, 0.7222056895494461],
+          rotation: [0, 0, 1.7316441821747883],
+          convention_at_create: "opencv_camera",
+        },
+      });
+      cleanup.push({ taskId: frame0.id, annotationId: source.id });
+
+      const t0 = Date.now();
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        common: {
+          crossFrameOverlayEnabled: true,
+          crossFrameOverlayK: 1,
+          crossFrameOverlayScope: "selected",
+        },
+      });
+      const win = await runPointcloudCrossframeTrack(page, cached, source, (created) => {
+        cleanup.push(created);
+      });
+      await finalize(page, "pointcloud-crossframe-track", undefined, drawTrim(win, t0));
+    } finally {
+      for (const annotation of cleanup.reverse()) {
+        await seed.deleteTaskAnnotation(annotation.taskId, annotation.annotationId, userEmail);
       }
     }
   });

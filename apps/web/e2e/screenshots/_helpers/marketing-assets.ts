@@ -598,6 +598,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "pointcloud-crossframe-track",
+    title: "3D 目标跨帧延续与修正",
+    theme: "保留同一轨迹身份的确定性跨帧延续",
+    objective:
+      "展示已复核 3D 框延续到后续两帧，在中间帧修正位置，并通过邻帧参考框核对同一 track_id 链。",
+    duration: { minSeconds: 22, targetSeconds: 30, maxSeconds: 40 },
+    shots: [
+      "从首帧已复核的 object 3D 框开始，保留完整点云与选中态。",
+      "延续到第 1 帧，展示新框自动选中、同一轨迹编号与无 ego 轨迹的真实提示。",
+      "在第 1 帧通过数值面板修正框中心位置并保存。",
+      "将修正后的框继续延续到第 2 帧，核对 track_id 未变。",
+      "回到第 1 帧，同时展示当前实线框与同轨迹邻帧虚线参考框。",
+    ],
+    editingNotes: [
+      "该能力不是 AI 追踪；当 scene 无 ego 轨迹时如实保留“原样复制”提示。",
+      "源 3D 框在录制窗口前通过正式 API 准备，母版不混入相机种框或从零画框。",
+    ],
+  }),
+  defineAsset({
     assetId: "video-draw",
     title: "视频轨迹画框",
     theme: "关键帧标注与中间帧插值",
