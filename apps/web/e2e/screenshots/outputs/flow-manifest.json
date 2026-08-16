@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-16T09:28:55.870Z",
+  "updated_at": "2026-08-16T10:56:19.918Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -3364,19 +3364,20 @@
     "docs-site/public/media/video/tracker-positive-negative-poster.webp": {
       "asset_id": "video-tracker-positive-negative",
       "role": "poster",
-      "generated_at": "2026-08-15T06:09:57.724Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
+      "generated_at": "2026-08-16T10:56:19.918Z",
+      "captured_commit": "0b8d8fc9686a68995df865f24e38a4234de14900",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › video-tracker-positive-negative",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "724105fdf03bc4c5462ea1454f77f97481b86ac637e0467ee3b00778da56df45",
-      "bytes": 91940,
+      "sha256": "47f039a723659648a39837759c7ae80a55a2d8bcca8eff6bb94467653001603c",
+      "bytes": 91470,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -3386,39 +3387,40 @@
         "duration_seconds": null
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260816T105354Z-0b8d8fc9686a",
         "assetId": "video-tracker-positive-negative",
-        "sha256": "53042a82196194f2b0ad74ef39ab5c6a5890908123b640e4bd573e9af7e29292"
+        "sha256": "7064daa3571f3ff2946b204d23025847ac110b984e3e88a0ace442199cc5af8b"
       }
     },
     "docs-site/public/media/video/tracker-positive-negative.mp4": {
       "asset_id": "video-tracker-positive-negative",
       "role": "docs-video",
-      "generated_at": "2026-08-15T06:09:57.656Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
+      "generated_at": "2026-08-16T10:56:19.829Z",
+      "captured_commit": "0b8d8fc9686a68995df865f24e38a4234de14900",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-f",
       "source": "apps/web/scripts/derive-doc-media.mjs",
       "test_title": "derive docs media › video-tracker-positive-negative",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "cf01bda1676ce595676a737b1355ca8790fa9b376127eecdc0ee492473b0e443",
-      "bytes": 2093349,
+      "sha256": "27be93514cbe6843072624155255ec20b58612a17d1c8be0eb133e44e1343eaf",
+      "bytes": 1642403,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 43.234
+        "duration_seconds": 30.5
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260816T105354Z-0b8d8fc9686a",
         "assetId": "video-tracker-positive-negative",
-        "sha256": "53042a82196194f2b0ad74ef39ab5c6a5890908123b640e4bd573e9af7e29292"
+        "sha256": "7064daa3571f3ff2946b204d23025847ac110b984e3e88a0ace442199cc5af8b"
       }
     },
     "docs-site/public/media/video/tracker-range-poster.webp": {
