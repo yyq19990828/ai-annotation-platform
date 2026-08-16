@@ -4,8 +4,9 @@ AI 标注平台官方 Python SDK(beta)。同步 Client 覆盖 projects / dataset
 predictions / jobs / exports / ml_backends / batches / members / dashboard / api_keys 等稳定自动化工作流；
 并提供全局 ML registry 与 service pool 运维；extras 提供 `aap` CLI 与终端监控面板。
 
-SDK、CLI 与 TUI 使用独立于 AAP 的 SemVer。AAP target 表示该 SDK release 完成测试与 OpenAPI 对账的
-平台基线，不代表未经验证的完整兼容范围：
+SDK、CLI 与 TUI 使用独立于 AAP 的 SemVer。AAP target 表示该 SDK release 最近一次完成测试与
+OpenAPI 对账的平台基线，不代表未经验证的完整兼容范围。主仓库发布新版本时无需同步更新该字段，
+也不会仅因 target 落后于当前主仓库版本而让契约测试失败；定期优化 SDK 时再更新它：
 
 ```python
 from ai_annotation import __aap_target_version__, __version__
