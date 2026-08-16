@@ -27,6 +27,14 @@ from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 
 
+def test_retryable_request_context_has_hard_size_limit():
+    from app.workers.tasks import _retryable_request_context
+
+    small = {"type": "text", "text": "car"}
+    assert _retryable_request_context(small) == small
+    assert _retryable_request_context({"text": "x" * (8 * 1024)}) is None
+
+
 async def _seed_project_and_backend(
     db: AsyncSession, owner_id: uuid.UUID
 ) -> tuple[Project, MLBackendRegistry]:

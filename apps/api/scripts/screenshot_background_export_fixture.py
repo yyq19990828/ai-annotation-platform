@@ -30,11 +30,19 @@ from app.db.models.export_artifact import ExportArtifact  # noqa: E402
 from app.db.models.notification import Notification  # noqa: E402
 from app.services import async_job as async_job_svc  # noqa: E402
 from app.services.storage import storage_service  # noqa: E402
+from app.workers.celery_app import celery_app  # noqa: E402
 from app.workers.export import _run_export  # noqa: E402
 from scripts.cleanup_screenshot_ocr_flow import assert_screenshot_scope  # noqa: E402
 
 
 ASSET_ID = "background-export-download"
+
+
+def _purge_export_queue() -> int:
+    """Drain the isolated screenshot broker's otherwise-unconsumed export queue."""
+    with celery_app.connection_for_write() as connection:
+        queue = celery_app.amqp.queues["export"].bind(connection.default_channel)
+        return int(queue.purge() or 0)
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,6 +93,11 @@ async def _validate_and_mark(args: argparse.Namespace) -> dict:
             targets = (job.payload or {}).get("targets")
             if targets != ["coco", "aap_json"]:
                 raise RuntimeError(f"unexpected recording export targets: {targets!r}")
+            purged_messages = _purge_export_queue()
+            if purged_messages < 1:
+                raise RuntimeError(
+                    "screenshot export queue did not contain the API task"
+                )
             job.payload = {
                 **(job.payload or {}),
                 "recording_asset_id": ASSET_ID,
@@ -93,6 +106,7 @@ async def _validate_and_mark(args: argparse.Namespace) -> dict:
             await db.commit()
             return {
                 "job_id": str(job.id),
+                "queued_messages_purged": purged_messages,
                 "targets": list(targets),
                 "opts": {
                     "include_attributes": bool(
@@ -145,6 +159,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
                 project_id=args.project_id,
                 task_id=args.task_id,
             )
+            purged_messages = _purge_export_queue()
             jobs = list(
                 (
                     await db.execute(
@@ -212,6 +227,7 @@ async def cleanup(args: argparse.Namespace) -> dict[str, int]:
             artifact_result.rowcount if artifact_result is not None else 0
         ),
         "objects": len(object_keys),
+        "queued_messages": purged_messages,
     }
 
 

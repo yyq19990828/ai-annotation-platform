@@ -62,6 +62,9 @@ API_PROXY_TARGET=http://127.0.0.1:8010 PORT=3001 pnpm dev --host 127.0.0.1
 
 `E2E_SEED_ENABLED` 仅对这个专用 API 进程临时开启。路由还会在数据库会话中
 验证 `_test` 后缀，不要将 API 命令的 `DATABASE_URL` 改为开发库。
+专用 Worker 故意不消费 `export` 队列；后台导出录制夹具会先从隔离的 Redis DB 15
+确认并移除 API 投递的导出消息，再对截图数据库直接执行 worker 主体；清理步骤也会
+排空该隔离队列，避免之后接入导出 Worker 时执行已删除作业的陈旧消息。
 营销录制启动器还会检查 `/health`：只有截图 API 能看见 `screenshots@…` worker，
 且看不见任何日常 worker 时才会开始录制。这个门禁可以在录制前发现数据库或 Redis
 隔离错误，避免项目预标注被错误 worker 取走后一直停留在“运行中”。

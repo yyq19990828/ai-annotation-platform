@@ -71,6 +71,7 @@ logger = logging.getLogger("app.api.projects")
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 _STATS_SERIES_POINTS = 12
 _STATS_SERIES_STEP = timedelta(days=7)
+_MAX_PREANNOTATE_RETRY_CONTEXT_BYTES = 8 * 1024
 
 
 def _visible_project_filter(user: User):
@@ -1545,6 +1546,10 @@ class PreannotateRequest(BaseModel):
         for s in sorted(stages, key=lambda x: x.stage):
             if s.parent_stage is None:
                 continue
+            if s.parent_stage >= s.stage:
+                raise ValueError(
+                    f"stage {s.stage} 的 parent_stage={s.parent_stage} 必须小于子阶段序号"
+                )
             if s.parent_stage not in known_depth:
                 raise ValueError(
                     f"stage {s.stage} 的 parent_stage={s.parent_stage} 未在前面定义; "
@@ -1623,6 +1628,23 @@ class PreannotateRequest(BaseModel):
                             f"都写 {final!r} 到 root; 设 on_key_conflict=last_wins 以允许末位覆盖"
                         )
                     final_keys[final] = s.stage
+        return self
+
+    @model_validator(mode="after")
+    def _validate_retry_context_size(self) -> "PreannotateRequest":
+        payload = self.model_dump_json(
+            include={
+                "prompt",
+                "output_mode",
+                "params",
+                "model_id",
+                "task_type",
+                "model_variants",
+                "class_filter",
+            }
+        ).encode()
+        if len(payload) > _MAX_PREANNOTATE_RETRY_CONTEXT_BYTES:
+            raise ValueError("预标注模型上下文不能超过 8 KiB")
         return self
 
 

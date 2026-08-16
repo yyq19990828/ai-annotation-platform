@@ -14,6 +14,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus
@@ -226,3 +227,45 @@ async def test_preannotate_invalid_output_mode_rejected(
         },
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_preannotate_rejects_oversized_retry_context(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    owner, token = super_admin
+    proj, backend, batch = await _seed(db_session, owner.id)
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(backend.id),
+            "batch_id": str(batch.id),
+            "prompt": "x" * (8 * 1024),
+        },
+    )
+    assert resp.status_code == 422
+    assert "8 KiB" in resp.text
+
+
+def test_preannotate_rejects_child_stage_sorted_before_root():
+    from app.api.v1.projects import PreannotateRequest
+
+    backend_id = uuid.uuid4()
+    with pytest.raises(ValidationError, match="必须小于子阶段序号"):
+        PreannotateRequest(
+            pipeline_stages=[
+                {
+                    "stage": 5,
+                    "ml_backend_id": backend_id,
+                    "parent_stage": None,
+                    "params": {"root": "ok"},
+                },
+                {
+                    "stage": 0,
+                    "ml_backend_id": backend_id,
+                    "parent_stage": 5,
+                    "params": {"blob": "x" * 20_000},
+                },
+            ]
+        )
