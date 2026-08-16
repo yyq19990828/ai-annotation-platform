@@ -96,7 +96,12 @@ Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/review-two-level-cycle.png — 两级循环示意 [manual] -->
 
-![接受或拒绝后自动推进到下一待决候选](../images/workbench/review-auto-advance.gif)
+<DocsVideo
+  src="/media/ai/candidate-keyboard-review.mp4"
+  poster="/media/ai/candidate-keyboard-review-poster.webp"
+  alt="使用 Tab 选中 AI 候选，按 A 接受或 D 拒绝后自动前进到下一项"
+  caption="Tab / Shift+Tab 在候选之间切换；按 A 接受或 D 拒绝后，焦点自动前进到下一项，适合连续处理 AI 候选。"
+/>
 
 从 AI 结果接管、逐个采纳 / 拒绝时可全程键盘操作（图片与视频 2D 工作台通用）：
 

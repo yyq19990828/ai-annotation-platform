@@ -90,12 +90,12 @@
 ### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
 
 - [ ] `images/workbench/review-two-level-cycle.png` — 两级键盘循环示意（建议矢量示意图）：`Tab`/`Shift+Tab` 同类流转，`` ` ``/``Shift+` `` 跨类跳转（AI 待审 → 人工 → 轨迹）[manual]
-- [x] `images/workbench/review-auto-advance.gif` — 决策后自动前进：`A`/`D` 采纳/拒绝 AI 候选后选中自动推进到下一待决对象 `[auto-gif]`（flows/candidate-keyboard-review 的聚焦裁切版）
+- [~] ~~`images/workbench/review-auto-advance.gif`~~ — **已由** `public/media/ai/candidate-keyboard-review.mp4` **替代**：完整键盘审阅流已迁移到 DocsVideo
 
 ### 两类传播术语（对应 `workbench/video-propagate.md`）
 
 - [x] `public/media/video/propagate-track-vs-copy.mp4` — 同一条中间卡车轨迹先纯几何复制 F0→F30，展示固定框与变大车身的偏离；撤销后运行真实 SAM3 延展，跨帧复核随目标变化的候选并回填 F1–F30 `[derived-mp4]`
-- [x] `images/video-propagate/shift-brush-range.gif` — `Shift` 刷选时间轴圈定 AI 追踪范围 → 画布右上追踪面板同步回填 + 影响范围高亮可见 `[auto-gif]`（flows/video-tracker-range）
+- [~] ~~`images/video-propagate/shift-brush-range.gif`~~ — **已由** `public/media/video/tracker-range.mp4` **替代**：完整范围选择流已迁移到 DocsVideo
 
 ### 点云文字标签（对应 `workbench/3d-box.md` / `workbench/settings.md`）
 

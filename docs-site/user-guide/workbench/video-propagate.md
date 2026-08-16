@@ -62,7 +62,12 @@ last_reviewed: 2026-08-16
 
 范围可选 10 / 30 / 60 帧、到相邻关键帧、到视频端点。开启帧采样后，数字范围按网格格子计算。也可以在时间轴上按住 `Shift` 拖选自定义范围；工具条会显示实际起止帧，并在大范围需要分窗时给出粗略窗口数。
 
-![按住 Shift 刷选时间轴并把自定义范围回填到 AI 追踪面板](../images/video-propagate/shift-brush-range.gif)
+<DocsVideo
+  src="/media/video/tracker-range.mp4"
+  poster="/media/video/tracker-range-poster.webp"
+  alt="按住 Shift 刷选时间轴范围并把自定义范围回填到 AI 追踪面板"
+  caption="按住 Shift 刷选后，追踪面板会显示实际起止帧与影响范围；确认范围后再发起 AI 追踪。"
+/>
 
 ## 按意图选择模型
 
