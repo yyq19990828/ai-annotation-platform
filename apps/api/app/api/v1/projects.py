@@ -71,7 +71,6 @@ logger = logging.getLogger("app.api.projects")
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 _STATS_SERIES_POINTS = 12
 _STATS_SERIES_STEP = timedelta(days=7)
-_MAX_PREANNOTATE_RETRY_CONTEXT_BYTES = 8 * 1024
 
 
 def _visible_project_filter(user: User):
@@ -1630,23 +1629,6 @@ class PreannotateRequest(BaseModel):
                     final_keys[final] = s.stage
         return self
 
-    @model_validator(mode="after")
-    def _validate_retry_context_size(self) -> "PreannotateRequest":
-        payload = self.model_dump_json(
-            include={
-                "prompt",
-                "output_mode",
-                "params",
-                "model_id",
-                "task_type",
-                "model_variants",
-                "class_filter",
-            }
-        ).encode()
-        if len(payload) > _MAX_PREANNOTATE_RETRY_CONTEXT_BYTES:
-            raise ValueError("预标注模型上下文不能超过 8 KiB")
-        return self
-
 
 def _validate_saved_pipeline(stages) -> None:
     """v0.18.27 · 校验「保存到项目」的编排结构, 复用预标注端点同款 PipelineStage + 树形校验。
@@ -1804,6 +1786,21 @@ async def trigger_preannotation(
 ):
     from app.services.ml_backend import MLBackendService
     from app.services.audit import AuditService
+    from app.workers.tasks import _build_predict_context, _retryable_request_context
+
+    retry_context = _build_predict_context(
+        prompt=body.prompt,
+        output_mode=body.output_mode,
+        params=body.params,
+        model_id=body.model_id,
+        task_type=body.task_type,
+        model_variants=body.model_variants,
+        class_filter=body.class_filter,
+        box_threshold=float(project.box_threshold),
+        text_threshold=float(project.text_threshold),
+    )
+    if retry_context is not None and _retryable_request_context(retry_context) is None:
+        raise HTTPException(status_code=422, detail="预标注模型上下文不能超过 8 KiB")
 
     svc = MLBackendService(db)
     source_backend_id = body.ml_backend_id

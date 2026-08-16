@@ -4,7 +4,7 @@
   "review_profile": "visual-content-v1",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -19,7 +19,7 @@
       ]
     },
     "docs-site/public/home/ai-assisted-annotation.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -33,7 +33,7 @@
       ]
     },
     "docs-site/public/home/ai-assisted-annotation.webm": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -47,7 +47,7 @@
       ]
     },
     "docs-site/public/home/ocr-real-scene-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -61,7 +61,7 @@
       ]
     },
     "docs-site/public/home/ocr-real-scene.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -75,7 +75,7 @@
       ]
     },
     "docs-site/public/home/ocr-real-scene.webm": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -89,7 +89,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/exemplar-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -103,7 +103,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/exemplar.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -117,7 +117,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/exemplar.webm": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -131,7 +131,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-box-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -145,7 +145,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-box.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -159,7 +159,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-box.webm": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -173,7 +173,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-point-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -187,7 +187,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-point.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -201,7 +201,7 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-point.webm": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -215,7 +215,7 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -230,7 +230,7 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -245,7 +245,7 @@
       ]
     },
     "docs-site/public/media/ai/candidate-keyboard-review-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -259,7 +259,7 @@
       ]
     },
     "docs-site/public/media/ai/candidate-keyboard-review.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -273,7 +273,7 @@
       ]
     },
     "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -288,7 +288,7 @@
       ]
     },
     "docs-site/public/media/ai/candidate-review-lifecycle.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -303,7 +303,7 @@
       ]
     },
     "docs-site/public/media/ai/current-frame-video-inference-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -318,7 +318,7 @@
       ]
     },
     "docs-site/public/media/ai/current-frame-video-inference.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -333,7 +333,7 @@
       ]
     },
     "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -348,7 +348,7 @@
       ]
     },
     "docs-site/public/media/ai/current-task-image-inference.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -363,7 +363,7 @@
       ]
     },
     "docs-site/public/media/ai/ocr-current-task-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -378,7 +378,7 @@
       ]
     },
     "docs-site/public/media/ai/ocr-current-task.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -393,7 +393,7 @@
       ]
     },
     "docs-site/public/media/ai/preannotate-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -407,7 +407,7 @@
       ]
     },
     "docs-site/public/media/ai/preannotate.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -421,7 +421,7 @@
       ]
     },
     "docs-site/public/media/ai/prediction-import-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -435,7 +435,7 @@
       ]
     },
     "docs-site/public/media/ai/prediction-import.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -449,7 +449,7 @@
       ]
     },
     "docs-site/public/media/ai/secondary-inference-attribute-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -464,7 +464,7 @@
       ]
     },
     "docs-site/public/media/ai/secondary-inference-attribute.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -479,7 +479,7 @@
       ]
     },
     "docs-site/public/media/datasets/background-export-download-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -494,7 +494,7 @@
       ]
     },
     "docs-site/public/media/datasets/background-export-download.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -509,7 +509,7 @@
       ]
     },
     "docs-site/public/media/datasets/storage-connector-create-test-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -524,7 +524,7 @@
       ]
     },
     "docs-site/public/media/datasets/storage-connector-create-test.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -539,7 +539,7 @@
       ]
     },
     "docs-site/public/media/jobs/jobs-bell-active-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -554,7 +554,7 @@
       ]
     },
     "docs-site/public/media/jobs/jobs-bell-active.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -569,7 +569,7 @@
       ]
     },
     "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -584,7 +584,7 @@
       ]
     },
     "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -599,7 +599,7 @@
       ]
     },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -614,7 +614,7 @@
       ]
     },
     "docs-site/public/media/large-image/mask-limit.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -629,7 +629,7 @@
       ]
     },
     "docs-site/public/media/large-image/progressive-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -643,7 +643,7 @@
       ]
     },
     "docs-site/public/media/large-image/progressive.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -657,7 +657,7 @@
       ]
     },
     "docs-site/public/media/large-image/pyramid-recovery-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -672,7 +672,7 @@
       ]
     },
     "docs-site/public/media/large-image/pyramid-recovery.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -687,7 +687,7 @@
       ]
     },
     "docs-site/public/media/mask-brush/mask-draw-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -702,7 +702,7 @@
       ]
     },
     "docs-site/public/media/mask-brush/mask-draw.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -717,7 +717,7 @@
       ]
     },
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -732,7 +732,7 @@
       ]
     },
     "docs-site/public/media/pipeline/apply-project.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -747,7 +747,7 @@
       ]
     },
     "docs-site/public/media/pipeline/template-create-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -762,7 +762,7 @@
       ]
     },
     "docs-site/public/media/pipeline/template-create.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -777,7 +777,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/billboard-label-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -792,7 +792,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/billboard-label.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -807,7 +807,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -822,7 +822,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -837,7 +837,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/controls-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -851,7 +851,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/controls.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -865,7 +865,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/crossframe-track-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -880,7 +880,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/crossframe-track.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -895,7 +895,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/orbit-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -909,7 +909,7 @@
       ]
     },
     "docs-site/public/media/pointcloud/orbit.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -923,7 +923,7 @@
       ]
     },
     "docs-site/public/media/polygon/draw-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -938,7 +938,7 @@
       ]
     },
     "docs-site/public/media/polygon/draw.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -953,7 +953,7 @@
       ]
     },
     "docs-site/public/media/polyline/draw-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -968,7 +968,7 @@
       ]
     },
     "docs-site/public/media/polyline/draw.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -983,7 +983,7 @@
       ]
     },
     "docs-site/public/media/projects/ai-pre-variant-selector-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -998,7 +998,7 @@
       ]
     },
     "docs-site/public/media/projects/ai-pre-variant-selector.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1013,7 +1013,7 @@
       ]
     },
     "docs-site/public/media/projects/batch-bulk-actions-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1028,7 +1028,7 @@
       ]
     },
     "docs-site/public/media/projects/batch-bulk-actions.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1043,7 +1043,7 @@
       ]
     },
     "docs-site/public/media/projects/create-existing-resources-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1058,7 +1058,7 @@
       ]
     },
     "docs-site/public/media/projects/create-existing-resources.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1073,7 +1073,7 @@
       ]
     },
     "docs-site/public/media/projects/ml-routing-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1088,7 +1088,7 @@
       ]
     },
     "docs-site/public/media/projects/ml-routing.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1103,7 +1103,7 @@
       ]
     },
     "docs-site/public/media/projects/project-actions-menu-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1118,7 +1118,7 @@
       ]
     },
     "docs-site/public/media/projects/project-actions-menu.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1133,7 +1133,7 @@
       ]
     },
     "docs-site/public/media/review/reject-flow-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1148,7 +1148,7 @@
       ]
     },
     "docs-site/public/media/review/reject-flow.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1163,7 +1163,7 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1178,7 +1178,7 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1193,7 +1193,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/gpu-resources-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1208,7 +1208,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/gpu-resources.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1223,7 +1223,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1238,7 +1238,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1253,7 +1253,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1268,7 +1268,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1283,7 +1283,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/video-pool-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1298,7 +1298,7 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/video-pool.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1313,7 +1313,7 @@
       ]
     },
     "docs-site/public/media/superadmin/platform-overview-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1328,7 +1328,7 @@
       ]
     },
     "docs-site/public/media/superadmin/platform-overview.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1343,7 +1343,7 @@
       ]
     },
     "docs-site/public/media/video/ai-tracker-panel-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1357,7 +1357,7 @@
       ]
     },
     "docs-site/public/media/video/ai-tracker-panel.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1371,7 +1371,7 @@
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1386,7 +1386,7 @@
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1401,7 +1401,7 @@
       ]
     },
     "docs-site/public/media/video/mask-track-edit-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1415,7 +1415,7 @@
       ]
     },
     "docs-site/public/media/video/mask-track-edit.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1429,7 +1429,7 @@
       ]
     },
     "docs-site/public/media/video/prediction-density-navigation-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1444,7 +1444,7 @@
       ]
     },
     "docs-site/public/media/video/prediction-density-navigation.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1459,7 +1459,7 @@
       ]
     },
     "docs-site/public/media/video/propagate-track-vs-copy-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1474,7 +1474,7 @@
       ]
     },
     "docs-site/public/media/video/propagate-track-vs-copy.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1489,7 +1489,7 @@
       ]
     },
     "docs-site/public/media/video/track-batch-propagate-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1505,7 +1505,7 @@
       ]
     },
     "docs-site/public/media/video/track-batch-propagate.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1521,7 +1521,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-box-seed-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1535,7 +1535,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-box-seed.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1549,7 +1549,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1564,7 +1564,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1579,7 +1579,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-cross-frame-points-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1593,7 +1593,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-cross-frame-points.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1607,7 +1607,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-positive-negative-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1622,7 +1622,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-positive-negative.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1637,7 +1637,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-range-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1651,7 +1651,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-range.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1665,7 +1665,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1680,7 +1680,7 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1695,7 +1695,7 @@
       ]
     },
     "docs-site/public/media/video/video-chapter-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1710,7 +1710,7 @@
       ]
     },
     "docs-site/public/media/video/video-chapter.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1725,7 +1725,7 @@
       ]
     },
     "docs-site/public/media/video/video-draw-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1740,7 +1740,7 @@
       ]
     },
     "docs-site/public/media/video/video-draw.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1755,7 +1755,7 @@
       ]
     },
     "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1770,7 +1770,7 @@
       ]
     },
     "docs-site/public/media/video/video-timeline-zoom.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1785,7 +1785,7 @@
       ]
     },
     "docs-site/public/media/video/video-track-carryover-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1800,7 +1800,7 @@
       ]
     },
     "docs-site/public/media/video/video-track-carryover.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1815,7 +1815,7 @@
       ]
     },
     "docs-site/public/media/video/workbench-overview-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1829,7 +1829,7 @@
       ]
     },
     "docs-site/public/media/video/workbench-overview.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1843,7 +1843,7 @@
       ]
     },
     "docs-site/public/media/workbench/hotkey-cheatsheet-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1858,7 +1858,7 @@
       ]
     },
     "docs-site/public/media/workbench/hotkey-cheatsheet.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1873,7 +1873,7 @@
       ]
     },
     "docs-site/public/media/workbench/rotated-bbox-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1888,7 +1888,7 @@
       ]
     },
     "docs-site/public/media/workbench/rotated-bbox.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1903,7 +1903,7 @@
       ]
     },
     "docs-site/public/media/workflows/jobs-retry-recovery-poster.webp": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1918,7 +1918,7 @@
       ]
     },
     "docs-site/public/media/workflows/jobs-retry-recovery.mp4": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1933,7 +1933,7 @@
       ]
     },
     "docs-site/user-guide/images/bbox/draw-in-progress.gif": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1944,7 +1944,7 @@
       ]
     },
     "docs-site/user-guide/images/datasets/import-images-wizard.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1956,7 +1956,7 @@
       ]
     },
     "docs-site/user-guide/images/export/format-select.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1968,7 +1968,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/e2e.gif": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1979,7 +1979,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/forgot-password.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -1991,7 +1991,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/login.dark.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2003,7 +2003,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/login.mobile.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2015,7 +2015,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/login.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2027,7 +2027,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/platform-nav-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2039,7 +2039,7 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/role-dashboard-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2051,7 +2051,7 @@
       ]
     },
     "docs-site/user-guide/images/mask-brush/toolbar-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2063,7 +2063,7 @@
       ]
     },
     "docs-site/user-guide/images/notifications/panel-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2075,7 +2075,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/ai-pre-config-panel.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2088,7 +2088,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/ai-pre-history-search.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2100,7 +2100,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/ai-pre-stepper.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2112,7 +2112,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/batch-status-list.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2124,7 +2124,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/create-entry.dark.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2136,7 +2136,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/create-entry.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2148,7 +2148,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2160,7 +2160,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/data-manager-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2172,7 +2172,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/empty-state.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2184,7 +2184,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/error-state.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2196,7 +2196,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/ml-backends/register-form.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2208,7 +2208,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/prediction-import-wizard.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2220,7 +2220,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/prediction-purge-modal.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2232,7 +2232,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/template-library-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2244,7 +2244,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/tool-units-panel.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2256,7 +2256,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/wizard-step4-backend.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2268,7 +2268,7 @@
       ]
     },
     "docs-site/user-guide/images/projects/wizard-steps.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2281,7 +2281,7 @@
       ]
     },
     "docs-site/user-guide/images/review/reject-form.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2293,7 +2293,7 @@
       ]
     },
     "docs-site/user-guide/images/review/review-list-page.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2305,7 +2305,7 @@
       ]
     },
     "docs-site/user-guide/images/review/workbench.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2317,7 +2317,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/ai-inspector-panel.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2329,7 +2329,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/exemplar-interaction.gif": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2340,7 +2340,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2352,7 +2352,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/interactive-toolbar.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2364,7 +2364,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/magic-box-toolbar.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2376,7 +2376,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-box-interaction.gif": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2387,7 +2387,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-point-interaction.gif": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2398,7 +2398,7 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-point-toolbar.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2410,7 +2410,7 @@
       ]
     },
     "docs-site/user-guide/images/settings/my-feedback.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2422,7 +2422,7 @@
       ]
     },
     "docs-site/user-guide/images/settings/notification-prefs.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2434,7 +2434,7 @@
       ]
     },
     "docs-site/user-guide/images/settings/profile.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2446,7 +2446,7 @@
       ]
     },
     "docs-site/user-guide/images/settings/system-smtp.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2458,7 +2458,7 @@
       ]
     },
     "docs-site/user-guide/images/settings/workbench-prefs.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2470,7 +2470,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/analytics/heatmap.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2482,7 +2482,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/analytics/overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2494,7 +2494,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/audit-logs/detail-modal.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2506,7 +2506,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/audit-logs/filter-bar.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2518,7 +2518,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/bugs/detail-panel.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2529,7 +2529,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/bugs/list.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2541,7 +2541,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/bugs/status-transitions.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2552,7 +2552,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/ml-backend/register-form.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2564,7 +2564,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/model-market/list.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2576,7 +2576,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/public-templates/templates-list.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2588,7 +2588,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/system-monitoring/health-panel.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2600,7 +2600,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/system-monitoring/workers-table.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2612,7 +2612,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/users/edit-modal.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2624,7 +2624,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/users/groups-tab.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2636,7 +2636,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/users/invite-modal.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2648,7 +2648,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/users/list.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2660,7 +2660,7 @@
       ]
     },
     "docs-site/user-guide/images/superadmin/users/permission-matrix.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2673,7 +2673,7 @@
       ]
     },
     "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2685,7 +2685,7 @@
       ]
     },
     "docs-site/user-guide/images/workbench/layout-overview.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2697,7 +2697,7 @@
       ]
     },
     "docs-site/user-guide/images/workbench/ocr-real-scene.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2709,7 +2709,7 @@
       ]
     },
     "docs-site/user-guide/images/workbench/pointcloud-real-scene.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2722,7 +2722,7 @@
       ]
     },
     "docs-site/user-guide/images/workbench/video-real-scene.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
@@ -2734,7 +2734,7 @@
       ]
     },
     "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
-      "last_verified_commit": "3e02478d80487f938590e9b199aaf5d327331a91",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
       "verified_at": "2026-08-16T12:36:37.673Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",

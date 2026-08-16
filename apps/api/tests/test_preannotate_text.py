@@ -248,6 +248,25 @@ async def test_preannotate_rejects_oversized_retry_context(
     assert "8 KiB" in resp.text
 
 
+@pytest.mark.asyncio
+async def test_preannotate_sizes_normalized_retry_context(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
+    owner, token = super_admin
+    proj, backend, batch = await _seed(db_session, owner.id)
+    resp = await httpx_client_bound.post(
+        f"/api/v1/projects/{proj.id}/preannotate",
+        headers=_bearer(token),
+        json={
+            "ml_backend_id": str(backend.id),
+            "batch_id": str(batch.id),
+            "prompt": "bus",
+            "params": {f"unset_{index}": None for index in range(1_000)},
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+
 def test_preannotate_rejects_child_stage_sorted_before_root():
     from app.api.v1.projects import PreannotateRequest
 

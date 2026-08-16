@@ -5234,6 +5234,7 @@ export function useWorkbenchShellModel({
     videoControlsRef,
     isPromptSupported: routing.isPromptSupported,
     aiInteractiveEnabled: currentProject?.ai_interactive_enabled,
+    maskToolDisabledReason: imageMaskSizeDisabledReason,
     maskEditor: stageMaskEditor,
     commitMaskAsPolygon,
     commitMaskInstanceOperation: () => void requestCommitMaskInstanceOperation(),
