@@ -18,7 +18,12 @@ last_reviewed: 2026-06-10
 
 ## 操作
 
-![折线逐点绘制：依次单击落点 + 预览线段，Enter 结束](../images/polyline/draw-in-progress.gif)
+<DocsVideo
+  src="/media/polyline/draw.mp4"
+  poster="/media/polyline/draw-poster.webp"
+  alt="沿线性目标逐点绘制折线并按 Enter 结束"
+  caption="依次单击落点观察预览线段，按 Enter 结束折线，再选择正确类别。"
+/>
 
 1. 在**无选中**状态下按 `L` 切到折线工具（选中状态下 `L` 是锁定）。
 2. 沿目标依次单击落点，每点生成一个顶点（至少 2 点）。

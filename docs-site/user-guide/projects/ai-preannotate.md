@@ -60,7 +60,12 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 ## 参数与模型变体
 
-![AI 预标变体选择器：尺寸 / 速度精度两轴联动 + 推荐 badge](../images/projects/ai-pre-variant-selector.gif)
+<DocsVideo
+  src="/media/projects/ai-pre-variant-selector.mp4"
+  poster="/media/projects/ai-pre-variant-selector-poster.webp"
+  alt="切换 AI 预标变体的尺寸与速度精度选项并查看推荐标识"
+  caption="变体选择器会联动显存、速度与精度信息，并在当前项目可用的选项上显示推荐标识。"
+/>
 
 参数面板来自当前 backend 的 `/setup.params`，常见字段包括 `box_threshold`、`text_threshold`、`score_threshold` 等。选择值按「用户 + backend」记忆，下次进入同一 backend 会自动恢复。
 

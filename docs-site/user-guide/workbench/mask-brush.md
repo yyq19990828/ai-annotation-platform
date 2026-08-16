@@ -31,7 +31,12 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
 
 ![Mask 笔刷工具栏](../images/mask-brush/toolbar-overview.png)
 
-![Mask 笔刷涂抹：拖拽绘制笔迹，Enter 提交](../images/mask-brush/draw-in-progress.gif)
+<DocsVideo
+  src="/media/mask-brush/mask-draw.mp4"
+  poster="/media/mask-brush/mask-draw-poster.webp"
+  alt="在目标区域涂抹 Mask 并按 Enter 提交"
+  caption="拖拽笔刷填充目标区域，确认覆盖范围后按 Enter 提交 Mask。"
+/>
 
 1. **空白 mask（从零开始）**
    - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画

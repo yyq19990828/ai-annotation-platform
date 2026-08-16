@@ -52,7 +52,12 @@ last_reviewed: 2026-08-11
 
 ### 智能笔迹（Smart Scribble）— 在已存 Mask 上做加减法
 
-![选中已存 Mask 后连续添加正向与负向智能笔迹](../images/sam/smart-scribble-interaction.gif)
+<DocsVideo
+  src="/media/sam/smart-scribble.mp4"
+  poster="/media/sam/smart-scribble-poster.webp"
+  alt="在已保存 Mask 上添加正向和负向智能笔迹并查看精修候选"
+  caption="先选中已保存 Mask，再用正向笔迹补回区域、用负向笔迹扣除误分区域，最后确认精修候选。"
+/>
 
 先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹补回目标区域；按住
 `Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，可移除误分区域。没有合格的源 Mask、当前

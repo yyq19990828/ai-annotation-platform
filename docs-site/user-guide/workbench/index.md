@@ -123,7 +123,12 @@ Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可
 
 在工作台内按 `?` 随时打开「键盘快捷键」面板，支持按动作 / 按键搜索，也可按使用频率排序：
 
-![键盘快捷键面板（按 ? 打开）](../images/workbench/hotkey-cheatsheet.gif)
+<DocsVideo
+  src="/media/workbench/hotkey-cheatsheet.mp4"
+  poster="/media/workbench/hotkey-cheatsheet-poster.webp"
+  alt="按问号打开工作台快捷键面板并搜索命令"
+  caption="按 ? 打开快捷键面板，按分组浏览或搜索命令，再关闭面板回到工作台。"
+/>
 
 <!--@include: ./hotkeys.generated.md-->
 

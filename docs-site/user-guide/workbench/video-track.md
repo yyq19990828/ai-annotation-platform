@@ -47,7 +47,12 @@ last_reviewed: 2026-08-15
 
 ## 矩形框、轨迹与关键帧
 
-![轨迹关键帧插值：两帧画框，中间帧 bbox 线性插值平滑移动](../images/workbench/video-track-trajectory.gif)
+<DocsVideo
+  src="/media/video/video-draw.mp4"
+  poster="/media/video/video-draw-poster.webp"
+  alt="在两个关键帧绘制轨迹框并查看中间帧插值"
+  caption="在起止关键帧完成画框并选择类别，切换中间帧可看到轨迹框按时间插值移动。"
+/>
 
 视频工作台明确区分两类对象：
 
@@ -169,7 +174,12 @@ AI 结果无需先落库就能核对，画布与右栏统一用 **violet** 表�
 
 开启帧采样后逐个网格帧续写多条轨迹时：上一网格帧有关键帧、当前帧却还没画的轨迹，会在当前帧显示一个**淡色 ghost 参考框**提示「这条还没续」。
 
-![Tab 切换待续写轨迹，拖动 ghost 续写后自动前进](../images/workbench/video-track-carryover-ghost.gif)
+<DocsVideo
+  src="/media/video/video-track-carryover.mp4"
+  poster="/media/video/video-track-carryover-poster.webp"
+  alt="用 Tab 切换待续写轨迹并拖动 ghost 框完成续写"
+  caption="跨采样网格帧时，ghost 框提示尚未续写的轨迹；拖动完成后可自动前进到下一条。"
+/>
 
 - `Tab` / `Shift+Tab` 会把这些待续轨迹一并纳入循环；点选 ghost 框即在当前帧续写该轨迹。
 - 打开设置里的**「续写后自动前进」**（默认关），续完一条会自动选中同帧下一条待续轨迹，连续续写无需逐条 `Tab` / 点选。

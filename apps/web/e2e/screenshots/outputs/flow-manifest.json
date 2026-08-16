@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-15T23:05:04.299Z",
+  "updated_at": "2026-08-16T09:28:55.870Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -1451,6 +1451,68 @@
         "sha256": "b0e5df77ab0a0b29a2ea5c76c911ac866373c5aa9dbc99e178ebf32520a50203"
       }
     },
+    "docs-site/public/media/mask-brush/mask-draw-poster.webp": {
+      "asset_id": "mask-draw",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:18.944Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › mask-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "f5abbf135b211686c5ff7cb4d4cf9add5c42aa755fa776e3f95911098230b84a",
+      "bytes": 83048,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "mask-draw",
+        "sha256": "d182ba4d7602c479dafa7740f35b3f7749f2463ae3ce5d581bdfbb0ab57972d7"
+      }
+    },
+    "docs-site/public/media/mask-brush/mask-draw.mp4": {
+      "asset_id": "mask-draw",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:18.878Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › mask-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "1c156942999fb17a6097f05dc796e7486a6a38285811267758b3da95776d112c",
+      "bytes": 308532,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 8.834
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "mask-draw",
+        "sha256": "d182ba4d7602c479dafa7740f35b3f7749f2463ae3ce5d581bdfbb0ab57972d7"
+      }
+    },
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
       "asset_id": "pipeline-apply-project",
       "role": "poster",
@@ -1881,6 +1943,254 @@
         "sha256": "c1b7957d196caff7530ba042c9674a4cbd1b90218d70978b07fe10b3cec71d85"
       }
     },
+    "docs-site/public/media/polygon/draw-poster.webp": {
+      "asset_id": "polygon-draw",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:23.601Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › polygon-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "49fe0d6b741c973231b306b2d9bb6847e4dcd98ca9526ea4d1ac140c1596795f",
+      "bytes": 88210,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "polygon-draw",
+        "sha256": "4a80025dd24ff6f876d31e540444de48847edf92c1bd81f611eba8429e367c96"
+      }
+    },
+    "docs-site/public/media/polygon/draw.mp4": {
+      "asset_id": "polygon-draw",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:23.534Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › polygon-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "0d587a54b67e97824256d91da1f777fe2321401ee5902fe779604016cc9f5473",
+      "bytes": 333000,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 10.567
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "polygon-draw",
+        "sha256": "4a80025dd24ff6f876d31e540444de48847edf92c1bd81f611eba8429e367c96"
+      }
+    },
+    "docs-site/public/media/polyline/draw-poster.webp": {
+      "asset_id": "polyline-draw",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:28.135Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › polyline-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "6b759aa7f9e5ccbbf7e16ced7c5bc7d75fde62777dabc06a89347550c50b5af9",
+      "bytes": 89196,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "polyline-draw",
+        "sha256": "ac5ef52e558bc95b44a6370e222542600d86844c29805ff6edae1dd03357b01a"
+      }
+    },
+    "docs-site/public/media/polyline/draw.mp4": {
+      "asset_id": "polyline-draw",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:28.060Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › polyline-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "1c1a09379b8588116a766d4d30729516c114a1bec96b04787e8e8cd287ffe511",
+      "bytes": 346848,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 9.667
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "polyline-draw",
+        "sha256": "ac5ef52e558bc95b44a6370e222542600d86844c29805ff6edae1dd03357b01a"
+      }
+    },
+    "docs-site/public/media/projects/ai-pre-variant-selector-poster.webp": {
+      "asset_id": "ai-pre-variant-selector",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:06.715Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › ai-pre-variant-selector",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "ba70e2dc65d1d0d0bc2023bedb8042b4ea1e00c74a6801c2f5b9b48978cf66cc",
+      "bytes": 47696,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "ai-pre-variant-selector",
+        "sha256": "5414842b7499e6fbadcbf6c01358709267070e7449942e8f733bb9315669a49f"
+      }
+    },
+    "docs-site/public/media/projects/ai-pre-variant-selector.mp4": {
+      "asset_id": "ai-pre-variant-selector",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:06.642Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › ai-pre-variant-selector",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "2aa8762baa2c1b8be6b348572f67cb1085855cd8204b8b75daa25657f7abd605",
+      "bytes": 285280,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 16.8
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "ai-pre-variant-selector",
+        "sha256": "5414842b7499e6fbadcbf6c01358709267070e7449942e8f733bb9315669a49f"
+      }
+    },
+    "docs-site/public/media/projects/batch-bulk-actions-poster.webp": {
+      "asset_id": "batch-bulk-actions",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:10.112Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › batch-bulk-actions",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "2f19609166e5153faec62810c084761eee6fb99b82193ad0d3e69b91736e822d",
+      "bytes": 42100,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "batch-bulk-actions",
+        "sha256": "ea2a9f557fdf97872c5d5fdc4652f0acc3827848e02994f3ee25a596f384354c"
+      }
+    },
+    "docs-site/public/media/projects/batch-bulk-actions.mp4": {
+      "asset_id": "batch-bulk-actions",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:10.051Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › batch-bulk-actions",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "44d23ffe5fbb9b8cc61fa3f59663753527fcf4b399975b1445414b531802389b",
+      "bytes": 169860,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 7.734
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "batch-bulk-actions",
+        "sha256": "ea2a9f557fdf97872c5d5fdc4652f0acc3827848e02994f3ee25a596f384354c"
+      }
+    },
     "docs-site/public/media/projects/create-existing-resources-poster.webp": {
       "asset_id": "project-create-existing-resources",
       "role": "poster",
@@ -2127,6 +2437,68 @@
         "runId": "20260815T181855Z-ffdfbb994137",
         "assetId": "review-reject",
         "sha256": "fcea29db274520c991036aa7878021ebe216320f9ae89a8514bb4fcc520ff70f"
+      }
+    },
+    "docs-site/public/media/sam/smart-scribble-poster.webp": {
+      "asset_id": "smart-scribble",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:37.118Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › smart-scribble",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "1e0effc83ea16e7ca7d923d0f98105a4ff9cc7ae92ff493b12a7e4fbb7c7c5da",
+      "bytes": 88222,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "smart-scribble",
+        "sha256": "739822ce26858e56027b018169f898e8dca6539ee2f05e45286c3828babd569c"
+      }
+    },
+    "docs-site/public/media/sam/smart-scribble.mp4": {
+      "asset_id": "smart-scribble",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:37.055Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › smart-scribble",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "97e559267cc6e48e04aad161077df2ebdd03312b71c973d24e716442f4504d5d",
+      "bytes": 374585,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 9.367
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "smart-scribble",
+        "sha256": "739822ce26858e56027b018169f898e8dca6539ee2f05e45286c3828babd569c"
       }
     },
     "docs-site/public/media/superadmin/model-market/gpu-resources-poster.webp": {
@@ -3171,6 +3543,254 @@
         "sha256": "d01d311effd9f0fb6eb037cd20288d26c7e3f39f4afd50fb679b56def9556540"
       }
     },
+    "docs-site/public/media/video/video-chapter-poster.webp": {
+      "asset_id": "video-chapter",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:41.998Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-chapter",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "d9aee5532ad33b44016c4565448dcf5b873a9777f6024c59b91c366c6934c036",
+      "bytes": 95676,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-chapter",
+        "sha256": "fafa5b159cdb6225eb768763ab719c1822df9073a58284bcb9ad783c56d99ce1"
+      }
+    },
+    "docs-site/public/media/video/video-chapter.mp4": {
+      "asset_id": "video-chapter",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:41.929Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-chapter",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "6085c93e46bb3f48cad0ea08b8797e8a8c07b5b1bf981cfe28b1ce61a9fb82e5",
+      "bytes": 322005,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 11.734
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-chapter",
+        "sha256": "fafa5b159cdb6225eb768763ab719c1822df9073a58284bcb9ad783c56d99ce1"
+      }
+    },
+    "docs-site/public/media/video/video-draw-poster.webp": {
+      "asset_id": "video-draw",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:47.328Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "ec573512649d3495342853631c5cde95cf2a4d79534bbeffeb12c17a6575488d",
+      "bytes": 106824,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-draw",
+        "sha256": "b8ffb897b75d29f11d3161f8dfa0fee9bb6920f48fa678e50277997bdebe4639"
+      }
+    },
+    "docs-site/public/media/video/video-draw.mp4": {
+      "asset_id": "video-draw",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:47.263Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-draw",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "9eb73723c2bf39af62ff70aceaa1195dd33672997163e5abc77c0232e480d5bd",
+      "bytes": 791781,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 12.867
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-draw",
+        "sha256": "b8ffb897b75d29f11d3161f8dfa0fee9bb6920f48fa678e50277997bdebe4639"
+      }
+    },
+    "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
+      "asset_id": "video-timeline-zoom",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:51.408Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-timeline-zoom",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "19c44673b25fa040d85f48dd7e247e1cef0c633712c230675c8644b93205aa5a",
+      "bytes": 111632,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-timeline-zoom",
+        "sha256": "909a872a34ca50c70bdacd1374804b96fef411b7f7e93c84d110e49bf0f8bc40"
+      }
+    },
+    "docs-site/public/media/video/video-timeline-zoom.mp4": {
+      "asset_id": "video-timeline-zoom",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:51.338Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-timeline-zoom",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "78b1f7006ce2fb502c176e77027a2f9cbd88b7fef9d8b587717fe849e5885e96",
+      "bytes": 306565,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 8.734
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-timeline-zoom",
+        "sha256": "909a872a34ca50c70bdacd1374804b96fef411b7f7e93c84d110e49bf0f8bc40"
+      }
+    },
+    "docs-site/public/media/video/video-track-carryover-poster.webp": {
+      "asset_id": "video-track-carryover",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:55.870Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-track-carryover",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "4a1eb00cc1b18346babcd1ed4eba2f5f4934c72c2edaf2890af141e501edc1d7",
+      "bytes": 94668,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-track-carryover",
+        "sha256": "cca2b1b918ba6559ef7a6f6d13fa7242613e117b276767f32f46e9613f66c29c"
+      }
+    },
+    "docs-site/public/media/video/video-track-carryover.mp4": {
+      "asset_id": "video-track-carryover",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:55.807Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › video-track-carryover",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "1aa4bc3b8813a3fca6d86406ba1ca29681438e9327f693ef6122d7298a6483c9",
+      "bytes": 466975,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 10.267
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "video-track-carryover",
+        "sha256": "cca2b1b918ba6559ef7a6f6d13fa7242613e117b276767f32f46e9613f66c29c"
+      }
+    },
     "docs-site/public/media/video/workbench-overview-poster.webp": {
       "asset_id": "video-track",
       "role": "poster",
@@ -3229,6 +3849,130 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "video-track",
         "sha256": "5cbb4d6c6e287b3975bb79c93966cd4c05d0ea8e1d16dc53a54abafd6423ca34"
+      }
+    },
+    "docs-site/public/media/workbench/hotkey-cheatsheet-poster.webp": {
+      "asset_id": "hotkey-cheatsheet",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:14.828Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › hotkey-cheatsheet",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "a9bb01605b411f66106be3230b6eed8d19918a00a35aedb3130641c52d053f4a",
+      "bytes": 34616,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "hotkey-cheatsheet",
+        "sha256": "8be67709a114140e21ebb9c882f1aca964d9798a022a01b3c09cad55df982288"
+      }
+    },
+    "docs-site/public/media/workbench/hotkey-cheatsheet.mp4": {
+      "asset_id": "hotkey-cheatsheet",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:14.755Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › hotkey-cheatsheet",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "bf13e6c9bb648f43ba0faee0317da1fab65551ec395d6d59e7f0415df01c6216",
+      "bytes": 465399,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 10.4
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "hotkey-cheatsheet",
+        "sha256": "8be67709a114140e21ebb9c882f1aca964d9798a022a01b3c09cad55df982288"
+      }
+    },
+    "docs-site/public/media/workbench/rotated-bbox-poster.webp": {
+      "asset_id": "rotated-bbox",
+      "role": "poster",
+      "generated_at": "2026-08-16T09:28:32.814Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › rotated-bbox",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "a93fa3baccaab29515e49c8388c016c867542d69c2904c11c681a3cb520f6377",
+      "bytes": 83650,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "rotated-bbox",
+        "sha256": "40b6d2774e0662811755ed31f537079163d55ef99025c751b1b02389d051f150"
+      }
+    },
+    "docs-site/public/media/workbench/rotated-bbox.mp4": {
+      "asset_id": "rotated-bbox",
+      "role": "docs-video",
+      "generated_at": "2026-08-16T09:28:32.742Z",
+      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "source_worktree_dirty": true,
+      "seed_revision": "screenshots-2026-08-e",
+      "source": "apps/web/scripts/derive-doc-media.mjs",
+      "test_title": "derive docs media › rotated-bbox",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+      ],
+      "sha256": "f2e8c29688ea278ff31997b48fa34adfbc6bb46a0310ae8cc6042b15dd6f4f48",
+      "bytes": 356387,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 10.034
+      },
+      "source_asset": {
+        "runId": "20260815T001709Z-435b32ac23d6",
+        "assetId": "rotated-bbox",
+        "sha256": "40b6d2774e0662811755ed31f537079163d55ef99025c751b1b02389d051f150"
       }
     },
     "docs-site/public/media/workflows/jobs-retry-recovery-poster.webp": {

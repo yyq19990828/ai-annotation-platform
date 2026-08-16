@@ -86,7 +86,12 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
   caption="先看五个预测位置在全片的分布，再用紫色前后按钮只跳到有候选的帧；画布中的公交车和卡车框会随 F0、F6、F12、F18、F24 同步更新。"
 />
 
-![以指针帧为锚缩放、平移时间轴并双击复位](../images/video-timeline/horizontal-zoom.gif)
+<DocsVideo
+  src="/media/video/video-timeline-zoom.mp4"
+  poster="/media/video/video-timeline-zoom-poster.webp"
+  alt="以指针帧为锚缩放和平移时间轴并双击复位"
+  caption="以指针所在帧为锚点放大时间轴，普通滚轮平移可见窗口，双击后恢复全部帧。"
+/>
 
 时间轴在紧凑浮层中占据主行，展开后则铺满整段视频；状态行同时显示当前时间与视频总时长。展开面板上方带稀疏的帧号刻度尺（随缩放自动重排，给长视频一个帧位参照）。长视频里帧太密时可以**横向放大**只看一段：
 
@@ -107,9 +112,12 @@ off-grid 关键帧只影响该轨迹在网格点之间的插值取值，不污�
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/video-playback/chapter-sidebar.png — 章节侧栏含彩色色带 + 章节列表 [manual] -->
 
-![在时间轴上圈选范围并创建章节](../images/video-timeline/brush-create-chapter.gif)
-
-![章节条与侧栏联动高亮，拖动边界后自动保存](../images/video-timeline/chapter-resize-hover.gif)
+<DocsVideo
+  src="/media/video/video-chapter.mp4"
+  poster="/media/video/video-chapter-poster.webp"
+  alt="在时间轴上圈选范围创建章节并拖动章节边界保存"
+  caption="在时间轴圈选范围创建章节，再通过章节条和侧栏联动检查并拖动边界。"
+/>
 
 长视频可以通过「章节」侧栏（位于轨迹侧栏下方）划分场景：
 

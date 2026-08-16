@@ -71,10 +71,10 @@
 
 ### 时间轴交互（对应 `workbench/video-playback.md`）
 
-- [x] `images/video-timeline/horizontal-zoom.gif` — `Ctrl`/`⌘` 滚动以指针帧为锚点放大时间轴 → 普通滚轮平移 → 双击复位全过程 `[auto-gif]`（flows/video-timeline-zoom）
+- [~] ~~`images/video-timeline/horizontal-zoom.gif`~~ — **已由** `public/media/video/video-timeline-zoom.mp4` **替代**：完整时间轴缩放流已迁移到 DocsVideo
 - [x] `public/media/video/prediction-density-navigation.mp4` — 五帧真实 YOLO 车辆候选 → 展开 violet AI 预测密度轨 → 连续前后跳预测帧 → 核对帧号与画布候选 `[derived-mp4]`
-- [x] `images/video-timeline/brush-create-chapter.gif` — 时间轴圈选一段 → 填写章节表单 → 创建章节全过程 `[auto-gif]`（flows/video-chapter）
-- [x] `images/video-timeline/chapter-resize-hover.gif` — 章节条 ↔ 侧栏行双向 hover 高亮，并拖边界改起止 `[auto-gif]`（flows/video-chapter 的拖柄裁切版）
+- [~] ~~`images/video-timeline/brush-create-chapter.gif`~~ — **已由** `public/media/video/video-chapter.mp4` **替代**：章节创建与边界调整完整流已迁移到 DocsVideo
+- [~] ~~`images/video-timeline/chapter-resize-hover.gif`~~ — **已由** `public/media/video/video-chapter.mp4` **替代**：章节创建与边界调整完整流已迁移到 DocsVideo
 
 ### 视频 AI 审阅（对应 `workbench/video-track.md`）
 
@@ -84,7 +84,7 @@
 - [x] `public/media/video/tracker-positive-negative.mp4` — 两个公交车目标分别设置跨帧正负点 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
 - [x] `public/media/video/tracker-box-seed.mp4` — 两个公交车目标分别绘制完整车身框 → 同时追踪 → 时间轴复核 → 接受 `[derived-mp4]`
 - [ ] `images/workbench/video-track-keyframe-source-bar.png` — 右栏「关键帧来源迷你条」近景（紫=AI / 灰=人工）+ 画布 AI 关键帧角标；红框：迷你条色段、画布角标 [manual]
-- [x] `images/workbench/video-track-carryover-ghost.gif` — 多轨迹跨网格帧续写：上一网格帧有框、当前帧未画的轨迹显示淡色 ghost 参考框 → `Tab` 循环 → 拖动续写 →「续写后自动前进」自动跳下一条 `[auto-gif]`（flows/video-track-carryover）
+- [~] ~~`images/workbench/video-track-carryover-ghost.gif`~~ — **已由** `public/media/video/video-track-carryover.mp4` **替代**：跨网格帧续写完整流已迁移到 DocsVideo
 - [ ] `images/workbench/video-track-sticky-hint.png` — 「粘轨迹」态画布顶部常驻提示条；红框：提示条 [manual]
 
 ### 审阅键盘化（对应 `workbench/index.md` 或 `review/index.md`「视频任务审核」）
@@ -174,9 +174,9 @@
 - [x] `public/media/ai/preannotate.mp4` — 选择项目与批次 → 运行 AI 预标 → 查看任务历史 → 返回工作台核对候选 `[derived-mp4]`
 - [ ] `images/projects/ai-pre-pipeline-dag-canvas.png` — AI 预标项目详情「批跑预标设置」两列 DAG 编排画布 + 右侧节点参数；红框：节点 +/删除/改父级、兼容性警告、运行计数 [manual]
 - [ ] `images/projects/ai-pre-project-pipeline-save.png` — 「保存为项目编排」成功态；红框：保存按钮、已保存编排阶段数 badge、清除按钮 [manual]
-- [x] `images/projects/ai-pre-variant-selector.gif` — VariantSelector 两轴选项 + 推荐 badge `[auto-gif]`（flows/ai-pre-variant-selector，切 select 看 显存/精度/推荐 pill 联动）
+- [~] ~~`images/projects/ai-pre-variant-selector.gif`~~ — **已由** `public/media/projects/ai-pre-variant-selector.mp4` **替代**：VariantSelector 完整流已迁移到 DocsVideo
 - [x] `images/projects/batch-status-list.png` — 批次列表各状态彩色徽标 `[auto]`（指向 P-0001，有 BT-260/261/262 多批次）
-- [x] `images/projects/batch-bulk-actions.gif` — 多选后批量操作工具栏（含批量通过/驳回）`[auto-gif]`（flows/batch-bulk-actions，勾选批次→工具栏浮现，P-0001）
+- [~] ~~`images/projects/batch-bulk-actions.gif`~~ — **已由** `public/media/projects/batch-bulk-actions.mp4` **替代**：批次多选批量操作完整流已迁移到 DocsVideo
 - [ ] `images/projects/batch-export-dialog.png` — 导出格式选择面板 [manual]
 - [x] `images/projects/data-manager-overview.png` — 整体布局（视图列表 + 过滤条件栏 + 任务表格）`[auto]`
 - [x] `images/projects/data-manager-filter-rules.png` — 过滤条件行编辑器字段选择器展开 `[auto]`
@@ -263,7 +263,7 @@
 - [x] `public/media/large-image/mask-limit.mp4` — Cosmic Cliffs 分块浏览 → 完整落库矩形框 → 悬停置灰 Mask 入口核对实际尺寸、单边上限与总像素上限 **[Tier A]** `[derived-mp4]`
 
 - [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
-- [x] `images/mask-brush/draw-in-progress.gif` — Mask 笔刷涂抹填区 + Enter 提交全过程 `[auto-gif]`（flows/mask-draw，P-COCO8，落库类型由任务 Mask 能力决定）
+- [~] ~~`images/mask-brush/draw-in-progress.gif`~~ — **已由** `public/media/mask-brush/mask-draw.mp4` **替代**：Mask 绘制与提交完整流已迁移到 DocsVideo
 - [x] `public/media/video/mask-track-edit.mp4` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/video/mask-correction-propagate.mp4` — 在 F5 漂移帧补入漏分区域、扣除外溢区域 → 使用原生 Mask seed 向后传播 → 跨帧审阅 → 采纳后原轨迹保留 17 个关键帧 **[Tier A]** `[derived-mp4]`
 - [ ] `images/pointcloud-crossframe/crossframe-propagate-toast.png` — 按 Alt+→ 跳帧自动选中新框 + toast [manual]
@@ -275,11 +275,11 @@
 - [x] `public/media/pointcloud/controls.mp4` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[derived-mp4]`（P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `public/media/pointcloud/controls.mp4` 内含青蓝高度色→相机 RGB 的切换）`[derived-mp4]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
-- [x] `images/polygon/draw-in-progress.gif` — 多边形逐点绘制全过程（落点 + 预览线，Enter 闭合提交）`[auto-gif]`（flows/polygon-draw，P-COCO8）
+- [~] ~~`images/polygon/draw-in-progress.gif`~~ — **已由** `public/media/polygon/draw.mp4` **替代**：多边形绘制与提交完整流已迁移到 DocsVideo
 - [ ] `images/polygon/vertex-insert-alt.png` — 按住 Alt 悬停边上光标变「+」的瞬间
-- [x] `images/polyline/draw-in-progress.gif` — 折线逐点绘制全过程（落点 + 预览线段，Enter 收尾）`[auto-gif]`（flows/polyline-draw，P-COCO8）
+- [~] ~~`images/polyline/draw-in-progress.gif`~~ — **已由** `public/media/polyline/draw.mp4` **替代**：折线绘制与提交完整流已迁移到 DocsVideo
 - [ ] `images/polyline/vertex-edit.png` — 折线选中态 Alt 插入/Shift 删除提示
-- [x] `images/workbench/rotated-bbox.gif` — 拖框生成旋转框（angle=0）全过程 `[auto-gif]`（flows/rotated-bbox，P-COCO8；旋转手柄演示待补，盲拖坐标易空拖出第二框）
+- [~] ~~`images/workbench/rotated-bbox.gif`~~ — **已由** `public/media/workbench/rotated-bbox.mp4` **替代**：旋转框绘制完整流已迁移到 DocsVideo
 - [ ] `images/workbench/rotated-bbox-rotate.png` — 旋转约 30° 后状态 + 角度值
 - [x] `images/sam/smart-point-toolbar.png` — 智能点交互工具条（正负极性 + 引擎/档位 + 状态灯）`[auto]`（scene: `sam/smart-point-toolbar`，P-COCO8 + live backend）
 - [x] `images/sam/interactive-toolbar.png` — 智能框交互工具条（引擎/模型/档位 + 状态灯）`[auto]`（scene: `sam/interactive-toolbar`，P-COCO8 + live backend）
@@ -287,7 +287,7 @@
 - [x] `images/sam/exemplar-output-mode.png` — Exemplar 示例交互工具条（输出形态三选一 + 示例能力控件）`[auto]`（scene: `sam/exemplar-output-mode`，P-COCO8 + live backend）
 - [x] `images/sam/smart-point-interaction.gif` — 无侧边栏的真实 SAM3 智能点车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-point`，P-COCO8）
 - [x] `images/sam/smart-box-interaction.gif` — 无侧边栏的真实 SAM3 智能框车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-box`，P-COCO8）
-- [x] `images/sam/smart-scribble-interaction.gif` — 选中已存原生 Mask 后连续绘制正、负笔迹并查看精修候选 `[auto-gif]`（flow: `smart-scribble`，P-COCO8 确定性签名候选）
+- [~] ~~`images/sam/smart-scribble-interaction.gif`~~ — **已由** `public/media/sam/smart-scribble.mp4` **替代**：正负笔迹精修完整流已迁移到 DocsVideo
 - [x] `public/media/ai/assisted-annotation.mp4` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[derived-mp4]`（P-COCO8）
 - [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
@@ -299,7 +299,7 @@
 - [x] `public/media/video/ai-tracker-panel.mp4` — 顶部打开 → 切换作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 `[derived-mp4]`
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
-- [x] `images/workbench/video-track-trajectory.gif` — track 工具画框：两关键帧 + 逐帧线性插值 bbox 平滑移动（含类别 popover Enter 提交）`[auto-gif]`（flows/video-draw，P-VIDEO-DEV）
+- [~] ~~`images/workbench/video-track-trajectory.gif`~~ — **已由** `public/media/video/video-draw.mp4` **替代**：轨迹关键帧与插值完整流已迁移到 DocsVideo
 - [x] `images/workbench/video-real-scene.png` — 真实城市交通视频任务工作台 `[auto]`（scene: `workbench/video-real-scene`，P-VIDEO-DEV）
 - [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`
 - [ ] `images/workbench/video-track-compose-dialog.png` — 跳连对话框两种 gap 模式 [manual]
