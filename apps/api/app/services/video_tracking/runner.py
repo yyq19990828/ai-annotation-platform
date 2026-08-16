@@ -2759,6 +2759,13 @@ async def run_tracker_job(
             if heartbeat_failed:
                 raise RuntimeError("tracker route lease heartbeat failed")
 
+            # Backend 响应数组不保证按帧有序；统一转为追踪方向的遍历顺序，
+            # 使窗口末尾几何和多实例跨窗关联都使用真实边界帧。
+            window_results.sort(
+                key=lambda result: result.frame_index,
+                reverse=window_direction == "backward",
+            )
+
             # 窗末: text-multiplex 关联 remap 窗内 obj_id → 跨窗全局 instance_id。
             if associate_multiplex:
                 window_results = _associate_multiplex_window(
