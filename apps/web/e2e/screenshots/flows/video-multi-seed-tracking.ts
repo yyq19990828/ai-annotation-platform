@@ -31,7 +31,10 @@ function assertAcceptedTracksCoverTargets(
   if (!Array.isArray(payload)) {
     throw new Error(`[video-multi-seed:${variant}] 标注刷新没有返回数组`);
   }
-  const tracks: NormalizedBbox[] = [];
+  const tracks: Array<{
+    frameZero: NormalizedBbox;
+    keyframes: Array<{ frameIndex: number; bbox: NormalizedBbox }>;
+  }> = [];
   for (const item of payload) {
     if (
       typeof item !== "object" ||
@@ -49,16 +52,18 @@ function assertAcceptedTracksCoverTargets(
           `${Array.isArray(keyframes) ? keyframes.length : 0}`,
       );
     }
-    const frameZero = keyframes.find(
-      (keyframe) =>
-        typeof keyframe === "object" &&
-        keyframe !== null &&
-        (keyframe as Record<string, unknown>).frame_index === 0,
-    ) as Record<string, unknown> | undefined;
-    const bbox = frameZero?.bbox;
-    if (typeof bbox === "object" && bbox !== null) {
-      tracks.push(bbox as unknown as NormalizedBbox);
-    }
+    const parsedKeyframes = keyframes.flatMap((keyframe) => {
+      if (typeof keyframe !== "object" || keyframe === null) return [];
+      const record = keyframe as Record<string, unknown>;
+      const frameIndex = record.frame_index;
+      const bbox = record.bbox;
+      if (typeof frameIndex !== "number" || typeof bbox !== "object" || bbox === null) {
+        return [];
+      }
+      return [{ frameIndex, bbox: bbox as NormalizedBbox }];
+    });
+    const frameZero = parsedKeyframes.find((keyframe) => keyframe.frameIndex === 0);
+    if (frameZero) tracks.push({ frameZero: frameZero.bbox, keyframes: parsedKeyframes });
   }
   if (tracks.length < expectedTargets.length) {
     throw new Error(
@@ -77,7 +82,7 @@ function assertAcceptedTracksCoverTargets(
     let bestIndex = -1;
     let bestOverlap = 0;
     for (const index of unmatched) {
-      const overlap = normalizedBboxIoU(tracks[index]!, expectedBbox);
+      const overlap = normalizedBboxIoU(tracks[index]!.frameZero, expectedBbox);
       if (overlap > bestOverlap) {
         bestIndex = index;
         bestOverlap = overlap;
@@ -89,6 +94,20 @@ function assertAcceptedTracksCoverTargets(
           `bestIoU=${bestOverlap.toFixed(3)}, expected=${JSON.stringify(expectedBbox)}, ` +
           `actual=${JSON.stringify(tracks)}`,
       );
+    }
+    const acceptedTrack = tracks[bestIndex]!;
+    const minimumWidth = expectedBbox.w * 0.62;
+    const minimumHeight = expectedBbox.h * 0.62;
+    for (const frameIndex of [4, 15, 30]) {
+      const keyframe = acceptedTrack.keyframes.find((item) => item.frameIndex === frameIndex);
+      if (!keyframe) continue;
+      if (keyframe.bbox.w < minimumWidth || keyframe.bbox.h < minimumHeight) {
+        throw new Error(
+          `[video-multi-seed:${variant}] ${targetClass} 轨迹在 F${frameIndex} 缩成局部目标: ` +
+            `expected>=${minimumWidth.toFixed(3)}×${minimumHeight.toFixed(3)}, ` +
+            `actual=${keyframe.bbox.w.toFixed(3)}×${keyframe.bbox.h.toFixed(3)}`,
+        );
+      }
     }
     unmatched.delete(bestIndex);
   }
