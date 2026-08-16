@@ -350,6 +350,92 @@ async def test_discovered_instance_reuses_one_annotation_across_windows(
     ]
 
 
+async def test_discovered_instance_keeps_outside_frames_accepted_before_visibility(
+    httpx_client_bound, super_admin, db_session
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=None,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=2,
+        target_class_name="car",
+        target_tool_unit_id="bbox",
+        prompt={"expected_source_versions": {}},
+        staged_result={
+            "results": [
+                {**_candidate(0), "instance_id": "new-1"},
+                _outside_candidate(1, "new-1"),
+                {**_candidate(2), "instance_id": "new-1"},
+            ],
+            "grid_step": 1,
+            "output_geometry": "bbox",
+        },
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    outside = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/decisions",
+        json={
+            "instance_ids": ["new-1"],
+            "from_frame": 1,
+            "to_frame": 1,
+            "decision": "accept",
+            "expected_source_versions": {},
+            "job_revision": 1,
+        },
+        headers=_bearer(token),
+    )
+    assert outside.status_code == 200, outside.text
+    assert outside.json()["status"] == "partially_reviewed"
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Annotation)
+            .where(Annotation.task_id == task.id, Annotation.source == "ai_tracker")
+        )
+        == 0
+    )
+
+    visible = await httpx_client_bound.post(
+        f"/api/v1/video-tracker-jobs/{job.id}/decisions",
+        json={
+            "instance_ids": ["new-1"],
+            "from_frame": 0,
+            "to_frame": 2,
+            "decision": "accept",
+            "expected_source_versions": {},
+            "job_revision": 2,
+        },
+        headers=_bearer(token),
+    )
+    assert visible.status_code == 200, visible.text
+    assert visible.json()["status"] == "accepted"
+    annotation = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.source == "ai_tracker",
+            )
+        )
+    ).scalar_one()
+    assert [item["frame_index"] for item in annotation.geometry["keyframes"]] == [
+        0,
+        2,
+    ]
+    assert annotation.geometry["outside"] == [
+        {"from": 1, "to": 1, "source": "prediction"}
+    ]
+
+
 async def test_sourceless_decision_skips_instance_with_only_outside_candidates(
     httpx_client_bound, super_admin, db_session
 ):
