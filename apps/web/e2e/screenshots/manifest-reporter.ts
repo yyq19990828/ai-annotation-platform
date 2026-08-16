@@ -38,6 +38,15 @@ function currentCommit(): string {
   }).trim();
 }
 
+function currentWorktreeDirty(): boolean {
+  return (
+    execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    }).trim().length > 0
+  );
+}
+
 function fileCommit(target: string): string {
   try {
     return (
@@ -85,6 +94,7 @@ function sortedRecord<T>(entries: Array<[string, T]>): Record<string, T> {
 export default class ScreenshotManifestReporter implements Reporter {
   private runEntries = new Map<string, ScreenshotRunMetadata>();
   private reporterError: string | null = null;
+  private sourceWorktreeDirty = currentWorktreeDirty();
 
   onTestEnd(_test: TestCase, result: TestResult): void {
     if (result.status !== "passed") return;
@@ -210,6 +220,7 @@ export default class ScreenshotManifestReporter implements Reporter {
           ? [...seedRevisions][0]
           : null,
       source_commit: sourceCommit,
+      source_worktree_dirty: this.sourceWorktreeDirty,
       projects: [...SCREENSHOT_MATRIX_PROJECTS],
       provenance: migrateLegacy ? "legacy-migration" : "current-run",
       entries: sortedRecord(outputEntries),

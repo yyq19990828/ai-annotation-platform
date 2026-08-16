@@ -168,6 +168,10 @@ describe("ImageTileScheduler", () => {
   it("refreshes a signed URL once after a tile fetch failure", async () => {
     let signCalls = 0;
     let fetchCalls = 0;
+    let allowRetry!: () => void;
+    const retryGate = new Promise<void>((resolve) => {
+      allowRetry = resolve;
+    });
     const scheduler = new ImageTileScheduler({
       taskId: "task-1",
       sourceIdentity: "source/g1",
@@ -186,6 +190,7 @@ describe("ImageTileScheduler", () => {
       fetchBlob: async () => {
         fetchCalls += 1;
         if (fetchCalls === 1) throw new Error("tile_fetch_403");
+        await retryGate;
         return new Blob(["tile"]);
       },
       decodeBlob: async (_blob, geometry) => ({
@@ -199,11 +204,18 @@ describe("ImageTileScheduler", () => {
     });
 
     scheduler.update({ x: 0, y: 0, width: 512, height: 512 }, 1, 1);
+    const retrying = await waitForSnapshot(
+      scheduler,
+      (snapshot) => snapshot.retryingVisibleTiles === 1,
+    );
+    expect(retrying).toMatchObject({ errors: 1, urlRefreshes: 1 });
+    allowRetry();
     const ready = await waitForSnapshot(scheduler, (snapshot) => snapshot.ready === 1);
     expect(ready).toMatchObject({
       errors: 1,
       signBatches: 2,
       urlRefreshes: 1,
+      retryingVisibleTiles: 0,
       targetCoverageRatio: 1,
     });
     expect(fetchCalls).toBe(2);

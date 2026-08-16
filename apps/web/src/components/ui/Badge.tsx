@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,7 +10,7 @@ import { useElementStyle } from "./useElementStyle";
  * 保留原有 `variant/dot` API(调用点零改动);语义色走设计 §2.2 固定调色板(柔底 /10 + 暗色提亮)。
  * 映射见 docs/plans/archive/2026-06-19-v0.17.1-ui-primitives-wave1.md §3.2。
  */
-interface BadgeProps {
+interface BadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
   variant?: "default" | "success" | "warning" | "danger" | "accent" | "ai" | "outline";
   dot?: boolean;
   children: ReactNode;
@@ -29,12 +29,13 @@ const variantClassNames: Record<NonNullable<BadgeProps["variant"]>, string> = {
 };
 
 export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
-  { variant = "default", dot, children, className, style },
+  { variant = "default", dot, children, className, style, ...spanProps },
   forwardedRef,
 ) {
   const styleRef = useElementStyle<HTMLSpanElement>(style, forwardedRef);
   return (
     <span
+      {...spanProps}
       ref={styleRef}
       className={cn(
         "inline-flex w-fit shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",

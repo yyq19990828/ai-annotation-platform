@@ -184,6 +184,14 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
     assert report["bindings"]["image_demo"]["backend_id"] == str(image.id)
     assert report["bindings"]["video_demo"]["tracker"] == ("sam3_video_interactive")
     assert report["bindings"]["ocr_demo"]["backend_id"] == str(ocr.id)
+    assert projects["ocr_demo"].preannotate_pipeline == [
+        {
+            "stage": 0,
+            "ml_backend_id": str(ocr.id),
+            "model_id": "ocr-e2e",
+            "task_type": "ocr",
+        }
+    ]
     assert projects["pointcloud_demo"].ml_backend_pool_id is None
     associations = list(
         (await db_session.execute(select(ProjectMLBackendPool))).scalars()

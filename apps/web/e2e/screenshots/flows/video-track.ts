@@ -31,6 +31,7 @@ export async function runVideoTrack(
   await page.waitForTimeout(500);
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_200);
 
   // ── 逐帧前进 8 帧（展示帧级控制，画面里车辆逐帧移动）──
   for (let i = 0; i < 8; i++) {
@@ -44,6 +45,13 @@ export async function runVideoTrack(
   await page.waitForTimeout(3500);
   await page.keyboard.press("Space"); // 暂停
   await page.waitForTimeout(700);
+
+  // 暂停后逐帧回看，展示播放头、帧号和画面可以双向核对。
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForTimeout(240);
+  }
+  await page.waitForTimeout(900);
 
   const drawEndMs = Date.now();
   return { drawStartMs, drawEndMs };

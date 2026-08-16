@@ -47,6 +47,8 @@ VIDEO_TOOL_BINDINGS = {
         "classes": [
             {"name": "car", "order": 0},
             {"name": "person", "order": 1},
+            {"name": "bus", "order": 2},
+            {"name": "truck", "order": 3},
         ],
     },
     "region": {
@@ -54,6 +56,8 @@ VIDEO_TOOL_BINDINGS = {
         "classes": [
             {"name": "car", "order": 0},
             {"name": "person", "order": 1},
+            {"name": "bus", "order": 2},
+            {"name": "truck", "order": 3},
         ],
     },
     "polyline": {

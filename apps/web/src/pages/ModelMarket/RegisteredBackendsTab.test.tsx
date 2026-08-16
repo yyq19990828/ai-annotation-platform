@@ -13,7 +13,7 @@
  * flows（drain/resume/delete/health）· 问题中心诊断去重 · 窄屏无 min-w-[980px]。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -422,8 +422,15 @@ describe("RegisteredBackendsTab (v0.23.4 P3)", () => {
       mockGpuResources.mockResolvedValue(makeGpuResources([makeGpuResource()]));
       renderUI();
       await switchTab(/GPU 资源/);
+      const summary = await screen.findByTestId("gpu-resource-summary");
+      expect(within(summary).getByText("运行时就绪")).toBeInTheDocument();
+      expect(within(summary).getByText("全局期望模式")).toBeInTheDocument();
+      expect(within(summary).getByText("Observe 就绪")).toBeInTheDocument();
+      expect(within(summary).getByText("Enforce 未就绪")).toBeInTheDocument();
       // 资源 ID 出现
       expect(await screen.findByText(/node-a\/index:0/)).toBeInTheDocument();
+      expect(screen.getByText("配置 · observe")).toBeInTheDocument();
+      expect(screen.getByText("1 个 backend")).toBeInTheDocument();
       // committed 运行时占用的数值
       expect(screen.getByText(/4,096 MiB/)).toBeInTheDocument();
       // 静态声明的数值

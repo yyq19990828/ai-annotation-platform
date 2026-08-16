@@ -418,20 +418,37 @@ pnpm --filter web screenshots                              # 生成 desktop-ligh
 pnpm --filter web screenshots:dark                         # 显式声明的深色场景
 pnpm --filter web screenshots:matrix                       # desktop-light/dark/mobile
 pnpm --filter web screenshots:flows                        # 流程 GIF，需 ffmpeg
+pnpm --filter web screenshots:marketing                    # 4K60 MKV + MP4/H.264，需本机 X11/NVIDIA/ffmpeg
+pnpm docs:media:derive                                      # 从最新 4K60 批次派生文档 MP4 + WebP
+pnpm docs:media:audit                                       # 检查引用、来源与人工复核版本
 pnpm --filter web screenshots:regression                   # 比较 9 张高价值视觉基线
 pnpm --filter web screenshots:regression:update            # 有意 UI 变化后更新基线
 ```
 
-当前完整矩阵有 63 个自动截图目标：60 个 desktop-light、2 个显式 dark 和 1 个显式 mobile；
-另有 3 张手工 PNG 和 32 个文档目标 GIF。生成后使用 `git diff docs-site/user-guide/images/`
-人工审阅 PNG 和 GIF 正文帧；完整 matrix 成功后才原子重建 v2 manifest，定向运行和 validate-only 不会替换它。
+不要手工维护资产数量；静态 manifest、流程 manifest、磁盘文件和文档引用共同给出当前清单。
+生成后人工审阅 PNG，以及 GIF / MP4 的核心动作与最终结果；完整 matrix 成功后才原子重建静态 manifest，定向运行和 validate-only 不会替换它。
+营销母版单独写入 Git 忽略的 `.artifacts/marketing/<run-id>/`，不可变的 4K60 MKV/H.264 采集源和
+4K60 MP4/H.264 通用母版分别按 SHA-256 命名。录制使用 1440×810 逻辑 viewport 与 1.8× 设备像素倍率，
+先由 X11 按 60Hz 主动采样 2592×1458 的真实动作，交给 NVENC 硬件编码，再用 Lanczos 统一到 3840×2160；工作台组件保持正常视觉比例。
+启动器会拒绝软件渲染、有效独立画面低于 55fps、独立帧占比低于 90%，以及其它重复帧伪装 60fps 的情况，并把校准实测值写入 manifest。每个目标需在高清营销资产目录登记主题、分镜和独立时长规格；
+组合多个功能的教程不归档为单项母版。归档时会强制检查 3840×2160、时长范围和 MP4/H.264 编码，
+通用 MP4 会按真实操作窗口去掉首屏加载；单次命令即使因失败重启 Playwright worker，也只使用一个固定批次和一份 manifest。
+内容规格、源 commit、两种格式的预留存储键以及 MP4 派生裁剪区间都会写入 manifest。
+该命令不直接覆盖站点媒体；运行 `pnpm docs:media:derive` 后才从母版统一生成文档 MP4、首页 WebM / MP4 fallback 与 WebP 封面。上传远端并校验前不要删除本地运行目录。
+本机显示不足 2700×1750 时，显式设置 `MARKETING_CAPTURE_DISPLAY`、必要时设置
+`MARKETING_XAUTHORITY`，并在命令参数中追加 `--resize-display`；启动器在结束后恢复原显示尺寸。
 流程脚本结束时会通过 `--repair` 恢复截图 seed 的期望状态。资产检查命令：
 
 ```bash
 pnpm --filter web screenshots:lint
 node docs-site/scripts/check-image-manifest.mjs --release
 node docs-site/scripts/check-orphan-images.mjs --strict
+pnpm docs:media:audit -- --release
 ```
+
+`flow-manifest.json` 保存 GIF、文档 MP4、首页视频与封面的生成 commit、seed、哈希和母版 lineage；
+`docs-site/maintainers/media-reviews.json` 单独保存人工复核 commit。只有工作树干净、媒体已提交并完成视觉检查后，才运行
+`pnpm docs:media:approve -- --asset <仓库相对路径>`。每周工作流会生成缺失、过时和到期复核报告，不会自动批准素材。
 
 `pnpm test:e2e` 使用 `annotation_e2e`，截图使用
 `annotation_screenshots_test`，两者都与开发库 `annotation` 隔离。不要为省略建库步骤

@@ -4,12 +4,22 @@ audience: [annotator, project_admin, super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-08-16
 ---
 
 # AI 辅助标注
 
 这一组文档按“现在要完成什么任务”组织 AI 能力。页面不按某个模型或后端拆分：先选任务，再按需要进入模型配置、协议或运维文档。
+
+## 五类入口与页面边界
+
+<ExcalidrawDiagram
+  src="/diagrams/shared/ai/task-entry-map.svg"
+  alt="AI 五类执行入口及工作台、AI 预标、模型市场三类页面边界关系图"
+  caption="五类 AI 执行入口：工作台承载图片交互式 AI、当前题 AI、二次推理和视频 AI 追踪，AI 预标页承载批量预标；模型市场与项目模型设置只提供能力声明和路由"
+/>
+
+图中五个编号才是执行入口。模型市场与项目模型设置负责声明能力、选择路由、检查健康状态和保存项目编排，但不会自行发起一次推理。候选型结果需要人工审阅；二次推理则直接更新当前已确认标注。
 
 ## 按角色开始
 

@@ -11,7 +11,14 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, mediaPoint, openImageAnnotate, recordingAnchor } from "./_canvas";
+import {
+  commitPendingAnnotationClass,
+  hidePredictions,
+  mediaPoint,
+  openImageAnnotate,
+  recordingAnchor,
+  renderedMediaBounds,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runPolylineDraw(
@@ -29,8 +36,7 @@ export async function runPolylineDraw(
   await page.waitForTimeout(900);
 
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[polyline-draw] workbench-stage 没有可见边界");
+  const box = await renderedMediaBounds(stage);
   const anchor = recordingAnchor(catalog, "image_demo", "annotating", "lane_marking");
   if (anchor.polyline.length < 2) {
     throw new Error("[polyline-draw] lane_marking 缺少折线路径锚点");
@@ -53,7 +59,11 @@ export async function runPolylineDraw(
   await page.waitForTimeout(800);
   // Enter 结束折线（不闭合）
   await page.keyboard.press("Enter");
-  await page.waitForTimeout(1100);
+  await commitPendingAnnotationClass(page, {
+    label: anchor.label,
+    taskId: catalog.projects.image_demo.tasks.annotating.id,
+  });
+  await page.waitForTimeout(1400);
 
   const drawEndMs = Date.now();
 

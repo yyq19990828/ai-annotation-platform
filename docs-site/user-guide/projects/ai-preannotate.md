@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-16
 ---
 
 # AI 预标
@@ -52,11 +52,20 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
    - **追加**：不去重，直接在已有预测上再加一份（仅特殊场景）。
 7. 点击运行。勾选多个批次时可以选择串行或并行；并行请求仍会受 backend 的 `max_concurrency` 保护。
 
-![选择项目和批次、运行 AI 预标并查看任务历史](../images/projects/ai-preannotate-flow.gif)
+<DocsVideo
+  src="/media/ai/preannotate.mp4"
+  poster="/media/ai/preannotate-poster.webp"
+  alt="选择项目和批次、运行 AI 预标、查看任务历史并返回工作台核对候选"
+/>
 
 ## 参数与模型变体
 
-![AI 预标变体选择器：尺寸 / 速度精度两轴联动 + 推荐 badge](../images/projects/ai-pre-variant-selector.gif)
+<DocsVideo
+  src="/media/projects/ai-pre-variant-selector.mp4"
+  poster="/media/projects/ai-pre-variant-selector-poster.webp"
+  alt="切换 AI 预标变体的尺寸与速度精度选项并查看推荐标识"
+  caption="变体选择器会联动显存、速度与精度信息，并在当前项目可用的选项上显示推荐标识。"
+/>
 
 参数面板来自当前 backend 的 `/setup.params`，常见字段包括 `box_threshold`、`text_threshold`、`score_threshold` 等。选择值按「用户 + backend」记忆，下次进入同一 backend 会自动恢复。
 
@@ -96,13 +105,17 @@ AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而�
 
 配好流水线（单阶段或多阶段）后，点设置区底部的 **保存为项目编排**，把当前这套配置存到项目（一项目一条「当前编排」）。保存后按钮旁出现「已保存编排 · N 阶段」标识，并多出 **清除** 按钮。
 
-存了项目编排后，标注工作台“当前题 AI”面板会多出一个 **运行当前题（按项目编排 · N 阶段）** 入口，对正在标的这一张图按该编排跑完整流水线；当前题执行与候选审阅见[当前题 AI 与二次推理](../ai/current-task-inference)。无需回到本页、无需选批次。本页是**项目内**定义和保存编排的主要入口，工作台只执行、不编辑编排；重新保存即覆盖，点“清除”即移除。若想把一套编排跨项目复用，可在[**全局编排库**](./pipeline-library)（`/pipelines`）里维护命名编排模板（支持私有 / 组织 / 公开三档可见范围），再套用到具体项目。
+存了项目编排后，标注工作台“当前题 AI”面板会多出一个 **运行当前题（按项目编排 · N 阶段）** 入口，对正在标的这一张图按该编排跑完整流水线；当前题执行与候选审阅见[当前题 AI 与二次推理](../ai/current-task-inference)。无需回到本页、无需选批次。本页是**项目内**定义和保存编排的主要入口，工作台只执行、不编辑编排；重新保存即覆盖，点“清除”即移除。若想把一套编排跨项目复用，可在[**全局编排库**](./pipeline-library)（`/ai-pre/pipelines`）里维护公共 / 组织命名模板，再套用到具体项目；项目私有副本仍在项目内维护。
 
 ## OCR / 文档版面预标
 
 OCR 与文档版面预标走和几何检测（YOLO）、文本检测（gsam2/sam3）**完全相同的 model-first 配置**：「模型任务」下拉列出 backend 自报的所有可批量预标的模型，OCR 端到端 / 检测模型与几何检测器并列出现，按选中模型自动决定要不要文本 prompt、要不要变体面板。
 
-![真实 OCR 图片在工作台运行当前题推理并生成文本候选](../images/workbench/ocr-real-scene.gif)
+<DocsVideo
+  src="/media/ai/ocr-current-task.mp4"
+  poster="/media/ai/ocr-current-task-poster.webp"
+  alt="真实 OCR 图片在工作台运行当前题推理并生成文本候选"
+/>
 
 <noscript><img src="../images/workbench/ocr-real-scene.png" alt="OCR 当前题 AI 面板静态备用图" /></noscript>
 
@@ -126,7 +139,15 @@ OCR 识别原子（`task=ocr`、`composition=atom`、吃 `crop` 输入,如 rapid
 
 ## 进度与取消
 
-批量预标会创建后台任务，并在 `/ai-pre/jobs`、右上角后台任务铃和通知中心中显示进度。取消、部分结果、失败项重试与升级给运维的边界统一见[AI 任务与失败恢复](../workflows/failed-prediction-recovery)；任务铃的本地隐藏不影响 Jobs 页面中的完整历史。
+批量预标会创建后台任务，并在 `/ai-pre/jobs`、右上角后台任务铃和通知中心中显示进度。任务铃会把预标、预测导入和导出放在同一个面板中：运行中的预标与导入可直接取消，已完成导出会显示格式、ZIP 文件数与大小，并提供下载入口。不支持取消的任务类型不会显示取消按钮；任务铃的本地隐藏不影响 Jobs 页面中的完整历史。
+
+<DocsVideo
+  src="/media/jobs/jobs-bell-active.mp4"
+  poster="/media/jobs/jobs-bell-active-poster.webp"
+  alt="后台任务铃同时展示进行中的批量预标和预测导入，以及已完成双格式导出的 ZIP 摘要与下载入口"
+/>
+
+取消、部分结果、失败项重试与升级给运维的边界统一见[AI 任务与失败恢复](../workflows/failed-prediction-recovery)。
 
 ![预标注历史搜索](../images/projects/ai-pre-history-search.png)
 

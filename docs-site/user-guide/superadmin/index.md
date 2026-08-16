@@ -3,7 +3,7 @@ audience: [super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-08-16
 ---
 
 # 超级管理员手册
@@ -17,6 +17,15 @@ last_reviewed: 2026-07-11
 - `/dashboard` — 管理平台全部项目、负责人、批次分派与导出入口
 - `/model-market` — ML 模型市场，集中管理 ML Backend 与失败预测
 - `/bugs` — BUG 反馈管理，支持状态流转、Markdown 描述/评论和多张截图附件
+
+平台概览先汇总用户、项目、任务和标注规模，再按项目状态与用户角色解释资源分布；继续向下可查看 30 天注册来源、ML 后端与预测成本、近期业务审计，以及全平台项目组合。它用于运营总览；DB、Redis、MinIO、Celery 等组件探活在独立的[系统监控](./system-monitoring)页面查看。
+
+<DocsVideo
+  src="/media/superadmin/platform-overview.mp4"
+  poster="/media/superadmin/platform-overview-poster.webp"
+  alt="超级管理员平台概览依次展示平台 KPI、项目与角色分布、注册趋势、模型成本、近期审计和全平台项目"
+  caption="从平台规模下钻到运营活动：核对注册来源、ML 调用与成本、近期业务事件，并比较图片、视频和 3D 点云项目的当前状态。"
+/>
 
 ## 核心职责
 

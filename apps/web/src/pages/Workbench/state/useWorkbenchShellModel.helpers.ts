@@ -41,6 +41,15 @@ export function videoAnnotationQueriesEnabled(
   return (!isVideoTask || segmentsResolved) && (!collaborationEnabled || activeSegmentId !== null);
 }
 
+export function annotationsForTask<T extends { task_id: string }>(
+  annotations: T[] | undefined,
+  taskId: string | undefined,
+): T[] | undefined {
+  if (annotations === undefined) return undefined;
+  if (!taskId) return [];
+  return annotations.filter((annotation) => annotation.task_id === taskId);
+}
+
 export function resolveMaskEditorSize(
   isVideoTask: boolean,
   imageSize: { imgW: number; imgH: number },

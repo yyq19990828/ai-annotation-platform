@@ -10,6 +10,14 @@ from app.config import settings
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+_MAX_FAILED_PREDICTION_CONTEXT_BYTES = 8 * 1024
+
+
+def _retryable_request_context(context: dict | None) -> dict | None:
+    if context is None:
+        return None
+    payload = json.dumps(context, ensure_ascii=False, separators=(",", ":")).encode()
+    return context if len(payload) <= _MAX_FAILED_PREDICTION_CONTEXT_BYTES else None
 
 
 def _stage_totals_snapshot(totals: dict[int, dict]) -> list[dict]:
@@ -917,6 +925,14 @@ async def _run_batch(
 
             crop_uploader = _make_crop_uploader(StorageService(), str(async_job_id))
 
+        retry_request_context = _retryable_request_context(stage_contexts[0])
+        if stage_contexts[0] is not None and retry_request_context is None:
+            logger.warning(
+                "batch_predict retry context exceeds %d bytes; omitting from failures job=%s",
+                _MAX_FAILED_PREDICTION_CONTEXT_BYTES,
+                async_job_id,
+            )
+
         # v0.18.2 · 逐阶段统计累加器 (跨 task 汇总): {stage_idx: {detected/targeted/ok/failed}}。
         pipeline_stage_totals: dict[int, dict] = {}
 
@@ -976,6 +992,11 @@ async def _run_batch(
                 gpu_arbiter_error = gpu_arbiter_failure_record(exc)
                 if gpu_arbiter_error is not None:
                     gpu_arbiter_failures.append(gpu_arbiter_error)
+                failure_extra: dict = {}
+                if retry_request_context is not None:
+                    failure_extra["request_context"] = retry_request_context
+                if gpu_arbiter_error is not None:
+                    failure_extra["gpu_arbiter_error"] = gpu_arbiter_error
                 failed = await pred_svc.create_failed(
                     task_id=task.id,
                     project_id=uuid.UUID(project_id),
@@ -990,11 +1011,7 @@ async def _run_batch(
                         if gpu_arbiter_error is not None
                         else str(exc)
                     ),
-                    extra=(
-                        {"gpu_arbiter_error": gpu_arbiter_error}
-                        if gpu_arbiter_error is not None
-                        else None
-                    ),
+                    extra=failure_extra or None,
                     ml_backend_pool_id=stage_clients[0].pool_id or source_pool_id,
                 )
                 failed_prediction_ids.append(str(failed.id))

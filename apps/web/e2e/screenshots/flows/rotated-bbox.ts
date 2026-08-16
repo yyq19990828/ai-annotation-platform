@@ -12,7 +12,17 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, mediaBbox, openImageAnnotate, recordingAnchor } from "./_canvas";
+import {
+  commitPendingAnnotationClass,
+  hidePredictions,
+  mediaBbox,
+  movePointerAtRefreshRate,
+  movePointerPathAtRefreshRate,
+  openImageAnnotate,
+  recordingAnchor,
+  renderedMediaBounds,
+  selectActiveClass,
+} from "./_canvas";
 
 export interface DrawWindow {
   drawStartMs: number;
@@ -34,29 +44,38 @@ export async function runRotatedBbox(
   await page.waitForTimeout(900);
 
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[rotated-bbox] workbench-stage 没有可见边界");
+  const box = await renderedMediaBounds(stage);
   const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
+  await selectActiveClass(page, stage, anchor.label);
   const { start, end } = mediaBbox(box, anchor.bbox);
   const cx = (start.x + end.x) / 2;
   const cy = (start.y + end.y) / 2;
   const halfH = (end.y - start.y) / 2;
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_200);
 
   // ── 拖出一个轴对齐矩形（左上 → 右下，分步移动让录屏看到拉框过程）──
   await page.mouse.move(start.x, start.y);
   await page.waitForTimeout(400);
   await page.mouse.down();
-  for (let i = 1; i <= 12; i++) {
-    await page.mouse.move(
-      start.x + ((end.x - start.x) * i) / 12,
-      start.y + ((end.y - start.y) * i) / 12,
-    );
-    await page.waitForTimeout(55);
-  }
+  await movePointerAtRefreshRate(page, start, end, 650);
   await page.mouse.up();
-  await page.waitForTimeout(1400); // 停留展示画好的旋转框(angle=0)被选中态 + 手柄
+  const created = (await commitPendingAnnotationClass(page, {
+    label: anchor.label,
+    taskId: catalog.projects.image_demo.tasks.annotating.id,
+  })) as {
+    id?: string;
+    task_id?: number;
+    class_name?: string;
+  };
+  if (
+    created.task_id !== catalog.projects.image_demo.tasks.annotating.id ||
+    created.class_name !== anchor.label
+  ) {
+    throw new Error("[rotated-bbox] 旋转框未以 car 类别落库");
+  }
+  await page.waitForTimeout(1_800); // 停留展示画好的旋转框(angle=0)被选中态 + 手柄
 
   // ── 抓旋转手柄改 angle ──
   // 手柄是 Konva Circle，无 DOM 句柄，但屏幕坐标可精确推算：它在框中心正上方
@@ -72,14 +91,22 @@ export async function runRotatedBbox(
   await page.waitForTimeout(200);
   const targetDeg = 35;
   const rotSteps = 14;
-  for (let i = 1; i <= rotSteps; i++) {
+  const rotationPath = Array.from({ length: rotSteps + 1 }, (_, i) => {
     const rad = ((targetDeg * i) / rotSteps) * (Math.PI / 180);
-    await page.mouse.move(cx + r * Math.sin(rad), cy - r * Math.cos(rad));
-    await page.waitForTimeout(60);
-  }
+    return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+  });
+  await movePointerPathAtRefreshRate(page, rotationPath, 750);
   await page.waitForTimeout(700); // 停留展示旋转到位的框
+  const rotationSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" &&
+      response.url().includes(`/annotations/${created.id ?? "missing"}`) &&
+      response.ok(),
+    { timeout: 20_000 },
+  );
   await page.mouse.up();
-  await page.waitForTimeout(1000); // 等 commit 落库 + 选中态稳定
+  await rotationSaved;
+  await page.waitForTimeout(2_000); // 等 commit 落库 + 选中态稳定
 
   const drawEndMs = Date.now();
 

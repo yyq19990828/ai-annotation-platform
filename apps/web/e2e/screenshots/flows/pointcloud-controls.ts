@@ -60,7 +60,7 @@ export async function runPointcloudControls(
 
   // ── 关抽屉, 露出完整重着色 + 放大后的点云, 停留展示 ──
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(2200);
+  await page.waitForTimeout(4200);
 
   const drawEndMs = Date.now();
   return { drawStartMs, drawEndMs };

@@ -139,16 +139,17 @@ EXTRA_TOOL_BINDINGS: dict = {
     "polyline": {
         "enabled": True,
         "classes": [
-            {"name": "lane", "order": 0},
+            {"name": "lane marking", "order": 0},
             {"name": "curb", "order": 1},
         ],
     },
     "region": {
         "enabled": True,
         "classes": [
-            {"name": "road", "order": 0},
-            {"name": "sky", "order": 1},
-            {"name": "building", "order": 2},
+            {"name": "car", "order": 0},
+            {"name": "road", "order": 1},
+            {"name": "sky", "order": 2},
+            {"name": "building", "order": 3},
         ],
     },
 }

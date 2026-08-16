@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 from app.config import settings
 from app.db.models.annotation import Annotation
@@ -369,6 +370,83 @@ async def test_runner_sourceless_detection_lands_all_as_new_tracks(
         assert all(kf["source"] == "prediction" for kf in r.geometry["keyframes"])
 
 
+async def test_full_accept_skips_sourceless_instance_with_only_outside_results(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=None,
+        target_class_name="bus",
+        target_tool_unit_id="bbox",
+        created_by=user.id,
+        status=VideoTrackerJobStatus.PENDING_REVIEW.value,
+        model_key="sam3_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=1,
+        prompt={"expected_source_versions": {}},
+        staged_result={
+            "results": [
+                {
+                    "frame_index": 0,
+                    "geometry": {
+                        "type": "bbox",
+                        "x": 0.1,
+                        "y": 0.1,
+                        "w": 0.2,
+                        "h": 0.2,
+                    },
+                    "confidence": 0.9,
+                    "outside": False,
+                    "instance_id": "visible",
+                    "primary": False,
+                },
+                {
+                    "frame_index": 0,
+                    "geometry": {
+                        "type": "bbox",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "w": 0.0,
+                        "h": 0.0,
+                    },
+                    "confidence": 0.0,
+                    "outside": True,
+                    "instance_id": "missing",
+                    "primary": False,
+                },
+            ],
+            "grid_step": 1,
+            "output_geometry": "bbox",
+        },
+        event_channel="video-tracker-job:test-sourceless",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    async def collect(_channel: str, _payload: dict) -> None:
+        return None
+
+    await accept_tracker_job(db_session, job.id, publisher=collect)
+    rows = (
+        (
+            await db_session.execute(
+                select(Annotation).where(
+                    Annotation.task_id == task.id,
+                    Annotation.source == "ai_tracker",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].geometry["keyframes"]
+
+
 async def test_create_tracker_job_sourceless_stores_target_category(
     db_session, super_admin
 ):
@@ -532,6 +610,7 @@ async def test_create_tracker_job_with_source_keeps_target_null(
     )
     db_session.add(source)
     await db_session.flush()
+    source_id = source.id
     ctx = await build_context_from_task(db_session, task)
     payload = VideoTrackerPropagateRequest(
         from_frame=0,
@@ -543,12 +622,12 @@ async def test_create_tracker_job_with_source_keeps_target_null(
         db_session,
         task=task,
         ctx=ctx,
-        annotation_id=source.id,
+        annotation_id=source_id,
         payload=payload,
         user=user,
     )
     job = await db_session.get(VideoTrackerJob, body.id)
-    assert job.annotation_id == source.id
+    assert job.annotation_id == source_id
     assert job.target_class_name is None
 
 
@@ -1124,12 +1203,13 @@ async def test_create_tracker_job_multi_source_builds_seeds(db_session, super_ad
     )
     db_session.add_all([src_a, src_b])
     await db_session.flush()
+    source_ids = [src_a.id, src_b.id]
     ctx = await build_context_from_task(db_session, task)
     payload = VideoTrackerPropagateRequest(
         from_frame=0,
         to_frame=3,
         model_key="mock_bbox",
-        source_annotation_ids=[src_a.id, src_b.id],
+        source_annotation_ids=source_ids,
         target_class_name="pedestrian",  # 多源时应被忽略 (各源继承自身 label)
     )
     body = await create_tracker_job(
@@ -1141,8 +1221,8 @@ async def test_create_tracker_job_multi_source_builds_seeds(db_session, super_ad
     assert job.target_class_name is None  # 多源不存显式目标类别
     seeds = job.prompt["seeds"]
     assert [s["obj_id"] for s in seeds] == [1, 2]
-    assert seeds[0]["source_annotation_id"] == str(src_a.id)
-    assert seeds[1]["source_annotation_id"] == str(src_b.id)
+    assert seeds[0]["source_annotation_id"] == str(source_ids[0])
+    assert seeds[1]["source_annotation_id"] == str(source_ids[1])
     # 普通 bbox 源: 回退整条几何。
     assert seeds[0]["geometry"] == {"type": "bbox", "x": 0, "y": 0, "w": 10, "h": 10}
     # video_track_bbox 源: 取 frame 0 关键帧 → result-style bbox。

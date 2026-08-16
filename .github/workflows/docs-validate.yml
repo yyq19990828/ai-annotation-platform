@@ -88,6 +88,9 @@ jobs:
       - name: User-guide image coverage
         run: node docs-site/scripts/check-image-manifest.mjs --strict && node docs-site/scripts/check-orphan-images.mjs --strict
 
+      - name: User-guide media review status
+        run: pnpm --filter @anno/docs-site media:audit -- --strict
+
       - name: Excalidraw diagram integrity
         run: pnpm --filter @anno/docs-site check:diagrams
 

@@ -52,7 +52,12 @@ last_reviewed: 2026-08-11
 
 ### 智能笔迹（Smart Scribble）— 在已存 Mask 上做加减法
 
-![选中已存 Mask 后连续添加正向与负向智能笔迹](../images/sam/smart-scribble-interaction.gif)
+<DocsVideo
+  src="/media/sam/smart-scribble.mp4"
+  poster="/media/sam/smart-scribble-poster.webp"
+  alt="在已保存 Mask 上添加正向和负向智能笔迹并查看精修候选"
+  caption="先选中已保存 Mask，再用正向笔迹补回区域、用负向笔迹扣除误分区域，最后确认精修候选。"
+/>
 
 先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹补回目标区域；按住
 `Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，可移除误分区域。没有合格的源 Mask、当前
@@ -80,7 +85,11 @@ last_reviewed: 2026-08-11
 
 **注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。候选确认时会按目标工具单位重新校验默认类别，不会沿用其他单位中同名或过期的活动类别。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
-![Magic Box 粗框后由真实 SAM3 收紧并确认类别](../images/sam/magic-box-interaction.gif)
+<DocsVideo
+  src="/media/ai/assisted-annotation.mp4"
+  poster="/media/ai/assisted-annotation-poster.webp"
+  alt="Magic Box 粗框真实车辆后由 SAM3 收紧，人工确认正确类别并保存"
+/>
 
 ### Exemplar 示例（视觉示例）
 

@@ -23,6 +23,7 @@ export interface ImageTileResourceSnapshot {
   generation: number;
   currentLevel: number;
   visibleTiles: number;
+  retryingVisibleTiles: number;
   targetCoverageRatio: number;
   desiredTiles: number;
   queued: number;
@@ -702,14 +703,17 @@ export class ImageTileScheduler {
 
   getSnapshot(): ImageTileResourceSnapshot {
     let visibleReady = 0;
+    let retryingVisibleTiles = 0;
     for (const key of this.visibleKeys) {
       if (this.cache.has(key)) visibleReady += 1;
+      else if (this.failures.has(key)) retryingVisibleTiles += 1;
     }
     return {
       sourceKind: "pyramid",
       generation: this.options.generation,
       currentLevel: this.currentLevel,
       visibleTiles: this.visibleKeys.size,
+      retryingVisibleTiles,
       targetCoverageRatio: this.visibleKeys.size === 0 ? 1 : visibleReady / this.visibleKeys.size,
       desiredTiles: this.desired.size,
       queued: this.queue.length,

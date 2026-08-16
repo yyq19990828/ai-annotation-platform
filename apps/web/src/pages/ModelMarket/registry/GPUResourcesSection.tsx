@@ -23,7 +23,10 @@ import {
 } from "@/components/shadcn/ui/table";
 import { Progress } from "@/components/shadcn/ui/progress";
 
-import type { GPUArbiterResourceItem } from "@/api/adminMlIntegrations";
+import type {
+  GPUArbiterResourceItem,
+  GPUArbiterResourcesResponse,
+} from "@/api/adminMlIntegrations";
 import { CopyableId, EmptyState, NullCell } from "./registryUi";
 import type { RegistryScope } from "./registryTypes";
 import type { Diagnostic } from "../runtimeTopology";
@@ -56,7 +59,13 @@ function gpuStatusLabel(s: GpuStatus): string {
   }
 }
 
-export function GPUResourcesSection({ scope }: { scope: RegistryScope }): ReactNode {
+export function GPUResourcesSection({
+  scope,
+  summary,
+}: {
+  scope: RegistryScope;
+  summary: GPUArbiterResourcesResponse | null;
+}): ReactNode {
   const { gpuResources } = scope;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -84,32 +93,60 @@ export function GPUResourcesSection({ scope }: { scope: RegistryScope }): ReactN
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8" />
-          <TableHead>资源</TableHead>
-          <TableHead>静态预算</TableHead>
-          <TableHead>已声明（静态）</TableHead>
-          <TableHead>运行时 committed</TableHead>
-          <TableHead>队列</TableHead>
-          <TableHead>Lease</TableHead>
-          <TableHead>desired → effective</TableHead>
-          <TableHead>最高诊断</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {gpuResources.map((resource) => (
-          <GpuResourceRow
-            key={resource.gpu_resource_id}
-            resource={resource}
-            scope={scope}
-            expanded={expanded.has(resource.gpu_resource_id)}
-            onToggle={() => toggle(resource.gpu_resource_id)}
-          />
-        ))}
-      </TableBody>
-    </Table>
+    <div className="flex flex-col gap-3">
+      {summary && <GPUResourceSummary summary={summary} />}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-8" />
+            <TableHead>资源</TableHead>
+            <TableHead>静态预算</TableHead>
+            <TableHead>已声明（静态）</TableHead>
+            <TableHead>运行时 committed</TableHead>
+            <TableHead>队列</TableHead>
+            <TableHead>Lease</TableHead>
+            <TableHead>desired → effective</TableHead>
+            <TableHead>最高诊断</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {gpuResources.map((resource) => (
+            <GpuResourceRow
+              key={resource.gpu_resource_id}
+              resource={resource}
+              scope={scope}
+              expanded={expanded.has(resource.gpu_resource_id)}
+              onToggle={() => toggle(resource.gpu_resource_id)}
+            />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function GPUResourceSummary({ summary }: { summary: GPUArbiterResourcesResponse }): ReactNode {
+  return (
+    <div
+      data-testid="gpu-resource-summary"
+      className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2"
+    >
+      <Badge variant={summary.runtime_ready ? "success" : "danger"}>
+        <Icon name={summary.runtime_ready ? "checkCircle" : "alert-triangle"} size={11} />
+        {summary.runtime_ready ? "运行时就绪" : "运行时未就绪"}
+      </Badge>
+      <span className="text-xs text-muted-foreground">全局期望模式</span>
+      <Badge variant="outline">{summary.global_desired_mode}</Badge>
+      <Badge variant={summary.observe_runtime_ready ? "success" : "warning"}>
+        Observe {summary.observe_runtime_ready ? "就绪" : "未就绪"}
+      </Badge>
+      <Badge variant={summary.enforce_runtime_ready ? "success" : "warning"}>
+        Enforce {summary.enforce_runtime_ready ? "就绪" : "未就绪"}
+      </Badge>
+      <Badge variant={summary.rollout_enabled ? "accent" : "outline"}>
+        Rollout {summary.rollout_enabled ? "已启用" : "未启用"}
+      </Badge>
+    </div>
   );
 }
 
@@ -164,6 +201,9 @@ function GpuResourceRow({
               <span>节点 · {resource.node_id}</span>
               <span className="mono">{resource.physical_device_token}</span>
             </div>
+            <div className="text-2xs text-muted-foreground">
+              配置 · {resource.configured_mode ?? "未配置"}
+            </div>
           </div>
         </TableCell>
         <TableCell>
@@ -179,6 +219,9 @@ function GpuResourceRow({
               value={staticProgressPct}
               className={staticPct > 100 ? "bg-status-caution-soft" : undefined}
             />
+            <span className="text-2xs text-muted-foreground">
+              {resource.claimed_backend_count} 个 backend
+            </span>
             {staticPct > 100 && <span className="text-2xs text-status-caution">弹性超售</span>}
           </div>
         </TableCell>

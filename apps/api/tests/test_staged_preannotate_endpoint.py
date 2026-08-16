@@ -308,7 +308,7 @@ async def test_reject_forward_parent_stage(
     ]
     resp = await _post_stages(httpx_client_bound, token, proj, detect, batch, stages)
     assert resp.status_code == 422, resp.text
-    assert "未在前面定义" in resp.text
+    assert "必须小于子阶段序号" in resp.text
 
 
 @pytest.mark.asyncio

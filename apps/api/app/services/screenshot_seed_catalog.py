@@ -63,6 +63,7 @@ def _recording_anchor_payload(anchor: RecordingAnchorSpec) -> dict[str, Any]:
         "label": anchor.label,
         "bbox": list(anchor.bbox),
         "point": list(anchor.point),
+        "additional_points": [list(point) for point in anchor.additional_points],
         "polygon": [list(point) for point in anchor.polygon],
         "polyline": [list(point) for point in anchor.polyline],
         "brush_strokes": [
@@ -348,7 +349,11 @@ async def _resolve_dataset_and_tasks(
             await db.scalar(
                 select(func.count())
                 .select_from(Annotation)
-                .where(Annotation.task_id == task.id)
+                .where(
+                    Annotation.task_id == task.id,
+                    Annotation.is_active.is_(True),
+                    Annotation.was_cancelled.is_(False),
+                )
             )
             or 0
         )

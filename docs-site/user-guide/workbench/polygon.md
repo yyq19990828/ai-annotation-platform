@@ -15,7 +15,12 @@ last_reviewed: 2026-06-10
 3. 双击 / 按 `Enter` 闭合多边形
 4. 在多边形旁弹出的类别浮层中选择 `region` 类别
 
-![多边形逐点绘制：沿边界落点 + 预览线，Enter 闭合提交](../images/polygon/draw-in-progress.gif)
+<DocsVideo
+  src="/media/polygon/draw.mp4"
+  poster="/media/polygon/draw-poster.webp"
+  alt="沿目标边界逐点绘制多边形并按 Enter 闭合提交"
+  caption="沿边界依次落点，观察预览线和闭合提示，按 Enter 完成多边形并选择类别。"
+/>
 
 ## 绘制快捷键
 

@@ -23,6 +23,7 @@ htmlcov/
 coverage/
 playwright-report/
 test-results/
+.artifacts/marketing/
 .pytest_cache/
 .ruff_cache/
 

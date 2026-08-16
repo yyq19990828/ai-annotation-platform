@@ -240,6 +240,7 @@ async def test_retry_worker_tracks_success_in_async_jobs(
     fp = await _seed_failed(
         db_session, project_id=proj.id, task_id=task.id, backend_id=backend.id
     )
+    fp.extra = {"request_context": {"type": "ocr", "model_id": "ocr-e2e"}}
     await db_session.commit()
     session_factory = _passthrough_session_factory(db_session)
     authority_marker = object()
@@ -254,9 +255,16 @@ async def test_retry_worker_tracks_success_in_async_jobs(
         build_authority,
     )
 
-    async def fake_predict(self, tasks_payload):
+    monkeypatch.setattr(
+        "app.services.storage.resolve_task_url",
+        lambda received_task: f"http://minio.test/{received_task.file_name}",
+    )
+
+    async def fake_predict(self, tasks_payload, context=None):
         assert self._shadow_session_factory is session_factory
         assert self._dispatch_context_factory is authority_marker
+        assert tasks_payload[0]["file_path"] == "http://minio.test/x.jpg"
+        assert context == {"type": "ocr", "model_id": "ocr-e2e"}
         return [
             PredictionResult(
                 task_id=tasks_payload[0]["id"],

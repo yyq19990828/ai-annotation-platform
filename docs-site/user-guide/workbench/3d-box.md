@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.13.3
 status: stable
-last_reviewed: 2026-08-14
+last_reviewed: 2026-08-16
 ---
 
 # 3D 立体框标注
@@ -54,7 +54,12 @@ last_reviewed: 2026-08-14
 
 ## 框标签（文字）
 
-<!-- TODO IMAGE_CHECKLIST: images/3d-box/billboard-label.png — 3D 框顶部 billboard 文字标签(始终朝向相机) [manual] -->
+<DocsVideo
+  src="/media/pointcloud/billboard-label.mp4"
+  poster="/media/pointcloud/billboard-label-poster.webp"
+  alt="在标签内容的轨迹段启用属性后，从多个角度环绕点云核对 3D 框 billboard 标签"
+  caption="切到标签内容的“轨迹”段并启用属性后，框顶标签同时显示类别和属性；环绕到侧视、俯仰与低角度时，文字仍持续正对相机。"
+/>
 
 3D 框顶部有一枚 **billboard 文字标签**——它始终朝向相机，随视角旋转保持正对，方便在任意角度读出类别 / 轨迹号 / 属性。显示哪些字段由工作台设置里统一的**「标签内容」**决定：点云框复用其中的**「轨迹」段**（`类别名` 恒显，另可勾选 `轨迹号 / 状态 / 属性`），与视频轨迹框同一套配置，调一处两端同步。见[工作台设置 · 标签内容](./settings#补充说明)。
 

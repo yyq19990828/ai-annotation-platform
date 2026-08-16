@@ -30,7 +30,11 @@ last_reviewed: 2026-08-11
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/large-image-pyramid-status.png — required 超大图生成中与失败/重试状态 [auto] -->
 
-![超大图从 overview 随缩放与平移渐进恢复局部高清细节](../images/workbench/large-image-progressive-detail.gif)
+<DocsVideo
+  src="/media/large-image/progressive.mp4"
+  poster="/media/large-image/progressive-poster.webp"
+  alt="超大图从概览随缩放与平移渐进恢复局部高清切片"
+/>
 
 图片背景浏览不要求 WebGPU；没有独立 GPU 的浏览器仍可打开、缩放和平移图片。已生成高清切片的超大图会
 先显示 overview，再按当前视口和缩放级别渐进加载清晰 tile。平移或放大时局部清晰度可能短暂变化，但
@@ -38,8 +42,14 @@ last_reviewed: 2026-08-11
 
 required 超大图的切片仍在生成时，画布显示“高清切片生成中”和安全预览；生成失败时显示不可用提示和
 “重新生成”按钮，不会自动下载并解码整张原图。重试仍受服务端冷却与频率限制。单个 tile 网络或解码
-失败时会保留 overview，不应出现整块透明背景。若提示长期不消失，请保留任务编号和 BUG 反馈中的
+失败时会保留 overview，并显示“高清切片请求失败，正在自动重试”；恢复完成后提示自动消失，不应出现整块透明背景。若提示长期不消失，请保留任务编号和 BUG 反馈中的
 Large Image Tile Diagnostics 联系管理员，不要在无法辨认目标细节时继续标注。
+
+<DocsVideo
+  src="/media/large-image/pyramid-recovery.mp4"
+  poster="/media/large-image/pyramid-recovery-poster.webp"
+  alt="超大图的一个可见高清切片请求失败后保留概览、自动重试并恢复清晰"
+/>
 
 Minimap、评论画布和邻题预取只使用缩略图或 overview，不会在主画布之外重复加载 required 大图。浏览器不
 支持 `createImageBitmap` 时会自动使用普通图片元素解码，功能保持一致。
@@ -86,7 +96,12 @@ Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/review-two-level-cycle.png — 两级循环示意 [manual] -->
 
-![接受或拒绝后自动推进到下一待决候选](../images/workbench/review-auto-advance.gif)
+<DocsVideo
+  src="/media/ai/candidate-keyboard-review.mp4"
+  poster="/media/ai/candidate-keyboard-review-poster.webp"
+  alt="使用 Tab 选中 AI 候选，按 A 接受或 D 拒绝后自动前进到下一项"
+  caption="Tab / Shift+Tab 在候选之间切换；按 A 接受或 D 拒绝后，焦点自动前进到下一项，适合连续处理 AI 候选。"
+/>
 
 从 AI 结果接管、逐个采纳 / 拒绝时可全程键盘操作（图片与视频 2D 工作台通用）：
 
@@ -108,7 +123,12 @@ Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可
 
 在工作台内按 `?` 随时打开「键盘快捷键」面板，支持按动作 / 按键搜索，也可按使用频率排序：
 
-![键盘快捷键面板（按 ? 打开）](../images/workbench/hotkey-cheatsheet.gif)
+<DocsVideo
+  src="/media/workbench/hotkey-cheatsheet.mp4"
+  poster="/media/workbench/hotkey-cheatsheet-poster.webp"
+  alt="按问号打开工作台快捷键面板并搜索命令"
+  caption="按 ? 打开快捷键面板，按分组浏览或搜索命令，再关闭面板回到工作台。"
+/>
 
 <!--@include: ./hotkeys.generated.md-->
 

@@ -6,28 +6,51 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { mediaPoint, recordingAnchor } from "./_canvas";
+import {
+  commitPendingAnnotationClass,
+  mediaPoint,
+  movePointerPathAtRefreshRate,
+  recordingAnchor,
+  renderedMediaBounds,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-async function stroke(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
-  await page.mouse.move(from.x, from.y);
+async function stroke(page: Page, points: Array<{ x: number; y: number }>, durationMs: number) {
+  const first = points[0];
+  if (!first || points.length < 2) {
+    throw new Error("[video-mask-track-edit] 笔刷路径至少需要两个点");
+  }
+  await page.mouse.move(first.x, first.y);
   await page.mouse.down();
-  await page.mouse.move(to.x, to.y, { steps: 12 });
+  await movePointerPathAtRefreshRate(page, points, durationMs);
   await page.mouse.up();
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(250);
 }
 
-async function confirmMask(page: Page, chooseClass: boolean) {
+async function confirmMask(
+  page: Page,
+  options: { label?: string; taskId: number; update?: boolean },
+) {
   const toolbar = page.getByTestId("mask-toolbar");
   const confirm = toolbar.getByTitle("确认 (Enter)");
   await confirm.waitFor({ state: "visible", timeout: 10_000 });
+  const updated = options.update
+    ? page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          /\/video\/tracks\/[^/]+\/mask-keyframes\/\d+(?:\?|$)/.test(response.url()) &&
+          response.ok(),
+        { timeout: 20_000 },
+      )
+    : null;
   await confirm.click();
-  if (chooseClass) {
-    const classPicker = page.getByTestId("class-picker-popover");
-    await classPicker.waitFor({ timeout: 10_000 });
-    // 直接点选默认类，避免类别弹层的键盘焦点影响 Mask 提交流程。
-    await classPicker.getByText("car", { exact: true }).click();
+  if (options.label) {
+    await commitPendingAnnotationClass(page, {
+      label: options.label,
+      taskId: options.taskId,
+    });
   }
+  if (updated) await updated;
   await toolbar.waitFor({ state: "hidden", timeout: 15_000 });
 }
 
@@ -43,8 +66,7 @@ export async function runVideoMaskTrackEdit(
   await page.waitForTimeout(1800);
 
   const surface = page.getByTestId("video-konva-stage");
-  const box = await surface.boundingBox();
-  if (!box) throw new Error("[video-mask-track-edit] video-konva-stage 没有可见边界");
+  const box = await renderedMediaBounds(surface);
   const initialAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
   const editAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f5", 5);
   if (initialAnchor.brush_strokes.length === 0 || editAnchor.brush_strokes.length === 0) {
@@ -57,13 +79,18 @@ export async function runVideoMaskTrackEdit(
   const toolbar = page.getByTestId("mask-toolbar");
   await toolbar.waitFor({ timeout: 10_000 });
 
-  for (const path of initialAnchor.brush_strokes) {
-    const [from, to] = path;
-    if (!from || !to) throw new Error("[video-mask-track-edit] 初始笔刷轨迹至少需要两个点");
-    await stroke(page, mediaPoint(box, from), mediaPoint(box, to));
-  }
+  // 六条横线合并成一条来回往返的连续笔迹：画面仍呈现逐行覆盖，
+  // 但只触发一次 pointerdown/up，避免 4K Mask 每笔全量重绘把操作拉长。
+  const initialPath = initialAnchor.brush_strokes.flatMap((path, index) => {
+    const points = path.map((point) => mediaPoint(box, point));
+    return index % 2 === 0 ? points : points.reverse();
+  });
+  await stroke(page, initialPath, 1_800);
   await page.waitForTimeout(650);
-  await confirmMask(page, true);
+  await confirmMask(page, {
+    label: initialAnchor.label,
+    taskId: project.tasks.tracking.id,
+  });
 
   const trackRow = page.locator('[data-testid^="video-mask-track-"]').last();
   await trackRow.waitFor({ timeout: 15_000 });
@@ -83,14 +110,22 @@ export async function runVideoMaskTrackEdit(
   await toolbar.waitFor({ timeout: 10_000 });
   await toolbar.getByTitle("橡皮 (E)").click();
   for (const path of editAnchor.brush_strokes) {
-    const [from, to] = path;
-    if (!from || !to) throw new Error("[video-mask-track-edit] 修正笔刷轨迹至少需要两个点");
-    await stroke(page, mediaPoint(box, from), mediaPoint(box, to));
+    await stroke(
+      page,
+      path.map((point) => mediaPoint(box, point)),
+      600,
+    );
   }
   await page.waitForTimeout(650);
-  await confirmMask(page, false);
+  await confirmMask(page, { taskId: project.tasks.tracking.id, update: true });
   await page.getByText("当前帧为 Mask 关键帧。").waitFor({ timeout: 10_000 });
   await page.waitForTimeout(900);
+  // 在两个真实关键帧间往返，验证 F0 初始 Mask 与 F5 人工修订都已落入同一轨迹。
+  await page.getByRole("button", { name: "上一关键帧" }).click();
+  await page.getByTestId("video-konva-stage").waitFor({ state: "visible" });
+  await page.waitForTimeout(1_200);
+  await page.getByRole("button", { name: "下一关键帧" }).click();
+  await page.waitForTimeout(1_200);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }

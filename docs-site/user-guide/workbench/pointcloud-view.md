@@ -18,7 +18,11 @@ last_reviewed: 2026-08-11
 
 ## 视图导航
 
-![拖动主 3D 视图旋转点云：左键按住拖拽即沿轨道环绕（orbit）观察](../images/workbench/pointcloud-view-orbit.gif)
+<DocsVideo
+  src="/media/pointcloud/orbit.mp4"
+  poster="/media/pointcloud/orbit-poster.webp"
+  alt="拖动主 3D 视图平滑旋转点云并在新视角稳定停留"
+/>
 
 - 主 3D 视图可旋转 / 平移 / 缩放查看点云。
 - 控件浮条「重置视角」回到默认斜视（跟随车头朝向）；「俯视」切到正上方鸟瞰（BEV），便于框选地面 footprint。两者随时切换。
@@ -38,7 +42,11 @@ last_reviewed: 2026-08-11
 
 ## 上色与深度
 
-![点云控件演示：工作台设置抽屉切换相机上色（高度色→相机 RGB）/ 点大小 / 深度提示](../images/workbench/pointcloud-controls-bar.gif)
+<DocsVideo
+  src="/media/pointcloud/controls.mp4"
+  poster="/media/pointcloud/controls-poster.webp"
+  alt="切换点云相机上色并调整点大小和深度范围"
+/>
 
 ### 相机 RGB 上色
 
