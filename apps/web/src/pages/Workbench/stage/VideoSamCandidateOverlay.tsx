@@ -151,21 +151,53 @@ export function VideoSamCandidateOverlay({
           描边环按 obj_id 配色 + 右上标号，单目标为白边、无标号。 */}
       {sessionPoints.map((sp, i) => {
         const ring = sp.obj != null ? objRingColor(sp.obj) : "#ffffff";
+        const positive = sp.polarity === 1;
+        const x = sp.pt[0] * width;
+        const y = sp.pt[1] * height;
+        const radius = (positive ? 4 : 6) / scale;
         return (
           <Fragment key={`sp-${i}`}>
             <Circle
-              x={sp.pt[0] * width}
-              y={sp.pt[1] * height}
-              radius={4 / scale}
-              fill={sp.polarity === 1 ? POSITIVE_POINT : NEGATIVE_POINT}
+              x={x}
+              y={y}
+              radius={radius}
+              fill={positive ? POSITIVE_POINT : NEGATIVE_POINT}
               stroke={ring}
               strokeWidth={(sp.obj != null ? 2 : 1.5) / scale}
               listening={false}
             />
+            {!positive && (
+              <>
+                <Line
+                  points={[
+                    x - radius * 0.55,
+                    y - radius * 0.55,
+                    x + radius * 0.55,
+                    y + radius * 0.55,
+                  ]}
+                  stroke="#ffffff"
+                  strokeWidth={1.5 / scale}
+                  lineCap="round"
+                  listening={false}
+                />
+                <Line
+                  points={[
+                    x - radius * 0.55,
+                    y + radius * 0.55,
+                    x + radius * 0.55,
+                    y - radius * 0.55,
+                  ]}
+                  stroke="#ffffff"
+                  strokeWidth={1.5 / scale}
+                  lineCap="round"
+                  listening={false}
+                />
+              </>
+            )}
             {sp.obj != null && (
               <Text
-                x={sp.pt[0] * width + 6 / scale}
-                y={sp.pt[1] * height - 11 / scale}
+                x={x + (positive ? 6 : 8) / scale}
+                y={y - (positive ? 11 : 13) / scale}
                 text={String(sp.obj)}
                 fontSize={11 / scale}
                 fontStyle="bold"

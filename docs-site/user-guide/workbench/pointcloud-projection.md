@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.13.4
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-15
 ---
 
 # 点云跨模态联动
@@ -36,9 +36,13 @@ schema 详情见 [点云 / 多模态数据集导入格式 · 标定 JSON schema]
 - 多框重叠时，选**面积最小**的框（前景 / 近处框面积通常较小，优先选中）。
 - 命中后调用 `onSelectBox`，选中对应 3D 框；`Shift+点击` 支持多选叠加。
 
-## 相机图种框（2D 框种 3D 框，v0.15.24）
+## 相机图种框（2D 框种 3D 框）
 
-<!-- TODO IMAGE_CHECKLIST: images/workbench-pointcloud-projection/seed-box-from-camera.png — 放大相机图拖 2D 框 → 主视图生成 3D 框 [manual] -->
+<DocsVideo
+  src="/media/pointcloud/camera-seed-3d-box.mp4"
+  poster="/media/pointcloud/camera-seed-3d-box-poster.webp"
+  alt="在同步前视相机中圈定前景目标，生成真实 3D 框，在点云与三视图核对并再次检查相机重投影"
+/>
 
 远处 / 稀疏 / 遮挡目标在点云主视图里点太少、难直接框，但在相机图上一眼可见。**种框**让你在相机图上拖一个 2D 矩形，系统反算视锥、选出锥内点云、自动拟合出一个 3D 框：
 

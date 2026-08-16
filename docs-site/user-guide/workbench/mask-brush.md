@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.10.8
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-16
 ---
 
 # Mask 像素编辑器
@@ -31,7 +31,12 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
 
 ![Mask 笔刷工具栏](../images/mask-brush/toolbar-overview.png)
 
-![Mask 笔刷涂抹：拖拽绘制笔迹，Enter 提交](../images/mask-brush/draw-in-progress.gif)
+<DocsVideo
+  src="/media/mask-brush/mask-draw.mp4"
+  poster="/media/mask-brush/mask-draw-poster.webp"
+  alt="在目标区域涂抹 Mask 并按 Enter 提交"
+  caption="拖拽笔刷填充目标区域，确认覆盖范围后按 Enter 提交 Mask。"
+/>
 
 1. **空白 mask（从零开始）**
    - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画
@@ -60,9 +65,14 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
 
 ## 大画布图片
 
-<!-- TODO IMAGE_CHECKLIST: images/mask-brush/large-image-limit.png — 超大底图可浏览但 Mask 尺寸超限提示 [auto] -->
+<DocsVideo
+  src="/media/large-image/mask-limit.mp4"
+  poster="/media/large-image/mask-limit-poster.webp"
+  alt="Cosmic Cliffs 超大图在工作台中放大后完成矩形标注，然后展示 Mask 尺寸超限提示"
+  caption="超过 Mask 编辑上限时，分块浏览和矢量标注仍然可用；Mask 入口会直接标出实际图像尺寸、单边上限和总像素上限。"
+/>
 
-图片 Mask 最大支持 8192 像素单边和 67,108,864 总像素。任一边超过 4096 或总像素
+图片 Mask 最大支持 8192 像素单边和 67,108,864 总像素。超过其中任一上限时，工作台保留大图浏览和矢量工具，但会置灰 Mask 工具并在悬停提示中列出实际尺寸与上限。仍在支持范围内时，任一边超过 4096 或总像素
 超过 16,777,216 时，工作台自动进入分块模式：
 
 - 笔刷、橡皮与套索加减只加载笔迹相交的区域，撤销、重做、保存和刷新后回读保持逐像素一致。
@@ -181,7 +191,11 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试」�
 
 ## 视频 Mask 轨迹
 
-![创建视频 Mask 轨迹并在保持帧编辑、物化新关键帧](../images/workbench/video-mask-track-edit.gif)
+<DocsVideo
+  src="/media/video/mask-track-edit.mp4"
+  poster="/media/video/mask-track-edit-poster.webp"
+  alt="创建视频 Mask 轨迹并在后续保持帧编辑、物化新关键帧"
+/>
 
 在视频任务中点击「Mask 轨迹」工具（该工具不占用快捷键）：
 
@@ -194,6 +208,14 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试」�
 7. 当前 Mask 可按连通组件拆为多条轨迹。预览确认后只在当前帧创建新轨迹，不复制后续关键帧、`outside` 或自动追踪身份。
 8. 「标记消失」只新增当前帧的人工 `outside`；「恢复保持」只移除人工区间并重新解析 held 来源。预测 `outside` 会明确标成「预测消失」，不能在此冒充人工恢复。
 9. `Delete` 只删除当前可见的精确关键帧，且至少保留一个关键帧。删除后如果邻近帧可保持，画布会立即恢复 held Mask；删除整条轨迹用 `Ctrl/⌘+Delete` 或右键菜单的「删除整条轨迹」。
+
+### 错帧纠正与重传播
+
+<DocsVideo
+  src="/media/video/mask-correction-propagate.mp4"
+  poster="/media/video/mask-correction-propagate-poster.webp"
+  alt="在漂移帧用笔刷补入漏分区域、用橡皮扣除外溢区域，再向后重传播并审阅更新后的 Mask 轨迹"
+/>
 
 当 Tracker 在某帧发生漂移时，编辑该帧 Mask 后可选择「仅保存」、向更早帧、向更晚帧或双向重传播。当前帧会先以人工关键帧单独保存；传播结果只进入待审候选，不会立即覆盖轨迹。窗口会同时受当前视频分段和模型单窗上限约束，纠错帧本身不进入候选。
 

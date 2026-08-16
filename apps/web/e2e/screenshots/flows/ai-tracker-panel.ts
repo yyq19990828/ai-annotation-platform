@@ -5,6 +5,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runAiTrackerPanel(
@@ -38,7 +39,12 @@ export async function runAiTrackerPanel(
   const headerY = headerBox.y + 18;
   await page.mouse.move(headerX, headerY);
   await page.mouse.down();
-  await page.mouse.move(headerX - 150, headerY + 24, { steps: 12 });
+  await movePointerAtRefreshRate(
+    page,
+    { x: headerX, y: headerY },
+    { x: headerX - 150, y: headerY + 24 },
+    650,
+  );
   await page.mouse.up();
   await page.waitForTimeout(800);
 
@@ -49,7 +55,12 @@ export async function runAiTrackerPanel(
   const handleY = handleBox.y + handleBox.height / 2;
   await page.mouse.move(handleX, handleY);
   await page.mouse.down();
-  await page.mouse.move(handleX + 60, handleY - 70, { steps: 12 });
+  await movePointerAtRefreshRate(
+    page,
+    { x: handleX, y: handleY },
+    { x: handleX + 60, y: handleY - 70 },
+    650,
+  );
   await page.mouse.up();
   await page.waitForTimeout(800);
 

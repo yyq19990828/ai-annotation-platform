@@ -3,7 +3,7 @@ audience: [annotator]
 type: how-to
 since: v0.9.40
 status: stable
-last_reviewed: 2026-08-11
+last_reviewed: 2026-08-16
 ---
 
 # 视频关键帧传播与 AI 追踪
@@ -20,6 +20,13 @@ last_reviewed: 2026-08-11
 | 结果落库    | 操作完成即写入，可整体撤销       | 先显示候选预览，可按目标与帧窗口接受后写入 |
 | 放弃结果    | 撤销复制操作                     | 在候选审阅条拒绝所选范围，标注零改动       |
 
+<DocsVideo
+  src="/media/video/propagate-track-vs-copy.mp4"
+  poster="/media/video/propagate-track-vs-copy-poster.webp"
+  alt="同一辆中间卡车从 F0 到 F30 的几何复制与 AI 延展结果对比"
+  caption="同一条卡车轨迹复制到 F30 后仍保留 F0 的框尺寸，已经偏离变大后的车身；撤销复制并运行 AI 延展后，候选框会随目标的位置和尺度变化，复核 F1–F30 后再回填原轨迹。"
+/>
+
 ## 复制后续（关键帧传播）
 
 选中轨迹后，点击选中卡上的**复制后续**（copy 图标），选择方向、帧数和是否覆盖已有关键帧。系统会把当前帧的框原样铺到目标帧，不调用模型，整个传播可作为一次操作撤销。
@@ -27,8 +34,6 @@ last_reviewed: 2026-08-11
 开启帧采样后，弹窗里的数量按采样网格格子计算，与 `←` / `→` 的导航单位一致。
 
 ## 先选择正确的作用范围
-
-<!-- TODO IMAGE_CHECKLIST: images/video-propagate/track-vs-copy-buttons.png — 选中卡「AI 追踪」vs「复制后续」两按钮对比 [manual] -->
 
 <AutoImage src="video-propagate/ai-tracking-panel.png" alt="视频工作台右上的 AI 追踪检查器，顶部入口位于 AI 单题按钮左侧" />
 
@@ -42,7 +47,12 @@ last_reviewed: 2026-08-11
 
 面板默认停在中间画布右上角。拖动头部可在画布内移动，拖右下角可调整尺寸；关闭重开或刷新后会恢复上次位置和尺寸，窗口变小时会自动夹回可见区域。**AI 追踪**与 **AI 单题**互斥：打开其中一个会收起另一个，避免同时遮挡画布。
 
-![AI 追踪面板拖动、缩放、重开恢复与 AI 单题互斥](../images/video-propagate/ai-tracking-panel-interaction.gif)
+<DocsVideo
+  src="/media/video/ai-tracker-panel.mp4"
+  poster="/media/video/ai-tracker-panel-poster.webp"
+  alt="AI 追踪面板拖动、缩放、重开恢复与 AI 单题互斥"
+  caption="追踪面板可在画布内移动和缩放，并与当前题 AI 面板保持互斥。"
+/>
 
 方向使用时间轴语义，避免“向前 / 向后”歧义：
 
@@ -52,7 +62,12 @@ last_reviewed: 2026-08-11
 
 范围可选 10 / 30 / 60 帧、到相邻关键帧、到视频端点。开启帧采样后，数字范围按网格格子计算。也可以在时间轴上按住 `Shift` 拖选自定义范围；工具条会显示实际起止帧，并在大范围需要分窗时给出粗略窗口数。
 
-![按住 Shift 刷选时间轴并把自定义范围回填到 AI 追踪面板](../images/video-propagate/shift-brush-range.gif)
+<DocsVideo
+  src="/media/video/tracker-range.mp4"
+  poster="/media/video/tracker-range-poster.webp"
+  alt="按住 Shift 刷选时间轴范围并把自定义范围回填到 AI 追踪面板"
+  caption="按住 Shift 刷选后，追踪面板会显示实际起止帧与影响范围；确认范围后再发起 AI 追踪。"
+/>
 
 ## 按意图选择模型
 
@@ -74,11 +89,58 @@ SAM 尺寸档位只在 **SAM2 · 框追踪**时显示，因为 `tiny / small / b
 
 文本检测追踪的工作台入口只收集文本描述。不要把图片工作台的 Exemplar 示例框当作视频种子；需要通过 API 传视觉示例的调用方见 [Video Tracker Jobs](../../api/guides/video-tracker-jobs#文本与视觉示例)。
 
+### 文本发现多个目标
+
+<DocsVideo
+  src="/media/video/tracker-text-discovery.mp4"
+  poster="/media/video/tracker-text-discovery-poster.webp"
+  alt="输入 bus 后筛选左右两辆完整公交车，跨帧核对并采纳为两条视频轨迹"
+  caption="文本发现会返回多个身份候选；先只保留左右两辆完整公交车，拖动时间轴跨帧核对，再采纳正确轨迹并拒绝剩余噪声。"
+/>
+
+画布级「发现目标」不会把文本结果直接落库。模型返回候选池后，先按目标复核完整车身，取消远处目标、重复框或局部部件；再拖动时间轴检查所选身份是否持续跟随同一对象。接受所选只新建当前勾选的轨迹，其余候选可继续审阅或整批拒绝。
+
+### 发现追踪（combo）
+
+<DocsVideo
+  src="/media/video/tracker-combo-discovery.mp4"
+  poster="/media/video/tracker-combo-discovery-poster.webp"
+  alt="选择 SAM3 发现追踪 combo，用文本发现公交车后跨两个窗口核对稳定身份并采纳"
+  caption="combo 先按文本发现目标，再把发现框作为内部种子交给逐对象视频记忆追踪；跨过分窗边界后仍保持同一组身份。"
+/>
+
+combo 不要求标注员再补画点或框。第一趟文本发现会在起始帧生成对象框，系统再把这些框铸造成第二趟追踪的内部种子。候选审阅仍按目标和帧窗口进行：先筛掉远处或不完整目标，再到第二个处理窗口核对身份是否稳定，最后只采纳需要的新轨迹。
+
 ## 点 / 框种子、多目标与中途纠偏
 
-SAM2 和 SAM3 点框交互追踪支持在发起前采集种子：
+SAM2 和 SAM3 点框交互追踪支持在发起前采集种子。三种种子分别录制，避免把点、负点和框的操作混成一段：
 
-![为多个目标添加点与框种子，并在后续帧追加纠偏](../images/video-propagate/multi-target-seeds.gif)
+### 跨帧多正点
+
+<DocsVideo
+  src="/media/video/tracker-cross-frame-points.mp4"
+  poster="/media/video/tracker-cross-frame-points-poster.webp"
+  alt="为左右两辆公交车分别添加跨帧正点，追踪后拖动时间轴核对两个候选"
+  caption="两个目标分别在 F0 与 F4 添加正点，发起一次多目标追踪，并在接受前跨帧复核。"
+/>
+
+### 正负点修正
+
+<DocsVideo
+  src="/media/video/tracker-positive-negative.mp4"
+  poster="/media/video/tracker-positive-negative-poster.webp"
+  alt="为两辆公交车添加正点和红色负点，追踪后跨帧核对候选"
+  caption="Alt + 单击加入负点，用于排除紧邻目标的背景或相邻物体；面板会分别统计正负提示。"
+/>
+
+### 整车框种子
+
+<DocsVideo
+  src="/media/video/tracker-box-seed.mp4"
+  poster="/media/video/tracker-box-seed-poster.webp"
+  alt="沿左右两辆公交车完整车身绘制框种子并同时追踪"
+  caption="每个框覆盖完整车身；生成两个候选后拖动时间轴检查跨帧位置，再整批接受。"
+/>
 
 1. 在追踪面板的「种子」区选择**点**或**框**，进入采集状态。
 2. 点模式下，单击目标添加正点；`Alt + 单击` 添加负点，表示“这块不要”。框模式下，在目标上拖出提示框。
@@ -96,6 +158,13 @@ SAM2 和 SAM3 点框交互追踪支持在发起前采集种子：
 2. 点击批量条上的 **批量延展**，打开追踪面板。标题和作用范围摘要会显示「批量延展 N 条轨迹」及类别（同类显类名，混类显「N 类」）。
 3. 选好模型与范围后发起。各条源轨迹在**同一个作业**里被并行追踪，各自回填各自轨迹——只产生一条审阅记录、一次接受，而不是每条轨迹一个作业。
 
+<DocsVideo
+  src="/media/video/track-batch-propagate.mp4"
+  poster="/media/video/track-batch-propagate-poster.webp"
+  alt="多选左右两条公交车轨迹，一次批量延展后跨帧复核并回填两条原轨迹"
+  caption="Ctrl 多选后，画布浮卡与右栏工具条同时显示“已选 2 条轨迹”；一个 SAM3 作业产生双目标候选，保留人工 F0 后一次回填两条原轨迹。"
+/>
+
 批量追踪与单条一样以起始帧的轨迹几何为种子，因此发起前把播放头停在这些轨迹都有框的帧上。接受后各源轨迹一并更新；作业运行期间若任一源轨迹被删除、锁定或修改，整次接受都会停止并要求刷新，不会把失效源静默降级成新轨迹。
 
 ## 在漂移帧修正 Mask 并重传播
@@ -111,9 +180,13 @@ SAM2 和 SAM3 点框交互追踪支持在发起前采集种子：
 
 ## 运行、取消与候选审阅
 
-<!-- TODO IMAGE_CHECKLIST: images/video-propagate/tracker-review-bar.png — AI 追踪候选审阅条与画布候选叠加 [manual] -->
+运行期间，轨迹卡片显示 `queued / running` 进度与取消按钮，顶栏「后台任务」和 `/ai-pre/jobs?tab=video` 的「视频」页保留任务记录。视频任务页同时展示运行中、待审阅、部分审阅、已采纳和已丢弃等执行 / 审阅状态，可按视频项目、状态和模型筛选；每条记录都能带任务、轨迹与起始帧返回对应视频工作台。取消只停止后续计算；如果模型已经产出部分帧，这部分结果仍会进入候选审阅；尚无结果时不会出现审阅条。
 
-运行期间，轨迹卡片显示 `queued / running` 进度与取消按钮，顶栏「后台任务」和 `/ai-pre/jobs?tab=video` 的「视频」页保留任务记录。取消只停止后续计算；如果模型已经产出部分帧，这部分结果仍会进入候选审阅；尚无结果时不会出现审阅条。
+<DocsVideo
+  src="/media/jobs/video-tracker-job-states.mp4"
+  poster="/media/jobs/video-tracker-job-states-poster.webp"
+  alt="视频追踪任务页对比运行中、待审阅、已采纳和已丢弃状态，按项目与状态筛选后返回对应视频工作台"
+/>
 
 追踪完成后不会立刻改写轨迹：
 

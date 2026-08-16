@@ -133,6 +133,8 @@ export interface UseWorkbenchHotkeysArgs {
   isPromptSupported?: (type: string) => boolean;
   /** 项目级「交互式 AI 工具」总开关; false 时 AI 工具 hotkey no-op (与 ToolDock 隐藏一致)。 */
   aiInteractiveEnabled?: boolean;
+  /** 与 ToolDock 共用的 Mask 禁用原因；存在时 M 热键不进入 Mask。 */
+  maskToolDisabledReason?: string;
   /** v0.10.8 · mask 工具激活时的 B/E/Enter/Esc 上下文键由这组 callback 消费。 */
   maskEditor?: UseMaskEditorReturn;
   commitMaskAsPolygon?: () => void;
@@ -213,6 +215,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     videoControlsRef,
     isPromptSupported,
     aiInteractiveEnabled,
+    maskToolDisabledReason,
     maskEditor,
     commitMaskAsPolygon,
     commitMaskInstanceOperation,
@@ -794,6 +797,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setTool": {
+          if (action.tool === "mask" && maskToolDisabledReason) {
+            pushToast({ msg: maskToolDisabledReason, kind: "warning" });
+            return;
+          }
           // 项目关闭交互式 AI 总开关时, AI 工具 hotkey 应 no-op (与 ToolDock 隐藏按钮契约一致)。
           if (
             aiInteractiveEnabled === false &&
@@ -987,6 +994,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleVideoSetSelectedClass,
     isPromptSupported,
     aiInteractiveEnabled,
+    maskToolDisabledReason,
     aiBoxes,
     autoAdvanceOnDecide,
     setShowHotkeys,

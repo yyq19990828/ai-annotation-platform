@@ -3,6 +3,7 @@
  */
 import type { Page, Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 function isPyramidRequest(response: Response, taskId: string): boolean {
@@ -55,6 +56,7 @@ export async function runLargeImageProgressive(
   const stageBox = await stage.boundingBox();
   if (!stageBox) throw new Error("[large-image-progressive] 大图画布不可见");
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_200);
   const zoomX = stageBox.x + stageBox.width * 0.72;
   const zoomY = stageBox.y + stageBox.height * 0.48;
   await page.mouse.move(zoomX, zoomY);
@@ -64,25 +66,55 @@ export async function runLargeImageProgressive(
     await page.waitForTimeout(260);
   }
   await page.keyboard.up("Control");
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1_400);
 
   const panStartX = stageBox.x + stageBox.width * 0.54;
   const panStartY = stageBox.y + stageBox.height * 0.52;
   await page.keyboard.down("Space");
   await page.mouse.move(panStartX, panStartY);
   await page.mouse.down();
-  await page.mouse.move(panStartX - stageBox.width * 0.16, panStartY + stageBox.height * 0.08, {
-    steps: 16,
-  });
+  await movePointerAtRefreshRate(
+    page,
+    { x: panStartX, y: panStartY },
+    { x: panStartX - stageBox.width * 0.16, y: panStartY + stageBox.height * 0.08 },
+    900,
+  );
   await page.mouse.up();
   await page.keyboard.up("Space");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1_300);
 
   await page.mouse.move(stageBox.x + stageBox.width * 0.82, stageBox.y + stageBox.height * 0.42);
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, -360);
   await page.keyboard.up("Control");
-  await page.waitForTimeout(1_200);
+  await page.waitForTimeout(1_500);
+
+  // 稍微缩回后平移到相邻区域，再放大一次，展示切片不只服务单一个视口。
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, 300);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(900);
+
+  const secondPanX = stageBox.x + stageBox.width * 0.48;
+  const secondPanY = stageBox.y + stageBox.height * 0.48;
+  await page.keyboard.down("Space");
+  await page.mouse.move(secondPanX, secondPanY);
+  await page.mouse.down();
+  await movePointerAtRefreshRate(
+    page,
+    { x: secondPanX, y: secondPanY },
+    { x: secondPanX + stageBox.width * 0.14, y: secondPanY - stageBox.height * 0.07 },
+    900,
+  );
+  await page.mouse.up();
+  await page.keyboard.up("Space");
+  await page.waitForTimeout(1_100);
+
+  await page.mouse.move(stageBox.x + stageBox.width * 0.42, stageBox.y + stageBox.height * 0.38);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -320);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(1_500);
 
   if (signedBatchCount === 0) {
     throw new Error("[large-image-progressive] 缩放平移后未观测到高清切片签名请求");

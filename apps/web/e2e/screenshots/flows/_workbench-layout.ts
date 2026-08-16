@@ -11,6 +11,7 @@ import type {
   WorkbenchLayoutPreferences,
   WorkbenchPreferences,
 } from "../../../src/api/auth";
+import { movePointerAtRefreshRate } from "./_canvas.ts";
 
 export type RecordingSidebarMode = "both" | "none";
 export interface RecordingWorkbenchOverrides {
@@ -19,6 +20,7 @@ export interface RecordingWorkbenchOverrides {
   video?: Partial<WorkbenchPreferences["video"]>;
   pointcloud?: Partial<WorkbenchPreferences["pointcloud"]>;
   layout?: Partial<WorkbenchLayoutPreferences>;
+  ui?: Partial<UserPreferences["ui"]>;
 }
 
 function embeddedLayout(
@@ -114,6 +116,7 @@ export async function installRecordingWorkbenchLayout(
         pointcloud: { ...original.workbench.pointcloud, ...(overrides.pointcloud ?? {}) },
         layout: { ...original.workbench.layout, ...(overrides.layout ?? {}) },
       },
+      ui: { ...original.ui, ...(overrides.ui ?? {}) },
     },
     mode,
   );
@@ -163,6 +166,10 @@ export async function installRecordingWorkbenchLayout(
       `workbench.${user.id}.rightOpen`,
       preferences.workbench.layout.rightOpen ? "1" : "0",
     );
+    localStorage.setItem(
+      `workbench.${user.id}.floatingSelection`,
+      JSON.stringify(preferences.workbench.layout.floatingSelection),
+    );
   }, sandbox);
 }
 
@@ -188,31 +195,54 @@ export async function waitForRecordingWorkbenchLayout(
   );
 }
 
+export function isAiPanelSafelyDockedRight(
+  viewportWidth: number,
+  panelRight: number,
+  maximumGap = 32,
+): boolean {
+  const gap = viewportWidth - panelRight;
+  return gap >= 0 && gap <= maximumGap;
+}
+
 /**
- * 把可拖动的当前题 AI 面板停到视口最右侧，避免录制时遮住中央主图。
+ * 把可拖动的当前题 AI 面板停到视口右侧安全边距内，避免录制时遮住中央主图。
  * 走真实 pointer drag，只影响隔离的 Playwright context，不改产品默认定位。
  */
 export async function dockAiPanelAtViewportRight(page: Page, panel: Locator): Promise<void> {
   const header = panel.getByTitle("拖动 AI 面板");
+  await header.waitFor({ state: "visible", timeout: 5_000 });
+  await page.waitForTimeout(300);
   const [panelBox, headerBox] = await Promise.all([panel.boundingBox(), header.boundingBox()]);
-  const viewport = page.viewportSize();
+  // marketing-master 使用 noDefaultViewport，让 Chromium 窗口铺满真实 X11 显示；
+  // 这种 context 下 page.viewportSize() 按 Playwright 合同返回 null，改读页面实际视口。
+  const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   if (!panelBox || !headerBox || !viewport) {
     throw new Error("[recording-layout] 无法定位当前题 AI 面板");
   }
 
-  const deltaX = viewport.width - panelBox.x - panelBox.width - 8;
-  const startX = headerBox.x + headerBox.width / 2;
-  const startY = headerBox.y + Math.min(18, headerBox.height / 2);
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + deltaX, startY, { steps: 8 });
-  await page.mouse.up();
+  if (!isAiPanelSafelyDockedRight(viewport.width, panelBox.x + panelBox.width)) {
+    // 产品会把浮层限制在 16px 左右的视口安全边距内；目标设为 16px，
+    // 不再要求实际布局越过自身的 clamp 去贴到错误的 8px 坐标。
+    const deltaX = viewport.width - panelBox.x - panelBox.width - 16;
+    const startX = headerBox.x + headerBox.width / 2;
+    const startY = headerBox.y + Math.min(18, headerBox.height / 2);
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await movePointerAtRefreshRate(
+      page,
+      { x: startX, y: startY },
+      { x: startX + deltaX, y: startY },
+      500,
+    );
+    await page.mouse.up();
+  }
 
   await page.waitForFunction(
     () => {
       const node = document.querySelector<HTMLElement>('[data-testid="ai-prediction-popover"]');
       if (!node) return false;
-      return Math.abs(window.innerWidth - node.getBoundingClientRect().right - 8) <= 2;
+      const gap = window.innerWidth - node.getBoundingClientRect().right;
+      return gap >= 0 && gap <= 32;
     },
     undefined,
     { timeout: 5_000 },

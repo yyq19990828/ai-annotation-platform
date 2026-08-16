@@ -13,7 +13,13 @@
  *     await seed.loginViaUI(page, data.admin_email, "Test1234");
  *   });
  */
-import { test as base, expect, type Page, type APIRequestContext } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type Page,
+  type APIRequestContext,
+  type APIResponse,
+} from "@playwright/test";
 
 export interface SeedData {
   admin_email: string;
@@ -57,6 +63,7 @@ export interface ScreenshotRecordingAnchor {
   frame_index?: number;
   bbox: [number, number, number, number];
   point: [number, number];
+  additional_points: Array<[number, number]>;
   polygon: Array<[number, number]>;
   polyline: Array<[number, number]>;
   brush_strokes: Array<Array<[number, number]>>;
@@ -160,6 +167,25 @@ export interface SeedTrackerReviewData {
   source_annotation_ids: string[];
 }
 
+export interface SeedProjectPipeline {
+  id: string;
+  name: string;
+  scope: string;
+  project_id: string | null;
+  is_default: boolean;
+  stages: Array<Record<string, unknown>>;
+}
+
+export interface SeedTaskAnnotation {
+  id: string;
+  task_id: string;
+  annotation_type: string;
+  class_name: string;
+  geometry: Record<string, unknown>;
+  track_id?: string | null;
+  attributes?: Record<string, unknown> | null;
+}
+
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
  *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
 export interface SeedPeekData {
@@ -173,14 +199,167 @@ const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 export class SeedAPI {
   constructor(private request: APIRequestContext) {}
 
+  /**
+   * 录制时 4K 转码会让测试 API 连接空闲数十秒，Uvicorn 已关闭的 keep-alive socket
+   * 偶尔会被客户端复用并报 socket hang up。登录是幂等操作，遇到连接复位后用新连接重试。
+   */
+  private async seedLogin(email: string): Promise<APIResponse> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
+          headers: { Connection: "close" },
+          data: { email },
+        });
+      } catch (error) {
+        if (attempt > 0 || !/socket hang up|ECONNRESET/i.test(String(error))) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+    throw new Error("seed/login transient retry exhausted");
+  }
+
   async accessToken(email: string): Promise<string> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
-      data: { email },
-    });
+    const res = await this.seedLogin(email);
     if (!res.ok()) {
       throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
     }
     return ((await res.json()) as { access_token: string }).access_token;
+  }
+
+  /** 通过正式 API 准备单条录制夹具；调用方必须在 finally 精确删除。 */
+  async createTaskAnnotation(
+    taskId: string,
+    userEmail: string,
+    payload: {
+      annotation_type: string;
+      tool_unit_id: string;
+      class_name: string;
+      geometry: Record<string, unknown>;
+      attributes?: Record<string, unknown>;
+    },
+  ): Promise<SeedTaskAnnotation> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.post(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+      data: payload,
+    });
+    if (!res.ok()) {
+      throw new Error(`annotations/create failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedTaskAnnotation;
+  }
+
+  /** 精确删除录制夹具或流程创建的单条标注。 */
+  async deleteTaskAnnotation(
+    taskId: string,
+    annotationId: string,
+    userEmail: string,
+  ): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(
+      `${API_BASE}/api/v1/tasks/${taskId}/annotations/${annotationId}`,
+      { headers: { Authorization: `Bearer ${token}`, Connection: "close" } },
+    );
+    if (!res.ok() && res.status() !== 404) {
+      throw new Error(`annotations/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /** 精确删除录制流创建的命名编排，避免在隔离截图库留下可变业务数据。 */
+  async deleteProjectPipeline(pipelineId: string, userEmail: string): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(`${API_BASE}/api/v1/project-pipelines/${pipelineId}`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+    });
+    if (!res.ok()) {
+      throw new Error(`project-pipelines/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /** 通过正式 API 精确删除录制流创建的单个存储连接器。 */
+  async deleteStorageConnection(connectionId: string, userEmail: string): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(
+      `${API_BASE}/api/v1/storage-connections/${connectionId}`,
+      { headers: { Authorization: `Bearer ${token}`, Connection: "close" } },
+    );
+    if (!res.ok() && res.status() !== 404) {
+      throw new Error(`storage-connections/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /** 只在隔离录制库内清理与指定名称完全一致的连接器残留。 */
+  async deleteStorageConnectionsByExactName(name: string, userEmail: string): Promise<string[]> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.get(`${API_BASE}/api/v1/storage-connections`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+    });
+    if (!res.ok()) {
+      throw new Error(`storage-connections/list failed: ${res.status()} ${await res.text()}`);
+    }
+    const connections = (await res.json()) as Array<{ id: string; name: string }>;
+    const exactIds = connections
+      .filter((connection) => connection.name === name)
+      .map((connection) => connection.id);
+    for (const connectionId of exactIds) {
+      await this.deleteStorageConnection(connectionId, userEmail);
+    }
+    return exactIds;
+  }
+
+  /** 通过正式级联删除端点精确清理录制流创建的临时项目。 */
+  async deleteProject(projectId: string, userEmail: string): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.delete(`${API_BASE}/api/v1/projects/${projectId}`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+    });
+    if (!res.ok() && res.status() !== 404) {
+      throw new Error(`projects/delete failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /** 只在隔离录制库内删除与指定名称完全一致的残留项目。 */
+  async deleteProjectsByExactName(name: string, userEmail: string): Promise<string[]> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.get(`${API_BASE}/api/v1/projects`, {
+      headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+      params: { search: name },
+    });
+    if (!res.ok()) {
+      throw new Error(`projects/list failed: ${res.status()} ${await res.text()}`);
+    }
+    const projects = (await res.json()) as Array<{ id: string; name: string }>;
+    const exactIds = projects
+      .filter((project) => project.name === name)
+      .map((project) => project.id);
+    for (const projectId of exactIds) await this.deleteProject(projectId, userEmail);
+    return exactIds;
+  }
+
+  /** 通过正式 API 准备录制所需模板；调用方必须在 finally 精确删除返回的 id。 */
+  async createProjectPipeline(
+    userEmail: string,
+    payload: {
+      name: string;
+      scope: "private" | "organization" | "public";
+      project_id: string | null;
+      organization_id?: string | null;
+      stages: Array<Record<string, unknown>>;
+      is_default: boolean;
+    },
+  ): Promise<SeedProjectPipeline> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.post(`${API_BASE}/api/v1/project-pipelines`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Connection: "close",
+      },
+      data: payload,
+    });
+    if (!res.ok()) {
+      throw new Error(`project-pipelines/create failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedProjectPipeline;
   }
 
   async reset(): Promise<SeedData> {
@@ -204,6 +383,64 @@ export class SeedAPI {
       );
     }
     return (await res.json()) as ScreenshotSeedCatalog;
+  }
+
+  /** 为隔离录制项目启用一个已注册的真实 backend。 */
+  async enableMLBackendByName(
+    projectId: string,
+    userEmail: string,
+    backendName: string,
+  ): Promise<string> {
+    const token = await this.accessToken(userEmail);
+    const headers = { Authorization: `Bearer ${token}` };
+    const available = await this.request.get(
+      `${API_BASE}/api/v1/projects/${projectId}/ml-backends/available`,
+      { headers },
+    );
+    if (!available.ok()) {
+      throw new Error(
+        `ml-backends/available failed: ${available.status()} ${await available.text()}`,
+      );
+    }
+    const body = (await available.json()) as {
+      items: Array<{ backend: { id: string; name: string }; enabled: boolean }>;
+    };
+    const item = body.items.find((candidate) => candidate.backend.name === backendName);
+    if (!item) throw new Error(`未找到 ML backend: ${backendName}`);
+    if (item.enabled) return item.backend.id;
+
+    const enabled = await this.request.put(
+      `${API_BASE}/api/v1/projects/${projectId}/ml-backends/${item.backend.id}/enablement`,
+      { headers, data: { enabled: true } },
+    );
+    if (!enabled.ok()) {
+      throw new Error(`ml-backends/enablement failed: ${enabled.status()} ${await enabled.text()}`);
+    }
+    return item.backend.id;
+  }
+
+  /** 通过正式端点跑一次真实单题推理，用于录制前验证输入可达并预热模型。 */
+  async predictTestMLBackend(
+    projectId: string,
+    backendId: string,
+    taskId: string,
+    userEmail: string,
+  ): Promise<void> {
+    const token = await this.accessToken(userEmail);
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/projects/${projectId}/ml-backends/${backendId}/predict-test`,
+      {
+        headers: { Authorization: `Bearer ${token}`, Connection: "close" },
+        params: { task_id: taskId },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(`ml-backends/predict-test failed: ${res.status()} ${await res.text()}`);
+    }
+    const body = (await res.json()) as { results?: unknown[] };
+    if (!Array.isArray(body.results) || body.results.length === 0) {
+      throw new Error("ml-backends/predict-test returned no real result");
+    }
   }
 
   /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */
@@ -385,9 +622,7 @@ export class SeedAPI {
 
   /** 直接拿 JWT 注入 localStorage（跳过 UI 登录，加快非 auth spec）。 */
   async injectToken(page: Page, email: string, baseURL?: string): Promise<void> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/login`, {
-      data: { email },
-    });
+    const res = await this.seedLogin(email);
     if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
     const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
@@ -428,6 +663,7 @@ export class SeedAPI {
     score?: number;
   }): Promise<{ prediction_id: string }> {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/inject-prediction`, {
+      headers: { Connection: "close" },
       data: {
         task_id: opts.taskId,
         project_id: opts.projectId,

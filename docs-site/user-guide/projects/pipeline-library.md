@@ -3,17 +3,16 @@ audience: [project_admin]
 type: how-to
 since: v0.21.0
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-08-15
 ---
 
 # 全局编排库（Pipeline 库）
 
 > 适用角色：项目管理员 / 超级管理员
 
-<!-- TODO IMAGE_CHECKLIST: images/pipeline-library/library-list.png — /pipelines 编排库列表 + 三档作用域 chip [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/pipeline-library/apply-to-project.png — 从库套用到项目 copy-on-write [manual] -->
 
-AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这类编排）此前只能一项目一条、无名、不可复用：同构的项目要重搭一遍同样的编排。**全局编排库**把编排升级为**可命名、可复用、带作用域**的模板——在 `/pipelines` 页从全局 backend/model 池搭一条编排存下来，任意项目一键套用。
+AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这类编排）此前只能一项目一条、无名、不可复用：同构的项目要重搭一遍同样的编排。**全局编排库**把编排升级为**可命名、可复用、带作用域**的模板——在 `/ai-pre/pipelines` 页从全局 backend/model 池搭一条编排存下来，任意项目一键套用。
 
 编排的阶段结构与项目里「批跑预标设置」的 DAG 完全同构，库只负责「存下来 / 分作用域 / 拷进项目」，不改执行路径。搭 DAG 本身的操作见 [AI 预标注](./ai-preannotate)。
 
@@ -31,7 +30,14 @@ AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这�
 
 ## 在编排库里建模板
 
-`/pipelines` 页（标题「编排库」）专门维护**公共 / 组织**命名模板：
+`/ai-pre/pipelines` 页（标题「编排库」）专门维护**公共 / 组织**命名模板：
+
+<DocsVideo
+  src="/media/pipeline/template-create.mp4"
+  poster="/media/pipeline/template-create-poster.webp"
+  alt="配置 YOLO 车辆检测与车辆属性分类两阶段 DAG，选择车辆类别和车型、颜色写回键，再保存为公共编排模板"
+  caption="公共模板只定义可复用编排；套用项目与实际运行分别在项目内完成。"
+/>
 
 1. 从全局 backend/model 池在画布上搭一条多层 DAG。
 2. 给它起个名字（如 `detect → 车辆属性`）。
@@ -48,6 +54,13 @@ AI 预标流水线（把多个 backend 按 DAG 串成「detect → 属性」这�
 ## 套用到项目（copy-on-write）
 
 在**项目详情页**从库里选一条模板套用到当前项目。套用是**深拷贝快照，不是活引用**：
+
+<DocsVideo
+  src="/media/pipeline/apply-project.mp4"
+  poster="/media/pipeline/apply-project-poster.webp"
+  alt="在 AI 预标项目详情中选择公共两阶段编排并套用为默认，再进入图片工作台运行项目编排并查看带车型和颜色的车辆候选"
+  caption="套用生成项目私有默认副本；工作台随后按这条两阶段编排执行真实车辆检测与属性分类。"
+/>
 
 - 系统把模板阶段拷成该项目名下一条新的**私有**副本；可勾选同时置为项目默认编排。
 - 源模板的「已套用次数」+1。

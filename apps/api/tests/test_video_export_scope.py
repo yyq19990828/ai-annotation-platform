@@ -221,6 +221,7 @@ async def test_normalize_segment_scope_resolves_contiguous_effective_range(
     job = await db_session.get(AsyncJob, uuid.UUID(response.json()["job_id"]))
     assert job is not None
     assert job.payload["video_export_scope"] == expected_scope
+    assert job.payload["format"] == "video_json"
 
     invalid = VideoExportScopeRequest.model_validate(
         {

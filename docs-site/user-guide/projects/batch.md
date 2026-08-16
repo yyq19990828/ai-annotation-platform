@@ -151,7 +151,12 @@ scene 模式项目在关联数据集时（经新建项目向导）会**自动**�
 
 ## 批量操作
 
-![批次多选批量操作：勾选后工具栏浮现批量通过 / 驳回等动作](../images/projects/batch-bulk-actions.gif)
+<DocsVideo
+  src="/media/projects/batch-bulk-actions.mp4"
+  poster="/media/projects/batch-bulk-actions-poster.webp"
+  alt="多选批次后显示批量通过和批量驳回工具栏"
+  caption="勾选多个批次后，批量操作栏会显示可用动作，并在执行后保留结果摘要。"
+/>
 
 已实现的多选批量操作是：
 

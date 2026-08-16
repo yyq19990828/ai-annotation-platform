@@ -1,6 +1,7 @@
 // v0.16.x 第 2 批 · useWorkbenchShellModel 纯函数测试守护(伴随逻辑提炼,锁定坐标公式行为)。
 import { describe, it, expect } from "vitest";
 import {
+  annotationsForTask,
   commitAfterNavigationGuard,
   resolveMaskEditorSize,
   resolvePinViewport,
@@ -10,6 +11,21 @@ import {
   shouldShowInManualAnnotationSection,
   videoAnnotationQueriesEnabled,
 } from "../useWorkbenchShellModel.helpers";
+
+describe("annotationsForTask", () => {
+  it("切题时不渲染上一题的迟到标注缓存", () => {
+    const annotations = [
+      { id: "old", task_id: "task-1" },
+      { id: "current", task_id: "task-2" },
+    ];
+
+    expect(annotationsForTask(annotations, "task-2")).toEqual([
+      { id: "current", task_id: "task-2" },
+    ]);
+    expect(annotationsForTask(annotations, undefined)).toEqual([]);
+    expect(annotationsForTask(undefined, "task-2")).toBeUndefined();
+  });
+});
 
 describe("commitAfterNavigationGuard", () => {
   it("快速导航时不允许较旧 guard 的迟到结果提交切题", async () => {

@@ -819,6 +819,10 @@ def _new_discovered_track(target: _TrackTarget, output_geometry: str) -> Annotat
     )
 
 
+def _discovered_track_has_keyframes(annotation: Annotation) -> bool:
+    return bool((annotation.geometry or {}).get("keyframes"))
+
+
 def _persist_tracker_results(
     db: AsyncSession,
     source_map: dict[str, Annotation],
@@ -846,9 +850,10 @@ def _persist_tracker_results(
             apply_tracker_results(sole_source, job, results, grid_step, output_geometry)
         else:
             main_ann = _new_discovered_track(target, output_geometry)
-            db.add(main_ann)
             apply_tracker_results(main_ann, job, results, grid_step, output_geometry)
-            created.append(main_ann)
+            if _discovered_track_has_keyframes(main_ann):
+                db.add(main_ann)
+                created.append(main_ann)
         return created
 
     by_instance: dict[str, list[TrackerFrameResult]] = {}
@@ -861,11 +866,12 @@ def _persist_tracker_results(
             apply_tracker_results(source, job, inst_results, grid_step, output_geometry)
         else:
             new_ann = _new_discovered_track(target, output_geometry)
-            db.add(new_ann)
             apply_tracker_results(
                 new_ann, job, inst_results, grid_step, output_geometry
             )
-            created.append(new_ann)
+            if _discovered_track_has_keyframes(new_ann):
+                db.add(new_ann)
+                created.append(new_ann)
     return created
 
 
@@ -1905,6 +1911,11 @@ async def decide_tracker_job(
 
     touched: list[Annotation] = []
     instance_annotations = dict(state.get("instance_annotations") or {})
+    deferred_results = {
+        str(instance_id): [dict(row) for row in instance_rows if isinstance(row, dict)]
+        for instance_id, instance_rows in (staged.get("deferred_results") or {}).items()
+        if isinstance(instance_rows, list)
+    }
     if decision == "accept":
         grid_step = int(staged.get("grid_step", 1))
         by_instance: dict[str, list[TrackerFrameResult]] = defaultdict(list)
@@ -1917,19 +1928,28 @@ async def decide_tracker_job(
         )
         for instance_id in sorted(by_instance):
             annotation = source_map.get(instance_id)
-            if annotation is None:
+            discovered = annotation is None
+            if discovered:
                 annotation = _new_discovered_track(target, output_geometry)
-                db.add(annotation)
-                instance_annotations[instance_id] = str(annotation.id)
-            frames = {result.frame_index for result in by_instance[instance_id]}
+            instance_results = [
+                *_deserialize_results(deferred_results.pop(instance_id, [])),
+                *by_instance[instance_id],
+            ]
+            frames = {result.frame_index for result in instance_results}
             apply_tracker_results(
                 annotation,
                 job,
-                by_instance[instance_id],
+                instance_results,
                 grid_step,
                 output_geometry,
                 override_manual_frames=frames if override_manual else None,
             )
+            if discovered:
+                if not _discovered_track_has_keyframes(annotation):
+                    deferred_results[instance_id] = _serialize_results(instance_results)
+                    continue
+                db.add(annotation)
+                instance_annotations[instance_id] = str(annotation.id)
             touched.append(annotation)
         try:
             for annotation in touched:
@@ -2008,7 +2028,11 @@ async def decide_tracker_job(
     job.revision = next_revision
     if remaining:
         job.status = VideoTrackerJobStatus.PARTIALLY_REVIEWED.value
-        job.staged_result = {**staged, "results": remaining}
+        job.staged_result = {
+            **staged,
+            "results": remaining,
+            "deferred_results": deferred_results,
+        }
     else:
         accepted_any = any(
             item.get("decision") == "accept"
@@ -2749,6 +2773,13 @@ async def run_tracker_job(
             if heartbeat_failed:
                 raise RuntimeError("tracker route lease heartbeat failed")
 
+            # Backend 响应数组不保证按帧有序；统一转为追踪方向的遍历顺序，
+            # 使窗口末尾几何和多实例跨窗关联都使用真实边界帧。
+            window_results.sort(
+                key=lambda result: result.frame_index,
+                reverse=window_direction == "backward",
+            )
+
             # 窗末: text-multiplex 关联 remap 窗内 obj_id → 跨窗全局 instance_id。
             if associate_multiplex:
                 window_results = _associate_multiplex_window(
@@ -2761,6 +2792,14 @@ async def run_tracker_job(
                     for result in primary_results
                 ]
             results.extend(window_results)
+            # PVS 单目标结果会带 instance_id，但不保证额外标记 primary。按与最终落库相同的
+            # 主实例规则推断本窗主目标，并始终用它最后一个有效几何续下一窗；否则无源任务
+            # 的 source_geometry 会一直为空，第二窗被 backend 以“缺少种子”拒绝。
+            primary_results, _ = _partition_results_by_instance(window_results)
+            for primary_result in reversed(primary_results):
+                if not primary_result.outside and primary_result.geometry:
+                    last_geometry = primary_result.geometry
+                    break
             # 续种状态 (关联后 id): 逐实例记末帧几何 (供多实例续种); 主实例 (或单实例 None)
             # 另记 last_geometry 供 source_geometry 兜底 (与既有单 track 续追一致)。
             for result in window_results:

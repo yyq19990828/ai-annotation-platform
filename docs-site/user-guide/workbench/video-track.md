@@ -3,14 +3,18 @@ audience: [annotator]
 type: how-to
 since: v0.9.16
 status: stable
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-15
 ---
 
 # 视频追踪标注
 
 ![真实城市交通视频任务工作台](../images/workbench/video-real-scene.png)
 
-![视频追踪工作台：时间轴 + 逐帧前进 + 播放](../images/workbench/video-track-overview.gif)
+<DocsVideo
+  src="/media/video/workbench-overview.mp4"
+  poster="/media/video/workbench-overview-poster.webp"
+  alt="视频追踪工作台中的时间轴、逐帧前进、播放与轨迹延续"
+/>
 
 视频任务在同一个工作台里打开，左侧队列、顶部提交、右侧属性与评论仍沿用图片工作台。画布区域会切换为视频播放器，时间轴悬浮在画布底部。本页讲**矩形框、轨迹与关键帧**的标注。相关页：
 
@@ -43,7 +47,12 @@ last_reviewed: 2026-08-13
 
 ## 矩形框、轨迹与关键帧
 
-![轨迹关键帧插值：两帧画框，中间帧 bbox 线性插值平滑移动](../images/workbench/video-track-trajectory.gif)
+<DocsVideo
+  src="/media/video/video-draw.mp4"
+  poster="/media/video/video-draw-poster.webp"
+  alt="在两个关键帧绘制轨迹框并查看中间帧插值"
+  caption="在起止关键帧完成画框并选择类别，切换中间帧可看到轨迹框按时间插值移动。"
+/>
 
 视频工作台明确区分两类对象：
 
@@ -143,12 +152,18 @@ ML 后端支持的交互模式，以及其产出几何所属工具单位是否�
 
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-candidate-render.png — 画布渲染检测式轨迹候选 video_track_bbox [manual] -->
 <!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-keyframe-source-bar.png — 右栏关键帧来源迷你条(紫=AI/灰=人工) [manual] -->
-<!-- TODO IMAGE_CHECKLIST: images/workbench/video-track-multiselect-batch-card.png — 多选 ≥2 轨迹浮卡批量卡 [manual] -->
 
 视频工作台里有两层 AI 候选，不要混淆：
 
 - **单帧 / 批量预标 Prediction**：当前题 AI 在视频中只为当前帧生成 `video_bbox` 候选；`/ai-pre` 的视频编排则按选择的执行单位生成逐帧框或跨帧轨迹候选。它们都按单条候选采纳 / 忽略。
 - **视频追踪 Job 候选**：AI 追踪完成或取消后先暂存在 job 中，通过顶部审阅条按目标与帧窗口接受 / 拒绝；接受后才写入轨迹。完整流程见[视频关键帧传播与 AI 追踪](./video-propagate#运行取消与候选审阅)。
+
+<DocsVideo
+  src="/media/video/track-batch-propagate.mp4"
+  poster="/media/video/track-batch-propagate-poster.webp"
+  alt="双轨迹多选后同时显示画布批量浮卡、右栏工具条和高亮轨迹框"
+  caption="两条 bus 轨迹进入多选态后，可从画布浮卡或右栏发起同一次批量延展；候选审阅与双轨迹回填也在同一段完整链路中展示。"
+/>
 
 AI 结果无需先落库就能核对，画布与右栏统一用 **violet** 表示「来自 AI」：
 
@@ -159,7 +174,12 @@ AI 结果无需先落库就能核对，画布与右栏统一用 **violet** 表�
 
 开启帧采样后逐个网格帧续写多条轨迹时：上一网格帧有关键帧、当前帧却还没画的轨迹，会在当前帧显示一个**淡色 ghost 参考框**提示「这条还没续」。
 
-![Tab 切换待续写轨迹，拖动 ghost 续写后自动前进](../images/workbench/video-track-carryover-ghost.gif)
+<DocsVideo
+  src="/media/video/video-track-carryover.mp4"
+  poster="/media/video/video-track-carryover-poster.webp"
+  alt="用 Tab 切换待续写轨迹并拖动 ghost 框完成续写"
+  caption="跨采样网格帧时，ghost 框提示尚未续写的轨迹；拖动完成后可自动前进到下一条。"
+/>
 
 - `Tab` / `Shift+Tab` 会把这些待续轨迹一并纳入循环；点选 ghost 框即在当前帧续写该轨迹。
 - 打开设置里的**「续写后自动前进」**（默认关），续完一条会自动选中同帧下一条待续轨迹，连续续写无需逐条 `Tab` / 点选。

@@ -4,7 +4,7 @@ audience: [annotator, project_admin]
 type: how-to
 since: v0.18.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-15
 ---
 
 # 当前题 AI 与二次推理
@@ -19,9 +19,23 @@ last_reviewed: 2026-07-14
 2. 选择该项目已启用的模型和可用参数，点击 **运行当前题**。
 3. 图片结果会出现在“AI 待审”列表和画布候选层中；视频结果只作用于当前帧，生成单帧 `video_bbox` 候选。两者都需要检查后接受、拒绝或编辑。
 
+<DocsVideo
+  src="/media/ai/current-task-image-inference.mp4"
+  poster="/media/ai/current-task-image-inference-poster.webp"
+  alt="运行项目已保存的 OCR 编排，检查文字候选的几何、识别文本和置信度，再采纳其中一条"
+  caption="当前题推理从项目编排开始，完整保留运行、候选审查和人工采纳的状态变化。"
+/>
+
 当前题 AI 面板可拖动头部移动，也可拖右下角调整尺寸；位置和尺寸在关闭重开、刷新后保留。视频任务中，顶部还会在它左侧显示 **追踪**入口；打开 AI 单题会收起 AI 追踪面板，反向也一样。
 
 如果项目管理员已在[AI 预标](../projects/ai-preannotate)中保存了项目编排，图片任务的面板会显示 **运行当前题（按项目编排 · N 阶段）**。它会按保存的阶段顺序执行检测、分类和属性写入，仍然把结果作为候选交给标注员审阅。视频任务不会显示这个入口：当前题 AI 只能分析当前帧；要批量跑视频编排请到 [AI 预标](../projects/ai-preannotate)，要追踪一条轨迹请用[视频 AI 追踪](../workbench/video-propagate)。
+
+<DocsVideo
+  src="/media/ai/current-frame-video-inference.mp4"
+  poster="/media/ai/current-frame-video-inference-poster.webp"
+  alt="在视频 F5 运行车辆检测，采纳中间 truck 候选，切换 F6 确认单帧作用域后返回 F5"
+  caption="视频当前题 AI 只生成单帧候选；采纳后可用相邻帧的待审与人工计数核对作用域。"
+/>
 
 当前题 AI 与批量预标的区别是范围：图片只作用于当前任务，视频只作用于当前帧；它不改变批次状态，也不会替代批量任务历史。批量运行、并发和幂等模式见[AI 预标](../projects/ai-preannotate)。
 
@@ -44,6 +58,13 @@ last_reviewed: 2026-07-14
 4. 结果会立即出现在标注详情和画布中；超时或 backend 不可达时，面板会提供明确错误与重试入口。
 
 二次推理直接更新已确认标注的属性或子标注，不走“AI 待审”候选列表。因此开始前应确认选中的父框与模型输出类型；要对整图重新生成候选，请使用当前题 AI 或批量预标。
+
+<DocsVideo
+  src="/media/ai/secondary-inference-attribute.mp4"
+  poster="/media/ai/secondary-inference-attribute-poster.webp"
+  alt="选中已确认文字区域，运行 RapidOCR 二次推理写回文本、语言和方向，再人工校正识别文本"
+  caption="二次推理直接补写同一标注的属性；人工修改单个属性后，该项 AI 来源消失，其余属性仍保留溯源。"
+/>
 
 ## 控制面板显示
 

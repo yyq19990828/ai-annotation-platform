@@ -18,7 +18,12 @@ last_reviewed: 2026-07-11
 
 ## 操作
 
-![旋转框绘制：拖出轴对齐矩形（角度 0）后，拖顶部旋转手柄调整角度](../images/workbench/rotated-bbox.gif)
+<DocsVideo
+  src="/media/workbench/rotated-bbox.mp4"
+  poster="/media/workbench/rotated-bbox-poster.webp"
+  alt="先拖出轴对齐矩形，再拖顶部手柄调整旋转框角度"
+  caption="先拖框确定中心和尺寸，选择 rotated_bbox 类别后，再拖顶部手柄调整角度。"
+/>
 
 1. 按 `W` 切到旋转框工具。图片和暂停的视频帧使用相同操作。
 2. 在画布上按下鼠标 → 拖动 → 松开，先生成一个**轴对齐**矩形（角度 0）。

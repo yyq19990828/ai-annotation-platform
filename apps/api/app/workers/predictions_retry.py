@@ -169,6 +169,7 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
     from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.notification import NotificationService
     from app.services.prediction import PredictionService
+    from app.services.storage import resolve_task_url
 
     fid = uuid.UUID(failed_id)
     uid = uuid.UUID(user_id)
@@ -183,6 +184,8 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
         backend = (
             await db.get(MLBackend, fp.ml_backend_id) if fp.ml_backend_id else None
         )
+        stored_context = (fp.extra or {}).get("request_context")
+        request_context = stored_context if isinstance(stored_context, dict) else None
         ns = NotificationService(db)
         await ns.notify(
             user_id=uid,
@@ -220,9 +223,14 @@ async def _run_retry_attempt(session_factory, failed_id: str, user_id: str) -> d
                     session_factory
                 ),
             )
-            results = await client.predict(
-                [{"id": str(task.id), "file_path": task.file_path}]
-            )
+            task_input = {
+                "id": str(task.id),
+                "file_path": resolve_task_url(task),
+            }
+            if request_context is None:
+                results = await client.predict([task_input])
+            else:
+                results = await client.predict([task_input], context=request_context)
             executed_backend_id = client.last_instance_id or backend.id
             retry_pool_id = client.pool_id
         if not results:

@@ -317,6 +317,15 @@ async def reconcile_screenshot_backends(
         pool = await service._pool_for_registry(backend.id)
         project.ml_backend_pool_id = pool.id if pool is not None else None
         requirement = BACKEND_REQUIREMENTS[spec.required_backend]
+        if spec.default_pipeline_model_id:
+            project.preannotate_pipeline = [
+                {
+                    "stage": 0,
+                    "ml_backend_id": str(backend.id),
+                    "model_id": spec.default_pipeline_model_id,
+                    "task_type": requirement.required_tasks[0],
+                }
+            ]
         binding = {
             "backend_id": str(backend.id),
             "backend_name": backend.name,

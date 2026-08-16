@@ -15,6 +15,15 @@ export type AsyncJobKind =
   | "create_tasks"
   | string;
 
+/** 仅展示 worker 实际支持协作取消的作业。 */
+export const CANCELLABLE_ASYNC_JOB_KINDS = new Set<AsyncJobKind>([
+  "batch_predict",
+  "dataset_import",
+  "mask_qc",
+  "mask_repair",
+  "mask_format_import",
+]);
+
 export interface AsyncJob {
   id: string;
   kind: AsyncJobKind;

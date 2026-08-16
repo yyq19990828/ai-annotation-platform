@@ -3,30 +3,31 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import type { ScreenshotRecordingAnchor, ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { mediaBbox, mediaPoint, recordingAnchor } from "./_canvas";
+import {
+  mediaBbox,
+  mediaPoint,
+  movePointerAtRefreshRate,
+  recordingAnchor,
+  renderedMediaBounds,
+  selectVideoRecordingClass,
+  commitPendingAnnotationClass,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 async function drawTrack(
   page: Page,
   stage: Locator,
   anchor: ScreenshotRecordingAnchor,
+  taskId: string | number,
 ): Promise<void> {
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[video-track-carryover] 视频画布不可见");
+  await selectVideoRecordingClass(page, stage, anchor.label);
+  const box = await renderedMediaBounds(stage);
   const { start, end } = mediaBbox(box, anchor.bbox);
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 12 });
+  await movePointerAtRefreshRate(page, start, end, 650);
   await page.mouse.up();
-  await page.getByTestId("class-picker-popover").waitFor({ timeout: 3_000 });
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" && response.url().includes("/annotations"),
-      { timeout: 5_000 },
-    ),
-    page.keyboard.press("Enter"),
-  ]);
+  await commitPendingAnnotationClass(page, { label: anchor.label, taskId });
   await page.waitForTimeout(650);
 }
 
@@ -44,15 +45,15 @@ export async function runVideoTrackCarryover(
   const leftBus = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0);
   const frontTruck = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
   await trackButton.click();
-  await drawTrack(page, stage, leftBus);
+  const drawStartMs = Date.now();
+  await drawTrack(page, stage, leftBus, project.tasks.tracking.id);
   await page.keyboard.press("Escape");
   await trackButton.click();
-  await drawTrack(page, stage, frontTruck);
+  await drawTrack(page, stage, frontTruck, project.tasks.tracking.id);
 
   await page.getByTestId("video-track-row").nth(1).waitFor({ timeout: 5_000 });
   await page.waitForTimeout(600);
 
-  const drawStartMs = Date.now();
   await page.keyboard.press("ArrowRight");
   const hint = page.getByTestId("video-sticky-track-hint");
   await hint.waitFor({ timeout: 3_000 });
@@ -69,8 +70,7 @@ export async function runVideoTrackCarryover(
   );
   await page.waitForTimeout(650);
 
-  const stageBox = await stage.boundingBox();
-  if (!stageBox) throw new Error("[video-track-carryover] 视频画布不可见");
+  const stageBox = await renderedMediaBounds(stage);
   const nextFrame = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f1", 1);
   const [dragFrom, dragTo] = nextFrame.polyline;
   if (!dragFrom || !dragTo) {
@@ -81,11 +81,11 @@ export async function runVideoTrackCarryover(
   const updated = page.waitForResponse(
     (response) =>
       response.request().method() === "PATCH" && response.url().includes("/annotations/"),
-    { timeout: 5_000 },
+    { timeout: 20_000 },
   );
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 14 });
+  await movePointerAtRefreshRate(page, start, end, 700);
   await page.mouse.up();
   await updated;
 

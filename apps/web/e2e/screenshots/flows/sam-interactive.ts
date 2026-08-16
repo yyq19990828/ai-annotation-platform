@@ -5,7 +5,14 @@
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { openImageAnnotate } from "./_canvas";
+import {
+  commitPendingAnnotationClass,
+  mediaBbox,
+  mediaPoint,
+  movePointerAtRefreshRate,
+  openImageAnnotate,
+  renderedMediaBounds,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export type SamRecordingTool = "smart-point" | "smart-box" | "magic-box" | "exemplar";
@@ -48,44 +55,36 @@ export async function runSamToolRecording(
   }
   await tool.click();
   await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+  if (toolId === "exemplar") {
+    // SAM3 exemplar 当前返回框候选；显式让请求几何与 Exemplar 形态都选择框，
+    // 避免默认原生 Mask 合同把合法 rectangle candidate 当成无效 Mask。
+    await page.getByTestId("single-frame-output-geometry-select").selectOption("polygon");
+    await page.getByTestId("exemplar-output-mode-select").selectOption("box");
+  }
   await page.keyboard.press("3"); // COCO 快捷类别 car
   await page.waitForTimeout(600);
 
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[sam-interactive] workbench-stage 没有可见边界");
+  const box = await renderedMediaBounds(stage);
 
   const drawStartMs = Date.now();
+  await page.waitForTimeout(1_200); // 稳定展示已选工具、目标和当前 car 类别
 
   // 锚点由媒体归一化坐标表达；可由模型预选、人工复核后写入 screenshot catalog。
   // 录制阶段只消费已版本化的锚点，避免每次推理漂移导致 GIF 构图不稳定。
   if (toolId === "smart-point") {
-    const point = {
-      x: box.x + box.width * anchor.point[0],
-      y: box.y + box.height * anchor.point[1],
-    };
-    await page.mouse.move(point.x, point.y, { steps: 10 });
+    const point = mediaPoint(box, anchor.point);
+    // 4K Konva 重绘下 Playwright 的 steps 会把一次移入拖成约 10 秒；单点提示无需
+    // 人为放慢鼠标，直接移入后保留短暂停顿即可看清点击位置与因果关系。
+    await page.mouse.move(point.x, point.y);
     await page.waitForTimeout(350);
     await page.mouse.click(point.x, point.y);
   } else {
-    const start = {
-      x: box.x + box.width * anchor.bbox[0],
-      y: box.y + box.height * anchor.bbox[1],
-    };
-    const end = {
-      x: box.x + box.width * anchor.bbox[2],
-      y: box.y + box.height * anchor.bbox[3],
-    };
-    await page.mouse.move(start.x, start.y, { steps: 8 });
+    const { start, end } = mediaBbox(box, anchor.bbox);
+    await page.mouse.move(start.x, start.y);
     await page.waitForTimeout(350);
     await page.mouse.down();
-    for (let i = 1; i <= 12; i++) {
-      await page.mouse.move(
-        start.x + ((end.x - start.x) * i) / 12,
-        start.y + ((end.y - start.y) * i) / 12,
-      );
-      await page.waitForTimeout(45);
-    }
+    await movePointerAtRefreshRate(page, start, end, 650);
     await page.mouse.up();
   }
 
@@ -100,13 +99,18 @@ export async function runSamToolRecording(
       timeout: 120_000,
     });
   }
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1_500);
 
   if (options.accept) {
-    // 默认类别已切为 car；Enter 是产品内明确展示的确认路径。
-    await page.keyboard.press("Enter");
+    if (toolId !== "magic-box") await page.keyboard.press("Enter");
+    await page.getByTestId("class-picker-popover").waitFor({ state: "visible", timeout: 5_000 });
+    await page.waitForTimeout(800);
+    await commitPendingAnnotationClass(page, {
+      label: anchor.label,
+      taskId: catalog.projects.image_demo.tasks.annotating.id,
+    });
     await acceptTitle.waitFor({ state: "hidden", timeout: 15_000 });
-    await page.waitForTimeout(1400);
+    await page.waitForTimeout(toolId === "magic-box" ? 3_200 : 2_000);
   } else {
     // 文档工具示例停在真实候选态，不落标注；page 关闭后候选自然消失。
     await page.waitForTimeout(1200);

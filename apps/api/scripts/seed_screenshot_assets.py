@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # package import from tests
     from scripts.seed_assets import SeedAssetError, default_cache_dir
 
 
-GENERATED_REVISION = "screenshots-real-v4"
+GENERATED_REVISION = "screenshots-real-v5"
 ROAD_SOURCE_IDS = ("auckland-traffic-1", "auckland-traffic-2")
 VIDEO_SOURCE_ID = "street-traffic-video"
 POINTCLOUD_SOURCE_IDS = tuple(f"pcl-pairwise-capture-{index}" for index in range(1, 5))
@@ -253,13 +253,13 @@ NUSCENES_CAMERA_CALIBRATIONS = {
 # centres fall inside a crop are exported, so every derived image has truthful labels.
 ROAD_BOXES = {
     "auckland-traffic-1": (
-        (2, (0.070, 0.610, 0.240, 0.790)),
-        (2, (0.350, 0.600, 0.490, 0.805)),
-        (2, (0.570, 0.610, 0.690, 0.800)),
-        (2, (0.710, 0.780, 0.910, 0.990)),
-        (7, (0.730, 0.280, 0.860, 0.530)),
-        (7, (0.350, 0.560, 0.480, 0.800)),
-        (7, (0.145, 0.460, 0.250, 0.645)),
+        (2, (0.085, 0.609, 0.209, 0.757)),
+        (2, (0.358, 0.615, 0.500, 0.805)),
+        (2, (0.589, 0.491, 0.710, 0.631)),
+        (2, (0.750, 0.770, 0.947, 0.988)),
+        (7, (0.757, 0.228, 0.891, 0.427)),
+        (7, (0.373, 0.457, 0.492, 0.632)),
+        (7, (0.155, 0.377, 0.249, 0.500)),
     ),
     "auckland-traffic-2": (
         (5, (0.520, 0.270, 0.675, 0.520)),

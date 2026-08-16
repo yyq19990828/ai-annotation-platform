@@ -8,6 +8,7 @@ import ExcalidrawDiagram from "./components/ExcalidrawDiagram.vue";
 import DocsHome from "./components/DocsHome.vue";
 import DocLinkCard from "./components/DocLinkCard.vue";
 import ApiReferenceFrame from "./components/ApiReferenceFrame.vue";
+import DocsVideo from "./components/DocsVideo.vue";
 import { setupMermaidZoom } from "./mermaid-zoom";
 import { setupImageZoom } from "./image-zoom";
 // 全局阅读基线优先于其他样式加载：先建立正文阅读 token，再叠加首页品牌 token
@@ -24,6 +25,7 @@ export default {
     app.component("DocsHome", DocsHome);
     app.component("DocLinkCard", DocLinkCard);
     app.component("ApiReferenceFrame", ApiReferenceFrame);
+    app.component("DocsVideo", DocsVideo);
     setupMermaidZoom();
     setupImageZoom();
   },

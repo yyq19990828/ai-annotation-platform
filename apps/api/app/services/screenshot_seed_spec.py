@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SEED_REVISION = "screenshots-2026-08-b"
+SEED_REVISION = "screenshots-2026-08-f"
 SEED_MANAGED_BY = "screenshot-seed"
 USER_SPECS = {
     "admin": ("admin", "super_admin"),
@@ -23,6 +23,7 @@ class RecordingAnchorSpec:
     label: str
     bbox: tuple[float, float, float, float]
     point: tuple[float, float]
+    additional_points: tuple[tuple[float, float], ...] = ()
     frame_index: int | None = None
     polygon: tuple[tuple[float, float], ...] = ()
     polyline: tuple[tuple[float, float], ...] = ()
@@ -77,6 +78,7 @@ class ProjectSpec:
     tasks: tuple[TaskSpec, ...]
     media_paths: tuple[str, ...] = ()
     required_backend: str | None = None
+    default_pipeline_model_id: str | None = None
     batches: tuple[BatchSpec, ...] = ()
     require_members: bool = False
     axis_convention: str | None = None
@@ -153,8 +155,8 @@ PROJECT_SPECS = {
                     RecordingAnchorSpec(
                         key="primary_truck",
                         label="truck",
-                        bbox=(0.82125, 0.373333, 0.9675, 0.706667),
-                        point=(0.894375, 0.54),
+                        bbox=(0.851625, 0.304, 1.0, 0.569333),
+                        point=(0.925812, 0.436667),
                     ),
                 ),
             ),
@@ -297,15 +299,25 @@ PROJECT_SPECS = {
                         label="bus",
                         frame_index=0,
                         bbox=(0.064, 0.3, 0.322, 0.81),
-                        point=(0.195, 0.55),
+                        point=(0.19, 0.72),
+                        additional_points=((0.19, 0.36),),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="right_bus_f0",
+                        label="bus",
+                        frame_index=0,
+                        bbox=(0.775, 0.306, 0.988, 0.704),
+                        point=(0.875, 0.42),
+                        additional_points=((0.88, 0.66),),
                         provenance="reviewed-frame-derived",
                     ),
                     RecordingAnchorSpec(
                         key="front_truck_f0",
                         label="truck",
                         frame_index=0,
-                        bbox=(0.455, 0.322, 0.716, 0.825),
-                        point=(0.59, 0.59),
+                        bbox=(0.49, 0.455, 0.72, 0.82),
+                        point=(0.61, 0.74),
                         brush_strokes=(
                             ((0.515, 0.51), (0.66, 0.51)),
                             ((0.505, 0.56), (0.672, 0.56)),
@@ -326,12 +338,32 @@ PROJECT_SPECS = {
                         provenance="reviewed-frame-derived",
                     ),
                     RecordingAnchorSpec(
+                        key="left_bus_f4",
+                        label="bus",
+                        frame_index=4,
+                        bbox=(0.065, 0.3, 0.325, 0.815),
+                        point=(0.197, 0.72),
+                        additional_points=((0.197, 0.36),),
+                        negative_point=(0.345, 0.4),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
                         key="front_truck_f4",
                         label="truck",
                         frame_index=4,
-                        bbox=(0.458, 0.32, 0.72, 0.83),
-                        point=(0.592, 0.595),
-                        negative_point=(0.74, 0.55),
+                        bbox=(0.492, 0.455, 0.722, 0.825),
+                        point=(0.612, 0.742),
+                        negative_point=(0.755, 0.755),
+                        provenance="reviewed-frame-derived",
+                    ),
+                    RecordingAnchorSpec(
+                        key="right_bus_f4",
+                        label="bus",
+                        frame_index=4,
+                        bbox=(0.776, 0.305, 0.989, 0.706),
+                        point=(0.876, 0.422),
+                        additional_points=((0.881, 0.662),),
+                        negative_point=(0.748, 0.56),
                         provenance="reviewed-frame-derived",
                     ),
                     RecordingAnchorSpec(
@@ -361,9 +393,24 @@ PROJECT_SPECS = {
         dataset_display_id="DS-PC-DEV",
         data_type="lidar",
         storage_prefix="pc-scene-dev/",
-        tasks=tuple(
-            TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
-            for index in range(4)
+        tasks=(
+            TaskSpec(
+                "frame_000",
+                "pc-scene-dev/lidar/000000.pcd",
+                recording_anchors=(
+                    RecordingAnchorSpec(
+                        key="foreground_object",
+                        label="object",
+                        bbox=(0.472, 0.566, 0.704, 0.982),
+                        point=(0.588, 0.774),
+                        provenance="reviewed-depth-frame-derived",
+                    ),
+                ),
+            ),
+            *(
+                TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
+                for index in range(1, 4)
+            ),
         ),
         media_paths=(
             *(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),
@@ -412,5 +459,6 @@ PROJECT_SPECS = {
         storage_prefix="ocr-dev/",
         tasks=(TaskSpec("ocr", "ocr-dev/ch_en_num.jpg"),),
         required_backend="ocr",
+        default_pipeline_model_id="ocr-e2e",
     ),
 }

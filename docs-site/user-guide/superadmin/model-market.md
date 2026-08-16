@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-16
 ---
 
 # 模型市场（/model-market）
@@ -59,13 +59,23 @@ last_reviewed: 2026-07-20
 
 ### 2. 运行时观测
 
-<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-pools.png — 运行时观测摘要带 + 两列服务池摘要卡 + 展开实例 [manual] -->
-
 运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**服务池**为默认比较层，先用摘要带汇总路由模式、可路由实例、异常池和数据新鲜度，再按服务池摘要卡 → 实例面板 → 详情 Sheet 逐级下钻。宽屏下服务池以两列排布，展开的卡片自动跨列；窄屏回落为单列。数据来自 `topology` + `runtime-snapshot` 两个权威读模型，按稳定 ID 关联（不再按 URL join）。
+
+<DocsVideo
+  src="/media/superadmin/model-market/runtime-pools.mp4"
+  poster="/media/superadmin/model-market/runtime-pools-poster.webp"
+  alt="模型市场运行时观测页依次展示服务池摘要、数据来源、车辆检测双实例及两台实例的详情面板"
+  caption="从服务池下钻到实例：核对路由模式、数据新鲜度、权重、当前并发与 GPU 驻留；尚未接入的共享路由指标保持未知语义。"
+/>
 
 页面提供单一「刷新」动作 + 自动刷新开关，并展开「数据来源」区域显示各来源（拓扑 / 路由账本 / 健康探活 / GPU 仲裁 / 模型驻留）的 `updated_at` / `stale` / `error`。单个来源失败不会抹掉其它可信数据——例如路由账本不可用时，拓扑与最近健康配置仍然展示，数据来源区域显示部分可用告警。
 
-<!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/runtime-data-sources.png — 展开的数据来源部分失败态（stale/error + 更新时间） [manual] -->
+<DocsVideo
+  src="/media/superadmin/model-market/runtime-data-sources.mp4"
+  poster="/media/superadmin/model-market/runtime-data-sources-poster.webp"
+  alt="模型市场运行时观测页展开数据来源，对比新鲜的拓扑与连接超时的路由账本"
+  caption="局部观测源退化不等于全局中断：页面保留 4/5 个可信来源与两个服务池，并在陈旧来源上明确呈现超时原因、上次更新时间和退避状态。"
+/>
 
 **服务池摘要卡**分组展示独立状态轴，不合成单一「在线」徽标：
 
@@ -114,7 +124,14 @@ last_reviewed: 2026-07-20
 
 **实例**（super_admin + project_admin）：实例名称、所属服务池、URL、来源、接流状态、权重（超管）、最大并发、GPU claim（超管）、最近检查、操作（健康检查 / 编辑 / drain / resume / 审核能力变更 / unload / 删除，**仅超管**，按风险排序）。当能力指纹变化导致成员被自动禁用时，「审核能力变更」会展示服务池基线与实例当前合同的差异；确认动作重新探活并复核候选指纹，只有池内其余接流成员仍然等价时才原子恢复成员和服务池。原始错误全文、能力快照、模型池、GPU generation 和诊断进入详情 Sheet。
 
-**GPU 资源**（**仅超管**）：资源名称、节点、静态预算 / 可分配容量、已声明预算、运行时 committed、Backend / card queue、lease、desired → effective 和最高诊断。静态声明超售与运行时实际占用是两根独立 Progress 条。资源行展开后列出受影响实例。
+**GPU 资源**（**仅超管**）：顶部汇总运行时就绪状态、全局期望模式、Observe / Enforce 就绪性和 Rollout 状态；资源表展示资源名称、节点、configured mode、静态预算 / 可分配容量、已声明预算与 backend 数、运行时 committed、Backend / card queue、lease、desired → effective 和最高诊断。静态声明超售与运行时实际占用是两根独立 Progress 条。资源行展开后列出受影响实例。
+
+<DocsVideo
+  src="/media/superadmin/model-market/gpu-resources.mp4"
+  poster="/media/superadmin/model-market/gpu-resources-poster.webp"
+  alt="模型市场 GPU 资源页展示运行时就绪状态、两张卡的静态与运行时预算，并展开阻断卡查看受影响实例"
+  caption="从全局就绪性下钻到单卡：区分静态声明与运行时 committed，核对 desired → effective，并从 blocker 资源反查受影响的 L4 实例。"
+/>
 
 **项目绑定**（**仅超管**）：默认按项目显示所绑定服务池、主服务池、可用实例数和风险；支持切换为按服务池反查项目。本页只读，修改入口跳项目设置。项目已启用但池内无可路由实例时单独告警。
 
@@ -137,6 +154,13 @@ backend 的变体面板拆成两组：
 - **图像推理变体**：SAM + DINO 双下拉，预热加载到图片池（grounded-sam2 图片 predictor）。预热走 `POST /{backend_id}/reload`（含 `task_type` 可选体）或 `POST /{backend_id}/warmup`（协议 v2 §4.4，backend 声明 `warmup_endpoint=true` 时启用）。
 - **视频追踪权重**：video tracker 不使用 DINO，预热加载到**独立 video 池**（`POST /reload` body 携带 `task_type=video`）。有多档视频权重时显示 SAM 下拉；只有单一视频模型时显示独立权重条目和预热按钮，不制造无意义下拉。
 - 分组是否显示优先读取健康检查落库的 `health_meta.capabilities.modalities`；纯图像 backend 不显示视频组，纯视频 backend 不显示图像组。未健康检查过、没有 modalities 快照时，页面回落到 `/setup` enum / tracker 判断，避免把未知能力的 backend 误隐藏。
+
+<DocsVideo
+  src="/media/superadmin/model-market/video-pool.mp4"
+  poster="/media/superadmin/model-market/video-pool-poster.webp"
+  alt="模型市场运行时观测页展开 SAM 3 视频追踪实例，查看独立视频池容量、活跃会话、GPU 驻留与视频权重预热入口"
+  caption="视频 tracker 使用独立显存池：从服务池下钻到实例，核对视频池 1/3、活跃会话、SAM 3.1 常驻状态和只作用于视频池的预热入口。"
+/>
 
 > ⚠️ **常见误区**：视频 tracker 用的是独立 `_video_pool`，不能只预热图片池。视频组的预热会走 `POST /reload` 并传 `task_type=video`，正确加载 video 池。
 >

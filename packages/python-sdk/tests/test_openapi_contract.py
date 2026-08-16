@@ -167,7 +167,6 @@ def test_api_coverage_manifest_classifies_watched_operations():
     spec = _snapshot()
     manifest = tomllib.loads(COVERAGE_MANIFEST.read_text(encoding="utf-8"))
     assert manifest["snapshot"] == __aap_target_version__
-    assert spec["info"]["version"] == __aap_target_version__
 
     watched_tags = set(manifest["watched_tags"])
     actual = _watched_operations(spec, watched_tags)

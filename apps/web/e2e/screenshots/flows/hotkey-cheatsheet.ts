@@ -42,10 +42,18 @@ export async function runHotkeyCheatSheet(
   await search.fill("");
   await page.waitForTimeout(1400);
 
-  const drawEndMs = Date.now();
+  // 再展示一次跨分组搜索，说明面板不只用于 AI 决策快捷键。
+  for (const ch of "视频") {
+    await search.type(ch);
+    await page.waitForTimeout(280);
+  }
+  await page.waitForTimeout(1_400);
+  await search.fill("");
+  await page.waitForTimeout(900);
 
   await page.keyboard.press("Escape"); // 关闭面板
-  await page.waitForTimeout(600);
+  await dialog.waitFor({ state: "hidden", timeout: 4_000 });
+  await page.waitForTimeout(1_400);
 
-  return { drawStartMs, drawEndMs };
+  return { drawStartMs, drawEndMs: Date.now() };
 }

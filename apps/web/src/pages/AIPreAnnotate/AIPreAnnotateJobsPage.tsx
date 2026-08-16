@@ -246,6 +246,7 @@ function JobRow({
 }) {
   const isRetry = job.kind === "prediction_retry";
   const batchId = payloadString(job.payload, "batch_id");
+  const taskId = payloadString(job.payload, "task_id");
   const failedPredictionId = payloadString(job.payload, "failed_prediction_id");
   const taskDisplayId = payloadString(job.payload, "task_display_id");
   const batchLabel = isRetry
@@ -332,12 +333,13 @@ function JobRow({
             navigate(
               buildWorkbenchUrl(job.project_id, {
                 batchId,
+                taskId,
                 returnTo,
               }),
             );
           }}
           title="去工作台"
-          disabled={!job.project_id || !batchId}
+          disabled={!job.project_id || (!batchId && !taskId)}
         >
           <Icon name="chevRight" size={11} />
         </Button>

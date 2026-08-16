@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-08-16
 ---
 
 # 创建项目
@@ -25,6 +25,17 @@ last_reviewed: 2026-07-14
 如果项目列表加载失败，页面会保留项目管理框架并显示错误提示。刷新页面或稍后重试；如果错误持续出现，请联系管理员检查后端服务和接口日志。
 
 ![项目列表错误状态](../images/projects/error-state.png)
+
+## 项目高频操作入口
+
+项目行或卡片的 `⋮` 菜单集中放置不需要常驻在主操作区的数据流入口：**导出标注数据**、**复制项目配置**和**导入预测**。菜单还会按权限展示预测清理或标注导入；「打开」与「设置」保留为行内直接按钮。
+
+<DocsVideo
+  src="/media/projects/project-actions-menu.mp4"
+  poster="/media/projects/project-actions-menu-poster.webp"
+  alt="项目列表打开更多操作菜单并依次定位导出标注数据、复制项目配置和导入预测"
+  caption="三个入口共享项目语境，但进入不同链路：导出生成可下载产物，复制只复用项目配置，导入预测写入待审 AI 候选。"
+/>
 
 ## 步骤
 
@@ -48,6 +59,15 @@ last_reviewed: 2026-07-14
 7. **Step 6 成员**：从已有的标注员 / 审核员账号中选择项目成员；该步也可跳过，之后可在项目设置的「成员管理」补充。
 
 > 审核相关设置不在向导内配置，需创建后进入 **项目设置页** 继续调整。
+
+下面的完整流程使用平台内已有资源：第 5 步关联已导入的道路数据集，第 6 步选择现有标注员和审核员，不在向导内上传数据或邀请账号。
+
+<DocsVideo
+  src="/media/projects/create-existing-resources.mp4"
+  poster="/media/projects/create-existing-resources-poster.webp"
+  alt="创建图片项目，关联现有道路数据集，并选择已有标注员与审核员"
+  caption="创建完成后，成功页同时核对项目编号、1 个已关联数据集和 2 位已添加成员。"
+/>
 
 ## 工具维度类别 / 属性
 

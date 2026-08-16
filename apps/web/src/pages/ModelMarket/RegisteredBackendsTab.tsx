@@ -263,7 +263,7 @@ export function RegisteredBackendsTab(): ReactNode {
                 />
               </TabsContent>
               <TabsContent value="gpu">
-                <GPUResourcesSection scope={scope} />
+                <GPUResourcesSection scope={scope} summary={gpuQ.data ?? null} />
               </TabsContent>
               <TabsContent value="projects">
                 <ProjectBindingsSection scope={scope} />

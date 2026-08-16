@@ -12,48 +12,81 @@
  * 返回 { drawStartMs, drawEndMs }：绘制段起止时间戳，供 finalize 裁掉开头(隐藏预测/选工具)
  * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 flows.spec 的 afterAll 重建截图 seed 清理。
  */
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { hidePredictions, mediaBbox, openImageAnnotate, recordingAnchor } from "./_canvas";
+import {
+  hidePredictions,
+  commitPendingAnnotationClass,
+  mediaBbox,
+  movePointerAtRefreshRate,
+  openImageAnnotate,
+  recordingAnchor,
+  renderedMediaBounds,
+} from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
-export async function runBboxDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
-  await openImageAnnotate(page, catalog);
-  await page.waitForTimeout(1400);
+export async function runBboxDraw(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+  options: { marketing?: boolean } = {},
+): Promise<DrawWindow> {
+  const taskKey = "annotating";
+  const task = catalog.projects.image_demo.tasks[taskKey];
+  if (!task) throw new Error(`[bbox-draw] image_demo 缺少任务 ${taskKey}`);
+  const hold = (normalMs: number, marketingMs: number) =>
+    page.waitForTimeout(options.marketing ? marketingMs : normalMs);
+
+  await openImageAnnotate(page, catalog, taskKey);
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true", {
+    timeout: 10_000,
+  });
+  await hold(1_400, 900);
 
   // 准备（不进 GIF）：隐藏满屏预测框 → 选矩形工具
   await hidePredictions(page);
+  await hold(0, 250);
 
   const btn = page.getByTestId("tool-btn-box");
   await btn.click();
-  await page.waitForTimeout(900);
+  await hold(900, 500);
 
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("[bbox-draw] workbench-stage 没有可见边界");
-  const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
+  const box = await renderedMediaBounds(stage);
+  const anchor = recordingAnchor(catalog, "image_demo", taskKey, "primary_vehicle");
   const { start, end } = mediaBbox(box, anchor.bbox);
 
   const drawStartMs = Date.now();
 
   // ── 拖出一个矩形（左上 → 右下，分步移动让录屏看到拉框过程）──
   await page.mouse.move(start.x, start.y);
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(options.marketing ? 200 : 400);
   await page.mouse.down();
-  for (let i = 1; i <= 12; i++) {
-    await page.mouse.move(
-      start.x + ((end.x - start.x) * i) / 12,
-      start.y + ((end.y - start.y) * i) / 12,
-    );
-    await page.waitForTimeout(55);
+  await expect(stage).toHaveAttribute("data-drag-kind", "draw", { timeout: 2_000 });
+  if (options.marketing) {
+    await movePointerAtRefreshRate(page, start, end, 650);
+  } else {
+    const steps = 12;
+    for (let i = 1; i <= steps; i++) {
+      await page.mouse.move(
+        start.x + ((end.x - start.x) * i) / steps,
+        start.y + ((end.y - start.y) * i) / steps,
+      );
+      await page.waitForTimeout(55);
+    }
   }
+  await expect(stage).toHaveAttribute("data-drag-changed", "true", { timeout: 2_000 });
   await page.mouse.up();
-  await page.waitForTimeout(1600); // 停留展示画好的矩形被选中态 + 8 个控制手柄
+  await expect(stage).toHaveAttribute("data-pending-drawing", "true", { timeout: 2_000 });
+  const classPicker = page.getByTestId("class-picker-popover");
+  await classPicker.waitFor({ state: "visible", timeout: 5_000 });
+  await hold(0, 450);
+  await commitPendingAnnotationClass(page, { label: anchor.label, taskId: task.id });
+  await hold(1_600, 2_200); // 短暂展示已保存的矩形和 8 个控制手柄
 
   const drawEndMs = Date.now();
 
   // 等 autosave 把新框落库（清理由 flows.spec 的 afterAll 重建截图 seed 完成）
-  await page.waitForTimeout(1200);
+  await hold(1_200, 0);
 
   return { drawStartMs, drawEndMs };
 }

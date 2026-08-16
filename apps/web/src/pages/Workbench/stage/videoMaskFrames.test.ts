@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse } from "@/types";
 import type { AiBox } from "../state/transforms";
@@ -183,5 +183,97 @@ describe("useVideoMaskFrames", () => {
 
     rerender({ frameIndex: 8 });
     await waitFor(() => expect(result.current).toEqual([]));
+  });
+
+  it("版本切换后先让 Konva 提交新 Mask，再释放旧 ImageBitmap", async () => {
+    const animationFrames: FrameRequestCallback[] = [];
+    class FakeImageBitmap {
+      width = 2;
+      height = 2;
+      close = vi.fn(() => {
+        this.width = 0;
+        this.height = 0;
+      });
+    }
+    vi.stubGlobal("ImageBitmap", FakeImageBitmap);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => new FakeImageBitmap()),
+    );
+    apiMocks.annotationVideoMaskContent.mockResolvedValue({
+      encoding: "coco_rle",
+      size: [2, 3],
+      counts: [1, 2, 3],
+    });
+    const colorForAnnotation = () => "#ff0000";
+    const colorForPrediction = () => "#00ff00";
+    const annotation = (version: number) =>
+      ({
+        id: "mask-track",
+        task_id: "task-1",
+        project_id: "project-1",
+        user_id: "user-1",
+        source: "manual",
+        annotation_type: "video_track_mask",
+        class_name: "Car",
+        geometry: {
+          type: "video_track_mask",
+          track_id: "track-1",
+          keyframes: [
+            {
+              frame_index: 1,
+              mask: {
+                encoding: "coco_rle_ref",
+                size: [2, 3],
+                object_key: `raster-masks/sha256/aa/aa/${"a".repeat(64)}.json`,
+                sha256: "a".repeat(64),
+                runs: 3,
+                bytes: 64,
+              },
+              source: "manual",
+            },
+          ],
+        },
+        confidence: 1,
+        parent_prediction_id: null,
+        parent_annotation_id: null,
+        lead_time: null,
+        is_active: true,
+        ground_truth: false,
+        version,
+        created_at: "2026-07-23T00:00:00Z",
+        updated_at: null,
+      }) satisfies AnnotationResponse;
+
+    const { result, rerender } = renderHook(
+      ({ value }) =>
+        useVideoMaskFrames({
+          taskId: "task-1",
+          annotations: [value],
+          candidates: [],
+          predictions: [],
+          frameIndex: 1,
+          selectedId: value.id,
+          colorForAnnotation,
+          colorForPrediction,
+        }),
+      { initialProps: { value: annotation(1) } },
+    );
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    const firstBitmap = result.current[0].image as unknown as FakeImageBitmap;
+    rerender({ value: annotation(2) });
+    await waitFor(() => expect(result.current[0]?.cacheKey).toContain("version:2"));
+
+    expect(firstBitmap.close).not.toHaveBeenCalled();
+    act(() => {
+      for (const callback of animationFrames.splice(0)) callback(performance.now());
+    });
+    expect(firstBitmap.close).toHaveBeenCalledTimes(1);
   });
 });

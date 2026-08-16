@@ -5,7 +5,7 @@
  * 不采纳候选；持久化 prediction / job 由 flows.spec 按本次 id 精确清理，
  * 平台不可变审计记录按安全设计保留。
  */
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
 import { dockAiPanelAtViewportRight, waitForRecordingWorkbenchLayout } from "./_workbench-layout";
@@ -14,6 +14,7 @@ export interface OcrCleanupRecord {
   projectId: string;
   taskId: string;
   celeryTaskId: string;
+  annotationIds: string[];
 }
 
 export interface OcrInferenceRecording extends DrawWindow, OcrCleanupRecord {}
@@ -33,9 +34,14 @@ export async function runOcrInference(
 
   const task = project.tasks.ocr;
   await page.goto(`/projects/${project.id}/annotate?task=${task.id}`);
-  await page.getByTestId("workbench-stage").waitFor({ state: "visible", timeout: 15_000 });
+  const stage = page.getByTestId("workbench-stage");
+  await stage.waitFor({ state: "visible", timeout: 15_000 });
+  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
   await waitForRecordingWorkbenchLayout(page, "both");
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1_000);
+  const drawStartMs = Date.now();
+  // 第一镜保留已完成加载的 OCR 原图，随后才进入模型配置，不把登录/骨架屏算进素材。
+  await page.waitForTimeout(1_800);
 
   await page.getByTestId("workbench-ai-single").click();
   const panel = page.getByTestId("ai-prediction-popover");
@@ -51,7 +57,8 @@ export async function runOcrInference(
   ) {
     throw new Error("[ocr-inference] 当前题 AI 未提供 ocr-e2e 模型");
   }
-  await page.waitForTimeout(700);
+  // 第二镜让“RapidOCR / 端到端 OCR”的真实配置保持可读。
+  await page.waitForTimeout(1_500);
 
   const responsePromise = page.waitForResponse(
     (response) => {
@@ -64,7 +71,6 @@ export async function runOcrInference(
     { timeout: 15_000 },
   );
 
-  const drawStartMs = Date.now();
   await panel.getByRole("button", { name: "运行当前题", exact: true }).click();
   const response = await responsePromise;
   if (!response.ok()) {
@@ -78,6 +84,7 @@ export async function runOcrInference(
     projectId: project.id,
     taskId: task.id,
     celeryTaskId: body.job_id,
+    annotationIds: [],
   };
   onDispatched?.(cleanupRecord);
 
@@ -94,7 +101,11 @@ export async function runOcrInference(
     undefined,
     { timeout: 120_000 },
   );
-  await page.waitForTimeout(1800);
+  // 第三镜先在 AI 面板核对识别文本和待审计数，再关闭面板展示完整文字框。
+  await page.waitForTimeout(2_200);
+  await panel.getByTitle("关闭当前题 AI").click();
+  await panel.waitFor({ state: "hidden", timeout: 5_000 });
+  await page.waitForTimeout(2_200);
 
   return {
     drawStartMs,

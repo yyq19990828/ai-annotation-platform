@@ -9,10 +9,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
-import { asyncJobsApi, type AsyncJob, type AsyncJobStatus } from "@/api/asyncJobs";
+import { useToastStore } from "@/components/ui/Toast";
+import {
+  asyncJobsApi,
+  CANCELLABLE_ASYNC_JOB_KINDS,
+  type AsyncJob,
+  type AsyncJobStatus,
+} from "@/api/asyncJobs";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -84,13 +90,53 @@ function exportDownloadUrl(result: Record<string, unknown>): string | null {
   return typeof url === "string" && url ? url : null;
 }
 
-/** 从 payload 取一段副标题（导出 job 显示「项目 display_id · 格式」）。 */
+const EXPORT_TARGET_LABELS: Record<string, string> = {
+  aap_json: "AAP JSON",
+  "yolo-det": "YOLO DET",
+  "yolo-obb": "YOLO OBB",
+  "yolo-seg": "YOLO SEG",
+  "binary-png": "BINARY PNG",
+  "indexed-png": "INDEXED PNG",
+  "label-studio-brush": "LABEL STUDIO",
+};
+
+function exportTargetLabel(target: string): string {
+  return EXPORT_TARGET_LABELS[target] ?? target.replace(/_/g, " ").toUpperCase();
+}
+
+/** 从 payload 取一段副标题（导出 job 显示「项目 display_id · 目标格式」）。 */
 function jobDetail(job: AsyncJob): string | null {
   const p = job.payload || {};
   const display = typeof p.project_display_id === "string" ? p.project_display_id : null;
-  const fmt = typeof p.format === "string" ? p.format.toUpperCase() : null;
+  const targets = Array.isArray(p.targets)
+    ? p.targets.filter((target): target is string => typeof target === "string")
+    : [];
+  const fmt =
+    targets.length > 0
+      ? targets.map(exportTargetLabel).join(" + ")
+      : typeof p.format === "string"
+        ? exportTargetLabel(p.format)
+        : null;
   const parts = [display, fmt].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
+}
+
+function exportResultDetail(result: Record<string, unknown>): string | null {
+  const fileCount = typeof result.file_count === "number" ? result.file_count : null;
+  const sizeBytes = typeof result.size_bytes === "number" ? result.size_bytes : null;
+  if (fileCount === null && sizeBytes === null) return null;
+  const parts = [fileCount === null ? null : `${fileCount} 个文件`];
+  if (sizeBytes !== null) {
+    const units = ["B", "KB", "MB", "GB"];
+    let value = Math.max(0, sizeBytes);
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    parts.push(`${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`);
+  }
+  return parts.filter(Boolean).join(" · ");
 }
 
 const STATUS_LABEL: Record<AsyncJobStatus, string> = {
@@ -142,15 +188,29 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
   );
 }
 
-function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) => void }) {
+function JobRow({
+  job,
+  onDismiss,
+  onCancel,
+  cancelPending = false,
+}: {
+  job: AsyncJob;
+  onDismiss?: (id: string) => void;
+  onCancel?: (id: string) => void;
+  cancelPending?: boolean;
+}) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
   // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
   const downloadUrl =
     job.kind === "export" && job.status === "completed" ? exportDownloadUrl(job.result) : null;
   const detail = jobDetail(job);
+  const resultDetail = job.kind === "export" ? exportResultDetail(job.result) : null;
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
+  const cancelRequested = job.payload?.cancel_requested === true;
+  const canCancel =
+    onCancel && !isTerminal(job.status) && CANCELLABLE_ASYNC_JOB_KINDS.has(job.kind);
   return (
     <div
       className="flex w-full flex-col gap-1 rounded-sm px-2.5 py-2 text-left"
@@ -185,6 +245,21 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
             ? (job.error_message ?? "失败").slice(0, 80)
             : new Date(job.completed_at ?? job.updated_at).toLocaleString("zh-CN")}
       </div>
+      {resultDetail && (
+        <div className="text-xs tabular-nums text-muted-foreground">ZIP · {resultDetail}</div>
+      )}
+      {canCancel && (
+        <button
+          type="button"
+          onClick={() => onCancel(job.id)}
+          disabled={cancelPending || cancelRequested}
+          className="mt-0.5 inline-flex cursor-pointer items-center gap-1 self-start rounded-sm border border-border bg-transparent px-2 py-1 text-xs font-semibold text-status-caution transition-colors duration-200 hover:border-status-caution hover:bg-status-caution-soft disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid={`job-cancel-${job.id}`}
+        >
+          <Icon name="x" size={12} />
+          {cancelPending || cancelRequested ? "取消中…" : "取消"}
+        </button>
+      )}
       {downloadUrl && (
         <a
           href={downloadUrl}
@@ -203,6 +278,8 @@ function JobRow({ job, onDismiss }: { job: AsyncJob; onDismiss?: (id: string) =>
 export function JobsBell() {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const queryClient = useQueryClient();
+  const pushToast = useToastStore((state) => state.push);
 
   const { data } = useQuery({
     queryKey: ["async-jobs", "recent"],
@@ -219,6 +296,19 @@ export function JobsBell() {
 
   const [filter, setFilter] = useState<JobFilter>(readFilter);
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
+  const cancelMut = useMutation({
+    mutationFn: (jobId: string) => asyncJobsApi.cancel(jobId),
+    onSuccess: (result) => {
+      pushToast({
+        msg: result.status === "cancel_requested" ? "已请求取消后台任务" : "后台任务已取消",
+        kind: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: ["async-jobs"] });
+    },
+    onError: (error) => {
+      pushToast({ msg: "取消后台任务失败", sub: (error as Error).message, kind: "error" });
+    },
+  });
 
   const changeFilter = (next: JobFilter) => {
     setFilter(next);
@@ -363,7 +453,15 @@ export function JobsBell() {
                   {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
                 </div>
               ) : (
-                visibleJobs.map((j) => <JobRow key={j.id} job={j} onDismiss={dismissOne} />)
+                visibleJobs.map((j) => (
+                  <JobRow
+                    key={j.id}
+                    job={j}
+                    onDismiss={dismissOne}
+                    onCancel={(jobId) => cancelMut.mutate(jobId)}
+                    cancelPending={cancelMut.isPending && cancelMut.variables === j.id}
+                  />
+                ))
               )}
             </div>
           </div>
