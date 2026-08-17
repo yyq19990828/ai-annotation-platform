@@ -44,7 +44,9 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
   <tr>
     <td width="50%" valign="top" align="center">
       <strong>Magic Box</strong><br>
-      <img src="./docs-site/user-guide/images/sam/magic-box-interaction.gif" alt="Magic Box 粗框自动收紧目标框" width="100%">
+      <a href="./docs-site/public/media/ai/assisted-annotation.mp4">
+        <img src="./docs-site/public/media/ai/assisted-annotation-poster.webp" alt="Magic Box 粗框自动收紧目标框" width="100%">
+      </a>
     </td>
     <td width="50%" valign="top" align="center">
       <strong>Exemplar</strong><br>

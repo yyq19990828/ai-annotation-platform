@@ -86,25 +86,25 @@ _模型市场集中呈现模型能力、连接状态和基础设施信息。_
 
 _图像工作台把工具、画布、对象列表和任务操作集中在同一页面。_
 
-![OCR 真实场景推理](../../docs-site/user-guide/images/workbench/ocr-real-scene.gif)
+![OCR 真实场景推理](../../docs-site/public/media/ai/ocr-current-task-poster.webp)
 
-_OCR 当前题推理：从启动模型到生成文本区域候选。_
+_[观看完整演示](../../docs-site/public/media/ai/ocr-current-task.mp4)：OCR 当前题推理从启动模型到生成文本区域候选。_
 
 ### 视频轨迹标注
 
 视频不是把图片标注重复很多次。平台提供关键帧、轨迹、插值、outside 区段、帧缓存与 chunk 服务，让同一个目标可以沿时间轴持续编辑和检查。
 
-![视频轨迹标注工作台](../../docs-site/user-guide/images/workbench/video-track-overview.gif)
+![视频轨迹标注工作台](../../docs-site/public/media/video/workbench-overview-poster.webp)
 
-_视频工作台：在时间轴中查看关键帧，并持续编辑同一目标的轨迹。_
+_[观看完整演示](../../docs-site/public/media/video/workbench-overview.mp4)：在时间轴中查看关键帧，并持续编辑同一目标的轨迹。_
 
 ### 点云与多模态联动
 
 三维工作台支持点云 3D 框、点级分割和 scene 时序数据，并处理 LiDAR 坐标归一化与相机投影联动。标注员可以在三维视图里确认空间位置，也可以借助图像视角判断目标边界。
 
-![点云标注工作台](../../docs-site/user-guide/images/workbench/pointcloud-view-orbit.gif)
+![点云标注工作台](../../docs-site/public/media/pointcloud/orbit-poster.webp)
 
-_点云工作台：旋转三维视角，检查空间结构和标注位置。_
+_[观看完整演示](../../docs-site/public/media/pointcloud/orbit.mp4)：旋转三维视角，检查空间结构和标注位置。_
 
 ### Data Manager、审核与数据交付
 
@@ -138,9 +138,9 @@ _智能点：单击目标后生成可选择的轮廓候选。_
 
 _智能框：拖出目标范围，由模型提取框内对象边界。_
 
-![Magic Box 自动收紧粗框](../../docs-site/user-guide/images/sam/magic-box-interaction.gif)
+![Magic Box 自动收紧粗框](../../docs-site/public/media/ai/assisted-annotation-poster.webp)
 
-_Magic Box：从一个粗略矩形开始，自动得到贴合目标的检测框。_
+_[观看完整演示](../../docs-site/public/media/ai/assisted-annotation.mp4)：Magic Box 从一个粗略矩形开始，自动得到贴合目标的检测框。_
 
 ![Exemplar 查找相似目标](../../docs-site/user-guide/images/sam/exemplar-interaction.gif)
 
@@ -148,9 +148,9 @@ _Exemplar：用一个示例目标查找画面中的相似对象。_
 
 项目级 AI 预标注可以先对一批任务运行模型，再把候选结果送入人工工作台。视频侧可以调用 tracker 延续目标轨迹，OCR 侧可以完成文本检测与识别。平台已经接入 Grounded-SAM-2、SAM 3、YOLO、ONNXTools 和 RapidOCR，并通过开放的 ML Backend 协议管理模型能力、连接状态与任务路由。
 
-![项目级 AI 预标注模型选择](../../docs-site/user-guide/images/projects/ai-pre-variant-selector.gif)
+![项目级 AI 预标注模型选择](../../docs-site/public/media/projects/ai-pre-variant-selector-poster.webp)
 
-_项目管理员可以选择模型能力与变体，再把预标注任务交给后台队列。_
+_[观看完整演示](../../docs-site/public/media/projects/ai-pre-variant-selector.mp4)：项目管理员可以选择模型能力与变体，再把预标注任务交给后台队列。_
 
 这里仍然坚持 human in the loop。模型输出默认是候选，不应该在缺少检查的情况下直接变成最终训练数据。
 
