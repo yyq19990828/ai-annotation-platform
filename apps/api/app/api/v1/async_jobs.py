@@ -42,6 +42,7 @@ CANCELLABLE_KINDS = {
     "mask_qc",
     "mask_repair",
     "mask_format_import",
+    "point_cloud_cross_frame",
 }
 RETRY_FAILED_KINDS = {"batch_predict"}
 
@@ -315,6 +316,42 @@ async def cancel_async_job(
             await db.commit()
             return {"status": "cancelled", "id": str(job_id)}
 
+        await async_job_svc.request_cancel(db, job.id)
+        await db.commit()
+        return {"status": "cancel_requested", "id": str(job_id)}
+
+    if job.kind == "point_cloud_cross_frame":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("point_cloud_cross_frame revoke failed job=%s", job.id)
+        if job.status == AsyncJobStatus.PENDING.value:
+            from app.services.cross_frame_job import summarize_items
+
+            targets = (job.payload or {}).get("targets") or []
+            items = [
+                {
+                    "frame_index": int(target.get("frame_index") or 0),
+                    "task_id": target.get("task_id"),
+                    "status": "cancelled",
+                    "created_count": 0,
+                    "skipped_count": 0,
+                    "reason": "cancelled_by_user",
+                }
+                for target in targets
+                if isinstance(target, dict)
+            ]
+            await async_job_svc.mark_cancelled(
+                db,
+                job.id,
+                result=summarize_items(items),
+            )
+            await notify_job_terminal(db, job_id=job.id)
+            await db.commit()
+            return {"status": "cancelled", "id": str(job_id)}
         await async_job_svc.request_cancel(db, job.id)
         await db.commit()
         return {"status": "cancel_requested", "id": str(job_id)}

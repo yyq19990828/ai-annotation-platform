@@ -29,6 +29,7 @@ TERMINAL_NOTIFY_KINDS = {
     "mask_repair",
     "mask_repair_rollback",
     "mask_format_import",
+    "point_cloud_cross_frame",
 }
 
 _STATUS_TO_TYPE = {
@@ -65,6 +66,8 @@ _PAYLOAD_SUMMARY_KEYS = (
     "mask_format_import_id",
     "staged_sha256",
     "plan_digest",
+    "scene_name",
+    "scope",
 )
 
 _RESULT_SUMMARY_KEYS = (
@@ -91,6 +94,8 @@ _RESULT_SUMMARY_KEYS = (
     "issue_count",
     "result_digest",
     "rolled_back_count",
+    "stale_count",
+    "created_annotation_count",
 )
 
 

@@ -34,7 +34,11 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
-from app.schemas.export import ExportRequestBody
+from app.schemas.export import (
+    ExportRequestBody,
+    LidarExportPreflightRequest,
+    LidarExportPreflightResponse,
+)
 from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
@@ -1244,6 +1248,29 @@ def _validate_export_targets(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post(
+    "/{project_id}/exports/lidar:preflight",
+    response_model=LidarExportPreflightResponse,
+)
+async def preflight_project_lidar_export(
+    body: LidarExportPreflightRequest,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+) -> LidarExportPreflightResponse:
+    if project.data_type != "lidar":
+        raise HTTPException(status_code=422, detail="project is not a lidar project")
+    targets = _validate_export_targets(body.targets, project.data_type)
+    from app.services.exporting.lidar_preflight import preflight_lidar_export
+
+    return await preflight_lidar_export(
+        db,
+        project_id=project.id,
+        batch_id=None,
+        targets=targets,
+        options=body.lidar,
+    )
+
+
 @router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
@@ -1298,6 +1325,32 @@ async def export_project(
     from app.services.audit import AuditService, AuditAction, export_detail
 
     targets = _validate_export_targets(targets, project.data_type)
+
+    lidar_options = body.lidar if body else None
+    lidar_options_payload = (
+        lidar_options.model_dump(mode="json", exclude_none=True)
+        if lidar_options
+        else None
+    )
+    if project.data_type == "lidar":
+        from app.services.exporting.lidar_preflight import (
+            LidarExportPreflightFailed,
+            assert_lidar_export_ready,
+        )
+
+        try:
+            await assert_lidar_export_ready(
+                db,
+                project_id=project.id,
+                batch_id=None,
+                targets=targets,
+                options=lidar_options,
+            )
+        except LidarExportPreflightFailed as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=exc.report.model_dump(mode="json"),
+            ) from exc
 
     from app.services.exporting.video_scope import normalize_video_export_scope
 
@@ -1383,6 +1436,7 @@ async def export_project(
                 if video_scope_payload
                 else {}
             ),
+            **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
         },
     )
     await AuditService.log(
@@ -1409,6 +1463,7 @@ async def export_project(
                     if video_scope_payload
                     else {}
                 ),
+                **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
             },
         ),
     )
@@ -1430,6 +1485,7 @@ async def export_project(
                 if video_scope_payload
                 else {}
             ),
+            **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
         },
         async_job_id=str(job.id),
     )

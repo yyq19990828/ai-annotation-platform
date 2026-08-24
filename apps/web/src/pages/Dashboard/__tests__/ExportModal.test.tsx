@@ -15,6 +15,7 @@ import { ExportModal } from "../ExportModal";
 vi.mock("@/api/projects", () => ({
   projectsApi: {
     exportProject: vi.fn(async () => ({ job_id: "j1" })),
+    preflightLidarExport: vi.fn(),
   },
 }));
 vi.mock("@/api/maskFormats", () => ({
@@ -81,6 +82,28 @@ function preflight(
   };
 }
 
+function lidarPreflight(
+  ready: boolean,
+  selectedCameraRole: string | null = null,
+  issues: Array<{ code: string; message: string }> = [],
+) {
+  return {
+    ready,
+    camera_roles: ["camera_front", "camera_back"],
+    selected_camera_role: selectedCameraRole,
+    checked_tasks: 39,
+    issue_count: issues.length,
+    issues_truncated: false,
+    issues: issues.map((issue) => ({
+      ...issue,
+      task_id: null,
+      task_display_id: null,
+      frame_key: null,
+      camera_role: selectedCameraRole,
+    })),
+  };
+}
+
 // 受控 harness：导出完成回调把 open 置 false，便于断言弹窗关闭。
 function ExportModalHarness({
   projectId,
@@ -107,6 +130,15 @@ function submitExport() {
 describe("ExportModal", () => {
   beforeEach(() => {
     vi.mocked(projectsApi.exportProject).mockClear();
+    vi.mocked(projectsApi.preflightLidarExport).mockReset();
+    vi.mocked(projectsApi.preflightLidarExport).mockImplementation(
+      async (_projectId, targets, lidar) =>
+        targets.includes("kitti") && !lidar?.kittiCameraRole
+          ? lidarPreflight(false, null, [
+              { code: "kitti_camera_required", message: "KITTI 导出必须显式选择相机" },
+            ])
+          : lidarPreflight(true, lidar?.kittiCameraRole ?? null),
+    );
     vi.mocked(maskFormatsApi.preflightExport).mockReset();
     vi.mocked(maskFormatsApi.preflightExport).mockResolvedValue(preflight());
     vi.mocked(tasksApi.listByProject).mockReset();
@@ -365,20 +397,48 @@ describe("ExportModal", () => {
     render(<ExportModalHarness projectId="p5" projectTypeKey="lidar" />);
 
     expect(screen.getByText("KITTI 3D")).toBeInTheDocument();
-    expect(screen.getByText("nuScenes JSON")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /nuScenes JSON/ })).toBeDisabled();
     expect(screen.getByText("Point Mask")).toBeInTheDocument();
     expect(screen.queryByText("COCO")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("KITTI 3D"));
-    fireEvent.click(screen.getByText("nuScenes JSON"));
+    await screen.findByRole("option", { name: "front" });
+    fireEvent.change(screen.getByLabelText("KITTI 投影相机"), {
+      target: { value: "camera_front" },
+    });
+    await screen.findByText("预检通过 · 39 帧");
     fireEvent.click(screen.getByText("Point Mask"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "开始导出" })).toBeEnabled());
     submitExport();
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
     expect(projectsApi.exportProject).toHaveBeenCalledWith(
       "p5",
-      ["aap_json", "kitti", "nuscenes", "pointmask"],
-      { includeAttributes: true },
+      ["aap_json", "kitti", "pointmask"],
+      {
+        includeAttributes: true,
+        lidar: { kittiCameraRole: "camera_front" },
+      },
     );
+    expect(maskFormatsApi.preflightExport).not.toHaveBeenCalled();
+  });
+
+  it("点云 KITTI 预检问题会定位展示并阻止入队", async () => {
+    vi.mocked(projectsApi.preflightLidarExport).mockResolvedValue(
+      lidarPreflight(false, "camera_front", [
+        { code: "camera_calibration_invalid", message: "T-1059 缺少有效内外参" },
+      ]),
+    );
+    render(<ExportModalHarness projectId="p-lidar-blocked" projectTypeKey="lidar" />);
+
+    fireEvent.click(screen.getByText("KITTI 3D"));
+    await screen.findByRole("option", { name: "front" });
+    fireEvent.change(screen.getByLabelText("KITTI 投影相机"), {
+      target: { value: "camera_front" },
+    });
+
+    await screen.findByText("camera_calibration_invalid");
+    expect(screen.getByRole("button", { name: "开始导出" })).toBeDisabled();
+    expect(projectsApi.exportProject).not.toHaveBeenCalled();
   });
 
   it("有损预检显示稳定 code，确认前不入队", async () => {

@@ -31,6 +31,16 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 Segment 模式把 `selection` 改为
 `{"kind":"segments","start_segment_id":"...","end_segment_id":"..."}`，并自动包含两端之间按索引连续的全部 segment。task 必须属于当前项目；批次导出时还必须属于当前批次。图片或点云项目传 `scope`、范围越界或 segment 不连续均返回 422。省略请求体时保持完整项目 / 批次导出。
 
+点云 KITTI 导出在请求体中显式选择相机 role：
+
+```json
+{
+  "lidar": { "kitti_camera_role": "camera_front" }
+}
+```
+
+创建任务前可调用 `POST /projects/{project_id}/exports/lidar:preflight`；批次使用 `POST /projects/{project_id}/batches/{batch_id}/exports/lidar:preflight`。请求体为 `{"targets":["kitti"],"lidar":{"kitti_camera_role":"camera_front"}}`。响应的 `camera_roles` 用于相机选择，`issues` 按 task / frame / camera 返回稳定 code；`ready=false` 时正式导出返回 409，且不会创建后台任务。
+
 参数：
 
 | 参数                   | 取值                                                 | 说明                                                                                                                                                                             |
@@ -63,6 +73,8 @@ Segment 模式把 `selection` 改为
 | **mots**              | 六列 MOTS 文本，Mask 使用 compressed COCO RLE                                                      |
 | **mot**               | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号                                                 |
 | **kitti**             | KITTI Tracking 2D label 文本                                                                       |
+| **kitti（点云）**     | 所选相机的 KITTI `label_2`、真实 calibration 与可见性跳过报告                                      |
+| **pointmask**         | 点云逐点 little-endian uint32 类别标签                                                             |
 | **voc**               | Pascal VOC XML（仅同步单选）                                                                       |
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标）                                                       |
 
@@ -128,6 +140,10 @@ schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbenc
 - 目前仅 `aap_json` 目标携带 `box_3d`，会对标注与预测的 box 几何调用 `unapply_to_psr` 反向映射回该数据集的源系约定；其它格式与非 box 几何不受影响。
 - `source` 模式下每个被转换的几何额外带 `axis_frame: "source"` 与 `axis_convention: "<source>"`，便于消费方识别坐标系。
 - `axis_frame` 计入导出缓存 key：`iso` 与 `source` 是两份独立缓存产物。
+
+KITTI 不消费 `axis_frame`。它会先按每帧数据集的 `axis_convention` 把平台 ISO 框反变换回源 LiDAR 坐标，再应用 `lidar.kitti_camera_role` 对应的真实内外参，固定输出 KITTI camera 坐标。缺轴约定、相机帧、标定或图像宽高均由预检阻止；不生成 identity calibration、`.unverified` 文件或负数 bbox。完全不可见对象进入 `export_report.json`。
+
+`targets=nuscenes` 当前固定返回 `nuscenes_export_not_trusted`，不会生成缺少真实 scene、timestamp 或 ego pose 的表集。
 
 ## 权限
 

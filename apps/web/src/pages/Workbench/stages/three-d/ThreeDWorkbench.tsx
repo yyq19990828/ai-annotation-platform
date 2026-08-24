@@ -2978,6 +2978,11 @@ export function ThreeDWorkbench({
         trackId={selectedAnn?.track_id ?? null}
         prefetchDepthRasters={rendererStatus?.actualBackend === "webgpu"}
         prefetchDecimateThreshold={performanceConfig.pcdDecimate}
+        selectedAnnotationIds={boxes
+          .filter((box) => selectedIdSet.has(box.id))
+          .map((box) => box.id)}
+        boxCount={boxes.length}
+        readOnly={readOnly}
         onNavigateFrame={handleTimelineNavigate}
       />
     </div>

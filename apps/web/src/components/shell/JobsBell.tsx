@@ -82,6 +82,7 @@ const KIND_LABEL: Record<string, string> = {
   mask_repair: "Mask 批量修复",
   mask_repair_rollback: "Mask 修复回滚",
   mask_format_import: "Mask 格式导入",
+  point_cloud_cross_frame: "3D 跨帧传播",
 };
 
 /** export job 完成时 result 的下载字段（后端 mark_complete 写入）。 */

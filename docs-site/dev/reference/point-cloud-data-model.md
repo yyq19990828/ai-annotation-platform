@@ -137,6 +137,12 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
 
 实现：`api/v1/tasks/video.py` 用 `get_linked_items` 取 link → 主点云（无 `primary_lidar` link 时回退 `task.file_path`）+ 各相机 presign + `metadata_["calibration"]`（非法降级 None）。
 
+### 可信 KITTI 导出合同
+
+点云 KITTI 不直接把平台 ISO 框当成 camera frame。导出按每个 task 的主点云 Dataset 读取 `axis_convention`，先用 `R_normᵀ` 把 ISO 角点映射回数据源 LiDAR 轴，再依次应用用户显式选择的 camera role 对应 `extrinsic`、可选 `rect` 与 `intrinsic`。`label_2` 的二维框来自近裁剪面裁剪后的 8 角点 / 12 边投影；`location` 使用相机坐标下的底面中心，完全不可见对象进入 `export_report.json`。
+
+项目和批次导出在创建 `AsyncJob` 前共用严格预检，worker 在查缓存和打包前重复检查。缺主点云、未声明或不可信的轴约定、缺所选相机帧、非法标定、缺图像宽高都会返回稳定 issue code；不得用 identity matrix、`.unverified` 文件或负数 bbox 代替失败。nuScenes 目标在真实 scene / timestamp / ego pose 合同完成前返回 `nuscenes_export_not_trusted`。
+
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`，由持久 Worker 解析 PCD、归一化轴向、抽稀并生成高度色；主视图负责 OrbitControls、框图层和资源生命周期。默认使用 Legacy WebGL2，设置中的本地实验开关可让主视图与三视图共同使用异步 WebGPU renderer、实例化点精灵和相机纹理直采样；切帧时旧实例立即归零，场景级实例缓冲与固定六路相机采样 TSL 拓扑继续复用，只更新点属性、纹理和标定 uniform。实验路径只生成 GPU 需要的 depth-only 遮挡栅格，并在 8 MiB / 8-key LRU 中与相邻帧预取合并，Legacy 和 WebGL2 fallback 不触发该预取。初始化失败或 device lost 会回退 Legacy。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 
 开发 seed 的 nuScenes 导入器把每点五个 float 的 `.pcd.bin` 转为只保留 XYZ 的 little-endian binary PCD，并在 dataset source metadata 中记录 `pcd_encoding=binary_xyz_f32`。对缺少该标记的既有 scene 再次执行 seed 时，导入器会按 `frame_index` 原位覆盖点云对象、同步大小与内容哈希，但不会重建 task 或 annotation。Scene 时间轴在点击帧后先等待该目标帧的 PCD、相机位图及实验路径深度资源预取完成，再开始任务导航；预取失败会被吞掉并继续导航，不改变可用性。
@@ -216,4 +222,10 @@ visible = w > 0                            // 相机前方; w<=0(后方)剔除�
 - **最佳相机提示**:选中框按可见角点数统计被几个相机看到,状态条显示「投影可见于 N 相机 · 正对 X」,最正对相机 figcaption 标「· 正对」。
 - **`track_id` 聚合高亮**:overlay 高亮集合 = 选中框 + 同 `track_id` 成员(G6)。本切片只打通身份可视化:相机视图上**独立绘制 / 编辑 2D 框成员**留后续。新建 3D 框即由 `_new_track_id()` 分配一个 `track_id`(不再需要「≥2 个成员才能成组」的旧编组端点);`track_id` 为空的孤立框退化为仅高亮自身,待 2D 成员落地再聚合。<!-- since v0.21.2 · ADR-0045：原按 group_id + /annotations/group 端点，编组下线后统一到 track_id -->
 
-> `point_mask_3d` 分割、三正交视图精修(ADR-0032 方案 B,v0.13.5)、跨帧轨迹留后续。
+## Scene 跨帧传播任务
+
+长区间的 `box_3d` 传播使用统一 `AsyncJob` 持久化，`kind=point_cloud_cross_frame`。作业 payload 保存 Scene、源 task、源 annotation 的 `id + version` 快照、显式 scope / direction / 闭区间和目标帧快照；result 按帧记录 success / skipped / failed / stale / cancelled 及新建标注数。
+
+每个目标 task 是独立提交边界。写入前会重新检查用户权限、task 可编辑性与源标注版本；已有同 `track_id` 活跃框的目标帧使用 `skip_existing` 跳过。源版本发生外部变化时，当前与后续未执行帧进入 stale，不再继续读取新几何。取消是协作式的：已提交帧保留，剩余帧终结为 cancelled。
+
+`point_mask_3d` 不能复用跨帧点索引，因此不进入该传播合同；registration 和轨迹拆分 / 合并也保持为独立后续能力。

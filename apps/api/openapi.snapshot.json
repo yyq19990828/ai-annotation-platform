@@ -7470,6 +7470,86 @@
         "title": "ConnectorDeploymentSftpPresetOut",
         "type": "object"
       },
+      "CrossFrameJobCreate": {
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "conflict_policy": {
+            "const": "skip_existing",
+            "default": "skip_existing",
+            "title": "Conflict Policy",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "forward",
+              "backward"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "end_frame": {
+            "minimum": 0.0,
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "operation": {
+            "const": "propagate",
+            "default": "propagate",
+            "title": "Operation",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "selected",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "start_frame": {
+            "minimum": 0.0,
+            "title": "Start Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "direction",
+          "start_frame",
+          "end_frame"
+        ],
+        "title": "CrossFrameJobCreate",
+        "type": "object"
+      },
+      "CrossFrameJobListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AsyncJobOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "CrossFrameJobListResponse",
+        "type": "object"
+      },
       "DataManagerAiReviewSummary": {
         "properties": {
           "by_model_version": {
@@ -9997,6 +10077,16 @@
       "ExportRequestBody": {
         "additionalProperties": false,
         "properties": {
+          "lidar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LidarExportOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "scope": {
             "anyOf": [
               {
@@ -13432,6 +13522,175 @@
           }
         },
         "title": "LabelContentByType",
+        "type": "object"
+      },
+      "LidarExportIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Role"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "frame_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Key"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Display Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "LidarExportIssue",
+        "type": "object"
+      },
+      "LidarExportOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "kitti_camera_role": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "pattern": "^camera_[A-Za-z0-9_.-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kitti Camera Role"
+          }
+        },
+        "title": "LidarExportOptions",
+        "type": "object"
+      },
+      "LidarExportPreflightRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "lidar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LidarExportOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "title": "LidarExportPreflightRequest",
+        "type": "object"
+      },
+      "LidarExportPreflightResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Camera Roles",
+            "type": "array"
+          },
+          "checked_tasks": {
+            "title": "Checked Tasks",
+            "type": "integer"
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/LidarExportIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "issues_truncated": {
+            "default": false,
+            "title": "Issues Truncated",
+            "type": "boolean"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "selected_camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Camera Role"
+          }
+        },
+        "required": [
+          "ready",
+          "camera_roles",
+          "checked_tasks",
+          "issue_count",
+          "issues"
+        ],
+        "title": "LidarExportPreflightResponse",
         "type": "object"
       },
       "LoginRequest": {
@@ -31766,7 +32025,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.24.7"
+    "version": "0.24.9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -42144,6 +42403,74 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/exports/lidar:preflight": {
+      "post": {
+        "operationId": "preflight_batch_lidar_export_api_v1_projects__project_id__batches__batch_id__exports_lidar_preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LidarExportPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LidarExportPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preflight Batch Lidar Export",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/batches/{batch_id}/reject": {
       "post": {
         "operationId": "reject_batch_api_v1_projects__project_id__batches__batch_id__reject_post",
@@ -43127,6 +43454,64 @@
           }
         ],
         "summary": "Export Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/exports/lidar:preflight": {
+      "post": {
+        "operationId": "preflight_project_lidar_export_api_v1_projects__project_id__exports_lidar_preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LidarExportPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LidarExportPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preflight Project Lidar Export",
         "tags": [
           "projects"
         ]
@@ -48827,6 +49212,180 @@
         "summary": "List Task Comments Paged",
         "tags": [
           "annotation-comments"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/cross-frame-jobs": {
+      "get": {
+        "operationId": "list_cross_frame_jobs_api_v1_tasks__task_id__cross_frame_jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossFrameJobListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Cross Frame Jobs",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "post": {
+        "operationId": "create_cross_frame_job_api_v1_tasks__task_id__cross_frame_jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossFrameJobCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Cross Frame Job",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/cross-frame-jobs/{job_id}/retry-failed": {
+      "post": {
+        "operationId": "retry_cross_frame_job_api_v1_tasks__task_id__cross_frame_jobs__job_id__retry_failed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Cross Frame Job",
+        "tags": [
+          "tasks"
         ]
       }
     },

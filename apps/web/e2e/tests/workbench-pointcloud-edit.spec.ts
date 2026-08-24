@@ -261,6 +261,93 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(pcdRequestCount, "邻帧预取与当前帧加载应复用同一个 PCD 请求").toBe(2);
   });
 
+  test("3D 跨帧任务中心显式提交范围并恢复持久作业状态", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+    const capturedBodies: Record<string, unknown>[] = [];
+    let jobs: Record<string, unknown>[] = [];
+    const completedJob = {
+      id: "11111111-1111-4111-8111-111111111111",
+      kind: "point_cloud_cross_frame",
+      project_id: lidar.lidar_project_id,
+      user_id: "22222222-2222-4222-8222-222222222222",
+      project_display_id: "P-PC-E2E",
+      project_name: "nuScenes mini",
+      status: "completed",
+      progress_pct: 100,
+      payload: {
+        start_frame: 1,
+        end_frame: 1,
+        direction: "forward",
+        scope: "all",
+      },
+      result: {
+        success_count: 1,
+        skipped_count: 0,
+        failed_count: 0,
+        stale_count: 0,
+        created_annotation_count: 1,
+      },
+      error_message: null,
+      celery_task_id: "celery-e2e",
+      started_at: "2026-08-25T00:00:00Z",
+      completed_at: "2026-08-25T00:00:01Z",
+      created_at: "2026-08-25T00:00:00Z",
+      updated_at: "2026-08-25T00:00:01Z",
+    };
+    await page.route("**/api/v1/tasks/*/cross-frame-jobs?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items: jobs, total: jobs.length }),
+      });
+    });
+    await page.route("**/api/v1/tasks/*/cross-frame-jobs", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      capturedBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      jobs = [completedJob];
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ ...completedJob, status: "pending", progress_pct: 0, result: {} }),
+      });
+    });
+    const runtimeErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") runtimeErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => runtimeErrors.push(error.message));
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${lidar.lidar_task_ids[0]}`);
+    await expect(page.getByTestId("scene-cross-frame-job-center")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("scene-cross-frame-job-center").click();
+    const dialog = page.getByRole("dialog", { name: "3D 跨帧任务中心" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: /当前帧全部框/ })).toBeChecked();
+    await expect(dialog.getByText("目标 F1–F1 · 1 个逻辑帧")).toBeVisible();
+
+    await dialog.getByRole("button", { name: "启动任务" }).click();
+
+    await expect.poll(() => capturedBodies.length).toBe(1);
+    expect(capturedBodies[0]).toEqual({
+      operation: "propagate",
+      scope: "all",
+      annotation_ids: [],
+      direction: "forward",
+      start_frame: 1,
+      end_frame: 1,
+      conflict_policy: "skip_existing",
+    });
+    await expect(dialog.getByText("已完成")).toBeVisible({ timeout: 10_000 });
+    await expect(dialog.getByText("成功 1 · 跳过 0 · 失败 0 · 过期 0")).toBeVisible();
+    expect(runtimeErrors).toEqual([]);
+  });
+
   test("WebGPU 实验路径显示真实 backend，并复用 Worker 且不回读 Canvas", async ({
     page,
     seed,

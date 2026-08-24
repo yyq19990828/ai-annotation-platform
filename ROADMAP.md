@@ -37,9 +37,8 @@
 - WebGPU 点云渲染继续保持默认关闭的实验功能：同一 NVIDIA 设备上的三轮 warm geometry、warm RGB、精修首帧、缓存 owner、CPU depth payload 与 GPU RSS plateau 均已通过；跨轮深度数组残留也已修复。Chromium GPU 进程受控丢失时，主视图和三视图会卸载旧 canvas 并自动重建 Legacy renderer；这验证了显存压力最终触发 device lost 时的熔断路径，但未主动制造不可控的物理 OOM。
   当前没有 NVIDIA、Intel/AMD 两类 GPU 的可用测试设备，跨厂商验证明确记为 `not tested`；它不阻塞
   本地性能与回退链路继续收口，但在硬件可用并完成验证前不得移除实验标记或默认启用。
-- 在放大相机投影视图中直接移动选中的 3D 框，保持所有相机、三视图和点云主视图同步。
-- 删除 KITTI 与 nuScenes 导出中的占位几何、时间和位姿，并提供多相机 COCO 派生 2D 导出。
-- 增加 scene 级 4D 时间轴与轨迹、标定、位姿质检摘要。
+- 下一阶段优先在已有 Scene 时间轴和跨帧任务中心上补轨迹拆分 / 合并；轨迹终结需要先冻结它对未来已有框的处理语义，再与标定、位姿质检摘要分别立项，让 3D Quality 发现的问题逐步具备可执行修复入口。
+- LiDAR 导出仍缺完整 nuScenes table / pose / timestamp / token 链与多相机 COCO 派生 2D；这两项继续独立立项，不恢复任何占位真值。
 
 ## 独立 Epic
 

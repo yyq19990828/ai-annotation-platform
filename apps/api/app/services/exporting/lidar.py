@@ -16,14 +16,21 @@ from typing import Any
 
 from app.db.models.annotation import Annotation
 from app.schemas._jsonb_types import SensorCalibration
-from app.services.axis_convention import PsrDict, unapply_to_psr
+from app.services.axis_convention import PsrDict, R_NORM
 
 
 @dataclass(frozen=True)
 class BoxExportAttrs:
     occluded: int = 0
-    truncated: float = 0.0
-    visibility: str = ""
+
+
+@dataclass(frozen=True)
+class LidarCameraExportCtx:
+    role: str
+    name: str
+    calibration: SensorCalibration
+    width: int
+    height: int
 
 
 @dataclass(frozen=True)
@@ -31,7 +38,21 @@ class LidarFrameExportCtx:
     task_id: uuid.UUID
     frame_key: str
     annotations: list[Annotation]
-    cameras: dict[str, SensorCalibration] = field(default_factory=dict)
+    axis_convention: str
+    cameras: dict[str, LidarCameraExportCtx] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class KittiSkippedAnnotation:
+    annotation_id: str
+    class_name: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class KittiFrameExportResult:
+    lines: list[str]
+    skipped: list[KittiSkippedAnnotation]
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -48,14 +69,11 @@ def _wrap_pi(value: float) -> float:
 
 def _map_box_attributes(attrs: dict | None) -> BoxExportAttrs:
     raw = attrs or {}
-    occluded = int(_clamp(float(raw.get("occluded", 0) or 0), 0, 3))
-    truncated = _clamp(float(raw.get("truncated", 0.0) or 0.0), 0.0, 1.0)
-    visibility = raw.get("visible", raw.get("visibility", "")) or ""
-    return BoxExportAttrs(
-        occluded=occluded,
-        truncated=truncated,
-        visibility=str(visibility),
-    )
+    try:
+        occluded = int(_clamp(float(raw.get("occluded", 0) or 0), 0, 3))
+    except (TypeError, ValueError):
+        occluded = 0
+    return BoxExportAttrs(occluded=occluded)
 
 
 def _box_psr(geometry: dict) -> PsrDict:
@@ -66,47 +84,294 @@ def _box_psr(geometry: dict) -> PsrDict:
     }
 
 
-def _kitti_bbox_placeholder() -> tuple[float, float, float, float]:
-    return (-1.0, -1.0, -1.0, -1.0)
-
-
 def _kitti_alpha(ry: float, x: float, z: float) -> float:
     if abs(x) < 1e-9 and abs(z) < 1e-9:
         return _wrap_pi(ry)
     return _wrap_pi(ry - math.atan2(x, z))
 
 
-def build_kitti_lidar_label_lines(
+def _euler_xyz_matrix(rotation: list[float]) -> tuple[float, ...]:
+    rx, ry, rz = rotation
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    return (
+        cy * cz,
+        -cy * sz,
+        sy,
+        cx * sz + cz * sx * sy,
+        cx * cz - sx * sy * sz,
+        -cy * sx,
+        sx * sz - cx * cz * sy,
+        cz * sx + cx * sy * sz,
+        cx * cy,
+    )
+
+
+def _mat3_vec(
+    matrix: tuple[float, ...] | list[float], point: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    x, y, z = point
+    return (
+        matrix[0] * x + matrix[1] * y + matrix[2] * z,
+        matrix[3] * x + matrix[4] * y + matrix[5] * z,
+        matrix[6] * x + matrix[7] * y + matrix[8] * z,
+    )
+
+
+def _iso_to_source(
+    point: tuple[float, float, float], axis_convention: str
+) -> tuple[float, float, float]:
+    matrix = R_NORM[axis_convention]
+    transpose = (
+        matrix[0],
+        matrix[3],
+        matrix[6],
+        matrix[1],
+        matrix[4],
+        matrix[7],
+        matrix[2],
+        matrix[5],
+        matrix[8],
+    )
+    return _mat3_vec(transpose, point)
+
+
+def _apply_camera_point(
+    point: tuple[float, float, float], calibration: SensorCalibration
+) -> tuple[float, float, float]:
+    x, y, z = point
+    extrinsic = calibration.extrinsic
+    camera = (
+        extrinsic[0] * x + extrinsic[1] * y + extrinsic[2] * z + extrinsic[3],
+        extrinsic[4] * x + extrinsic[5] * y + extrinsic[6] * z + extrinsic[7],
+        extrinsic[8] * x + extrinsic[9] * y + extrinsic[10] * z + extrinsic[11],
+    )
+    if calibration.rect:
+        rect = calibration.rect
+        cx, cy, cz = camera
+        return (
+            rect[0] * cx + rect[1] * cy + rect[2] * cz + rect[3],
+            rect[4] * cx + rect[5] * cy + rect[6] * cz + rect[7],
+            rect[8] * cx + rect[9] * cy + rect[10] * cz + rect[11],
+        )
+    return camera
+
+
+def _apply_camera_vector(
+    vector: tuple[float, float, float], calibration: SensorCalibration
+) -> tuple[float, float, float]:
+    extrinsic = calibration.extrinsic
+    camera = _mat3_vec(
+        (
+            extrinsic[0],
+            extrinsic[1],
+            extrinsic[2],
+            extrinsic[4],
+            extrinsic[5],
+            extrinsic[6],
+            extrinsic[8],
+            extrinsic[9],
+            extrinsic[10],
+        ),
+        vector,
+    )
+    if calibration.rect:
+        rect = calibration.rect
+        return _mat3_vec(
+            (
+                rect[0],
+                rect[1],
+                rect[2],
+                rect[4],
+                rect[5],
+                rect[6],
+                rect[8],
+                rect[9],
+                rect[10],
+            ),
+            camera,
+        )
+    return camera
+
+
+def _project_camera_point(
+    point: tuple[float, float, float], intrinsic: list[float]
+) -> tuple[float, float] | None:
+    x, y, z = point
+    u = intrinsic[0] * x + intrinsic[1] * y + intrinsic[2] * z
+    v = intrinsic[3] * x + intrinsic[4] * y + intrinsic[5] * z
+    w = intrinsic[6] * x + intrinsic[7] * y + intrinsic[8] * z
+    if w <= 0 or not math.isfinite(w):
+        return None
+    pixel = (u / w, v / w)
+    return pixel if all(math.isfinite(value) for value in pixel) else None
+
+
+_BOX_EDGES: tuple[tuple[int, int], ...] = (
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 0),
+    (4, 5),
+    (5, 6),
+    (6, 7),
+    (7, 4),
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
+)
+_NEAR_PLANE = 0.1
+
+
+def _box_iso_geometry(
+    psr: PsrDict,
+) -> tuple[
+    list[tuple[float, float, float]],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]:
+    center = tuple(psr["center"])
+    length, width, height = psr["size"]
+    rotation = _euler_xyz_matrix(psr["rotation"])
+
+    def world(local: tuple[float, float, float]) -> tuple[float, float, float]:
+        offset = _mat3_vec(rotation, local)
+        return (
+            center[0] + offset[0],
+            center[1] + offset[1],
+            center[2] + offset[2],
+        )
+
+    corners = [
+        world((sx * length / 2, sy * width / 2, sz * height / 2))
+        for sz in (-1, 1)
+        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    ]
+    bottom_center = world((0, 0, -height / 2))
+    forward = _mat3_vec(rotation, (1, 0, 0))
+    return corners, bottom_center, forward
+
+
+def _clipped_projection_bbox(
+    corners: list[tuple[float, float, float]],
+    camera: LidarCameraExportCtx,
+) -> tuple[tuple[float, float, float, float], float] | None:
+    candidates = [point for point in corners if point[2] >= _NEAR_PLANE]
+    for start_index, end_index in _BOX_EDGES:
+        start = corners[start_index]
+        end = corners[end_index]
+        start_front = start[2] >= _NEAR_PLANE
+        end_front = end[2] >= _NEAR_PLANE
+        if start_front == end_front:
+            continue
+        ratio = (_NEAR_PLANE - start[2]) / (end[2] - start[2])
+        candidates.append(
+            (
+                start[0] + ratio * (end[0] - start[0]),
+                start[1] + ratio * (end[1] - start[1]),
+                _NEAR_PLANE,
+            )
+        )
+    pixels = [
+        pixel
+        for point in candidates
+        if (pixel := _project_camera_point(point, camera.calibration.intrinsic))
+        is not None
+    ]
+    if not pixels:
+        return None
+    raw = (
+        min(pixel[0] for pixel in pixels),
+        min(pixel[1] for pixel in pixels),
+        max(pixel[0] for pixel in pixels),
+        max(pixel[1] for pixel in pixels),
+    )
+    raw_area = max(0.0, raw[2] - raw[0]) * max(0.0, raw[3] - raw[1])
+    if raw_area <= 1e-9:
+        return None
+    image_right = float(camera.width - 1)
+    image_bottom = float(camera.height - 1)
+    clipped = (
+        _clamp(raw[0], 0.0, image_right),
+        _clamp(raw[1], 0.0, image_bottom),
+        _clamp(raw[2], 0.0, image_right),
+        _clamp(raw[3], 0.0, image_bottom),
+    )
+    clipped_area = max(0.0, clipped[2] - clipped[0]) * max(0.0, clipped[3] - clipped[1])
+    if clipped_area <= 1e-9:
+        return None
+    truncated = _clamp(1.0 - clipped_area / raw_area, 0.0, 1.0)
+    return clipped, truncated
+
+
+def build_kitti_lidar_frame(
     annotations: list[Annotation],
     *,
-    calib_by_cam: dict[str, SensorCalibration] | None = None,
-) -> list[str]:
-    """Build KITTI ``label_2`` rows from ISO-frame ``box_3d`` annotations.
+    camera: LidarCameraExportCtx,
+    axis_convention: str,
+) -> KittiFrameExportResult:
+    """Project ISO-frame cuboids into one trusted KITTI camera frame."""
 
-    KITTI 3D detection labels are always in camera coordinates, independent of
-    the API's ``axis_frame`` option. The platform stores box PSR in ISO
-    (+X forward, +Y left, +Z up), so mapping to KITTI camera is the fixed
-    inverse of the existing ``kitti_camera`` normalization matrix.
-    """
-
-    _ = calib_by_cam  # 2D bbox projection is deliberately optional for v0.14.7.
     lines: list[str] = []
+    skipped: list[KittiSkippedAnnotation] = []
     for ann in annotations:
         geometry = ann.geometry or {}
         if geometry.get("type") != "box_3d":
             continue
-        box_cam = unapply_to_psr(_box_psr(geometry), "kitti_camera")
-        x, y, z = box_cam["center"]
-        length, width, height = box_cam["size"]
-        ry = _wrap_pi(float(box_cam["rotation"][1]))
+        psr = _box_psr(geometry)
+        length, width, height = psr["size"]
+        if not all(
+            math.isfinite(value) and value > 0 for value in (length, width, height)
+        ):
+            skipped.append(
+                KittiSkippedAnnotation(
+                    str(ann.id), str(ann.class_name), "invalid_geometry"
+                )
+            )
+            continue
+        corners_iso, bottom_iso, forward_iso = _box_iso_geometry(psr)
+        corners_camera = [
+            _apply_camera_point(
+                _iso_to_source(point, axis_convention), camera.calibration
+            )
+            for point in corners_iso
+        ]
+        projection = _clipped_projection_bbox(corners_camera, camera)
+        if projection is None:
+            reason = (
+                "behind_camera"
+                if all(point[2] < _NEAR_PLANE for point in corners_camera)
+                else "outside_image_or_degenerate"
+            )
+            skipped.append(
+                KittiSkippedAnnotation(str(ann.id), str(ann.class_name), reason)
+            )
+            continue
+        bbox, truncated = projection
+        x, y, z = _apply_camera_point(
+            _iso_to_source(bottom_iso, axis_convention), camera.calibration
+        )
+        forward_camera = _apply_camera_vector(
+            _iso_to_source(forward_iso, axis_convention), camera.calibration
+        )
+        if math.hypot(forward_camera[0], forward_camera[2]) <= 1e-9:
+            skipped.append(
+                KittiSkippedAnnotation(
+                    str(ann.id), str(ann.class_name), "degenerate_orientation"
+                )
+            )
+            continue
+        ry = _wrap_pi(math.atan2(-forward_camera[2], forward_camera[0]))
         alpha = _kitti_alpha(ry, x, z)
         attrs = _map_box_attributes(ann.attributes)
-        x1, y1, x2, y2 = _kitti_bbox_placeholder()
+        x1, y1, x2, y2 = bbox
         lines.append(
             " ".join(
                 [
                     str(ann.class_name),
-                    f"{attrs.truncated:.2f}",
+                    f"{truncated:.6f}",
                     str(attrs.occluded),
                     f"{alpha:.6f}",
                     f"{x1:.2f}",
@@ -123,161 +388,27 @@ def build_kitti_lidar_label_lines(
                 ]
             )
         )
-    return lines
+    return KittiFrameExportResult(lines=lines, skipped=skipped)
 
 
-def _visibility_token(value: str) -> str:
-    aliases = {
-        "": "",
-        "0": "visibility-0",
-        "1": "visibility-1",
-        "2": "visibility-2",
-        "3": "visibility-3",
-        "v0-40": "visibility-0",
-        "v40-60": "visibility-1",
-        "v60-80": "visibility-2",
-        "v80-100": "visibility-3",
-    }
-    return aliases.get(value, value)
+def build_kitti_lidar_label_lines(
+    annotations: list[Annotation],
+    *,
+    camera: LidarCameraExportCtx,
+    axis_convention: str,
+) -> list[str]:
+    return build_kitti_lidar_frame(
+        annotations,
+        camera=camera,
+        axis_convention=axis_convention,
+    ).lines
 
 
 def build_nuscenes_frame_records(
     frames: list[LidarFrameExportCtx],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Build a lightweight nuScenes-style table set.
-
-    Without persisted ego poses, exported boxes stay in ego/ISO coordinates and
-    ``ego_pose`` rows are explicit identity placeholders.
-    """
-
-    samples: list[dict[str, Any]] = []
-    sample_annotations: list[dict[str, Any]] = []
-    categories: dict[str, dict[str, Any]] = {}
-    attributes: dict[str, dict[str, Any]] = {}
-    calibrated_sensors: dict[str, dict[str, Any]] = {}
-    sample_data: list[dict[str, Any]] = []
-    ego_pose: list[dict[str, Any]] = []
-    instances: dict[str, dict[str, Any]] = {}
-
-    for frame in frames:
-        sample_token = f"sample-{frame.task_id}"
-        ego_pose_token = f"ego-pose-{frame.task_id}"
-        samples.append(
-            {
-                "token": sample_token,
-                "timestamp": 0,
-                "scene_token": "aap-scene",
-                "prev": "",
-                "next": "",
-            }
-        )
-        ego_pose.append(
-            {
-                "token": ego_pose_token,
-                "translation": [0.0, 0.0, 0.0],
-                "rotation": [1.0, 0.0, 0.0, 0.0],
-                "_aap_note": "identity placeholder: AAP v0.14.7 has no persisted ego_pose/global trajectory",
-            }
-        )
-        for cam_name, calib in sorted(frame.cameras.items()):
-            sensor_token = f"calibrated-{cam_name}"
-            if sensor_token not in calibrated_sensors:
-                calibrated_sensors[sensor_token] = {
-                    "token": sensor_token,
-                    "sensor_token": f"sensor-{cam_name}",
-                    "translation": [
-                        float(calib.extrinsic[3]),
-                        float(calib.extrinsic[7]),
-                        float(calib.extrinsic[11]),
-                    ],
-                    "rotation": [1.0, 0.0, 0.0, 0.0],
-                    "camera_intrinsic": [
-                        list(calib.intrinsic[0:3]),
-                        list(calib.intrinsic[3:6]),
-                        list(calib.intrinsic[6:9]),
-                    ],
-                }
-            sample_data.append(
-                {
-                    "token": f"sample-data-{frame.task_id}-{cam_name}",
-                    "sample_token": sample_token,
-                    "ego_pose_token": ego_pose_token,
-                    "calibrated_sensor_token": sensor_token,
-                    "filename": f"images/{cam_name}/{frame.frame_key}",
-                    "fileformat": "jpg",
-                    "is_key_frame": True,
-                }
-            )
-        for ann in frame.annotations:
-            geometry = ann.geometry or {}
-            if geometry.get("type") != "box_3d":
-                continue
-            categories.setdefault(
-                ann.class_name,
-                {
-                    "token": f"category-{ann.class_name}",
-                    "name": ann.class_name,
-                    "description": "",
-                },
-            )
-            attrs = _map_box_attributes(ann.attributes)
-            visibility_token = _visibility_token(attrs.visibility)
-            if visibility_token:
-                attributes.setdefault(
-                    visibility_token,
-                    {
-                        "token": visibility_token,
-                        "name": attrs.visibility,
-                        "description": "",
-                    },
-                )
-            # v0.21.2 · ADR-0045 · 跨帧同一对象 instance 归并按 track_id (原 group_id);
-            # 无 track_id 的孤立框退化为按 annotation id 各自成 instance。
-            track_id = getattr(ann, "track_id", None)
-            instance_key = f"{ann.class_name}-{track_id}" if track_id else str(ann.id)
-            instance_token = f"instance-{instance_key}"
-            instances.setdefault(
-                instance_token,
-                {
-                    "token": instance_token,
-                    "category_token": f"category-{ann.class_name}",
-                },
-            )
-            psr = _box_psr(geometry)
-            length, width, height = psr["size"]
-            yaw = float(psr["rotation"][2])
-            sample_annotations.append(
-                {
-                    "token": f"annotation-{ann.id}",
-                    "sample_token": sample_token,
-                    "instance_token": instance_token,
-                    "visibility_token": visibility_token,
-                    "attribute_tokens": [visibility_token] if visibility_token else [],
-                    "translation": psr["center"],
-                    "size": [width, length, height],
-                    "rotation": [
-                        math.cos(yaw / 2.0),
-                        0.0,
-                        0.0,
-                        math.sin(yaw / 2.0),
-                    ],
-                    "num_lidar_pts": 0,
-                    "num_radar_pts": 0,
-                    "_aap_coordinate_frame": "ego_iso",
-                }
-            )
-
-    return {
-        "sample": samples,
-        "sample_annotation": sample_annotations,
-        "category": list(categories.values()),
-        "attribute": list(attributes.values()),
-        "visibility": list(attributes.values()),
-        "instance": list(instances.values()),
-        "calibrated_sensor": list(calibrated_sensors.values()),
-        "sample_data": sample_data,
-        "ego_pose": ego_pose,
-    }
+    _ = frames
+    raise ValueError("nuscenes_export_not_trusted")
 
 
 def build_pointmask_label_bytes(

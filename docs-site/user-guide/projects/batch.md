@@ -210,9 +210,9 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 图片     | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载）                                            |
 | 视频     | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`、`coco-frames-seg`、`davis`（palette PNG）、`youtube-vos`、`mots` |
-| 3D 点云  | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask`                                                                                                           |
+| 3D 点云  | `aap_json`、`kitti`（3D label）、`pointmask`                                                                                                                       |
 
-点云 `aap_json` / `kitti` 导出支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。
+点云 `aap_json` 支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。KITTI 必须显式选择相机通道，并在任务入队前通过逐帧标定与图像尺寸预检；nuScenes 标准导出在真实位姿与时间合同完成前不可用。
 
 视频轨迹批次支持两种帧模式：
 

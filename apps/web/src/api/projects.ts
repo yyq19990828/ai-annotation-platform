@@ -165,6 +165,26 @@ export type VideoExportScope = {
         to_frame: number;
       };
 };
+export interface LidarExportOptions {
+  kittiCameraRole?: string;
+}
+export interface LidarExportIssue {
+  code: string;
+  message: string;
+  task_id: string | null;
+  task_display_id: string | null;
+  frame_key: string | null;
+  camera_role: string | null;
+}
+export interface LidarExportPreflight {
+  ready: boolean;
+  camera_roles: string[];
+  selected_camera_role: string | null;
+  checked_tasks: number;
+  issue_count: number;
+  issues_truncated: boolean;
+  issues: LidarExportIssue[];
+}
 export interface ExportOptions {
   includeAttributes?: boolean;
   videoFrameMode?: VideoFrameMode;
@@ -172,6 +192,7 @@ export interface ExportOptions {
   videoOverlapPolicy?: "error" | "z_order" | "larger_area" | "smaller_area";
   motsFrameBase?: 0 | 1;
   scope?: VideoExportScope;
+  lidar?: LidarExportOptions;
 }
 
 export interface ProjectClassUsageResponse {
@@ -293,9 +314,14 @@ export const projectsApi = {
     if (opts?.motsFrameBase !== undefined) {
       params.set("mots_frame_base", String(opts.motsFrameBase));
     }
-    return apiClient.post<{ job_id: string }>(
-      `/projects/${id}/export?${params.toString()}`,
-      opts?.scope ? { scope: opts.scope } : {},
-    );
+    return apiClient.post<{ job_id: string }>(`/projects/${id}/export?${params.toString()}`, {
+      ...(opts?.scope ? { scope: opts.scope } : {}),
+      ...(opts?.lidar ? { lidar: { kitti_camera_role: opts.lidar.kittiCameraRole } } : {}),
+    });
   },
+  preflightLidarExport: (id: string, targets: ExportTarget[], lidar?: LidarExportOptions) =>
+    apiClient.post<LidarExportPreflight>(`/projects/${id}/exports/lidar:preflight`, {
+      targets,
+      ...(lidar ? { lidar: { kitti_camera_role: lidar.kittiCameraRole } } : {}),
+    }),
 };

@@ -159,6 +159,7 @@
 | POST | `/bulk-approve` |
 | POST | `/bulk-reject` |
 | GET | `/{batch_id}/audit-logs` |
+| POST | `/{batch_id}/exports/lidar:preflight` |
 | POST | `/{batch_id}/export` |
 
 ## `bug_reports.py`
@@ -412,6 +413,7 @@
 | GET | `/{project_id}/members` |
 | POST | `/{project_id}/members` |
 | DELETE | `/{project_id}/members/{member_id}` |
+| POST | `/{project_id}/exports/lidar:preflight` |
 | POST | `/{project_id}/export` |
 | POST | `/{project_id}/preannotate` |
 | GET | `/{project_id}/orphan-tasks/preview` |
@@ -493,6 +495,14 @@
 | POST | `/{task_id}/annotations/video/track-compositions` |
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | DELETE | `/{task_id}/annotations/{annotation_id}` |
+
+## `tasks/cross_frame_jobs.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/cross-frame-jobs` |
+| GET | `/{task_id}/cross-frame-jobs` |
+| POST | `/{task_id}/cross-frame-jobs/{job_id}/retry-failed` |
 
 ## `tasks/image_pyramid.py`
 
@@ -640,4 +650,4 @@
 
 ---
 
-_共 60 模块 / 358 路由_
+_共 61 模块 / 363 路由_

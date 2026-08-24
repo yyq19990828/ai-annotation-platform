@@ -41,6 +41,7 @@ from app.services.exporting.packaging import (
 from app.services.exporting.video_scope import VideoExportScope
 from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.contracts import canonical_digest
+from app.schemas.export import LidarExportOptions
 from app.services.notification import NotificationService
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
@@ -249,6 +250,25 @@ async def _run_export(
                     db, job_uuid, celery_task_id=celery_task_id
                 )
                 await db.commit()
+
+                if {"kitti", "nuscenes"} & set(targets):
+                    from app.services.exporting.lidar_preflight import (
+                        assert_lidar_export_ready,
+                    )
+
+                    raw_lidar_options = opts.get("lidar")
+                    lidar_options = (
+                        LidarExportOptions.model_validate(raw_lidar_options)
+                        if raw_lidar_options
+                        else None
+                    )
+                    await assert_lidar_export_ready(
+                        db,
+                        project_id=proj_uuid,
+                        batch_id=batch_uuid,
+                        targets=targets,
+                        options=lidar_options,
+                    )
 
                 scope_id = batch_uuid or proj_uuid
                 max_updated_at, active_count = await _scope_fingerprint(

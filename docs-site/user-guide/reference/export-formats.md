@@ -14,7 +14,7 @@ last_reviewed: 2026-08-13
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / Point Mask**。nuScenes 入口会显示为暂不可用，真实 scene、timestamp 与 ego pose 合同完成前不能入队。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -44,7 +44,6 @@ last_reviewed: 2026-08-13
 | 视频轨迹     | KITTI Tracking     | `kitti`                       | KITTI 跟踪工具链                                                    |
 | **点云**     | AAP JSON           | `aap_json`                    | 点云跨实例无损迁移 / 备份（保留 3D 几何）                           |
 | 点云         | KITTI 3D           | `kitti`                       | KITTI 3D 检测训练前处理（KITTI camera 坐标）                        |
-| 点云         | nuScenes JSON      | `nuscenes`                    | 单帧 3D 检测训练前处理（nuScenes 风格表集）                         |
 | 点云         | Point Mask         | `pointmask`                   | 逐点语义分割训练前处理                                              |
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
@@ -338,19 +337,16 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ## 点云标准训练格式
 
-`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源（点云回源脚本是 `fetch_pointclouds.py`，把点云拉到 `velodyne/`；图片回源脚本是 `fetch_images.py`，把图片拉到 `images/<camera>/`）。
+`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源（点云回源脚本是 `fetch_pointclouds.py`，把点云拉到 `velodyne/`；图片回源脚本是 `fetch_images.py`，把图片拉到 `images/<camera>/`）。
 
-| 目标          | 主要文件                                                                      | 用途                                                           |
-| ------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| KITTI 3D      | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json` | 3D 检测训练前处理，box 输出为 KITTI camera 坐标                |
-| nuScenes JSON | **9 个表 JSON**（见下）                                                       | 单帧 3D 检测训练前处理                                         |
-| Point Mask    | `segmentation/<frame>.label`、`category_map.json`                             | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
+| 目标       | 主要文件                                                                                            | 用途                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| KITTI 3D   | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json`、`export_report.json` | 3D 检测训练前处理，box 输出为所选 KITTI camera 坐标            |
+| Point Mask | `segmentation/<frame>.label`、`category_map.json`                                                   | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
 
-**nuScenes JSON 实际产出 9 个表文件**（不是早期文档误写的 4 个），每个表落一个同名 `.json`：
+KITTI 3D 必须在弹窗中显式选择一条相机通道。系统会逐任务核对主点云轴约定、所选相机图、内外参和真实宽高；任一缺口都会列出 task / frame / camera 并阻止创建后台任务。预检通过后，`label_2` 的 2D bbox 来自真实角点投影，`location` 是相机坐标下的 3D 框底面中心，`rotation_y`、`alpha` 与 `truncated` 也由同一投影计算。完全在相机后方或画面外的对象不会伪造 bbox，而会记录到 `export_report.json`。
 
-`sample.json`、`sample_annotation.json`、`category.json`、`attribute.json`、`visibility.json`、`instance.json`、`calibrated_sensor.json`、`sample_data.json`、`ego_pose.json`。
-
-nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pose`**的子集（`ego_pose` 行是单位平移 + 单位四元数的占位，带 `_aap_note` 说明）。它不等同于完整 nuScenes global 轨迹导出，不能直接用于 nuScenes devkit 的多帧跟踪评测；完整 global 轨迹依赖后续 ego pose 数据模型。
+nuScenes 标准导出当前被严格禁用：API 返回 `nuscenes_export_not_trusted`，不会再生成带固定 scene token、零 timestamp 或单位 ego pose 的伪标准表集。
 
 ### `axis_frame` 坐标系参数（`iso` | `source`）
 
@@ -359,11 +355,11 @@ nuScenes JSON 当前是**单帧 sample 风格、ego/ISO 坐标、占位 `ego_pos
 - `axis_frame=iso`（默认）：3D box 的 PSR（position / size / rotation）保持平台**内部归一化 ISO 约定**（+X 前 / +Y 左 / +Z 上）。
 - `axis_frame=source`：把 box 映射回该数据集导入时声明的 `axis_convention`（dataset metadata 里的轴约定），还原到用户原始坐标系。
 
-注意作用范围：`axis_frame` 影响 **AAP JSON 与 COCO**（携带 3D / 框 geometry 的格式）。**KITTI 3D 导出与 `axis_frame` 无关——它的 `label_2` 永远输出 KITTI camera 坐标**（3D 检测标签的固定约定），是 ISO→KITTI camera 的固定逆变换。nuScenes 子集当前固定 ego/ISO 坐标。
+注意作用范围：对点云项目，`axis_frame` 只影响 **AAP JSON** 携带的 3D geometry。**KITTI 3D 导出与 `axis_frame` 无关——它会把平台 ISO 框先映射回每帧数据源 LiDAR 轴，再应用所选相机的真实标定，最终固定输出 KITTI camera 坐标。**
 
-### 缺标定时的 `.unverified` 文件名标记
+### 标定缺失时严格失败
 
-KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺标定时改名为 `<frame>.unverified.txt`**：缺标定时文件内容是单位矩阵占位（P2 / R0_rect / Tr_velo_to_cam 全为单位阵），并在文件头写显式警告，禁止下游拿它做 3D→2D 投影。`.unverified.txt` 后缀就是给下游/人工一眼识别「这帧没有真实标定」的信号，避免静默把占位矩阵当真实标定消费。
+KITTI 3D 的 `calib/<frame>.txt` 只写真实 `P2`、`R0_rect` 与 `Tr_velo_to_cam`。缺标定、矩阵非法或图像宽高缺失时，预检会阻止导出；包内不会出现 identity matrix 或 `.unverified.txt` 占位文件。
 
 ### 点云 ZIP 包目录树（单目标 KITTI 3D）
 
@@ -376,8 +372,8 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 │   ├── scene01_000.txt            # KITTI camera 坐标 3D box（每帧一文件）
 │   └── scene01_001.txt
 ├── calib/
-│   ├── scene01_000.txt            # 有标定
-│   └── scene01_001.unverified.txt # 缺标定 → 单位矩阵占位 + 警告头
+│   ├── scene01_000.txt            # 所选相机真实标定
+│   └── scene01_001.txt
 ├── calib_raw/
 │   └── cam_front/
 │       ├── scene01_000.json       # 原始标定原样透传
@@ -387,6 +383,7 @@ KITTI 3D 的 `calib/<frame>` 标定文件**有标定时叫 `<frame>.txt`，缺�
 │   └── cam_front/                 # 空占位目录，fetch_images.py 回源相机图到此
 ├── pointclouds_manifest.json      # 点云预签名 URL + expires_at
 ├── images_manifest.json           # 相机图预签名 URL + expires_at
+├── export_report.json             # 可见性跳过明细与导出计数
 ├── fetch_pointclouds.py
 └── fetch_images.py
 ```

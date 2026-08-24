@@ -27,12 +27,16 @@ import {
   type TimelineFrameRange,
 } from "./sceneTimelineVirtualization";
 import { prefetchPointCloudFrameAssets } from "./pointCloudAssetCache";
+import { CrossFrameJobCenter } from "./CrossFrameJobCenter";
 
 interface SceneTimelineProps {
   taskId: string | null;
   trackId: string | null;
   prefetchDepthRasters?: boolean;
   prefetchDecimateThreshold?: number;
+  selectedAnnotationIds?: string[];
+  boxCount?: number;
+  readOnly?: boolean;
   onNavigateFrame: (taskId: string, annotationId: string | null) => Promise<boolean>;
 }
 
@@ -152,6 +156,9 @@ export function SceneTimeline({
   trackId,
   prefetchDepthRasters = false,
   prefetchDecimateThreshold,
+  selectedAnnotationIds = [],
+  boxCount = 0,
+  readOnly = false,
   onNavigateFrame,
 }: SceneTimelineProps) {
   const queryClient = useQueryClient();
@@ -159,6 +166,7 @@ export function SceneTimeline({
   const [collapsed, setCollapsed] = useState(false);
   const [range, setRange] = useState<TimelineFrameRange>(timelineInitialRange);
   const [navigatingTaskId, setNavigatingTaskId] = useState<string | null>(null);
+  const [jobCenterOpen, setJobCenterOpen] = useState(false);
   const query = useSceneTimeline(taskId, range.startFrame, range.endFrame, trackId);
   const data = query.data;
   const sceneStart = data?.scene_start_frame ?? 0;
@@ -273,7 +281,7 @@ export function SceneTimeline({
       </div>
     );
   }
-  if (!data?.scene_id || currentFrame == null || frameCount <= 1) return null;
+  if (!taskId || !data?.scene_id || currentFrame == null || frameCount <= 1) return null;
 
   return (
     <section
@@ -300,7 +308,16 @@ export function SceneTimeline({
           F{currentFrame} / F{sceneEnd}
         </span>
         {trackId && <span className="text-brand">当前对象轨迹</span>}
-        <span className="ml-auto tabular-nums text-muted-foreground">
+        <Button
+          size="xs"
+          variant="ghost"
+          className="ml-auto"
+          data-testid="scene-cross-frame-job-center"
+          onClick={() => setJobCenterOpen(true)}
+        >
+          跨帧任务
+        </Button>
+        <span className="tabular-nums text-muted-foreground">
           {data.populated_frame_count ?? 0} 帧{query.isFetching ? " · 更新中" : ""}
         </span>
       </header>
@@ -334,6 +351,17 @@ export function SceneTimeline({
           </TimelineSizer>
         </div>
       )}
+      <CrossFrameJobCenter
+        open={jobCenterOpen}
+        onClose={() => setJobCenterOpen(false)}
+        taskId={taskId}
+        currentFrame={currentFrame}
+        sceneStartFrame={sceneStart}
+        sceneEndFrame={sceneEnd}
+        selectedAnnotationIds={selectedAnnotationIds}
+        boxCount={boxCount}
+        readOnly={readOnly}
+      />
     </section>
   );
 }
