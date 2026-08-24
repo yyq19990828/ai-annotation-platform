@@ -299,6 +299,93 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(patches, "Escape 取消不得新增 PATCH").toHaveLength(2);
   });
 
+  test("相机种框一次激活 → 连续创建两个框 → 保存期拒绝重复拖动", async ({ page, seed }) => {
+    test.setTimeout(60_000);
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const collapsedCamera = page.getByTitle("展开相机").first();
+    if (await collapsedCamera.isVisible()) await collapsedCamera.click();
+    await page.getByTitle("放大相机").first().click();
+    await page.getByRole("button", { name: "种框 ⊹" }).click();
+    await expect(page.getByRole("button", { name: /连续种框.*拖矩形/ })).toBeVisible();
+
+    const modalBody = page.getByRole("button", { name: "关闭 ✕" }).locator("..");
+    const cameraCanvas = modalBody.getByLabel(/^front 相机投影$/);
+    await expect(cameraCanvas).toBeVisible();
+    await expect
+      .poll(() => cameraCanvas.evaluate((element) => (element as HTMLCanvasElement).width))
+      .toBeGreaterThan(0);
+    const bounds = await cameraCanvas.boundingBox();
+    if (!bounds) throw new Error("放大相机 canvas boundingBox 不可用");
+    const start = { x: bounds.x + bounds.width * 0.35, y: bounds.y + bounds.height * 0.35 };
+    const end = { x: bounds.x + bounds.width * 0.62, y: bounds.y + bounds.height * 0.68 };
+
+    let releaseFirstRequest: (() => void) | null = null;
+    const firstRequestGate = new Promise<void>((resolve) => {
+      releaseFirstRequest = resolve;
+    });
+    let boxPostCount = 0;
+    await page.route("**/api/v1/tasks/*/annotations", async (route) => {
+      if (route.request().method() === "POST") {
+        boxPostCount += 1;
+        if (boxPostCount === 1) await firstRequestGate;
+      }
+      await route.continue();
+    });
+
+    const firstResponse = page.waitForResponse(
+      (response) => response.request().method() === "POST" && /\/annotations$/.test(response.url()),
+      { timeout: 10_000 },
+    );
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.getByRole("button", { name: /正在保存/ })).toBeVisible();
+    await expect(cameraCanvas).toHaveAttribute("aria-disabled", "true");
+
+    await page.mouse.move(start.x + 12, start.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(end.x + 12, end.y + 12, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    expect(boxPostCount, "相机保存期间的额外拖框不得发 POST").toBe(1);
+
+    releaseFirstRequest?.();
+    await firstResponse;
+    await expect(page.getByRole("button", { name: /连续种框.*拖矩形/ })).toBeVisible();
+    await expect(cameraCanvas).not.toHaveAttribute("aria-disabled", "true");
+
+    const secondResponse = page.waitForResponse(
+      (response) => response.request().method() === "POST" && /\/annotations$/.test(response.url()),
+      { timeout: 10_000 },
+    );
+    await page.mouse.move(start.x + 20, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x + 20, end.y, { steps: 6 });
+    await page.mouse.up();
+    await secondResponse;
+    expect(boxPostCount).toBe(2);
+    await expect(page.locator('[data-testid^="box-list-item-"]')).toHaveCount(3);
+    await expect(page.getByRole("button", { name: /连续种框.*拖矩形/ })).toBeVisible();
+
+    await page.keyboard.press("v");
+    await expect(page.getByRole("button", { name: "种框 ⊹" })).toBeVisible();
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    expect(boxPostCount).toBe(2);
+  });
+
   // 一键贴合(Q 键):applyFit 写 setForm + 立即(非防抖)PATCH 落库 —— 守护 usePsrEditor
   // 另一类 setForm 写点(一键操作,区别于数值面板的防抖路径)。Q 键 effect 本身也是
   // 3D 合并键盘 handler 的一员,重构若动 Q 分支/applyFit↔form 接线,这条立刻报警。

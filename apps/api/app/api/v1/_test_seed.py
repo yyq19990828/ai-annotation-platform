@@ -746,7 +746,10 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     # 校验 PATCH);coalesce 会误落 bbox unit,故此处显式构造。
     tool_bindings = {
         "lidar_box_3d": {
-            "classes": [{"name": "car", "order": 0}],
+            "classes": [
+                {"name": "car", "order": 0},
+                {"name": "pedestrian", "order": 1},
+            ],
             "enabled": True,
             "attribute_schema": {"fields": []},
         },

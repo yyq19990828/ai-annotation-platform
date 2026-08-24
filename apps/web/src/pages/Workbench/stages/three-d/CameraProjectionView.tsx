@@ -26,6 +26,7 @@ const CAMERA_ITEM = "m-0 shrink-0";
 const CAMERA_VIEW = "relative inline-block leading-none";
 const CAMERA_CANVAS = "absolute inset-0 cursor-pointer touch-none";
 const CAMERA_CANVAS_SEED = "cursor-crosshair";
+const CAMERA_CANVAS_BLOCKED = "cursor-wait";
 const CAMERA_IMG = "block w-[190px] h-auto object-cover";
 const CAMERA_FIGCAPTION = "mt-1 text-xs text-muted-foreground text-center";
 
@@ -50,6 +51,8 @@ interface CameraProjectionViewProps {
    * 上层据此选视锥内点拟合 box_3d。开则禁用反选点击、光标 crosshair。无标定时不生效。
    */
   seedMode?: boolean;
+  /** 上层正在保存种框时阻止新的 pointer，不把请求排成并发队列。 */
+  interactionDisabled?: boolean;
   /** v0.15.24 · 种框完成回调:rect 为 natural 像素系,calibration 为本相机标定(必非空)。 */
   onSeedBox?: (rect: SeedRect, calibration: SensorCalibration) => void;
   /** 放大相机视图中允许直接移动中心的单个 3D 框；缩略视图与不可编辑态传 null。 */
@@ -97,6 +100,7 @@ export function CameraProjectionView({
   pointPositions = null,
   showDepth = false,
   seedMode = false,
+  interactionDisabled = false,
   onSeedBox,
   editableBox = null,
   onEditPsr,
@@ -298,6 +302,13 @@ export function CameraProjectionView({
     draw();
   }, [draw]);
 
+  useEffect(() => {
+    if (!interactionDisabled) return;
+    seedStartRef.current = null;
+    seedRectRef.current = null;
+    draw();
+  }, [draw, interactionDisabled]);
+
   // 图尺寸变化(响应式布局 / 懒加载)重算缩放并重绘。
   useEffect(() => {
     const img = imgRef.current;
@@ -375,6 +386,7 @@ export function CameraProjectionView({
   // v0.13.6 / v0.15.24 · mousemove:种框模式下更新橡皮筋矩形(ref + 直接重绘);否则深度 hover。
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (interactionDisabled) return;
       if (seedMode) {
         if (!seedStartRef.current) return;
         const { x, y } = localXY(e);
@@ -444,6 +456,7 @@ export function CameraProjectionView({
       draw,
       showDepth,
       raster,
+      interactionDisabled,
     ],
   );
 
@@ -451,6 +464,10 @@ export function CameraProjectionView({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (e.button !== 0 || editDragRef.current) return;
+      if (interactionDisabled) {
+        e.preventDefault();
+        return;
+      }
       if (seedMode) {
         if (!calibration) return;
         seedStartRef.current = localXY(e);
@@ -507,11 +524,18 @@ export function CameraProjectionView({
       naturalPixel,
       onEditError,
       name,
+      interactionDisabled,
     ],
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (interactionDisabled) {
+        seedStartRef.current = null;
+        seedRectRef.current = null;
+        draw();
+        return;
+      }
       const drag = editDragRef.current;
       if (!seedMode && drag && drag.pointerId === e.pointerId) {
         editDragRef.current = null;
@@ -543,7 +567,16 @@ export function CameraProjectionView({
       const rect = normalizeRect(start.x / sx, start.y / sy, x / sx, y / sy);
       onSeedBox(rect, calibration);
     },
-    [seedMode, calibration, onSeedBox, onEditPsr, releasePointer, localXY, draw],
+    [
+      seedMode,
+      calibration,
+      onSeedBox,
+      onEditPsr,
+      releasePointer,
+      localXY,
+      draw,
+      interactionDisabled,
+    ],
   );
 
   const handlePointerLeave = useCallback(() => {
@@ -562,6 +595,7 @@ export function CameraProjectionView({
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (interactionDisabled) return;
       if (suppressClickRef.current) {
         suppressClickRef.current = false;
         return;
@@ -583,7 +617,7 @@ export function CameraProjectionView({
       }
       if (hitId) onSelectBox(hitId, { shift: e.shiftKey });
     },
-    [seedMode, onSelectBox],
+    [interactionDisabled, seedMode, onSelectBox],
   );
 
   return (
@@ -599,8 +633,15 @@ export function CameraProjectionView({
         />
         <canvas
           ref={canvasRef}
-          className={seedMode ? `${CAMERA_CANVAS} ${CAMERA_CANVAS_SEED}` : CAMERA_CANVAS}
+          className={[
+            CAMERA_CANVAS,
+            seedMode && CAMERA_CANVAS_SEED,
+            interactionDisabled && CAMERA_CANVAS_BLOCKED,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           aria-label={`${name} 相机投影${editableBox ? "，拖动中心手柄微调 3D 框" : ""}`}
+          aria-disabled={interactionDisabled || undefined}
           onClick={handleClick}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -614,7 +655,7 @@ export function CameraProjectionView({
         {name}
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}
-        {seedMode && calibration && " · 拖框种 3D 框"}
+        {seedMode && calibration && (interactionDisabled ? " · 正在保存" : " · 拖框种 3D 框")}
         {showDepth && !seedMode && hover && ` · ${hover.depth.toFixed(1)}m`}
       </figcaption>
     </figure>

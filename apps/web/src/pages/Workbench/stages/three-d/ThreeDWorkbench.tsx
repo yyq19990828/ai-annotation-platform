@@ -35,6 +35,7 @@ import {
   type AlignPsr,
 } from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useAuthStore } from "@/stores/authStore";
@@ -118,6 +119,7 @@ const ROOT = "flex flex-col size-full min-h-0 bg-background";
 const VIEWPORT_WRAP = "relative flex-1 min-h-0";
 const VIEWPORT = "absolute inset-0";
 const PLACING = "cursor-crosshair";
+const CREATION_BLOCKED = "cursor-wait";
 const BOX_SELECT_RECT =
   "absolute left-[var(--rect-l)] top-[var(--rect-t)] w-[var(--rect-w)] h-[var(--rect-h)] z-local-3 pointer-events-none border border-brand bg-brand/10 opacity-50";
 const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-local-3 size-full pointer-events-none";
@@ -365,6 +367,12 @@ export function ThreeDWorkbench({
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
   const [seedMode, setSeedMode] = useState(false);
+  const [boxCreationSaving, setBoxCreationSaving] = useState(false);
+  const [boxCreationIssue, setBoxCreationIssue] = useState<string | null>(null);
+  const boxCreationInFlightRef = useRef(false);
+  const boxCreationRevisionRef = useRef(0);
+  const taskIdRef = useRef(taskId);
+  taskIdRef.current = taskId;
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
   const finishPointMaskPolygonRef = useRef<(subtract: boolean) => void>(() => undefined);
@@ -753,19 +761,47 @@ export function ThreeDWorkbench({
     return () => window.removeEventListener("keydown", onKey);
   }, [readOnly, selectedId, onCrossFramePropagate, onCrossFramePropagateBatch, pushToast]);
 
-  // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
+  // 切任务回到选择工具，并让旧 task 的迟到创建响应失效。
   useEffect(() => {
+    boxCreationRevisionRef.current += 1;
+    boxCreationInFlightRef.current = false;
+    setBoxCreationSaving(false);
+    setBoxCreationIssue(null);
+    setSeedMode(false);
     onSetThreeDTool("select");
     setPointCloudViewMode("orbit");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
-  // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
+  // 只在进入工具的那个事件周期清一次旧选择。持续建框成功后即使仍为 box，
+  // 新框也必须保持选中，不能被 placing=true 的 effect 再次清空。
+  const previousThreeDToolRef = useRef(threeDTool);
   useEffect(() => {
-    if (placing || (pointMasking && selectedAnn?.geometry?.type !== "point_mask_3d")) {
+    const previous = previousThreeDToolRef.current;
+    previousThreeDToolRef.current = threeDTool;
+    if (threeDTool === "box" && previous !== "box") {
+      onSelectBox(null);
+      setBoxCreationIssue(null);
+    } else if (
+      threeDTool === "point-mask" &&
+      previous !== "point-mask" &&
+      selectedAnn?.geometry?.type !== "point_mask_3d"
+    ) {
       onSelectBox(null);
     }
-  }, [placing, pointMasking, selectedAnn?.geometry, onSelectBox]);
+  }, [threeDTool, selectedAnn?.geometry?.type, onSelectBox]);
+
+  // 只读或工具类别被撤销时立即安全退出，不保留看似可用的 armed 状态。
+  useEffect(() => {
+    if (!readOnly && boxClasses.length > 0) return;
+    if (threeDTool !== "box" && !seedMode) return;
+    boxCreationRevisionRef.current += 1;
+    boxCreationInFlightRef.current = false;
+    setBoxCreationSaving(false);
+    setBoxCreationIssue(null);
+    setSeedMode(false);
+    if (threeDTool === "box") onSetThreeDTool("select");
+  }, [boxClasses.length, onSetThreeDTool, readOnly, seedMode, threeDTool]);
 
   // B 进放置 / V / Esc 回选择(焦点在输入框时不拦截;无可用类别时 B 无效)。
   useEffect(() => {
@@ -778,6 +814,8 @@ export function ThreeDWorkbench({
       } else if (e.key === "Escape" || e.key === "v" || e.key === "V") {
         setPointMaskPolygonPoints([]);
         setPointMaskCursor(null);
+        setSeedMode(false);
+        setBoxCreationIssue(null);
         onSetThreeDTool("select");
       } else if ((e.key === "b" || e.key === "B") && canPlaceBox) onSetThreeDTool("box");
       else if ((e.key === "p" || e.key === "P") && canPlacePointMask) onSetThreeDTool("point-mask");
@@ -1019,13 +1057,49 @@ export function ThreeDWorkbench({
     });
   }, [selectedId, selectedHidden, updateAnnotation]);
 
-  // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
+  const submitBoxCreation = useCallback(
+    (payload: AnnotationPayload) => {
+      if (boxCreationInFlightRef.current) return;
+      const submittedTaskId = taskId;
+      const revision = ++boxCreationRevisionRef.current;
+      boxCreationInFlightRef.current = true;
+      setBoxCreationIssue(null);
+      setBoxCreationSaving(true);
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          if (
+            revision !== boxCreationRevisionRef.current ||
+            submittedTaskId !== taskIdRef.current
+          ) {
+            return;
+          }
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
+        },
+        onError: () => {
+          if (revision !== boxCreationRevisionRef.current) return;
+          setBoxCreationIssue("保存失败，请重试");
+        },
+        onSettled: () => {
+          if (revision !== boxCreationRevisionRef.current) return;
+          boxCreationInFlightRef.current = false;
+          setBoxCreationSaving(false);
+        },
+      });
+    },
+    [createAnnotation, history, onSelectBox, taskId],
+  );
+
+  // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框，工具继续 armed。
   const handlePlace = useCallback(
     (clientX: number, clientY: number) => {
       const scene = sceneRef.current;
-      if (!scene || !boxPlaceClass) return;
+      if (!scene || !boxPlaceClass || boxCreationInFlightRef.current) return;
       const ground = scene.placeOnGround(clientX, clientY);
-      if (!ground) return;
+      if (!ground) {
+        setBoxCreationIssue("未找到可放置位置，请换个位置重试");
+        return;
+      }
       const [l, w, h] = defaultBoxSize;
       const geometry = boxGeometryFromPsr(
         {
@@ -1041,23 +1115,9 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          onSelectBox(created.id);
-        },
-      });
-      onSetThreeDTool("select"); // 单次放置后回到选择工具
+      submitBoxCreation(payload);
     },
-    [
-      axisConvention,
-      boxPlaceClass,
-      createAnnotation,
-      defaultBoxSize,
-      history,
-      onSelectBox,
-      onSetThreeDTool,
-    ],
+    [axisConvention, boxPlaceClass, defaultBoxSize, submitBoxCreation],
   );
 
   // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实
@@ -1067,9 +1127,12 @@ export function ThreeDWorkbench({
   const handleBoxSelect = useCallback(
     (a: { x: number; y: number }, b: { x: number; y: number }) => {
       const scene = sceneRef.current;
-      if (!scene || !boxPlaceClass) return;
+      if (!scene || !boxPlaceClass || boxCreationInFlightRef.current) return;
       const selected = scene.selectPointsInScreenRect(a.x, a.y, b.x, b.y);
-      if (!selected) return; // 框内无点 → 不建框
+      if (!selected) {
+        setBoxCreationIssue("框内无点，请调整范围后重试");
+        return;
+      }
       const psr = psrFromPoints(selected);
       const geometry = boxGeometryFromPsr(psr, axisConvention);
       const payload: AnnotationPayload = {
@@ -1078,15 +1141,9 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          onSelectBox(created.id);
-        },
-      });
-      onSetThreeDTool("select"); // 单次画框后回到选择工具
+      submitBoxCreation(payload);
     },
-    [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
+    [boxPlaceClass, axisConvention, submitBoxCreation],
   );
 
   // v0.15.24 · §Phase1 相机图「2D 框种 3D 框」:在放大相机图上拖矩形 → 该相机标定反算视锥选点
@@ -1095,9 +1152,12 @@ export function ThreeDWorkbench({
   const handleSeedBox = useCallback(
     (rect: SeedRect, calibration: SensorCalibration) => {
       const scene = sceneRef.current;
-      if (!scene || !boxPlaceClass) return;
+      if (!scene || !boxPlaceClass || boxCreationInFlightRef.current) return;
       const positions = scene.getPointPositions();
-      if (!positions) return;
+      if (!positions) {
+        setBoxCreationIssue("点云尚未就绪，请稍后重试");
+        return;
+      }
       const gated = depthGate(selectPointsInRect(positions, rect, calibration));
       let psr: Psr;
       if (gated.length >= 3) {
@@ -1121,23 +1181,9 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          onSelectBox(created.id);
-        },
-      });
-      setSeedMode(false);
+      submitBoxCreation(payload);
     },
-    [
-      boxPlaceClass,
-      axisConvention,
-      defaultBoxSize,
-      createAnnotation,
-      history,
-      onSelectBox,
-      pushToast,
-    ],
+    [boxPlaceClass, axisConvention, defaultBoxSize, pushToast, submitBoxCreation],
   );
 
   const applyPointMaskSelection = useCallback(
@@ -1299,11 +1345,19 @@ export function ThreeDWorkbench({
   const [previewPath, setPreviewPath] = useState<ScreenPoint[]>([]);
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
+    // 控件条、状态条和其他覆盖层都在 viewport DOM 内，事件会冒泡到这里。
+    // 持续建框时只接受主渲染 canvas 的 pointer，避免点「俯视」等控件误创建。
+    if (!(e.target instanceof HTMLCanvasElement)) return;
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
     if (e.button === 0 && e.detail === 1 && threeDTool === "select") {
       selectionBeforeDoubleClickRef.current = [...selectedIds];
     }
+    if (placing && boxCreationSaving) {
+      e.preventDefault();
+      return;
+    }
     if (placing || pointMaskDragMode) {
+      if (placing) setBoxCreationIssue(null);
       // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
       sceneRef.current?.setBoxSelecting(true);
       boxSelectStartRef.current = { x: e.clientX, y: e.clientY };
@@ -2130,7 +2184,11 @@ export function ThreeDWorkbench({
       <div ref={viewportWrapRef} className={VIEWPORT_WRAP}>
         <div
           ref={viewportRef}
-          className={drawingSelection ? `${VIEWPORT} ${PLACING}` : VIEWPORT}
+          className={
+            drawingSelection
+              ? `${VIEWPORT} ${boxCreationSaving && placing ? CREATION_BLOCKED : PLACING}`
+              : VIEWPORT
+          }
           data-testid="pc-viewport"
           onMouseDown={handleViewportMouseDown}
           onMouseMove={handleViewportMouseMove}
@@ -2316,7 +2374,30 @@ export function ThreeDWorkbench({
             <span>· 邻帧对齐 {neighborMovedCount.toLocaleString()} 动态点</span>
           )}
           {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
-          {placing && <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>}
+          {placing && (
+            <Badge
+              variant={boxCreationIssue ? "danger" : boxCreationSaving ? "warning" : "accent"}
+              dot
+              data-testid="three-d-creation-status"
+              data-phase={
+                boxCreationSaving
+                  ? "saving"
+                  : boxCreationIssue
+                    ? "error"
+                    : isBoxSelecting
+                      ? "drawing"
+                      : "armed"
+              }
+            >
+              {boxCreationSaving
+                ? `连续建框 · 正在保存 ${boxPlaceClass ?? ""}`
+                : boxCreationIssue
+                  ? `连续建框 · ${boxCreationIssue} · V/Esc 退出`
+                  : isBoxSelecting
+                    ? `连续建框 · 正在拟合 ${boxPlaceClass ?? ""}`
+                    : `连续建框 · ${boxPlaceClass ?? ""} · 点击放置 / 拖框拟合 · V/Esc 退出`}
+            </Badge>
+          )}
           {pointMasking && (
             <span>
               · {pointMaskSelectMode === "polygon" ? "点击多边形闭合" : "拖动选点"}
@@ -2674,11 +2755,20 @@ export function ThreeDWorkbench({
                   className={
                     seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
                   }
-                  onClick={() => setSeedMode((v) => !v)}
+                  onClick={() => {
+                    setBoxCreationIssue(null);
+                    setSeedMode((v) => !v);
+                  }}
                   aria-pressed={seedMode}
                   title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
                 >
-                  {seedMode ? "种框中 · 拖矩形" : "种框 ⊹"}
+                  {seedMode
+                    ? boxCreationSaving
+                      ? `正在保存 ${boxPlaceClass}`
+                      : boxCreationIssue
+                        ? `保存失败 · 重试 ${boxPlaceClass}`
+                        : `连续种框 · ${boxPlaceClass} · 拖矩形`
+                    : "种框 ⊹"}
                 </button>
               )}
               {cameras.length > 1 && (
@@ -2712,6 +2802,7 @@ export function ThreeDWorkbench({
                 pointPositions={pointPositions}
                 showDepth={depthOn}
                 seedMode={seedMode}
+                interactionDisabled={boxCreationSaving}
                 onSeedBox={handleSeedBox}
                 editableBox={
                   threeDTool === "select" && selectedPsrEditable && !seedMode ? selectedBox : null
