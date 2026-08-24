@@ -115,6 +115,8 @@ interface WorkbenchStageHostCommonProps {
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
   /** v0.15.1 · 区间插值: 当前 task(起点)与 toTask(终点)的同 track 框之间插值填充。 */
   onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
+  /** Scene 时间轴复用壳层保存保护与 task 导航。 */
+  onNavigateSceneFrame: (targetTaskId: string) => Promise<boolean>;
   /** v0.13.10 · 3D 浮层避让右栏 + 三视图浮窗偏好。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -368,6 +370,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCrossFramePropagateBatch,
       onCrossFramePropagateToTask,
       onCrossFrameInterpolate,
+      onNavigateSceneFrame,
       rightSidebarOpen,
       rightSidebarWidth,
       workbenchLayout,
@@ -544,6 +547,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               onCrossFramePropagateBatch={onCrossFramePropagateBatch}
               onCrossFramePropagateToTask={onCrossFramePropagateToTask}
               onCrossFrameInterpolate={onCrossFrameInterpolate}
+              onNavigateSceneFrame={onNavigateSceneFrame}
               rightSidebarOpen={rightSidebarOpen}
               rightSidebarWidth={rightSidebarWidth}
               triViewFloat={workbenchLayout.triViewFloat}

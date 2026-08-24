@@ -121,6 +121,7 @@ export function usePredictionPropagation({
           });
           // 源 task 框可能刚被分配 track_id, 失效让本帧高亮同步。
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+          queryClient.invalidateQueries({ queryKey: ["scene-timeline"] });
           await settleCrossFrameTarget(taskId, {
             taskId: resolution.taskId,
             annotationId: annotation.id,
@@ -175,6 +176,7 @@ export function usePredictionPropagation({
             queryKey: ["annotations", resolution.taskId],
           });
           queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+          queryClient.invalidateQueries({ queryKey: ["scene-timeline"] });
           await settleCrossFrameTarget(taskId, { taskId: resolution.taskId });
           pushToast({
             msg: `${items.length} 个目标已延续到帧 ${resolution.frameIndex}`,
@@ -214,6 +216,7 @@ export function usePredictionPropagation({
         );
         queryClient.invalidateQueries({ queryKey: ["annotations", targetTaskId] });
         queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+        queryClient.invalidateQueries({ queryKey: ["scene-timeline"] });
         await settleCrossFrameTarget(taskId, {
           taskId: targetTaskId,
           annotationId: annotation.id,
@@ -246,6 +249,7 @@ export function usePredictionPropagation({
         for (const tid of affectedTasks) {
           queryClient.invalidateQueries({ queryKey: ["annotations", tid] });
         }
+        queryClient.invalidateQueries({ queryKey: ["scene-timeline"] });
         if (annotations.length === 0) {
           pushToast({
             msg: `区间内中间帧均已有该目标的框(跳过 ${skipped_frames.length} 帧)`,

@@ -30,12 +30,11 @@
 
 [持续创建与持续自动拟合](../2026-08-24-v0.24.3-3d-continuous-creation.md) 已转为 v0.24.3 实施计划，不再属于 backlog。
 
-| 草案                                                                        | 独立结果                                       | 关键依赖                        |
-| --------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------- |
-| [scene 时间轴](2026-08-24-3d-scene-timeline-draft.md)                       | 只读场景状态层，可定位对象区间、断点与任务状态 | Scene / frame_index / track_id  |
-| [跨帧任务中心与 registration 跟踪](2026-08-24-3d-cross-frame-jobs-draft.md) | selected/all 显式、进度、取消、重试、失败帧    | scene 时间轴可作为主要消费面    |
-| [3D 专属质量流程](2026-08-24-3d-quality-workflow-draft.md)                  | 规则发现问题但不自动改真值，一键恢复现场       | scene 时间轴、稳定几何口径      |
-| [可信 LiDAR 导出](2026-08-24-lidar-trusted-export-draft.md)                 | 删除 KITTI / nuScenes 假数据，派生 2D 可审计   | 标定、pose、timestamp、track_id |
+| 草案                                                                        | 独立结果                                     | 关键依赖                        |
+| --------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------- |
+| [跨帧任务中心与 registration 跟踪](2026-08-24-3d-cross-frame-jobs-draft.md) | selected/all 显式、进度、取消、重试、失败帧  | scene 时间轴可作为主要消费面    |
+| [3D 专属质量流程](2026-08-24-3d-quality-workflow-draft.md)                  | 规则发现问题但不自动改真值，一键恢复现场     | scene 时间轴、稳定几何口径      |
+| [可信 LiDAR 导出](2026-08-24-lidar-trusted-export-draft.md)                 | 删除 KITTI / nuScenes 假数据，派生 2D 可审计 | 标定、pose、timestamp、track_id |
 
 ### 由合同或基线触发后再转定稿
 
@@ -49,6 +48,8 @@
 | [3D Ground Truth 与 Consensus](2026-08-24-3d-ground-truth-consensus-draft.md) | 可解释的对拍、即时反馈与多人一致性   | 3D 指标合同和质量定位流程稳定             |
 
 ## 共同研究依据
+
+- [`v0.24.4 · 3D Scene 时间轴 MVP`](../2026-08-24-v0.24.4-3d-scene-timeline.md) 已转为实施计划，不再属于 backlog。
 
 - [`docs/research/22-supervisely-cvat-workbench.md`](../../research/22-supervisely-cvat-workbench.md)：Supervisely / CVAT 工作台、教程、图片、GIF、视频与固定源码快照的深度调研。
 - [`docs/research/14-point-cloud-image-fusion.md`](../../research/14-point-cloud-image-fusion.md)：点云与图像联合标注、真值边界与平台差距。

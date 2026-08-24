@@ -130,6 +130,70 @@ async function expectCenterHitTarget(locator: Locator) {
 }
 
 test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
+  test("nuScenes mini Scene 时间轴切帧、恢复轨迹选择并可稳定折叠展开", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    const timelineRequests: string[] = [];
+    const annotationReads: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.endsWith("/scene-timeline")) timelineRequests.push(request.url());
+      if (request.method() === "GET" && /\/tasks\/[0-9a-f-]+\/annotations$/.test(url.pathname)) {
+        annotationReads.push(request.url());
+      }
+    });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${lidar.lidar_task_ids[0]}`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const timeline = page.getByTestId("three-d-scene-timeline");
+    await expect(timeline).toBeVisible({ timeout: 10_000 });
+    await expect(timeline).toContainText("nuScenes mini scene-0061");
+    await expect(page.getByTestId("scene-timeline-frame-0")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+
+    const firstCard = page.locator('[data-testid^="box-list-item-"]').first();
+    await firstCard.click({ position: { x: 12, y: 16 } });
+    await expect(timeline).toContainText("当前对象轨迹");
+    await expect(page.getByTestId("scene-timeline-track-frame-0")).toBeVisible();
+    await expect(page.getByTestId("scene-timeline-track-frame-1")).toBeVisible();
+
+    await page.getByTestId("scene-timeline-frame-1").click();
+    await expect(page).toHaveURL(new RegExp(`task=${lidar.lidar_task_ids[1]}`));
+    await expect(page.getByTestId("scene-timeline-frame-1")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+    await expect(page.locator('[data-testid^="box-list-item-"]').first()).toHaveClass(
+      /border-brand/,
+    );
+    await expect(timeline).toContainText("当前对象轨迹");
+
+    const toggle = page.getByTestId("scene-timeline-toggle");
+    await toggle.click();
+    await expect(page.getByTestId("scene-timeline-virtual-canvas")).toBeHidden();
+    await toggle.click();
+    await expect(page.getByTestId("scene-timeline-virtual-canvas")).toBeVisible();
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible();
+
+    expect(timelineRequests.length).toBeGreaterThan(0);
+    for (const requestUrl of timelineRequests) {
+      const url = new URL(requestUrl);
+      const start = Number(url.searchParams.get("start_frame"));
+      const end = Number(url.searchParams.get("end_frame"));
+      expect(end - start + 1).toBeLessThanOrEqual(200);
+    }
+    expect(annotationReads.length, "只应读取进入过的两个 task，不得逐帧 N+1").toBeLessThanOrEqual(
+      2,
+    );
+  });
+
   test("点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库", async ({ page, seed }) => {
     await seed.reset();
     const lidar = await seed.seedLidar();

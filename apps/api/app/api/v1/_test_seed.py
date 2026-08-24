@@ -619,10 +619,10 @@ def _make_nuscenes_profile_pcd_bytes() -> tuple[bytes, int]:
     return _binary_pcd_bytes(bytes(xyz), count), count
 
 
-def _make_test_pcd_bytes() -> tuple[
-    bytes, Literal["nuscenes_mini", "nuscenes_profile"], int
+def _make_test_pcd_frames() -> tuple[
+    list[bytes], Literal["nuscenes_mini", "nuscenes_profile"], int
 ]:
-    """优先取 seed 下载缓存的真实 nuScenes mini，CI 无数据时用同量级扫描兜底。"""
+    """优先取 seed 脚本下载的两个真实 nuScenes mini 帧，CI 无数据时兜底。"""
     xdg_cache = os.environ.get("XDG_CACHE_HOME")
     cache_base = Path(xdg_cache).expanduser() if xdg_cache else Path.home() / ".cache"
     lidar_frames = sorted(
@@ -632,10 +632,12 @@ def _make_test_pcd_bytes() -> tuple[
         ).glob("*.pcd.bin")
     )
     if lidar_frames:
-        payload, count = _nuscenes_lidar_to_pcd(lidar_frames[0])
-        return payload, "nuscenes_mini", count
+        converted = [_nuscenes_lidar_to_pcd(path) for path in lidar_frames[:2]]
+        if len(converted) == 1:
+            converted.append(converted[0])
+        return [payload for payload, _ in converted], "nuscenes_mini", converted[0][1]
     payload, count = _make_nuscenes_profile_pcd_bytes()
-    return payload, "nuscenes_profile", count
+    return [payload, payload], "nuscenes_profile", count
 
 
 @router.post(
@@ -649,7 +651,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     from sqlalchemy import select
 
     from app.db.models.annotation import Annotation
-    from app.db.models.dataset import Dataset, DatasetItem
+    from app.db.models.dataset import Dataset, DatasetItem, Scene
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
     from app.db.models.task import Task
@@ -715,17 +717,22 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         await _try_delete(
             "DELETE FROM projects WHERE id = ANY(:pids)", {"pids": old_pids}
         )
+    # Dataset 不归属于 Project，不能依赖删项目级联；清掉上次 seed 遗留的 items/scene。
+    await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-LDR-%'")
     await db.flush()
 
-    # 上传测试点云到 datasets_bucket(presign GET 才能 200,前端 loadPcd 才成功)。
+    # 上传两个独立帧到 datasets_bucket(presign GET 才能 200,前端 loadPcd 才成功)。
     suffix = secrets.token_hex(3)
-    pcd_key = f"e2e/lidar/{suffix}.pcd"
-    pcd_bytes, pcd_source, pcd_point_count = _make_test_pcd_bytes()
-    storage_service.client.put_object(
-        Bucket=storage_service.datasets_bucket,
-        Key=pcd_key,
-        Body=pcd_bytes,
-    )
+    pcd_frames, pcd_source, pcd_point_count = _make_test_pcd_frames()
+    pcd_keys = []
+    for idx, pcd_bytes in enumerate(pcd_frames):
+        pcd_key = f"e2e/lidar/{suffix}-{idx}.pcd"
+        storage_service.client.put_object(
+            Bucket=storage_service.datasets_bucket,
+            Key=pcd_key,
+            Body=pcd_bytes,
+        )
+        pcd_keys.append(pcd_key)
     camera_key = f"e2e/lidar/{suffix}-camera-front.svg"
     camera_svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" '
@@ -805,6 +812,17 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     db.add(dataset)
     await db.flush()
 
+    scene = Scene(
+        display_id=f"SCN-E2E-{suffix}",
+        dataset_id=dataset.id,
+        name="nuScenes mini scene-0061",
+        source_format="nuscenes",
+        source_metadata={"fixture_source": pcd_source},
+        created_by=admin.id,
+    )
+    db.add(scene)
+    await db.flush()
+
     calibration = {
         "extrinsic": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
         "intrinsic": [100, 0, 320, 0, 100, 240, 0, 0, 1],
@@ -814,8 +832,10 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         lidar_item = DatasetItem(
             dataset_id=dataset.id,
             file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
-            file_path=pcd_key,
+            file_path=pcd_keys[idx],
             file_type="point_cloud",
+            scene_id=scene.id,
+            frame_index=idx,
         )
         camera_item = DatasetItem(
             dataset_id=dataset.id,
@@ -825,6 +845,8 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             width=640,
             height=480,
             metadata_={"calibration": calibration},
+            scene_id=scene.id,
+            frame_index=idx,
         )
         camera_side_item = DatasetItem(
             dataset_id=dataset.id,
@@ -834,6 +856,8 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             width=640,
             height=480,
             metadata_={"calibration": calibration},
+            scene_id=scene.id,
+            frame_index=idx,
         )
         db.add_all([lidar_item, camera_item, camera_side_item])
         await db.flush()
@@ -844,7 +868,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             dataset_item_id=lidar_item.id,
             status="pending",
             file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
-            file_path=pcd_key,
+            file_path=pcd_keys[idx],
             file_type="point_cloud",
             batch_id=batch.id,
         )
@@ -874,6 +898,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
                 annotation_type="box_3d",
                 tool_unit_id="lidar_box_3d",
                 class_name="car",
+                track_id="trk_e2e_lidar_car",
                 geometry={
                     "type": "box_3d",
                     "center": [1.0, 0.0, 1.0],

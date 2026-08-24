@@ -557,6 +557,12 @@
 | POST | `/{task_id}/review/approve` |
 | POST | `/{task_id}/review/reject` |
 
+## `tasks/scene_timeline.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/scene-timeline` |
+
 ## `tasks/video.py`
 
 | Method | Path |
@@ -634,4 +640,4 @@
 
 ---
 
-_共 59 模块 / 357 路由_
+_共 60 模块 / 358 路由_

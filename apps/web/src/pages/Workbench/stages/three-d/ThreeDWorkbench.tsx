@@ -113,6 +113,7 @@ import { usePsrPatchPipeline } from "./usePsrPatchPipeline";
 import { useCameraPanels } from "./useCameraPanels";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import { useElementStyle } from "@/components/ui/useElementStyle";
+import { SceneTimeline } from "./SceneTimeline";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
 const ROOT = "flex flex-col size-full min-h-0 bg-background";
@@ -234,6 +235,8 @@ interface ThreeDWorkbenchProps {
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
   /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。v0.21.2 · 按 track_id 认链。 */
   onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
+  /** Scene 时间轴导航，服从壳层的未保存保护。 */
+  onNavigateSceneFrame: (targetTaskId: string) => Promise<boolean>;
   /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -263,6 +266,7 @@ export function ThreeDWorkbench({
   onCrossFramePropagateBatch,
   onCrossFramePropagateToTask,
   onCrossFrameInterpolate,
+  onNavigateSceneFrame,
   rightSidebarOpen,
   rightSidebarWidth,
   triViewFloat,
@@ -640,6 +644,30 @@ export function ThreeDWorkbench({
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
+  const pendingTimelineSelectionRef = useRef<{
+    taskId: string;
+    annotationId: string | null;
+  } | null>(null);
+  const handleTimelineNavigate = useCallback(
+    async (targetTaskId: string, annotationId: string | null) => {
+      pendingTimelineSelectionRef.current = { taskId: targetTaskId, annotationId };
+      const allowed = await onNavigateSceneFrame(targetTaskId);
+      if (!allowed) pendingTimelineSelectionRef.current = null;
+      return allowed;
+    },
+    [onNavigateSceneFrame],
+  );
+  useEffect(() => {
+    const pending = pendingTimelineSelectionRef.current;
+    if (!pending || pending.taskId !== taskId || !annotations) return;
+    pendingTimelineSelectionRef.current = null;
+    if (
+      pending.annotationId &&
+      annotations.some((annotation) => annotation.id === pending.annotationId)
+    ) {
+      onSelectBox(pending.annotationId);
+    }
+  }, [annotations, onSelectBox, taskId]);
   const selectedBoxIds = useMemo(
     () => selectedIds.filter((id) => boxes.some((b) => b.id === id)),
     [selectedIds, boxes],
@@ -2815,6 +2843,11 @@ export function ThreeDWorkbench({
           </div>
         )}
       </div>
+      <SceneTimeline
+        taskId={taskId}
+        trackId={selectedAnn?.track_id ?? null}
+        onNavigateFrame={handleTimelineNavigate}
+      />
     </div>
   );
 }

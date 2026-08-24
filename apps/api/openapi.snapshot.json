@@ -23846,6 +23846,194 @@
         "title": "SceneOut",
         "type": "object"
       },
+      "SceneTimelineFrameSummary": {
+        "properties": {
+          "annotation_count": {
+            "default": 0,
+            "title": "Annotation Count",
+            "type": "integer"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "selected_track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneTimelineTrackOccurrence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unavailable",
+              "missing"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Status"
+          }
+        },
+        "required": [
+          "frame_index",
+          "state"
+        ],
+        "title": "SceneTimelineFrameSummary",
+        "type": "object"
+      },
+      "SceneTimelineResponse": {
+        "description": "3D Scene 时间轴窗口摘要。start/end 均为包含端点。",
+        "properties": {
+          "current_frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Frame Index"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTimelineFrameSummary"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "populated_frame_count": {
+            "default": 0,
+            "title": "Populated Frame Count",
+            "type": "integer"
+          },
+          "scene_end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene End Frame"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "scene_start_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Start Frame"
+          },
+          "summary_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Summary Version",
+            "type": "integer"
+          },
+          "window_end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Frame"
+          },
+          "window_start_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Frame"
+          }
+        },
+        "title": "SceneTimelineResponse",
+        "type": "object"
+      },
+      "SceneTimelineTrackOccurrence": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "source",
+          "class_name"
+        ],
+        "title": "SceneTimelineTrackOccurrence",
+        "type": "object"
+      },
       "SceneUpdate": {
         "properties": {
           "name": {
@@ -49882,6 +50070,93 @@
           }
         ],
         "summary": "Reject Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-timeline": {
+      "get": {
+        "description": "返回当前 task 所属 3D Scene 的只读窗口摘要。",
+        "operationId": "get_task_scene_timeline_api_v1_tasks__task_id__scene_timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_frame",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Start Frame",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_frame",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "End Frame",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Track Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTimelineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Scene Timeline",
         "tags": [
           "tasks"
         ]

@@ -6333,6 +6333,7 @@ export function useWorkbenchShellModel({
         onCrossFramePropagateBatch: crossFramePropagateBatch,
         onCrossFramePropagateToTask: crossFramePropagateToTask,
         onCrossFrameInterpolate: crossFrameInterpolate,
+        onNavigateSceneFrame: navigateToCrossFrameTask,
         rightSidebarOpen: rightOpen,
         rightSidebarWidth: rightOpen ? rightPx : 0,
         workbenchLayout: s.workbenchLayout,

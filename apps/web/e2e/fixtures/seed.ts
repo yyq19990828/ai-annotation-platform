@@ -114,7 +114,7 @@ export interface ScreenshotSeedCatalog {
     Partial<Record<"large_image_demo", ScreenshotCatalogProject>>;
 }
 
-/** 点云 E2E fixture：优先使用 seed 用户缓存中的 nuScenes mini 真实 LIDAR_TOP 单帧；
+/** 点云 E2E fixture：优先使用 seed 用户缓存中的两个 nuScenes mini 真实 LIDAR_TOP 帧；
  *  CI 未安装外部数据时回落到 32 线、同量级点数的确定性扫描。 */
 export interface SeedLidarData {
   lidar_project_id: string;

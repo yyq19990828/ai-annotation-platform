@@ -1,0 +1,115 @@
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.v1.tasks._shared import (
+    _assert_task_visible,
+    _load_task_or_404,
+    _visible_task_ids,
+)
+from app.db.models.project import Project
+from app.db.models.user import User
+from app.deps import get_current_user, get_db
+from app.schemas.scene import (
+    SceneTimelineFrameSummary,
+    SceneTimelineResponse,
+    SceneTimelineTrackOccurrence,
+)
+from app.services.scene import (
+    get_scene_timeline_annotation_summaries,
+    get_scene_timeline_window,
+)
+
+
+router = APIRouter()
+_MAX_WINDOW_FRAMES = 200
+
+
+@router.get(
+    "/{task_id}/scene-timeline",
+    response_model=SceneTimelineResponse,
+)
+async def get_task_scene_timeline(
+    task_id: uuid.UUID,
+    start_frame: int = Query(..., ge=0),
+    end_frame: int = Query(..., ge=0),
+    track_id: str | None = Query(default=None, min_length=1, max_length=64),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """返回当前 task 所属 3D Scene 的只读窗口摘要。"""
+    if end_frame < start_frame:
+        raise HTTPException(
+            status_code=422,
+            detail="end_frame must be greater than or equal to start_frame",
+        )
+    if end_frame - start_frame + 1 > _MAX_WINDOW_FRAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"scene timeline window cannot exceed {_MAX_WINDOW_FRAMES} frames",
+        )
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    window = await get_scene_timeline_window(
+        db, task=task, start_frame=start_frame, end_frame=end_frame
+    )
+    if window is None:
+        return SceneTimelineResponse()
+
+    project = await db.get(Project, task.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    all_task_ids = {entry.task_id for entry in window.frame_tasks.values()}
+    visible_task_ids = await _visible_task_ids(
+        db, project, current_user, list(all_task_ids)
+    )
+    annotation_summaries = await get_scene_timeline_annotation_summaries(
+        db, task_ids=visible_task_ids, track_id=track_id
+    )
+
+    frames: list[SceneTimelineFrameSummary] = []
+    for frame_index in range(start_frame, end_frame + 1):
+        frame_task = window.frame_tasks.get(frame_index)
+        if frame_task is None:
+            frames.append(
+                SceneTimelineFrameSummary(frame_index=frame_index, state="missing")
+            )
+            continue
+        if frame_task.task_id not in visible_task_ids:
+            frames.append(
+                SceneTimelineFrameSummary(frame_index=frame_index, state="unavailable")
+            )
+            continue
+
+        summary = annotation_summaries.get(frame_task.task_id)
+        occurrence = None
+        if summary and summary.selected_annotation_id is not None:
+            occurrence = SceneTimelineTrackOccurrence(
+                annotation_id=summary.selected_annotation_id,
+                source=summary.selected_source or "manual",
+                class_name=summary.selected_class_name or "",
+            )
+        frames.append(
+            SceneTimelineFrameSummary(
+                frame_index=frame_index,
+                state="available",
+                task_id=frame_task.task_id,
+                task_status=frame_task.status,
+                annotation_count=summary.annotation_count if summary else 0,
+                selected_track=occurrence,
+            )
+        )
+
+    return SceneTimelineResponse(
+        scene_id=window.scene_id,
+        scene_name=window.scene_name,
+        current_frame_index=window.current_frame_index,
+        scene_start_frame=window.scene_start_frame,
+        scene_end_frame=window.scene_end_frame,
+        populated_frame_count=window.populated_frame_count,
+        window_start_frame=start_frame,
+        window_end_frame=end_frame,
+        frames=frames,
+    )

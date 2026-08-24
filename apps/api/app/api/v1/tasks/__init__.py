@@ -10,6 +10,7 @@ from app.api.v1.tasks import (
     mask_mutations,
     predictions,
     review,
+    scene_timeline,
     video,
 )
 from app.api.v1.tasks import list as task_list
@@ -26,6 +27,7 @@ from app.api.v1.tasks._shared import (
 # 且对外路径与拆分前完全一致(/tasks 根列表端点)。
 router = APIRouter()
 router.include_router(task_list.router, prefix="/tasks")
+router.include_router(scene_timeline.router, prefix="/tasks")
 router.include_router(video.router, prefix="/tasks")
 router.include_router(image_pyramid.router, prefix="/tasks")
 router.include_router(mask_capabilities.router, prefix="/tasks")

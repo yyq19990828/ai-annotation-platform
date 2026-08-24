@@ -146,6 +146,7 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
         );
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
       // B-20 接续：首条标注会把 task 从 pending 转 in_progress，需刷新批次进度
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -177,6 +178,7 @@ export function useDeleteAnnotation(taskId: string | undefined, videoSegmentId?:
       qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
     },
   });
 }
@@ -238,6 +240,7 @@ export function useUpdateAnnotation(
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey });
+      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
       // 通知桥 (usePendingGeom): mutation 已 settle (成功或失败), 主动清 pending override,
       // 不依赖被动 800ms 兜底 — 避免慢网 (> 800ms) 回滚后 pending 已 drop 而画面闪到旧几何。
       const annotationId = (vars as { annotationId?: string } | undefined)?.annotationId;

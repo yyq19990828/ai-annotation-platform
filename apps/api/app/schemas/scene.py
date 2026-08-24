@@ -4,6 +4,7 @@
 """
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -54,6 +55,36 @@ class NeighborsResponse(BaseModel):
     scene_total_frames: int
     prev: list[NeighborInfo] = Field(default_factory=list)
     next: list[NeighborInfo] = Field(default_factory=list)
+
+
+class SceneTimelineTrackOccurrence(BaseModel):
+    annotation_id: UUID
+    source: str
+    class_name: str
+
+
+class SceneTimelineFrameSummary(BaseModel):
+    frame_index: int
+    state: Literal["available", "unavailable", "missing"]
+    task_id: UUID | None = None
+    task_status: str | None = None
+    annotation_count: int = 0
+    selected_track: SceneTimelineTrackOccurrence | None = None
+
+
+class SceneTimelineResponse(BaseModel):
+    """3D Scene 时间轴窗口摘要。start/end 均为包含端点。"""
+
+    summary_version: Literal[1] = 1
+    scene_id: UUID | None = None
+    scene_name: str | None = None
+    current_frame_index: int | None = None
+    scene_start_frame: int | None = None
+    scene_end_frame: int | None = None
+    populated_frame_count: int = 0
+    window_start_frame: int | None = None
+    window_end_frame: int | None = None
+    frames: list[SceneTimelineFrameSummary] = Field(default_factory=list)
 
 
 class InferenceResult(BaseModel):

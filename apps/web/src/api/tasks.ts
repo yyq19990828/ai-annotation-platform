@@ -14,7 +14,11 @@ import type {
   VideoFrameOut,
   VideoFramePrefetchResponse,
 } from "@/types";
-import type { ImagePyramidRetryResponse, TaskMaskCapabilitiesResponse } from "./generated";
+import type {
+  ImagePyramidRetryResponse,
+  SceneTimelineResponse,
+  TaskMaskCapabilitiesResponse,
+} from "./generated";
 import type {
   ImagePyramidAssetRequest,
   ImagePyramidAssetUrlsResponse,
@@ -209,6 +213,21 @@ export const tasksApi = {
   // v0.14.0 · scene 内前后 k 个邻居 task(跨帧导航 backing)。
   getNeighbors: (id: string, k = 1) =>
     apiClient.get<NeighborsResponse>(`/tasks/${id}/neighbors?k=${k}`),
+
+  getSceneTimeline: (
+    id: string,
+    startFrame: number,
+    endFrame: number,
+    trackId?: string | null,
+    init?: RequestInit,
+  ) => {
+    const query = new URLSearchParams({
+      start_frame: String(startFrame),
+      end_frame: String(endFrame),
+    });
+    if (trackId) query.set("track_id", trackId);
+    return apiClient.silentGet<SceneTimelineResponse>(`/tasks/${id}/scene-timeline?${query}`, init);
+  },
 
   // v0.15.17 · 一次性拉 ±k 帧邻帧标注(替代 2k 条并发 getAnnotations + client 过滤)。
   // v0.21.2 · trackId 给定 → 服务端只回该 track(scope=selected);省略 → 回全部(scope=all)。
