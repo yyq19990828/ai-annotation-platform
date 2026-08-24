@@ -137,7 +137,16 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
 
 实现：`api/v1/tasks/video.py` 用 `get_linked_items` 取 link → 主点云（无 `primary_lidar` link 时回退 `task.file_path`）+ 各相机 presign + `metadata_["calibration"]`（非法降级 None）。
 
-前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`(`PCDLoader` + OrbitControls + 高度上色 + 大点云抽稀 + dispose 生命周期),相机图只读平铺。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
+前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`，由持久 Worker 解析 PCD、归一化轴向、抽稀并生成高度色；主视图负责 OrbitControls、框图层和资源生命周期。默认使用 Legacy WebGL2，设置中的本地实验开关可让主视图与三视图共同使用异步 WebGPU renderer、实例化点精灵和相机纹理直采样；切帧时旧实例立即归零，场景级实例缓冲与固定六路相机采样 TSL 拓扑继续复用，只更新点属性、纹理和标定 uniform。实验路径只生成 GPU 需要的 depth-only 遮挡栅格，并在 8 MiB / 8-key LRU 中与相邻帧预取合并，Legacy 和 WebGL2 fallback 不触发该预取。初始化失败或 device lost 会回退 Legacy。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
+
+开发 seed 的 nuScenes 导入器把每点五个 float 的 `.pcd.bin` 转为只保留 XYZ 的 little-endian binary PCD，并在 dataset source metadata 中记录 `pcd_encoding=binary_xyz_f32`。对缺少该标记的既有 scene 再次执行 seed 时，导入器会按 `frame_index` 原位覆盖点云对象、同步大小与内容哈希，但不会重建 task 或 annotation。Scene 时间轴在点击帧后先等待该目标帧的 PCD、相机位图及实验路径深度资源预取完成，再开始任务导航；预取失败会被吞掉并继续导航，不改变可用性。
+
+渲染链在 geometry 与相机颜色跨过实际绘制边界后写入 `aap:pointcloud:geometry-ready` 和
+`aap:pointcloud:camera-color-ready` Performance mark，便于在 DevTools trace 中区分 PCD/geometry
+等待与相机上色等待。开发环境可用 `pointcloud:renderer-bench` 对同一 nuScenes Scene 分别刷新
+Legacy 与实验 renderer；必须同时提供 `POINTCLOUD_BENCH_PROJECT_ID` 和
+`POINTCLOUD_BENCH_TASK_ID`。报告中的 `runValidity` 只说明样本可信，只有 `promotionGate.passed`
+才表示本机样本达到推广门；实验开关仍需跨 OS/GPU 资格后才能转为默认功能。
 
 > 只读;3D 框标注(v0.13.3)与标定驱动投影联动(v0.13.4)后续。
 

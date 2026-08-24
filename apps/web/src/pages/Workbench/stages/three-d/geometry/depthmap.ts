@@ -28,6 +28,13 @@ export interface DepthRaster {
   maxDepth: number;
 }
 
+/** WebGPU camera colorization only needs the nearest depth per low-resolution cell. */
+export interface GpuDepthRaster {
+  cols: number;
+  rows: number;
+  depth: Float32Array;
+}
+
 /** 单点投影到相机:{u, v, depth};depth = 相机系 z(w)。与 colorize.projectOne 同。 */
 function projectOne(
   x: number,
@@ -97,6 +104,34 @@ export function buildDepthRaster(
   }
 
   return { cols, rows, cell, width, height, depth, x, y, z, u, v, minDepth, maxDepth };
+}
+
+/**
+ * Build the compact depth texture payload used by GPU camera colorization.
+ * Empty cells use a finite sentinel so the main thread can upload the array directly.
+ */
+export function buildGpuDepthRaster(
+  positions: Float32Array,
+  calib: SensorCalibration,
+  width: number,
+  height: number,
+  cell = 8,
+): GpuDepthRaster {
+  const cols = Math.max(1, Math.ceil(width / cell));
+  const rows = Math.max(1, Math.ceil(height / cell));
+  const depth = new Float32Array(cols * rows).fill(1e20);
+
+  const n = (positions.length / 3) | 0;
+  for (let i = 0; i < n; i += 1) {
+    const p = projectOne(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2], calib);
+    if (p.depth <= 0 || p.u < 0 || p.u >= width || p.v < 0 || p.v >= height) continue;
+    const col = Math.min(cols - 1, Math.floor(p.u / cell));
+    const row = Math.min(rows - 1, Math.floor(p.v / cell));
+    const index = row * cols + col;
+    if (p.depth < depth[index]) depth[index] = p.depth;
+  }
+
+  return { cols, rows, depth };
 }
 
 /**

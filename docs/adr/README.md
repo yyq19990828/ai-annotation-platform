@@ -43,6 +43,7 @@
 - [0009](0009-task-events-table-and-partition.md) — task_events 表与按月分区方案
 - [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）
 - [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
+- [0068](0068-experimental-webgpu-pointcloud-renderer.md) — 3D 点云采用默认关闭的 WebGPU 实验渲染路径
 
 ### 已采纳（Accepted，归档）
 

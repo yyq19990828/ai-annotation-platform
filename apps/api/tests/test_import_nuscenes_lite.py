@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 from pathlib import Path
 
@@ -245,6 +246,7 @@ async def test_import_nuscenes_two_scenes(
         "format": "nuscenes",
         "version": "v1.0-mini",
         "scenes": ["scene-0000", "scene-0001"],
+        "pcd_encoding": "binary_xyz_f32",
     }
     assert project.display_id == "P-PC-TEST"
     assert project.name == "nuScenes test seed"
@@ -499,10 +501,73 @@ async def test_import_nuscenes_frame_modes_axis_and_points(
             for _, k in fake_client.objects
             if f"{dataset_name}/" in k and k.endswith(".pcd")
         )
-        text = fake_client.objects[(storage_service.datasets_bucket, key)].decode()
-        data_line = text.split("DATA ascii\n", 1)[1].splitlines()[0]
-        x, y, z = data_line.split()
-        return (float(x), float(y), float(z))
+        payload = fake_client.objects[(storage_service.datasets_bucket, key)]
+        marker = b"DATA binary\n"
+        offset = payload.index(marker) + len(marker)
+        return tuple(np.frombuffer(payload[offset : offset + 12], dtype="<f4"))
 
     assert first_point("nu-lite-ego") == pytest.approx((11.0, 22.0, 33.0))
     assert first_point("nu-lite-sensor") == pytest.approx((1.0, 2.0, 3.0))
+
+
+async def test_existing_ascii_scene_is_upgraded_in_place(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=1)
+    fake_client = _FakeS3Client()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+
+    first = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-upgrade",
+        owner_id=user.id,
+    )
+    dataset = await db_session.get(Dataset, first["dataset_id"])
+    item = (
+        await db_session.execute(
+            select(DatasetItem)
+            .where(DatasetItem.dataset_id == dataset.id)
+            .where(DatasetItem.file_type == "point_cloud")
+        )
+    ).scalar_one()
+    legacy = (
+        b"# .PCD v0.7 - Point Cloud Data file format\n"
+        b"VERSION 0.7\nFIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\n"
+        b"WIDTH 3\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS 3\nDATA ascii\n"
+        b"1 2 3\n4 5 6\n7 8 9\n"
+    )
+    fake_client.objects[(storage_service.datasets_bucket, item.file_path)] = legacy
+    item.file_size = len(legacy)
+    item.content_hash = hashlib.sha256(legacy).hexdigest()
+    metadata = dict(dataset.metadata_ or {})
+    source = dict(metadata["source"])
+    source.pop("pcd_encoding", None)
+    metadata["source"] = source
+    dataset.metadata_ = metadata
+    await db_session.flush()
+
+    second = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-upgrade",
+        owner_id=user.id,
+    )
+
+    upgraded = fake_client.objects[(storage_service.datasets_bucket, item.file_path)]
+    assert second["scenes"] == [
+        {
+            "name": "scene-0000",
+            "frames": 1,
+            "skipped": True,
+            "upgraded_point_clouds": 1,
+        }
+    ]
+    assert b"DATA binary\n" in upgraded[:200]
+    assert item.file_size == len(upgraded)
+    assert item.content_hash == hashlib.sha256(upgraded).hexdigest()
+    assert dataset.metadata_["source"]["pcd_encoding"] == "binary_xyz_f32"

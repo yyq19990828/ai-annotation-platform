@@ -230,6 +230,20 @@ Supervisely 的 2D 与 [Video 3.0](https://docs.supervisely.com/labeling/labelin
 
 先建立可重复基准，再选择 octree、固定网格或其他索引。没有数据集、机器、相机轨迹、显存与编辑延迟口径的“120 FPS”没有决策价值。
 
+### 3.11 WebGPU 与点云颜色路径的补充核验
+
+前述调研已经记录了 Supervisely 使用 WebGPU，但没有拆开“渲染大点云”和“相机给点云上色”这两个问题。补充核验后的证据边界如下：
+
+| 对象        | 公开实现能确认的事实                                                                                                                                                                                                                                                                                                                                                                                 | 不能确认的部分                                                                                              | 可迁移机制                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Supervisely | [性能升级文档](https://github.com/supervisely/docs/blob/846b10b4a903300dc4cffc7cf785ad95723a0cb4/labeling/3D-Point-Clouds/3D-point-cloud-episodes-2/3D-point-cloud-optimizations.md)明确称渲染管线从 WebGL 迁到 WebGPU，颜色模式、点大小和对象重着色直接在 GPU 完成；[3D 总览](https://docs.supervisely.com/labeling/labeling-toolbox/3d-point-clouds)说明大场景切成 3D tiles，只加载可见与邻近 tile | 完整前端闭源，无法确认相机 JPEG/PNG 是否在 shader 中逐点直接采样，也无法核对标定、遮挡、fallback 与显存预算 | 显示属性留在 GPU；大场景把可见性加载和渲染后端分开治理               |
+| CVAT        | 固定快照的 [`cvat-canvas3d`](https://github.com/cvat-ai/cvat/blob/cd392352e76fc314a4cb8c271ad18097224afb77/cvat-canvas3d/src/typescript/canvas3dView.ts)使用 Three.js `WebGLRenderer`、`PCDLoader`、`PointsMaterial` 和 PCD vertex color；透视与三个正交视图分别建 renderer                                                                                                                          | 没有 WebGPU 依赖，也没有标定相机给点云逐点上色的公开路径；contextual images 只是参考图                      | WebGL 路线仍可提供确定的 cuboid 编辑；不能拿它回答六相机上色性能问题 |
+| Potree      | [公开 point-cloud vertex shader](https://github.com/potree/potree/blob/develop/src/materials/shaders/pointcloud.vs)在点材质中查询 visible-node、classification、gradient 与 shadow-map texture                                                                                                                                                                                                       | 不是标注工作台，也没有本项目的多相机选择和标定合同                                                          | 自定义点材质直接采样 texture 是成熟的 GPU 显示模式                   |
+
+Three.js 当前[官方 WebGPU 迁移说明](https://threejs.org/manual/en/webgpurenderer)明确：`WebGPURenderer` 要求异步初始化，现有自定义 shader 必须迁到 TSL/node material，并可在 WebGPU 不可用时使用 WebGL2 backend；官方也提醒部分场景不一定比 `WebGLRenderer` 更快。[ImageBitmapLoader](https://threejs.org/docs/pages/ImageBitmapLoader.html)提供异步、面向 texture 的图片准备路径。当前版本的 `PointsNodeMaterial` 还限制 WebGPU point primitive 为 1 pixel，因此保留可调点大小需要实例化 sprite/quad，不能把现有 `Points` 原样换 renderer。
+
+基于当前产品对切帧和选框卡顿的容忍度，平台已提供完整 3D WebGPU 实验 Pilot：主视图与三视图共同迁移，TSL 直接采样相机 texture，并保留默认关闭的 Legacy 对照。此处仍是待实测的产品决策，不把 Supervisely 的厂商数据当成本项目收益；只有真实 nuScenes A/B 和跨设备资格通过后，才另行讨论转为正常功能。
+
 ---
 
 ## 4. CVAT：值得拆解的编辑器确定性
@@ -423,7 +437,7 @@ CVAT 的 QA 体系是本次调研里最完整的之一：
 | 2D GT 与即时反馈        | ◐           | ●                | ◐                            | 可复用现有质量体系演进               |
 | 2D Consensus            | ●           | ●                | ◐ 数据基础在建设中           | 不与 3D 第一版强绑定                 |
 | 空间 tiling             | ●           | 未作为当前主卖点 | ○                            | P1 性能基础设施                      |
-| WebGPU 3D               | ●           | ○                | ○                            | 先有基准和瓶颈证据，再决定           |
+| WebGPU 3D               | ●           | ○                | ◐ 实验 Pilot 已实现          | 默认关闭，以真实 A/B 决定是否转正    |
 
 ---
 
@@ -525,7 +539,7 @@ CVAT 的 QA 体系是本次调研里最完整的之一：
 3. 设计离线 tile manifest，包含包围盒、点数、属性、层级和字节范围。
 4. 用视锥和屏幕误差选择 tile，预取相邻 tile，在 Worker 解码。
 5. 对编辑中的点索引建立“全局点 ID 到 tile 局部索引”映射，避免点掩码失真。
-6. 只有在 WebGL 路线达到明确瓶颈后，再评估 WebGPU。
+6. 用默认关闭的完整 WebGPU Pilot 与 Legacy 路径做同机 A/B；只有渲染、选框和切帧均达到门槛后才讨论转正。
 
 验收标准不应写成“达到厂商 120 FPS”，而应写成：同一机器、同一轨迹下，5,000 万点数据首屏无需完整下载，镜头移动峰值内存受控，选框与掩码操作没有因 tile 换入而丢点。
 

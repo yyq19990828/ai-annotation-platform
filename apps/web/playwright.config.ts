@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
 const rasterMaskCreateEnabled = rasterMaskMatrix === "native";
 const chromiumChannel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL;
+const pointcloudWebGpuQualification = process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1";
 const configDir = dirname(fileURLToPath(import.meta.url));
 const isCI = Boolean(process.env.CI);
 const useIsolatedServers = !isCI || Boolean(rasterMaskMatrix);
@@ -77,12 +78,20 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         ...(chromiumChannel ? { channel: chromiumChannel } : {}),
         launchOptions: {
-          args: [
-            "--use-gl=angle",
-            "--use-angle=swiftshader",
-            "--enable-unsafe-swiftshader",
-            "--ignore-gpu-blocklist",
-          ],
+          args: pointcloudWebGpuQualification
+            ? [
+                "--enable-unsafe-webgpu",
+                "--enable-features=Vulkan",
+                "--use-angle=vulkan",
+                "--disable-vulkan-surface",
+                "--ignore-gpu-blocklist",
+              ]
+            : [
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
+                "--enable-unsafe-swiftshader",
+                "--ignore-gpu-blocklist",
+              ],
         },
       },
     },

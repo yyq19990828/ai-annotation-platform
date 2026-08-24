@@ -31,6 +31,8 @@ import { prefetchPointCloudFrameAssets } from "./pointCloudAssetCache";
 interface SceneTimelineProps {
   taskId: string | null;
   trackId: string | null;
+  prefetchDepthRasters?: boolean;
+  prefetchDecimateThreshold?: number;
   onNavigateFrame: (taskId: string, annotationId: string | null) => Promise<boolean>;
 }
 
@@ -145,7 +147,13 @@ function TimelineCell({
   );
 }
 
-export function SceneTimeline({ taskId, trackId, onNavigateFrame }: SceneTimelineProps) {
+export function SceneTimeline({
+  taskId,
+  trackId,
+  prefetchDepthRasters = false,
+  prefetchDecimateThreshold,
+  onNavigateFrame,
+}: SceneTimelineProps) {
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -208,36 +216,48 @@ export function SceneTimeline({ taskId, trackId, onNavigateFrame }: SceneTimelin
 
   const prefetchFrame = useCallback(
     (summary: SceneTimelineFrameSummary) => {
-      if (summary.state !== "available" || !summary.task_id || summary.task_id === taskId) return;
-      void queryClient
+      if (summary.state !== "available" || !summary.task_id || summary.task_id === taskId) {
+        return Promise.resolve();
+      }
+      return queryClient
         .fetchQuery({
           queryKey: ["task-point-cloud-manifest", summary.task_id],
           queryFn: () => tasksApi.getPointCloudManifest(summary.task_id!),
           staleTime: 5 * 60 * 1000,
         })
-        .then(prefetchPointCloudFrameAssets)
+        .then((manifest) =>
+          prefetchPointCloudFrameAssets(manifest, {
+            depthRasters: prefetchDepthRasters,
+            ...(prefetchDecimateThreshold === undefined
+              ? {}
+              : { decimateThreshold: prefetchDecimateThreshold }),
+          }),
+        )
         .catch(() => {});
     },
-    [queryClient, taskId],
+    [prefetchDecimateThreshold, prefetchDepthRasters, queryClient, taskId],
   );
 
   useEffect(() => {
     if (!data || currentFrame == null) return;
-    const adjacent = (data.frames ?? []).filter(
-      (frame) => Math.abs(frame.frame_index - currentFrame) === 1,
-    );
-    // Let the active frame finish first, then warm the two most likely navigation targets.
-    const timeout = window.setTimeout(() => {
-      adjacent.forEach(prefetchFrame);
-    }, 800);
-    return () => window.clearTimeout(timeout);
+    const frames = data.frames ?? [];
+    const next = frames.find((frame) => frame.frame_index === currentFrame + 1);
+    if (next) void prefetchFrame(next);
   }, [currentFrame, data, prefetchFrame]);
 
   const handleNavigate = async (summary: SceneTimelineFrameSummary) => {
     if (!summary.task_id || summary.task_id === taskId) return;
     setNavigatingTaskId(summary.task_id);
     try {
-      await onNavigateFrame(summary.task_id, summary.selected_track?.annotation_id ?? null);
+      await prefetchFrame(summary);
+      const allowed = await onNavigateFrame(
+        summary.task_id,
+        summary.selected_track?.annotation_id ?? null,
+      );
+      if (allowed) {
+        const following = frameByIndex.get(summary.frame_index + 1);
+        if (following) void prefetchFrame(following);
+      }
     } finally {
       setNavigatingTaskId(null);
     }

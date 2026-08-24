@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SensorCalibration } from "@/types";
 import type { CameraSample } from "./colorize";
 import { colorizePointsAsync, colorizePointsOnMainThread } from "./pointcloudCompute";
+import { PointCloudComputeSession } from "./pointCloudComputeSession";
 
 const calib: SensorCalibration = {
   extrinsic: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
@@ -67,6 +68,40 @@ describe("colorizePointsAsync", () => {
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PointCloudComputeSession", () => {
+  it("reuses one worker across requests until the workbench session is disposed", async () => {
+    const factory = vi.fn();
+    const worker = {
+      postMessage: vi.fn((request: { reqId: number; kind: string }) => {
+        queueMicrotask(() => {
+          worker.onmessage?.({
+            data: {
+              reqId: request.reqId,
+              ok: true,
+              kind: request.kind,
+              colors: new Float32Array([0.2, 0.3, 0.4]),
+            },
+          } as MessageEvent);
+        });
+      }),
+      terminate: vi.fn(),
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      onerror: null,
+    };
+    factory.mockReturnValue(worker as unknown as Worker);
+    const session = new PointCloudComputeSession(factory);
+
+    await session.colorize(new Float32Array([0, 0, 1]), null, [sample()]);
+    await session.colorize(new Float32Array([0, 0, 1]), null, [sample()]);
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(worker.postMessage).toHaveBeenCalledTimes(2);
+    expect(worker.terminate).not.toHaveBeenCalled();
+    session.dispose();
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 });

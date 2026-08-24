@@ -238,7 +238,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     );
     await expect(timeline).toContainText("当前对象轨迹");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
-    await expect.poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBe(0);
     await expect(page.getByText("相机上色…")).toBeHidden();
 
     const toggle = page.getByTestId("scene-timeline-toggle");
@@ -259,6 +259,138 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       2,
     );
     expect(pcdRequestCount, "邻帧预取与当前帧加载应复用同一个 PCD 请求").toBe(2);
+  });
+
+  test("WebGPU 实验路径显示真实 backend，并复用 Worker 且不回读 Canvas", async ({
+    page,
+    seed,
+    browser,
+  }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+    await page.addInitScript(() => {
+      localStorage.setItem("aap.experiment.pointCloudWebGpuRenderer", "1");
+      const NativeWorker = window.Worker;
+      const WrappedWorker = function (...args: ConstructorParameters<typeof Worker>) {
+        if (String(args[0]).includes("pointcloud.worker")) {
+          window.__pointCloudColorWorkerCount = (window.__pointCloudColorWorkerCount ?? 0) + 1;
+        }
+        return new NativeWorker(...args);
+      } as typeof Worker;
+      WrappedWorker.prototype = NativeWorker.prototype;
+      window.Worker = WrappedWorker;
+      window.__pointCloudColorWorkerCount = 0;
+      const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+      Object.defineProperty(window, "__pointCloudGetImageDataCount", {
+        configurable: true,
+        writable: true,
+        value: 0,
+      });
+      CanvasRenderingContext2D.prototype.getImageData = function (...args) {
+        if (Number(args[2]) * Number(args[3]) > 1) {
+          (
+            window as typeof window & {
+              __pointCloudGetImageDataCount?: number;
+            }
+          ).__pointCloudGetImageDataCount =
+            ((window as typeof window & { __pointCloudGetImageDataCount?: number })
+              .__pointCloudGetImageDataCount ?? 0) + 1;
+        }
+        return originalGetImageData.apply(this, args);
+      };
+    });
+    await page.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const response = await fetch("/api/v1/auth/me/preferences", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ workbench: { pointcloud: { colorizeWithCamera: true } } }),
+      });
+      if (!response.ok) throw new Error(`开启相机上色失败: ${response.status}`);
+    });
+
+    const runtimeErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") runtimeErrors.push(`console: ${message.text()}`);
+    });
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${lidar.lidar_task_ids[0]}`);
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("相机上色…")).toBeHidden({ timeout: 20_000 });
+
+    const backendBadge = page.getByTestId("pointcloud-renderer-backend");
+    const backend = await backendBadge.getAttribute("data-backend");
+    expect(["webgpu", "webgl2-fallback", "legacy-webgl2"]).toContain(backend);
+    if (process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1") expect(backend).toBe("webgpu");
+    if (backend !== "legacy-webgl2") {
+      const pointInstances = await page.getByTestId("pc-viewport").evaluate((element) => {
+        const scene = (
+          element as HTMLElement & {
+            __pointCloudScene?: {
+              getPointsGeometry: () => {
+                getAttribute: (name: string) => {
+                  count: number;
+                  isInstancedBufferAttribute?: boolean;
+                };
+              } | null;
+            };
+          }
+        ).__pointCloudScene;
+        const position = scene?.getPointsGeometry()?.getAttribute("position");
+        return {
+          count: position?.count ?? 0,
+          instanced: position?.isInstancedBufferAttribute === true,
+        };
+      });
+      expect(pointInstances.instanced).toBe(true);
+      expect(pointInstances.count).toBeGreaterThan(1_000);
+    }
+    await expect.poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBe(1);
+    if (backend !== "legacy-webgl2") {
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as typeof window & { __pointCloudGetImageDataCount?: number })
+                .__pointCloudGetImageDataCount ?? 0,
+          ),
+        )
+        .toBe(0);
+    } else {
+      await expect(backendBadge).toHaveAttribute("title", /webgpu/i);
+    }
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await card.click({ position: { x: 12, y: 16 } });
+    await page.getByRole("button", { name: "框体精修" }).click();
+    await expect(page.getByText("三视图精修")).toBeVisible();
+    if (process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1") {
+      await expect(backendBadge).toHaveText("WebGPU");
+      const triRendererCanvas = page
+        .getByTestId("tri-view-renderer-panel")
+        .locator(":scope > canvas");
+      await expect(triRendererCanvas).toHaveCount(1);
+      await triRendererCanvas.evaluate((canvas) => {
+        canvas.dataset.beforeDeviceLoss = "true";
+      });
+
+      const browserSession = await browser.newBrowserCDPSession();
+      await browserSession.send("Browser.crashGpuProcess");
+      await browserSession.detach();
+
+      await expect(backendBadge).toHaveAttribute("data-backend", "legacy-webgl2", {
+        timeout: 20_000,
+      });
+      await expect(backendBadge).toHaveAttribute("title", /device-lost/i);
+      await expect(page.locator('canvas[data-before-device-loss="true"]')).toHaveCount(0);
+      await expect(page.getByTestId("pointcloud-stats")).toBeVisible();
+    }
+    expect(runtimeErrors).toEqual([]);
   });
 
   test("点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库", async ({ page, seed }) => {
@@ -761,6 +893,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.getByRole("button", { name: "恢复点级分割布局" }).click();
     await expect(page.getByLabel("展开三视图精修(可拖动)")).toBeVisible();
+    await expect(page.getByTestId("tri-view-renderer-panel")).toHaveCount(0);
     await expect(page.getByTestId("pointmask-mode-select")).toHaveCount(0);
 
     const sensorFusionSave = page.waitForRequest(

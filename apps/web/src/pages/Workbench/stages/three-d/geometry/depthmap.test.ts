@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { SensorCalibration } from "@/types";
-import { buildDepthRaster, sampleDepth } from "./depthmap";
+import { buildDepthRaster, buildGpuDepthRaster, sampleDepth } from "./depthmap";
 
 /* 极简标定:extrinsic=单位阵,intrinsic=[[1,0,0],[0,1,0],[0,0,1]]
  * ⇒ 点 (x,y,z) → u=x/z, v=y/z, depth=z。 */
@@ -11,6 +11,20 @@ const CALIB: SensorCalibration = {
 };
 
 describe("buildDepthRaster + sampleDepth", () => {
+  it("GPU depth-only 栅格与完整栅格深度一致，空格可直接上传", () => {
+    const positions = new Float32Array([2, 2, 4, 4, 4, 8]);
+    const full = buildDepthRaster(positions, CALIB, 4, 4, 1);
+    const gpu = buildGpuDepthRaster(positions, CALIB, 4, 4, 1);
+
+    expect(gpu.cols).toBe(full.cols);
+    expect(gpu.rows).toBe(full.rows);
+    for (let index = 0; index < full.depth.length; index += 1) {
+      if (Number.isFinite(full.depth[index])) expect(gpu.depth[index]).toBe(full.depth[index]);
+      else expect(gpu.depth[index]).toBeGreaterThan(1e10);
+    }
+    expect(Array.from(gpu.depth).every(Number.isFinite)).toBe(true);
+  });
+
   it("最近点深度落到对应格,可被采样到", () => {
     // 点 (2,2,4) → u=0.5,v=0.5,depth=4。cell=1 ⇒ 格(0,0)。
     const r = buildDepthRaster(new Float32Array([2, 2, 4]), CALIB, 4, 4, 1);

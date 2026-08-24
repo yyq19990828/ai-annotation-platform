@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.24.3",
+  "version": "0.24.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -33,6 +33,7 @@
     "screenshots:lint": "node scripts/screenshots-lint.mjs --strict",
     "size": "node scripts/check-bundle-size.mjs",
     "video:bench": "node scripts/video-bench/run-video-bench.mjs",
+    "pointcloud:renderer-bench": "node scripts/benchmark-pointcloud-renderer.mjs",
     "image:bench": "node scripts/image-bench/run-image-bench.mjs",
     "image:seeds": "node scripts/image-bench/fetch-real-large-images.mjs",
     "mask:bench": "node scripts/benchmark-image-raster-mask.mjs",

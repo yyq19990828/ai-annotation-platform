@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PointCloudViewState } from "./PointCloudScene";
@@ -11,6 +11,10 @@ const mockState = vi.hoisted(() => {
     mode: "orbit",
   } as PointCloudViewState;
   const instances: MockScene[] = [];
+  const createOptions: Array<{
+    rendererMode?: string;
+    onDeviceLost?: (reason: string) => void;
+  }> = [];
   class MockScene {
     currentView: PointCloudViewState = initialView;
     viewChangeHandler: ((view: PointCloudViewState) => void) | null = null;
@@ -43,11 +47,26 @@ const mockState = vi.hoisted(() => {
     resize = vi.fn();
     dispose = vi.fn();
 
+    static async create(
+      _container: HTMLElement,
+      options: { rendererMode?: string; onDeviceLost?: (reason: string) => void } = {},
+    ) {
+      createOptions.push(options);
+      return new MockScene();
+    }
+
+    getRendererStatus = vi.fn(() => ({
+      requestedMode: "legacy",
+      actualBackend: "legacy-webgl2",
+      initMs: 0,
+      fallbackReason: null,
+    }));
+
     constructor() {
       instances.push(this);
     }
   }
-  return { instances, MockScene };
+  return { createOptions, instances, MockScene };
 });
 
 vi.mock("./PointCloudScene", () => ({ PointCloudScene: mockState.MockScene }));
@@ -69,6 +88,7 @@ const ACCOUNT_VIEW: PointCloudViewState = {
 
 describe("usePointCloudScene camera continuity", () => {
   beforeEach(() => {
+    mockState.createOptions.length = 0;
     mockState.instances.length = 0;
     globalThis.ResizeObserver = class {
       observe() {}
@@ -158,6 +178,7 @@ describe("usePointCloudScene camera continuity", () => {
         onTransformCommit: vi.fn(),
       }),
     );
+    await waitFor(() => expect(mockState.instances).toHaveLength(2));
     const remountedScene = mockState.instances[1];
     await waitFor(() => expect(remountedScene.applyViewState).toHaveBeenCalledWith(ACCOUNT_VIEW));
     expect(onWorkbenchLayoutChange).not.toHaveBeenCalled();
@@ -228,5 +249,48 @@ describe("usePointCloudScene camera continuity", () => {
 
     finishFrame2({ totalPoints: 20, renderedPoints: 20, decimated: false, decimateStride: 1 });
     await waitFor(() => expect(render.result.current.loadedPointCloudUrl).toBe("frame-3.pcd"));
+  });
+
+  it("WebGPU device lost 后熔断当前页面并用 Legacy renderer 重建场景", async () => {
+    const container = document.createElement("div");
+    const sceneRef = { current: null };
+    const render = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: container },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        rendererMode: "webgpu-experimental",
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: undefined,
+        continuityKey: "scene-device-lost",
+        axisConvention: "iso_8855",
+        boxes: [],
+        selectedId: null,
+        selectedPsrEditable: false,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(mockState.instances).toHaveLength(1));
+    expect(mockState.createOptions[0]?.rendererMode).toBe("webgpu-experimental");
+
+    act(() => mockState.createOptions[0]?.onDeviceLost?.("adapter reset"));
+
+    await waitFor(() => expect(mockState.instances).toHaveLength(2));
+    expect(mockState.instances[0].dispose).toHaveBeenCalledTimes(1);
+    expect(mockState.createOptions[1]?.rendererMode).toBe("legacy");
+    await waitFor(() =>
+      expect(render.result.current.rendererStatus).toMatchObject({
+        requestedMode: "webgpu-experimental",
+        actualBackend: "legacy-webgl2",
+        fallbackReason: "device-lost: adapter reset",
+      }),
+    );
   });
 });

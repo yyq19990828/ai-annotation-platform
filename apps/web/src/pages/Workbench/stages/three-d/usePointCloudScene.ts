@@ -28,6 +28,11 @@ import {
   type PointCloudViewState,
   type SceneBox,
 } from "./PointCloudScene";
+import type {
+  PointCloudRendererMode,
+  PointCloudRendererStatus,
+} from "./rendering/pointCloudRenderer";
+import { markPointCloudPaint } from "./pointCloudTiming";
 
 interface UsePointCloudSceneParams {
   /** 渲染容器(壳组件持有的 DOM ref)。 */
@@ -37,6 +42,8 @@ interface UsePointCloudSceneParams {
   sceneRef: MutableRefObject<PointCloudScene | null>;
   /** 性能档位抽稀阈值。 */
   pcdDecimate: number;
+  /** 工作台打开时冻结的 renderer 选择；设置切换后需刷新。 */
+  rendererMode?: PointCloudRendererMode;
   pointSize: number;
   showGrid: boolean;
   showAxisGizmo: boolean;
@@ -71,6 +78,7 @@ interface UsePointCloudSceneResult {
   isLoading: boolean;
   /** stats 所属的精确 URL，用于防止新 manifest 搭配旧点缓冲。 */
   loadedPointCloudUrl: string | null;
+  rendererStatus: PointCloudRendererStatus | null;
 }
 
 const RUNTIME_VIEW_TRANSFER_TTL_MS = 10_000;
@@ -101,6 +109,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     viewportRef,
     sceneRef,
     pcdDecimate,
+    rendererMode = "legacy",
     pointSize,
     showGrid,
     showAxisGizmo,
@@ -125,6 +134,9 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     isLoading: boolean;
   }>({ stats: null, loadedPointCloudUrl: null, isLoading: false });
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rendererStatus, setRendererStatus] = useState<PointCloudRendererStatus | null>(null);
+  const [rendererReadyVersion, setRendererReadyVersion] = useState(0);
+  const [rendererCircuitReason, setRendererCircuitReason] = useState<string | null>(null);
   const deferPointCloudDisplayRef = useRef(deferPointCloudDisplay);
   deferPointCloudDisplayRef.current = deferPointCloudDisplay;
 
@@ -162,56 +174,83 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
 
   // 实例化 / 销毁 Scene(随容器挂载一次)。
   useEffect(() => {
-    if (!viewportRef.current) return;
-    const scene = new PointCloudScene(viewportRef.current, {
+    const container = viewportRef.current;
+    if (!container) return;
+    let cancelled = false;
+    let scene: PointCloudScene | null = null;
+    let ro: ResizeObserver | null = null;
+    setRendererStatus(null);
+    setLoadState({ stats: null, loadedPointCloudUrl: null, isLoading: !!pointCloudUrl });
+    const effectiveMode = rendererCircuitReason ? "legacy" : rendererMode;
+    void PointCloudScene.create(container, {
       decimateThreshold: pcdDecimate,
+      rendererMode: effectiveMode,
+      onDeviceLost: (reason) => {
+        if (!cancelled && rendererMode === "webgpu-experimental") {
+          setRendererCircuitReason(`device-lost: ${reason}`);
+        }
+      },
+    }).then((created) => {
+      if (cancelled) {
+        created.dispose();
+        return;
+      }
+      scene = created;
+      sceneRef.current = created;
+      created.setPointSize(pointSize);
+      created.setGridVisible(showGrid);
+      created.setAxisGizmoVisible(showAxisGizmo);
+      created.setCameraDamping(cameraDamping);
+      created.setViewChangeHandler(scheduleCameraViewSave);
+      // 拖拽结束:回写表单 + PATCH 持久化(壳层注入的 onTransformCommit,与数值面板共用持久化管线)。
+      created.setTransformHandler((id, psr) => onTransformCommitRef.current(id, psr));
+      ro = new ResizeObserver(() => created.resize());
+      ro.observe(container);
+      const status = created.getRendererStatus();
+      setRendererStatus(
+        rendererCircuitReason
+          ? { ...status, requestedMode: rendererMode, fallbackReason: rendererCircuitReason }
+          : status,
+      );
+      setRendererReadyVersion((value) => value + 1);
     });
-    sceneRef.current = scene;
-    scene.setPointSize(pointSize);
-    scene.setGridVisible(showGrid);
-    scene.setAxisGizmoVisible(showAxisGizmo);
-    scene.setCameraDamping(cameraDamping);
-    scene.setViewChangeHandler(scheduleCameraViewSave);
-    // 拖拽结束:回写表单 + PATCH 持久化(壳层注入的 onTransformCommit,与数值面板共用持久化管线)。
-    scene.setTransformHandler((id, psr) => onTransformCommitRef.current(id, psr));
-    const ro = new ResizeObserver(() => scene.resize());
-    ro.observe(viewportRef.current);
     return () => {
+      cancelled = true;
       if (cameraSaveRafRef.current !== null) {
         window.cancelAnimationFrame(cameraSaveRafRef.current);
         cameraSaveRafRef.current = null;
       }
       const loadedContinuityKey = loadedContinuityKeyRef.current;
-      if (loadedContinuityKey !== null && !suspendCameraSaveRef.current) {
+      if (scene && loadedContinuityKey !== null && !suspendCameraSaveRef.current) {
         storeRuntimeViewTransfer(loadedContinuityKey, scene.getViewState());
       }
-      ro.disconnect();
-      scene.dispose();
-      sceneRef.current = null;
+      ro?.disconnect();
+      scene?.dispose();
+      if (sceneRef.current === scene) sceneRef.current = null;
     };
-    // 场景生命周期只跟 DOM 容器绑定;偏好变化由下方独立 effects 同步。
+    // rendererMode 在工作台打开时冻结；只有 page circuit 会触发同页重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [rendererCircuitReason, rendererMode]);
 
   useEffect(() => {
     sceneRef.current?.setPointSize(pointSize);
-  }, [pointSize, loadState.stats, sceneRef]);
+  }, [pointSize, loadState.stats, rendererReadyVersion, sceneRef]);
 
   useEffect(() => {
     sceneRef.current?.setGridVisible(showGrid);
-  }, [showGrid, sceneRef]);
+  }, [showGrid, rendererReadyVersion, sceneRef]);
 
   useEffect(() => {
     sceneRef.current?.setAxisGizmoVisible(showAxisGizmo);
-  }, [showAxisGizmo, sceneRef]);
+  }, [showAxisGizmo, rendererReadyVersion, sceneRef]);
 
   useEffect(() => {
     sceneRef.current?.setCameraDamping(cameraDamping);
-  }, [cameraDamping, sceneRef]);
+  }, [cameraDamping, rendererReadyVersion, sceneRef]);
 
   useEffect(() => {
     sceneRef.current?.setDecimateThreshold(pcdDecimate);
-  }, [pcdDecimate, sceneRef]);
+  }, [pcdDecimate, rendererReadyVersion, sceneRef]);
 
   // manifest 到位后加载点云。
   // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
@@ -251,6 +290,11 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         loadedContinuityKeyRef.current = continuityKey;
         onViewModeChangeRef.current(scene.getViewState().mode);
         setLoadState({ stats: s, loadedPointCloudUrl: pointCloudUrl, isLoading: false });
+        markPointCloudPaint(
+          "geometry-ready",
+          pointCloudUrl,
+          () => !cancelled && loadSequence === loadSequenceRef.current,
+        );
         suspendCameraSaveRef.current = false;
       })
       .catch((e) => {
@@ -269,12 +313,12 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         storeRuntimeViewTransfer(continuityKey, scene.getViewState());
       }
     };
-  }, [pointCloudUrl, continuityKey, axisConvention, sceneRef]);
+  }, [pointCloudUrl, continuityKey, axisConvention, rendererReadyVersion, sceneRef]);
 
   // 同步 3D 框图层(标注 / 选中变化)。scene 在挂载 effect 里先建,本 effect 后跑。
   useEffect(() => {
     sceneRef.current?.setBoxes(boxes);
-  }, [boxes, sceneRef]);
+  }, [boxes, rendererReadyVersion, sceneRef]);
 
   // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组);只读/锁定不挂。
   useEffect(() => {
@@ -282,7 +326,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     if (!scene) return;
     if (selectedId && selectedPsrEditable) scene.attachTransform(selectedId);
     else scene.detachTransform();
-  }, [selectedId, boxes, selectedPsrEditable, sceneRef]);
+  }, [selectedId, boxes, selectedPsrEditable, rendererReadyVersion, sceneRef]);
 
   // W/E/R 切 gizmo 模式(仅选中且可编辑时;焦点在输入框时不拦截)。
   useEffect(() => {
@@ -309,5 +353,6 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     loadError,
     isLoading: loadState.isLoading,
     loadedPointCloudUrl: loadState.loadedPointCloudUrl,
+    rendererStatus,
   };
 }

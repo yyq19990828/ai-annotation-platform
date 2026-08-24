@@ -83,6 +83,11 @@ import {
   type ColorAdjust,
 } from "./geometry/colorize";
 import { colorizePointsAsync } from "./geometry/pointcloudCompute";
+import { retainPointCloudComputeSession } from "./geometry/pointCloudComputeSession";
+import {
+  prepareCameraTextureResources,
+  type CameraTextureResources,
+} from "./rendering/cameraTextureResources";
 import { projectPoints } from "./geometry/projection";
 import type { ScreenPoint } from "./geometry/pointInPolygon";
 import { fitSize, fitBottom, fitYaw, fitSizeAndBottom, psrFromPoints } from "./geometry/autofit";
@@ -114,6 +119,12 @@ import { useCameraPanels } from "./useCameraPanels";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { SceneTimeline } from "./SceneTimeline";
+import { markPointCloudPaint } from "./pointCloudTiming";
+import {
+  pointCloudRendererModeFromExperiment,
+  readPointCloudWebGpuExperiment,
+  type PointCloudRendererStatus,
+} from "./rendering/pointCloudRenderer";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
 const ROOT = "flex flex-col size-full min-h-0 bg-background";
@@ -214,6 +225,13 @@ const DEFAULT_TRI_ZOOM_BY_VIEW: Record<TriView, number> = {
   front: TRI_ZOOM_DEFAULT,
 };
 
+function rendererBackendLabel(status: PointCloudRendererStatus | null): string {
+  if (!status) return "Renderer 初始化…";
+  if (status.actualBackend === "webgpu") return "WebGPU";
+  if (status.actualBackend === "webgl2-fallback") return "WebGL2 fallback";
+  return "Legacy WebGL2";
+}
+
 interface ThreeDWorkbenchProps {
   taskId: string | null;
   /** v0.13.3 · 锁定 task / viewer 角色时只读:不放置 / 不编辑 / 无 gizmo,仅看 + 选中查看数值。 */
@@ -280,6 +298,7 @@ export function ThreeDWorkbench({
   onWorkbenchConfigUpdate,
   box3dDefaultSize,
 }: ThreeDWorkbenchProps) {
+  useEffect(() => retainPointCloudComputeSession(), []);
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const pushToast = useToastStore((st) => st.push);
   const userId = useAuthStore((s) => s.user?.id ?? null);
@@ -310,6 +329,13 @@ export function ThreeDWorkbench({
   const controlsRef = useRef<HTMLDivElement>(null);
   // 场景实例 ref —— 壳层各交互 handler 共用;生命周期由 usePointCloudScene 管理。
   const sceneRef = useRef<PointCloudScene | null>(null);
+  const [rendererMode] = useState(() =>
+    pointCloudRendererModeFromExperiment(readPointCloudWebGpuExperiment()),
+  );
+  const [triRendererStatus, setTriRendererStatus] = useState<PointCloudRendererStatus | null>(null);
+  const handleTriRendererStatus = useCallback((status: PointCloudRendererStatus) => {
+    setTriRendererStatus(status);
+  }, []);
   const performanceConfig = useMemo(
     () => resolveWorkbenchPerformanceTier(workbenchCommon.performanceTier),
     [workbenchCommon.performanceTier],
@@ -365,6 +391,8 @@ export function ThreeDWorkbench({
   const [neighborMovedCount, setNeighborMovedCount] = useState(0);
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
+  const [cameraTextureResources, setCameraTextureResources] =
+    useState<CameraTextureResources | null>(null);
   const colorizedRawRef = useRef<Float32Array | null>(null);
   const adjustedColorBufferRef = useRef<Float32Array | null>(null);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
@@ -736,17 +764,19 @@ export function ThreeDWorkbench({
     loadError,
     isLoading: pointCloudLoading,
     loadedPointCloudUrl,
+    rendererStatus,
   } = usePointCloudScene({
     viewportRef,
     sceneRef,
     pcdDecimate: performanceConfig.pcdDecimate,
+    rendererMode,
     pointSize,
     showGrid: workbenchPointcloud.showGrid,
     showAxisGizmo: workbenchPointcloud.showAxisGizmo,
     cameraDamping: workbenchPointcloud.cameraDamping,
     persistCameraView: workbenchPointcloud.persistCameraView,
     pointCloudUrl: manifest?.point_cloud_url,
-    deferPointCloudDisplay: colorizeOn,
+    deferPointCloudDisplay: false,
     continuityKey: manifest?.scene_id ?? taskId,
     axisConvention,
     boxes,
@@ -1751,9 +1781,8 @@ export function ThreeDWorkbench({
     [stats],
   );
 
-  // v0.13.6 · 相机 RGB 上色:开关开 → 逐点投影到各标定相机采样像素 → 写回点云 color;
-  // 关 → 还原高度色带。一次性算(不进每帧),依赖 colorizeOn / cameras / stats(载帧)。
-  // 无标定相机自动剔除;getImageData 跨域污染则降级(整相机跳过)。三视图复用同一 geometry 自动跟随。
+  // Legacy 仍由持久 Worker 生成颜色 attribute；实验 renderer 直接采样 ImageBitmap texture，
+  // 不执行 Canvas getImageData / 逐点 RGB 回传。两条路径都先显示高度色，不再隐藏点云。
   useEffect(() => {
     const scene = sceneRef.current;
     const pointCloudUrl = manifest?.point_cloud_url ?? null;
@@ -1763,23 +1792,44 @@ export function ThreeDWorkbench({
       colorizedRawRef.current = null;
       adjustedColorBufferRef.current = null;
       setColorizing(false);
+      setCameraTextureResources(null);
       return;
     }
     if (!colorizeOn) {
       colorizedRawRef.current = null;
       adjustedColorBufferRef.current = null;
+      scene.setCameraTextureColorization(null);
+      setCameraTextureResources(null);
       scene.setPointColors(null);
       scene.setPointCloudVisible(true);
       return;
     }
     const controller = new AbortController();
     setColorizing(true);
-    scene.setPointCloudVisible(false);
+    let textureResources: CameraTextureResources | null = null;
     (async () => {
       try {
         const positions = scene.getPointPositions();
         const calibCams = cameras.filter((c) => c.calibration);
         if (!positions || calibCams.length === 0) return;
+        const useTextureSampling =
+          rendererStatus?.actualBackend !== "legacy-webgl2" && calibCams.length <= 6;
+        if (useTextureSampling) {
+          textureResources = await prepareCameraTextureResources(
+            pointCloudUrl,
+            positions,
+            calibCams.map((camera) => ({
+              imageUrl: camera.image_url,
+              calibration: camera.calibration!,
+            })),
+            controller.signal,
+          );
+          if (controller.signal.aborted) return;
+          scene.setCameraTextureColorAdjust(colorAdjust);
+          scene.setCameraTextureColorization(textureResources.samples);
+          setCameraTextureResources(textureResources);
+          return;
+        }
         const samples = (
           await Promise.all(calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!)))
         ).filter((s): s is CameraSample => s !== null);
@@ -1797,24 +1847,45 @@ export function ThreeDWorkbench({
       } catch (error) {
         if (!controller.signal.aborted) {
           console.warn("[pointcloud-colorize] failed; showing height colors", error);
+          scene.setCameraTextureColorization(null);
           scene.setPointColors(null);
         }
       } finally {
         if (!controller.signal.aborted) {
           scene.setPointCloudVisible(true);
           setColorizing(false);
+          markPointCloudPaint(
+            "camera-color-ready",
+            pointCloudUrl,
+            () => !controller.signal.aborted,
+          );
         }
       }
     })();
     return () => {
       controller.abort();
+      scene.setCameraTextureColorization(null);
+      const resources = textureResources;
+      resources?.dispose();
+      setCameraTextureResources((current) => (current === resources ? null : current));
     };
     // colorAdjust changes are handled by the lightweight remap effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colorizeOn, cameras, loadedPointCloudUrl, manifest?.point_cloud_url, stats]);
+  }, [
+    colorizeOn,
+    cameras,
+    loadedPointCloudUrl,
+    manifest?.point_cloud_url,
+    rendererStatus?.actualBackend,
+    stats,
+  ]);
 
   useEffect(() => {
     const scene = sceneRef.current;
+    if (scene && rendererStatus?.actualBackend !== "legacy-webgl2") {
+      scene.setCameraTextureColorAdjust(colorAdjust);
+      return;
+    }
     const raw = colorizedRawRef.current;
     if (!scene || !colorizeOn || !raw) return;
     if (isNeutralAdjust(colorAdjust)) {
@@ -1825,7 +1896,7 @@ export function ThreeDWorkbench({
       adjustedColorBufferRef.current = new Float32Array(raw.length);
     }
     scene.setPointColors(adjustColors(raw, colorAdjust, adjustedColorBufferRef.current));
-  }, [colorAdjust, colorizeOn]);
+  }, [colorAdjust, colorizeOn, rendererStatus?.actualBackend]);
 
   useEffect(() => {
     sceneRef.current?.highlightPointMask(selectedPointMask?.point_indices ?? null);
@@ -2139,6 +2210,23 @@ export function ThreeDWorkbench({
         : null,
     [selectedBox, multiBoxSelected],
   );
+  // 实验 renderer 在空闲的折叠态用首个框完成首帧管线提交，避免用户第一次打开精修时编译。
+  // Legacy 只在浮窗展开时挂载，避免单纯选中框也抢占第二个 WebGL context。
+  const triRendererSelected = useMemo<TriSelected | null>(() => {
+    if (rendererMode !== "webgpu-experimental") {
+      return triViewFloat.collapsed ? null : triSelected;
+    }
+    if (triSelected) return triSelected;
+    const fallback = boxes[0];
+    return fallback
+      ? {
+          center: fallback.center,
+          size: fallback.size,
+          rotation: fallback.rotation,
+          color: fallback.color,
+        }
+      : null;
+  }, [boxes, rendererMode, triSelected, triViewFloat.collapsed]);
 
   // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
   // 松手 (commit=true) 走与 gizmo 同一条 PATCH 管线持久化, 并清草稿 (乐观更新已写入缓存)。
@@ -2413,6 +2501,17 @@ export function ThreeDWorkbench({
           {pointCloudLoading && <span data-testid="pointcloud-loading">加载点云…</span>}
           {error && <span className={ERR}>manifest 加载失败</span>}
           {loadError && <span className={ERR}>点云加载失败: {loadError}</span>}
+          <Badge
+            variant={rendererStatus?.actualBackend === "webgpu" ? "accent" : "outline"}
+            data-testid="pointcloud-renderer-backend"
+            data-backend={rendererStatus?.actualBackend ?? "initializing"}
+            title={rendererStatus?.fallbackReason ?? undefined}
+          >
+            {rendererBackendLabel(rendererStatus)}
+            {triRendererStatus && triRendererStatus.actualBackend !== rendererStatus?.actualBackend
+              ? ` · 三视图 ${rendererBackendLabel(triRendererStatus)}`
+              : ""}
+          </Badge>
           {stats && (
             <span data-testid="pointcloud-stats">
               {stats.renderedPoints.toLocaleString()} 点
@@ -2701,23 +2800,29 @@ export function ThreeDWorkbench({
         )}
 
         {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
-        {triSelected && !triViewFloat.collapsed && (
+        {triRendererSelected && (
           <FloatingPanelShell
             title="三视图精修"
             position={triFloatPosition}
             onPositionChange={updateTriViewFloat}
             onCollapse={() => updateTriViewFloat({ collapsed: true })}
+            collapsed={!triSelected || triViewFloat.collapsed}
             variant="no-merge"
             minSize={{ w: 200, h: 240 }}
             maxSize={{ w: 480, h: 720 }}
             bounds={triFloatBounds}
           >
             <TriViewPanel
-              selected={triSelected}
+              selected={triRendererSelected}
               getPointsGeometry={getPointsGeometry}
               pointsReady={!!stats}
-              editable={selectedPsrEditable}
+              editable={!!triSelected && selectedPsrEditable}
               pointSize={pointSize}
+              rendererMode={rendererMode}
+              onRendererStatus={handleTriRendererStatus}
+              active={!!triSelected && !triViewFloat.collapsed}
+              cameraTextureSamples={cameraTextureResources?.samples ?? null}
+              cameraColorAdjust={colorAdjust}
               zoomByView={triZoomByView}
               onZoomChange={handleTriZoomChange}
               onEditPsr={handleEditPsr}
@@ -2871,6 +2976,8 @@ export function ThreeDWorkbench({
       <SceneTimeline
         taskId={taskId}
         trackId={selectedAnn?.track_id ?? null}
+        prefetchDepthRasters={rendererStatus?.actualBackend === "webgpu"}
+        prefetchDecimateThreshold={performanceConfig.pcdDecimate}
         onNavigateFrame={handleTimelineNavigate}
       />
     </div>

@@ -1,24 +1,42 @@
 /**
  * v0.13.2 · 裸 Three.js 点云场景(命令式薄封装,不用 react-three-fiber)。
  *
- * 职责:管 WebGLRenderer / PerspectiveCamera / Scene / OrbitControls 生命周期,
+ * 职责:管 Legacy WebGL / 实验 WebGPU renderer、PerspectiveCamera / Scene / OrbitControls 生命周期,
  * 加载 PCD、按高度上色、大点云抽稀、resize、dispose。React 组件只持有一个实例
  * 并在 effect 里 mount/unmount,交互逻辑全在这里(命令式编辑器更顺,见 epic §14.10.4)。
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 
-import { applyConventionToPositions, type LidarAxisConvention } from "./geometry/axisConvention";
-
-import { estimateGroundZ } from "./geometry/ground";
+import type { LidarAxisConvention } from "./geometry/axisConvention";
 import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 import { framePerspectiveBox } from "./geometry/viewFraming";
-import { loadPointCloudBuffer } from "./pointCloudAssetCache";
+import { loadTimedDecodedPointCloudFrame } from "./pointCloudAssetCache";
+import {
+  createPointCloudRenderer,
+  disposePointCloudRenderer,
+  type PointCloudRenderer,
+  type PointCloudRendererMode,
+  type PointCloudRendererStatus,
+  type PointCloudRendererSurface,
+} from "./rendering/pointCloudRenderer";
+import {
+  createWebGpuPointCloudLayer,
+  type WebGpuPointCloudLayer,
+} from "./rendering/webgpuPointCloudLayer";
+import type { GpuCameraTextureSample } from "./rendering/cameraTextureColorNode";
+import type { ColorAdjust } from "./geometry/colorize";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
+const WEBGPU_MIN_POINT_CAPACITY = 65_536;
+
+function webGpuPointCapacity(pointCount: number): number {
+  let capacity = WEBGPU_MIN_POINT_CAPACITY;
+  while (capacity < pointCount) capacity *= 2;
+  return capacity;
+}
 
 // v0.15.18 · 邻帧点云叠加弱化色,与当前帧的高度色带 / 相机上色强区分。
 // 前/后帧分色(过去冷蓝 / 未来暖橙),让动态目标拖影读起来是"运动方向"而非乱噪。
@@ -27,6 +45,13 @@ const NEIGHBOR_FUTURE_COLOR = 0xd98a4a; // 未来帧:暖橙
 // 时序淡出:帧距越远越淡(distance=1 最实),拖影随距离自然衰减。
 function neighborOpacity(distance: number): number {
   return Math.max(0.15, 0.5 - (Math.max(1, distance) - 1) * 0.12);
+}
+
+interface NeighborPointLayer {
+  object: THREE.Object3D;
+  geometry: THREE.BufferGeometry;
+  material: THREE.PointsMaterial | null;
+  webGpuLayer: WebGpuPointCloudLayer | null;
 }
 
 // 选中框高亮色(线框)。未选中用类别色。
@@ -97,14 +122,26 @@ export interface PointCloudLoadOptions {
 
 type TransformMode = "translate" | "rotate" | "scale";
 
+export interface PointCloudSceneOptions {
+  decimateThreshold?: number;
+  rendererMode?: PointCloudRendererMode;
+  onDeviceLost?: (reason: string) => void;
+}
+
 export class PointCloudScene {
-  private renderer: THREE.WebGLRenderer;
+  private renderer: PointCloudRenderer;
+  private readonly rendererStatus: PointCloudRendererStatus;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
-  private points: THREE.Points | null = null;
+  private points: THREE.Object3D | null = null;
+  private pointRaycastObject: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null =
+    null;
+  private pointGeometry: THREE.BufferGeometry | null = null;
+  private webGpuPointLayer: WebGpuPointCloudLayer | null = null;
   private pointIndexStride = 1;
   private sourcePointCount = 0;
+  private renderedPointCount = 0;
   // v0.13.6 · 载帧时存的原色(高度色带),相机上色关闭时还原。
   private baseColors: Float32Array | null = null;
   private raf = 0;
@@ -133,7 +170,7 @@ export class PointCloudScene {
   // v0.15.18 · 邻帧点云叠加图层:各邻帧点云经 ego 补偿(对象矩阵)对齐到当前帧 ego 系,
   // 弱化单色 + 低透明,与当前帧点区分。切帧 / 关开关时整层重建并 dispose。
   private neighborLayer = new THREE.Group();
-  private neighborPoints: THREE.Points[] = [];
+  private neighborPoints: NeighborPointLayer[] = [];
 
   // v0.13.3 · 鲁棒取景中心/半径(mean ± 2.5σ,见 setRobustFrame)。
   private readonly viewCenter = new THREE.Vector3();
@@ -165,7 +202,23 @@ export class PointCloudScene {
   // 拖拽结束会触发一次 click,不应改变选中 —— 用此标记吞掉那次 click。
   private suppressClickAfterDrag = false;
 
-  constructor(container: HTMLElement, options: { decimateThreshold?: number } = {}) {
+  static async create(
+    container: HTMLElement,
+    options: PointCloudSceneOptions = {},
+  ): Promise<PointCloudScene> {
+    const surface = await createPointCloudRenderer({
+      mode: options.rendererMode ?? "legacy",
+      antialias: true,
+      onDeviceLost: options.onDeviceLost,
+    });
+    return new PointCloudScene(container, options, surface);
+  }
+
+  private constructor(
+    container: HTMLElement,
+    options: PointCloudSceneOptions,
+    surface: PointCloudRendererSurface,
+  ) {
     this.container = container;
     if (import.meta.env.DEV) {
       (this.container as HTMLElement & { __pointCloudScene?: PointCloudScene }).__pointCloudScene =
@@ -174,7 +227,8 @@ export class PointCloudScene {
     this.setDecimateThreshold(options.decimateThreshold ?? DEFAULT_DECIMATE_THRESHOLD);
     const { clientWidth: w, clientHeight: h } = container;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = surface.renderer;
+    this.rendererStatus = surface.status;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
     this.renderer.setClearColor(0x0b0d12, 1);
@@ -227,6 +281,10 @@ export class PointCloudScene {
     this.animate();
   }
 
+  getRendererStatus(): PointCloudRendererStatus {
+    return this.rendererStatus;
+  }
+
   setDecimateThreshold(value: number): void {
     if (!Number.isFinite(value) || value <= 0) {
       this.decimateThreshold = DEFAULT_DECIMATE_THRESHOLD;
@@ -269,13 +327,12 @@ export class PointCloudScene {
       label.position.copy(axis.dir).multiplyScalar(1.48);
       this.axisGroup.add(label);
     }
-    const ring = new THREE.LineLoop(
-      new THREE.BufferGeometry().setFromPoints(
-        Array.from({ length: 48 }, (_, i) => {
-          const t = (i / 48) * Math.PI * 2;
-          return new THREE.Vector3(Math.cos(t) * 1.42, Math.sin(t) * 1.42, 0);
-        }),
-      ),
+    const ringPoints = Array.from({ length: 49 }, (_, i) => {
+      const t = ((i % 48) / 48) * Math.PI * 2;
+      return new THREE.Vector3(Math.cos(t) * 1.42, Math.sin(t) * 1.42, 0);
+    });
+    const ring = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(ringPoints),
       new THREE.LineBasicMaterial({
         color: 0x44a6ff,
         transparent: true,
@@ -376,39 +433,12 @@ export class PointCloudScene {
     convention: LidarAxisConvention = "iso_8855",
     options: PointCloudLoadOptions = {},
   ): Promise<PointCloudStats> {
-    const loader = new PCDLoader();
-    const loaded = loader.parse(await loadPointCloudBuffer(url));
-    const srcGeom = loaded.geometry;
-    const srcPos = srcGeom.getAttribute("position") as THREE.BufferAttribute;
-    const total = srcPos.count;
-
-    const decimated = total > this.decimateThreshold;
-    const stride = decimated ? Math.ceil(total / this.decimateThreshold) : 1;
-    const rendered = decimated ? Math.floor(total / stride) : total;
-    const positions = new Float32Array(rendered * 3);
-    for (let i = 0, j = 0; i < total && j < rendered; i += stride, j++) {
-      positions[j * 3] = srcPos.getX(i);
-      positions[j * 3 + 1] = srcPos.getY(i);
-      positions[j * 3 + 2] = srcPos.getZ(i);
-    }
-    srcGeom.dispose();
-    // v0.13.11 · 归一化必须发生在 setRobustFrame / estimateGroundZ / applyHeightColors
-    // 之前,这些函数都假设 +Z 上 / +X 前;src 系下算会得到错的取景中心、地面 z、色带。
-    applyConventionToPositions(positions, convention);
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    this.applyHeightColors(geom, positions, rendered);
-    const baseColors = new Float32Array(
-      (geom.getAttribute("color") as THREE.BufferAttribute).array as Float32Array,
-    );
-    geom.computeBoundingBox();
-
-    const material = new THREE.PointsMaterial({
-      size: this.pointSize,
-      vertexColors: true,
-      sizeAttenuation: true,
-    });
+    const frame = await loadTimedDecodedPointCloudFrame(url, convention, this.decimateThreshold);
+    const positions = frame.positions;
+    const total = frame.totalPoints;
+    const rendered = frame.renderedPoints;
+    const stride = frame.decimateStride;
+    const decimated = stride > 1;
 
     const stats = {
       totalPoints: total,
@@ -416,78 +446,79 @@ export class PointCloudScene {
       decimated,
       decimateStride: stride,
     };
-    if (options.shouldCommit && !options.shouldCommit()) {
-      geom.dispose();
-      material.dispose();
-      return stats;
+    if (options.shouldCommit && !options.shouldCommit()) return stats;
+
+    let material: THREE.PointsMaterial | null = null;
+    let webGpuLayer: WebGpuPointCloudLayer | null = null;
+    let pointRaycastObject: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null = null;
+    let pointObject: THREE.Object3D;
+    let geom: THREE.BufferGeometry;
+    let reusedWebGpuLayer = false;
+    if (this.rendererStatus.actualBackend === "legacy-webgl2") {
+      geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute("color", new THREE.BufferAttribute(frame.heightColors.slice(), 3));
+      geom.computeBoundingBox();
+      material = new THREE.PointsMaterial({
+        size: this.pointSize,
+        vertexColors: true,
+        sizeAttenuation: true,
+      });
+      pointObject = new THREE.Points(geom, material);
+    } else if (
+      this.webGpuPointLayer &&
+      this.pointGeometry &&
+      this.points &&
+      this.pointRaycastObject &&
+      this.webGpuPointLayer.updatePointData(positions, frame.heightColors)
+    ) {
+      geom = this.pointGeometry;
+      webGpuLayer = this.webGpuPointLayer;
+      pointObject = this.points;
+      pointRaycastObject = this.pointRaycastObject;
+      reusedWebGpuLayer = true;
+    } else {
+      const capacity = webGpuPointCapacity(rendered);
+      const positionBuffer = new Float32Array(capacity * 3);
+      const colorBuffer = new Float32Array(capacity * 3);
+      positionBuffer.set(positions);
+      colorBuffer.set(frame.heightColors);
+      geom = new THREE.BufferGeometry();
+      const positionAttribute = new THREE.BufferAttribute(positionBuffer, 3);
+      const colorAttribute = new THREE.BufferAttribute(colorBuffer, 3);
+      positionAttribute.setUsage(THREE.DynamicDrawUsage);
+      colorAttribute.setUsage(THREE.DynamicDrawUsage);
+      geom.setAttribute("position", positionAttribute);
+      geom.setAttribute("color", colorAttribute);
+      geom.setDrawRange(0, rendered);
+      webGpuLayer = createWebGpuPointCloudLayer(geom, {
+        pointSize: this.pointSize,
+        sizeAttenuation: true,
+        selection: true,
+      });
+      pointObject = webGpuLayer.object;
+      pointRaycastObject = new THREE.Points(
+        geom,
+        new THREE.PointsMaterial({ size: this.pointSize, vertexColors: false }),
+      );
     }
 
-    this.removePoints();
+    if (!reusedWebGpuLayer) this.removePoints();
     this.pointIndexStride = stride;
     this.sourcePointCount = total;
-    this.baseColors = baseColors;
-    this.points = new THREE.Points(geom, material);
+    this.renderedPointCount = rendered;
+    this.baseColors = frame.heightColors;
+    this.pointGeometry = geom;
+    this.webGpuPointLayer = webGpuLayer;
+    this.pointRaycastObject = pointRaycastObject;
+    this.points = pointObject;
     this.points.visible = options.visible ?? true;
-    this.scene.add(this.points);
-    this.setRobustFrame(positions, rendered);
-    this.groundZ = estimateGroundZ(positions, rendered);
+    if (!reusedWebGpuLayer) this.scene.add(this.points);
+    this.viewCenter.fromArray(frame.viewCenter);
+    this.viewRadius = frame.viewRadius;
+    this.groundZ = frame.groundZ;
     this.frameView();
-
     return stats;
-  }
-
-  /** 按 z(高度)做一条蓝→青→黄的色带,纯只读可视化。 */
-  private applyHeightColors(geom: THREE.BufferGeometry, positions: Float32Array, count: number) {
-    let zMin = Infinity;
-    let zMax = -Infinity;
-    for (let i = 0; i < count; i++) {
-      const z = positions[i * 3 + 2];
-      if (z < zMin) zMin = z;
-      if (z > zMax) zMax = z;
-    }
-    const span = zMax - zMin || 1;
-    const colors = new Float32Array(count * 3);
-    const c = new THREE.Color();
-    for (let i = 0; i < count; i++) {
-      const t = (positions[i * 3 + 2] - zMin) / span;
-      c.setHSL(0.62 - 0.62 * t, 0.85, 0.45 + 0.15 * t);
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  }
-
-  /**
-   * v0.13.3 · 鲁棒取景:用 mean ± 2.5σ 框住稠密区,而非 bbox。LiDAR 帧常带远处稀疏
-   * 离群点(本夹具 bbox 达 369×297m 但稠密区仅 ~76×110m),按 bbox 取景会把相机拉得
-   * 极远、点云与标注框都缩成几像素。mean/std 受少量离群点影响小,框得准。
-   */
-  private setRobustFrame(positions: Float32Array, count: number) {
-    if (count === 0) return;
-    let sx = 0,
-      sy = 0,
-      sz = 0,
-      sxx = 0,
-      syy = 0,
-      szz = 0;
-    for (let i = 0; i < count; i++) {
-      const x = positions[i * 3],
-        y = positions[i * 3 + 1],
-        z = positions[i * 3 + 2];
-      sx += x;
-      sy += y;
-      sz += z;
-      sxx += x * x;
-      syy += y * y;
-      szz += z * z;
-    }
-    const mx = sx / count,
-      my = sy / count,
-      mz = sz / count;
-    const sd = (sum2: number, m: number) => Math.sqrt(Math.max(sum2 / count - m * m, 0));
-    this.viewCenter.set(mx, my, mz);
-    this.viewRadius = Math.max(2.5 * Math.max(sd(sxx, mx), sd(syy, my), sd(szz, mz)), 5);
   }
 
   private frameView() {
@@ -671,13 +702,22 @@ export class PointCloudScene {
    * TriViewRenderer 只引用、不 dispose)。无点云时返回 null。
    */
   getPointsGeometry(): THREE.BufferGeometry | null {
-    return this.points?.geometry ?? null;
+    return this.pointGeometry;
   }
 
   setPointSize(size: number) {
     this.pointSize = size;
-    if (this.points) {
-      (this.points.material as THREE.PointsMaterial).size = size;
+    if (this.webGpuPointLayer) {
+      this.webGpuPointLayer.setPointSize(size);
+    } else if (this.points) {
+      ((this.points as THREE.Points).material as THREE.PointsMaterial).size = size;
+    }
+    if (this.pointRaycastObject) {
+      (this.pointRaycastObject.material as THREE.PointsMaterial).size = size;
+    }
+    for (const neighbor of this.neighborPoints) {
+      if (neighbor.material) neighbor.material.size = size * 0.8;
+      neighbor.webGpuLayer?.setPointSize(size * 0.8);
     }
   }
 
@@ -722,10 +762,10 @@ export class PointCloudScene {
 
   /** v0.13.6 · 当前点坐标 (N*3, lidar/world 系, 与标定同系); 供相机上色逐点投影。 */
   getPointPositions(): Float32Array | null {
-    const attr = this.points?.geometry.getAttribute("position") as
-      | THREE.BufferAttribute
-      | undefined;
-    return attr ? (attr.array as Float32Array) : null;
+    const attr = this.pointGeometry?.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (!attr || this.renderedPointCount === 0) return null;
+    const positions = attr.array as Float32Array;
+    return positions.subarray(0, this.renderedPointCount * 3);
   }
 
   /** v0.13.6 · 载帧时的原色 (高度色带); 上色时无相机覆盖的点回退到它。 */
@@ -735,7 +775,13 @@ export class PointCloudScene {
 
   /** 换帧开始时立即移除旧点缓冲，不让上一帧冒充当前帧。 */
   clearPointCloud() {
-    this.removePoints();
+    if (this.webGpuPointLayer && this.points) {
+      this.points.visible = false;
+      this.webGpuPointLayer.setPointCount(0);
+      this.renderedPointCount = 0;
+    } else {
+      this.removePoints();
+    }
     this.baseColors = null;
     this.groundZ = 0;
   }
@@ -749,7 +795,7 @@ export class PointCloudScene {
    * 原地写回既有 color buffer (长度一致), 触发 GPU 更新。三视图复用同一 geometry 自动跟随。
    */
   setPointColors(colors: Float32Array | null) {
-    const geom = this.points?.geometry;
+    const geom = this.pointGeometry;
     if (!geom) return;
     const target = colors ?? this.baseColors;
     if (!target) return;
@@ -758,8 +804,20 @@ export class PointCloudScene {
     attr.needsUpdate = true;
   }
 
+  setCameraTextureColorization(samples: readonly GpuCameraTextureSample[] | null) {
+    this.webGpuPointLayer?.setCameraColorization(samples);
+  }
+
+  setCameraTextureColorAdjust(adjust: ColorAdjust) {
+    this.webGpuPointLayer?.setColorAdjust(adjust);
+  }
+
   highlightPointMask(indices: readonly number[] | null) {
-    const geom = this.points?.geometry;
+    if (this.webGpuPointLayer) {
+      this.webGpuPointLayer.setSelection(indices, this.pointIndexStride);
+      return;
+    }
+    const geom = this.pointGeometry;
     if (!geom) return;
     const base = this.baseColors;
     if (!base) return;
@@ -790,11 +848,20 @@ export class PointCloudScene {
   private removePoints() {
     if (!this.points) return;
     this.scene.remove(this.points);
-    this.points.geometry.dispose();
-    (this.points.material as THREE.Material).dispose();
+    const hadWebGpuLayer = this.webGpuPointLayer !== null;
+    this.webGpuPointLayer?.dispose();
+    this.webGpuPointLayer = null;
+    this.pointRaycastObject?.material.dispose();
+    this.pointRaycastObject = null;
+    this.pointGeometry?.dispose();
+    this.pointGeometry = null;
+    if (!hadWebGpuLayer && (this.points as THREE.Points).material) {
+      ((this.points as THREE.Points).material as THREE.Material).dispose();
+    }
     this.points = null;
     this.pointIndexStride = 1;
     this.sourcePointCount = 0;
+    this.renderedPointCount = 0;
   }
 
   /**
@@ -955,30 +1022,48 @@ export class PointCloudScene {
       distance: number;
     }[],
   ) {
-    for (const p of this.neighborPoints) {
-      this.neighborLayer.remove(p);
-      p.geometry.dispose();
-      (p.material as THREE.Material).dispose();
-    }
+    for (const pointLayer of this.neighborPoints) this.disposeNeighborPointLayer(pointLayer);
     this.neighborPoints = [];
     for (const f of frames) {
       const geom = new THREE.BufferGeometry();
       geom.setAttribute("position", new THREE.BufferAttribute(f.positions, 3));
-      const mat = new THREE.PointsMaterial({
-        size: this.pointSize * 0.8,
-        color: f.dir === "future" ? NEIGHBOR_FUTURE_COLOR : NEIGHBOR_PAST_COLOR,
-        transparent: true,
-        opacity: neighborOpacity(f.distance),
-        sizeAttenuation: true,
-        depthWrite: false,
-      });
-      const pts = new THREE.Points(geom, mat);
-      pts.matrixAutoUpdate = false;
-      pts.matrix.copy(f.matrix);
-      pts.renderOrder = 0; // 在当前帧点(默认)与框之下
-      this.neighborLayer.add(pts);
-      this.neighborPoints.push(pts);
+      const color = f.dir === "future" ? NEIGHBOR_FUTURE_COLOR : NEIGHBOR_PAST_COLOR;
+      let material: THREE.PointsMaterial | null = null;
+      let webGpuLayer: WebGpuPointCloudLayer | null = null;
+      let object: THREE.Object3D;
+      if (this.rendererStatus.actualBackend === "legacy-webgl2") {
+        material = new THREE.PointsMaterial({
+          size: this.pointSize * 0.8,
+          color,
+          transparent: true,
+          opacity: neighborOpacity(f.distance),
+          sizeAttenuation: true,
+          depthWrite: false,
+        });
+        object = new THREE.Points(geom, material);
+      } else {
+        webGpuLayer = createWebGpuPointCloudLayer(geom, {
+          pointSize: this.pointSize * 0.8,
+          sizeAttenuation: true,
+          color,
+          opacity: neighborOpacity(f.distance),
+          depthWrite: false,
+        });
+        object = webGpuLayer.object;
+      }
+      object.matrixAutoUpdate = false;
+      object.matrix.copy(f.matrix);
+      object.renderOrder = 0; // 在当前帧点(默认)与框之下
+      this.neighborLayer.add(object);
+      this.neighborPoints.push({ object, geometry: geom, material, webGpuLayer });
     }
+  }
+
+  private disposeNeighborPointLayer(pointLayer: NeighborPointLayer) {
+    this.neighborLayer.remove(pointLayer.object);
+    pointLayer.geometry.dispose();
+    pointLayer.material?.dispose();
+    pointLayer.webGpuLayer?.dispose();
   }
 
   private createBoxGroup(id: string): THREE.Group {
@@ -1093,12 +1178,13 @@ export class PointCloudScene {
     // 优先打点云:Raycaster.params.Points.threshold 控制命中半径(米)。
     // try/finally 保证即使 intersectObject 抛错,threshold 也还原,不污染后续 attachTransform
     // 等其他 raycaster 用法。
-    if (this.points) {
+    const pointPickTarget = this.pointRaycastObject ?? this.points;
+    if (pointPickTarget) {
       const prev = this.raycaster.params.Points?.threshold ?? 1;
       this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: 0.3 };
       let hits: THREE.Intersection[];
       try {
-        hits = this.raycaster.intersectObject(this.points, false);
+        hits = this.raycaster.intersectObject(pointPickTarget, false);
       } finally {
         this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: prev };
       }
@@ -1192,11 +1278,7 @@ export class PointCloudScene {
     }
     this.referenceBoxes = [];
     // v0.15.18 · 邻帧点云图层:各自持有 geometry + material,全部 dispose。
-    for (const p of this.neighborPoints) {
-      this.neighborLayer.remove(p);
-      p.geometry.dispose();
-      (p.material as THREE.Material).dispose();
-    }
+    for (const pointLayer of this.neighborPoints) this.disposeNeighborPointLayer(pointLayer);
     this.neighborPoints = [];
     this.unitEdges.dispose();
     this.unitBox.dispose();
@@ -1205,12 +1287,11 @@ export class PointCloudScene {
     this.transform.dispose();
     this.disposeAxisGizmo();
     this.controls.dispose();
-    this.renderer.dispose();
+    disposePointCloudRenderer(this.renderer);
     // renderer.dispose() 只释放渲染缓存/着色器,不丢弃底层 WebGL context(靠 GC 回收,
     // 时机不定)。dev 下 StrictMode 双调用 + 反复 HMR 会让旧 context 堆积到浏览器上限
     // (Chrome ~16),后续 new WebGLRenderer 报 "Error creating WebGL context"。
     // forceContextLoss() 主动触发 context loss,让浏览器立即回收。
-    this.renderer.forceContextLoss();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }

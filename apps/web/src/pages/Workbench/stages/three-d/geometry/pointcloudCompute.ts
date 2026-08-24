@@ -1,129 +1,52 @@
 import { colorizePoints, type CameraSample } from "./colorize";
 import { buildDepthRaster } from "./depthmap";
-
-type PointcloudWorkerResponse =
-  | { reqId: number; ok: true; colors: Float32Array }
-  | { reqId: number; ok: false; error: string };
-
-type PointcloudWorkerRequest = {
-  reqId: number;
-  kind: "colorize";
-  positions: Float32Array;
-  baseColors: Float32Array | null;
-  samples: CameraSample[];
-};
+import { getPointCloudComputeSession, PointCloudComputeSession } from "./pointCloudComputeSession";
 
 type WorkerFactory = () => Worker;
-
-let nextReqId = 1;
-
-function createDefaultWorker(): Worker {
-  return new Worker(new URL("./pointcloud.worker.ts", import.meta.url), { type: "module" });
-}
 
 export function colorizePointsOnMainThread(
   positions: Float32Array,
   baseColors: Float32Array | null,
   samples: CameraSample[],
 ): Float32Array {
-  const rasters = samples.map((s) => buildDepthRaster(positions, s.calib, s.width, s.height));
+  const rasters = samples.map((sample) =>
+    buildDepthRaster(positions, sample.calib, sample.width, sample.height),
+  );
   return colorizePoints(positions, baseColors, samples, rasters);
-}
-
-function cloneSample(sample: CameraSample): CameraSample {
-  return {
-    ...sample,
-    data: sample.data.slice(),
-  };
-}
-
-function transferList(req: PointcloudWorkerRequest): Transferable[] {
-  const transfers: Transferable[] = [req.positions.buffer];
-  if (req.baseColors) transfers.push(req.baseColors.buffer);
-  for (const sample of req.samples) transfers.push(sample.data.buffer);
-  return transfers;
 }
 
 export async function colorizePointsAsync(
   positions: Float32Array,
   baseColors: Float32Array | null,
   samples: CameraSample[],
-  opts: {
+  options: {
     createWorker?: WorkerFactory | null;
     timeoutMs?: number;
     signal?: AbortSignal;
   } = {},
 ): Promise<Float32Array> {
-  if (opts.signal?.aborted)
+  if (options.signal?.aborted) {
     throw new DOMException("Point-cloud colorization aborted", "AbortError");
-  if (samples.length === 0) {
-    return colorizePointsOnMainThread(positions, baseColors, samples);
   }
-  if (typeof Worker === "undefined" && !opts.createWorker) {
+  if (
+    samples.length === 0 ||
+    options.createWorker === null ||
+    (typeof Worker === "undefined" && !options.createWorker)
+  ) {
     return colorizePointsOnMainThread(positions, baseColors, samples);
   }
 
-  let worker: Worker;
+  const customSession = options.createWorker
+    ? new PointCloudComputeSession(options.createWorker)
+    : null;
+  const session = customSession ?? getPointCloudComputeSession();
   try {
-    worker = (opts.createWorker ?? createDefaultWorker)();
-  } catch (err) {
-    console.warn("[pointcloud-worker] fallback to main thread", err);
+    return await session.colorize(positions, baseColors, samples, options);
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    console.warn("[pointcloud-worker] fallback to main thread", error);
     return colorizePointsOnMainThread(positions, baseColors, samples);
+  } finally {
+    customSession?.dispose();
   }
-
-  const reqId = nextReqId;
-  nextReqId += 1;
-  const req: PointcloudWorkerRequest = {
-    reqId,
-    kind: "colorize",
-    positions: positions.slice(),
-    baseColors: baseColors?.slice() ?? null,
-    samples: samples.map(cloneSample),
-  };
-
-  return new Promise((resolve, reject) => {
-    let done = false;
-    const cleanup = () => {
-      window.clearTimeout(timer);
-      opts.signal?.removeEventListener("abort", abort);
-    };
-    const finish = (colors: Float32Array) => {
-      if (done) return;
-      done = true;
-      cleanup();
-      worker.terminate();
-      resolve(colors);
-    };
-    const abort = () => {
-      if (done) return;
-      done = true;
-      cleanup();
-      worker.terminate();
-      reject(new DOMException("Point-cloud colorization aborted", "AbortError"));
-    };
-    const fallback = (err: unknown) => {
-      if (done) return;
-      console.warn("[pointcloud-worker] fallback to main thread", err);
-      finish(colorizePointsOnMainThread(positions, baseColors, samples));
-    };
-    const timer = window.setTimeout(
-      () => fallback(new Error("pointcloud worker timeout")),
-      opts.timeoutMs ?? 10_000,
-    );
-    opts.signal?.addEventListener("abort", abort, { once: true });
-
-    worker.onmessage = (event: MessageEvent<PointcloudWorkerResponse>) => {
-      const msg = event.data;
-      if (msg.reqId !== reqId) return;
-      if (msg.ok) finish(msg.colors);
-      else fallback(new Error(msg.error));
-    };
-    worker.onerror = (event) => fallback(event.error ?? event.message);
-
-    try {
-      worker.postMessage(req, transferList(req));
-    } catch (err) {
-      fallback(err);
-    }
-  });
 }

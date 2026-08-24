@@ -29,6 +29,20 @@ import {
   type TriView,
   type Psr,
 } from "./geometry/triview";
+import {
+  createPointCloudRenderer,
+  disposePointCloudRenderer,
+  type PointCloudRenderer,
+  type PointCloudRendererMode,
+  type PointCloudRendererStatus,
+  type PointCloudRendererSurface,
+} from "./rendering/pointCloudRenderer";
+import {
+  createWebGpuPointCloudLayer,
+  type WebGpuPointCloudLayer,
+} from "./rendering/webgpuPointCloudLayer";
+import type { GpuCameraTextureSample } from "./rendering/cameraTextureColorNode";
+import type { ColorAdjust } from "./geometry/colorize";
 
 /** 一个视图在面板里的像素矩形 (CSS px, 左上原点); 由 React 面板按行布局量出后下发。 */
 export interface ViewRectCss {
@@ -75,10 +89,13 @@ function attributeVersion(
 }
 
 export class TriViewRenderer {
-  private renderer: THREE.WebGLRenderer;
+  private renderer: PointCloudRenderer;
+  private readonly rendererStatus: PointCloudRendererStatus;
   private scene = new THREE.Scene();
-  private points: THREE.Points | null = null;
-  private material: THREE.PointsMaterial;
+  private points: THREE.Object3D | null = null;
+  private geometry: THREE.BufferGeometry | null = null;
+  private material: THREE.PointsMaterial | null = null;
+  private webGpuPointLayer: WebGpuPointCloudLayer | null = null;
   private cameras: Record<TriView, THREE.OrthographicCamera>;
   private rects: ViewRectCss[] = [];
   private box: Psr | null = null;
@@ -100,21 +117,44 @@ export class TriViewRenderer {
   private width: number;
   private height: number;
   private renderCount = 0;
+  private activeRenderCount = 0;
   private colorAttribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null = null;
   private colorVersion = -1;
+  private active = true;
+  private hasRendered = false;
 
-  constructor(container: HTMLElement) {
+  static async create(
+    container: HTMLElement,
+    options: {
+      rendererMode?: PointCloudRendererMode;
+      onDeviceLost?: (reason: string) => void;
+    } = {},
+  ): Promise<TriViewRenderer> {
+    const surface = await createPointCloudRenderer({
+      mode: options.rendererMode ?? "legacy",
+      antialias: true,
+      onDeviceLost: options.onDeviceLost,
+    });
+    return new TriViewRenderer(container, surface);
+  }
+
+  private constructor(container: HTMLElement, surface: PointCloudRendererSurface) {
     this.container = container;
     const { clientWidth: w, clientHeight: h } = container;
     this.width = w || 1;
     this.height = h || 1;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = surface.renderer;
+    this.rendererStatus = surface.status;
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.setSize(this.width, this.height);
     this.renderer.setClearColor(0x0b0d12, 1);
-    this.renderer.localClippingEnabled = true; // 启用 GPU 框内点裁切
+    if ("localClippingEnabled" in this.renderer) {
+      (
+        this.renderer as PointCloudRenderer & { localClippingEnabled: boolean }
+      ).localClippingEnabled = true;
+    }
     const el = this.renderer.domElement;
     el.style.position = "absolute";
     el.style.inset = "0";
@@ -122,12 +162,14 @@ export class TriViewRenderer {
     el.style.pointerEvents = "none"; // 交互交给 overlay (B-2 起)
     container.appendChild(el);
 
-    this.material = new THREE.PointsMaterial({
-      size: 2,
-      vertexColors: true,
-      sizeAttenuation: false, // 正交相机下 attenuation 无效; size 当像素用, 每帧按比例算
-    });
-    this.material.clippingPlanes = []; // 选中框时填 6 面
+    if (this.rendererStatus.actualBackend === "legacy-webgl2") {
+      this.material = new THREE.PointsMaterial({
+        size: 2,
+        vertexColors: true,
+        sizeAttenuation: false, // 正交相机下 attenuation 无效; size 当像素用, 每帧按比例算
+      });
+      this.material.clippingPlanes = []; // 选中框时填 6 面
+    }
 
     const mk = () => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 1000);
     this.cameras = { top: mk(), side: mk(), front: mk() };
@@ -136,9 +178,19 @@ export class TriViewRenderer {
     this.invalidate();
   }
 
+  getRendererStatus(): PointCloudRendererStatus {
+    return this.rendererStatus;
+  }
+
   /** 绑定/解绑要渲染的点 geometry (复用主场景同一份, 不 clone、不 dispose)。 */
   setGeometry(geom: THREE.BufferGeometry | null) {
-    if (this.points?.geometry === geom) {
+    if (this.geometry === geom) {
+      if (geom && this.webGpuPointLayer) {
+        const count = Number.isFinite(geom.drawRange.count)
+          ? geom.drawRange.count
+          : geom.getAttribute("position").count;
+        this.webGpuPointLayer.setPointCount(count);
+      }
       this.invalidate();
       return;
     }
@@ -146,8 +198,19 @@ export class TriViewRenderer {
       this.scene.remove(this.points);
       this.points = null;
     }
+    this.webGpuPointLayer?.dispose();
+    this.webGpuPointLayer = null;
+    this.geometry = geom;
     if (geom) {
-      this.points = new THREE.Points(geom, this.material);
+      if (this.material) {
+        this.points = new THREE.Points(geom, this.material);
+      } else {
+        this.webGpuPointLayer = createWebGpuPointCloudLayer(geom, {
+          pointSize: 2,
+          sizeAttenuation: false,
+        });
+        this.points = this.webGpuPointLayer.object;
+      }
       this.points.frustumCulled = false; // 正交相机各自裁, 关整体 culling
       this.scene.add(this.points);
     }
@@ -160,9 +223,9 @@ export class TriViewRenderer {
   setBox(box: Psr | null) {
     if (samePsr(this.box, box)) return;
     this.box = box;
-    this.material.clippingPlanes = box
-      ? boxLocalClipPlanes(box.center, box.size, box.rotation, FRAME_MARGIN)
-      : [];
+    const planes = box ? boxLocalClipPlanes(box.center, box.size, box.rotation, FRAME_MARGIN) : [];
+    if (this.material) this.material.clippingPlanes = planes;
+    this.webGpuPointLayer?.setClippingPlanes(planes);
     this.invalidate();
   }
 
@@ -203,6 +266,23 @@ export class TriViewRenderer {
     this.invalidate();
   }
 
+  setCameraTextureColorization(samples: readonly GpuCameraTextureSample[] | null) {
+    this.webGpuPointLayer?.setCameraColorization(samples);
+    this.invalidate();
+  }
+
+  setCameraTextureColorAdjust(adjust: ColorAdjust) {
+    this.webGpuPointLayer?.setColorAdjust(adjust);
+    this.invalidate();
+  }
+
+  /** Hidden panels submit once to warm the pipeline, then stay idle until expanded. */
+  setActive(active: boolean) {
+    if (this.active === active) return;
+    this.active = active;
+    if (active) this.invalidate();
+  }
+
   /** 容器尺寸变化: 同步 canvas 像素尺寸 (viewport 由 setViewports 单独给)。 */
   resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
@@ -216,7 +296,7 @@ export class TriViewRenderer {
 
   /** 合并同一帧内的多次状态变化，只提交一次三视图渲染。 */
   invalidate() {
-    if (this.disposed || this.renderRaf) return;
+    if (this.disposed || this.renderRaf || (!this.active && this.hasRendered)) return;
     this.renderRaf = requestAnimationFrame(this.render);
   }
 
@@ -224,7 +304,7 @@ export class TriViewRenderer {
   private watchGeometryChanges = () => {
     if (this.disposed) return;
     this.geometryWatchRaf = requestAnimationFrame(this.watchGeometryChanges);
-    const colorAttribute = this.points?.geometry.getAttribute("color") ?? null;
+    const colorAttribute = this.geometry?.getAttribute("color") ?? null;
     const colorVersion = attributeVersion(colorAttribute);
     if (colorAttribute === this.colorAttribute && colorVersion === this.colorVersion) return;
     this.colorAttribute = colorAttribute;
@@ -291,10 +371,18 @@ export class TriViewRenderer {
         this.zoomByView[rect.view],
       );
       const sCss = rect.w / 2 / halfW;
-      this.material.size = Math.max(1, this.worldPointSize * sCss * this.dpr);
+      const pointSize = Math.max(1, this.worldPointSize * sCss * this.dpr);
+      if (this.material) this.material.size = pointSize;
+      this.webGpuPointLayer?.setPointSize(pointSize);
       r.render(this.scene, this.cameras[rect.view]);
+      this.hasRendered = true;
     }
     r.setScissorTest(false);
+    if (import.meta.env.DEV && this.active && this.hasRendered) {
+      this.activeRenderCount += 1;
+      this.container.dataset.triViewActiveRenderCount = String(this.activeRenderCount);
+      this.container.dataset.triViewActiveRenderAt = String(performance.now());
+    }
   };
 
   dispose() {
@@ -305,11 +393,14 @@ export class TriViewRenderer {
     this.geometryWatchRaf = 0;
     if (this.points) this.scene.remove(this.points); // 不 dispose geometry (主场景拥有)
     this.points = null;
-    this.material.dispose();
-    this.renderer.dispose();
+    this.geometry = null;
+    this.webGpuPointLayer?.dispose();
+    this.webGpuPointLayer = null;
+    this.material?.dispose();
+    this.material = null;
+    disposePointCloudRenderer(this.renderer);
     // renderer.dispose() 不丢弃底层 WebGL context;dev 下 StrictMode 双调用 + HMR 反复
     // 重建会让 context 堆积到浏览器上限。forceContextLoss() 主动释放,避免耗尽。
-    this.renderer.forceContextLoss();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }

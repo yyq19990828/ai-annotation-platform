@@ -190,18 +190,22 @@ def _compute_ego_to_cam_extrinsic(
 
 
 # --------------------------------------------------------------------------- #
-# .pcd.bin → ASCII PCD
+# .pcd.bin → binary PCD
 # --------------------------------------------------------------------------- #
-def _lidar_bin_to_ascii_pcd(
+PCD_ENCODING = "binary_xyz_f32"
+
+
+def _lidar_bin_to_binary_pcd(
     bin_path: Path,
     *,
     transform: np.ndarray | None = None,
 ) -> bytes:
     """nuScenes LIDAR_TOP .pcd.bin 是 float32 数组,每点 5 个 float (x y z intensity ring)。
-    只取前 3 列写成标准 ASCII PCD(x y z)。"""
+    只取前 3 列写成标准 little-endian binary PCD(x y z)。"""
     pts = np.fromfile(str(bin_path), dtype=np.float32).reshape(-1, 5)[:, :3]
     if transform is not None and pts.size:
         pts = pts @ transform[:3, :3].T + transform[:3, 3]
+    pts = np.ascontiguousarray(pts, dtype="<f4")
     n = pts.shape[0]
     header = (
         "# .PCD v0.7 - Point Cloud Data file format\n"
@@ -214,11 +218,9 @@ def _lidar_bin_to_ascii_pcd(
         "HEIGHT 1\n"
         "VIEWPOINT 0 0 0 1 0 0 0\n"
         f"POINTS {n}\n"
-        "DATA ascii\n"
+        "DATA binary\n"
     )
-    lines = "\n".join(f"{p[0]} {p[1]} {p[2]}" for p in pts)
-    body = lines + ("\n" if n else "")
-    return (header + body).encode("utf-8")
+    return header.encode("ascii") + pts.tobytes(order="C")
 
 
 # --------------------------------------------------------------------------- #
@@ -315,6 +317,7 @@ async def import_nuscenes(
     # 1. ensure/复用 dataset(派生固定 display_id → 幂等)
     display_id = dataset_display_id or _derived_display_id("DS-NU-", dataset_name)
     ds = await db.scalar(select(Dataset).where(Dataset.display_id == display_id))
+    needs_pcd_upgrade = False
     if ds is None:
         ds = Dataset(
             id=uuid.uuid4(),
@@ -329,6 +332,7 @@ async def import_nuscenes(
                     "format": "nuscenes",
                     "version": version,
                     "scenes": sorted(scene_names),
+                    "pcd_encoding": PCD_ENCODING,
                 },
             },
         )
@@ -336,6 +340,10 @@ async def import_nuscenes(
         await db.flush()
     else:
         meta = dict(ds.metadata_ or {})
+        existing_source = meta.get("source")
+        needs_pcd_upgrade = not isinstance(existing_source, dict) or (
+            existing_source.get("pcd_encoding") != PCD_ENCODING
+        )
         existing_axis = meta.get("axis_convention")
         if existing_axis and existing_axis != axis_convention:
             raise ValueError(
@@ -349,13 +357,16 @@ async def import_nuscenes(
             "format": "nuscenes",
             "version": version,
             "scenes": sorted(scene_names),
+            "pcd_encoding": PCD_ENCODING,
         }
         ds.metadata_ = meta
         ds.is_temporal = True
         await db.flush()
 
     bucket = storage_service.datasets_bucket
-    existing_scene_names = {s.name for s in await scene_svc.list_for_dataset(db, ds.id)}
+    existing_scenes = {
+        scene.name: scene for scene in await scene_svc.list_for_dataset(db, ds.id)
+    }
 
     report_scenes: list[dict] = []
     total_items = 0
@@ -368,12 +379,72 @@ async def import_nuscenes(
                 f"scene name {scene_name!r} 在 {meta_dir}/scene.json 中不存在"
             )
 
-        if scene_name in existing_scene_names:
-            # 幂等:同名 scene 已建过,跳过(仍记入报告)
+        if scene_name in existing_scenes:
+            # 幂等:同名 scene 已建过时保留 task / annotation；旧 ASCII PCD
+            # 只原位覆盖对象并同步 DB 大小与哈希。
             samples = _ordered_samples(scene_row, samples_by_token)
-            report_scenes.append(
-                {"name": scene_name, "frames": len(samples), "skipped": True}
-            )
+            upgraded_point_clouds = 0
+            if needs_pcd_upgrade:
+                scene = existing_scenes[scene_name]
+                lidar_items = list(
+                    (
+                        await db.execute(
+                            select(DatasetItem)
+                            .where(DatasetItem.dataset_id == ds.id)
+                            .where(DatasetItem.scene_id == scene.id)
+                            .where(DatasetItem.file_type == "point_cloud")
+                        )
+                    ).scalars()
+                )
+                lidar_by_frame = {item.frame_index: item for item in lidar_items}
+                if len(lidar_by_frame) != len(samples):
+                    raise ValueError(
+                        f"scene {scene_name!r} 已存在的 lidar 帧数与 nuScenes 源不一致"
+                    )
+                for frame_idx, sample in enumerate(samples):
+                    by_channel = _key_sample_data_by_channel(
+                        sample["token"], sample_data, cs_by_token, sensor_by_token
+                    )
+                    lidar_sd = next(
+                        (
+                            sd
+                            for sd in by_channel.values()
+                            if sensor_by_token[
+                                cs_by_token[sd["calibrated_sensor_token"]][
+                                    "sensor_token"
+                                ]
+                            ]["modality"]
+                            == "lidar"
+                        ),
+                        None,
+                    )
+                    if lidar_sd is None:
+                        raise ValueError(
+                            f"scene {scene_name!r} sample {sample['token']!r} 无 lidar keyframe"
+                        )
+                    item = lidar_by_frame.get(frame_idx)
+                    if item is None:
+                        raise ValueError(
+                            f"scene {scene_name!r} 缺少 frame_index={frame_idx} 的 lidar item"
+                        )
+                    cs_lidar = cs_by_token[lidar_sd["calibrated_sensor_token"]]
+                    transform = _transform(
+                        cs_lidar["rotation"], cs_lidar["translation"]
+                    )
+                    pcd_bytes = _lidar_bin_to_binary_pcd(
+                        nuscenes_root / lidar_sd["filename"],
+                        transform=transform if frame == "ego" else None,
+                    )
+                    storage_service.client.put_object(
+                        Bucket=bucket, Key=item.file_path, Body=pcd_bytes
+                    )
+                    item.file_size = len(pcd_bytes)
+                    item.content_hash = hashlib.sha256(pcd_bytes).hexdigest()
+                    upgraded_point_clouds += 1
+            report = {"name": scene_name, "frames": len(samples), "skipped": True}
+            if upgraded_point_clouds:
+                report["upgraded_point_clouds"] = upgraded_point_clouds
+            report_scenes.append(report)
             continue
 
         samples = _ordered_samples(scene_row, samples_by_token)
@@ -430,7 +501,7 @@ async def import_nuscenes(
                 cs_lidar["rotation"],
                 cs_lidar["translation"],
             )
-            pcd_bytes = _lidar_bin_to_ascii_pcd(
+            pcd_bytes = _lidar_bin_to_binary_pcd(
                 nuscenes_root / lidar_sd["filename"],
                 transform=T_ego_from_lidar if frame == "ego" else None,
             )

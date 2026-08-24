@@ -12,6 +12,11 @@ import {
   type VideoReferenceSetting,
 } from "../stage/videoReferencePredict";
 import type { LockableField, WorkbenchConfigPatch } from "./useWorkbenchConfig";
+import {
+  POINT_CLOUD_WEBGPU_STORAGE_KEY,
+  readPointCloudWebGpuExperiment,
+  writePointCloudWebGpuExperiment,
+} from "../stages/three-d/pointCloudExperiment";
 
 export type WorkbenchPreferenceSettingCategory = "common" | "image" | "video" | "pointcloud";
 export type WorkbenchSettingCategory = WorkbenchPreferenceSettingCategory | "experiment";
@@ -53,6 +58,8 @@ interface WorkbenchSettingFieldBase {
   control: WorkbenchSettingControl;
   /** 注册但不渲染。v0.15.3 红线:不新增用户可感知项(snapToGrid 现状无设置 UI)。 */
   hidden?: boolean;
+  /** 实验字段在工作台抽屉中只显示给相关模态；个人设置页仍展示全部。 */
+  stageKinds?: Array<"image" | "video" | "3d">;
 }
 
 export interface WorkbenchPreferenceSettingField extends WorkbenchSettingFieldBase {
@@ -559,9 +566,22 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     },
   },
   {
+    key: "experiment.pointCloudWebGpuRenderer",
+    category: "experiment",
+    storage: "local",
+    stageKinds: ["3d"],
+    label: "3D WebGPU 渲染器",
+    description:
+      "实验性、默认关闭；完整切换 3D 主视图和框体精修视图，刷新或重新打开 3D 任务后生效。实际后端会显示在 3D 状态栏",
+    control: { type: "toggle", onText: "实验已启用", offText: "Legacy" },
+    read: () => readPointCloudWebGpuExperiment(),
+    write: (value) => writePointCloudWebGpuExperiment(Boolean(value)),
+  },
+  {
     key: "experiment.webcodecs",
     category: "experiment",
     storage: "local",
+    stageKinds: ["video"],
     label: "WebCodecs 精确解码",
     description: "默认开启;暂停、逐帧和 seek 优先精确解码,不支持时安全回退,刷新后生效",
     control: { type: "toggle" },
@@ -572,6 +592,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     key: "experiment.videoReferencePredict",
     category: "experiment",
     storage: "local",
+    stageKinds: ["video"],
     label: "参考框运动预测",
     description: "实验性,即时生效:选中轨迹当前帧无框时的参考框如何预测(默认取最近关键帧)",
     control: {
@@ -587,6 +608,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     write: (value) => writeVideoReferenceSetting(value as VideoReferenceSetting),
   },
 ];
+
+export { POINT_CLOUD_WEBGPU_STORAGE_KEY };
 
 export function isLocalSettingField(
   field: WorkbenchSettingField,

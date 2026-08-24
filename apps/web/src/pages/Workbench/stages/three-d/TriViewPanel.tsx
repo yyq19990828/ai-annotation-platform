@@ -17,6 +17,12 @@ import type * as THREE from "three";
 import { TriViewRenderer, type ViewRectCss } from "./TriViewRenderer";
 import { TriOrthoView, type TriSelected } from "./TriOrthoView";
 import type { TriView, Psr } from "./geometry/triview";
+import type {
+  PointCloudRendererMode,
+  PointCloudRendererStatus,
+} from "./rendering/pointCloudRenderer";
+import type { GpuCameraTextureSample } from "./rendering/cameraTextureColorNode";
+import type { ColorAdjust } from "./geometry/colorize";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
 const TRI_PANEL = "relative flex-1 flex flex-col gap-1.5 p-1.5 bg-card min-h-0";
@@ -65,6 +71,12 @@ interface TriViewPanelProps {
   editable: boolean;
   /** 点大小 (米): 跟随主视图点大小滑杆。 */
   pointSize: number;
+  rendererMode?: PointCloudRendererMode;
+  onRendererStatus?: (status: PointCloudRendererStatus) => void;
+  cameraTextureSamples?: readonly GpuCameraTextureSample[] | null;
+  cameraColorAdjust?: ColorAdjust;
+  /** False keeps one hidden warm-up submit, then pauses rendering until the panel is expanded. */
+  active?: boolean;
   /** 当前对象按视图记忆的缩放倍数。 */
   zoomByView: Record<TriView, number>;
   onZoomChange: (view: TriView, zoom: number) => void;
@@ -107,6 +119,11 @@ export function TriViewPanel({
   pointsReady,
   editable,
   pointSize,
+  rendererMode = "legacy",
+  onRendererStatus,
+  cameraTextureSamples = null,
+  cameraColorAdjust,
+  active = true,
   zoomByView,
   onZoomChange,
   onEditPsr,
@@ -118,6 +135,8 @@ export function TriViewPanel({
     front: null,
   });
   const rendererRef = useRef<TriViewRenderer | null>(null);
+  const [rendererReadyVersion, setRendererReadyVersion] = useState(0);
+  const [rendererCircuitReason, setRendererCircuitReason] = useState<string | null>(null);
   // 拖拽期冻结取景参考 (起始姿态); null = 无拖拽。
   const [frozen, setFrozen] = useState<Psr | null>(null);
 
@@ -140,32 +159,72 @@ export function TriViewPanel({
 
   // 挂载建 renderer, 卸载 dispose; 面板尺寸变化重排。
   useEffect(() => {
-    if (!panelRef.current) return;
-    const r = new TriViewRenderer(panelRef.current);
-    rendererRef.current = r;
-    layout();
-    const ro = new ResizeObserver(() => layout());
-    ro.observe(panelRef.current);
+    const panel = panelRef.current;
+    if (!panel) return;
+    let cancelled = false;
+    let r: TriViewRenderer | null = null;
+    let ro: ResizeObserver | null = null;
+    const effectiveRendererMode = rendererCircuitReason ? "legacy" : rendererMode;
+    void TriViewRenderer.create(panel, {
+      rendererMode: effectiveRendererMode,
+      onDeviceLost: (reason) => {
+        if (!cancelled && rendererMode === "webgpu-experimental") {
+          setRendererCircuitReason(`tri-device-lost: ${reason}`);
+        }
+      },
+    }).then((created) => {
+      if (cancelled) {
+        created.dispose();
+        return;
+      }
+      r = created;
+      rendererRef.current = created;
+      const status = created.getRendererStatus();
+      onRendererStatus?.(
+        rendererCircuitReason
+          ? { ...status, requestedMode: rendererMode, fallbackReason: rendererCircuitReason }
+          : status,
+      );
+      setRendererReadyVersion((value) => value + 1);
+      layout();
+      ro = new ResizeObserver(() => layout());
+      ro.observe(panel);
+    });
     return () => {
-      ro.disconnect();
-      r.dispose();
-      rendererRef.current = null;
+      cancelled = true;
+      ro?.disconnect();
+      r?.dispose();
+      if (rendererRef.current === r) rendererRef.current = null;
     };
-  }, [layout]);
+  }, [layout, onRendererStatus, rendererCircuitReason, rendererMode]);
 
   // 点云加载完 (或换帧) 重绑 geometry。
   useEffect(() => {
     rendererRef.current?.setGeometry(getPointsGeometry());
-  }, [pointsReady, getPointsGeometry]);
+  }, [pointsReady, getPointsGeometry, rendererReadyVersion]);
 
   // 点大小跟随主视图滑杆。
   useEffect(() => {
     rendererRef.current?.setPointSize(pointSize);
-  }, [pointSize]);
+  }, [pointSize, rendererReadyVersion]);
+
+  useEffect(() => {
+    rendererRef.current?.setActive(active);
+  }, [active, rendererReadyVersion]);
+
+  useEffect(() => {
+    rendererRef.current?.setCameraTextureColorization(cameraTextureSamples);
+  }, [cameraTextureSamples, pointsReady, rendererReadyVersion]);
+
+  useEffect(() => {
+    if (cameraColorAdjust) {
+      rendererRef.current?.setCameraTextureColorAdjust(cameraColorAdjust);
+    }
+  }, [cameraColorAdjust, pointsReady, rendererReadyVersion]);
 
   useEffect(() => {
     rendererRef.current?.setZoomByView(zoomByView);
-  }, [zoomByView]);
+  }, [zoomByView, rendererReadyVersion]);
 
   // 选中框 PSR 变化 (含拖拽 draft): 更新裁剪面/相机, 并重排。
   useEffect(() => {
@@ -175,12 +234,12 @@ export function TriViewPanel({
         : null,
     );
     layout();
-  }, [selected, layout]);
+  }, [selected, layout, rendererReadyVersion]);
 
   // 拖拽期冻结相机取景 (裁剪面仍随实时 box)。
   useEffect(() => {
     rendererRef.current?.setCameraRef(frozen);
-  }, [frozen]);
+  }, [frozen, rendererReadyVersion]);
 
   const handleDragStart = useCallback((startPsr: Psr) => setFrozen(startPsr), []);
   const handleDragMove = useCallback((psr: Psr) => onEditPsr(psr, false), [onEditPsr]);
@@ -193,7 +252,7 @@ export function TriViewPanel({
   );
 
   return (
-    <div ref={panelRef} className={TRI_PANEL}>
+    <div ref={panelRef} className={TRI_PANEL} data-testid="tri-view-renderer-panel">
       {VIEWS.map((view) => (
         <div
           key={view}

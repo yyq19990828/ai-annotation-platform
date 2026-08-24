@@ -35,13 +35,31 @@
 
 ## [Unreleased]
 
+## [0.24.7] - 2026-08-25
+
 ### Added
 
 - 3D 点云工作台新增只读 Scene 时间轴：可查看当前帧、缺失帧、每帧 3D 标注密度和选中对象的跨帧存在位置，并从底部测量带直接切换任务、恢复同轨迹对象选择；窗口摘要、权限脱敏和虚拟化渲染让一万帧场景也不会退化为逐帧请求。
+- 3D 工作台新增默认关闭的 WebGPU 实验渲染器，可在刷新后让主视图与三正交视图共同使用实例化点精灵，并在状态栏显示真实 WebGPU、WebGL2 fallback 或 Legacy backend；初始化失败和 device lost 会安全回退，跨厂商 GPU 资格完成前不会转为默认功能。
+
+### Changed
+
+- nuScenes 导入与开发 seed 现在把激光雷达转换为紧凑的 little-endian binary PCD；再次执行 seed 会原位升级已有 ASCII 点云并保留任务和标注，减少冷切帧的传输与解析开销。
+- 点云帧资源改为持久 Worker 解析和有界缓存，Scene 时间轴会优先预解析前进方向的 PCD、预解码相机 `ImageBitmap`，回退帧则在悬停或键盘聚焦时按需预取；实验上色直接在 TSL 材质中采样相机纹理，亮度、对比度和 Gamma 只更新 GPU uniform，不再回读 Canvas 或上传逐点 RGB。
+- 实验 WebGPU 切帧改为复用容量分级的实例缓冲和固定六路相机采样 shader，只更新点属性、纹理与标定 uniform；避免每帧重建 `PointsNodeMaterial` / TSL 图，把相邻帧 geometry 与 RGB 的首次绘制移出重复编译关键路径。
+- WebGPU 相机上色的遮挡深度资源改为 depth-only Worker 结果和 8 MiB 有界 LRU，并只在实际 WebGPU backend 下随相邻帧预取；warm 切帧可直接复用深度纹理数据，Legacy 与 fallback 不承担额外后台计算。
+- 点云渲染链新增可在 DevTools trace 中定位 geometry 与相机颜色首次绘制的 Performance mark，并提供同一 nuScenes 任务下的 Legacy / WebGPU A/B 脚本；报告会将运行有效性与“可转正常功能”性能门分开，样本或指标不足时不会误判通过。
 
 ### Fixed
 
+- WebGPU 相机上色释放深度纹理时会同步断开 CPU 栅格 payload，避免长会话跨帧后每轮残留约一帧深度数组；开发基准同时记录 V8 heap、renderer/GPU RSS、缓存 owner 与 Worker pending，能够区分有界预热和资源泄漏。
+- 实验 WebGPU 主视图或三视图丢失 GPU device 后会卸载旧 canvas 并就地重建 Legacy renderer，保留丢失原因且不中断点云操作。
+- 折叠三视图时，选中 3D 框不再提前创建 Legacy WebGL renderer；WebGPU 实验路径仍保留一次隐藏预热，避免选框时的额外 context 开销并让精修首帧实际受益。
+- 点云 A/B 基准改用浏览器真实 click 事件到实际 renderer 首帧的时间边界，不再把 Playwright 协议和浮窗标题显隐误算为应用渲染延迟。
+- Scene 时间轴切帧只等待目标 PCD 与相机位图就绪；WebGPU 深度栅格仍会在持久 Worker 中预取并进入缓存，但不再阻塞导航，避免缓存中的 pending 深度任务拖慢相邻帧切换。
 - 3D Scene 切帧会立即清除上一帧点云并隔离过期异步结果，相机面板不再用旧帧图片等待新图，相机 RGB 只在当前点云就绪后计算并一次性显示，避免旧数据暂留和高度色带 / RGB 来回闪烁；时间轴同时预取相邻帧的 PCD 与相机资源，减少真实 nuScenes 帧的网络等待。
+- 点云切帧不再为了等待相机 RGB 隐藏新 geometry；高度色会立即可见，资源就绪后最多切换一次 RGB，避免空场景和上色开关之间的抖动。
+- 三视图精修收起时保留 renderer 和点图层，实验 WebGPU 会在隐藏态完成一次首帧预热后暂停不可见提交；首次展开及重复收起/展开不再触发 60 ms 级主线程长任务。
 
 ## [0.24.3] - 2026-08-24
 
