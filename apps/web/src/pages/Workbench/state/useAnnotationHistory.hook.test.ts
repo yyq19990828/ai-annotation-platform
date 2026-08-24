@@ -56,12 +56,14 @@ describe("useAnnotationHistory · 栈状态机", () => {
     });
     await waitFor(() => expect(result.current.canRedo).toBe(true));
     expect(handlers.updateAnnotation).toHaveBeenCalledWith("a1", { class_name: "old" });
+    expect(handlers.updateAnnotation).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await result.current.redo();
     });
     await waitFor(() => expect(result.current.canUndo).toBe(true));
     expect(handlers.updateAnnotation).toHaveBeenCalledWith("a1", { class_name: "new" });
+    expect(handlers.updateAnnotation).toHaveBeenCalledTimes(2);
   });
 
   it("新 push 清空 redo 栈", async () => {

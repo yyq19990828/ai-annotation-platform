@@ -101,7 +101,7 @@ PROJECT_STATE = {
         "owner": "project_admin",
     },
     "pointcloud_demo": {
-        "name": "真实室内点云（截图）",
+        "name": "nuScenes mini 自动驾驶场景（截图）",
         "type_label": "点云检测",
         "type_key": "lidar",
         "data_type": "lidar",
@@ -144,10 +144,10 @@ DATASET_STATE = {
         "data_type": "video",
     },
     "pointcloud_demo": {
-        "name": "screenshots-real-pointcloud",
-        "description": "Point Cloud Library 真实 RGB-D 室内扫描序列",
+        "name": "nuscenes-mini",
+        "description": "nuScenes mini scene-0061 的 39 帧激光雷达与六相机同步序列",
         "data_type": "point_cloud",
-        "axis_convention": "opencv_camera",
+        "axis_convention": "iso_8855",
     },
     "pointcloud_multicam_demo": {
         "name": "screenshots-nuscenes-multicamera",
@@ -176,6 +176,8 @@ LEGACY_PROJECT_NAMES = {
     "pointcloud_demo": {
         "点云联合标注 (dev)",
         "合成点云联合标注（截图）",
+        "真实室内点云（截图）",
+        "nuScenes mini 自动驾驶场景（dev）",
         PROJECT_STATE["pointcloud_demo"]["name"],
     },
     "pointcloud_multicam_demo": {PROJECT_STATE["pointcloud_multicam_demo"]["name"]},
@@ -195,6 +197,7 @@ LEGACY_DATASET_NAMES = {
     "pointcloud_demo": {
         "pc-scene-dev",
         "screenshots-synthetic-pointcloud",
+        "screenshots-real-pointcloud",
         DATASET_STATE["pointcloud_demo"]["name"],
     },
     "pointcloud_multicam_demo": {
@@ -202,6 +205,9 @@ LEGACY_DATASET_NAMES = {
         DATASET_STATE["pointcloud_multicam_demo"]["name"],
     },
     "ocr_demo": {"ocr-dev", DATASET_STATE["ocr_demo"]["name"]},
+}
+LEGACY_STORAGE_PREFIXES = {
+    "pointcloud_demo": {"pc-scene-dev/", "nuscenes-mini/"},
 }
 
 
@@ -295,7 +301,13 @@ async def _assert_rebuild_ownership(
                 )
             ).scalars()
         )
-        if any(not item.file_path.startswith(spec.storage_prefix) for item in items):
+        allowed_prefixes = LEGACY_STORAGE_PREFIXES.get(
+            logical_key, {spec.storage_prefix}
+        )
+        if any(
+            not any(item.file_path.startswith(prefix) for prefix in allowed_prefixes)
+            for item in items
+        ):
             raise ScreenshotSeedReconcileError(
                 f"{spec.dataset_display_id}: legacy seed has unexpected storage paths"
             )

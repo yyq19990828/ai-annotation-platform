@@ -1,7 +1,12 @@
 // v0.16.x 第 2 批 · ThreeDWorkbench PSR 表单纯逻辑测试守护(伴随从 schedulePatch /
 // handleFieldBlur 提炼,锁定字段校验与 form→geometry 转换行为)。
 import { describe, it, expect } from "vitest";
-import { isPsrFieldBad, parsePsrForm, psrFormToGeometry } from "./ThreeDWorkbench.helpers";
+import {
+  buildThreeDLayoutPreset,
+  isPsrFieldBad,
+  parsePsrForm,
+  psrFormToGeometry,
+} from "./ThreeDWorkbench.helpers";
 import type { PsrField } from "./ThreeDWorkbench.helpers";
 
 const FULL_FORM: Record<PsrField, string> = {
@@ -59,5 +64,45 @@ describe("psrFormToGeometry", () => {
       rotation: [0 * deg, 0 * deg, 90 * deg],
       convention_at_create: "raw",
     });
+  });
+});
+
+describe("buildThreeDLayoutPreset", () => {
+  const roles = ["front", "side", "front"];
+
+  it("框体精修只展开默认三视图并收起当前相机 role", () => {
+    expect(buildThreeDLayoutPreset("box-refinement", roles)).toEqual({
+      triViewFloat: { collapsed: false, x: null, y: null, w: null, h: null },
+      cameraPanels: {
+        front: { x: null, y: null, collapsed: true },
+        side: { x: null, y: null, collapsed: true },
+      },
+    });
+  });
+
+  it("传感器融合清空相机自定义记录并收起默认三视图", () => {
+    expect(buildThreeDLayoutPreset("sensor-fusion", roles)).toEqual({
+      triViewFloat: { collapsed: true, x: null, y: null, w: null, h: null },
+      cameraPanels: {},
+    });
+  });
+
+  it("点级分割收起三视图与当前全部相机，但不含其他布局字段", () => {
+    const patch = buildThreeDLayoutPreset("point-segmentation", roles);
+    expect(patch).toEqual({
+      triViewFloat: { collapsed: true, x: null, y: null, w: null, h: null },
+      cameraPanels: {
+        front: { x: null, y: null, collapsed: true },
+        side: { x: null, y: null, collapsed: true },
+      },
+    });
+    expect(Object.keys(patch).sort()).toEqual(["cameraPanels", "triViewFloat"]);
+  });
+
+  it.each([0, 1, 2, 6])("按 manifest 的 %i 路相机生成且不虚构 role", (count) => {
+    const matrixRoles = Array.from({ length: count }, (_, index) => `camera-${index + 1}`);
+    expect(
+      Object.keys(buildThreeDLayoutPreset("box-refinement", matrixRoles).cameraPanels ?? {}),
+    ).toEqual(matrixRoles);
   });
 });

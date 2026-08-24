@@ -4,7 +4,8 @@ import type { CSSProperties } from "react";
 import * as THREE from "three";
 import type { Box3DGeometry, SensorCalibration } from "@/types";
 import type { FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import type { TriViewFloatState } from "@/api/auth";
+import type { CameraPanelState, TriViewFloatState } from "@/api/auth";
+import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { Psr } from "./geometry/triview";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import type { CameraSample } from "./geometry/colorize";
@@ -24,6 +25,38 @@ export const TRI_FLOAT_DEFAULT_H = 440;
 export const TRI_TAB_DRAG_SIZE = { w: 96, h: 34 };
 // 收起标签拖动判定阈值:位移超过此值才算"拖动"(否则按点击展开),px。
 export const TRI_TAB_DRAG_THRESHOLD = 3;
+export type ThreeDLayoutPreset = "box-refinement" | "sensor-fusion" | "point-segmentation";
+
+export const THREE_D_LAYOUT_PRESETS: ReadonlyArray<{
+  id: ThreeDLayoutPreset;
+  label: string;
+  description: string;
+}> = [
+  { id: "box-refinement", label: "框体精修", description: "展开三视图，收起相机面板" },
+  { id: "sensor-fusion", label: "传感器融合", description: "收起三视图，恢复相机默认贴边" },
+  { id: "point-segmentation", label: "点级分割", description: "收起三视图和相机面板" },
+];
+
+/** 生成一次性恢复命令，不引入“当前预设”持久状态。 */
+export function buildThreeDLayoutPreset(
+  preset: ThreeDLayoutPreset,
+  cameraRoles: readonly string[],
+): Pick<WorkbenchLayoutPatch, "triViewFloat" | "cameraPanels"> {
+  const collapsedCameras: Record<string, CameraPanelState> = {};
+  for (const role of new Set(cameraRoles.filter(Boolean))) {
+    collapsedCameras[role] = { x: null, y: null, collapsed: true };
+  }
+  return {
+    triViewFloat: {
+      collapsed: preset !== "box-refinement",
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+    cameraPanels: preset === "sensor-fusion" ? {} : collapsedCameras,
+  };
+}
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 export type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;

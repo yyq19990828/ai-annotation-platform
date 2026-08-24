@@ -37,6 +37,20 @@ export const MIN_SIZE = 0.05;
 /** 三视图正交相机/裁剪在框各方向额外放宽的米数 (看清框边界外一圈轮廓贴合度)。 */
 export const FRAME_MARGIN = 0.6;
 
+export const TRI_ZOOM_DEFAULT = 1;
+export const TRI_ZOOM_STEP = 1.12;
+export const TRI_ZOOM_MIN = 0.5;
+export const TRI_ZOOM_MAX = 8;
+
+export function clampTriZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return TRI_ZOOM_DEFAULT;
+  return Math.min(TRI_ZOOM_MAX, Math.max(TRI_ZOOM_MIN, zoom));
+}
+
+export function stepTriZoom(zoom: number, direction: 1 | -1): number {
+  return clampTriZoom(zoom * (direction > 0 ? TRI_ZOOM_STEP : 1 / TRI_ZOOM_STEP));
+}
+
 function toVec3(v: THREE.Vector3): Vec3 {
   return [v.x, v.y, v.z];
 }
@@ -54,15 +68,17 @@ export function frameOrtho(
   view: TriView,
   aspect: number,
   margin = FRAME_MARGIN,
+  zoom = TRI_ZOOM_DEFAULT,
 ): { halfW: number; halfH: number } {
   const { u, v } = VIEW_AXES[view];
   const halfU = size[u] / 2 + margin; // 屏幕横轴方向需框住的半宽 (米)
   const halfV = size[v] / 2 + margin; // 屏幕纵轴方向需框住的半高 (米)
   // 框的宽高比 vs 视口宽高比: 框更"宽"则按宽贴边、高度按 aspect 撑开; 反之按高贴边。
+  const safeZoom = clampTriZoom(zoom);
   if (halfU / halfV > aspect) {
-    return { halfW: halfU, halfH: halfU / aspect };
+    return { halfW: halfU / safeZoom, halfH: halfU / aspect / safeZoom };
   }
-  return { halfW: halfV * aspect, halfH: halfV };
+  return { halfW: (halfV * aspect) / safeZoom, halfH: halfV / safeZoom };
 }
 
 /**

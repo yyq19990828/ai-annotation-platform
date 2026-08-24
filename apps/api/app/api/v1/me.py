@@ -162,7 +162,12 @@ def _promote_legacy_workbench_keys(payload: dict) -> dict:
 _REMOVED_WORKBENCH_LAYOUT_KEYS = ("leftWidth", "rightWidth")
 
 
-def _deep_merge_preferences(existing: dict, incoming: dict) -> dict:
+_ATOMIC_PREFERENCE_MAP_PATHS = {("workbench", "layout", "cameraPanels")}
+
+
+def _deep_merge_preferences(
+    existing: dict, incoming: dict, *, _path: tuple[str, ...] = ()
+) -> dict:
     """把 incoming 深合并到 existing 的副本: dict 递归、其它类型 (list / scalar) 直接覆盖。
 
     动机: pydantic exclude_unset PATCH 只带用户本次改的键, 顶层浅合并会让"改一个字段=
@@ -171,12 +176,17 @@ def _deep_merge_preferences(existing: dict, incoming: dict) -> dict:
     字段, ai.secondary_by_model 里单 backend 桶 PATCH 也不冲掉其它 backend 的偏好。
 
     注: list 直接覆盖 (合并语义不确定), 前端如需增删列表元素应提交完整列表。
+    workbench.layout.cameraPanels 是按 role 提交的完整 map；缺失 role 表示删除
+    其自定义状态，故该路径不能递归合并。
     """
     out: dict = dict(existing)
     for k, v in incoming.items():
         cur = out.get(k)
-        if isinstance(v, dict) and isinstance(cur, dict):
-            out[k] = _deep_merge_preferences(cur, v)
+        path = (*_path, k)
+        if path in _ATOMIC_PREFERENCE_MAP_PATHS:
+            out[k] = v
+        elif isinstance(v, dict) and isinstance(cur, dict):
+            out[k] = _deep_merge_preferences(cur, v, _path=path)
         else:
             out[k] = v
     return out

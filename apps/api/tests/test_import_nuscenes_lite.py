@@ -226,6 +226,10 @@ async def test_import_nuscenes_two_scenes(
         scene_names=["scene-0000", "scene-0001"],
         dataset_name="nu-lite-multi",
         owner_id=user.id,
+        dataset_display_id="DS-PC-TEST",
+        project_display_id="P-PC-TEST",
+        project_name="nuScenes test seed",
+        tool_bindings={"lidar_box_3d": {"enabled": True}},
     )
 
     # 1. 跑通,报告自洽
@@ -233,7 +237,27 @@ async def test_import_nuscenes_two_scenes(
     assert all(s["frames"] == 3 for s in result["scenes"])
     dataset_id = result["dataset_id"]
     dataset = await db_session.get(Dataset, dataset_id)
+    project = await db_session.get(Project, result["project_id"])
+    assert dataset.display_id == "DS-PC-TEST"
+    assert dataset.file_count == 14
     assert dataset.metadata_["axis_convention"] == "iso_8855"
+    assert dataset.metadata_["source"] == {
+        "format": "nuscenes",
+        "version": "v1.0-mini",
+        "scenes": ["scene-0000", "scene-0001"],
+    }
+    assert project.display_id == "P-PC-TEST"
+    assert project.name == "nuScenes test seed"
+    assert project.tool_bindings == {"lidar_box_3d": {"enabled": True}}
+    items = list(
+        (
+            await db_session.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
+            )
+        ).scalars()
+    )
+    assert len(items) == 14
+    assert all(item.content_hash and len(item.content_hash) == 64 for item in items)
 
     # 2. DB 里 2 个 Scene 行,name 对应
     scenes = (

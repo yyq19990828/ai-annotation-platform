@@ -22,7 +22,7 @@ import type { TriView, Psr } from "./geometry/triview";
 const TRI_PANEL = "relative flex-1 flex flex-col gap-1.5 p-1.5 bg-card min-h-0";
 const TRI_ROW = "relative flex-1 min-h-0 border border-border rounded-sm overflow-hidden";
 const TRI_CAPTION =
-  "absolute top-1 left-1/2 z-local-2 -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-xs text-muted-foreground whitespace-nowrap pointer-events-none";
+  "absolute top-1 left-1/2 z-local-2 -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-xs text-muted-foreground tabular-nums whitespace-nowrap pointer-events-none";
 const TRI_AXIS_GLYPH =
   "absolute left-1.5 bottom-1 z-local-2 w-[42px] h-[42px] pointer-events-none [filter:drop-shadow(0_0_5px_var(--sc-muted))]";
 const TRI_AXIS_PATH =
@@ -65,6 +65,9 @@ interface TriViewPanelProps {
   editable: boolean;
   /** 点大小 (米): 跟随主视图点大小滑杆。 */
   pointSize: number;
+  /** 当前对象按视图记忆的缩放倍数。 */
+  zoomByView: Record<TriView, number>;
+  onZoomChange: (view: TriView, zoom: number) => void;
   /** 拖拽中 (commit=false, draft) / 松手 (commit=true, PATCH) 回写选中框 PSR。 */
   onEditPsr: (psr: Psr, commit: boolean) => void;
 }
@@ -104,6 +107,8 @@ export function TriViewPanel({
   pointsReady,
   editable,
   pointSize,
+  zoomByView,
+  onZoomChange,
   onEditPsr,
 }: TriViewPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -158,6 +163,10 @@ export function TriViewPanel({
     rendererRef.current?.setPointSize(pointSize);
   }, [pointSize]);
 
+  useEffect(() => {
+    rendererRef.current?.setZoomByView(zoomByView);
+  }, [zoomByView]);
+
   // 选中框 PSR 变化 (含拖拽 draft): 更新裁剪面/相机, 并重排。
   useEffect(() => {
     rendererRef.current?.setBox(
@@ -198,12 +207,16 @@ export function TriViewPanel({
             selected={selected}
             frozen={frozen}
             editable={editable}
+            zoom={zoomByView[view]}
+            onZoomChange={(zoom) => onZoomChange(view, zoom)}
             onDragStart={handleDragStart}
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
           />
           <TriAxisGlyph view={view} />
-          <figcaption className={TRI_CAPTION}>{TRI_LABEL[view]}</figcaption>
+          <figcaption className={TRI_CAPTION}>
+            {TRI_LABEL[view]} · {Math.round(zoomByView[view] * 100)}%
+          </figcaption>
         </div>
       ))}
       {!selected && (

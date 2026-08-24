@@ -502,7 +502,9 @@ pnpm docs:media:audit -- --release
 | `anno2`  | annotator     | 123456 | (标注组A)          |
 | `anno3`  | annotator     | 123456 | (标注组B)          |
 
-初始化：`cd apps/api && uv run python scripts/seed.py`
+初始化：`cd apps/api && uv run python scripts/seed.py`。首次运行会从官方地址下载
+nuScenes mini 到 `~/.cache/ai-annotation-platform/nuscenes-mini`（约 4 GB，支持断点续传），
+并导入 scene-0061 的 39 个关键帧；归档和解压内容都不会写入 Git 仓库。
 
 ## 下一步计划
 

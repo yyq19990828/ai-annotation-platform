@@ -522,6 +522,7 @@ export function useWorkbenchConfig(
     mergeUser(user?.preferences?.workbench, userId, { preferLocalLayout: true }),
   );
   const userConfigRef = useRef(userConfig);
+  const saveRevisionRef = useRef(0);
   const layoutSaveTimerRef = useRef<number | null>(null);
   // 每个 userId 只用共享 query 数据 hydrate 一次本地态: 首屏 remote 优先同步, 之后共享 query
   // 的后续变化(ai.* 写触发的 refetch / 本 hook 写回灌)不再覆盖本地 userConfig, 避免盖掉
@@ -538,6 +539,7 @@ export function useWorkbenchConfig(
   useEffect(() => {
     const listener: ConfigListener = (config, source) => {
       if (source === sourceRef.current) return;
+      saveRevisionRef.current += 1;
       userConfigRef.current = config;
       setUserConfig(config);
     };
@@ -582,6 +584,7 @@ export function useWorkbenchConfig(
 
   const update = useCallback(
     async (patch: WorkbenchConfigPatch) => {
+      const saveRevision = ++saveRevisionRef.current;
       const prev = userConfigRef.current;
       const next = applyConfigPatch(
         prev,
@@ -596,6 +599,7 @@ export function useWorkbenchConfig(
         const res = await authApi.updatePreferences({
           workbench: sanitizeForPersist(next),
         });
+        if (saveRevision !== saveRevisionRef.current) return;
         // v0.21.18 · 整份返回值回灌共享 query 缓存(PATCH 返回整份 preferences, 无子键覆盖风险)。
         queryClient.setQueryData(userPreferencesQueryKey(userId), res);
         const saved = mergeUser(res.workbench, userId);
@@ -604,11 +608,12 @@ export function useWorkbenchConfig(
         broadcastConfig(saved, sourceRef.current);
         writeLocalLayout(saved.layout, userId);
       } catch {
+        if (saveRevision !== saveRevisionRef.current) return;
         userConfigRef.current = prev;
         setUserConfig(prev);
         broadcastConfig(prev, sourceRef.current);
       } finally {
-        setSaving(false);
+        if (saveRevision === saveRevisionRef.current) setSaving(false);
       }
     },
     [userId, queryClient],
@@ -625,10 +630,12 @@ export function useWorkbenchConfig(
       // 已触发，标记为「无待写」，卸载时不再冗余 flush(见上方 cleanup)。
       layoutSaveTimerRef.current = null;
       const payload = userConfigRef.current;
+      const saveRevision = saveRevisionRef.current;
       setSaving(true);
       authApi
         .updatePreferences({ workbench: sanitizeForPersist(payload) })
         .then((res) => {
+          if (saveRevision !== saveRevisionRef.current) return;
           queryClient.setQueryData(userPreferencesQueryKey(userId), res);
           const saved = mergeUser(res.workbench, userId);
           userConfigRef.current = saved;
@@ -639,12 +646,15 @@ export function useWorkbenchConfig(
         .catch((err) => {
           console.warn("Failed to persist workbench preferences", err);
         })
-        .finally(() => setSaving(false));
+        .finally(() => {
+          if (saveRevision === saveRevisionRef.current) setSaving(false);
+        });
     }, 300);
   }, [userId, queryClient]);
 
   const setLayout = useCallback(
     (patch: WorkbenchLayoutPatch) => {
+      saveRevisionRef.current += 1;
       const prev = userConfigRef.current;
       const next = {
         ...prev,
@@ -662,6 +672,7 @@ export function useWorkbenchConfig(
   // v0.15.3 · 设置抽屉写路径:本地立即生效(画布实时预览)+ 防抖 PATCH。
   const setFields = useCallback(
     (patch: WorkbenchConfigPatch) => {
+      saveRevisionRef.current += 1;
       const prev = userConfigRef.current;
       const next = applyConfigPatch(
         prev,

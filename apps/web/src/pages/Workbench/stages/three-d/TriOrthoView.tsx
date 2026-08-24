@@ -19,6 +19,9 @@ import { boxAxisWorldDir } from "./geometry/box3d";
 import {
   VIEW_AXES,
   frameOrtho,
+  FRAME_MARGIN,
+  TRI_ZOOM_DEFAULT,
+  stepTriZoom,
   dragHandle,
   dragRotation,
   type TriView,
@@ -35,12 +38,10 @@ export interface TriSelected {
 }
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
-// pointer-events 必须互斥下发:同时挂 pointer-events-none + pointer-events-auto 时,Tailwind
-// 两个 utility 同特异性、`none` 在生成 CSS 中靠后会胜出 → editable 也收不到事件(v0.17.6
-// module.css→Tailwind 迁移引入的回归)。故按 editable 二选一,绝不并存。
+// pointer-events 必须互斥下发；只读框也要接收 wheel / keyboard 视图缩放。
 const TRI_OVERLAY = "absolute inset-0 z-local-1";
-const TRI_OVERLAY_EDITABLE = "pointer-events-auto";
-const TRI_OVERLAY_READONLY = "pointer-events-none";
+const TRI_OVERLAY_INTERACTIVE = "pointer-events-auto focus-visible:ring-2 focus-visible:ring-ring";
+const TRI_OVERLAY_INACTIVE = "pointer-events-none";
 const TRI_ANGLE_HUD =
   "absolute left-1/2 top-1/2 z-local-3 min-w-[104px] flex items-baseline justify-center gap-[7px] px-2.5 py-1.5 -translate-x-1/2 -translate-y-1/2 border border-brand rounded-sm bg-black/56 shadow-[0_0_14px_var(--sc-brand)]/20 text-brand font-mono pointer-events-none before:absolute before:left-2 before:right-2 before:h-px before:top-1 before:bg-brand/45 before:content-[''] after:absolute after:left-2 after:right-2 after:h-px after:bottom-[3px] after:bg-brand/45 after:content-['']";
 const TRI_ANGLE_LABEL = "text-2xs text-muted-foreground";
@@ -52,8 +53,10 @@ interface TriOrthoViewProps {
   selected: TriSelected | null;
   /** 拖拽期冻结取景参考 (= 起始姿态, 只用 center/size/rotation); null = 无拖拽。 */
   frozen: Psr | null;
-  /** 是否可编辑 (任务非只读 且 框未锁定); false → 只读, 不画 handle/方向线、不收事件。 */
+  /** 是否可编辑；false 时不画几何 handle，但仍允许只读缩放视图。 */
   editable: boolean;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
   onDragStart: (startPsr: Psr) => void;
   onDragMove: (psr: Psr) => void;
   onDragEnd: (psr: Psr) => void;
@@ -87,6 +90,7 @@ const ANGLE_LABEL: Record<TriView, string> = {
   front: "Roll",
 };
 const DEG = Math.PI / 180;
+const WHEEL_ZOOM_THRESHOLD = 80;
 
 function shortestAngleDelta(current: number, start: number) {
   let delta = current - start;
@@ -106,9 +110,16 @@ function formatSignedDeg(rad: number, whole = false) {
  * 把实时框投到取景参考系的屏幕坐标: 4 角 / 框心 / 8 个 resize 柄 / 方向线末端旋转柄。
  * 角由实时 box 的 u/v 世界轴张成 → 旋转时倾斜; 参考系 (ref) 决定相机基与米→px 比例。
  */
-function projectBox(view: TriView, selected: TriSelected, ref: Psr, cssW: number, cssH: number) {
+function projectBox(
+  view: TriView,
+  selected: TriSelected,
+  ref: Psr,
+  cssW: number,
+  cssH: number,
+  zoom: number,
+) {
   const { u, v } = VIEW_AXES[view];
-  const { halfW } = frameOrtho(ref.size, view, cssW / cssH);
+  const { halfW } = frameOrtho(ref.size, view, cssW / cssH, FRAME_MARGIN, zoom);
   const s = cssW / 2 / halfW;
   const refU = boxAxisWorldDir(ref.rotation, u);
   const refV = boxAxisWorldDir(ref.rotation, v);
@@ -176,6 +187,8 @@ export function TriOrthoView({
   selected,
   frozen,
   editable,
+  zoom,
+  onZoomChange,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -225,7 +238,7 @@ export function TriOrthoView({
     if (!selected) return;
 
     const ref = frozen ?? selected;
-    const proj = projectBox(view, selected, ref, cssW, cssH);
+    const proj = projectBox(view, selected, ref, cssW, cssH, zoom);
     const [a, b, c, d] = proj.corners;
     ctx.strokeStyle = selected.color;
     ctx.lineWidth = 1.5;
@@ -252,7 +265,7 @@ export function TriOrthoView({
     ctx.beginPath();
     ctx.arc(proj.rotKnob[0], proj.rotKnob[1], KNOB_R, 0, Math.PI * 2);
     ctx.fill();
-  }, [view, selected, frozen, editable]);
+  }, [view, selected, frozen, editable, zoom]);
 
   useEffect(() => {
     draw();
@@ -268,8 +281,27 @@ export function TriOrthoView({
 
   // 最新 props 放 ref, 让下面的交互 effect 用空依赖跑一次: 拖拽中 onDragMove 改 selected (draft)
   // 不会重跑 effect、不会把 window mousemove/mouseup 监听器拆掉 (否则 mouseup 收不到 → 不提交)。
-  const propsRef = useRef({ view, selected, editable, onDragStart, onDragMove, onDragEnd });
-  propsRef.current = { view, selected, editable, onDragStart, onDragMove, onDragEnd };
+  const propsRef = useRef({
+    view,
+    selected,
+    editable,
+    zoom,
+    onZoomChange,
+    onDragStart,
+    onDragMove,
+    onDragEnd,
+  });
+  propsRef.current = {
+    view,
+    selected,
+    editable,
+    zoom,
+    onZoomChange,
+    onDragStart,
+    onDragMove,
+    onDragEnd,
+  };
+  const wheelDeltaRef = useRef({ value: 0, sign: 0 });
 
   // 拖拽: window 级 move/up。resize 用累计位移喂 dragHandle(起始 PSR); rot 用角度增量喂 dragRotation。
   useEffect(() => {
@@ -306,10 +338,12 @@ export function TriOrthoView({
     };
 
     const onDown = (e: MouseEvent) => {
-      const { view, selected, editable, onDragStart } = propsRef.current;
-      if (!editable || !selected) return;
+      const { view, selected, editable, zoom, onDragStart } = propsRef.current;
+      if (!selected) return;
+      canvas.focus({ preventScroll: true });
+      if (!editable) return;
       const rect = canvas.getBoundingClientRect();
-      const proj = projectBox(view, selected, selected, rect.width, rect.height);
+      const proj = projectBox(view, selected, selected, rect.width, rect.height, zoom);
       const grab = hitTest(e.clientX - rect.left, e.clientY - rect.top, proj);
       if (!grab) return;
       e.preventDefault();
@@ -352,19 +386,55 @@ export function TriOrthoView({
 
     // 悬停光标反馈 (非拖拽时)。
     const onHover = (e: MouseEvent) => {
-      const { view, selected, editable } = propsRef.current;
+      const { view, selected, editable, zoom } = propsRef.current;
       if (dragRef.current || !editable || !selected) return;
       const rect = canvas.getBoundingClientRect();
-      const proj = projectBox(view, selected, selected, rect.width, rect.height);
+      const proj = projectBox(view, selected, selected, rect.width, rect.height, zoom);
       const grab = hitTest(e.clientX - rect.left, e.clientY - rect.top, proj);
       canvas.style.cursor = grab === "rot" ? "grab" : grab ? CURSOR[grab] : "default";
     };
 
+    const onWheel = (e: WheelEvent) => {
+      const { selected, zoom, onZoomChange } = propsRef.current;
+      if (!selected || dragRef.current) return;
+      e.preventDefault();
+      canvas.focus({ preventScroll: true });
+      const linePx = 16;
+      const pagePx = canvas.parentElement?.clientHeight ?? 240;
+      const delta = e.deltaY * (e.deltaMode === 1 ? linePx : e.deltaMode === 2 ? pagePx : 1);
+      if (!Number.isFinite(delta) || delta === 0) return;
+      const sign = Math.sign(delta);
+      if (wheelDeltaRef.current.sign !== sign) {
+        wheelDeltaRef.current = { value: 0, sign };
+      }
+      wheelDeltaRef.current.value += delta;
+      if (Math.abs(wheelDeltaRef.current.value) < WHEEL_ZOOM_THRESHOLD) return;
+      wheelDeltaRef.current.value -= sign * WHEEL_ZOOM_THRESHOLD;
+      onZoomChange(stepTriZoom(zoom, sign < 0 ? 1 : -1));
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const { selected, zoom, onZoomChange } = propsRef.current;
+      if (!selected || dragRef.current) return;
+      const direction = e.key === "+" || e.key === "=" ? 1 : e.key === "-" ? -1 : null;
+      if (direction !== null) {
+        e.preventDefault();
+        onZoomChange(stepTriZoom(zoom, direction));
+      } else if (e.key === "0") {
+        e.preventDefault();
+        onZoomChange(TRI_ZOOM_DEFAULT);
+      }
+    };
+
     canvas.addEventListener("mousedown", onDown);
     canvas.addEventListener("mousemove", onHover);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("keydown", onKeyDown);
     return () => {
       canvas.removeEventListener("mousedown", onDown);
       canvas.removeEventListener("mousemove", onHover);
+      canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -374,11 +444,9 @@ export function TriOrthoView({
     <>
       <canvas
         ref={canvasRef}
-        className={
-          editable
-            ? `${TRI_OVERLAY} ${TRI_OVERLAY_EDITABLE}`
-            : `${TRI_OVERLAY} ${TRI_OVERLAY_READONLY}`
-        }
+        tabIndex={selected ? 0 : -1}
+        aria-label={`${view === "top" ? "俯视" : view === "side" ? "侧视" : "正视"}精修视图，缩放 ${Math.round(zoom * 100)}%`}
+        className={`${TRI_OVERLAY} ${selected ? TRI_OVERLAY_INTERACTIVE : TRI_OVERLAY_INACTIVE}`}
       />
       {angleHud && (
         <div className={TRI_ANGLE_HUD} aria-hidden="true">

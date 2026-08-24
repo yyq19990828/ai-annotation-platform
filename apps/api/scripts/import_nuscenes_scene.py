@@ -267,6 +267,10 @@ async def import_nuscenes(
     owner_id: uuid.UUID,
     version: str = "v1.0-mini",
     frame: Literal["sensor", "ego"] = "ego",
+    dataset_display_id: str | None = None,
+    project_display_id: str | None = None,
+    project_name: str | None = None,
+    tool_bindings: dict | None = None,
 ) -> dict:
     """把 nuScenes 的若干 scene 转换并入库到一个共用 dataset。
 
@@ -282,7 +286,7 @@ async def import_nuscenes(
     调用方负责最终 commit(build_tasks_for_link 内部会 commit;参考 seed_pointcloud)。
     返回 {"dataset_id", "scenes": [{"name", "frames"}...], "total_items"}。
     """
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
     from app.db.models.project import Project
@@ -309,7 +313,7 @@ async def import_nuscenes(
     axis_convention = "iso_8855" if frame == "ego" else "apollo"
 
     # 1. ensure/复用 dataset(派生固定 display_id → 幂等)
-    display_id = _derived_display_id("DS-NU-", dataset_name)
+    display_id = dataset_display_id or _derived_display_id("DS-NU-", dataset_name)
     ds = await db.scalar(select(Dataset).where(Dataset.display_id == display_id))
     if ds is None:
         ds = Dataset(
@@ -319,7 +323,14 @@ async def import_nuscenes(
             data_type="point_cloud",
             is_temporal=True,
             created_by=owner_id,
-            metadata_={"axis_convention": axis_convention},
+            metadata_={
+                "axis_convention": axis_convention,
+                "source": {
+                    "format": "nuscenes",
+                    "version": version,
+                    "scenes": sorted(scene_names),
+                },
+            },
         )
         db.add(ds)
         await db.flush()
@@ -334,7 +345,12 @@ async def import_nuscenes(
             )
         if not existing_axis:
             meta["axis_convention"] = axis_convention
-            ds.metadata_ = meta
+        meta["source"] = {
+            "format": "nuscenes",
+            "version": version,
+            "scenes": sorted(scene_names),
+        }
+        ds.metadata_ = meta
         ds.is_temporal = True
         await db.flush()
 
@@ -428,6 +444,7 @@ async def import_nuscenes(
                 file_path=lidar_key,
                 file_type="point_cloud",
                 file_size=len(pcd_bytes),
+                content_hash=hashlib.sha256(pcd_bytes).hexdigest(),
             )
             db.add(lidar_item)
             lidar_items.append(lidar_item)
@@ -452,6 +469,7 @@ async def import_nuscenes(
                     file_path=cam_key,
                     file_type="image",
                     file_size=len(jpg_bytes),
+                    content_hash=hashlib.sha256(jpg_bytes).hexdigest(),
                 )
                 db.add(cam_item)
                 await db.flush()  # 拿 id 以填 shared_frame_items
@@ -493,6 +511,7 @@ async def import_nuscenes(
                         file_path=calib_key,
                         file_type="other",
                         file_size=len(calib_bytes),
+                        content_hash=hashlib.sha256(calib_bytes).hexdigest(),
                     )
                     db.add(calib_item)
                     calib_items.append(calib_item)
@@ -535,7 +554,9 @@ async def import_nuscenes(
         report_scenes.append({"name": scene_name, "frames": len(samples)})
 
     # 3. 建/复用 lidar Project + ProjectDataset → build_tasks_for_link + attach_calibration
-    project_display_id = _derived_display_id("P-NU-", dataset_name)
+    project_display_id = project_display_id or _derived_display_id(
+        "P-NU-", dataset_name
+    )
     project = await db.scalar(
         select(Project).where(Project.display_id == project_display_id)
     )
@@ -543,14 +564,14 @@ async def import_nuscenes(
         project = Project(
             id=uuid.uuid4(),
             display_id=project_display_id,
-            name=f"nuScenes {dataset_name}",
+            name=project_name or f"nuScenes {dataset_name}",
             type_label="点云检测",
             type_key="lidar",
             data_type="lidar",
             scene_mode=True,
             prefer_same_scene_continuation=True,
             owner_id=owner_id,
-            tool_bindings={},
+            tool_bindings=tool_bindings or {},
             ai_enabled=False,
         )
         db.add(project)
@@ -570,6 +591,12 @@ async def import_nuscenes(
     # task 通过 dataset_item_id → scene_id 反查到 frame_index。
     await build_tasks_for_link(db, dataset_id=ds.id, project_id=project.id)
     await attach_calibration(db, dataset_id=ds.id)
+    ds.file_count = int(
+        await db.scalar(
+            select(func.count(DatasetItem.id)).where(DatasetItem.dataset_id == ds.id)
+        )
+        or 0
+    )
     await db.flush()
 
     return {

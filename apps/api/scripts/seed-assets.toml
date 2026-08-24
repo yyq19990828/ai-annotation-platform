@@ -292,7 +292,7 @@ public_docs_notes = "Use only for non-commercial public documentation and retain
 
 [[assets]]
 id = "pcl-pairwise-capture-1"
-profiles = ["screenshots"]
+profiles = ["legacy"]
 urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0001.pcd"]
 sha256 = "b3bf4f1ca7200e665c86e9ce28c142c7b058de64455713a36f555b0003f773de"
 size_bytes = 972688
@@ -314,7 +314,7 @@ public_docs_notes = "Keep the repository attribution with published point-cloud 
 
 [[assets]]
 id = "pcl-pairwise-capture-2"
-profiles = ["screenshots"]
+profiles = ["legacy"]
 urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0002.pcd"]
 sha256 = "42e1c94ccd55e3c007c22736091d4151bf23c1f45b12b384a0168ad438a396fd"
 size_bytes = 964377
@@ -336,7 +336,7 @@ public_docs_notes = "Keep the repository attribution with published point-cloud 
 
 [[assets]]
 id = "pcl-pairwise-capture-3"
-profiles = ["screenshots"]
+profiles = ["legacy"]
 urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0003.pcd"]
 sha256 = "0f0b017ac0c43649383eeb5fc4580d4e589a313f7a087c7a7612f46b7bc12c29"
 size_bytes = 978555
@@ -358,7 +358,7 @@ public_docs_notes = "Keep the repository attribution with published point-cloud 
 
 [[assets]]
 id = "pcl-pairwise-capture-4"
-profiles = ["screenshots"]
+profiles = ["legacy"]
 urls = ["https://raw.githubusercontent.com/PointCloudLibrary/data/5c26bdd0591ba150b91858b5c9fe5e91cb39ae86/tutorials/pairwise/capture0004.pcd"]
 sha256 = "31dcf57d076e054e1a828057930beab7dd12676bf2ed364405311b309c4c34a8"
 size_bytes = 996256
@@ -380,7 +380,7 @@ public_docs_notes = "Keep the repository attribution with published point-cloud 
 
 [[assets]]
 id = "sustechpoints-example"
-profiles = ["demo"]
+profiles = ["legacy"]
 urls = ["https://codeload.github.com/naurril/SUSTechPOINTS/tar.gz/20eda5d14692fd837ac694cfdfbf2477a284abd3"]
 sha256 = "103ee51be8afce538a0f8fc2f5c568cb2ab5d484fdf4ad5c8b3bbccd6583c7d0"
 size_bytes = 12123957

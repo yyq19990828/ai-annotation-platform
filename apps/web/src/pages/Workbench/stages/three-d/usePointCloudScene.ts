@@ -46,6 +46,8 @@ interface UsePointCloudSceneParams {
   persistCameraView: boolean;
   /** manifest 的点云 URL(presigned);缺省时不加载。 */
   pointCloudUrl: string | undefined;
+  /** scene_id；无 scene 的单帧任务传 taskId，防止无关任务复用运行时视角。 */
+  continuityKey: string | null;
   axisConvention: LidarAxisConvention;
   /** 标注框 → 渲染输入(选中态 / 颜色 / 草稿覆盖已在壳层算好)。 */
   boxes: SceneBox[];
@@ -54,6 +56,8 @@ interface UsePointCloudSceneParams {
   selectedPsrEditable: boolean;
   pointcloudCamera: PointcloudCameraState | null;
   onWorkbenchLayoutChange: (patch: WorkbenchLayoutPatch) => void;
+  /** 载帧与视角恢复完成后，同步壳层的相机模式按钮状态。 */
+  onViewModeChange: (mode: PointCloudViewState["mode"]) => void;
   /** gizmo 拖拽结束:回写表单 + PATCH 持久化(壳层注入,闭合 form / mutate / history)。 */
   onTransformCommit: (id: string, psr: BoxPsr) => void;
 }
@@ -62,6 +66,29 @@ interface UsePointCloudSceneResult {
   /** 载帧统计(渲染点数 / 抽稀);null = 未加载。其变化亦作"换帧"信号被壳层多处消费。 */
   stats: PointCloudStats | null;
   loadError: string | null;
+}
+
+const RUNTIME_VIEW_TRANSFER_TTL_MS = 10_000;
+let pendingRuntimeViewTransfer: {
+  continuityKey: string;
+  view: PointCloudViewState;
+  expiresAt: number;
+} | null = null;
+
+function storeRuntimeViewTransfer(continuityKey: string, view: PointCloudViewState) {
+  pendingRuntimeViewTransfer = {
+    continuityKey,
+    view,
+    expiresAt: Date.now() + RUNTIME_VIEW_TRANSFER_TTL_MS,
+  };
+}
+
+function takeRuntimeViewTransfer(continuityKey: string | null): PointCloudViewState | null {
+  const pending = pendingRuntimeViewTransfer;
+  pendingRuntimeViewTransfer = null;
+  if (!pending || continuityKey === null) return null;
+  if (pending.continuityKey !== continuityKey || pending.expiresAt < Date.now()) return null;
+  return pending.view;
 }
 
 export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCloudSceneResult {
@@ -75,12 +102,14 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     cameraDamping,
     persistCameraView,
     pointCloudUrl,
+    continuityKey,
     axisConvention,
     boxes,
     selectedId,
     selectedPsrEditable,
     pointcloudCamera,
     onWorkbenchLayoutChange,
+    onViewModeChange,
     onTransformCommit,
   } = params;
 
@@ -93,12 +122,20 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   pointcloudCameraRef.current = pointcloudCamera;
   const onWorkbenchLayoutChangeRef = useRef(onWorkbenchLayoutChange);
   onWorkbenchLayoutChangeRef.current = onWorkbenchLayoutChange;
+  const onViewModeChangeRef = useRef(onViewModeChange);
+  onViewModeChangeRef.current = onViewModeChange;
   const onTransformCommitRef = useRef(onTransformCommit);
   onTransformCommitRef.current = onTransformCommit;
   const cameraSaveRafRef = useRef<number | null>(null);
   const pendingCameraViewRef = useRef<PointCloudViewState | null>(null);
+  const suspendCameraSaveRef = useRef(false);
+  const loadSequenceRef = useRef(0);
+  const loadedContinuityKeyRef = useRef<string | null>(null);
 
   const scheduleCameraViewSave = useCallback((view: PointCloudViewState) => {
+    if (suspendCameraSaveRef.current) return;
+    const loadedContinuityKey = loadedContinuityKeyRef.current;
+    if (loadedContinuityKey !== null) storeRuntimeViewTransfer(loadedContinuityKey, view);
     if (!persistCameraViewRef.current) return;
     pendingCameraViewRef.current = view;
     if (cameraSaveRafRef.current !== null) return;
@@ -131,6 +168,10 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
       if (cameraSaveRafRef.current !== null) {
         window.cancelAnimationFrame(cameraSaveRafRef.current);
         cameraSaveRafRef.current = null;
+      }
+      const loadedContinuityKey = loadedContinuityKeyRef.current;
+      if (loadedContinuityKey !== null && !suspendCameraSaveRef.current) {
+        storeRuntimeViewTransfer(loadedContinuityKey, scene.getViewState());
       }
       ro.disconnect();
       scene.dispose();
@@ -165,24 +206,44 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || !pointCloudUrl) return;
+    const runtimeView =
+      continuityKey !== null && loadedContinuityKeyRef.current === continuityKey
+        ? scene.getViewState()
+        : takeRuntimeViewTransfer(continuityKey);
+    const loadSequence = ++loadSequenceRef.current;
     let cancelled = false;
     setLoadError(null);
+    suspendCameraSaveRef.current = true;
     scene
       .loadPcd(pointCloudUrl, axisConvention)
       .then((s) => {
-        if (cancelled) return;
-        if (persistCameraViewRef.current) {
+        if (cancelled || loadSequence !== loadSequenceRef.current) return;
+        if (runtimeView) {
+          scene.applyViewState(runtimeView);
+        } else if (persistCameraViewRef.current) {
           scene.applyViewState(pointcloudCameraRef.current);
         }
+        loadedContinuityKeyRef.current = continuityKey;
+        onViewModeChangeRef.current(scene.getViewState().mode);
         setStats(s);
+        suspendCameraSaveRef.current = false;
       })
       .catch((e) => {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
+        if (cancelled || loadSequence !== loadSequenceRef.current) return;
+        suspendCameraSaveRef.current = false;
+        setLoadError(e instanceof Error ? e.message : String(e));
       });
     return () => {
       cancelled = true;
+      if (
+        continuityKey !== null &&
+        loadedContinuityKeyRef.current === continuityKey &&
+        !suspendCameraSaveRef.current
+      ) {
+        storeRuntimeViewTransfer(continuityKey, scene.getViewState());
+      }
     };
-  }, [pointCloudUrl, axisConvention, sceneRef]);
+  }, [pointCloudUrl, continuityKey, axisConvention, sceneRef]);
 
   // 同步 3D 框图层(标注 / 选中变化)。scene 在挂载 effect 里先建,本 effect 后跑。
   useEffect(() => {

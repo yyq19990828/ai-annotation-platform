@@ -114,11 +114,13 @@ export interface ScreenshotSeedCatalog {
     Partial<Record<"large_image_demo", ScreenshotCatalogProject>>;
 }
 
-/** v0.16.x · 点云 E2E 基线 fixture：1 个 lidar 项目 + 2 帧(同一最小 .pcd)point_cloud task。
- *  需先 reset()(复用其 E2E 用户),缺则后端补建。 */
+/** 点云 E2E fixture：优先使用 seed 用户缓存中的 nuScenes mini 真实 LIDAR_TOP 单帧；
+ *  CI 未安装外部数据时回落到 32 线、同量级点数的确定性扫描。 */
 export interface SeedLidarData {
   lidar_project_id: string;
   lidar_task_ids: string[];
+  lidar_fixture_source: "nuscenes_mini" | "nuscenes_profile";
+  lidar_point_count: number;
 }
 
 export type RasterMaskFixtureVariant =

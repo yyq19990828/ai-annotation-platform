@@ -1,16 +1,13 @@
-"""v0.13.2 dev-only · 把 SUSTechPOINTS 夹具 scene 灌进当前栈(MinIO + DB),
-建一个 lidar 项目 + 每帧 Task + link + 标定,供浏览器实测点云查看器。
-owner 统一用标准 admin/123456 账号(与 seed.py 一致),不再随机造用户。
+"""Dev-only point-cloud seeds.
 
-幂等:固定 display_id(P-PC-DEV / DS-PC-DEV),项目已存在则跳过,重复跑安全。
+The primary P-PC-DEV / DS-PC-DEV fixture is the official nuScenes mini scene-0061.
+It is downloaded into the user cache on demand and is never copied into the repo.
+The directory importer remains available for the small screenshot-only multicamera seed.
 
 独立跑:
     cd apps/api && PYTHONPATH=. uv run python scripts/seed_pointcloud.py
 
-seed_pointcloud() 也被 apps/api/scripts/seed.py 复用,作为开发者初始化的一部分。
-
-v0.13.11 · 由 `scripts/seed_pointcloud_dev.py` 移入 apps/api/scripts/, 与其余 seed
-脚本同处一目录;同时删除旧的 standalone seed_pointcloud.py。
+Both entry points are reused by apps/api/scripts/seed.py.
 """
 
 import asyncio
@@ -19,21 +16,16 @@ import sys
 import uuid
 from pathlib import Path
 
-# repo root。host 布局 apps/api/scripts/<this> 取 parents[3];浅布局(如容器把代码挂在
-# /app)parents[3] 会越界,退化为文件系统根 → 夹具 .exists()=False 时各 seed 优雅跳过不崩。
-_parents = Path(__file__).resolve().parents
-REPO = _parents[3] if len(_parents) > 3 else _parents[-1]
-FIXTURE = REPO / "third-party/SUSTechPOINTS/data/example"
-
 # nuScenes-mini scene 模式项目:复用同目录 import_nuscenes_scene.py 的转换/入库逻辑。
 # scripts/ 在独立跑时即 sys.path[0];经 seed.py 导入时 seed.py 已把 scripts/ 入 path,
 # 这里再补一次保证两种入口都能 import 兄弟脚本。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from import_nuscenes_scene import import_nuscenes  # noqa: E402  (依赖 sys.path 先扩)
+from nuscenes_fixture import ensure_nuscenes_mini  # noqa: E402
 
 PROJECT_DISPLAY_ID = "P-PC-DEV"
 DATASET_DISPLAY_ID = "DS-PC-DEV"
-DATASET_NAME = "pc-scene-dev"
+DATASET_NAME = "nuscenes-mini"
 ADMIN_EMAIL = "admin"
 ADMIN_PASSWORD = "123456"
 
@@ -56,12 +48,22 @@ POINTCLOUD_TOOL_BINDINGS = {
     },
 }
 
-# nuScenes-mini 共 10 个 scene(~5.1G)。仅取 1 个 scene(scene-0061, 39 帧)做 scene
-# 模式点云项目演示——"不要全用,有点大"。dataset_name 取短名让派生 display_id 不被 hash 截断
-# (DS-NU-nuscenes-mini / P-NU-nuscenes-mini 均 ≤ 20 字符)。
-NUSCENES_FIXTURE = REPO / "third-party/nuscenes-mini"
+# nuScenes mini 共 10 个 scene。dev seed 只导入 scene-0061 的 39 个 key frame；下载
+# 缓存仍保留完整 mini 的 key-frame samples，方便后续切换 scene，不提取未使用的 sweeps。
 NUSCENES_SCENES = ["scene-0061"]
 NUSCENES_DATASET_NAME = "nuscenes-mini"
+NUSCENES_PROJECT_NAME = "nuScenes mini 自动驾驶场景（dev）"
+
+_LEGACY_PROJECT_NAMES = {
+    "点云联合标注 (dev)",
+    "合成点云联合标注（截图）",
+    "真实室内点云（截图）",
+}
+_LEGACY_DATASET_NAMES = {
+    "pc-scene-dev",
+    "screenshots-synthetic-pointcloud",
+    "screenshots-real-pointcloud",
+}
 
 
 async def _ensure_admin(db) -> uuid.UUID:
@@ -91,8 +93,8 @@ async def seed_pointcloud(
     db,
     *,
     owner_id: uuid.UUID,
-    fixture: Path | None = None,
-    axis_convention: str = "sustechpoints_demo",
+    fixture: Path,
+    axis_convention: str,
     project_display_id: str = PROJECT_DISPLAY_ID,
     dataset_display_id: str = DATASET_DISPLAY_ID,
     dataset_name: str = DATASET_NAME,
@@ -117,7 +119,6 @@ async def seed_pointcloud(
     if existing:
         return None
 
-    fixture = fixture or FIXTURE
     if not fixture.exists():
         raise FileNotFoundError(f"点云夹具缺失: {fixture}")
 
@@ -193,7 +194,81 @@ async def seed_pointcloud(
     return {"project": project_display_id, "files": n, "tasks": result}
 
 
-async def seed_nuscenes_scene(db, *, owner_id: uuid.UUID) -> dict:
+async def _remove_legacy_dev_seed(db, *, owner_id: uuid.UUID) -> list[str]:
+    """Remove only the known, exclusively linked legacy P-PC-DEV seed."""
+    from sqlalchemy import select
+
+    from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+    from app.db.models.project import Project
+    from app.services.project_delete import delete_project_records
+
+    project = await db.scalar(
+        select(Project).where(Project.display_id == PROJECT_DISPLAY_ID)
+    )
+    dataset = await db.scalar(
+        select(Dataset).where(Dataset.display_id == DATASET_DISPLAY_ID)
+    )
+    if project is None and dataset is None:
+        return []
+    if project is None or dataset is None:
+        raise RuntimeError(
+            "P-PC-DEV / DS-PC-DEV legacy seed is partial; refusing automatic replacement"
+        )
+    source = (dataset.metadata_ or {}).get("source")
+    if (
+        isinstance(source, dict)
+        and source.get("format") == "nuscenes"
+        and source.get("version") == "v1.0-mini"
+    ):
+        return []
+    if (
+        project.owner_id != owner_id
+        or dataset.created_by != owner_id
+        or project.name not in _LEGACY_PROJECT_NAMES
+        or dataset.name not in _LEGACY_DATASET_NAMES
+    ):
+        raise RuntimeError(
+            "P-PC-DEV / DS-PC-DEV is not a recognized dev seed; refusing replacement"
+        )
+    links = list(
+        (
+            await db.execute(
+                select(ProjectDataset).where(
+                    (ProjectDataset.project_id == project.id)
+                    | (ProjectDataset.dataset_id == dataset.id)
+                )
+            )
+        ).scalars()
+    )
+    if len(links) != 1 or (
+        links[0].project_id != project.id or links[0].dataset_id != dataset.id
+    ):
+        raise RuntimeError(
+            "P-PC-DEV / DS-PC-DEV has unexpected links; refusing replacement"
+        )
+    storage_keys = list(
+        (
+            await db.execute(
+                select(DatasetItem.file_path).where(
+                    DatasetItem.dataset_id == dataset.id
+                )
+            )
+        ).scalars()
+    )
+    await delete_project_records(db, project)
+    await db.delete(dataset)
+    await db.flush()
+    return [key for key in storage_keys if key]
+
+
+async def seed_nuscenes_scene(
+    db,
+    *,
+    owner_id: uuid.UUID,
+    cache_dir: Path | None = None,
+    offline: bool = False,
+    create_batch: bool = True,
+) -> dict:
     """把 nuScenes-mini 的 scene-0061(39 帧)灌入当前栈,建 scene 模式点云项目并按 scene 建包。
 
     复用 import_nuscenes_scene.import_nuscenes:每帧转 ego 系 PCD + 6 路相机 jpg +
@@ -215,28 +290,57 @@ async def seed_nuscenes_scene(db, *, owner_id: uuid.UUID) -> dict:
     from app.schemas.batch import BatchSplitRequest
     from app.services.batch import BatchService
 
-    if not NUSCENES_FIXTURE.exists():
-        raise FileNotFoundError(f"nuScenes-mini 夹具缺失: {NUSCENES_FIXTURE}")
+    nuscenes_root = ensure_nuscenes_mini(cache_dir=cache_dir, offline=offline)
+    stale_storage_keys = await _remove_legacy_dev_seed(db, owner_id=owner_id)
 
     info = await import_nuscenes(
         db,
-        nuscenes_root=NUSCENES_FIXTURE,
+        nuscenes_root=nuscenes_root,
         scene_names=NUSCENES_SCENES,
         dataset_name=NUSCENES_DATASET_NAME,
         owner_id=owner_id,
         version="v1.0-mini",
         frame="ego",
+        dataset_display_id=DATASET_DISPLAY_ID,
+        project_display_id=PROJECT_DISPLAY_ID,
+        project_name=NUSCENES_PROJECT_NAME,
+        tool_bindings=POINTCLOUD_TOOL_BINDINGS,
     )
 
-    try:
-        batches = await BatchService(db).split(
-            info["project_id"],
-            BatchSplitRequest(strategy="by_scene", name_prefix="Scene"),
-            created_by=owner_id,
-        )
-        info["batches"] = len(batches)
-    except HTTPException:
-        info["batches"] = 0  # 无未分包任务(重跑已建包)
+    from app.db.models.dataset import Dataset
+    from app.db.models.project import Project
+    from app.services.storage import storage_service
+
+    project = await db.get(Project, info["project_id"])
+    dataset = await db.get(Dataset, info["dataset_id"])
+    if project is not None:
+        project.name = NUSCENES_PROJECT_NAME
+        project.scene_mode = True
+        project.prefer_same_scene_continuation = True
+        project.tool_bindings = POINTCLOUD_TOOL_BINDINGS
+    if dataset is not None:
+        dataset.name = NUSCENES_DATASET_NAME
+    await db.flush()
+
+    if create_batch:
+        try:
+            batches = await BatchService(db).split(
+                info["project_id"],
+                BatchSplitRequest(strategy="by_scene", name_prefix="Scene"),
+                created_by=owner_id,
+            )
+            info["batches"] = len(batches)
+        except HTTPException:
+            info["batches"] = 0  # 无未分包任务(重跑已建包)
+    else:
+        info["batches"] = 0
+    for key in stale_storage_keys:
+        try:
+            storage_service.delete_object(key, bucket=storage_service.datasets_bucket)
+        except Exception as exc:  # noqa: BLE001 - stale dev objects must not abort seed
+            print(f"  WARN 旧点云对象清理失败 {key}: {exc}")
+    info["fixture"] = str(nuscenes_root)
+    info["replaced_legacy"] = bool(stale_storage_keys)
     return info
 
 
@@ -245,20 +349,11 @@ async def main() -> None:
 
     async with async_session() as db:
         owner_id = await _ensure_admin(db)
-        info = await seed_pointcloud(db, owner_id=owner_id)
-        await db.commit()
         nu = await seed_nuscenes_scene(db, owner_id=owner_id)
         await db.commit()
 
     print("=== 点云 dev 数据 ===")
-    if info is None:
-        print(f"SUSTechPOINTS 项目 {PROJECT_DISPLAY_ID} 已存在,跳过")
-    else:
-        print(f"SUSTechPOINTS  上传文件: {info['files']}  建任务: {info['tasks']}")
-        print(f"  项目: {info['project']}")
-    print(
-        f"nuScenes scene 模式  total_items: {nu['total_items']}  本次建包: {nu['batches']}"
-    )
+    print(f"nuScenes mini  total_items: {nu['total_items']}  本次建包: {nu['batches']}")
     for s in nu["scenes"]:
         tag = " (已存在,跳过)" if s.get("skipped") else ""
         print(f"  scene {s['name']}: {s['frames']} frames{tag}")

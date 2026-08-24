@@ -159,6 +159,79 @@ async def test_patch_workbench_layout_deep_merges_new_collapse_flags(
     assert layout["discussionCollapsed"] is True
 
 
+async def test_patch_camera_panels_replaces_role_map(httpx_client, annotator):
+    """cameraPanels 是前端提交的整份 role map；删掉 role 必须真正清除旧状态。"""
+    _, token = annotator
+    headers = _bearer(token)
+
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {
+                    "cameraPanels": {
+                        "camera_CAM_FRONT": {
+                            "x": None,
+                            "y": None,
+                            "collapsed": True,
+                        },
+                        "camera_CAM_BACK": {
+                            "x": 120,
+                            "y": 80,
+                            "collapsed": True,
+                        },
+                    }
+                }
+            }
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+
+    # 宽屏下点「展开相机」会删掉该 role，用缺省值表示展开。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {
+                    "cameraPanels": {
+                        "camera_CAM_BACK": {
+                            "x": 120,
+                            "y": 80,
+                            "collapsed": True,
+                        }
+                    }
+                }
+            }
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["workbench"]["layout"]["cameraPanels"] == {
+        "camera_CAM_BACK": {"x": 120.0, "y": 80.0, "collapsed": True}
+    }
+
+    # 未提交 cameraPanels 的其他 layout 单键 PATCH 仍须保留当前 map。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"layout": {"attrPanelCollapsed": True}}},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["workbench"]["layout"]["cameraPanels"] == {
+        "camera_CAM_BACK": {"x": 120.0, "y": 80.0, "collapsed": True}
+    }
+
+    # 「传感器融合 / 重置相机布局」用空 map 清掉所有 role。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"layout": {"cameraPanels": {}}}},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["workbench"]["layout"]["cameraPanels"] == {}
+
+
 async def test_patch_ai_secondary_by_model_deep_merges_per_backend_bucket(
     httpx_client, annotator
 ):

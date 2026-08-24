@@ -10,7 +10,124 @@
  * 由 `pointcloud` project 跑(WebGL 软渲染);seed 已含单路标定相机，覆盖相机内中心拖动。
  * 跨帧 scene 仍由对应邻帧 spec 单独覆盖。
  */
+import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "../fixtures/seed";
+
+interface BrowserPointCloudViewState {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  mode: "orbit" | "bev";
+}
+
+async function readPointCloudViewState(page: Page): Promise<BrowserPointCloudViewState> {
+  const state = await page.getByTestId("pc-viewport").evaluate((element) => {
+    const scene = (
+      element as HTMLElement & {
+        __pointCloudScene?: { getViewState: () => BrowserPointCloudViewState };
+      }
+    ).__pointCloudScene;
+    return scene?.getViewState() ?? null;
+  });
+  if (!state) throw new Error("开发态点云场景视角探针不可用");
+  return state;
+}
+
+async function pointCloudBoxScreenPoint(
+  page: Page,
+  card: Locator,
+): Promise<{ x: number; y: number }> {
+  const testId = await card.getAttribute("data-testid");
+  const boxId = testId?.replace(/^box-list-item-/, "");
+  if (!boxId) throw new Error("box list item 缺少 annotation id");
+  const point = await page.getByTestId("pc-viewport").evaluate((element, id) => {
+    const scene = (
+      element as HTMLElement & {
+        __pointCloudScene?: {
+          boxGroups: Map<
+            string,
+            {
+              position: { clone: () => { project: (camera: unknown) => { x: number; y: number } } };
+            }
+          >;
+          camera: unknown;
+        };
+      }
+    ).__pointCloudScene;
+    const group = scene?.boxGroups.get(id);
+    if (!scene || !group) return null;
+    const projected = group.position.clone().project(scene.camera);
+    const bounds = element.getBoundingClientRect();
+    return {
+      x: bounds.left + ((projected.x + 1) / 2) * bounds.width,
+      y: bounds.top + ((1 - projected.y) / 2) * bounds.height,
+    };
+  }, boxId);
+  if (!point) throw new Error("开发态点云场景框投影探针不可用");
+  return point;
+}
+
+async function focusPointCloudBox(page: Page, card: Locator): Promise<void> {
+  const testId = await card.getAttribute("data-testid");
+  const boxId = testId?.replace(/^box-list-item-/, "");
+  if (!boxId) throw new Error("box list item 缺少 annotation id");
+  const focused = await page.getByTestId("pc-viewport").evaluate((element, id) => {
+    const scene = (
+      element as HTMLElement & {
+        __pointCloudScene?: { focusBox: (boxId: string) => boolean };
+      }
+    ).__pointCloudScene;
+    return scene?.focusBox(id) ?? false;
+  }, boxId);
+  expect(focused, "开发态点云场景应能聚焦选中框").toBe(true);
+}
+
+function expectPointCloudViewStateClose(
+  actual: BrowserPointCloudViewState,
+  expected: BrowserPointCloudViewState,
+) {
+  expect(actual.mode).toBe(expected.mode);
+  for (const field of ["position", "target", "up"] as const) {
+    for (let index = 0; index < 3; index += 1) {
+      expect(actual[field][index]).toBeCloseTo(expected[field][index], 6);
+    }
+  }
+}
+
+async function waitForPointCloudViewStable(page: Page): Promise<BrowserPointCloudViewState> {
+  let previous = await readPointCloudViewState(page);
+  await expect
+    .poll(
+      async () => {
+        await page.waitForTimeout(100);
+        const current = await readPointCloudViewState(page);
+        const delta = Math.max(
+          ...current.position.map((value, index) => Math.abs(value - previous.position[index])),
+          ...current.target.map((value, index) => Math.abs(value - previous.target[index])),
+          ...current.up.map((value, index) => Math.abs(value - previous.up[index])),
+        );
+        previous = current;
+        return delta;
+      },
+      { timeout: 10_000, intervals: [100, 200, 300] },
+    )
+    .toBeLessThan(1e-6);
+  return readPointCloudViewState(page);
+}
+
+async function expectCenterHitTarget(locator: Locator) {
+  await expect(locator).toBeVisible();
+  expect(
+    await locator.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height / 2,
+      );
+      return hit === element || (hit !== null && element.contains(hit));
+    }),
+  ).toBe(true);
+}
 
 test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   test("点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库", async ({ page, seed }) => {
@@ -74,7 +191,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 2200, height: 1080 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
     await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
@@ -87,9 +204,10 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect(cx).toHaveValue("1");
 
     const collapsedCamera = page.getByTitle("展开相机").first();
-    await expect(collapsedCamera).toBeVisible({ timeout: 10_000 });
-    await collapsedCamera.click();
-    await page.getByTitle("放大相机").click();
+    if (await collapsedCamera.isVisible()) await collapsedCamera.click();
+    const enlargeCamera = page.getByTitle("放大相机").first();
+    await expect(enlargeCamera).toBeVisible({ timeout: 10_000 });
+    await enlargeCamera.click();
     const canvas = page.getByLabel(/相机投影，拖动中心手柄微调 3D 框/);
     await expect(canvas).toBeVisible({ timeout: 10_000 });
     await expect
@@ -121,6 +239,8 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.mouse.up();
     await expect.poll(() => patches.length).toBe(1);
+    await page.waitForTimeout(350);
+    expect(patches, `中心手柄松手后只能保存一次: ${JSON.stringify(patches)}`).toHaveLength(1);
     expect(patches[0].geometry?.type).toBe("box_3d");
     expect(patches[0].geometry?.center?.[0]).toBeGreaterThan(1.2);
     expect(patches[0].geometry?.center?.[1]).toBeCloseTo(0, 5);
@@ -140,17 +260,36 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await page.mouse.up();
     expect(patches, "拖出画布取消不得新增 PATCH").toHaveLength(2);
 
-    await page.mouse.move(handleX, handleY);
+    if ((await canvas.count()) === 0) await page.getByTitle("放大相机").first().click();
+    const switchCanvas = page.getByLabel(/^front 相机投影，拖动中心手柄微调 3D 框/);
+    await expect(switchCanvas).toBeVisible();
+    const switchBounds = await switchCanvas.boundingBox();
+    if (!switchBounds) throw new Error("切换相机前 canvas boundingBox 不可用");
+    const switchHandleX = switchBounds.x + switchBounds.width * (420 / 640);
+    const switchHandleY = switchBounds.y + switchBounds.height * 0.5;
+    await page.mouse.move(switchHandleX, switchHandleY);
     await page.mouse.down();
-    await page.mouse.move(handleX + 32, handleY, { steps: 4 });
-    await page.keyboard.press("ArrowRight");
+    await page.mouse.move(switchHandleX + 32, switchHandleY, { steps: 4 });
+    await page.getByTitle("下一视角").evaluate((button) => (button as HTMLButtonElement).click());
     await expect(cx).toHaveValue("1");
     await page.mouse.up();
     expect(patches, "拖动中切换相机不得新增 PATCH").toHaveLength(2);
 
-    await page.mouse.move(handleX, handleY);
+    if ((await canvas.count()) === 0) {
+      await page.getByTitle("放大相机").first().click();
+    } else {
+      await page.getByTitle("上一视角").click();
+    }
+    const restoredCanvas = page.getByLabel(/^front 相机投影，拖动中心手柄微调 3D 框/);
+    await expect(restoredCanvas).toBeVisible();
+    await page.waitForTimeout(100);
+    const restoredBounds = await restoredCanvas.boundingBox();
+    if (!restoredBounds) throw new Error("切回 front 后放大相机 canvas boundingBox 不可用");
+    const restoredHandleX = restoredBounds.x + restoredBounds.width * (420 / 640);
+    const restoredHandleY = restoredBounds.y + restoredBounds.height * 0.5;
+    await page.mouse.move(restoredHandleX, restoredHandleY);
     await page.mouse.down();
-    await page.mouse.move(handleX - 48, handleY, { steps: 6 });
+    await page.mouse.move(restoredHandleX - 48, restoredHandleY, { steps: 6 });
     await expect.poll(async () => Number(await cx.inputValue())).toBeLessThan(0.9);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: /关闭/ })).toBeVisible();
@@ -177,6 +316,32 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     const card = page.locator('[data-testid^="box-list-item-"]').first();
     await expect(card).toBeVisible({ timeout: 10_000 });
     await card.click({ position: { x: 12, y: 16 } }); // 选中,焦点落卡片(非 input)
+
+    // 真实 nuScenes 的传感器盲区覆盖 ego 原点；把固定 seed 框移到首帧真实点密集区，
+    // 避免 Q 因框内无点而被等值更新短路。CI profile 在固定框内自带目标点，无需搬移。
+    if (lidar.lidar_fixture_source === "nuscenes_mini") {
+      await page.getByLabel("展开详情").click();
+      const setupPatch = page.waitForRequest(
+        (req) => {
+          if (req.method() !== "PATCH" || !/\/annotations\/[0-9a-f-]+/.test(req.url())) {
+            return false;
+          }
+          const geometry = (
+            req.postDataJSON() as { geometry?: { center?: number[]; size?: number[] } }
+          ).geometry;
+          return geometry?.center?.[0] === 5 && geometry.size?.[2] === 4;
+        },
+        { timeout: 10_000 },
+      );
+      await page.getByLabel("cx", { exact: true }).fill("5");
+      await page.getByLabel("cy", { exact: true }).fill("-1");
+      await page.getByLabel("cz", { exact: true }).fill("-1");
+      await page.getByLabel("l", { exact: true }).fill("4");
+      await page.getByLabel("w", { exact: true }).fill("4");
+      await page.getByLabel("h", { exact: true }).fill("4");
+      await setupPatch;
+      await card.click({ position: { x: 12, y: 16 } });
+    }
 
     // Q(无修饰)→ handleFitDefault → applyFit(fitSizeAndBottom)→ setForm + 即时 PATCH。
     const patchPromise = page.waitForRequest(
@@ -215,6 +380,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.getByRole("button", { name: "俯视" }).click(); // BEV:固定相机、轴屏对齐
     await page.waitForTimeout(400);
+    await focusPointCloudBox(page, card);
     await page.keyboard.press("w"); // 平移模式
 
     const patches: Array<{ geometry?: { type?: string; center?: number[] } }> = [];
@@ -283,5 +449,263 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(overlayPE.found, "三视图 overlay canvas 应存在").toBe(true);
     expect(overlayPE.pe, "overlay 必须 pointer-events:auto 才能拖框精修").toBe("auto");
     expect(overlayPE.isTop, "overlay 应为命中点最上层元素(未被遮挡)").toBe(true);
+  });
+
+  test("选择工具双击框 → 单选并聚焦，不产生 annotation 写请求", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    const annotationWrites: string[] = [];
+    page.on("request", (request) => {
+      if (
+        ["POST", "PATCH", "DELETE"].includes(request.method()) &&
+        /\/annotations(?:\/|\?|$)/.test(request.url())
+      ) {
+        annotationWrites.push(`${request.method()} ${request.url()}`);
+      }
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "俯视" }).click();
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    const hit = await pointCloudBoxScreenPoint(page, card);
+    await page.mouse.dblclick(hit.x, hit.y);
+
+    await expect(page.getByLabel("展开详情")).toBeVisible({ timeout: 5_000 });
+    await page.waitForTimeout(300);
+    expect(annotationWrites).toEqual([]);
+  });
+
+  test("三视图按对象和视图记忆离散缩放，触控板小 delta 先累计", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    await page.locator("body").click();
+    await page.keyboard.press("b");
+    const mainCanvas = page.locator("canvas").first();
+    const mainBounds = await mainCanvas.boundingBox();
+    if (!mainBounds) throw new Error("主点云 canvas boundingBox 不可用");
+    await page.mouse.click(
+      mainBounds.x + mainBounds.width * 0.7,
+      mainBounds.y + mainBounds.height * 0.6,
+    );
+    const cards = page.locator('[data-testid^="box-list-item-"]');
+    await expect(cards).toHaveCount(2, { timeout: 10_000 });
+
+    await cards.first().click({ position: { x: 12, y: 16 } });
+    const top = page.getByLabel(/^俯视精修视图/);
+    await expect(top).toHaveAttribute("aria-label", /缩放 100%/);
+    for (let i = 0; i < 3; i += 1) {
+      await top.dispatchEvent("wheel", { deltaY: -20, deltaMode: 0 });
+    }
+    await expect(top).toHaveAttribute("aria-label", /缩放 100%/);
+    await top.dispatchEvent("wheel", { deltaY: -20, deltaMode: 0 });
+    await expect(top).toHaveAttribute("aria-label", /缩放 112%/);
+
+    await cards.nth(1).click({ position: { x: 12, y: 16 } });
+    await expect(page.getByLabel(/^俯视精修视图/)).toHaveAttribute("aria-label", /缩放 100%/);
+    const side = page.getByLabel(/^侧视精修视图/);
+    await side.focus();
+    await page.keyboard.press("=");
+    await expect(side).toHaveAttribute("aria-label", /缩放 112%/);
+
+    await cards.first().click({ position: { x: 12, y: 16 } });
+    await expect(page.getByLabel(/^俯视精修视图/)).toHaveAttribute("aria-label", /缩放 112%/);
+    await expect(page.getByLabel(/^侧视精修视图/)).toHaveAttribute("aria-label", /缩放 100%/);
+  });
+
+  test("三套布局预设一次点击恢复三视图和相机面板，不切换当前工具", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await page
+      .locator('[data-testid^="box-list-item-"]')
+      .first()
+      .click({ position: { x: 12, y: 16 } });
+    await page.waitForTimeout(200);
+    const cameraBefore = await readPointCloudViewState(page);
+
+    await page.getByRole("button", { name: "恢复点级分割布局" }).click();
+    await expect(page.getByLabel("展开三视图精修(可拖动)")).toBeVisible();
+    await expect(page.getByTestId("pointmask-mode-select")).toHaveCount(0);
+
+    const sensorFusionSave = page.waitForRequest(
+      (request) => {
+        if (
+          request.method() !== "PATCH" ||
+          !request.url().endsWith("/api/v1/auth/me/preferences")
+        ) {
+          return false;
+        }
+        const body = request.postDataJSON() as {
+          workbench?: { layout?: { cameraPanels?: Record<string, unknown> } };
+        };
+        return Object.keys(body.workbench?.layout?.cameraPanels ?? {}).length === 0;
+      },
+      { timeout: 10_000 },
+    );
+    await page.getByRole("button", { name: "恢复传感器融合布局" }).click();
+    await expect(page.getByLabel("展开三视图精修(可拖动)")).toBeVisible();
+    const sensorFusionBody = (await sensorFusionSave).postDataJSON() as {
+      workbench?: {
+        layout?: {
+          cameraPanels?: Record<string, unknown>;
+          triViewFloat?: { collapsed?: boolean };
+        };
+      };
+    };
+    expect(sensorFusionBody.workbench?.layout?.cameraPanels).toEqual({});
+    expect(sensorFusionBody.workbench?.layout?.triViewFloat?.collapsed).toBe(true);
+    await expect(page.getByTitle("展开相机").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "恢复框体精修布局" }).click();
+    await expect(page.getByText("三视图精修", { exact: true })).toBeVisible();
+    await expect(page.getByTitle("展开相机").first()).toBeVisible();
+    const cameraAfter = await readPointCloudViewState(page);
+    expectPointCloudViewStateClose(cameraAfter, cameraBefore);
+  });
+
+  test("布局预设在目标视口与 0/1/2/6 路相机下不遮挡关键入口", async ({ page, seed }) => {
+    test.setTimeout(90_000);
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+    let cameraCount = 0;
+
+    await page.route("**/api/v1/tasks/*/point-cloud/manifest", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as {
+        cameras: Array<Record<string, unknown>>;
+        [key: string]: unknown;
+      };
+      const sources = body.cameras;
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          cameras: Array.from({ length: cameraCount }, (_, index) => ({
+            ...sources[index % Math.max(sources.length, 1)],
+            name: `matrix-camera-${index + 1}`,
+            role: `matrix-role-${index + 1}`,
+          })),
+        },
+      });
+    });
+
+    const matrix = [
+      { count: 0, width: 1366, height: 768, closeSidebar: false, selectBox: false },
+      { count: 1, width: 1920, height: 1080, closeSidebar: true, selectBox: true },
+      { count: 2, width: 1366, height: 768, closeSidebar: true, selectBox: true },
+      { count: 6, width: 1920, height: 1080, closeSidebar: false, selectBox: false },
+    ];
+
+    for (const item of matrix) {
+      cameraCount = item.count;
+      await page.setViewportSize({ width: item.width, height: item.height });
+      await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+      const expandDetails = page.getByRole("button", { name: "展开标注详情" });
+      if ((item.selectBox || !item.closeSidebar) && (await expandDetails.isVisible())) {
+        await expandDetails.click();
+      }
+      if (item.selectBox) {
+        await page
+          .locator('[data-testid^="box-list-item-"]')
+          .first()
+          .click({
+            position: { x: 12, y: 16 },
+          });
+      }
+      const collapseDetails = page.getByRole("button", { name: "收起标注详情" });
+      if (item.closeSidebar && (await collapseDetails.isVisible())) await collapseDetails.click();
+
+      await page.getByRole("button", { name: "恢复点级分割布局" }).click();
+      await expect(page.getByTitle("展开相机")).toHaveCount(item.count);
+      await page.getByRole("button", { name: "恢复传感器融合布局" }).click();
+      await page.getByRole("button", { name: "恢复框体精修布局" }).click();
+
+      for (const name of ["恢复框体精修布局", "恢复传感器融合布局", "恢复点级分割布局"]) {
+        await expectCenterHitTarget(page.getByRole("button", { name }));
+      }
+      for (const name of ["上一", "提交质检", "跳过", "下一"]) {
+        await expectCenterHitTarget(page.getByRole("button", { name, exact: true }));
+      }
+    }
+  });
+
+  test("关闭持久化时同 scene 切帧仍恢复运行时相机", async ({ page, seed }) => {
+    test.setTimeout(60_000);
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+    const [firstTaskId, secondTaskId] = lidar.lidar_task_ids;
+
+    await page.route("**/api/v1/tasks/*/point-cloud/manifest", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      const taskId = route
+        .request()
+        .url()
+        .match(/\/tasks\/([^/]+)\/point-cloud/)?.[1];
+      const frameIndex = taskId === secondTaskId ? 1 : 0;
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          scene_id: "00000000-0000-0000-0000-000000000024",
+          scene_name: "e2e-camera-continuity",
+          frame_index: frameIndex,
+          scene_total_frames: 2,
+          point_cloud_url: `${String(body.point_cloud_url)}#frame-${frameIndex}`,
+        },
+      });
+    });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${firstTaskId}`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    const defaultView = await readPointCloudViewState(page);
+    const canvas = page.locator("canvas").first();
+    const bounds = await canvas.boundingBox();
+    if (!bounds) throw new Error("主点云 canvas boundingBox 不可用");
+    await page.mouse.move(bounds.x + bounds.width * 0.45, bounds.y + bounds.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width * 0.62, bounds.y + bounds.height * 0.42, {
+      steps: 12,
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => JSON.stringify(await readPointCloudViewState(page)))
+      .not.toBe(JSON.stringify(defaultView));
+    const before = await waitForPointCloudViewStable(page);
+
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/tasks/${secondTaskId}/point-cloud/manifest`) && response.ok(),
+    );
+    await page.getByText(/e2e-lidar-.*-1\.pcd/, { exact: true }).click();
+    await responsePromise;
+    await expect.poll(() => page.url()).toContain(secondTaskId);
+    const after = await waitForPointCloudViewStable(page);
+    expectPointCloudViewStateClose(after, before);
   });
 });

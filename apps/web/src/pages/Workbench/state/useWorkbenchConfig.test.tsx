@@ -253,6 +253,48 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     expect(window.localStorage.getItem("workbench.u1.cameraPanels")).toContain("front");
     expect(window.localStorage.getItem("workbench.u1.pointcloudCamera")).toContain("position");
   });
+
+  it("较早的布局保存晚返回时不覆盖更新后的相机面板状态", async () => {
+    mockGetPreferences.mockResolvedValue({ workbench: {} });
+    const pending: Array<{
+      payload: { workbench: Record<string, unknown> };
+      resolve: (value: { workbench: Record<string, unknown> }) => void;
+    }> = [];
+    mockUpdatePreferences.mockImplementation(
+      (payload: { workbench: Record<string, unknown> }) =>
+        new Promise((resolve) => pending.push({ payload, resolve })),
+    );
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    vi.useFakeTimers();
+    act(() => {
+      result.current.setLayout({
+        cameraPanels: { front: { x: null, y: null, collapsed: true } },
+      });
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(pending).toHaveLength(1);
+
+    act(() => {
+      result.current.setLayout({ cameraPanels: {} });
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(pending).toHaveLength(2);
+
+    await act(async () => {
+      pending[0].resolve(pending[0].payload);
+      await Promise.resolve();
+    });
+    expect(result.current.layout.cameraPanels).toEqual({});
+
+    await act(async () => {
+      pending[1].resolve(pending[1].payload);
+      await Promise.resolve();
+    });
+    expect(result.current.layout.cameraPanels).toEqual({});
+    vi.useRealTimers();
+  });
 });
 
 describe("useWorkbenchConfig · v0.15.3 setFields + 多实例广播", () => {

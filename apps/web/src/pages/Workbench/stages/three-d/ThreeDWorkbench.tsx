@@ -35,6 +35,8 @@ import {
   type AlignPsr,
 } from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
+import { Button } from "@/components/ui/Button";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas, displayClassName } from "@/pages/Workbench/stage/colors";
 import { buildTrackLabelText, shouldShowLabel } from "@/pages/Workbench/stage/annotationVisual";
@@ -70,7 +72,7 @@ import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
 import type { TriSelected } from "./TriOrthoView";
-import type { Psr } from "./geometry/triview";
+import { TRI_ZOOM_DEFAULT, clampTriZoom, type Psr, type TriView } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import {
@@ -120,7 +122,9 @@ const BOX_SELECT_RECT =
   "absolute left-[var(--rect-l)] top-[var(--rect-t)] w-[var(--rect-w)] h-[var(--rect-h)] z-local-3 pointer-events-none border border-brand bg-brand/10 opacity-50";
 const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-local-3 size-full pointer-events-none";
 const CONTROLS =
-  "absolute top-3 left-3 z-local-4 flex flex-wrap items-center gap-3 max-w-[calc(100%-24px)] px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm";
+  "absolute top-3 left-3 z-local-4 flex max-w-[calc(100%-24px)] flex-col items-start gap-1.5 pointer-events-none";
+const CONTROL_BAR =
+  "flex flex-wrap items-center gap-3 max-w-full px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm pointer-events-auto";
 const BTN =
   "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-sm hover:border-brand hover:text-brand disabled:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-65";
 const BTN_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
@@ -129,6 +133,8 @@ const SELECT_CTL =
   "appearance-none min-w-[84px] px-1.5 py-1 rounded-sm border border-border bg-background text-foreground text-xs";
 const FIT_GROUP =
   "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
+const LAYOUT_PRESET_GROUP =
+  "flex items-center gap-1 max-w-full px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm pointer-events-auto";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
 const ERR = "text-status-danger";
@@ -177,6 +183,7 @@ const CAM_MODAL_NEXT = "right-4";
 import {
   ANCHOR_CLASS,
   CAMERA_STACK_VISIBLE,
+  THREE_D_LAYOUT_PRESETS,
   IDENTITY_MATRIX,
   LIDAR_TOOL_UNIT,
   POINT_MASK_TOOL_UNIT,
@@ -185,6 +192,7 @@ import {
   TRI_TAB_DRAG_SIZE,
   TRI_TAB_DRAG_THRESHOLD,
   boxGeometryFromPsr,
+  buildThreeDLayoutPreset,
   frontCameraForward,
   geometryConvention,
   isPsrFieldBad,
@@ -193,8 +201,15 @@ import {
   resolveBox3dDefaultSize,
   resolveTriViewFloatRect,
   sortedIndices,
+  type ThreeDLayoutPreset,
   type PsrField,
 } from "./ThreeDWorkbench.helpers";
+
+const DEFAULT_TRI_ZOOM_BY_VIEW: Record<TriView, number> = {
+  top: TRI_ZOOM_DEFAULT,
+  side: TRI_ZOOM_DEFAULT,
+  front: TRI_ZOOM_DEFAULT,
+};
 
 interface ThreeDWorkbenchProps {
   taskId: string | null;
@@ -690,12 +705,14 @@ export function ThreeDWorkbench({
     cameraDamping: workbenchPointcloud.cameraDamping,
     persistCameraView: workbenchPointcloud.persistCameraView,
     pointCloudUrl: manifest?.point_cloud_url,
+    continuityKey: manifest?.scene_id ?? taskId,
     axisConvention,
     boxes,
     selectedId,
     selectedPsrEditable,
     pointcloudCamera,
     onWorkbenchLayoutChange,
+    onViewModeChange: setPointCloudViewMode,
     onTransformCommit: handleTransformCommit,
   });
 
@@ -1267,6 +1284,7 @@ export function ThreeDWorkbench({
 
   // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const selectionBeforeDoubleClickRef = useRef<string[]>([]);
   const DRAG_CLICK_TOL = 4; // px
   // v0.13.9 · 框选拖拽起点(client px)与屏上预览矩形(相对 viewportWrap px)。
   const boxSelectStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1282,6 +1300,9 @@ export function ThreeDWorkbench({
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
+    if (e.button === 0 && e.detail === 1 && threeDTool === "select") {
+      selectionBeforeDoubleClickRef.current = [...selectedIds];
+    }
     if (placing || pointMaskDragMode) {
       // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
       sceneRef.current?.setBoxSelecting(true);
@@ -1383,9 +1404,33 @@ export function ThreeDWorkbench({
   };
 
   const handleViewportDoubleClick = (e: React.MouseEvent) => {
-    if (!pointMaskPolygonMode) return;
+    if (pointMaskPolygonMode) {
+      e.preventDefault();
+      finishPointMaskPolygon(e.altKey);
+      return;
+    }
+    const scene = sceneRef.current;
+    if (
+      threeDTool !== "select" ||
+      drawingSelection ||
+      isBoxSelecting ||
+      !scene ||
+      scene.isTransformDragging()
+    ) {
+      return;
+    }
+    const hitId = scene.pickBox(e.clientX, e.clientY);
+    if (!hitId) {
+      const previous = selectionBeforeDoubleClickRef.current;
+      if (previous.length > 0) {
+        onSelectBox(previous[0]);
+        for (const id of previous.slice(1)) onSelectBox(id, { shift: true });
+      }
+      return;
+    }
     e.preventDefault();
-    finishPointMaskPolygon(e.altKey);
+    onSelectBox(hitId);
+    scene.focusBox(hitId);
   };
 
   const handleViewportClick = (e: React.MouseEvent) => {
@@ -1534,6 +1579,17 @@ export function ThreeDWorkbench({
         : c,
     );
   }, [manifest?.cameras, axisConvention]);
+  const handleApplyLayoutPreset = useCallback(
+    (preset: ThreeDLayoutPreset) => {
+      onWorkbenchLayoutChange(
+        buildThreeDLayoutPreset(
+          preset,
+          cameras.map((camera) => camera.role),
+        ),
+      );
+    },
+    [cameras, onWorkbenchLayoutChange],
+  );
   // v0.13.7 · 相机按物理朝向分组(悬浮环绕):每个 anchor 一个定位容器,同朝向沿边堆叠。
   const cameraGroups = useMemo(() => {
     const groups = new Map<Anchor, typeof cameras>();
@@ -1942,6 +1998,29 @@ export function ThreeDWorkbench({
   // v0.13.5 · 三视图复用主场景点 geometry (零拷贝); selected 仅在 PSR/色变化时换引用,
   // 避免每次 render 触发 TriViewRenderer.setBox。
   const getPointsGeometry = useCallback(() => sceneRef.current?.getPointsGeometry() ?? null, []);
+  const [triZoomByAnnotation, setTriZoomByAnnotation] = useState(
+    () => new Map<string, Record<TriView, number>>(),
+  );
+  const triZoomAnnotationId = !multiBoxSelected ? (selectedBox?.id ?? null) : null;
+  const triZoomByView = useMemo(
+    () =>
+      triZoomAnnotationId
+        ? (triZoomByAnnotation.get(triZoomAnnotationId) ?? DEFAULT_TRI_ZOOM_BY_VIEW)
+        : DEFAULT_TRI_ZOOM_BY_VIEW,
+    [triZoomAnnotationId, triZoomByAnnotation],
+  );
+  const handleTriZoomChange = useCallback(
+    (view: TriView, zoom: number) => {
+      if (!triZoomAnnotationId) return;
+      setTriZoomByAnnotation((currentByAnnotation) => {
+        const current = currentByAnnotation.get(triZoomAnnotationId) ?? DEFAULT_TRI_ZOOM_BY_VIEW;
+        const next = new Map(currentByAnnotation);
+        next.set(triZoomAnnotationId, { ...current, [view]: clampTriZoom(zoom) });
+        return next;
+      });
+    },
+    [triZoomAnnotationId],
+  );
   const triSelected = useMemo<TriSelected | null>(
     () =>
       selectedBox && !multiBoxSelected
@@ -2094,53 +2173,72 @@ export function ThreeDWorkbench({
 
         {/* 控件浮条 */}
         <div ref={controlsRef} className={CONTROLS}>
-          <button type="button" className={BTN} onClick={handleResetView}>
-            重置视角
-          </button>
-          <button
-            type="button"
-            className={pointCloudViewMode === "bev" ? `${BTN} ${BTN_ACTIVE}` : BTN}
-            onClick={handleBevView}
-            aria-pressed={pointCloudViewMode === "bev"}
-          >
-            俯视
-          </button>
-          <button
-            type="button"
-            className={BTN}
-            onClick={handleResetCameraPanels}
-            title="恢复 2D 相机图默认贴边布局"
-          >
-            重置相机布局
-          </button>
-          {colorizing && (
-            <span className={SIZE_CTL} title="相机上色处理中">
-              相机上色…
-            </span>
-          )}
-          {threeDTool === "point-mask" && (
-            <label className={SIZE_CTL}>
-              选点
-              <select
-                className={SELECT_CTL}
-                data-testid="pointmask-mode-select"
-                value={pointMaskSelectMode}
-                disabled={!canPlacePointMask}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (isPointMaskSelectMode(next)) {
-                    onWorkbenchConfigChange({
-                      pointcloud: { pointMaskSelectMode: next },
-                    });
-                  }
-                }}
-              >
-                <option value="rect">矩形</option>
-                <option value="lasso">套索</option>
-                <option value="polygon">多边形</option>
-              </select>
-            </label>
-          )}
+          <div className={CONTROL_BAR}>
+            <button type="button" className={BTN} onClick={handleResetView}>
+              重置视角
+            </button>
+            <button
+              type="button"
+              className={pointCloudViewMode === "bev" ? `${BTN} ${BTN_ACTIVE}` : BTN}
+              onClick={handleBevView}
+              aria-pressed={pointCloudViewMode === "bev"}
+            >
+              俯视
+            </button>
+            <button
+              type="button"
+              className={BTN}
+              onClick={handleResetCameraPanels}
+              title="恢复 2D 相机图默认贴边布局"
+            >
+              重置相机布局
+            </button>
+            {colorizing && (
+              <span className={SIZE_CTL} title="相机上色处理中">
+                相机上色…
+              </span>
+            )}
+            {threeDTool === "point-mask" && (
+              <label className={SIZE_CTL}>
+                选点
+                <select
+                  className={SELECT_CTL}
+                  data-testid="pointmask-mode-select"
+                  value={pointMaskSelectMode}
+                  disabled={!canPlacePointMask}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (isPointMaskSelectMode(next)) {
+                      onWorkbenchConfigChange({
+                        pointcloud: { pointMaskSelectMode: next },
+                      });
+                    }
+                  }}
+                >
+                  <option value="rect">矩形</option>
+                  <option value="lasso">套索</option>
+                  <option value="polygon">多边形</option>
+                </select>
+              </label>
+            )}
+          </div>
+          <div className={LAYOUT_PRESET_GROUP} role="group" aria-label="3D 面板布局预设">
+            {THREE_D_LAYOUT_PRESETS.map((preset) => (
+              <Tooltip key={preset.id} name={preset.label} desc={preset.description} side="bottom">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="default"
+                  className="shrink-0"
+                  aria-label={`恢复${preset.label}布局`}
+                  data-testid={`3d-layout-preset-${preset.id}`}
+                  onClick={() => handleApplyLayoutPreset(preset.id)}
+                >
+                  {preset.label}
+                </Button>
+              </Tooltip>
+            ))}
+          </div>
         </div>
 
         <ContextMenu
@@ -2486,6 +2584,8 @@ export function ThreeDWorkbench({
               pointsReady={!!stats}
               editable={selectedPsrEditable}
               pointSize={pointSize}
+              zoomByView={triZoomByView}
+              onZoomChange={handleTriZoomChange}
               onEditPsr={handleEditPsr}
             />
           </FloatingPanelShell>

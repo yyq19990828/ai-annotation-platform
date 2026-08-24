@@ -128,4 +128,39 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     expect(body.annotation_type).toBe("point_mask_3d");
     expect(body.geometry?.type).toBe("point_mask_3d");
   });
+
+  test("point-mask 多边形双击优先完成绘制，不触发框聚焦", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await page.locator("body").click();
+    await page.keyboard.press("p");
+    await page.getByTestId("pointmask-mode-select").selectOption("polygon");
+
+    const canvas = page.locator("canvas").first();
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("canvas boundingBox 不可用");
+    const at = (fx: number, fy: number): [number, number] => [
+      box.x + box.width * fx,
+      box.y + box.height * fy,
+    ];
+    await page.mouse.click(...at(0.25, 0.3));
+    await page.mouse.click(...at(0.75, 0.3));
+    const postPromise = page.waitForRequest(
+      (req) =>
+        req.method() === "POST" &&
+        /\/annotations(\?|$)/.test(req.url().split("/api")[1] ?? req.url()),
+      { timeout: 10_000 },
+    );
+    await page.mouse.dblclick(...at(0.5, 0.75));
+    const body = postPromise.then((request) => request.postDataJSON()) as Promise<{
+      geometry?: { type?: string };
+    }>;
+    await expect(body).resolves.toMatchObject({ geometry: { type: "point_mask_3d" } });
+  });
 });

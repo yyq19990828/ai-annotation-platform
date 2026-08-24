@@ -14,6 +14,7 @@ import { applyConventionToPositions, type LidarAxisConvention } from "./geometry
 
 import { estimateGroundZ } from "./geometry/ground";
 import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
+import { framePerspectiveBox } from "./geometry/viewFraming";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
@@ -151,11 +152,17 @@ export class PointCloudScene {
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
   private onTransformEnd: ((id: string, psr: BoxPsr) => void) | null = null;
+  private transformDragging = false;
+  private transformChangedDuringDrag = false;
   // 拖拽结束会触发一次 click,不应改变选中 —— 用此标记吞掉那次 click。
   private suppressClickAfterDrag = false;
 
   constructor(container: HTMLElement, options: { decimateThreshold?: number } = {}) {
     this.container = container;
+    if (import.meta.env.DEV) {
+      (this.container as HTMLElement & { __pointCloudScene?: PointCloudScene }).__pointCloudScene =
+        this;
+    }
     this.setDecimateThreshold(options.decimateThreshold ?? DEFAULT_DECIMATE_THRESHOLD);
     const { clientWidth: w, clientHeight: h } = container;
 
@@ -193,12 +200,18 @@ export class PointCloudScene {
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
     this.transform.setSpace("local");
+    this.transform.addEventListener("objectChange", () => {
+      if (this.transformDragging) this.transformChangedDuringDrag = true;
+    });
     this.transform.addEventListener("dragging-changed", (event) => {
       const dragging = (event as unknown as { value: boolean }).value;
+      this.transformDragging = dragging;
       this.controls.enabled = !dragging; // 拖 gizmo 时禁用 orbit,避免相机乱转
-      if (!dragging) {
+      if (dragging) {
+        this.transformChangedDuringDrag = false;
+      } else {
         this.suppressClickAfterDrag = true;
-        this.emitTransform();
+        if (this.transformChangedDuringDrag) this.emitTransform();
       }
     });
     this.scene.add(this.transform.getHelper());
@@ -672,16 +685,17 @@ export class PointCloudScene {
     };
   }
 
-  applyViewState(view: PointCloudViewState | null | undefined) {
-    if (!view) return;
+  applyViewState(view: PointCloudViewState | null | undefined): boolean {
+    if (!view || (view.mode !== "orbit" && view.mode !== "bev")) return false;
     const values = [...view.position, ...view.target, ...view.up];
-    if (values.length !== 9 || values.some((v) => !Number.isFinite(v))) return;
+    if (values.length !== 9 || values.some((v) => !Number.isFinite(v))) return false;
     this.camera.position.fromArray(view.position);
     this.controls.target.fromArray(view.target);
     this.camera.up.fromArray(view.up);
-    this.setOrbitMouseMode(view.mode === "bev" ? "bev" : "orbit");
+    this.setOrbitMouseMode(view.mode);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    return true;
   }
 
   /** v0.13.6 · 当前点坐标 (N*3, lidar/world 系, 与标定同系); 供相机上色逐点投影。 */
@@ -1000,6 +1014,29 @@ export class PointCloudScene {
     return typeof id === "string" ? id : null;
   }
 
+  /** 保持当前观察方向 / up / 模式，把相机安全取景到指定框。 */
+  focusBox(id: string): boolean {
+    const group = this.boxGroups.get(id);
+    if (!group) return false;
+    const framed = framePerspectiveBox({
+      boxCenter: group.position.toArray() as [number, number, number],
+      boxSize: [Math.abs(group.scale.x), Math.abs(group.scale.y), Math.abs(group.scale.z)],
+      cameraPosition: this.camera.position.toArray() as [number, number, number],
+      cameraTarget: this.controls.target.toArray() as [number, number, number],
+      fallbackDirection: [-this.forward.x * 2.2, -this.forward.y * 2.2, 1.2],
+      verticalFovDeg: this.camera.fov,
+      aspect: this.camera.aspect,
+      fullFrameFar: this.viewRadius * 50,
+    });
+    this.controls.target.fromArray(framed.target);
+    this.camera.position.fromArray(framed.position);
+    this.camera.near = framed.near;
+    this.camera.far = framed.far;
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    return true;
+  }
+
   /**
    * v0.13.3 · 屏幕坐标射线 → 世界落点 [x,y,z],供放置新框(透视拖拽不准,故先点落点 +
    * 默认尺寸,再用数值面板 / gizmo / Q 一键贴合精修)。射线极端时返回 null。
@@ -1079,6 +1116,10 @@ export class PointCloudScene {
     return false;
   }
 
+  isTransformDragging(): boolean {
+    return this.transformDragging;
+  }
+
   private emitTransform() {
     const obj = this.transform.object;
     const id = obj?.userData.boxId;
@@ -1099,6 +1140,8 @@ export class PointCloudScene {
 
   dispose() {
     this.disposed = true;
+    const debugContainer = this.container as HTMLElement & { __pointCloudScene?: PointCloudScene };
+    if (debugContainer.__pointCloudScene === this) delete debugContainer.__pointCloudScene;
     cancelAnimationFrame(this.raf);
     this.removePoints();
     for (const group of this.boxGroups.values()) this.disposeBoxGroup(group);
