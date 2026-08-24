@@ -731,7 +731,12 @@ export function ThreeDWorkbench({
   }, []);
 
   // Three.js 场景生命周期(实例化/销毁 · 偏好同步 · 点云加载 · 框图层 · gizmo 挂载 · W-E-R)。
-  const { stats, loadError } = usePointCloudScene({
+  const {
+    stats,
+    loadError,
+    isLoading: pointCloudLoading,
+    loadedPointCloudUrl,
+  } = usePointCloudScene({
     viewportRef,
     sceneRef,
     pcdDecimate: performanceConfig.pcdDecimate,
@@ -741,6 +746,7 @@ export function ThreeDWorkbench({
     cameraDamping: workbenchPointcloud.cameraDamping,
     persistCameraView: workbenchPointcloud.persistCameraView,
     pointCloudUrl: manifest?.point_cloud_url,
+    deferPointCloudDisplay: colorizeOn,
     continuityKey: manifest?.scene_id ?? taskId,
     axisConvention,
     boxes,
@@ -1750,44 +1756,62 @@ export function ThreeDWorkbench({
   // 无标定相机自动剔除;getImageData 跨域污染则降级(整相机跳过)。三视图复用同一 geometry 自动跟随。
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene || !stats) return;
+    const pointCloudUrl = manifest?.point_cloud_url ?? null;
+    const frameReady =
+      !!scene && !!stats && !!pointCloudUrl && loadedPointCloudUrl === pointCloudUrl;
+    if (!scene || !frameReady) {
+      colorizedRawRef.current = null;
+      adjustedColorBufferRef.current = null;
+      setColorizing(false);
+      return;
+    }
     if (!colorizeOn) {
       colorizedRawRef.current = null;
       adjustedColorBufferRef.current = null;
       scene.setPointColors(null);
+      scene.setPointCloudVisible(true);
       return;
     }
-    let cancelled = false;
+    const controller = new AbortController();
     setColorizing(true);
+    scene.setPointCloudVisible(false);
     (async () => {
-      const positions = scene.getPointPositions();
-      const calibCams = cameras.filter((c) => c.calibration);
-      if (!positions || calibCams.length === 0) {
-        if (!cancelled) setColorizing(false);
-        return;
-      }
-      const samples = (
-        await Promise.all(calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!)))
-      ).filter((s): s is CameraSample => s !== null);
-      if (cancelled) return;
-      if (samples.length > 0) {
-        const colors = await colorizePointsAsync(positions, scene.getBaseColors(), samples);
-        if (!cancelled) {
+      try {
+        const positions = scene.getPointPositions();
+        const calibCams = cameras.filter((c) => c.calibration);
+        if (!positions || calibCams.length === 0) return;
+        const samples = (
+          await Promise.all(calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!)))
+        ).filter((s): s is CameraSample => s !== null);
+        if (controller.signal.aborted || samples.length === 0) return;
+        const colors = await colorizePointsAsync(positions, scene.getBaseColors(), samples, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
           colorizedRawRef.current = colors;
           adjustedColorBufferRef.current = null;
           scene.setPointColors(
             isNeutralAdjust(colorAdjust) ? colors : adjustColors(colors, colorAdjust),
           );
         }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn("[pointcloud-colorize] failed; showing height colors", error);
+          scene.setPointColors(null);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          scene.setPointCloudVisible(true);
+          setColorizing(false);
+        }
       }
-      if (!cancelled) setColorizing(false);
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
     // colorAdjust changes are handled by the lightweight remap effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colorizeOn, cameras, stats]);
+  }, [colorizeOn, cameras, loadedPointCloudUrl, manifest?.point_cloud_url, stats]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -2386,6 +2410,7 @@ export function ThreeDWorkbench({
         {/* 状态条 */}
         <div className={STATUS_BAR}>
           {isLoading && <span>加载 manifest…</span>}
+          {pointCloudLoading && <span data-testid="pointcloud-loading">加载点云…</span>}
           {error && <span className={ERR}>manifest 加载失败</span>}
           {loadError && <span className={ERR}>点云加载失败: {loadError}</span>}
           {stats && (

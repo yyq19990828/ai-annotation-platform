@@ -14,7 +14,7 @@ const mockState = vi.hoisted(() => {
   class MockScene {
     currentView: PointCloudViewState = initialView;
     viewChangeHandler: ((view: PointCloudViewState) => void) | null = null;
-    loadPcd = vi.fn(async () => {
+    loadPcd = vi.fn(async (_url?: string, _convention?: unknown, _options?: unknown) => {
       this.viewChangeHandler?.(initialView);
       return { totalPoints: 10, renderedPoints: 10, decimated: false, decimateStride: 1 };
     });
@@ -34,6 +34,8 @@ const mockState = vi.hoisted(() => {
     setCameraDamping = vi.fn();
     setTransformHandler = vi.fn();
     setDecimateThreshold = vi.fn();
+    clearPointCloud = vi.fn();
+    setPointCloudVisible = vi.fn();
     setBoxes = vi.fn();
     attachTransform = vi.fn();
     detachTransform = vi.fn();
@@ -160,5 +162,71 @@ describe("usePointCloudScene camera continuity", () => {
     await waitFor(() => expect(remountedScene.applyViewState).toHaveBeenCalledWith(ACCOUNT_VIEW));
     expect(onWorkbenchLayoutChange).not.toHaveBeenCalled();
     remounted.unmount();
+  });
+
+  it("换帧立即清掉旧点云，且过期加载不再具备提交资格", async () => {
+    const container = document.createElement("div");
+    const sceneRef = { current: null };
+    let pointCloudUrl = "frame-1.pcd";
+    const render = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: container },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl,
+        continuityKey: "scene-a",
+        axisConvention: "iso_8855",
+        boxes: [],
+        selectedId: null,
+        selectedPsrEditable: false,
+        pointcloudCamera: null,
+        deferPointCloudDisplay: true,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(render.result.current.loadedPointCloudUrl).toBe("frame-1.pcd"));
+    const scene = mockState.instances[0];
+
+    let finishFrame2!: (value: {
+      totalPoints: number;
+      renderedPoints: number;
+      decimated: boolean;
+      decimateStride: number;
+    }) => void;
+    scene.loadPcd.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFrame2 = resolve;
+        }),
+    );
+    pointCloudUrl = "frame-2.pcd";
+    render.rerender();
+
+    await waitFor(() => expect(scene.loadPcd).toHaveBeenCalledTimes(2));
+    expect(render.result.current.stats).toBeNull();
+    expect(render.result.current.loadedPointCloudUrl).toBeNull();
+    expect(render.result.current.isLoading).toBe(true);
+    expect(scene.clearPointCloud).toHaveBeenCalled();
+    const frame2Options = scene.loadPcd.mock.calls[1][2] as {
+      shouldCommit: () => boolean;
+      visible: boolean;
+    };
+    expect(frame2Options.shouldCommit()).toBe(true);
+    expect(frame2Options.visible).toBe(false);
+
+    pointCloudUrl = "frame-3.pcd";
+    render.rerender();
+    await waitFor(() => expect(scene.loadPcd).toHaveBeenCalledTimes(3));
+    expect(frame2Options.shouldCommit()).toBe(false);
+
+    finishFrame2({ totalPoints: 20, renderedPoints: 20, decimated: false, decimateStride: 1 });
+    await waitFor(() => expect(render.result.current.loadedPointCloudUrl).toBe("frame-3.pcd"));
   });
 });

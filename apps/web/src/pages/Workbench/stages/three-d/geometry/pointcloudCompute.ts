@@ -51,8 +51,11 @@ export async function colorizePointsAsync(
   opts: {
     createWorker?: WorkerFactory | null;
     timeoutMs?: number;
+    signal?: AbortSignal;
   } = {},
 ): Promise<Float32Array> {
+  if (opts.signal?.aborted)
+    throw new DOMException("Point-cloud colorization aborted", "AbortError");
   if (samples.length === 0) {
     return colorizePointsOnMainThread(positions, baseColors, samples);
   }
@@ -78,14 +81,25 @@ export async function colorizePointsAsync(
     samples: samples.map(cloneSample),
   };
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let done = false;
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
+    };
     const finish = (colors: Float32Array) => {
       if (done) return;
       done = true;
-      window.clearTimeout(timer);
+      cleanup();
       worker.terminate();
       resolve(colors);
+    };
+    const abort = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      worker.terminate();
+      reject(new DOMException("Point-cloud colorization aborted", "AbortError"));
     };
     const fallback = (err: unknown) => {
       if (done) return;
@@ -96,6 +110,7 @@ export async function colorizePointsAsync(
       () => fallback(new Error("pointcloud worker timeout")),
       opts.timeoutMs ?? 10_000,
     );
+    opts.signal?.addEventListener("abort", abort, { once: true });
 
     worker.onmessage = (event: MessageEvent<PointcloudWorkerResponse>) => {
       const msg = event.data;

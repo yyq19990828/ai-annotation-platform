@@ -20,6 +20,12 @@ interface BrowserPointCloudViewState {
   mode: "orbit" | "bev";
 }
 
+declare global {
+  interface Window {
+    __pointCloudColorWorkerCount?: number;
+  }
+}
+
 async function readPointCloudViewState(page: Page): Promise<BrowserPointCloudViewState> {
   const state = await page.getByTestId("pc-viewport").evaluate((element) => {
     const scene = (
@@ -134,6 +140,43 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await seed.reset();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker;
+      const WrappedWorker = function (...args: ConstructorParameters<typeof Worker>) {
+        if (String(args[0]).includes("pointcloud.worker")) {
+          window.__pointCloudColorWorkerCount = (window.__pointCloudColorWorkerCount ?? 0) + 1;
+        }
+        return new NativeWorker(...args);
+      } as typeof Worker;
+      WrappedWorker.prototype = NativeWorker.prototype;
+      window.Worker = WrappedWorker;
+      window.__pointCloudColorWorkerCount = 0;
+    });
+    await page.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const response = await fetch("/api/v1/auth/me/preferences", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workbench: { pointcloud: { colorizeWithCamera: true } },
+        }),
+      });
+      if (!response.ok) throw new Error(`开启相机上色失败: ${response.status}`);
+    });
+
+    let pcdRequestCount = 0;
+    let releaseTargetPcd: (() => void) | null = null;
+    const targetPcdGate = new Promise<void>((resolve) => {
+      releaseTargetPcd = resolve;
+    });
+    await page.route("**/*.pcd*", async (route) => {
+      pcdRequestCount += 1;
+      if (pcdRequestCount > 1) await targetPcdGate;
+      await route.continue();
+    });
 
     const timelineRequests: string[] = [];
     const annotationReads: string[] = [];
@@ -149,6 +192,13 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${lidar.lidar_task_ids[0]}`);
     await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0))
+      .toBeGreaterThan(0);
+    await expect(page.getByText("相机上色…")).toBeHidden();
+    await page.evaluate(() => {
+      window.__pointCloudColorWorkerCount = 0;
+    });
 
     const timeline = page.getByTestId("three-d-scene-timeline");
     await expect(timeline).toBeVisible({ timeout: 10_000 });
@@ -164,8 +214,21 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect(page.getByTestId("scene-timeline-track-frame-0")).toBeVisible();
     await expect(page.getByTestId("scene-timeline-track-frame-1")).toBeVisible();
 
+    await expect.poll(() => pcdRequestCount).toBe(2);
     await page.getByTestId("scene-timeline-frame-1").click();
     await expect(page).toHaveURL(new RegExp(`task=${lidar.lidar_task_ids[1]}`));
+    await expect(page.getByTestId("pointcloud-loading")).toBeVisible();
+    expect(
+      await page.getByTestId("pc-viewport").evaluate((element) => {
+        const scene = (
+          element as HTMLElement & {
+            __pointCloudScene?: { getPointPositions: () => Float32Array | null };
+          }
+        ).__pointCloudScene;
+        return scene?.getPointPositions() ?? null;
+      }),
+    ).toBeNull();
+    releaseTargetPcd?.();
     await expect(page.getByTestId("scene-timeline-frame-1")).toHaveAttribute(
       "aria-current",
       "step",
@@ -174,6 +237,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       /border-brand/,
     );
     await expect(timeline).toContainText("当前对象轨迹");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBe(1);
+    await expect(page.getByText("相机上色…")).toBeHidden();
 
     const toggle = page.getByTestId("scene-timeline-toggle");
     await toggle.click();
@@ -192,6 +258,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(annotationReads.length, "只应读取进入过的两个 task，不得逐帧 N+1").toBeLessThanOrEqual(
       2,
     );
+    expect(pcdRequestCount, "邻帧预取与当前帧加载应复用同一个 PCD 请求").toBe(2);
   });
 
   test("点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库", async ({ page, seed }) => {

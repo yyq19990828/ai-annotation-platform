@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useSceneTimelineMock = vi.hoisted(() => vi.fn());
@@ -24,6 +26,15 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 import { SceneTimeline } from "./SceneTimeline";
+
+function renderTimeline(props: ComponentProps<typeof SceneTimeline>) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <SceneTimeline {...props} />
+    </QueryClientProvider>,
+  );
+}
 
 function timelineData() {
   return {
@@ -84,7 +95,7 @@ describe("SceneTimeline", () => {
   });
 
   it("renders only virtual cells for a 10000-frame scene and exposes track presence", () => {
-    render(<SceneTimeline taskId="task-0" trackId="trk_car" onNavigateFrame={vi.fn()} />);
+    renderTimeline({ taskId: "task-0", trackId: "trk_car", onNavigateFrame: vi.fn() });
 
     expect(screen.getByTestId("three-d-scene-timeline")).toBeTruthy();
     expect(screen.getByText("nuScenes mini scene-0061")).toBeTruthy();
@@ -96,7 +107,7 @@ describe("SceneTimeline", () => {
 
   it("navigates to an available frame with the matching annotation", async () => {
     const navigate = vi.fn().mockResolvedValue(true);
-    render(<SceneTimeline taskId="task-0" trackId="trk_car" onNavigateFrame={navigate} />);
+    renderTimeline({ taskId: "task-0", trackId: "trk_car", onNavigateFrame: navigate });
 
     fireEvent.click(screen.getByTestId("scene-timeline-frame-1"));
 
@@ -104,7 +115,7 @@ describe("SceneTimeline", () => {
   });
 
   it("collapses to the compact header and expands again", () => {
-    render(<SceneTimeline taskId="task-0" trackId={null} onNavigateFrame={vi.fn()} />);
+    renderTimeline({ taskId: "task-0", trackId: null, onNavigateFrame: vi.fn() });
 
     const toggle = screen.getByTestId("scene-timeline-toggle");
     fireEvent.click(toggle);
@@ -122,7 +133,7 @@ describe("SceneTimeline", () => {
       isFetching: false,
       refetch: vi.fn(),
     });
-    render(<SceneTimeline taskId="task-single" trackId={null} onNavigateFrame={vi.fn()} />);
+    renderTimeline({ taskId: "task-single", trackId: null, onNavigateFrame: vi.fn() });
     expect(screen.queryByTestId("three-d-scene-timeline")).toBeNull();
   });
 });

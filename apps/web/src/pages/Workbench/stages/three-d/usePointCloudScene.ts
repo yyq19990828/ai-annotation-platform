@@ -46,6 +46,8 @@ interface UsePointCloudSceneParams {
   persistCameraView: boolean;
   /** manifest 的点云 URL(presigned);缺省时不加载。 */
   pointCloudUrl: string | undefined;
+  /** 相机上色开启时，新点云在 RGB 完成前不显示中间高度色。 */
+  deferPointCloudDisplay?: boolean;
   /** scene_id；无 scene 的单帧任务传 taskId，防止无关任务复用运行时视角。 */
   continuityKey: string | null;
   axisConvention: LidarAxisConvention;
@@ -66,6 +68,9 @@ interface UsePointCloudSceneResult {
   /** 载帧统计(渲染点数 / 抽稀);null = 未加载。其变化亦作"换帧"信号被壳层多处消费。 */
   stats: PointCloudStats | null;
   loadError: string | null;
+  isLoading: boolean;
+  /** stats 所属的精确 URL，用于防止新 manifest 搭配旧点缓冲。 */
+  loadedPointCloudUrl: string | null;
 }
 
 const RUNTIME_VIEW_TRANSFER_TTL_MS = 10_000;
@@ -102,6 +107,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     cameraDamping,
     persistCameraView,
     pointCloudUrl,
+    deferPointCloudDisplay = false,
     continuityKey,
     axisConvention,
     boxes,
@@ -113,8 +119,14 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     onTransformCommit,
   } = params;
 
-  const [stats, setStats] = useState<PointCloudStats | null>(null);
+  const [loadState, setLoadState] = useState<{
+    stats: PointCloudStats | null;
+    loadedPointCloudUrl: string | null;
+    isLoading: boolean;
+  }>({ stats: null, loadedPointCloudUrl: null, isLoading: false });
   const [loadError, setLoadError] = useState<string | null>(null);
+  const deferPointCloudDisplayRef = useRef(deferPointCloudDisplay);
+  deferPointCloudDisplayRef.current = deferPointCloudDisplay;
 
   const persistCameraViewRef = useRef(persistCameraView);
   persistCameraViewRef.current = persistCameraView;
@@ -183,7 +195,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
 
   useEffect(() => {
     sceneRef.current?.setPointSize(pointSize);
-  }, [pointSize, stats, sceneRef]);
+  }, [pointSize, loadState.stats, sceneRef]);
 
   useEffect(() => {
     sceneRef.current?.setGridVisible(showGrid);
@@ -205,17 +217,30 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene || !pointCloudUrl) return;
+    if (!scene) return;
+    const loadSequence = ++loadSequenceRef.current;
+    scene.clearPointCloud();
+    setLoadError(null);
+    setLoadState({
+      stats: null,
+      loadedPointCloudUrl: null,
+      isLoading: !!pointCloudUrl,
+    });
+    if (!pointCloudUrl) {
+      suspendCameraSaveRef.current = false;
+      return;
+    }
     const runtimeView =
       continuityKey !== null && loadedContinuityKeyRef.current === continuityKey
         ? scene.getViewState()
         : takeRuntimeViewTransfer(continuityKey);
-    const loadSequence = ++loadSequenceRef.current;
     let cancelled = false;
-    setLoadError(null);
     suspendCameraSaveRef.current = true;
     scene
-      .loadPcd(pointCloudUrl, axisConvention)
+      .loadPcd(pointCloudUrl, axisConvention, {
+        shouldCommit: () => !cancelled && loadSequence === loadSequenceRef.current,
+        visible: !deferPointCloudDisplayRef.current,
+      })
       .then((s) => {
         if (cancelled || loadSequence !== loadSequenceRef.current) return;
         if (runtimeView) {
@@ -225,12 +250,13 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         }
         loadedContinuityKeyRef.current = continuityKey;
         onViewModeChangeRef.current(scene.getViewState().mode);
-        setStats(s);
+        setLoadState({ stats: s, loadedPointCloudUrl: pointCloudUrl, isLoading: false });
         suspendCameraSaveRef.current = false;
       })
       .catch((e) => {
         if (cancelled || loadSequence !== loadSequenceRef.current) return;
         suspendCameraSaveRef.current = false;
+        setLoadState({ stats: null, loadedPointCloudUrl: null, isLoading: false });
         setLoadError(e instanceof Error ? e.message : String(e));
       });
     return () => {
@@ -278,5 +304,10 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, selectedPsrEditable, sceneRef]);
 
-  return { stats, loadError };
+  return {
+    stats: loadState.stats,
+    loadError,
+    isLoading: loadState.isLoading,
+    loadedPointCloudUrl: loadState.loadedPointCloudUrl,
+  };
 }

@@ -15,6 +15,7 @@ import { applyConventionToPositions, type LidarAxisConvention } from "./geometry
 import { estimateGroundZ } from "./geometry/ground";
 import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 import { framePerspectiveBox } from "./geometry/viewFraming";
+import { loadPointCloudBuffer } from "./pointCloudAssetCache";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
@@ -85,6 +86,13 @@ export interface PointCloudViewState {
   target: [number, number, number];
   up: [number, number, number];
   mode: "orbit" | "bev";
+}
+
+export interface PointCloudLoadOptions {
+  /** 异步解析完成后再复核，阻止过期帧覆盖新帧。 */
+  shouldCommit?: () => boolean;
+  /** 相机上色开启时先隐藏高度色，待 RGB 就绪后原子显示。 */
+  visible?: boolean;
 }
 
 type TransformMode = "translate" | "rotate" | "scale";
@@ -366,9 +374,10 @@ export class PointCloudScene {
   async loadPcd(
     url: string,
     convention: LidarAxisConvention = "iso_8855",
+    options: PointCloudLoadOptions = {},
   ): Promise<PointCloudStats> {
     const loader = new PCDLoader();
-    const loaded = await loader.loadAsync(url);
+    const loaded = loader.parse(await loadPointCloudBuffer(url));
     const srcGeom = loaded.geometry;
     const srcPos = srcGeom.getAttribute("position") as THREE.BufferAttribute;
     const total = srcPos.count;
@@ -376,9 +385,6 @@ export class PointCloudScene {
     const decimated = total > this.decimateThreshold;
     const stride = decimated ? Math.ceil(total / this.decimateThreshold) : 1;
     const rendered = decimated ? Math.floor(total / stride) : total;
-    this.pointIndexStride = stride;
-    this.sourcePointCount = total;
-
     const positions = new Float32Array(rendered * 3);
     for (let i = 0, j = 0; i < total && j < rendered; i += stride, j++) {
       positions[j * 3] = srcPos.getX(i);
@@ -393,7 +399,7 @@ export class PointCloudScene {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     this.applyHeightColors(geom, positions, rendered);
-    this.baseColors = new Float32Array(
+    const baseColors = new Float32Array(
       (geom.getAttribute("color") as THREE.BufferAttribute).array as Float32Array,
     );
     geom.computeBoundingBox();
@@ -404,14 +410,30 @@ export class PointCloudScene {
       sizeAttenuation: true,
     });
 
+    const stats = {
+      totalPoints: total,
+      renderedPoints: rendered,
+      decimated,
+      decimateStride: stride,
+    };
+    if (options.shouldCommit && !options.shouldCommit()) {
+      geom.dispose();
+      material.dispose();
+      return stats;
+    }
+
     this.removePoints();
+    this.pointIndexStride = stride;
+    this.sourcePointCount = total;
+    this.baseColors = baseColors;
     this.points = new THREE.Points(geom, material);
+    this.points.visible = options.visible ?? true;
     this.scene.add(this.points);
     this.setRobustFrame(positions, rendered);
     this.groundZ = estimateGroundZ(positions, rendered);
     this.frameView();
 
-    return { totalPoints: total, renderedPoints: rendered, decimated, decimateStride: stride };
+    return stats;
   }
 
   /** 按 z(高度)做一条蓝→青→黄的色带,纯只读可视化。 */
@@ -709,6 +731,17 @@ export class PointCloudScene {
   /** v0.13.6 · 载帧时的原色 (高度色带); 上色时无相机覆盖的点回退到它。 */
   getBaseColors(): Float32Array | null {
     return this.baseColors;
+  }
+
+  /** 换帧开始时立即移除旧点缓冲，不让上一帧冒充当前帧。 */
+  clearPointCloud() {
+    this.removePoints();
+    this.baseColors = null;
+    this.groundZ = 0;
+  }
+
+  setPointCloudVisible(visible: boolean) {
+    if (this.points) this.points.visible = visible;
   }
 
   /**

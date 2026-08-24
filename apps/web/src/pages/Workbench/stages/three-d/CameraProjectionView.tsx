@@ -23,11 +23,13 @@ import type { SceneBox } from "./PointCloudScene";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
 const CAMERA_ITEM = "m-0 shrink-0";
-const CAMERA_VIEW = "relative inline-block leading-none";
+const CAMERA_VIEW = "relative inline-block min-h-24 w-[190px] bg-muted leading-none";
 const CAMERA_CANVAS = "absolute inset-0 cursor-pointer touch-none";
 const CAMERA_CANVAS_SEED = "cursor-crosshair";
 const CAMERA_CANVAS_BLOCKED = "cursor-wait";
 const CAMERA_IMG = "block w-[190px] h-auto object-cover";
+const CAMERA_LOADING =
+  "absolute inset-0 flex items-center justify-center text-xs text-muted-foreground";
 const CAMERA_FIGCAPTION = "mt-1 text-xs text-muted-foreground text-center";
 
 interface CameraProjectionViewProps {
@@ -122,9 +124,16 @@ export function CameraProjectionView({
   // v0.13.6 · 深度提示:相机深度栅格(state,变化时驱动一次重绘)+ hover 读数(不入 draw 依赖,不触发重绘)。
   const [raster, setRaster] = useState<DepthRaster | null>(null);
   const [natSize, setNatSize] = useState<{ w: number; h: number } | null>(null);
+  const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [hover, setHover] = useState<{ depth: number; point: [number, number, number] } | null>(
     null,
   );
+  const imageReady = loadedImageUrl === imageUrl;
+
+  useEffect(() => {
+    setNatSize(null);
+    setHover(null);
+  }, [imageUrl]);
 
   // 深度栅格:开关开 + 有点 + 有标定 + 知道原图尺寸时建一次(换帧/换相机重建);否则清空。
   useEffect(() => {
@@ -321,9 +330,12 @@ export function CameraProjectionView({
   // 图加载后记下原图分辨率(深度栅格 / 投影都基于 intrinsic 原图坐标)+ 重绘。
   const handleImgLoad = useCallback(() => {
     const img = imgRef.current;
-    if (img?.naturalWidth) setNatSize({ w: img.naturalWidth, h: img.naturalHeight });
+    if (img?.naturalWidth) {
+      setLoadedImageUrl(imageUrl);
+      setNatSize({ w: img.naturalWidth, h: img.naturalHeight });
+    }
     draw();
-  }, [draw]);
+  }, [draw, imageUrl]);
 
   // 光标相对 canvas 的显示坐标。
   const localXY = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -627,14 +639,17 @@ export function CameraProjectionView({
           ref={imgRef}
           src={imageUrl}
           alt={name}
-          className={CAMERA_IMG}
-          loading="lazy"
+          className={`${CAMERA_IMG} ${imageReady ? "" : "opacity-0"}`}
+          loading="eager"
+          decoding="async"
           onLoad={handleImgLoad}
         />
+        {!imageReady && <span className={CAMERA_LOADING}>加载相机…</span>}
         <canvas
           ref={canvasRef}
           className={[
             CAMERA_CANVAS,
+            !imageReady && "pointer-events-none opacity-0",
             seedMode && CAMERA_CANVAS_SEED,
             interactionDisabled && CAMERA_CANVAS_BLOCKED,
           ]

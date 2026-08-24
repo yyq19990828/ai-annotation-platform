@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 
 import type { SceneTimelineFrameSummary } from "@/api/generated";
+import { tasksApi } from "@/api/tasks";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
@@ -16,6 +26,7 @@ import {
   timelineQueryRange,
   type TimelineFrameRange,
 } from "./sceneTimelineVirtualization";
+import { prefetchPointCloudFrameAssets } from "./pointCloudAssetCache";
 
 interface SceneTimelineProps {
   taskId: string | null;
@@ -31,6 +42,7 @@ interface TimelineCellProps {
   maxDensity: number;
   navigating: boolean;
   onNavigate: (summary: SceneTimelineFrameSummary) => void;
+  onPrefetch: (summary: SceneTimelineFrameSummary) => void;
 }
 
 function TimelineSizer({
@@ -72,6 +84,7 @@ function TimelineCell({
   maxDensity,
   navigating,
   onNavigate,
+  onPrefetch,
 }: TimelineCellProps) {
   const count = summary?.annotation_count ?? 0;
   const barHeight = Math.round(densityRatio(count, maxDensity) * 22);
@@ -108,6 +121,8 @@ function TimelineCell({
         unavailable && "opacity-45",
       )}
       onClick={() => summary && onNavigate(summary)}
+      onPointerEnter={() => summary && onPrefetch(summary)}
+      onFocus={() => summary && onPrefetch(summary)}
     >
       <span className="mt-1 leading-none">{frameIndex}</span>
       <span className="relative mt-1 h-[30px] w-full" aria-hidden="true">
@@ -131,6 +146,7 @@ function TimelineCell({
 }
 
 export function SceneTimeline({ taskId, trackId, onNavigateFrame }: SceneTimelineProps) {
+  const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [range, setRange] = useState<TimelineFrameRange>(timelineInitialRange);
@@ -189,6 +205,33 @@ export function SceneTimeline({ taskId, trackId, onNavigateFrame }: SceneTimelin
     1,
     ...(data?.frames ?? []).map((frame) => frame.annotation_count ?? 0),
   );
+
+  const prefetchFrame = useCallback(
+    (summary: SceneTimelineFrameSummary) => {
+      if (summary.state !== "available" || !summary.task_id || summary.task_id === taskId) return;
+      void queryClient
+        .fetchQuery({
+          queryKey: ["task-point-cloud-manifest", summary.task_id],
+          queryFn: () => tasksApi.getPointCloudManifest(summary.task_id!),
+          staleTime: 5 * 60 * 1000,
+        })
+        .then(prefetchPointCloudFrameAssets)
+        .catch(() => {});
+    },
+    [queryClient, taskId],
+  );
+
+  useEffect(() => {
+    if (!data || currentFrame == null) return;
+    const adjacent = (data.frames ?? []).filter(
+      (frame) => Math.abs(frame.frame_index - currentFrame) === 1,
+    );
+    // Let the active frame finish first, then warm the two most likely navigation targets.
+    const timeout = window.setTimeout(() => {
+      adjacent.forEach(prefetchFrame);
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [currentFrame, data, prefetchFrame]);
 
   const handleNavigate = async (summary: SceneTimelineFrameSummary) => {
     if (!summary.task_id || summary.task_id === taskId) return;
@@ -264,6 +307,7 @@ export function SceneTimeline({ taskId, trackId, onNavigateFrame }: SceneTimelin
                   maxDensity={maxDensity}
                   navigating={navigatingTaskId === summary?.task_id}
                   onNavigate={(frame) => void handleNavigate(frame)}
+                  onPrefetch={prefetchFrame}
                 />
               );
             })}

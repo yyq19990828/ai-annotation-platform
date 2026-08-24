@@ -49,4 +49,24 @@ describe("colorizePointsAsync", () => {
     );
     warn.mockRestore();
   });
+
+  it("切帧取消时终止过期 worker 并拒绝旧上色结果", async () => {
+    const controller = new AbortController();
+    const worker = {
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      onmessage: null,
+      onerror: null,
+    } as unknown as Worker;
+    const pending = colorizePointsAsync(new Float32Array([0, 0, 1]), null, [sample()], {
+      createWorker: () => worker,
+      timeoutMs: 20,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
 });
