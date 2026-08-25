@@ -82,4 +82,28 @@ describe("webgpuPointCloudLayer", () => {
     depthTexture.dispose();
     geometry.dispose();
   });
+
+  it("wraps tri-view points in a clipping group for WebGPU and its WebGL fallback", () => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute([1, 1, 1], 3));
+
+    const layer = createWebGpuPointCloudLayer(geometry, {
+      pointSize: 1,
+      sizeAttenuation: false,
+      clipping: true,
+    });
+    const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 2);
+    layer.setClippingPlanes([plane]);
+
+    expect((layer.object as THREE.Object3D & { isClippingGroup?: boolean }).isClippingGroup).toBe(
+      true,
+    );
+    expect(
+      (layer.object as THREE.Object3D & { clippingPlanes?: THREE.Plane[] }).clippingPlanes,
+    ).toEqual([plane]);
+
+    layer.dispose();
+    geometry.dispose();
+  });
 });

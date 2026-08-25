@@ -3,8 +3,8 @@
  *
  * 封装 `PointCloudScene` 的 实例化 / 销毁 / 偏好同步 / 点云加载 / 框图层 / gizmo 挂载 /
  * W-E-R 模式键 / 相机视图存档(rAF 防抖)。与 ThreeDWorkbench 的唯一耦合点 ——
- * gizmo 拖拽结束回写表单 + PATCH —— 走 `onTransformCommit` 回调参数注入,form / mutate /
- * history 仍由壳组件持有,边界干净。
+ * gizmo 拖拽中回写本地预览、结束后 PATCH —— 走 `onTransformPreview` / `onTransformCommit`
+ * 回调参数注入，form / mutate / history 仍由壳组件持有，边界干净。
  *
  * 守护:点云 E2E 护栏网(smoke 加载 / gizmo W 拖拽→PATCH / B 放置 / cx 编辑 / Q 贴合)。
  */
@@ -69,6 +69,8 @@ interface UsePointCloudSceneParams {
   onViewModeChange: (mode: PointCloudViewState["mode"]) => void;
   /** gizmo 拖拽结束:回写表单 + PATCH 持久化(壳层注入,闭合 form / mutate / history)。 */
   onTransformCommit: (id: string, psr: BoxPsr) => void;
+  /** gizmo 拖拽中:只更新壳层本地 PSR，供三视图和相机投影实时预览。 */
+  onTransformPreview: (id: string, psr: BoxPsr) => void;
 }
 
 interface UsePointCloudSceneResult {
@@ -127,6 +129,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     onWorkbenchLayoutChange,
     onViewModeChange,
     onTransformCommit,
+    onTransformPreview,
   } = params;
 
   const [loadState, setLoadState] = useState<{
@@ -152,6 +155,8 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   onViewModeChangeRef.current = onViewModeChange;
   const onTransformCommitRef = useRef(onTransformCommit);
   onTransformCommitRef.current = onTransformCommit;
+  const onTransformPreviewRef = useRef(onTransformPreview);
+  onTransformPreviewRef.current = onTransformPreview;
   const cameraSaveRafRef = useRef<number | null>(null);
   const pendingCameraViewRef = useRef<PointCloudViewState | null>(null);
   const suspendCameraSaveRef = useRef(false);
@@ -206,8 +211,10 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         created.setAxisGizmoVisible(showAxisGizmo);
         created.setCameraDamping(cameraDamping);
         created.setViewChangeHandler(scheduleCameraViewSave);
-        // 拖拽结束:回写表单 + PATCH 持久化(壳层注入的 onTransformCommit,与数值面板共用持久化管线)。
-        created.setTransformHandler((id, psr) => onTransformCommitRef.current(id, psr));
+        created.setTransformHandler((id, psr, commit) => {
+          if (commit) onTransformCommitRef.current(id, psr);
+          else onTransformPreviewRef.current(id, psr);
+        });
         ro = new ResizeObserver(() => created.resize());
         ro.observe(container);
         const status = created.getRendererStatus();

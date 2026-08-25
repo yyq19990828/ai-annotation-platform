@@ -599,11 +599,16 @@ export function ThreeDWorkbench({
   // PATCH 防抖 250ms;yaw 以度展示。
   const [form, setForm] = useState<Record<PsrField, string> | null>(null);
 
-  // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
-  const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
+  // 本地草稿 PSR：三视图或主视图 gizmo 拖拽时覆盖选中框，实时同步全部投影视图；提交后清空。
+  const [draftPsr, setDraftPsr] = useState<{
+    id: string;
+    psr: Psr;
+    source: "gizmo" | "triview";
+  } | null>(null);
+  const sceneDraftPsr = draftPsr?.source === "triview" ? draftPsr : null;
 
   // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态 + 标签)。
-  const boxes = useMemo<SceneBox[]>(() => {
+  const sceneBoxes = useMemo<SceneBox[]>(() => {
     // 标签内容复用 common.labelContent 的 track 段(点云框是跨帧 track 语义):类别名恒显,
     // 轨迹号 / 属性按开关。state 后缀点云渲染层无逐帧态,留空。可见性走 labelVisibility 门控。
     const trackContent = workbenchCommon.labelContent.track;
@@ -631,7 +636,7 @@ export function ThreeDWorkbench({
       };
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
       // 三视图拖拽中:用本地草稿覆盖该框的 PSR(实时预览, 不发请求)。
-      const dp = draftPsr && draftPsr.id === a.id ? draftPsr.psr : null;
+      const dp = sceneDraftPsr && sceneDraftPsr.id === a.id ? sceneDraftPsr.psr : null;
       const selected = selectedIdSet.has(a.id);
       const label = shouldShowLabel(selected, labelVisibility)
         ? buildTrackLabelText(
@@ -665,10 +670,34 @@ export function ThreeDWorkbench({
   }, [
     annotations,
     selectedIdSet,
-    draftPsr,
+    sceneDraftPsr,
     workbenchCommon.labelContent.track,
     workbenchCommon.labelVisibility,
   ]);
+
+  // 主 gizmo 已经直接改变 Three.js group；其草稿只覆盖依赖 React 的三视图/相机，不能再喂回
+  // PointCloudScene，否则每次 objectChange 都会重挂 TransformControls 并把一次拖动拆成多次提交。
+  const boxes = useMemo<SceneBox[]>(() => {
+    if (!draftPsr || draftPsr.source !== "gizmo") return sceneBoxes;
+    return sceneBoxes.map((box) =>
+      box.id === draftPsr.id
+        ? {
+            ...box,
+            center: [draftPsr.psr.center[0], draftPsr.psr.center[1], draftPsr.psr.center[2]],
+            size: [
+              Math.abs(draftPsr.psr.size[0]),
+              Math.abs(draftPsr.psr.size[1]),
+              Math.abs(draftPsr.psr.size[2]),
+            ],
+            rotation: [
+              draftPsr.psr.rotation[0],
+              draftPsr.psr.rotation[1],
+              draftPsr.psr.rotation[2],
+            ],
+          }
+        : box,
+    );
+  }, [draftPsr, sceneBoxes]);
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
@@ -737,9 +766,16 @@ export function ThreeDWorkbench({
   const selectedPsrEditable = selectedEditable && !multiBoxSelected;
   const selectedPointMaskEditable = selectedEditable && !!selectedPointMask && !multiBoxSelected;
 
-  // gizmo 拖拽结束:回写 PSR 表单 + 几何 PATCH 持久化(与数值面板共用持久化管线)。
+  // gizmo 拖拽中只更新本地 PSR，三视图与相机投影跟随主框实时刷新。
+  const handleTransformPreview = useCallback((id: string, psr: BoxPsr) => {
+    setForm(psrToForm(psr));
+    setDraftPsr({ id, psr, source: "gizmo" });
+  }, []);
+
+  // gizmo 拖拽结束:清理预览并回写 PSR 表单 + 几何 PATCH 持久化。
   // 作为回调注入 usePointCloudScene —— form / mutate / history 仍由本壳组件持有,边界干净。
   const handleTransformCommit = useCallback((id: string, psr: BoxPsr) => {
+    setDraftPsr(null);
     setForm(psrToForm(psr));
     const ann = annotationsRef.current?.find((a) => a.id === id);
     const geometry = boxGeometryFromPsr(
@@ -780,12 +816,13 @@ export function ThreeDWorkbench({
     deferPointCloudDisplay: false,
     continuityKey: manifest?.scene_id ?? taskId,
     axisConvention,
-    boxes,
+    boxes: sceneBoxes,
     selectedId,
     selectedPsrEditable,
     pointcloudCamera,
     onWorkbenchLayoutChange,
     onViewModeChange: setPointCloudViewMode,
+    onTransformPreview: handleTransformPreview,
     onTransformCommit: handleTransformCommit,
   });
 
@@ -2254,7 +2291,7 @@ export function ThreeDWorkbench({
           { geometry },
         );
       } else {
-        setDraftPsr({ id: selectedId, psr });
+        setDraftPsr({ id: selectedId, psr, source: "triview" });
       }
     },
     [selectedId, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory],

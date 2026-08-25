@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.project_member import ProjectMember
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from tests.factory import create_batch, create_project, create_task
 
 
@@ -318,6 +319,24 @@ async def test_scene_track_aggregates_visible_occurrences_and_duplicate_frame(
     )
     db_session.add(scene)
     await db_session.flush()
+    scene_track = SceneTrack(
+        project_id=project.id,
+        scene_id=scene.id,
+        track_id="trk_scene",
+        class_name="car",
+        created_by=owner.id,
+    )
+    db_session.add(scene_track)
+    await db_session.flush()
+    db_session.add(
+        SceneTrackInterval(
+            scene_track_id=scene_track.id,
+            start_frame=0,
+            end_frame=None,
+            source="manual",
+            created_by=owner.id,
+        )
+    )
     items = [
         DatasetItem(
             dataset_id=dataset.id,
@@ -352,6 +371,8 @@ async def test_scene_track_aggregates_visible_occurrences_and_duplicate_frame(
                 tool_unit_id="bbox",
                 class_name="car",
                 track_id="trk_scene",
+                scene_track_id=scene_track.id,
+                temporal_role="keyframe" if index == 0 else "derived",
                 geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
             )
         )
@@ -365,6 +386,8 @@ async def test_scene_track_aggregates_visible_occurrences_and_duplicate_frame(
             tool_unit_id="bbox",
             class_name="car",
             track_id="trk_scene",
+            scene_track_id=scene_track.id,
+            temporal_role="sample",
             geometry={"type": "bbox", "x": 0.3, "y": 0.3, "w": 0.1, "h": 0.1},
         )
     )
@@ -382,6 +405,9 @@ async def test_scene_track_aggregates_visible_occurrences_and_duplicate_frame(
     assert row["distinct_task_count"] == 3
     assert row["distinct_frame_count"] == 3
     assert row["duplicate_frame_count"] == 1
+    assert row["start_frame"] == 0
+    assert row["end_frame"] is None
+    assert row["keyframe_count"] == 1
     assert "duplicate_frame" in row["quality_issues"]
 
     detail = await httpx_client.get(

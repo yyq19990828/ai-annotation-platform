@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.task import Task
 from app.schemas.track_operation import TrackOperationRequest, TrackSummary
-from app.services.annotation_propagation import _new_track_id
 from app.services.scene import get_scene_frame_task_map, resolve_task_scene_frames
 
 
@@ -64,12 +63,6 @@ class PreparedTrackOperation:
         if self.secondary is not None:
             task_ids.update(self.secondary.task_ids)
         return frozenset(task_ids)
-
-
-@dataclass(frozen=True)
-class TrackOperationMutation:
-    created_track_id: str | None
-    updated_member_count: int
 
 
 @dataclass(frozen=True)
@@ -320,43 +313,6 @@ async def prepare_track_operation(
         ),
         affected_member_count=sum(track.summary.member_count for track in tracks),
         rewritten_member_count=rewritten_member_count,
-    )
-
-
-async def apply_track_operation(
-    db: AsyncSession,
-    *,
-    prepared: PreparedTrackOperation,
-    expected_snapshot_token: str,
-) -> TrackOperationMutation:
-    if prepared.snapshot_token != expected_snapshot_token:
-        raise _error(
-            409,
-            "track_snapshot_stale",
-            "track members changed after preview; preview the operation again",
-        )
-
-    created_track_id = None
-    if prepared.request.operation == "split":
-        assert prepared.request.split_after_frame is not None
-        created_track_id = _new_track_id()
-        for row in prepared.primary.rows:
-            frame_index = prepared.context.task_to_frame[row.task_id]
-            if frame_index > prepared.request.split_after_frame:
-                row.track_id = created_track_id
-            row.version = int(row.version or 1) + 1
-    else:
-        assert prepared.secondary is not None
-        for row in prepared.primary.rows:
-            row.version = int(row.version or 1) + 1
-        for row in prepared.secondary.rows:
-            row.track_id = prepared.primary.summary.track_id
-            row.version = int(row.version or 1) + 1
-
-    await db.flush()
-    return TrackOperationMutation(
-        created_track_id=created_track_id,
-        updated_member_count=prepared.affected_member_count,
     )
 
 

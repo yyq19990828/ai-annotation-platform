@@ -3,11 +3,14 @@ from __future__ import annotations
 import copy
 import logging
 import uuid
+from collections import Counter
 from datetime import datetime
+from fastapi import HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
+from app.db.models.scene_track import SceneTrack
 from app.db.models.prediction import (
     INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
     Prediction,
@@ -37,10 +40,24 @@ from app.services.raster_mask_storage import (
     prepare_mask_geometry_for_annotation_write,
     prepare_mask_payload_for_write,
 )
+from app.services.scene_track_domain import (
+    SceneTrackIntegrityError,
+    bind_annotation_to_scene_track,
+    ensure_scene_track,
+    reclassify_single_member_scene_track,
+    touch_annotation_scene_track,
+)
 
 logger = logging.getLogger("app.services.annotation")
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
+
+
+def _raise_scene_track_conflict(exc: SceneTrackIntegrityError) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail={"reason": exc.code, "message": str(exc)},
+    ) from exc
 
 
 def validate_geometry_type_transition(
@@ -219,6 +236,8 @@ class AnnotationService:
 
         await prepare_mask_geometry_for_annotation_write(self.db, task, geometry)
         geometry, track_id = prepare_compact_track_identity(geometry)
+        if geometry.get("type") == "box_3d" and track_id is None:
+            track_id = _new_track_id()
         annotation = Annotation(
             id=uuid.uuid4(),
             task_id=task_id,
@@ -236,8 +255,21 @@ class AnnotationService:
             parent_annotation_id=parent_annotation_id,
             lead_time=lead_time,
             attributes=attributes or {},
+            temporal_role="keyframe" if geometry.get("type") == "box_3d" else "sample",
         )
         self.db.add(annotation)
+        if task is not None:
+            try:
+                await bind_annotation_to_scene_track(
+                    self.db,
+                    annotation=annotation,
+                    task=task,
+                    temporal_role="keyframe",
+                    interval_source="manual",
+                    actor_id=user_id,
+                )
+            except SceneTrackIntegrityError as exc:
+                _raise_scene_track_conflict(exc)
         await self.db.flush()
 
         await self._update_task_stats(task_id)
@@ -435,6 +467,8 @@ class AnnotationService:
             geometry, track_id = prepare_compact_track_identity(
                 shape.get("geometry", {})
             )
+            if geometry.get("type") == "box_3d" and track_id is None:
+                track_id = _new_track_id()
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -453,8 +487,23 @@ class AnnotationService:
                 parent_prediction_id=prediction_id,
                 attributes=attributes,
                 attributes_meta=attributes_meta,
+                temporal_role=(
+                    "keyframe" if geometry.get("type") == "box_3d" else "sample"
+                ),
             )
             self.db.add(annotation)
+            if task is not None:
+                try:
+                    await bind_annotation_to_scene_track(
+                        self.db,
+                        annotation=annotation,
+                        task=task,
+                        temporal_role="keyframe",
+                        interval_source="manual",
+                        actor_id=user_id,
+                    )
+                except SceneTrackIntegrityError as exc:
+                    _raise_scene_track_conflict(exc)
             anns.append(annotation)
 
         await self.db.flush()
@@ -542,6 +591,7 @@ class AnnotationService:
             return False
         annotation.is_active = False
         annotation.version += 1
+        await touch_annotation_scene_track(self.db, annotation, make_keyframe=False)
         # v0.20.9 · 级联软删子框: 删父框时其所有 active 子框一并软删, 不留 orphan。
         # 父子仅一层 (create 时约束), 故无需递归。
         children = (
@@ -643,6 +693,59 @@ class AnnotationService:
                 by_unit[(r.project_id, r.tool_unit_id)] = None
             for (pid, unit), _ in by_unit.items():
                 await self._validate_class_name(pid, unit, class_name)
+        linked_rows = [row for row in rows if row.scene_track_id is not None]
+        linked_track_ids = sorted(
+            {
+                row.scene_track_id
+                for row in linked_rows
+                if row.scene_track_id is not None
+            },
+            key=str,
+        )
+        linked_tracks: dict[uuid.UUID, SceneTrack] = {}
+        if linked_track_ids:
+            tracks = list(
+                (
+                    await self.db.execute(
+                        select(SceneTrack)
+                        .where(SceneTrack.id.in_(linked_track_ids))
+                        .order_by(SceneTrack.id)
+                        .with_for_update()
+                    )
+                ).scalars()
+            )
+            linked_tracks = {track.id: track for track in tracks}
+            if len(linked_tracks) != len(linked_track_ids):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "reason": "track_missing",
+                        "message": "one or more annotations reference a missing Scene Track",
+                    },
+                )
+        if class_name is not None:
+            selected_counts = Counter(
+                row.scene_track_id
+                for row in linked_rows
+                if row.scene_track_id is not None
+            )
+            for track_id, selected_count in selected_counts.items():
+                active_count = await self.db.scalar(
+                    select(func.count())
+                    .select_from(Annotation)
+                    .where(Annotation.scene_track_id == track_id)
+                    .where(Annotation.is_active.is_(True))
+                    .where(Annotation.was_cancelled.is_(False))
+                )
+                if int(active_count or 0) != selected_count:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "reason": "track_class_change_requires_scope",
+                            "message": "select every active Scene Track member to change its class",
+                        },
+                    )
+                linked_tracks[track_id].class_name = class_name
         for r in rows:
             if class_name is not None:
                 r.class_name = class_name
@@ -659,6 +762,8 @@ class AnnotationService:
             if is_hidden is not None:
                 r.is_hidden = is_hidden
             r.version += 1
+        for track in linked_tracks.values():
+            track.revision = int(track.revision or 1) + 1
         await self.db.flush()
         return rows
 
@@ -884,8 +989,31 @@ class AnnotationService:
             geometry=geometry,
             track_id=track_id,
             attributes=copy.deepcopy(src.attributes or {}),
+            temporal_role="derived" if geom_type == "box_3d" else "sample",
         )
         self.db.add(new_annotation)
+        if geom_type == "box_3d":
+            assert ctx.src_frame_index is not None
+            assert ctx.target_frame_index is not None
+            assert ctx.target_scene_id is not None
+            try:
+                track = await ensure_scene_track(
+                    self.db,
+                    project_id=ctx.target_task.project_id,
+                    scene_id=ctx.target_scene_id,
+                    track_id=track_id,
+                    class_name=src.class_name,
+                    frames={ctx.src_frame_index, ctx.target_frame_index},
+                    actor_id=user_id,
+                    interval_source="derived",
+                )
+            except SceneTrackIntegrityError as exc:
+                _raise_scene_track_conflict(exc)
+            src.scene_track_id = track.id
+            if src.temporal_role != "keyframe":
+                src.temporal_role = "keyframe"
+                src.version = int(src.version or 1) + 1
+            new_annotation.scene_track_id = track.id
         return new_annotation, motion_compensated
 
     async def propagate_batch(
@@ -1161,9 +1289,34 @@ class AnnotationService:
                 geometry=geometry,
                 track_id=track_id,
                 attributes=copy.deepcopy(box_from.attributes or {}),
+                temporal_role="derived",
             )
             self.db.add(ann)
             created.append(ann)
+
+        try:
+            track = await ensure_scene_track(
+                self.db,
+                project_id=from_task.project_id,
+                scene_id=from_scene,
+                track_id=track_id,
+                class_name=box_from.class_name,
+                frames=set(range(from_frame, to_frame + 1)),
+                actor_id=user_id,
+                interval_source="derived",
+            )
+        except SceneTrackIntegrityError as exc:
+            _raise_scene_track_conflict(exc)
+        box_from.scene_track_id = track.id
+        box_to.scene_track_id = track.id
+        if box_from.temporal_role != "keyframe":
+            box_from.temporal_role = "keyframe"
+            box_from.version = int(box_from.version or 1) + 1
+        if box_to.temporal_role != "keyframe":
+            box_to.temporal_role = "keyframe"
+            box_to.version = int(box_to.version or 1) + 1
+        for ann in created:
+            ann.scene_track_id = track.id
 
         await self.db.flush()
         for ann in created:
@@ -1186,12 +1339,21 @@ class AnnotationService:
         annotation = await self.db.get(Annotation, annotation_id)
         if not annotation or not annotation.is_active:
             return None
+        track_reclassified = False
         if class_name is not None:
             # v0.14.17 · 与 create / accept_prediction 对齐: PATCH 改类也走软校验,
             # 堵住"采纳后 PATCH 改成项目标签集外的任意非法值"的数据质量缺口.
             await self._validate_class_name(
                 annotation.project_id, annotation.tool_unit_id, class_name
             )
+            try:
+                track_reclassified = await reclassify_single_member_scene_track(
+                    self.db,
+                    annotation=annotation,
+                    class_name=class_name,
+                )
+            except SceneTrackIntegrityError as exc:
+                _raise_scene_track_conflict(exc)
         if geometry is not None:
             next_type = str(geometry.get("type") or "")
             validate_geometry_type_transition(
@@ -1235,6 +1397,37 @@ class AnnotationService:
         if is_hidden is not None:
             annotation.is_hidden = is_hidden
         annotation.version += 1
+        newly_bound = False
+        if (annotation.geometry or {}).get("type") == "box_3d":
+            if annotation.track_id is None:
+                annotation.track_id = _new_track_id()
+            if annotation.scene_track_id is None:
+                task = await self.db.get(Task, annotation.task_id)
+                if task is not None:
+                    binding = await bind_annotation_to_scene_track(
+                        self.db,
+                        annotation=annotation,
+                        task=task,
+                        temporal_role=(
+                            "keyframe"
+                            if geometry is not None or class_name is not None
+                            else annotation.temporal_role
+                        ),
+                        interval_source="manual",
+                        actor_id=None,
+                    )
+                    newly_bound = binding is not None
+        try:
+            if not track_reclassified and not newly_bound:
+                await touch_annotation_scene_track(
+                    self.db,
+                    annotation,
+                    make_keyframe=geometry is not None,
+                )
+            elif track_reclassified and geometry is not None:
+                annotation.temporal_role = "keyframe"
+        except SceneTrackIntegrityError as exc:
+            _raise_scene_track_conflict(exc)
         await self.db.flush()
         return annotation
 

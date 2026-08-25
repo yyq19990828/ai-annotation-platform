@@ -4,6 +4,7 @@
 > - 关注范围：图片与视频标注的选类、建标、精修、AI 辅助、时间导航、连续作业和审核交互
 > - 对照对象：本仓库当前 `feat/26-08-16` 分支，提交 `3e02478d`
 > - 前置报告：[`22-supervisely-cvat-workbench.md`](./22-supervisely-cvat-workbench.md)
+> - 3D 时序对象补充：[`24-3d-temporal-object-lifecycle.md`](./24-3d-temporal-object-lifecycle.md)
 > - 结论用途：产品设计、交互验收和实施排期依据，不是照搬竞品界面的功能清单
 
 本文专门补足前一份报告中图片与视频部分的深度。结论来自 Supervisely、CVAT 的官方文档、教程、图片、GIF、视频和可取得的源码，并逐项对照本项目当前代码与用户文档。
@@ -313,6 +314,8 @@ CVAT 的 Objects、Labels、Issues 三个页签和按 Label 批量隐藏 / 锁�
 Supervisely 的全局对象时间轴加精细浮动时间轴验证了“两级时域”的价值，但本项目已经实现。下一步不应再造时间轴，而应解决信息优先级：默认只强调当前轨迹、当前问题和当前操作范围，其它密度轨道按需展开。
 
 ### 5.2 P0：常驻“当前轨迹条”
+
+CVAT 的 keyframe/outside 与 Supervisely 的 episode object/figure 结构进一步说明：常驻轨迹条不能只展示当前有几个框，还应区分“身份仍在但当前缺席”“人工关键帧”“系统派生帧”和“未物化成员”。这些状态应由统一轨迹领域返回，界面不从当前帧数组猜测；完整商业与开源平台证据见[时序对象补充报告](./24-3d-temporal-object-lifecycle.md)。
 
 建议在画布上缘或详细时间轴上缘增加一条窄而稳定的轨迹上下文，不做成可拖动大浮窗：
 

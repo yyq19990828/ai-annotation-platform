@@ -13,9 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
 from app.services.project import (
     derive_attribute_keys,
@@ -36,6 +37,8 @@ from app.schemas.aap_json import (
     AAPJsonV1Envelope,
     AAPPredictionEntry,
     AAPProjectMeta,
+    AAPSceneTrackEntry,
+    AAPSceneTrackInterval,
     AAPTaskBlock,
     AAPTaskMatch,
 )
@@ -1064,6 +1067,60 @@ class ExportService:
         for pred in predictions:
             pred_by_task.setdefault(pred.task_id, []).append(pred)
 
+        exported_scene_track_ids = {
+            ann.scene_track_id for ann in annotations if ann.scene_track_id is not None
+        }
+        scene_track_entries: list[AAPSceneTrackEntry] = []
+        if exported_scene_track_ids:
+            scene_track_rows = (
+                await self.db.execute(
+                    select(SceneTrack, Scene.name)
+                    .join(Scene, Scene.id == SceneTrack.scene_id)
+                    .where(SceneTrack.id.in_(exported_scene_track_ids))
+                    .order_by(Scene.name, SceneTrack.track_id)
+                )
+            ).all()
+            interval_rows = list(
+                (
+                    await self.db.execute(
+                        select(SceneTrackInterval)
+                        .where(
+                            SceneTrackInterval.scene_track_id.in_(
+                                exported_scene_track_ids
+                            )
+                        )
+                        .order_by(
+                            SceneTrackInterval.scene_track_id,
+                            SceneTrackInterval.start_frame,
+                        )
+                    )
+                ).scalars()
+            )
+            intervals_by_track: dict[uuid.UUID, list[SceneTrackInterval]] = {}
+            for interval in interval_rows:
+                intervals_by_track.setdefault(interval.scene_track_id, []).append(
+                    interval
+                )
+            scene_track_entries = [
+                AAPSceneTrackEntry(
+                    track_id=track.track_id,
+                    scene_name=scene_name,
+                    class_name=track.class_name,
+                    presence_mode=track.presence_mode,
+                    attributes=track.attributes or {},
+                    attributes_meta=track.attributes_meta or {},
+                    intervals=[
+                        AAPSceneTrackInterval(
+                            start_frame=interval.start_frame,
+                            end_frame=interval.end_frame,
+                            source=interval.source,
+                        )
+                        for interval in intervals_by_track.get(track.id, [])
+                    ],
+                )
+                for track, scene_name in scene_track_rows
+            ]
+
         axis_by_task = (
             await self._axis_convention_by_task(tasks) if axis_frame == "source" else {}
         )
@@ -1100,6 +1157,8 @@ class ExportService:
                         attributes=ann.attributes or {},
                         confidence=ann.confidence,
                         source=ann.source,
+                        track_id=ann.track_id,
+                        temporal_role=ann.temporal_role,
                         user_id=ann.user_id,
                         created_at=ann.created_at,
                         external_id=None,
@@ -1193,6 +1252,7 @@ class ExportService:
                 annotation_guide=getattr(project, "annotation_guide", None),
             ),
             mask_objects=mask_objects,
+            scene_tracks=scene_track_entries,
             tasks=task_blocks,
         )
 

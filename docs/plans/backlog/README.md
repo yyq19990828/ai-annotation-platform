@@ -52,8 +52,10 @@
 ## 共同研究依据
 
 - [`v0.24.4 · 3D Scene 时间轴 MVP`](../2026-08-24-v0.24.4-3d-scene-timeline.md) 已转为实施计划，不再属于 backlog。
+- [`v0.24.11 · 3D 时序对象与轨迹生命周期基础`](../2026-08-25-v0.24.11-3d-track-domain-foundation.md) 已转为实施计划，不再属于 backlog。
 
 - [`docs/research/22-supervisely-cvat-workbench.md`](../../research/22-supervisely-cvat-workbench.md)：Supervisely / CVAT 工作台、教程、图片、GIF、视频与固定源码快照的深度调研。
+- [`docs/research/24-3d-temporal-object-lifecycle.md`](../../research/24-3d-temporal-object-lifecycle.md)：商业平台、开源工具与 OpenLABEL 的 3D 时序对象、存在区间和轨迹修复合同。
 - [`docs/research/14-point-cloud-image-fusion.md`](../../research/14-point-cloud-image-fusion.md)：点云与图像联合标注、真值边界与平台差距。
 - [`docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md`](../2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)：已实施历史、延期方向和版本边界。
 

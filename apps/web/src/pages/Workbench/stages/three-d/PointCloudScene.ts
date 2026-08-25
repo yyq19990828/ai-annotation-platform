@@ -196,7 +196,7 @@ export class PointCloudScene {
 
   // v0.13.3 · 选中框拖拽编辑(平移/yaw/缩放)。gizmo 挂 getHelper() 到场景。
   private readonly transform: TransformControls;
-  private onTransformEnd: ((id: string, psr: BoxPsr) => void) | null = null;
+  private onTransformChange: ((id: string, psr: BoxPsr, commit: boolean) => void) | null = null;
   private transformDragging = false;
   private transformChangedDuringDrag = false;
   // 拖拽结束会触发一次 click,不应改变选中 —— 用此标记吞掉那次 click。
@@ -263,7 +263,9 @@ export class PointCloudScene {
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
     this.transform.setSpace("local");
     this.transform.addEventListener("objectChange", () => {
-      if (this.transformDragging) this.transformChangedDuringDrag = true;
+      if (!this.transformDragging) return;
+      this.transformChangedDuringDrag = true;
+      this.emitTransform(false);
     });
     this.transform.addEventListener("dragging-changed", (event) => {
       const dragging = (event as unknown as { value: boolean }).value;
@@ -273,7 +275,7 @@ export class PointCloudScene {
         this.transformChangedDuringDrag = false;
       } else {
         this.suppressClickAfterDrag = true;
-        if (this.transformChangedDuringDrag) this.emitTransform();
+        if (this.transformChangedDuringDrag) this.emitTransform(true);
       }
     });
     this.scene.add(this.transform.getHelper());
@@ -1201,9 +1203,9 @@ export class PointCloudScene {
     return [hit.x, hit.y, this.groundZ];
   }
 
-  /** React 注册拖拽结束回调(回传该框最新 PSR 供持久化)。 */
-  setTransformHandler(cb: ((id: string, psr: BoxPsr) => void) | null) {
-    this.onTransformEnd = cb;
+  /** React 注册变换回调；拖动中回传预览，松手后回传提交。 */
+  setTransformHandler(cb: ((id: string, psr: BoxPsr, commit: boolean) => void) | null) {
+    this.onTransformChange = cb;
   }
 
   /** 把变换 gizmo 挂到指定框;找不到则脱离。 */
@@ -1239,22 +1241,26 @@ export class PointCloudScene {
     return this.transformDragging;
   }
 
-  private emitTransform() {
+  private emitTransform(commit: boolean) {
     const obj = this.transform.object;
     const id = obj?.userData.boxId;
-    if (!obj || typeof id !== "string" || !this.onTransformEnd) return;
+    if (!obj || typeof id !== "string" || !this.onTransformChange) return;
     const e = new THREE.Euler().setFromQuaternion(obj.quaternion, "XYZ");
     const s = obj.scale;
-    this.onTransformEnd(id, {
-      center: [obj.position.x, obj.position.y, obj.position.z],
-      // 缩放 gizmo 可能拖出负 scale(翻转);尺寸必须为正,取绝对值并设下限 0.05m。
-      size: [
-        Math.max(Math.abs(s.x), 0.05),
-        Math.max(Math.abs(s.y), 0.05),
-        Math.max(Math.abs(s.z), 0.05),
-      ],
-      rotation: [e.x, e.y, e.z],
-    });
+    this.onTransformChange(
+      id,
+      {
+        center: [obj.position.x, obj.position.y, obj.position.z],
+        // 缩放 gizmo 可能拖出负 scale(翻转);尺寸必须为正,取绝对值并设下限 0.05m。
+        size: [
+          Math.max(Math.abs(s.x), 0.05),
+          Math.max(Math.abs(s.y), 0.05),
+          Math.max(Math.abs(s.z), 0.05),
+        ],
+        rotation: [e.x, e.y, e.z],
+      },
+      commit,
+    );
   }
 
   dispose() {

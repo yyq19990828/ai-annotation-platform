@@ -89,3 +89,4 @@
 | 21   | [WebGPU 视频工作台适用性](./21-webgpu-video-workbench.md)                              | 客户端 / 服务端资源边界、Linux NVIDIA 实测、packed XOR 与 immutable base cache production A/B、ROI 路由与字节预算 |
 | 22   | [Supervisely 与 CVAT 标注工作台](./22-supervisely-cvat-workbench.md)                   | 官方文档、源码、教程与媒体深读；UI 交互、3D 工作台逻辑、能力差距、借鉴优先级与验收标准                            |
 | 23   | [Supervisely 与 CVAT 图片、视频工作台](./23-supervisely-cvat-image-video-workbench.md) | 图片与视频 UI 交互专项；高频摩擦、工具状态、AI / Mask、轨迹时间轴、审核定位与实施验收                             |
+| 24   | [3D 时序对象与轨迹生命周期](./24-3d-temporal-object-lifecycle.md)                      | 八个商业/开放核心平台、五个开源项目与 OpenLABEL；对象身份、存在区间、时间角色、可逆修复和领域基础                 |

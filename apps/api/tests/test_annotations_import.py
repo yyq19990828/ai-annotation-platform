@@ -27,7 +27,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
+from app.services.annotations_import import import_aap_json_annotations
+from tests.test_track_operations import _seed_scene
 
 pytestmark = pytest.mark.asyncio
 
@@ -115,6 +118,91 @@ def _ann_entry(
     if confidence is not None:
         entry["confidence"] = confidence
     return entry
+
+
+async def test_aap_scene_track_intervals_and_temporal_roles_round_trip(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    project, scene, tasks = await _seed_scene(
+        db_session, owner_id=user.id, frame_count=5
+    )
+    envelope = {
+        "schema_version": "1.5",
+        "exported_from": {"platform": "aap"},
+        "project": {"name": project.name, "type_key": project.type_key},
+        "scene_tracks": [
+            {
+                "track_id": "trk-imported-gap",
+                "scene_name": scene.name,
+                "class_name": "car",
+                "attributes": {"motion": "parked"},
+                "attributes_meta": {},
+                "intervals": [
+                    {"start_frame": 0, "end_frame": 0, "source": "imported"},
+                    {"start_frame": 4, "end_frame": 4, "source": "imported"},
+                ],
+            }
+        ],
+        "tasks": [
+            {
+                "task_match": {"display_id": tasks[frame].display_id},
+                "media_type": "lidar",
+                "annotations": [
+                    {
+                        "geometry": {
+                            "type": "box_3d",
+                            "center": [float(frame), 0.0, 0.0],
+                            "size": [4.0, 2.0, 1.5],
+                            "rotation": [0.0, 0.0, 0.0],
+                        },
+                        "class_name": "car",
+                        "tool_unit_id": "lidar_box_3d",
+                        "source": "manual",
+                        "track_id": "trk-imported-gap",
+                        "temporal_role": "keyframe" if frame == 0 else "sample",
+                    }
+                ],
+                "predictions": [],
+            }
+            for frame in (0, 4)
+        ],
+    }
+    result = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+    )
+    assert result.imported == 2
+    assert result.errors == []
+    track = (
+        await db_session.execute(
+            select(SceneTrack).where(SceneTrack.track_id == "trk-imported-gap")
+        )
+    ).scalar_one()
+    assert track.attributes == {"motion": "parked"}
+    assert track.presence_mode == "explicit"
+    intervals = list(
+        (
+            await db_session.execute(
+                select(SceneTrackInterval)
+                .where(SceneTrackInterval.scene_track_id == track.id)
+                .order_by(SceneTrackInterval.start_frame)
+            )
+        ).scalars()
+    )
+    assert [(row.start_frame, row.end_frame) for row in intervals] == [(0, 0), (4, 4)]
+    members = list(
+        (
+            await db_session.execute(
+                select(Annotation)
+                .where(Annotation.scene_track_id == track.id)
+                .order_by(Annotation.task_id)
+            )
+        ).scalars()
+    )
+    assert {row.temporal_role for row in members} == {"keyframe", "sample"}
 
 
 # ── append 默认语义 ──────────────────────────────────────────────────

@@ -10,7 +10,7 @@
 
 ## 1. 推荐结论
 
-推荐让同一 scene 对象的人工 3D cuboid、点掩码和各相机人工 2D 几何继续作为**各自可版本化的 Annotation 成员**，共同使用现有 `track_id` 作为跨帧 / 跨模态身份；另用显式 sensor context 记录成员属于哪一个 dataset item / camera role / calibration revision。
+推荐让同一 scene 对象的人工 3D cuboid、点掩码和各相机人工 2D 几何继续作为**各自可版本化的 Annotation 成员**，共同挂到 [`SceneTrack`](../2026-08-25-v0.24.11-3d-track-domain-foundation.md)；现有 `track_id` 保留为稳定外部键和成员查询合同，另用显式 sensor context 记录成员属于哪一个 dataset item / camera role / calibration revision。
 
 人工 3D 与人工 2D 成员是并列真值。3D 实时投影只是关联证据，绝不自动覆盖人工 2D；人工 2D 编辑也不在欠约束情况下自动改 3D。冲突通过残差、issue 和用户决定解决。
 
@@ -18,13 +18,14 @@
 
 - ADR-0033 明确当前相机 overlay 是由 `box_3d` 实时投影的只读可视化，不持久化 2D 结果。
 - 相机图种 3D 框当前只保存 `box_3d`，拖出的 2D 矩形是一次性提示。
-- ADR-0045 已把 `track_id` 定为与 geometry 类型无关的跨帧对象身份，可作为共同对象键。
+- ADR-0045 已把 `track_id` 定为与 geometry 类型无关的跨帧对象身份；轨迹领域草案进一步让 SceneTrack 承担对象级权威状态，并保留该键作为兼容接口。
 - task 与 dataset item 已有多关联和 camera role，calibration 存在于 sensor metadata；Annotation 本身尚未明确绑定某个相机成员。
 
 ## 3. 权威关系
 
 ```text
-track_id = 同一对象身份
+SceneTrack = Scene 内同一对象的权威身份与生命周期
+track_id = 稳定外部键与 Annotation 成员查询键
   ├─ Annotation(box_3d, primary_lidar context, own revision)
   ├─ Annotation(point_mask_3d, primary_lidar context, own revision)
   ├─ Annotation(bbox / raster mask, camera_front context, own revision)
@@ -32,7 +33,7 @@ track_id = 同一对象身份
   └─ derived projection evidence(calibration revision, ephemeral/cacheable)
 ```
 
-推荐不新建第二个 `object_id` 与 `track_id` 竞争。若实施时发现 `track_id` 的现有唯一性、作用域或生命周期无法表达同帧非时序对象，转定稿 ADR 必须先调整其合同，而不是静默增加另一层字符串关联。
+推荐不新建第二个 `object_id` 与 `track_id` 或 SceneTrack 竞争。多模态成员直接关联 SceneTrack，`track_id` 继续冗余在 Annotation 上以兼容现有查询与导出。若实施时发现现有作用域无法表达同帧非时序对象，转定稿 ADR 必须先调整合同，而不是静默增加另一层字符串关联。
 
 sensor context 推荐使用受约束的关系记录，而不是把 `camera_role`、dataset item id 和 calibration digest 随意塞进 attributes。具体表 / 列由 ADR 根据届时 Annotation 模型决定，但必须保证：annotation member 唯一、sensor item 属于同一 task / scene、role 合法、calibration revision 可审计。
 
@@ -42,8 +43,8 @@ sensor context 推荐使用受约束的关系记录，而不是把 `camera_role`
 - 修改 3D 后实时显示新投影和人工 2D 的残差，不自动改人工 2D。
 - 修改人工 2D 后只更新该 member；可以请求“用此证据调整 3D”的候选操作，接受前不写 3D。
 - calibration revision 改变后重新计算派生投影，人工 member 坐标不变并标记 relationship stale，等待复核。
-- 删除一个 member 不删除整个对象；删除最后一个 member 时保留 / 关闭 object identity 的策略必须在转定稿 ADR 冻结。
-- 跨帧传播必须显式说明传播 3D、某相机 2D 或全部成员，不能只凭共享 track_id 批量覆盖。
+- 删除一个 member 不删除整个对象；删除最后一个 member 时由 SceneTrack lifecycle command 决定保留、终止或退役，不能从成员计数隐式推导。
+- 跨帧传播必须显式说明传播 3D、某相机 2D 或全部成员，不能只凭共享 `track_id` 批量覆盖。
 
 ## 5. 范围
 
@@ -63,7 +64,7 @@ sensor context 推荐使用受约束的关系记录，而不是把 `camera_role`
 
 ## 7. 推荐实现切片（转定稿后执行）
 
-1. **ADR 与只读聚合**：冻结身份 / sensor context，先把现有 3D member 和派生投影聚合成对象视图，不新增 2D 写入。
+1. **ADR 与只读聚合**：以 SceneTrack 为对象身份，冻结 member / sensor context，先把现有 3D member 和派生投影聚合成对象视图，不新增 2D 写入。
 2. **单相机 bbox member**：显式保留、独立编辑、revision / audit、与 3D 残差，不做反向自动求解。
 3. **多相机与标定更新**：成员可见性、occlusion、relationship stale 和批量复核。
 4. **跨帧与导出**：明确 scope，补原生 / COCO / KITTI lineage；通过后再评估 mask / polygon。
@@ -80,12 +81,12 @@ sensor context 推荐使用受约束的关系记录，而不是把 `camera_role`
 ## 9. 风险与回滚
 
 - 最大风险是真值不清：若 UI 不区分 member 与 projection，用户会把派生框当人工标注。视觉与数据来源必须同时表达。
-- `track_id` 既做时序又做跨模态身份，需要严格作用域；ADR 和约束优先于 UI。
+- SceneTrack 同时承接时序和跨模态对象身份，需要严格作用域、member 唯一性与传感器关系约束；ADR 和约束优先于 UI。
 - 回滚可停止新 member 创建并把已存在 member 只读展示 / 原生导出；不能删除人工 2D 真值。派生投影继续按旧路径工作。
 
 ## 10. 转定稿专项检查
 
-- 重新审计 Annotation schema、track_id 约束、task-dataset-item link、camera calibration revision 与所有导出器。
-- 先写 ADR 比较“Annotation + sensor context”“独立 multimodal member 表”“新 object entity”至少三种方案，并用最小迁移面作选择。
+- 重新审计 Annotation schema、SceneTrack / `track_id` 约束、task-dataset-item link、camera calibration revision 与所有导出器。
+- 先写 ADR 比较“Annotation + SceneTrack 外键 + sensor context”“独立 multimodal member 表”“SceneTrack member 关系表”至少三种方案，并以真值所有权、约束完整性和可迁移性作选择。
 - 用真实多相机任务演练创建、标定更新、成员冲突、跨帧传播和删除，冻结每一步真值所有权。
 - 精确列出模型 / 迁移 / API / UI / projection / quality / export / tests / docs 的文件与兼容策略，确认大变更面后再批准。

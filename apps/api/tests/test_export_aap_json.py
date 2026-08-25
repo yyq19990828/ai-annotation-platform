@@ -14,18 +14,21 @@ import uuid
 
 import httpx
 import pytest
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas.aap_json import AAPTaskBlock, AAPTaskMatch
 from app.services.display_id import next_display_id
 from app.services.exporting.service import ExportService
 from tests.factory import create_project
+from tests.test_track_operations import _add_box, _seed_scene
 
 pytestmark = pytest.mark.asyncio
 
@@ -124,7 +127,7 @@ async def test_export_aap_json_project_envelope(
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
 
-    assert body["schema_version"] == "1.3"
+    assert body["schema_version"] == "1.5"
     assert body["exported_from"]["project_display_id"] == project.display_id
     assert body["project"]["annotation_guide"] == "# 测试指引\n请标注所有车辆."
     assert body["project"]["type_key"] == "image-det"
@@ -181,7 +184,7 @@ async def test_export_aap_json_empty_project(
     await db_session.flush()
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
-    assert body["schema_version"] == "1.3"
+    assert body["schema_version"] == "1.5"
     assert body["tasks"] == []
 
 
@@ -483,7 +486,7 @@ async def test_export_aap_json_video_project_task_block(
     monkeypatch.setattr("app.services.exporting.service.load_coco_rle", _fake_load)
 
     body = json.loads(await ExportService(db_session).export_aap_json(project.id))
-    assert body["schema_version"] == "1.3"
+    assert body["schema_version"] == "1.5"
     assert len(body["tasks"]) == 1
     t0 = body["tasks"][0]
     assert t0["media_type"] == "video"
@@ -547,3 +550,87 @@ async def test_export_aap_json_video_project_task_block(
         scoped_by_type["video_track_mask"]["geometry"]["keyframes"][0]["frame_index"]
         == 7
     )
+
+
+async def test_export_aap_json_preserves_scene_track_presence_intervals(
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, _ = super_admin
+    project, scene, tasks = await _seed_scene(
+        db_session, owner_id=user.id, frame_count=5
+    )
+    first = await _add_box(
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        track_id="trk-export-gap",
+    )
+    last = await _add_box(
+        db_session,
+        task=tasks[4],
+        project=project,
+        user_id=user.id,
+        track_id="trk-export-gap",
+        x=4.0,
+    )
+    first.temporal_role = "keyframe"
+    last.temporal_role = "sample"
+    track = (
+        await db_session.execute(
+            select(SceneTrack).where(SceneTrack.track_id == "trk-export-gap")
+        )
+    ).scalar_one()
+    track.presence_mode = "explicit"
+    await db_session.execute(
+        delete(SceneTrackInterval).where(SceneTrackInterval.scene_track_id == track.id)
+    )
+    db_session.add_all(
+        [
+            SceneTrackInterval(
+                scene_track_id=track.id,
+                start_frame=frame,
+                end_frame=frame,
+                source="manual",
+                created_by=user.id,
+            )
+            for frame in (0, 4)
+        ]
+    )
+    await db_session.flush()
+
+    body = json.loads(await ExportService(db_session).export_aap_json(project.id))
+    assert body["schema_version"] == "1.5"
+    assert body["scene_tracks"] == [
+        {
+            "track_id": "trk-export-gap",
+            "scene_name": scene.name,
+            "class_name": "car",
+            "presence_mode": "explicit",
+            "attributes": {},
+            "attributes_meta": {},
+            "intervals": [
+                {
+                    "start_frame": 0,
+                    "end_frame": 0,
+                    "source": "manual",
+                },
+                {
+                    "start_frame": 4,
+                    "end_frame": 4,
+                    "source": "manual",
+                },
+            ],
+        }
+    ]
+    exported_entries = [
+        entry
+        for block in body["tasks"]
+        for entry in block["annotations"]
+        if entry["track_id"] == "trk-export-gap"
+    ]
+    assert {entry["temporal_role"] for entry in exported_entries} == {
+        "keyframe",
+        "sample",
+    }

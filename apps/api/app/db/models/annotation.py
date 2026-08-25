@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
+    CheckConstraint,
     Integer,
     String,
     Float,
@@ -19,6 +20,10 @@ from app.db.base import Base
 class Annotation(Base):
     __tablename__ = "annotations"
     __table_args__ = (
+        CheckConstraint(
+            "temporal_role IN ('keyframe','derived','sample')",
+            name="ck_annotations_temporal_role",
+        ),
         Index(
             "ix_annotations_project_track_active",
             "project_id",
@@ -67,6 +72,15 @@ class Annotation(Base):
                 "AND video_segment_id IS NOT NULL"
             ),
         ),
+        Index(
+            "ix_annotations_scene_track_task_active",
+            "scene_track_id",
+            "task_id",
+            postgresql_where=text(
+                "is_active = true AND was_cancelled = false "
+                "AND scene_track_id IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -106,6 +120,18 @@ class Annotation(Base):
     # 权威落点 (原分裂: video geometry 内 track_id + box_3d 借 group_id>=1e9, 编组下线后
     # group_id 列已删). 单一工厂 _new_track_id() 产出; propagate/interpolate/导出/3D 前端统一读本列.
     track_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # ADR-0069 · 3D Scene member 的权威 Track 外键。track_id 继续冗余为兼容外部键；
+    # 非 Scene / compact video / 迁移异常链保持 NULL。
+    scene_track_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("scene_tracks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # source 表示来源，temporal_role 表示成员在时序模型中的角色，两者正交。
+    temporal_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="sample", default="sample"
+    )
     lead_time: Mapped[float | None] = mapped_column(Float)
     was_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     ground_truth: Mapped[bool] = mapped_column(Boolean, default=False)

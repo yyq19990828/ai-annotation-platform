@@ -79,6 +79,19 @@ function sameViewRects(a: ViewRectCss[], b: ViewRectCss[]): boolean {
   );
 }
 
+/**
+ * WebGLRenderer 的 viewport 原点在左下；WebGPURenderer（含其 WebGL2 fallback）
+ * 对外统一使用左上原点，backend 自己再转换成底层图形 API 坐标。
+ */
+export function triViewportY(
+  yTop: number,
+  height: number,
+  containerHeight: number,
+  backend: PointCloudRendererStatus["actualBackend"],
+): number {
+  return backend === "legacy-webgl2" ? containerHeight - (yTop + height) : yTop;
+}
+
 function attributeVersion(
   attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null,
 ): number {
@@ -208,6 +221,7 @@ export class TriViewRenderer {
         this.webGpuPointLayer = createWebGpuPointCloudLayer(geom, {
           pointSize: 2,
           sizeAttenuation: false,
+          clipping: true,
         });
         this.points = this.webGpuPointLayer.object;
       }
@@ -357,9 +371,9 @@ export class TriViewRenderer {
     r.setScissorTest(true);
     for (const rect of this.rects) {
       if (rect.w <= 0 || rect.h <= 0) continue;
-      const yBottom = cssH - (rect.y + rect.h); // CSS 左上原点 → WebGL 左下原点
-      r.setViewport(rect.x, yBottom, rect.w, rect.h);
-      r.setScissor(rect.x, yBottom, rect.w, rect.h);
+      const viewportY = triViewportY(rect.y, rect.h, cssH, this.rendererStatus.actualBackend);
+      r.setViewport(rect.x, viewportY, rect.w, rect.h);
+      r.setScissor(rect.x, viewportY, rect.w, rect.h);
       this.updateCamera(rect.view, rect.w / rect.h);
       // 正交下按本视图 米→px (sCss) 把世界点大小换成像素 (×dpr 到 framebuffer px); 下限 1px。
       const camBox = this.cameraRef ?? this.box;

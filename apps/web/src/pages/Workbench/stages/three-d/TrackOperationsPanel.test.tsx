@@ -5,9 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 
 const api = vi.hoisted(() => ({
+  getSceneTrack: vi.fn(),
+  listSceneTrackOperations: vi.fn(),
   listPointCloudTrackOperationCandidates: vi.fn(),
-  previewPointCloudTrackOperation: vi.fn(),
-  executePointCloudTrackOperation: vi.fn(),
+  previewSceneTrackCommand: vi.fn(),
+  executeSceneTrackCommand: vi.fn(),
+  revertSceneTrackOperation: vi.fn(),
 }));
 const pushToast = vi.hoisted(() => vi.fn());
 
@@ -19,32 +22,33 @@ vi.mock("@/components/ui/Toast", () => ({
 
 import { TrackOperationsPanel } from "./TrackOperationsPanel";
 
-function preview(operation: "split" | "merge") {
+function preview(kind: "split" | "merge" | "mark_absent" | "resume" | "terminate") {
   return {
     contract_version: 1 as const,
-    operation,
+    kind,
     scene_id: "scene-1",
     scene_name: "scene-0061",
-    primary: {
-      track_id: "trk-primary",
-      class_name: "car",
-      member_count: 3,
-      first_frame: 10,
-      last_frame: 12,
+    track_id: "trk-primary",
+    secondary_track_id: kind === "merge" ? "trk-secondary" : null,
+    frame_index: kind === "merge" ? null : 12,
+    resume_frame: null,
+    source_revisions: { "trk-primary": 4 },
+    before_intervals: {
+      "trk-primary": [
+        { id: "interval-1", start_frame: 10, end_frame: 14, source: "manual", version: 1 },
+      ],
     },
-    secondary:
-      operation === "merge"
-        ? {
-            track_id: "trk-secondary",
-            class_name: "car",
-            member_count: 2,
-            first_frame: 13,
-            last_frame: 14,
-          }
-        : null,
-    survivor_track_id: "trk-primary",
-    affected_member_count: operation === "merge" ? 5 : 3,
-    rewritten_member_count: 2,
+    after_intervals: {
+      "trk-primary": [
+        { id: "interval-2", start_frame: 10, end_frame: 12, source: "manual", version: 1 },
+      ],
+    },
+    affected_members: {
+      total: kind === "merge" ? 5 : 2,
+      by_temporal_role: kind === "terminate" ? { keyframe: 2 } : { derived: 2 },
+      frames: [13, 14],
+      requires_confirmation: kind === "terminate",
+    },
     snapshot_token: "a".repeat(64),
   };
 }
@@ -57,7 +61,10 @@ function renderPanel(patch: Partial<React.ComponentProps<typeof TrackOperationsP
       <TrackOperationsPanel
         taskId="task-12"
         currentFrame={12}
+        sceneStartFrame={0}
+        sceneEndFrame={38}
         selectedTrackId="trk-primary"
+        selectedAnnotationId="annotation-12"
         readOnly={false}
         onCompleted={onCompleted}
         {...patch}
@@ -71,91 +78,137 @@ describe("TrackOperationsPanel", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     pushToast.mockReset();
+    api.getSceneTrack.mockResolvedValue({
+      contract_version: 1,
+      revision: 4,
+      presence_mode: "inferred",
+      intervals: [
+        { id: "interval-1", start_frame: 10, end_frame: 14, source: "manual", version: 1 },
+      ],
+      members: { by_temporal_role: { keyframe: 2, derived: 3, sample: 0 } },
+      available_commands: ["split", "merge", "mark_absent", "terminate", "revert"],
+    });
+    api.listSceneTrackOperations.mockResolvedValue({ contract_version: 1, operations: [] });
     api.listPointCloudTrackOperationCandidates.mockResolvedValue({
       contract_version: 1,
-      primary: preview("split").primary,
       candidates: [
         {
           track_id: "trk-secondary",
           class_name: "car",
           member_count: 2,
-          first_frame: 13,
-          last_frame: 14,
+          first_frame: 15,
+          last_frame: 16,
         },
       ],
       truncated: false,
     });
-    api.previewPointCloudTrackOperation.mockImplementation(
-      (_taskId: string, body: { operation: "split" | "merge" }) =>
-        Promise.resolve(preview(body.operation)),
+    api.previewSceneTrackCommand.mockImplementation(
+      (
+        _taskId: string,
+        body: { kind: "split" | "merge" | "mark_absent" | "resume" | "terminate" },
+      ) => Promise.resolve(preview(body.kind)),
     );
-    api.executePointCloudTrackOperation.mockImplementation(
-      (_taskId: string, body: { operation: "split" | "merge" }) =>
+    api.executeSceneTrackCommand.mockImplementation(
+      (
+        _taskId: string,
+        body: { kind: "split" | "merge" | "mark_absent" | "resume" | "terminate" },
+      ) =>
         Promise.resolve({
-          ...preview(body.operation),
-          created_track_id: body.operation === "split" ? "trk-new" : null,
-          updated_member_count: body.operation === "split" ? 3 : 5,
+          ...preview(body.kind),
+          operation_id: "operation-1",
+          status: "committed",
+          created_track_id: body.kind === "split" ? "trk-new" : null,
+          result_revisions: { "trk-primary": 5 },
         }),
     );
+    api.revertSceneTrackOperation.mockResolvedValue({});
   });
 
   it("requires a selected 3D track", () => {
-    renderPanel({ selectedTrackId: null });
+    renderPanel({ selectedTrackId: null, selectedAnnotationId: null });
 
     expect(screen.getByText(/请先在当前帧选择/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "预览影响" })).toBeNull();
   });
 
-  it("previews and confirms a split with the snapshot token", async () => {
+  it("previews and confirms a split through the unified command API", async () => {
     const { onCompleted } = renderPanel();
 
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
-    await screen.findByText(/共更新 3 个成员/);
-    expect(api.previewPointCloudTrackOperation).toHaveBeenCalledWith("task-12", {
-      operation: "split",
-      primary_track_id: "trk-primary",
-      split_after_frame: 12,
+    await screen.findByText(/影响 2 个成员/);
+    expect(api.previewSceneTrackCommand).toHaveBeenCalledWith("task-12", {
+      kind: "split",
+      track_id: "trk-primary",
+      frame_index: 12,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "确认拆分" }));
-    await waitFor(() =>
-      expect(api.executePointCloudTrackOperation).toHaveBeenCalledWith("task-12", {
-        operation: "split",
-        primary_track_id: "trk-primary",
-        split_after_frame: 12,
-        snapshot_token: "a".repeat(64),
-      }),
-    );
+    await waitFor(() => expect(api.executeSceneTrackCommand).toHaveBeenCalled());
+    const payload = api.executeSceneTrackCommand.mock.calls[0][1];
+    expect(payload).toMatchObject({
+      kind: "split",
+      track_id: "trk-primary",
+      frame_index: 12,
+      snapshot_token: "a".repeat(64),
+    });
+    expect(payload.idempotency_key).toMatch(/^scene-track-split-/);
     expect(onCompleted).toHaveBeenCalledOnce();
-    expect(pushToast).toHaveBeenCalledWith({ msg: "轨迹已拆分", kind: "success" });
   });
 
-  it("loads safe candidates and keeps the selected track as merge survivor", async () => {
+  it("loads safe merge candidates", async () => {
     renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "合并轨迹" }));
+    fireEvent.click(screen.getByRole("button", { name: "合并" }));
 
     const select = await screen.findByRole("combobox", { name: "合并候选轨迹" });
     await waitFor(() => expect(select).not.toBeDisabled());
     fireEvent.change(select, { target: { value: "trk-secondary" } });
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
 
-    await screen.findByText(/共更新 5 个成员/);
-    expect(api.previewPointCloudTrackOperation).toHaveBeenCalledWith("task-12", {
-      operation: "merge",
-      primary_track_id: "trk-primary",
+    await screen.findByText(/影响 5 个成员/);
+    expect(api.previewSceneTrackCommand).toHaveBeenCalledWith("task-12", {
+      kind: "merge",
+      track_id: "trk-primary",
       secondary_track_id: "trk-secondary",
     });
-    expect(screen.getByText(/合并到当前轨迹/)).toBeTruthy();
+  });
+
+  it("requires explicit confirmation before deactivating keyframes", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "终止轨迹" }));
+    fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
+
+    const confirm = await screen.findByRole("button", { name: "确认终止轨迹" });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(confirm).not.toBeDisabled();
+  });
+
+  it("previews a bounded absence with an explicit resume frame", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "标记缺席" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "缺席后的恢复帧" }), {
+      target: { value: "18" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
+
+    await waitFor(() =>
+      expect(api.previewSceneTrackCommand).toHaveBeenCalledWith("task-12", {
+        kind: "mark_absent",
+        track_id: "trk-primary",
+        frame_index: 12,
+        resume_frame: 18,
+      }),
+    );
   });
 
   it("drops a stale confirmation and requires a fresh preview", async () => {
-    api.executePointCloudTrackOperation.mockRejectedValue(
+    api.executeSceneTrackCommand.mockRejectedValue(
       new ApiError(409, "stale", { reason: "track_snapshot_stale" }),
     );
     renderPanel();
 
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
-    await screen.findByText(/共更新 3 个成员/);
+    await screen.findByText(/影响 2 个成员/);
     fireEvent.click(screen.getByRole("button", { name: "确认拆分" }));
 
     await waitFor(() =>
@@ -170,7 +223,24 @@ describe("TrackOperationsPanel", () => {
   it("blocks previews in read-only mode", () => {
     renderPanel({ readOnly: true });
 
-    expect(screen.getByText("当前任务只读，不能修改轨迹身份。")).toBeTruthy();
+    expect(screen.getByText("当前任务只读，不能修改轨迹。")).toBeTruthy();
     expect(screen.getByRole("button", { name: "预览影响" })).toBeDisabled();
+  });
+
+  it("disables commands that do not match the current lifecycle state", async () => {
+    api.getSceneTrack.mockResolvedValue({
+      contract_version: 1,
+      revision: 5,
+      presence_mode: "explicit",
+      intervals: [
+        { id: "interval-2", start_frame: 20, end_frame: 25, source: "manual", version: 1 },
+      ],
+      members: { by_temporal_role: { keyframe: 1, derived: 0, sample: 0 } },
+      available_commands: ["merge", "resume"],
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "拆分" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "恢复出现" })).not.toBeDisabled();
   });
 });

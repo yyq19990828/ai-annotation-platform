@@ -63,6 +63,7 @@ class SceneTimelineAnnotationSummary:
     selected_annotation_id: uuid.UUID | None = None
     selected_source: str | None = None
     selected_class_name: str | None = None
+    selected_temporal_role: str | None = None
 
 
 class SceneNameConflict(ValueError):
@@ -428,15 +429,18 @@ async def get_scene_timeline_annotation_summaries(
                     Annotation.id,
                     Annotation.source,
                     Annotation.class_name,
+                    Annotation.temporal_role,
                 )
                 .where(*active_3d)
                 .where(Annotation.track_id == track_id)
                 .order_by(Annotation.task_id, Annotation.created_at, Annotation.id)
             )
         ).all()
-        selected_by_task: dict[uuid.UUID, tuple[uuid.UUID, str, str]] = {}
-        for task_id, annotation_id, source, class_name in track_rows:
-            selected_by_task.setdefault(task_id, (annotation_id, source, class_name))
+        selected_by_task: dict[uuid.UUID, tuple[uuid.UUID, str, str, str]] = {}
+        for task_id, annotation_id, source, class_name, temporal_role in track_rows:
+            selected_by_task.setdefault(
+                task_id, (annotation_id, source, class_name, temporal_role)
+            )
         for task_id, selected in selected_by_task.items():
             current = summaries.get(
                 task_id, SceneTimelineAnnotationSummary(annotation_count=0)
@@ -446,6 +450,7 @@ async def get_scene_timeline_annotation_summaries(
                 selected_annotation_id=selected[0],
                 selected_source=selected[1],
                 selected_class_name=selected[2],
+                selected_temporal_role=selected[3],
             )
     return summaries
 

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PointCloudViewState } from "./PointCloudScene";
+import type { BoxPsr, PointCloudViewState } from "./PointCloudScene";
 
 const mockState = vi.hoisted(() => {
   const initialView = {
@@ -123,6 +123,7 @@ describe("usePointCloudScene camera continuity", () => {
         pointcloudCamera: null,
         onWorkbenchLayoutChange: vi.fn(),
         onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
         onTransformCommit: vi.fn(),
       }),
     );
@@ -133,6 +134,55 @@ describe("usePointCloudScene camera continuity", () => {
     expect(render.result.current.isLoading).toBe(false);
     expect(render.result.current.rendererStatus).toBeNull();
     expect(sceneRef.current).toBeNull();
+  });
+
+  it("将 gizmo 拖动帧路由到本地预览，仅在松手后提交", async () => {
+    const container = document.createElement("div");
+    const sceneRef = { current: null };
+    const onTransformPreview = vi.fn();
+    const onTransformCommit = vi.fn();
+    const render = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: container },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: undefined,
+        continuityKey: "scene-transform-preview",
+        axisConvention: "iso_8855",
+        boxes: [],
+        selectedId: null,
+        selectedPsrEditable: false,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformPreview,
+        onTransformCommit,
+      }),
+    );
+    await waitFor(() => expect(mockState.instances).toHaveLength(1));
+    const handler = mockState.instances[0].setTransformHandler.mock.calls[0]?.[0] as (
+      id: string,
+      psr: BoxPsr,
+      commit: boolean,
+    ) => void;
+    const psr: BoxPsr = {
+      center: [3, 4, 5],
+      size: [6, 2, 1.5],
+      rotation: [0, 0, 0.2],
+    };
+
+    act(() => handler("box-1", psr, false));
+    expect(onTransformPreview).toHaveBeenCalledWith("box-1", psr);
+    expect(onTransformCommit).not.toHaveBeenCalled();
+
+    act(() => handler("box-1", psr, true));
+    expect(onTransformCommit).toHaveBeenCalledWith("box-1", psr);
+    render.unmount();
   });
 
   it("同 continuity key 重载时在 loadPcd 后恢复运行时视角", async () => {
@@ -162,6 +212,7 @@ describe("usePointCloudScene camera continuity", () => {
         pointcloudCamera: ACCOUNT_VIEW,
         onWorkbenchLayoutChange,
         onViewModeChange,
+        onTransformPreview: vi.fn(),
         onTransformCommit: vi.fn(),
       }),
     );
@@ -213,6 +264,7 @@ describe("usePointCloudScene camera continuity", () => {
         pointcloudCamera: null,
         onWorkbenchLayoutChange,
         onViewModeChange,
+        onTransformPreview: vi.fn(),
         onTransformCommit: vi.fn(),
       }),
     );
@@ -247,6 +299,7 @@ describe("usePointCloudScene camera continuity", () => {
         deferPointCloudDisplay: true,
         onWorkbenchLayoutChange: vi.fn(),
         onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
         onTransformCommit: vi.fn(),
       }),
     );
@@ -312,6 +365,7 @@ describe("usePointCloudScene camera continuity", () => {
         pointcloudCamera: null,
         onWorkbenchLayoutChange: vi.fn(),
         onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
         onTransformCommit: vi.fn(),
       }),
     );

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PointsNodeMaterial } from "three/webgpu";
+import { ClippingGroup, PointsNodeMaterial } from "three/webgpu";
 import type Node from "three/src/nodes/core/Node.js";
 import {
   instancedBufferAttribute,
@@ -38,6 +38,8 @@ interface WebGpuPointCloudLayerOptions {
   opacity?: number;
   depthWrite?: boolean;
   selection?: boolean;
+  /** WebGPURenderer (含 WebGL2 fallback) 只通过 ClippingGroup 消费局部裁剪面。 */
+  clipping?: boolean;
 }
 
 function ensureInstancedAttribute(
@@ -123,9 +125,11 @@ export function createWebGpuPointCloudLayer(
     ? Math.min(position.count, geometry.drawRange.count)
     : position.count;
   sprite.frustumCulled = false;
+  const clippingGroup = options.clipping ? new ClippingGroup() : null;
+  if (clippingGroup) clippingGroup.add(sprite);
 
   return {
-    object: sprite,
+    object: clippingGroup ?? sprite,
     updatePointData(positions, colors) {
       const pointCount = positions.length / 3;
       if (
@@ -157,8 +161,12 @@ export function createWebGpuPointCloudLayer(
       material.size = size;
     },
     setClippingPlanes(planes) {
-      material.clippingPlanes = planes;
-      material.needsUpdate = true;
+      if (clippingGroup) {
+        clippingGroup.clippingPlanes = planes;
+      } else {
+        material.clippingPlanes = planes;
+        material.needsUpdate = true;
+      }
     },
     setSelection(indices, pointIndexStride) {
       if (!selectionAttribute) return;

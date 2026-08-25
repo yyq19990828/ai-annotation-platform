@@ -5,7 +5,7 @@
 > - 对照对象：本仓库当前 `feat/26-08-16` 分支，提交 `3e02478d`
 > - 结论用途：产品与工程决策输入，不是可以直接照抄的迭代清单
 
-本文以 Supervisely 与 CVAT 的当前官方文档、教程、公开源码、图片、GIF 和视频为主证据，并对照本项目现有实现。它补充并更新 [`03-cvat.md`](./03-cvat.md) 的工作台部分，也比 [`14-point-cloud-image-fusion.md`](./14-point-cloud-image-fusion.md) 更关注完整操作过程。图片与视频的逐阶段交互分析、实施优先级和验收标准见 [`23-supervisely-cvat-image-video-workbench.md`](./23-supervisely-cvat-image-video-workbench.md)。
+本文以 Supervisely 与 CVAT 的当前官方文档、教程、公开源码、图片、GIF 和视频为主证据，并对照本项目现有实现。它补充并更新 [`03-cvat.md`](./03-cvat.md) 的工作台部分，也比 [`14-point-cloud-image-fusion.md`](./14-point-cloud-image-fusion.md) 更关注完整操作过程。图片与视频的逐阶段交互分析、实施优先级和验收标准见 [`23-supervisely-cvat-image-video-workbench.md`](./23-supervisely-cvat-image-video-workbench.md)；更多商业与开源平台的 3D 时序对象、存在区间和轨迹修复合同见 [`24-3d-temporal-object-lifecycle.md`](./24-3d-temporal-object-lifecycle.md)。
 
 ---
 
@@ -165,6 +165,8 @@ Supervisely 的 3D 工具箱提供了三类场景理解能力：
 建议保留当前“快速种子”模式，同时增加可选的“持久化多模态对象”模式。数据层可利用现有 `track_id` 作为共同身份，但 2D 成员必须有自己的几何、相机、帧、来源和修订记录。
 
 ### 3.6 episode 时间轴承担的是场景状态，不只是换帧
+
+从数据格式看，Supervisely 还把 episode 级 `objects[]` 与逐帧 `figures[]` 分开，figure 通过 `objectKey` 归属稳定对象。这说明对象侧栏、时间轴和逐帧几何应共享一个 Scene 级身份来源，而不是各自在 Annotation 列表上临时聚合。缺席区间、人工锚点和可逆修复的跨平台深读见[时序对象补充报告](./24-3d-temporal-object-lifecycle.md)。
 
 Supervisely 的底部时间轴同时表达：
 

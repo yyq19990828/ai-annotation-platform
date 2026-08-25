@@ -200,7 +200,7 @@ export function CrossFrameJobCenter({
           aria-selected={view === "track"}
           onClick={() => setView("track")}
         >
-          轨迹修正
+          轨迹生命周期
         </Button>
       </div>
       {view === "propagate" ? (
@@ -374,7 +374,10 @@ export function CrossFrameJobCenter({
         <TrackOperationsPanel
           taskId={taskId}
           currentFrame={currentFrame}
+          sceneStartFrame={sceneStartFrame}
+          sceneEndFrame={sceneEndFrame}
           selectedTrackId={selectedTrackId}
+          selectedAnnotationId={selectedAnnotationIds[0] ?? null}
           readOnly={readOnly}
         />
       )}

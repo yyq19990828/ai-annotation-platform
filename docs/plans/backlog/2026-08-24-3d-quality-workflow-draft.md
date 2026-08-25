@@ -17,14 +17,14 @@
 ## 2. 当前基线快照
 
 - 平台已有 `MaskQCRun / MaskQCIssue`、`VideoTrackQualityRun / Issue`、`AsyncJob` 和 `AnnotationFeedback`，已经验证“机器发现 + 结构化指标 + 人工讨论”的分层价值。
-- 3D 工作台已有 cuboid 内点选择、地面估计、自动拟合、投影、邻帧点云、ego 对齐和 `track_id`，多数首批规则不需要引入新算法依赖。
+- 3D 工作台已有 cuboid 内点选择、地面估计、自动拟合、投影、邻帧点云、ego 对齐和 `track_id`，多数首批规则不需要引入新算法依赖；track 断点和时序跳变在 [`SceneTrack`](../2026-08-25-v0.24.11-3d-track-domain-foundation.md) 稳定前不得把成员缺口当成生命周期真值。
 - 通用 Issues 能锚定 project / task / annotation / pixel，但 3D 问题还需要 scene、frame、track、camera、PSR、点索引集合和辅助层参数，不能只靠一段 body 文本恢复现场。
 - 当前没有 3D 专属规则版本、source snapshot、stale 判定和批量运行入口。
 
 ## 3. 领域边界
 
 ```text
-Annotation / Scene / Pose / Calibration
+Annotation / SceneTrack / Scene / Pose / Calibration
                 │ source snapshot + rule config revision
                 ▼
        3D Quality Run (AsyncJob)
@@ -38,18 +38,18 @@ Annotation / Scene / Pose / Calibration
                 └─► resolved / wont_fix / stale（不自动改标注）
 ```
 
-`3D Quality Issue` 保存规则 code、规则版本、metric、threshold、source annotation versions、scene / frame / track 定位器、相关 annotation、建议动作和状态。评论与协作继续进入 `AnnotationFeedback`，不在质量表重复造讨论系统。
+`3D Quality Issue` 保存规则 code、规则版本、metric、threshold、source annotation versions、`scene_track_id + track_revision`、scene / frame 定位器、相关 annotation、建议命令和状态。评论与协作继续进入 `AnnotationFeedback`，不在质量表重复造讨论系统。
 
 ## 4. 第一批规则
 
-| 规则            | 输入与指标                                        | 定位行为                      | 首版边界                           |
-| --------------- | ------------------------------------------------- | ----------------------------- | ---------------------------------- |
-| 空框 / 点数过少 | cuboid 内有效点数与项目阈值                       | 聚焦框并只高亮框内点          | 对抽样点云必须换算或明确标记近似   |
-| 穿地 / 悬浮     | 框底面与地面估计差值                              | 显示地面层和高度差            | 地面置信度不足时不报结论性 issue   |
-| 尺寸异常        | 类别内 length / width / height 稳健分位           | 打开 PSR 面板并展示同类范围   | 样本不足不计算类别异常             |
-| 时序跳变        | 同 track 相邻帧中心、尺寸、yaw 的 pose 补偿后差值 | 同显前后帧框和差值            | 只比较可信 pose 或明确无 pose 模式 |
-| track 断点      | 存在区间内缺失帧、重复身份或类别漂移              | 跳到断点并给出传播 / 插值入口 | 不自动补帧                         |
-| 点掩码重叠      | 互斥类别共享全局点 ID                             | 高亮冲突点和两个对象          | 点索引不稳定的数据集禁用           |
+| 规则            | 输入与指标                                        | 定位行为                    | 首版边界                           |
+| --------------- | ------------------------------------------------- | --------------------------- | ---------------------------------- |
+| 空框 / 点数过少 | cuboid 内有效点数与项目阈值                       | 聚焦框并只高亮框内点        | 对抽样点云必须换算或明确标记近似   |
+| 穿地 / 悬浮     | 框底面与地面估计差值                              | 显示地面层和高度差          | 地面置信度不足时不报结论性 issue   |
+| 尺寸异常        | 类别内 length / width / height 稳健分位           | 打开 PSR 面板并展示同类范围 | 样本不足不计算类别异常             |
+| 时序跳变        | 同 track 相邻帧中心、尺寸、yaw 的 pose 补偿后差值 | 同显前后帧框和差值          | 只比较可信 pose 或明确无 pose 模式 |
+| track 断点      | 声明存在区间内缺失帧、重复身份或类别漂移          | 跳到断点并建议轨迹命令      | 明确缺席区间不报漏标，不自动补帧   |
+| 点掩码重叠      | 互斥类别共享全局点 ID                             | 高亮冲突点和两个对象        | 点索引不稳定的数据集禁用           |
 
 “多相机投影残差”只有在[持久化多模态对象草案](2026-08-24-persistent-multimodal-object-draft.md)落地后才启用；实时投影与自身比较不能构成独立质量证据。
 
@@ -71,7 +71,7 @@ Annotation / Scene / Pose / Calibration
 
 ## 7. 非范围
 
-- 不自动移动 cuboid、补 track、删除点或接受候选。
+- 不自动移动 cuboid、补 track、执行生命周期命令、删除点或接受候选。
 - 不在本计划实现 GT job、多人 replica、Consensus 投票或合并。
 - 不把统计离群等同错误；阈值不足或证据低置信时降级为 info 或不产出。
 - 不复用 MaskQC 的 region mask 存储去承载 3D 点索引。
@@ -102,6 +102,7 @@ Annotation / Scene / Pose / Calibration
 ## 11. 转定稿专项检查
 
 - 对比届时的 MaskQC、VideoTrackQuality 和 AnnotationFeedback，确认哪些基础设施已抽成共享层，避免复制过期实现。
+- SceneTrack、存在区间、track revision 与可逆命令日志必须先完成；质量规则只引用命令建议，不能绕过 preview 和用户确认直接修改真值。
 - 用真实点云抽样 / tiling 状态核对点数和点索引语义；近似指标必须在 UI 标出。
 - 为每条拟实施规则先建立正反夹具和阈值报告，未达到解释性要求的规则从定稿移除。
 - 精确列出模型、迁移、worker、service、router、前端定位器、时间轴、测试和文档文件，并确认大变更面。

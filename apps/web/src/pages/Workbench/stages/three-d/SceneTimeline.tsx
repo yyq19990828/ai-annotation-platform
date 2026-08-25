@@ -103,11 +103,15 @@ function TimelineCell({
   const available = summary?.state === "available" && !!summary.task_id;
   const missing = summary?.state === "missing";
   const unavailable = summary?.state === "unavailable";
-  const trackPresent = !!summary?.selected_track;
+  const trackMaterialized = !!summary?.selected_track;
+  const trackDeclaredPresent = summary?.selected_track_present === true;
+  const temporalRole = summary?.selected_track?.temporal_role ?? null;
   const label = summary
     ? `帧 ${frameIndex}，${
         missing ? "缺失" : unavailable ? "不可访问" : `${count} 个 3D 标注`
-      }${trackPresent ? "，当前对象存在" : ""}`
+      }${trackDeclaredPresent ? "，当前对象在存在区间内" : ""}${
+        trackMaterialized ? `，${temporalRole ?? "sample"} 成员已物化` : ""
+      }`
     : `帧 ${frameIndex}，正在加载`;
 
   return (
@@ -143,10 +147,24 @@ function TimelineCell({
         )}
       </span>
       <span
-        data-testid={trackPresent ? `scene-timeline-track-frame-${frameIndex}` : undefined}
-        className={cn("mb-1 block h-1 w-5 rounded-full bg-transparent", trackPresent && "bg-brand")}
+        data-testid={trackDeclaredPresent ? `scene-timeline-track-frame-${frameIndex}` : undefined}
+        className={cn(
+          "relative mb-1 block h-1 w-5 rounded-full bg-transparent",
+          trackDeclaredPresent && "bg-brand/30",
+        )}
         aria-hidden="true"
-      />
+      >
+        {trackMaterialized && (
+          <span
+            className={cn(
+              "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+              temporalRole === "keyframe" && "size-2 rounded-full bg-brand",
+              temporalRole === "derived" && "h-1 w-3 rounded-full bg-violet-500",
+              temporalRole === "sample" && "size-1.5 rotate-45 bg-muted-foreground",
+            )}
+          />
+        )}
+      </span>
     </button>
   );
 }

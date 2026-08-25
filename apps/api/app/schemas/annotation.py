@@ -253,6 +253,8 @@ class AnnotationOut(BaseModel):
     # v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (trk_<hex>). 前端 3D 跨帧配对/
     # 插值/高亮据此认同一对象 (原用 group_id 高位段, 编组下线后该列已删).
     track_id: str | None = None
+    scene_track_id: UUID | None = None
+    temporal_role: Literal["keyframe", "derived", "sample"] = "sample"
     lead_time: float | None = None
     is_active: bool
     ground_truth: bool = False

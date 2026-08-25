@@ -165,7 +165,9 @@ async def test_scene_timeline_returns_window_density_and_selected_track(
         "annotation_id": str(selected.id),
         "source": "manual",
         "class_name": "car",
+        "temporal_role": "sample",
     }
+    assert body["frames"][0]["selected_track_present"] is False
     assert body["frames"][1]["annotation_count"] == 0
     assert body["frames"][1]["selected_track"] is None
 
@@ -232,6 +234,7 @@ async def test_scene_timeline_hides_cross_batch_task_details(
         "task_status": None,
         "annotation_count": 0,
         "selected_track": None,
+        "selected_track_present": False,
     }
 
 
@@ -262,6 +265,7 @@ async def test_scene_timeline_does_not_include_tasks_from_another_project(
         "task_status": None,
         "annotation_count": 0,
         "selected_track": None,
+        "selected_track_present": None,
     }
 
 

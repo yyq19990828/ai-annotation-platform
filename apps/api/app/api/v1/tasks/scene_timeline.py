@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import (
@@ -9,6 +10,7 @@ from app.api.v1.tasks._shared import (
     _visible_task_ids,
 )
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
 from app.schemas.scene import (
@@ -68,18 +70,56 @@ async def get_task_scene_timeline(
     annotation_summaries = await get_scene_timeline_annotation_summaries(
         db, task_ids=visible_task_ids, track_id=track_id
     )
+    selected_intervals: list[SceneTrackInterval] = []
+    if track_id:
+        scene_track = (
+            await db.execute(
+                select(SceneTrack)
+                .where(SceneTrack.project_id == task.project_id)
+                .where(SceneTrack.scene_id == window.scene_id)
+                .where(SceneTrack.track_id == track_id)
+                .where(SceneTrack.retired_at.is_(None))
+            )
+        ).scalar_one_or_none()
+        if scene_track is not None:
+            selected_intervals = list(
+                (
+                    await db.execute(
+                        select(SceneTrackInterval)
+                        .where(SceneTrackInterval.scene_track_id == scene_track.id)
+                        .order_by(SceneTrackInterval.start_frame)
+                    )
+                ).scalars()
+            )
 
     frames: list[SceneTimelineFrameSummary] = []
     for frame_index in range(start_frame, end_frame + 1):
+        selected_track_present = (
+            any(
+                interval.start_frame <= frame_index
+                and (interval.end_frame is None or frame_index <= interval.end_frame)
+                for interval in selected_intervals
+            )
+            if track_id
+            else None
+        )
         frame_task = window.frame_tasks.get(frame_index)
         if frame_task is None:
             frames.append(
-                SceneTimelineFrameSummary(frame_index=frame_index, state="missing")
+                SceneTimelineFrameSummary(
+                    frame_index=frame_index,
+                    state="missing",
+                    selected_track_present=selected_track_present,
+                )
             )
             continue
         if frame_task.task_id not in visible_task_ids:
             frames.append(
-                SceneTimelineFrameSummary(frame_index=frame_index, state="unavailable")
+                SceneTimelineFrameSummary(
+                    frame_index=frame_index,
+                    state="unavailable",
+                    selected_track_present=selected_track_present,
+                )
             )
             continue
 
@@ -90,6 +130,7 @@ async def get_task_scene_timeline(
                 annotation_id=summary.selected_annotation_id,
                 source=summary.selected_source or "manual",
                 class_name=summary.selected_class_name or "",
+                temporal_role=summary.selected_temporal_role or "sample",
             )
         frames.append(
             SceneTimelineFrameSummary(
@@ -99,6 +140,7 @@ async def get_task_scene_timeline(
                 task_status=frame_task.status,
                 annotation_count=summary.annotation_count if summary else 0,
                 selected_track=occurrence,
+                selected_track_present=selected_track_present,
             )
         )
 

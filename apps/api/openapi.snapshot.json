@@ -2602,6 +2602,18 @@
             ],
             "title": "Project Id"
           },
+          "scene_track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Track Id"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -2609,6 +2621,16 @@
           "task_id": {
             "format": "uuid",
             "title": "Task Id",
+            "type": "string"
+          },
+          "temporal_role": {
+            "default": "sample",
+            "enum": [
+              "keyframe",
+              "derived",
+              "sample"
+            ],
+            "title": "Temporal Role",
             "type": "string"
           },
           "tool_unit_id": {
@@ -24126,6 +24148,17 @@
               }
             ]
           },
+          "selected_track_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Track Present"
+          },
           "state": {
             "enum": [
               "available",
@@ -24283,6 +24316,16 @@
           "source": {
             "title": "Source",
             "type": "string"
+          },
+          "temporal_role": {
+            "default": "sample",
+            "enum": [
+              "keyframe",
+              "derived",
+              "sample"
+            ],
+            "title": "Temporal Role",
+            "type": "string"
           }
         },
         "required": [
@@ -24291,6 +24334,876 @@
           "class_name"
         ],
         "title": "SceneTimelineTrackOccurrence",
+        "type": "object"
+      },
+      "SceneTrackCommandExecuteRequest": {
+        "properties": {
+          "confirm_member_deactivation": {
+            "default": false,
+            "title": "Confirm Member Deactivation",
+            "type": "boolean"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "track_id",
+          "snapshot_token",
+          "idempotency_key"
+        ],
+        "title": "SceneTrackCommandExecuteRequest",
+        "type": "object"
+      },
+      "SceneTrackCommandMemberImpact": {
+        "properties": {
+          "by_temporal_role": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Temporal Role",
+            "type": "object"
+          },
+          "frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "requires_confirmation": {
+            "default": false,
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "SceneTrackCommandMemberImpact",
+        "type": "object"
+      },
+      "SceneTrackCommandPreviewOut": {
+        "properties": {
+          "affected_members": {
+            "$ref": "#/components/schemas/SceneTrackCommandMemberImpact"
+          },
+          "after_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "After Intervals",
+            "type": "object"
+          },
+          "before_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "Before Intervals",
+            "type": "object"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate",
+              "revert"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "source_revisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Revisions",
+            "type": "object"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "scene_id",
+          "track_id",
+          "affected_members",
+          "snapshot_token"
+        ],
+        "title": "SceneTrackCommandPreviewOut",
+        "type": "object"
+      },
+      "SceneTrackCommandRequest": {
+        "properties": {
+          "confirm_member_deactivation": {
+            "default": false,
+            "title": "Confirm Member Deactivation",
+            "type": "boolean"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "track_id"
+        ],
+        "title": "SceneTrackCommandRequest",
+        "type": "object"
+      },
+      "SceneTrackCommandResultOut": {
+        "properties": {
+          "affected_members": {
+            "$ref": "#/components/schemas/SceneTrackCommandMemberImpact"
+          },
+          "after_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "After Intervals",
+            "type": "object"
+          },
+          "before_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "Before Intervals",
+            "type": "object"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "created_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Track Id"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate",
+              "revert"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "result_revisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Result Revisions",
+            "type": "object"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "source_revisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Revisions",
+            "type": "object"
+          },
+          "status": {
+            "default": "committed",
+            "enum": [
+              "committed",
+              "reverted"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "scene_id",
+          "track_id",
+          "affected_members",
+          "snapshot_token",
+          "operation_id"
+        ],
+        "title": "SceneTrackCommandResultOut",
+        "type": "object"
+      },
+      "SceneTrackDetailOut": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "attributes_meta": {
+            "additionalProperties": true,
+            "title": "Attributes Meta",
+            "type": "object"
+          },
+          "available_commands": {
+            "items": {
+              "enum": [
+                "split",
+                "merge",
+                "mark_absent",
+                "resume",
+                "terminate",
+                "revert"
+              ],
+              "type": "string"
+            },
+            "title": "Available Commands",
+            "type": "array"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "current_frame": {
+            "title": "Current Frame",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTrackIntervalOut"
+            },
+            "title": "Intervals",
+            "type": "array"
+          },
+          "members": {
+            "$ref": "#/components/schemas/SceneTrackMemberSummary"
+          },
+          "presence_mode": {
+            "enum": [
+              "inferred",
+              "explicit"
+            ],
+            "title": "Presence Mode",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "scene_id",
+          "track_id",
+          "class_name",
+          "presence_mode",
+          "revision",
+          "current_frame",
+          "members"
+        ],
+        "title": "SceneTrackDetailOut",
+        "type": "object"
+      },
+      "SceneTrackDiagnosticIssueOut": {
+        "properties": {
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SceneTrackDiagnosticIssueOut",
+        "type": "object"
+      },
+      "SceneTrackDiagnosticReportOut": {
+        "properties": {
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "issue_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Issue Counts",
+            "type": "object"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTrackDiagnosticIssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "linked_member_count": {
+            "title": "Linked Member Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scene_id",
+          "track_count",
+          "linked_member_count"
+        ],
+        "title": "SceneTrackDiagnosticReportOut",
+        "type": "object"
+      },
+      "SceneTrackIntervalOut": {
+        "properties": {
+          "end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frame"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "legacy_envelope",
+              "manual",
+              "imported",
+              "derived"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "start_frame",
+          "source",
+          "version"
+        ],
+        "title": "SceneTrackIntervalOut",
+        "type": "object"
+      },
+      "SceneTrackMemberSummary": {
+        "properties": {
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Source",
+            "type": "object"
+          },
+          "by_temporal_role": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Temporal Role",
+            "type": "object"
+          },
+          "derived_frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Derived Frames",
+            "type": "array"
+          },
+          "keyframe_frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Keyframe Frames",
+            "type": "array"
+          },
+          "sample_frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Sample Frames",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "SceneTrackMemberSummary",
+        "type": "object"
+      },
+      "SceneTrackOperationListItemOut": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate",
+              "revert"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/SceneTrackCommandResultOut"
+          },
+          "status": {
+            "enum": [
+              "committed",
+              "reverted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "created_at",
+          "completed_at",
+          "response"
+        ],
+        "title": "SceneTrackOperationListItemOut",
+        "type": "object"
+      },
+      "SceneTrackOperationListOut": {
+        "properties": {
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTrackOperationListItemOut"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "title": "SceneTrackOperationListOut",
+        "type": "object"
+      },
+      "SceneTrackRevertRequest": {
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key"
+        ],
+        "title": "SceneTrackRevertRequest",
         "type": "object"
       },
       "SceneUpdate": {
@@ -32356,7 +33269,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.24.10"
+    "version": "0.24.11"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -51047,6 +51960,378 @@
           }
         ],
         "summary": "Get Task Scene Timeline",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands": {
+      "get": {
+        "operationId": "list_scene_track_operations_api_v1_tasks__task_id__scene_track_commands_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackOperationListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scene Track Operations",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands/execute": {
+      "post": {
+        "operationId": "execute_scene_track_command_api_v1_tasks__task_id__scene_track_commands_execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTrackCommandExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackCommandResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Scene Track Command",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands/preview": {
+      "post": {
+        "operationId": "preview_scene_track_command_api_v1_tasks__task_id__scene_track_commands_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTrackCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackCommandPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Scene Track Command",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands/{operation_id}/revert": {
+      "post": {
+        "operationId": "revert_scene_track_command_api_v1_tasks__task_id__scene_track_commands__operation_id__revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTrackRevertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackCommandResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revert Scene Track Command",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-diagnostics": {
+      "get": {
+        "operationId": "get_scene_track_diagnostics_api_v1_tasks__task_id__scene_track_diagnostics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackDiagnosticReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene Track Diagnostics",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-tracks/{track_id}": {
+      "get": {
+        "operationId": "get_scene_track_detail_api_v1_tasks__task_id__scene_tracks__track_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene Track Detail",
         "tags": [
           "tasks"
         ]

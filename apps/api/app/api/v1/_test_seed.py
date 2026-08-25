@@ -889,6 +889,18 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
 
     # 每帧注入 1 个 box_3d 标注(落在点阵范围内),供 P2 选中 / 改 PSR / gizmo 断言。
     # 几何 = ISO 8855 系;center/size 单位 m,rotation 单位 rad(roll,pitch,yaw)。
+    from app.services.scene_track_domain import ensure_scene_track
+
+    scene_track = await ensure_scene_track(
+        db,
+        project_id=project.id,
+        scene_id=scene.id,
+        track_id="trk_e2e_lidar_car",
+        class_name="car",
+        frames=set(range(len(tasks))),
+        actor_id=annotator.id,
+        interval_source="imported",
+    )
     for t in tasks:
         db.add(
             Annotation(
@@ -900,6 +912,8 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
                 tool_unit_id="lidar_box_3d",
                 class_name="car",
                 track_id="trk_e2e_lidar_car",
+                scene_track_id=scene_track.id,
+                temporal_role="sample",
                 geometry={
                     "type": "box_3d",
                     "center": [1.0, 0.0, 1.0],

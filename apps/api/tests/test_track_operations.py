@@ -11,6 +11,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.task import Task
+from app.services.scene_track_domain import bind_annotation_to_scene_track
 from tests.factory import create_project
 
 
@@ -79,6 +80,7 @@ async def _add_box(
     class_name="car",
     locked=False,
     x=0.0,
+    bind=True,
 ):
     row = Annotation(
         task_id=task.id,
@@ -94,6 +96,16 @@ async def _add_box(
     )
     db.add(row)
     await db.flush()
+    if bind:
+        await bind_annotation_to_scene_track(
+            db,
+            annotation=row,
+            task=task,
+            temporal_role="keyframe",
+            interval_source="manual",
+            actor_id=user_id,
+        )
+        await db.flush()
     return row
 
 
@@ -516,6 +528,7 @@ async def test_track_integrity_rejects_duplicate_frames_and_class_drift(
         user_id=user.id,
         track_id="trk-drift",
         class_name="car",
+        bind=False,
     )
     await _add_box(
         db_session,
@@ -524,6 +537,7 @@ async def test_track_integrity_rejects_duplicate_frames_and_class_drift(
         user_id=user.id,
         track_id="trk-drift",
         class_name="pedestrian",
+        bind=False,
     )
     drift = await _preview(
         httpx_client,

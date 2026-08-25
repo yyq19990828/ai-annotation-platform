@@ -25,6 +25,11 @@ from app.db.models.dataset import (
     VideoSegment,
 )
 from app.db.models.scene_pose import SceneFramePose
+from app.db.models.scene_track import (
+    SceneTrack,
+    SceneTrackInterval,
+    SceneTrackOperation,
+)
 from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
@@ -100,6 +105,9 @@ __all__ = [
     "VideoFrameIndex",
     "VideoSegment",
     "SceneFramePose",
+    "SceneTrack",
+    "SceneTrackInterval",
+    "SceneTrackOperation",
     "MLBackendRegistry",
     "MLBackendServicePool",
     "MLBackendPoolMember",

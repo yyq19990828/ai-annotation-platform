@@ -190,6 +190,95 @@ export interface PointCloudTrackOperationResult extends PointCloudTrackOperation
   updated_member_count: number;
 }
 
+export interface SceneTrackInterval {
+  id: string;
+  start_frame: number;
+  end_frame: number | null;
+  source: "legacy_envelope" | "manual" | "imported" | "derived";
+  version: number;
+}
+
+export interface SceneTrackDetail {
+  contract_version: 1;
+  id: string;
+  project_id: string;
+  scene_id: string;
+  scene_name: string | null;
+  track_id: string;
+  class_name: string;
+  presence_mode: "inferred" | "explicit";
+  attributes: Record<string, unknown>;
+  attributes_meta: Record<string, unknown>;
+  revision: number;
+  retired_at: string | null;
+  current_frame: number;
+  intervals: SceneTrackInterval[];
+  members: {
+    total: number;
+    by_temporal_role: Record<string, number>;
+    by_source: Record<string, number>;
+    keyframe_frames: number[];
+    derived_frames: number[];
+    sample_frames: number[];
+  };
+  available_commands: Array<"split" | "merge" | "mark_absent" | "resume" | "terminate" | "revert">;
+}
+
+export type SceneTrackCommandKind =
+  | "split"
+  | "merge"
+  | "mark_absent"
+  | "resume"
+  | "terminate"
+  | "revert";
+
+export interface SceneTrackCommandRequest {
+  kind: Exclude<SceneTrackCommandKind, "revert">;
+  track_id: string;
+  secondary_track_id?: string;
+  frame_index?: number;
+  resume_frame?: number;
+  source_annotation_id?: string;
+  confirm_member_deactivation?: boolean;
+}
+
+export interface SceneTrackCommandPreview {
+  contract_version: 1;
+  kind: SceneTrackCommandKind;
+  scene_id: string;
+  scene_name: string | null;
+  track_id: string;
+  secondary_track_id: string | null;
+  frame_index: number | null;
+  resume_frame: number | null;
+  source_revisions: Record<string, number>;
+  before_intervals: Record<string, SceneTrackInterval[]>;
+  after_intervals: Record<string, SceneTrackInterval[]>;
+  affected_members: {
+    total: number;
+    by_temporal_role: Record<string, number>;
+    frames: number[];
+    requires_confirmation: boolean;
+  };
+  snapshot_token: string;
+}
+
+export interface SceneTrackCommandResult extends SceneTrackCommandPreview {
+  operation_id: string;
+  status: "committed" | "reverted";
+  created_track_id: string | null;
+  result_revisions: Record<string, number>;
+}
+
+export interface SceneTrackOperationItem {
+  id: string;
+  kind: SceneTrackCommandKind;
+  status: "committed" | "reverted";
+  created_at: string;
+  completed_at: string;
+  response: SceneTrackCommandResult;
+}
+
 export interface VideoFrameTimetableParams {
   from?: number;
   to?: number;
@@ -384,6 +473,38 @@ export const tasksApi = {
   listPointCloudTrackOperationCandidates: (taskId: string, trackId: string) =>
     apiClient.get<PointCloudTrackOperationCandidates>(
       `/tasks/${taskId}/track-operations/candidates?track_id=${encodeURIComponent(trackId)}`,
+    ),
+
+  getSceneTrack: (taskId: string, trackId: string) =>
+    apiClient.get<SceneTrackDetail>(`/tasks/${taskId}/scene-tracks/${encodeURIComponent(trackId)}`),
+
+  previewSceneTrackCommand: (taskId: string, payload: SceneTrackCommandRequest) =>
+    apiClient.post<SceneTrackCommandPreview>(
+      `/tasks/${taskId}/scene-track-commands/preview`,
+      payload,
+    ),
+
+  executeSceneTrackCommand: (
+    taskId: string,
+    payload: SceneTrackCommandRequest & {
+      snapshot_token: string;
+      idempotency_key: string;
+    },
+  ) =>
+    apiClient.post<SceneTrackCommandResult>(
+      `/tasks/${taskId}/scene-track-commands/execute`,
+      payload,
+    ),
+
+  listSceneTrackOperations: (taskId: string, trackId: string) =>
+    apiClient.get<{ contract_version: 1; operations: SceneTrackOperationItem[] }>(
+      `/tasks/${taskId}/scene-track-commands?track_id=${encodeURIComponent(trackId)}`,
+    ),
+
+  revertSceneTrackOperation: (taskId: string, operationId: string, idempotencyKey: string) =>
+    apiClient.post<SceneTrackCommandResult>(
+      `/tasks/${taskId}/scene-track-commands/${operationId}/revert`,
+      { idempotency_key: idempotencyKey },
     ),
 
   previewPointCloudTrackOperation: (taskId: string, payload: PointCloudTrackOperationRequest) =>

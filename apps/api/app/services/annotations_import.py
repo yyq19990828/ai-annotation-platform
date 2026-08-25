@@ -15,11 +15,13 @@ import uuid
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
+from app.db.models.dataset import Scene
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.schemas.aap_json import (
     AAPImportErrorEntry,
     AAPImportResult,
@@ -28,6 +30,12 @@ from app.schemas.aap_json import (
 )
 from app.schemas._jsonb_types import Geometry
 from app.services.annotation_track_identity import prepare_compact_track_identity
+from app.services.annotation_propagation import _new_track_id
+from app.services.scene_track_domain import (
+    SceneTrackIntegrityError,
+    bind_annotation_to_scene_track,
+)
+from app.services.scene import get_scene_frame_task_map
 from app.services.raster_mask_storage import (
     assert_raster_mask_write_enabled,
     resolve_mask_reference_objects,
@@ -83,12 +91,150 @@ async def _purge_imported_annotations(db: AsyncSession, task_id: uuid.UUID) -> N
 
     只删导入子集，绝不碰人工标注。
     """
+    scene_track_ids = list(
+        (
+            await db.execute(
+                select(Annotation.scene_track_id)
+                .where(Annotation.task_id == task_id)
+                .where(Annotation.attributes["_imported"].astext == "true")
+                .where(Annotation.scene_track_id.is_not(None))
+                .distinct()
+            )
+        ).scalars()
+    )
     await db.execute(
         delete(Annotation).where(
             Annotation.task_id == task_id,
             Annotation.attributes["_imported"].astext == "true",
         )
     )
+    if scene_track_ids:
+        await db.execute(
+            update(SceneTrack)
+            .where(SceneTrack.id.in_(scene_track_ids))
+            .values(revision=SceneTrack.revision + 1)
+        )
+    await db.flush()
+
+
+async def _apply_imported_scene_tracks(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    envelope: AAPJsonV1Envelope,
+    operator_user_id: uuid.UUID,
+    result: AAPImportResult,
+) -> None:
+    """Replace member-derived envelopes with exported authoritative intervals."""
+    for entry in envelope.scene_tracks:
+        query = (
+            select(SceneTrack)
+            .join(Scene, Scene.id == SceneTrack.scene_id)
+            .where(SceneTrack.project_id == project_id)
+            .where(SceneTrack.track_id == entry.track_id)
+        )
+        if entry.scene_name is not None:
+            query = query.where(Scene.name == entry.scene_name)
+        tracks = list((await db.execute(query.with_for_update())).scalars())
+        if len(tracks) != 1:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match={
+                        "scene_name": entry.scene_name,
+                        "track_id": entry.track_id,
+                    },
+                    reason="scene track metadata could not be matched uniquely",
+                )
+            )
+            continue
+        track = tracks[0]
+        if track.class_name != entry.class_name:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match={
+                        "scene_name": entry.scene_name,
+                        "track_id": entry.track_id,
+                    },
+                    reason="scene track class conflicts with imported members",
+                )
+            )
+            continue
+        ordered = sorted(
+            entry.intervals,
+            key=lambda row: (
+                row.start_frame,
+                row.end_frame if row.end_frame is not None else 2**31 - 1,
+            ),
+        )
+        invalid = any(
+            left.end_frame is None or left.end_frame + 1 >= right.start_frame
+            for left, right in zip(ordered, ordered[1:], strict=False)
+        )
+        if invalid:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match={
+                        "scene_name": entry.scene_name,
+                        "track_id": entry.track_id,
+                    },
+                    reason="scene track intervals overlap or are adjacent",
+                )
+            )
+            continue
+        frame_tasks = await get_scene_frame_task_map(db, track.scene_id)
+        task_frames = {task_id: frame for frame, task_id in frame_tasks.items()}
+        members = list(
+            (
+                await db.execute(
+                    select(Annotation)
+                    .where(Annotation.scene_track_id == track.id)
+                    .where(Annotation.is_active.is_(True))
+                    .where(Annotation.was_cancelled.is_(False))
+                )
+            ).scalars()
+        )
+        member_frames = [
+            task_frames[row.task_id] for row in members if row.task_id in task_frames
+        ]
+        if any(
+            not any(
+                interval.start_frame <= frame
+                and (interval.end_frame is None or frame <= interval.end_frame)
+                for interval in ordered
+            )
+            for frame in member_frames
+        ):
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match={
+                        "scene_name": entry.scene_name,
+                        "track_id": entry.track_id,
+                    },
+                    reason="scene track intervals do not cover every imported member",
+                )
+            )
+            continue
+        await db.execute(
+            delete(SceneTrackInterval).where(
+                SceneTrackInterval.scene_track_id == track.id
+            )
+        )
+        for interval in ordered:
+            db.add(
+                SceneTrackInterval(
+                    id=uuid.uuid4(),
+                    scene_track_id=track.id,
+                    start_frame=interval.start_frame,
+                    end_frame=interval.end_frame,
+                    source="imported",
+                    version=1,
+                    created_by=operator_user_id,
+                )
+            )
+        track.attributes = dict(entry.attributes or {})
+        track.attributes_meta = dict(entry.attributes_meta or {})
+        track.presence_mode = entry.presence_mode
+        track.revision = int(track.revision or 1) + 1
     await db.flush()
 
 
@@ -280,7 +426,14 @@ async def import_aap_json_annotations(
 
             # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
             #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）
-            geometry, track_id = prepare_compact_track_identity(entry.geometry)
+            geometry, track_id = prepare_compact_track_identity(
+                entry.geometry, entry.track_id
+            )
+            if geometry.get("type") == "box_3d" and track_id is None:
+                track_id = _new_track_id()
+            temporal_role = entry.temporal_role or (
+                "derived" if source == "interpolated" else "sample"
+            )
             ann_kwargs: dict[str, Any] = dict(
                 id=uuid.uuid4(),
                 task_id=task.id,
@@ -296,19 +449,46 @@ async def import_aap_json_annotations(
                 was_cancelled=False,  # D5
                 ground_truth=False,  # D5
                 attributes=attributes,  # D1+D2
+                temporal_role=temporal_role,
             )
             # D5: created_at 若 entry 提供则显式设置，否则走 server_default now()
             if entry.created_at is not None:
                 ann_kwargs["created_at"] = entry.created_at
 
             annotation = Annotation(**ann_kwargs)
-            db.add(annotation)
+            try:
+                async with db.begin_nested():
+                    db.add(annotation)
+                    await bind_annotation_to_scene_track(
+                        db,
+                        annotation=annotation,
+                        task=task,
+                        temporal_role=temporal_role,
+                        interval_source="imported",
+                        actor_id=operator_user_id,
+                    )
+            except SceneTrackIntegrityError as exc:
+                result.errors.append(
+                    AAPImportErrorEntry(
+                        task_match=match_dict,
+                        reason=f"scene track conflict ({exc.code}): {exc}",
+                    )
+                )
+                result.skipped += 1
+                continue
             affected_tasks.add(task.id)
             result.imported += 1
 
     # D6: 循环结束后批量更新受影响 task 统计，抑制 batch 自动流转
     if affected_tasks and not dry_run:
         await db.flush()
+        await _apply_imported_scene_tracks(
+            db,
+            project_id=project_id,
+            envelope=envelope,
+            operator_user_id=operator_user_id,
+            result=result,
+        )
         from app.services.annotation import AnnotationService
 
         svc = AnnotationService(db)

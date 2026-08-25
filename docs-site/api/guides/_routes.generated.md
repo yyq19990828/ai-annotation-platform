@@ -577,6 +577,12 @@
 
 | Method | Path |
 |---|---|
+| GET | `/{task_id}/scene-tracks/{track_id}` |
+| GET | `/{task_id}/scene-track-diagnostics` |
+| POST | `/{task_id}/scene-track-commands/preview` |
+| POST | `/{task_id}/scene-track-commands/execute` |
+| GET | `/{task_id}/scene-track-commands` |
+| POST | `/{task_id}/scene-track-commands/{operation_id}/revert` |
 | GET | `/{task_id}/track-operations/candidates` |
 | POST | `/{task_id}/track-operations/preview` |
 | POST | `/{task_id}/track-operations` |
@@ -658,4 +664,4 @@
 
 ---
 
-_共 62 模块 / 366 路由_
+_共 62 模块 / 372 路由_

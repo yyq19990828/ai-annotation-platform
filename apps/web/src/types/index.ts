@@ -575,6 +575,9 @@ export interface AnnotationResponse {
   is_hidden?: boolean;
   // v0.21.2 · ADR-0045 · 跨帧同一对象的通用标识 (trk_<hex>); 3D 跨帧插值/高亮据此认链.
   track_id?: string | null;
+  // ADR-0069 · 3D Scene member 的权威 Track 实体和时间角色。
+  scene_track_id?: string | null;
+  temporal_role?: "keyframe" | "derived" | "sample";
   version?: number;
   created_at: string;
   updated_at: string | null;

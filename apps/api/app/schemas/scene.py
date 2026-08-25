@@ -61,6 +61,7 @@ class SceneTimelineTrackOccurrence(BaseModel):
     annotation_id: UUID
     source: str
     class_name: str
+    temporal_role: Literal["keyframe", "derived", "sample"] = "sample"
 
 
 class SceneTimelineFrameSummary(BaseModel):
@@ -70,6 +71,7 @@ class SceneTimelineFrameSummary(BaseModel):
     task_status: str | None = None
     annotation_count: int = 0
     selected_track: SceneTimelineTrackOccurrence | None = None
+    selected_track_present: bool | None = None
 
 
 class SceneTimelineResponse(BaseModel):

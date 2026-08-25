@@ -70,7 +70,9 @@ function timelineData(): SceneTimelineResponse & { frames: SceneTimelineFrameSum
           annotation_id: "ann-0",
           source: "manual",
           class_name: "car",
+          temporal_role: "keyframe",
         },
+        selected_track_present: true,
       },
       {
         frame_index: 1,
@@ -82,7 +84,9 @@ function timelineData(): SceneTimelineResponse & { frames: SceneTimelineFrameSum
           annotation_id: "ann-1",
           source: "manual",
           class_name: "car",
+          temporal_role: "derived",
         },
+        selected_track_present: true,
       },
       {
         frame_index: 2,
@@ -91,6 +95,7 @@ function timelineData(): SceneTimelineResponse & { frames: SceneTimelineFrameSum
         task_status: null,
         annotation_count: 0,
         selected_track: null,
+        selected_track_present: false,
       },
     ],
   };

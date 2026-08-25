@@ -31,6 +31,11 @@ vi.mock("@/components/ui/Modal", () => ({
       </div>
     ) : null,
 }));
+vi.mock("./TrackOperationsPanel", () => ({
+  TrackOperationsPanel: () => (
+    <section aria-label="3D 轨迹生命周期">统一管理身份、存在区间和帧成员</section>
+  ),
+}));
 
 import { CrossFrameJobCenter } from "./CrossFrameJobCenter";
 
@@ -129,10 +134,10 @@ describe("CrossFrameJobCenter", () => {
   it("keeps track identity correction in the same cross-frame center", () => {
     renderCenter();
 
-    fireEvent.click(screen.getByRole("tab", { name: "轨迹修正" }));
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹生命周期" }));
 
-    expect(screen.getByRole("region", { name: "3D 轨迹修正" })).toBeTruthy();
-    expect(screen.getByText(/当前 survivor/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "3D 轨迹生命周期" })).toBeTruthy();
+    expect(screen.getByText(/统一管理身份、存在区间和帧成员/)).toBeTruthy();
   });
 
   it("cancels active jobs and retries only terminal jobs with failed frames", async () => {
