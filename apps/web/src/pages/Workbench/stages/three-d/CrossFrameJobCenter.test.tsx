@@ -73,6 +73,7 @@ function renderCenter(patch: Partial<React.ComponentProps<typeof CrossFrameJobCe
         sceneStartFrame={0}
         sceneEndFrame={30}
         selectedAnnotationIds={["ann-1", "ann-2"]}
+        selectedTrackId="trk-selected"
         boxCount={5}
         readOnly={false}
         {...patch}
@@ -123,6 +124,15 @@ describe("CrossFrameJobCenter", () => {
 
     expect(screen.getByText(/单个任务最多传播 500 个 3D 框/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "启动任务" })).toBeDisabled();
+  });
+
+  it("keeps track identity correction in the same cross-frame center", () => {
+    renderCenter();
+
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹修正" }));
+
+    expect(screen.getByRole("region", { name: "3D 轨迹修正" })).toBeTruthy();
+    expect(screen.getByText(/当前 survivor/)).toBeTruthy();
   });
 
   it("cancels active jobs and retries only terminal jobs with failed frames", async () => {

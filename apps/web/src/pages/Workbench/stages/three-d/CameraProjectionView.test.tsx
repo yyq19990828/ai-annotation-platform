@@ -47,4 +47,33 @@ describe("CameraProjectionView frame loading", () => {
     expect(screen.getByText("加载相机…")).toBeTruthy();
     expect(screen.getByLabelText("front 相机投影").className).toContain("pointer-events-none");
   });
+
+  it("expands the image together with its positioning container", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    render(
+      <CameraProjectionView
+        name="front"
+        imageUrl="/frame-0.jpg"
+        boxes={[]}
+        highlightedIds={new Set()}
+        onSelectBox={vi.fn()}
+        expanded
+      />,
+    );
+
+    const image = screen.getByRole("img", { name: "front" });
+    const view = image.parentElement;
+    expect(image.className).toContain("h-[70vh]");
+    expect(image.className).toContain("max-w-full");
+    expect(image.className).not.toContain("w-[190px]");
+    expect(view?.className).toContain("w-fit");
+    expect(view?.className).toContain("max-w-full");
+    expect(view?.className).not.toContain("w-[190px]");
+  });
 });

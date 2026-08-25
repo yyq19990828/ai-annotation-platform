@@ -184,7 +184,7 @@ const CAM_GROUP =
   "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
 const CAM_MODAL = "absolute inset-0 z-base flex items-center justify-center bg-black/70";
 const CAM_MODAL_BODY =
-  "relative p-3 rounded-md border border-border bg-card shadow-sm [&_figure_img]:w-auto [&_figure_img]:h-[70vh] [&_figure_img]:max-w-[88vw]";
+  "relative w-fit max-w-[calc(100%-24px)] p-3 rounded-md border border-border bg-card shadow-sm";
 const CAM_MODAL_CLOSE =
   "absolute top-4 right-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_MODAL_SEED =
@@ -762,6 +762,7 @@ export function ThreeDWorkbench({
   const {
     stats,
     loadError,
+    rendererError,
     isLoading: pointCloudLoading,
     loadedPointCloudUrl,
     rendererStatus,
@@ -2501,14 +2502,23 @@ export function ThreeDWorkbench({
           {pointCloudLoading && <span data-testid="pointcloud-loading">加载点云…</span>}
           {error && <span className={ERR}>manifest 加载失败</span>}
           {loadError && <span className={ERR}>点云加载失败: {loadError}</span>}
+          {rendererError && (
+            <span className={ERR} data-testid="pointcloud-renderer-error">
+              Renderer 初始化失败: {rendererError}
+            </span>
+          )}
           <Badge
             variant={rendererStatus?.actualBackend === "webgpu" ? "accent" : "outline"}
             data-testid="pointcloud-renderer-backend"
-            data-backend={rendererStatus?.actualBackend ?? "initializing"}
-            title={rendererStatus?.fallbackReason ?? undefined}
+            data-backend={
+              rendererError ? "failed" : (rendererStatus?.actualBackend ?? "initializing")
+            }
+            title={rendererError ?? rendererStatus?.fallbackReason ?? undefined}
           >
-            {rendererBackendLabel(rendererStatus)}
-            {triRendererStatus && triRendererStatus.actualBackend !== rendererStatus?.actualBackend
+            {rendererError ? "Renderer 不可用" : rendererBackendLabel(rendererStatus)}
+            {!rendererError &&
+            triRendererStatus &&
+            triRendererStatus.actualBackend !== rendererStatus?.actualBackend
               ? ` · 三视图 ${rendererBackendLabel(triRendererStatus)}`
               : ""}
           </Badge>
@@ -2894,9 +2904,15 @@ export function ThreeDWorkbench({
         {/* v0.13.7 · 相机放大浮层(L3):点⛶弹大图,遮罩 / 关闭钮 / ESC 关闭。
             复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}
         {enlargedCam && (
-          <div className={CAM_MODAL} onClick={() => setEnlargedRole(null)} role="presentation">
+          <div
+            className={CAM_MODAL}
+            data-testid="camera-modal"
+            onClick={() => setEnlargedRole(null)}
+            role="presentation"
+          >
             <div
               className={CAM_MODAL_BODY}
+              data-testid="camera-modal-body"
               onClick={(e) => e.stopPropagation()}
               role="presentation"
             >
@@ -2968,6 +2984,7 @@ export function ThreeDWorkbench({
                 onEditPsr={handleEditPsr}
                 onCancelEditPsr={handleCancelCameraEdit}
                 onEditError={handleCameraEditError}
+                expanded
               />
             </div>
           </div>

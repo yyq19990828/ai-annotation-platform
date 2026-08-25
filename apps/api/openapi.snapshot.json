@@ -26896,6 +26896,337 @@
         "title": "TopologyResponse",
         "type": "object"
       },
+      "TrackOperationCandidatesResponse": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TrackSummary"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TrackSummary"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "primary"
+        ],
+        "title": "TrackOperationCandidatesResponse",
+        "type": "object"
+      },
+      "TrackOperationExecuteRequest": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary_track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Primary Track Id",
+            "type": "string"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "split_after_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split After Frame"
+          }
+        },
+        "required": [
+          "operation",
+          "primary_track_id",
+          "snapshot_token"
+        ],
+        "title": "TrackOperationExecuteRequest",
+        "type": "object"
+      },
+      "TrackOperationPreviewResponse": {
+        "properties": {
+          "affected_member_count": {
+            "title": "Affected Member Count",
+            "type": "integer"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TrackSummary"
+          },
+          "rewritten_member_count": {
+            "title": "Rewritten Member Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "survivor_track_id": {
+            "title": "Survivor Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "scene_id",
+          "primary",
+          "survivor_track_id",
+          "affected_member_count",
+          "rewritten_member_count",
+          "snapshot_token"
+        ],
+        "title": "TrackOperationPreviewResponse",
+        "type": "object"
+      },
+      "TrackOperationRequest": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary_track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Primary Track Id",
+            "type": "string"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "split_after_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split After Frame"
+          }
+        },
+        "required": [
+          "operation",
+          "primary_track_id"
+        ],
+        "title": "TrackOperationRequest",
+        "type": "object"
+      },
+      "TrackOperationResult": {
+        "properties": {
+          "affected_member_count": {
+            "title": "Affected Member Count",
+            "type": "integer"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "created_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Track Id"
+          },
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TrackSummary"
+          },
+          "rewritten_member_count": {
+            "title": "Rewritten Member Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "survivor_track_id": {
+            "title": "Survivor Track Id",
+            "type": "string"
+          },
+          "updated_member_count": {
+            "title": "Updated Member Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation",
+          "scene_id",
+          "primary",
+          "survivor_track_id",
+          "affected_member_count",
+          "rewritten_member_count",
+          "snapshot_token",
+          "updated_member_count"
+        ],
+        "title": "TrackOperationResult",
+        "type": "object"
+      },
+      "TrackSummary": {
+        "properties": {
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "first_frame": {
+            "title": "First Frame",
+            "type": "integer"
+          },
+          "last_frame": {
+            "title": "Last Frame",
+            "type": "integer"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "class_name",
+          "member_count",
+          "first_frame",
+          "last_frame"
+        ],
+        "title": "TrackSummary",
+        "type": "object"
+      },
       "TrackerExemplar": {
         "description": "v0.21.19 · text-driven 追踪 (sam3_video) 的单个视觉示例框。\n\nbbox: 归一化 xyxy [x1, y1, x2, y2]; label: True=正框(扩召回) / False=负框(排误检)。\n复用 sam3 图片侧 `Exemplar` 形状 (sam3-backend/schemas.py), 沿用归一化坐标红线。",
         "properties": {
@@ -32025,7 +32356,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.24.9"
+    "version": "0.24.10"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -50819,6 +51150,193 @@
           }
         ],
         "summary": "Submit Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/track-operations": {
+      "post": {
+        "operationId": "execute_track_operation_api_v1_tasks__task_id__track_operations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackOperationExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Track Operation",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/track-operations/candidates": {
+      "get": {
+        "operationId": "list_track_operation_candidates_api_v1_tasks__task_id__track_operations_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOperationCandidatesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Track Operation Candidates",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/track-operations/preview": {
+      "post": {
+        "operationId": "preview_track_operation_api_v1_tasks__task_id__track_operations_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOperationPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Track Operation",
         "tags": [
           "tasks"
         ]

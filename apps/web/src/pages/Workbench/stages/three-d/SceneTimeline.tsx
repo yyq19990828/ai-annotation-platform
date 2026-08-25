@@ -359,6 +359,7 @@ export function SceneTimeline({
         sceneStartFrame={sceneStart}
         sceneEndFrame={sceneEnd}
         selectedAnnotationIds={selectedAnnotationIds}
+        selectedTrackId={trackId}
         boxCount={boxCount}
         readOnly={readOnly}
       />

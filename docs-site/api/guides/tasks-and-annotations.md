@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-22
+last_reviewed: 2026-08-25
 ---
 
 # 任务与标注
@@ -316,6 +316,42 @@ POST /api/v1/tasks/:id/annotations/video/track-compositions
 | `join_tracks`      | 跳连两条同类、可见帧区间不重叠的 track；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |
 
 响应包含 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，客户端应按这三组结果更新 annotation 列表。
+
+## 3D 轨迹拆分与合并
+
+点云 Scene 中的 `box_3d` 轨迹采用“候选 → 预览 → 原子执行”流程修正身份。操作只更新
+`track_id` 和 annotation 版本，不改变 cuboid geometry、类别或属性。
+
+```http
+GET  /api/v1/tasks/:id/track-operations/candidates?track_id=trk_primary&limit=20
+POST /api/v1/tasks/:id/track-operations/preview
+POST /api/v1/tasks/:id/track-operations
+```
+
+拆分请求以 URL 中任务对应的当前帧为边界；当前帧及之前保留原轨迹，之后的成员获得新轨迹 ID：
+
+```json
+{
+  "operation": "split",
+  "primary_track_id": "trk_primary",
+  "split_after_frame": 12
+}
+```
+
+合并请求把 `primary_track_id` 固定为 survivor，只接受同类别且活跃帧完全不重叠的第二条轨迹：
+
+```json
+{
+  "operation": "merge",
+  "primary_track_id": "trk_survivor",
+  "secondary_track_id": "trk_candidate"
+}
+```
+
+预览响应包含两条轨迹摘要、受影响成员数、实际改写成员数和 `snapshot_token`。执行时提交相同操作字段并附上该
+令牌；服务端锁定成员后重算快照，成员身份、版本或集合已变化时返回 `409 track_snapshot_stale`，不会留下部分写入。
+成员 task 必须全部可见、可编辑且未锁定；类别漂移、同帧重复、跨 Scene 成员或合并帧冲突同样会拒绝整次操作。
+单次最多处理 5000 个活跃成员，超限返回 `422 track_member_limit_exceeded`。
 
 ## 候选预测（AI 紫框）
 

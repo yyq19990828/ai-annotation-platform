@@ -75,6 +75,7 @@ interface UsePointCloudSceneResult {
   /** 载帧统计(渲染点数 / 抽稀);null = 未加载。其变化亦作"换帧"信号被壳层多处消费。 */
   stats: PointCloudStats | null;
   loadError: string | null;
+  rendererError: string | null;
   isLoading: boolean;
   /** stats 所属的精确 URL，用于防止新 manifest 搭配旧点缓冲。 */
   loadedPointCloudUrl: string | null;
@@ -134,6 +135,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     isLoading: boolean;
   }>({ stats: null, loadedPointCloudUrl: null, isLoading: false });
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rendererError, setRendererError] = useState<string | null>(null);
   const [rendererStatus, setRendererStatus] = useState<PointCloudRendererStatus | null>(null);
   const [rendererReadyVersion, setRendererReadyVersion] = useState(0);
   const [rendererCircuitReason, setRendererCircuitReason] = useState<string | null>(null);
@@ -180,6 +182,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     let scene: PointCloudScene | null = null;
     let ro: ResizeObserver | null = null;
     setRendererStatus(null);
+    setRendererError(null);
     setLoadState({ stats: null, loadedPointCloudUrl: null, isLoading: !!pointCloudUrl });
     const effectiveMode = rendererCircuitReason ? "legacy" : rendererMode;
     void PointCloudScene.create(container, {
@@ -190,30 +193,36 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
           setRendererCircuitReason(`device-lost: ${reason}`);
         }
       },
-    }).then((created) => {
-      if (cancelled) {
-        created.dispose();
-        return;
-      }
-      scene = created;
-      sceneRef.current = created;
-      created.setPointSize(pointSize);
-      created.setGridVisible(showGrid);
-      created.setAxisGizmoVisible(showAxisGizmo);
-      created.setCameraDamping(cameraDamping);
-      created.setViewChangeHandler(scheduleCameraViewSave);
-      // 拖拽结束:回写表单 + PATCH 持久化(壳层注入的 onTransformCommit,与数值面板共用持久化管线)。
-      created.setTransformHandler((id, psr) => onTransformCommitRef.current(id, psr));
-      ro = new ResizeObserver(() => created.resize());
-      ro.observe(container);
-      const status = created.getRendererStatus();
-      setRendererStatus(
-        rendererCircuitReason
-          ? { ...status, requestedMode: rendererMode, fallbackReason: rendererCircuitReason }
-          : status,
-      );
-      setRendererReadyVersion((value) => value + 1);
-    });
+    })
+      .then((created) => {
+        if (cancelled) {
+          created.dispose();
+          return;
+        }
+        scene = created;
+        sceneRef.current = created;
+        created.setPointSize(pointSize);
+        created.setGridVisible(showGrid);
+        created.setAxisGizmoVisible(showAxisGizmo);
+        created.setCameraDamping(cameraDamping);
+        created.setViewChangeHandler(scheduleCameraViewSave);
+        // 拖拽结束:回写表单 + PATCH 持久化(壳层注入的 onTransformCommit,与数值面板共用持久化管线)。
+        created.setTransformHandler((id, psr) => onTransformCommitRef.current(id, psr));
+        ro = new ResizeObserver(() => created.resize());
+        ro.observe(container);
+        const status = created.getRendererStatus();
+        setRendererStatus(
+          rendererCircuitReason
+            ? { ...status, requestedMode: rendererMode, fallbackReason: rendererCircuitReason }
+            : status,
+        );
+        setRendererReadyVersion((value) => value + 1);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setLoadState({ stats: null, loadedPointCloudUrl: null, isLoading: false });
+        setRendererError(error instanceof Error ? error.message : String(error));
+      });
     return () => {
       cancelled = true;
       if (cameraSaveRafRef.current !== null) {
@@ -351,6 +360,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   return {
     stats: loadState.stats,
     loadError,
+    rendererError,
     isLoading: loadState.isLoading,
     loadedPointCloudUrl: loadState.loadedPointCloudUrl,
     rendererStatus,

@@ -573,6 +573,14 @@
 |---|---|
 | GET | `/{task_id}/scene-timeline` |
 
+## `tasks/track_operations.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/track-operations/candidates` |
+| POST | `/{task_id}/track-operations/preview` |
+| POST | `/{task_id}/track-operations` |
+
 ## `tasks/video.py`
 
 | Method | Path |
@@ -650,4 +658,4 @@
 
 ---
 
-_共 61 模块 / 363 路由_
+_共 62 模块 / 366 路由_

@@ -15,6 +15,7 @@ const mockState = vi.hoisted(() => {
     rendererMode?: string;
     onDeviceLost?: (reason: string) => void;
   }> = [];
+  const createControl = { error: null as Error | null };
   class MockScene {
     currentView: PointCloudViewState = initialView;
     viewChangeHandler: ((view: PointCloudViewState) => void) | null = null;
@@ -52,6 +53,7 @@ const mockState = vi.hoisted(() => {
       options: { rendererMode?: string; onDeviceLost?: (reason: string) => void } = {},
     ) {
       createOptions.push(options);
+      if (createControl.error) throw createControl.error;
       return new MockScene();
     }
 
@@ -66,7 +68,7 @@ const mockState = vi.hoisted(() => {
       instances.push(this);
     }
   }
-  return { createOptions, instances, MockScene };
+  return { createControl, createOptions, instances, MockScene };
 });
 
 vi.mock("./PointCloudScene", () => ({ PointCloudScene: mockState.MockScene }));
@@ -90,11 +92,47 @@ describe("usePointCloudScene camera continuity", () => {
   beforeEach(() => {
     mockState.createOptions.length = 0;
     mockState.instances.length = 0;
+    mockState.createControl.error = null;
     globalThis.ResizeObserver = class {
       observe() {}
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;
+  });
+
+  it("Renderer 创建失败时结束加载并暴露明确错误", async () => {
+    mockState.createControl.error = new Error("Error creating WebGL context.");
+    const container = document.createElement("div");
+    const sceneRef = { current: null };
+    const render = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: container },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: "frame-1.pcd",
+        continuityKey: "scene-renderer-error",
+        axisConvention: "iso_8855",
+        boxes: [],
+        selectedId: null,
+        selectedPsrEditable: false,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(render.result.current.rendererError).toBe("Error creating WebGL context."),
+    );
+    expect(render.result.current.isLoading).toBe(false);
+    expect(render.result.current.rendererStatus).toBeNull();
+    expect(sceneRef.current).toBeNull();
   });
 
   it("同 continuity key 重载时在 loadPcd 后恢复运行时视角", async () => {

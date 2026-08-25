@@ -477,9 +477,9 @@ pnpm docs:media:audit -- --release
   `screenshot-ml-stub` 后改用 `--ml-backend-mode stub`。不要把浏览器的 `/minio`
   地址拿来配置 backend，后者必须同时对宿主 API 和 Celery 容器可达。
 - **远程工作台一直「重连中」**：DEV 中的 WebSocket 默认跟随页面同源，由
-  Vite 将 `:3000/ws` 升级并转发到本机 API。只有本机打开页面时才直连
-  `localhost:8000`。不要把 Docker 默认 IP 或服务器端 `localhost` 发给远程浏览器；
-  如果确需覆盖，使用对远程浏览器可达的 `VITE_WS_HOST`。
+  Vite 将当前页面端口的 `/ws` 升级并转发到本机 API；LAN 与 SSH LocalForward
+  访问也保持同源。不要把 Docker 默认 IP 或服务器端 `localhost:8000` 发给远程浏览器；
+  只有刻意绕过 Vite proxy 时才设置浏览器可达的 `VITE_WS_HOST`。
 - **seed repair 后点项目被退回总览**：`--repair` 可能为 seed 自有项目生成新 UUID。
   旧页签或已缓存的项目卡片仍指向旧 UUID 时会跳回总览；修复数据后强制刷新
   项目总览一次。

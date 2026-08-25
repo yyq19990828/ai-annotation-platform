@@ -8,6 +8,8 @@ import { Modal } from "@/components/ui/Modal";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 
+import { TrackOperationsPanel } from "./TrackOperationsPanel";
+
 interface CrossFrameJobCenterProps {
   open: boolean;
   onClose: () => void;
@@ -16,12 +18,14 @@ interface CrossFrameJobCenterProps {
   sceneStartFrame: number;
   sceneEndFrame: number;
   selectedAnnotationIds: string[];
+  selectedTrackId: string | null;
   boxCount: number;
   readOnly: boolean;
 }
 
 type Scope = "selected" | "all";
 type Direction = "forward" | "backward";
+type CenterView = "propagate" | "track";
 
 const STATUS_LABEL: Record<AsyncJob["status"], string> = {
   pending: "排队中",
@@ -68,6 +72,7 @@ export function CrossFrameJobCenter({
   sceneStartFrame,
   sceneEndFrame,
   selectedAnnotationIds,
+  selectedTrackId,
   boxCount,
   readOnly,
 }: CrossFrameJobCenterProps) {
@@ -75,6 +80,7 @@ export function CrossFrameJobCenter({
   const pushToast = useToastStore((state) => state.push);
   const defaultDirection: Direction = currentFrame < sceneEndFrame ? "forward" : "backward";
   const [scope, setScope] = useState<Scope>(selectedAnnotationIds.length > 0 ? "selected" : "all");
+  const [view, setView] = useState<CenterView>("propagate");
   const [direction, setDirection] = useState<Direction>(defaultDirection);
   const [targetEnd, setTargetEnd] = useState(() =>
     defaultDirection === "forward"
@@ -177,170 +183,201 @@ export function CrossFrameJobCenter({
 
   return (
     <Modal open={open} onClose={onClose} title="3D 跨帧任务中心" width={720}>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <section className="space-y-4" aria-label="新建跨帧任务">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">传播 3D 框</h3>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              从当前 F{currentFrame} 传播；每个目标帧独立提交，取消会保留已完成帧。
-            </p>
-          </div>
+      <div className="mb-4 grid grid-cols-2 gap-2" role="tablist" aria-label="跨帧任务类型">
+        <Button
+          size="sm"
+          variant={view === "propagate" ? "primary" : "default"}
+          role="tab"
+          aria-selected={view === "propagate"}
+          onClick={() => setView("propagate")}
+        >
+          批量传播
+        </Button>
+        <Button
+          size="sm"
+          variant={view === "track" ? "primary" : "default"}
+          role="tab"
+          aria-selected={view === "track"}
+          onClick={() => setView("track")}
+        >
+          轨迹修正
+        </Button>
+      </div>
+      {view === "propagate" ? (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          <section className="space-y-4" aria-label="新建跨帧任务">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">传播 3D 框</h3>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                从当前 F{currentFrame} 传播；每个目标帧独立提交，取消会保留已完成帧。
+              </p>
+            </div>
 
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-medium text-foreground">对象范围</legend>
-            <label className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-xs text-foreground">
-              <span>已选择对象 ({selectedAnnotationIds.length})</span>
-              <input
-                type="radio"
-                name="cross-frame-scope"
-                value="selected"
-                checked={scope === "selected"}
-                disabled={selectedAnnotationIds.length === 0}
-                onChange={() => setScope("selected")}
-              />
-            </label>
-            <label className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-xs text-foreground">
-              <span>当前帧全部框 ({boxCount})</span>
-              <input
-                type="radio"
-                name="cross-frame-scope"
-                value="all"
-                checked={scope === "all"}
-                disabled={boxCount === 0}
-                onChange={() => setScope("all")}
-              />
-            </label>
-          </fieldset>
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-foreground">对象范围</legend>
+              <label className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-xs text-foreground">
+                <span>已选择对象 ({selectedAnnotationIds.length})</span>
+                <input
+                  type="radio"
+                  name="cross-frame-scope"
+                  value="selected"
+                  checked={scope === "selected"}
+                  disabled={selectedAnnotationIds.length === 0}
+                  onChange={() => setScope("selected")}
+                />
+              </label>
+              <label className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-xs text-foreground">
+                <span>当前帧全部框 ({boxCount})</span>
+                <input
+                  type="radio"
+                  name="cross-frame-scope"
+                  value="all"
+                  checked={scope === "all"}
+                  disabled={boxCount === 0}
+                  onChange={() => setScope("all")}
+                />
+              </label>
+            </fieldset>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1 text-xs text-muted-foreground">
-              方向
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1 text-xs text-muted-foreground">
+                方向
+                <select
+                  aria-label="传播方向"
+                  value={direction}
+                  onChange={(event) => setNextDirection(event.target.value as Direction)}
+                  className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                >
+                  <option value="forward" disabled={currentFrame >= sceneEndFrame}>
+                    向后
+                  </option>
+                  <option value="backward" disabled={currentFrame <= sceneStartFrame}>
+                    向前
+                  </option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-muted-foreground">
+                结束帧
+                <input
+                  aria-label="传播结束帧"
+                  type="number"
+                  min={sceneStartFrame}
+                  max={sceneEndFrame}
+                  value={targetEnd}
+                  onChange={(event) => setTargetEnd(Number(event.target.value))}
+                  className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                />
+              </label>
+            </div>
+
+            <label className="block space-y-1 text-xs text-muted-foreground">
+              冲突策略
               <select
-                aria-label="传播方向"
-                value={direction}
-                onChange={(event) => setNextDirection(event.target.value as Direction)}
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                aria-label="冲突策略"
+                value="skip_existing"
+                disabled
+                className="h-8 w-full rounded-md border border-border bg-muted px-2 text-xs text-foreground"
               >
-                <option value="forward" disabled={currentFrame >= sceneEndFrame}>
-                  向后
-                </option>
-                <option value="backward" disabled={currentFrame <= sceneStartFrame}>
-                  向前
-                </option>
+                <option value="skip_existing">跳过已有同轨迹框</option>
               </select>
             </label>
-            <label className="space-y-1 text-xs text-muted-foreground">
-              结束帧
-              <input
-                aria-label="传播结束帧"
-                type="number"
-                min={sceneStartFrame}
-                max={sceneEndFrame}
-                value={targetEnd}
-                onChange={(event) => setTargetEnd(Number(event.target.value))}
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
-              />
-            </label>
-          </div>
 
-          <label className="block space-y-1 text-xs text-muted-foreground">
-            冲突策略
-            <select
-              aria-label="冲突策略"
-              value="skip_existing"
-              disabled
-              className="h-8 w-full rounded-md border border-border bg-muted px-2 text-xs text-foreground"
-            >
-              <option value="skip_existing">跳过已有同轨迹框</option>
-            </select>
-          </label>
-
-          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            目标 F{range.start}–F{range.end} · {Math.max(0, range.count)} 个逻辑帧
-            {!targetValid && <span className="ml-2 text-status-danger">范围必须为 1–100 帧</span>}
-          </div>
-          {readOnly && (
-            <p className="text-xs text-status-caution">当前任务只读，不能启动写任务。</p>
-          )}
-          {sourceCount > 500 && (
-            <p className="text-xs text-status-caution">
-              单个任务最多传播 500 个 3D 框，请缩小已选范围。
-            </p>
-          )}
-          <Button variant="primary" size="sm" disabled={!canStart} onClick={start}>
-            {createMutation.isPending ? "提交中…" : "启动任务"}
-          </Button>
-        </section>
-
-        <section
-          className="min-h-64 border-t border-border pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0"
-          aria-label="跨帧任务历史"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">当前 Scene 作业</h3>
-            <Button size="xs" variant="ghost" onClick={() => void jobsQuery.refetch()}>
-              刷新
-            </Button>
-          </div>
-          {jobsQuery.isError ? (
-            <p className="text-xs text-status-danger">任务列表加载失败</p>
-          ) : jobs.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-              暂无跨帧任务
-            </p>
-          ) : (
-            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-              {jobs.map((job) => {
-                const active = job.status === "pending" || job.status === "running";
-                return (
-                  <article
-                    key={job.id}
-                    className="rounded-md border border-border bg-background p-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-foreground">{frameRange(job)}</span>
-                      <Badge variant={job.status === "failed" ? "warning" : "outline"}>
-                        {STATUS_LABEL[job.status]}
-                      </Badge>
-                      <span className="ml-auto text-2xs tabular-nums text-muted-foreground">
-                        {job.progress_pct}%
-                      </span>
-                    </div>
-                    <div className="mt-2">
-                      <ProgressBar value={job.progress_pct} />
-                    </div>
-                    <p className="mt-2 text-2xs text-muted-foreground">{jobSummary(job)}</p>
-                    {(active || hasRetryableFrames(job)) && (
-                      <div className="mt-2 flex justify-end gap-2">
-                        {active && (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            disabled={cancelMutation.isPending}
-                            onClick={() => cancelMutation.mutate(job.id)}
-                          >
-                            取消
-                          </Button>
-                        )}
-                        {!active && hasRetryableFrames(job) && (
-                          <Button
-                            size="xs"
-                            variant="default"
-                            disabled={retryMutation.isPending}
-                            onClick={() => retryMutation.mutate(job.id)}
-                          >
-                            重试失败帧
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              目标 F{range.start}–F{range.end} · {Math.max(0, range.count)} 个逻辑帧
+              {!targetValid && <span className="ml-2 text-status-danger">范围必须为 1–100 帧</span>}
             </div>
-          )}
-        </section>
-      </div>
+            {readOnly && (
+              <p className="text-xs text-status-caution">当前任务只读，不能启动写任务。</p>
+            )}
+            {sourceCount > 500 && (
+              <p className="text-xs text-status-caution">
+                单个任务最多传播 500 个 3D 框，请缩小已选范围。
+              </p>
+            )}
+            <Button variant="primary" size="sm" disabled={!canStart} onClick={start}>
+              {createMutation.isPending ? "提交中…" : "启动任务"}
+            </Button>
+          </section>
+
+          <section
+            className="min-h-64 border-t border-border pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0"
+            aria-label="跨帧任务历史"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">当前 Scene 作业</h3>
+              <Button size="xs" variant="ghost" onClick={() => void jobsQuery.refetch()}>
+                刷新
+              </Button>
+            </div>
+            {jobsQuery.isError ? (
+              <p className="text-xs text-status-danger">任务列表加载失败</p>
+            ) : jobs.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+                暂无跨帧任务
+              </p>
+            ) : (
+              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {jobs.map((job) => {
+                  const active = job.status === "pending" || job.status === "running";
+                  return (
+                    <article
+                      key={job.id}
+                      className="rounded-md border border-border bg-background p-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-foreground">
+                          {frameRange(job)}
+                        </span>
+                        <Badge variant={job.status === "failed" ? "warning" : "outline"}>
+                          {STATUS_LABEL[job.status]}
+                        </Badge>
+                        <span className="ml-auto text-2xs tabular-nums text-muted-foreground">
+                          {job.progress_pct}%
+                        </span>
+                      </div>
+                      <div className="mt-2">
+                        <ProgressBar value={job.progress_pct} />
+                      </div>
+                      <p className="mt-2 text-2xs text-muted-foreground">{jobSummary(job)}</p>
+                      {(active || hasRetryableFrames(job)) && (
+                        <div className="mt-2 flex justify-end gap-2">
+                          {active && (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              disabled={cancelMutation.isPending}
+                              onClick={() => cancelMutation.mutate(job.id)}
+                            >
+                              取消
+                            </Button>
+                          )}
+                          {!active && hasRetryableFrames(job) && (
+                            <Button
+                              size="xs"
+                              variant="default"
+                              disabled={retryMutation.isPending}
+                              onClick={() => retryMutation.mutate(job.id)}
+                            >
+                              重试失败帧
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : (
+        <TrackOperationsPanel
+          taskId={taskId}
+          currentFrame={currentFrame}
+          selectedTrackId={selectedTrackId}
+          readOnly={readOnly}
+        />
+      )}
     </Modal>
   );
 }

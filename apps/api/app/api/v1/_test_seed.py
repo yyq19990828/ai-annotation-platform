@@ -866,6 +866,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             display_id=f"T-E2E-LIDAR-{suffix}-{idx}",
             project_id=project.id,
             dataset_item_id=lidar_item.id,
+            sequence_order=idx,
             status="pending",
             file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
             file_path=pcd_keys[idx],

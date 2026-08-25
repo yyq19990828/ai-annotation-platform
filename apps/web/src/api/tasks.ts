@@ -145,6 +145,51 @@ export interface VideoTrackCompositionResponse {
   deleted_annotation_ids: string[];
 }
 
+export interface PointCloudTrackSummary {
+  track_id: string;
+  class_name: string;
+  member_count: number;
+  first_frame: number;
+  last_frame: number;
+}
+
+export type PointCloudTrackOperationRequest =
+  | {
+      operation: "split";
+      primary_track_id: string;
+      split_after_frame: number;
+    }
+  | {
+      operation: "merge";
+      primary_track_id: string;
+      secondary_track_id: string;
+    };
+
+export interface PointCloudTrackOperationCandidates {
+  contract_version: 1;
+  primary: PointCloudTrackSummary;
+  candidates: PointCloudTrackSummary[];
+  truncated: boolean;
+}
+
+export interface PointCloudTrackOperationPreview {
+  contract_version: 1;
+  operation: "split" | "merge";
+  scene_id: string;
+  scene_name: string | null;
+  primary: PointCloudTrackSummary;
+  secondary: PointCloudTrackSummary | null;
+  survivor_track_id: string;
+  affected_member_count: number;
+  rewritten_member_count: number;
+  snapshot_token: string;
+}
+
+export interface PointCloudTrackOperationResult extends PointCloudTrackOperationPreview {
+  created_track_id: string | null;
+  updated_member_count: number;
+}
+
 export interface VideoFrameTimetableParams {
   from?: number;
   to?: number;
@@ -335,6 +380,22 @@ export const tasksApi = {
       `/tasks/${taskId}/annotations/video/track-compositions`,
       payload,
     ),
+
+  listPointCloudTrackOperationCandidates: (taskId: string, trackId: string) =>
+    apiClient.get<PointCloudTrackOperationCandidates>(
+      `/tasks/${taskId}/track-operations/candidates?track_id=${encodeURIComponent(trackId)}`,
+    ),
+
+  previewPointCloudTrackOperation: (taskId: string, payload: PointCloudTrackOperationRequest) =>
+    apiClient.post<PointCloudTrackOperationPreview>(
+      `/tasks/${taskId}/track-operations/preview`,
+      payload,
+    ),
+
+  executePointCloudTrackOperation: (
+    taskId: string,
+    payload: PointCloudTrackOperationRequest & { snapshot_token: string },
+  ) => apiClient.post<PointCloudTrackOperationResult>(`/tasks/${taskId}/track-operations`, payload),
 
   submit: (id: string) => apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),
 

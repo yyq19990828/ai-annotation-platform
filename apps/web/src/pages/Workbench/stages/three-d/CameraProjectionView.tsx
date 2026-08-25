@@ -23,11 +23,16 @@ import type { SceneBox } from "./PointCloudScene";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
 const CAMERA_ITEM = "m-0 shrink-0";
-const CAMERA_VIEW = "relative inline-block min-h-24 w-[190px] bg-muted leading-none";
+const CAMERA_ITEM_EXPANDED = "w-fit max-w-full";
+const CAMERA_VIEW = "relative inline-block min-h-24 bg-muted leading-none";
+const CAMERA_VIEW_THUMBNAIL = "w-[190px]";
+const CAMERA_VIEW_EXPANDED = "w-fit max-w-full";
 const CAMERA_CANVAS = "absolute inset-0 cursor-pointer touch-none";
 const CAMERA_CANVAS_SEED = "cursor-crosshair";
 const CAMERA_CANVAS_BLOCKED = "cursor-wait";
-const CAMERA_IMG = "block w-[190px] h-auto object-cover";
+const CAMERA_IMG = "block";
+const CAMERA_IMG_THUMBNAIL = "h-auto w-[190px] object-cover";
+const CAMERA_IMG_EXPANDED = "h-[70vh] w-auto max-w-full object-contain";
 const CAMERA_LOADING =
   "absolute inset-0 flex items-center justify-center text-xs text-muted-foreground";
 const CAMERA_FIGCAPTION = "mt-1 text-xs text-muted-foreground text-center";
@@ -65,6 +70,8 @@ interface CameraProjectionViewProps {
   onCancelEditPsr?: (boxId: string, original: Psr) => void;
   /** 标定不可逆等异常只提示，不改变当前草稿。 */
   onEditError?: () => void;
+  /** 放大浮层使用内容宽度，并受父级可用空间约束；缩略图保持固定 190px。 */
+  expanded?: boolean;
 }
 
 // 一个框至少有这么多可见角点才参与命中测试(避免擦边框误选)。
@@ -108,6 +115,7 @@ export function CameraProjectionView({
   onEditPsr,
   onCancelEditPsr,
   onEditError,
+  expanded = false,
 }: CameraProjectionViewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -633,13 +641,15 @@ export function CameraProjectionView({
   );
 
   return (
-    <figure className={CAMERA_ITEM}>
-      <div className={CAMERA_VIEW}>
+    <figure className={`${CAMERA_ITEM} ${expanded ? CAMERA_ITEM_EXPANDED : ""}`}>
+      <div className={`${CAMERA_VIEW} ${expanded ? CAMERA_VIEW_EXPANDED : CAMERA_VIEW_THUMBNAIL}`}>
         <img
           ref={imgRef}
           src={imageUrl}
           alt={name}
-          className={`${CAMERA_IMG} ${imageReady ? "" : "opacity-0"}`}
+          className={`${CAMERA_IMG} ${
+            expanded ? CAMERA_IMG_EXPANDED : CAMERA_IMG_THUMBNAIL
+          } ${imageReady ? "" : "opacity-0"}`}
           loading="eager"
           decoding="async"
           onLoad={handleImgLoad}

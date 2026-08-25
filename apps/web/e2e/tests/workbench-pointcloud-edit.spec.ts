@@ -348,6 +348,68 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(runtimeErrors).toEqual([]);
   });
 
+  test("3D 轨迹拆分合并在同一任务中心完成预览与快照确认", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+    const previewBodies: Record<string, unknown>[] = [];
+    const executeBodies: Record<string, unknown>[] = [];
+    page.on("request", (request) => {
+      if (request.method() !== "POST") return;
+      const path = new URL(request.url()).pathname;
+      if (!/\/api\/v1\/tasks\/[^/]+\/track-operations(?:\/preview)?$/.test(path)) return;
+      const body = request.postDataJSON() as Record<string, unknown>;
+      if (path.endsWith("/preview")) previewBodies.push(body);
+      else executeBodies.push(body);
+    });
+    const runtimeErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") runtimeErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => runtimeErrors.push(error.message));
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${lidar.lidar_task_ids[0]}`);
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await card.click({ position: { x: 12, y: 16 } });
+    await page.getByTestId("scene-cross-frame-job-center").click();
+    const dialog = page.getByRole("dialog", { name: "3D 跨帧任务中心" });
+    await dialog.getByRole("tab", { name: "轨迹修正" }).click();
+    await expect(dialog.getByRole("region", { name: "3D 轨迹修正" })).toBeVisible();
+
+    await dialog.getByRole("button", { name: "预览影响" }).click();
+    await expect(dialog.getByText(/共更新 2 个成员/)).toBeVisible();
+    await dialog.getByRole("button", { name: "确认拆分" }).click();
+    await expect(page.getByText("轨迹已拆分")).toBeVisible();
+
+    await dialog.getByRole("button", { name: "合并轨迹" }).click();
+    const candidate = dialog.getByRole("combobox", { name: "合并候选轨迹" });
+    await expect(candidate).toBeEnabled();
+    const secondaryTrackId = await candidate.locator("option").nth(1).getAttribute("value");
+    expect(secondaryTrackId).toMatch(/^trk_/);
+    await candidate.selectOption(secondaryTrackId!);
+    await dialog.getByRole("button", { name: "预览影响" }).click();
+    await expect(dialog.getByText(/共更新 2 个成员/)).toBeVisible();
+    await dialog.getByRole("button", { name: "确认合并" }).click();
+    await expect(page.getByText("轨迹已合并")).toBeVisible();
+
+    expect(previewBodies).toHaveLength(2);
+    expect(previewBodies[0]).toMatchObject({
+      operation: "split",
+      split_after_frame: 0,
+    });
+    expect(previewBodies[1]).toMatchObject({
+      operation: "merge",
+      secondary_track_id: secondaryTrackId,
+    });
+    expect(executeBodies).toHaveLength(2);
+    expect(executeBodies.every((body) => /^[0-9a-f]{64}$/.test(String(body.snapshot_token)))).toBe(
+      true,
+    );
+    expect(runtimeErrors).toEqual([]);
+  });
+
   test("WebGPU 实验路径显示真实 backend，并复用 Worker 且不回读 Canvas", async ({
     page,
     seed,
@@ -563,6 +625,20 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect
       .poll(() => canvas.evaluate((el) => (el as HTMLCanvasElement).width))
       .toBeGreaterThan(0);
+
+    const modalBody = page.getByTestId("camera-modal-body");
+    const expandedImage = modalBody.getByRole("img");
+    const [modalBodyBounds, expandedImageBounds] = await Promise.all([
+      modalBody.boundingBox(),
+      expandedImage.boundingBox(),
+    ]);
+    if (!modalBodyBounds || !expandedImageBounds) {
+      throw new Error("放大相机布局 boundingBox 不可用");
+    }
+    expect(expandedImageBounds.x).toBeGreaterThanOrEqual(modalBodyBounds.x);
+    expect(expandedImageBounds.x + expandedImageBounds.width).toBeLessThanOrEqual(
+      modalBodyBounds.x + modalBodyBounds.width,
+    );
 
     const patches: Array<{
       geometry?: { type?: string; center?: number[]; size?: number[]; rotation?: number[] };

@@ -73,12 +73,10 @@ curl -s http://127.0.0.1:8000/health  # API 在线
 
 如果直连 :8000 能拿到 OPEN + msg，但通过 :3000 vite proxy 卡 CONNECTING，就是 vite proxy 问题。
 
-**修复**：前端统一通过 `buildWsUrl()` 选择连接地址：本机 `localhost` 开发态直连 API，从 LAN、Tailscale 或其它主机访问 DEV 页面时走页面同源 `/ws` 代理。`VITE_WS_HOST` 可显式覆盖，便于并行 worktree 使用不同 API 端口：
+**修复**：前端统一通过 `buildWsUrl()` 选择连接地址。浏览器开发态默认走页面同源 `/ws` 代理，本机、LAN、Tailscale 与 SSH LocalForward 因而使用相同路径；Vite 再按 `API_PROXY_TARGET` 转发到对应 API。只有刻意绕过 Vite proxy 时才用 `VITE_WS_HOST` 显式覆盖：
 
 ```ts
-const host =
-  import.meta.env.VITE_WS_HOST ||
-  (isLoopback(window.location.hostname) ? "localhost:8000" : window.location.host);
+const host = import.meta.env.VITE_WS_HOST || window.location.host;
 const url = `${proto}://${host}/ws/<name>?token=...`;
 ```
 
@@ -168,7 +166,7 @@ async def _my_async_task():
 
 前端：
 
-- [ ] hook 使用 `buildWsUrl()`；本地端口覆盖使用 `VITE_WS_HOST`
+- [ ] hook 使用 `buildWsUrl()`；Vite 后端端口使用 `API_PROXY_TARGET`，仅直连覆盖使用 `VITE_WS_HOST`
 - [ ] URL 是 `/ws/<name>` 不带 `/api/v1`
 - [ ] onclose code 1008 / 1006 区分鉴权失败 vs 网络断；不要静默兜底（v0.6.9 通知 bug 教训）
 - [ ] 加 e2e 或 hook 单测覆盖 URL 派发，避免 14 个月无人发现的二次重演
