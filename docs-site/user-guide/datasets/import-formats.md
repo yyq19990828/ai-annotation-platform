@@ -134,6 +134,9 @@ scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/us
 
 不走向导、直接灌进当前栈(MinIO + DB)。范例见 [`apps/api/scripts/seed_pointcloud.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/scripts/seed_pointcloud.py)(SUSTechPOINTS 示例)与下文 nuScenes 脚本。
 
+nuScenes 脚本会把 `sample_data` 中的相机像素宽高一并持久化；对已入库的同名 Scene 重跑时，
+仅回填缺失尺寸并保留原有任务和标注。宽高是相机投影、人工 2D 成员与投影残差的必要坐标基准。
+
 ## 标定 JSON schema
 
 `calib/camera/<cam>.json` 经 `SensorCalibration` 校验,三个字段:

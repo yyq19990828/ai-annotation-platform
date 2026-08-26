@@ -505,6 +505,8 @@ pnpm docs:media:audit -- --release
 初始化：`cd apps/api && uv run python scripts/seed.py`。首次运行会从官方地址下载
 nuScenes mini 到 `~/.cache/ai-annotation-platform/nuscenes-mini`（约 4 GB，支持断点续传），
 并导入 scene-0061 的 39 个关键帧；归档和解压内容都不会写入 Git 仓库。
+重跑 seed 会保留已有任务和标注，并从 nuScenes `sample_data` 幂等回填旧相机条目缺失的
+像素宽高，供 3D 投影、持久化 2D 成员和残差质检共用。
 
 ## 下一步计划
 

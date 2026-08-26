@@ -260,6 +260,9 @@ async def test_import_nuscenes_two_scenes(
     )
     assert len(items) == 14
     assert all(item.content_hash and len(item.content_hash) == 64 for item in items)
+    camera_items = [item for item in items if item.file_type == "image"]
+    assert camera_items
+    assert all((item.width, item.height) == (1, 1) for item in camera_items)
 
     # 2. DB 里 2 个 Scene 行,name 对应
     scenes = (
@@ -571,3 +574,52 @@ async def test_existing_ascii_scene_is_upgraded_in_place(
     assert item.file_size == len(upgraded)
     assert item.content_hash == hashlib.sha256(upgraded).hexdigest()
     assert dataset.metadata_["source"]["pcd_encoding"] == "binary_xyz_f32"
+
+
+async def test_existing_scene_backfills_missing_camera_dimensions(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=2)
+    monkeypatch.setattr(storage_service, "client", _FakeS3Client())
+
+    first = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-dimensions",
+        owner_id=user.id,
+    )
+    camera_items = list(
+        (
+            await db_session.execute(
+                select(DatasetItem)
+                .where(DatasetItem.dataset_id == first["dataset_id"])
+                .where(DatasetItem.file_type == "image")
+            )
+        ).scalars()
+    )
+    assert len(camera_items) == 2
+    for item in camera_items:
+        item.width = None
+        item.height = None
+    await db_session.flush()
+
+    second = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-dimensions",
+        owner_id=user.id,
+    )
+
+    assert [(item.width, item.height) for item in camera_items] == [(1, 1), (1, 1)]
+    assert second["scenes"] == [
+        {
+            "name": "scene-0000",
+            "frames": 2,
+            "skipped": True,
+            "backfilled_camera_dimensions": 2,
+        }
+    ]

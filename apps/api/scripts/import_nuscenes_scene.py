@@ -106,6 +106,17 @@ def _index_by_token(rows: list[dict]) -> dict[str, dict]:
     return {row["token"]: row for row in rows}
 
 
+def _camera_dimensions(sample_data: dict) -> tuple[int, int]:
+    width = int(sample_data.get("width") or 0)
+    height = int(sample_data.get("height") or 0)
+    if width <= 0 or height <= 0:
+        raise ValueError(
+            f"nuScenes camera sample_data {sample_data.get('token')!r} "
+            "has no valid width/height"
+        )
+    return width, height
+
+
 # --------------------------------------------------------------------------- #
 # 几何:四元数 wxyz → 旋转矩阵;变换矩阵组装;lidar→camera 外参链
 # --------------------------------------------------------------------------- #
@@ -381,11 +392,42 @@ async def import_nuscenes(
 
         if scene_name in existing_scenes:
             # 幂等:同名 scene 已建过时保留 task / annotation；旧 ASCII PCD
-            # 只原位覆盖对象并同步 DB 大小与哈希。
+            # 只原位覆盖对象并同步 DB 大小与哈希；同时为旧相机条目
+            # 回填 nuScenes sample_data 中的像素尺寸，让投影与 2D 成员有可靠坐标基准。
             samples = _ordered_samples(scene_row, samples_by_token)
+            scene = existing_scenes[scene_name]
+            camera_items = list(
+                (
+                    await db.execute(
+                        select(DatasetItem)
+                        .where(DatasetItem.dataset_id == ds.id)
+                        .where(DatasetItem.scene_id == scene.id)
+                        .where(DatasetItem.file_type == "image")
+                    )
+                ).scalars()
+            )
+            camera_by_path = {item.file_path: item for item in camera_items}
+            backfilled_camera_dimensions = 0
+            for frame_idx, sample in enumerate(samples):
+                frame_stem = f"{scene_name}_{frame_idx:06d}"
+                by_channel = _key_sample_data_by_channel(
+                    sample["token"], sample_data, cs_by_token, sensor_by_token
+                )
+                for channel, sd in by_channel.items():
+                    cs = cs_by_token[sd["calibrated_sensor_token"]]
+                    if sensor_by_token[cs["sensor_token"]]["modality"] != "camera":
+                        continue
+                    camera_key = (
+                        f"{dataset_name}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
+                    )
+                    item = camera_by_path.get(camera_key)
+                    if item is None or (item.width and item.height):
+                        continue
+                    item.width, item.height = _camera_dimensions(sd)
+                    backfilled_camera_dimensions += 1
+
             upgraded_point_clouds = 0
             if needs_pcd_upgrade:
-                scene = existing_scenes[scene_name]
                 lidar_items = list(
                     (
                         await db.execute(
@@ -444,6 +486,8 @@ async def import_nuscenes(
             report = {"name": scene_name, "frames": len(samples), "skipped": True}
             if upgraded_point_clouds:
                 report["upgraded_point_clouds"] = upgraded_point_clouds
+            if backfilled_camera_dimensions:
+                report["backfilled_camera_dimensions"] = backfilled_camera_dimensions
             report_scenes.append(report)
             continue
 
@@ -534,6 +578,7 @@ async def import_nuscenes(
                 storage_service.client.put_object(
                     Bucket=bucket, Key=cam_key, Body=jpg_bytes
                 )
+                camera_width, camera_height = _camera_dimensions(sd)
                 cam_item = DatasetItem(
                     dataset_id=ds.id,
                     file_name=f"{frame_stem}.jpg",
@@ -541,6 +586,8 @@ async def import_nuscenes(
                     file_type="image",
                     file_size=len(jpg_bytes),
                     content_hash=hashlib.sha256(jpg_bytes).hexdigest(),
+                    width=camera_width,
+                    height=camera_height,
                 )
                 db.add(cam_item)
                 await db.flush()  # 拿 id 以填 shared_frame_items

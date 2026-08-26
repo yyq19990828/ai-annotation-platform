@@ -3198,6 +3198,21 @@ export function ThreeDWorkbench({
                     <span className="font-medium">多相机 2D 成员</span>
                     {cameraMembers.query.isLoading ? (
                       <span className="text-muted-foreground">读取中…</span>
+                    ) : cameraMembers.query.isError ? (
+                      <span
+                        role="alert"
+                        className="text-status-caution"
+                        title={
+                          cameraMembers.query.error instanceof Error
+                            ? cameraMembers.query.error.message
+                            : "请检查相机标定与图像尺寸"
+                        }
+                      >
+                        2D 成员不可用：
+                        {cameraMembers.query.error instanceof Error
+                          ? cameraMembers.query.error.message
+                          : "上下文读取失败"}
+                      </span>
                     ) : (
                       <>
                         <button
