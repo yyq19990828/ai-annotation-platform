@@ -275,7 +275,9 @@ export function SceneTimeline({
     if (!summary.task_id || summary.task_id === taskId) return;
     setNavigatingTaskId(summary.task_id);
     try {
-      await prefetchFrame(summary);
+      // 预热只用于缩短目标帧就绪时间，不能成为切帧导航的前置门禁。慢 PCD
+      // 请求会被资产缓存复用，导航则应立即更新 task/URL 并展示显式 loading。
+      void prefetchFrame(summary);
       const allowed = await onNavigateFrame(
         summary.task_id,
         summary.selected_track?.annotation_id ?? null,

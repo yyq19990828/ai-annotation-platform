@@ -138,7 +138,7 @@ describe("SceneTimeline", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-1", "ann-1"));
   });
 
-  it("waits for the target frame prefetch before switching tasks", async () => {
+  it("does not block task navigation on a slow target frame prefetch", async () => {
     let finishTargetPrefetch!: () => void;
     const targetPrefetch = new Promise<void>((resolve) => {
       finishTargetPrefetch = resolve;
@@ -156,11 +156,9 @@ describe("SceneTimeline", () => {
     );
 
     fireEvent.click(screen.getByTestId("scene-timeline-frame-1"));
-    expect(navigate).not.toHaveBeenCalled();
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-1", "ann-1"));
 
     finishTargetPrefetch();
-
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-1", "ann-1"));
   });
 
   it("starts warming the following frame as soon as navigation succeeds", async () => {

@@ -336,13 +336,13 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     sceneRef.current?.setBoxes(boxes);
   }, [boxes, rendererReadyVersion, sceneRef]);
 
-  // 选中框时挂变换 gizmo,取消选中时脱离(依赖 boxes 以确保 setBoxes 已建好该组);只读/锁定不挂。
+  // 选中框时挂变换 gizmo,取消选中时脱离；同一次 render 中 setBoxes effect 先执行。
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
     if (selectedId && selectedPsrEditable) scene.attachTransform(selectedId);
     else scene.detachTransform();
-  }, [selectedId, boxes, selectedPsrEditable, rendererReadyVersion, sceneRef]);
+  }, [boxes, selectedId, selectedPsrEditable, rendererReadyVersion, sceneRef]);
 
   // W/E/R 切 gizmo 模式(仅选中且可编辑时;焦点在输入框时不拦截)。
   useEffect(() => {

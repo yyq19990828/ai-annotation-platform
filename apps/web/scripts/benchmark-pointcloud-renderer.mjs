@@ -500,8 +500,20 @@ async function runMode(browser, token, user, mode) {
     const initialRgbMs = (await waitForTimingPhase(page, "camera-color-ready")).at;
     const backendBadge = page.getByTestId("pointcloud-renderer-backend");
     const actualBackend = await backendBadge.getAttribute("data-backend");
+    const rendererViewport = page.getByTestId("pc-viewport");
+    const rendererOwnerCount = Number(
+      (await rendererViewport.getAttribute("data-pointcloud-renderer-count")) ?? "0",
+    );
 
     const idleRaf = await sampleAnimationFrames(page);
+    await page.waitForTimeout(300);
+    const idleSubmitBefore = Number(
+      (await rendererViewport.getAttribute("data-pointcloud-submit-count")) ?? "0",
+    );
+    await page.waitForTimeout(300);
+    const idleSubmitAfter = Number(
+      (await rendererViewport.getAttribute("data-pointcloud-submit-count")) ?? "0",
+    );
     let refinement = null;
     const refinementReopen = [];
     const firstBox = page.locator('[data-testid^="box-list-item-"]').first();
@@ -522,11 +534,9 @@ async function runMode(browser, token, user, mode) {
       await waitForTwoFrames(page);
       const measureRefinement = async (label) => {
         const diagnosticsStartedAt = await beginFrameDiagnostics(page, `${mode}:${label}`);
-        const rendererPanel = page.getByTestId("tri-view-renderer-panel");
-        const activeRenderCountBefore =
-          (await rendererPanel.count()) > 0
-            ? Number((await rendererPanel.getAttribute("data-tri-view-active-render-count")) ?? "0")
-            : 0;
+        const activeRenderCountBefore = Number(
+          (await rendererViewport.getAttribute("data-pointcloud-tri-pass-count")) ?? "0",
+        );
         const startedAt = await page
           .getByRole("button", { name: "框体精修" })
           .evaluate((button) => {
@@ -536,13 +546,13 @@ async function runMode(browser, token, user, mode) {
           });
         await page.getByText("三视图精修").waitFor({ state: "visible" });
         await page.waitForFunction((previousCount) => {
-          const panel = document.querySelector('[data-testid="tri-view-renderer-panel"]');
+          const viewport = document.querySelector('[data-testid="pc-viewport"]');
           return (
-            Number(panel?.getAttribute("data-tri-view-active-render-count") ?? "0") > previousCount
+            Number(viewport?.getAttribute("data-pointcloud-tri-pass-count") ?? "0") > previousCount
           );
         }, activeRenderCountBefore);
         const firstFrameAt = Number(
-          await rendererPanel.getAttribute("data-tri-view-active-render-at"),
+          await rendererViewport.getAttribute("data-pointcloud-tri-active-render-at"),
         );
         const openMs = firstFrameAt - startedAt;
         const raf = await sampleAnimationFrames(page);
@@ -598,6 +608,8 @@ async function runMode(browser, token, user, mode) {
         stages: summarizeStages(warm),
       },
       idleRaf,
+      rendererOwnerCount,
+      idleSubmitDelta: idleSubmitAfter - idleSubmitBefore,
       refinement,
       refinementReopen,
       workerCount: await page.evaluate(() => window.__pointCloudWorkerCount ?? 0),

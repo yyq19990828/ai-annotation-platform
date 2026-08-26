@@ -357,7 +357,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     page.on("request", (request) => {
       if (request.method() !== "POST") return;
       const path = new URL(request.url()).pathname;
-      if (!/\/api\/v1\/tasks\/[^/]+\/track-operations(?:\/preview)?$/.test(path)) return;
+      if (!/\/api\/v1\/tasks\/[^/]+\/scene-track-commands\/(?:preview|execute)$/.test(path)) {
+        return;
+      }
       const body = request.postDataJSON() as Record<string, unknown>;
       if (path.endsWith("/preview")) previewBodies.push(body);
       else executeBodies.push(body);
@@ -375,32 +377,32 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await card.click({ position: { x: 12, y: 16 } });
     await page.getByTestId("scene-cross-frame-job-center").click();
     const dialog = page.getByRole("dialog", { name: "3D 跨帧任务中心" });
-    await dialog.getByRole("tab", { name: "轨迹修正" }).click();
-    await expect(dialog.getByRole("region", { name: "3D 轨迹修正" })).toBeVisible();
+    await dialog.getByRole("tab", { name: "轨迹生命周期" }).click();
+    await expect(dialog.getByRole("region", { name: "3D 轨迹生命周期" })).toBeVisible();
 
     await dialog.getByRole("button", { name: "预览影响" }).click();
-    await expect(dialog.getByText(/共更新 2 个成员/)).toBeVisible();
+    await expect(dialog.getByText(/影响 2 个成员/)).toBeVisible();
     await dialog.getByRole("button", { name: "确认拆分" }).click();
-    await expect(page.getByText("轨迹已拆分")).toBeVisible();
+    await expect(dialog.getByText(/^拆分 ·/)).toBeVisible();
 
-    await dialog.getByRole("button", { name: "合并轨迹" }).click();
+    await dialog.getByRole("button", { name: "合并", exact: true }).click();
     const candidate = dialog.getByRole("combobox", { name: "合并候选轨迹" });
     await expect(candidate).toBeEnabled();
     const secondaryTrackId = await candidate.locator("option").nth(1).getAttribute("value");
     expect(secondaryTrackId).toMatch(/^trk_/);
     await candidate.selectOption(secondaryTrackId!);
     await dialog.getByRole("button", { name: "预览影响" }).click();
-    await expect(dialog.getByText(/共更新 2 个成员/)).toBeVisible();
+    await expect(dialog.getByText(/影响 2 个成员/)).toBeVisible();
     await dialog.getByRole("button", { name: "确认合并" }).click();
-    await expect(page.getByText("轨迹已合并")).toBeVisible();
+    await expect(dialog.getByText(/^合并 ·/)).toBeVisible();
 
     expect(previewBodies).toHaveLength(2);
     expect(previewBodies[0]).toMatchObject({
-      operation: "split",
-      split_after_frame: 0,
+      kind: "split",
+      frame_index: 0,
     });
     expect(previewBodies[1]).toMatchObject({
-      operation: "merge",
+      kind: "merge",
       secondary_track_id: secondaryTrackId,
     });
     expect(executeBodies).toHaveLength(2);
@@ -518,13 +520,15 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await card.click({ position: { x: 12, y: 16 } });
     await page.getByRole("button", { name: "框体精修" }).click();
     await expect(page.getByText("三视图精修")).toBeVisible();
+    const pointCloudViewport = page.getByTestId("pc-viewport");
+    const rendererCanvas = pointCloudViewport.locator(":scope > canvas");
+    await expect(rendererCanvas).toHaveCount(1);
+    await expect(
+      page.getByTestId("tri-view-renderer-panel").locator(":scope > canvas"),
+    ).toHaveCount(0);
     if (process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1") {
       await expect(backendBadge).toHaveText("WebGPU");
-      const triRendererCanvas = page
-        .getByTestId("tri-view-renderer-panel")
-        .locator(":scope > canvas");
-      await expect(triRendererCanvas).toHaveCount(1);
-      await triRendererCanvas.evaluate((canvas) => {
+      await rendererCanvas.evaluate((canvas) => {
         canvas.dataset.beforeDeviceLoss = "true";
       });
 
@@ -1015,25 +1019,53 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     );
     const cards = page.locator('[data-testid^="box-list-item-"]');
     await expect(cards).toHaveCount(2, { timeout: 10_000 });
+    await expect
+      .poll(() =>
+        cards.evaluateAll((elements) =>
+          elements.every(
+            (element) => !element.getAttribute("data-testid")?.startsWith("box-list-item-tmp_"),
+          ),
+        ),
+      )
+      .toBe(true);
+    const cardTestIds = await cards.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-testid") ?? ""),
+    );
+    const firstCard = page.getByTestId(cardTestIds[0]);
+    const secondCard = page.getByTestId(cardTestIds[1]);
 
-    await cards.first().click({ position: { x: 12, y: 16 } });
+    await firstCard.click({ position: { x: 12, y: 16 } });
+    await expect(firstCard).toHaveClass(/border-brand/);
     const top = page.getByLabel(/^俯视精修视图/);
     await expect(top).toHaveAttribute("aria-label", /缩放 100%/);
     for (let i = 0; i < 3; i += 1) {
       await top.dispatchEvent("wheel", { deltaY: -20, deltaMode: 0 });
     }
     await expect(top).toHaveAttribute("aria-label", /缩放 100%/);
+    const mainPassBeforeTriZoom = await page
+      .getByTestId("pc-viewport")
+      .evaluate((element) => Number((element as HTMLElement).dataset.pointcloudMainPassCount ?? 0));
     await top.dispatchEvent("wheel", { deltaY: -20, deltaMode: 0 });
     await expect(top).toHaveAttribute("aria-label", /缩放 112%/);
+    await expect
+      .poll(() =>
+        page
+          .getByTestId("pc-viewport")
+          .evaluate((element) =>
+            Number((element as HTMLElement).dataset.pointcloudMainPassCount ?? 0),
+          ),
+      )
+      .toBeGreaterThan(mainPassBeforeTriZoom);
 
-    await cards.nth(1).click({ position: { x: 12, y: 16 } });
+    await secondCard.click({ position: { x: 12, y: 16 } });
+    await expect(secondCard).toHaveClass(/border-brand/);
     await expect(page.getByLabel(/^俯视精修视图/)).toHaveAttribute("aria-label", /缩放 100%/);
     const side = page.getByLabel(/^侧视精修视图/);
     await side.focus();
     await page.keyboard.press("=");
     await expect(side).toHaveAttribute("aria-label", /缩放 112%/);
 
-    await cards.first().click({ position: { x: 12, y: 16 } });
+    await firstCard.click({ position: { x: 12, y: 16 } });
     await expect(page.getByLabel(/^俯视精修视图/)).toHaveAttribute("aria-label", /缩放 112%/);
     await expect(page.getByLabel(/^侧视精修视图/)).toHaveAttribute("aria-label", /缩放 100%/);
   });
@@ -1212,13 +1244,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       .not.toBe(JSON.stringify(defaultView));
     const before = await waitForPointCloudViewStable(page);
 
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes(`/tasks/${secondTaskId}/point-cloud/manifest`) && response.ok(),
-    );
     await page.getByText(/e2e-lidar-.*-1\.pcd/, { exact: true }).click();
-    await responsePromise;
     await expect.poll(() => page.url()).toContain(secondTaskId);
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     const after = await waitForPointCloudViewStable(page);
     expectPointCloudViewStateClose(after, before);
   });

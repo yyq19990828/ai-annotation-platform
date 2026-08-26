@@ -36,6 +36,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 3D 主透视视图与 Top / Side / Front 精修视图改由同一个 renderer、canvas 和图形 context 调度，共享点云 GPU attribute、相机纹理、backend 与 device-lost 生命周期；主视图停止永久 RAF，只有相机阻尼或可见状态实际变化时才提交渲染。
+
+### Fixed
+
+- 三视图浮窗移动、缩放、折叠、展开及框体实时调整现在统一从主 canvas 的 client rect 换算 scissor viewport，不再因两套 renderer 的 DPR、原点或资源更新时序不同出现点框错位、内容丢失和 backend 状态分叉。
+- 缩放三视图时会先恢复主 Scene 再提交正交 pass，浮窗半像素布局抖动也不再反复唤醒渲染；主视图不会黑屏，空闲提交能正常归零。
+- 放大相机视图时，共享 renderer canvas 会只将三视图面板矩形裁剪并提升到相机浮层之上，点云、编辑框与控件不再出现分层。
+- Scene 时间轴切帧不再等待慢 PCD 预热完成才更新 task；同 Scene 恢复相机时会先清除 OrbitControls 阻尼残量，避免跨帧视角继续漂移。
+
 ## [0.24.11] - 2026-08-25
 
 ### Added

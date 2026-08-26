@@ -90,6 +90,8 @@ Scene 时间轴标题栏的「跨帧任务」会打开当前 Scene 的 3D 跨帧
 
 该开关用于在同一套真实任务上对比切帧、选框和三视图性能。初始化失败或运行时设备丢失会自动回到 Legacy，不影响当前标注数据。在真实 nuScenes A/B 和多设备验证确认有效前，它不会成为默认功能。
 
+无论使用哪个实际 backend，主透视视图与三个精修视图都由同一块渲染画布驱动。静止且没有加载、相机或标注变化时，渲染器会停止提交；移动主视角、调整框体、缩放或移动三视图浮窗会按需唤醒对应视图。状态栏只显示这一个 renderer 的真实 backend，因此主视图与三视图不会出现不同的 fallback 状态。
+
 ### 深度热力图
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/workbench/pointcloud-depth-heatmap.png — 深度热力图 + figcaption 深度读数 [manual] -->

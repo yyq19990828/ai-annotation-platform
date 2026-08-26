@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BoxPsr, PointCloudViewState } from "./PointCloudScene";
+import type { BoxPsr, PointCloudViewState, SceneBox } from "./PointCloudScene";
 
 const mockState = vi.hoisted(() => {
   const initialView = {
@@ -182,6 +182,55 @@ describe("usePointCloudScene camera continuity", () => {
 
     act(() => handler("box-1", psr, true));
     expect(onTransformCommit).toHaveBeenCalledWith("box-1", psr);
+    render.unmount();
+  });
+
+  it("选中框数据延迟到达时重新挂载变换 gizmo", async () => {
+    const container = document.createElement("div");
+    const sceneRef = { current: null };
+    let boxes: SceneBox[] = [];
+    const render = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: container },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: undefined,
+        continuityKey: "scene-late-selected-box",
+        axisConvention: "iso_8855",
+        boxes,
+        selectedId: "box-1",
+        selectedPsrEditable: true,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(mockState.instances).toHaveLength(1));
+    const scene = mockState.instances[0];
+    await waitFor(() => expect(scene.attachTransform).toHaveBeenCalledWith("box-1"));
+    scene.attachTransform.mockClear();
+
+    boxes = [
+      {
+        id: "box-1",
+        center: [1, 2, 3],
+        size: [4, 2, 1.5],
+        rotation: [0, 0, 0.2],
+        color: "#22c55e",
+        selected: true,
+      },
+    ];
+    render.rerender();
+
+    await waitFor(() => expect(scene.setBoxes).toHaveBeenLastCalledWith(boxes));
+    expect(scene.attachTransform).toHaveBeenCalledWith("box-1");
     render.unmount();
   });
 

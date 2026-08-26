@@ -332,10 +332,6 @@ export function ThreeDWorkbench({
   const [rendererMode] = useState(() =>
     pointCloudRendererModeFromExperiment(readPointCloudWebGpuExperiment()),
   );
-  const [triRendererStatus, setTriRendererStatus] = useState<PointCloudRendererStatus | null>(null);
-  const handleTriRendererStatus = useCallback((status: PointCloudRendererStatus) => {
-    setTriRendererStatus(status);
-  }, []);
   const performanceConfig = useMemo(
     () => resolveWorkbenchPerformanceTier(workbenchCommon.performanceTier),
     [workbenchCommon.performanceTier],
@@ -391,8 +387,7 @@ export function ThreeDWorkbench({
   const [neighborMovedCount, setNeighborMovedCount] = useState(0);
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
-  const [cameraTextureResources, setCameraTextureResources] =
-    useState<CameraTextureResources | null>(null);
+  const [, setCameraTextureResources] = useState<CameraTextureResources | null>(null);
   const colorizedRawRef = useRef<Float32Array | null>(null);
   const adjustedColorBufferRef = useRef<Float32Array | null>(null);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
@@ -467,6 +462,7 @@ export function ThreeDWorkbench({
     () => resolveTriViewFloatRect(triViewFloat, effectiveRightSidebarWidth),
     [effectiveRightSidebarWidth, triViewFloat],
   );
+  const triViewLayoutKey = `${triFloatPosition.x}:${triFloatPosition.y}:${triFloatPosition.w}:${triFloatPosition.h}`;
   const updateTriViewFloat = useCallback(
     (patch: Partial<FloatingPanelRect> & { collapsed?: boolean }) => {
       onWorkbenchLayoutChange({
@@ -1771,6 +1767,13 @@ export function ThreeDWorkbench({
     () => (enlargedIndex >= 0 ? cameras[enlargedIndex] : null),
     [cameras, enlargedIndex],
   );
+  const triViewElevated = enlargedCam !== null;
+  useLayoutEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.setTriViewElevated(triViewElevated);
+    return () => scene.setTriViewElevated(false);
+  }, [rendererStatus?.actualBackend, triViewElevated]);
   const cycleEnlargedCamera = useCallback(
     (dir: -1 | 1) => {
       if (cameras.length === 0) return;
@@ -2210,9 +2213,6 @@ export function ThreeDWorkbench({
   }, [selectedBox, cameras]);
   const bestCameraRole = selectedCameraVis[0]?.role ?? null;
 
-  // v0.13.5 · 三视图复用主场景点 geometry (零拷贝); selected 仅在 PSR/色变化时换引用,
-  // 避免每次 render 触发 TriViewRenderer.setBox。
-  const getPointsGeometry = useCallback(() => sceneRef.current?.getPointsGeometry() ?? null, []);
   const [triZoomByAnnotation, setTriZoomByAnnotation] = useState(
     () => new Map<string, Record<TriView, number>>(),
   );
@@ -2248,24 +2248,6 @@ export function ThreeDWorkbench({
         : null,
     [selectedBox, multiBoxSelected],
   );
-  // 实验 renderer 在空闲的折叠态用首个框完成首帧管线提交，避免用户第一次打开精修时编译。
-  // Legacy 只在浮窗展开时挂载，避免单纯选中框也抢占第二个 WebGL context。
-  const triRendererSelected = useMemo<TriSelected | null>(() => {
-    if (rendererMode !== "webgpu-experimental") {
-      return triViewFloat.collapsed ? null : triSelected;
-    }
-    if (triSelected) return triSelected;
-    const fallback = boxes[0];
-    return fallback
-      ? {
-          center: fallback.center,
-          size: fallback.size,
-          rotation: fallback.rotation,
-          color: fallback.color,
-        }
-      : null;
-  }, [boxes, rendererMode, triSelected, triViewFloat.collapsed]);
-
   // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
   // 松手 (commit=true) 走与 gizmo 同一条 PATCH 管线持久化, 并清草稿 (乐观更新已写入缓存)。
   const handleEditPsr = useCallback(
@@ -2553,11 +2535,6 @@ export function ThreeDWorkbench({
             title={rendererError ?? rendererStatus?.fallbackReason ?? undefined}
           >
             {rendererError ? "Renderer 不可用" : rendererBackendLabel(rendererStatus)}
-            {!rendererError &&
-            triRendererStatus &&
-            triRendererStatus.actualBackend !== rendererStatus?.actualBackend
-              ? ` · 三视图 ${rendererBackendLabel(triRendererStatus)}`
-              : ""}
           </Badge>
           {stats && (
             <span data-testid="pointcloud-stats">
@@ -2847,7 +2824,7 @@ export function ThreeDWorkbench({
         )}
 
         {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
-        {triRendererSelected && (
+        {triSelected && (
           <FloatingPanelShell
             title="三视图精修"
             position={triFloatPosition}
@@ -2858,22 +2835,19 @@ export function ThreeDWorkbench({
             minSize={{ w: 200, h: 240 }}
             maxSize={{ w: 480, h: 720 }}
             bounds={triFloatBounds}
+            className="!bg-transparent [&>div:nth-of-type(2)]:!bg-transparent"
           >
-            <TriViewPanel
-              selected={triRendererSelected}
-              getPointsGeometry={getPointsGeometry}
-              pointsReady={!!stats}
-              editable={!!triSelected && selectedPsrEditable}
-              pointSize={pointSize}
-              rendererMode={rendererMode}
-              onRendererStatus={handleTriRendererStatus}
-              active={!!triSelected && !triViewFloat.collapsed}
-              cameraTextureSamples={cameraTextureResources?.samples ?? null}
-              cameraColorAdjust={colorAdjust}
-              zoomByView={triZoomByView}
-              onZoomChange={handleTriZoomChange}
-              onEditPsr={handleEditPsr}
-            />
+            {!triViewFloat.collapsed && (
+              <TriViewPanel
+                scene={sceneRef.current}
+                selected={triSelected}
+                editable={!!triSelected && selectedPsrEditable}
+                layoutKey={triViewLayoutKey}
+                zoomByView={triZoomByView}
+                onZoomChange={handleTriZoomChange}
+                onEditPsr={handleEditPsr}
+              />
+            )}
           </FloatingPanelShell>
         )}
         {triSelected && triViewFloat.collapsed && (

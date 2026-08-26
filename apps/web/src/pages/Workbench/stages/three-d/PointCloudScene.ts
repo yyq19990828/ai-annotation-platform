@@ -12,7 +12,14 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import type { LidarAxisConvention } from "./geometry/axisConvention";
 import { isPointInPolygon, type ScreenPoint } from "./geometry/pointInPolygon";
 import { framePerspectiveBox } from "./geometry/viewFraming";
+import type { Psr, TriView } from "./geometry/triview";
 import { loadTimedDecodedPointCloudFrame } from "./pointCloudAssetCache";
+import {
+  clientRectToCanvasClipPath,
+  PointCloudTriViewPass,
+  type ClientRectSnapshot,
+  type TriViewClientLayout,
+} from "./PointCloudTriViewPass";
 import {
   createPointCloudRenderer,
   disposePointCloudRenderer,
@@ -27,6 +34,13 @@ import {
 } from "./rendering/webgpuPointCloudLayer";
 import type { GpuCameraTextureSample } from "./rendering/cameraTextureColorNode";
 import type { ColorAdjust } from "./geometry/colorize";
+import {
+  POINT_CLOUD_RENDER_ALL,
+  POINT_CLOUD_RENDER_MAIN,
+  POINT_CLOUD_RENDER_TRI,
+  PointCloudRenderScheduler,
+  resolvePointCloudRenderPlan,
+} from "./rendering/pointCloudRenderScheduler";
 
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
@@ -144,7 +158,13 @@ export class PointCloudScene {
   private renderedPointCount = 0;
   // v0.13.6 · 载帧时存的原色(高度色带),相机上色关闭时还原。
   private baseColors: Float32Array | null = null;
-  private raf = 0;
+  private renderScheduler!: PointCloudRenderScheduler;
+  private readonly triViewPass: PointCloudTriViewPass;
+  private triViewLayout: TriViewClientLayout | null = null;
+  private triViewElevated = false;
+  private renderSubmitCount = 0;
+  private mainPassCount = 0;
+  private triPassCount = 0;
   private disposed = false;
   private container: HTMLElement;
 
@@ -152,6 +172,7 @@ export class PointCloudScene {
   // 用 boxToMatrix4 设矩阵。共享单位几何(边长 1),材质按框单独建(颜色不同)。
   private boxLayer = new THREE.Group();
   private boxGroups = new Map<string, THREE.Group>();
+  private boxSignature = "";
   private readonly unitEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
   private readonly unitBox = new THREE.BoxGeometry(1, 1, 1);
   private readonly raycaster = new THREE.Raycaster();
@@ -166,6 +187,7 @@ export class PointCloudScene {
   // pickBox 只遍历 boxGroups), 仅作时序连续性参考。切 selectedGroupId / overlay K 时整层重建。
   private referenceLayer = new THREE.Group();
   private referenceBoxes: THREE.LineSegments[] = [];
+  private referenceBoxSignature = "";
 
   // v0.15.18 · 邻帧点云叠加图层:各邻帧点云经 ego 补偿(对象矩阵)对齐到当前帧 ego 系,
   // 弱化单色 + 低透明,与当前帧点区分。切帧 / 关开关时整层重建并 dispose。
@@ -229,10 +251,29 @@ export class PointCloudScene {
 
     this.renderer = surface.renderer;
     this.rendererStatus = surface.status;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(w, h);
     this.renderer.setClearColor(0x0b0d12, 1);
+    if ("localClippingEnabled" in this.renderer) {
+      (
+        this.renderer as PointCloudRenderer & {
+          localClippingEnabled: boolean;
+        }
+      ).localClippingEnabled = true;
+    }
     container.appendChild(this.renderer.domElement);
+    // canvas 绝对填满 viewport，不建立额外布局；相机大图开启时可只提升
+    // 三视图面板矩形，其余主视图仍由 modal 遮住。
+    this.renderer.domElement.style.position = "absolute";
+    this.renderer.domElement.style.inset = "0";
+    this.triViewPass = new PointCloudTriViewPass(this.rendererStatus.actualBackend, pixelRatio);
+    if (import.meta.env.DEV) {
+      this.container.dataset.pointcloudRendererCount = "1";
+      this.container.dataset.pointcloudSubmitCount = "0";
+      this.container.dataset.pointcloudMainPassCount = "0";
+      this.container.dataset.pointcloudTriPassCount = "0";
+    }
 
     this.scene = new THREE.Scene();
 
@@ -246,6 +287,7 @@ export class PointCloudScene {
     this.setOrbitMouseMode("orbit");
     this.controls.addEventListener("change", () => {
       this.onViewChange?.(this.getViewState());
+      this.invalidateMain("orbit-controls");
     });
 
     // 网格地平面参考(xy 平面)。
@@ -263,6 +305,7 @@ export class PointCloudScene {
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
     this.transform.setSpace("local");
     this.transform.addEventListener("objectChange", () => {
+      this.invalidateMain("transform-object");
       if (!this.transformDragging) return;
       this.transformChangedDuringDrag = true;
       this.emitTransform(false);
@@ -277,10 +320,12 @@ export class PointCloudScene {
         this.suppressClickAfterDrag = true;
         if (this.transformChangedDuringDrag) this.emitTransform(true);
       }
+      this.invalidateMain("transform-dragging");
     });
     this.scene.add(this.transform.getHelper());
 
-    this.animate();
+    this.renderScheduler = new PointCloudRenderScheduler(this.renderFrame);
+    this.invalidateAll("scene-init");
   }
 
   getRendererStatus(): PointCloudRendererStatus {
@@ -295,13 +340,73 @@ export class PointCloudScene {
     this.decimateThreshold = Math.max(1, Math.round(value));
   }
 
-  private animate = () => {
-    if (this.disposed) return;
-    this.raf = requestAnimationFrame(this.animate);
-    this.controls.update();
-    this.updateTransformSize();
-    this.renderer.render(this.scene, this.camera);
-    this.renderAxisGizmo();
+  private markInvalidation(reason: string): void {
+    if (!import.meta.env.DEV) return;
+    this.container.dataset.pointcloudLastInvalidateReason = reason;
+    this.container.dataset.pointcloudLastInvalidateAt = String(performance.now());
+  }
+
+  private invalidateMain(reason = "main-state"): void {
+    if (this.disposed || !this.renderScheduler) return;
+    this.markInvalidation(reason);
+    this.renderScheduler.invalidate(POINT_CLOUD_RENDER_MAIN);
+  }
+
+  private invalidateTri(reason = "tri-state"): void {
+    if (this.disposed || !this.renderScheduler) return;
+    this.markInvalidation(reason);
+    this.renderScheduler.invalidate(POINT_CLOUD_RENDER_TRI);
+  }
+
+  private invalidateAll(reason: string): void {
+    if (this.disposed || !this.renderScheduler) return;
+    this.markInvalidation(reason);
+    this.renderScheduler.invalidate(POINT_CLOUD_RENDER_ALL);
+  }
+
+  private renderFrame = (dirtyMask: number): boolean => {
+    if (this.disposed) return false;
+    const controlsChanged = this.controls.update();
+    // WebGPURenderer（含 WebGL2 fallback）的 clear/scissor 状态由 backend 延迟提交；只画
+    // 正交 pass 时清三视图区域可能先清掉完整 swapchain。任何可见 pass 变化都先恢复主 Scene，
+    // 再叠三视图，避免缩放三视图后主画布黑屏，仍由 scheduler 合并为同一个 RAF。
+    const { renderMain, renderTri } = resolvePointCloudRenderPlan(dirtyMask, controlsChanged);
+    const { clientWidth: width, clientHeight: height } = this.container;
+    let mainPasses = 0;
+    if (renderMain) {
+      this.updateTransformSize();
+      this.renderer.setScissorTest(false);
+      this.renderer.setViewport(0, 0, width, height);
+      this.renderer.render(this.scene, this.camera);
+      this.renderAxisGizmo();
+      mainPasses = 1;
+    }
+    let triPasses = 0;
+    if (renderTri) {
+      const domRect = this.renderer.domElement.getBoundingClientRect();
+      const canvasRect: ClientRectSnapshot = {
+        left: domRect.left,
+        top: domRect.top,
+        width: domRect.width,
+        height: domRect.height,
+      };
+      triPasses = this.triViewPass.render(this.renderer, canvasRect);
+      this.renderer.setScissorTest(false);
+      this.renderer.setViewport(0, 0, width, height);
+    }
+    if (import.meta.env.DEV && mainPasses + triPasses > 0) {
+      this.renderSubmitCount += mainPasses + triPasses;
+      this.mainPassCount += mainPasses;
+      this.triPassCount += triPasses;
+      this.container.dataset.pointcloudSubmitCount = String(this.renderSubmitCount);
+      this.container.dataset.pointcloudMainPassCount = String(this.mainPassCount);
+      this.container.dataset.pointcloudTriPassCount = String(this.triPassCount);
+      this.container.dataset.pointcloudLastSubmitAt = String(performance.now());
+      if (triPasses > 0) {
+        this.container.dataset.pointcloudTriActiveRenderAt = String(performance.now());
+      }
+    }
+    return controlsChanged;
   };
 
   private initAxisGizmo() {
@@ -515,7 +620,10 @@ export class PointCloudScene {
     this.pointRaycastObject = pointRaycastObject;
     this.points = pointObject;
     this.points.visible = options.visible ?? true;
+    this.triViewPass.setVisible(options.visible ?? true);
     if (!reusedWebGpuLayer) this.scene.add(this.points);
+    this.triViewPass.setGeometry(geom);
+    this.invalidateTri();
     this.viewCenter.fromArray(frame.viewCenter);
     this.viewRadius = frame.viewRadius;
     this.groundZ = frame.groundZ;
@@ -698,17 +806,70 @@ export class PointCloudScene {
     this.controls.enabled = !active;
   }
 
-  /**
-   * v0.13.5 · 暴露当前点云 BufferGeometry, 供三视图 TriViewRenderer 复用同一份点数据
-   * (CPU 数据共享, 各 WebGL context 各自惰性上传一份 GPU 副本; 主场景拥有生命周期,
-   * TriViewRenderer 只引用、不 dispose)。无点云时返回 null。
-   */
+  /** 暴露当前点云 BufferGeometry，供开发诊断确认实例化 attribute 合同。 */
   getPointsGeometry(): THREE.BufferGeometry | null {
     return this.pointGeometry;
   }
 
+  setTriViewLayout(layout: TriViewClientLayout | null): void {
+    if (!this.triViewPass.setLayout(layout)) return;
+    this.triViewLayout = layout;
+    this.syncTriViewCanvasLayer();
+    this.invalidateAll("tri-layout");
+  }
+
+  setTriViewElevated(elevated: boolean): void {
+    if (this.disposed) return;
+    if (elevated === this.triViewElevated) return;
+    this.triViewElevated = elevated;
+    this.syncTriViewCanvasLayer();
+    this.invalidateAll("tri-layer");
+  }
+
+  private syncTriViewCanvasLayer(): void {
+    const canvas = this.renderer.domElement;
+    if (!this.triViewElevated || !this.triViewLayout) {
+      canvas.style.removeProperty("z-index");
+      canvas.style.removeProperty("clip-path");
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const clipPath = clientRectToCanvasClipPath(this.triViewLayout.panel, {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    });
+    if (!clipPath) {
+      canvas.style.removeProperty("z-index");
+      canvas.style.removeProperty("clip-path");
+      return;
+    }
+    canvas.style.zIndex = "var(--sc-z-local-overlay)";
+    canvas.style.clipPath = clipPath;
+  }
+
+  setTriViewBox(box: Psr | null): void {
+    if (this.triViewPass.setBox(box)) this.invalidateTri();
+  }
+
+  setTriViewCameraRef(cameraRef: Psr | null): void {
+    if (this.triViewPass.setCameraRef(cameraRef)) this.invalidateTri();
+  }
+
+  setTriViewZoomByView(zoomByView: Record<TriView, number>): void {
+    if (this.triViewPass.setZoomByView(zoomByView)) this.invalidateTri();
+  }
+
+  setTriViewActive(active: boolean): void {
+    if (!this.triViewPass.setActive(active)) return;
+    this.invalidateAll("tri-active");
+  }
+
   setPointSize(size: number) {
+    if (size === this.pointSize) return;
     this.pointSize = size;
+    this.triViewPass.setPointSize(size);
     if (this.webGpuPointLayer) {
       this.webGpuPointLayer.setPointSize(size);
     } else if (this.points) {
@@ -721,15 +882,21 @@ export class PointCloudScene {
       if (neighbor.material) neighbor.material.size = size * 0.8;
       neighbor.webGpuLayer?.setPointSize(size * 0.8);
     }
+    this.invalidateMain();
+    this.invalidateTri();
   }
 
   setGridVisible(visible: boolean) {
+    if (visible === this.grid.visible) return;
     this.grid.visible = visible;
+    this.invalidateMain();
   }
 
   setAxisGizmoVisible(visible: boolean) {
+    if (visible === this.axisGizmoVisible) return;
     this.axisGizmoVisible = visible;
     this.axisGroup.visible = visible;
+    this.invalidateMain();
   }
 
   setCameraDamping(dampingFactor: number) {
@@ -753,12 +920,23 @@ export class PointCloudScene {
     if (!view || (view.mode !== "orbit" && view.mode !== "bev")) return false;
     const values = [...view.position, ...view.target, ...view.up];
     if (values.length !== 9 || values.some((v) => !Number.isFinite(v))) return false;
+    // OrbitControls 在阻尼启用时保留 sphericalDelta / panOffset。直接应用跨帧
+    // 相机会在下一次 update 又叠加旧动量，产生毫米级漂移。先在无阻尼模式冲刷
+    // 内部残量，再写入目标视角；期间不向外暴露瞬时中间态。
+    const viewChangeHandler = this.onViewChange;
+    const dampingEnabled = this.controls.enableDamping;
+    this.onViewChange = null;
+    this.controls.enableDamping = false;
+    this.controls.update();
     this.camera.position.fromArray(view.position);
     this.controls.target.fromArray(view.target);
     this.camera.up.fromArray(view.up);
     this.setOrbitMouseMode(view.mode);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    this.controls.enableDamping = dampingEnabled;
+    this.onViewChange = viewChangeHandler;
+    this.onViewChange?.(this.getViewState());
     return true;
   }
 
@@ -784,12 +962,19 @@ export class PointCloudScene {
     } else {
       this.removePoints();
     }
+    this.triViewPass.setGeometry(this.pointGeometry);
     this.baseColors = null;
     this.groundZ = 0;
+    this.invalidateMain();
+    this.invalidateTri();
   }
 
   setPointCloudVisible(visible: boolean) {
+    if (this.points?.visible === visible) return;
     if (this.points) this.points.visible = visible;
+    this.triViewPass.setVisible(visible);
+    this.invalidateMain();
+    this.invalidateTri();
   }
 
   /**
@@ -804,19 +989,29 @@ export class PointCloudScene {
     const attr = geom.getAttribute("color") as THREE.BufferAttribute;
     (attr.array as Float32Array).set(target);
     attr.needsUpdate = true;
+    this.invalidateMain();
+    this.invalidateTri();
   }
 
   setCameraTextureColorization(samples: readonly GpuCameraTextureSample[] | null) {
     this.webGpuPointLayer?.setCameraColorization(samples);
+    this.triViewPass.setCameraTextureColorization(samples);
+    this.invalidateMain("camera-texture");
+    this.invalidateTri("camera-texture");
   }
 
   setCameraTextureColorAdjust(adjust: ColorAdjust) {
     this.webGpuPointLayer?.setColorAdjust(adjust);
+    this.triViewPass.setCameraTextureColorAdjust(adjust);
+    this.invalidateMain("camera-color-adjust");
+    this.invalidateTri("camera-color-adjust");
   }
 
   highlightPointMask(indices: readonly number[] | null) {
     if (this.webGpuPointLayer) {
       this.webGpuPointLayer.setSelection(indices, this.pointIndexStride);
+      this.invalidateMain();
+      this.invalidateTri();
       return;
     }
     const geom = this.pointGeometry;
@@ -837,6 +1032,8 @@ export class PointCloudScene {
       }
     }
     attr.needsUpdate = true;
+    this.invalidateMain();
+    this.invalidateTri();
   }
 
   resize() {
@@ -845,11 +1042,14 @@ export class PointCloudScene {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.syncTriViewCanvasLayer();
+    this.invalidateAll("resize");
   }
 
   private removePoints() {
     if (!this.points) return;
     this.scene.remove(this.points);
+    this.triViewPass.setGeometry(null);
     const hadWebGpuLayer = this.webGpuPointLayer !== null;
     this.webGpuPointLayer?.dispose();
     this.webGpuPointLayer = null;
@@ -864,6 +1064,7 @@ export class PointCloudScene {
     this.pointIndexStride = 1;
     this.sourcePointCount = 0;
     this.renderedPointCount = 0;
+    this.invalidateMain();
   }
 
   /**
@@ -871,6 +1072,19 @@ export class PointCloudScene {
    * 每框材质单独建(颜色不同),移除时 dispose 材质(几何只在 scene dispose 时清)。
    */
   setBoxes(boxes: SceneBox[]) {
+    const signature = JSON.stringify(
+      boxes.map(({ id, center, size, rotation, color, selected, label }) => [
+        id,
+        center,
+        size,
+        rotation,
+        color,
+        selected,
+        label ?? null,
+      ]),
+    );
+    if (signature === this.boxSignature) return;
+    this.boxSignature = signature;
     const next = new Set(boxes.map((b) => b.id));
     for (const [id, group] of this.boxGroups) {
       if (!next.has(id)) {
@@ -890,6 +1104,7 @@ export class PointCloudScene {
       this.updateBoxGroup(group, b);
     }
     this.syncBoxLabels(boxes, next);
+    this.invalidateMain("boxes");
   }
 
   /**
@@ -981,6 +1196,18 @@ export class PointCloudScene {
    * overlay K 时由 React 重新调一次。
    */
   setReferenceBoxes(boxes: ReferenceBox[]) {
+    const signature = JSON.stringify(
+      boxes.map(({ id, center, size, rotation, color, dim }) => [
+        id,
+        center,
+        size,
+        rotation,
+        color,
+        dim ?? false,
+      ]),
+    );
+    if (signature === this.referenceBoxSignature) return;
+    this.referenceBoxSignature = signature;
     for (const seg of this.referenceBoxes) {
       this.referenceLayer.remove(seg);
       (seg.material as THREE.Material).dispose();
@@ -1007,6 +1234,7 @@ export class PointCloudScene {
       this.referenceLayer.add(seg);
       this.referenceBoxes.push(seg);
     }
+    this.invalidateMain("reference-boxes");
   }
 
   /**
@@ -1024,6 +1252,7 @@ export class PointCloudScene {
       distance: number;
     }[],
   ) {
+    if (frames.length === 0 && this.neighborPoints.length === 0) return;
     for (const pointLayer of this.neighborPoints) this.disposeNeighborPointLayer(pointLayer);
     this.neighborPoints = [];
     for (const f of frames) {
@@ -1059,6 +1288,7 @@ export class PointCloudScene {
       this.neighborLayer.add(object);
       this.neighborPoints.push({ object, geometry: geom, material, webGpuLayer });
     }
+    this.invalidateMain("neighbor-points");
   }
 
   private disposeNeighborPointLayer(pointLayer: NeighborPointLayer) {
@@ -1211,12 +1441,17 @@ export class PointCloudScene {
   /** 把变换 gizmo 挂到指定框;找不到则脱离。 */
   attachTransform(id: string) {
     const group = this.boxGroups.get(id);
+    if (group && this.transform.object === group) return;
+    if (!group && !this.transform.object) return;
     if (group) this.transform.attach(group);
     else this.transform.detach();
+    this.invalidateMain();
   }
 
   detachTransform() {
+    if (!this.transform.object) return;
     this.transform.detach();
+    this.invalidateMain();
   }
 
   /** 切换 gizmo 模式;旋转仅绕 Z(yaw,7-DoF),平移/缩放允许各轴。 */
@@ -1226,6 +1461,7 @@ export class PointCloudScene {
     this.transform.showX = !rotateOnlyZ;
     this.transform.showY = !rotateOnlyZ;
     this.transform.showZ = true;
+    this.invalidateMain();
   }
 
   /** 拖拽刚结束触发的 click 应被吞掉(否则会误改选中);返回并清标记。 */
@@ -1266,9 +1502,21 @@ export class PointCloudScene {
   dispose() {
     this.disposed = true;
     const debugContainer = this.container as HTMLElement & { __pointCloudScene?: PointCloudScene };
-    if (debugContainer.__pointCloudScene === this) delete debugContainer.__pointCloudScene;
-    cancelAnimationFrame(this.raf);
+    const ownsDebugContainer = debugContainer.__pointCloudScene === this;
+    if (ownsDebugContainer) delete debugContainer.__pointCloudScene;
+    if (import.meta.env.DEV && ownsDebugContainer) {
+      delete this.container.dataset.pointcloudRendererCount;
+      delete this.container.dataset.pointcloudSubmitCount;
+      delete this.container.dataset.pointcloudMainPassCount;
+      delete this.container.dataset.pointcloudTriPassCount;
+      delete this.container.dataset.pointcloudLastSubmitAt;
+      delete this.container.dataset.pointcloudTriActiveRenderAt;
+      delete this.container.dataset.pointcloudLastInvalidateReason;
+      delete this.container.dataset.pointcloudLastInvalidateAt;
+    }
+    this.renderScheduler.dispose();
     this.removePoints();
+    this.triViewPass.dispose();
     for (const group of this.boxGroups.values()) this.disposeBoxGroup(group);
     this.boxGroups.clear();
     for (const sprite of this.boxLabels.values()) {

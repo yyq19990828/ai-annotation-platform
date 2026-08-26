@@ -60,7 +60,7 @@ function toVec3(v: THREE.Vector3): Vec3 {
  * 并按视口 aspect (= 宽/高 像素比) 保持不变形 (取较紧的一维, 另一维按 aspect 撑开)。
  *
  * 供两处共用同一口径:
- *   - TriViewRenderer 设正交相机 left/right/top/bottom = ±halfW / ±halfH;
+ *   - PointCloudTriViewPass 设正交相机 left/right/top/bottom = ±halfW / ±halfH;
  *   - TriOrthoView 2D overlay 把米→px (s = (cssW/2)/halfW) 画框矩形, 与 WebGL 底严丝对齐。
  */
 export function frameOrtho(
