@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   pointCloudQualityApi,
+  type PointCloudQualityConfig,
+  type PointCloudQualityReviewVerdict,
   type PointCloudQualityRunScope,
   type PointCloudQualityStatus,
 } from "@/api/pointCloudQuality";
@@ -60,11 +62,56 @@ export function usePatchPointCloudQualityIssue(projectId: string) {
       issueId: string;
       status: "open" | "resolved" | "wont_fix";
       reason?: string;
-    }) => pointCloudQualityApi.patchIssue(value.issueId, value.status, value.reason),
+      reviewVerdict?: PointCloudQualityReviewVerdict;
+      reviewNote?: string;
+    }) =>
+      pointCloudQualityApi.patchIssue(value.issueId, {
+        status: value.status,
+        reason: value.reason,
+        review_verdict: value.reviewVerdict,
+        review_note: value.reviewNote,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: [POINT_CLOUD_QUALITY_QUERY_KEY, projectId],
       });
+    },
+  });
+}
+
+export function usePointCloudQualityEvaluations(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["point-cloud-quality-evaluations", projectId],
+    queryFn: ({ signal }) => pointCloudQualityApi.evaluations(projectId, signal),
+    enabled: enabled && !!projectId,
+    staleTime: 5_000,
+  });
+}
+
+export function useCreatePointCloudQualityEvaluation(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (candidateConfig: PointCloudQualityConfig) =>
+      pointCloudQualityApi.createEvaluation(projectId, candidateConfig),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["point-cloud-quality-evaluations", projectId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+}
+
+export function usePromotePointCloudQualityEvaluation(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (evaluationId: string) =>
+      pointCloudQualityApi.promoteEvaluation(projectId, evaluationId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["point-cloud-quality-evaluations", projectId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     },
   });
 }

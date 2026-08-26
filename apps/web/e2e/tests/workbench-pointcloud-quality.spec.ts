@@ -50,6 +50,7 @@ async function installQualityRoutes(
     track_revision: null,
     related_annotation_ids: [context.annotationId],
     source_versions: { [context.annotationId]: 1 },
+    class_name: "car",
     code: "ground_clearance",
     rule_version: 1,
     severity: "warning",
@@ -72,6 +73,10 @@ async function installQualityRoutes(
     resolution_reason: null,
     resolved_by_id: null,
     resolved_at: null,
+    review_verdict: null,
+    review_note: null,
+    reviewed_by_id: null,
+    reviewed_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -92,6 +97,34 @@ async function installQualityRoutes(
     reused: false,
   };
   const requests: Array<{ kind: string; body: Record<string, unknown> }> = [];
+  const evaluation = {
+    id: "00000000-0000-4000-8000-000000000104",
+    project_id: context.projectId,
+    created_by_id: "00000000-0000-4000-8000-000000000105",
+    baseline_config_revision: 1,
+    baseline_config_digest: "a".repeat(64),
+    candidate_config_digest: "c".repeat(64),
+    cutoff_at: now,
+    sample_count: 2,
+    summary: {
+      changed_targets: [
+        {
+          code: "low_point_count",
+          class_name: null,
+          status: "promote",
+          reasons: [],
+          baseline: { decidable_count: 2, observed_false_positive_rate: 0.5 },
+          candidate: { observed_false_positive_rate: 0, confirmed_retention: 1 },
+        },
+      ],
+    },
+    gate_status: "promote",
+    gate_reasons: [],
+    promoted_by_id: null,
+    promoted_at: null,
+    promoted_config_revision: null,
+    created_at: now,
+  };
 
   await page.route("**/api/v1/projects/*/point-cloud-quality/issues**", async (route) => {
     await route.fulfill({ status: 200, json: { items: [issue], total: 1 } });
@@ -111,7 +144,31 @@ async function installQualityRoutes(
       kind: "disposition",
       body: route.request().postDataJSON() as Record<string, unknown>,
     });
-    await route.fulfill({ status: 200, json: { ...issue, status: "wont_fix" } });
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 200,
+      json: { ...issue, ...body, review_verdict: body.review_verdict ?? null },
+    });
+  });
+  await page.route("**/api/v1/projects/*/point-cloud-quality/evaluations**", async (route) => {
+    const request = route.request();
+    if (request.url().endsWith("/promote")) {
+      requests.push({ kind: "promote", body: {} });
+      await route.fulfill({
+        status: 200,
+        json: { ...evaluation, promoted_at: now, promoted_config_revision: 2 },
+      });
+      return;
+    }
+    if (request.method() === "POST") {
+      requests.push({
+        kind: "evaluation",
+        body: request.postDataJSON() as Record<string, unknown>,
+      });
+      await route.fulfill({ status: 201, json: evaluation });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { items: [], total: 0 } });
   });
   await page.route("**/api/v1/feedbacks", async (route) => {
     requests.push({
@@ -158,12 +215,17 @@ test.describe("workbench point-cloud quality", () => {
       scene_ids: [context.sceneId],
     });
 
-    await panel.getByText("无需处理").click();
-    await panel.getByPlaceholder("填写无需处理的原因").fill("已确认为稀疏回波");
-    await panel.getByText("确认").click();
+    await panel.getByText("其他判定").click();
+    await panel.getByPlaceholder("填写判定依据").fill("已确认为稀疏回波");
+    await panel.getByRole("button", { name: "确认", exact: true }).click();
     await expect
       .poll(() => routes.requests.find((entry) => entry.kind === "disposition")?.body)
-      .toEqual({ status: "wont_fix", reason: "已确认为稀疏回波" });
+      .toEqual({
+        status: "wont_fix",
+        reason: "已确认为稀疏回波",
+        review_verdict: "false_positive",
+        review_note: "已确认为稀疏回波",
+      });
 
     await panel.getByText("讨论").click();
     await panel.getByPlaceholder("记录判断或 @ 协作者").fill("请复核地面估计");
@@ -182,5 +244,20 @@ test.describe("workbench point-cloud quality", () => {
           auxiliary_layers: ["ground"],
         },
       });
+
+    await panel.getByText("规则治理").click();
+    await panel.getByLabel("最少点数").fill("4");
+    await panel.getByText("生成候选评估").click();
+    await expect
+      .poll(() => routes.requests.find((entry) => entry.kind === "evaluation")?.body)
+      .toMatchObject({
+        candidate_config: {
+          config_revision: 1,
+          thresholds: { minimum_points: 4 },
+        },
+      });
+    await expect(panel.getByText("保留 100%")).toBeVisible();
+    await panel.getByText("晋级为项目配置").click();
+    await expect.poll(() => routes.requests.some((entry) => entry.kind === "promote")).toBeTruthy();
   });
 });

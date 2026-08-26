@@ -115,6 +115,11 @@ class PointCloudQualityIssue(Base):
             "(frame_start >= 0 AND frame_end >= frame_start)",
             name="ck_point_cloud_quality_issues_frames",
         ),
+        CheckConstraint(
+            "review_verdict IS NULL OR review_verdict IN "
+            "('confirmed','false_positive','accepted_exception','uncertain')",
+            name="ck_point_cloud_quality_issues_review_verdict",
+        ),
         UniqueConstraint(
             "project_id", "dedupe_key", name="uq_point_cloud_quality_issues_dedupe"
         ),
@@ -149,6 +154,12 @@ class PointCloudQualityIssue(Base):
             "track_revision",
         ),
         Index("ix_point_cloud_quality_issues_last_seen", "last_seen_run_id"),
+        Index(
+            "ix_point_cloud_quality_issues_project_review",
+            "project_id",
+            "review_verdict",
+            "reviewed_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -181,6 +192,7 @@ class PointCloudQualityIssue(Base):
         ARRAY(UUID(as_uuid=True)), nullable=False, default=list, server_default="{}"
     )
     source_versions: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    class_name: Mapped[str | None] = mapped_column(String(100))
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     rule_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
@@ -209,6 +221,12 @@ class PointCloudQualityIssue(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_verdict: Mapped[str | None] = mapped_column(String(24))
+    review_note: Mapped[str | None] = mapped_column(Text)
+    reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -217,4 +235,54 @@ class PointCloudQualityIssue(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+class PointCloudQualityEvaluation(Base):
+    __tablename__ = "point_cloud_quality_evaluations"
+    __table_args__ = (
+        CheckConstraint(
+            "gate_status IN ('insufficient_data','hold','promote')",
+            name="ck_point_cloud_quality_evaluations_gate_status",
+        ),
+        CheckConstraint(
+            "sample_count >= 0",
+            name="ck_point_cloud_quality_evaluations_sample_count",
+        ),
+        Index(
+            "ix_point_cloud_quality_evaluations_project_created",
+            "project_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    baseline_config_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    baseline_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    baseline_config_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    candidate_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_config_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    cutoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    sample_snapshot: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    gate_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    gate_reasons: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
+    promoted_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    promoted_config_revision: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

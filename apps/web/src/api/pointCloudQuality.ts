@@ -2,6 +2,41 @@ import { apiClient } from "./client";
 
 export type PointCloudQualitySeverity = "blocker" | "warning" | "info";
 export type PointCloudQualityStatus = "open" | "resolved" | "wont_fix" | "stale";
+export type PointCloudQualityReviewVerdict =
+  | "confirmed"
+  | "false_positive"
+  | "accepted_exception"
+  | "uncertain";
+
+export interface PointCloudQualityThresholdConfig {
+  minimum_points: number;
+  ground_sample_min: number;
+  ground_margin_m: number;
+  ground_penetration_m: number;
+  ground_float_m: number;
+  size_min_samples: number;
+  size_mad_z: number;
+  temporal_center_jump_m: number;
+  temporal_size_change_ratio: number;
+  temporal_yaw_jump_rad: number;
+}
+
+export type PointCloudQualityThresholdOverride = Partial<PointCloudQualityThresholdConfig>;
+
+export interface PointCloudQualityConfig {
+  schema_version: 2;
+  config_revision: number;
+  enabled: boolean;
+  thresholds: PointCloudQualityThresholdConfig;
+  enabled_rules: string[];
+  severity_overrides: Record<string, "info" | "warning" | "blocker" | "off">;
+  class_thresholds: Record<string, PointCloudQualityThresholdOverride>;
+  governance: {
+    minimum_reviewed_per_rule: number;
+    maximum_false_positive_rate: number;
+    minimum_confirmed_retention: number;
+  };
+}
 
 export interface PointCloudQualityLocator {
   scene_id: string;
@@ -26,6 +61,7 @@ export interface PointCloudQualityIssue {
   track_revision: number | null;
   related_annotation_ids: string[];
   source_versions: Record<string, number>;
+  class_name: string | null;
   code: string;
   rule_version: number;
   severity: PointCloudQualitySeverity;
@@ -40,6 +76,10 @@ export interface PointCloudQualityIssue {
   resolution_reason: string | null;
   resolved_by_id: string | null;
   resolved_at: string | null;
+  review_verdict: PointCloudQualityReviewVerdict | null;
+  review_note: string | null;
+  reviewed_by_id: string | null;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +109,56 @@ export interface PointCloudQualityRun {
 export type PointCloudQualityRunScope =
   | { scope: "scene_ids"; scene_ids: string[] }
   | { scope: "task_ids"; task_ids: string[] };
+
+export interface PointCloudQualityEvaluation {
+  id: string;
+  project_id: string;
+  created_by_id: string | null;
+  baseline_config_revision: number;
+  baseline_config_digest: string;
+  baseline_config_snapshot?: PointCloudQualityConfig;
+  candidate_config_digest: string;
+  candidate_config_snapshot?: PointCloudQualityConfig;
+  cutoff_at: string;
+  sample_count: number;
+  summary: {
+    sample_count?: number;
+    metric_contract?: Record<string, string>;
+    changed_targets?: Array<{
+      code: string;
+      class_name: string | null;
+      status: "insufficient_data" | "hold" | "promote";
+      reasons: string[];
+      baseline: PointCloudQualityMetricSummary;
+      candidate: PointCloudQualityMetricSummary;
+    }>;
+    [key: string]: unknown;
+  };
+  gate_status: "insufficient_data" | "hold" | "promote";
+  gate_reasons: Array<Record<string, unknown>>;
+  promoted_by_id: string | null;
+  promoted_at: string | null;
+  promoted_config_revision: number | null;
+  created_at: string;
+}
+
+export interface PointCloudQualityMetricSummary {
+  sample_count: number;
+  triggered_count: number;
+  confirmed: number;
+  false_positive: number;
+  accepted_exception: number;
+  uncertain: number;
+  decidable_count: number;
+  observed_precision: number | null;
+  observed_false_positive_rate: number | null;
+  confirmed_retention: number | null;
+}
+
+export interface PointCloudQualityEvaluationPage {
+  items: PointCloudQualityEvaluation[];
+  total: number;
+}
 
 function queryString(params: Record<string, string | number | undefined>): string {
   const query = new URLSearchParams();
@@ -112,9 +202,31 @@ export const pointCloudQualityApi = {
       `/projects/${projectId}/point-cloud-quality/runs/${runId}`,
       { signal },
     ),
-  patchIssue: (issueId: string, status: "open" | "resolved" | "wont_fix", reason?: string) =>
+  patchIssue: (
+    issueId: string,
+    value: {
+      status: "open" | "resolved" | "wont_fix";
+      reason?: string;
+      review_verdict?: PointCloudQualityReviewVerdict;
+      review_note?: string;
+    },
+  ) =>
     apiClient.patch<PointCloudQualityIssue>(`/point-cloud-quality/issues/${issueId}`, {
-      status,
-      reason,
+      ...value,
     }),
+  evaluations: (projectId: string, signal?: AbortSignal) =>
+    apiClient.get<PointCloudQualityEvaluationPage>(
+      `/projects/${projectId}/point-cloud-quality/evaluations?limit=20`,
+      { signal },
+    ),
+  createEvaluation: (projectId: string, candidateConfig: PointCloudQualityConfig) =>
+    apiClient.post<PointCloudQualityEvaluation>(
+      `/projects/${projectId}/point-cloud-quality/evaluations`,
+      { candidate_config: candidateConfig },
+    ),
+  promoteEvaluation: (projectId: string, evaluationId: string) =>
+    apiClient.post<PointCloudQualityEvaluation>(
+      `/projects/${projectId}/point-cloud-quality/evaluations/${evaluationId}/promote`,
+      {},
+    ),
 };

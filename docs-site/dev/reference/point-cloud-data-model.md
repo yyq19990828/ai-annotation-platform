@@ -247,8 +247,16 @@ Project / Scene / Task / Annotation scope
 
 Project / Scene scope 冻结完整 Scene 成员，可以执行逐框和轨迹规则。Task / Annotation scope 只执行所选标注可独立判定的逐框规则；轨迹规则记录 `track_rules:scope_incomplete` skip，避免用成员片段制造整轨缺口、跳变或身份漂移。worker 每个标注/轨迹边界直接读取最新取消状态，并只缓存当前帧的解析点云。
 
-`PointCloudQualityIssue` 持久化规则 code/version、severity/status、frame 区间、metric/threshold/evidence、标注版本、SceneTrack revision、稳定 dedupe key 和可恢复 locator。locator 可同时指向 Scene、帧、任务、标注、SceneTrack、相机与辅助层。处置仅改变问题状态并写审计，不执行 `suggested_command`。
+`PointCloudQualityIssue` 持久化规则 code/version、class、severity/status、frame 区间、metric/threshold/evidence、标注版本、SceneTrack revision、稳定 dedupe key 和可恢复 locator。locator 可同时指向 Scene、帧、任务、标注、SceneTrack、相机与辅助层。处置仅改变问题状态并写审计，不执行 `suggested_command`。
 
 规则内核将 PCD 源坐标按 Dataset `axis_convention` 归一到 ISO 平台坐标，再执行框内点数、局部地面、尺寸稳健异常和轨迹时序检查。无法解析的 PCD 或不足的地面样本进入 run skip，不产生猜测 issue，也不会批量将同 Scene 的既有问题标为 stale。
 
-问题的 `open / resolved / wont_fix / stale` 状态与通用 `AnnotationFeedback` 评论分开；评论通过 `anchor_type=point_cloud` 保存结构化定位器，并继续服从对应 Task 的可见性边界。标注版本、轨迹 revision、主点云 item / content hash / path 或项目规则 digest 任一变化都会在问题读取时使旧证据 stale。
+问题的 `open / resolved / wont_fix / stale` 状态与通用 `AnnotationFeedback` 评论分开；人工评估结论也以 `confirmed / false_positive / accepted_exception / uncertain` 独立存储，不再从工作流状态猜测。评论通过 `anchor_type=point_cloud` 保存结构化定位器，并继续服从对应 Task 的可见性边界。标注版本、轨迹 revision、主点云 item / content hash / path 或项目规则 digest 任一变化都会在问题读取时使旧证据 stale；页内问题使用批量版本、轨迹与点云校验，不按 issue 执行 N+1 读取。
+
+### 评估快照与配置晋级
+
+Project 质量配置支持全局阈值和按 class 的稀疏 override；旧 schema 在服务边界补齐治理字段后规范化为当前结构。扫描 Run 仍冻结当时的完整 config snapshot/digest，同一 Run 不会在运行中读取新阈值。
+
+`PointCloudQualityEvaluation` 将已有明确人工判定且非 stale 的 issue 冻结为最多 20,000 条的样本快照，保存 baseline/candidate 配置与 digest、cutoff、按规则/类别摘要、gate 理由和晋级记录。原始样本仅在服务端保留，API 不返回样本中的 issue id。数值候选只能沿不会制造新问题的方向重放；收紧阈值、改变样本构造阈值、启停规则或修改 severity 都要先执行新扫描。
+
+观察精度与误报率只使用 `confirmed + false_positive` 作为可判定分母；`accepted_exception` 和 `uncertain` 单独计数。候选“已确认问题保留率”是 baseline 已发现问题上的代理指标，不是 recall。晋级同时要求受影响规则/类别的可判定样本数、候选误报率和确认保留率达标，并在 project row lock 下复核 baseline revision/digest 后才将 config revision 增加一次。

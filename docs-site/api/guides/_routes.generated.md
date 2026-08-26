@@ -378,6 +378,10 @@
 | GET | `/projects/{project_id}/point-cloud-quality/issues` |
 | GET | `/point-cloud-quality/issues/{issue_id}` |
 | PATCH | `/point-cloud-quality/issues/{issue_id}` |
+| POST | `/projects/{project_id}/point-cloud-quality/evaluations` |
+| GET | `/projects/{project_id}/point-cloud-quality/evaluations` |
+| GET | `/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}` |
+| POST | `/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}/promote` |
 
 ## `predictions.py`
 
@@ -674,4 +678,4 @@
 
 ---
 
-_共 63 模块 / 377 路由_
+_共 63 模块 / 381 路由_

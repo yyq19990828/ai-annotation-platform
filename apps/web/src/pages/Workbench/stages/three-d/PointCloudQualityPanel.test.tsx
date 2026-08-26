@@ -35,6 +35,7 @@ const issue: PointCloudQualityIssue = {
   track_revision: 3,
   related_annotation_ids: ["annotation-1"],
   source_versions: { "annotation-1": 2 },
+  class_name: "car",
   code: "ground_clearance",
   rule_version: 1,
   severity: "warning",
@@ -57,6 +58,10 @@ const issue: PointCloudQualityIssue = {
   resolution_reason: null,
   resolved_by_id: null,
   resolved_at: null,
+  review_verdict: null,
+  review_note: null,
+  reviewed_by_id: null,
+  reviewed_at: null,
   created_at: "2026-08-26T00:00:00Z",
   updated_at: "2026-08-26T00:00:00Z",
 };
@@ -125,7 +130,7 @@ describe("PointCloudQualityPanel", () => {
     expect(runMutate).toHaveBeenCalledOnce();
   });
 
-  it("requires a wont-fix reason and creates a first-class point-cloud discussion anchor", () => {
+  it("records an explicit false-positive verdict and creates a point-cloud discussion anchor", () => {
     render(
       <PointCloudQualityPanel
         projectId="project-1"
@@ -137,15 +142,21 @@ describe("PointCloudQualityPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("无需处理"));
+    fireEvent.click(screen.getByText("其他判定"));
     const confirm = screen.getByText("确认");
     expect(confirm).toBeDisabled();
-    fireEvent.change(screen.getByPlaceholderText("填写无需处理的原因"), {
+    fireEvent.change(screen.getByPlaceholderText("填写判定依据"), {
       target: { value: "雨天稀疏回波" },
     });
     fireEvent.click(confirm);
     expect(patchMutate).toHaveBeenCalledWith(
-      { issueId: "issue-1", status: "wont_fix", reason: "雨天稀疏回波" },
+      {
+        issueId: "issue-1",
+        status: "wont_fix",
+        reason: "雨天稀疏回波",
+        reviewVerdict: "false_positive",
+        reviewNote: "雨天稀疏回波",
+      },
       expect.any(Object),
     );
 

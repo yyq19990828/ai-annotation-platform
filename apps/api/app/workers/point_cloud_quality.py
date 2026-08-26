@@ -143,6 +143,7 @@ async def _upsert_finding(
     scene_track_id: uuid.UUID | None,
     track_revision: int | None,
     source_versions: dict[str, int],
+    class_name: str | None,
     source_evidence: dict | None = None,
 ) -> PointCloudQualityIssue | None:
     severity = severity_for_rule(config, finding.code)
@@ -192,6 +193,7 @@ async def _upsert_finding(
             track_revision=track_revision,
             related_annotation_ids=related_ids,
             source_versions=source_versions,
+            class_name=class_name,
             code=finding.code,
             rule_version=1,
             severity=severity,
@@ -216,6 +218,7 @@ async def _upsert_finding(
         issue.track_revision = track_revision
         issue.related_annotation_ids = related_ids
         issue.source_versions = source_versions
+        issue.class_name = class_name
         issue.severity = severity
         issue.severity_rank = SEVERITY_RANK[severity]
         issue.metric = finding.metric
@@ -226,13 +229,18 @@ async def _upsert_finding(
         if issue.status == "stale":
             issue.status = "open"
             issue.resolution_reason = None
+            issue.resolved_by_id = None
+            issue.resolved_at = None
+            issue.review_verdict = None
+            issue.review_note = None
+            issue.reviewed_by_id = None
+            issue.reviewed_at = None
     await db.flush()
     return issue
 
 
 async def execute_scan(db, run: PointCloudQualityRun) -> dict:
     config = PointCloudQualityConfig.model_validate(run.config_snapshot)
-    thresholds = thresholds_from_config(config)
     records = list(run.source_snapshot or [])
     tasks = {row["task_id"]: row for row in records if row["kind"] == "task"}
     annotations = sorted(
@@ -297,7 +305,7 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
         findings = evaluate_box(
             points,
             _box(row["geometry"]),
-            thresholds=thresholds,
+            thresholds=thresholds_from_config(config, row["class_name"]),
             size_samples=sizes_by_class[row["class_name"]],
         )
         for finding in findings:
@@ -315,6 +323,7 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
                 ),
                 track_revision=None,
                 source_versions={row["annotation_id"]: int(row["annotation_version"])},
+                class_name=row["class_name"],
                 source_evidence=(
                     {
                         "pointcloud_item_id": pointcloud["item_id"],
@@ -383,7 +392,7 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
             presence_mode=track["presence_mode"],
             intervals=intervals,
             members=members,
-            thresholds=thresholds,
+            thresholds=thresholds_from_config(config, track["class_name"]),
         )
         member_by_id = {member.annotation_id: member for member in members}
         for finding in findings:
@@ -409,6 +418,7 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
                 scene_track_id=uuid.UUID(track_id),
                 track_revision=int(track["revision"]),
                 source_versions=source_versions,
+                class_name=track["class_name"],
             )
             if issue is not None:
                 issue_counts[finding.code] += 1

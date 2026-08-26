@@ -47,7 +47,7 @@ import type {
   WorkbenchLayoutPatch,
 } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
-import type { PointCloudQualityIssue } from "@/api/pointCloudQuality";
+import type { PointCloudQualityConfig, PointCloudQualityIssue } from "@/api/pointCloudQuality";
 import { usePointCloudQualityIssues } from "@/hooks/usePointCloudQuality";
 
 import { AttributeForm } from "../../shell/AttributeForm";
@@ -3091,6 +3091,11 @@ export function ThreeDWorkbench({
             sceneId={manifest.scene_id}
             taskId={taskId ?? ""}
             canScanScene={qualityCanScanScene}
+            canGovern={qualityCanScanScene}
+            qualityConfig={
+              project.point_cloud_quality_config as PointCloudQualityConfig | undefined
+            }
+            classes={boxClasses}
             onClose={() => setQualityPanelOpen(false)}
             onLocate={handleLocateQualityIssue}
           />

@@ -18768,6 +18768,13 @@
       "PointCloudQualityConfig": {
         "additionalProperties": false,
         "properties": {
+          "class_thresholds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PointCloudQualityThresholdOverride"
+            },
+            "title": "Class Thresholds",
+            "type": "object"
+          },
           "config_revision": {
             "default": 1,
             "minimum": 1.0,
@@ -18786,9 +18793,12 @@
             "title": "Enabled Rules",
             "type": "array"
           },
+          "governance": {
+            "$ref": "#/components/schemas/PointCloudQualityGovernanceConfig"
+          },
           "schema_version": {
-            "const": 1,
-            "default": 1,
+            "const": 2,
+            "default": 2,
             "title": "Schema Version",
             "type": "integer"
           },
@@ -18810,6 +18820,336 @@
           }
         },
         "title": "PointCloudQualityConfig",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_config": {
+            "$ref": "#/components/schemas/PointCloudQualityConfig"
+          }
+        },
+        "required": [
+          "candidate_config"
+        ],
+        "title": "PointCloudQualityEvaluationCreate",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationListItem": {
+        "properties": {
+          "baseline_config_digest": {
+            "title": "Baseline Config Digest",
+            "type": "string"
+          },
+          "baseline_config_revision": {
+            "title": "Baseline Config Revision",
+            "type": "integer"
+          },
+          "candidate_config_digest": {
+            "title": "Candidate Config Digest",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "cutoff_at": {
+            "format": "date-time",
+            "title": "Cutoff At",
+            "type": "string"
+          },
+          "gate_reasons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Gate Reasons",
+            "type": "array"
+          },
+          "gate_status": {
+            "enum": [
+              "insufficient_data",
+              "hold",
+              "promote"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "promoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted At"
+          },
+          "promoted_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted By Id"
+          },
+          "promoted_config_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Config Revision"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "created_by_id",
+          "baseline_config_revision",
+          "baseline_config_digest",
+          "candidate_config_digest",
+          "cutoff_at",
+          "sample_count",
+          "summary",
+          "gate_status",
+          "gate_reasons",
+          "promoted_by_id",
+          "promoted_at",
+          "promoted_config_revision",
+          "created_at"
+        ],
+        "title": "PointCloudQualityEvaluationListItem",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationOut": {
+        "properties": {
+          "baseline_config_digest": {
+            "title": "Baseline Config Digest",
+            "type": "string"
+          },
+          "baseline_config_revision": {
+            "title": "Baseline Config Revision",
+            "type": "integer"
+          },
+          "baseline_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Baseline Config Snapshot",
+            "type": "object"
+          },
+          "candidate_config_digest": {
+            "title": "Candidate Config Digest",
+            "type": "string"
+          },
+          "candidate_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Candidate Config Snapshot",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "cutoff_at": {
+            "format": "date-time",
+            "title": "Cutoff At",
+            "type": "string"
+          },
+          "gate_reasons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Gate Reasons",
+            "type": "array"
+          },
+          "gate_status": {
+            "enum": [
+              "insufficient_data",
+              "hold",
+              "promote"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "promoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted At"
+          },
+          "promoted_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted By Id"
+          },
+          "promoted_config_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Config Revision"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "created_by_id",
+          "baseline_config_revision",
+          "baseline_config_digest",
+          "baseline_config_snapshot",
+          "candidate_config_digest",
+          "candidate_config_snapshot",
+          "cutoff_at",
+          "sample_count",
+          "summary",
+          "gate_status",
+          "gate_reasons",
+          "promoted_by_id",
+          "promoted_at",
+          "promoted_config_revision",
+          "created_at"
+        ],
+        "title": "PointCloudQualityEvaluationOut",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PointCloudQualityEvaluationListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "PointCloudQualityEvaluationPage",
+        "type": "object"
+      },
+      "PointCloudQualityGovernanceConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "maximum_false_positive_rate": {
+            "default": 0.1,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Maximum False Positive Rate",
+            "type": "number"
+          },
+          "minimum_confirmed_retention": {
+            "default": 0.9,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Minimum Confirmed Retention",
+            "type": "number"
+          },
+          "minimum_reviewed_per_rule": {
+            "default": 20,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Minimum Reviewed Per Rule",
+            "type": "integer"
+          }
+        },
+        "title": "PointCloudQualityGovernanceConfig",
         "type": "object"
       },
       "PointCloudQualityIssueOut": {
@@ -18836,6 +19176,17 @@
               }
             ],
             "title": "Annotation Version"
+          },
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
           },
           "code": {
             "title": "Code",
@@ -18947,6 +19298,58 @@
               }
             ],
             "title": "Resolved By Id"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "review_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "false_positive",
+                  "accepted_exception",
+                  "uncertain"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Verdict"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Id"
           },
           "rule_version": {
             "title": "Rule Version",
@@ -19065,6 +19468,7 @@
           "track_revision",
           "related_annotation_ids",
           "source_versions",
+          "class_name",
           "code",
           "rule_version",
           "severity",
@@ -19079,6 +19483,10 @@
           "resolution_reason",
           "resolved_by_id",
           "resolved_at",
+          "review_verdict",
+          "review_note",
+          "reviewed_by_id",
+          "reviewed_at",
           "created_at",
           "updated_at"
         ],
@@ -19120,6 +19528,35 @@
               }
             ],
             "title": "Reason"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "review_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "false_positive",
+                  "accepted_exception",
+                  "uncertain"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Verdict"
           },
           "status": {
             "enum": [
@@ -19369,6 +19806,140 @@
           }
         },
         "title": "PointCloudQualityThresholdConfig",
+        "type": "object"
+      },
+      "PointCloudQualityThresholdOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "ground_float_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Float M"
+          },
+          "ground_margin_m": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Margin M"
+          },
+          "ground_penetration_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 5.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Penetration M"
+          },
+          "ground_sample_min": {
+            "anyOf": [
+              {
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Sample Min"
+          },
+          "minimum_points": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Points"
+          },
+          "size_mad_z": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 20.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Mad Z"
+          },
+          "size_min_samples": {
+            "anyOf": [
+              {
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Min Samples"
+          },
+          "temporal_center_jump_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Center Jump M"
+          },
+          "temporal_size_change_ratio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Size Change Ratio"
+          },
+          "temporal_yaw_jump_rad": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 3.142,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Yaw Jump Rad"
+          }
+        },
+        "title": "PointCloudQualityThresholdOverride",
         "type": "object"
       },
       "PointMaskGeometry": {
@@ -48066,6 +48637,249 @@
         "summary": "Apply Project Pipeline",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/evaluations": {
+      "get": {
+        "operationId": "get_project_evaluations_api_v1_projects__project_id__point_cloud_quality_evaluations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Evaluations",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      },
+      "post": {
+        "operationId": "create_project_evaluation_api_v1_projects__project_id__point_cloud_quality_evaluations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointCloudQualityEvaluationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Project Evaluation",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}": {
+      "get": {
+        "operationId": "get_project_evaluation_api_v1_projects__project_id__point_cloud_quality_evaluations__evaluation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evaluation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evaluation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Evaluation",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}/promote": {
+      "post": {
+        "operationId": "promote_project_evaluation_api_v1_projects__project_id__point_cloud_quality_evaluations__evaluation_id__promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evaluation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evaluation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Promote Project Evaluation",
+        "tags": [
+          "point-cloud-quality"
         ]
       }
     },

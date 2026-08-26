@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.tasks._shared import _REVIEWERS, _assert_task_visible, _visible_task_ids
 from app.db.models.annotation import Annotation
 from app.db.models.point_cloud_quality import (
+    PointCloudQualityEvaluation,
     PointCloudQualityIssue,
     PointCloudQualityRun,
 )
@@ -23,6 +24,9 @@ from app.schemas.point_cloud_quality import (
     PointCloudQualityIssueOut,
     PointCloudQualityIssuePage,
     PointCloudQualityIssuePatch,
+    PointCloudQualityEvaluationCreate,
+    PointCloudQualityEvaluationOut,
+    PointCloudQualityEvaluationPage,
     PointCloudQualityRunOut,
     PointCloudQualityRunRequest,
 )
@@ -34,6 +38,11 @@ from app.services.point_cloud_quality.service import (
     dispatch_quality_run,
     list_issues,
     refresh_issue_staleness,
+)
+from app.services.point_cloud_quality.evaluation import (
+    create_evaluation,
+    list_evaluations,
+    promote_evaluation,
 )
 from app.services.scheduler import is_privileged_for_project
 
@@ -267,14 +276,23 @@ async def patch_issue(
             status_code=409, detail={"reason": "point_cloud_quality_issue_stale"}
         )
     previous = issue.status
+    previous_verdict = issue.review_verdict
     issue.status = body.status
     issue.resolution_reason = (body.reason or "").strip() or None
     if body.status == "open":
         issue.resolved_by_id = None
         issue.resolved_at = None
+        issue.review_verdict = None
+        issue.review_note = None
+        issue.reviewed_by_id = None
+        issue.reviewed_at = None
     else:
         issue.resolved_by_id = current_user.id
         issue.resolved_at = datetime.now(timezone.utc)
+        issue.review_verdict = body.review_verdict
+        issue.review_note = (body.review_note or "").strip() or None
+        issue.reviewed_by_id = current_user.id if body.review_verdict else None
+        issue.reviewed_at = datetime.now(timezone.utc) if body.review_verdict else None
     await AuditService.log(
         db,
         actor=current_user,
@@ -287,8 +305,133 @@ async def patch_issue(
             "from": previous,
             "to": issue.status,
             "reason": issue.resolution_reason,
+            "verdict_from": previous_verdict,
+            "verdict_to": issue.review_verdict,
+            "review_note": issue.review_note,
         },
     )
     await db.commit()
     await db.refresh(issue)
     return PointCloudQualityIssueOut.model_validate(issue)
+
+
+@router.post(
+    "/projects/{project_id}/point-cloud-quality/evaluations",
+    response_model=PointCloudQualityEvaluationOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_project_evaluation(
+    body: PointCloudQualityEvaluationCreate,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    if not is_privileged_for_project(current_user, project):
+        raise HTTPException(
+            status_code=403, detail="Quality governance requires project owner"
+        )
+    try:
+        evaluation = await create_evaluation(
+            db,
+            project=project,
+            actor_id=current_user.id,
+            candidate=body.candidate_config,
+        )
+    except PointCloudQualityError as exc:
+        _raise_quality_error(exc)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.POINT_CLOUD_QUALITY_EVALUATION_CREATE,
+        target_type="point_cloud_quality_evaluation",
+        target_id=evaluation.id,
+        request=request,
+        status_code=201,
+        detail={
+            "project_id": str(project.id),
+            "baseline_config_revision": evaluation.baseline_config_revision,
+            "sample_count": evaluation.sample_count,
+            "gate_status": evaluation.gate_status,
+        },
+    )
+    await db.commit()
+    await db.refresh(evaluation)
+    return PointCloudQualityEvaluationOut.model_validate(evaluation)
+
+
+@router.get(
+    "/projects/{project_id}/point-cloud-quality/evaluations",
+    response_model=PointCloudQualityEvaluationPage,
+)
+async def get_project_evaluations(
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_roles(*_REVIEWERS)),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    rows, total = await list_evaluations(
+        db, project_id=project.id, limit=limit, offset=offset
+    )
+    return PointCloudQualityEvaluationPage(items=rows, total=total)
+
+
+@router.get(
+    "/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}",
+    response_model=PointCloudQualityEvaluationOut,
+)
+async def get_project_evaluation(
+    evaluation_id: uuid.UUID,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    evaluation = await db.get(PointCloudQualityEvaluation, evaluation_id)
+    if evaluation is None or evaluation.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Quality evaluation not found")
+    return PointCloudQualityEvaluationOut.model_validate(evaluation)
+
+
+@router.post(
+    "/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}/promote",
+    response_model=PointCloudQualityEvaluationOut,
+)
+async def promote_project_evaluation(
+    evaluation_id: uuid.UUID,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    if not is_privileged_for_project(current_user, project):
+        raise HTTPException(
+            status_code=403, detail="Quality governance requires project owner"
+        )
+    try:
+        evaluation, locked_project = await promote_evaluation(
+            db,
+            project_id=project.id,
+            evaluation_id=evaluation_id,
+            actor_id=current_user.id,
+        )
+    except PointCloudQualityError as exc:
+        _raise_quality_error(exc)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.POINT_CLOUD_QUALITY_EVALUATION_PROMOTE,
+        target_type="point_cloud_quality_evaluation",
+        target_id=evaluation.id,
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(locked_project.id),
+            "from_revision": evaluation.baseline_config_revision,
+            "to_revision": evaluation.promoted_config_revision,
+            "candidate_config_digest": evaluation.candidate_config_digest,
+        },
+    )
+    await db.commit()
+    await db.refresh(evaluation)
+    return PointCloudQualityEvaluationOut.model_validate(evaluation)

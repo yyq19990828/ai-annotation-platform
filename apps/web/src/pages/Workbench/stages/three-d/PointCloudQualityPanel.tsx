@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Check, Crosshair, MessageSquareText, RefreshCw, X } from "lucide-react";
 
-import type { PointCloudQualityIssue } from "@/api/pointCloudQuality";
+import type {
+  PointCloudQualityConfig,
+  PointCloudQualityIssue,
+  PointCloudQualityReviewVerdict,
+} from "@/api/pointCloudQuality";
 import { Button } from "@/components/ui/Button";
 import { useCreateFeedback } from "@/hooks/useFeedbacks";
 import {
@@ -11,6 +15,8 @@ import {
   useRunPointCloudQuality,
 } from "@/hooks/usePointCloudQuality";
 import { cn } from "@/lib/utils";
+
+import { PointCloudQualityGovernance } from "./PointCloudQualityGovernance";
 
 const CODE_LABEL: Record<string, string> = {
   low_point_count: "框内点数过少",
@@ -23,6 +29,12 @@ const CODE_LABEL: Record<string, string> = {
 };
 
 const SEVERITY_LABEL = { blocker: "阻断", warning: "警告", info: "提示" } as const;
+const VERDICT_LABEL: Record<PointCloudQualityReviewVerdict, string> = {
+  confirmed: "确认问题",
+  false_positive: "误报",
+  accepted_exception: "接受例外",
+  uncertain: "不确定",
+};
 
 function metricSummary(issue: PointCloudQualityIssue): string {
   const metric = issue.metric;
@@ -42,6 +54,9 @@ interface PointCloudQualityPanelProps {
   sceneId: string;
   taskId: string;
   canScanScene: boolean;
+  canGovern?: boolean;
+  qualityConfig?: PointCloudQualityConfig | null;
+  classes?: string[];
   onClose: () => void;
   onLocate: (issue: PointCloudQualityIssue) => void;
 }
@@ -51,12 +66,18 @@ export function PointCloudQualityPanel({
   sceneId,
   taskId,
   canScanScene,
+  canGovern = false,
+  qualityConfig,
+  classes = [],
   onClose,
   onLocate,
 }: PointCloudQualityPanelProps) {
+  const [tab, setTab] = useState<"issues" | "governance">("issues");
   const [filter, setFilter] = useState<"open" | "stale" | "all">("open");
   const [runId, setRunId] = useState<string | null>(null);
-  const [wontFixId, setWontFixId] = useState<string | null>(null);
+  const [dispositionId, setDispositionId] = useState<string | null>(null);
+  const [verdict, setVerdict] =
+    useState<Exclude<PointCloudQualityReviewVerdict, "confirmed">>("false_positive");
   const [reason, setReason] = useState("");
   const [commentIssueId, setCommentIssueId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -145,170 +166,237 @@ export function PointCloudQualityPanel({
         </Button>
       </header>
 
-      <div className="flex items-center gap-2 border-b border-border p-3">
-        <Button size="sm" variant="primary" disabled={scanning} onClick={startScan}>
-          <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
-          {scanning
-            ? `扫描中 ${activeRun?.progress_pct ?? 0}%`
-            : canScanScene
-              ? "扫描当前 Scene"
-              : "扫描当前任务"}
-        </Button>
-        <select
-          aria-label="质量问题状态"
-          className="ml-auto h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value as typeof filter)}
+      <div className="grid grid-cols-2 border-b border-border p-2">
+        <Button
+          size="sm"
+          variant={tab === "issues" ? "default" : "ghost"}
+          onClick={() => setTab("issues")}
         >
-          <option value="open">待处理</option>
-          <option value="stale">已过期</option>
-          <option value="all">全部</option>
-        </select>
+          问题
+        </Button>
+        <Button
+          size="sm"
+          variant={tab === "governance" ? "default" : "ghost"}
+          onClick={() => setTab("governance")}
+        >
+          规则治理
+        </Button>
       </div>
 
-      <div className="flex gap-2 border-b border-border px-3 py-2 text-xs text-muted-foreground">
-        <span className="text-status-danger">阻断 {counts.blocker}</span>
-        <span className="text-status-caution">警告 {counts.warning}</span>
-        <span>提示 {counts.info}</span>
-        <span className="ml-auto">共 {issuesQuery.data?.total ?? 0}</span>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {issuesQuery.isLoading && <p className="p-3 text-sm text-muted-foreground">正在加载…</p>}
-        {issuesQuery.isError && (
-          <div className="p-3 text-sm text-status-danger">
-            质量问题加载失败
-            <Button size="xs" variant="ghost" onClick={() => void issuesQuery.refetch()}>
-              重试
-            </Button>
-          </div>
-        )}
-        {!issuesQuery.isLoading && !issuesQuery.isError && issues.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            当前筛选下没有质量问题
-          </div>
-        )}
-        <div className="space-y-2">
-          {issues.map((issue) => (
-            <article
-              key={issue.id}
-              className="rounded-md border border-border bg-background p-2.5 text-xs"
-              data-testid={`point-cloud-quality-issue-${issue.code}`}
-            >
-              <div className="flex items-start gap-2">
-                <span
-                  className={cn(
-                    "mt-0.5 rounded-sm px-1.5 py-0.5 font-medium",
-                    issue.severity === "blocker" && "bg-status-danger-soft text-status-danger",
-                    issue.severity === "warning" && "bg-status-caution-soft text-status-caution",
-                    issue.severity === "info" && "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {SEVERITY_LABEL[issue.severity]}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-foreground">
-                    {CODE_LABEL[issue.code] ?? issue.code}
-                  </div>
-                  <div className="mt-0.5 text-muted-foreground">
-                    F{issue.frame_start ?? "—"}
-                    {issue.frame_end != null && issue.frame_end !== issue.frame_start
-                      ? `–F${issue.frame_end}`
-                      : ""}
-                    <span className="mx-1">·</span>
-                    {metricSummary(issue)}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <Button size="xs" variant="default" onClick={() => onLocate(issue)}>
-                  <Crosshair className="size-3" />
-                  定位
-                </Button>
-                {issue.status === "open" && (
-                  <>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      disabled={patchIssue.isPending}
-                      onClick={() => patchIssue.mutate({ issueId: issue.id, status: "resolved" })}
-                    >
-                      <Check className="size-3" />
-                      已解决
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => {
-                        setWontFixId(issue.id);
-                        setReason("");
-                      }}
-                    >
-                      无需处理
-                    </Button>
-                  </>
-                )}
-                {issue.status === "resolved" || issue.status === "wont_fix" ? (
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => patchIssue.mutate({ issueId: issue.id, status: "open" })}
-                  >
-                    重新打开
-                  </Button>
-                ) : null}
-                {issue.task_id && (
-                  <Button size="xs" variant="ghost" onClick={() => setCommentIssueId(issue.id)}>
-                    <MessageSquareText className="size-3" />
-                    讨论
-                  </Button>
-                )}
-              </div>
-              {wontFixId === issue.id && (
-                <div className="mt-2 flex gap-1.5">
-                  <input
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                    placeholder="填写无需处理的原因"
-                    className="min-w-0 flex-1 rounded-sm border border-border bg-card px-2 py-1 text-foreground"
-                  />
-                  <Button
-                    size="xs"
-                    variant="primary"
-                    disabled={!reason.trim() || patchIssue.isPending}
-                    onClick={() =>
-                      patchIssue.mutate(
-                        { issueId: issue.id, status: "wont_fix", reason: reason.trim() },
-                        { onSuccess: () => setWontFixId(null) },
-                      )
-                    }
-                  >
-                    确认
-                  </Button>
-                </div>
-              )}
-              {commentIssueId === issue.id && (
-                <div className="mt-2 flex gap-1.5">
-                  <input
-                    value={comment}
-                    onChange={(event) => setComment(event.target.value)}
-                    placeholder="记录判断或 @ 协作者"
-                    className="min-w-0 flex-1 rounded-sm border border-border bg-card px-2 py-1 text-foreground"
-                  />
-                  <Button
-                    size="xs"
-                    variant="primary"
-                    disabled={!comment.trim() || createFeedback.isPending}
-                    onClick={() => submitFeedback(issue)}
-                  >
-                    发送
-                  </Button>
-                </div>
-              )}
-            </article>
-          ))}
+      {tab === "issues" && (
+        <div className="flex items-center gap-2 border-b border-border p-3">
+          <Button size="sm" variant="primary" disabled={scanning} onClick={startScan}>
+            <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
+            {scanning
+              ? `扫描中 ${activeRun?.progress_pct ?? 0}%`
+              : canScanScene
+                ? "扫描当前 Scene"
+                : "扫描当前任务"}
+          </Button>
+          <select
+            aria-label="质量问题状态"
+            className="ml-auto h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as typeof filter)}
+          >
+            <option value="open">待处理</option>
+            <option value="stale">已过期</option>
+            <option value="all">全部</option>
+          </select>
         </div>
-      </div>
+      )}
+
+      {tab === "issues" && (
+        <div className="flex gap-2 border-b border-border px-3 py-2 text-xs text-muted-foreground">
+          <span className="text-status-danger">阻断 {counts.blocker}</span>
+          <span className="text-status-caution">警告 {counts.warning}</span>
+          <span>提示 {counts.info}</span>
+          <span className="ml-auto">共 {issuesQuery.data?.total ?? 0}</span>
+        </div>
+      )}
+
+      {tab === "governance" ? (
+        <PointCloudQualityGovernance
+          projectId={projectId}
+          config={qualityConfig}
+          classes={classes}
+          canGovern={canGovern}
+        />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {issuesQuery.isLoading && <p className="p-3 text-sm text-muted-foreground">正在加载…</p>}
+          {issuesQuery.isError && (
+            <div className="p-3 text-sm text-status-danger">
+              质量问题加载失败
+              <Button size="xs" variant="ghost" onClick={() => void issuesQuery.refetch()}>
+                重试
+              </Button>
+            </div>
+          )}
+          {!issuesQuery.isLoading && !issuesQuery.isError && issues.length === 0 && (
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              当前筛选下没有质量问题
+            </div>
+          )}
+          <div className="space-y-2">
+            {issues.map((issue) => (
+              <article
+                key={issue.id}
+                className="rounded-md border border-border bg-background p-2.5 text-xs"
+                data-testid={`point-cloud-quality-issue-${issue.code}`}
+              >
+                <div className="flex items-start gap-2">
+                  <span
+                    className={cn(
+                      "mt-0.5 rounded-sm px-1.5 py-0.5 font-medium",
+                      issue.severity === "blocker" && "bg-status-danger-soft text-status-danger",
+                      issue.severity === "warning" && "bg-status-caution-soft text-status-caution",
+                      issue.severity === "info" && "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {SEVERITY_LABEL[issue.severity]}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-foreground">
+                      {CODE_LABEL[issue.code] ?? issue.code}
+                    </div>
+                    <div className="mt-0.5 text-muted-foreground">
+                      F{issue.frame_start ?? "—"}
+                      {issue.frame_end != null && issue.frame_end !== issue.frame_start
+                        ? `–F${issue.frame_end}`
+                        : ""}
+                      <span className="mx-1">·</span>
+                      {metricSummary(issue)}
+                    </div>
+                    {issue.review_verdict && (
+                      <div className="mt-1 text-brand">
+                        人工判定：{VERDICT_LABEL[issue.review_verdict]}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Button size="xs" variant="default" onClick={() => onLocate(issue)}>
+                    <Crosshair className="size-3" />
+                    定位
+                  </Button>
+                  {issue.status === "open" && (
+                    <>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        disabled={patchIssue.isPending}
+                        onClick={() =>
+                          patchIssue.mutate({
+                            issueId: issue.id,
+                            status: "resolved",
+                            reviewVerdict: "confirmed",
+                          })
+                        }
+                      >
+                        <Check className="size-3" />
+                        确认问题
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => {
+                          setDispositionId(issue.id);
+                          setVerdict("false_positive");
+                          setReason("");
+                        }}
+                      >
+                        其他判定
+                      </Button>
+                    </>
+                  )}
+                  {issue.status === "resolved" || issue.status === "wont_fix" ? (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => patchIssue.mutate({ issueId: issue.id, status: "open" })}
+                    >
+                      重新打开
+                    </Button>
+                  ) : null}
+                  {issue.task_id && (
+                    <Button size="xs" variant="ghost" onClick={() => setCommentIssueId(issue.id)}>
+                      <MessageSquareText className="size-3" />
+                      讨论
+                    </Button>
+                  )}
+                </div>
+                {dispositionId === issue.id && (
+                  <div className="mt-2 space-y-1.5">
+                    <select
+                      aria-label="人工判定"
+                      value={verdict}
+                      onChange={(event) =>
+                        setVerdict(
+                          event.target.value as Exclude<
+                            PointCloudQualityReviewVerdict,
+                            "confirmed"
+                          >,
+                        )
+                      }
+                      className="h-8 w-full rounded-sm border border-border bg-card px-2 text-foreground"
+                    >
+                      <option value="false_positive">误报</option>
+                      <option value="accepted_exception">接受例外</option>
+                      <option value="uncertain">不确定</option>
+                    </select>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={reason}
+                        onChange={(event) => setReason(event.target.value)}
+                        placeholder="填写判定依据"
+                        className="min-w-0 flex-1 rounded-sm border border-border bg-card px-2 py-1 text-foreground"
+                      />
+                      <Button
+                        size="xs"
+                        variant="primary"
+                        disabled={!reason.trim() || patchIssue.isPending}
+                        onClick={() =>
+                          patchIssue.mutate(
+                            {
+                              issueId: issue.id,
+                              status: "wont_fix",
+                              reason: reason.trim(),
+                              reviewVerdict: verdict,
+                              reviewNote: reason.trim(),
+                            },
+                            { onSuccess: () => setDispositionId(null) },
+                          )
+                        }
+                      >
+                        确认
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {commentIssueId === issue.id && (
+                  <div className="mt-2 flex gap-1.5">
+                    <input
+                      value={comment}
+                      onChange={(event) => setComment(event.target.value)}
+                      placeholder="记录判断或 @ 协作者"
+                      className="min-w-0 flex-1 rounded-sm border border-border bg-card px-2 py-1 text-foreground"
+                    />
+                    <Button
+                      size="xs"
+                      variant="primary"
+                      disabled={!comment.trim() || createFeedback.isPending}
+                      onClick={() => submitFeedback(issue)}
+                    >
+                      发送
+                    </Button>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

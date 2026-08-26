@@ -26,6 +26,7 @@ from app.schemas.point_cloud_quality import (
 from app.services.async_job import create_job
 from app.services.mask_qc.service import canonical_digest
 from app.services.point_cloud_quality.config import (
+    effective_thresholds,
     load_point_cloud_quality_config,
     point_cloud_quality_config_digest,
 )
@@ -470,65 +471,144 @@ async def dispatch_quality_run(
 async def refresh_issue_staleness(
     db: AsyncSession, issue: PointCloudQualityIssue
 ) -> bool:
-    stale = False
-    run_id = issue.last_seen_run_id or issue.run_id
-    if run_id is not None:
-        run = await db.get(PointCloudQualityRun, run_id)
-        project = await db.get(Project, issue.project_id)
-        if run is None or project is None:
-            stale = True
-        else:
-            current_config = load_point_cloud_quality_config(
-                project.point_cloud_quality_config
+    return (await refresh_issue_staleness_bulk(db, [issue]))[issue.id]
+
+
+async def refresh_issue_staleness_bulk(
+    db: AsyncSession, issues: list[PointCloudQualityIssue]
+) -> dict[uuid.UUID, bool]:
+    if not issues:
+        return {}
+    project_ids = {issue.project_id for issue in issues}
+    projects = {
+        row.id: row
+        for row in (
+            await db.execute(select(Project).where(Project.id.in_(project_ids)))
+        ).scalars()
+    }
+    run_ids = {
+        run_id
+        for issue in issues
+        if (run_id := issue.last_seen_run_id or issue.run_id) is not None
+    }
+    runs = {
+        row.id: row
+        for row in (
+            await db.execute(
+                select(PointCloudQualityRun).where(PointCloudQualityRun.id.in_(run_ids))
             )
-            stale = (
-                point_cloud_quality_config_digest(current_config) != run.config_digest
+        ).scalars()
+    }
+    annotation_ids = {
+        uuid.UUID(raw_id)
+        for issue in issues
+        for raw_id in (issue.source_versions or {})
+    }
+    annotations = {
+        row.id: row
+        for row in (
+            await db.execute(
+                select(Annotation).where(Annotation.id.in_(annotation_ids))
             )
-    for raw_id, version in (issue.source_versions or {}).items():
-        if stale:
-            break
-        annotation = await db.get(Annotation, uuid.UUID(raw_id))
-        if (
-            annotation is None
-            or not annotation.is_active
-            or annotation.was_cancelled
-            or annotation.version != int(version)
-        ):
-            stale = True
-            break
-    source_item_id = (issue.evidence or {}).get("pointcloud_item_id")
-    if not stale and source_item_id is not None:
-        expected_item_id = uuid.UUID(source_item_id)
-        current_item_id: uuid.UUID | None = None
-        if issue.task_id is not None:
-            task = await db.get(Task, issue.task_id)
-            if task is not None:
-                current_item_id = task.dataset_item_id
-                if current_item_id is None:
-                    current_item_id = (
-                        await db.execute(
-                            select(TaskDatasetItemLink.dataset_item_id).where(
-                                TaskDatasetItemLink.task_id == task.id,
-                                TaskDatasetItemLink.role == "primary_lidar",
-                            )
-                        )
-                    ).scalar_one_or_none()
-        item = await db.get(DatasetItem, expected_item_id)
-        stale = (
-            current_item_id != expected_item_id
-            or item is None
-            or item.content_hash
-            != (issue.evidence or {}).get("pointcloud_content_hash")
-            or item.file_path != (issue.evidence or {}).get("pointcloud_file_path")
+        ).scalars()
+    }
+    task_ids = {issue.task_id for issue in issues if issue.task_id is not None}
+    tasks = {
+        row.id: row
+        for row in (
+            await db.execute(select(Task).where(Task.id.in_(task_ids)))
+        ).scalars()
+    }
+    missing_direct_task_ids = {
+        task_id for task_id, task in tasks.items() if task.dataset_item_id is None
+    }
+    linked_item_by_task = dict(
+        (
+            await db.execute(
+                select(
+                    TaskDatasetItemLink.task_id,
+                    TaskDatasetItemLink.dataset_item_id,
+                ).where(
+                    TaskDatasetItemLink.task_id.in_(missing_direct_task_ids),
+                    TaskDatasetItemLink.role == "primary_lidar",
+                )
+            )
+        ).all()
+    )
+    item_ids = {
+        uuid.UUID(str(source_item_id))
+        for issue in issues
+        if (source_item_id := (issue.evidence or {}).get("pointcloud_item_id"))
+    }
+    items = {
+        row.id: row
+        for row in (
+            await db.execute(select(DatasetItem).where(DatasetItem.id.in_(item_ids)))
+        ).scalars()
+    }
+    track_ids = {
+        issue.scene_track_id for issue in issues if issue.scene_track_id is not None
+    }
+    tracks = {
+        row.id: row
+        for row in (
+            await db.execute(select(SceneTrack).where(SceneTrack.id.in_(track_ids)))
+        ).scalars()
+    }
+    config_digests = {
+        project_id: point_cloud_quality_config_digest(
+            load_point_cloud_quality_config(project.point_cloud_quality_config)
         )
-    if not stale and issue.scene_track_id is not None:
-        track = await db.get(SceneTrack, issue.scene_track_id)
-        stale = track is None or track.revision != issue.track_revision
-    if stale and issue.status != "stale":
-        issue.status = "stale"
-        issue.resolved_at = None
-        issue.resolved_by_id = None
-    return stale
+        for project_id, project in projects.items()
+    }
+
+    result: dict[uuid.UUID, bool] = {}
+    for issue in issues:
+        stale = False
+        run_id = issue.last_seen_run_id or issue.run_id
+        if run_id is not None:
+            run = runs.get(run_id)
+            stale = (
+                run is None
+                or issue.project_id not in projects
+                or config_digests.get(issue.project_id) != run.config_digest
+            )
+        for raw_id, version in (issue.source_versions or {}).items():
+            if stale:
+                break
+            annotation = annotations.get(uuid.UUID(raw_id))
+            stale = bool(
+                annotation is None
+                or not annotation.is_active
+                or annotation.was_cancelled
+                or annotation.version != int(version)
+            )
+        source_item_id = (issue.evidence or {}).get("pointcloud_item_id")
+        if not stale and source_item_id is not None:
+            expected_item_id = uuid.UUID(str(source_item_id))
+            task = tasks.get(issue.task_id) if issue.task_id is not None else None
+            current_item_id = (
+                task.dataset_item_id
+                if task is not None and task.dataset_item_id is not None
+                else linked_item_by_task.get(issue.task_id)
+            )
+            item = items.get(expected_item_id)
+            stale = bool(
+                current_item_id != expected_item_id
+                or item is None
+                or item.content_hash
+                != (issue.evidence or {}).get("pointcloud_content_hash")
+                or item.file_path != (issue.evidence or {}).get("pointcloud_file_path")
+            )
+        if not stale and issue.scene_track_id is not None:
+            track = tracks.get(issue.scene_track_id)
+            stale = track is None or track.revision != issue.track_revision
+        if stale and issue.status != "stale":
+            issue.status = "stale"
+            issue.resolved_at = None
+            issue.resolved_by_id = None
+        result[issue.id] = stale
+    return result
 
 
 async def list_issues(
@@ -591,8 +671,7 @@ async def list_issues(
             )
         ).scalars()
     )
-    for issue in rows:
-        await refresh_issue_staleness(db, issue)
+    await refresh_issue_staleness_bulk(db, rows)
     await db.flush()
     if status:
         rows = [issue for issue in rows if issue.status == status]
@@ -606,10 +685,12 @@ async def list_issues(
     return rows, total
 
 
-def thresholds_from_config(config: PointCloudQualityConfig):
+def thresholds_from_config(
+    config: PointCloudQualityConfig, class_name: str | None = None
+):
     from app.services.point_cloud_quality.kernel import QualityThresholds
 
-    return QualityThresholds(**config.thresholds.model_dump())
+    return QualityThresholds(**effective_thresholds(config, class_name).model_dump())
 
 
 def issue_dedupe_key(

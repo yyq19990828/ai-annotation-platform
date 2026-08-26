@@ -313,6 +313,25 @@ async def test_quality_api_lists_locates_and_requires_wont_fix_reason(
     )
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "wont_fix"
+    assert response.json()["review_verdict"] is None
+    response = await httpx_client.patch(
+        f"/api/v1/point-cloud-quality/issues/{issue.id}",
+        json={"status": "open"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    response = await httpx_client.patch(
+        f"/api/v1/point-cloud-quality/issues/{issue.id}",
+        json={
+            "status": "resolved",
+            "review_verdict": "confirmed",
+            "review_note": "box is genuinely empty",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["review_verdict"] == "confirmed"
+    assert response.json()["reviewed_by_id"] == str(user.id)
 
     feedback_payload = {
         "kind": "comment",
