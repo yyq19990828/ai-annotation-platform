@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.workers.video_tracker",
         "app.workers.video_track_quality",
         "app.workers.mask_qc",
+        "app.workers.point_cloud_quality",
         "app.workers.mask_repair",
         "app.workers.mask_format_import",
         # v0.10.16 · async_jobs 兜底信号 + DuckDB 分析同步
@@ -83,6 +84,7 @@ celery_app.conf.update(
         "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.video_track_quality.run": {"queue": "media"},
         "app.workers.mask_qc.run_mask_qc": {"queue": "media"},
+        "app.workers.point_cloud_quality.run": {"queue": "media"},
         "app.workers.mask_repair.run_mask_repair": {"queue": "media"},
         "app.workers.mask_repair.rollback_mask_repair": {"queue": "media"},
         "app.workers.mask_format_import.run_mask_format_import": {"queue": "media"},

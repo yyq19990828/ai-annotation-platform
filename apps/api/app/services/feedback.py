@@ -220,6 +220,7 @@ class FeedbackService:
         kind: str | None = None,
         anchor_type: str | None = None,
         status: str | None = None,
+        allowed_task_ids: set[uuid.UUID] | None = None,
         cursor: str | None = None,
         limit: int = 50,
     ) -> tuple[list[AnnotationFeedback], str | None]:
@@ -227,6 +228,13 @@ class FeedbackService:
             AnnotationFeedback.project_id == project_id,
             AnnotationFeedback.is_active.is_(True),
         )
+        if allowed_task_ids is not None:
+            q = q.where(
+                or_(
+                    AnnotationFeedback.task_id.is_(None),
+                    AnnotationFeedback.task_id.in_(allowed_task_ids),
+                )
+            )
         if task_id is not None:
             q = q.where(AnnotationFeedback.task_id == task_id)
         if annotation_id is not None:

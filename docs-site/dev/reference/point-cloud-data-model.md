@@ -3,7 +3,7 @@ title: 点云联合标注数据模型
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-08-26
 ---
 
 # 点云联合标注 · 后端数据模型
@@ -229,3 +229,26 @@ visible = w > 0                            // 相机前方; w<=0(后方)剔除�
 每个目标 task 是独立提交边界。写入前会重新检查用户权限、task 可编辑性与源标注版本；已有同 `track_id` 活跃框的目标帧使用 `skip_existing` 跳过。源版本发生外部变化时，当前与后续未执行帧进入 stale，不再继续读取新几何。取消是协作式的：已提交帧保留，剩余帧终结为 cancelled。
 
 `point_mask_3d` 不能复用跨帧点索引，因此不进入该传播合同；registration 和轨迹拆分 / 合并也保持为独立后续能力。
+
+## 3D 质量闭环
+
+3D 质量检查使用独立的 Run / Issue 领域，不把三维证据塞进二维 Mask QC：
+
+```text
+Project / Scene / Task / Annotation scope
+  -> freeze config + annotation versions + SceneTrack revisions + point-cloud hashes
+  -> PointCloudQualityRun + AsyncJob
+  -> deterministic rule kernel
+  -> PointCloudQualityIssue
+  -> timeline marker / workbench locator / point_cloud feedback anchor
+```
+
+`PointCloudQualityRun` 保存 scope、配置快照与 digest、源快照与 digest、singleflight key、进度、跳过摘要和终态。相同输入与配置的 pending / running / completed 运行会复用；worker 开始前再次计算源 digest，防止在过期几何上生成新事实。
+
+Project / Scene scope 冻结完整 Scene 成员，可以执行逐框和轨迹规则。Task / Annotation scope 只执行所选标注可独立判定的逐框规则；轨迹规则记录 `track_rules:scope_incomplete` skip，避免用成员片段制造整轨缺口、跳变或身份漂移。worker 每个标注/轨迹边界直接读取最新取消状态，并只缓存当前帧的解析点云。
+
+`PointCloudQualityIssue` 持久化规则 code/version、severity/status、frame 区间、metric/threshold/evidence、标注版本、SceneTrack revision、稳定 dedupe key 和可恢复 locator。locator 可同时指向 Scene、帧、任务、标注、SceneTrack、相机与辅助层。处置仅改变问题状态并写审计，不执行 `suggested_command`。
+
+规则内核将 PCD 源坐标按 Dataset `axis_convention` 归一到 ISO 平台坐标，再执行框内点数、局部地面、尺寸稳健异常和轨迹时序检查。无法解析的 PCD 或不足的地面样本进入 run skip，不产生猜测 issue，也不会批量将同 Scene 的既有问题标为 stale。
+
+问题的 `open / resolved / wont_fix / stale` 状态与通用 `AnnotationFeedback` 评论分开；评论通过 `anchor_type=point_cloud` 保存结构化定位器，并继续服从对应 Task 的可见性边界。标注版本、轨迹 revision、主点云 item / content hash / path 或项目规则 digest 任一变化都会在问题读取时使旧证据 stale。

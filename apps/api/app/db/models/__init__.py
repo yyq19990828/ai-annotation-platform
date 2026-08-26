@@ -59,6 +59,10 @@ from app.db.models.video_track_quality import (
     VideoTrackQualityIssue,
     VideoTrackQualityRun,
 )
+from app.db.models.point_cloud_quality import (
+    PointCloudQualityIssue,
+    PointCloudQualityRun,
+)
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.bug_report import BugReport, BugComment
@@ -136,6 +140,8 @@ __all__ = [
     "VideoChapter",
     "VideoTrackQualityIssue",
     "VideoTrackQualityRun",
+    "PointCloudQualityIssue",
+    "PointCloudQualityRun",
     "AuditLog",
     "UserInvitation",
     "BugReport",

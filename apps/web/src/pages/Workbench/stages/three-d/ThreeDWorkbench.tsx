@@ -47,6 +47,8 @@ import type {
   WorkbenchLayoutPatch,
 } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
+import type { PointCloudQualityIssue } from "@/api/pointCloudQuality";
+import { usePointCloudQualityIssues } from "@/hooks/usePointCloudQuality";
 
 import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
@@ -72,6 +74,7 @@ import { FramePicker, type FramePickerMode } from "./FramePicker";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
+import { PointCloudQualityPanel } from "./PointCloudQualityPanel";
 import type { TriSelected } from "./TriOrthoView";
 import { TRI_ZOOM_DEFAULT, clampTriZoom, type Psr, type TriView } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
@@ -180,6 +183,7 @@ const DELETE_BTN =
 const TRI_FLOAT_TAB =
   "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-local-6 px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
 const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
+const QUALITY_PANEL_WIDTH = 360;
 const CAM_GROUP =
   "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
 const CAM_MODAL = "absolute inset-0 z-base flex items-center justify-center bg-black/70";
@@ -302,6 +306,7 @@ export function ThreeDWorkbench({
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const pushToast = useToastStore((st) => st.push);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const userRole = useAuthStore((s) => s.user?.role ?? null);
   // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
   // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
   const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
@@ -427,6 +432,39 @@ export function ThreeDWorkbench({
   // 创建新 3D 标注需要对应工具单位的类别(后端按 tool_bindings 校验 class_name)。
   const { data: task } = useTask(taskId ?? "");
   const { data: project } = useProject(task?.project_id ?? "");
+  const qualityAllowed =
+    userRole === "super_admin" || userRole === "project_admin" || userRole === "reviewer";
+  const qualityCanScanScene = userRole === "super_admin" || project?.owner_id === userId;
+  const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
+  const qualitySafeFloatBounds = useMemo(() => {
+    if (!triFloatBounds || !qualityPanelOpen) return triFloatBounds;
+    const margin = triFloatBounds.margin ?? 0;
+    return {
+      ...triFloatBounds,
+      right: Math.max(
+        triFloatBounds.left + 200 + margin * 2,
+        triFloatBounds.right - QUALITY_PANEL_WIDTH,
+      ),
+    };
+  }, [qualityPanelOpen, triFloatBounds]);
+  const qualityIssuesQuery = usePointCloudQualityIssues({
+    projectId: qualityAllowed ? (task?.project_id ?? "") : "",
+    sceneId: manifest?.scene_id ?? undefined,
+    status: "open",
+  });
+  const qualityMarkers = useMemo(() => {
+    const rank = { blocker: 0, warning: 1, info: 2 } as const;
+    const markers: Record<number, "blocker" | "warning" | "info"> = {};
+    for (const issue of qualityIssuesQuery.data?.items ?? []) {
+      if (issue.frame_start == null) continue;
+      const end = issue.frame_end ?? issue.frame_start;
+      for (let frame = issue.frame_start; frame <= end; frame += 1) {
+        const current = markers[frame];
+        if (!current || rank[issue.severity] < rank[current]) markers[frame] = issue.severity;
+      }
+    }
+    return markers;
+  }, [qualityIssuesQuery.data?.items]);
   const toolBindings = project?.tool_bindings;
   const hasToolBindings = !!toolBindings && Object.keys(toolBindings).length > 0;
   const boxClasses = useMemo(() => {
@@ -458,9 +496,11 @@ export function ThreeDWorkbench({
       ? activeClass
       : (pointMaskClasses[0] ?? null);
   const effectiveRightSidebarWidth = rightSidebarOpen ? rightSidebarWidth : 0;
+  const effectiveFloatingRightInset =
+    effectiveRightSidebarWidth + (qualityPanelOpen ? QUALITY_PANEL_WIDTH : 0);
   const triFloatPosition = useMemo(
-    () => resolveTriViewFloatRect(triViewFloat, effectiveRightSidebarWidth),
-    [effectiveRightSidebarWidth, triViewFloat],
+    () => resolveTriViewFloatRect(triViewFloat, effectiveFloatingRightInset),
+    [effectiveFloatingRightInset, triViewFloat],
   );
   const triViewLayoutKey = `${triFloatPosition.x}:${triFloatPosition.y}:${triFloatPosition.w}:${triFloatPosition.h}`;
   const updateTriViewFloat = useCallback(
@@ -482,7 +522,7 @@ export function ThreeDWorkbench({
   const triTabDrag = useDragMove({
     position: triFloatPosition,
     size: TRI_TAB_DRAG_SIZE,
-    bounds: triFloatBounds,
+    bounds: qualitySafeFloatBounds,
     onStart: (pos) => {
       triTabStartRef.current = pos;
       triTabMovedRef.current = false;
@@ -701,6 +741,7 @@ export function ThreeDWorkbench({
     taskId: string;
     annotationId: string | null;
   } | null>(null);
+  const pendingQualityLocatorRef = useRef<PointCloudQualityIssue | null>(null);
   const handleTimelineNavigate = useCallback(
     async (targetTaskId: string, annotationId: string | null) => {
       pendingTimelineSelectionRef.current = { taskId: targetTaskId, annotationId };
@@ -709,6 +750,45 @@ export function ThreeDWorkbench({
       return allowed;
     },
     [onNavigateSceneFrame],
+  );
+  const applyQualityLocatorView = useCallback(
+    (issue: PointCloudQualityIssue) => {
+      const groundZ = issue.metric.ground_z;
+      sceneRef.current?.setQualityGroundPlane(
+        issue.locator.auxiliary_layers.includes("ground") && typeof groundZ === "number"
+          ? groundZ
+          : null,
+      );
+      if (issue.locator.auxiliary_layers.includes("neighbor_frames")) {
+        onWorkbenchConfigChange({
+          common: { crossFrameOverlayEnabled: true, crossFrameOverlayK: 1 },
+        });
+      }
+      if (issue.locator.camera) setEnlargedRole(issue.locator.camera);
+    },
+    [onWorkbenchConfigChange],
+  );
+  const handleLocateQualityIssue = useCallback(
+    (issue: PointCloudQualityIssue) => {
+      if (!issue.locator.task_id) {
+        pushToast({ msg: "该问题缺少可访问的任务定位器", kind: "warning" });
+        return;
+      }
+      if (issue.locator.task_id === taskId) {
+        applyQualityLocatorView(issue);
+        onSelectBox(issue.locator.annotation_id);
+        return;
+      }
+      pendingQualityLocatorRef.current = issue;
+      void handleTimelineNavigate(issue.locator.task_id, issue.locator.annotation_id).then(
+        (allowed) => {
+          if (!allowed && pendingQualityLocatorRef.current?.id === issue.id) {
+            pendingQualityLocatorRef.current = null;
+          }
+        },
+      );
+    },
+    [applyQualityLocatorView, handleTimelineNavigate, onSelectBox, pushToast, taskId],
   );
   useEffect(() => {
     const pending = pendingTimelineSelectionRef.current;
@@ -720,7 +800,12 @@ export function ThreeDWorkbench({
     ) {
       onSelectBox(pending.annotationId);
     }
-  }, [annotations, onSelectBox, taskId]);
+    const qualityIssue = pendingQualityLocatorRef.current;
+    if (qualityIssue?.locator.task_id === taskId) {
+      pendingQualityLocatorRef.current = null;
+      applyQualityLocatorView(qualityIssue);
+    }
+  }, [annotations, applyQualityLocatorView, onSelectBox, taskId]);
   const selectedBoxIds = useMemo(
     () => selectedIds.filter((id) => boxes.some((b) => b.id === id)),
     [selectedIds, boxes],
@@ -2834,7 +2919,7 @@ export function ThreeDWorkbench({
             variant="no-merge"
             minSize={{ w: 200, h: 240 }}
             maxSize={{ w: 480, h: 720 }}
-            bounds={triFloatBounds}
+            bounds={qualitySafeFloatBounds}
             className="!bg-transparent [&>div:nth-of-type(2)]:!bg-transparent"
           >
             {!triViewFloat.collapsed && (
@@ -2895,7 +2980,7 @@ export function ThreeDWorkbench({
                 showDepth={depthOn}
                 onEnlarge={() => setEnlargedRole(cam.role)}
                 autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
-                dragBounds={triFloatBounds}
+                dragBounds={qualitySafeFloatBounds}
                 position={
                   cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
                     ? {
@@ -3000,6 +3085,16 @@ export function ThreeDWorkbench({
             </div>
           </div>
         )}
+        {qualityPanelOpen && project && manifest?.scene_id && (
+          <PointCloudQualityPanel
+            projectId={project.id}
+            sceneId={manifest.scene_id}
+            taskId={taskId ?? ""}
+            canScanScene={qualityCanScanScene}
+            onClose={() => setQualityPanelOpen(false)}
+            onLocate={handleLocateQualityIssue}
+          />
+        )}
       </div>
       <SceneTimeline
         taskId={taskId}
@@ -3012,6 +3107,9 @@ export function ThreeDWorkbench({
         boxCount={boxes.length}
         readOnly={readOnly}
         onNavigateFrame={handleTimelineNavigate}
+        qualityMarkers={qualityMarkers}
+        qualityIssueCount={qualityIssuesQuery.data?.total ?? 0}
+        onOpenQuality={qualityAllowed ? () => setQualityPanelOpen(true) : undefined}
       />
     </div>
   );

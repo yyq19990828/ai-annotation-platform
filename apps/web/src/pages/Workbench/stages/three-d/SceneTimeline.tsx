@@ -38,6 +38,9 @@ interface SceneTimelineProps {
   boxCount?: number;
   readOnly?: boolean;
   onNavigateFrame: (taskId: string, annotationId: string | null) => Promise<boolean>;
+  qualityMarkers?: Record<number, "blocker" | "warning" | "info">;
+  qualityIssueCount?: number;
+  onOpenQuality?: () => void;
 }
 
 interface TimelineCellProps {
@@ -49,6 +52,7 @@ interface TimelineCellProps {
   navigating: boolean;
   onNavigate: (summary: SceneTimelineFrameSummary) => void;
   onPrefetch: (summary: SceneTimelineFrameSummary) => void;
+  qualitySeverity?: "blocker" | "warning" | "info";
 }
 
 function TimelineSizer({
@@ -91,6 +95,7 @@ function TimelineCell({
   navigating,
   onNavigate,
   onPrefetch,
+  qualitySeverity,
 }: TimelineCellProps) {
   const count = summary?.annotation_count ?? 0;
   const barHeight = Math.round(densityRatio(count, maxDensity) * 22);
@@ -134,6 +139,18 @@ function TimelineCell({
       onPointerEnter={() => summary && onPrefetch(summary)}
       onFocus={() => summary && onPrefetch(summary)}
     >
+      {qualitySeverity && (
+        <span
+          data-testid={`scene-timeline-quality-${frameIndex}`}
+          className={cn(
+            "absolute right-1 top-1 size-1.5 rounded-full",
+            qualitySeverity === "blocker" && "bg-status-danger",
+            qualitySeverity === "warning" && "bg-status-caution",
+            qualitySeverity === "info" && "bg-brand",
+          )}
+          aria-hidden="true"
+        />
+      )}
       <span className="mt-1 leading-none">{frameIndex}</span>
       <span className="relative mt-1 h-[30px] w-full" aria-hidden="true">
         {barHeight > 0 && (
@@ -178,6 +195,9 @@ export function SceneTimeline({
   boxCount = 0,
   readOnly = false,
   onNavigateFrame,
+  qualityMarkers = {},
+  qualityIssueCount = 0,
+  onOpenQuality,
 }: SceneTimelineProps) {
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -328,10 +348,21 @@ export function SceneTimeline({
           F{currentFrame} / F{sceneEnd}
         </span>
         {trackId && <span className="text-brand">当前对象轨迹</span>}
+        {onOpenQuality && (
+          <Button
+            size="xs"
+            variant={qualityIssueCount > 0 ? "default" : "ghost"}
+            className="ml-auto"
+            data-testid="scene-quality-open"
+            onClick={onOpenQuality}
+          >
+            3D 质检{qualityIssueCount > 0 ? ` · ${qualityIssueCount}` : ""}
+          </Button>
+        )}
         <Button
           size="xs"
           variant="ghost"
-          className="ml-auto"
+          className={onOpenQuality ? undefined : "ml-auto"}
           data-testid="scene-cross-frame-job-center"
           onClick={() => setJobCenterOpen(true)}
         >
@@ -365,6 +396,7 @@ export function SceneTimeline({
                   navigating={navigatingTaskId === summary?.task_id}
                   onNavigate={(frame) => void handleNavigate(frame)}
                   onPrefetch={prefetchFrame}
+                  qualitySeverity={qualityMarkers[frameIndex]}
                 />
               );
             })}

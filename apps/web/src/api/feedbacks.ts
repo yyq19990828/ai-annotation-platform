@@ -7,7 +7,7 @@
 import { apiClient } from "./client";
 
 export type FeedbackKind = "issue" | "comment" | "reject" | "bug";
-export type FeedbackAnchorType = "project" | "task" | "annotation" | "pixel";
+export type FeedbackAnchorType = "project" | "task" | "annotation" | "pixel" | "point_cloud";
 export type FeedbackStatus = "open" | "resolved" | "wont_fix";
 export type FeedbackSeverity = "info" | "warn" | "blocker";
 
@@ -23,13 +23,17 @@ export interface MaskFeedbackCompareLocator {
 }
 
 export interface FeedbackAnchorPosition {
-  x: number;
-  y: number;
+  x?: number | null;
+  y?: number | null;
   frame?: number | null;
   region_bbox?: [number, number, number, number] | null;
   region_digest?: string | null;
   boundary_digest?: string | null;
   mask_qc_issue_id?: string | null;
+  point_cloud_quality_issue_id?: string | null;
+  scene_id?: string | null;
+  scene_track_id?: string | null;
+  auxiliary_layers?: string[];
   compare_locator?: MaskFeedbackCompareLocator | null;
 }
 
@@ -54,6 +58,19 @@ export interface AnnotationFeedback {
   resolved_by_id: string | null;
   created_at: string;
   updated_at: string | null;
+}
+
+export type PixelAnchoredFeedback = AnnotationFeedback & {
+  anchor_type: "pixel";
+  anchor_position: FeedbackAnchorPosition & { x: number; y: number };
+};
+
+export function hasPixelAnchor(feedback: AnnotationFeedback): feedback is PixelAnchoredFeedback {
+  return (
+    feedback.anchor_type === "pixel" &&
+    typeof feedback.anchor_position?.x === "number" &&
+    typeof feedback.anchor_position.y === "number"
+  );
 }
 
 export interface AnnotationFeedbackListPage {

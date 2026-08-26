@@ -1899,7 +1899,8 @@
               "project",
               "task",
               "annotation",
-              "pixel"
+              "pixel",
+              "point_cloud"
             ],
             "title": "Anchor Type",
             "type": "string"
@@ -2052,7 +2053,8 @@
               "project",
               "task",
               "annotation",
-              "pixel"
+              "pixel",
+              "point_cloud"
             ],
             "title": "Anchor Type",
             "type": "string"
@@ -10292,8 +10294,16 @@
         "type": "object"
       },
       "FeedbackAnchorPosition": {
-        "description": "pixel anchor 携带的坐标 (相对 0-1 与 geometry 同语义); frame 视频时可选.",
+        "description": "Pixel or 3D quality anchor position and durable locator.",
         "properties": {
+          "auxiliary_layers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Auxiliary Layers",
+            "type": "array"
+          },
           "boundary_digest": {
             "anyOf": [
               {
@@ -10340,6 +10350,18 @@
             ],
             "title": "Mask Qc Issue Id"
           },
+          "point_cloud_quality_issue_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Cloud Quality Issue Id"
+          },
           "region_bbox": {
             "anyOf": [
               {
@@ -10379,23 +10401,57 @@
             ],
             "title": "Region Digest"
           },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Track Id"
+          },
           "x": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "X",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
           },
           "y": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Y",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
           }
         },
-        "required": [
-          "x",
-          "y"
-        ],
         "title": "FeedbackAnchorPosition",
         "type": "object"
       },
@@ -18709,6 +18765,612 @@
         "title": "PointCloudCameraOut",
         "type": "object"
       },
+      "PointCloudQualityConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "config_revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enabled Rules",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "severity_overrides": {
+            "additionalProperties": {
+              "enum": [
+                "info",
+                "warning",
+                "blocker",
+                "off"
+              ],
+              "type": "string"
+            },
+            "title": "Severity Overrides",
+            "type": "object"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/PointCloudQualityThresholdConfig"
+          }
+        },
+        "title": "PointCloudQualityConfig",
+        "type": "object"
+      },
+      "PointCloudQualityIssueOut": {
+        "properties": {
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "annotation_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Version"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "frame_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame End"
+          },
+          "frame_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Start"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen Run Id"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "metric": {
+            "additionalProperties": true,
+            "title": "Metric",
+            "type": "object"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "related_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Related Annotation Ids",
+            "type": "array"
+          },
+          "resolution_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Reason"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By Id"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "integer"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Track Id"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Versions",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "wont_fix",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Command"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "threshold": {
+            "additionalProperties": true,
+            "title": "Threshold",
+            "type": "object"
+          },
+          "track_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Revision"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "last_seen_run_id",
+          "project_id",
+          "scene_id",
+          "task_id",
+          "annotation_id",
+          "annotation_version",
+          "scene_track_id",
+          "track_revision",
+          "related_annotation_ids",
+          "source_versions",
+          "code",
+          "rule_version",
+          "severity",
+          "status",
+          "frame_start",
+          "frame_end",
+          "metric",
+          "threshold",
+          "evidence",
+          "locator",
+          "suggested_command",
+          "resolution_reason",
+          "resolved_by_id",
+          "resolved_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PointCloudQualityIssueOut",
+        "type": "object"
+      },
+      "PointCloudQualityIssuePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PointCloudQualityIssueOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "PointCloudQualityIssuePage",
+        "type": "object"
+      },
+      "PointCloudQualityIssuePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "wont_fix"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "PointCloudQualityIssuePatch",
+        "type": "object"
+      },
+      "PointCloudQualityRunOut": {
+        "properties": {
+          "async_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Async Job Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "config_digest": {
+            "title": "Config Digest",
+            "type": "string"
+          },
+          "config_revision": {
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "progress_pct": {
+            "title": "Progress Pct",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reused": {
+            "default": false,
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "scope_json": {
+            "additionalProperties": true,
+            "title": "Scope Json",
+            "type": "object"
+          },
+          "source_snapshot_digest": {
+            "title": "Source Snapshot Digest",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "async_job_id",
+          "status",
+          "progress_pct",
+          "scope_json",
+          "config_revision",
+          "config_digest",
+          "source_snapshot_digest",
+          "summary",
+          "error_message",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "PointCloudQualityRunOut",
+        "type": "object"
+      },
+      "PointCloudQualityRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "expected_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Expected Versions",
+            "type": "object"
+          },
+          "scene_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Scene Ids",
+            "type": "array"
+          },
+          "scope": {
+            "enum": [
+              "project",
+              "scene_ids",
+              "task_ids",
+              "annotation_ids"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "PointCloudQualityRunRequest",
+        "type": "object"
+      },
+      "PointCloudQualityThresholdConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "ground_float_m": {
+            "default": 0.45,
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Ground Float M",
+            "type": "number"
+          },
+          "ground_margin_m": {
+            "default": 0.75,
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Ground Margin M",
+            "type": "number"
+          },
+          "ground_penetration_m": {
+            "default": 0.2,
+            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "title": "Ground Penetration M",
+            "type": "number"
+          },
+          "ground_sample_min": {
+            "default": 24,
+            "minimum": 3.0,
+            "title": "Ground Sample Min",
+            "type": "integer"
+          },
+          "minimum_points": {
+            "default": 5,
+            "minimum": 0.0,
+            "title": "Minimum Points",
+            "type": "integer"
+          },
+          "size_mad_z": {
+            "default": 4.5,
+            "exclusiveMinimum": 0.0,
+            "maximum": 20.0,
+            "title": "Size Mad Z",
+            "type": "number"
+          },
+          "size_min_samples": {
+            "default": 8,
+            "minimum": 3.0,
+            "title": "Size Min Samples",
+            "type": "integer"
+          },
+          "temporal_center_jump_m": {
+            "default": 4.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 100.0,
+            "title": "Temporal Center Jump M",
+            "type": "number"
+          },
+          "temporal_size_change_ratio": {
+            "default": 0.6,
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Temporal Size Change Ratio",
+            "type": "number"
+          },
+          "temporal_yaw_jump_rad": {
+            "default": 0.8,
+            "exclusiveMinimum": 0.0,
+            "maximum": 3.142,
+            "title": "Temporal Yaw Jump Rad",
+            "type": "number"
+          }
+        },
+        "title": "PointCloudQualityThresholdConfig",
+        "type": "object"
+      },
       "PointMaskGeometry": {
         "additionalProperties": false,
         "description": "v0.13.0 · 3D 点云语义/实例分割掩码。point_indices 为指向点云的整数索引列表。",
@@ -20629,6 +21291,9 @@
             ],
             "title": "Owner Name"
           },
+          "point_cloud_quality_config": {
+            "$ref": "#/components/schemas/PointCloudQualityConfig"
+          },
           "preannotate_pipeline": {
             "anyOf": [
               {
@@ -22461,6 +23126,16 @@
               }
             ],
             "title": "Name"
+          },
+          "point_cloud_quality_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointCloudQualityConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "preannotate_pipeline": {
             "anyOf": [
@@ -41424,6 +42099,110 @@
         ]
       }
     },
+    "/api/v1/point-cloud-quality/issues/{issue_id}": {
+      "get": {
+        "operationId": "get_issue_api_v1_point_cloud_quality_issues__issue_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityIssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issue",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_issue_api_v1_point_cloud_quality_issues__issue_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointCloudQualityIssuePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityIssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Issue",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
     "/api/v1/project-pipelines": {
       "get": {
         "operationId": "list_pipelines_api_v1_project_pipelines_get",
@@ -47287,6 +48066,337 @@
         "summary": "Apply Project Pipeline",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/issues": {
+      "get": {
+        "operationId": "get_issues_api_v1_projects__project_id__point_cloud_quality_issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "resolved",
+                    "wont_fix",
+                    "stale"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "blocker",
+                    "warning",
+                    "info"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Track Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityIssuePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issues",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/runs": {
+      "post": {
+        "operationId": "create_run_api_v1_projects__project_id__point_cloud_quality_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointCloudQualityRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Run",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_projects__project_id__point_cloud_quality_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Run",
+        "tags": [
+          "point-cloud-quality"
         ]
       }
     },

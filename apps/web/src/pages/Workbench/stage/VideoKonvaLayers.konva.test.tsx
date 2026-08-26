@@ -313,4 +313,16 @@ describe("VideoKonvaIssueLayer", () => {
     );
     expect(document.querySelector('[data-konva="Layer"]')).toBeNull();
   });
+
+  it("3D 质量锚点没有 x/y 时不进入二维图钉层", () => {
+    const pointCloudIssue = {
+      ...issue("quality-1", 0),
+      anchor_type: "point_cloud",
+      anchor_position: { frame: 0, point_cloud_quality_issue_id: "quality-1" },
+    } as unknown as AnnotationFeedback;
+    render(
+      <VideoKonvaIssueLayer pixelIssues={[pointCloudIssue]} frameIndex={0} size={size} scale={1} />,
+    );
+    expect(document.querySelector('[data-konva="Layer"]')).toBeNull();
+  });
 });

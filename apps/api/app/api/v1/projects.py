@@ -768,6 +768,33 @@ async def update_project(
             )
         requested_config.config_revision = current_config.config_revision + 1
         payload["mask_qc_config"] = requested_config.model_dump(mode="json")
+    if "point_cloud_quality_config" in payload:
+        from app.services.point_cloud_quality.config import (
+            load_point_cloud_quality_config,
+        )
+
+        project = (
+            await db.execute(
+                select(Project).where(Project.id == project.id).with_for_update()
+            )
+        ).scalar_one()
+        current_config = load_point_cloud_quality_config(
+            project.point_cloud_quality_config
+        )
+        requested_config = load_point_cloud_quality_config(
+            payload["point_cloud_quality_config"]
+        )
+        if requested_config.config_revision != current_config.config_revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "point_cloud_quality_config_revision_conflict",
+                    "expected": requested_config.config_revision,
+                    "actual": current_config.config_revision,
+                },
+            )
+        requested_config.config_revision = current_config.config_revision + 1
+        payload["point_cloud_quality_config"] = requested_config.model_dump(mode="json")
     # v0.13.x 收口 PR#30 review #5: type_key 与 data_type 媒体维度必须一致.
     # 单独 PATCH 任一字段也要校验 (用 payload 给值 + 项目现值组合后的有效值).
     if "type_key" in payload or "data_type" in payload:

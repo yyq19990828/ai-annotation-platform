@@ -369,6 +369,16 @@
 | GET | `/notification-preferences` |
 | PUT | `/notification-preferences` |
 
+## `point_cloud_quality.py`
+
+| Method | Path |
+|---|---|
+| POST | `/projects/{project_id}/point-cloud-quality/runs` |
+| GET | `/projects/{project_id}/point-cloud-quality/runs/{run_id}` |
+| GET | `/projects/{project_id}/point-cloud-quality/issues` |
+| GET | `/point-cloud-quality/issues/{issue_id}` |
+| PATCH | `/point-cloud-quality/issues/{issue_id}` |
+
 ## `predictions.py`
 
 | Method | Path |
@@ -664,4 +674,4 @@
 
 ---
 
-_共 62 模块 / 372 路由_
+_共 63 模块 / 377 路由_

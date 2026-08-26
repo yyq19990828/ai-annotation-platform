@@ -210,6 +210,7 @@ export class PointCloudScene {
   private readonly axisCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
   private readonly axisGroup = new THREE.Group();
   private readonly grid: THREE.GridHelper;
+  private readonly qualityGroundGrid: THREE.GridHelper;
   private axisGizmoVisible = true;
   private pointSize = 0.06;
   private decimateThreshold = DEFAULT_DECIMATE_THRESHOLD;
@@ -294,6 +295,10 @@ export class PointCloudScene {
     this.grid = new THREE.GridHelper(100, 50, 0x2a2f3a, 0x1a1d24);
     this.grid.rotation.x = Math.PI / 2;
     this.scene.add(this.grid);
+    this.qualityGroundGrid = new THREE.GridHelper(20, 20, 0xf59e0b, 0xf59e0b);
+    this.qualityGroundGrid.rotation.x = Math.PI / 2;
+    this.qualityGroundGrid.visible = false;
+    this.scene.add(this.qualityGroundGrid);
 
     this.scene.add(this.boxLayer);
     this.scene.add(this.labelLayer);
@@ -892,6 +897,13 @@ export class PointCloudScene {
     this.invalidateMain();
   }
 
+  setQualityGroundPlane(z: number | null): void {
+    const visible = z != null && Number.isFinite(z);
+    this.qualityGroundGrid.visible = visible;
+    if (visible) this.qualityGroundGrid.position.z = z!;
+    this.invalidateMain("quality-ground-plane");
+  }
+
   setAxisGizmoVisible(visible: boolean) {
     if (visible === this.axisGizmoVisible) return;
     this.axisGizmoVisible = visible;
@@ -955,6 +967,7 @@ export class PointCloudScene {
 
   /** 换帧开始时立即移除旧点缓冲，不让上一帧冒充当前帧。 */
   clearPointCloud() {
+    this.qualityGroundGrid.visible = false;
     if (this.webGpuPointLayer && this.points) {
       this.points.visible = false;
       this.webGpuPointLayer.setPointCount(0);
@@ -1536,6 +1549,13 @@ export class PointCloudScene {
     this.neighborPoints = [];
     this.unitEdges.dispose();
     this.unitBox.dispose();
+    this.qualityGroundGrid.geometry.dispose();
+    const qualityGroundMaterial = this.qualityGroundGrid.material;
+    if (Array.isArray(qualityGroundMaterial)) {
+      qualityGroundMaterial.forEach((material) => material.dispose());
+    } else {
+      qualityGroundMaterial.dispose();
+    }
     this.transform.detach();
     this.scene.remove(this.transform.getHelper());
     this.transform.dispose();

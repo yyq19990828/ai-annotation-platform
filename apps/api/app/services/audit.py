@@ -139,6 +139,7 @@ class AuditAction(str, Enum):
     FEEDBACK_DELETED = "feedback.deleted"
     # v0.11.0 · ADR-0027 双写一致性对账 cron 检出漂移
     FEEDBACK_RECONCILE_DRIFT = "feedback.reconcile_drift"
+    POINT_CLOUD_QUALITY_ISSUE_STATUS = "point_cloud_quality.issue_status"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

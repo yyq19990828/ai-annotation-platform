@@ -129,6 +129,23 @@ describe("SceneTimeline", () => {
     expect(screen.getByTestId("scene-timeline-frame-2")).toBeDisabled();
   });
 
+  it("shows quality severity on frames and opens the quality panel", () => {
+    const openQuality = vi.fn();
+    renderTimeline({
+      taskId: "task-0",
+      trackId: null,
+      onNavigateFrame: vi.fn(),
+      qualityMarkers: { 1: "blocker" },
+      qualityIssueCount: 3,
+      onOpenQuality: openQuality,
+    });
+
+    expect(screen.getByTestId("scene-timeline-quality-1")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("scene-quality-open"));
+    expect(openQuality).toHaveBeenCalledOnce();
+    expect(screen.getByText("3D 质检 · 3")).toBeTruthy();
+  });
+
   it("navigates to an available frame with the matching annotation", async () => {
     const navigate = vi.fn().mockResolvedValue(true);
     renderTimeline({ taskId: "task-0", trackId: "trk_car", onNavigateFrame: navigate });

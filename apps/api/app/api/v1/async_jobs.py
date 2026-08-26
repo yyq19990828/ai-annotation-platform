@@ -20,6 +20,7 @@ from app.db.enums import UserRole
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
 from app.db.models.mask_qc import MaskQCRun
+from app.db.models.point_cloud_quality import PointCloudQualityRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.user import User
@@ -43,6 +44,7 @@ CANCELLABLE_KINDS = {
     "mask_repair",
     "mask_format_import",
     "point_cloud_cross_frame",
+    "point_cloud_quality",
 }
 RETRY_FAILED_KINDS = {"batch_predict"}
 
@@ -52,7 +54,7 @@ AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "canc
 async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> bool:
     if user.role == UserRole.SUPER_ADMIN.value or job.user_id == user.id:
         return True
-    if job.kind != "mask_qc" or job.project_id is None:
+    if job.kind not in {"mask_qc", "point_cloud_quality"} or job.project_id is None:
         return False
     project = await db.get(Project, job.project_id)
     if project is None:
@@ -222,6 +224,31 @@ async def cancel_async_job(
             await db.execute(
                 select(MaskQCRun)
                 .where(MaskQCRun.async_job_id == job.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if run is not None and run.status in {"pending", "running"}:
+            run.status = "cancelled"
+            run.completed_at = datetime.now(timezone.utc)
+        await notify_job_terminal(db, job_id=job.id)
+        await db.commit()
+        return {"status": "cancelled", "id": str(job_id)}
+
+    if job.kind == "point_cloud_quality":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("point_cloud_quality revoke failed job=%s", job.id)
+        await async_job_svc.mark_cancelled(
+            db, job.id, result={"reason": "cancelled_by_user"}
+        )
+        run = (
+            await db.execute(
+                select(PointCloudQualityRun)
+                .where(PointCloudQualityRun.async_job_id == job.id)
                 .with_for_update()
             )
         ).scalar_one_or_none()
