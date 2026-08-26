@@ -324,7 +324,7 @@ describe("usePointCloudScene camera continuity", () => {
     remounted.unmount();
   });
 
-  it("换帧立即清掉旧点云，且过期加载不再具备提交资格", async () => {
+  it("换帧保留旧点云直到新帧原子提交，且过期加载不再具备提交资格", async () => {
     const container = document.createElement("div");
     const sceneRef = { current: null };
     let pointCloudUrl = "frame-1.pcd";
@@ -371,10 +371,10 @@ describe("usePointCloudScene camera continuity", () => {
     render.rerender();
 
     await waitFor(() => expect(scene.loadPcd).toHaveBeenCalledTimes(2));
-    expect(render.result.current.stats).toBeNull();
-    expect(render.result.current.loadedPointCloudUrl).toBeNull();
+    expect(render.result.current.stats?.totalPoints).toBe(10);
+    expect(render.result.current.loadedPointCloudUrl).toBe("frame-1.pcd");
     expect(render.result.current.isLoading).toBe(true);
-    expect(scene.clearPointCloud).toHaveBeenCalled();
+    expect(scene.clearPointCloud).not.toHaveBeenCalled();
     const frame2Options = scene.loadPcd.mock.calls[1][2] as {
       shouldCommit: () => boolean;
       visible: boolean;

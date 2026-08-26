@@ -17,6 +17,11 @@ import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useSceneTimeline } from "@/hooks/useSceneTimeline";
 import { cn } from "@/lib/utils";
+import {
+  beginPointCloudNavigationTrace,
+  pointCloudNavigationGenerationForTask,
+  publishPointCloudNavigationTrace,
+} from "@/utils/pointCloudNavigationDiagnostics";
 
 import {
   SCENE_TIMELINE_CELL_WIDTH,
@@ -28,6 +33,9 @@ import {
 } from "./sceneTimelineVirtualization";
 import { prefetchPointCloudFrameAssets } from "./pointCloudAssetCache";
 import { CrossFrameJobCenter } from "./CrossFrameJobCenter";
+
+// 人工快速点选约为 8–10 次/秒（100–125ms 间隔）；稍长于该间隔，只提交停手后的最终意图。
+const FRAME_NAVIGATION_SETTLE_MS = 160;
 
 interface SceneTimelineProps {
   taskId: string | null;
@@ -205,6 +213,12 @@ export function SceneTimeline({
   const [range, setRange] = useState<TimelineFrameRange>(timelineInitialRange);
   const [navigatingTaskId, setNavigatingTaskId] = useState<string | null>(null);
   const [jobCenterOpen, setJobCenterOpen] = useState(false);
+  const pendingNavigationRef = useRef<SceneTimelineFrameSummary | null>(null);
+  const navigationTimerRef = useRef<number | null>(null);
+  const navigationInFlightRef = useRef(false);
+  const navigationEpochRef = useRef(0);
+  const pendingPointerPrefetchRef = useRef<SceneTimelineFrameSummary | null>(null);
+  const pointerPrefetchTimerRef = useRef<number | null>(null);
   const query = useSceneTimeline(taskId, range.startFrame, range.endFrame, trackId);
   const data = query.data;
   const sceneStart = data?.scene_start_frame ?? 0;
@@ -221,6 +235,25 @@ export function SceneTimeline({
   const virtualItems = virtualizer.getVirtualItems();
   const firstVirtualIndex = virtualItems[0]?.index ?? 0;
   const lastVirtualIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
+
+  useEffect(() => {
+    if (!taskId) return;
+    publishPointCloudNavigationTrace({
+      source: "timeline",
+      type: "timeline-state",
+      generation: pointCloudNavigationGenerationForTask(taskId),
+      taskId,
+      frameIndex: currentFrame,
+      status: query.isPlaceholderData
+        ? "placeholder"
+        : query.isFetching
+          ? "fetching"
+          : query.isError
+            ? "error"
+            : "ready",
+      pending: navigationInFlightRef.current || pendingNavigationRef.current !== null,
+    });
+  }, [currentFrame, query.isError, query.isFetching, query.isPlaceholderData, taskId]);
 
   useEffect(() => {
     setRange(timelineInitialRange());
@@ -268,7 +301,7 @@ export function SceneTimeline({
       return queryClient
         .fetchQuery({
           queryKey: ["task-point-cloud-manifest", summary.task_id],
-          queryFn: () => tasksApi.getPointCloudManifest(summary.task_id!),
+          queryFn: ({ signal }) => tasksApi.getPointCloudManifest(summary.task_id!, { signal }),
           staleTime: 5 * 60 * 1000,
         })
         .then((manifest) =>
@@ -284,32 +317,163 @@ export function SceneTimeline({
     [prefetchDecimateThreshold, prefetchDepthRasters, queryClient, taskId],
   );
 
+  const schedulePointerPrefetch = useCallback(
+    (summary: SceneTimelineFrameSummary) => {
+      pendingPointerPrefetchRef.current = summary;
+      if (pointerPrefetchTimerRef.current !== null) {
+        window.clearTimeout(pointerPrefetchTimerRef.current);
+      }
+      pointerPrefetchTimerRef.current = window.setTimeout(() => {
+        pointerPrefetchTimerRef.current = null;
+        const pending = pendingPointerPrefetchRef.current;
+        pendingPointerPrefetchRef.current = null;
+        if (pending) void prefetchFrame(pending);
+      }, FRAME_NAVIGATION_SETTLE_MS);
+    },
+    [prefetchFrame],
+  );
+
+  const runPendingNavigation: () => void = useCallback(() => {
+    if (navigationInFlightRef.current) return;
+    const summary = pendingNavigationRef.current;
+    if (!summary?.task_id) return;
+    pendingNavigationRef.current = null;
+    navigationTimerRef.current = null;
+    navigationInFlightRef.current = true;
+    const navigationEpoch = navigationEpochRef.current;
+    const generation = pointCloudNavigationGenerationForTask(summary.task_id);
+    publishPointCloudNavigationTrace({
+      source: "timeline",
+      type: "navigation-start",
+      generation,
+      taskId: summary.task_id,
+      targetTaskId: summary.task_id,
+      frameIndex: summary.frame_index,
+    });
+    void (async () => {
+      try {
+        void prefetchFrame(summary);
+        const allowed = await onNavigateFrame(
+          summary.task_id!,
+          summary.selected_track?.annotation_id ?? null,
+        );
+        if (navigationEpochRef.current !== navigationEpoch) return;
+        publishPointCloudNavigationTrace({
+          source: "timeline",
+          type: "navigation-resolved",
+          generation,
+          taskId: summary.task_id!,
+          targetTaskId: summary.task_id!,
+          frameIndex: summary.frame_index,
+          allowed,
+        });
+        if (allowed && pendingNavigationRef.current === null) {
+          const following = frameByIndex.get(summary.frame_index + 1);
+          if (following) void prefetchFrame(following);
+        }
+      } finally {
+        if (navigationEpochRef.current === navigationEpoch) {
+          navigationInFlightRef.current = false;
+          const pending = pendingNavigationRef.current;
+          if (pending?.task_id) {
+            publishPointCloudNavigationTrace({
+              source: "timeline",
+              type: "navigation-follow-up-scheduled",
+              generation: pointCloudNavigationGenerationForTask(pending.task_id),
+              taskId: pending.task_id,
+              targetTaskId: pending.task_id,
+              frameIndex: pending.frame_index,
+              pending: true,
+            });
+            navigationTimerRef.current = window.setTimeout(
+              runPendingNavigation,
+              FRAME_NAVIGATION_SETTLE_MS,
+            );
+          } else {
+            setNavigatingTaskId(null);
+          }
+        }
+      }
+    })();
+  }, [frameByIndex, onNavigateFrame, prefetchFrame]);
+
+  const scheduleNavigation = useCallback(
+    (summary: SceneTimelineFrameSummary) => {
+      if (!summary.task_id || summary.task_id === taskId) return;
+      const replaced = pendingNavigationRef.current;
+      const generation = beginPointCloudNavigationTrace({
+        source: "timeline",
+        targetTaskId: summary.task_id,
+        frameIndex: summary.frame_index,
+      });
+      if (replaced?.task_id) {
+        publishPointCloudNavigationTrace({
+          source: "timeline",
+          type: "navigation-intent-replaced",
+          generation: pointCloudNavigationGenerationForTask(replaced.task_id),
+          taskId: replaced.task_id,
+          targetTaskId: replaced.task_id,
+          frameIndex: replaced.frame_index,
+          pending: true,
+        });
+      }
+      pendingNavigationRef.current = summary;
+      setNavigatingTaskId(summary.task_id);
+      pendingPointerPrefetchRef.current = null;
+      if (pointerPrefetchTimerRef.current !== null) {
+        window.clearTimeout(pointerPrefetchTimerRef.current);
+        pointerPrefetchTimerRef.current = null;
+      }
+      if (navigationInFlightRef.current) {
+        publishPointCloudNavigationTrace({
+          source: "timeline",
+          type: "navigation-intent-queued",
+          generation,
+          taskId: summary.task_id,
+          targetTaskId: summary.task_id,
+          frameIndex: summary.frame_index,
+          pending: true,
+        });
+        return;
+      }
+      if (navigationTimerRef.current !== null) {
+        window.clearTimeout(navigationTimerRef.current);
+      }
+      navigationTimerRef.current = window.setTimeout(
+        runPendingNavigation,
+        FRAME_NAVIGATION_SETTLE_MS,
+      );
+    },
+    [runPendingNavigation, taskId],
+  );
+
+  useEffect(() => {
+    navigationEpochRef.current += 1;
+    navigationInFlightRef.current = false;
+    pendingNavigationRef.current = null;
+    pendingPointerPrefetchRef.current = null;
+    setNavigatingTaskId(null);
+    return () => {
+      navigationEpochRef.current += 1;
+      if (navigationTimerRef.current !== null) {
+        window.clearTimeout(navigationTimerRef.current);
+        navigationTimerRef.current = null;
+      }
+      if (pointerPrefetchTimerRef.current !== null) {
+        window.clearTimeout(pointerPrefetchTimerRef.current);
+        pointerPrefetchTimerRef.current = null;
+      }
+      pendingNavigationRef.current = null;
+      pendingPointerPrefetchRef.current = null;
+    };
+  }, [taskId]);
+
   useEffect(() => {
     if (!data || currentFrame == null) return;
     const frames = data.frames ?? [];
     const next = frames.find((frame) => frame.frame_index === currentFrame + 1);
     if (next) void prefetchFrame(next);
   }, [currentFrame, data, prefetchFrame]);
-
-  const handleNavigate = async (summary: SceneTimelineFrameSummary) => {
-    if (!summary.task_id || summary.task_id === taskId) return;
-    setNavigatingTaskId(summary.task_id);
-    try {
-      // 预热只用于缩短目标帧就绪时间，不能成为切帧导航的前置门禁。慢 PCD
-      // 请求会被资产缓存复用，导航则应立即更新 task/URL 并展示显式 loading。
-      void prefetchFrame(summary);
-      const allowed = await onNavigateFrame(
-        summary.task_id,
-        summary.selected_track?.annotation_id ?? null,
-      );
-      if (allowed) {
-        const following = frameByIndex.get(summary.frame_index + 1);
-        if (following) void prefetchFrame(following);
-      }
-    } finally {
-      setNavigatingTaskId(null);
-    }
-  };
 
   if (query.isError && !data?.scene_id) {
     return (
@@ -394,8 +558,8 @@ export function SceneTimeline({
                   current={frameIndex === currentFrame}
                   maxDensity={maxDensity}
                   navigating={navigatingTaskId === summary?.task_id}
-                  onNavigate={(frame) => void handleNavigate(frame)}
-                  onPrefetch={prefetchFrame}
+                  onNavigate={scheduleNavigation}
+                  onPrefetch={schedulePointerPrefetch}
                   qualitySeverity={qualityMarkers[frameIndex]}
                 />
               );

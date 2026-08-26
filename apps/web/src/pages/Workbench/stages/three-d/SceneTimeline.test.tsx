@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -155,6 +155,81 @@ describe("SceneTimeline", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-1", "ann-1"));
   });
 
+  it("coalesces 100ms frame clicks and navigates only to the latest intent", async () => {
+    const data = timelineData();
+    data.frames[2] = {
+      frame_index: 2,
+      state: "available",
+      task_id: "task-2",
+      task_status: "in_progress",
+      annotation_count: 0,
+      selected_track: null,
+    };
+    useSceneTimelineMock.mockReturnValue({
+      data,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    getPointCloudManifestMock.mockImplementation(async (requestedTaskId: string) => ({
+      task_id: requestedTaskId,
+      point_cloud_url: `https://assets.test/${requestedTaskId}.pcd`,
+      cameras: [],
+      expires_in: 900,
+    }));
+    const navigate = vi.fn().mockResolvedValue(true);
+    renderTimeline({ taskId: "task-0", trackId: null, onNavigateFrame: navigate });
+    await waitFor(() => expect(prefetchPointCloudFrameAssetsMock).toHaveBeenCalled());
+    getPointCloudManifestMock.mockClear();
+    prefetchPointCloudFrameAssetsMock.mockClear();
+    vi.useFakeTimers();
+
+    try {
+      for (let index = 0; index < 10; index += 1) {
+        fireEvent.click(screen.getByTestId(`scene-timeline-frame-${index % 2 === 0 ? 1 : 2}`));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenLastCalledWith("task-2", null);
+      expect(prefetchPointCloudFrameAssetsMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("切到其他任务后不会执行旧时间轴定时导航", async () => {
+    vi.useFakeTimers();
+    const navigate = vi.fn().mockResolvedValue(true);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const rendered = render(
+      <QueryClientProvider client={queryClient}>
+        <SceneTimeline taskId="task-0" trackId={null} onNavigateFrame={navigate} />
+      </QueryClientProvider>,
+    );
+
+    try {
+      fireEvent.click(screen.getByTestId("scene-timeline-frame-1"));
+      rendered.rerender(
+        <QueryClientProvider client={queryClient}>
+          <SceneTimeline taskId="task-external" trackId={null} onNavigateFrame={navigate} />
+        </QueryClientProvider>,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not block task navigation on a slow target frame prefetch", async () => {
     let finishTargetPrefetch!: () => void;
     const targetPrefetch = new Promise<void>((resolve) => {
@@ -210,12 +285,17 @@ describe("SceneTimeline", () => {
     renderTimeline({ taskId: "task-0", trackId: null, onNavigateFrame: navigate });
 
     fireEvent.click(screen.getByTestId("scene-timeline-frame-1"));
-    expect(getPointCloudManifestMock).not.toHaveBeenCalledWith("task-2");
+    expect(getPointCloudManifestMock.mock.calls.some(([id]) => id === "task-2")).toBe(false);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-1", "ann-1"));
 
     finishNavigation(true);
 
-    await waitFor(() => expect(getPointCloudManifestMock).toHaveBeenCalledWith("task-2"));
+    await waitFor(() =>
+      expect(getPointCloudManifestMock).toHaveBeenCalledWith(
+        "task-2",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
   });
 
   it("collapses to the compact header and expands again", () => {
@@ -293,6 +373,6 @@ describe("SceneTimeline", () => {
         { depthRasters: false },
       ),
     );
-    expect(getPointCloudManifestMock).not.toHaveBeenCalledWith("task-0");
+    expect(getPointCloudManifestMock.mock.calls.some(([id]) => id === "task-0")).toBe(false);
   });
 });

@@ -965,7 +965,7 @@ export class PointCloudScene {
     return this.baseColors;
   }
 
-  /** 换帧开始时立即移除旧点缓冲，不让上一帧冒充当前帧。 */
+  /** 在无目标点云或载入失败时移除当前点缓冲；正常换帧由 loadPcd 原子替换。 */
   clearPointCloud() {
     this.qualityGroundGrid.visible = false;
     if (this.webGpuPointLayer && this.points) {

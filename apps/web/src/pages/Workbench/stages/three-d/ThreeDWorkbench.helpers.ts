@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import * as THREE from "three";
 import type { Box3DGeometry, SensorCalibration } from "@/types";
 import type { FloatingPanelRect } from "../../shell/FloatingPanelShell";
+import type { FloatingPanelBounds } from "../../shell/useDragMove";
 import type { CameraPanelState, TriViewFloatState } from "@/api/auth";
 import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { Psr } from "./geometry/triview";
@@ -85,6 +86,40 @@ export function resolveTriViewFloatRect(
   };
 }
 
+/**
+ * 把相机面板统一放在一个 viewport 图层中，并用 even-odd polygon 挖掉三视图浮窗区域。
+ * 三视图点云仍由主 renderer canvas 绘制；裁掉相机图层后，透明正交视口会看到点云，
+ * 而不是 DOM 相机卡片。向外取整可覆盖亚像素边缘，避免拖动 / 缩放后的 1px 漏边。
+ */
+export function cameraLayerClipPath(
+  bounds: FloatingPanelBounds,
+  triView: FloatingPanelRect,
+): string | undefined {
+  const width = bounds.right - bounds.left;
+  const height = bounds.bottom - bounds.top;
+  if (width <= 0 || height <= 0) return undefined;
+
+  const left = Math.max(0, Math.floor(triView.x - bounds.left));
+  const top = Math.max(0, Math.floor(triView.y - bounds.top));
+  const right = Math.min(width, Math.ceil(triView.x + triView.w - bounds.left));
+  const bottom = Math.min(height, Math.ceil(triView.y + triView.h - bounds.top));
+  if (right <= left || bottom <= top) return undefined;
+
+  return [
+    "polygon(evenodd",
+    "0px 0px",
+    `${width}px 0px`,
+    `${width}px ${height}px`,
+    `0px ${height}px`,
+    "0px 0px",
+    `${left}px ${top}px`,
+    `${left}px ${bottom}px`,
+    `${right}px ${bottom}px`,
+    `${right}px ${top}px`,
+    `${left}px ${top}px)`,
+  ].join(", ");
+}
+
 export function resolveBox3dDefaultSize(
   value?: [number, number, number] | null,
 ): [number, number, number] {
@@ -123,25 +158,44 @@ export function geometryConvention(
 export function loadCameraSample(
   imageUrl: string,
   calib: SensorCalibration,
+  signal?: AbortSignal,
 ): Promise<CameraSample | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    let settled = false;
+    const finish = (sample: CameraSample | null) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", handleAbort);
+      img.onload = null;
+      img.onerror = null;
+      resolve(sample);
+    };
+    const handleAbort = () => {
+      img.src = "";
+      finish(null);
+    };
+    if (signal?.aborted) {
+      finish(null);
+      return;
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true });
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(null);
+      if (!ctx) return finish(null);
       ctx.drawImage(img, 0, 0);
       try {
         const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        resolve({ calib, width: canvas.width, height: canvas.height, data });
+        finish({ calib, width: canvas.width, height: canvas.height, data });
       } catch {
-        resolve(null); // 跨域污染
+        finish(null); // 跨域污染
       }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => finish(null);
     img.src = imageUrl;
   });
 }

@@ -32,7 +32,9 @@ import type {
   PointCloudRendererMode,
   PointCloudRendererStatus,
 } from "./rendering/pointCloudRenderer";
+import { cancelActivePointCloudFrameLoad } from "./pointCloudAssetCache";
 import { markPointCloudPaint } from "./pointCloudTiming";
+import { publishPointCloudResourceTrace } from "@/utils/pointCloudNavigationDiagnostics";
 
 interface UsePointCloudSceneParams {
   /** 渲染容器(壳组件持有的 DOM ref)。 */
@@ -272,19 +274,33 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   // v0.13.11 · 传入 axisConvention,scene 内部加载完 PCD 立即把 positions 旋到 ISO 系。
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene) return;
+    if (!scene) {
+      if (pointCloudUrl) {
+        publishPointCloudResourceTrace(pointCloudUrl, {
+          type: "waiting-renderer",
+          status: "pending",
+          pending: true,
+        });
+      }
+      return;
+    }
     const loadSequence = ++loadSequenceRef.current;
-    scene.clearPointCloud();
     setLoadError(null);
-    setLoadState({
-      stats: null,
-      loadedPointCloudUrl: null,
-      isLoading: !!pointCloudUrl,
-    });
+    setLoadState((previous) =>
+      pointCloudUrl
+        ? { ...previous, isLoading: true }
+        : { stats: null, loadedPointCloudUrl: null, isLoading: false },
+    );
     if (!pointCloudUrl) {
+      scene.clearPointCloud();
       suspendCameraSaveRef.current = false;
       return;
     }
+    publishPointCloudResourceTrace(pointCloudUrl, {
+      type: "load-start",
+      status: "pending",
+      pending: true,
+    });
     const runtimeView =
       continuityKey !== null && loadedContinuityKeyRef.current === continuityKey
         ? scene.getViewState()
@@ -297,7 +313,14 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         visible: !deferPointCloudDisplayRef.current,
       })
       .then((s) => {
-        if (cancelled || loadSequence !== loadSequenceRef.current) return;
+        if (cancelled || loadSequence !== loadSequenceRef.current) {
+          publishPointCloudResourceTrace(pointCloudUrl, {
+            type: "load-stale-result",
+            status: cancelled ? "cancelled" : "superseded",
+            pending: false,
+          });
+          return;
+        }
         if (runtimeView) {
           scene.applyViewState(runtimeView);
         } else if (persistCameraViewRef.current) {
@@ -306,6 +329,11 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         loadedContinuityKeyRef.current = continuityKey;
         onViewModeChangeRef.current(scene.getViewState().mode);
         setLoadState({ stats: s, loadedPointCloudUrl: pointCloudUrl, isLoading: false });
+        publishPointCloudResourceTrace(pointCloudUrl, {
+          type: "load-committed",
+          status: "success",
+          pending: false,
+        });
         markPointCloudPaint(
           "geometry-ready",
           pointCloudUrl,
@@ -314,13 +342,32 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         suspendCameraSaveRef.current = false;
       })
       .catch((e) => {
-        if (cancelled || loadSequence !== loadSequenceRef.current) return;
+        if (cancelled || loadSequence !== loadSequenceRef.current) {
+          publishPointCloudResourceTrace(pointCloudUrl, {
+            type: "load-rejected-after-cancel",
+            status: cancelled ? "cancelled" : "superseded",
+            pending: false,
+          });
+          return;
+        }
         suspendCameraSaveRef.current = false;
+        scene.clearPointCloud();
         setLoadState({ stats: null, loadedPointCloudUrl: null, isLoading: false });
         setLoadError(e instanceof Error ? e.message : String(e));
+        publishPointCloudResourceTrace(pointCloudUrl, {
+          type: "load-error",
+          status: e instanceof Error ? e.name : "unknown-error",
+          pending: false,
+        });
       });
     return () => {
       cancelled = true;
+      publishPointCloudResourceTrace(pointCloudUrl, {
+        type: "load-cancel-requested",
+        status: "cancelled",
+        pending: true,
+      });
+      cancelActivePointCloudFrameLoad();
       if (
         continuityKey !== null &&
         loadedContinuityKeyRef.current === continuityKey &&

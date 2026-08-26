@@ -321,10 +321,10 @@ export const tasksApi = {
     return apiClient.get<TaskResponse | null>(`/tasks/next?${q}`);
   },
 
-  get: (id: string) => apiClient.get<TaskResponse>(`/tasks/${id}`),
+  get: (id: string, init?: RequestInit) => apiClient.get<TaskResponse>(`/tasks/${id}`, init),
 
-  getMaskCapabilities: (id: string) =>
-    apiClient.get<TaskMaskCapabilitiesResponse>(`/tasks/${id}/mask-capabilities`),
+  getMaskCapabilities: (id: string, init?: RequestInit) =>
+    apiClient.get<TaskMaskCapabilitiesResponse>(`/tasks/${id}/mask-capabilities`, init),
 
   getImagePyramid: (id: string, init?: RequestInit) =>
     apiClient.silentGet<ImagePyramidResponse>(`/tasks/${id}/image-pyramid`, init),
@@ -339,28 +339,30 @@ export const tasksApi = {
   retryImagePyramid: (id: string) =>
     apiClient.post<ImagePyramidRetryResponse>(`/tasks/${id}/image-pyramid/retry`, {}),
 
-  getVideoManifest: (id: string) =>
-    apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
+  getVideoManifest: (id: string, init?: RequestInit) =>
+    apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`, init),
 
   // manifest v2:精确帧 pipeline(WebCodecs)激活时增量查询 chunk_size_frames / dataset_item_id。
   // 实验链路失败会静默回退,不弹全局 toast;signal 让切 task / 卸载能取消旧请求。
   getVideoManifestV2: (id: string, init?: RequestInit) =>
     apiClient.silentGet<VideoManifestV2Response>(`/tasks/${id}/video/manifest-v2`, init),
 
-  getPointCloudManifest: (id: string) =>
-    apiClient.get<TaskPointCloudManifestResponse>(`/tasks/${id}/point-cloud/manifest`),
+  getPointCloudManifest: (id: string, init?: RequestInit) =>
+    apiClient.get<TaskPointCloudManifestResponse>(`/tasks/${id}/point-cloud/manifest`, init),
 
   getCameraAnnotationMembers: (
     taskId: string,
     sceneTrackId: string,
     projectionCameraRole?: string | null,
     includeInactive = false,
+    init?: RequestInit,
   ) => {
     const query = new URLSearchParams({ scene_track_id: sceneTrackId });
     if (projectionCameraRole) query.set("projection_camera_role", projectionCameraRole);
     if (includeInactive) query.set("include_inactive", "true");
     return apiClient.get<CameraAnnotationMemberList>(
       `/tasks/${taskId}/point-cloud/camera-members?${query}`,
+      init,
     );
   },
 
@@ -401,8 +403,8 @@ export const tasksApi = {
     ),
 
   // v0.14.0 · scene 内前后 k 个邻居 task(跨帧导航 backing)。
-  getNeighbors: (id: string, k = 1) =>
-    apiClient.get<NeighborsResponse>(`/tasks/${id}/neighbors?k=${k}`),
+  getNeighbors: (id: string, k = 1, init?: RequestInit) =>
+    apiClient.get<NeighborsResponse>(`/tasks/${id}/neighbors?k=${k}`, init),
 
   getSceneTimeline: (
     id: string,
@@ -421,9 +423,12 @@ export const tasksApi = {
 
   // v0.15.17 · 一次性拉 ±k 帧邻帧标注(替代 2k 条并发 getAnnotations + client 过滤)。
   // v0.21.2 · trackId 给定 → 服务端只回该 track(scope=selected);省略 → 回全部(scope=all)。
-  getNeighborAnnotations: (id: string, k = 1, trackId?: string | null) => {
+  getNeighborAnnotations: (id: string, k = 1, trackId?: string | null, init?: RequestInit) => {
     const q = trackId != null ? `?k=${k}&track_id=${encodeURIComponent(trackId)}` : `?k=${k}`;
-    return apiClient.get<NeighborAnnotationsResponse>(`/tasks/${id}/neighbor-annotations${q}`);
+    return apiClient.get<NeighborAnnotationsResponse>(
+      `/tasks/${id}/neighbor-annotations${q}`,
+      init,
+    );
   },
 
   // v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库
@@ -462,34 +467,49 @@ export const tasksApi = {
       to_task_id: toTaskId,
     }),
 
-  getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
+  getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams, init?: RequestInit) => {
     const q = new URLSearchParams();
     if (params?.from !== undefined) q.set("from", String(params.from));
     if (params?.to !== undefined) q.set("to", String(params.to));
     const suffix = q.toString() ? `?${q}` : "";
     return apiClient.get<TaskVideoFrameTimetableResponse>(
       `/tasks/${id}/video/frame-timetable${suffix}`,
+      init,
     );
   },
 
-  getVideoFrame: (id: string, frameIndex: number, params?: VideoFrameParams) => {
+  getVideoFrame: (
+    id: string,
+    frameIndex: number,
+    params?: VideoFrameParams,
+    init?: RequestInit,
+  ) => {
     const q = new URLSearchParams();
     if (params?.format) q.set("format", params.format);
     if (params?.width !== undefined) q.set("w", String(params.width));
     const suffix = q.toString() ? `?${q}` : "";
-    return apiClient.get<VideoFrameOut>(`/tasks/${id}/video/frames/${frameIndex}${suffix}`);
+    return apiClient.get<VideoFrameOut>(`/tasks/${id}/video/frames/${frameIndex}${suffix}`, init);
   },
 
-  prefetchVideoFrames: (id: string, frameIndices: number[], params?: VideoFrameParams) =>
-    apiClient.post<VideoFramePrefetchResponse>(`/tasks/${id}/video/frames:prefetch`, {
-      frame_indices: frameIndices,
-      width: params?.width ?? 320,
-      format: params?.format ?? "webp",
-    }),
+  prefetchVideoFrames: (
+    id: string,
+    frameIndices: number[],
+    params?: VideoFrameParams,
+    init?: RequestInit,
+  ) =>
+    apiClient.post<VideoFramePrefetchResponse>(
+      `/tasks/${id}/video/frames:prefetch`,
+      {
+        frame_indices: frameIndices,
+        width: params?.width ?? 320,
+        format: params?.format ?? "webp",
+      },
+      init,
+    ),
 
-  getAnnotations: (id: string, videoSegmentId?: string | null) => {
+  getAnnotations: (id: string, videoSegmentId?: string | null, init?: RequestInit) => {
     const query = videoSegmentId ? `?video_segment_id=${videoSegmentId}` : "";
-    return apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations${query}`);
+    return apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations${query}`, init);
   },
 
   createAnnotation: (id: string, payload: AnnotationPayload) =>
@@ -526,13 +546,17 @@ export const tasksApi = {
       payload,
     ),
 
-  listPointCloudTrackOperationCandidates: (taskId: string, trackId: string) =>
+  listPointCloudTrackOperationCandidates: (taskId: string, trackId: string, init?: RequestInit) =>
     apiClient.get<PointCloudTrackOperationCandidates>(
       `/tasks/${taskId}/track-operations/candidates?track_id=${encodeURIComponent(trackId)}`,
+      init,
     ),
 
-  getSceneTrack: (taskId: string, trackId: string) =>
-    apiClient.get<SceneTrackDetail>(`/tasks/${taskId}/scene-tracks/${encodeURIComponent(trackId)}`),
+  getSceneTrack: (taskId: string, trackId: string, init?: RequestInit) =>
+    apiClient.get<SceneTrackDetail>(
+      `/tasks/${taskId}/scene-tracks/${encodeURIComponent(trackId)}`,
+      init,
+    ),
 
   previewSceneTrackCommand: (taskId: string, payload: SceneTrackCommandRequest) =>
     apiClient.post<SceneTrackCommandPreview>(
@@ -552,9 +576,10 @@ export const tasksApi = {
       payload,
     ),
 
-  listSceneTrackOperations: (taskId: string, trackId: string) =>
+  listSceneTrackOperations: (taskId: string, trackId: string, init?: RequestInit) =>
     apiClient.get<{ contract_version: 1; operations: SceneTrackOperationItem[] }>(
       `/tasks/${taskId}/scene-track-commands?track_id=${encodeURIComponent(trackId)}`,
+      init,
     ),
 
   revertSceneTrackOperation: (taskId: string, operationId: string, idempotencyKey: string) =>

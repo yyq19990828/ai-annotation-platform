@@ -7,6 +7,8 @@ import type { LidarAxisConvention } from "./axisConvention";
 
 type WorkerFactory = () => Worker;
 
+export type PointCloudDecodeLane = "shared" | "active" | "prefetch";
+
 type WorkerRequest =
   | {
       reqId: number;
@@ -110,7 +112,11 @@ export class PointCloudComputeSession {
   private run(
     request: WorkerRequestPayload,
     transfer: Transferable[],
-    options: { signal?: AbortSignal; timeoutMs?: number } = {},
+    options: {
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      terminateWorkerOnAbort?: boolean;
+    } = {},
   ): Promise<WorkerSuccess> {
     if (options.signal?.aborted) {
       return Promise.reject(new DOMException("Point-cloud computation aborted", "AbortError"));
@@ -120,8 +126,13 @@ export class PointCloudComputeSession {
     this.nextRequestId += 1;
     return new Promise((resolve, reject) => {
       const abort = () => {
+        const error = new DOMException("Point-cloud computation aborted", "AbortError");
+        if (options.terminateWorkerOnAbort) {
+          this.failWorker(error);
+          return;
+        }
         this.finish(reqId);
-        reject(new DOMException("Point-cloud computation aborted", "AbortError"));
+        reject(error);
       };
       const timer = globalThis.setTimeout(() => {
         this.failWorker(new Error("pointcloud worker timeout"));
@@ -141,7 +152,7 @@ export class PointCloudComputeSession {
     buffer: ArrayBuffer,
     convention: LidarAxisConvention,
     decimateThreshold: number,
-    options: { signal?: AbortSignal } = {},
+    options: { signal?: AbortSignal; terminateWorkerOnAbort?: boolean } = {},
   ): Promise<DecodedPointCloudFrame> {
     const transferable = buffer.slice(0);
     const response = await this.run(
@@ -157,7 +168,11 @@ export class PointCloudComputeSession {
     positions: Float32Array,
     baseColors: Float32Array | null,
     samples: CameraSample[],
-    options: { signal?: AbortSignal; timeoutMs?: number } = {},
+    options: {
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      terminateWorkerOnAbort?: boolean;
+    } = {},
   ): Promise<Float32Array> {
     const clonedPositions = positions.slice();
     const clonedBaseColors = baseColors?.slice() ?? null;
@@ -182,7 +197,7 @@ export class PointCloudComputeSession {
   async buildDepthRasters(
     positions: Float32Array,
     cameras: Array<{ calib: SensorCalibration; width: number; height: number }>,
-    options: { signal?: AbortSignal } = {},
+    options: { signal?: AbortSignal; terminateWorkerOnAbort?: boolean } = {},
   ): Promise<GpuDepthRaster[]> {
     const clonedPositions = positions.slice();
     const response = await this.run(
@@ -202,11 +217,47 @@ export class PointCloudComputeSession {
 }
 
 let sharedSession: PointCloudComputeSession | null = null;
+let activeDecodeSession: PointCloudComputeSession | null = null;
+let prefetchDecodeSession: PointCloudComputeSession | null = null;
+let colorizeSession: PointCloudComputeSession | null = null;
+let activeDepthSession: PointCloudComputeSession | null = null;
+let prefetchDepthSession: PointCloudComputeSession | null = null;
 let sharedSessionOwners = 0;
 
 export function getPointCloudComputeSession(): PointCloudComputeSession {
   sharedSession ??= new PointCloudComputeSession();
   return sharedSession;
+}
+
+export function getPointCloudColorizeSession(): PointCloudComputeSession {
+  colorizeSession ??= new PointCloudComputeSession();
+  return colorizeSession;
+}
+
+export function getPointCloudDepthSession(
+  lane: "shared" | "active" | "prefetch",
+): PointCloudComputeSession {
+  if (lane === "active") {
+    activeDepthSession ??= new PointCloudComputeSession();
+    return activeDepthSession;
+  }
+  if (lane === "prefetch") {
+    prefetchDepthSession ??= new PointCloudComputeSession();
+    return prefetchDepthSession;
+  }
+  return getPointCloudComputeSession();
+}
+
+function getPointCloudDecodeSession(lane: PointCloudDecodeLane): PointCloudComputeSession {
+  if (lane === "active") {
+    activeDecodeSession ??= new PointCloudComputeSession();
+    return activeDecodeSession;
+  }
+  if (lane === "prefetch") {
+    prefetchDecodeSession ??= new PointCloudComputeSession();
+    return prefetchDecodeSession;
+  }
+  return getPointCloudComputeSession();
 }
 
 /** Read-only worker counters used by the local renderer benchmark. */
@@ -215,8 +266,18 @@ export function getPointCloudComputeDiagnostics(): {
   pendingRequests: number;
   owners: number;
 } {
+  const sessions = [
+    sharedSession,
+    activeDecodeSession,
+    prefetchDecodeSession,
+    colorizeSession,
+    activeDepthSession,
+    prefetchDepthSession,
+  ].filter((session): session is PointCloudComputeSession => session !== null);
+  const diagnostics = sessions.map((session) => session.getDiagnostics());
   return {
-    ...(sharedSession?.getDiagnostics() ?? { workerActive: false, pendingRequests: 0 }),
+    workerActive: diagnostics.some((entry) => entry.workerActive),
+    pendingRequests: diagnostics.reduce((total, entry) => total + entry.pendingRequests, 0),
     owners: sharedSessionOwners,
   };
 }
@@ -240,6 +301,16 @@ export function retainPointCloudComputeSession(): () => void {
     if (sharedSessionOwners === 0) {
       sharedSession?.dispose();
       sharedSession = null;
+      activeDecodeSession?.dispose();
+      activeDecodeSession = null;
+      prefetchDecodeSession?.dispose();
+      prefetchDecodeSession = null;
+      colorizeSession?.dispose();
+      colorizeSession = null;
+      activeDepthSession?.dispose();
+      activeDepthSession = null;
+      prefetchDepthSession?.dispose();
+      prefetchDepthSession = null;
     }
   };
 }
@@ -248,18 +319,20 @@ export async function decodePointCloudFrameAsync(
   buffer: ArrayBuffer,
   convention: LidarAxisConvention,
   decimateThreshold: number,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; lane?: PointCloudDecodeLane } = {},
 ): Promise<DecodedPointCloudFrame> {
+  if (options.signal?.aborted) {
+    throw new DOMException("Point-cloud computation aborted", "AbortError");
+  }
   if (typeof Worker === "undefined") {
     return decodePointCloudFrame(buffer, convention, decimateThreshold);
   }
   try {
-    return await getPointCloudComputeSession().decodePcd(
-      buffer,
-      convention,
-      decimateThreshold,
-      options,
-    );
+    const lane = options.lane ?? "shared";
+    return await getPointCloudDecodeSession(lane).decodePcd(buffer, convention, decimateThreshold, {
+      signal: options.signal,
+      terminateWorkerOnAbort: lane !== "shared",
+    });
   } catch (error) {
     if (options.signal?.aborted) throw error;
     console.warn("[pointcloud-worker] PCD decode fallback to main thread", error);

@@ -24,8 +24,10 @@ export function useCameraAnnotationMembers(
 
   const query = useQuery({
     queryKey: [...queryKey, sourceVersion, projectionCameraRole],
-    queryFn: () =>
-      tasksApi.getCameraAnnotationMembers(taskId!, sceneTrackId!, projectionCameraRole),
+    queryFn: ({ signal }) =>
+      tasksApi.getCameraAnnotationMembers(taskId!, sceneTrackId!, projectionCameraRole, false, {
+        signal,
+      }),
     enabled: !!taskId && !!sceneTrackId,
   });
 

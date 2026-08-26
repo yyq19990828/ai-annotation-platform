@@ -103,7 +103,7 @@ export function CrossFrameJobCenter({
 
   const jobsQuery = useQuery({
     queryKey: ["async-jobs", "point-cloud-cross-frame", taskId],
-    queryFn: () => asyncJobsApi.listCrossFrame(taskId),
+    queryFn: ({ signal }) => asyncJobsApi.listCrossFrame(taskId, 20, { signal }),
     enabled: open,
     refetchInterval: open ? 1500 : false,
   });

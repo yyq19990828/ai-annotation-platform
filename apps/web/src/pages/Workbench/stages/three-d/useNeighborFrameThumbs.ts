@@ -57,7 +57,8 @@ export function useNeighborFrameThumbs(
   const results = useQueries({
     queries: frames.map((f) => ({
       queryKey: ["task-point-cloud-manifest", f.taskId],
-      queryFn: () => tasksApi.getPointCloudManifest(f.taskId),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        tasksApi.getPointCloudManifest(f.taskId, { signal }),
       enabled,
       staleTime: 5 * 60 * 1000,
     })),

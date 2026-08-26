@@ -23,13 +23,100 @@ export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi,
 
 export async function commitAfterNavigationGuard(
   guard: () => Promise<boolean>,
-  signal: AbortSignal | undefined,
+  signal: AbortSignal | readonly (AbortSignal | undefined)[] | undefined,
   commit: () => void,
 ): Promise<boolean> {
   const allowed = await guard();
-  if (!allowed || signal?.aborted) return false;
+  const aborted = signal
+    ? "aborted" in signal
+      ? signal.aborted
+      : signal.some((candidate) => candidate?.aborted)
+    : false;
+  if (!allowed || aborted) return false;
   commit();
   return true;
+}
+
+type LatestTaskNavigationRun = (signal: AbortSignal) => Promise<boolean>;
+
+interface PendingTaskNavigation {
+  taskId: string;
+  run: LatestTaskNavigationRun;
+  resolve: (allowed: boolean) => void;
+}
+
+/**
+ * 首次任务导航立即执行；冷却窗口内的连续输入只保留最后一个目标。
+ * 普通单击无额外延迟，高速点选则从“每次都加载”降为“首次 + 最终”。
+ */
+export class LatestTaskNavigationScheduler {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private pending: PendingTaskNavigation | null = null;
+  private activeController: AbortController | null = null;
+  private disposed = false;
+
+  constructor(private readonly settleMs: number) {}
+
+  activate(): void {
+    this.disposed = false;
+  }
+
+  schedule(taskId: string, run: LatestTaskNavigationRun): Promise<boolean> {
+    if (this.disposed) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      if (this.timer === null && this.pending === null && this.activeController === null) {
+        this.runNow({ taskId, run, resolve });
+        this.armTimer();
+        return;
+      }
+      this.activeController?.abort();
+      this.pending?.resolve(false);
+      this.pending = { taskId, run, resolve };
+      this.armTimer();
+    });
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.activeController?.abort();
+    this.activeController = null;
+    this.pending?.resolve(false);
+    this.pending = null;
+  }
+
+  private armTimer(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.flushPending();
+    }, this.settleMs);
+  }
+
+  private flushPending(): void {
+    if (this.disposed || this.activeController !== null) return;
+    const pending = this.pending;
+    this.pending = null;
+    if (!pending) return;
+    this.runNow(pending);
+    this.armTimer();
+  }
+
+  private runNow(pending: PendingTaskNavigation): void {
+    const controller = new AbortController();
+    this.activeController = controller;
+    void Promise.resolve()
+      .then(() => pending.run(controller.signal))
+      .then((allowed) => pending.resolve(controller.signal.aborted ? false : allowed))
+      .catch(() => pending.resolve(false))
+      .finally(() => {
+        if (this.activeController !== controller) return;
+        this.activeController = null;
+        if (this.pending && this.timer === null) this.flushPending();
+      });
+  }
 }
 
 export function videoAnnotationQueriesEnabled(

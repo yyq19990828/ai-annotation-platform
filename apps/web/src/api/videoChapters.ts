@@ -44,9 +44,9 @@ interface VideoChapterListResponse {
 }
 
 export const videoChaptersApi = {
-  list: (datasetItemId: string) =>
+  list: (datasetItemId: string, init?: RequestInit) =>
     apiClient
-      .get<VideoChapterListResponse>(`/videos/${datasetItemId}/chapters`)
+      .get<VideoChapterListResponse>(`/videos/${datasetItemId}/chapters`, init)
       .then((res) => res.chapters ?? []),
   create: (datasetItemId: string, payload: VideoChapterCreatePayload) =>
     apiClient.post<VideoChapter>(`/videos/${datasetItemId}/chapters`, payload),

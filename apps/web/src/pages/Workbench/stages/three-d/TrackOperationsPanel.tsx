@@ -83,17 +83,19 @@ export function TrackOperationsPanel({
 
   const detailQuery = useQuery({
     queryKey: ["scene-track-detail", taskId, selectedTrackId],
-    queryFn: () => tasksApi.getSceneTrack(taskId, selectedTrackId!),
+    queryFn: ({ signal }) => tasksApi.getSceneTrack(taskId, selectedTrackId!, { signal }),
     enabled: !!selectedTrackId,
   });
   const historyQuery = useQuery({
     queryKey: ["scene-track-operations", taskId, selectedTrackId],
-    queryFn: () => tasksApi.listSceneTrackOperations(taskId, selectedTrackId!),
+    queryFn: ({ signal }) =>
+      tasksApi.listSceneTrackOperations(taskId, selectedTrackId!, { signal }),
     enabled: !!selectedTrackId,
   });
   const candidatesQuery = useQuery({
     queryKey: ["point-cloud-track-operation-candidates", taskId, selectedTrackId],
-    queryFn: () => tasksApi.listPointCloudTrackOperationCandidates(taskId, selectedTrackId!),
+    queryFn: ({ signal }) =>
+      tasksApi.listPointCloudTrackOperationCandidates(taskId, selectedTrackId!, { signal }),
     enabled: operation === "merge" && !!selectedTrackId && !readOnly,
   });
   const candidates = useMemo(

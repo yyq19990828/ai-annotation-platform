@@ -57,9 +57,12 @@ export async function prepareCameraTextureResources(
     await Promise.all(
       cameras.map(async (camera) => {
         try {
-          const handle = await acquireCameraBitmap(camera.imageUrl);
+          const handle = await acquireCameraBitmap(camera.imageUrl, signal, "active");
           return { camera, handle };
         } catch (error) {
+          if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+            return null;
+          }
           console.warn("[pointcloud-camera-texture] skipped camera", camera.imageUrl, error);
           return null;
         }
@@ -93,6 +96,7 @@ export async function prepareCameraTextureResources(
         width: handle.bitmap.width,
         height: handle.bitmap.height,
       })),
+      { signal, lane: "active" },
     );
     markPointCloudStage("camera-depth-ready", pointCloudUrl, depthStartedAt, loaded.cacheHit);
     if (signal?.aborted) throw new DOMException("Camera texture preparation aborted", "AbortError");

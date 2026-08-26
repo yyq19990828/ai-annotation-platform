@@ -1,6 +1,6 @@
 import { colorizePoints, type CameraSample } from "./colorize";
 import { buildDepthRaster } from "./depthmap";
-import { getPointCloudComputeSession, PointCloudComputeSession } from "./pointCloudComputeSession";
+import { getPointCloudColorizeSession, PointCloudComputeSession } from "./pointCloudComputeSession";
 
 type WorkerFactory = () => Worker;
 
@@ -39,9 +39,12 @@ export async function colorizePointsAsync(
   const customSession = options.createWorker
     ? new PointCloudComputeSession(options.createWorker)
     : null;
-  const session = customSession ?? getPointCloudComputeSession();
+  const session = customSession ?? getPointCloudColorizeSession();
   try {
-    return await session.colorize(positions, baseColors, samples, options);
+    return await session.colorize(positions, baseColors, samples, {
+      ...options,
+      terminateWorkerOnAbort: true,
+    });
   } catch (error) {
     if (options.signal?.aborted) throw error;
     console.warn("[pointcloud-worker] fallback to main thread", error);

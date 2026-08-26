@@ -185,8 +185,9 @@ const TRI_FLOAT_TAB =
   "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-local-6 px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
 const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
 const QUALITY_PANEL_WIDTH = 360;
+const CAMERA_LAYER = "absolute inset-0 z-local-3 pointer-events-none";
 const CAM_GROUP =
-  "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
+  "absolute flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
 const CAM_MODAL = "absolute inset-0 z-base flex items-center justify-center bg-black/70";
 const CAM_MODAL_BODY =
   "relative w-fit max-w-[calc(100%-24px)] p-3 rounded-md border border-border bg-card shadow-sm";
@@ -216,6 +217,7 @@ import {
   TRI_TAB_DRAG_THRESHOLD,
   boxGeometryFromPsr,
   buildThreeDLayoutPreset,
+  cameraLayerClipPath,
   frontCameraForward,
   geometryConvention,
   isPsrFieldBad,
@@ -2087,7 +2089,9 @@ export function ThreeDWorkbench({
           return;
         }
         const samples = (
-          await Promise.all(calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!)))
+          await Promise.all(
+            calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!, controller.signal)),
+          )
         ).filter((s): s is CameraSample => s !== null);
         if (controller.signal.aborted || samples.length === 0) return;
         const colors = await colorizePointsAsync(positions, scene.getBaseColors(), samples, {
@@ -2462,6 +2466,16 @@ export function ThreeDWorkbench({
           }
         : null,
     [selectedBox, multiBoxSelected],
+  );
+  const cameraLayerClip = useMemo(
+    () =>
+      triSelected && !triViewFloat.collapsed && triFloatBounds
+        ? cameraLayerClipPath(triFloatBounds, triFloatPosition)
+        : undefined,
+    [triFloatBounds, triFloatPosition, triSelected, triViewFloat.collapsed],
+  );
+  const cameraLayerRef = useElementStyle<HTMLDivElement>(
+    cameraLayerClip ? { clipPath: cameraLayerClip } : undefined,
   );
   // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
   // 松手 (commit=true) 走与 gizmo 同一条 PATCH 管线持久化, 并清草稿 (乐观更新已写入缓存)。
@@ -3093,39 +3107,41 @@ export function ThreeDWorkbench({
 
         {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。
             投影 overlay / 上色 / 深度命中沿用 CameraProjectionView,布局对其透明。 */}
-        {cameraGroups.map(([anchor, cams]) => (
-          <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
-            {cams.map((cam, index) => (
-              <FloatingCameraPanel
-                key={cam.role}
-                role={cam.role}
-                name={cam.name}
-                imageUrl={cam.image_url}
-                calibration={cam.calibration}
-                boxes={boxes}
-                highlightedIds={highlightedIds}
-                onSelectBox={onSelectBox}
-                bestForSelected={cam.role === bestCameraRole}
-                pointPositions={pointPositions}
-                showDepth={depthOn}
-                onEnlarge={() => setEnlargedRole(cam.role)}
-                autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
-                dragBounds={qualitySafeFloatBounds}
-                position={
-                  cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
-                    ? {
-                        x: cameraPanels[cam.role]!.x!,
-                        y: cameraPanels[cam.role]!.y!,
-                      }
-                    : null
-                }
-                collapsed={cameraPanels[cam.role]?.collapsed}
-                onPositionChange={handleCameraPanelPosition}
-                onCollapsedChange={handleCameraPanelCollapsed}
-              />
-            ))}
-          </div>
-        ))}
+        <div ref={cameraLayerRef} className={CAMERA_LAYER} data-testid="camera-panel-layer">
+          {cameraGroups.map(([anchor, cams]) => (
+            <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
+              {cams.map((cam, index) => (
+                <FloatingCameraPanel
+                  key={cam.role}
+                  role={cam.role}
+                  name={cam.name}
+                  imageUrl={cam.image_url}
+                  calibration={cam.calibration}
+                  boxes={boxes}
+                  highlightedIds={highlightedIds}
+                  onSelectBox={onSelectBox}
+                  bestForSelected={cam.role === bestCameraRole}
+                  pointPositions={pointPositions}
+                  showDepth={depthOn}
+                  onEnlarge={() => setEnlargedRole(cam.role)}
+                  autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
+                  dragBounds={qualitySafeFloatBounds}
+                  position={
+                    cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
+                      ? {
+                          x: cameraPanels[cam.role]!.x!,
+                          y: cameraPanels[cam.role]!.y!,
+                        }
+                      : null
+                  }
+                  collapsed={cameraPanels[cam.role]?.collapsed}
+                  onPositionChange={handleCameraPanelPosition}
+                  onCollapsedChange={handleCameraPanelCollapsed}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
 
         {/* v0.13.7 · 相机放大浮层(L3):点⛶弹大图,遮罩 / 关闭钮 / ESC 关闭。
             复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}

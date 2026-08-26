@@ -11,7 +11,7 @@ vi.mock("./geometry/pointCloudComputeSession", async (importOriginal) => {
   return {
     ...actual,
     decodePointCloudFrameAsync: decodePointCloudFrameAsyncMock,
-    getPointCloudComputeSession: () => ({ buildDepthRasters: buildDepthRastersMock }),
+    getPointCloudDepthSession: () => ({ buildDepthRasters: buildDepthRastersMock }),
   };
 });
 
@@ -19,9 +19,11 @@ import {
   acquireCameraBitmap,
   loadPointCloudDepthRasters,
   loadPointCloudBuffer,
+  loadTimedDecodedPointCloudFrame,
   prefetchPointCloudFrameAssets,
   prefetchPointCloudBuffer,
 } from "./pointCloudAssetCache";
+import { PointCloudComputeSession } from "./geometry/pointCloudComputeSession";
 
 const CALIBRATION: SensorCalibration = {
   extrinsic: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
@@ -40,6 +42,27 @@ describe("pointCloudAssetCache", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("terminates an interruptible decode worker when its frame becomes obsolete", async () => {
+    const controller = new AbortController();
+    const worker = {
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      onmessage: null,
+      onerror: null,
+    } as unknown as Worker;
+    const session = new PointCloudComputeSession(() => worker);
+    const decode = session.decodePcd(new Uint8Array([1, 2, 3]).buffer, "iso_8855", 500_000, {
+      signal: controller.signal,
+      terminateWorkerOnAbort: true,
+    });
+
+    controller.abort();
+
+    await expect(decode).rejects.toMatchObject({ name: "AbortError" });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(session.getDiagnostics()).toEqual({ workerActive: false, pendingRequests: 0 });
   });
 
   it("reuses an in-flight prefetched PCD request when the frame becomes current", async () => {
@@ -75,6 +98,296 @@ describe("pointCloudAssetCache", () => {
       bytes,
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts an obsolete active-frame decode before starting the latest frame", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(new Uint8Array([1]), { status: 200 })),
+    );
+    const pending = new Map<
+      string,
+      {
+        signal: AbortSignal;
+        resolve: (value: { positions: Float32Array }) => void;
+        reject: (reason: unknown) => void;
+      }
+    >();
+    decodePointCloudFrameAsyncMock.mockImplementation(
+      (_buffer, _convention, _threshold, options: { lane?: string; signal?: AbortSignal } = {}) =>
+        new Promise((resolve, reject) => {
+          const url = pending.size === 0 ? "first" : "latest";
+          const signal = options.signal!;
+          pending.set(url, { signal, resolve, reject });
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Point-cloud computation aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+
+    const first = loadTimedDecodedPointCloudFrame(
+      "https://assets.test/active-first.pcd",
+      "iso_8855",
+      500_000,
+    );
+    const firstRejected = expect(first).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(pending.has("first")).toBe(true));
+    const latest = loadTimedDecodedPointCloudFrame(
+      "https://assets.test/active-latest.pcd",
+      "iso_8855",
+      500_000,
+    );
+    await vi.waitFor(() => expect(pending.has("latest")).toBe(true));
+
+    expect(pending.get("first")?.signal.aborted).toBe(true);
+    await firstRejected;
+    pending.get("latest")?.resolve({ positions: new Float32Array([0, 0, 1]) });
+    await expect(latest).resolves.toMatchObject({ positions: expect.any(Float32Array) });
+    expect(decodePointCloudFrameAsyncMock).toHaveBeenLastCalledWith(
+      expect.any(ArrayBuffer),
+      "iso_8855",
+      500_000,
+      expect.objectContaining({ lane: "active", signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("aborts the obsolete PCD download before the latest frame waits for a network slot", async () => {
+    const fetchSignals: Array<AbortSignal | undefined> = [];
+    const resolveFetches: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const signal = init?.signal ?? undefined;
+            fetchSignals.push(signal);
+            resolveFetches.push(resolve);
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Point-cloud fetch aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+      ),
+    );
+    decodePointCloudFrameAsyncMock.mockImplementation(
+      (_buffer, _convention, _threshold, options: { signal?: AbortSignal } = {}) => {
+        if (options.signal?.aborted) {
+          return Promise.reject(new DOMException("Point-cloud computation aborted", "AbortError"));
+        }
+        return Promise.resolve({ positions: new Float32Array([0, 0, 1]) });
+      },
+    );
+
+    const obsolete: Array<Promise<unknown>> = [];
+    for (let frame = 0; frame < 5; frame += 1) {
+      obsolete.push(
+        loadTimedDecodedPointCloudFrame(
+          `https://assets.test/network-obsolete-${frame}.pcd`,
+          "iso_8855",
+          500_000,
+        ).catch((error) => error),
+      );
+      await vi.waitFor(() => expect(resolveFetches).toHaveLength(frame + 1));
+    }
+    const latest = loadTimedDecodedPointCloudFrame(
+      "https://assets.test/network-latest.pcd",
+      "iso_8855",
+      500_000,
+    );
+    await vi.waitFor(() => expect(resolveFetches).toHaveLength(6));
+
+    resolveFetches.forEach((resolve, index) => {
+      resolve(new Response(new Uint8Array([index]), { status: 200 }));
+    });
+    await expect(latest).resolves.toMatchObject({ positions: expect.any(Float32Array) });
+    await Promise.all(obsolete);
+
+    expect(fetchSignals).toHaveLength(6);
+    for (const obsoleteSignal of fetchSignals.slice(0, -1)) {
+      expect(obsoleteSignal).toBeInstanceOf(AbortSignal);
+      expect(obsoleteSignal?.aborted).toBe(true);
+    }
+    expect(fetchSignals[fetchSignals.length - 1]?.aborted).toBe(false);
+  });
+
+  it("旧邻帧的 signal 不会取消同 URL 的当前帧下载", async () => {
+    const requests: Array<{
+      signal: AbortSignal | undefined;
+      resolve: (response: Response) => void;
+    }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const signal = init?.signal ?? undefined;
+            requests.push({ signal, resolve });
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Point-cloud fetch aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+      ),
+    );
+    decodePointCloudFrameAsyncMock.mockResolvedValue({
+      positions: new Float32Array([0, 0, 1]),
+    });
+    const neighborController = new AbortController();
+    const url = "https://assets.test/shared-owner.pcd";
+
+    const neighbor = loadPointCloudBuffer(url, neighborController.signal).catch((error) => error);
+    const active = loadTimedDecodedPointCloudFrame(url, "iso_8855", 500_000);
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+
+    neighborController.abort();
+    requests[1].resolve(new Response(new Uint8Array([1]), { status: 200 }));
+
+    await expect(active).resolves.toMatchObject({ positions: expect.any(Float32Array) });
+    await neighbor;
+    expect(requests[0].signal?.aborted).toBe(true);
+    expect(requests[1].signal?.aborted).toBe(false);
+  });
+
+  it("keeps rapid prefetches latest-only without cancelling the active-frame lane", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(new Uint8Array([1]), { status: 200 })),
+    );
+    const signals: AbortSignal[] = [];
+    decodePointCloudFrameAsyncMock.mockImplementation(
+      (_buffer, _convention, _threshold, options: { lane?: string; signal?: AbortSignal } = {}) =>
+        new Promise((resolve, reject) => {
+          const signal = options.signal!;
+          signals.push(signal);
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Point-cloud computation aborted", "AbortError")),
+            { once: true },
+          );
+          if (signals.length === 2) resolve({ positions: new Float32Array([0, 0, 1]) });
+        }),
+    );
+    const manifest = (frame: number) =>
+      ({
+        point_cloud_url: `https://assets.test/prefetch-${frame}.pcd`,
+        axis_convention: "iso_8855",
+        cameras: [],
+      }) as unknown as TaskPointCloudManifestResponse;
+
+    const first = prefetchPointCloudFrameAssets(manifest(1));
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    const latest = prefetchPointCloudFrameAssets(manifest(2));
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+
+    expect(signals[0].aborted).toBe(true);
+    await expect(first).resolves.toBeUndefined();
+    await expect(latest).resolves.toBeUndefined();
+    expect(decodePointCloudFrameAsyncMock).toHaveBeenLastCalledWith(
+      expect.any(ArrayBuffer),
+      "iso_8855",
+      500_000,
+      expect.objectContaining({ lane: "prefetch", signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("aborts obsolete camera downloads when a newer frame prefetch starts", async () => {
+    const requests: Array<{
+      url: string;
+      signal: AbortSignal | undefined;
+      resolve: (response: Response) => void;
+    }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const signal = init?.signal ?? undefined;
+            requests.push({ url: String(input), signal, resolve });
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Asset prefetch aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+      ),
+    );
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockResolvedValue({ width: 8, height: 4, close: vi.fn() } as unknown as ImageBitmap),
+    );
+    decodePointCloudFrameAsyncMock.mockResolvedValue({ positions: new Float32Array([0, 0, 1]) });
+    const manifest = (frame: number) =>
+      ({
+        point_cloud_url: `https://assets.test/prefetch-camera-${frame}.pcd`,
+        axis_convention: "iso_8855",
+        cameras: Array.from({ length: 6 }, (_, index) => ({
+          image_url: `https://assets.test/prefetch-camera-${frame}-${index}.jpg`,
+          calibration: CALIBRATION,
+        })),
+      }) as unknown as TaskPointCloudManifestResponse;
+
+    const first = prefetchPointCloudFrameAssets(manifest(1));
+    await vi.waitFor(() => expect(requests).toHaveLength(7));
+    const latest = prefetchPointCloudFrameAssets(manifest(2));
+    await vi.waitFor(() => expect(requests).toHaveLength(14));
+
+    try {
+      const obsoleteCameras = requests
+        .slice(0, 7)
+        .filter((request) => request.url.endsWith(".jpg"));
+      expect(obsoleteCameras).toHaveLength(6);
+      expect(obsoleteCameras.every((request) => request.signal instanceof AbortSignal)).toBe(true);
+      expect(obsoleteCameras.every((request) => request.signal?.aborted)).toBe(true);
+    } finally {
+      for (const request of requests) {
+        request.resolve(new Response(new Uint8Array([1]), { status: 200 }));
+      }
+      await Promise.allSettled([first, latest]);
+    }
+  });
+
+  it("does not let an in-flight prefetch block the same frame becoming active", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(new Uint8Array([1]), { status: 200 })),
+    );
+    const pending: Array<{
+      lane: string | undefined;
+      signal: AbortSignal | undefined;
+      resolve: (value: { positions: Float32Array }) => void;
+      reject: (reason: unknown) => void;
+    }> = [];
+    decodePointCloudFrameAsyncMock.mockImplementation(
+      (_buffer, _convention, _threshold, options: { lane?: string; signal?: AbortSignal } = {}) =>
+        new Promise((resolve, reject) => {
+          pending.push({ lane: options.lane, signal: options.signal, resolve, reject });
+          options.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Point-cloud computation aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const manifest = {
+      point_cloud_url: "https://assets.test/prefetch-promoted.pcd",
+      axis_convention: "iso_8855",
+      cameras: [],
+    } as unknown as TaskPointCloudManifestResponse;
+
+    const prefetch = prefetchPointCloudFrameAssets(manifest);
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    const active = loadTimedDecodedPointCloudFrame(manifest.point_cloud_url, "iso_8855", 500_000);
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+
+    expect(pending.map((request) => request.lane)).toEqual(["prefetch", "active"]);
+    expect(pending[0].signal?.aborted).toBe(true);
+    pending[1].resolve({ positions: new Float32Array([0, 0, 1]) });
+    await expect(active).resolves.toMatchObject({ positions: expect.any(Float32Array) });
+    await expect(prefetch).resolves.toBeUndefined();
   });
 
   it("reuses decoded bitmaps and closes an unpinned LRU entry", async () => {
@@ -186,7 +499,7 @@ describe("pointCloudAssetCache", () => {
     expect(buildDepthRastersMock).toHaveBeenCalledTimes(2);
   });
 
-  it("starts depth-raster prefetch without holding the frame-navigation promise open", async () => {
+  it("把深度预取保留在可取消的帧预取生命周期内", async () => {
     let resolveDepth!: (value: ReturnType<typeof depthResult>) => void;
     buildDepthRastersMock.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -225,6 +538,6 @@ describe("pointCloudAssetCache", () => {
     resolveDepth(depthResult());
     await prefetch;
 
-    expect(completedBeforeDepth).toBe(true);
+    expect(completedBeforeDepth).toBe(false);
   });
 });

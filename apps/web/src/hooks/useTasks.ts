@@ -44,7 +44,7 @@ export function useNextTask(projectId: string | undefined, batchId?: string) {
 export function useTask(id: string) {
   return useQuery({
     queryKey: ["task", id],
-    queryFn: () => tasksApi.get(id),
+    queryFn: ({ signal }) => tasksApi.get(id, { signal }),
     enabled: !!id,
   });
 }
@@ -52,7 +52,7 @@ export function useTask(id: string) {
 export function useMaskCapabilities(taskId: string | null | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-mask-capabilities", taskId],
-    queryFn: () => tasksApi.getMaskCapabilities(taskId!),
+    queryFn: ({ signal }) => tasksApi.getMaskCapabilities(taskId!, { signal }),
     enabled: !!taskId && enabled,
     staleTime: 30_000,
   });
@@ -61,7 +61,7 @@ export function useMaskCapabilities(taskId: string | null | undefined, enabled =
 export function useVideoManifest(taskId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-video-manifest", taskId],
-    queryFn: () => tasksApi.getVideoManifest(taskId!),
+    queryFn: ({ signal }) => tasksApi.getVideoManifest(taskId!, { signal }),
     enabled: !!taskId && enabled,
   });
 }
@@ -69,7 +69,7 @@ export function useVideoManifest(taskId: string | undefined, enabled = true) {
 export function useVideoFrameTimetable(taskId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-video-frame-timetable", taskId],
-    queryFn: () => tasksApi.getVideoFrameTimetable(taskId!),
+    queryFn: ({ signal }) => tasksApi.getVideoFrameTimetable(taskId!, undefined, { signal }),
     enabled: !!taskId && enabled,
     staleTime: Infinity,
   });
@@ -85,7 +85,7 @@ export function useAnnotations(
     : (["annotations", taskId] as const);
   return useQuery({
     queryKey,
-    queryFn: () => tasksApi.getAnnotations(taskId!, videoSegmentId),
+    queryFn: ({ signal }) => tasksApi.getAnnotations(taskId!, videoSegmentId, { signal }),
     enabled: !!taskId && enabled,
   });
 }

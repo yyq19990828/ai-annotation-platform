@@ -5,7 +5,7 @@ import type { LidarAxisConvention } from "./geometry/axisConvention";
 import type { GpuDepthRaster } from "./geometry/depthmap";
 import {
   decodePointCloudFrameAsync,
-  getPointCloudComputeSession,
+  getPointCloudDepthSession,
 } from "./geometry/pointCloudComputeSession";
 import type { DecodedPointCloudFrame } from "./geometry/pointcloudFrame";
 import { markPointCloudStage } from "./pointCloudTiming";
@@ -15,14 +15,41 @@ const DECODED_FRAME_CACHE_LIMIT = 3;
 const CAMERA_ASSET_CACHE_LIMIT = 18;
 const DEPTH_RASTER_CACHE_LIMIT = 8;
 const DEPTH_RASTER_CACHE_BUDGET_BYTES = 8 * 1024 * 1024;
+type PointCloudAssetLane = "shared" | "active" | "prefetch";
 
-const pointCloudBuffers = new Map<string, Promise<ArrayBuffer>>();
-const decodedFrames = new Map<string, Promise<DecodedPointCloudFrame>>();
-const cameraBlobs = new Map<string, Promise<Blob>>();
+interface PointCloudBufferCacheEntry {
+  promise: Promise<ArrayBuffer>;
+  ready: boolean;
+  signal?: AbortSignal;
+}
+
+const pointCloudBuffers = new Map<string, PointCloudBufferCacheEntry>();
+
+interface DecodedFrameCacheEntry {
+  promise: Promise<DecodedPointCloudFrame>;
+  ready: boolean;
+  lane: "shared" | "active" | "prefetch";
+  signal?: AbortSignal;
+}
+
+const decodedFrames = new Map<string, DecodedFrameCacheEntry>();
+interface CameraBlobEntry {
+  promise: Promise<Blob>;
+  ready: boolean;
+  lane: PointCloudAssetLane;
+  signal?: AbortSignal;
+}
+
+const cameraBlobs = new Map<string, CameraBlobEntry>();
+let activeFrameDecodeController: AbortController | null = null;
+let prefetchFrameDecodeController: AbortController | null = null;
 
 interface DepthRasterCacheEntry {
   promise: Promise<GpuDepthRaster[]>;
   bytes: number;
+  ready: boolean;
+  lane: PointCloudAssetLane;
+  signal?: AbortSignal;
 }
 
 const depthRasters = new Map<string, DepthRasterCacheEntry>();
@@ -32,6 +59,8 @@ interface CameraBitmapEntry {
   promise: Promise<ImageBitmap>;
   bitmap: ImageBitmap | null;
   references: number;
+  lane: PointCloudAssetLane;
+  signal?: AbortSignal;
 }
 
 const cameraBitmaps = new Map<string, CameraBitmapEntry>();
@@ -126,26 +155,36 @@ function depthRasterKey(
   ]);
 }
 
-/** Shared in-flight/raw-byte cache used by active loads and timeline prefetch. */
-export function loadPointCloudBuffer(url: string): Promise<ArrayBuffer> {
+/** Shared raw-byte cache; an obsolete in-flight owner must not retain a network slot. */
+export function loadPointCloudBuffer(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
   const cached = pointCloudBuffers.get(url);
-  if (cached) {
+  if (cached && (cached.ready || (!cached.signal?.aborted && cached.signal === signal))) {
     touch(pointCloudBuffers, url, cached);
-    return cached;
+    return cached.promise;
   }
+  if (cached) pointCloudBuffers.delete(url);
 
-  const request = fetch(url, { cache: "force-cache" })
+  const entry: PointCloudBufferCacheEntry = {
+    promise: Promise.resolve(new ArrayBuffer(0)),
+    ready: false,
+    signal,
+  };
+  entry.promise = fetch(url, { cache: "force-cache", signal })
     .then((response) => {
       if (!response.ok) throw new Error(`点云资源加载失败: ${response.status}`);
       return response.arrayBuffer();
     })
+    .then((buffer) => {
+      entry.ready = true;
+      return buffer;
+    })
     .catch((error) => {
-      if (pointCloudBuffers.get(url) === request) pointCloudBuffers.delete(url);
+      if (pointCloudBuffers.get(url) === entry) pointCloudBuffers.delete(url);
       throw error;
     });
-  pointCloudBuffers.set(url, request);
+  pointCloudBuffers.set(url, entry);
   trimOldest(pointCloudBuffers, POINT_CLOUD_CACHE_LIMIT);
-  return request;
+  return entry.promise;
 }
 
 export async function prefetchPointCloudBuffer(url: string): Promise<void> {
@@ -156,30 +195,59 @@ function decodedPointCloudFrameRequest(
   url: string,
   convention: LidarAxisConvention,
   decimateThreshold: number,
+  options: {
+    lane?: "shared" | "active" | "prefetch";
+    signal?: AbortSignal;
+  } = {},
 ): { promise: Promise<DecodedPointCloudFrame>; cacheHit: boolean } {
+  const lane = options.lane ?? "shared";
   const key = `${url}\n${convention}\n${decimateThreshold}`;
   const cached = decodedFrames.get(key);
-  if (cached) {
+  const reusable =
+    cached &&
+    (cached.ready ||
+      (!cached.signal?.aborted && cached.lane === lane && cached.signal === options.signal));
+  if (reusable) {
     touch(decodedFrames, key, cached);
-    return { promise: cached, cacheHit: true };
+    return { promise: cached.promise, cacheHit: true };
   }
-  const request = loadPointCloudBuffer(url)
-    .then((buffer) => decodePointCloudFrameAsync(buffer, convention, decimateThreshold))
+
+  const entry: DecodedFrameCacheEntry = {
+    promise: Promise.resolve(null as unknown as DecodedPointCloudFrame),
+    ready: false,
+    lane,
+    signal: options.signal,
+  };
+  entry.promise = loadPointCloudBuffer(url, options.signal)
+    .then((buffer) =>
+      decodePointCloudFrameAsync(buffer, convention, decimateThreshold, {
+        lane,
+        signal: options.signal,
+      }),
+    )
+    .then((frame) => {
+      entry.ready = true;
+      return frame;
+    })
     .catch((error) => {
-      if (decodedFrames.get(key) === request) decodedFrames.delete(key);
+      if (decodedFrames.get(key) === entry) decodedFrames.delete(key);
       throw error;
     });
-  decodedFrames.set(key, request);
+  decodedFrames.set(key, entry);
   trimOldest(decodedFrames, DECODED_FRAME_CACHE_LIMIT);
-  return { promise: request, cacheHit: false };
+  return { promise: entry.promise, cacheHit: false };
 }
 
 export function loadDecodedPointCloudFrame(
   url: string,
   convention: LidarAxisConvention,
   decimateThreshold: number,
+  options: { signal?: AbortSignal } = {},
 ): Promise<DecodedPointCloudFrame> {
-  return decodedPointCloudFrameRequest(url, convention, decimateThreshold).promise;
+  return decodedPointCloudFrameRequest(url, convention, decimateThreshold, {
+    lane: "shared",
+    signal: options.signal,
+  }).promise;
 }
 
 /** Active-scene load with one unambiguous cache/timing event for the benchmark trace. */
@@ -188,39 +256,117 @@ export async function loadTimedDecodedPointCloudFrame(
   convention: LidarAxisConvention,
   decimateThreshold: number,
 ): Promise<DecodedPointCloudFrame> {
+  prefetchFrameDecodeController?.abort();
+  prefetchFrameDecodeController = null;
+  activeFrameDecodeController?.abort();
+  const controller = new AbortController();
+  activeFrameDecodeController = controller;
   const startedAt = performance.now();
-  const request = decodedPointCloudFrameRequest(url, convention, decimateThreshold);
-  const frame = await request.promise;
-  markPointCloudStage("pcd-frame-ready", url, startedAt, request.cacheHit);
-  return frame;
+  const request = decodedPointCloudFrameRequest(url, convention, decimateThreshold, {
+    lane: "active",
+    signal: controller.signal,
+  });
+  try {
+    const frame = await request.promise;
+    markPointCloudStage("pcd-frame-ready", url, startedAt, request.cacheHit);
+    return frame;
+  } finally {
+    if (activeFrameDecodeController === controller) activeFrameDecodeController = null;
+  }
 }
 
-function loadCameraBlob(url: string): Promise<Blob> {
+/** Stop obsolete active-frame CPU work when the owning scene effect is replaced or unmounted. */
+export function cancelActivePointCloudFrameLoad(): void {
+  activeFrameDecodeController?.abort();
+  activeFrameDecodeController = null;
+}
+
+function loadCameraBlob(
+  url: string,
+  signal?: AbortSignal,
+  lane: PointCloudAssetLane = "shared",
+): Promise<Blob> {
   const cached = cameraBlobs.get(url);
-  if (cached) {
+  const reusable =
+    cached &&
+    (cached.ready || (!cached.signal?.aborted && cached.lane === lane && cached.signal === signal));
+  if (reusable) {
     touch(cameraBlobs, url, cached);
-    return cached;
+    return cached.promise;
   }
-  const request = fetch(url, { cache: "force-cache" })
+  if (cached) cameraBlobs.delete(url);
+
+  const entry: CameraBlobEntry = {
+    promise: Promise.resolve(new Blob()),
+    ready: false,
+    lane,
+    signal,
+  };
+  entry.promise = fetch(url, { cache: "force-cache", signal })
     .then((response) => {
       if (!response.ok) throw new Error(`相机资源加载失败: ${response.status}`);
       return response.blob();
     })
+    .then((blob) => {
+      entry.ready = true;
+      return blob;
+    })
     .catch((error) => {
-      if (cameraBlobs.get(url) === request) cameraBlobs.delete(url);
+      if (cameraBlobs.get(url) === entry) cameraBlobs.delete(url);
       throw error;
     });
-  cameraBlobs.set(url, request);
+  cameraBlobs.set(url, entry);
   trimOldest(cameraBlobs, CAMERA_ASSET_CACHE_LIMIT);
-  return request;
+  return entry.promise;
 }
 
-function loadCameraBitmap(url: string): Promise<ImageBitmap> {
+function decodeImageBitmap(blob: Blob, signal?: AbortSignal): Promise<ImageBitmap> {
+  const decode = createImageBitmap(blob);
+  if (!signal) return decode;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      reject(new DOMException("Camera bitmap decode aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    void decode.then(
+      (bitmap) => {
+        signal.removeEventListener("abort", onAbort);
+        if (settled || signal.aborted) {
+          bitmap.close();
+          return;
+        }
+        settled = true;
+        resolve(bitmap);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        if (settled) return;
+        settled = true;
+        reject(error);
+      },
+    );
+    if (signal.aborted) onAbort();
+  });
+}
+
+function loadCameraBitmap(
+  url: string,
+  signal?: AbortSignal,
+  lane: PointCloudAssetLane = "shared",
+): Promise<ImageBitmap> {
   const cached = cameraBitmaps.get(url);
-  if (cached) {
+  const reusable =
+    cached &&
+    (cached.bitmap !== null ||
+      (!cached.signal?.aborted && cached.lane === lane && cached.signal === signal));
+  if (reusable) {
     touch(cameraBitmaps, url, cached);
     return cached.promise;
   }
+  if (cached) cameraBitmaps.delete(url);
   if (typeof createImageBitmap === "undefined") {
     return Promise.reject(new Error("ImageBitmap decode is unavailable"));
   }
@@ -228,9 +374,11 @@ function loadCameraBitmap(url: string): Promise<ImageBitmap> {
     bitmap: null,
     references: 0,
     promise: Promise.resolve(null as unknown as ImageBitmap),
+    lane,
+    signal,
   };
-  entry.promise = loadCameraBlob(url)
-    .then((blob) => createImageBitmap(blob))
+  entry.promise = loadCameraBlob(url, signal, lane)
+    .then((blob) => decodeImageBitmap(blob, signal))
     .then((bitmap) => {
       entry.bitmap = bitmap;
       trimCameraBitmaps();
@@ -252,10 +400,14 @@ export interface AcquiredCameraBitmap {
 }
 
 /** Pins a decoded bitmap until the renderer releases its camera texture owner. */
-export async function acquireCameraBitmap(url: string): Promise<AcquiredCameraBitmap> {
+export async function acquireCameraBitmap(
+  url: string,
+  signal?: AbortSignal,
+  lane: PointCloudAssetLane = "active",
+): Promise<AcquiredCameraBitmap> {
   const cached = cameraBitmaps.get(url);
   const cacheReady = cached?.bitmap != null;
-  const promise = loadCameraBitmap(url);
+  const promise = loadCameraBitmap(url, signal, lane);
   const entry = cameraBitmaps.get(url);
   if (!entry) throw new Error("Camera bitmap cache entry was not created");
   entry.references += 1;
@@ -294,19 +446,29 @@ export function loadPointCloudDepthRasters(
   pointCloudUrl: string,
   positions: Float32Array,
   cameras: readonly CameraDepthRasterInput[],
+  options: { signal?: AbortSignal; lane?: PointCloudAssetLane } = {},
 ): Promise<LoadedPointCloudDepthRasters> {
+  const lane = options.lane ?? "shared";
   const key = depthRasterKey(pointCloudUrl, positions, cameras);
   const cached = depthRasters.get(key);
-  if (cached) {
+  const reusable =
+    cached &&
+    (cached.ready ||
+      (!cached.signal?.aborted && cached.lane === lane && cached.signal === options.signal));
+  if (reusable) {
     touch(depthRasters, key, cached);
     return cached.promise.then((rasters) => ({ rasters, cacheHit: true }));
   }
+  if (cached) depthRasters.delete(key);
 
   const entry: DepthRasterCacheEntry = {
     promise: Promise.resolve([]),
     bytes: 0,
+    ready: false,
+    lane,
+    signal: options.signal,
   };
-  entry.promise = getPointCloudComputeSession()
+  entry.promise = getPointCloudDepthSession(lane)
     .buildDepthRasters(
       positions,
       cameras.map((camera) => ({
@@ -314,8 +476,13 @@ export function loadPointCloudDepthRasters(
         width: camera.width,
         height: camera.height,
       })),
+      {
+        signal: options.signal,
+        terminateWorkerOnAbort: lane !== "shared",
+      },
     )
     .then((rasters) => {
+      entry.ready = true;
       if (depthRasters.get(key) === entry) {
         entry.bytes = rasters.reduce((total, raster) => total + raster.depth.byteLength, 0);
         depthRasterCacheBytes += entry.bytes;
@@ -338,26 +505,28 @@ export interface PointCloudFramePrefetchOptions {
 }
 
 /** Decode parsed PCD and camera bitmaps for an adjacent frame. */
-export async function prefetchPointCloudFrameAssets(
+async function prefetchPointCloudFrameAssetsWithSignal(
   manifest: TaskPointCloudManifestResponse,
-  options: PointCloudFramePrefetchOptions = {},
+  options: PointCloudFramePrefetchOptions,
+  signal: AbortSignal,
 ): Promise<void> {
   const decimateThreshold = options.decimateThreshold ?? 500_000;
   const convention = manifest.axis_convention ?? "iso_8855";
-  const framePromise = loadDecodedPointCloudFrame(
+  const framePromise = decodedPointCloudFrameRequest(
     manifest.point_cloud_url,
     convention,
     decimateThreshold,
-  ).catch(() => null);
+    { lane: "prefetch", signal },
+  ).promise.catch(() => null);
   const cameraPromises = manifest.cameras
     .filter((camera) => !!camera.image_url)
     .map(async (camera) => {
       try {
         if (typeof createImageBitmap === "undefined") {
-          await loadCameraBlob(camera.image_url);
+          await loadCameraBlob(camera.image_url, signal, "prefetch");
           return null;
         }
-        const bitmap = await loadCameraBitmap(camera.image_url);
+        const bitmap = await loadCameraBitmap(camera.image_url, signal, "prefetch");
         return camera.calibration ? { camera, bitmap } : null;
       } catch {
         return null;
@@ -374,7 +543,7 @@ export async function prefetchPointCloudFrameAssets(
     } => asset !== null && !!asset.camera.calibration,
   );
   if (usableCameras.length === 0 || usableCameras.length > 6) return;
-  void loadPointCloudDepthRasters(
+  await loadPointCloudDepthRasters(
     manifest.point_cloud_url,
     frame.positions,
     usableCameras.map(({ camera, bitmap }) => ({
@@ -382,5 +551,21 @@ export async function prefetchPointCloudFrameAssets(
       width: bitmap.width,
       height: bitmap.height,
     })),
+    { signal, lane: "prefetch" },
   ).catch(() => {});
+}
+
+/** Keep only the newest speculative frame warm; active-frame decode uses a separate lane. */
+export function prefetchPointCloudFrameAssets(
+  manifest: TaskPointCloudManifestResponse,
+  options: PointCloudFramePrefetchOptions = {},
+): Promise<void> {
+  prefetchFrameDecodeController?.abort();
+  const controller = new AbortController();
+  prefetchFrameDecodeController = controller;
+  return prefetchPointCloudFrameAssetsWithSignal(manifest, options, controller.signal).finally(
+    () => {
+      if (prefetchFrameDecodeController === controller) prefetchFrameDecodeController = null;
+    },
+  );
 }

@@ -103,9 +103,10 @@ export const asyncJobsApi = {
     apiClient.post<{ status: string; id: string }>(`/async-jobs/${id}/cancel`),
   retryFailed: (id: string) =>
     apiClient.post<AsyncJobRetryFailedResponse>(`/async-jobs/${id}/retry-failed`),
-  listCrossFrame: (taskId: string, limit = 20) =>
+  listCrossFrame: (taskId: string, limit = 20, init?: RequestInit) =>
     apiClient.get<AsyncJobListResponse>(
       `/tasks/${taskId}/cross-frame-jobs?limit=${encodeURIComponent(String(limit))}`,
+      init,
     ),
   createCrossFrame: (taskId: string, body: CrossFrameJobCreate) =>
     apiClient.post<AsyncJob>(`/tasks/${taskId}/cross-frame-jobs`, body),

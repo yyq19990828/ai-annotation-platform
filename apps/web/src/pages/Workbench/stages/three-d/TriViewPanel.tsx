@@ -18,8 +18,8 @@ import { TriOrthoView, type TriSelected } from "./TriOrthoView";
 import type { TriView, Psr } from "./geometry/triview";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
-const TRI_PANEL = "relative flex-1 flex min-h-0 flex-col gap-1.5 bg-transparent p-1.5";
-const TRI_ROW = "relative flex-1 min-h-0 border border-border rounded-sm overflow-hidden";
+const TRI_PANEL = "relative flex-1 flex min-h-0 flex-col gap-0 bg-transparent p-0";
+const TRI_ROW = "relative flex-1 min-h-0 border border-border overflow-hidden";
 const TRI_CAPTION =
   "absolute top-1 left-1/2 z-local-2 -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-xs text-muted-foreground tabular-nums whitespace-nowrap pointer-events-none";
 const TRI_AXIS_GLYPH =

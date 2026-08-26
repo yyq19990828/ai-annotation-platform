@@ -18,13 +18,14 @@ export function usePredictions(
   return useInfiniteQuery({
     queryKey: ["predictions", taskId, modelVersion, minConfidence, pageSize],
     initialPageParam: 0,
-    queryFn: ({ pageParam = 0 }) =>
+    queryFn: ({ pageParam = 0, signal }) =>
       predictionsApi.listByTask(
         taskId!,
         modelVersion,
         minConfidence,
         pageSize,
         pageParam as number,
+        { signal },
       ),
     getNextPageParam: (lastPage: PredictionResponse[], allPages) => {
       const lastShapes = lastPage.reduce((sum, p) => sum + (p.result?.length ?? 0), 0);
