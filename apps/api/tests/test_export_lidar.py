@@ -109,6 +109,33 @@ def test_kitti_lidar_label_projects_bbox_and_camera_bottom_center():
     assert float(fields[3]) == pytest.approx(-math.pi / 2, abs=1e-6)
 
 
+def test_kitti_lidar_prefers_persistent_manual_camera_bbox() -> None:
+    scene_track_id = uuid.uuid4()
+    source = _ann()
+    source.scene_track_id = scene_track_id
+    member = _ann(geometry={"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4})
+    member.scene_track_id = scene_track_id
+    member.sensor_role = "camera_front"
+    member.sensor_dataset_item_id = uuid.uuid4()
+    member.sensor_visibility = "visible"
+    member.calibration_revision = 1
+    member.calibration_digest = "a" * 64
+    member.is_active = True
+    member.was_cancelled = False
+
+    result = build_kitti_lidar_frame(
+        [source],
+        camera=_camera(),
+        axis_convention="iso_8855",
+        camera_members=[member],
+    )
+
+    fields = result.lines[0].split()
+    assert [float(value) for value in fields[4:8]] == pytest.approx([20, 24, 80, 72])
+    assert result.manual_bbox_count == 1
+    assert result.derived_bbox_count == 0
+
+
 @pytest.mark.parametrize(
     ("center", "expected_reason"),
     [

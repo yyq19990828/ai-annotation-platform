@@ -12,9 +12,54 @@ from app.services.point_cloud_quality.kernel import (
     TrackInterval,
     TrackMember,
     evaluate_box,
+    evaluate_projection_residual,
     evaluate_track,
     parse_pcd_positions,
 )
+
+
+def test_projection_residual_rule_uses_iou_or_normalized_edge_distance() -> None:
+    primary_id = uuid.uuid4()
+    camera_id = uuid.uuid4()
+    finding = evaluate_projection_residual(
+        iou=0.45,
+        max_edge_residual_px=20,
+        mean_edge_residual_px=8,
+        max_edge_residual_ratio=0.01,
+        projected_bbox=(0.4, 0.3, 0.2, 0.2),
+        manual_bbox=(0.42, 0.3, 0.2, 0.2),
+        camera_role="camera_front",
+        calibration_digest="a" * 64,
+        member_calibration_digest="a" * 64,
+        frame_index=3,
+        annotation_ids=(primary_id, camera_id),
+        thresholds=QualityThresholds(
+            projection_min_iou=0.5,
+            projection_max_edge_residual_ratio=0.025,
+        ),
+    )
+    assert finding is not None
+    assert finding.code == "projection_residual"
+    assert finding.annotation_ids == (primary_id, camera_id)
+    assert finding.evidence["camera_role"] == "camera_front"
+
+    assert (
+        evaluate_projection_residual(
+            iou=0.8,
+            max_edge_residual_px=4,
+            mean_edge_residual_px=2,
+            max_edge_residual_ratio=0.01,
+            projected_bbox=(0.4, 0.3, 0.2, 0.2),
+            manual_bbox=(0.4, 0.3, 0.2, 0.2),
+            camera_role="camera_front",
+            calibration_digest="a" * 64,
+            member_calibration_digest="a" * 64,
+            frame_index=3,
+            annotation_ids=(primary_id, camera_id),
+            thresholds=QualityThresholds(),
+        )
+        is None
+    )
 
 
 def _binary_pcd(points: list[tuple[float, float, float, float]]) -> bytes:

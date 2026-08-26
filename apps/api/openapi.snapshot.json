@@ -2427,6 +2427,28 @@
             "title": "Attributes Meta",
             "type": "object"
           },
+          "calibration_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Digest"
+          },
+          "calibration_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Revision"
+          },
           "class_name": {
             "title": "Class Name",
             "type": "string"
@@ -2615,6 +2637,46 @@
               }
             ],
             "title": "Scene Track Id"
+          },
+          "sensor_dataset_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Dataset Item Id"
+          },
+          "sensor_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Role"
+          },
+          "sensor_visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "visible",
+                  "occluded",
+                  "truncated",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Visibility"
           },
           "source": {
             "title": "Source",
@@ -6600,6 +6662,342 @@
         "title": "CacheStats",
         "type": "object"
       },
+      "CameraAnnotationMemberCreate": {
+        "properties": {
+          "bbox": {
+            "$ref": "#/components/schemas/NormalizedCameraBbox"
+          },
+          "camera_role": {
+            "maxLength": 50,
+            "minLength": 1,
+            "pattern": "^camera_",
+            "title": "Camera Role",
+            "type": "string"
+          },
+          "expected_calibration_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Calibration Digest",
+            "type": "string"
+          },
+          "expected_calibration_revision": {
+            "minimum": 1.0,
+            "title": "Expected Calibration Revision",
+            "type": "integer"
+          },
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "source_annotation_id": {
+            "format": "uuid",
+            "title": "Source Annotation Id",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "visible",
+            "enum": [
+              "visible",
+              "occluded",
+              "truncated",
+              "unknown"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_annotation_id",
+          "camera_role",
+          "bbox",
+          "expected_track_revision",
+          "expected_calibration_revision",
+          "expected_calibration_digest"
+        ],
+        "title": "CameraAnnotationMemberCreate",
+        "type": "object"
+      },
+      "CameraAnnotationMemberDelete": {
+        "properties": {
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "expected_track_revision"
+        ],
+        "title": "CameraAnnotationMemberDelete",
+        "type": "object"
+      },
+      "CameraAnnotationMemberList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "projected_bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NormalizedCameraBbox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "track_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Revision"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CameraAnnotationMemberList",
+        "type": "object"
+      },
+      "CameraAnnotationMemberOut": {
+        "properties": {
+          "bbox": {
+            "$ref": "#/components/schemas/NormalizedCameraBbox"
+          },
+          "calibration_digest": {
+            "title": "Calibration Digest",
+            "type": "string"
+          },
+          "calibration_revision": {
+            "title": "Calibration Revision",
+            "type": "integer"
+          },
+          "camera_dataset_item_id": {
+            "format": "uuid",
+            "title": "Camera Dataset Item Id",
+            "type": "string"
+          },
+          "camera_role": {
+            "title": "Camera Role",
+            "type": "string"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_calibration_digest": {
+            "title": "Current Calibration Digest",
+            "type": "string"
+          },
+          "current_calibration_revision": {
+            "title": "Current Calibration Revision",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "relation_status": {
+            "enum": [
+              "current",
+              "stale"
+            ],
+            "title": "Relation Status",
+            "type": "string"
+          },
+          "residual": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CameraProjectionResidual"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_track_id": {
+            "format": "uuid",
+            "title": "Scene Track Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          },
+          "track_revision": {
+            "minimum": 1.0,
+            "title": "Track Revision",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "visibility": {
+            "enum": [
+              "visible",
+              "occluded",
+              "truncated",
+              "unknown"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "scene_track_id",
+          "track_id",
+          "class_name",
+          "camera_dataset_item_id",
+          "camera_role",
+          "bbox",
+          "visibility",
+          "version",
+          "is_active",
+          "calibration_revision",
+          "calibration_digest",
+          "current_calibration_revision",
+          "current_calibration_digest",
+          "relation_status",
+          "track_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CameraAnnotationMemberOut",
+        "type": "object"
+      },
+      "CameraAnnotationMemberRestore": {
+        "properties": {
+          "expected_calibration_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Calibration Digest",
+            "type": "string"
+          },
+          "expected_calibration_revision": {
+            "minimum": 1.0,
+            "title": "Expected Calibration Revision",
+            "type": "integer"
+          },
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "expected_track_revision",
+          "expected_calibration_revision",
+          "expected_calibration_digest"
+        ],
+        "title": "CameraAnnotationMemberRestore",
+        "type": "object"
+      },
+      "CameraAnnotationMemberUpdate": {
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NormalizedCameraBbox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_calibration_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Calibration Digest",
+            "type": "string"
+          },
+          "expected_calibration_revision": {
+            "minimum": 1.0,
+            "title": "Expected Calibration Revision",
+            "type": "integer"
+          },
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "visible",
+                  "occluded",
+                  "truncated",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "required": [
+          "expected_version",
+          "expected_track_revision",
+          "expected_calibration_revision",
+          "expected_calibration_digest"
+        ],
+        "title": "CameraAnnotationMemberUpdate",
+        "type": "object"
+      },
       "CameraPanelState": {
         "additionalProperties": false,
         "description": "v0.15.x · 3D 悬浮相机面板的位置 + 折叠态。按相机 role 分桶存。\n\n位置像素由前端按视图计算后落库;无该 role 键 = 用默认贴边位置 + 自动折叠态。",
@@ -6633,6 +7031,43 @@
           }
         },
         "title": "CameraPanelState",
+        "type": "object"
+      },
+      "CameraProjectionResidual": {
+        "properties": {
+          "iou": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Iou",
+            "type": "number"
+          },
+          "max_edge_residual_px": {
+            "minimum": 0.0,
+            "title": "Max Edge Residual Px",
+            "type": "number"
+          },
+          "max_edge_residual_ratio": {
+            "minimum": 0.0,
+            "title": "Max Edge Residual Ratio",
+            "type": "number"
+          },
+          "mean_edge_residual_px": {
+            "minimum": 0.0,
+            "title": "Mean Edge Residual Px",
+            "type": "number"
+          },
+          "projected_bbox": {
+            "$ref": "#/components/schemas/NormalizedCameraBbox"
+          }
+        },
+        "required": [
+          "iou",
+          "max_edge_residual_px",
+          "mean_edge_residual_px",
+          "max_edge_residual_ratio",
+          "projected_bbox"
+        ],
+        "title": "CameraProjectionResidual",
         "type": "object"
       },
       "CanvasDrawing": {
@@ -18159,6 +18594,42 @@
         "title": "NeighborsResponse",
         "type": "object"
       },
+      "NormalizedCameraBbox": {
+        "properties": {
+          "h": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "H",
+            "type": "number"
+          },
+          "w": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "W",
+            "type": "number"
+          },
+          "x": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "NormalizedCameraBbox",
+        "type": "object"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -18744,6 +19215,44 @@
               }
             ]
           },
+          "calibration_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Digest"
+          },
+          "calibration_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Revision"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
           "image_url": {
             "title": "Image Url",
             "type": "string"
@@ -18755,11 +19264,23 @@
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "required": [
           "name",
           "role",
+          "dataset_item_id",
           "image_url"
         ],
         "title": "PointCloudCameraOut",
@@ -19770,6 +20291,20 @@
             "title": "Minimum Points",
             "type": "integer"
           },
+          "projection_max_edge_residual_ratio": {
+            "default": 0.025,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Projection Max Edge Residual Ratio",
+            "type": "number"
+          },
+          "projection_min_iou": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Projection Min Iou",
+            "type": "number"
+          },
           "size_mad_z": {
             "default": 4.5,
             "exclusiveMinimum": 0.0,
@@ -19873,6 +20408,32 @@
               }
             ],
             "title": "Minimum Points"
+          },
+          "projection_max_edge_residual_ratio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Max Edge Residual Ratio"
+          },
+          "projection_min_iou": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Min Iou"
           },
           "size_mad_z": {
             "anyOf": [
@@ -26733,6 +27294,71 @@
           "intrinsic"
         ],
         "title": "SensorCalibration",
+        "type": "object"
+      },
+      "SensorCalibrationRevisionOut": {
+        "properties": {
+          "calibration": {
+            "$ref": "#/components/schemas/SensorCalibration"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "revision",
+          "digest",
+          "calibration"
+        ],
+        "title": "SensorCalibrationRevisionOut",
+        "type": "object"
+      },
+      "SensorCalibrationUpdate": {
+        "properties": {
+          "calibration": {
+            "$ref": "#/components/schemas/SensorCalibration"
+          },
+          "expected_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Digest",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calibration",
+          "expected_revision",
+          "expected_digest"
+        ],
+        "title": "SensorCalibrationUpdate",
         "type": "object"
       },
       "ServicePoolAdminItem": {
@@ -34515,7 +35141,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.24.11"
+    "version": "0.24.15"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -53137,6 +53763,423 @@
           }
         ],
         "summary": "Get Task Neighbors",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/camera-members": {
+      "get": {
+        "operationId": "get_camera_members_api_v1_tasks__task_id__point_cloud_camera_members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Track Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_camera_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^camera_",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Projection Camera Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Inactive",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Camera Members",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "post": {
+        "operationId": "post_camera_member_api_v1_tasks__task_id__point_cloud_camera_members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Post Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/camera-members/{member_id}": {
+      "delete": {
+        "operationId": "remove_camera_member_api_v1_tasks__task_id__point_cloud_camera_members__member_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberDelete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_camera_member_api_v1_tasks__task_id__point_cloud_camera_members__member_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/camera-members/{member_id}/restore": {
+      "post": {
+        "operationId": "restore_deleted_camera_member_api_v1_tasks__task_id__point_cloud_camera_members__member_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberRestore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Deleted Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/cameras/{camera_role}/calibration": {
+      "patch": {
+        "operationId": "patch_camera_calibration_api_v1_tasks__task_id__point_cloud_cameras__camera_role__calibration_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "camera_role",
+            "required": true,
+            "schema": {
+              "title": "Camera Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorCalibrationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorCalibrationRevisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Camera Calibration",
         "tags": [
           "tasks"
         ]

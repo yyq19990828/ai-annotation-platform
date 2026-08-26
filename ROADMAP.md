@@ -37,8 +37,8 @@
 - WebGPU 点云渲染继续保持默认关闭的实验功能：同一 NVIDIA 设备上的三轮 warm geometry、warm RGB、精修首帧、缓存 owner、CPU depth payload 与 GPU RSS plateau 均已通过；跨轮深度数组残留也已修复。主透视视图与三正交视图共用唯一 renderer/context，空闲时停止提交；Chromium GPU 进程受控丢失后会卸载这一 canvas 并自动重建完整 Legacy Scene，这验证了显存压力最终触发 device lost 时的熔断路径，但未主动制造不可控的物理 OOM。
   当前没有 NVIDIA、Intel/AMD 两类 GPU 的可用测试设备，跨厂商验证明确记为 `not tested`；它不阻塞
   本地性能与回退链路继续收口，但在硬件可用并完成验证前不得移除实验标记或默认启用。
-- Scene Track 与 3D Quality 已共享 `scene_track_id + revision + interval` 权威合同，并打通冻结输入、异步规则、时间轴标记、工作台定位、显式人工判定、评估快照、按类阈值与晋级门。下一步优先建立持久化多相机人工成员，并为投影残差规则冻结真值冲突、标定 revision 与导出语义。
-- LiDAR 导出仍缺完整 nuScenes table / pose / timestamp / token 链与多相机 COCO 派生 2D；这两项继续独立立项，不恢复任何占位真值。
+- Scene Track 已支持同帧 3D 主成员与按相机 role 区分的持久化人工 bbox，标定采用可追溯 revision，3D Quality 能冻结并治理投影残差，KITTI 优先使用所选相机的人工框。后续多模态几何扩展集中在相机 polygon / mask、跨相机批量复核和标定管理 UI。
+- LiDAR 导出仍缺完整 nuScenes table / pose / timestamp / token 链与多相机 COCO 派生 2D；这两项继续独立立项，不恢复任何占位真值。下一版优先补齐真实 nuScenes 场景与时间合同，再决定是否开放该导出目标。
 
 ## 独立 Epic
 

@@ -876,7 +876,9 @@ def _lidar_readme(target: str) -> str:
     if target == "kitti":
         return (
             common + "\nKITTI label_2 and calib use the explicitly selected camera. "
-            "Fully invisible cuboids are listed in export_report.json.\n"
+            "A persistent manual camera bbox is preferred over the derived projection; "
+            "export_report.json records both source counts. Fully invisible cuboids are "
+            "listed there as skipped.\n"
         )
     if target == "pointmask":
         return common + "\nPointmask labels are little-endian uint32 class ids.\n"
@@ -912,6 +914,8 @@ async def _build_lidar_export_zip(
     frame_count = 0
     kitti_skipped: list[dict[str, str]] = []
     kitti_exported_count = 0
+    kitti_manual_bbox_count = 0
+    kitti_derived_bbox_count = 0
     image_manifest_all: list[dict] = []
     image_manifest_selected: list[dict] = []
     pointcloud_manifest: list[dict] = []
@@ -929,6 +933,23 @@ async def _build_lidar_export_zip(
             )
 
         async for tasks, ann_by_task, dataset_items in chunks:
+            task_ids = [task.id for task in tasks]
+            camera_members_by_task: dict[uuid.UUID, list[Annotation]] = {}
+            if task_ids:
+                camera_members = list(
+                    (
+                        await svc.db.execute(
+                            select(Annotation)
+                            .where(Annotation.task_id.in_(task_ids))
+                            .where(Annotation.sensor_role.is_not(None))
+                            .where(Annotation.is_active.is_(True))
+                            .where(Annotation.was_cancelled.is_(False))
+                            .order_by(Annotation.task_id, Annotation.id)
+                        )
+                    ).scalars()
+                )
+                for member in camera_members:
+                    camera_members_by_task.setdefault(member.task_id, []).append(member)
             links_by_task = await _load_lidar_link_items(svc, tasks)
             axis_by_task = await svc._axis_convention_by_task(tasks)
             for task in tasks:
@@ -1031,6 +1052,7 @@ async def _build_lidar_export_zip(
                             anns,
                             camera=selected_camera,
                             axis_convention=axis_convention,
+                            camera_members=camera_members_by_task.get(task.id, []),
                         )
                         zf.writestr(
                             f"{prefix}label_2/{frame_key}.txt",
@@ -1041,6 +1063,8 @@ async def _build_lidar_export_zip(
                             _kitti_calib_text(selected_camera.calibration),
                         )
                         kitti_exported_count += len(result.lines)
+                        kitti_manual_bbox_count += result.manual_bbox_count
+                        kitti_derived_bbox_count += result.derived_bbox_count
                         kitti_skipped.extend(
                             {
                                 "frame": frame_key,
@@ -1112,6 +1136,8 @@ async def _build_lidar_export_zip(
                             "camera_role": selected_camera_role,
                             "frames": frame_count,
                             "exported_annotations": kitti_exported_count,
+                            "manual_bbox_count": kitti_manual_bbox_count,
+                            "derived_bbox_count": kitti_derived_bbox_count,
                             "skipped_annotations": kitti_skipped,
                         },
                         ensure_ascii=False,

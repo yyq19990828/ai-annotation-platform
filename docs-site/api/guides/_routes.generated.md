@@ -564,6 +564,17 @@
 |---|---|
 | POST | `/{task_id}/annotations/mask-mutations:commit` |
 
+## `tasks/multicamera_annotations.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/point-cloud/camera-members` |
+| POST | `/{task_id}/point-cloud/camera-members` |
+| PATCH | `/{task_id}/point-cloud/camera-members/{member_id}` |
+| DELETE | `/{task_id}/point-cloud/camera-members/{member_id}` |
+| POST | `/{task_id}/point-cloud/camera-members/{member_id}/restore` |
+| PATCH | `/{task_id}/point-cloud/cameras/{camera_role}/calibration` |
+
 ## `tasks/predictions.py`
 
 | Method | Path |
@@ -678,4 +689,4 @@
 
 ---
 
-_共 63 模块 / 381 路由_
+_共 64 模块 / 387 路由_

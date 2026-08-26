@@ -18,8 +18,8 @@ scene/time/pose contract exists.
 | `kitti`     | KITTI 3D detection labels     | Selected KITTI camera   |
 | `pointmask` | Per-point semantic labels     | Point index order       |
 
-These targets are pure serializers. They do not add database tables, columns, or
-migrations. Existing AAP JSON export remains unchanged.
+These targets are pure serializers. AAP JSON preserves SceneTrack camera members,
+their visibility, and the calibration revision relationship by camera role.
 
 ## Common Package Files
 
@@ -71,7 +71,15 @@ The 2D bbox uses all eight corners plus edge intersections with the near plane.
 It is clipped to the real image bounds, and `truncated` is the lost projected
 area ratio. `location` is the 3D box bottom center in rectified camera
 coordinates; `rotation_y` comes from the transformed local +X direction and
-`alpha = rotation_y - atan2(x, z)`. Only `occluded` is read from attributes.
+`alpha = rotation_y - atan2(x, z)`.
+
+If the selected camera has an active manual bbox member for the same SceneTrack,
+that bbox takes precedence over the derived 2D projection. The 3D dimensions,
+location, and rotation still come from the 3D member. Without a manual member,
+the serializer keeps the derived projection path. `export_report.json` records
+`manual_bbox_count` and `derived_bbox_count` so downstream consumers can audit
+the source of every 2D box. Manual member visibility maps to KITTI occlusion;
+truncation stays tied to the image boundary.
 
 Objects fully behind the camera, outside the image, or projection-degenerate are
 omitted from `label_2` and listed with a stable reason in `export_report.json`.

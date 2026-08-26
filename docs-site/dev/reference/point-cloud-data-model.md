@@ -53,9 +53,9 @@ await link_items(session, task_id, [(item_id, "primary_lidar", None),
 links = await get_linked_items(session, task_id)
 ```
 
-## G2 · 标定存储：`SensorCalibration` 进 `metadata_`（v0.13.1）
+## G2 · 标定当前值与版本历史
 
-相机标定按相机一份(对该相机所有帧通用),存进相机 `DatasetItem.metadata_` 的约定 key `"calibration"`，**不加列、零迁移**(决策见 ADR-0030)。
+相机标定按相机一份，当前读模型存进相机 `DatasetItem.metadata_` 的约定 key `"calibration"`。`sensor_calibration_revisions` 以 `(dataset_item_id, revision)` 保存 append-only 标定快照、SHA-256 digest、操作者和时间；所有标定更新都通过带 expected revision/digest 的服务串行化。只有 metadata 的存量标定按虚拟 revision 1 读取，首次修改前会先物化该基线。
 
 ```python
 class SensorCalibration(BaseModel):
@@ -109,19 +109,21 @@ POST /datasets/{id}/link  (project.data_type=="lidar"):
 - **工具单位**（`ToolUnitId` / `TOOL_UNIT_IDS`）：`lidar_box_3d` 从「留位」转为后端可用；新增 `point_mask_3d`。
 - **file_type**：`services/dataset.py` 的 `_infer_file_type_from_ext` 放开点云扩展名 `.pcd` / `.bin` / `.las` / `.ply` → `file_type = "point_cloud"`（对应 `DatasetDataType.POINT_CLOUD`）。
 
-## G6 · 跨模态身份：复用 `Annotation.track_id`
+## G6 · SceneTrack 多模态成员
 
 <!-- since v0.21.2 · ADR-0045：跨模态身份从 group_id 迁到独立 track_id 列，group_id 列 / group 端点已下线 -->
 
-**不新增任何模型**。同一物理物体的「3D 框 + 各相机 2D 框」共享同一 `Annotation.track_id`，聚为一个逻辑对象（等价 xtreme1 的 trackId / SUSTechPOINTS 的 obj_id）。
+同一物理物体的「3D 框 + 各相机人工 2D 框」共享 `Annotation.scene_track_id + track_id`，聚为一个逻辑对象。3D 框是该帧的主成员；每个相机 role 最多有一个活跃 bbox 成员。
 
 约定：
 
-- 在 3D 工作台新建一个物体时，先分配一个 `track_id`（`_new_track_id()` 产出 `trk_<uuid.hex>`）。
-- 该物体的 3D `box_3d` 标注与投影到各相机视图后生成 / 校正的 2D 标注，全部写入**同一** `track_id`。
-- 跨模态联动（选中 3D 框高亮各 2D 框、批量改类别）按 `track_id` 聚合查询，无需新表或新外键。
+- 2D 成员仍是一等 `Annotation`，`geometry.type=bbox`，并保存 `sensor_dataset_item_id`、`sensor_role`、`sensor_visibility`、`calibration_revision` 和 `calibration_digest`。
+- 传感器上下文字段必须全有或全无；部分唯一索引约束 `(task_id, scene_track_id, sensor_role)` 的活跃成员。
+- SceneTrack revision 是跨模态成员集合的并发边界。成员创建、更新、删除或恢复同时校验 annotation version、track revision 和当前 calibration revision/digest。
+- 3D→2D 投影仍是可重建的派生参考，不写入数据库；人工 2D 框不会因 3D 框或标定变化被自动覆盖。标定 digest 不一致时关系状态为 `stale`。
+- SceneTrack 拆分、合并、缺席、恢复与终止会同时处理全部模态成员，主标注列表和任务统计只计算非传感器成员。
 
-> 投影本身（标定驱动 3D→2D）是 v0.13.4 前端工作；v0.13.0 仅约定身份字段，不预存投影结果。
+AAP JSON 以 camera role 而不是实例内 DatasetItem UUID 迁移相机成员；导入时把 role 重新解析到目标任务的数据项，并恢复原 SceneTrack 关系和标定版本证据。
 
 ## 点云查看器 manifest API + 前端模块（v0.13.2）
 
@@ -220,7 +222,7 @@ visible = w > 0                            // 相机前方; w<=0(后方)剔除�
 - **3D→2D**:选中 3D 框 → 各相机投影框高亮(白描边加粗 + 淡填充),承共享 `selectedId`。
 - **2D→3D 反选**:点相机里的投影框 → 命中测试(投影包围盒含点、取最小面积框)→ `onSelectBox` 选中对应 3D 框。
 - **最佳相机提示**:选中框按可见角点数统计被几个相机看到,状态条显示「投影可见于 N 相机 · 正对 X」,最正对相机 figcaption 标「· 正对」。
-- **`track_id` 聚合高亮**:overlay 高亮集合 = 选中框 + 同 `track_id` 成员(G6)。本切片只打通身份可视化:相机视图上**独立绘制 / 编辑 2D 框成员**留后续。新建 3D 框即由 `_new_track_id()` 分配一个 `track_id`(不再需要「≥2 个成员才能成组」的旧编组端点);`track_id` 为空的孤立框退化为仅高亮自身,待 2D 成员落地再聚合。<!-- since v0.21.2 · ADR-0045：原按 group_id + /annotations/group 端点，编组下线后统一到 track_id -->
+- **跨模态成员联动**：overlay 高亮集合 = 选中框 + 同 `track_id` 成员。放大相机图可独立创建 / 编辑人工 bbox；API 按 `scene_track_id` 读取成员并返回当前 track revision、标定关系和投影残差。新建 3D 框由 `_new_track_id()` 分配外部稳定键，权威成员关系由 `scene_track_id` 维护。<!-- since v0.21.2 · ADR-0045：原按 group_id + /annotations/group 端点，编组下线后统一到 track_id -->
 
 ## Scene 跨帧传播任务
 

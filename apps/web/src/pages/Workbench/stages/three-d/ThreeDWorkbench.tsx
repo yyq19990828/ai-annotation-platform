@@ -49,6 +49,7 @@ import type {
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
 import type { PointCloudQualityConfig, PointCloudQualityIssue } from "@/api/pointCloudQuality";
 import { usePointCloudQualityIssues } from "@/hooks/usePointCloudQuality";
+import { useCameraAnnotationMembers } from "@/hooks/useCameraAnnotationMembers";
 
 import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
@@ -194,6 +195,10 @@ const CAM_MODAL_CLOSE =
 const CAM_MODAL_SEED =
   "absolute top-4 left-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_MODAL_SEED_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
+const CAM_MODAL_MEMBER_BAR =
+  "absolute bottom-9 left-4 right-4 z-local-1 flex flex-wrap items-center justify-center gap-2 pointer-events-none";
+const CAM_MODAL_MEMBER_CARD =
+  "flex flex-wrap items-center gap-2 rounded-md border border-border bg-card/95 px-2.5 py-1.5 text-xs text-foreground shadow-sm pointer-events-auto";
 const CAM_MODAL_SWITCH =
   "absolute top-1/2 z-local-1 w-9 h-12 -translate-y-1/2 rounded-md border border-border bg-background text-foreground cursor-pointer text-control-xl leading-none hover:border-brand hover:text-brand";
 const CAM_MODAL_PREV = "left-4";
@@ -399,6 +404,7 @@ export function ThreeDWorkbench({
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
   // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
   const [seedMode, setSeedMode] = useState(false);
+  const [manualBboxMode, setManualBboxMode] = useState(false);
   const [boxCreationSaving, setBoxCreationSaving] = useState(false);
   const [boxCreationIssue, setBoxCreationIssue] = useState<string | null>(null);
   const boxCreationInFlightRef = useRef(false);
@@ -737,6 +743,12 @@ export function ThreeDWorkbench({
 
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
+  const cameraMembers = useCameraAnnotationMembers(
+    taskId,
+    selectedAnn?.scene_track_id ?? null,
+    selectedAnn?.version ?? null,
+    enlargedRole,
+  );
   const pendingTimelineSelectionRef = useRef<{
     taskId: string;
     annotationId: string | null;
@@ -1852,6 +1864,124 @@ export function ThreeDWorkbench({
     () => (enlargedIndex >= 0 ? cameras[enlargedIndex] : null),
     [cameras, enlargedIndex],
   );
+  const enlargedCameraMember = useMemo(
+    () =>
+      cameraMembers.data?.items.find(
+        (member) => member.is_active && member.camera_role === enlargedCam?.role,
+      ) ?? null,
+    [cameraMembers.data?.items, enlargedCam?.role],
+  );
+  useEffect(() => {
+    setManualBboxMode(false);
+  }, [enlargedCam?.role, selectedAnn?.scene_track_id]);
+
+  const handleManualBboxCommit = useCallback(
+    async (bbox: { x: number; y: number; w: number; h: number }) => {
+      if (
+        !taskId ||
+        !selectedAnn?.scene_track_id ||
+        !enlargedCam?.calibration ||
+        !enlargedCam.calibration_revision ||
+        !enlargedCam.calibration_digest ||
+        !cameraMembers.data?.track_revision
+      ) {
+        pushToast({ msg: "2D 成员上下文尚未就绪，请稍后重试", kind: "warning" });
+        return;
+      }
+      try {
+        if (enlargedCameraMember) {
+          await cameraMembers.update.mutateAsync({
+            memberId: enlargedCameraMember.id,
+            payload: {
+              bbox,
+              expected_version: enlargedCameraMember.version,
+              expected_track_revision: cameraMembers.data.track_revision,
+              expected_calibration_revision: enlargedCam.calibration_revision,
+              expected_calibration_digest: enlargedCam.calibration_digest,
+            },
+          });
+        } else {
+          await cameraMembers.create.mutateAsync({
+            source_annotation_id: selectedAnn.id,
+            camera_role: enlargedCam.role,
+            bbox,
+            visibility: "visible",
+            expected_track_revision: cameraMembers.data.track_revision,
+            expected_calibration_revision: enlargedCam.calibration_revision,
+            expected_calibration_digest: enlargedCam.calibration_digest,
+          });
+        }
+        setManualBboxMode(false);
+        pushToast({
+          msg: enlargedCameraMember ? "2D 成员已更新" : "2D 成员已创建",
+          kind: "success",
+        });
+      } catch (error) {
+        await cameraMembers.query.refetch();
+        pushToast({
+          msg: "2D 成员保存失败",
+          sub: error instanceof Error ? error.message : "数据或标定已变化，请重试",
+          kind: "error",
+        });
+      }
+    },
+    [cameraMembers, enlargedCam, enlargedCameraMember, pushToast, selectedAnn, taskId],
+  );
+
+  const handleManualVisibilityChange = useCallback(
+    async (visibility: "visible" | "occluded" | "truncated" | "unknown") => {
+      if (
+        !enlargedCameraMember ||
+        !enlargedCam?.calibration_revision ||
+        !enlargedCam.calibration_digest ||
+        !cameraMembers.data?.track_revision
+      )
+        return;
+      try {
+        await cameraMembers.update.mutateAsync({
+          memberId: enlargedCameraMember.id,
+          payload: {
+            visibility,
+            expected_version: enlargedCameraMember.version,
+            expected_track_revision: cameraMembers.data.track_revision,
+            expected_calibration_revision: enlargedCam.calibration_revision,
+            expected_calibration_digest: enlargedCam.calibration_digest,
+          },
+        });
+      } catch (error) {
+        await cameraMembers.query.refetch();
+        pushToast({
+          msg: "可见性更新失败",
+          sub: error instanceof Error ? error.message : "数据已变化，请重试",
+          kind: "error",
+        });
+      }
+    },
+    [cameraMembers, enlargedCam, enlargedCameraMember, pushToast],
+  );
+
+  const handleDeleteManualBbox = useCallback(async () => {
+    if (!enlargedCameraMember || !cameraMembers.data?.track_revision) return;
+    if (!window.confirm(`删除 ${enlargedCam?.name ?? "当前相机"} 的 2D 成员？`)) return;
+    try {
+      await cameraMembers.remove.mutateAsync({
+        memberId: enlargedCameraMember.id,
+        payload: {
+          expected_version: enlargedCameraMember.version,
+          expected_track_revision: cameraMembers.data.track_revision,
+        },
+      });
+      setManualBboxMode(false);
+      pushToast({ msg: "2D 成员已删除", kind: "success" });
+    } catch (error) {
+      await cameraMembers.query.refetch();
+      pushToast({
+        msg: "2D 成员删除失败",
+        sub: error instanceof Error ? error.message : "数据已变化，请重试",
+        kind: "error",
+      });
+    }
+  }, [cameraMembers, enlargedCam?.name, enlargedCameraMember, pushToast]);
   const triViewElevated = enlargedCam !== null;
   useLayoutEffect(() => {
     const scene = sceneRef.current;
@@ -3027,6 +3157,7 @@ export function ThreeDWorkbench({
                   }
                   onClick={() => {
                     setBoxCreationIssue(null);
+                    setManualBboxMode(false);
                     setSeedMode((v) => !v);
                   }}
                   aria-pressed={seedMode}
@@ -3061,6 +3192,96 @@ export function ThreeDWorkbench({
                   </button>
                 </>
               )}
+              {selectedAnn?.scene_track_id && enlargedCam.calibration && (
+                <div className={CAM_MODAL_MEMBER_BAR}>
+                  <div className={CAM_MODAL_MEMBER_CARD}>
+                    <span className="font-medium">多相机 2D 成员</span>
+                    {cameraMembers.query.isLoading ? (
+                      <span className="text-muted-foreground">读取中…</span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={manualBboxMode ? `${BTN} ${BTN_ACTIVE}` : BTN}
+                          disabled={cameraMembers.busy || !cameraMembers.data?.track_revision}
+                          onClick={() => {
+                            setSeedMode(false);
+                            setManualBboxMode((value) => !value);
+                          }}
+                        >
+                          {manualBboxMode
+                            ? "退出 2D 编辑"
+                            : enlargedCameraMember
+                              ? "编辑 2D 框"
+                              : "创建 2D 框"}
+                        </button>
+                        {!enlargedCameraMember && cameraMembers.data?.projected_bbox && (
+                          <button
+                            type="button"
+                            className={BTN}
+                            disabled={cameraMembers.busy}
+                            onClick={() =>
+                              void handleManualBboxCommit(cameraMembers.data!.projected_bbox!)
+                            }
+                          >
+                            采用当前投影
+                          </button>
+                        )}
+                        {enlargedCameraMember && (
+                          <>
+                            <select
+                              className={SELECT_CTL}
+                              value={enlargedCameraMember.visibility}
+                              disabled={cameraMembers.busy}
+                              aria-label="2D 成员可见性"
+                              onChange={(event) =>
+                                void handleManualVisibilityChange(
+                                  event.target.value as
+                                    | "visible"
+                                    | "occluded"
+                                    | "truncated"
+                                    | "unknown",
+                                )
+                              }
+                            >
+                              <option value="visible">可见</option>
+                              <option value="occluded">遮挡</option>
+                              <option value="truncated">截断</option>
+                              <option value="unknown">未知</option>
+                            </select>
+                            {enlargedCameraMember.residual && (
+                              <span className="text-muted-foreground">
+                                IoU {enlargedCameraMember.residual.iou.toFixed(2)} · 边差{" "}
+                                {enlargedCameraMember.residual.max_edge_residual_px.toFixed(1)}px
+                              </span>
+                            )}
+                            {enlargedCameraMember.relation_status === "stale" && (
+                              <button
+                                type="button"
+                                className={BTN}
+                                disabled={cameraMembers.busy}
+                                onClick={() =>
+                                  void handleManualBboxCommit(enlargedCameraMember.bbox)
+                                }
+                              >
+                                标定已变更 · 重新确认
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={DELETE_BTN}
+                              disabled={cameraMembers.busy}
+                              onClick={() => void handleDeleteManualBbox()}
+                            >
+                              删除 2D 框
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
               <CameraProjectionView
                 name={enlargedCam.name}
                 imageUrl={enlargedCam.image_url}
@@ -3071,15 +3292,21 @@ export function ThreeDWorkbench({
                 bestForSelected={enlargedCam.role === bestCameraRole}
                 pointPositions={pointPositions}
                 showDepth={depthOn}
-                seedMode={seedMode}
-                interactionDisabled={boxCreationSaving}
+                seedMode={seedMode && !manualBboxMode}
+                interactionDisabled={boxCreationSaving || cameraMembers.busy}
                 onSeedBox={handleSeedBox}
                 editableBox={
-                  threeDTool === "select" && selectedPsrEditable && !seedMode ? selectedBox : null
+                  threeDTool === "select" && selectedPsrEditable && !seedMode && !manualBboxMode
+                    ? selectedBox
+                    : null
                 }
                 onEditPsr={handleEditPsr}
                 onCancelEditPsr={handleCancelCameraEdit}
                 onEditError={handleCameraEditError}
+                manualBbox={enlargedCameraMember?.bbox ?? null}
+                manualBboxMode={manualBboxMode}
+                manualBboxStale={enlargedCameraMember?.relation_status === "stale"}
+                onManualBboxCommit={(bbox) => void handleManualBboxCommit(bbox)}
                 expanded
               />
             </div>

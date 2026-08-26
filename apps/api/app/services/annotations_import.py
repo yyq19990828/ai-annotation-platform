@@ -22,6 +22,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import Scene
 from app.db.models.project import Project
 from app.db.models.scene_track import SceneTrack, SceneTrackInterval
+from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.schemas.aap_json import (
     AAPImportErrorEntry,
     AAPImportResult,
@@ -308,7 +309,10 @@ async def import_aap_json_annotations(
                 result.skipped += 1
             continue
 
-        for entry in block.annotations:
+        # 先建主标注/SceneTrack，再挂同轨迹的相机成员；交换格式不要求调用方排序。
+        for entry in sorted(
+            block.annotations, key=lambda item: item.sensor_role is not None
+        ):
             # 1. class_name 缺失检查
             if not entry.class_name:
                 result.errors.append(
@@ -434,6 +438,63 @@ async def import_aap_json_annotations(
             temporal_role = entry.temporal_role or (
                 "derived" if source == "interpolated" else "sample"
             )
+            sensor_item_id = None
+            scene_track_id = None
+            if entry.sensor_role is not None:
+                sensor_item_id = await db.scalar(
+                    select(TaskDatasetItemLink.dataset_item_id)
+                    .where(TaskDatasetItemLink.task_id == task.id)
+                    .where(TaskDatasetItemLink.role == entry.sensor_role)
+                )
+                if sensor_item_id is None:
+                    result.errors.append(
+                        AAPImportErrorEntry(
+                            task_match=match_dict,
+                            reason=f"camera role '{entry.sensor_role}' is not linked to task",
+                        )
+                    )
+                    result.skipped += 1
+                    continue
+                scene_track_id = await db.scalar(
+                    select(Annotation.scene_track_id)
+                    .where(Annotation.task_id == task.id)
+                    .where(Annotation.track_id == track_id)
+                    .where(Annotation.sensor_role.is_(None))
+                    .where(Annotation.scene_track_id.is_not(None))
+                    .where(Annotation.is_active.is_(True))
+                    .limit(1)
+                )
+                if scene_track_id is None:
+                    result.errors.append(
+                        AAPImportErrorEntry(
+                            task_match=match_dict,
+                            reason=(
+                                f"camera member track '{track_id}' has no primary 3D annotation"
+                            ),
+                        )
+                    )
+                    result.skipped += 1
+                    continue
+                existing_camera_member = await db.scalar(
+                    select(Annotation.id)
+                    .where(Annotation.task_id == task.id)
+                    .where(Annotation.scene_track_id == scene_track_id)
+                    .where(Annotation.sensor_role == entry.sensor_role)
+                    .where(Annotation.is_active.is_(True))
+                    .where(Annotation.was_cancelled.is_(False))
+                    .limit(1)
+                )
+                if existing_camera_member is not None:
+                    result.errors.append(
+                        AAPImportErrorEntry(
+                            task_match=match_dict,
+                            reason=(
+                                f"camera member for role '{entry.sensor_role}' already exists"
+                            ),
+                        )
+                    )
+                    result.skipped += 1
+                    continue
             ann_kwargs: dict[str, Any] = dict(
                 id=uuid.uuid4(),
                 task_id=task.id,
@@ -450,6 +511,12 @@ async def import_aap_json_annotations(
                 ground_truth=False,  # D5
                 attributes=attributes,  # D1+D2
                 temporal_role=temporal_role,
+                scene_track_id=scene_track_id,
+                sensor_dataset_item_id=sensor_item_id,
+                sensor_role=entry.sensor_role,
+                sensor_visibility=entry.sensor_visibility,
+                calibration_revision=entry.calibration_revision,
+                calibration_digest=entry.calibration_digest,
             )
             # D5: created_at 若 entry 提供则显式设置，否则走 server_default now()
             if entry.created_at is not None:
@@ -459,14 +526,24 @@ async def import_aap_json_annotations(
             try:
                 async with db.begin_nested():
                     db.add(annotation)
-                    await bind_annotation_to_scene_track(
-                        db,
-                        annotation=annotation,
-                        task=task,
-                        temporal_role=temporal_role,
-                        interval_source="imported",
-                        actor_id=operator_user_id,
-                    )
+                    if scene_track_id is not None:
+                        track = await db.get(SceneTrack, scene_track_id)
+                        if track is None:
+                            raise SceneTrackIntegrityError(
+                                "scene_track_missing",
+                                "camera member SceneTrack was not found",
+                            )
+                        track.revision += 1
+                        await db.flush()
+                    else:
+                        await bind_annotation_to_scene_track(
+                            db,
+                            annotation=annotation,
+                            task=task,
+                            temporal_role=temporal_role,
+                            interval_source="imported",
+                            actor_id=operator_user_id,
+                        )
             except SceneTrackIntegrityError as exc:
                 result.errors.append(
                     AAPImportErrorEntry(

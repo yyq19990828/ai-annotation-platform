@@ -163,6 +163,86 @@ async def test_terminate_requires_confirmation_and_revert_restores_state(
     assert original_operation.status == "reverted"
 
 
+async def test_terminate_and_revert_include_camera_members(
+    db_session, httpx_client, super_admin
+):
+    user, token = super_admin
+    project, _scene, tasks = await _seed_scene(
+        db_session, owner_id=user.id, frame_count=3
+    )
+    rows = [
+        await _add_box(
+            db_session,
+            task=tasks[frame],
+            project=project,
+            user_id=user.id,
+            track_id="trk-camera-lifecycle",
+        )
+        for frame in range(3)
+    ]
+    camera_member = Annotation(
+        task_id=tasks[2].id,
+        project_id=project.id,
+        user_id=user.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="lidar_box_3d",
+        class_name="car",
+        geometry={"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+        track_id=rows[2].track_id,
+        scene_track_id=rows[2].scene_track_id,
+        temporal_role="sample",
+        sensor_dataset_item_id=tasks[2].dataset_item_id,
+        sensor_role="camera_front",
+        sensor_visibility="visible",
+        calibration_revision=1,
+        calibration_digest="a" * 64,
+    )
+    db_session.add(camera_member)
+    await db_session.flush()
+
+    body = {
+        "kind": "terminate",
+        "track_id": "trk-camera-lifecycle",
+        "frame_index": 0,
+    }
+    preview = await _preview(
+        httpx_client,
+        task_id=tasks[0].id,
+        token=token,
+        body=body,
+    )
+    assert preview.status_code == 200, preview.text
+    payload = preview.json()
+    assert payload["affected_members"]["total"] == 3
+    assert payload["affected_members"]["frames"] == [1, 2]
+
+    execute = await httpx_client.post(
+        f"/api/v1/tasks/{tasks[0].id}/scene-track-commands/execute",
+        json={
+            **body,
+            "confirm_member_deactivation": True,
+            "snapshot_token": payload["snapshot_token"],
+            "idempotency_key": "terminate-camera-lifecycle",
+        },
+        headers=_headers(token),
+    )
+    assert execute.status_code == 200, execute.text
+    await db_session.refresh(camera_member)
+    assert camera_member.is_active is False
+    assert camera_member.is_hidden is True
+
+    revert = await httpx_client.post(
+        f"/api/v1/tasks/{tasks[0].id}/scene-track-commands/{execute.json()['operation_id']}/revert",
+        json={"idempotency_key": "revert-camera-lifecycle"},
+        headers=_headers(token),
+    )
+    assert revert.status_code == 200, revert.text
+    await db_session.refresh(camera_member)
+    assert camera_member.is_active is True
+    assert camera_member.is_hidden is False
+
+
 async def test_history_filters_by_track_before_applying_limit(
     db_session, httpx_client, super_admin
 ):

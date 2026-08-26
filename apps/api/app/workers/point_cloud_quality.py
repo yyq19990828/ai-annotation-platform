@@ -4,6 +4,7 @@ import asyncio
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import uuid
+from dataclasses import dataclass
 
 import numpy as np
 from sqlalchemy import select
@@ -15,6 +16,7 @@ from app.db.models.point_cloud_quality import (
 )
 from app.db.models.project import Project
 from app.schemas.point_cloud_quality import PointCloudQualityConfig
+from app.schemas._jsonb_types import SensorCalibration
 from app.services import async_job as async_job_svc
 from app.services.axis_convention import R_NORM
 from app.services.async_job_notify import notify_job_terminal
@@ -25,9 +27,11 @@ from app.services.point_cloud_quality.kernel import (
     TrackInterval,
     TrackMember,
     evaluate_box,
+    evaluate_projection_residual,
     evaluate_track,
     parse_pcd_positions,
 )
+from app.services.pointcloud_projection import project_iso_box, projection_residual
 from app.services.point_cloud_quality.service import (
     current_source_digest,
     issue_dedupe_key,
@@ -40,6 +44,13 @@ from app.workers.celery_app import celery_app
 
 MAX_POINT_CLOUD_BYTES = 256 * 1024 * 1024
 SEVERITY_RANK = {"blocker": 0, "warning": 1, "info": 2}
+
+
+@dataclass(frozen=True)
+class _ProjectionCamera:
+    calibration: SensorCalibration
+    width: int
+    height: int
 
 
 @celery_app.task(bind=True, name="app.workers.point_cloud_quality.run")
@@ -180,6 +191,9 @@ async def _upsert_finding(
         scene_track_id=scene_track_id,
         code=finding.code,
     )
+    locator["camera"] = finding.evidence.get("camera_role")
+    if locator["camera"]:
+        locator["auxiliary_layers"].append("camera_projection")
     if issue is None:
         issue = PointCloudQualityIssue(
             run_id=run.id,
@@ -247,6 +261,10 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
         (row for row in records if row["kind"] == "annotation"),
         key=lambda row: (row["task_id"], row["annotation_id"]),
     )
+    camera_annotations = sorted(
+        (row for row in records if row["kind"] == "camera_annotation"),
+        key=lambda row: (row["task_id"], row["annotation_id"]),
+    )
     all_tracks = [row for row in records if row["kind"] == "track"]
     complete_track_scope = run.scope_json.get("scope") in {"project", "scene_ids"}
     tracks = all_tracks if complete_track_scope else []
@@ -263,6 +281,15 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
         (row["scene_id"], int(row["frame_index"])): row["task_id"]
         for row in tasks.values()
         if row["frame_index"] is not None
+    }
+    camera_annotations_by_track: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for row in camera_annotations:
+        if row["scene_track_id"]:
+            camera_annotations_by_track[(row["task_id"], row["scene_track_id"])].append(
+                row
+            )
+    track_revision_by_id = {
+        row["scene_track_id"]: int(row["revision"]) for row in all_tracks
     }
     sizes_by_class: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
     for row in annotations:
@@ -335,6 +362,91 @@ async def execute_scan(db, run: PointCloudQualityRun) -> dict:
                     if pointcloud
                     else None
                 ),
+            )
+            if issue is not None:
+                issue_counts[finding.code] += 1
+        task_cameras = {
+            camera["role"]: camera for camera in (task.get("cameras") or [])
+        }
+        for member in camera_annotations_by_track.get(
+            (row["task_id"], row["scene_track_id"]), []
+        ):
+            camera_data = task_cameras.get(member["sensor_role"])
+            if (
+                camera_data is None
+                or not camera_data.get("width")
+                or not camera_data.get("height")
+            ):
+                skip_counts["projection:camera_unavailable"] += 1
+                continue
+            camera = _ProjectionCamera(
+                calibration=SensorCalibration.model_validate(
+                    camera_data["calibration"]
+                ),
+                width=int(camera_data["width"]),
+                height=int(camera_data["height"]),
+            )
+            projected = project_iso_box(
+                {
+                    "center": [float(value) for value in row["geometry"]["center"]],
+                    "size": [float(value) for value in row["geometry"]["size"]],
+                    "rotation": [float(value) for value in row["geometry"]["rotation"]],
+                },
+                camera=camera,
+                axis_convention=(pointcloud or {}).get("axis_convention") or "iso_8855",
+            )
+            if projected is None:
+                skip_counts["projection:not_visible"] += 1
+                continue
+            geometry = member["geometry"]
+            manual_bbox = tuple(float(geometry[key]) for key in ("x", "y", "w", "h"))
+            residual = projection_residual(
+                manual_bbox,
+                projected.pixel_bbox,
+                width=camera.width,
+                height=camera.height,
+            )
+            finding = evaluate_projection_residual(
+                iou=residual.iou,
+                max_edge_residual_px=residual.max_edge_residual_px,
+                mean_edge_residual_px=residual.mean_edge_residual_px,
+                max_edge_residual_ratio=residual.max_edge_residual_ratio,
+                projected_bbox=projected.normalized_bbox,
+                manual_bbox=manual_bbox,
+                camera_role=member["sensor_role"],
+                calibration_digest=camera_data["digest"],
+                member_calibration_digest=member["calibration_digest"],
+                frame_index=int(row["frame_index"]),
+                annotation_ids=(
+                    uuid.UUID(row["annotation_id"]),
+                    uuid.UUID(member["annotation_id"]),
+                ),
+                thresholds=thresholds_from_config(config, row["class_name"]),
+            )
+            if finding is None:
+                continue
+            issue = await _upsert_finding(
+                db,
+                run=run,
+                finding=finding,
+                config=config,
+                scene_id=uuid.UUID(row["scene_id"]),
+                task_id=uuid.UUID(row["task_id"]),
+                annotation_id=uuid.UUID(row["annotation_id"]),
+                annotation_version=int(row["annotation_version"]),
+                scene_track_id=uuid.UUID(row["scene_track_id"]),
+                track_revision=track_revision_by_id.get(row["scene_track_id"]),
+                source_versions={
+                    row["annotation_id"]: int(row["annotation_version"]),
+                    member["annotation_id"]: int(member["annotation_version"]),
+                },
+                class_name=row["class_name"],
+                source_evidence={
+                    "camera_item_id": camera_data["item_id"],
+                    "camera_role": member["sensor_role"],
+                    "camera_calibration_revision": camera_data["revision"],
+                    "camera_calibration_digest": camera_data["digest"],
+                },
             )
             if issue is not None:
                 issue_counts[finding.code] += 1

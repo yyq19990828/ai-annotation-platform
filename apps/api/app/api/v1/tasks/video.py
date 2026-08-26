@@ -271,7 +271,10 @@ async def get_point_cloud_manifest(
     current_user: User = Depends(get_current_user),
 ):
     from app.db.models.project import Project
-    from app.schemas._jsonb_types import SensorCalibration
+    from app.services.sensor_calibration import (
+        SensorCalibrationError,
+        resolve_calibration_state,
+    )
 
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -321,26 +324,32 @@ async def get_point_cloud_manifest(
         item = items_by_id.get(link.dataset_item_id)
         if item is None:
             continue
-        calibration: SensorCalibration | None = None
-        raw_calib = (item.metadata_ or {}).get("calibration")
-        if raw_calib:
-            try:
-                calibration = SensorCalibration.model_validate(raw_calib)
-            except Exception:
-                # 入库已经过 attach_calibration 归一化，正常到不了这里；真踩到说明
-                # 存了脏标定，别静默吞 —— 记一条 warning 指明是哪个 task/相机被判废。
-                logger.warning(
-                    "task %s %s: stored calibration failed validation, returning null",
-                    task_id,
-                    link.role,
-                )
-                calibration = None
+        calibration = None
+        calibration_revision = None
+        calibration_digest = None
+        try:
+            state = await resolve_calibration_state(db, item)
+            calibration = state.calibration
+            calibration_revision = state.revision
+            calibration_digest = state.digest
+        except SensorCalibrationError:
+            # 无标定相机仍可展示原图；投影与人工成员写入按显式空值降级。
+            logger.warning(
+                "task %s %s: stored calibration unavailable, returning null",
+                task_id,
+                link.role,
+            )
         cameras.append(
             PointCloudCameraOut(
                 name=link.role[len("camera_") :],
                 role=link.role,
+                dataset_item_id=item.id,
                 image_url=_presign(item.file_path),
+                width=item.width,
+                height=item.height,
                 calibration=calibration,
+                calibration_revision=calibration_revision,
+                calibration_digest=calibration_digest,
             )
         )
 

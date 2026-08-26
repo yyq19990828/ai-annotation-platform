@@ -38,6 +38,10 @@ RULE_THRESHOLD_FIELDS: dict[str, tuple[str, ...]] = {
         "temporal_size_change_ratio",
         "temporal_yaw_jump_rad",
     ),
+    "projection_residual": (
+        "projection_min_iou",
+        "projection_max_edge_residual_ratio",
+    ),
 }
 NON_REPLAYABLE_FIELDS = {"ground_sample_min", "ground_margin_m", "size_min_samples"}
 
@@ -70,6 +74,12 @@ def _triggered(sample: dict[str, Any], config: PointCloudQualityConfig) -> bool:
             > threshold.temporal_size_change_ratio
             or float(metric.get("yaw_delta_rad_per_frame", 0))
             > threshold.temporal_yaw_jump_rad
+        )
+    if code == "projection_residual":
+        return (
+            float(metric.get("iou", 1)) < threshold.projection_min_iou
+            or float(metric.get("max_edge_residual_ratio", 0))
+            > threshold.projection_max_edge_residual_ratio
         )
     return True
 
@@ -178,6 +188,12 @@ def _assert_replay_direction(
     fields = RULE_THRESHOLD_FIELDS[code]
     if code == "low_point_count":
         valid = candidate["minimum_points"] <= baseline["minimum_points"]
+    elif code == "projection_residual":
+        valid = (
+            candidate["projection_min_iou"] <= baseline["projection_min_iou"]
+            and candidate["projection_max_edge_residual_ratio"]
+            >= baseline["projection_max_edge_residual_ratio"]
+        )
     else:
         valid = all(candidate[field] >= baseline[field] for field in fields)
     if not valid:

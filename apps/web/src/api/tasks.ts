@@ -15,6 +15,12 @@ import type {
   VideoFramePrefetchResponse,
 } from "@/types";
 import type {
+  CameraAnnotationMemberCreate,
+  CameraAnnotationMemberDelete,
+  CameraAnnotationMemberList,
+  CameraAnnotationMemberOut,
+  CameraAnnotationMemberRestore,
+  CameraAnnotationMemberUpdate,
   ImagePyramidRetryResponse,
   SceneTimelineResponse,
   TaskMaskCapabilitiesResponse,
@@ -343,6 +349,56 @@ export const tasksApi = {
 
   getPointCloudManifest: (id: string) =>
     apiClient.get<TaskPointCloudManifestResponse>(`/tasks/${id}/point-cloud/manifest`),
+
+  getCameraAnnotationMembers: (
+    taskId: string,
+    sceneTrackId: string,
+    projectionCameraRole?: string | null,
+    includeInactive = false,
+  ) => {
+    const query = new URLSearchParams({ scene_track_id: sceneTrackId });
+    if (projectionCameraRole) query.set("projection_camera_role", projectionCameraRole);
+    if (includeInactive) query.set("include_inactive", "true");
+    return apiClient.get<CameraAnnotationMemberList>(
+      `/tasks/${taskId}/point-cloud/camera-members?${query}`,
+    );
+  },
+
+  createCameraAnnotationMember: (taskId: string, payload: CameraAnnotationMemberCreate) =>
+    apiClient.post<CameraAnnotationMemberOut>(
+      `/tasks/${taskId}/point-cloud/camera-members`,
+      payload,
+    ),
+
+  updateCameraAnnotationMember: (
+    taskId: string,
+    memberId: string,
+    payload: CameraAnnotationMemberUpdate,
+  ) =>
+    apiClient.patch<CameraAnnotationMemberOut>(
+      `/tasks/${taskId}/point-cloud/camera-members/${memberId}`,
+      payload,
+    ),
+
+  deleteCameraAnnotationMember: (
+    taskId: string,
+    memberId: string,
+    payload: CameraAnnotationMemberDelete,
+  ) =>
+    apiClient.delete<CameraAnnotationMemberOut>(
+      `/tasks/${taskId}/point-cloud/camera-members/${memberId}`,
+      payload,
+    ),
+
+  restoreCameraAnnotationMember: (
+    taskId: string,
+    memberId: string,
+    payload: CameraAnnotationMemberRestore,
+  ) =>
+    apiClient.post<CameraAnnotationMemberOut>(
+      `/tasks/${taskId}/point-cloud/camera-members/${memberId}/restore`,
+      payload,
+    ),
 
   // v0.14.0 · scene 内前后 k 个邻居 task(跨帧导航 backing)。
   getNeighbors: (id: string, k = 1) =>

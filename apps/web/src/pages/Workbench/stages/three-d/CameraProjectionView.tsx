@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { hexToRgba } from "@/pages/Workbench/stage/colors";
+import type { NormalizedCameraBbox } from "@/api/generated";
 import type { SensorCalibration } from "@/types";
 
 import { psrToCorners } from "./geometry/box3d";
@@ -70,6 +71,13 @@ interface CameraProjectionViewProps {
   onCancelEditPsr?: (boxId: string, original: Psr) => void;
   /** 标定不可逆等异常只提示，不改变当前草稿。 */
   onEditError?: () => void;
+  /** 当前相机上的持久化 2D 成员；坐标为图像归一化坐标。 */
+  manualBbox?: NormalizedCameraBbox | null;
+  /** 开启后拖框创建，或用八向手柄/框内拖动编辑现有 2D 成员。 */
+  manualBboxMode?: boolean;
+  /** 标定版本落后时用警示色和虚线提示。 */
+  manualBboxStale?: boolean;
+  onManualBboxCommit?: (bbox: NormalizedCameraBbox) => void;
   /** 放大浮层使用内容宽度，并受父级可用空间约束；缩略图保持固定 190px。 */
   expanded?: boolean;
 }
@@ -83,6 +91,98 @@ const MIN_SEED_DRAG_PX = 5;
 const EDIT_HANDLE_RADIUS_PX = 7;
 const EDIT_HANDLE_HIT_RADIUS_PX = 20;
 const EDIT_DRAG_THRESHOLD_PX = 0.5;
+const MANUAL_HANDLE_SIZE_PX = 7;
+const MANUAL_HANDLE_HIT_PX = 12;
+const MIN_MANUAL_BBOX_RATIO = 0.005;
+
+type ManualHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+interface ManualBboxDisplayRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface ManualBboxDrag {
+  pointerId: number;
+  kind: "create" | "move" | "resize";
+  handle?: ManualHandle;
+  start: { x: number; y: number };
+  original: NormalizedCameraBbox | null;
+  latest: NormalizedCameraBbox | null;
+  moved: boolean;
+}
+
+function manualHandlePoints(rect: ManualBboxDisplayRect) {
+  const cx = (rect.x0 + rect.x1) / 2;
+  const cy = (rect.y0 + rect.y1) / 2;
+  return {
+    nw: { x: rect.x0, y: rect.y0 },
+    n: { x: cx, y: rect.y0 },
+    ne: { x: rect.x1, y: rect.y0 },
+    e: { x: rect.x1, y: cy },
+    se: { x: rect.x1, y: rect.y1 },
+    s: { x: cx, y: rect.y1 },
+    sw: { x: rect.x0, y: rect.y1 },
+    w: { x: rect.x0, y: cy },
+  } satisfies Record<ManualHandle, { x: number; y: number }>;
+}
+
+function hitManualHandle(
+  rect: ManualBboxDisplayRect,
+  point: { x: number; y: number },
+): ManualHandle | null {
+  let best: { handle: ManualHandle; distance: number } | null = null;
+  for (const [handle, candidate] of Object.entries(manualHandlePoints(rect)) as Array<
+    [ManualHandle, { x: number; y: number }]
+  >) {
+    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+    if (distance <= MANUAL_HANDLE_HIT_PX && (!best || distance < best.distance)) {
+      best = { handle, distance };
+    }
+  }
+  return best?.handle ?? null;
+}
+
+function normalizedBboxFromPoints(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  width: number,
+  height: number,
+): NormalizedCameraBbox | null {
+  const x0 = Math.max(0, Math.min(1, Math.min(start.x, end.x) / width));
+  const y0 = Math.max(0, Math.min(1, Math.min(start.y, end.y) / height));
+  const x1 = Math.max(0, Math.min(1, Math.max(start.x, end.x) / width));
+  const y1 = Math.max(0, Math.min(1, Math.max(start.y, end.y) / height));
+  if (x1 - x0 < MIN_MANUAL_BBOX_RATIO || y1 - y0 < MIN_MANUAL_BBOX_RATIO) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+function moveManualBbox(bbox: NormalizedCameraBbox, dx: number, dy: number): NormalizedCameraBbox {
+  return {
+    ...bbox,
+    x: Math.max(0, Math.min(1 - bbox.w, bbox.x + dx)),
+    y: Math.max(0, Math.min(1 - bbox.h, bbox.y + dy)),
+  };
+}
+
+function resizeManualBbox(
+  bbox: NormalizedCameraBbox,
+  handle: ManualHandle,
+  dx: number,
+  dy: number,
+): NormalizedCameraBbox {
+  let x0 = bbox.x;
+  let y0 = bbox.y;
+  let x1 = bbox.x + bbox.w;
+  let y1 = bbox.y + bbox.h;
+  if (handle.includes("w")) x0 = Math.min(x1 - MIN_MANUAL_BBOX_RATIO, Math.max(0, x0 + dx));
+  if (handle.includes("e")) x1 = Math.max(x0 + MIN_MANUAL_BBOX_RATIO, Math.min(1, x1 + dx));
+  if (handle.includes("n")) y0 = Math.min(y1 - MIN_MANUAL_BBOX_RATIO, Math.max(0, y0 + dy));
+  if (handle.includes("s")) y1 = Math.max(y0 + MIN_MANUAL_BBOX_RATIO, Math.min(1, y1 + dy));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 
 interface CameraEditDrag {
   pointerId: number;
@@ -115,6 +215,10 @@ export function CameraProjectionView({
   onEditPsr,
   onCancelEditPsr,
   onEditError,
+  manualBbox = null,
+  manualBboxMode = false,
+  manualBboxStale = false,
+  onManualBboxCommit,
   expanded = false,
 }: CameraProjectionViewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -124,6 +228,9 @@ export function CameraProjectionView({
   const seedRectRef = useRef<SeedRect | null>(null);
   const editHandleRef = useRef<{ x: number; y: number } | null>(null);
   const editDragRef = useRef<CameraEditDrag | null>(null);
+  const manualDragRef = useRef<ManualBboxDrag | null>(null);
+  const manualDraftRef = useRef<NormalizedCameraBbox | null>(null);
+  const manualRectRef = useRef<ManualBboxDisplayRect | null>(null);
   const suppressClickRef = useRef(false);
   // 命中测试用:每框可见投影角点的显示坐标包围盒(id + 矩形 + 面积),draw 时同步。
   const hitBoxesRef = useRef<
@@ -163,6 +270,7 @@ export function CameraProjectionView({
     const natH = img.naturalHeight;
     hitBoxesRef.current = [];
     editHandleRef.current = null;
+    manualRectRef.current = null;
     if (!cssW || !cssH || !natW || !natH) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -174,14 +282,12 @@ export function CameraProjectionView({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
-    if (!calibration) return; // 无标定 → 降级不画
-
     const sx = cssW / natW;
     const sy = cssH / natH;
 
     // v0.13.6 · 深度热力图:遍历栅格非空格,在投影像素画按深度着色的点(近→远 = 红→蓝)。
     // 画在框线之下。深度归一化到 [minDepth, maxDepth],hue 0(红,近)→ 240(蓝,远)。
-    if (showDepth && raster && isFinite(raster.minDepth)) {
+    if (calibration && showDepth && raster && isFinite(raster.minDepth)) {
       const span = raster.maxDepth - raster.minDepth || 1;
       const cellsN = raster.cols * raster.rows;
       for (let c = 0; c < cellsN; c++) {
@@ -193,7 +299,14 @@ export function CameraProjectionView({
       }
     }
 
-    if (editableBox && onEditPsr && onCancelEditPsr && !seedMode) {
+    if (
+      calibration &&
+      editableBox &&
+      onEditPsr &&
+      onCancelEditPsr &&
+      !seedMode &&
+      !manualBboxMode
+    ) {
       const projected = projectPoints([editableBox.center], calibration);
       const [u, v] = projected.pixels[0];
       const x = u * sx;
@@ -232,13 +345,17 @@ export function CameraProjectionView({
     }
 
     // 高亮框最后画(描边置顶);同序更新命中包围盒。
-    const ordered = [...boxes].sort(
-      (a, b) => Number(highlightedIds.has(a.id)) - Number(highlightedIds.has(b.id)),
-    );
+    const projectionCalibration = calibration;
+    const ordered = projectionCalibration
+      ? [...boxes].sort(
+          (a, b) => Number(highlightedIds.has(a.id)) - Number(highlightedIds.has(b.id)),
+        )
+      : [];
 
     for (const b of ordered) {
+      if (!projectionCalibration) break;
       const corners = psrToCorners(b.center, b.size, b.rotation);
-      const { pixels, visible } = projectPoints(corners, calibration);
+      const { pixels, visible } = projectPoints(corners, projectionCalibration);
       if (!visible.some(Boolean)) continue; // 全角点在相机后方 / 不可见 → 该相机不画此框
 
       const disp = pixels.map(([u, v]) => [u * sx, v * sy] as [number, number]);
@@ -302,6 +419,44 @@ export function CameraProjectionView({
       ctx.strokeRect(seed.x0, seed.y0, w, h);
       ctx.restore();
     }
+
+    const manual = manualDraftRef.current ?? manualBbox;
+    if (manual) {
+      const rect = {
+        x0: manual.x * cssW,
+        y0: manual.y * cssH,
+        x1: (manual.x + manual.w) * cssW,
+        y1: (manual.y + manual.h) * cssH,
+      };
+      manualRectRef.current = rect;
+      const styles = getComputedStyle(canvas);
+      const color = manualBboxStale
+        ? styles.getPropertyValue("--sc-warning").trim() || "#f59e0b"
+        : styles.getPropertyValue("--sc-success").trim() || "#10b981";
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.12;
+      ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      if (manualBboxStale) ctx.setLineDash([7, 4]);
+      ctx.strokeRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+      ctx.setLineDash([]);
+      if (manualBboxMode) {
+        const handles = manualHandlePoints(rect);
+        ctx.fillStyle = color;
+        for (const point of Object.values(handles)) {
+          ctx.fillRect(
+            point.x - MANUAL_HANDLE_SIZE_PX / 2,
+            point.y - MANUAL_HANDLE_SIZE_PX / 2,
+            MANUAL_HANDLE_SIZE_PX,
+            MANUAL_HANDLE_SIZE_PX,
+          );
+        }
+      }
+      ctx.restore();
+    }
   }, [
     boxes,
     calibration,
@@ -312,6 +467,9 @@ export function CameraProjectionView({
     showDepth,
     raster,
     seedMode,
+    manualBbox,
+    manualBboxMode,
+    manualBboxStale,
   ]);
 
   // 数据 / 标定变化重绘。
@@ -323,8 +481,16 @@ export function CameraProjectionView({
     if (!interactionDisabled) return;
     seedStartRef.current = null;
     seedRectRef.current = null;
+    manualDragRef.current = null;
+    manualDraftRef.current = null;
     draw();
   }, [draw, interactionDisabled]);
+
+  useEffect(() => {
+    manualDragRef.current = null;
+    manualDraftRef.current = null;
+    draw();
+  }, [draw, manualBboxMode, name]);
 
   // 图尺寸变化(响应式布局 / 懒加载)重算缩放并重绘。
   useEffect(() => {
@@ -380,6 +546,19 @@ export function CameraProjectionView({
     [onCancelEditPsr, releasePointer],
   );
 
+  const cancelManualEdit = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      const drag = manualDragRef.current;
+      if (!drag) return;
+      manualDragRef.current = null;
+      manualDraftRef.current = null;
+      suppressClickRef.current = false;
+      if (canvas) releasePointer(canvas, drag.pointerId);
+      draw();
+    },
+    [draw, releasePointer],
+  );
+
   useEffect(() => {
     const drag = editDragRef.current;
     if (
@@ -394,19 +573,43 @@ export function CameraProjectionView({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !editDragRef.current) return;
+      if (event.key !== "Escape" || (!editDragRef.current && !manualDragRef.current)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      cancelCameraEdit(canvasRef.current);
+      if (manualDragRef.current) cancelManualEdit(canvasRef.current);
+      else cancelCameraEdit(canvasRef.current);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [cancelCameraEdit]);
+  }, [cancelCameraEdit, cancelManualEdit]);
 
   // v0.13.6 / v0.15.24 · mousemove:种框模式下更新橡皮筋矩形(ref + 直接重绘);否则深度 hover。
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (interactionDisabled) return;
+      const manualDrag = manualDragRef.current;
+      if (manualBboxMode && manualDrag && manualDrag.pointerId === e.pointerId) {
+        const point = localXY(e);
+        const width = e.currentTarget.clientWidth;
+        const height = e.currentTarget.clientHeight;
+        const dx = (point.x - manualDrag.start.x) / width;
+        const dy = (point.y - manualDrag.start.y) / height;
+        let next: NormalizedCameraBbox | null = null;
+        if (manualDrag.kind === "create") {
+          next = normalizedBboxFromPoints(manualDrag.start, point, width, height);
+        } else if (manualDrag.kind === "move" && manualDrag.original) {
+          next = moveManualBbox(manualDrag.original, dx, dy);
+        } else if (manualDrag.handle && manualDrag.original) {
+          next = resizeManualBbox(manualDrag.original, manualDrag.handle, dx, dy);
+        }
+        manualDrag.latest = next;
+        manualDrag.moved ||=
+          Math.hypot(point.x - manualDrag.start.x, point.y - manualDrag.start.y) >=
+          MIN_SEED_DRAG_PX;
+        manualDraftRef.current = next;
+        draw();
+        return;
+      }
       if (seedMode) {
         if (!seedStartRef.current) return;
         const { x, y } = localXY(e);
@@ -453,6 +656,21 @@ export function CameraProjectionView({
         return;
       }
 
+      if (manualBboxMode) {
+        const point = localXY(e);
+        const rect = manualRectRef.current;
+        if (!rect) e.currentTarget.style.cursor = "crosshair";
+        else if (hitManualHandle(rect, point)) e.currentTarget.style.cursor = "nwse-resize";
+        else if (
+          point.x >= rect.x0 &&
+          point.x <= rect.x1 &&
+          point.y >= rect.y0 &&
+          point.y <= rect.y1
+        )
+          e.currentTarget.style.cursor = "move";
+        else e.currentTarget.style.cursor = "default";
+        return;
+      }
       const handle = editHandleRef.current;
       if (handle) {
         const { x, y } = localXY(e);
@@ -467,6 +685,7 @@ export function CameraProjectionView({
     },
     [
       seedMode,
+      manualBboxMode,
       calibration,
       onEditPsr,
       cancelCameraEdit,
@@ -483,7 +702,7 @@ export function CameraProjectionView({
   // v0.15.24 · 种框:按下记起点(需有标定);松手换算回 natural 像素发 onSeedBox;微小位移视为误点。
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (e.button !== 0 || editDragRef.current) return;
+      if (e.button !== 0 || editDragRef.current || manualDragRef.current) return;
       if (interactionDisabled) {
         e.preventDefault();
         return;
@@ -492,6 +711,37 @@ export function CameraProjectionView({
         if (!calibration) return;
         seedStartRef.current = localXY(e);
         seedRectRef.current = null;
+        return;
+      }
+      if (manualBboxMode && onManualBboxCommit) {
+        const point = localXY(e);
+        const rect = manualRectRef.current;
+        let kind: ManualBboxDrag["kind"] = "create";
+        let handle: ManualHandle | undefined;
+        if (rect && manualBbox) {
+          handle = hitManualHandle(rect, point) ?? undefined;
+          if (handle) kind = "resize";
+          else if (
+            point.x >= rect.x0 &&
+            point.x <= rect.x1 &&
+            point.y >= rect.y0 &&
+            point.y <= rect.y1
+          )
+            kind = "move";
+          else return;
+        }
+        manualDragRef.current = {
+          pointerId: e.pointerId,
+          kind,
+          handle,
+          start: point,
+          original: manualBbox,
+          latest: manualBbox,
+          moved: false,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+        e.currentTarget.style.cursor = kind === "move" ? "grabbing" : "crosshair";
+        e.preventDefault();
         return;
       }
       if (!editableBox || !calibration || !onEditPsr || !onCancelEditPsr) return;
@@ -536,6 +786,9 @@ export function CameraProjectionView({
     },
     [
       seedMode,
+      manualBboxMode,
+      manualBbox,
+      onManualBboxCommit,
       calibration,
       editableBox,
       onEditPsr,
@@ -553,6 +806,17 @@ export function CameraProjectionView({
       if (interactionDisabled) {
         seedStartRef.current = null;
         seedRectRef.current = null;
+        draw();
+        return;
+      }
+      const manualDrag = manualDragRef.current;
+      if (manualBboxMode && manualDrag && manualDrag.pointerId === e.pointerId) {
+        manualDragRef.current = null;
+        releasePointer(e.currentTarget, e.pointerId);
+        suppressClickRef.current = manualDrag.moved;
+        const next = manualDrag.latest;
+        manualDraftRef.current = null;
+        if (manualDrag.moved && next) onManualBboxCommit?.(next);
         draw();
         return;
       }
@@ -589,9 +853,11 @@ export function CameraProjectionView({
     },
     [
       seedMode,
+      manualBboxMode,
       calibration,
       onSeedBox,
       onEditPsr,
+      onManualBboxCommit,
       releasePointer,
       localXY,
       draw,
@@ -601,6 +867,7 @@ export function CameraProjectionView({
 
   const handlePointerLeave = useCallback(() => {
     setHover(null);
+    if (manualDragRef.current) return;
     if (editDragRef.current) {
       cancelCameraEdit(canvasRef.current);
       return;
@@ -620,7 +887,7 @@ export function CameraProjectionView({
         suppressClickRef.current = false;
         return;
       }
-      if (seedMode) return; // 种框模式禁用反选
+      if (seedMode || manualBboxMode) return; // 编辑模式禁用反选
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -637,7 +904,7 @@ export function CameraProjectionView({
       }
       if (hitId) onSelectBox(hitId, { shift: e.shiftKey });
     },
-    [interactionDisabled, seedMode, onSelectBox],
+    [interactionDisabled, manualBboxMode, seedMode, onSelectBox],
   );
 
   return (
@@ -660,12 +927,20 @@ export function CameraProjectionView({
           className={[
             CAMERA_CANVAS,
             !imageReady && "pointer-events-none opacity-0",
-            seedMode && CAMERA_CANVAS_SEED,
+            (seedMode || manualBboxMode) && CAMERA_CANVAS_SEED,
             interactionDisabled && CAMERA_CANVAS_BLOCKED,
           ]
             .filter(Boolean)
             .join(" ")}
-          aria-label={`${name} 相机投影${editableBox ? "，拖动中心手柄微调 3D 框" : ""}`}
+          aria-label={`${name} 相机投影${
+            manualBboxMode
+              ? manualBbox
+                ? "，拖动框体或手柄编辑 2D 成员"
+                : "，拖动创建 2D 成员"
+              : editableBox
+                ? "，拖动中心手柄微调 3D 框"
+                : ""
+          }`}
           aria-disabled={interactionDisabled || undefined}
           onClick={handleClick}
           onPointerDown={handlePointerDown}
@@ -681,6 +956,9 @@ export function CameraProjectionView({
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}
         {seedMode && calibration && (interactionDisabled ? " · 正在保存" : " · 拖框种 3D 框")}
+        {manualBbox && ` · 2D 人工框${manualBboxStale ? "（标定已变更）" : ""}`}
+        {manualBboxMode &&
+          (interactionDisabled ? " · 正在保存" : manualBbox ? " · 可移动/缩放" : " · 拖框创建")}
         {showDepth && !seedMode && hover && ` · ${hover.depth.toFixed(1)}m`}
       </figcaption>
     </figure>

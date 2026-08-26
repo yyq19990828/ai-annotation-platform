@@ -114,3 +114,4 @@
 - [0068](0068-experimental-webgpu-pointcloud-renderer.md) — 3D 点云渲染器采用可回退的实验性 WebGPU 后端
 - [0069](archive/0069-scene-track-domain-and-lifecycle.md) — Scene Track 作为 3D 时序对象生命周期、存在区间与可逆命令的权威模型
 - [0070](archive/0070-single-context-pointcloud-four-view-rendering.md) — 点云四视图采用单 context 与事件驱动渲染
+- [0071](archive/0071-persistent-multicamera-annotation-members.md) — 多相机人工标注作为 SceneTrack 的持久成员

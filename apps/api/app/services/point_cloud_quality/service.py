@@ -31,6 +31,10 @@ from app.services.point_cloud_quality.config import (
     point_cloud_quality_config_digest,
 )
 from app.services.scene import resolve_task_scene_frames
+from app.services.sensor_calibration import (
+    SensorCalibrationError,
+    resolve_calibration_states,
+)
 
 
 MAX_QUALITY_TASKS = 5_000
@@ -188,6 +192,26 @@ async def build_source_snapshot(
     selected_track_ids = {
         row.scene_track_id for row in annotations if row.scene_track_id
     }
+    camera_annotation_stmt = select(Annotation).where(
+        Annotation.project_id == project.id,
+        Annotation.sensor_role.is_not(None),
+        Annotation.is_active.is_(True),
+        Annotation.was_cancelled.is_(False),
+        Annotation.task_id.in_(selected_task_ids),
+    )
+    if request.scope in {"task_ids", "annotation_ids"}:
+        camera_annotation_stmt = camera_annotation_stmt.where(
+            Annotation.scene_track_id.in_(selected_track_ids)
+        )
+    camera_annotations = list(
+        (await db.execute(camera_annotation_stmt.order_by(Annotation.id))).scalars()
+    )
+    if len(annotations) + len(camera_annotations) > MAX_QUALITY_ANNOTATIONS:
+        raise PointCloudQualityError(
+            422,
+            "point_cloud_quality_annotation_budget_exceeded",
+            limit=MAX_QUALITY_ANNOTATIONS,
+        )
     track_stmt = select(SceneTrack).where(
         SceneTrack.project_id == project.id,
         SceneTrack.scene_id.in_(selected_scene_ids),
@@ -224,18 +248,25 @@ async def build_source_snapshot(
     direct_item_ids = {
         task.dataset_item_id for task in selected_tasks if task.dataset_item_id
     }
-    link_rows = (
+    all_link_rows = list(
         await db.execute(
             select(
-                TaskDatasetItemLink.task_id, TaskDatasetItemLink.dataset_item_id
-            ).where(
-                TaskDatasetItemLink.task_id.in_(selected_task_ids),
-                TaskDatasetItemLink.role == "primary_lidar",
-            )
+                TaskDatasetItemLink.task_id,
+                TaskDatasetItemLink.dataset_item_id,
+                TaskDatasetItemLink.role,
+            ).where(TaskDatasetItemLink.task_id.in_(selected_task_ids))
         )
-    ).all()
-    linked_item_by_task = {task_id: item_id for task_id, item_id in link_rows}
-    item_ids = direct_item_ids | set(linked_item_by_task.values())
+    )
+    linked_item_by_task = {
+        task_id: item_id
+        for task_id, item_id, role in all_link_rows
+        if role == "primary_lidar"
+    }
+    camera_links_by_task: dict[uuid.UUID, list[tuple[str, uuid.UUID]]] = {}
+    for task_id, item_id, role in all_link_rows:
+        if role.startswith("camera_"):
+            camera_links_by_task.setdefault(task_id, []).append((role, item_id))
+    item_ids = direct_item_ids | {item_id for _, item_id, _ in all_link_rows}
     items = list(
         (
             await db.execute(select(DatasetItem).where(DatasetItem.id.in_(item_ids)))
@@ -250,6 +281,31 @@ async def build_source_snapshot(
         ).scalars()
     )
     dataset_by_id = {row.id: row for row in datasets}
+    calibration_by_item: dict[uuid.UUID, dict] = {}
+    camera_item_ids = {
+        item_id for links in camera_links_by_task.values() for _, item_id in links
+    }
+    camera_items = [
+        item
+        for item_id in camera_item_ids
+        if (item := item_by_id.get(item_id)) is not None
+    ]
+    try:
+        calibration_states = await resolve_calibration_states(db, camera_items)
+    except SensorCalibrationError:
+        # A malformed legacy item must not prevent the remaining scene snapshot.
+        calibration_states = {}
+        for item in camera_items:
+            try:
+                calibration_states.update(await resolve_calibration_states(db, [item]))
+            except SensorCalibrationError:
+                continue
+    for item_id, state in calibration_states.items():
+        calibration_by_item[item_id] = {
+            "revision": state.revision,
+            "digest": state.digest,
+            "calibration": state.calibration.model_dump(mode="json"),
+        }
 
     records: list[dict] = []
     for task in selected_tasks:
@@ -276,6 +332,20 @@ async def build_source_snapshot(
                     if item is not None and item.dataset_id in dataset_by_id
                     else None
                 ),
+                "cameras": [
+                    {
+                        "role": role,
+                        "item_id": str(camera_item.id),
+                        "width": camera_item.width,
+                        "height": camera_item.height,
+                        **calibration_by_item[camera_item.id],
+                    }
+                    for role, camera_item_id in sorted(
+                        camera_links_by_task.get(task.id, [])
+                    )
+                    if (camera_item := item_by_id.get(camera_item_id)) is not None
+                    and camera_item.id in calibration_by_item
+                ],
             }
         )
     for row in annotations:
@@ -295,6 +365,32 @@ async def build_source_snapshot(
                 "scene_track_id": str(row.scene_track_id)
                 if row.scene_track_id
                 else None,
+                "geometry": row.geometry,
+                "geometry_digest": canonical_digest(row.geometry),
+            }
+        )
+    for row in camera_annotations:
+        scene_frame = scene_frames[row.task_id]
+        if scene_frame.scene_id is None or scene_frame.frame_index is None:
+            continue
+        records.append(
+            {
+                "kind": "camera_annotation",
+                "annotation_id": str(row.id),
+                "annotation_version": row.version,
+                "task_id": str(row.task_id),
+                "scene_id": str(scene_frame.scene_id),
+                "frame_index": scene_frame.frame_index,
+                "class_name": row.class_name,
+                "track_id": row.track_id,
+                "scene_track_id": (
+                    str(row.scene_track_id) if row.scene_track_id else None
+                ),
+                "sensor_role": row.sensor_role,
+                "sensor_dataset_item_id": str(row.sensor_dataset_item_id),
+                "sensor_visibility": row.sensor_visibility,
+                "calibration_revision": row.calibration_revision,
+                "calibration_digest": row.calibration_digest,
                 "geometry": row.geometry,
                 "geometry_digest": canonical_digest(row.geometry),
             }
@@ -535,11 +631,17 @@ async def refresh_issue_staleness_bulk(
             )
         ).all()
     )
-    item_ids = {
+    pointcloud_item_ids = {
         uuid.UUID(str(source_item_id))
         for issue in issues
         if (source_item_id := (issue.evidence or {}).get("pointcloud_item_id"))
     }
+    camera_item_ids = {
+        uuid.UUID(str(source_item_id))
+        for issue in issues
+        if (source_item_id := (issue.evidence or {}).get("camera_item_id"))
+    }
+    item_ids = pointcloud_item_ids | camera_item_ids
     items = {
         row.id: row
         for row in (
@@ -554,6 +656,45 @@ async def refresh_issue_staleness_bulk(
         for row in (
             await db.execute(select(SceneTrack).where(SceneTrack.id.in_(track_ids)))
         ).scalars()
+    }
+    camera_link_by_task_role: dict[tuple[uuid.UUID, str], uuid.UUID] = {}
+    if camera_item_ids:
+        camera_link_by_task_role = {
+            (task_id, role): item_id
+            for task_id, item_id, role in (
+                await db.execute(
+                    select(
+                        TaskDatasetItemLink.task_id,
+                        TaskDatasetItemLink.dataset_item_id,
+                        TaskDatasetItemLink.role,
+                    ).where(
+                        TaskDatasetItemLink.task_id.in_(task_ids),
+                        TaskDatasetItemLink.role.like("camera_%"),
+                    )
+                )
+            ).all()
+        }
+    camera_items = [items[item_id] for item_id in camera_item_ids if item_id in items]
+    try:
+        camera_calibration_states = await resolve_calibration_states(db, camera_items)
+    except SensorCalibrationError:
+        # Keep malformed legacy camera metadata local to that camera while retaining
+        # one-query behavior for the normal path.
+        camera_calibration_states = {}
+        for item in camera_items:
+            try:
+                camera_calibration_states.update(
+                    await resolve_calibration_states(db, [item])
+                )
+            except SensorCalibrationError:
+                continue
+    camera_calibration_digests: dict[uuid.UUID, str | None] = {
+        item_id: (
+            state.digest
+            if (state := camera_calibration_states.get(item_id)) is not None
+            else None
+        )
+        for item_id in camera_item_ids
     }
     config_digests = {
         project_id: point_cloud_quality_config_digest(
@@ -599,6 +740,17 @@ async def refresh_issue_staleness_bulk(
                 or item.content_hash
                 != (issue.evidence or {}).get("pointcloud_content_hash")
                 or item.file_path != (issue.evidence or {}).get("pointcloud_file_path")
+            )
+        camera_item_id = (issue.evidence or {}).get("camera_item_id")
+        camera_role = (issue.evidence or {}).get("camera_role")
+        if not stale and camera_item_id is not None and camera_role is not None:
+            expected_camera_item_id = uuid.UUID(str(camera_item_id))
+            stale = bool(
+                issue.task_id is None
+                or camera_link_by_task_role.get((issue.task_id, str(camera_role)))
+                != expected_camera_item_id
+                or camera_calibration_digests.get(expected_camera_item_id)
+                != (issue.evidence or {}).get("camera_calibration_digest")
             )
         if not stale and issue.scene_track_id is not None:
             track = tracks.get(issue.scene_track_id)

@@ -254,6 +254,13 @@ class AnnotationOut(BaseModel):
     # 插值/高亮据此认同一对象 (原用 group_id 高位段, 编组下线后该列已删).
     track_id: str | None = None
     scene_track_id: UUID | None = None
+    sensor_dataset_item_id: UUID | None = None
+    sensor_role: str | None = None
+    sensor_visibility: Literal["visible", "occluded", "truncated", "unknown"] | None = (
+        None
+    )
+    calibration_revision: int | None = None
+    calibration_digest: str | None = None
     temporal_role: Literal["keyframe", "derived", "sample"] = "sample"
     lead_time: float | None = None
     is_active: bool

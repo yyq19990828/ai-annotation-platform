@@ -9,6 +9,7 @@ from app.api.v1.tasks import (
     locks,
     mask_capabilities,
     mask_mutations,
+    multicamera_annotations,
     predictions,
     review,
     scene_timeline,
@@ -36,6 +37,7 @@ router.include_router(video.router, prefix="/tasks")
 router.include_router(image_pyramid.router, prefix="/tasks")
 router.include_router(mask_capabilities.router, prefix="/tasks")
 router.include_router(mask_mutations.router, prefix="/tasks")
+router.include_router(multicamera_annotations.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
 router.include_router(ai_masks.router, prefix="/tasks")
 router.include_router(predictions.router, prefix="/tasks")

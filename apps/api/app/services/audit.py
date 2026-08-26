@@ -142,6 +142,7 @@ class AuditAction(str, Enum):
     POINT_CLOUD_QUALITY_ISSUE_STATUS = "point_cloud_quality.issue_status"
     POINT_CLOUD_QUALITY_EVALUATION_CREATE = "point_cloud_quality.evaluation_create"
     POINT_CLOUD_QUALITY_EVALUATION_PROMOTE = "point_cloud_quality.evaluation_promote"
+    SENSOR_CALIBRATION_UPDATE = "sensor_calibration.update"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

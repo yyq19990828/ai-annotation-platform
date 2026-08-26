@@ -337,6 +337,7 @@ async def reclassify_single_member_scene_track(
         .where(Annotation.scene_track_id == track.id)
         .where(Annotation.is_active.is_(True))
         .where(Annotation.was_cancelled.is_(False))
+        .where(Annotation.sensor_role.is_(None))
     )
     if int(member_count or 0) != 1:
         raise SceneTrackIntegrityError(
@@ -344,6 +345,20 @@ async def reclassify_single_member_scene_track(
             "change the class through a whole-track operation",
         )
     track.class_name = class_name
+    camera_members = list(
+        (
+            await db.execute(
+                select(Annotation)
+                .where(Annotation.scene_track_id == track.id)
+                .where(Annotation.sensor_role.is_not(None))
+                .where(Annotation.was_cancelled.is_(False))
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    for member in camera_members:
+        member.class_name = class_name
+        member.version = int(member.version or 1) + 1
     track.revision = int(track.revision or 1) + 1
     return True
 

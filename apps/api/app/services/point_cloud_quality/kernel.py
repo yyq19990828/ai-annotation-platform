@@ -28,6 +28,8 @@ class QualityThresholds:
     temporal_center_jump_m: float = 4.0
     temporal_size_change_ratio: float = 0.6
     temporal_yaw_jump_rad: float = 0.8
+    projection_min_iou: float = 0.5
+    projection_max_edge_residual_ratio: float = 0.025
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,53 @@ class QualityFinding:
     frame_end: int | None = None
     annotation_ids: tuple[uuid.UUID, ...] = ()
     suggestion: str | None = None
+
+
+def evaluate_projection_residual(
+    *,
+    iou: float,
+    max_edge_residual_px: float,
+    mean_edge_residual_px: float,
+    max_edge_residual_ratio: float,
+    projected_bbox: tuple[float, float, float, float],
+    manual_bbox: tuple[float, float, float, float],
+    camera_role: str,
+    calibration_digest: str,
+    member_calibration_digest: str,
+    frame_index: int,
+    annotation_ids: tuple[uuid.UUID, uuid.UUID],
+    thresholds: QualityThresholds,
+) -> QualityFinding | None:
+    if (
+        iou >= thresholds.projection_min_iou
+        and max_edge_residual_ratio <= thresholds.projection_max_edge_residual_ratio
+    ):
+        return None
+    return QualityFinding(
+        code="projection_residual",
+        severity="warning",
+        metric={
+            "iou": iou,
+            "max_edge_residual_px": max_edge_residual_px,
+            "mean_edge_residual_px": mean_edge_residual_px,
+            "max_edge_residual_ratio": max_edge_residual_ratio,
+        },
+        threshold={
+            "minimum_iou": thresholds.projection_min_iou,
+            "maximum_edge_residual_ratio": thresholds.projection_max_edge_residual_ratio,
+        },
+        evidence={
+            "camera_role": camera_role,
+            "calibration_digest": calibration_digest,
+            "member_calibration_digest": member_calibration_digest,
+            "projected_bbox": list(projected_bbox),
+            "manual_bbox": list(manual_bbox),
+        },
+        frame_start=frame_index,
+        frame_end=frame_index,
+        annotation_ids=annotation_ids,
+        suggestion="open_camera_member",
+    )
 
 
 _HEADER_LINE = re.compile(rb"^([A-Z]+)\s+(.+)$")

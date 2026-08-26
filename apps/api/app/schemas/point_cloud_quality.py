@@ -16,6 +16,7 @@ POINT_CLOUD_QUALITY_RULE_CODES = frozenset(
         "track_gap",
         "track_identity_drift",
         "duplicate_track_member",
+        "projection_residual",
     }
 )
 
@@ -33,6 +34,8 @@ class PointCloudQualityThresholdConfig(BaseModel):
     temporal_center_jump_m: float = Field(default=4.0, gt=0, le=100)
     temporal_size_change_ratio: float = Field(default=0.6, gt=0, le=10)
     temporal_yaw_jump_rad: float = Field(default=0.8, gt=0, le=3.142)
+    projection_min_iou: float = Field(default=0.5, ge=0, le=1)
+    projection_max_edge_residual_ratio: float = Field(default=0.025, gt=0, le=1)
 
 
 class PointCloudQualityThresholdOverride(BaseModel):
@@ -48,6 +51,8 @@ class PointCloudQualityThresholdOverride(BaseModel):
     temporal_center_jump_m: float | None = Field(default=None, gt=0, le=100)
     temporal_size_change_ratio: float | None = Field(default=None, gt=0, le=10)
     temporal_yaw_jump_rad: float | None = Field(default=None, gt=0, le=3.142)
+    projection_min_iou: float | None = Field(default=None, ge=0, le=1)
+    projection_max_edge_residual_ratio: float | None = Field(default=None, gt=0, le=1)
 
 
 class PointCloudQualityGovernanceConfig(BaseModel):

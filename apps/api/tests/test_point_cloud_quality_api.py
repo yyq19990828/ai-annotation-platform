@@ -13,6 +13,7 @@ from app.db.models.point_cloud_quality import PointCloudQualityIssue
 from app.db.models.project_member import ProjectMember
 from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
+from app.schemas._jsonb_types import SensorCalibration
 from app.schemas.point_cloud_quality import (
     PointCloudQualityConfig,
     PointCloudQualityRunRequest,
@@ -22,6 +23,8 @@ from app.services.point_cloud_quality.service import (
     create_quality_run,
     refresh_issue_staleness,
 )
+from app.services.sensor_calibration import calibration_digest
+from app.services.task_dataset_link import link_items
 from app.workers.point_cloud_quality import (
     _cancel_requested,
     _normalize_points,
@@ -125,6 +128,115 @@ async def _seed_quality_scene(db, *, owner_id):
         await db.flush()
         annotations.append(row)
     return project, scene, tasks, track, annotations
+
+
+async def test_projection_residual_scan_and_staleness(
+    db_session, super_admin, monkeypatch
+):
+    user, _token = super_admin
+    project, scene, tasks, track, annotations = await _seed_quality_scene(
+        db_session, owner_id=user.id
+    )
+    task = tasks[0]
+    source = annotations[0]
+    source.geometry = _box(10.0)
+    primary = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert primary is not None
+    calibration = SensorCalibration.model_validate(
+        {
+            "extrinsic": [
+                0,
+                -1,
+                0,
+                0,
+                0,
+                0,
+                -1,
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ],
+            "intrinsic": [100, 0, 100, 0, 100, 60, 0, 0, 1],
+        }
+    )
+    digest = calibration_digest(calibration)
+    camera = DatasetItem(
+        dataset_id=primary.dataset_id,
+        file_name="front.jpg",
+        file_path="quality/front.jpg",
+        file_type="image",
+        width=200,
+        height=120,
+        scene_id=scene.id,
+        frame_index=0,
+        metadata_={"calibration": calibration.model_dump(mode="json")},
+    )
+    db_session.add(camera)
+    await db_session.flush()
+    await link_items(
+        db_session,
+        task.id,
+        [(camera.id, "camera_front", "CAM_FRONT")],
+    )
+    member = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="lidar_box_3d",
+        class_name="car",
+        geometry={"type": "bbox", "x": 0.0, "y": 0.0, "w": 0.1, "h": 0.1},
+        track_id=source.track_id,
+        scene_track_id=track.id,
+        temporal_role="sample",
+        sensor_dataset_item_id=camera.id,
+        sensor_role="camera_front",
+        sensor_visibility="visible",
+        calibration_revision=1,
+        calibration_digest=digest,
+    )
+    db_session.add(member)
+    track.revision += 1
+    await db_session.flush()
+
+    run, job, created = await create_quality_run(
+        db_session,
+        project=project,
+        actor_id=user.id,
+        request=PointCloudQualityRunRequest(scope="task_ids", task_ids=[task.id]),
+    )
+    assert created is True and job is not None
+    monkeypatch.setattr(
+        "app.workers.point_cloud_quality._read_pointcloud",
+        lambda _key: np.asarray([(100.0, 0.0, 0.0)], dtype=np.float32),
+    )
+    run.status = "running"
+    await async_job_svc.mark_running(db_session, job.id)
+    await execute_scan(db_session, run)
+
+    issue = (
+        await db_session.execute(
+            select(PointCloudQualityIssue).where(
+                PointCloudQualityIssue.project_id == project.id,
+                PointCloudQualityIssue.code == "projection_residual",
+            )
+        )
+    ).scalar_one()
+    assert issue.locator["camera"] == "camera_front"
+    assert issue.evidence["camera_calibration_digest"] == digest
+    assert str(member.id) in issue.source_versions
+    assert await refresh_issue_staleness(db_session, issue) is False
+
+    member.version += 1
+    await db_session.flush()
+    assert await refresh_issue_staleness(db_session, issue) is True
 
 
 async def test_quality_run_singleflight_and_worker_track_findings(

@@ -16,7 +16,17 @@ from typing import Any
 
 from app.db.models.annotation import Annotation
 from app.schemas._jsonb_types import SensorCalibration
-from app.services.axis_convention import PsrDict, R_NORM
+from app.services.axis_convention import PsrDict
+from app.services.pointcloud_projection import (
+    NEAR_PLANE as _NEAR_PLANE,
+    apply_camera_point as _apply_camera_point,
+    apply_camera_vector as _apply_camera_vector,
+    box_iso_geometry as _box_iso_geometry,
+    clamp as _clamp,
+    clipped_projection_bbox as _clipped_projection_bbox,
+    iso_to_source as _iso_to_source,
+    pixel_bbox,
+)
 
 
 @dataclass(frozen=True)
@@ -53,10 +63,8 @@ class KittiSkippedAnnotation:
 class KittiFrameExportResult:
     lines: list[str]
     skipped: list[KittiSkippedAnnotation]
-
-
-def _clamp(value: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, value))
+    manual_bbox_count: int = 0
+    derived_bbox_count: int = 0
 
 
 def _wrap_pi(value: float) -> float:
@@ -90,232 +98,28 @@ def _kitti_alpha(ry: float, x: float, z: float) -> float:
     return _wrap_pi(ry - math.atan2(x, z))
 
 
-def _euler_xyz_matrix(rotation: list[float]) -> tuple[float, ...]:
-    rx, ry, rz = rotation
-    cx, sx = math.cos(rx), math.sin(rx)
-    cy, sy = math.cos(ry), math.sin(ry)
-    cz, sz = math.cos(rz), math.sin(rz)
-    return (
-        cy * cz,
-        -cy * sz,
-        sy,
-        cx * sz + cz * sx * sy,
-        cx * cz - sx * sy * sz,
-        -cy * sx,
-        sx * sz - cx * cz * sy,
-        cz * sx + cx * sy * sz,
-        cx * cy,
-    )
-
-
-def _mat3_vec(
-    matrix: tuple[float, ...] | list[float], point: tuple[float, float, float]
-) -> tuple[float, float, float]:
-    x, y, z = point
-    return (
-        matrix[0] * x + matrix[1] * y + matrix[2] * z,
-        matrix[3] * x + matrix[4] * y + matrix[5] * z,
-        matrix[6] * x + matrix[7] * y + matrix[8] * z,
-    )
-
-
-def _iso_to_source(
-    point: tuple[float, float, float], axis_convention: str
-) -> tuple[float, float, float]:
-    matrix = R_NORM[axis_convention]
-    transpose = (
-        matrix[0],
-        matrix[3],
-        matrix[6],
-        matrix[1],
-        matrix[4],
-        matrix[7],
-        matrix[2],
-        matrix[5],
-        matrix[8],
-    )
-    return _mat3_vec(transpose, point)
-
-
-def _apply_camera_point(
-    point: tuple[float, float, float], calibration: SensorCalibration
-) -> tuple[float, float, float]:
-    x, y, z = point
-    extrinsic = calibration.extrinsic
-    camera = (
-        extrinsic[0] * x + extrinsic[1] * y + extrinsic[2] * z + extrinsic[3],
-        extrinsic[4] * x + extrinsic[5] * y + extrinsic[6] * z + extrinsic[7],
-        extrinsic[8] * x + extrinsic[9] * y + extrinsic[10] * z + extrinsic[11],
-    )
-    if calibration.rect:
-        rect = calibration.rect
-        cx, cy, cz = camera
-        return (
-            rect[0] * cx + rect[1] * cy + rect[2] * cz + rect[3],
-            rect[4] * cx + rect[5] * cy + rect[6] * cz + rect[7],
-            rect[8] * cx + rect[9] * cy + rect[10] * cz + rect[11],
-        )
-    return camera
-
-
-def _apply_camera_vector(
-    vector: tuple[float, float, float], calibration: SensorCalibration
-) -> tuple[float, float, float]:
-    extrinsic = calibration.extrinsic
-    camera = _mat3_vec(
-        (
-            extrinsic[0],
-            extrinsic[1],
-            extrinsic[2],
-            extrinsic[4],
-            extrinsic[5],
-            extrinsic[6],
-            extrinsic[8],
-            extrinsic[9],
-            extrinsic[10],
-        ),
-        vector,
-    )
-    if calibration.rect:
-        rect = calibration.rect
-        return _mat3_vec(
-            (
-                rect[0],
-                rect[1],
-                rect[2],
-                rect[4],
-                rect[5],
-                rect[6],
-                rect[8],
-                rect[9],
-                rect[10],
-            ),
-            camera,
-        )
-    return camera
-
-
-def _project_camera_point(
-    point: tuple[float, float, float], intrinsic: list[float]
-) -> tuple[float, float] | None:
-    x, y, z = point
-    u = intrinsic[0] * x + intrinsic[1] * y + intrinsic[2] * z
-    v = intrinsic[3] * x + intrinsic[4] * y + intrinsic[5] * z
-    w = intrinsic[6] * x + intrinsic[7] * y + intrinsic[8] * z
-    if w <= 0 or not math.isfinite(w):
-        return None
-    pixel = (u / w, v / w)
-    return pixel if all(math.isfinite(value) for value in pixel) else None
-
-
-_BOX_EDGES: tuple[tuple[int, int], ...] = (
-    (0, 1),
-    (1, 2),
-    (2, 3),
-    (3, 0),
-    (4, 5),
-    (5, 6),
-    (6, 7),
-    (7, 4),
-    (0, 4),
-    (1, 5),
-    (2, 6),
-    (3, 7),
-)
-_NEAR_PLANE = 0.1
-
-
-def _box_iso_geometry(
-    psr: PsrDict,
-) -> tuple[
-    list[tuple[float, float, float]],
-    tuple[float, float, float],
-    tuple[float, float, float],
-]:
-    center = tuple(psr["center"])
-    length, width, height = psr["size"]
-    rotation = _euler_xyz_matrix(psr["rotation"])
-
-    def world(local: tuple[float, float, float]) -> tuple[float, float, float]:
-        offset = _mat3_vec(rotation, local)
-        return (
-            center[0] + offset[0],
-            center[1] + offset[1],
-            center[2] + offset[2],
-        )
-
-    corners = [
-        world((sx * length / 2, sy * width / 2, sz * height / 2))
-        for sz in (-1, 1)
-        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
-    ]
-    bottom_center = world((0, 0, -height / 2))
-    forward = _mat3_vec(rotation, (1, 0, 0))
-    return corners, bottom_center, forward
-
-
-def _clipped_projection_bbox(
-    corners: list[tuple[float, float, float]],
-    camera: LidarCameraExportCtx,
-) -> tuple[tuple[float, float, float, float], float] | None:
-    candidates = [point for point in corners if point[2] >= _NEAR_PLANE]
-    for start_index, end_index in _BOX_EDGES:
-        start = corners[start_index]
-        end = corners[end_index]
-        start_front = start[2] >= _NEAR_PLANE
-        end_front = end[2] >= _NEAR_PLANE
-        if start_front == end_front:
-            continue
-        ratio = (_NEAR_PLANE - start[2]) / (end[2] - start[2])
-        candidates.append(
-            (
-                start[0] + ratio * (end[0] - start[0]),
-                start[1] + ratio * (end[1] - start[1]),
-                _NEAR_PLANE,
-            )
-        )
-    pixels = [
-        pixel
-        for point in candidates
-        if (pixel := _project_camera_point(point, camera.calibration.intrinsic))
-        is not None
-    ]
-    if not pixels:
-        return None
-    raw = (
-        min(pixel[0] for pixel in pixels),
-        min(pixel[1] for pixel in pixels),
-        max(pixel[0] for pixel in pixels),
-        max(pixel[1] for pixel in pixels),
-    )
-    raw_area = max(0.0, raw[2] - raw[0]) * max(0.0, raw[3] - raw[1])
-    if raw_area <= 1e-9:
-        return None
-    image_right = float(camera.width - 1)
-    image_bottom = float(camera.height - 1)
-    clipped = (
-        _clamp(raw[0], 0.0, image_right),
-        _clamp(raw[1], 0.0, image_bottom),
-        _clamp(raw[2], 0.0, image_right),
-        _clamp(raw[3], 0.0, image_bottom),
-    )
-    clipped_area = max(0.0, clipped[2] - clipped[0]) * max(0.0, clipped[3] - clipped[1])
-    if clipped_area <= 1e-9:
-        return None
-    truncated = _clamp(1.0 - clipped_area / raw_area, 0.0, 1.0)
-    return clipped, truncated
-
-
 def build_kitti_lidar_frame(
     annotations: list[Annotation],
     *,
     camera: LidarCameraExportCtx,
     axis_convention: str,
+    camera_members: list[Annotation] | None = None,
 ) -> KittiFrameExportResult:
     """Project ISO-frame cuboids into one trusted KITTI camera frame."""
 
     lines: list[str] = []
     skipped: list[KittiSkippedAnnotation] = []
+    manual_bbox_count = 0
+    derived_bbox_count = 0
+    manual_by_track = {
+        member.scene_track_id: member
+        for member in (camera_members or [])
+        if member.is_active
+        and not member.was_cancelled
+        and member.sensor_role == camera.role
+        and member.scene_track_id is not None
+        and (member.geometry or {}).get("type") == "bbox"
+    }
     for ann in annotations:
         geometry = ann.geometry or {}
         if geometry.get("type") != "box_3d":
@@ -338,6 +142,7 @@ def build_kitti_lidar_frame(
             )
             for point in corners_iso
         ]
+        manual_member = manual_by_track.get(ann.scene_track_id)
         projection = _clipped_projection_bbox(corners_camera, camera)
         if projection is None:
             reason = (
@@ -349,7 +154,19 @@ def build_kitti_lidar_frame(
                 KittiSkippedAnnotation(str(ann.id), str(ann.class_name), reason)
             )
             continue
-        bbox, truncated = projection
+        derived_bbox, truncated = projection
+        if manual_member is not None:
+            manual = manual_member.geometry or {}
+            bbox = pixel_bbox(
+                tuple(float(manual[key]) for key in ("x", "y", "w", "h")),
+                camera.width,
+                camera.height,
+            )
+            truncated = 0.0
+            manual_bbox_count += 1
+        else:
+            bbox = derived_bbox
+            derived_bbox_count += 1
         x, y, z = _apply_camera_point(
             _iso_to_source(bottom_iso, axis_convention), camera.calibration
         )
@@ -388,7 +205,12 @@ def build_kitti_lidar_frame(
                 ]
             )
         )
-    return KittiFrameExportResult(lines=lines, skipped=skipped)
+    return KittiFrameExportResult(
+        lines=lines,
+        skipped=skipped,
+        manual_bbox_count=manual_bbox_count,
+        derived_bbox_count=derived_bbox_count,
+    )
 
 
 def build_kitti_lidar_label_lines(

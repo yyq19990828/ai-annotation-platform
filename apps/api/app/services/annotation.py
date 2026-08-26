@@ -517,7 +517,9 @@ class AnnotationService:
         video_segment_id: uuid.UUID | None = None,
     ) -> list[Annotation]:
         q = select(Annotation).where(
-            Annotation.task_id == task_id, Annotation.is_active.is_(True)
+            Annotation.task_id == task_id,
+            Annotation.is_active.is_(True),
+            Annotation.sensor_role.is_(None),
         )
         if not include_cancelled:
             q = q.where(Annotation.was_cancelled.is_(False))
@@ -543,6 +545,7 @@ class AnnotationService:
             Annotation.task_id.in_(task_ids),
             Annotation.is_active.is_(True),
             Annotation.was_cancelled.is_(False),
+            Annotation.sensor_role.is_(None),
         )
         if track_id is not None:
             q = q.where(Annotation.track_id == track_id)
@@ -565,7 +568,9 @@ class AnnotationService:
         排序键参考 alembic 0031 的 ix_annotations_task_created_id 复合索引。
         """
         q = select(Annotation).where(
-            Annotation.task_id == task_id, Annotation.is_active.is_(True)
+            Annotation.task_id == task_id,
+            Annotation.is_active.is_(True),
+            Annotation.sensor_role.is_(None),
         )
         if not include_cancelled:
             q = q.where(Annotation.was_cancelled.is_(False))
@@ -589,9 +594,31 @@ class AnnotationService:
         annotation = await self.db.get(Annotation, annotation_id)
         if not annotation:
             return False
+        if annotation.sensor_role is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="camera members must be deleted through the point-cloud camera member API",
+            )
         annotation.is_active = False
         annotation.version += 1
         await touch_annotation_scene_track(self.db, annotation, make_keyframe=False)
+        if annotation.sensor_role is None and annotation.scene_track_id is not None:
+            camera_members = list(
+                (
+                    await self.db.execute(
+                        select(Annotation)
+                        .where(Annotation.task_id == annotation.task_id)
+                        .where(Annotation.scene_track_id == annotation.scene_track_id)
+                        .where(Annotation.sensor_role.is_not(None))
+                        .where(Annotation.is_active.is_(True))
+                        .where(Annotation.was_cancelled.is_(False))
+                        .with_for_update()
+                    )
+                ).scalars()
+            )
+            for camera_member in camera_members:
+                camera_member.is_active = False
+                camera_member.version += 1
         # v0.20.9 · 级联软删子框: 删父框时其所有 active 子框一并软删, 不留 orphan。
         # 父子仅一层 (create 时约束), 故无需递归。
         children = (
@@ -673,6 +700,11 @@ class AnnotationService:
             )
         # 整体校验: 任一被锁 / 已软删 → 422 + 整体回滚 (调用方上游事务承担).
         for r in rows:
+            if r.sensor_role is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="camera members must be edited through the point-cloud camera member API",
+                )
             if not r.is_active:
                 raise HTTPException(
                     status_code=422,
@@ -736,6 +768,7 @@ class AnnotationService:
                     .where(Annotation.scene_track_id == track_id)
                     .where(Annotation.is_active.is_(True))
                     .where(Annotation.was_cancelled.is_(False))
+                    .where(Annotation.sensor_role.is_(None))
                 )
                 if int(active_count or 0) != selected_count:
                     raise HTTPException(
@@ -746,6 +779,20 @@ class AnnotationService:
                         },
                     )
                 linked_tracks[track_id].class_name = class_name
+                camera_members = list(
+                    (
+                        await self.db.execute(
+                            select(Annotation)
+                            .where(Annotation.scene_track_id == track_id)
+                            .where(Annotation.sensor_role.is_not(None))
+                            .where(Annotation.was_cancelled.is_(False))
+                            .with_for_update()
+                        )
+                    ).scalars()
+                )
+                for camera_member in camera_members:
+                    camera_member.class_name = class_name
+                    camera_member.version = int(camera_member.version or 1) + 1
         for r in rows:
             if class_name is not None:
                 r.class_name = class_name
@@ -1339,6 +1386,11 @@ class AnnotationService:
         annotation = await self.db.get(Annotation, annotation_id)
         if not annotation or not annotation.is_active:
             return None
+        if annotation.sensor_role is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="camera members must be edited through the point-cloud camera member API",
+            )
         track_reclassified = False
         if class_name is not None:
             # v0.14.17 · 与 create / accept_prediction 对齐: PATCH 改类也走软校验,
@@ -1373,8 +1425,6 @@ class AnnotationService:
                     reject_identity_change=True,
                 )
             except ValueError as exc:
-                from fastapi import HTTPException
-
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             annotation.geometry = geometry
             annotation.annotation_type = next_type
@@ -1892,6 +1942,7 @@ class AnnotationService:
                 Annotation.task_id == task_id,
                 Annotation.is_active.is_(True),
                 Annotation.was_cancelled.is_(False),
+                Annotation.sensor_role.is_(None),
             )
         )
         count = count_result.scalar() or 0

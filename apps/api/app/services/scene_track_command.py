@@ -280,6 +280,7 @@ def _snapshot_token(
                         "class_name": row.class_name,
                         "is_active": row.is_active,
                         "temporal_role": row.temporal_role,
+                        "sensor_role": row.sensor_role,
                     }
                     for row in track.members
                 ],
@@ -293,6 +294,16 @@ def _snapshot_token(
 
 def _active_members(track: LoadedCommandTrack) -> list[Annotation]:
     return [row for row in track.members if row.is_active]
+
+
+def _active_primary_members(track: LoadedCommandTrack) -> list[Annotation]:
+    return [
+        row
+        for row in track.members
+        if row.is_active
+        and row.sensor_role is None
+        and (row.geometry or {}).get("type") == "box_3d"
+    ]
 
 
 def _validate_single_active_member_per_frame(
@@ -350,14 +361,19 @@ async def prepare_scene_track_command(
                 "split_anchor_mismatch",
                 "frame_index must equal the anchor task frame",
             )
-        active = _active_members(primary)
+        active = _active_primary_members(primary)
         _validate_single_active_member_per_frame(context, active)
         tail = [
             row
             for row in primary.members
             if _frame_for(context, row) > request.frame_index
         ]
-        if not any(row.is_active for row in tail):
+        if not any(
+            row.is_active
+            and row.sensor_role is None
+            and (row.geometry or {}).get("type") == "box_3d"
+            for row in tail
+        ):
             raise _error(
                 409,
                 "split_tail_missing",
@@ -394,8 +410,8 @@ async def prepare_scene_track_command(
                 "track_class_conflict",
                 "only Scene Tracks with the same class can be merged",
             )
-        primary_active = _active_members(primary)
-        secondary_active = _active_members(secondary)
+        primary_active = _active_primary_members(primary)
+        secondary_active = _active_primary_members(secondary)
         _validate_single_active_member_per_frame(context, primary_active)
         _validate_single_active_member_per_frame(context, secondary_active)
         primary_frames = {_frame_for(context, row) for row in primary_active}
@@ -405,6 +421,22 @@ async def prepare_scene_track_command(
                 409,
                 "track_frame_conflict",
                 "Tracks with an active member on the same frame cannot be merged",
+            )
+        primary_camera_keys = {
+            (_frame_for(context, row), row.sensor_role)
+            for row in _active_members(primary)
+            if row.sensor_role is not None
+        }
+        secondary_camera_keys = {
+            (_frame_for(context, row), row.sensor_role)
+            for row in _active_members(secondary)
+            if row.sensor_role is not None
+        }
+        if primary_camera_keys & secondary_camera_keys:
+            raise _error(
+                409,
+                "track_camera_member_conflict",
+                "Tracks with an active member for the same frame and camera cannot be merged",
             )
         secondary_specs = _interval_specs(secondary)
         before[secondary.track.track_id] = secondary_specs
@@ -493,7 +525,13 @@ async def prepare_scene_track_command(
                 "resume frame does not have a task in this Scene",
             )
         source = next(
-            (row for row in primary.members if row.id == request.source_annotation_id),
+            (
+                row
+                for row in primary.members
+                if row.id == request.source_annotation_id
+                and row.sensor_role is None
+                and (row.geometry or {}).get("type") == "box_3d"
+            ),
             None,
         )
         if source is None or not source.is_active:
@@ -503,7 +541,11 @@ async def prepare_scene_track_command(
                 "resume source must be an active member of this Track",
             )
         if any(
-            row.is_active and row.task_id == target_task_id for row in primary.members
+            row.is_active
+            and row.task_id == target_task_id
+            and row.sensor_role is None
+            and (row.geometry or {}).get("type") == "box_3d"
+            for row in primary.members
         ):
             raise _error(
                 409,
@@ -576,6 +618,7 @@ def _member_state(row: Annotation) -> dict:
         "is_active": row.is_active,
         "is_hidden": row.is_hidden,
         "temporal_role": row.temporal_role,
+        "sensor_role": row.sensor_role,
         "version": int(row.version or 1),
     }
 

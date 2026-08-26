@@ -18,6 +18,7 @@ from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import (
     Dataset,
     DatasetItem,
+    SensorCalibrationRevision,
     ProjectDataset,
     VideoChunk,
     VideoFrameCache,
@@ -104,6 +105,7 @@ __all__ = [
     "AnnotationFeedback",
     "Dataset",
     "DatasetItem",
+    "SensorCalibrationRevision",
     "ProjectDataset",
     "VideoChunk",
     "VideoFrameCache",

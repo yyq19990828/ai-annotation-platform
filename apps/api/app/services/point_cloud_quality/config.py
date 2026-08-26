@@ -14,6 +14,7 @@ DEFAULT_RULE_SEVERITIES = {
     "track_gap": "warning",
     "track_identity_drift": "blocker",
     "duplicate_track_member": "blocker",
+    "projection_residual": "warning",
 }
 
 
