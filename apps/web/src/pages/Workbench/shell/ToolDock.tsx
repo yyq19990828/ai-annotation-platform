@@ -259,6 +259,13 @@ const THREE_D_TOOLS: Array<{
     desc: "点击放置或拖框自动拟合；完成后继续待命",
   },
   { id: "point-mask", hotkey: "P", label: "分割", icon: "scissors", desc: "框选点云生成 3D 分割" },
+  {
+    id: "measure",
+    hotkey: "M",
+    label: "测量",
+    icon: "ruler",
+    desc: "吸附点云测量三维距离、水平距离与高差",
+  },
 ];
 
 function unitForThreeDTool(tool: ThreeDTool): string | null {

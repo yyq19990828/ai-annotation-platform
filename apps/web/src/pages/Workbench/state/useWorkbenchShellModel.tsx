@@ -6375,13 +6375,17 @@ export function useWorkbenchShellModel({
         stageKind === "3d"
           ? s.threeDTool === "point-mask"
             ? "点云分割"
-            : "3D 框"
+            : s.threeDTool === "measure"
+              ? "测量"
+              : "3D 框"
           : TOOL_REGISTRY[s.tool].label,
       toolIcon:
         stageKind === "3d"
           ? s.threeDTool === "point-mask"
             ? "scissors"
-            : "rect"
+            : s.threeDTool === "measure"
+              ? "ruler"
+              : "rect"
           : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass,
       recentClasses,

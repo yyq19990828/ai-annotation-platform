@@ -37,6 +37,8 @@
 
 [3D 专属质量流程](../2026-08-26-v0.24.13-3d-quality-workflow.md) 已完成转定稿并进入实施，不再属于 backlog。
 
+[3D 测量 Overlay MVP](../2026-08-27-v0.24.19-3d-measurement-overlay.md) 已从“地面、测量与几何辅助层”拆出并转为实施计划；原草案不再属于 backlog，地面预览与几何特征只有重新满足各自触发门后才能另立草案。
+
 可信 LiDAR 导出已收缩为 [LiDAR 可信导出 MVP](../2026-08-25-v0.24.9-lidar-trusted-export-mvp.md) 并转入实施；完整 nuScenes 与多相机 COCO 派生 2D 不在当前版本范围。
 
 [持久化多模态对象](2026-08-24-persistent-multimodal-object-draft.md) 的相机 bbox 主路径已由
@@ -49,7 +51,6 @@
 | ----------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------- |
 | [点云空间流式加载](2026-08-24-pointcloud-spatial-streaming-draft.md)          | 视口 LOD、分块解码和稳定全局点 ID    | 三档固定数据集基准证明现链路不达标        |
 | [3D AI 候选助手](2026-08-24-3d-ai-candidate-assistant-draft.md)               | 预览、调整、接受、拒绝的统一候选合同 | 本地算法验证后再开放远程模型协议          |
-| [地面、测量与几何辅助层](2026-08-24-3d-scene-aids-draft.md)                   | 不污染标注真值的场景理解 overlay     | 参数、缓存和持久化边界冻结                |
 | [Point Cloud Pen](2026-08-24-pointcloud-pen-draft.md)                         | 点选与笔刷共用一个点掩码工具         | 点索引稳定；若启用 tiling 则先完成全局 ID |
 | [3D Ground Truth 与 Consensus](2026-08-24-3d-ground-truth-consensus-draft.md) | 可解释的对拍、即时反馈与多人一致性   | 3D 指标合同和质量定位流程稳定             |
 

@@ -117,11 +117,27 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     expect(boxPostCount).toBe(20);
 
     // 每个连续创建结果仍是独立 history entry。
+    const firstUndoResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        /\/annotations\/[0-9a-f-]+/.test(response.url()),
+    );
     await page.keyboard.press("Control+z");
+    await firstUndoResponse;
     await expect(page.getByText(/·\s*20\s*框/)).toBeVisible();
+    const secondUndoResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        /\/annotations\/[0-9a-f-]+/.test(response.url()),
+    );
     await page.keyboard.press("Control+z");
+    await secondUndoResponse;
     await expect(page.getByText(/·\s*19\s*框/)).toBeVisible();
+    const redoResponse = page.waitForResponse(
+      (response) => response.request().method() === "POST" && /\/annotations$/.test(response.url()),
+    );
     await page.keyboard.press("Control+y");
+    await redoResponse;
     await expect(page.getByText(/·\s*20\s*框/)).toBeVisible();
   });
 
@@ -207,13 +223,10 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
       "saving",
     );
 
-    const secondManifest = page.waitForResponse(
-      (response) =>
-        response.url().includes(`/tasks/${secondTaskId}/point-cloud/manifest`) && response.ok(),
-    );
+    // SceneTimeline 会预取相邻帧 manifest；切换后可直接命中缓存，不应强制等新的网络响应。
     await page.getByText(/e2e-lidar-.*-1\.pcd/, { exact: true }).click();
-    await secondManifest;
     await expect.poll(() => page.url()).toContain(secondTaskId);
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("three-d-creation-status")).toHaveCount(0);
     await expect(page.getByTestId("three-d-tool-btn-select")).toHaveAttribute(
       "aria-pressed",
@@ -393,5 +406,128 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
       geometry?: { type?: string };
     }>;
     await expect(body).resolves.toMatchObject({ geometry: { type: "point_mask_3d" } });
+  });
+
+  test("M 点云测量只写会话态 overlay，支持管理并在切任务时清理", async ({ page, seed }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+    const [, secondTaskId] = lidar.lidar_task_ids;
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    let annotationMutationCount = 0;
+    page.on("request", (request) => {
+      if (!/\/annotations(?:\/|\?|$)/.test(request.url())) return;
+      if (["POST", "PATCH", "DELETE"].includes(request.method())) annotationMutationCount += 1;
+    });
+
+    await page.locator("body").click();
+    await page.keyboard.press("m");
+    await expect(page.getByTestId("three-d-tool-btn-measure")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("measurement-status")).toContainText("单击点云添加锚点");
+    await expect(page.getByTestId("measurement-panel")).toBeVisible();
+
+    const hits = await page.getByTestId("pc-viewport").evaluate((element) => {
+      const scene = (
+        element as HTMLElement & {
+          __pointCloudScene?: {
+            pickPoint: (
+              clientX: number,
+              clientY: number,
+            ) => { pointIndex: number; position: [number, number, number] } | null;
+          };
+        }
+      ).__pointCloudScene;
+      if (!scene) return [];
+      const bounds = element.getBoundingClientRect();
+      const found: Array<{
+        x: number;
+        y: number;
+        pointIndex: number;
+        position: [number, number, number];
+      }> = [];
+      for (
+        let y = bounds.top + bounds.height * 0.15;
+        y <= bounds.bottom - bounds.height * 0.15;
+        y += 8
+      ) {
+        for (
+          let x = bounds.left + bounds.width * 0.15;
+          x <= bounds.right - bounds.width * 0.15;
+          x += 8
+        ) {
+          const hit = scene.pickPoint(x, y);
+          if (!hit || found.some((candidate) => candidate.pointIndex === hit.pointIndex)) continue;
+          found.push({ x, y, ...hit });
+          if (
+            found.length >= 2 &&
+            Math.hypot(
+              found[1].position[0] - found[0].position[0],
+              found[1].position[1] - found[0].position[1],
+              found[1].position[2] - found[0].position[2],
+            ) > 0.1
+          ) {
+            return found.slice(0, 2);
+          }
+          if (found.length >= 2) found.splice(1);
+        }
+      }
+      return found;
+    });
+    expect(hits, "开发态场景探针应找到两个不同的真实点").toHaveLength(2);
+
+    await page.mouse.click(hits[0].x, hits[0].y);
+    await page.mouse.click(hits[1].x, hits[1].y);
+    const draft = page.getByTestId("measurement-draft");
+    await expect(draft).toContainText("2 个锚点");
+    await expect(draft).toContainText("三维总长");
+    await expect(draft).toContainText(/\d+\.\d{2} m/);
+
+    await page.getByRole("button", { name: "完成当前" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator('[data-testid^="measurement-item-"]')).toHaveCount(1);
+    const measurement = page.locator('[data-testid^="measurement-item-"]').first();
+    await expect(measurement).toContainText("测量 1 · 1 段");
+    await expect(draft).toContainText("0 个锚点");
+    expect(annotationMutationCount, "测量完成不得写 Annotation API").toBe(0);
+
+    await page.getByRole("button", { name: "隐藏测量 1" }).click();
+    await expect(page.getByRole("button", { name: "显示测量 1" })).toBeVisible();
+    await page.getByRole("button", { name: "显示测量 1" }).click();
+    await expect(page.getByRole("button", { name: "隐藏测量 1" })).toBeVisible();
+    await page.getByRole("button", { name: "删除测量 1" }).click();
+    await expect(page.locator('[data-testid^="measurement-item-"]')).toHaveCount(0);
+    expect(annotationMutationCount, "测量显隐与删除不得写 Annotation API").toBe(0);
+
+    await page.mouse.click(hits[0].x, hits[0].y);
+    await page.mouse.click(hits[1].x, hits[1].y);
+    await page.getByRole("button", { name: "完成当前" }).click();
+    await expect(page.locator('[data-testid^="measurement-item-"]')).toHaveCount(1);
+
+    await page.getByText(/e2e-lidar-.*-1\.pcd/, { exact: true }).click();
+    await expect.poll(() => page.url()).toContain(secondTaskId);
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("three-d-tool-btn-select")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.keyboard.press("m");
+    await expect(page.locator('[data-testid^="measurement-item-"]')).toHaveCount(0);
+    await expect(page.getByTestId("measurement-draft")).toContainText("0 个锚点");
+    expect(annotationMutationCount, "切任务清理测量不得写 Annotation API").toBe(0);
+
+    await page.keyboard.press("v");
+    await expect(page.getByTestId("three-d-tool-btn-select")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("measurement-panel")).toHaveCount(0);
   });
 });

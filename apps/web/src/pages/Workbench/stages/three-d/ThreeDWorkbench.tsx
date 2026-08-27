@@ -60,6 +60,7 @@ import {
   type PointCloudScene,
   type PointMaskSelection,
   type SceneBox,
+  type SceneMeasurementPath,
   type ReferenceBox,
 } from "./PointCloudScene";
 import { usePointCloudScene } from "./usePointCloudScene";
@@ -94,6 +95,14 @@ import {
 } from "./rendering/cameraTextureResources";
 import { projectPoints } from "./geometry/projection";
 import type { ScreenPoint } from "./geometry/pointInPolygon";
+import {
+  formatMeasurementMeters,
+  MAX_MEASUREMENT_ANCHORS,
+  MAX_MEASUREMENT_PATHS,
+  summarizeMeasurement,
+  type MeasurementAnchor,
+  type MeasurementPath,
+} from "./geometry/measurement";
 import { fitSize, fitBottom, fitYaw, fitSizeAndBottom, psrFromPoints } from "./geometry/autofit";
 import {
   centralRay,
@@ -155,6 +164,12 @@ const LAYOUT_PRESET_GROUP =
   "flex items-center gap-1 max-w-full px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm pointer-events-auto";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
+const MEASUREMENT_PANEL =
+  "absolute top-3 right-3 z-local-4 flex w-[288px] max-h-[calc(100%-72px)] flex-col gap-2 overflow-auto rounded-md border border-border bg-card p-2.5 text-xs text-foreground shadow-sm";
+const MEASUREMENT_ROW =
+  "flex items-start justify-between gap-2 rounded-sm border border-border p-2";
+const MEASUREMENT_VALUE_GRID = "grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground";
+const MEASUREMENT_ACTIONS = "flex shrink-0 items-center gap-1";
 const ERR = "text-status-danger";
 const MISMATCH_BANNER =
   "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-local-4 flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
@@ -416,6 +431,9 @@ export function ThreeDWorkbench({
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
   const finishPointMaskPolygonRef = useRef<(subtract: boolean) => void>(() => undefined);
+  const [measurementDraft, setMeasurementDraft] = useState<MeasurementAnchor[]>([]);
+  const [completedMeasurements, setCompletedMeasurements] = useState<MeasurementPath[]>([]);
+  const measurementIdRef = useRef(0);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
   const { data: annotations } = useAnnotations(taskId ?? undefined);
@@ -494,6 +512,7 @@ export function ThreeDWorkbench({
   const canPlacePointMask = !readOnly && pointMaskClasses.length > 0;
   const placing = threeDTool === "box" && canPlaceBox;
   const pointMasking = threeDTool === "point-mask" && canPlacePointMask;
+  const measuring = threeDTool === "measure";
   const pointMaskPolygonMode = pointMasking && pointMaskSelectMode === "polygon";
   const pointMaskDragMode = pointMasking && pointMaskSelectMode !== "polygon";
   const drawingSelection = placing || pointMasking;
@@ -889,6 +908,25 @@ export function ThreeDWorkbench({
     // 依赖全为稳定 ref / setState / 纯函数 import,故空依赖。
   }, []);
 
+  const measurementScenePaths = useMemo<SceneMeasurementPath[]>(() => {
+    const completed = completedMeasurements
+      .filter((measurement) => measurement.visible)
+      .map((measurement) => ({
+        id: measurement.id,
+        positions: measurement.anchors.map((anchor) => anchor.position),
+        active: false,
+      }));
+    if (measurementDraft.length === 0) return completed;
+    return [
+      ...completed,
+      {
+        id: "measurement-draft",
+        positions: measurementDraft.map((anchor) => anchor.position),
+        active: true,
+      },
+    ];
+  }, [completedMeasurements, measurementDraft]);
+
   // Three.js 场景生命周期(实例化/销毁 · 偏好同步 · 点云加载 · 框图层 · gizmo 挂载 · W-E-R)。
   const {
     stats,
@@ -912,6 +950,7 @@ export function ThreeDWorkbench({
     continuityKey: manifest?.scene_id ?? taskId,
     axisConvention,
     boxes: sceneBoxes,
+    measurementPaths: measurementScenePaths,
     selectedId,
     selectedPsrEditable,
     pointcloudCamera,
@@ -958,6 +997,45 @@ export function ThreeDWorkbench({
     return () => window.removeEventListener("keydown", onKey);
   }, [readOnly, selectedId, onCrossFramePropagate, onCrossFramePropagateBatch, pushToast]);
 
+  const measurementDraftSummary = useMemo(
+    () => summarizeMeasurement(measurementDraft),
+    [measurementDraft],
+  );
+  const completeMeasurement = useCallback(() => {
+    if (measurementDraft.length < 2) {
+      pushToast({ msg: "至少选择两个点才能完成测量", kind: "" });
+      return;
+    }
+    if (completedMeasurements.length >= MAX_MEASUREMENT_PATHS) {
+      pushToast({ msg: `当前任务最多保留 ${MAX_MEASUREMENT_PATHS} 条测量`, kind: "" });
+      return;
+    }
+    measurementIdRef.current += 1;
+    setCompletedMeasurements((previous) => [
+      ...previous,
+      {
+        id: `measurement-${measurementIdRef.current}`,
+        anchors: measurementDraft,
+        visible: true,
+      },
+    ]);
+    setMeasurementDraft([]);
+  }, [completedMeasurements.length, measurementDraft, pushToast]);
+  const toggleMeasurementVisible = useCallback((measurementId: string) => {
+    setCompletedMeasurements((previous) =>
+      previous.map((measurement) =>
+        measurement.id === measurementId
+          ? { ...measurement, visible: !measurement.visible }
+          : measurement,
+      ),
+    );
+  }, []);
+  const deleteMeasurement = useCallback((measurementId: string) => {
+    setCompletedMeasurements((previous) =>
+      previous.filter((measurement) => measurement.id !== measurementId),
+    );
+  }, []);
+
   // 切任务回到选择工具，并让旧 task 的迟到创建响应失效。
   useEffect(() => {
     boxCreationRevisionRef.current += 1;
@@ -965,6 +1043,9 @@ export function ThreeDWorkbench({
     setBoxCreationSaving(false);
     setBoxCreationIssue(null);
     setSeedMode(false);
+    setMeasurementDraft([]);
+    setCompletedMeasurements([]);
+    measurementIdRef.current = 0;
     onSetThreeDTool("select");
     setPointCloudViewMode("orbit");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -985,6 +1066,11 @@ export function ThreeDWorkbench({
       selectedAnn?.geometry?.type !== "point_mask_3d"
     ) {
       onSelectBox(null);
+    } else if (threeDTool === "measure" && previous !== "measure") {
+      onSelectBox(null);
+    }
+    if (previous === "measure" && threeDTool !== "measure") {
+      setMeasurementDraft([]);
     }
   }, [threeDTool, selectedAnn?.geometry?.type, onSelectBox]);
 
@@ -1000,26 +1086,41 @@ export function ThreeDWorkbench({
     if (threeDTool === "box") onSetThreeDTool("select");
   }, [boxClasses.length, onSetThreeDTool, readOnly, seedMode, threeDTool]);
 
-  // B 进放置 / V / Esc 回选择(焦点在输入框时不拦截;无可用类别时 B 无效)。
+  // B/P/M 切工具；Enter 完成多边形或测量；V/Esc 回选择或取消当前测量草稿。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.key === "Enter" && pointMaskPolygonMode) {
+      if (e.key === "Enter" && measuring) {
+        e.preventDefault();
+        completeMeasurement();
+      } else if (e.key === "Enter" && pointMaskPolygonMode) {
         e.preventDefault();
         finishPointMaskPolygonRef.current(e.altKey);
+      } else if (e.key === "Escape" && measuring && measurementDraft.length > 0) {
+        setMeasurementDraft([]);
       } else if (e.key === "Escape" || e.key === "v" || e.key === "V") {
         setPointMaskPolygonPoints([]);
         setPointMaskCursor(null);
+        setMeasurementDraft([]);
         setSeedMode(false);
         setBoxCreationIssue(null);
         onSetThreeDTool("select");
       } else if ((e.key === "b" || e.key === "B") && canPlaceBox) onSetThreeDTool("box");
       else if ((e.key === "p" || e.key === "P") && canPlacePointMask) onSetThreeDTool("point-mask");
+      else if (e.key === "m" || e.key === "M") onSetThreeDTool("measure");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canPlaceBox, canPlacePointMask, onSetThreeDTool, pointMaskPolygonMode]);
+  }, [
+    canPlaceBox,
+    canPlacePointMask,
+    completeMeasurement,
+    measurementDraft.length,
+    measuring,
+    onSetThreeDTool,
+    pointMaskPolygonMode,
+  ]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -1685,6 +1786,32 @@ export function ThreeDWorkbench({
   };
 
   const handleViewportClick = (e: React.MouseEvent) => {
+    if (measuring) {
+      if (!(e.target instanceof HTMLCanvasElement) || e.detail !== 1) return;
+      if (sceneRef.current?.shouldIgnoreClick()) return;
+      const down = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
+      if (completedMeasurements.length >= MAX_MEASUREMENT_PATHS) {
+        pushToast({ msg: `当前任务最多保留 ${MAX_MEASUREMENT_PATHS} 条测量`, kind: "" });
+        return;
+      }
+      if (measurementDraft.length >= MAX_MEASUREMENT_ANCHORS) {
+        pushToast({ msg: `单条测量最多包含 ${MAX_MEASUREMENT_ANCHORS} 个锚点`, kind: "" });
+        return;
+      }
+      const hit = sceneRef.current?.pickPoint(e.clientX, e.clientY) ?? null;
+      if (!hit) {
+        pushToast({ msg: "未命中点云，请放大后重试", kind: "" });
+        return;
+      }
+      if (measurementDraft[measurementDraft.length - 1]?.pointIndex === hit.pointIndex) {
+        pushToast({ msg: "该点已经是当前路径的最后一个锚点", kind: "" });
+        return;
+      }
+      setMeasurementDraft((previous) => [...previous, hit]);
+      return;
+    }
     if (pointMaskPolygonMode) {
       const down = pointerDownRef.current;
       pointerDownRef.current = null;
@@ -1727,6 +1854,11 @@ export function ThreeDWorkbench({
   };
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (measuring) {
+      pointerDownRef.current = null;
+      closeContextMenu();
+      return;
+    }
     // 右键拖动 = OrbitControls 相机平移, 抑制菜单; 右键点击才弹(与 click 判定同阈值)。
     const down = pointerDownRef.current;
     pointerDownRef.current = null;
@@ -2574,7 +2706,7 @@ export function ThreeDWorkbench({
         <div
           ref={viewportRef}
           className={
-            drawingSelection
+            drawingSelection || measuring
               ? `${VIEWPORT} ${boxCreationSaving && placing ? CREATION_BLOCKED : PLACING}`
               : VIEWPORT
           }
@@ -2815,6 +2947,12 @@ export function ThreeDWorkbench({
           {threeDTool === "point-mask" && !canPlacePointMask && (
             <span className={ERR}>· 当前项目未启用 point_mask_3d 类别</span>
           )}
+          {measuring && (
+            <span data-testid="measurement-status">
+              · 测量 · 单击点云添加锚点 · Enter 完成 · Esc 取消草稿 · V 退出
+            </span>
+          )}
+          {completedMeasurements.length > 0 && <span>· {completedMeasurements.length} 条测量</span>}
           {selectedBox && (
             <span>
               · 选中 {selectedClass ?? ""} 中心 [
@@ -2827,6 +2965,117 @@ export function ThreeDWorkbench({
             </span>
           )}
         </div>
+
+        {measuring && (
+          <aside
+            className={MEASUREMENT_PANEL}
+            aria-label="点云测量"
+            data-testid="measurement-panel"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold">点云测量</div>
+                <div className="text-muted-foreground">结果仅保留在当前任务会话</div>
+              </div>
+              {completedMeasurements.length > 0 && (
+                <button
+                  type="button"
+                  className={RESET_BTN}
+                  onClick={() => setCompletedMeasurements([])}
+                >
+                  全部清除
+                </button>
+              )}
+            </div>
+
+            <div className={MEASUREMENT_ROW} data-testid="measurement-draft">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">当前测量 · {measurementDraft.length} 个锚点</div>
+                {measurementDraft.length === 0 ? (
+                  <div className="mt-1 text-muted-foreground">在主点云中依次单击真实点。</div>
+                ) : measurementDraft.length === 1 ? (
+                  <div className="mt-1 text-muted-foreground">继续选择第二个点以形成距离。</div>
+                ) : (
+                  <div className={`${MEASUREMENT_VALUE_GRID} mt-1`}>
+                    <span>三维总长</span>
+                    <span>{formatMeasurementMeters(measurementDraftSummary.distance3d)}</span>
+                    <span>水平总长</span>
+                    <span>
+                      {formatMeasurementMeters(measurementDraftSummary.horizontalDistance)}
+                    </span>
+                    <span>首尾高差</span>
+                    <span>
+                      {formatMeasurementMeters(measurementDraftSummary.elevationChange, true)}
+                    </span>
+                  </div>
+                )}
+                <div className="mt-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={measurementDraft.length < 2}
+                    onClick={completeMeasurement}
+                  >
+                    完成当前
+                  </button>
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={measurementDraft.length === 0}
+                    onClick={() => setMeasurementDraft([])}
+                  >
+                    取消草稿
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {completedMeasurements.map((measurement, index) => {
+              const summary = summarizeMeasurement(measurement.anchors);
+              return (
+                <div
+                  key={measurement.id}
+                  className={MEASUREMENT_ROW}
+                  data-testid={`measurement-item-${measurement.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      测量 {index + 1} · {summary.segmentCount} 段
+                    </div>
+                    <div className={`${MEASUREMENT_VALUE_GRID} mt-1`}>
+                      <span>三维总长</span>
+                      <span>{formatMeasurementMeters(summary.distance3d)}</span>
+                      <span>水平总长</span>
+                      <span>{formatMeasurementMeters(summary.horizontalDistance)}</span>
+                      <span>首尾高差</span>
+                      <span>{formatMeasurementMeters(summary.elevationChange, true)}</span>
+                    </div>
+                  </div>
+                  <div className={MEASUREMENT_ACTIONS}>
+                    <button
+                      type="button"
+                      className={ICON_BTN}
+                      aria-label={
+                        measurement.visible ? `隐藏测量 ${index + 1}` : `显示测量 ${index + 1}`
+                      }
+                      onClick={() => toggleMeasurementVisible(measurement.id)}
+                    >
+                      <Icon name={measurement.visible ? "eye" : "eyeOff"} size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className={ICON_BTN}
+                      aria-label={`删除测量 ${index + 1}`}
+                      onClick={() => deleteMeasurement(measurement.id)}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </aside>
+        )}
 
         {/* 选中框 PSR 数值编辑面板(右上;头部可拖动 + 渐进展开) */}
         {selectedBox && form && (

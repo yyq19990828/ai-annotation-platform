@@ -34,6 +34,7 @@ import {
 } from "./rendering/webgpuPointCloudLayer";
 import type { GpuCameraTextureSample } from "./rendering/cameraTextureColorNode";
 import type { ColorAdjust } from "./geometry/colorize";
+import type { MeasurementPosition } from "./geometry/measurement";
 import {
   POINT_CLOUD_RENDER_ALL,
   POINT_CLOUD_RENDER_MAIN,
@@ -105,6 +106,17 @@ export interface ReferenceBox {
   color: string;
   /** v0.15.17 · scope=all 下非选中 group 的框弱化显示(更低透明度)。 */
   dim?: boolean;
+}
+
+export interface SceneMeasurementPath {
+  id: string;
+  positions: readonly MeasurementPosition[];
+  active: boolean;
+}
+
+export interface PointCloudPick {
+  pointIndex: number;
+  position: MeasurementPosition;
 }
 
 /** v0.13.3 · TransformControls 拖拽结束时回传的 PSR(center/size/rotation)。 */
@@ -188,6 +200,9 @@ export class PointCloudScene {
   private referenceLayer = new THREE.Group();
   private referenceBoxes: THREE.LineSegments[] = [];
   private referenceBoxSignature = "";
+
+  // 会话态测量辅助层：只渲染主视图，不参与框拾取、标注、导出或三视图编辑。
+  private measurementLayer = new THREE.Group();
 
   // v0.15.18 · 邻帧点云叠加图层:各邻帧点云经 ego 补偿(对象矩阵)对齐到当前帧 ego 系,
   // 弱化单色 + 低透明,与当前帧点区分。切帧 / 关开关时整层重建并 dispose。
@@ -303,6 +318,7 @@ export class PointCloudScene {
     this.scene.add(this.boxLayer);
     this.scene.add(this.labelLayer);
     this.scene.add(this.referenceLayer);
+    this.scene.add(this.measurementLayer);
     this.scene.add(this.neighborLayer);
     this.initAxisGizmo();
 
@@ -904,6 +920,60 @@ export class PointCloudScene {
     this.invalidateMain("quality-ground-plane");
   }
 
+  setMeasurementPaths(paths: readonly SceneMeasurementPath[]): void {
+    this.clearMeasurementLayer();
+    for (const path of paths) {
+      if (path.positions.length === 0) continue;
+      const color = path.active ? 0xf59e0b : 0x38bdf8;
+      const points = path.positions.map((position) => new THREE.Vector3(...position));
+
+      const markerGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const markerMaterial = new THREE.PointsMaterial({
+        color,
+        depthTest: false,
+        depthWrite: false,
+        size: path.active ? 0.2 : 0.16,
+        sizeAttenuation: true,
+      });
+      const markers = new THREE.Points(markerGeometry, markerMaterial);
+      markers.name = `measurement-markers:${path.id}`;
+      markers.renderOrder = 40;
+      this.measurementLayer.add(markers);
+
+      if (points.length < 2) continue;
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: path.active ? 1 : 0.9,
+      });
+      const line = new THREE.Line(lineGeometry, lineMaterial);
+      line.name = `measurement-line:${path.id}`;
+      line.renderOrder = 39;
+      this.measurementLayer.add(line);
+    }
+    this.invalidateMain("measurement-paths");
+  }
+
+  private clearMeasurementLayer(): void {
+    for (const child of [...this.measurementLayer.children]) {
+      this.measurementLayer.remove(child);
+      const renderable = child as THREE.Object3D & {
+        geometry?: THREE.BufferGeometry;
+        material?: THREE.Material | THREE.Material[];
+      };
+      renderable.geometry?.dispose();
+      const materials = Array.isArray(renderable.material)
+        ? renderable.material
+        : renderable.material
+          ? [renderable.material]
+          : [];
+      materials.forEach((material) => material.dispose());
+    }
+  }
+
   setAxisGizmoVisible(visible: boolean) {
     if (visible === this.axisGizmoVisible) return;
     this.axisGizmoVisible = visible;
@@ -1377,6 +1447,53 @@ export class PointCloudScene {
     return typeof id === "string" ? id : null;
   }
 
+  /** 屏幕坐标严格命中最近的渲染点；未命中不回落地面或自由空间。 */
+  pickPoint(clientX: number, clientY: number): PointCloudPick | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const pointPickTarget =
+      this.pointRaycastObject ?? (this.points instanceof THREE.Points ? this.points : null);
+    if (!pointPickTarget) return null;
+
+    const previousThreshold = this.raycaster.params.Points?.threshold ?? 1;
+    this.raycaster.params.Points = {
+      ...(this.raycaster.params.Points ?? {}),
+      threshold: 0.3,
+    };
+    let hit: THREE.Intersection | undefined;
+    try {
+      hit = this.raycaster.intersectObject(pointPickTarget, false)[0];
+    } finally {
+      this.raycaster.params.Points = {
+        ...(this.raycaster.params.Points ?? {}),
+        threshold: previousThreshold,
+      };
+    }
+    if (
+      !hit ||
+      hit.index == null ||
+      !Number.isInteger(hit.index) ||
+      hit.index < 0 ||
+      hit.index >= this.renderedPointCount
+    ) {
+      return null;
+    }
+    const positionAttribute = pointPickTarget.geometry.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute;
+    const pointPosition = new THREE.Vector3().fromBufferAttribute(positionAttribute, hit.index);
+    pointPickTarget.updateMatrixWorld(true);
+    pointPosition.applyMatrix4(pointPickTarget.matrixWorld);
+    return {
+      pointIndex: hit.index * this.pointIndexStride,
+      position: [pointPosition.x, pointPosition.y, pointPosition.z],
+    };
+  }
+
   /** 保持当前观察方向 / up / 模式，把相机安全取景到指定框。 */
   focusBox(id: string): boolean {
     const group = this.boxGroups.get(id);
@@ -1420,24 +1537,8 @@ export class PointCloudScene {
     );
     this.raycaster.setFromCamera(ndc, this.camera);
 
-    // 优先打点云:Raycaster.params.Points.threshold 控制命中半径(米)。
-    // try/finally 保证即使 intersectObject 抛错,threshold 也还原,不污染后续 attachTransform
-    // 等其他 raycaster 用法。
-    const pointPickTarget = this.pointRaycastObject ?? this.points;
-    if (pointPickTarget) {
-      const prev = this.raycaster.params.Points?.threshold ?? 1;
-      this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: 0.3 };
-      let hits: THREE.Intersection[];
-      try {
-        hits = this.raycaster.intersectObject(pointPickTarget, false);
-      } finally {
-        this.raycaster.params.Points = { ...(this.raycaster.params.Points ?? {}), threshold: prev };
-      }
-      if (hits.length > 0) {
-        const p = hits[0].point;
-        return [p.x, p.y, p.z];
-      }
-    }
+    const pointHit = this.pickPoint(clientX, clientY);
+    if (pointHit) return pointHit.position;
 
     // Fallback:射线与 z=groundZ 水平面相交(空地点击 / 未载点云)。
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -this.groundZ);
@@ -1544,6 +1645,7 @@ export class PointCloudScene {
       (seg.material as THREE.Material).dispose();
     }
     this.referenceBoxes = [];
+    this.clearMeasurementLayer();
     // v0.15.18 · 邻帧点云图层:各自持有 geometry + material,全部 dispose。
     for (const pointLayer of this.neighborPoints) this.disposeNeighborPointLayer(pointLayer);
     this.neighborPoints = [];

@@ -1,7 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BoxPsr, PointCloudViewState, SceneBox } from "./PointCloudScene";
+import type {
+  BoxPsr,
+  PointCloudViewState,
+  SceneBox,
+  SceneMeasurementPath,
+} from "./PointCloudScene";
 
 const mockState = vi.hoisted(() => {
   const initialView = {
@@ -42,6 +47,7 @@ const mockState = vi.hoisted(() => {
     clearPointCloud = vi.fn();
     setPointCloudVisible = vi.fn();
     setBoxes = vi.fn();
+    setMeasurementPaths = vi.fn();
     attachTransform = vi.fn();
     detachTransform = vi.fn();
     setTransformMode = vi.fn();
@@ -389,6 +395,56 @@ describe("usePointCloudScene camera continuity", () => {
 
     finishFrame2({ totalPoints: 20, renderedPoints: 20, decimated: false, decimateStride: 1 });
     await waitFor(() => expect(render.result.current.loadedPointCloudUrl).toBe("frame-3.pcd"));
+  });
+
+  it("把会话态测量路径同步到场景，并响应隐藏或删除", async () => {
+    const container = document.createElement("div");
+    const sceneRef = { current: null };
+    let measurementPaths: SceneMeasurementPath[] = [
+      {
+        id: "measurement-1",
+        positions: [
+          [1, 2, 3],
+          [4, 6, 3],
+        ],
+        active: false,
+      },
+    ];
+    const render = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: container },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: undefined,
+        continuityKey: "scene-measurement",
+        axisConvention: "iso_8855",
+        boxes: [],
+        measurementPaths,
+        selectedId: null,
+        selectedPsrEditable: false,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => expect(mockState.instances).toHaveLength(1));
+    const scene = mockState.instances[0];
+    await waitFor(() =>
+      expect(scene.setMeasurementPaths).toHaveBeenLastCalledWith(measurementPaths),
+    );
+
+    measurementPaths = [];
+    render.rerender();
+    await waitFor(() => expect(scene.setMeasurementPaths).toHaveBeenLastCalledWith([]));
+    render.unmount();
   });
 
   it("WebGPU device lost 后熔断当前页面并用 Legacy renderer 重建场景", async () => {

@@ -26,6 +26,7 @@ import {
   type BoxPsr,
   type PointCloudStats,
   type PointCloudViewState,
+  type SceneMeasurementPath,
   type SceneBox,
 } from "./PointCloudScene";
 import type {
@@ -62,6 +63,8 @@ interface UsePointCloudSceneParams {
   axisConvention: LidarAxisConvention;
   /** 标注框 → 渲染输入(选中态 / 颜色 / 草稿覆盖已在壳层算好)。 */
   boxes: SceneBox[];
+  /** 会话态测量路径；只同步到主 scene 的辅助层。 */
+  measurementPaths?: SceneMeasurementPath[];
   selectedId: string | null;
   /** 选中且可编辑时才挂 gizmo / 接 W-E-R。 */
   selectedPsrEditable: boolean;
@@ -87,6 +90,7 @@ interface UsePointCloudSceneResult {
 }
 
 const RUNTIME_VIEW_TRANSFER_TTL_MS = 10_000;
+const EMPTY_MEASUREMENT_PATHS: SceneMeasurementPath[] = [];
 let pendingRuntimeViewTransfer: {
   continuityKey: string;
   view: PointCloudViewState;
@@ -125,6 +129,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     continuityKey,
     axisConvention,
     boxes,
+    measurementPaths = EMPTY_MEASUREMENT_PATHS,
     selectedId,
     selectedPsrEditable,
     pointcloudCamera,
@@ -382,6 +387,10 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   useEffect(() => {
     sceneRef.current?.setBoxes(boxes);
   }, [boxes, rendererReadyVersion, sceneRef]);
+
+  useEffect(() => {
+    sceneRef.current?.setMeasurementPaths(measurementPaths);
+  }, [measurementPaths, rendererReadyVersion, loadState.loadedPointCloudUrl, sceneRef]);
 
   // 选中框时挂变换 gizmo,取消选中时脱离；同一次 render 中 setBoxes effect 先执行。
   useEffect(() => {

@@ -147,6 +147,12 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
 
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`，由持久 Worker 解析 PCD、归一化轴向、抽稀并生成高度色；主透视视图与 Top / Side / Front 三正交视图使用同一个 renderer、canvas 和图形 context，通过 viewport / scissor 分 pass 绘制，并由事件驱动 scheduler 在状态稳定后停止提交。四视图共享点云 geometry 的 GPU attribute、backend、相机纹理和 device-lost 生命周期；不同相机仍各自执行一次 render pass。默认使用 Legacy WebGL2，设置中的本地实验开关可启用异步 WebGPU renderer、实例化点精灵和相机纹理直采样；切帧时旧实例立即归零，场景级实例缓冲与固定六路相机采样 TSL 拓扑继续复用，只更新点属性、纹理和标定 uniform。实验路径只生成 GPU 需要的 depth-only 遮挡栅格，并在 8 MiB / 8-key LRU 中与相邻帧预取合并，Legacy 和 WebGL2 fallback 不触发该预取。初始化失败或 device lost 会回退 Legacy。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 
+### 会话态测量 Overlay
+
+点云测量是前端辅助层，不是 `Annotation` 几何类型。`ThreeDWorkbench` 持有当前 task 的测量草稿与已完成路径；锚点由 `PointCloudScene.pickPoint` 严格射线命中当前渲染点后取得源点索引和 ISO 世界坐标，不回落到 `groundZ`、地面平面或自由空间。读数由纯函数累计各段三维距离与水平距离，首尾高差取末点 `z` 减首点 `z`。
+
+React 状态只经 `usePointCloudScene` 单向同步到 `PointCloudScene` 的 measurement layer。路径更新、隐藏、删除和 scene dispose 都会释放该层自有的 geometry/material，并仅触发主视图的事件驱动重绘。测量不调用 Annotation API，不进入 history、导出、审计或账号偏好；切换 task 会清空全部测量。只读任务仍可使用，因为该能力不产生持久化写入。
+
 开发 seed 的 nuScenes 导入器把每点五个 float 的 `.pcd.bin` 转为只保留 XYZ 的 little-endian binary PCD，并在 dataset source metadata 中记录 `pcd_encoding=binary_xyz_f32`。同时保留原始 `.pcd.bin`、相机图和 map，冻结 size / SHA-256 及 scene、sample、sample_data、sensor、calibrated_sensor、ego_pose、log 和 map 表上下文。对既有 Scene 重跑导入器时，只会在来源表上下文与原始字节指纹全部未漂移时幂等回填可信导出合同，并保留任务和标注；同名 Scene 指向不同源时直接拒绝。新数据集使用受保留的 Dataset UUID 对象前缀，普通上传无法写入该命名空间。nuScenes 预检在完整加载前对项目或批次限制 1000 帧、30000 个有效 3D 框，以及单帧/总 PCD 字节数和框内点计算预算。Scene 时间轴点击目标帧后会立即开始任务导航，PCD、相机位图及实验路径深度资源的预取在后台并行执行并由资产缓存去重；慢预取或预取失败不会阻塞导航。
 
 渲染链在 geometry 与相机颜色跨过实际绘制边界后写入 `aap:pointcloud:geometry-ready` 和
