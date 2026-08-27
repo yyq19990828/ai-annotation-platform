@@ -1,12 +1,16 @@
 # 持久化 2D / 3D 多模态对象计划草案
 
-> Status: trigger-gated research-draft
+> Status: partially superseded research-draft
 >
 > Implementation authorization: no
 >
 > Version: unassigned；本草案不占版本号
 >
 > Finalization: 实施前必须执行 [`backlog/README.md`](README.md) 的“转定稿门”并先批准数据真值 ADR
+>
+> Superseded scope: 相机 bbox 成员、sensor context、标定 revision、投影残差与 KITTI lineage
+> 已由 [`v0.24.15`](../2026-08-26-v0.24.15-persistent-multicamera-members.md) 实施。
+> 本草案只保留相机 polygon / mask 等尚未排期的后续研究边界。
 
 ## 1. 推荐结论
 
@@ -14,7 +18,11 @@
 
 人工 3D 与人工 2D 成员是并列真值。3D 实时投影只是关联证据，绝不自动覆盖人工 2D；人工 2D 编辑也不在欠约束情况下自动改 3D。冲突通过残差、issue 和用户决定解决。
 
-## 2. 当前基线快照
+## 2. 历史基线与当前差异
+
+以下条目记录草案形成时的历史基线，不能再作为当前实现说明。当前系统已经持久化相机 bbox
+成员，并以 SceneTrack、sensor context、标定 revision 和投影残差维护 2D / 3D 真值关系；
+后续转定稿只允许评估 polygon / mask 等未覆盖几何，不得重复建设 bbox 合同。
 
 - ADR-0033 明确当前相机 overlay 是由 `box_3d` 实时投影的只读可视化，不持久化 2D 结果。
 - 相机图种 3D 框当前只保存 `box_3d`，拖出的 2D 矩形是一次性提示。

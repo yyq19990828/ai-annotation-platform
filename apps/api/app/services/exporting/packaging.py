@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -29,14 +30,16 @@ from datetime import datetime, timezone
 from posixpath import splitext
 from typing import Any, AsyncIterator
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import DatasetItem
+from app.db.models.dataset import DatasetItem, Scene
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
+from app.db.models.scene_pose import SceneFramePose
 from app.schemas._jsonb_types import SensorCalibration
 from app.services.exporting.service import (
     ExportService,
@@ -46,9 +49,13 @@ from app.services.exporting.service import (
 from app.services.axis_convention import AxisFrame, R_NORM
 from app.services.exporting.lidar import (
     LidarCameraExportCtx,
+    LidarFrameExportCtx,
+    NuScenesSensorExportCtx,
+    build_nuscenes_frame_records,
     build_kitti_lidar_frame,
     build_pointmask_label_bytes,
     category_map_json,
+    count_lidar_points_in_boxes,
 )
 from app.services.exporting.lidar_preflight import calibration_is_valid
 from app.services.exporting.video import (
@@ -87,6 +94,7 @@ from app.services.mask_formats.image_export import (
     yolo_seg_lines_with_masks,
 )
 from app.services.raster_mask_storage import load_coco_rle
+from app.services.point_cloud_quality import parse_pcd_positions
 from app.config import settings
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
 from app.services.video_frame_service import derive_sampled_frames, derive_step
@@ -292,6 +300,104 @@ def main() -> int:
             print("[x] 下载失败 %s: %s" % (rel, exc))
             fail += 1
     print("[done] 点云回源 成功 %d，失败 %d，输出目录 velodyne/" % (ok, fail))
+    return 0 if fail == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+_FETCH_NUSCENES_MEDIA_TEMPLATE = '''#!/usr/bin/env python3
+"""Materialize the exact nuScenes source tree from media_manifest.json."""
+import hashlib
+import json
+import os
+import sys
+import tempfile
+import urllib.request
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def safe_destination(rel_path: str) -> str:
+    if (
+        not isinstance(rel_path, str)
+        or not rel_path
+        or "\\\\" in rel_path
+        or ":" in rel_path
+        or "\\0" in rel_path
+    ):
+        raise ValueError("unsafe media path")
+    parts = rel_path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("unsafe media path")
+    root = os.path.realpath(HERE)
+    destination = os.path.realpath(os.path.join(root, *parts))
+    if os.path.commonpath((root, destination)) != root or destination == root:
+        raise ValueError("unsafe media path")
+    return destination
+
+
+def file_matches(path: str, expected_size: int, expected_sha256: str) -> bool:
+    if not os.path.isfile(path) or os.path.getsize(path) != expected_size:
+        return False
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest() == expected_sha256
+
+
+def main() -> int:
+    with open(os.path.join(HERE, "media_manifest.json"), "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    expires_at = manifest.get("expires_at")
+    if expires_at and datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc):
+        print("[!] 媒体链接已过期，请回平台重新导出。")
+        return 2
+    ok = 0
+    fail = 0
+    for item in manifest.get("media", []):
+        rel_path = item.get("rel_path")
+        url = item.get("presigned_url")
+        if not rel_path or not url:
+            continue
+        temp_path = None
+        try:
+            expected_size = int(item["source_file_size"])
+            expected_sha256 = str(item["source_sha256"]).lower()
+            if (
+                expected_size < 0
+                or len(expected_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in expected_sha256)
+            ):
+                raise ValueError("invalid media fingerprint")
+            dest = safe_destination(rel_path)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if file_matches(dest, expected_size, expected_sha256):
+                ok += 1
+                continue
+            with tempfile.NamedTemporaryFile(
+                prefix=".aap-download-",
+                dir=os.path.dirname(dest),
+                delete=False,
+            ) as temp_file:
+                temp_path = temp_file.name
+            urllib.request.urlretrieve(url, temp_path)
+            if not file_matches(temp_path, expected_size, expected_sha256):
+                raise ValueError("downloaded media fingerprint mismatch")
+            os.replace(temp_path, dest)
+            temp_path = None
+            ok += 1
+        except Exception as exc:  # noqa: BLE001
+            print("[x] 下载失败 %s: %s" % (rel_path, exc))
+            fail += 1
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+    print("[done] nuScenes 媒体回源 成功 %d，失败 %d" % (ok, fail))
     return 0 if fail == 0 else 1
 
 
@@ -882,7 +988,54 @@ def _lidar_readme(target: str) -> str:
         )
     if target == "pointmask":
         return common + "\nPointmask labels are little-endian uint32 class ids.\n"
+    if target == "nuscenes":
+        return (
+            "AAP trusted nuScenes keyframe export\n\n"
+            "This package is compatible with the official nuscenes-devkit load/query "
+            "contract after running fetch_nuscenes_media.py. It is not an official "
+            "detection/tracking benchmark split and does not map project categories to "
+            "the official ontology. JSON tables live in v1.0-aap/; media keeps its exact "
+            "source-relative path. Presigned media links expire at the time recorded in "
+            "media_manifest.json.\n"
+        )
     return common
+
+
+def _read_dataset_object(key: str) -> bytes:
+    response = storage_service.client.get_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=key,
+    )
+    body = response["Body"]
+    try:
+        return body.read()
+    finally:
+        close = getattr(body, "close", None)
+        if close is not None:
+            close()
+
+
+def _nuscenes_media_entry(
+    *,
+    rel_path: str,
+    storage_key: str,
+    kind: str,
+    source_file_size: int,
+    source_sha256: str,
+    expires_iso: str,
+) -> dict[str, Any]:
+    return {
+        "rel_path": rel_path,
+        "kind": kind,
+        "source_file_size": source_file_size,
+        "source_sha256": source_sha256,
+        "presigned_url": storage_service.generate_download_url(
+            storage_key,
+            expires_in=PRESIGN_EXPIRES_SECONDS,
+            bucket=storage_service.datasets_bucket,
+        ),
+        "expires_at": expires_iso,
+    }
 
 
 async def _build_lidar_export_zip(
@@ -899,8 +1052,6 @@ async def _build_lidar_export_zip(
     for target in targets:
         if target not in LIDAR_EXPORT_TARGETS:
             raise UnsupportedExportError(f"unsupported lidar export target: {target}")
-    if "nuscenes" in targets:
-        raise UnsupportedExportError("nuscenes_export_not_trusted")
     lidar_options = format_options.get("lidar") or {}
     selected_camera_role = lidar_options.get("kitti_camera_role")
     if "kitti" in targets and not selected_camera_role:
@@ -919,6 +1070,8 @@ async def _build_lidar_export_zip(
     image_manifest_all: list[dict] = []
     image_manifest_selected: list[dict] = []
     pointcloud_manifest: list[dict] = []
+    nuscenes_frames: list[LidarFrameExportCtx] = []
+    nuscenes_media: dict[str, dict[str, Any]] = {}
     now = datetime.now(timezone.utc)
     expires_iso = datetime.fromtimestamp(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
@@ -952,6 +1105,33 @@ async def _build_lidar_export_zip(
                     camera_members_by_task.setdefault(member.task_id, []).append(member)
             links_by_task = await _load_lidar_link_items(svc, tasks)
             axis_by_task = await svc._axis_convention_by_task(tasks)
+            scenes_by_id: dict[uuid.UUID, Scene] = {}
+            poses_by_frame: dict[tuple[uuid.UUID, int], SceneFramePose] = {}
+            if "nuscenes" in targets:
+                scene_ids = {
+                    item.scene_id
+                    for item in dataset_items.values()
+                    if item.scene_id is not None
+                }
+                if scene_ids:
+                    scenes_by_id = {
+                        scene.id: scene
+                        for scene in (
+                            await svc.db.execute(
+                                select(Scene).where(Scene.id.in_(scene_ids))
+                            )
+                        ).scalars()
+                    }
+                    poses_by_frame = {
+                        (pose.scene_id, pose.frame_index): pose
+                        for pose in (
+                            await svc.db.execute(
+                                select(SceneFramePose).where(
+                                    SceneFramePose.scene_id.in_(scene_ids)
+                                )
+                            )
+                        ).scalars()
+                    }
             for task in tasks:
                 linked = links_by_task.get(task.id, {})
                 fallback_item = (
@@ -1030,6 +1210,127 @@ async def _build_lidar_export_zip(
                         }
                     )
                 anns = ann_by_task.get(task.id, [])
+                if "nuscenes" in targets:
+                    if (
+                        primary_item is None
+                        or primary_item.scene_id is None
+                        or primary_item.frame_index is None
+                    ):
+                        raise UnsupportedExportError(
+                            f"nuscenes_scene_frame_missing:{task.id}"
+                        )
+                    scene = scenes_by_id.get(primary_item.scene_id)
+                    pose = poses_by_frame.get(
+                        (primary_item.scene_id, primary_item.frame_index)
+                    )
+                    if scene is None or pose is None or pose.timestamp_us is None:
+                        raise UnsupportedExportError(
+                            f"nuscenes_frame_pose_missing:{task.id}"
+                        )
+                    source_primary = (primary_item.metadata_ or {}).get(
+                        "nuscenes_export"
+                    )
+                    if not isinstance(source_primary, dict):
+                        raise UnsupportedExportError(
+                            f"nuscenes_sensor_contract_missing:{task.id}"
+                        )
+                    sensor_items = {
+                        role: item for role, (_link, item) in linked.items()
+                    }
+                    sensor_items.setdefault("primary_lidar", primary_item)
+                    sensors: dict[str, NuScenesSensorExportCtx] = {}
+                    for role, item in sorted(sensor_items.items()):
+                        if role != "primary_lidar" and not role.startswith("camera_"):
+                            continue
+                        source = (item.metadata_ or {}).get("nuscenes_export")
+                        if not isinstance(source, dict):
+                            raise UnsupportedExportError(
+                                f"nuscenes_sensor_contract_missing:{task.id}:{role}"
+                            )
+                        sensors[role] = NuScenesSensorExportCtx(
+                            role=role,
+                            dataset_item_id=item.id,
+                            sample_data=dict(source["sample_data"]),
+                            calibrated_sensor=dict(source["calibrated_sensor"]),
+                            sensor=dict(source["sensor"]),
+                            ego_pose=dict(source["ego_pose"]),
+                            source_storage_key=str(source["source_storage_key"]),
+                        )
+                        rel_path = str(source["sample_data"]["filename"])
+                        entry = _nuscenes_media_entry(
+                            rel_path=rel_path,
+                            storage_key=str(source["source_storage_key"]),
+                            kind=str(source["sensor"]["modality"]),
+                            source_file_size=int(source["source_file_size"]),
+                            source_sha256=str(source["source_sha256"]),
+                            expires_iso=expires_iso,
+                        )
+                        previous = nuscenes_media.setdefault(rel_path, entry)
+                        if previous["source_sha256"] != entry["source_sha256"]:
+                            raise UnsupportedExportError(
+                                f"nuscenes_media_path_collision:{rel_path}"
+                            )
+                    scene_source = (scene.source_metadata or {}).get("nuscenes_export")
+                    if not isinstance(scene_source, dict):
+                        raise UnsupportedExportError(
+                            f"nuscenes_scene_contract_missing:{scene.id}"
+                        )
+                    map_rel = str(scene_source["map"]["filename"])
+                    map_entry = _nuscenes_media_entry(
+                        rel_path=map_rel,
+                        storage_key=str(scene_source["map_storage_key"]),
+                        kind="map",
+                        source_file_size=int(scene_source["map_file_size"]),
+                        source_sha256=str(scene_source["map_sha256"]),
+                        expires_iso=expires_iso,
+                    )
+                    previous_map = nuscenes_media.setdefault(map_rel, map_entry)
+                    if previous_map["source_sha256"] != map_entry["source_sha256"]:
+                        raise UnsupportedExportError(
+                            f"nuscenes_media_path_collision:{map_rel}"
+                        )
+                    axis_convention = axis_by_task.get(task.id)
+                    if axis_convention not in R_NORM:
+                        raise UnsupportedExportError(
+                            f"axis_convention_untrusted:{task.id}"
+                        )
+                    pcd_bytes = _read_dataset_object(primary_item.file_path)
+                    if (
+                        len(pcd_bytes) != primary_item.file_size
+                        or hashlib.sha256(pcd_bytes).hexdigest()
+                        != primary_item.content_hash
+                    ):
+                        raise UnsupportedExportError(
+                            f"nuscenes_platform_pcd_drift:{task.id}"
+                        )
+                    points = parse_pcd_positions(pcd_bytes)
+                    raw_lidar_points = int(source_primary["source_file_size"]) // 20
+                    if len(points) != raw_lidar_points:
+                        raise UnsupportedExportError(
+                            f"nuscenes_lidar_point_count_drift:{task.id}"
+                        )
+                    norm = np.asarray(
+                        R_NORM[axis_convention], dtype=np.float64
+                    ).reshape(3, 3)
+                    points_iso = np.asarray(points, dtype=np.float64) @ norm.T
+                    nuscenes_frames.append(
+                        LidarFrameExportCtx(
+                            task_id=task.id,
+                            frame_key=frame_key,
+                            annotations=anns,
+                            axis_convention=axis_convention,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            scene_source_metadata=dict(scene.source_metadata or {}),
+                            source_sample=dict(source_primary["sample"]),
+                            frame_index=primary_item.frame_index,
+                            timestamp_us=pose.timestamp_us,
+                            ego_translation=list(pose.ego_translation),
+                            ego_rotation=list(pose.ego_rotation),
+                            sensors=sensors,
+                            point_counts=count_lidar_points_in_boxes(points_iso, anns),
+                        )
+                    )
                 frame_count += 1
                 for target in targets:
                     prefix = f"{target}/" if multi else ""
@@ -1101,6 +1402,41 @@ async def _build_lidar_export_zip(
                     await svc.export_aap_json(project.id, batch_id=batch_id),
                 )
                 file_count += frame_count
+                continue
+            if target == "nuscenes":
+                records = build_nuscenes_frame_records(nuscenes_frames)
+                for table_name, rows in records.items():
+                    zf.writestr(
+                        f"{prefix}v1.0-aap/{table_name}.json",
+                        json.dumps(
+                            rows,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            allow_nan=False,
+                        ),
+                    )
+                zf.writestr(f"{prefix}README.txt", _lidar_readme(target))
+                zf.writestr(
+                    f"{prefix}media_manifest.json",
+                    json.dumps(
+                        {
+                            "contract": "nuscenes-devkit-load-query-keyframes-v1",
+                            "media": [
+                                nuscenes_media[path] for path in sorted(nuscenes_media)
+                            ],
+                            "expires_at": expires_iso,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+                zf.writestr(
+                    f"{prefix}fetch_nuscenes_media.py",
+                    _FETCH_NUSCENES_MEDIA_TEMPLATE,
+                )
+                file_count += len(nuscenes_frames)
                 continue
             zf.writestr(f"{prefix}README.txt", _lidar_readme(target))
             zf.writestr(

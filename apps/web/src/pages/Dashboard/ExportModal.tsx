@@ -134,9 +134,8 @@ const LIDAR_OPTIONS: TargetOption[] = [
   },
   {
     value: "nuscenes",
-    label: "nuScenes JSON（暂不可用）",
-    description: "真实 scene、timestamp 与 ego pose 合同完成后开放。",
-    disabled: true,
+    label: "nuScenes",
+    description: "官方 13 表 + 原始媒体清单，仅允许完整可信的 nuScenes Scene。",
   },
   {
     value: "pointmask",
@@ -318,7 +317,7 @@ function ExportForm({
   }, [scopeMode, selectedTaskId]);
 
   useEffect(() => {
-    if (!isLidarProject || !targets.includes("kitti")) {
+    if (!isLidarProject || (!targets.includes("kitti") && !targets.includes("nuscenes"))) {
       setLidarPreflight(null);
       setLidarPreflightLoading(false);
       return;
@@ -458,7 +457,7 @@ function ExportForm({
         if (!checked.ready) {
           pushToast({
             msg: "LiDAR 导出预检未通过",
-            sub: "请按问题清单补齐相机、标定或图像尺寸",
+            sub: "请按问题清单补齐来源、Scene、位姿、媒体或标定合同",
             kind: "warning",
           });
           return;
@@ -570,24 +569,28 @@ function ExportForm({
           )}
         </div>
       </div>
-      {isLidarProject && targets.includes("kitti") && (
+      {isLidarProject && (targets.includes("kitti") || targets.includes("nuscenes")) && (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
-          <label htmlFor="kitti-camera-role" className="text-xs font-semibold text-foreground">
-            KITTI 投影相机
-          </label>
-          <select
-            id="kitti-camera-role"
-            value={kittiCameraRole}
-            onChange={(event) => setKittiCameraRole(event.target.value)}
-            className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
-          >
-            <option value="">请选择相机通道</option>
-            {(lidarPreflight?.camera_roles ?? []).map((role) => (
-              <option key={role} value={role}>
-                {role.replace(/^camera_/, "")}
-              </option>
-            ))}
-          </select>
+          {targets.includes("kitti") && (
+            <>
+              <label htmlFor="kitti-camera-role" className="text-xs font-semibold text-foreground">
+                KITTI 投影相机
+              </label>
+              <select
+                id="kitti-camera-role"
+                value={kittiCameraRole}
+                onChange={(event) => setKittiCameraRole(event.target.value)}
+                className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+              >
+                <option value="">请选择相机通道</option>
+                {(lidarPreflight?.camera_roles ?? []).map((role) => (
+                  <option key={role} value={role}>
+                    {role.replace(/^camera_/, "")}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           {lidarPreflightLoading && (
             <div className="text-xs text-muted-foreground">正在核对全部点云帧…</div>
           )}
@@ -939,8 +942,10 @@ function ExportForm({
             !scopeValid ||
             preflight?.loss_class === "unsupported" ||
             (isLidarProject &&
-              targets.includes("kitti") &&
-              (!kittiCameraRole || lidarPreflightLoading || !lidarPreflight?.ready))
+              (targets.includes("kitti") || targets.includes("nuscenes")) &&
+              ((targets.includes("kitti") && !kittiCameraRole) ||
+                lidarPreflightLoading ||
+                !lidarPreflight?.ready))
           }
           onClick={handleExport}
           className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"

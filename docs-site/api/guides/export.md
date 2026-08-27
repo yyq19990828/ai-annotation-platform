@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-27
 ---
 
 # 导出
@@ -74,6 +74,7 @@ Segment 模式把 `selection` 改为
 | **mot**               | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号                                                 |
 | **kitti**             | KITTI Tracking 2D label 文本                                                                       |
 | **kitti（点云）**     | 所选相机的 KITTI `label_2`、真实 calibration 与可见性跳过报告                                      |
+| **nuscenes（点云）**  | 官方 13 表关键帧子集、原媒体 manifest 与回源脚本                                                   |
 | **pointmask**         | 点云逐点 little-endian uint32 类别标签                                                             |
 | **voc**               | Pascal VOC XML（仅同步单选）                                                                       |
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标）                                                       |
@@ -143,7 +144,7 @@ schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbenc
 
 KITTI 不消费 `axis_frame`。它会先按每帧数据集的 `axis_convention` 把平台 ISO 框反变换回源 LiDAR 坐标，再应用 `lidar.kitti_camera_role` 对应的真实内外参，固定输出 KITTI camera 坐标。缺轴约定、相机帧、标定或图像宽高均由预检阻止；不生成 identity calibration、`.unverified` 文件或负数 bbox。完全不可见对象进入 `export_report.json`。
 
-`targets=nuscenes` 当前固定返回 `nuscenes_export_not_trusted`，不会生成缺少真实 scene、timestamp 或 ego pose 的表集。
+`targets=nuscenes` 只接受由 nuScenes 导入器以 ego / ISO 模式保全的完整 Scene。项目或批次预检会校验原始 scene / sample / sensor / pose / map 合同、标定指纹、原始资产指纹和完整帧范围；任一不符时返回 409 且不创建导出任务。单次范围最多包含 1000 帧和 30000 个有效 3D 框，单帧 PCD 不超过 256 MiB、总 PCD 不超过 4 GiB，精确框内点测试不超过 1 亿次；超限同样在预检阶段拒绝。产物是官方 devkit 可加载/查询的关键帧子集，不代表官方 benchmark 兼容。为保证已签发包在链接有效期内仍可物化，删除 Dataset 不会立即删除其冻结的可信来源资产。
 
 ## 权限
 

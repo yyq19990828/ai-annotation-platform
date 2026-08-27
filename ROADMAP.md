@@ -38,7 +38,7 @@
   当前没有 NVIDIA、Intel/AMD 两类 GPU 的可用测试设备，跨厂商验证明确记为 `not tested`；它不阻塞
   本地性能与回退链路继续收口，但在硬件可用并完成验证前不得移除实验标记或默认启用。
 - Scene Track 已支持同帧 3D 主成员与按相机 role 区分的持久化人工 bbox，标定采用可追溯 revision，3D Quality 能冻结并治理投影残差，KITTI 优先使用所选相机的人工框。后续多模态几何扩展集中在相机 polygon / mask、跨相机批量复核和标定管理 UI。
-- LiDAR 导出仍缺完整 nuScenes table / pose / timestamp / token 链与多相机 COCO 派生 2D；这两项继续独立立项，不恢复任何占位真值。下一版优先补齐真实 nuScenes 场景与时间合同，再决定是否开放该导出目标。
+- nuScenes 已形成可信导出合同：只允许真实来源和完整 Scene，生成官方 13 表关键帧子集并以指纹 manifest 回源原始媒体。官方 benchmark ontology / split 映射与多相机 COCO 派生 2D 继续独立立项。
 
 ## 独立 Epic
 

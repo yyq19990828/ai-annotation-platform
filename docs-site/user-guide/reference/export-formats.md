@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-27
 ---
 
 # Mask 标注导入与数据导出格式
@@ -14,7 +14,7 @@ last_reviewed: 2026-08-13
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / Point Mask**。nuScenes 入口会显示为暂不可用，真实 scene、timestamp 与 ego pose 合同完成前不能入队。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes / Point Mask**。nuScenes 只允许来源真实且包含完整 Scene 的数据入队。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -44,6 +44,7 @@ last_reviewed: 2026-08-13
 | 视频轨迹     | KITTI Tracking     | `kitti`                       | KITTI 跟踪工具链                                                    |
 | **点云**     | AAP JSON           | `aap_json`                    | 点云跨实例无损迁移 / 备份（保留 3D 几何）                           |
 | 点云         | KITTI 3D           | `kitti`                       | KITTI 3D 检测训练前处理（KITTI camera 坐标）                        |
+| 点云         | nuScenes           | `nuscenes`                    | 官方 devkit 可加载的完整 Scene 关键帧表集                           |
 | 点云         | Point Mask         | `pointmask`                   | 逐点语义分割训练前处理                                              |
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
@@ -354,16 +355,17 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ## 点云标准训练格式
 
-`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源（点云回源脚本是 `fetch_pointclouds.py`，把点云拉到 `velodyne/`；图片回源脚本是 `fetch_images.py`，把图片拉到 `images/<camera>/`）。
+`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过预签名 URL 回源。
 
 | 目标       | 主要文件                                                                                            | 用途                                                           |
 | ---------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | KITTI 3D   | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json`、`export_report.json` | 3D 检测训练前处理，box 输出为所选 KITTI camera 坐标            |
+| nuScenes   | `v1.0-aap/*.json`、`media_manifest.json`、`fetch_nuscenes_media.py`                                 | 官方 13 表关键帧子集，原路径回源点云、相机图和地图             |
 | Point Mask | `segmentation/<frame>.label`、`category_map.json`                                                   | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
 
 KITTI 3D 必须在弹窗中显式选择一条相机通道。系统会逐任务核对主点云轴约定、所选相机图、内外参和真实宽高；任一缺口都会列出 task / frame / camera 并阻止创建后台任务。预检通过后，`label_2` 的 2D bbox 来自真实角点投影，`location` 是相机坐标下的 3D 框底面中心，`rotation_y`、`alpha` 与 `truncated` 也由同一投影计算。完全在相机后方或画面外的对象不会伪造 bbox，而会记录到 `export_report.json`。
 
-nuScenes 标准导出当前被严格禁用：API 返回 `nuscenes_export_not_trusted`，不会再生成带固定 scene token、零 timestamp 或单位 ego pose 的伪标准表集。
+nuScenes 会在入队前核对来源 scene / log / map、完整帧链、逐传感器时钟与位姿、标定指纹和原始资产指纹。批次截断 Scene、`--frame sensor`、历史数据未重跑导入器回填，或单次超过 1000 帧 / 30000 个有效 3D 框及 PCD / 精确点数统计资源预算时都会拒绝。解压后运行 `python fetch_nuscenes_media.py`，即可物化为官方 devkit 可加载和查询的 `v1.0-aap` 目录树。该产物不是官方 benchmark split，也不会自动把项目类别映射到官方 ontology。删除 Dataset 时会保留已冻结的可信来源资产，避免已签发包在链接有效期内无法回源。
 
 ### `axis_frame` 坐标系参数（`iso` | `source`）
 

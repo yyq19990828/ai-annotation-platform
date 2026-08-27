@@ -39,12 +39,15 @@
 
 可信 LiDAR 导出已收缩为 [LiDAR 可信导出 MVP](../2026-08-25-v0.24.9-lidar-trusted-export-mvp.md) 并转入实施；完整 nuScenes 与多相机 COCO 派生 2D 不在当前版本范围。
 
+[持久化多模态对象](2026-08-24-persistent-multimodal-object-draft.md) 的相机 bbox 主路径已由
+[`v0.24.15`](../2026-08-26-v0.24.15-persistent-multicamera-members.md) 实施；原草案标记为部分替代，
+只保留相机 polygon / mask 等未排期方向。
+
 ### 由合同或基线触发后再转定稿
 
 | 草案                                                                          | 触发后交付                           | 触发门                                    |
 | ----------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------- |
 | [点云空间流式加载](2026-08-24-pointcloud-spatial-streaming-draft.md)          | 视口 LOD、分块解码和稳定全局点 ID    | 三档固定数据集基准证明现链路不达标        |
-| [持久化多模态对象](2026-08-24-persistent-multimodal-object-draft.md)          | 人工 2D 与 3D 成员共享身份和审计关系 | 真值冲突与标定版本 ADR 获批               |
 | [3D AI 候选助手](2026-08-24-3d-ai-candidate-assistant-draft.md)               | 预览、调整、接受、拒绝的统一候选合同 | 本地算法验证后再开放远程模型协议          |
 | [地面、测量与几何辅助层](2026-08-24-3d-scene-aids-draft.md)                   | 不污染标注真值的场景理解 overlay     | 参数、缓存和持久化边界冻结                |
 | [Point Cloud Pen](2026-08-24-pointcloud-pen-draft.md)                         | 点选与笔刷共用一个点掩码工具         | 点索引稳定；若启用 tiling 则先完成全局 ID |

@@ -511,6 +511,15 @@ _DESCRIPTORS = [
         export_capability=_capability(True, verified=True, enabled_for_ui=True),
         option_schema={"frame_base": {"type": "integer", "enum": [0, 1], "default": 0}},
     ),
+    MaskFormatDescriptor(
+        format_id="nuscenes",
+        label="nuScenes",
+        adapter_version="2.0.0",
+        manifest_version="2",
+        media_types=frozenset({"lidar"}),
+        import_capability=_capability(False),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
     *[
         MaskFormatDescriptor(
             format_id=format_id,
@@ -531,7 +540,6 @@ _DESCRIPTORS = [
             ("yolo-frames-seg", "YOLO Frames Segmentation", {"video"}),
             ("mot", "MOT", {"video"}),
             ("kitti", "KITTI", {"video", "lidar"}),
-            ("nuscenes", "nuScenes", {"lidar"}),
             ("pointmask", "Point Mask", {"lidar"}),
         )
     ],

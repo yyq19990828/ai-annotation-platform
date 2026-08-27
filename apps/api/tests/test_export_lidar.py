@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -19,6 +20,8 @@ from app.schemas._jsonb_types import SensorCalibration
 from app.schemas.export import LidarExportOptions
 from app.services.exporting.lidar import (
     LidarCameraExportCtx,
+    LidarFrameExportCtx,
+    NuScenesSensorExportCtx,
     build_kitti_lidar_frame,
     build_kitti_lidar_label_lines,
     build_nuscenes_frame_records,
@@ -28,7 +31,11 @@ from app.services.exporting.lidar_preflight import (
     calibration_is_valid,
     preflight_lidar_export,
 )
-from app.services.exporting.packaging import build_export_zip, clean_export_targets
+from app.services.exporting.packaging import (
+    _FETCH_NUSCENES_MEDIA_TEMPLATE,
+    build_export_zip,
+    clean_export_targets,
+)
 from app.services.task_dataset_link import link_items
 from tests.factory import create_project
 
@@ -83,6 +90,63 @@ def _camera() -> LidarCameraExportCtx:
         width=200,
         height=120,
     )
+
+
+def test_nuscenes_fetch_script_rejects_unsafe_paths_and_verifies_downloads(
+    tmp_path,
+):
+    namespace = {
+        "__file__": str(tmp_path / "fetch_nuscenes_media.py"),
+        "__name__": "test",
+    }
+    exec(
+        compile(_FETCH_NUSCENES_MEDIA_TEMPLATE, "fetch_nuscenes_media.py", "exec"),
+        namespace,
+    )
+    namespace["HERE"] = str(tmp_path)
+
+    for unsafe_path in (
+        "../escape.bin",
+        r"..\escape.bin",
+        r"C:\escape.bin",
+        "//server/share.bin",
+        "samples//file.bin",
+        "samples/\0file.bin",
+    ):
+        with pytest.raises(ValueError, match="unsafe media path"):
+            namespace["safe_destination"](unsafe_path)
+
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"trusted-source")
+    manifest_path = tmp_path / "media_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "media": [
+                    {
+                        "rel_path": "samples/LIDAR_TOP/source.bin",
+                        "presigned_url": source.as_uri(),
+                        "source_file_size": source.stat().st_size,
+                        "source_sha256": hashlib.sha256(
+                            source.read_bytes()
+                        ).hexdigest(),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert namespace["main"]() == 0
+    destination = tmp_path / "samples" / "LIDAR_TOP" / "source.bin"
+    assert destination.read_bytes() == b"trusted-source"
+
+    destination.write_bytes(b"corrupt")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["media"][0]["source_sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert namespace["main"]() == 1
+    assert destination.read_bytes() == b"corrupt"
+    assert list(destination.parent.glob(".aap-download-*")) == []
 
 
 def test_kitti_lidar_label_projects_bbox_and_camera_bottom_center():
@@ -247,8 +311,134 @@ def test_pointmask_builds_uint32_labels_with_one_based_category_ids():
 
 
 def test_nuscenes_serializer_refuses_placeholder_output():
-    with pytest.raises(ValueError, match="nuscenes_export_not_trusted"):
+    with pytest.raises(ValueError, match="nuscenes_export_empty"):
         build_nuscenes_frame_records([])
+
+
+def test_nuscenes_serializer_builds_complete_deterministic_scene_graph():
+    scene_id = uuid.uuid4()
+    annotations = [_ann(track_id="vehicle-1"), _ann(track_id="vehicle-1")]
+    source_scene = {
+        "nuscenes_export": {
+            "scene": {
+                "token": "source-scene",
+                "name": "scene-0001",
+                "description": "test",
+                "log_token": "source-log",
+                "nbr_samples": 2,
+                "first_sample_token": "source-sample-0",
+                "last_sample_token": "source-sample-1",
+            },
+            "log": {
+                "token": "source-log",
+                "logfile": "logfile",
+                "vehicle": "vehicle",
+                "date_captured": "2026-08-27",
+                "location": "test-track",
+            },
+            "map": {
+                "token": "source-map",
+                "log_tokens": ["source-log"],
+                "category": "semantic_prior",
+                "filename": "maps/source-map.png",
+            },
+        }
+    }
+    frames: list[LidarFrameExportCtx] = []
+    for index, annotation in enumerate(annotations):
+        source_sample = {
+            "token": f"source-sample-{index}",
+            "timestamp": 1_000_000 + index * 100_000,
+            "scene_token": "source-scene",
+            "prev": "source-sample-0" if index else "",
+            "next": "source-sample-1" if index == 0 else "",
+        }
+        sensor = {
+            "token": "source-sensor",
+            "channel": "LIDAR_TOP",
+            "modality": "lidar",
+        }
+        calibrated = {
+            "token": "source-calibrated",
+            "sensor_token": "source-sensor",
+            "translation": [0, 0, 0],
+            "rotation": [1, 0, 0, 0],
+            "camera_intrinsic": [],
+        }
+        ego_pose = {
+            "token": f"source-ego-{index}",
+            "translation": [float(index), 0, 0],
+            "rotation": [1, 0, 0, 0],
+            "timestamp": 1_000_010 + index * 100_000,
+        }
+        sample_data = {
+            "token": f"source-sd-{index}",
+            "sample_token": source_sample["token"],
+            "ego_pose_token": ego_pose["token"],
+            "calibrated_sensor_token": calibrated["token"],
+            "filename": f"samples/LIDAR_TOP/{index}.pcd.bin",
+            "fileformat": "bin",
+            "width": 0,
+            "height": 0,
+            "timestamp": ego_pose["timestamp"],
+            "is_key_frame": True,
+        }
+        frames.append(
+            LidarFrameExportCtx(
+                task_id=annotation.task_id,
+                frame_key=str(index),
+                annotations=[annotation],
+                axis_convention="iso_8855",
+                scene_id=scene_id,
+                scene_name="scene-0001",
+                scene_source_metadata=source_scene,
+                source_sample=source_sample,
+                frame_index=index,
+                timestamp_us=ego_pose["timestamp"],
+                ego_translation=ego_pose["translation"],
+                ego_rotation=ego_pose["rotation"],
+                sensors={
+                    "primary_lidar": NuScenesSensorExportCtx(
+                        role="primary_lidar",
+                        dataset_item_id=uuid.uuid4(),
+                        sample_data=sample_data,
+                        calibrated_sensor=calibrated,
+                        sensor=sensor,
+                        ego_pose=ego_pose,
+                        source_storage_key=f"source/{index}.pcd.bin",
+                    )
+                },
+                point_counts={annotation.id: index + 1},
+            )
+        )
+
+    first = build_nuscenes_frame_records(list(reversed(frames)))
+    second = build_nuscenes_frame_records(frames)
+
+    assert first == second
+    assert set(first) == {
+        "attribute",
+        "calibrated_sensor",
+        "category",
+        "ego_pose",
+        "instance",
+        "log",
+        "map",
+        "sample",
+        "sample_annotation",
+        "sample_data",
+        "scene",
+        "sensor",
+        "visibility",
+    }
+    assert [row["timestamp"] for row in first["sample"]] == [1_000_000, 1_100_000]
+    assert first["scene"][0]["nbr_samples"] == 2
+    assert first["instance"][0]["nbr_annotations"] == 2
+    exported_annotations = sorted(
+        first["sample_annotation"], key=lambda row: row["num_lidar_pts"]
+    )
+    assert exported_annotations[0]["size"] == [2.0, 4.0, 1.5]
+    assert exported_annotations[1]["translation"] == [11.0, 0.0, 0.0]
 
 
 def test_lidar_preflight_rejects_non_rigid_or_negative_focal_calibration():
@@ -433,6 +623,7 @@ async def test_lidar_export_zip_writes_standard_targets(
         file_name="000001.pcd",
         file_path="scene-a/lidar/000001.pcd",
         file_type="point_cloud",
+        file_size=48,
         metadata_={"point_count": 4},
     )
     cam_item = DatasetItem(
@@ -507,6 +698,72 @@ async def test_lidar_export_zip_writes_standard_targets(
     )
     await db_session.flush()
 
+    with monkeypatch.context() as scope_patch:
+        scope_patch.setattr(
+            "app.services.exporting.lidar_preflight.MAX_NUSCENES_EXPORT_FRAMES",
+            0,
+        )
+        oversized_frames = await preflight_lidar_export(
+            db_session,
+            project_id=project.id,
+            batch_id=None,
+            targets=["nuscenes"],
+            options=None,
+        )
+    assert oversized_frames.checked_tasks == 1
+    assert [issue.code for issue in oversized_frames.issues] == [
+        "nuscenes_export_too_large"
+    ]
+
+    with monkeypatch.context() as scope_patch:
+        scope_patch.setattr(
+            "app.services.exporting.lidar_preflight.MAX_NUSCENES_EXPORT_BOXES",
+            0,
+        )
+        oversized_boxes = await preflight_lidar_export(
+            db_session,
+            project_id=project.id,
+            batch_id=None,
+            targets=["nuscenes"],
+            options=None,
+        )
+    assert oversized_boxes.checked_tasks == 1
+    assert [issue.code for issue in oversized_boxes.issues] == [
+        "nuscenes_export_too_large"
+    ]
+
+    with monkeypatch.context() as scope_patch:
+        scope_patch.setattr(
+            "app.services.exporting.lidar_preflight.MAX_NUSCENES_POINT_BOX_TESTS",
+            0,
+        )
+        oversized_point_work = await preflight_lidar_export(
+            db_session,
+            project_id=project.id,
+            batch_id=None,
+            targets=["nuscenes"],
+            options=None,
+        )
+    assert "nuscenes_export_too_large" in {
+        issue.code for issue in oversized_point_work.issues
+    }
+
+    with monkeypatch.context() as scope_patch:
+        scope_patch.setattr(
+            "app.services.exporting.lidar_preflight.MAX_NUSCENES_PCD_BYTES_TOTAL",
+            0,
+        )
+        oversized_pcd_bytes = await preflight_lidar_export(
+            db_session,
+            project_id=project.id,
+            batch_id=None,
+            targets=["nuscenes"],
+            options=None,
+        )
+    assert "nuscenes_export_too_large" in {
+        issue.code for issue in oversized_pcd_bytes.issues
+    }
+
     zip_path, file_count, _size = await build_export_zip(
         db_session,
         project.id,
@@ -546,7 +803,7 @@ async def test_lidar_export_zip_writes_standard_targets(
     finally:
         os.unlink(zip_path)
 
-    with pytest.raises(ValueError, match="nuscenes_export_not_trusted"):
+    with pytest.raises(ValueError, match="nuscenes_scene_frame_missing"):
         await build_export_zip(
             db_session,
             project.id,

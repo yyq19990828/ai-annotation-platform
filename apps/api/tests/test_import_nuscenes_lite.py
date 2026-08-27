@@ -13,7 +13,10 @@ from __future__ import annotations
 import io
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
+import zipfile
 
 import numpy as np
 import pytest
@@ -22,9 +25,24 @@ from sqlalchemy import select
 
 from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.project import Project
+from app.db.models.scene_pose import SceneFramePose
+from app.db.models.task_batch import TaskBatch
 from app.services import scene as scene_svc
+from app.services.exporting.packaging import build_export_zip
+from app.services.exporting.lidar_preflight import preflight_lidar_export
 from app.services.storage import storage_service
-from scripts.import_nuscenes_scene import _derived_display_id, import_nuscenes
+from app.workers.export import _nuscenes_scope_digest
+from scripts.import_nuscenes_scene import (
+    _derived_display_id,
+    _lidar_bin_to_binary_pcd,
+    _load_table,
+    _ordered_samples,
+    _quat_wxyz_to_rot,
+    _resolve_source_path,
+    _safe_source_path,
+    _transform,
+    import_nuscenes,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,18 +62,161 @@ async def test_derived_display_id_keeps_short_names_and_bounds_long_names():
     assert project_display_id == _derived_display_id("P-NU-", long_name)
 
 
+async def test_nuscenes_source_resolution_rejects_symlink_escape(tmp_path):
+    root = tmp_path / "nuscenes"
+    root.mkdir()
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"private")
+    (root / "escape.bin").symlink_to(outside)
+
+    with pytest.raises(ValueError, match="escapes its root"):
+        _resolve_source_path(root, "escape.bin")
+
+    meta_dir = root / "v1.0-mini"
+    meta_dir.mkdir()
+    (meta_dir / "scene.json").symlink_to(outside)
+    with pytest.raises(ValueError, match="metadata table escapes its root"):
+        _load_table(meta_dir, "scene")
+
+
+async def test_nuscenes_sample_chain_and_quaternion_reject_malformed_values():
+    cyclic = {
+        "token": "sample-0",
+        "next": "sample-0",
+    }
+    with pytest.raises(ValueError, match="contains a cycle"):
+        _ordered_samples(
+            {"first_sample_token": "sample-0", "nbr_samples": 1},
+            {"sample-0": cyclic},
+        )
+    with pytest.raises(ValueError, match="quaternion is invalid"):
+        _quat_wxyz_to_rot([0.0, 0.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="quaternion is invalid"):
+        _quat_wxyz_to_rot([1e308, 1e308, 1e308, 1e308])
+
+
+async def test_nuscenes_lidar_rejects_float32_overflow_after_transform(tmp_path):
+    lidar_path = tmp_path / "lidar.pcd.bin"
+    np.array([1.0, 2.0, 3.0, 0.5, 0.0], dtype=np.float32).tofile(lidar_path)
+    transform = _transform(_IDENTITY_QUAT, [1e308, 0.0, 0.0])
+    with pytest.raises(ValueError, match="non-finite points"):
+        _lidar_bin_to_binary_pcd(lidar_path, transform=transform)
+
+
+async def test_same_named_datasets_use_distinct_storage_roots(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=1)
+    fake_client = _FakeS3Client()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+
+    first = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="same-display-name",
+        dataset_display_id="DS-NU-SAME-A",
+        project_display_id="P-NU-SAME-A",
+        owner_id=user.id,
+    )
+    second = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="same-display-name",
+        dataset_display_id="DS-NU-SAME-B",
+        project_display_id="P-NU-SAME-B",
+        owner_id=user.id,
+    )
+    datasets = [
+        await db_session.get(Dataset, result["dataset_id"])
+        for result in (first, second)
+    ]
+    storage_roots = {
+        dataset.metadata_["source"]["storage_root"] for dataset in datasets
+    }
+    assert len(storage_roots) == 2
+    for dataset in datasets:
+        root_prefix = f"{dataset.metadata_['source']['storage_root']}/"
+        item_paths = list(
+            (
+                await db_session.execute(
+                    select(DatasetItem.file_path).where(
+                        DatasetItem.dataset_id == dataset.id
+                    )
+                )
+            ).scalars()
+        )
+        assert item_paths
+        assert all(path.startswith(root_prefix) for path in item_paths)
+
+    first_dataset = datasets[0]
+    original_metadata = first_dataset.metadata_
+    first_dataset.metadata_ = {
+        **original_metadata,
+        "source": {
+            **original_metadata["source"],
+            "storage_root": datasets[1].metadata_["source"]["storage_root"],
+        },
+    }
+    await db_session.flush()
+    objects_before = dict(fake_client.objects)
+    with pytest.raises(ValueError, match="storage_root does not match its UUID"):
+        await import_nuscenes(
+            db_session,
+            nuscenes_root=root,
+            scene_names=["scene-0000"],
+            dataset_name="same-display-name",
+            dataset_display_id="DS-NU-SAME-A",
+            project_display_id="P-NU-SAME-A",
+            owner_id=user.id,
+        )
+    assert fake_client.objects == objects_before
+    first_dataset.metadata_ = original_metadata
+    await db_session.flush()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "../escape.pcd.bin",
+        r"..\escape.pcd.bin",
+        "C:/escape.pcd.bin",
+        r"\\server\share\escape.pcd.bin",
+        "samples//escape.pcd.bin",
+        "samples/./escape.pcd.bin",
+    ],
+)
+async def test_safe_source_path_rejects_cross_platform_escape(filename):
+    with pytest.raises(ValueError, match="source filename is unsafe"):
+        _safe_source_path(filename)
+
+
 # --------------------------------------------------------------------------- #
 # fake S3:put_object 存 dict,get_object 读回(attach_calibration 要读 calib)
 # --------------------------------------------------------------------------- #
 class _FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
+        self.metadata: dict[tuple[str, str], dict[str, str]] = {}
 
-    def put_object(self, *, Bucket, Key, Body, ContentType=None):  # noqa: N803
+    def put_object(  # noqa: N803
+        self, *, Bucket, Key, Body, ContentType=None, Metadata=None
+    ):
         self.objects[(Bucket, Key)] = bytes(Body)
+        self.metadata[(Bucket, Key)] = dict(Metadata or {})
 
     def get_object(self, *, Bucket, Key):  # noqa: N803
         return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
+
+    def head_object(self, *, Bucket, Key):  # noqa: N803
+        payload = self.objects[(Bucket, Key)]
+        return {
+            "ContentLength": len(payload),
+            "Metadata": self.metadata[(Bucket, Key)],
+        }
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +270,23 @@ def _write_fake_nuscenes(
     sample_tbl: list[dict] = []
     sample_data_tbl: list[dict] = []
     ego_pose_tbl: list[dict] = []
+    log_tbl = [
+        {
+            "token": "log-0",
+            "logfile": "n015-2018-07-11-11-54-16+0800",
+            "vehicle": "n015",
+            "date_captured": "2018-07-11",
+            "location": "singapore-onenorth",
+        }
+    ]
+    map_tbl = [
+        {
+            "token": "map-0",
+            "log_tokens": ["log-0"],
+            "category": "semantic_prior",
+            "filename": "maps/map-0.png",
+        }
+    ]
 
     # 造极小 lidar bin(3 点,每点 5 float)+ 1x1 jpg
     lidar_dir = root / "samples" / "LIDAR_TOP"
@@ -123,6 +301,9 @@ def _write_fake_nuscenes(
     ).tofile(str(pcd_bin))
     jpg_path = cam_dir / "cam.jpg"
     Image.new("RGB", (1, 1)).save(str(jpg_path), format="JPEG")
+    map_path = root / "maps" / "map-0.png"
+    map_path.parent.mkdir(parents=True)
+    Image.new("L", (2, 2)).save(str(map_path), format="PNG")
 
     for s_i in range(scenes):
         sample_tokens = [f"sample-{s_i}-{i}" for i in range(samples_per)]
@@ -208,6 +389,8 @@ def _write_fake_nuscenes(
         ("calibrated_sensor", calibrated_sensor),
         ("sensor", sensor),
         ("ego_pose", ego_pose_tbl),
+        ("log", log_tbl),
+        ("map", map_tbl),
     ]:
         (meta / f"{name}.json").write_text(json.dumps(rows), encoding="utf-8")
 
@@ -247,6 +430,8 @@ async def test_import_nuscenes_two_scenes(
         "version": "v1.0-mini",
         "scenes": ["scene-0000", "scene-0001"],
         "pcd_encoding": "binary_xyz_f32",
+        "storage_root": f"__aap_trusted_nuscenes__-{dataset.id.hex}",
+        "storage_layout": "uuid_v1",
     }
     assert project.display_id == "P-PC-TEST"
     assert project.name == "nuScenes test seed"
@@ -263,6 +448,23 @@ async def test_import_nuscenes_two_scenes(
     camera_items = [item for item in items if item.file_type == "image"]
     assert camera_items
     assert all((item.width, item.height) == (1, 1) for item in camera_items)
+    assert all(
+        item.metadata_["nuscenes_export"]["sample_data"]["sample_token"]
+        for item in camera_items
+    )
+    assert all(
+        item.metadata_["nuscenes_export"]["sample"]["scene_token"]
+        for item in camera_items
+    )
+    assert all(
+        len(item.metadata_["nuscenes_export"]["source_sha256"]) == 64
+        and item.metadata_["nuscenes_export"]["source_file_size"] > 0
+        for item in camera_items
+    )
+    assert all(
+        item.metadata_["nuscenes_export"]["platform_calibration_digest"]
+        for item in camera_items
+    )
 
     # 2. DB 里 2 个 Scene 行,name 对应
     scenes = (
@@ -275,6 +477,17 @@ async def test_import_nuscenes_two_scenes(
         .all()
     )
     assert [s.name for s in scenes] == ["scene-0000", "scene-0001"]
+    assert all(
+        s.source_metadata["nuscenes_export"]["log"]["token"] == "log-0" for s in scenes
+    )
+    assert all(
+        s.source_metadata["nuscenes_export"]["map"]["token"] == "map-0" for s in scenes
+    )
+    assert all(
+        len(s.source_metadata["nuscenes_export"]["map_sha256"]) == 64
+        and s.source_metadata["nuscenes_export"]["map_file_size"] > 0
+        for s in scenes
+    )
 
     # 3. 每个 scene 的 lidar items frame_index = 0/1/2,scene_id 正确
     for scene in scenes:
@@ -334,6 +547,162 @@ async def test_import_nuscenes_two_scenes(
     assert neighbors.next == []  # 不串到 scene B 首帧
     assert len(neighbors.prev) == 1
     assert neighbors.prev[0].frame_index == 1
+
+    preflight = await preflight_lidar_export(
+        db_session,
+        project_id=project.id,
+        batch_id=None,
+        targets=["nuscenes"],
+        options=None,
+    )
+    assert preflight.ready is True
+    assert preflight.checked_tasks == 6
+    assert preflight.issues == []
+
+    first_camera = camera_items[0]
+    original_camera_metadata = first_camera.metadata_
+    invalid_source = dict(original_camera_metadata["nuscenes_export"])
+    invalid_source["source_sha256"] = "z" * 64
+    first_camera.metadata_ = {
+        **original_camera_metadata,
+        "nuscenes_export": invalid_source,
+    }
+    await db_session.flush()
+    invalid_sha_preflight = await preflight_lidar_export(
+        db_session,
+        project_id=project.id,
+        batch_id=None,
+        targets=["nuscenes"],
+        options=None,
+    )
+    assert "nuscenes_source_asset_contract_missing" in {
+        issue.code for issue in invalid_sha_preflight.issues
+    }
+    first_camera.metadata_ = original_camera_metadata
+    await db_session.flush()
+
+    digest_before_pose_change = await _nuscenes_scope_digest(
+        db_session, project.id, None
+    )
+    first_pose = (
+        await db_session.execute(
+            select(SceneFramePose)
+            .where(SceneFramePose.scene_id == scene_a.id)
+            .order_by(SceneFramePose.frame_index)
+            .limit(1)
+        )
+    ).scalar_one()
+    original_translation = list(first_pose.ego_translation)
+    first_pose.ego_translation = [
+        original_translation[0] + 1.0,
+        *original_translation[1:],
+    ]
+    await db_session.flush()
+    assert (
+        await _nuscenes_scope_digest(db_session, project.id, None)
+        != digest_before_pose_change
+    )
+    first_pose.ego_translation = original_translation
+    await db_session.flush()
+    assert (
+        await _nuscenes_scope_digest(db_session, project.id, None)
+        == digest_before_pose_change
+    )
+
+    partial_batch = TaskBatch(
+        project_id=project.id,
+        dataset_id=dataset_id,
+        display_id="B-NU-PARTIAL",
+        name="partial scene",
+        created_by=user.id,
+    )
+    db_session.add(partial_batch)
+    await db_session.flush()
+    partial_tasks = list(
+        (
+            await db_session.execute(
+                select(Task)
+                .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+                .where(DatasetItem.scene_id == scene_a.id)
+                .order_by(DatasetItem.frame_index)
+                .limit(2)
+            )
+        ).scalars()
+    )
+    for task in partial_tasks:
+        task.batch_id = partial_batch.id
+    await db_session.flush()
+    partial_preflight = await preflight_lidar_export(
+        db_session,
+        project_id=project.id,
+        batch_id=partial_batch.id,
+        targets=["nuscenes"],
+        options=None,
+    )
+    assert partial_preflight.ready is False
+    assert "nuscenes_scene_incomplete" in {
+        issue.code for issue in partial_preflight.issues
+    }
+
+    monkeypatch.setattr(
+        storage_service,
+        "generate_download_url",
+        lambda key, **_kwargs: f"https://example.invalid/{key}",
+    )
+    zip_path, file_count, _size = await build_export_zip(
+        db_session,
+        project.id,
+        batch_id=None,
+        targets=["nuscenes"],
+        include_attributes=True,
+        video_frame_mode="keyframes",
+    )
+    materialized = tmp_path / "devkit-tree"
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extractall(materialized)
+            assert {
+                f"v1.0-aap/{name}.json"
+                for name in (
+                    "attribute",
+                    "calibrated_sensor",
+                    "category",
+                    "ego_pose",
+                    "instance",
+                    "log",
+                    "map",
+                    "sample",
+                    "sample_annotation",
+                    "sample_data",
+                    "scene",
+                    "sensor",
+                    "visibility",
+                )
+            }.issubset(archive.namelist())
+            assert file_count == 6
+        manifest = json.loads((materialized / "media_manifest.json").read_text())
+        for media in manifest["media"]:
+            source = root / media["rel_path"]
+            destination = materialized / media["rel_path"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+        from nuscenes.nuscenes import NuScenes
+        from nuscenes.utils.data_classes import LidarPointCloud
+
+        devkit = NuScenes(
+            version="v1.0-aap",
+            dataroot=str(materialized),
+            verbose=False,
+        )
+        assert len(devkit.scene) == 2
+        assert len(devkit.sample) == 6
+        first_sample = devkit.get("sample", devkit.scene[0]["first_sample_token"])
+        lidar_token = first_sample["data"]["LIDAR_TOP"]
+        lidar_path = devkit.get_sample_data_path(lidar_token)
+        assert LidarPointCloud.from_file(lidar_path).points.shape[0] == 4
+    finally:
+        os.unlink(zip_path)
 
 
 async def test_backfill_frame_poses_restores_deleted_rows(
@@ -498,19 +867,20 @@ async def test_import_nuscenes_frame_modes_axis_and_points(
     assert ego_dataset.metadata_["axis_convention"] == "iso_8855"
     assert sensor_dataset.metadata_["axis_convention"] == "apollo"
 
-    def first_point(dataset_name: str) -> tuple[float, float, float]:
+    def first_point(dataset: Dataset) -> tuple[float, float, float]:
+        storage_root = dataset.metadata_["source"]["storage_root"]
         key = next(
             k
             for _, k in fake_client.objects
-            if f"{dataset_name}/" in k and k.endswith(".pcd")
+            if k.startswith(f"{storage_root}/") and k.endswith(".pcd")
         )
         payload = fake_client.objects[(storage_service.datasets_bucket, key)]
         marker = b"DATA binary\n"
         offset = payload.index(marker) + len(marker)
         return tuple(np.frombuffer(payload[offset : offset + 12], dtype="<f4"))
 
-    assert first_point("nu-lite-ego") == pytest.approx((11.0, 22.0, 33.0))
-    assert first_point("nu-lite-sensor") == pytest.approx((1.0, 2.0, 3.0))
+    assert first_point(ego_dataset) == pytest.approx((11.0, 22.0, 33.0))
+    assert first_point(sensor_dataset) == pytest.approx((1.0, 2.0, 3.0))
 
 
 async def test_existing_ascii_scene_is_upgraded_in_place(
@@ -530,13 +900,40 @@ async def test_existing_ascii_scene_is_upgraded_in_place(
         owner_id=user.id,
     )
     dataset = await db_session.get(Dataset, first["dataset_id"])
-    item = (
-        await db_session.execute(
-            select(DatasetItem)
-            .where(DatasetItem.dataset_id == dataset.id)
-            .where(DatasetItem.file_type == "point_cloud")
+    dataset_items = list(
+        (
+            await db_session.execute(
+                select(DatasetItem).where(DatasetItem.dataset_id == dataset.id)
+            )
+        ).scalars()
+    )
+    item = next(row for row in dataset_items if row.file_type == "point_cloud")
+    current_root = dataset.metadata_["source"]["storage_root"]
+    legacy_root = "nu-lite-upgrade"
+    for (bucket, key), payload in list(fake_client.objects.items()):
+        if not key.startswith(f"{current_root}/"):
+            continue
+        replacement = f"{legacy_root}/{key.removeprefix(f'{current_root}/')}"
+        fake_client.objects[(bucket, replacement)] = payload
+        fake_client.metadata[(bucket, replacement)] = fake_client.metadata[
+            (bucket, key)
+        ]
+        del fake_client.objects[(bucket, key)]
+        del fake_client.metadata[(bucket, key)]
+    for dataset_item in dataset_items:
+        dataset_item.file_path = dataset_item.file_path.replace(
+            f"{current_root}/", f"{legacy_root}/", 1
         )
+        if dataset_item.file_type in {"point_cloud", "image"}:
+            item_metadata = dict(dataset_item.metadata_ or {})
+            item_metadata.pop("nuscenes_export", None)
+            dataset_item.metadata_ = item_metadata
+    scene = (
+        await db_session.execute(select(Scene).where(Scene.dataset_id == dataset.id))
     ).scalar_one()
+    scene_metadata = dict(scene.source_metadata or {})
+    scene_metadata.pop("nuscenes_export", None)
+    scene.source_metadata = scene_metadata
     legacy = (
         b"# .PCD v0.7 - Point Cloud Data file format\n"
         b"VERSION 0.7\nFIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\n"
@@ -549,6 +946,8 @@ async def test_existing_ascii_scene_is_upgraded_in_place(
     metadata = dict(dataset.metadata_ or {})
     source = dict(metadata["source"])
     source.pop("pcd_encoding", None)
+    source.pop("storage_root", None)
+    source.pop("storage_layout", None)
     metadata["source"] = source
     dataset.metadata_ = metadata
     await db_session.flush()
@@ -574,6 +973,135 @@ async def test_existing_ascii_scene_is_upgraded_in_place(
     assert item.file_size == len(upgraded)
     assert item.content_hash == hashlib.sha256(upgraded).hexdigest()
     assert dataset.metadata_["source"]["pcd_encoding"] == "binary_xyz_f32"
+    assert dataset.metadata_["source"]["storage_layout"] == "legacy_name"
+
+    third = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-upgrade",
+        owner_id=user.id,
+    )
+    assert third["scenes"] == [
+        {
+            "name": "scene-0000",
+            "frames": 1,
+            "skipped": True,
+        }
+    ]
+
+
+async def test_existing_scene_rejects_source_drift_before_object_writes(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=1)
+    fake_client = _FakeS3Client()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+
+    await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-source-drift",
+        owner_id=user.id,
+    )
+    objects_before = dict(fake_client.objects)
+    metadata_before = {key: dict(value) for key, value in fake_client.metadata.items()}
+    lidar_path = root / "samples" / "LIDAR_TOP" / "lidar.pcd.bin"
+    original_lidar = lidar_path.read_bytes()
+    lidar_path.write_bytes(original_lidar + (b"\0" * 20))
+
+    with pytest.raises(ValueError, match="existing scene source drift"):
+        await import_nuscenes(
+            db_session,
+            nuscenes_root=root,
+            scene_names=["scene-0000"],
+            dataset_name="nu-lite-source-drift",
+            owner_id=user.id,
+        )
+    assert fake_client.objects == objects_before
+    assert fake_client.metadata == metadata_before
+
+    lidar_path.write_bytes(original_lidar)
+    calibration_path = root / "v1.0-mini" / "calibrated_sensor.json"
+    calibration_rows = json.loads(calibration_path.read_text(encoding="utf-8"))
+    calibration_rows[0]["translation"] = [9.0, 0.0, 0.0]
+    calibration_path.write_text(json.dumps(calibration_rows), encoding="utf-8")
+    with pytest.raises(ValueError, match="existing scene source drift"):
+        await import_nuscenes(
+            db_session,
+            nuscenes_root=root,
+            scene_names=["scene-0000"],
+            dataset_name="nu-lite-source-drift",
+            owner_id=user.id,
+        )
+    assert fake_client.objects == objects_before
+    assert fake_client.metadata == metadata_before
+
+    calibration_rows[0]["translation"] = _ZERO_TRANS
+    calibration_path.write_text(json.dumps(calibration_rows), encoding="utf-8")
+    scene_path = root / "v1.0-mini" / "scene.json"
+    scene_rows = json.loads(scene_path.read_text(encoding="utf-8"))
+    scene_rows[0]["token"] = "replacement-scene-token"
+    scene_path.write_text(json.dumps(scene_rows), encoding="utf-8")
+    with pytest.raises(
+        ValueError, match="does not match the requested nuScenes source"
+    ):
+        await import_nuscenes(
+            db_session,
+            nuscenes_root=root,
+            scene_names=["scene-0000"],
+            dataset_name="nu-lite-source-drift",
+            owner_id=user.id,
+        )
+    assert fake_client.objects == objects_before
+    assert fake_client.metadata == metadata_before
+
+
+async def test_existing_binary_scene_refreshes_platform_pcd_fingerprint(
+    tmp_path, db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    root = tmp_path / "nuscenes-mini"
+    _write_fake_nuscenes(root, scenes=1, samples_per=1)
+    fake_client = _FakeS3Client()
+    monkeypatch.setattr(storage_service, "client", fake_client)
+
+    first = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-pcd-fingerprint",
+        owner_id=user.id,
+    )
+    item = (
+        await db_session.execute(
+            select(DatasetItem)
+            .where(DatasetItem.dataset_id == first["dataset_id"])
+            .where(DatasetItem.file_type == "point_cloud")
+        )
+    ).scalar_one()
+    object_key = (storage_service.datasets_bucket, item.file_path)
+    fake_client.metadata[object_key] = {}
+
+    second = await import_nuscenes(
+        db_session,
+        nuscenes_root=root,
+        scene_names=["scene-0000"],
+        dataset_name="nu-lite-pcd-fingerprint",
+        owner_id=user.id,
+    )
+
+    assert fake_client.metadata[object_key] == {"sha256": item.content_hash}
+    assert second["scenes"] == [
+        {
+            "name": "scene-0000",
+            "frames": 1,
+            "skipped": True,
+        }
+    ]
 
 
 async def test_existing_scene_backfills_missing_camera_dimensions(

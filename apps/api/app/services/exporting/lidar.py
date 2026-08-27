@@ -7,6 +7,7 @@ them directly.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import struct
@@ -14,9 +15,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+
 from app.db.models.annotation import Annotation
 from app.schemas._jsonb_types import SensorCalibration
-from app.services.axis_convention import PsrDict
+from app.services.axis_convention import PsrDict, _euler_xyz_to_mat3
 from app.services.pointcloud_projection import (
     NEAR_PLANE as _NEAR_PLANE,
     apply_camera_point as _apply_camera_point,
@@ -44,12 +47,33 @@ class LidarCameraExportCtx:
 
 
 @dataclass(frozen=True)
+class NuScenesSensorExportCtx:
+    role: str
+    dataset_item_id: uuid.UUID
+    sample_data: dict[str, Any]
+    calibrated_sensor: dict[str, Any]
+    sensor: dict[str, Any]
+    ego_pose: dict[str, Any]
+    source_storage_key: str
+
+
+@dataclass(frozen=True)
 class LidarFrameExportCtx:
     task_id: uuid.UUID
     frame_key: str
     annotations: list[Annotation]
     axis_convention: str
     cameras: dict[str, LidarCameraExportCtx] = field(default_factory=dict)
+    scene_id: uuid.UUID | None = None
+    scene_name: str | None = None
+    scene_source_metadata: dict[str, Any] = field(default_factory=dict)
+    source_sample: dict[str, Any] = field(default_factory=dict)
+    frame_index: int | None = None
+    timestamp_us: int | None = None
+    ego_translation: list[float] | None = None
+    ego_rotation: list[float] | None = None
+    sensors: dict[str, NuScenesSensorExportCtx] = field(default_factory=dict)
+    point_counts: dict[uuid.UUID, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -229,8 +253,645 @@ def build_kitti_lidar_label_lines(
 def build_nuscenes_frame_records(
     frames: list[LidarFrameExportCtx],
 ) -> dict[str, list[dict[str, Any]]]:
-    _ = frames
-    raise ValueError("nuscenes_export_not_trusted")
+    if not frames:
+        raise ValueError("nuscenes_export_empty")
+
+    ordered = sorted(
+        frames,
+        key=lambda frame: (
+            str(frame.scene_id or ""),
+            -1 if frame.frame_index is None else frame.frame_index,
+            str(frame.task_id),
+        ),
+    )
+    records: dict[str, list[dict[str, Any]]] = {
+        "attribute": [],
+        "calibrated_sensor": [],
+        "category": [],
+        "ego_pose": [],
+        "instance": [],
+        "log": [],
+        "map": [],
+        "sample": [],
+        "sample_annotation": [],
+        "sample_data": [],
+        "scene": [],
+        "sensor": [],
+        "visibility": [],
+    }
+
+    scene_groups: dict[uuid.UUID, list[LidarFrameExportCtx]] = {}
+    for frame in ordered:
+        if (
+            frame.scene_id is None
+            or frame.frame_index is None
+            or frame.timestamp_us is None
+            or frame.ego_translation is None
+            or frame.ego_rotation is None
+            or not frame.source_sample
+        ):
+            raise ValueError(f"nuscenes_frame_contract_missing:{frame.task_id}")
+        if not frame.sensors:
+            raise ValueError(f"nuscenes_sensor_contract_missing:{frame.task_id}")
+        scene_groups.setdefault(frame.scene_id, []).append(frame)
+
+    category_names = sorted(
+        {
+            str(ann.class_name)
+            for frame in ordered
+            for ann in frame.annotations
+            if (ann.geometry or {}).get("type") == "box_3d"
+        }
+    )
+    category_tokens = {
+        name: _nuscenes_token("category", name) for name in category_names
+    }
+    records["category"] = [
+        {
+            "token": category_tokens[name],
+            "name": name,
+            "description": f"AAP project category {name}",
+            "index": index,
+        }
+        for index, name in enumerate(category_names, start=1)
+    ]
+
+    log_by_token: dict[str, dict[str, Any]] = {}
+    map_by_token: dict[str, dict[str, Any]] = {}
+    sensor_by_token: dict[str, dict[str, Any]] = {}
+    calibrated_by_token: dict[str, dict[str, Any]] = {}
+    ego_by_token: dict[str, dict[str, Any]] = {}
+    sample_token_by_frame: dict[tuple[uuid.UUID, int], str] = {}
+    sample_data_groups: dict[tuple[uuid.UUID, str], list[dict[str, Any]]] = {}
+    annotation_groups: dict[str, list[dict[str, Any]]] = {}
+    instance_categories: dict[str, str] = {}
+
+    for scene_id, scene_frames in scene_groups.items():
+        source = (scene_frames[0].scene_source_metadata or {}).get("nuscenes_export")
+        if not isinstance(source, dict):
+            raise ValueError(f"nuscenes_scene_source_missing:{scene_id}")
+        source_scene = source.get("scene")
+        source_log = source.get("log")
+        source_map = source.get("map")
+        if not all(
+            isinstance(value, dict) for value in (source_scene, source_log, source_map)
+        ):
+            raise ValueError(f"nuscenes_scene_metadata_incomplete:{scene_id}")
+
+        for field_name in ("token", "logfile", "vehicle", "date_captured", "location"):
+            _required_source_value(source_log, field_name, "log")
+        for field_name in ("token", "category", "filename"):
+            _required_source_value(source_map, field_name, "map")
+        for field_name in (
+            "token",
+            "name",
+            "description",
+            "log_token",
+            "nbr_samples",
+            "first_sample_token",
+            "last_sample_token",
+        ):
+            _required_source_value(
+                source_scene,
+                field_name,
+                "scene",
+                allow_empty=field_name == "description",
+            )
+        if str(source_scene["log_token"]) != str(source_log["token"]) or str(
+            source_log["token"]
+        ) not in source_map.get("log_tokens", []):
+            raise ValueError(f"nuscenes_scene_log_map_reference_invalid:{scene_id}")
+
+        log_token = _nuscenes_token("log", _canonical_json(source_log))
+        log_by_token.setdefault(
+            log_token,
+            {
+                "token": log_token,
+                "logfile": str(source_log["logfile"]),
+                "vehicle": str(source_log["vehicle"]),
+                "date_captured": str(source_log["date_captured"]),
+                "location": str(source_log["location"]),
+            },
+        )
+        source_map_token = str(source_map["token"])
+        map_token = _nuscenes_token("map", source_map_token)
+        map_record = map_by_token.setdefault(
+            map_token,
+            {
+                "token": map_token,
+                "log_tokens": [],
+                "category": str(source_map["category"]),
+                "filename": str(source_map["filename"]),
+            },
+        )
+        if log_token not in map_record["log_tokens"]:
+            map_record["log_tokens"].append(log_token)
+
+        scene_frames.sort(key=lambda frame: int(frame.frame_index or 0))
+        frame_indices = [int(frame.frame_index or 0) for frame in scene_frames]
+        try:
+            expected_count = int(source_scene["nbr_samples"])
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError(f"nuscenes_scene_frame_gap:{scene_id}") from exc
+        if len(frame_indices) != expected_count or any(
+            frame_index != index for index, frame_index in enumerate(frame_indices)
+        ):
+            raise ValueError(f"nuscenes_scene_frame_gap:{scene_id}")
+        source_samples = [frame.source_sample for frame in scene_frames]
+        source_tokens = [str(sample.get("token") or "") for sample in source_samples]
+        if (
+            not all(source_tokens)
+            or source_tokens[0] != str(source_scene["first_sample_token"])
+            or source_tokens[-1] != str(source_scene["last_sample_token"])
+        ):
+            raise ValueError(f"nuscenes_scene_sample_boundary_invalid:{scene_id}")
+        for index, source_sample in enumerate(source_samples):
+            expected_prev = source_tokens[index - 1] if index else ""
+            expected_next = (
+                source_tokens[index + 1] if index + 1 < len(source_tokens) else ""
+            )
+            if (
+                str(source_sample.get("prev") or "") != expected_prev
+                or str(source_sample.get("next") or "") != expected_next
+                or source_sample.get("timestamp") is None
+            ):
+                raise ValueError(f"nuscenes_scene_sample_chain_invalid:{scene_id}")
+        sample_tokens = [
+            _nuscenes_token("sample", scene_id, frame.frame_index)
+            for frame in scene_frames
+        ]
+        for index, (frame, sample_token) in enumerate(
+            zip(scene_frames, sample_tokens, strict=True)
+        ):
+            sample_token_by_frame[(scene_id, int(frame.frame_index or 0))] = (
+                sample_token
+            )
+            records["sample"].append(
+                {
+                    "token": sample_token,
+                    "timestamp": int(frame.source_sample["timestamp"]),
+                    "scene_token": _nuscenes_token("scene", scene_id),
+                    "next": sample_tokens[index + 1]
+                    if index + 1 < len(sample_tokens)
+                    else "",
+                    "prev": sample_tokens[index - 1] if index else "",
+                }
+            )
+        records["scene"].append(
+            {
+                "token": _nuscenes_token("scene", scene_id),
+                "name": str(source_scene["name"]),
+                "description": str(source_scene["description"]),
+                "log_token": log_token,
+                "nbr_samples": expected_count,
+                "first_sample_token": sample_tokens[0],
+                "last_sample_token": sample_tokens[-1],
+            }
+        )
+
+        for frame in scene_frames:
+            sample_token = sample_token_by_frame[
+                (scene_id, int(frame.frame_index or 0))
+            ]
+            lidar_sensor_count = 0
+            for role, source_sensor in sorted(frame.sensors.items()):
+                sensor = source_sensor.sensor
+                calibrated = source_sensor.calibrated_sensor
+                ego_pose = source_sensor.ego_pose
+                sample_data = source_sensor.sample_data
+                if not source_sensor.source_storage_key:
+                    raise ValueError("nuscenes_source_storage_key_missing")
+                for field_name in ("token", "channel", "modality"):
+                    _required_source_value(sensor, field_name, "sensor")
+                for field_name in (
+                    "token",
+                    "sensor_token",
+                    "translation",
+                    "rotation",
+                    "camera_intrinsic",
+                ):
+                    _required_source_value(
+                        calibrated,
+                        field_name,
+                        "calibrated_sensor",
+                        allow_empty=field_name == "camera_intrinsic",
+                    )
+                for field_name in ("token", "translation", "rotation", "timestamp"):
+                    _required_source_value(ego_pose, field_name, "ego_pose")
+                for field_name in (
+                    "token",
+                    "sample_token",
+                    "ego_pose_token",
+                    "calibrated_sensor_token",
+                    "filename",
+                    "fileformat",
+                    "width",
+                    "height",
+                    "timestamp",
+                    "is_key_frame",
+                ):
+                    _required_source_value(
+                        sample_data,
+                        field_name,
+                        "sample_data",
+                        allow_empty=field_name in {"width", "height"},
+                    )
+                if (
+                    str(calibrated["sensor_token"]) != str(sensor["token"])
+                    or str(sample_data["calibrated_sensor_token"])
+                    != str(calibrated["token"])
+                    or str(sample_data["ego_pose_token"]) != str(ego_pose["token"])
+                    or str(sample_data["sample_token"])
+                    != str(frame.source_sample["token"])
+                    or sample_data["is_key_frame"] is not True
+                ):
+                    raise ValueError(
+                        f"nuscenes_sensor_reference_invalid:{frame.task_id}:{role}"
+                    )
+                if str(sensor["modality"]) == "lidar":
+                    lidar_sensor_count += 1
+                sensor_token = _nuscenes_token("sensor", _canonical_json(sensor))
+                calibrated_token = _nuscenes_token(
+                    "calibrated_sensor", _canonical_json(calibrated)
+                )
+                ego_token = _nuscenes_token("ego_pose", _canonical_json(ego_pose))
+                sample_data_token = _nuscenes_token(
+                    "sample_data",
+                    source_sensor.dataset_item_id,
+                    sample_data.get("token"),
+                )
+                sensor_by_token.setdefault(
+                    sensor_token,
+                    {
+                        "token": sensor_token,
+                        "channel": str(sensor["channel"]),
+                        "modality": str(sensor["modality"]),
+                    },
+                )
+                calibrated_by_token.setdefault(
+                    calibrated_token,
+                    {
+                        "token": calibrated_token,
+                        "sensor_token": sensor_token,
+                        "translation": [
+                            float(v) for v in calibrated.get("translation") or []
+                        ],
+                        "rotation": _normalized_quaternion(calibrated.get("rotation")),
+                        "camera_intrinsic": [
+                            [float(v) for v in row]
+                            for row in (calibrated.get("camera_intrinsic") or [])
+                        ],
+                    },
+                )
+                ego_by_token.setdefault(
+                    ego_token,
+                    {
+                        "token": ego_token,
+                        "translation": [
+                            float(v) for v in ego_pose.get("translation") or []
+                        ],
+                        "rotation": _normalized_quaternion(ego_pose.get("rotation")),
+                        "timestamp": int(
+                            ego_pose.get("timestamp")
+                            or sample_data.get("timestamp")
+                            or 0
+                        ),
+                    },
+                )
+                data_record = {
+                    "token": sample_data_token,
+                    "sample_token": sample_token,
+                    "ego_pose_token": ego_token,
+                    "calibrated_sensor_token": calibrated_token,
+                    "filename": str(sample_data["filename"]),
+                    "fileformat": str(sample_data["fileformat"]),
+                    "width": int(sample_data["width"]),
+                    "height": int(sample_data["height"]),
+                    "timestamp": int(sample_data["timestamp"]),
+                    "is_key_frame": bool(sample_data["is_key_frame"]),
+                    "next": "",
+                    "prev": "",
+                }
+                records["sample_data"].append(data_record)
+                sample_data_groups.setdefault(
+                    (scene_id, str(sensor["channel"])), []
+                ).append(data_record)
+
+            if lidar_sensor_count != 1:
+                raise ValueError(f"nuscenes_lidar_sensor_count_invalid:{frame.task_id}")
+
+            for ann in frame.annotations:
+                geometry = ann.geometry or {}
+                if geometry.get("type") != "box_3d":
+                    continue
+                raw_size = geometry.get("size")
+                raw_center = geometry.get("center")
+                raw_rotation = geometry.get("rotation")
+                if not all(
+                    isinstance(value, list) and len(value) == 3
+                    for value in (raw_size, raw_center, raw_rotation)
+                ):
+                    raise ValueError(f"nuscenes_box_geometry_invalid:{ann.id}")
+                length, width, height = [float(v) for v in raw_size]
+                local_center = [float(v) for v in raw_center]
+                local_rotation = [float(v) for v in raw_rotation]
+                if (
+                    not all(
+                        math.isfinite(value)
+                        for value in (
+                            length,
+                            width,
+                            height,
+                            *local_center,
+                            *local_rotation,
+                        )
+                    )
+                    or min(length, width, height) <= 0
+                ):
+                    raise ValueError(f"nuscenes_box_geometry_invalid:{ann.id}")
+                ego_rotation = _normalized_quaternion(frame.ego_rotation)
+                global_center = [
+                    left + right
+                    for left, right in zip(
+                        _quaternion_rotate(ego_rotation, local_center),
+                        [float(v) for v in frame.ego_translation or []],
+                        strict=True,
+                    )
+                ]
+                global_rotation = _normalized_quaternion(
+                    _quaternion_multiply(
+                        ego_rotation, _euler_xyz_quaternion(local_rotation)
+                    )
+                )
+                instance_key = str(ann.scene_track_id or ann.track_id or ann.id)
+                instance_token = _nuscenes_token("instance", scene_id, instance_key)
+                annotation_record = {
+                    "token": _nuscenes_token("sample_annotation", ann.id, ann.version),
+                    "sample_token": sample_token,
+                    "instance_token": instance_token,
+                    "attribute_tokens": [],
+                    "visibility_token": "",
+                    "translation": global_center,
+                    "size": [width, length, height],
+                    "rotation": global_rotation,
+                    "num_lidar_pts": int(frame.point_counts[ann.id]),
+                    "num_radar_pts": 0,
+                    "next": "",
+                    "prev": "",
+                    "_frame_index": int(frame.frame_index or 0),
+                }
+                records["sample_annotation"].append(annotation_record)
+                annotation_groups.setdefault(instance_token, []).append(
+                    annotation_record
+                )
+                previous_category = instance_categories.setdefault(
+                    instance_token, str(ann.class_name)
+                )
+                if previous_category != str(ann.class_name):
+                    raise ValueError(
+                        f"nuscenes_instance_category_drift:{instance_token}"
+                    )
+
+    for group in sample_data_groups.values():
+        group.sort(key=lambda row: (row["timestamp"], row["token"]))
+        for index, row in enumerate(group):
+            row["prev"] = group[index - 1]["token"] if index else ""
+            row["next"] = group[index + 1]["token"] if index + 1 < len(group) else ""
+
+    for instance_token, group in annotation_groups.items():
+        group.sort(key=lambda row: (row["_frame_index"], row["token"]))
+        for index, row in enumerate(group):
+            row["prev"] = group[index - 1]["token"] if index else ""
+            row["next"] = group[index + 1]["token"] if index + 1 < len(group) else ""
+            row.pop("_frame_index", None)
+        records["instance"].append(
+            {
+                "token": instance_token,
+                "category_token": category_tokens[instance_categories[instance_token]],
+                "nbr_annotations": len(group),
+                "first_annotation_token": group[0]["token"],
+                "last_annotation_token": group[-1]["token"],
+            }
+        )
+
+    records["log"] = sorted(log_by_token.values(), key=lambda row: row["token"])
+    records["map"] = sorted(map_by_token.values(), key=lambda row: row["token"])
+    records["sensor"] = sorted(sensor_by_token.values(), key=lambda row: row["token"])
+    records["calibrated_sensor"] = sorted(
+        calibrated_by_token.values(), key=lambda row: row["token"]
+    )
+    records["ego_pose"] = sorted(ego_by_token.values(), key=lambda row: row["token"])
+    records["scene"].sort(key=lambda row: row["token"])
+    records["sample"].sort(key=lambda row: (row["timestamp"], row["token"]))
+    records["sample_data"].sort(key=lambda row: (row["timestamp"], row["token"]))
+    records["sample_annotation"].sort(
+        key=lambda row: (row["sample_token"], row["token"])
+    )
+    records["instance"].sort(key=lambda row: row["token"])
+    validate_nuscenes_records(records)
+    return records
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def _required_source_value(
+    row: dict[str, Any],
+    field_name: str,
+    table: str,
+    *,
+    allow_empty: bool = False,
+) -> object:
+    if field_name not in row or row[field_name] is None:
+        raise ValueError(f"nuscenes_source_field_missing:{table}:{field_name}")
+    value = row[field_name]
+    if not allow_empty and value == "":
+        raise ValueError(f"nuscenes_source_field_empty:{table}:{field_name}")
+    return value
+
+
+def _nuscenes_token(kind: str, *parts: object) -> str:
+    payload = "\x1f".join((kind, *[str(part) for part in parts]))
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
+
+
+def _normalized_quaternion(raw: object) -> list[float]:
+    values = [float(v) for v in (raw or [])]
+    if len(values) != 4 or not all(math.isfinite(v) for v in values):
+        raise ValueError("nuscenes_quaternion_invalid")
+    norm = math.hypot(*values)
+    if not math.isfinite(norm) or norm <= 1e-12:
+        raise ValueError("nuscenes_quaternion_invalid")
+    return [v / norm for v in values]
+
+
+def _quaternion_multiply(left: list[float], right: list[float]) -> list[float]:
+    lw, lx, ly, lz = left
+    rw, rx, ry, rz = right
+    return [
+        lw * rw - lx * rx - ly * ry - lz * rz,
+        lw * rx + lx * rw + ly * rz - lz * ry,
+        lw * ry - lx * rz + ly * rw + lz * rx,
+        lw * rz + lx * ry - ly * rx + lz * rw,
+    ]
+
+
+def _quaternion_rotate(quaternion: list[float], point: list[float]) -> list[float]:
+    _, x, y, z = _quaternion_multiply(
+        _quaternion_multiply(quaternion, [0.0, *point]),
+        [quaternion[0], -quaternion[1], -quaternion[2], -quaternion[3]],
+    )
+    return [x, y, z]
+
+
+def _euler_xyz_quaternion(rotation: list[float]) -> list[float]:
+    rx, ry, rz = rotation
+    c1, c2, c3 = math.cos(rx / 2), math.cos(ry / 2), math.cos(rz / 2)
+    s1, s2, s3 = math.sin(rx / 2), math.sin(ry / 2), math.sin(rz / 2)
+    return [
+        c1 * c2 * c3 - s1 * s2 * s3,
+        s1 * c2 * c3 + c1 * s2 * s3,
+        c1 * s2 * c3 - s1 * c2 * s3,
+        c1 * c2 * s3 + s1 * s2 * c3,
+    ]
+
+
+def validate_nuscenes_records(records: dict[str, list[dict[str, Any]]]) -> None:
+    expected = {
+        "attribute",
+        "calibrated_sensor",
+        "category",
+        "ego_pose",
+        "instance",
+        "log",
+        "map",
+        "sample",
+        "sample_annotation",
+        "sample_data",
+        "scene",
+        "sensor",
+        "visibility",
+    }
+    if set(records) != expected:
+        raise ValueError("nuscenes_table_set_invalid")
+    if not records["log"] or not records["map"] or not records["scene"]:
+        raise ValueError("nuscenes_required_table_empty")
+    tokens: dict[str, set[str]] = {}
+    for table, rows in records.items():
+        table_tokens = {str(row.get("token") or "") for row in rows}
+        if "" in table_tokens or len(table_tokens) != len(rows):
+            raise ValueError(f"nuscenes_token_invalid:{table}")
+        tokens[table] = table_tokens
+
+    foreign_keys = {
+        "calibrated_sensor": (("sensor_token", "sensor"),),
+        "instance": (("category_token", "category"),),
+        "sample": (("scene_token", "scene"),),
+        "sample_annotation": (
+            ("sample_token", "sample"),
+            ("instance_token", "instance"),
+        ),
+        "sample_data": (
+            ("sample_token", "sample"),
+            ("ego_pose_token", "ego_pose"),
+            ("calibrated_sensor_token", "calibrated_sensor"),
+        ),
+        "scene": (("log_token", "log"),),
+    }
+    for table, relations in foreign_keys.items():
+        for row in records[table]:
+            for field_name, target in relations:
+                if row.get(field_name) not in tokens[target]:
+                    raise ValueError(
+                        f"nuscenes_foreign_key_invalid:{table}:{field_name}"
+                    )
+    for row in records["map"]:
+        if not row.get("filename") or not row.get("log_tokens"):
+            raise ValueError("nuscenes_map_invalid")
+        if any(token not in tokens["log"] for token in row["log_tokens"]):
+            raise ValueError("nuscenes_map_log_invalid")
+    for row in records["sample_data"]:
+        if (
+            not row.get("filename")
+            or not row.get("fileformat")
+            or row.get("timestamp") is None
+            or row.get("is_key_frame") is not True
+        ):
+            raise ValueError("nuscenes_sample_data_invalid")
+    for row in records["sample_annotation"]:
+        if int(row.get("num_lidar_pts", -1)) < 0:
+            raise ValueError("nuscenes_annotation_point_count_invalid")
+    for table in ("sample", "sample_data", "sample_annotation"):
+        by_token = {row["token"]: row for row in records[table]}
+        for row in records[table]:
+            for direction, inverse in (("next", "prev"), ("prev", "next")):
+                target = row.get(direction) or ""
+                if target and (
+                    target not in by_token
+                    or by_token[target].get(inverse) != row["token"]
+                ):
+                    raise ValueError(f"nuscenes_chain_invalid:{table}:{direction}")
+    sample_count_by_scene: dict[str, int] = {}
+    for sample in records["sample"]:
+        scene_token = str(sample["scene_token"])
+        sample_count_by_scene[scene_token] = (
+            sample_count_by_scene.get(scene_token, 0) + 1
+        )
+    annotations_by_instance: dict[str, list[dict[str, Any]]] = {}
+    for annotation in records["sample_annotation"]:
+        annotations_by_instance.setdefault(
+            str(annotation["instance_token"]), []
+        ).append(annotation)
+    for row in records["scene"]:
+        if (
+            row["first_sample_token"] not in tokens["sample"]
+            or row["last_sample_token"] not in tokens["sample"]
+        ):
+            raise ValueError("nuscenes_scene_sample_invalid")
+        if sample_count_by_scene.get(str(row["token"]), 0) != row["nbr_samples"]:
+            raise ValueError("nuscenes_scene_count_invalid")
+    for row in records["instance"]:
+        group = annotations_by_instance.get(str(row["token"]), [])
+        group_tokens = {annotation["token"] for annotation in group}
+        if (
+            len(group) != row["nbr_annotations"]
+            or row["first_annotation_token"] not in group_tokens
+            or row["last_annotation_token"] not in group_tokens
+        ):
+            raise ValueError("nuscenes_instance_count_invalid")
+
+
+def count_lidar_points_in_boxes(
+    points: np.ndarray, annotations: list[Annotation]
+) -> dict[uuid.UUID, int]:
+    finite = np.asarray(points, dtype=np.float64)
+    finite = finite[np.isfinite(finite).all(axis=1)]
+    counts: dict[uuid.UUID, int] = {}
+    for ann in annotations:
+        geometry = ann.geometry or {}
+        if geometry.get("type") != "box_3d":
+            continue
+        center = np.asarray(geometry.get("center") or [], dtype=np.float64)
+        size = np.asarray(geometry.get("size") or [], dtype=np.float64)
+        rotation = [float(v) for v in geometry.get("rotation") or []]
+        if center.shape != (3,) or size.shape != (3,) or len(rotation) != 3:
+            raise ValueError(f"nuscenes_box_geometry_invalid:{ann.id}")
+        matrix = np.asarray(
+            _euler_xyz_to_mat3(*rotation),
+            dtype=np.float64,
+        ).reshape(3, 3)
+        local = (finite - center) @ matrix
+        counts[ann.id] = int(
+            np.count_nonzero(np.all(np.abs(local) <= size / 2 + 1e-6, axis=1))
+        )
+    return counts
 
 
 def build_pointmask_label_bytes(

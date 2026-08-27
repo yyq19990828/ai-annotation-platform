@@ -3,19 +3,20 @@ audience: [developer, ml_engineer]
 type: reference
 since: v0.14.7
 status: stable
-last_reviewed: 2026-08-25
+last_reviewed: 2026-08-27
 ---
 
 # LiDAR Export Formats
 
-LiDAR projects expose three trusted targets. The `nuscenes` identifier remains
-reserved for compatibility, but strict preflight rejects it until the complete
-scene/time/pose contract exists.
+LiDAR projects expose four trusted targets. nuScenes uses a stricter source
+contract than the other targets and only accepts complete scenes imported from
+real nuScenes tables and media.
 
 | Target      | Purpose                       | Coordinate frame        |
 | ----------- | ----------------------------- | ----------------------- |
 | `aap_json`  | Platform-native lossless JSON | API `axis_frame` option |
 | `kitti`     | KITTI 3D detection labels     | Selected KITTI camera   |
+| `nuscenes`  | nuScenes keyframe table set   | Global nuScenes frame   |
 | `pointmask` | Per-point semantic labels     | Point index order       |
 
 These targets are pure serializers. AAP JSON preserves SceneTrack camera members,
@@ -89,11 +90,24 @@ exists.
 
 ## nuScenes JSON
 
-`nuscenes` is not a trusted export target yet. Project preflight, batch preflight,
-direct export requests, and worker-side checks return
-`nuscenes_export_not_trusted`. The serializer facade raises the same reason and
-cannot produce tables. Re-enabling this target requires real scene tokens,
-timestamps, ego poses, calibration rotations, and reference-integrity tests.
+`nuscenes` writes the 13 core tables under `v1.0-aap/`, plus
+`media_manifest.json`, `fetch_nuscenes_media.py`, and a README. The manifest
+references the original `.pcd.bin`, camera images, and map at their exact source
+paths; the converted platform PCD is never presented as raw nuScenes media.
+
+Preflight requires a real nuScenes source, importer `--frame ego`, ISO 8855,
+the complete `0..nbr_samples-1` scene, closed source sample chains, per-sensor
+sample data / calibration / ego-pose references, unchanged calibration digests,
+and source assets whose stored size and SHA-256 still match object metadata.
+Project and batch exports reject partial scenes before creating an async job.
+
+The serializer rebuilds deterministic tokens and `prev` / `next` chains, uses
+the source sample timestamp, transforms ego boxes into the global frame, maps
+platform `[length,width,height]` to `[width,length,height]`, and calculates
+`num_lidar_pts` from the current ego PCD. After running the fetch script, the
+tree is compatible with official nuscenes-devkit load and query operations.
+This is a keyframe subset, not an official benchmark split: project categories
+are not mapped to the official detection/tracking ontology.
 
 ## Point Mask
 
@@ -119,8 +133,8 @@ The registry still recognizes these LiDAR identifiers:
 aap_json, kitti, nuscenes, pointmask
 ```
 
-`nuscenes` recognition does not imply readiness; strict LiDAR preflight always
-rejects it. KITTI additionally requires `lidar.kitti_camera_role`.
+nuScenes additionally requires its strict source and complete-scene preflight.
+KITTI requires `lidar.kitti_camera_role`.
 
 The name `kitti` is shared with video projects, but the serializers are separate:
 

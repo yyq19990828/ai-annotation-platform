@@ -20,7 +20,7 @@ test.describe("trusted LiDAR export", () => {
 
     const dialog = page.getByRole("dialog", { name: "导出标注数据" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("button", { name: /^nuScenes JSON/ })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: /^nuScenes/ })).toBeEnabled();
 
     const kitti = dialog.getByRole("button", { name: /^KITTI 3D/ });
     const missingCameraResponse = page.waitForResponse(

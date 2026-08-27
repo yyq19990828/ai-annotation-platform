@@ -143,11 +143,11 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
 
 点云 KITTI 不直接把平台 ISO 框当成 camera frame。导出按每个 task 的主点云 Dataset 读取 `axis_convention`，先用 `R_normᵀ` 把 ISO 角点映射回数据源 LiDAR 轴，再依次应用用户显式选择的 camera role 对应 `extrinsic`、可选 `rect` 与 `intrinsic`。`label_2` 的二维框来自近裁剪面裁剪后的 8 角点 / 12 边投影；`location` 使用相机坐标下的底面中心，完全不可见对象进入 `export_report.json`。
 
-项目和批次导出在创建 `AsyncJob` 前共用严格预检，worker 在查缓存和打包前重复检查。缺主点云、未声明或不可信的轴约定、缺所选相机帧、非法标定、缺图像宽高都会返回稳定 issue code；不得用 identity matrix、`.unverified` 文件或负数 bbox 代替失败。nuScenes 目标在真实 scene / timestamp / ego pose 合同完成前返回 `nuscenes_export_not_trusted`。
+项目和批次导出在创建 `AsyncJob` 前共用严格预检，worker 在查缓存和打包前重复检查。缺主点云、未声明或不可信的轴约定、缺所选相机帧、非法标定、缺图像宽高都会返回稳定 issue code；不得用 identity matrix、`.unverified` 文件或负数 bbox 代替失败。nuScenes 还会校验真实 scene / log / map、完整 sample 链、逐传感器位姿与时钟、原媒体指纹和完整 Scene 范围，任一缺口都拒绝。
 
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`，由持久 Worker 解析 PCD、归一化轴向、抽稀并生成高度色；主透视视图与 Top / Side / Front 三正交视图使用同一个 renderer、canvas 和图形 context，通过 viewport / scissor 分 pass 绘制，并由事件驱动 scheduler 在状态稳定后停止提交。四视图共享点云 geometry 的 GPU attribute、backend、相机纹理和 device-lost 生命周期；不同相机仍各自执行一次 render pass。默认使用 Legacy WebGL2，设置中的本地实验开关可启用异步 WebGPU renderer、实例化点精灵和相机纹理直采样；切帧时旧实例立即归零，场景级实例缓冲与固定六路相机采样 TSL 拓扑继续复用，只更新点属性、纹理和标定 uniform。实验路径只生成 GPU 需要的 depth-only 遮挡栅格，并在 8 MiB / 8-key LRU 中与相邻帧预取合并，Legacy 和 WebGL2 fallback 不触发该预取。初始化失败或 device lost 会回退 Legacy。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 
-开发 seed 的 nuScenes 导入器把每点五个 float 的 `.pcd.bin` 转为只保留 XYZ 的 little-endian binary PCD，并在 dataset source metadata 中记录 `pcd_encoding=binary_xyz_f32`。对缺少该标记的既有 scene 再次执行 seed 时，导入器会按 `frame_index` 原位覆盖点云对象、同步大小与内容哈希，但不会重建 task 或 annotation。Scene 时间轴点击目标帧后会立即开始任务导航，PCD、相机位图及实验路径深度资源的预取在后台并行执行并由资产缓存去重；慢预取或预取失败不会阻塞导航。
+开发 seed 的 nuScenes 导入器把每点五个 float 的 `.pcd.bin` 转为只保留 XYZ 的 little-endian binary PCD，并在 dataset source metadata 中记录 `pcd_encoding=binary_xyz_f32`。同时保留原始 `.pcd.bin`、相机图和 map，冻结 size / SHA-256 及 scene、sample、sample_data、sensor、calibrated_sensor、ego_pose、log 和 map 表上下文。对既有 Scene 重跑导入器时，只会在来源表上下文与原始字节指纹全部未漂移时幂等回填可信导出合同，并保留任务和标注；同名 Scene 指向不同源时直接拒绝。新数据集使用受保留的 Dataset UUID 对象前缀，普通上传无法写入该命名空间。nuScenes 预检在完整加载前对项目或批次限制 1000 帧、30000 个有效 3D 框，以及单帧/总 PCD 字节数和框内点计算预算。Scene 时间轴点击目标帧后会立即开始任务导航，PCD、相机位图及实验路径深度资源的预取在后台并行执行并由资产缓存去重；慢预取或预取失败不会阻塞导航。
 
 渲染链在 geometry 与相机颜色跨过实际绘制边界后写入 `aap:pointcloud:geometry-ready` 和
 `aap:pointcloud:camera-color-ready` Performance mark，便于在 DevTools trace 中区分 PCD/geometry

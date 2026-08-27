@@ -134,8 +134,7 @@ scene 模式项目的开启与用法见 [项目管理 · scene 模式项目](/us
 
 不走向导、直接灌进当前栈(MinIO + DB)。范例见 [`apps/api/scripts/seed_pointcloud.py`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/apps/api/scripts/seed_pointcloud.py)(SUSTechPOINTS 示例)与下文 nuScenes 脚本。
 
-nuScenes 脚本会把 `sample_data` 中的相机像素宽高一并持久化；对已入库的同名 Scene 重跑时，
-仅回填缺失尺寸并保留原有任务和标注。宽高是相机投影、人工 2D 成员与投影残差的必要坐标基准。
+nuScenes 脚本会把 `sample_data` 中的相机像素宽高一并持久化，并保留原始 `.pcd.bin`、相机图、map 以及官方表上下文的 size / SHA-256。对已入库的同名 Scene 重跑时，会幂等回填这些尺寸和可信导出合同，同时保留原有任务和标注。
 
 ## 标定 JSON schema
 
@@ -216,9 +215,9 @@ PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
   --dataset-name nu-mini-multi
 ```
 
-> 转换脚本入库后的对象存储布局是 `<dataset_name>/<scene_name>/{lidar,camera,calib}/...`(顶层多子目录 = 多 scene),与上文「顶层多子目录 = 多 scene」的目录树一致。每个 scene 的标定取**该 scene 第 1 帧**的内外参对全 scene 通用(逐帧精确补偿留待后续版本)。
+> 转换后的平台工作资产位于 `<dataset_uuid>/<scene_name>/{lidar,camera,calib}/...`；可信导出使用的原始资产位于 `<dataset_uuid>/_nuscenes/source/<原相对路径>`。对象前缀与展示名称解耦，同名 Dataset 不会互相覆盖。每个 scene 的平台投影标定取首帧作为工作台基准；导出时则使用逐传感器保留的原始 `calibrated_sensor` 和 `ego_pose`。
 
-脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。如果 `--dataset-name` 较长,脚本会把内部 `DS-NU-...` / `P-NU-...` display_id 稳定截断并追加 hash,避免超过数据库长度限制;展示名称和对象存储前缀仍保留原始 `dataset_name`。
+脚本只依赖 numpy + Pillow,不需要 `nuscenes-devkit`。数据集下载见 [nuscenes.org/nuscenes#download](https://www.nuscenes.org/nuscenes#download)(选 mini split)。如果 `--dataset-name` 较长,脚本会把内部 `DS-NU-...` / `P-NU-...` display_id 稳定截断并追加 hash,避免超过数据库长度限制;展示名称仍保留原始 `dataset_name`，对象存储前缀则使用不可冲突的 Dataset UUID。
 
 脚本入库的数据集会自动声明为时序数据集(`is_temporal`),并配套创建一个已开启 scene 模式的项目,导入完成即可直接按 scene 分包标注(见上文「时序数据集声明与 scene 模式项目」)。
 
@@ -236,6 +235,8 @@ PYTHONPATH=. uv run python scripts/import_nuscenes_scene.py \
 > **坐标系**:v0.14.3 起脚本默认 `--frame ego`,逐点乘 `T_ego_from_lidar` 把 LIDAR_TOP 原始点落到 nuScenes ego(车体)系,并写 `axis_convention=iso_8855`;相机标定同步写为 `cam_from_ego`,投影仍与点云自洽。若需要保留 v0.14.2 的原始 LIDAR_TOP 传感器系点,可显式传 `--frame sensor`,此时脚本写 `axis_convention=apollo` 和 `cam_from_lidar`。
 >
 > ⚠️ 同一个 dataset 不能混用 `--frame ego` 与 `--frame sensor`;脚本发现已存在 dataset 的 `axis_convention` 与本次模式不一致时会拒绝继续导入。多相机装置的 `sniff-axis-convention` 响应会透出 `per_camera` 和 `agreement`,可用于判断侧/后相机是否与正前相机有分歧。
+>
+> nuScenes 可信导出只接受 `--frame ego`。历史 Scene 必须对同一来源重跑本导入器，补齐 log / map / sample / sensor 上下文和原始资产后才能通过导出预检；不会用平台 PCD 或默认地图伪造缺失值。
 
 ### KITTI
 

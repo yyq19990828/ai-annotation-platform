@@ -30,8 +30,11 @@ from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJob
 from app.db.models.export_artifact import ExportArtifact
+from app.db.models.dataset import DatasetItem, Scene
 from app.db.models.project import Project
+from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
+from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.services import async_job as async_job_svc
 from app.services.exporting import cache as export_cache
 from app.services.exporting.packaging import (
@@ -174,6 +177,122 @@ async def _scope_fingerprint(
     return (max(timestamps) if timestamps else None), int(row[1] or 0)
 
 
+async def _nuscenes_scope_digest(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID | None,
+) -> str:
+    task_query = select(Task).where(Task.project_id == project_id)
+    if batch_id is not None:
+        task_query = task_query.where(Task.batch_id == batch_id)
+    tasks = list((await db.execute(task_query)).scalars())
+    task_ids = [task.id for task in tasks]
+    links = []
+    if task_ids:
+        links = list(
+            (
+                await db.execute(
+                    select(TaskDatasetItemLink).where(
+                        TaskDatasetItemLink.task_id.in_(task_ids)
+                    )
+                )
+            ).scalars()
+        )
+    item_ids = {
+        item_id
+        for item_id in (
+            [task.dataset_item_id for task in tasks]
+            + [link.dataset_item_id for link in links]
+        )
+        if item_id is not None
+    }
+    items = (
+        list(
+            (
+                await db.execute(
+                    select(DatasetItem).where(DatasetItem.id.in_(item_ids))
+                )
+            ).scalars()
+        )
+        if item_ids
+        else []
+    )
+    scene_ids = {item.scene_id for item in items if item.scene_id is not None}
+    scenes = (
+        list((await db.execute(select(Scene).where(Scene.id.in_(scene_ids)))).scalars())
+        if scene_ids
+        else []
+    )
+    poses = (
+        list(
+            (
+                await db.execute(
+                    select(SceneFramePose).where(SceneFramePose.scene_id.in_(scene_ids))
+                )
+            ).scalars()
+        )
+        if scene_ids
+        else []
+    )
+    return canonical_digest(
+        {
+            "tasks": [
+                {
+                    "id": task.id,
+                    "batch_id": task.batch_id,
+                    "dataset_item_id": task.dataset_item_id,
+                    "sequence_order": task.sequence_order,
+                    "updated_at": task.updated_at,
+                }
+                for task in sorted(tasks, key=lambda row: str(row.id))
+            ],
+            "links": [
+                {
+                    "task_id": link.task_id,
+                    "dataset_item_id": link.dataset_item_id,
+                    "role": link.role,
+                    "sensor_name": link.sensor_name,
+                }
+                for link in sorted(links, key=lambda row: (str(row.task_id), row.role))
+            ],
+            "items": [
+                {
+                    "id": item.id,
+                    "scene_id": item.scene_id,
+                    "frame_index": item.frame_index,
+                    "file_path": item.file_path,
+                    "content_hash": item.content_hash,
+                    "metadata": item.metadata_,
+                    "updated_at": item.updated_at,
+                }
+                for item in sorted(items, key=lambda row: str(row.id))
+            ],
+            "scenes": [
+                {
+                    "id": scene.id,
+                    "source_format": scene.source_format,
+                    "source_metadata": scene.source_metadata,
+                    "updated_at": scene.updated_at,
+                }
+                for scene in sorted(scenes, key=lambda row: str(row.id))
+            ],
+            "poses": [
+                {
+                    "scene_id": pose.scene_id,
+                    "frame_index": pose.frame_index,
+                    "timestamp_us": pose.timestamp_us,
+                    "ego_translation": pose.ego_translation,
+                    "ego_rotation": pose.ego_rotation,
+                    "source_metadata": pose.source_metadata,
+                }
+                for pose in sorted(
+                    poses, key=lambda row: (str(row.scene_id), row.frame_index)
+                )
+            ],
+        }
+    )
+
+
 async def _scope_naming(
     db: AsyncSession, project_id: uuid.UUID, batch_id: uuid.UUID | None
 ) -> tuple[str, str | None, str]:
@@ -274,6 +393,14 @@ async def _run_export(
                 max_updated_at, active_count = await _scope_fingerprint(
                     db, proj_uuid, batch_uuid
                 )
+                options_payload: object = opts
+                if "nuscenes" in targets:
+                    options_payload = {
+                        "request": opts,
+                        "nuscenes_scope_digest": await _nuscenes_scope_digest(
+                            db, proj_uuid, batch_uuid
+                        ),
+                    }
                 cache_key = export_cache.compute_cache_key(
                     scope_id,
                     targets,
@@ -283,7 +410,7 @@ async def _run_export(
                     active_count,
                     axis_frame=axis_frame,
                     adapter_contracts=mask_format_registry.versions(targets),
-                    options_digest=canonical_digest(opts),
+                    options_digest=canonical_digest(options_payload),
                 )
                 # v0.10.43 · media 前缀 + 友好下载名（{display_id}_{dataset?}_{job[:8]}.zip）。
                 media, dataset_name, project_display_id = await _scope_naming(

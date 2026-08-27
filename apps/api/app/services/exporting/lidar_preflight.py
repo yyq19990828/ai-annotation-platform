@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import uuid
+from pathlib import PurePosixPath
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.annotation import Annotation
+from app.db.models.dataset import Dataset, DatasetItem, Scene
+from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.schemas._jsonb_types import SensorCalibration
@@ -18,10 +22,17 @@ from app.schemas.export import (
     LidarExportPreflightResponse,
 )
 from app.services.axis_convention import R_NORM
+from app.services.sensor_calibration import resolve_calibration_states
+from app.services.storage import storage_service
 
 
 MAX_PREFLIGHT_ISSUES = 200
 PREFLIGHT_LINK_CHUNK_SIZE = 1000
+MAX_NUSCENES_EXPORT_FRAMES = 1000
+MAX_NUSCENES_EXPORT_BOXES = 30_000
+MAX_NUSCENES_POINT_BOX_TESTS = 100_000_000
+MAX_NUSCENES_PCD_BYTES_PER_FRAME = 256 * 1024 * 1024
+MAX_NUSCENES_PCD_BYTES_TOTAL = 4 * 1024 * 1024 * 1024
 
 
 class LidarExportPreflightFailed(ValueError):
@@ -104,6 +115,69 @@ def calibration_is_valid(raw: object) -> bool:
     return True
 
 
+def _finite_vector(raw: object, length: int) -> bool:
+    if not isinstance(raw, list) or len(raw) != length:
+        return False
+    try:
+        return all(math.isfinite(float(value)) for value in raw)
+    except (TypeError, ValueError):
+        return False
+
+
+def _quaternion_is_valid(raw: object) -> bool:
+    if not _finite_vector(raw, 4):
+        return False
+    norm = math.hypot(*(float(value) for value in raw))
+    return math.isfinite(norm) and norm > 1e-12
+
+
+def _box_geometry_is_valid(raw: object) -> bool:
+    if not isinstance(raw, dict) or raw.get("type") != "box_3d":
+        return True
+    center = raw.get("center")
+    size = raw.get("size")
+    rotation = raw.get("rotation")
+    return (
+        _finite_vector(center, 3)
+        and _finite_vector(size, 3)
+        and _finite_vector(rotation, 3)
+        and all(float(value) > 0 for value in size)
+    )
+
+
+def _source_scene_is_valid(raw: dict) -> bool:
+    try:
+        sample_count = int(raw.get("nbr_samples"))
+    except (OverflowError, TypeError, ValueError):
+        return False
+    return (
+        all(
+            raw.get(field) not in (None, "") for field in ("token", "name", "log_token")
+        )
+        and isinstance(raw.get("description"), str)
+        and sample_count > 0
+        and all(
+            raw.get(field) not in (None, "")
+            for field in ("first_sample_token", "last_sample_token")
+        )
+    )
+
+
+def _source_path_is_safe(raw: object) -> bool:
+    if not isinstance(raw, str) or not raw:
+        return False
+    raw_parts = raw.split("/")
+    path = PurePosixPath(raw)
+    return (
+        not path.is_absolute()
+        and bool(path.parts)
+        and all(part not in {"", ".", ".."} for part in raw_parts)
+        and "\\" not in raw
+        and ":" not in raw
+        and "\0" not in raw
+    )
+
+
 async def preflight_lidar_export(
     db: AsyncSession,
     *,
@@ -122,16 +196,9 @@ async def preflight_lidar_export(
         if len(issues) < MAX_PREFLIGHT_ISSUES:
             issues.append(issue)
 
-    if "nuscenes" in targets:
-        add_issue(
-            LidarExportIssue(
-                code="nuscenes_export_not_trusted",
-                message="nuScenes 导出尚未具备真实 scene、timestamp 与 ego pose 合同",
-            )
-        )
-
     needs_kitti = "kitti" in targets
-    if not needs_kitti:
+    needs_nuscenes = "nuscenes" in targets
+    if not needs_kitti and not needs_nuscenes:
         return LidarExportPreflightResponse(
             ready=issue_count == 0,
             camera_roles=[],
@@ -141,6 +208,63 @@ async def preflight_lidar_export(
             issues_truncated=issue_count > len(issues),
             issues=issues,
         )
+
+    task_scope = [Task.project_id == project_id]
+    if batch_id is not None:
+        task_scope.append(Task.batch_id == batch_id)
+    task_count = int(
+        (await db.scalar(select(func.count(Task.id)).where(*task_scope))) or 0
+    )
+    if needs_nuscenes:
+        if task_count == 0:
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_export_empty",
+                    message="nuScenes 导出范围内没有任务",
+                )
+            )
+        elif task_count > MAX_NUSCENES_EXPORT_FRAMES:
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_export_too_large",
+                    message=(
+                        f"nuScenes 导出范围含 {task_count} 帧，"
+                        f"当前上限为 {MAX_NUSCENES_EXPORT_FRAMES} 帧"
+                    ),
+                )
+            )
+        else:
+            box_count_query = (
+                select(func.count(Annotation.id))
+                .join(Task, Task.id == Annotation.task_id)
+                .where(
+                    *task_scope,
+                    Annotation.geometry["type"].as_string() == "box_3d",
+                    Annotation.is_active.is_(True),
+                    Annotation.was_cancelled.is_(False),
+                )
+            )
+            box_count = int((await db.scalar(box_count_query)) or 0)
+            if box_count > MAX_NUSCENES_EXPORT_BOXES:
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_export_too_large",
+                        message=(
+                            f"nuScenes 导出范围含 {box_count} 个有效 3D 框，"
+                            f"当前上限为 {MAX_NUSCENES_EXPORT_BOXES} 个"
+                        ),
+                    )
+                )
+        if issue_count:
+            return LidarExportPreflightResponse(
+                ready=False,
+                camera_roles=[],
+                selected_camera_role=selected_role,
+                checked_tasks=task_count,
+                issue_count=issue_count,
+                issues_truncated=False,
+                issues=issues,
+            )
 
     task_query = (
         select(Task, DatasetItem, Dataset)
@@ -154,7 +278,6 @@ async def preflight_lidar_export(
     task_rows = list((await db.execute(task_query)).all())
     tasks = [row[0] for row in task_rows]
     task_ids = [task.id for task in tasks]
-
     links_by_task: dict[uuid.UUID, dict[str, DatasetItem]] = {}
     camera_roles: set[str] = set()
     for start in range(0, len(task_ids), PREFLIGHT_LINK_CHUNK_SIZE):
@@ -167,23 +290,23 @@ async def preflight_lidar_export(
                 )
                 .where(
                     TaskDatasetItemLink.task_id.in_(chunk_ids),
-                    TaskDatasetItemLink.role.like("camera_%"),
                 )
                 .order_by(TaskDatasetItemLink.role)
             )
         ).all()
         for link, item in link_rows:
             links_by_task.setdefault(link.task_id, {})[link.role] = item
-            camera_roles.add(link.role)
+            if link.role.startswith("camera_"):
+                camera_roles.add(link.role)
 
-    if selected_role is None:
+    if needs_kitti and selected_role is None:
         add_issue(
             LidarExportIssue(
                 code="kitti_camera_required",
                 message="KITTI 导出必须显式选择一条相机通道",
             )
         )
-    elif selected_role not in camera_roles:
+    elif needs_kitti and selected_role not in camera_roles:
         add_issue(
             LidarExportIssue(
                 code="kitti_camera_role_not_found",
@@ -192,6 +315,184 @@ async def preflight_lidar_export(
             )
         )
 
+    scene_ids = {
+        item.scene_id
+        for _task, item, _dataset in task_rows
+        if item is not None and item.scene_id is not None
+    }
+    scenes_by_id: dict[uuid.UUID, Scene] = {}
+    poses_by_frame: dict[tuple[uuid.UUID, int], SceneFramePose] = {}
+    all_scene_tasks: dict[uuid.UUID, list[tuple[Task, DatasetItem]]] = {}
+    if needs_nuscenes and scene_ids:
+        scenes_by_id = {
+            scene.id: scene
+            for scene in (
+                await db.execute(select(Scene).where(Scene.id.in_(scene_ids)))
+            ).scalars()
+        }
+        poses_by_frame = {
+            (pose.scene_id, pose.frame_index): pose
+            for pose in (
+                await db.execute(
+                    select(SceneFramePose).where(SceneFramePose.scene_id.in_(scene_ids))
+                )
+            ).scalars()
+        }
+        full_rows = (
+            await db.execute(
+                select(Task, DatasetItem)
+                .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+                .where(Task.project_id == project_id)
+                .where(DatasetItem.scene_id.in_(scene_ids))
+            )
+        ).all()
+        for full_task, full_item in full_rows:
+            all_scene_tasks.setdefault(full_item.scene_id, []).append(
+                (full_task, full_item)
+            )
+
+    camera_items = [
+        item
+        for linked in links_by_task.values()
+        for role, item in linked.items()
+        if role.startswith("camera_")
+    ]
+    calibration_states = {}
+    if needs_nuscenes and camera_items:
+        try:
+            calibration_states = await resolve_calibration_states(db, camera_items)
+        except (ValueError, TypeError):
+            calibration_states = {}
+
+    invalid_boxes_by_task: dict[uuid.UUID, list[uuid.UUID]] = {}
+    box_counts_by_task: dict[uuid.UUID, int] = {}
+    if needs_nuscenes:
+        for start in range(0, len(task_ids), PREFLIGHT_LINK_CHUNK_SIZE):
+            chunk_ids = task_ids[start : start + PREFLIGHT_LINK_CHUNK_SIZE]
+            annotations = (
+                await db.execute(
+                    select(Annotation).where(
+                        Annotation.task_id.in_(chunk_ids),
+                        Annotation.is_active.is_(True),
+                        Annotation.was_cancelled.is_(False),
+                    )
+                )
+            ).scalars()
+            for annotation in annotations:
+                if (
+                    isinstance(annotation.geometry, dict)
+                    and annotation.geometry.get("type") == "box_3d"
+                ):
+                    box_counts_by_task[annotation.task_id] = (
+                        box_counts_by_task.get(annotation.task_id, 0) + 1
+                    )
+                if not _box_geometry_is_valid(annotation.geometry):
+                    invalid_boxes_by_task.setdefault(annotation.task_id, []).append(
+                        annotation.id
+                    )
+
+    asset_contracts: dict[str, tuple[int, str, dict, str]] = {}
+
+    def check_asset(
+        *,
+        key: object,
+        size: object,
+        sha256: object,
+        common: dict,
+        kind: str,
+    ) -> None:
+        if not isinstance(key, str) or not key or not isinstance(sha256, str):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_source_asset_contract_missing",
+                    message=f"{kind} 缺少原始对象路径、大小或 SHA-256",
+                    **common,
+                )
+            )
+            return
+        try:
+            expected_size = int(size)
+        except (TypeError, ValueError):
+            expected_size = -1
+        normalized_sha256 = sha256.lower()
+        if (
+            expected_size < 0
+            or len(normalized_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in normalized_sha256)
+        ):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_source_asset_contract_missing",
+                    message=f"{kind} 的原始资产指纹无效",
+                    **common,
+                )
+            )
+            return
+        existing = asset_contracts.get(key)
+        if existing is not None and existing[:2] != (
+            expected_size,
+            normalized_sha256,
+        ):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_source_asset_path_collision",
+                    message=f"{kind} 路径被不同资产指纹重复引用",
+                    **common,
+                )
+            )
+            return
+        asset_contracts[key] = (expected_size, normalized_sha256, common, kind)
+
+    point_box_tests = 0
+    total_pcd_bytes = 0
+    pcd_size_exceeded = False
+    if needs_nuscenes:
+        for task, primary_item, _dataset in task_rows:
+            if primary_item is None:
+                continue
+            try:
+                pcd_bytes = max(int(primary_item.file_size), 0)
+            except (TypeError, ValueError):
+                pcd_bytes = 0
+            total_pcd_bytes += pcd_bytes
+            pcd_size_exceeded = (
+                pcd_size_exceeded or pcd_bytes > MAX_NUSCENES_PCD_BYTES_PER_FRAME
+            )
+            box_count = box_counts_by_task.get(task.id, 0)
+            if box_count == 0:
+                continue
+            raw_point_count = (primary_item.metadata_ or {}).get("point_count")
+            try:
+                metadata_point_count = max(int(raw_point_count), 0)
+            except (TypeError, ValueError):
+                metadata_point_count = 0
+            point_count = max(
+                metadata_point_count,
+                max(int(primary_item.file_size or 0) // 12, 0),
+            )
+            point_box_tests += max(point_count, 0) * box_count
+        if pcd_size_exceeded or total_pcd_bytes > MAX_NUSCENES_PCD_BYTES_TOTAL:
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_export_too_large",
+                    message=(
+                        "nuScenes 平台 PCD 单帧或总字节数超过当前单次"
+                        "导出预算，请减少 Scene 范围"
+                    ),
+                )
+            )
+        if point_box_tests > MAX_NUSCENES_POINT_BOX_TESTS:
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_export_too_large",
+                    message=(
+                        "nuScenes 精确框内点统计超过当前单次计算预算，"
+                        "请减少 Scene 或 3D 框数量"
+                    ),
+                )
+            )
+
+    selected_tasks_by_scene: dict[uuid.UUID, list[tuple[Task, DatasetItem]]] = {}
     for task, primary_item, dataset in task_rows:
         frame_key = _frame_key(task, primary_item)
         common = {
@@ -199,6 +500,14 @@ async def preflight_lidar_export(
             "task_display_id": task.display_id,
             "frame_key": frame_key,
         }
+        for annotation_id in invalid_boxes_by_task.get(task.id, []):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_box_geometry_invalid",
+                    message=f"3D 框 {annotation_id} 含非有限值或非正尺寸",
+                    **common,
+                )
+            )
         if primary_item is None:
             add_issue(
                 LidarExportIssue(
@@ -226,43 +535,430 @@ async def preflight_lidar_export(
                     **common,
                 )
             )
-
-        if selected_role is None:
-            continue
-        camera_item = links_by_task.get(task.id, {}).get(selected_role)
-        if camera_item is None:
+        elif needs_nuscenes and convention != "iso_8855":
             add_issue(
                 LidarExportIssue(
-                    code="camera_frame_missing",
-                    message=f"当前帧缺少相机通道 {selected_role}",
-                    camera_role=selected_role,
+                    code="nuscenes_axis_convention_invalid",
+                    message="nuScenes ego 源必须使用 iso_8855 坐标约定",
+                    **common,
+                )
+            )
+
+        if needs_kitti and selected_role is not None:
+            camera_item = links_by_task.get(task.id, {}).get(selected_role)
+            if camera_item is None:
+                add_issue(
+                    LidarExportIssue(
+                        code="camera_frame_missing",
+                        message=f"当前帧缺少相机通道 {selected_role}",
+                        camera_role=selected_role,
+                        **common,
+                    )
+                )
+            else:
+                if (
+                    not camera_item.width
+                    or camera_item.width <= 0
+                    or not camera_item.height
+                    or camera_item.height <= 0
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="camera_image_size_missing",
+                            message=f"相机通道 {selected_role} 缺少有效图像宽高",
+                            camera_role=selected_role,
+                            **common,
+                        )
+                    )
+                if not calibration_is_valid(
+                    (camera_item.metadata_ or {}).get("calibration")
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="camera_calibration_invalid",
+                            message=f"相机通道 {selected_role} 缺少有效内外参",
+                            camera_role=selected_role,
+                            **common,
+                        )
+                    )
+
+        if not needs_nuscenes or primary_item is None:
+            continue
+        if primary_item.scene_id is None or primary_item.frame_index is None:
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_scene_frame_missing",
+                    message="nuScenes 导出要求每个主点云归属 Scene 并有 frame_index",
                     **common,
                 )
             )
             continue
-        if (
-            not camera_item.width
-            or camera_item.width <= 0
-            or not camera_item.height
-            or camera_item.height <= 0
+        selected_tasks_by_scene.setdefault(primary_item.scene_id, []).append(
+            (task, primary_item)
+        )
+        scene = scenes_by_id.get(primary_item.scene_id)
+        if scene is None or scene.source_format != "nuscenes":
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_source_scene_invalid",
+                    message="Scene 不是可信的 nuScenes 来源",
+                    **common,
+                )
+            )
+            continue
+        scene_meta = scene.source_metadata or {}
+        source_scene = scene_meta.get("nuscenes_export")
+        if scene_meta.get("frame") != "ego" or not isinstance(source_scene, dict):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_ego_frame_required",
+                    message="nuScenes 可信导出只允许 importer --frame ego 数据",
+                    **common,
+                )
+            )
+            continue
+        source_scene_row = source_scene.get("scene")
+        source_log = source_scene.get("log")
+        source_map = source_scene.get("map")
+        if not all(
+            isinstance(value, dict)
+            for value in (source_scene_row, source_log, source_map)
         ):
             add_issue(
                 LidarExportIssue(
-                    code="camera_image_size_missing",
-                    message=f"相机通道 {selected_role} 缺少有效图像宽高",
-                    camera_role=selected_role,
+                    code="nuscenes_scene_contract_missing",
+                    message="Scene 缺少原始 scene / log / map 合同",
                     **common,
                 )
             )
-        if not calibration_is_valid((camera_item.metadata_ or {}).get("calibration")):
+            continue
+        if not _source_scene_is_valid(source_scene_row):
             add_issue(
                 LidarExportIssue(
-                    code="camera_calibration_invalid",
-                    message=f"相机通道 {selected_role} 缺少有效内外参",
-                    camera_role=selected_role,
+                    code="nuscenes_scene_contract_invalid",
+                    message="nuScenes scene 字段不完整或 nbr_samples 无效",
                     **common,
                 )
             )
+        if (
+            any(
+                source_log.get(field) in (None, "")
+                for field in (
+                    "token",
+                    "logfile",
+                    "vehicle",
+                    "date_captured",
+                    "location",
+                )
+            )
+            or any(
+                source_map.get(field) in (None, "")
+                for field in ("token", "category", "filename")
+            )
+            or not _source_path_is_safe(source_map.get("filename"))
+        ):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_log_map_contract_invalid",
+                    message="nuScenes log / map 字段不完整",
+                    **common,
+                )
+            )
+        if source_scene_row.get("log_token") != source_log.get(
+            "token"
+        ) or source_log.get("token") not in (source_map.get("log_tokens") or []):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_log_map_reference_invalid",
+                    message="scene / log / map 原始引用不闭合",
+                    **common,
+                )
+            )
+        check_asset(
+            key=source_scene.get("map_storage_key"),
+            size=source_scene.get("map_file_size"),
+            sha256=source_scene.get("map_sha256"),
+            common=common,
+            kind="map",
+        )
+        check_asset(
+            key=primary_item.file_path,
+            size=primary_item.file_size,
+            sha256=primary_item.content_hash,
+            common=common,
+            kind="platform_pcd",
+        )
+
+        pose = poses_by_frame.get((primary_item.scene_id, primary_item.frame_index))
+        if (
+            pose is None
+            or pose.timestamp_us is None
+            or not _finite_vector(pose.ego_translation, 3)
+            or not _quaternion_is_valid(pose.ego_rotation)
+        ):
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_frame_pose_missing",
+                    message="当前帧缺少完整 ego pose 或 LiDAR 时钟",
+                    **common,
+                )
+            )
+
+        sensor_items = dict(links_by_task.get(task.id, {}))
+        sensor_items.setdefault("primary_lidar", primary_item)
+        lidar_count = 0
+        channels: set[str] = set()
+        for role, item in sensor_items.items():
+            if role != "primary_lidar" and not role.startswith("camera_"):
+                continue
+            source = (item.metadata_ or {}).get("nuscenes_export")
+            if not isinstance(source, dict):
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_sensor_contract_missing",
+                        message=f"通道 {role} 缺少原始 nuScenes 上下文",
+                        camera_role=role if role.startswith("camera_") else None,
+                        **common,
+                    )
+                )
+                continue
+            sample = source.get("sample")
+            sample_data = source.get("sample_data")
+            calibrated = source.get("calibrated_sensor")
+            sensor = source.get("sensor")
+            ego_pose = source.get("ego_pose")
+            if not all(
+                isinstance(value, dict)
+                for value in (sample, sample_data, calibrated, sensor, ego_pose)
+            ):
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_sensor_contract_missing",
+                        message=f"通道 {role} 原始表上下文不完整",
+                        **common,
+                    )
+                )
+                continue
+            channel = str(sensor.get("channel") or "")
+            modality = str(sensor.get("modality") or "")
+            filename = str(sample_data.get("filename") or "")
+            references_valid = (
+                bool(sample.get("token"))
+                and sample.get("scene_token") == source_scene_row.get("token")
+                and isinstance(sample.get("timestamp"), int)
+                and isinstance(sample.get("prev"), str)
+                and isinstance(sample.get("next"), str)
+                and bool(sample_data.get("token"))
+                and sample_data.get("sample_token") == sample.get("token")
+                and sample_data.get("calibrated_sensor_token")
+                == calibrated.get("token")
+                and calibrated.get("sensor_token") == sensor.get("token")
+                and sample_data.get("ego_pose_token") == ego_pose.get("token")
+                and sample_data.get("is_key_frame") is True
+                and isinstance(sample_data.get("timestamp"), int)
+                and sample_data.get("timestamp") == ego_pose.get("timestamp")
+                and isinstance(sample_data.get("prev"), str)
+                and isinstance(sample_data.get("next"), str)
+                and bool(calibrated.get("token"))
+                and _finite_vector(calibrated.get("translation"), 3)
+                and _quaternion_is_valid(calibrated.get("rotation"))
+                and isinstance(calibrated.get("camera_intrinsic"), list)
+                and bool(sensor.get("token"))
+                and bool(ego_pose.get("token"))
+                and isinstance(ego_pose.get("timestamp"), int)
+                and _finite_vector(ego_pose.get("translation"), 3)
+                and _quaternion_is_valid(ego_pose.get("rotation"))
+                and channel
+                and modality in {"lidar", "camera"}
+                and filename
+                and bool(sample_data.get("fileformat"))
+                and isinstance(sample_data.get("width"), int)
+                and isinstance(sample_data.get("height"), int)
+                and _source_path_is_safe(filename)
+            )
+            if not references_valid or channel in channels:
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_sensor_reference_invalid",
+                        message=f"通道 {role} 的 token 引用、时钟或路径不闭合",
+                        **common,
+                    )
+                )
+            channels.add(channel)
+            if modality == "lidar":
+                lidar_count += 1
+                try:
+                    raw_size = int(source.get("source_file_size"))
+                except (TypeError, ValueError):
+                    raw_size = -1
+                if (
+                    sample_data.get("fileformat") != "pcd"
+                    or not filename.endswith(".pcd.bin")
+                    or raw_size % 20 != 0
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="nuscenes_lidar_media_invalid",
+                            message="原始 LiDAR 必须是五通道 float32 .pcd.bin",
+                            **common,
+                        )
+                    )
+                if pose is not None and (
+                    pose.timestamp_us != sample_data.get("timestamp")
+                    or pose.ego_translation != ego_pose.get("translation")
+                    or pose.ego_rotation != ego_pose.get("rotation")
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="nuscenes_frame_pose_drift",
+                            message="SceneFramePose 与原始 LIDAR_TOP ego_pose 不一致",
+                            **common,
+                        )
+                    )
+            elif (
+                not item.width
+                or not item.height
+                or int(sample_data.get("width") or 0) != item.width
+                or int(sample_data.get("height") or 0) != item.height
+            ):
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_camera_size_invalid",
+                        message=f"相机通道 {role} 宽高与原始 sample_data 不一致",
+                        camera_role=role,
+                        **common,
+                    )
+                )
+            if role.startswith("camera_"):
+                baseline_digest = source.get("platform_calibration_digest")
+                state = calibration_states.get(item.id)
+                if state is None or state.digest != baseline_digest:
+                    add_issue(
+                        LidarExportIssue(
+                            code="nuscenes_camera_calibration_drift",
+                            message=f"相机通道 {role} 导入后标定已变更",
+                            camera_role=role,
+                            **common,
+                        )
+                    )
+            check_asset(
+                key=source.get("source_storage_key"),
+                size=source.get("source_file_size"),
+                sha256=source.get("source_sha256"),
+                common=common,
+                kind=role,
+            )
+        if lidar_count != 1:
+            add_issue(
+                LidarExportIssue(
+                    code="nuscenes_lidar_channel_invalid",
+                    message="每帧必须且只能有一个 LiDAR 关键帧",
+                    **common,
+                )
+            )
+
+    if needs_nuscenes:
+        for scene_id, selected_rows in selected_tasks_by_scene.items():
+            common = {
+                "task_id": selected_rows[0][0].id,
+                "task_display_id": selected_rows[0][0].display_id,
+                "frame_key": _frame_key(selected_rows[0][0], selected_rows[0][1]),
+            }
+            all_rows = all_scene_tasks.get(scene_id, [])
+            scene = scenes_by_id.get(scene_id)
+            source = (
+                (scene.source_metadata or {}).get("nuscenes_export")
+                if scene is not None
+                else None
+            )
+            source_scene = source.get("scene") if isinstance(source, dict) else None
+            try:
+                expected_count = int(source_scene["nbr_samples"])
+            except (KeyError, OverflowError, TypeError, ValueError):
+                expected_count = -1
+            selected_ids = {task.id for task, _item in selected_rows}
+            all_ids = {task.id for task, _item in all_rows}
+            frame_indices = sorted(item.frame_index for _task, item in all_rows)
+            if (
+                expected_count < 1
+                or selected_ids != all_ids
+                or len(all_ids) != expected_count
+                or any(
+                    frame_index != index
+                    for index, frame_index in enumerate(frame_indices)
+                )
+            ):
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_scene_incomplete",
+                        message="导出范围必须包含 Scene 的 0..nbr_samples-1 全部帧",
+                        **common,
+                    )
+                )
+                continue
+            ordered = sorted(all_rows, key=lambda row: int(row[1].frame_index))
+            source_samples = [
+                ((item.metadata_ or {}).get("nuscenes_export") or {}).get("sample")
+                for _task, item in ordered
+            ]
+            tokens = [
+                str(sample.get("token") or "") if isinstance(sample, dict) else ""
+                for sample in source_samples
+            ]
+            if (
+                not all(tokens)
+                or tokens[0] != str(source_scene.get("first_sample_token") or "")
+                or tokens[-1] != str(source_scene.get("last_sample_token") or "")
+                or any(
+                    not isinstance(sample, dict)
+                    or str(sample.get("prev") or "")
+                    != (tokens[index - 1] if index else "")
+                    or str(sample.get("next") or "")
+                    != (tokens[index + 1] if index + 1 < len(tokens) else "")
+                    or sample.get("timestamp") is None
+                    for index, sample in enumerate(source_samples)
+                )
+            ):
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_sample_chain_invalid",
+                        message="原始 sample 的首尾、prev / next 或时间戳不闭合",
+                        **common,
+                    )
+                )
+
+        async def verify_asset(
+            key: str, contract: tuple[int, str, dict, str]
+        ) -> tuple[str, tuple[int, str, dict, str], dict | None]:
+            head = await asyncio.to_thread(
+                storage_service.verify_upload,
+                key,
+                storage_service.datasets_bucket,
+            )
+            return key, contract, head
+
+        asset_rows = list(asset_contracts.items())
+        for start in range(0, len(asset_rows), 32):
+            verified = await asyncio.gather(
+                *[
+                    verify_asset(key, contract)
+                    for key, contract in asset_rows[start : start + 32]
+                ]
+            )
+            for _key, (expected_size, sha256, common, kind), head in verified:
+                metadata = (head or {}).get("Metadata") or {}
+                if (
+                    head is None
+                    or int(head.get("ContentLength", -1)) != expected_size
+                    or str(metadata.get("sha256") or "").lower() != sha256
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="nuscenes_source_asset_drift",
+                            message=f"{kind} 原始对象不存在或与导入指纹不一致",
+                            **common,
+                        )
+                    )
 
     return LidarExportPreflightResponse(
         ready=issue_count == 0,
